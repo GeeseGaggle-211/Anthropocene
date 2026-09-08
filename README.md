@@ -6,6 +6,10 @@ A Unity 6 2D URP project for sprite-, shape-, and particle-driven gameplay.
 
 Use Unity Hub or open this folder with Unity Editor `6000.5.10f1`. The first import can take several minutes because Unity generates the ignored `Library` folder.
 
+On Windows, run `Open-Anthropocene.ps1` to fast-forward the local `main` branch from GitHub and then open this checkout in the installed editor. The script deliberately uses `git pull --ff-only`, so it stops instead of creating an unexpected merge when local and remote history diverge.
+
+Repository: <https://github.com/GeeseGaggle-211/Anthropocene>
+
 ## Foundation
 
 - Unity 6 (`6000.5.10f1`)
