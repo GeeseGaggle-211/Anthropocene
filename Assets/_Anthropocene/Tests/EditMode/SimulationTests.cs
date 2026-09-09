@@ -10,6 +10,26 @@ namespace Anthropocene.Tests.EditMode
     public sealed class SimulationTests
     {
         [Test]
+        public void PlanningPath_UsesOnlyAllowedTilesAndMovementBudget()
+        {
+            var map = new HexMap(5, 5);
+            var visible = new HashSet<int> { 12, 13, 14 };
+            var path = PlanningPath.Find(map, 12, 14, 2, visible.Contains);
+            Assert.That(path, Is.EqualTo(new[] { 12, 13, 14 }));
+
+            visible.Remove(13);
+            Assert.That(PlanningPath.Find(map, 12, 14, 2, visible.Contains), Is.Empty, "A presentation preview must not route through an unobserved tile.");
+            Assert.That(PlanningPath.Find(map, 12, 13, 1, _ => true, _ => 2), Is.Empty, "Weighted terrain must consume the same movement budget shown to the player.");
+        }
+
+        [Test]
+        public void QueueFeedback_DistinguishesAddFromReplacement()
+        {
+            Assert.That(PlanningPath.QueueMessage(null, "Move to tile 7"), Is.EqualTo("Queued Move to tile 7."));
+            Assert.That(PlanningPath.QueueMessage("Move to tile 7", "Hunt herd 9"), Is.EqualTo("Replaced Move to tile 7 with Hunt herd 9."));
+        }
+
+        [Test]
         public void ElevationContours_AndStackSlots_PreserveCountsAndHitGeometry()
         {
             var bounds = new Rect(0, 0, 110, 128);

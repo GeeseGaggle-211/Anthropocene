@@ -23,7 +23,7 @@ namespace Anthropocene.Presentation
         private Task<TurnRecord> resolving;
         private string operation = "Building the world";
         private Texture2D hex;
-        private GUIStyle text, title, glyph, small, button;
+        private GUIStyle text, title, glyph, small, button, badge, section, centered;
         private Font font;
         private TilesetDefinition[] tilesets;
         private ITileRenderer tileRenderer;
@@ -34,7 +34,8 @@ namespace Anthropocene.Presentation
         private string seedText = "1729", status = "Choose a world, then begin.", mode = "Inspect";
         private bool menu = true, help, debug;
         private readonly List<string> journal = new List<string>();
-        private static readonly Color Ink = new Color(.055f, .066f, .065f), Panel = new Color(.085f, .098f, .093f), Paper = new Color(.83f, .84f, .75f), Gold = new Color(.91f, .69f, .33f);
+        private static readonly Color Ink = new Color(.035f, .044f, .043f), Panel = new Color(.075f, .086f, .082f), Paper = new Color(.86f, .86f, .78f), Gold = new Color(.91f, .69f, .33f);
+        private static readonly Color MoveColor = new Color(.30f, .78f, .58f), HuntColor = new Color(.95f, .60f, .24f), FishColor = new Color(.28f, .70f, .88f), InvalidColor = new Color(.88f, .28f, .24f);
         private static readonly string[] Sizes = { "Standard  1024 x 512", "Small  96 x 48", "Tiny  48 x 24" };
         private string SavePath => Path.Combine(Application.persistentDataPath, "opening-v3.anthro");
         public WorldState State => world;
@@ -64,7 +65,7 @@ namespace Anthropocene.Presentation
             if (resolving != null && resolving.IsCompleted) { if (resolving.IsFaulted) status = "Turn failed: " + resolving.Exception.GetBaseException().Message; else FinishTurn(resolving.Result); resolving = null; }
             if (generating == null || !generating.IsCompleted) return;
             if (generating.IsFaulted) status = "World generation failed: " + generating.Exception.GetBaseException().Message;
-            else { world = generating.Result; menu = false; planned.Clear(); journal.Clear(); FocusCamp(); Refresh(); status = operation == "Loading the saved opening" ? "Saved opening restored." : "Your people gather automatically. Choose orders, then end the generation."; }
+            else { world = generating.Result; menu = false; planned.Clear(); journal.Clear(); lastResolutionSummary = ""; FocusCamp(); Refresh(); status = operation == "Loading the saved opening" ? "Saved opening restored." : "Your people gather automatically. Choose orders, then commit the generation."; }
             generating = null;
         }
         private void OnDestroy() { if (hex != null) Destroy(hex); }
@@ -75,20 +76,23 @@ namespace Anthropocene.Presentation
             title = new GUIStyle(text) { fontSize = 23, fontStyle = FontStyle.Bold };
             small = new GUIStyle(text) { fontSize = 12 };
             glyph = new GUIStyle(text) { alignment = TextAnchor.MiddleCenter, fontSize = 24, fontStyle = FontStyle.Bold, wordWrap = false };
+            badge = new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold, normal = { textColor = Ink } };
+            section = new GUIStyle(small) { fontStyle = FontStyle.Bold };
+            centered = new GUIStyle(text) { alignment = TextAnchor.MiddleCenter };
             button = new GUIStyle(GUI.skin.button) { font = font, fontSize = 14, wordWrap = true, alignment = TextAnchor.MiddleLeft, padding = new RectOffset(10, 8, 5, 5), normal = { textColor = Paper }, hover = { textColor = Gold } };
         }
         private void OnGUI()
         {
             Styles(); GUI.depth = -20;
             Fill(new Rect(0, 0, Screen.width, Screen.height), Ink);
-            if (resolving != null) { GUI.Label(new Rect(40, 80, Screen.width - 80, 100), "Resolving the generation... Seasonal food flows, consumption and demographics are advancing.", title); return; }
+            if (resolving != null) { ResolutionScreen(); return; }
             if (menu || world == null || generating != null) { Menu(); return; }
             GUIUtility.keyboardControl = 0;
-            float side = Mathf.Min(340, Screen.width * .33f);
-            var mapRect = new Rect(0, 64, Screen.width - side, Screen.height - 190);
+            float side = Mathf.Min(390, Screen.width * .36f);
+            var mapRect = new Rect(0, 64, Screen.width - side, Screen.height - 212);
             GUI.enabled = saving == null;
             Header(side); DrawMap(mapRect); Sidebar(new Rect(Screen.width - side, 64, side, Screen.height - 64));
-            Footer(new Rect(0, Screen.height - 126, Screen.width - side, 126));
+            Footer(new Rect(0, Screen.height - 148, Screen.width - side, 148));
             HandleInput(mapRect);
             GUI.enabled = true;
             if (help) Help(); else DrawHover(mapRect);
@@ -163,19 +167,19 @@ namespace Anthropocene.Presentation
                     int id = world.Map.At(center % world.Config.Width + dq, center / world.Config.Width + dr); if (id < 0) continue;
                     var pos = Position(id, area); if (pos.x < -radius || pos.x > area.width + radius || pos.y < -radius || pos.y > area.height + radius) continue;
                     bool visible = observation.Tiles.TryGetValue(id, out var tile);
-                    bool own = camp.Tile == id || observation.Hunters.Any(h => h.Tile == id && h.Id == selected);
                     var rect = new Rect(pos.x - radius * .866f, pos.y - radius, radius * 1.732f, radius * 2);
-                    var visual = new TileRenderContext { Bounds = rect, Tile = visible ? tile : null, Inspected = inspected == id, Selected = own };
+                    var visual = new TileRenderContext { Bounds = rect, Tile = visible ? tile : null, Inspected = inspected == id, Selected = SelectedTile == id, SelectedEntity = selected };
                     if (visible) visual.Entities.AddRange(TileDetails.Occupants(observation, id));
                     tileRenderer.Draw(visual);
                     if (!visible) continue;
                     float distance = (mouse - pos).sqrMagnitude;
                     if (distance < nearest) { nearest = distance; hovered = id; hoveredBounds = new Rect(rect.x + area.x, rect.y + area.y, rect.width, rect.height); }
                     for (int slot = 0; slot < Math.Min(6, visual.Entities.Count); slot++) if (LayeredTileRenderer.OccupantSlot(rect, slot, visual.Entities.Count).Contains(mouse)) hoveredOccupant = visual.Entities[slot].Id;
-                    foreach (var order in planned.Values.Where(o => o.Destination == id || o.Target == id && o.Kind == OrderKind.Fish))
-                        GUI.Label(new Rect(rect.x + rect.width - 18, rect.y + 8, 18, 20), "+", text);
+                    DrawPlanningTile(rect, id);
                 }
-            GUI.Label(new Rect(16, 12, area.width - 32, 25), "CURRENT SIGHT ONLY    |    " + mode.ToUpperInvariant(), small);
+            DrawPaths(area);
+            Fill(new Rect(12, 10, Mathf.Min(area.width - 24, 720), 32), new Color(.035f, .044f, .043f, .92f));
+            GUI.Label(new Rect(24, 17, Mathf.Min(area.width - 48, 696), 22), ModeInstruction(), small);
             if (world.Finished || world.LinkedPopulation(camp) <= 0) Transition(new Rect(30, 55, Mathf.Min(550, area.width - 60), 225));
             GUI.EndGroup();
         }
@@ -186,21 +190,34 @@ namespace Anthropocene.Presentation
             sidebarScroll = GUI.BeginScrollView(new Rect(0, 0, area.width, area.height), sidebarScroll, new Rect(0, 0, area.width - 22, sidebarHeight));
             float width = area.width - 38, y = 12;
             var camp = world.Camps.First(c => c.Player == 0);
-            GUI.Label(new Rect(14, y, width, 30), "YOUR PEOPLE", title); y += 36;
+            GUI.Label(new Rect(14, y, width, 24), "YOUR TRIBE", section); y += 26;
             GUI.Label(new Rect(14, y, width, 58), world.LinkedPopulation(camp) + " people  |  " + camp.Population + " at camp\nFood reserves: " + Knowledge.Bands[observation.FoodCondition] + (camp.DeficitTurns > 0 ? "\nHunger: " + camp.DeficitTurns + " recent seasonal deficits" : world.Turn == 1 ? "\nThe first generation awaits" : "\nCamp supplied in the final interval"), text); y += 70;
-            if (Button(new Rect(14, y, width, 32), (selected == camp.Id ? "> " : "") + "@  Camp  [movement 1]")) { selected = camp.Id; center = camp.Tile; pan = Vector2.zero; mode = "Inspect"; } y += 38;
+
+            Fill(new Rect(10, y, width + 8, 62), new Color(.14f, .16f, .14f));
+            GUI.Label(new Rect(20, y + 7, width - 12, 24), "SELECTED  ·  " + SelectedName, section);
+            string selectedDetail = selected == camp.Id ? camp.Population + " people · movement " + observation.CampMovement + " · gathers automatically" : observation.Hunters.First(h => h.Id == selected).Population + " hunters · movement " + observation.HunterMovement + " · " + (observation.Hunters.First(h => h.Id == selected).InSupply ? "in supply" : "carrying provisions");
+            GUI.Label(new Rect(20, y + 32, width - 12, 22), selectedDetail, small); y += 70;
+
+            GUI.Label(new Rect(14, y, width, 22), "UNIT STACK / ROSTER", section); y += 24;
+            if (Button(new Rect(14, y, width, 34), (selected == camp.Id ? "◆  " : "◇  ") + "@  Camp  ·  tile " + camp.Tile)) { SelectUnit(camp.Id, camp.Tile); } y += 40;
             foreach (var h in observation.Hunters)
             {
-                if (Button(new Rect(14, y, width, 32), (selected == h.Id ? "> " : "") + "h  Hunters " + h.Id + "  (" + h.Population + ") [move 2]")) { selected = h.Id; center = h.Tile; pan = Vector2.zero; mode = "Inspect"; } y += 38;
+                if (Button(new Rect(14, y, width, 34), (selected == h.Id ? "◆  " : "◇  ") + "h  Hunters " + h.Id + "  ·  " + h.Population + " people  ·  tile " + h.Tile)) { SelectUnit(h.Id, h.Tile); } y += 40;
             }
-            GUI.Label(new Rect(14, y, width, 23), "PLAN ORDERS", small); y += 26;
-            if (Button(new Rect(14, y, width, 32), "Move [M]  - choose a visible tile")) mode = "Move"; y += 38;
+
+            y += 6; GUI.Label(new Rect(14, y, width, 23), "COMMANDS  ·  " + mode.ToUpperInvariant(), section); y += 26;
+            if (Button(new Rect(14, y, width, 36), mode == "Move" ? "◆ MOVE [M]  ·  choose a green tile" : "◇ MOVE [M]  ·  preview range", mode == "Move")) BeginMode("Move"); y += 42;
             if (selected == camp.Id)
             {
-                if (Button(new Rect(14, y, 35, 30), "-")) dispatch = Math.Max(1, dispatch - 1);
-                GUI.Label(new Rect(58, y + 4, width - 100, 25), dispatch + " people to dispatch", text);
-                if (Button(new Rect(14 + width - 35, y, 35, 30), "+")) dispatch = Math.Min(camp.Population - world.Config.MinimumCamp, dispatch + 1); y += 36;
-                if (Button(new Rect(14, y, width, 32), "Dispatch hunters [D]")) Queue(new Order(OrderKind.Dispatch, camp.Id, population: dispatch)); y += 38;
+                int maximum = Math.Max(0, camp.Population - world.Config.MinimumCamp);
+                dispatch = Mathf.Clamp(dispatch, 1, Math.Max(1, maximum));
+                bool controls = GUI.enabled; GUI.enabled = controls && maximum > 0;
+                if (Button(new Rect(14, y, 38, 32), "−")) dispatch = Math.Max(1, dispatch - 1);
+                GUI.Label(new Rect(61, y + 5, width - 108, 25), maximum > 0 ? dispatch + " people" : "Camp minimum reached", centered);
+                if (Button(new Rect(14 + width - 38, y, 38, 32), "+")) dispatch = Math.Min(maximum, dispatch + 1); y += 38;
+                if (Button(new Rect(14, y, width, 38), "DISPATCH [D]  ·  form a hunter group")) Queue(new Order(OrderKind.Dispatch, camp.Id, population: dispatch));
+                GUI.enabled = controls; y += 42;
+                GUI.Label(new Rect(14, y, width, 44), maximum > 0 ? "Spawns at the camp after this generation resolves; the new group can receive orders next generation." : "Unavailable: dispatch must leave at least " + world.Config.MinimumCamp + " people at camp.", small); y += 50;
             }
             else
             {
@@ -209,17 +226,44 @@ namespace Anthropocene.Presentation
                 {
                     string supply = expedition.InSupply ? "Supplied by camp (path range " + observation.SupplyRange + ")." : "Beyond supply: provisions " + Knowledge.Bands[expedition.Provisions] + ".";
                     if (expedition.DeficitTurns > 0) supply += " Hungry for " + expedition.DeficitTurns + " seasonal checks.";
-                    GUI.Label(new Rect(14, y, width, 54), supply, text); y += 60;
+                    GUI.Label(new Rect(14, y, width, 45), supply, small); y += 49;
                 }
-                if (Button(new Rect(14, y, width, 32), "Hunt [H]  - choose a visible herd")) mode = "Hunt"; y += 38;
-                if (Button(new Rect(14, y, width, 32), "Fish [F]  - choose adjacent water")) mode = "Fish"; y += 38;
-                if (Button(new Rect(14, y, width, 32), "Reintegrate at camp [R]")) Queue(new Order(OrderKind.Reintegrate, selected, camp.Id)); y += 38;
+                if (Button(new Rect(14, y, width, 36), mode == "Hunt" ? "◆ HUNT [H]  ·  choose an amber herd" : "◇ HUNT [H]  ·  preview targets", mode == "Hunt")) BeginMode("Hunt"); y += 42;
+                if (Button(new Rect(14, y, width, 36), mode == "Fish" ? "◆ FISH [F]  ·  choose blue water" : "◇ FISH [F]  ·  preview targets", mode == "Fish")) BeginMode("Fish"); y += 42;
+                var reintegrate = new Order(OrderKind.Reintegrate, selected, camp.Id);
+                string reintegrateError = resolver.Validate(world, 0, reintegrate, new HashSet<int>(observation.Tiles.Keys));
+                bool controls = GUI.enabled; GUI.enabled = controls && reintegrateError == null;
+                if (Button(new Rect(14, y, width, 36), "REINTEGRATE [R]  ·  join source camp")) Queue(reintegrate);
+                GUI.enabled = controls; y += 40;
+                if (reintegrateError != null) { GUI.Label(new Rect(14, y, width, 34), "Unavailable: " + reintegrateError, small); y += 38; }
             }
-            if (Button(new Rect(14, y, width, 30), "Clear selected unit's order")) { planned.Remove(selected); status = "Order cleared."; } y += 38;
-            GUI.Label(new Rect(14, y, width, 47), planned.TryGetValue(selected, out var order) ? "Queued: " + Describe(order) : "No order. Camp gathering remains automatic.", text); y += 54;
+
+            bool hasOrder = planned.TryGetValue(selected, out var selectedOrder), available = GUI.enabled;
+            GUI.enabled = available && hasOrder;
+            if (Button(new Rect(14, y, width, 32), "CANCEL SELECTED ORDER [Backspace]")) CancelSelectedOrder();
+            GUI.enabled = available; y += 38;
+            GUI.Label(new Rect(14, y, width, 42), hasOrder ? "Selected queue: " + Describe(selectedOrder) + ". Choosing another command replaces it." : "Selected queue: hold position. Choosing a command adds it.", small); y += 48;
+
+            GUI.Label(new Rect(14, y, width, 22), "ORDER QUEUE", section); y += 24;
+            if (planned.Count == 0) { GUI.Label(new Rect(14, y, width, 24), "No explicit orders", small); y += 28; }
+            foreach (var order in planned.Values.OrderBy(o => o.Entity))
+            {
+                GUI.Label(new Rect(14, y, width, 36), "◆ " + UnitName(order.Entity) + "  ·  " + Describe(order), small); y += 38;
+            }
+
+            string commit = CommitPreview(); float commitHeight = small.CalcHeight(new GUIContent(commit), width);
+            Fill(new Rect(10, y, width + 8, commitHeight + 68), new Color(.13f, .145f, .12f));
+            GUI.Label(new Rect(20, y + 8, width - 12, commitHeight), commit, small); y += commitHeight + 14;
             GUI.enabled = saving == null && !world.Finished && world.LinkedPopulation(camp) > 0;
-            if (Button(new Rect(14, y, width, 44), "END TURN  [Enter]", true)) EndTurn(); GUI.enabled = saving == null; y += 56;
-            GUI.Label(new Rect(14, y, width, 26), "WAYS OF LIVING", small); y += 28;
+            if (Button(new Rect(14, y, width, 44), "COMMIT ORDERS / END GENERATION  [Enter]", true)) EndTurn(); GUI.enabled = saving == null; y += 58;
+
+            if (!string.IsNullOrEmpty(lastResolutionSummary))
+            {
+                GUI.Label(new Rect(14, y, width, 22), "LAST RESOLUTION", section); y += 24;
+                float resultHeight = text.CalcHeight(new GUIContent(lastResolutionSummary), width);
+                GUI.Label(new Rect(14, y, width, resultHeight), lastResolutionSummary, text); y += resultHeight + 12;
+            }
+            GUI.Label(new Rect(14, y, width, 26), "WAYS OF LIVING", section); y += 28;
             foreach (Domain domain in Enum.GetValues(typeof(Domain)))
             {
                 double progress = TurnResolver.NeolithicProgress(world, camp, domain) / world.Config.ExperienceThreshold;
@@ -243,8 +287,16 @@ namespace Anthropocene.Presentation
         private void Footer(Rect area)
         {
             Fill(area, new Color(.065f, .078f, .071f));
-            GUI.Label(new Rect(area.x + 16, area.y + 8, area.width - 32, 36), status, text);
-            logScroll = GUI.BeginScrollView(new Rect(area.x + 12, area.y + 47, area.width - 24, 70), logScroll, new Rect(0, 0, area.width - 44, Mathf.Max(70, journal.Count * 21)));
+            GUI.Label(new Rect(area.x + 16, area.y + 7, area.width - 32, 32), "SELECTED: " + SelectedName.ToUpperInvariant() + "    |    MODE: " + mode.ToUpperInvariant(), section);
+            string feedback = status;
+            if (hovered >= 0 && (mode == "Move" || mode == "Hunt" || mode == "Fish"))
+            {
+                if (TryTargetOrder(hovered, out _, out string error)) feedback = "Valid target: click to queue. The highlighted path is the route for this generation.";
+                else feedback = "Unavailable here: " + error;
+            }
+            GUI.Label(new Rect(area.x + 16, area.y + 35, area.width - 32, 37), feedback, text);
+            GUI.Label(new Rect(area.x + 16, area.y + 74, area.width - 32, 27), "ON COMMIT  ·  " + CommitPreview(), small);
+            logScroll = GUI.BeginScrollView(new Rect(area.x + 12, area.y + 104, area.width - 24, 38), logScroll, new Rect(0, 0, area.width - 44, Mathf.Max(38, journal.Count * 21)));
             for (int i = 0; i < journal.Count; i++) GUI.Label(new Rect(4, i * 21, area.width - 55, 22), journal[i], small);
             GUI.EndScrollView();
         }
@@ -256,17 +308,11 @@ namespace Anthropocene.Presentation
             if (e.type == EventType.MouseDown && mapArea.Contains(e.mousePosition) && hovered >= 0)
             {
                 inspected = hovered;
-                if (e.button == 1 || mode == "Move") Queue(new Order(OrderKind.Move, selected, destination: hovered));
-                else if (mode == "Hunt")
+                if (e.button == 1) Queue(new Order(OrderKind.Move, selected, destination: hovered));
+                else if (mode == "Move" || mode == "Hunt" || mode == "Fish")
                 {
-                    var herd = observation.Herds.FirstOrDefault(h => h.Id == hoveredOccupant && !h.Domestic) ?? observation.Herds.FirstOrDefault(h => h.Tile == hovered && !h.Domestic);
-                    int destination = planned.TryGetValue(selected, out var prior) && prior.Destination >= 0 ? prior.Destination : hovered;
-                    if (herd == null) status = "Choose a currently visible wild herd."; else Queue(new Order(OrderKind.Hunt, selected, herd.Id, destination));
-                }
-                else if (mode == "Fish")
-                {
-                    int destination = planned.TryGetValue(selected, out var prior) ? prior.Destination : -1;
-                    Queue(new Order(OrderKind.Fish, selected, hovered, destination));
+                    if (TryTargetOrder(hovered, out var candidate, out string error)) Queue(candidate);
+                    else status = "Unavailable: " + error;
                 }
                 else
                 {
@@ -278,13 +324,14 @@ namespace Anthropocene.Presentation
             switch (e.keyCode)
             {
                 case KeyCode.Return: EndTurn(); break;
-                case KeyCode.M: mode = "Move"; break;
-                case KeyCode.H: mode = "Hunt"; break;
-                case KeyCode.F: mode = "Fish"; break;
+                case KeyCode.M: BeginMode("Move"); break;
+                case KeyCode.H: BeginMode("Hunt"); break;
+                case KeyCode.F: BeginMode("Fish"); break;
                 case KeyCode.C: FocusCamp(); break;
-                case KeyCode.D: if (selected == observation.CampId) Queue(new Order(OrderKind.Dispatch, selected, population: dispatch)); break;
-                case KeyCode.R: Queue(new Order(OrderKind.Reintegrate, selected, observation.CampId)); break;
-                case KeyCode.Escape: mode = "Inspect"; break;
+                case KeyCode.D: if (selected == observation.CampId) Queue(new Order(OrderKind.Dispatch, selected, population: dispatch)); else status = "Select the camp before dispatching a new group."; break;
+                case KeyCode.R: if (SelectedIsHunter) Queue(new Order(OrderKind.Reintegrate, selected, observation.CampId)); else status = "Select a hunter group to reintegrate."; break;
+                case KeyCode.Backspace: CancelSelectedOrder(); break;
+                case KeyCode.Escape: BeginMode("Inspect"); status = "Inspection mode. No queued orders were changed."; break;
                 case KeyCode.F3: debug = !debug; break;
                 case KeyCode.V: SetTileset(tilesetIndex + 1); status = "Tileset: " + tilesets[tilesetIndex].Name; break;
                 case KeyCode.LeftArrow: pan.x += 40; break;
@@ -298,13 +345,17 @@ namespace Anthropocene.Presentation
         private void Queue(Order order)
         {
             if (world.Finished || saving != null) return;
-            string error = resolver.Validate(world, 0, order);
-            if (error != null) { status = error; return; }
-            planned[order.Entity] = order.Copy(); status = "Queued " + Describe(order) + ". Orders resolve together at the end of the turn."; mode = "Inspect";
+            string error = resolver.Validate(world, 0, order, new HashSet<int>(observation.Tiles.Keys));
+            if (error != null) { status = "Unavailable: " + error; return; }
+            string previous = planned.TryGetValue(order.Entity, out var prior) ? Describe(prior) : null;
+            planned[order.Entity] = order.Copy();
+            status = PlanningPath.QueueMessage(previous, Describe(order)) + " It will resolve only when you commit the generation.";
+            mode = "Inspect";
         }
         private void EndTurn()
         {
             if (saving != null || world.Finished || world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) == 0) return;
+            resolvingSummary = CommitPreview();
             var orders = new Dictionary<int, List<Order>> { [0] = planned.Values.OrderBy(o => o.Entity).ToList() }; var traces = new List<DecisionTrace>();
             foreach (var camp in world.Camps.Where(c => c.Player != 0).OrderBy(c => c.Player))
             { var decision = policy.Decide(builder.Build(world, camp.Player), camp.Mandate); orders[camp.Player] = decision.Orders; traces.Add(decision.Trace); }
@@ -313,12 +364,26 @@ namespace Anthropocene.Presentation
         private void FinishTurn(TurnRecord record)
         {
             var ownIds = new HashSet<int>(observation.Hunters.Select(h => h.Id)) { observation.CampId }; int turn = record.Turn;
+            var outcomes = new List<string>();
             foreach (var ownOrder in planned.Values)
             {
                 int location = ownOrder.Entity == observation.CampId ? world.Camps.First(c => c.Player == 0).Tile : world.Hunters.FirstOrDefault(h => h.Id == ownOrder.Entity)?.Tile ?? -1;
-                if (ownOrder.Destination >= 0 && location != ownOrder.Destination) journal.Add("Turn " + turn + ": your planned movement was blocked.");
-                if (ownOrder.Kind == OrderKind.Hunt && !record.Transfers.Any(t => t.Entity == ownOrder.Entity && t.Kind == "Hunting" && t.Food > 0)) journal.Add("Turn " + turn + ": the hunt brought no food; the hunters gained practice.");
-                if (ownOrder.Kind == OrderKind.Dispatch) journal.Add("Turn " + turn + ": " + ownOrder.Population + " people formed a hunter group.");
+                bool moved = ownOrder.Destination < 0 || location == ownOrder.Destination;
+                if (!moved) { journal.Add("Turn " + turn + ": your planned movement was blocked."); outcomes.Add(UnitName(ownOrder.Entity) + " movement was blocked"); }
+                else if (ownOrder.Destination >= 0) outcomes.Add(UnitName(ownOrder.Entity) + " reached tile " + ownOrder.Destination);
+                if (ownOrder.Kind == OrderKind.Hunt)
+                {
+                    bool success = record.Transfers.Any(t => t.Entity == ownOrder.Entity && t.Kind == "Hunting" && t.Food > 0);
+                    if (!success) journal.Add("Turn " + turn + ": the hunt brought no food; the hunters gained practice.");
+                    outcomes.Add("Hunters " + ownOrder.Entity + (success ? " returned with hunted food" : " found no food but gained practice"));
+                }
+                if (ownOrder.Kind == OrderKind.Fish)
+                {
+                    bool success = record.Transfers.Any(t => t.Entity == ownOrder.Entity && t.Kind == "Fishing" && t.Food > 0);
+                    outcomes.Add("Hunters " + ownOrder.Entity + (success ? " caught fish" : " caught no fish"));
+                }
+                if (ownOrder.Kind == OrderKind.Dispatch) { journal.Add("Turn " + turn + ": " + ownOrder.Population + " people formed a hunter group."); outcomes.Add(ownOrder.Population + " people formed a new hunter group at camp"); }
+                if (ownOrder.Kind == OrderKind.Reintegrate) outcomes.Add(world.Hunters.Any(h => h.Id == ownOrder.Entity) ? "Hunters " + ownOrder.Entity + " could not reintegrate" : "Hunters " + ownOrder.Entity + " rejoined the camp");
             }
             planned.Clear(); Refresh();
             // Never show the authoritative global event log to the player: it contains hidden rival activity.
@@ -329,6 +394,7 @@ namespace Anthropocene.Presentation
             int grown = record.PopulationChanges.Where(c => c.Camp == player.Id && c.Count > 0).Sum(c => c.Count);
             int died = -record.PopulationChanges.Where(c => c.Camp == player.Id && c.Count < 0).Sum(c => c.Count);
             var demography = record.Demographics.First(d => d.Camp == player.Id); journal.Add("Turn " + turn + ": " + demography.Explanation); journal.Add("Food: land " + demography.TerrestrialFood.ToString("F0") + ", passive marine " + demography.MarineFood.ToString("F0") + ", total received " + demography.FoodReceived.ToString("F0") + " / required " + demography.FoodRequired.ToString("F0"));
+            lastResolutionSummary = "Generation " + turn + ": " + demography.StartingPopulation + " + " + demography.Additions + " additions − " + demography.Deaths + " deaths = " + demography.EndingPopulation + " people. " + (outcomes.Count == 0 ? "No explicit orders; units held position." : string.Join(" · ", outcomes)) + " " + demography.Explanation;
             if (grown > 0) journal.Add("Turn " + turn + ": nutrition and reserves supported net growth of " + grown + " people.");
             if (died > 0) journal.Add("Turn " + turn + ": " + died + " people died from sustained hunger.");
             foreach (var supply in record.Logistics.Where(l => l.Camp == player.Id))
@@ -379,14 +445,22 @@ namespace Anthropocene.Presentation
             Fill(r, new Color(.12f, .14f, .12f));
             GUI.Label(new Rect(r.x + 20, r.y + 15, width - 40, 38), "READING THE LAND", title);
             string helpText =
-                "@ Your camp (gold) / rival camp (red)   h Hunters\na Antelope   g Goats   b Bison   C Camels   H Horses   d Domestic herd\n. Grassland   T Woodland   & Jungle   : Desert\nNested contours: elevation 1-10; X Impassable peak; o Oasis; w Freshwater\nRivers follow tile edges. Sea tiles contain undrinkable saltwater.\n\nDots beneath glyphs show food from Depleted (one) to Abundant (five). Select a tile for food, water and renewal bands.\n\nLeft-click to inspect/select. Right-click or M to plan movement. Select hunters, then H to hunt or F to fish. To intercept a herd, queue a move to its predicted destination first, then choose Hunt and click the herd.\n\nD dispatches hunters; R reintegrates at camp. Enter resolves a generation for all tribes. Food and ecology advance through seasons within each turn. Escape returns to inspection.\n\nWheel zooms; middle-drag or arrows pan; C centers camp.\nYour camp gathers within one tile. Hunters outside a traversable supply path carry and eat their own provisions. Return to deposit food. V switches tilesets. Nested hex outlines count elevation levels 1–10; X marks impassable peaks. Units occupy separate slots; click a slot or use the inspector stack list. Hold still on a visible tile for two seconds for details. Saltwater is undrinkable. Wild herd labels are estimates: fewer than 10, rounded tens (~40), then broad hundreds (100+). Your own livestock counts are exact.";
+                "@ Your camp (gold) / rival camp (red)   h Hunters\na Antelope   g Goats   b Bison   C Camels   H Horses   d Domestic herd\n. Grassland   T Woodland   & Jungle   : Desert\nNested contours: elevation 1-10; X Impassable peak; o Oasis; w Freshwater\nRivers follow tile edges. Sea tiles contain undrinkable saltwater.\n\nDots beneath glyphs show food from Depleted (one) to Abundant (five). Select a tile for food, water and renewal bands.\n\nClick a unit slot or roster entry to select that exact unit. The selected slot has a gold frame. M or right-click enters movement planning: green tiles are valid this generation, a thick line previews the route, and red means the pointed tile is unavailable. Hunter Hunt targets are amber; fishing targets are blue.\n\nEach unit can queue one order. A new order for that unit replaces its previous order; Backspace or the Cancel button removes it. Gold paths and Q badges are committed previews. Enter resolves every queued order simultaneously. Units without orders hold position; camp gathering is automatic.\n\nD dispatches hunters. A dispatched group appears at camp after resolution and can first receive orders next generation. R reintegrates hunters already at their source camp. Escape leaves targeting without changing queued orders.\n\nWheel zooms; middle-drag or arrows pan; C centers camp.\nHunters outside a traversable supply path carry and eat their own provisions. Return to deposit food. V switches tilesets. Hold still on a visible tile for two seconds for details. Saltwater is undrinkable. Wild herd labels are estimates: fewer than 10, rounded tens (~40), then broad hundreds (100+). Your own livestock counts are exact.";
             float contentHeight = text.CalcHeight(new GUIContent(helpText), width - 62);
             helpScroll = GUI.BeginScrollView(new Rect(r.x + 20, r.y + 62, width - 40, r.height - 120), helpScroll, new Rect(0, 0, width - 62, contentHeight));
             GUI.Label(new Rect(0, 0, width - 62, contentHeight), helpText, text);
             GUI.EndScrollView();
             if (Button(new Rect(r.x + 20, r.yMax - 45, width - 40, 32), "Return to the land")) help = false;
         }
-        private static string Describe(Order order) => order.Kind + (order.Kind == OrderKind.Dispatch ? " " + order.Population + " people" : order.Kind == OrderKind.Hunt ? " herd " + order.Target : order.Kind == OrderKind.Fish ? " at the selected shore" : order.Kind == OrderKind.Move ? " to the selected tile" : "");
+        private static string Describe(Order order)
+        {
+            if (order.Kind == OrderKind.Dispatch) return "Dispatch " + order.Population + " people (spawns after resolution)";
+            if (order.Kind == OrderKind.Hunt) return "Hunt herd " + order.Target + (order.Destination >= 0 ? " from tile " + order.Destination : "");
+            if (order.Kind == OrderKind.Fish) return "Fish water tile " + order.Target + (order.Destination >= 0 ? " from tile " + order.Destination : " from current tile");
+            if (order.Kind == OrderKind.Move) return "Move to tile " + order.Destination;
+            if (order.Kind == OrderKind.Reintegrate) return "Reintegrate at source camp";
+            return "Hold position";
+        }
         private static string TechName(Technology tech) => tech == Technology.AnimalHusbandry ? "Animal Husbandry" : tech == Technology.Cultivation ? "Agriculture / Cultivation" : "Watercraft and Fisheries";
         private bool Button(Rect rect, string label, bool accent = false) { var previous = GUI.backgroundColor; GUI.backgroundColor = accent ? new Color(.55f, .49f, .26f) : new Color(.32f, .37f, .32f); bool clicked = GUI.Button(rect, label, button); GUI.backgroundColor = previous; return clicked; }
         private static void Fill(Rect rect, Color color) { var before = GUI.color; GUI.color = color; GUI.DrawTexture(rect, Texture2D.whiteTexture); GUI.color = before; }

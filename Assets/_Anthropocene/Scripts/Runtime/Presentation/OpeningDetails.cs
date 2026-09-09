@@ -29,6 +29,8 @@ namespace Anthropocene.Presentation
             if (occupants.Length == 0) return;
             var exact = occupants.FirstOrDefault(p => p.Id == hit);
             selected = exact != null ? exact.SelectableId : occupants[(Array.FindIndex(occupants, p => p.SelectableId == selected) + 1) % occupants.Length].SelectableId;
+            mode = "Inspect";
+            status = UnitName(selected) + " selected from this stack.";
         }
         private void DrawStack(int tile, ref float y, float width)
         {
@@ -39,7 +41,7 @@ namespace Anthropocene.Presentation
                 float height = Mathf.Max(34, text.CalcHeight(new GUIContent(occupant.Description), width - 20) + 12);
                 if (occupant.SelectableId >= 0)
                 {
-                    if (Button(new Rect(14, y, width, height), (selected == occupant.SelectableId ? "> " : "") + occupant.Description)) { selected = occupant.SelectableId; mode = "Inspect"; }
+                    if (Button(new Rect(14, y, width, height), (selected == occupant.SelectableId ? "◆ " : "◇ ") + occupant.Description)) { selected = occupant.SelectableId; mode = "Inspect"; status = UnitName(selected) + " selected from this stack."; }
                 }
                 else GUI.Label(new Rect(14, y, width, height), occupant.Description, text);
                 y += height + 4;

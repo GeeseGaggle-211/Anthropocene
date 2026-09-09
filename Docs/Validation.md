@@ -10,6 +10,15 @@ Windows x64, Unity 6000.5.10f1, Unity-bundled .NET 8.0.318. Timings are local de
 - All 11 Unity EditMode tests passed. Added visual tests verify exact contour counts at normal zoom, monotonic density at low zoom, nonoverlapping stack hit slots and hover-panel flipping/clamping. A touching-slot failure was fixed with explicit gutters.
 - 30 seeded four-tribe games completed with zero illegal AI orders and zero replay mismatches, including reversed entity and submitted-order collections. All population and food-report conservation checks passed.
 - The new model recorded 10,752 additions and 2,001 starvation deaths; 84/120 tribes survived. First technologies: 0 Animal Husbandry, 37 Cultivation, 47 Watercraft/Fisheries; 36 tribes died before a breakthrough. This suite now spans human generations and is not directly comparable to the earlier ninety-day-turn survival figures. Marginal sites can decline severely, and the policy/balance still favors fishing over hunting.
+
+The `ui/civ5-inspired` presentation experiment adds two EditMode checks for the planning path and queue feedback. The path check verifies that previews obey the displayed movement budget, weighted terrain cost and the filtered visible-tile boundary; the queue check distinguishes a newly queued command from replacement of the selected unit's earlier command. These presentation helpers do not mutate simulation state.
+
+## Civ-inspired UI experiment — September 10, 2026
+
+- The focused headless suite passed all 129 assertions (29 original, 57 milestone-two and 43 milestone-three). No simulation source or gameplay tuning changed.
+- Unity 6000.5.10f1 compiled the presentation and all 13 EditMode tests passed in 9.11 seconds with no failures or skips. This includes the two new planning-presentation checks above.
+- The Windows x64 development player built successfully through `Anthropocene.Editor.PrototypeBuild.Windows`. Unity reported `Build Finished, Result: Success` and exited with code 0.
+- Automated player interaction was blocked at launch by a Windows firewall/security permission dialog. The dialog was not acted on, and only this experiment's player process was closed. Selection, target-mode and order-resolution interaction therefore remain a manual smoke-test risk for this branch; no screenshot was retained.
 - Standard seed 1729: 524,288 tiles generated in about 6.8 seconds; its four-turn AI opening took about 19.4 seconds headlessly. Sampled managed memory was 210–240 MB. Save was 33.0 MB in about 1.0 second; load about 0.85 seconds. Runtime turn resolution uses a worker/progress screen.
 
 ## Elevation coverage

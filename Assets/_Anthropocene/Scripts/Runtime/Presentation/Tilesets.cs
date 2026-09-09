@@ -36,6 +36,7 @@ namespace Anthropocene.Presentation
         public Rect Bounds;
         public TileObservation Tile;
         public bool Inspected, Selected;
+        public int SelectedEntity = -1;
         public readonly List<VisibleOccupant> Entities = new List<VisibleOccupant>();
     }
     public interface ITileRenderer { void Draw(TileRenderContext context); }
@@ -86,7 +87,7 @@ namespace Anthropocene.Presentation
             var rect = context.Bounds; var tile = context.Tile;
             string biome = tile == null ? "hidden" : "biome." + tile.Terrain.ToString().ToLowerInvariant();
             var ground = tileset.Find(biome);
-            string border = context.Inspected ? "selected" : context.Selected ? "friendly" : "border";
+            string border = context.Selected ? "selected" : context.Inspected ? "friendly" : "border";
             Tint(rect, hex, ColorOf(tileset.Find(border).Tint));
             Tint(new Rect(rect.x + 1.5f, rect.y + 1.5f, rect.width - 3, rect.height - 3), hex, ColorOf(ground.Background));
             if (tile == null) return;
@@ -126,6 +127,11 @@ namespace Anthropocene.Presentation
             {
                 var slot = OccupantSlot(rect, i, context.Entities.Count);
                 // Opaque backplates preserve individual glyphs over dense elevation contours.
+                if (context.Entities[i].SelectableId == context.SelectedEntity)
+                {
+                    Color selected = ColorOf(tileset.Find("selected").Tint);
+                    Tint(new Rect(slot.x - 2, slot.y - 2, slot.width + 4, slot.height + 4), Texture2D.whiteTexture, selected);
+                }
                 Tint(new Rect(slot.x + 1, slot.y + 1, slot.width - 2, slot.height - 2), Texture2D.whiteTexture, ColorOf(ground.Background));
                 bool countBadge = !string.IsNullOrEmpty(context.Entities[i].Badge) && slot.width >= 38 && slot.height >= 34;
                 Symbol(context.Entities[i].Key, countBadge ? new Rect(slot.x, slot.y, slot.width, slot.height - 14) : slot, context.Entities.Count > 1 ? 1.4f : 1.8f);
