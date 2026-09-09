@@ -1,0 +1,390 @@
+﻿Anthropocene — Early Hunter-Gatherer Prototype
+Game design and technical requirements for the opening simulation
+Document status: implementation-ready prototype specification
+Purpose: define the minimum deterministic simulation for the Paleolithic opening of a new Anthropocene game, normally around ten turns and hard-capped at twelve. The opening should make the player’s earliest civilizational question—how the people obtain food—visible through play, while recording behavior that later systems can interpret as learning by doing.
+1. Product intent
+The prototype begins before a civilization has a fixed historical identity. Each player controls a mobile People/Camp population and may organize part of that population into hunter groups. Repeated choices—remaining near productive gathering ground, following herds, moving frequently, or investing population in hunters—create a behavioral history. Later technology and social-development systems may interpret that history, but this milestone does not unlock named cultures or predetermined paths.
+Design principles
+* WEGO first: players and AI submit intentions during planning; the simulation resolves them together.
+* Simulation first: authoritative state lives in plain C# data and systems, independent of Unity GameObjects, scenes, animation, and rendering.
+* Behavior before labels: nomadic and agricultural trajectories must eventually emerge from play history, not be selected as starting technologies.
+* Ecology matters: camps and herds draw from the same finite landscape, and herds visibly reduce both food and water.
+* Configuration over constants: turn duration, harvest rates, herd consumption, regeneration, movement, and tuning values must be data-driven.
+* Determinism: a saved state, order set, configuration, and random seed must reproduce the same result.
+2. Prototype scope
+In scope
+* Tile-based world with renewable food, water, and an environmental regeneration rate.
+* One mobile People/Camp unit per player at game start.
+* Automatic camp gathering from the occupied tile and all radius-1 neighboring tiles.
+* Hunter groups created by splitting people from a camp and removed by reintegrating them.
+* Hunter movement, hunt and fish orders, animal kills, aquatic extraction, and food yield returned to the owning population.
+* Mobile animal herds with animal count, regeneration, food consumption, and water consumption.
+* Simultaneous WEGO order resolution and deterministic conflict handling.
+* Per-turn event history and behavioral aggregates for future learning-by-doing.
+* Non-player Paleolithic tribes controlled by a deterministic heuristic policy through the same observation, order, validation, and WEGO interfaces used by human-controlled tribes.
+* Headless simulation tests covering the core loop.
+Explicitly out of scope
+* Permanent settlements beyond the first cultivation improvement, later named technologies beyond the three opening subsistence breakthroughs, civic systems, diplomacy, warfare between players, construction, implemented trade, RL-trained policies, and sophisticated later-era strategic AI beyond the heuristic Paleolithic tribe policy defined in Section 18.
+* Predetermined Harappan, Scythian, Mongol, or other cultural origins.
+* Detailed individual people, age cohorts, equipment, animal species simulation, disease, seasons as climate models, or tactical combat.
+* Camp drinking-water logistics. In this milestone, water is an ecological state variable that affects regeneration and is consumed by herds; later survival systems may make it a direct camp need.
+3. Turn and time model
+One opening turn initially represents one season. “Season” is a starting scale, not a hardcoded invariant. As technological and institutional pace accelerates, the amount of simulated calendar time represented by one turn must be able to shorten while the player still receives one planning-and-resolution cycle.
+Required time-scale model
+* WorldState stores the current simulated time and the duration represented by the upcoming turn.
+* SimulationConfig defines a base opening duration, expressed in neutral units such as days, plus allowed minimum and maximum durations.
+* A TimeScalePolicy returns simulatedDurationForTurn from current progression state. For the prototype it returns the configured seasonal duration; a later technology system may reduce it.
+* Every rate-based system receives the resolved turn duration or a normalized time factor. No resource or population system may assume that every turn is permanently one season.
+* Shortening a turn must reduce per-turn regeneration, consumption, and other elapsed-time effects consistently.
+* For fractional rates, use a duration-aware conversion such as effectiveFraction = 1 − (1 − baseFraction) ^ timeFactor, rather than multiplying into values above 100 percent.
+* The history record stores both turn number and simulated duration so later analytics can compare behavior across changing time scales.
+4. World and tile model
+The authoritative map topology is hexagonal. The world wraps east-west and does not wrap north-south. Radius, adjacency, distance, movement, visibility, gathering, and pathfinding queries must all use the same hex-map service and distance definition.
+TileData minimum state
+* TileId or coordinate: stable identity and map position.
+* food: current harvestable wild food, clamped to zero through maxFood.
+* maxFood: local carrying capacity for wild food.
+* water: current accessible environmental water, clamped to zero through maxWater.
+* maxWater: local water capacity; include it even if map generation initially fills all tiles to a fixed ratio.
+* regenerationRate: composite environmental productivity derived during map generation from moisture or water availability, soil quality, biome, and any other chosen inputs.
+* Optional presentation metadata such as biome or terrain type may exist, but it must not replace the numeric resource state used by the simulation.
+Tile regeneration
+* After extraction, food regenerates toward maxFood using regenerationRate, available water, and the current turn’s time factor.
+* Water recovery may use a simple configured rate in the prototype. The interface must allow rainfall, rivers, seasonality, and climate systems to replace it later.
+* All additions and removals are clamped. Food and water can never be negative and cannot exceed their configured capacities.
+* The regeneration calculation must be isolated behind a system or policy, not embedded in rendering or Tile MonoBehaviours.
+5. People/Camp unit
+The People/Camp is a mobile population center, not a permanent city. It represents gatherers, children, elders, craftspeople, storage, and social organization that are not currently operating as a separate hunter group.
+CampState minimum state
+* campId and playerId.
+* tileId.
+* populationCount.
+* storedFood, the destination for successful gathering and hunting yields.
+* movement allowance: exactly 1 tile per turn in the opening Paleolithic prototype. The value remains data-driven in SimulationConfig for later eras, but Paleolithic configuration and acceptance tests must use 1.
+* current order and stable status flags required by resolution.
+Automatic gathering
+* Each turn, after movement is resolved, an active camp automatically requests food from its occupied tile and every tile at map radius 1. Adjacent water tiles are eligible only when they are accessible freshwater or coastal-shallow tiles; open-ocean tiles are excluded until later technology.
+* Gathering is not a separate unit action in this prototype; it occurs unless the camp is in a state that explicitly disables it. Aquatic gathering competes for the same population-derived gathering capacity as terrestrial gathering and does not grant an additional radius or free harvest capacity.
+* Requested harvest from each tile is a configured fraction of that tile’s available food, modified by camp population through a capped, monotonic population factor.
+* A larger camp gathers more in total but must not remove more than the tile contains. The scaling function and cap are configuration values.
+* Harvested food is subtracted from tiles and added to camp storedFood. History records the amount and source tile for every transfer.
+* When several camps or herds compete for the same food in one resolution, allocation must be order-independent as defined in the ecological demand phase.
+5A. Population sustenance and hunger
+The Paleolithic loop requires population food consumption so gathering, hunting, and fishing are survival systems rather than score generation.
+Required behavior
+Each Camp is responsible for the food requirement of its own population plus all HunterGroups linked to that Camp. The opening prototype does not model separate hunter ration logistics; all linked people draw from the source Camp's storedFood regardless of distance.
+foodRequired = totalLinkedPopulation × foodConsumptionPerPerson × timeFactor.
+At the sustenance phase, consume up to foodRequired from storedFood. Record foodConsumed and foodDeficit = max(0, foodRequired - foodConsumed).
+A one-turn deficit does not immediately kill people. Track consecutiveFoodDeficitTurns and cumulative deficit severity.
+After a configurable starvationGraceTurns, continued deficit causes deterministic population attrition based on the unmet-food fraction and a configured starvationMortalityRate. Losses are distributed deterministically across the Camp and its linked HunterGroups while preserving stable IDs and population accounting.
+Food consumption, deficits, and starvation losses are duration-scaled. No birth, age-cohort, disease, nutrition-quality, or individual-health simulation is required in the Paleolithic milestone.
+6. Hunter groups
+A hunter group is a mobile allocation of camp population. Creating hunters does not create people; reintegration does not duplicate them.
+HunterGroupState minimum state
+* hunterGroupId, playerId, and sourceCampId.
+* tileId and populationCount.
+* movement allowance: 2 tiles per turn in the opening prototype. The value remains data-driven in SimulationConfig, but the prototype configuration and acceptance tests must set it to 2.
+* current order, target herd or tile when applicable, and carriedFood if hunting yield is not transferred instantly.
+Split and reintegrate rules
+* A DispatchHunters order specifies the source camp and number of people. Validation rejects zero, negative, or excessive allocations and preserves a configurable minimum camp population.
+* A valid dispatch subtracts exactly that population from the camp and creates a group on the camp tile. The new group may execute a legal movement or hunt intention in the same resolution if the order model supports a compound dispatch order.
+* A ReintegrateHunters order succeeds only when the group occupies the camp’s tile at the reintegration phase. It adds the group’s full population and carried resources to the camp, then removes the hunter group.
+* Population conservation must be asserted after every turn: total people across a player’s camps and hunters changes only through an explicitly modeled birth, death, or loss event. Those events are out of scope for the first prototype.
+7. Animal herds
+Herds are autonomous mobile ecological actors placed during world generation. A herd occupies one tile at a time.
+HerdState minimum state
+* herdId and optional species or archetype id.
+* tileId.
+* animalCount and optional maxAnimalCount or local carrying-capacity cap.
+* regenerationRate. Large-animal archetypes should normally configure a lower rate than small-animal archetypes.
+* foodConsumptionPerAnimal and waterConsumptionPerAnimal.
+* movement allowance: 1 tile per turn in the opening prototype, plus migration policy and current target or intent. The value remains data-driven in SimulationConfig, but the prototype configuration and acceptance tests must set it to 1.
+Ecological pressure
+* Every surviving herd requests both food and water from the tile it occupies during each ecological demand phase.
+* foodDemand = animalCount × foodConsumptionPerAnimal × timeFactor.
+* waterDemand = animalCount × waterConsumptionPerAnimal × timeFactor.
+* The realized amounts are subtracted from tile.food and tile.water and recorded separately in turn history.
+* A herd must never consume below zero. Unmet food or water demand is recorded so future movement, mortality, or migration logic can respond without changing this prototype’s data model.
+* This ecological pressure occurs every turn, including turns in which the herd moved, and applies to the herd’s final resolved tile.
+Herd regeneration and movement
+* Animal regeneration occurs after hunting and resource consumption. Growth is duration-scaled, capped, and may be reduced by unmet food or water demand.
+* Herd movement intentions are generated from a read-only planning snapshot. A herd may move at most 1 tile per turn in the opening prototype. Use a simple priority state machine: Flee > Seek Water > Seek Food > Stay/Wander. A herd is Threatened when any hunter group is within radius 1 at planning time. In Flee, evaluate the current tile plus all legal adjacent destinations and first maximize the minimum distance to any hunter, then prefer sufficient water, then sufficient food, with seeded deterministic tie-breaking. If not threatened, use realized intake or projected resource-demand ratios to determine whether hydration is critically low, then whether food is insufficient; seek the deficient resource in that order. If the current tile can satisfy both needs, prefer staying, with only a small configurable seeded wander chance. Habitat utility should compare available food and water against the herd's own demand so a large herd does not treat a barely stocked tile as equivalent to a rich one. Herds may observe only snapshot hunter positions and never submitted hunter movement orders. This deliberately leaves hunter groups faster than prey so pursuit is engaging rather than frustrating.
+* All herd moves resolve through the same movement system as player units. Iteration order may not change outcomes.
+* If no legal destination is preferable, a herd may remain in place.
+8. Hunting
+A Hunt order targets a known herd. Movement resolves before hunting. The hunt attempt is valid only if the hunter group and target herd occupy the same tile after movement commits. If the herd moves away or the hunter fails to reach that tile, the hunt does not occur, but the attempted hunt still contributes hunting effort to learning-by-doing history.
+Required behavior
+* Resolve movement before the hunt attempt. Hunter and herd must share the same final resolved tile for the hunt to proceed; adjacency alone is insufficient.
+* Determine hunt success with a deterministic formula using hunter population, configured efficiency, herd state, terrain modifiers if available, the turn time factor, and seeded randomness.
+* Kills are capped by the herd’s current animalCount and immediately reduce that count.
+* Food yield equals animals killed multiplied by configured yield per animal. Transfer it to the linked camp immediately for the prototype, or use carriedFood if travel logistics are enabled; choose one approach globally and test it.
+* Remove a herd when animalCount reaches zero, after recording the kill and extinction event.
+* A failed hunt still records effort so learning-by-doing can distinguish attempted hunting from successful harvest.
+8A. Fishing
+Fishing is an early subsistence mechanic available through both passive camp gathering and active hunter-group effort. Ordinary fish are not mobile herd entities; aquatic food is a regenerating stock on eligible water tiles.
+Required behavior
+* Camps may passively gather aquatic food only from radius-1 freshwater or coastal-shallow tiles; this uses the same gather-capacity budget as land forage.
+* Hunter groups may receive a Fish order targeting an eligible adjacent or occupied aquatic tile and extract more intensively than passive camp gathering.
+* In the opening prototype, fishing is shore-based: hunter groups remain on land or an eligible shore tile while fishing. Open-ocean entry is unavailable.
+* The Watercraft and Fisheries breakthrough at the end of the Paleolithic unlocks primitive watercraft, allowing hunter/foraging groups to enter eligible coastal-shallow water; exact primitive-water movement is separately configurable. Deep-ocean travel remains deferred.
+* Aquatic extraction cannot reduce the tile below zero and is resolved through the same order-independent resource-allocation policy used for terrestrial gathering.
+* Turn history records passive aquatic gathering and active fishing separately from terrestrial gathering and herd hunting so future progression can infer a maritime/coastal specialization.
+8B. Starting player placement
+Initial camp placement is seeded pseudo-random and deliberately asymmetric. The generator must avoid unwinnable starts without forcing every player into equally strong terrain.
+Placement rules
+* Candidate starts must be legal land tiles and must pass a minimum viability threshold based on immediately accessible food, water-supported productivity, and regeneration in the occupied tile plus radius-1 neighbors.
+* A StartViabilityScore should combine radius-1 current food, radius-1 seasonal regeneration potential, accessible water or aquatic food where relevant, and at most a modest nearby-herd bonus. A nearby herd is not required.
+* Reject starts that have effectively zero harvestable food and negligible regeneration in the opening seasonal state, including barren desert, permanent ice, or equivalent nonviable terrain unless an immediately usable alternative food source makes the start viable.
+* After hard viability filtering, choose starts by seeded weighted random selection rather than always choosing the highest-scoring tile. This preserves meaningful asymmetry between river valleys, coasts, woodlands, steppe, and marginal but survivable starts.
+* Enforce a configurable minimum separation between player starts. Placement order and tie-breaking must be deterministic for the same world seed and configuration.
+* Starting positions are not required to be equally valuable; the acceptance requirement is survivability, not competitive symmetry.
+
+
+8C. Paleolithic visibility and fog of war
+The Paleolithic opening uses present-tense visibility only. Camps and hunter groups reveal the map around their current positions, but the player has no persistent explored-map memory.
+Visibility rules
+* Each friendly Camp and HunterGroup reveals every tile within map radius 2 of its current tile. The player's visible set is the union of those current vision areas.
+* When no friendly unit currently sees a tile, that tile returns to fully hidden. The UI retains no explored-terrain state, last-seen resource values, remembered herd positions, or remembered foreign-unit positions in this era.
+* Herds, rival units, resources, terrain details, and other world information may be displayed or directly targeted only while their tile is currently visible.
+* Visibility is derived from committed unit positions. Herd AI and the authoritative world simulation continue to operate on full state; fog of war changes player-observable information and legal player targets, not simulation outcomes.
+* During WEGO planning, neither player nor herd may inspect the opposing side's submitted movement orders. After movement commits, visibility is recomputed from the new friendly-unit positions before the next planning phase.
+* Terrain obstruction and persistent exploration memory are deferred. Later technologies or institutions such as route knowledge, oral tradition, surveying, or cartography may introduce map memory or improved sight.
+The radius-2 value must be configurable, but the opening Paleolithic prototype and acceptance tests use exactly 2 tiles with zero persistent memory.
+8D. Paleolithic technology breakthrough
+The Paleolithic ends with the society's first technology. This breakthrough is inferred from how the population survived rather than selected from a research menu. The first technology determines sequence, not destiny: all three opening technologies remain discoverable later in the Neolithic.
+Breakthrough activity model
+Track separate HuntingExperience, GatheringExperience, and FishingExperience. Experience should primarily represent population-time actively engaged in the domain, with configurable secondary modifiers for successful harvest, repeated practice, novelty, or difficulty. Raw food yield alone must not determine experience.
+Before the end of Turn 10, a domain may trigger an immediate breakthrough only by reaching its configured absolute experience threshold.
+At the end of Turns 10 and 11, if no threshold breakthrough has occurred, a domain with a strict majority of total subsistence experience may trigger the corresponding breakthrough. These two turns are the grace period for a clear behavioral majority to emerge.
+At the end of Turn 12, the Paleolithic ends unconditionally. If no threshold or strict-majority breakthrough has occurred, select the domain with the highest cumulative experience. Exact ties use a deterministic configured tie-break rule. No player may remain in the Paleolithic beyond Turn 12.
+
+
+Turn-12 secondary carryover
+A player whose first technology is forced at the Turn-12 hard cap must not be penalized for having lived a balanced Paleolithic. All unselected domain experience persists into the Neolithic. In addition, the second-highest experience domain receives a configurable SecondaryTechCarryoverBonus toward its corresponding Neolithic technology. The carryover rule should preserve the player's actual accumulated experience and may apply a configurable minimum progress floor or multiplier so a near-balanced player begins meaningfully closer to the secondary breakthrough rather than effectively starting from zero.
+Breakthrough mapping
+Hunting -> Animal Husbandry. Select the most-experienced eligible domesticable animal species from the player's hunting history. Add an initial domestic herd stock associated with the Camp. Domestic animals consume resources, reproduce, and become the foundation for later pastoral mechanics; detailed pastoral unit behavior is deferred.
+Gathering -> Agriculture/Cultivation. Unlock a worked-tile cultivation improvement on eligible land within the Camp's workable area. Eligibility requires sufficient moisture and other configured environmental requirements. Cultivation increases local maxFood and/or foodRegenerationRate rather than creating food directly. More detailed crops, planting seasons, irrigation, and soil depletion are deferred.
+Fishing -> Watercraft and Fisheries. Hunter groups gain the ability to embark into eligible coastal-shallow water for expanded fishing, using a separately configurable primitive-water movement allowance. Camps near the coastline may improve eligible worked coastal-shallow tiles with Fisheries that increase aquatic maxFood and/or regeneration. Deep-ocean travel remains unavailable.
+Neolithic continuation
+Unlocking one branch does not lock out the other two. During the Neolithic, the remaining Animal Husbandry, Agriculture/Cultivation, and Watercraft/Fisheries technologies may still be discovered through sufficient continued activity in their respective domains.
+A later inter-civilization knowledge-transfer system may also allow these technologies to spread through trade or contact with societies that already know them. Trade/contact transmission is a deferred mechanic and must not be implemented as part of the Paleolithic milestone.
+
+
+
+
+9. WEGO turn resolution
+The following phase order is authoritative. Systems read a stable snapshot where stated, accumulate deltas or intents, and commit them at phase boundaries. Entity collection order must never determine results.
+1. Planning: players and AI submit camp, hunter, and population-allocation orders; herd AI computes intentions from the same pre-resolution snapshot.
+2. Validation and lock: validate ownership, targets, ranges, population, and legal state; reject or replace invalid orders with an explicit no-op result; freeze the order set.
+3. Population allocation: resolve dispatch orders and any pre-movement population changes. New groups receive stable IDs.
+4. Movement intent: compute destinations for camps, hunter groups, and herds without mutating positions.
+5. Movement commit: resolve all legal moves simultaneously, then commit final positions. Stacking is permissive by default: multiple herds may share a tile; multiple hunter groups may share a tile; hunters and herds may share a tile; and a camp may share a tile with its own hunters or herds. Rival camps may never occupy the same tile. Any attempted move that would leave rival camps co-occupying a tile fails under a deterministic, stable-ID collision rule.
+6. Hunting and fishing: resolve hunt attempts against herds at their final positions, then resolve active fishing attempts against eligible aquatic tiles; apply kills or aquatic extraction and food yields.
+7. Ecological demand: camps calculate radius-1 food requests; surviving herds calculate food and water requests on their final tile.
+8. Resource allocation: for each tile, satisfy requests from a common pre-extraction resource snapshot. If total demand exceeds supply, allocate proportionally by demand with deterministic remainder handling. Commit food and water deltas together.
+9. Population sustenance: each Camp consumes storedFood for its own population plus linked HunterGroups, records any deficit, and applies starvation attrition only after the configured grace period.
+10. Biological and tile regeneration: regenerate surviving herds based on realized intake, then regenerate tile food and water using the configured duration.
+11. Reintegration and cleanup: merge eligible hunter groups, remove depleted herds, clamp state, and run invariants.
+12. History and clock: append orders, outcomes, resource deltas, aggregate behavior, random seed information, and the turn duration; advance simulated time and turn number.
+The proportional resource-allocation rule is the prototype default because it preserves WEGO fairness. It must be isolated behind an allocation policy so a later design can introduce priority, access control, territorial advantage, or conflict.
+10. Orders and system boundaries
+Minimum order types
+* MoveCamp(campId, destinationTileId).
+* DispatchHunters(campId, populationCount, optional follow-up order).
+* MoveHunters(hunterGroupId, destinationTileId).
+* Hunt(hunterGroupId, herdId).
+* Fish(hunterGroupId, aquaticTileId).
+* ReintegrateHunters(hunterGroupId, campId).
+* NoOp(entityId).
+Recommended simulation modules
+* WorldState and SimulationConfig.
+* TurnManager or TurnResolver.
+* MapSystem and neighborhood/distance service.
+* MovementSystem.
+* CampSystem and GatheringSystem.
+* HunterSystem, HuntingSystem, and FishingSystem.
+* HerdSystem and herd movement policy.
+* EcologySystem for demand allocation and tile regeneration.
+* TimeScalePolicy.
+* TurnHistory and invariant validation.
+* AgentObservationBuilder, IAgentPolicy, HeuristicTribePolicy, AgentMandate, and agent decision-trace logging.
+11. Turn history and learning by doing
+The Paleolithic prototype uses behavioral history to unlock exactly one first subsistence technology at the era transition while retaining the same evidence for later learning-by-doing progression.
+Per-turn records
+* Turn number, simulated start time, and simulated duration.
+* Submitted orders, validation results, resolved destinations, and encounter outcomes.
+* Camp population, hunter population, splits, reintegrations, and conservation checks.
+* Food gathered by camp and source tile, including whether the source was terrestrial forage or aquatic forage.
+* Hunt attempts, hunter effort, kills, yield, and target herd.
+* Per-herd food consumed, water consumed, unmet demand, regeneration, and movement.
+* Per-tile pre-turn state, extraction deltas by source, regeneration deltas, and final state. This may be stored as compact events rather than complete snapshots.
+* Seed or deterministic random stream position required to replay the turn.
+Derived behavioral aggregates
+* Fraction of obtained food from terrestrial gathering, aquatic gathering or fishing, and hunting.
+* Average and cumulative camp movement; consecutive turns stationary.
+* Average hunter allocation as a fraction of total population.
+* Turns spent following or targeting herds and distance maintained from the camp.
+* Reliance on depleted versus regenerating local resources.
+* These values remain descriptive signals except for HuntingExperience, GatheringExperience, and FishingExperience, which feed the Paleolithic first-technology breakthrough rules.
+12. Configuration requirements
+The following values must be editable without changing simulation code. New-game configuration exposes world-size presets in the menu, with Standard defaulting to exactly 1024 × 512 tiles; the underlying width and height remain data-driven rather than hardcoded:
+* Opening turn duration, normalized base duration, and minimum turn duration.
+* Camp movement allowance and hunter movement allowance. For the opening Paleolithic prototype, Camp movement is exactly 1 tile per turn and HunterGroup movement is exactly 2 tiles per turn.
+* Gather radius, base harvest fraction, population scaling curve, and harvest cap.
+* Tile food and water capacities and regeneration parameters.
+* Herd starting count, population cap, regeneration, per-animal food and water consumption, movement, and animal food yield. For the opening prototype, herd movement is set to exactly 1 tile per turn.
+* Hunt efficiency and variance; fishing extraction efficiency; aquatic-food regeneration; accessible freshwater and coastal-shallow tile classifications; and the earliest permitted water-entry range for hunter groups.
+* Minimum camp population after dispatch.
+* Collision, ecological allocation, and remainder policies; foodConsumptionPerPerson; starvationGraceTurns; starvationMortalityRate; Paleolithic experience thresholds; Turn-10/11 strict-majority checks; Turn-12 hard-cap tie-breaking; SecondaryTechCarryoverBonus floor or multiplier; initial domestic-herd size; cultivation eligibility and productivity modifiers; primitive-water movement allowance; and heuristic-AI plan-continuity / relocation-inertia strength and any associated minimum-improvement threshold.
+Unity ScriptableObjects may author these values, but the simulation must consume plain serializable configuration data so headless tests do not require Unity scene objects.
+13. Technical constraints
+* No MonoBehaviour, GameObject, Transform, animation, or Tilemap object may be the authoritative owner of population, resources, herd count, orders, or turn history.
+* Orders are immutable after the validation-and-lock phase.
+* Entities use stable IDs; systems must not rely on list position or Unity instance IDs.
+* Randomness uses an injected seeded service or named deterministic streams.
+* Each system returns explicit events or deltas suitable for logs, UI animation, save files, and replay.
+* Save/load must include WorldState, configuration version, clock, history or replay data, and random state.
+* Rendering observes committed state and events after a phase or turn; it never changes simulation outcomes. Player-facing UI must not expose authoritative simulation numbers by default. Exact internal values such as food, water, regeneration, habitat quality, and similar yields are translated through a presentation/knowledge policy into qualitative bands such as Depleted, Poor, Decent, Ample, or Abundant. Thresholds are configurable. Debug and developer views may expose raw values, but normal Paleolithic play is qualitative. Later technologies or institutions may increase the precision of what the player can know without changing the underlying simulation.
+14. Acceptance criteria
+1. A headless simulation can initialize a small seeded map with at least two camps and multiple herds and run through the Paleolithic transition, never exceeding twelve turns, without Unity rendering.
+2. Each camp gathers food from exactly its occupied tile plus radius-1 neighbors, subject to availability and competition. Adjacent freshwater and coastal-shallow tiles may contribute aquatic food; open-ocean tiles may not.
+3. Increasing camp population never decreases its requested harvest, and harvesting never makes tile food negative. Passive aquatic gathering and active fishing likewise cannot reduce aquatic food below zero.
+4. Dispatching and reintegrating hunters conserves population exactly and updates both camp and hunter state. In the opening Paleolithic prototype, every Camp moves at most 1 tile per turn, every HunterGroup moves at most 2 tiles per turn, and every herd moves at most 1 tile per turn.
+5. A Hunt attempt resolves only when the hunter group and target herd occupy the same final tile after WEGO movement. A successful hunt reduces herd animalCount and awards the configured food yield; an exhausted herd is removed. If post-movement tile contact is not achieved, no kill occurs but hunting effort is still recorded. A successful Fish order reduces aquatic food on the target tile and awards food without creating or destroying mobile fish entities.
+6. Every surviving herd reduces both food and water on its final occupied tile each turn when those resources are available.
+7. Food and water consumption are clamped, and unmet herd demand is recorded.
+8. Two resource claimants on one tile receive deterministic, order-independent allocations. Permissive stacking allows all entity combinations except rival Camp-Camp co-occupancy; any rival-camp collision is resolved deterministically without overlapping camps.
+9. Changing the turn duration changes all elapsed-time rates consistently; the same scenario with shorter turns produces smaller per-turn ecological changes.
+10. Identical initial state, orders, configuration, and seed produce byte-equivalent or field-equivalent committed state and history.
+11. History can report terrestrial-gathering reliance, aquatic-gathering or fishing reliance, hunting reliance, mobility, hunter allocation, herd pressure, and the time scale used for each turn.
+12. Automated invariants confirm no negative resources, no invalid entity locations, no duplicate stable IDs, and no unexplained population creation or loss. Population food consumption is duration-scaled, food deficits are recorded, and starvation losses occur only after the configured grace period.
+* Given a generated world and seed, every player start passes the configured viability threshold, avoids effectively barren zero-yield terrain unless an immediately usable alternate food source makes it viable, respects minimum player separation, and is reproducible from the same seed.
+* When any hunter is within radius 1 at planning time, a herd's Flee decision maximizes the minimum distance to all known hunter groups before using water and food as tie-breakers. Herds never read submitted hunter orders.
+* At the start of each planning phase, the player's visible map is exactly the union of radius-2 vision around current Camps and HunterGroups. A tile that leaves this union becomes fully hidden again with no persistent explored-state or last-seen entity/resource memory, and hidden entities cannot be directly targeted. Paleolithic breakthrough tests must also verify threshold unlocks, the Turn-10/11 strict-majority grace period, the unconditional Turn-12 transition, deterministic tie-breaking, and secondary-tech carryover for Turn-12 forced transitions. Normal player-facing tile/resource UI must display qualitative yield bands rather than raw simulation values; exact numbers are reserved for debug/developer inspection unless a later knowledge system explicitly grants greater precision.
+15. Initial implementation sequence
+1. Implement serializable data models, map topology, configuration, time scale, stable IDs, and deterministic random service.
+2. Implement order definitions, validation, and the phase-based TurnResolver.
+3. Implement simultaneous movement and population split/reintegration.
+4. Implement camp gathering, population sustenance and hunger, herd food-and-water pressure, proportional resource allocation, and regeneration.
+5. Implement hunting, fishing, herd movement, seeded player placement, and Paleolithic visibility.
+6. Implement turn events, history aggregates, Paleolithic breakthrough evaluation including Turn-12 secondary carryover, invariants, and replay-oriented tests.
+7. Implement the agent-policy boundary, filtered AgentObservation construction, deterministic HeuristicTribePolicy, AgentMandate variation, and headless AI benchmark tests before adding Unity presentation.
+8. Add Unity adapters and presentation only after the headless Paleolithic loop, including the first-tech transition, is deterministic and covered by tests.
+16. Deferred design questions
+These questions are deliberately configurable or deferred and must not block the prototype:
+* Exact tuning of later-era movement costs and route-network abstractions on the fixed hex topology.
+* Exact conversion from population count to gather capacity.
+* Whether hunting yield transfers instantly or must be physically carried home.
+* Whether herd hunger and thirst cause immediate mortality or only influence future movement and growth.
+* Whether camps later consume water directly and whether water becomes a transported stockpile.
+* How later progression systems convert behavioral history into technologies, institutions, or cultural trajectories.
+17. Map generation design draft
+The world generator must create strategically distinct but causally coherent worlds. It should not paint biomes onto arbitrary terrain. Each stage consumes stable outputs from the preceding stages, records its configuration, and produces plain serializable data that can be tested without Unity rendering.
+Authoritative generation pipeline
+* World seed and geometry: create a WorldGenerationConfig containing the seed, generator version, map width and height, the authoritative hex topology service, east-west longitude wrapping, non-wrapping north-south pole behavior, seasonal count, and world-shape preset. The default Standard world size is 1024 × 512 tiles, or 524,288 tiles total. World size is selected through the new-game menu and remains fully configurable; the chosen preset and resolved dimensions are stored in the effective generation configuration and save data. All later randomness must come from named deterministic streams derived from the world seed.
+* Tectonic plates and crust: partition the map into configurable plates. Each plate stores a stable plateId, continental or oceanic crust type, base crust elevation or thickness, and a movement vector. Plate boundaries are classified as convergent, divergent, or transform from relative motion.
+* Tectonic relief: build the base elevation field from crust type and boundary effects. Continental collision raises broad mountain chains; oceanic subduction creates trenches, coastal ranges, and island arcs; divergence creates rifts and mid-ocean ridges; transform boundaries create narrower rough terrain. Add seeded low-frequency variation without erasing the plate signal.
+* Volcanism and hotspots: place boundary volcanism where subduction or rifting supports it, then add configurable mantle hotspots independent of plate boundaries. Hotspots may form volcanic islands or island chains, with age and elevation decay used to produce believable chains instead of isolated random peaks.
+* Elevation finalization: combine tectonic relief, volcanism, background variation, and a configurable erosion or smoothing pass. Apply sea level only after this combined height field exists. Classify deep ocean, coastal shallows, coast, lowland, hill, mountain, and optional ice-cap elevation bands from numeric elevation; terrain labels must not replace the underlying value. Coastal-shallow classification must be available to early fishing and gathering rules.
+* Global climate baseline: resolve the world’s position within its star’s habitable zone before local climate calculations. habitableZonePosition is normalized from 0 at the inner, hotter edge to 1 at the outer, colder edge. It produces a planet-wide temperature offset, with configurable inner-edge, midpoint, and outer-edge values. This global offset is applied first and must not be folded into latitude, elevation, ocean, or seasonal modifiers.
+* Temperature field: calculate each tile’s seasonal temperature from the global stellar baseline, latitude or insolation, axial-tilt and season phase, elevation lapse rate, and configurable ocean moderation or continentality. The same inputs and seed must produce identical temperature fields.
+* Prevailing winds: generate broad latitude-driven circulation bands, then modify them by season, rotation direction, land-ocean contrast, and major terrain where the chosen fidelity supports it. Wind is stored as a seasonal vector field or an equivalent deterministic transport graph.
+* Atmospheric moisture transport: initialize atmospheric moisture primarily from ocean evaporation, with optional contributions from lakes, wetlands, and evapotranspiration. Advect moisture along prevailing winds in deterministic steps. Cooling and uplift convert carried moisture into precipitation; each precipitation event removes the corresponding moisture from the air mass.
+* Rain shadows and continental drying: windward mountain slopes receive orographic precipitation. Descending leeward air is warmer and drier, producing rain shadows. Moisture must also decay across large continental interiors so distance from water matters without becoming the sole rule.
+* Seasonal precipitation: store precipitation or snowfall per tile for every configured season, not only an annual average. Latitude bands, wind shifts, monsoonal land-ocean contrast, and temperature determine seasonal distribution. Annual summaries may be cached, but ecology must be able to inspect the seasonal values.
+* Hydrology: derive downhill flow from the finalized elevation field. Resolve depressions as lakes, wetlands, spillways, or configured endorheic basins; accumulate runoff; place rivers above a configurable flow threshold; and route water to an ocean, lake, or valid inland sink. Rivers may not flow uphill, create accidental cycles, or terminate without an explicit sink.
+* Soil moisture: calculate a seasonal soil-water balance from precipitation, snowmelt, river and lake access, infiltration, drainage, evaporation or evapotranspiration, temperature, slope, and optional soil class. Soil moisture may carry between seasons and must remain a numeric field separate from surface-water availability.
+* Biome and ecology classification: classify biome or ecoregion from multi-season temperature, soil moisture, precipitation seasonality, elevation, coast and freshwater access, and disturbance such as volcanism. Classification should support ecotones or confidence weights so small climate changes do not create excessive checkerboard borders.
+* Seasonal tile resources: convert the climate and ecology fields into maxFood, maxWater, foodRegenerationRate, and waterRecoveryRate for each season. Water tiles must also expose aquatic-food productivity so freshwater and coastal-shallow tiles can support early fishing without simulating ordinary fish as mobile herd entities. Also produce the initial food and water fill levels, migration or herd habitat suitability, and any modifiers required by gathering. These numeric outputs are authoritative; biome names are presentation and tuning metadata.
+* Finalization and validation: seed herds only after resource and habitat fields exist, then place player camps through the seeded start-viability policy rather than uniform random placement. Emit a WorldGenerationReport containing stage timings, configuration hash, land and water ratios, continent and island counts, elevation and climate ranges, biome shares, river statistics, start-placement viability metrics, and validation warnings or failures.
+Generated data and runtime integration
+* Generated geographic fields are immutable during the opening prototype unless a later simulation system explicitly changes terrain or climate. Runtime tile.food and tile.water remain mutable stocks that are initialized from the generated seasonal capacities.
+* TileData must retain stable coordinates plus elevation, land or water classification, plateId, crust type, volcanic activity or age where used, and references to seasonal climate and ecology data.
+* SeasonalClimateData must expose temperature, precipitation or snowfall, prevailing wind, runoff, soil moisture, and surface-water accessibility for every season.
+* SeasonalResourceData must expose maxFood, maxWater, food regeneration, water recovery, aquatic-food productivity where applicable, and habitat suitability. Turn systems select or interpolate the correct seasonal record from simulated time and scale rates by the resolved turn duration.
+* Herd placement and migration policies consume habitat suitability and current tile resources. Every surviving herd still removes both food and water from its final occupied tile during the runtime ecological demand phase; world generation only establishes the starting conditions and regeneration envelope.
+* Save data must include the seed, generator version, complete effective configuration, and either the generated world or enough compatibility-stable information to reproduce it exactly. Loading an older save may not silently regenerate it with a newer algorithm.
+World-shape tuning and presets
+* The configuration must expose plate count and size distribution, continental-crust share, ocean target, sea level, boundary activity, uplift strength and width, ridge and trench strength, erosion, background elevation noise, hotspot count, hotspot-chain length, island-arc probability, and minimum island size.
+* Climate tuning must expose the stellar habitable-zone position, baseline offsets, axial tilt or seasonal amplitude, latitude gradient, elevation lapse rate, ocean moderation, wind-band layout, moisture capacity, evaporation, transport distance, orographic precipitation, leeward drying, continental moisture decay, and monsoon strength.
+* Hydrology and ecology tuning must expose runoff and river thresholds, lake and endorheic-basin policy, infiltration and evaporation, soil-water carryover, biome thresholds or classifier data, ecotone smoothing, and the curves that map climate and biome data into seasonal food, water, and regeneration.
+* A Continents preset should favor several medium or large continental plates, balanced ocean coverage, broad mountain systems, limited hotspot islands, and meaningful continental interiors.
+* An Archipelagos preset should favor greater ocean coverage, smaller plates, active oceanic boundaries, island arcs, hotspots, fragmented coastlines, and short moisture-transport distances across land.
+* A Pangaea-like preset should favor one dominant connected continental mass, fewer major oceans, broad interior distances, strong coastal-to-interior moisture gradients, and mountain or rift structure that can divide internal climate regions.
+* Presets are named configuration bundles, not separate algorithms. Every knob remains overridable, and each generated world must record the fully resolved values rather than only the preset name.
+* World-shape validation should measure results across multiple seeds. Presets should change statistical tendencies while still allowing natural variation; a single forced continent outline or handcrafted mask is not acceptable.
+Recommended implementation boundaries
+* WorldGenerator is a pure C# orchestrator that executes ordered IWorldGenerationStage implementations against a WorldGenerationContext and returns GeneratedWorld plus WorldGenerationReport.
+* Recommended stages are GeometryStage, PlateStage, ElevationStage, VolcanismStage, ClimateBaselineStage, TemperatureStage, WindStage, MoistureStage, HydrologyStage, SoilMoistureStage, BiomeStage, ResourceStage, and PlacementStage.
+* Each stage declares its required inputs and outputs. A stage may not read Unity scene state, mutate rendering objects, or depend on collection iteration order.
+* Use named deterministic random streams per stage and stable sorting for plates, tiles, rivers, and placement candidates. Adding random work to a later stage must not change earlier-stage results.
+* Keep numeric fields at useful precision through the pipeline and quantize only at an explicit boundary. Visual noise, tile art, and mesh generation must consume committed world data and may not change simulation values.
+* Configuration should be authorable through ScriptableObjects but copied into versioned plain data before generation. Headless tests call the same generator used by the game.
+Map-generation acceptance criteria
+* The same generator version, effective configuration, and seed produce field-equivalent tiles, climate records, rivers, biome assignments, resources, placements, and report metrics. Selecting Standard world size resolves to exactly 1024 × 512 tiles; selecting a different menu size changes the configured dimensions without changing generator architecture.
+* Moving habitableZonePosition toward the inner edge raises the planet-wide temperature baseline, and moving it toward the outer edge lowers it, before local latitude, elevation, ocean, and seasonal effects are added.
+* For otherwise identical settings, equatorial lowlands are generally warmer than polar or high-elevation tiles, subject to the configured global baseline.
+* Moist air crossing a sufficiently high mountain range produces greater windward precipitation and a measurable leeward rain shadow.
+* Every river follows valid downhill or equal-height spillway links to an ocean, lake, wetland, or configured endorheic sink; the hydrology graph contains no accidental cycles.
+* Biome and seasonal resource outputs are consistent with their climate inputs: hot wet regions can support jungle-like ecology, persistently dry regions produce arid ecology, and cold or high regions have appropriately constrained productivity.
+* Seasonal food, water, and regeneration values are finite, non-negative, capacity-clamped, and available to the runtime ecological demand and regeneration systems.
+* Across a representative seed suite, Continents, Archipelagos, and Pangaea-like presets produce statistically distinct land connectivity, island count, coastline fragmentation, and continental-interior distance.
+* The generator runs headlessly, emits a validation report instead of silently accepting impossible fields, and completes within a configurable performance and memory budget appropriate to the target map size.
+18. Non-player tribe AI architecture
+The Paleolithic milestone uses a deterministic, non-RL heuristic AI for non-player tribes. This AI is the production baseline for early implementation and the behavioral benchmark for any future learned policy. The architecture must deliberately create stable hooks for later reinforcement-learning agents without requiring changes to authoritative simulation systems, fog of war, order validation, or WEGO resolution.
+
+
+Core policy boundary
+All tribe decision-makers operate behind one policy contract. Conceptually, IAgentPolicy.Decide(AgentObservation observation, AgentMandate mandate) returns the same Order or OrderSet types accepted from the player input layer. HeuristicTribePolicy implements this contract now. ScriptedTestPolicy may implement it for deterministic scenarios. A future RLPolicy must be able to implement the same contract without receiving privileged simulation access.
+The policy never mutates WorldState directly. It receives a read-only observation, chooses intentions, and submits ordinary orders. All ownership, movement, targeting, population, visibility, stacking, and resource rules are enforced by the same validation and TurnResolver used for human orders.
+The observation schema and action/order schema must be versioned plain serializable data. Do not bind the policy interface to Unity GameObjects, MonoBehaviours, scene state, UI widgets, or a specific ML framework.
+
+
+Observation and anti-cheating rules
+AgentObservation is constructed by an AgentObservationBuilder from the same knowledge boundary that constrains the human player. Non-player tribes may inspect their own controllable entities and internal behavioral history, but world information is limited to currently visible tiles and entities under the Paleolithic radius-2, zero-persistent-map-memory rule.
+The heuristic AI may not read hidden tiles, hidden herds, hidden rival units, another player's submitted orders, global resource maps, future random outcomes, or any other authoritative state unavailable through its observation.
+Visible environmental information must pass through the same knowledge/presentation policy used for the player. If the Paleolithic player knows that a tile's food yield is Poor, Decent, Ample, or Abundant rather than an exact internal number, the tribe policy receives the corresponding qualitative band or an equivalent non-privileged observation feature rather than the authoritative resource value.
+Paleolithic agents retain non-spatial internal history such as their own food-deficit trend, cumulative HuntingExperience, GatheringExperience, FishingExperience, prior own orders and outcomes, and specialization tendency. They do not retain last-seen tile contents or a private explored-map memory after a tile leaves current vision.
+
+
+Agent mandate and behavioral variation
+AgentMandate provides bounded behavioral variation without assigning predetermined cultures. It contains configurable tendencies such as riskTolerance, mobilityBias, explorationBias, reservePreference, huntingBias, gatheringBias, fishingBias, and specializationPersistence. Values are generated deterministically from the game seed or selected from bounded profiles and are recorded in save/replay state.
+Mandate weights are soft preferences, not hard scripts. Environment, survival pressure, and actual learned-by-doing history must remain capable of overriding them. A tribe with a fishing bias that spawns inland must still respond sensibly to terrestrial opportunities; it must not behave suicidally in order to satisfy a personality weight.
+The three subsistence biases should remain modest enough that the first Paleolithic technology is still substantially caused by environment and actual behavior rather than assigned at game start.
+
+
+Paleolithic heuristic decision process
+At the start of AI planning, build one immutable AgentObservation from the same pre-resolution snapshot used by the player and herd AI. The tribe then performs a bounded deterministic decision pass.
+1. Assess survival pressure. Estimate food security from own stored-food condition, recent food deficit, linked population, and the qualitative productivity currently visible. Sustained or imminent deficit strongly increases the value of immediate food acquisition and decreases optional exploration.
+2. Assess currently visible opportunities. Score terrestrial gathering, visible huntable herds, and eligible fishing opportunities using qualitative resource bands, expected effort, distance, hunter availability, current specialization experience, risk tolerance, and resource depletion. Do not use hidden future herd movement or exact authoritative yields.
+3. Choose camp posture. If the current radius remains sufficiently productive, prefer staying and exploiting it. If local productivity is poor or depleted and a visibly better legal destination exists, consider moving the Camp one tile. Apply a modest configurable inertia/continuity bias to the current location and current plan so marginal improvements alone do not justify uprooting the tribe. A small advantage such as only a few percent more expected food should normally be insufficient by itself. This is a soft bias, not an anti-backtracking rule: a materially better observed opportunity, worsening local conditions, starvation pressure, herd movement, or another meaningful change may immediately justify reversing direction or revisiting a prior tile. The purpose is to suppress algorithmic A-B-A-B thrashing, not realistic reconsideration.
+4. Allocate hunters. Dispatch only population the Camp can afford to release while preserving the configured minimum camp population and an additional heuristic safety reserve. Increase hunter allocation when a visible herd or fishing opportunity is strong; reduce it when food security is weak enough that failed pursuit would be dangerous.
+5. Choose hunter missions. Existing groups choose among Hunt, Fish, Move/Scout, Return/Reintegrate, or NoOp. A hunt plan must predictively choose movement using only visible herd position and known herd behavior; it may not know the herd's submitted move. Fishing follows the same legal shore/water rules as the player. Return is favored when reintegration is valuable or no nearby opportunity justifies remaining detached.
+6. Apply emerging specialization. Cumulative HuntingExperience, GatheringExperience, and FishingExperience provide a modest persistence bonus to repeating successful behavior, representing learned practice. This bonus may reinforce an emerging way of life but must not override starvation or make the AI ignore clearly superior opportunities.
+7. Select the highest-scoring legal plan. Exact ties and any deliberately configured behavioral variation use a named deterministic random stream scoped to playerId or agentId and turn number. Identical state, observation, mandate, configuration, and seed must produce identical orders.
+
+
+Candidate-plan architecture
+Do not encode Paleolithic AI as one long if/else chain coupled to game state. Use small evaluators or considerations that score legal candidate plans. Recommended considerations include SurvivalNeed, LocalFoodSecurity, TravelCost, HuntOpportunity, FishingOpportunity, GatheringOpportunity, PopulationRisk, ResourceDepletion, ExplorationValue, ReintegrationValue, SpecializationContinuity, and PlanContinuity/RelocationInertia. The inertia consideration is intentionally modest and should reward continuity rather than directly penalize returning to a previously occupied tile.
+Each consideration consumes AgentObservation plus AgentMandate and returns an interpretable contribution. A decision trace records the candidate plans, major score components, rejected illegal actions, selected plan, and deterministic tie-break information. This trace is developer-facing and is not player-visible by default.
+Candidate generation must be bounded. The Paleolithic agent searches only its currently observable local area and legal destinations/actions, never the full 1024 x 512 world. This keeps decision cost proportional to active local entities rather than total map area and establishes a scalable pattern for later eras.
+
+
+Fairness and difficulty policy
+The baseline AI receives no compensating resources, extra sight, hidden information, movement bonuses, or immunity from starvation. Difficulty should initially be tuned through decision quality, mandate ranges, candidate breadth, scoring coefficients, and optional intentional mistakes rather than simulation-rule cheating.
+If later game modes deliberately introduce AI handicaps or bonuses, they must be explicit configuration rules applied outside IAgentPolicy and visible to testing/telemetry; they must not be hidden privileged reads inside the policy.
+
+
+Future RL compatibility hooks
+The heuristic architecture must preserve a clean future RL insertion point. AgentObservation is the observation boundary; legal order enumeration and action masks define the action boundary; IAgentPolicy is the policy boundary; the headless TurnResolver is the environment transition; and TurnHistory plus agent decision/outcome logs provide training and evaluation data.
+A future RLPolicy may replace HeuristicTribePolicy for selected tribes while heuristic, scripted, player, and RL-controlled tribes coexist in the same headless simulation. Swapping policies must not require changes to WorldState, Order definitions, visibility, validation, movement, ecology, hunting resolution, or save/replay semantics beyond storing policy identity/version and any policy-owned state.
+Do not define or optimize an RL reward function in the Paleolithic implementation. First establish a competent heuristic baseline and stable era mechanics. Later learned policies should be evaluated against the heuristic baseline for survival, legality, computational cost, robustness across seeds, behavioral diversity, and susceptibility to pathological exploits.
+
+
+Headless AI validation and benchmarks
+The same initial state, observation, mandate, configuration, and random seed produces the same non-player orders and committed result.
+No heuristic decision changes when hidden world state is altered while the agent's legal AgentObservation remains identical. This is a required anti-cheating regression test.
+Every HeuristicTribePolicy output passes through normal order validation. The policy never creates population, bypasses movement allowances, targets hidden entities, accesses submitted rival orders, or directly mutates authoritative state.
+Curated benchmark worlds should include at least a productive inland gathering start, a herd-rich terrestrial start, a productive coast, a locally depleted start requiring migration, and an uncertain or mixed start. The AI should remain viable and make explainable use of the opportunities it can actually observe; tests should validate principles and survival competence rather than hardcode that a particular map must always produce one specialization. Add an inertia regression scenario in which two near-equivalent locations alternate by a trivial utility margin: the AI should not repeatedly oscillate between them. A separate scenario must show that a material change in observed conditions can immediately overcome inertia and justify backtracking or reversal.
+Run large seeded headless suites and report survival-to-transition rate, starvation rate, average food security, illegal-order rate, movement frequency, hunter-allocation behavior, first-tech distribution, decision time, and deterministic replay failures. These metrics tune the heuristic and later serve as the benchmark suite for RL agents.
+The first implementation milestone is complete when multiple heuristic-controlled tribes can play the full Paleolithic loop headlessly through the Turn-12 maximum transition under normal fog-of-war and survival rules without privileged information, while producing deterministic decision traces suitable for debugging and future policy comparison.

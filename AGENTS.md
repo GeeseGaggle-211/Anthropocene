@@ -1,0 +1,72 @@
+# Working on Anthropocene
+
+## Intent and current scope
+
+Anthropocene is a deterministic, simultaneous-turn strategy simulation. The playable opening follows mobile camps and hunter groups through the Paleolithic to their first technological breakthrough, normally within twelve turns. Prioritize information a player can act on: readable Dwarf Fortress-style glyph tiles, clear terrain and resource distinctions, understandable orders, and explained outcomes. Decorative art is secondary.
+
+Read `Docs/Milestone3.md` for current mechanics and `Docs/Validation.md` for tested behavior and known limitations. `Docs/Implementation.md` describes the architecture. `Docs/DesignSpec.txt` preserves the original Google Drive specification; do not silently rewrite that historical source. Earlier milestone notes contain superseded rules. Current user instructions take precedence over these documents.
+
+The default player turn is twenty years, resolved through seasonal economic intervals. Earlier references to ninety-day player turns and four elevation bands are historical. A complete Neolithic era, trade, diplomacy, warfare, construction and RL training are outside the current implementation.
+
+## Repository map
+
+- `Assets/_Anthropocene/Simulation/`: authoritative, Unity-independent C# state, generation, turn resolution, logistics, observations, AI policies and saves.
+- `Assets/_Anthropocene/Scripts/Runtime/Presentation/`: Unity immediate-mode UI, layered glyph renderer, hover details and order controls.
+- `Assets/_Anthropocene/Scripts/Runtime/Core/GameBootstrap.cs`: creates the persistent game root and opening UI.
+- `Assets/_Anthropocene/Resources/OpeningConfig.json`: simulation tuning. Keep serialized values and `SimulationConfig` defaults consistent when changing defaults.
+- `Assets/_Anthropocene/Resources/Tilesets/`: classic and high-contrast semantic glyph definitions. Both must convey the same gameplay information.
+- `Assets/_Anthropocene/Editor/PrototypeBuild.cs`: Windows development build entry point.
+- `Tools/Headless/`: console checks and benchmarks compiling the actual simulation source files, not a duplicate implementation.
+- `Assets/_Anthropocene/Tests/EditMode/`: Unity/NUnit integration and presentation checks.
+
+## Preserve these contracts
+
+- Keep Unity APIs out of the simulation assembly. The headless project targets .NET 8 with C# 9; simulation changes must compile there and in Unity.
+- Preserve seeded determinism, stable entity IDs, sorted resource allocation and collection-order-independent replay. Use the existing keyed random streams instead of wall-clock randomness. Timings and UI state must not affect authoritative results.
+- Player details and AI decisions consume filtered observations. Do not expose hidden tiles, foreign private stores/populations, global event logs or rival submitted orders. Wild herds and foreign livestock use `HerdCountKnowledge` estimates; only owned livestock counts are exact. Keep derived AI categories consistent with those estimates.
+- Continuous height and biome are independent of gameplay elevation. Marine tiles are level 0, traversable land and freshwater lakes are levels 1–9, and level 10 blocks movement and placement. Preserve freshwater, river-edge and coastline invariants.
+- Human growth depends on recurring food surplus and reserves, with rising consumption, fractional progress and separately recorded deaths. Do not introduce an arbitrary human population cap. Maintain population and food conservation and the persisted demographic explanation.
+- Passive coastal gathering uses adjacent Shallows and shares the camp's land-gathering labor. Ocean is excluded and marine food never supplies freshwater. Remote hunters retain finite carried provisions and respect traversable supply paths.
+- Keep terrain, elevation contours, water/features, food markers and occupants independently legible. Stacked units use stable slots shared by rendering and hit testing; overflow remains accessible in the inspector. Delayed hover must reset with navigation, use visible information only and never intercept input.
+- Generation, turn resolution and save/load use workers. Do not read or mutate partially resolved world state from the UI; preserve the busy/progress guards.
+- Save/load must restore authoritative geography and history without regeneration. The current signature is `ANTHROPOCENE-4`, filename `opening-v3.anthro`, and world/config/generator/observation versions are 3. If a change breaks compatibility, explicitly version it or implement a migration and test rejection/round-trip behavior. Preserve older user saves.
+
+## Build and validate
+
+Use Unity **6000.5.10f1**, matching `ProjectSettings/ProjectVersion.txt`. Open `Assets/Scenes/SampleScene.unity` and press Play. Do not launch concurrent Unity editor/batch instances against the same checkout. Check the process project path before closing an editor; other checkouts may be running.
+
+From the repository root in PowerShell:
+
+```powershell
+# Focused simulation checks without the seeded benchmark batch
+./Tools/Test-Headless.ps1 -Seeds 0
+
+# Broader simulation, replay, generation and Standard-world benchmark
+./Tools/Test-Headless.ps1 -Seeds 30 -Standard -Geography
+
+# Standard-world elevation, viable-start and save/load audit
+./Tools/Test-Headless.ps1 -Seeds 0 -Audit
+```
+
+The script finds the local or Unity-bundled .NET SDK, then falls back to `dotnet` on PATH. Run checks appropriate to the change: focused simulation checks for mechanics, the broader suites for generation/determinism/performance changes, and Unity EditMode tests for engine integration or presentation changes. Do not repeat unchanged expensive suites without a reason. The recorded baseline is 129 headless assertions and 11 Unity tests; counts can legitimately increase.
+
+Run EditMode tests in Unity's Test Runner. For batch runs, use the Unity executable with `-batchmode -nographics -projectPath <absolute-root> -runTests -testPlatform EditMode -testResults <absolute-xml-path> -logFile <absolute-log-path>`; let the test runner exit rather than adding `-quit`. Create the output directory first and inspect the XML result, not just the process exit code. Launch background batch processes hidden on Windows.
+
+Build through **Anthropocene > Build Windows prototype**, or use `-batchmode -nographics -quit -projectPath <absolute-root> -executeMethod Anthropocene.Editor.PrototypeBuild.Windows -logFile <absolute-log-path>`. Close the player from this checkout before replacing its build. Output is `Builds/Windows/Anthropocene.exe`. Inspect the build log for success and smoke-test UI changes in the player.
+
+`Open-Anthropocene.ps1` pulls with `git pull --ff-only` before opening Unity. Use it when synchronizing is intended; open the editor directly for ordinary local iteration.
+
+## Reproducible interactive demo
+
+Choose **Small / Continents / seed 1 / six tribes**. Dispatch eight people in each of the first two turns. Turn-three planning should show 48 people, 40 elapsed years, the camp plus two hunter groups on one tile, and a last-generation report of 39 + 9 additions − 0 deaths. Passive marine gathering is approximately 1,695.6 food in that generation. This is a normal deterministic play sequence, not a special seed rule or edited save.
+
+Use V to compare tilesets, the wheel to zoom, arrows to pan and C to center the camp. Check exact slot selection, hover after more than two stationary seconds, coastal saltwater/food information, and save/load restoration. Preserve any existing user save when setting up a new demonstration.
+
+## Follow-on workflow
+
+- Inspect `git status` before editing and preserve existing work. Do not revert settings or source files wholesale to HEAD just to remove apparent noise; Unity can reserialize settings while other edits already exist.
+- Keep Unity `.meta` files with their assets and preserve existing GUIDs. Keep third-party packages outside `_Anthropocene`; document provenance/licensing for added assets and use only dependencies needed by the task.
+- Build output, `Library`, logs, local SDKs and `TestResults` are intentionally ignored. Commit source, configuration, metadata, tests and relevant documentation. Do not force-add generated artifacts to satisfy a documentation link.
+- Update the current mechanics and validation notes when behavior changes. Distinguish automated coverage from manually observed UI behavior, and record benchmark seed/configuration when reporting performance.
+- The present balance can produce severe decline at marginal sites and favors fishing over hunting; the recorded thirty-seed run had 84/120 surviving tribes and no husbandry-first outcomes. Treat these as known tuning limitations, not proof of balanced play. Climate and wind transport are also approximate.
+- Stay within the requested work. Do not start later eras, background monitoring or additional agent tasks merely because they appear in the roadmap. After completing an assignment, report the result and await further instructions.

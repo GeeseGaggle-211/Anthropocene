@@ -22,6 +22,7 @@ namespace Anthropocene.Core
             var root = new GameObject("[Anthropocene]");
             DontDestroyOnLoad(root);
             root.AddComponent<GameBootstrap>();
+            root.AddComponent<Anthropocene.Presentation.OpeningGame>();
         }
 
         private void Awake()

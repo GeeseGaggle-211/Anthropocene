@@ -37,3 +37,9 @@ sysinfo.txt
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local tools and headless output
+.tools/
+**/bin/
+TestResults/
+!Tools/Headless/Anthropocene.Headless.csproj

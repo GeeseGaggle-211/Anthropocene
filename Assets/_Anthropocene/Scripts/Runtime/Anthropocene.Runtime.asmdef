@@ -1,7 +1,7 @@
 {
   "name": "Anthropocene.Runtime",
   "rootNamespace": "Anthropocene",
-  "references": [],
+  "references": ["Anthropocene.Simulation"],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

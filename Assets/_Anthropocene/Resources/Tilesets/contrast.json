@@ -1,0 +1,333 @@
+{
+  "Version": 1,
+  "Id": "contrast",
+  "Name": "High contrast glyphs",
+  "Definitions": [
+    {
+      "Key": "fallback",
+      "Glyph": "?",
+      "Tint": "#D4D6BF",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "hidden",
+      "Glyph": "",
+      "Tint": "#111911",
+      "Background": "#050706",
+      "Scale": 0.8
+    },
+    {
+      "Key": "border",
+      "Glyph": "",
+      "Tint": "#344134",
+      "Background": "#111713",
+      "Scale": 0.8
+    },
+    {
+      "Key": "selected",
+      "Glyph": "",
+      "Tint": "#E8B055",
+      "Background": "#111713",
+      "Scale": 0.8
+    },
+    {
+      "Key": "friendly",
+      "Glyph": "",
+      "Tint": "#87A487",
+      "Background": "#111713",
+      "Scale": 0.8
+    },
+    {
+      "Key": "biome.ocean",
+      "Glyph": "~",
+      "Tint": "#F2EBDD",
+      "Background": "#10222E",
+      "Scale": 0.8
+    },
+    {
+      "Key": "biome.shallows",
+      "Glyph": "~",
+      "Tint": "#F2EBDD",
+      "Background": "#183B46",
+      "Scale": 0.8
+    },
+    {
+      "Key": "biome.lake",
+      "Glyph": "~",
+      "Tint": "#F2EBDD",
+      "Background": "#17444D",
+      "Scale": 0.8
+    },
+    {
+      "Key": "biome.grassland",
+      "Glyph": ".",
+      "Tint": "#F2EBDD",
+      "Background": "#364525",
+      "Scale": 0.8
+    },
+    {
+      "Key": "biome.woodland",
+      "Glyph": "T",
+      "Tint": "#F2EBDD",
+      "Background": "#233C21",
+      "Scale": 0.8
+    },
+    {
+      "Key": "biome.jungle",
+      "Glyph": "&",
+      "Tint": "#F2EBDD",
+      "Background": "#173E2A",
+      "Scale": 0.8
+    },
+    {
+      "Key": "biome.desert",
+      "Glyph": ":",
+      "Tint": "#F2EBDD",
+      "Background": "#55482C",
+      "Scale": 0.8
+    },
+    {
+      "Key": "biome.tundra",
+      "Glyph": ",",
+      "Tint": "#F2EBDD",
+      "Background": "#3E4236",
+      "Scale": 0.8
+    },
+    {
+      "Key": "biome.ice",
+      "Glyph": "*",
+      "Tint": "#F2EBDD",
+      "Background": "#626D6A",
+      "Scale": 0.8
+    },
+    {
+      "Key": "relief.lowland",
+      "Glyph": "",
+      "Tint": "#C3C9B5",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "relief.hills",
+      "Glyph": "^",
+      "Tint": "#C3C9B5",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "relief.highland",
+      "Glyph": "^^",
+      "Tint": "#D8D4C2",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "relief.mountain",
+      "Glyph": "M",
+      "Tint": "#E9E2D2",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "feature.oasis",
+      "Glyph": "o",
+      "Tint": "#49DFD4",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "feature.freshwater",
+      "Glyph": "w",
+      "Tint": "#63D1E2",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "feature.river",
+      "Glyph": "",
+      "Tint": "#3CAEC6",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "feature.cultivation",
+      "Glyph": "%",
+      "Tint": "#D1B76B",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "feature.fishery",
+      "Glyph": "+",
+      "Tint": "#70C9D6",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "resource.food",
+      "Glyph": "",
+      "Tint": "#D4D6BF",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "entity.camp",
+      "Glyph": "@",
+      "Tint": "#F4BF63",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "entity.hunter",
+      "Glyph": "h",
+      "Tint": "#F1EAC2",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "entity.rivalcamp",
+      "Glyph": "@",
+      "Tint": "#ED7769",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "entity.rivalhunter",
+      "Glyph": "h",
+      "Tint": "#ED7769",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "entity.stack",
+      "Glyph": "+",
+      "Tint": "#FFFFD0",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "species.antelope",
+      "Glyph": "a",
+      "Tint": "#D9AD72",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "species.goat",
+      "Glyph": "g",
+      "Tint": "#DCCBAC",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "species.bison",
+      "Glyph": "b",
+      "Tint": "#CDAD8F",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "species.camel",
+      "Glyph": "C",
+      "Tint": "#F0C885",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "species.horse",
+      "Glyph": "H",
+      "Tint": "#D4BDB0",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "entity.domestic",
+      "Glyph": "d",
+      "Tint": "#DBAF79",
+      "Background": "#273722",
+      "Scale": 0.8
+    },
+    {
+      "Key": "elevation.contours",
+      "Glyph": "",
+      "Tint": "#FFFFFF",
+      "Opacity": 0.42,
+      "LineWidth": 1.0,
+      "Spacing": 2.8
+    },
+    {
+      "Key": "elevation.0",
+      "Glyph": "0",
+      "Tint": "#E8B055",
+      "Scale": 0.9
+    },
+    {
+      "Key": "elevation.1",
+      "Glyph": "1",
+      "Tint": "#E8B055",
+      "Scale": 0.9
+    },
+    {
+      "Key": "elevation.2",
+      "Glyph": "2",
+      "Tint": "#E8B055",
+      "Scale": 0.9
+    },
+    {
+      "Key": "elevation.3",
+      "Glyph": "3",
+      "Tint": "#E8B055",
+      "Scale": 0.9
+    },
+    {
+      "Key": "elevation.4",
+      "Glyph": "4",
+      "Tint": "#E8B055",
+      "Scale": 0.9
+    },
+    {
+      "Key": "elevation.5",
+      "Glyph": "5",
+      "Tint": "#E8B055",
+      "Scale": 0.9
+    },
+    {
+      "Key": "elevation.6",
+      "Glyph": "6",
+      "Tint": "#E8B055",
+      "Scale": 0.9
+    },
+    {
+      "Key": "elevation.7",
+      "Glyph": "7",
+      "Tint": "#E8B055",
+      "Scale": 0.9
+    },
+    {
+      "Key": "elevation.8",
+      "Glyph": "8",
+      "Tint": "#E8B055",
+      "Scale": 0.9
+    },
+    {
+      "Key": "elevation.9",
+      "Glyph": "9",
+      "Tint": "#E8B055",
+      "Scale": 0.9
+    },
+    {
+      "Key": "elevation.10",
+      "Glyph": "X",
+      "Tint": "#E8B055",
+      "Scale": 0.9
+    },
+    {
+      "Key": "elevation.ridge",
+      "Glyph": "",
+      "Tint": "#B69D75",
+      "Opacity": 0.28,
+      "LineWidth": 1.2
+    }
+  ]
+}

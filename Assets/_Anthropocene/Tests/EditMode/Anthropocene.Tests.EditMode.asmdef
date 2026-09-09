@@ -2,7 +2,8 @@
   "name": "Anthropocene.Tests.EditMode",
   "rootNamespace": "Anthropocene.Tests",
   "references": [
-    "Anthropocene.Runtime"
+    "Anthropocene.Runtime",
+    "Anthropocene.Simulation"
   ],
   "includePlatforms": [
     "Editor"
