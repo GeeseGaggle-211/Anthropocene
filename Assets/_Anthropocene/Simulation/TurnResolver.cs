@@ -212,19 +212,22 @@ namespace Anthropocene.Simulation
             foreach (var group in requests.GroupBy(r => r.Item2.Id).OrderBy(g => g.Key))
             {
                 var sorted = group.OrderBy(r => r.Item1.Id).ToArray(); var herd = sorted[0].Item2;
-                int total = sorted.Sum(r => r.Item3), available = Math.Min(total, herd.Animals);
+                var species = w.Config.GetSpecies(herd.Species);
+                int breedingReserve = Math.Min(herd.Animals, Math.Max(species.MinimumAnimals, (int)Math.Ceiling(herd.Animals * w.Config.HuntBreedingReserveFraction)));
+                int total = sorted.Sum(r => r.Item3), available = Math.Min(total, Math.Max(0, herd.Animals - breedingReserve));
                 int[] kills = sorted.Select(r => total == 0 ? 0 : (int)((long)available * r.Item3 / total)).ToArray();
                 int remainder = available - kills.Sum();
                 foreach (int i in Enumerable.Range(0, sorted.Length).OrderByDescending(i => total == 0 ? 0 : (long)available * sorted[i].Item3 % total).ThenBy(i => sorted[i].Item1.Id))
                     if (remainder > 0 && kills[i] < sorted[i].Item3) { kills[i]++; remainder--; }
                 for (int i = 0; i < sorted.Length; i++)
                 {
-                    var hunter = sorted[i].Item1; var camp = w.Camps.First(c => c.Id == hunter.SourceCamp); double yield = kills[i] * w.Config.GetSpecies(herd.Species).FoodYield;
+                    var hunter = sorted[i].Item1; var camp = w.Camps.First(c => c.Id == hunter.SourceCamp); double yield = kills[i] * species.FoodYield;
                     Supply.Award(w, hunter, yield, record); camp.Experience[(int)Domain.Hunting] += yield * w.Config.HarvestExperienceWeight;
                     record.Transfers.Add(new Transfer { Entity = hunter.Id, Tile = hunter.Tile, Kind = "Hunting", Food = yield });
                     record.Log("Hunters " + hunter.Id + " killed " + kills[i] + " animals from herd " + herd.Id + ".");
                 }
-                herd.Animals -= available; if (herd.Animals == 0) record.Log("Herd " + herd.Id + " became extinct.");
+                herd.Animals -= available;
+                if (available < total) record.Log("Herd " + herd.Id + " retained " + herd.Animals + " breeding animals after the generation's harvest.");
             }
             w.Herds.RemoveAll(h => h.Animals <= 0);
         }

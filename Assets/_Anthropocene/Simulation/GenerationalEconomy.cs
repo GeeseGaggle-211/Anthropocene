@@ -55,7 +55,8 @@ namespace Anthropocene.Simulation
                 camp.StepFoodIncome = 0;
             }
 
-            // Movement happens once; these are simultaneous claims over the entire generation.
+            // Movement happens once. Herd reproduction is realized before the generation's hunting harvest.
+            ReproduceHerds(w, intervals, years);
             Hunt(w, orders, record, intervals);
             var demands = new List<Demand>();
             foreach (var order in orders.Where(o => o.Kind == OrderKind.Fish).OrderBy(o => o.Entity))
@@ -112,7 +113,7 @@ namespace Anthropocene.Simulation
             SustainGeneration(w, record, intervals, generationScale, plans, foraged, recovering);
             Supply.Finish(w, record);
             ApplyStorage(w, record, intervals);
-            GrowAndSplitHerds(w, record, intervals, years);
+            SplitHerds(w, record);
 
             w.Days += record.Duration;
             AdvanceEcology(w, resources, weights);
@@ -259,7 +260,7 @@ namespace Anthropocene.Simulation
             }
         }
 
-        private static void GrowAndSplitHerds(WorldState w, TurnRecord record, double intervals, double years)
+        private static void ReproduceHerds(WorldState w, double intervals, double years)
         {
             foreach (var herd in w.Herds.OrderBy(h => h.Id).ToArray())
             {
@@ -268,6 +269,10 @@ namespace Anthropocene.Simulation
                 double target = herd.Animals * Math.Exp(species.GrowthRate * years * Math.Max(0, intake)) + herd.GrowthRemainder;
                 int grown = Math.Max(0, (int)Math.Floor(target) - herd.Animals); herd.GrowthRemainder = target - Math.Floor(target); herd.Animals += grown;
             }
+        }
+
+        private static void SplitHerds(WorldState w, TurnRecord record)
+        {
             foreach (var herd in w.Herds.Where(h => h.DomesticCamp < 0 && h.Animals > h.Capacity).OrderBy(h => h.Id).ToArray())
             {
                 int groups = (int)Math.Ceiling(herd.Animals / (double)herd.Capacity), total = herd.Animals, baseSize = total / groups, remainder = total % groups;

@@ -96,6 +96,7 @@ namespace Anthropocene.Simulation
             if (config.HunterCarryGenerations <= 0) config.HunterCarryGenerations = 1;
             if (config.MinimumStorageGenerations <= 0) config.MinimumStorageGenerations = 1;
             if (config.MaximumStorageGenerations < config.MinimumStorageGenerations) config.MaximumStorageGenerations = 4;
+            if (config.HuntBreedingReserveFraction <= 0) config.HuntBreedingReserveFraction = .2;
             if (legacyGenerationalConfig)
             {
                 config.HunterForagePerPerson = 1;

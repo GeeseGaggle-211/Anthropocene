@@ -68,11 +68,11 @@ internal static class Program
         w = Flat(); var bytes = SaveCodec.Save(w); var loaded = SaveCodec.Load(bytes);
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), "Save round trip");
         resolver.Resolve(w, Orders()); resolver.Resolve(loaded, Orders()); Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), "Replay from save");
-        w = Flat(); w.Config.StartingReserveGenerations = w.Config.HunterCarryGenerations = w.Config.MinimumStorageGenerations = w.Config.MaximumStorageGenerations = w.Config.HunterForagePerPerson = 0;
+        w = Flat(); w.Config.StartingReserveGenerations = w.Config.HunterCarryGenerations = w.Config.MinimumStorageGenerations = w.Config.MaximumStorageGenerations = w.Config.HunterForagePerPerson = w.Config.HuntBreedingReserveFraction = 0;
         foreach (var species in w.Config.Species) species.MaximumHerdSize = 32;
         w.Herds.Add(new Herd { Id = w.NextId++, Tile = w.Camps[0].Tile + 1, Species = "antelope", Animals = 30, Capacity = 32 });
         loaded = SaveCodec.Load(SaveCodec.Save(w));
-        Check(loaded.Config.StartingReserveGenerations == 1 && loaded.Config.HunterCarryGenerations == 1 && loaded.Config.MinimumStorageGenerations == 1 && loaded.Config.MaximumStorageGenerations == 4 && loaded.Config.HunterForagePerPerson == 1, "Legacy saves gain generational defaults");
+        Check(loaded.Config.StartingReserveGenerations == 1 && loaded.Config.HunterCarryGenerations == 1 && loaded.Config.MinimumStorageGenerations == 1 && loaded.Config.MaximumStorageGenerations == 4 && loaded.Config.HunterForagePerPerson == 1 && loaded.Config.HuntBreedingReserveFraction == .2, "Legacy saves gain generational defaults");
         Check(loaded.Config.GetSpecies("antelope").MaximumHerdSize == 150 && loaded.Herds[0].Capacity == 150, "Legacy saves gain species herd thresholds");
         w = Flat(); camp = w.Camps[0];
         hunter = new Hunter { Id = w.NextId++, Tile = camp.Tile, Population = 12, Player = 0, SourceCamp = camp.Id }; w.Hunters.Add(hunter); camp.Population -= 12;

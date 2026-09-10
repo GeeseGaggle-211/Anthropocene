@@ -48,7 +48,7 @@ From the repository root in PowerShell:
 ./Tools/Test-Headless.ps1 -Seeds 0 -Audit
 ```
 
-The script finds the local or Unity-bundled .NET SDK, then falls back to `dotnet` on PATH. Run checks appropriate to the change: focused simulation checks for mechanics, the broader suites for generation/determinism/performance changes, and Unity EditMode tests for engine integration or presentation changes. Do not repeat unchanged expensive suites without a reason. The recorded baseline is 137 headless assertions and 14 Unity tests; counts can legitimately increase.
+The script finds the local or Unity-bundled .NET SDK, then falls back to `dotnet` on PATH. Run checks appropriate to the change: focused simulation checks for mechanics, the broader suites for generation/determinism/performance changes, and Unity EditMode tests for engine integration or presentation changes. Do not repeat unchanged expensive suites without a reason. The recorded baseline is 138 headless assertions and 14 Unity tests; counts can legitimately increase.
 
 Run EditMode tests in Unity's Test Runner. For batch runs, use the Unity executable with `-batchmode -nographics -projectPath <absolute-root> -runTests -testPlatform EditMode -testResults <absolute-xml-path> -logFile <absolute-log-path>`; let the test runner exit rather than adding `-quit`. Create the output directory first and inspect the XML result, not just the process exit code. Launch background batch processes hidden on Windows.
 

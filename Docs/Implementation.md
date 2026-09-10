@@ -39,7 +39,7 @@ AI consumes immutable observations with the same qualitative resource bands and 
 ## Resolved specification ambiguities
 
 - Explicit hunger and demographic requirements supersede the older population-only-by-splitting rule. Conservation is previous population plus recorded net growth minus recorded starvation deaths.
-- Hunters within a traversable supply path share the camp store. Distant hunters forage their occupied tile for immediate subsistence, then consume finite carried provisions. Surplus hunting/fishing harvest is retained up to capacity and deposits on return; movement can continue beyond supply range.
+- Hunters within a traversable supply path share the camp store. Distant hunters forage their occupied tile for immediate subsistence, then consume finite carried provisions. Herds reproduce before the generation's hunting harvest; hunting preserves the larger of the species minimum or 20% of the multiplied herd as breeding stock. Surplus hunting/fishing harvest is retained up to capacity and deposits on return; movement can continue beyond supply range.
 - Dispatch has no same-turn compound follow-up. Existing hunters can combine movement with Hunt/Fish.
 - Seasonal profiles are weighted into one generation-scale renewable-resource window. All camp, hunter and herd demands use one sorted proportional allocation, followed by one demographic/herd update and one map pass.
 - Domain ties prefer Hunting, then Gathering, then Fishing. Turn-12 forced transitions preserve experience and expose secondary progress through the configured multiplier/floor.

@@ -50,6 +50,7 @@
   "PopulationScale": 24,
   "HuntEfficiency": 0.22,
   "HuntVariance": 0.35,
+  "HuntBreedingReserveFraction": 0.2,
   "FishPerPerson": 2.6,
   "WanderChance": 0.05,
   "ExperienceThreshold": 225,

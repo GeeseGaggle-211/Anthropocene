@@ -50,6 +50,10 @@ internal static class Milestone3Checks
         w = Flat(); var growingHerd = new Herd { Id = w.NextId++, Tile = 160, Animals = 149, Capacity = 150, Species = "antelope" }; w.Herds.Add(growingHerd);
         int herdPopulation = w.Herds.Sum(h => h.Animals); var herdTurn = resolver.Resolve(w, Idle());
         Check(w.Herds.Count > 1 && w.Herds.All(h => h.Animals <= h.Capacity) && w.Herds.Sum(h => h.Animals) > herdPopulation && herdTurn.Events.Any(e => e.Contains("divided")), "well-fed herds grow toward 150 and split deterministically above their limit");
+        w = Flat(); var huntingCamp = w.Camps[0]; huntingCamp.Population -= 8; var hunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = huntingCamp.Tile, Population = 8 }; w.Hunters.Add(hunters);
+        var camels = new Herd { Id = w.NextId++, Tile = w.Map.Neighbors(huntingCamp.Tile).First(), Animals = 10, Capacity = 80, Species = "camel" }; w.Herds.Add(camels);
+        int interception = TurnResolver.HerdDestination(w, camels); var sustainableHunt = resolver.Resolve(w, new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Hunt, hunters.Id, camels.Id, interception) } });
+        Check(sustainableHunt.Transfers.Where(t => t.Kind == "Hunting").Sum(t => t.Food) == 192 && camels.Animals == 4 && sustainableHunt.Events.Any(e => e.Contains("breeding animals")), "herds reproduce before harvest and an opening camel hunt retains breeding stock");
         w = Flat(30, .3f); w.Camps[0].Food = 48;
         for (int i = 0; i < 4; i++) resolver.Resolve(w, Idle()); int settled = w.Camps[0].Population;
         var plateau = resolver.Resolve(w, Idle()).Demographics[0];

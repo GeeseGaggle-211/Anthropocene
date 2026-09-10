@@ -4,12 +4,12 @@ Windows x64, Unity 6000.5.10f1, Unity-bundled .NET 8.0.318. Timings are local de
 
 ## Automated checks
 
-- 137 focused headless assertions passed: 31 original rules, 59 second-milestone rules and 47 third-milestone checks.
-- New checks cover annualized exponential growth, increasing food demand, a food-supported plateau, deficit decline, reserve-only non-growth, demographic rounding/explanations, twenty-year and shortened clocks, finite seasonal replenishment, passive marine food without freshwater credit, shared coastal/land labor, peak movement/AI/placement, stack occupants, hover timing/reset/fade and hidden-information isolation.
+- 138 focused headless assertions passed: 31 original rules, 59 second-milestone rules and 48 third-milestone checks.
+- New checks cover annualized exponential growth, increasing food demand, a food-supported plateau, deficit decline, reserve-only non-growth, demographic rounding/explanations, twenty-year and shortened clocks, finite seasonal replenishment, reproduction-before-harvest with retained breeding stock, passive marine food without freshwater credit, shared coastal/land labor, peak movement/AI/placement, stack occupants, hover timing/reset/fade and hidden-information isolation.
 - Herd-count boundary checks cover 1, 9, 10, 14, 15, 25, 99, 100, 101, 199, 200 and 249. Own livestock remains exact; foreign livestock and wild herds remain approximate. Counts in the same bucket produce identical player details and AI size categories. Save/load and authoritative replay preserve the result.
 - All 14 Unity EditMode tests passed. Added visual tests verify exact contour counts, nonoverlapping stack hit slots, hover layout, planning paths and connected/uncertain/disconnected supply previews.
 - 30 seeded four-tribe games completed with zero illegal AI orders and zero replay mismatches, including reversed entity and submitted-order collections. All population and food-report conservation checks passed.
-- The single-pass generational model recorded 12,583 additions and 656 starvation deaths; all 120 tribes survived. First technologies among completed openings were 53 Cultivation and 67 Watercraft/Fisheries. Animal Husbandry still did not emerge first, so hunting balance remains a known tuning issue.
+- The reproduction-before-harvest generational model recorded 12,157 additions and 913 starvation deaths; all 120 tribes survived. First technologies among completed openings were 1 Animal Husbandry, 50 Cultivation and 69 Watercraft/Fisheries. Animal Husbandry remains rare, so hunting balance remains a known tuning issue.
 
 The September 10 generational checks additionally cover one-generation starting reserves, one-to-four-generation climate storage, disconnected subsistence foraging with barren-site starvation retained, species herd thresholds/splitting and Standard-only support for 80 tribes.
 
@@ -25,9 +25,9 @@ The `ui/civ5-inspired` presentation experiment adds two EditMode checks for the 
 
 ## Generational resolver and scale validation — September 10, 2026
 
-- Standard seed 1729 generated all 524,288 tiles and 80 separated viable starts in 6.67–6.96 seconds.
-- The complete twelve-turn 80-tribe opening resolved in 1.74–1.85 seconds headlessly, using about 204–215 MB managed memory.
-- Its 33.8 MB save completed in 1.08–1.15 seconds and loaded in 0.82–1.01 seconds.
+- Standard seed 1729 generated all 524,288 tiles and 80 separated viable starts in 6.63 seconds.
+- The complete twelve-turn 80-tribe opening resolved in 3.86 seconds headlessly, using about 327 MB managed memory after reproduction-before-harvest.
+- Its 36.3 MB save completed in 1.32 seconds and loaded in 1.09 seconds.
 - The eight-seed Standard audit retained all elevation, coast/freshwater, oasis, river, start and save/load invariants with 80 camps in every world.
 - The Windows player visibly showed one full starting generation, climate storage, 24 → 34 first-generation growth, a green connected tether, and a red four-tile disconnected preview with a matching sidebar warning. A disconnected group remained present and reported its local-forage/provision state after resolution.
 

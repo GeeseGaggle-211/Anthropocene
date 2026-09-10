@@ -29,7 +29,7 @@ namespace Anthropocene.Simulation
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
         public double GatherFraction = .22, GatherPerPerson = 1.8, PopulationScale = 24;
-        public double HuntEfficiency = .22, HuntVariance = .35, FishPerPerson = 2.6;
+        public double HuntEfficiency = .22, HuntVariance = .35, HuntBreedingReserveFraction = .2, FishPerPerson = 2.6;
         public double WanderChance = .05;
         public double ExperienceThreshold = 225, HarvestExperienceWeight = .08, CarryoverMultiplier = 1.25, CarryoverFloor = 100;
         public double CultivationMultiplier = 1.4, CultivationMoisture = .25, RelocationInertia = .18;
@@ -66,7 +66,7 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
             if (StartingPopulation <= MinimumCamp || MinimumCamp < 1 || Consumption <= 0 || PopulationScale <= 0)
                 throw new ArgumentException("Invalid population configuration.");
-            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || HerdsPerLandTile < 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
+            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || HuntBreedingReserveFraction <= 0 || HuntBreedingReserveFraction >= 1 || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || HerdsPerLandTile < 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
                 throw new ArgumentException("Invalid logistics, demographic or ecological configuration.");
             if (ElevationQuantiles == null || ElevationQuantiles.Length != 9 || ElevationQuantiles[0] <= 0 || ElevationQuantiles[8] >= 1 || !ElevationQuantiles.SequenceEqual(ElevationQuantiles.OrderBy(x => x).Distinct())) throw new ArgumentException("Elevation requires nine increasing quantile boundaries.");
             if (HerdSmallCountThreshold < 1 || HerdCountRounding < 1 || HerdBroadCountSize < HerdSmallCountThreshold) throw new ArgumentException("Invalid observable herd count thresholds.");
