@@ -41,6 +41,37 @@ internal static class Program
         return counts.OrderByDescending(item => item.Count).ThenBy(item => item.Name, StringComparer.Ordinal).First().Name;
     }
     private static int Percentile(IReadOnlyList<int> sorted, double fraction) => sorted.Count == 0 ? 0 : sorted[(int)Math.Round((sorted.Count - 1) * fraction)];
+    private static void RunNomadStandardAudit(int games)
+    {
+        int totalNomads = 0, totalTribes = 0;
+        for (int seed = 1; seed <= games; seed++)
+        {
+            var config = new SimulationConfig { Players = 32 };
+            var world = new WorldGenerator().Generate(seed, config);
+            var resolver = new TurnResolver(); var policy = new HeuristicTribePolicy(); var builder = new AgentObservationBuilder();
+            int illegal = 0;
+            while (!world.Finished && world.Turn <= 12)
+            {
+                var orders = new Dictionary<int, List<Order>>();
+                foreach (var camp in world.Camps)
+                {
+                    var decision = policy.Decide(builder.Build(world, camp.Player), camp.Mandate);
+                    orders[camp.Player] = decision.Orders;
+                    illegal += decision.Orders.Count(order => resolver.Validate(world, camp.Player, order) != null);
+                }
+                resolver.Resolve(world, orders);
+            }
+            int nomads = world.Camps.Count(camp => camp.Technology == Technology.AnimalHusbandry);
+            var populations = world.Camps.Select(world.LinkedPopulation).OrderBy(population => population).ToArray();
+            int survivors = populations.Count(population => population > 0);
+            totalNomads += nomads; totalTribes += world.Camps.Count;
+            Console.WriteLine("NOMAD_STANDARD seed=" + seed + " husbandry=" + nomads + "/" + world.Camps.Count + " survivors=" + survivors + "/" + world.Camps.Count + " medianPopulation=" + Percentile(populations, .5) + " maxPopulation=" + populations.LastOrDefault() + " herds=" + world.Herds.Count(herd => herd.DomesticCamp < 0));
+            Check(illegal == 0, "Standard nomad audit emitted illegal AI orders at seed " + seed);
+            Check(nomads * 5 >= world.Camps.Count, "At least 20% of tribes should reach Animal Husbandry in Standard opening seed " + seed);
+            world = null; GC.Collect();
+        }
+        Console.WriteLine("NOMAD_STANDARD_TOTAL husbandry=" + totalNomads + "/" + totalTribes);
+    }
     private static string FirstDifference(object left, object right, string path = "world")
     {
         if (ReferenceEquals(left, right)) return null;
@@ -161,7 +192,9 @@ internal static class Program
                 System.IO.File.WriteAllText("Assets/_Anthropocene/Resources/OpeningConfig.json", System.Text.Json.JsonSerializer.Serialize(new SimulationConfig(), new System.Text.Json.JsonSerializerOptions { IncludeFields = true, WriteIndented = true }));
                 return 0;
             }
-            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20; int survivors = 0, total = 0, starvation = 0, growth = 0, illegal = 0;
+            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20;
+            if (args.Contains("--nomad-standard")) { RunNomadStandardAudit(seeds); return 0; }
+            int survivors = 0, total = 0, starvation = 0, growth = 0, illegal = 0;
             var habitatPaths = new Dictionary<string, HabitatPathStats>(StringComparer.Ordinal);
             int aridRiverCorridors = 0;
             var endingPopulations = new List<int>(); int growthResponseOpportunities = 0, growthResponses = 0, dispatchResponses = 0, additionalDispatchResponses = 0, gatheringResponses = 0;

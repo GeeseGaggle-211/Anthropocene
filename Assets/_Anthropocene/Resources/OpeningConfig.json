@@ -124,6 +124,8 @@
   "MinimumOpeningHerds": 1,
   "HerdsPerLandTile": 0.008,
   "HerdRegionVariation": 0.35,
+  "GrasslandHerdDensityMultiplier": 1.35,
+  "SteppeHerdDensityMultiplier": 1.15,
   "WildHerdFissionEnabled": false,
   "StartFreshwaterMinimum": 6,
   "RainPoolRainThreshold": 0.035,

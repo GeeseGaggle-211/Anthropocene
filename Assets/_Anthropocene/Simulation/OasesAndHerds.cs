@@ -69,6 +69,7 @@ namespace Anthropocene.Simulation
     }
     internal static class WildHerdPlacement
     {
+        public static double Density(WorldState w, Tile tile) => tile.Terrain == Terrain.Grassland ? w.Config.GrasslandHerdDensityMultiplier : tile.Terrain == Terrain.Tundra ? w.Config.SteppeHerdDensityMultiplier : 1;
         public static double Weight(WorldState w, Tile tile, SpeciesDefinition species)
         {
             double forage = tile.Seasons.Average(s => s.MaxPotentialFood) / Math.Max(1, species.FoodConsumption * species.MinimumAnimals * 3);
@@ -89,7 +90,7 @@ namespace Anthropocene.Simulation
             foreach (var region in w.Tiles.Where(t => t.TraversableLand && t.Terrain != Terrain.Ice).GroupBy(t => (t.Id / w.Config.Width / size) * columns + t.Id % w.Config.Width / size).OrderBy(g => g.Key))
             {
                 double variation = 1 + (Numbers.Random(w.Seed, 130, region.Key) * 2 - 1) * w.Config.HerdRegionVariation;
-                int count = (int)Math.Round(region.Count() * w.Config.HerdsPerLandTile * variation);
+                int count = (int)Math.Round(region.Sum(tile => Density(w, tile)) * w.Config.HerdsPerLandTile * variation);
                 var candidates = region.Select(t => new { Tile = t, Suitability = w.Config.Species.Sum(s => Weight(w, t, s)) }).Where(x => x.Suitability > 0)
                     .OrderBy(x => -Math.Log(Math.Max(1e-12, Numbers.Random(w.Seed, 131, x.Tile.Id))) / x.Suitability).ThenBy(x => x.Tile.Id).Take(count);
                 foreach (var candidate in candidates) Add(w, candidate.Tile);

@@ -82,6 +82,7 @@ internal static class Milestone3Checks
         practiceCamp.Experience[(int)Domain.Gathering] = practiceConfig.ExperienceThreshold * practiceConfig.PracticeBonusFull;
         practiceCamp.Experience[(int)Domain.Fishing] = practiceConfig.ExperienceThreshold * practiceConfig.PracticeBonusFull;
         Check(PracticeEffects.GatheringImpact(practiceConfig, practiceCamp) == .5 && PracticeEffects.FishingImpact(practiceConfig, practiceCamp) == .5, "half proficiency halves gathering and fishing environmental impact");
+        var densityWorld = Flat(); Check(WildHerdPlacement.Density(densityWorld, new Tile { Terrain = Terrain.Grassland }) > WildHerdPlacement.Density(densityWorld, new Tile { Terrain = Terrain.Desert }) && WildHerdPlacement.Density(densityWorld, new Tile { Terrain = Terrain.Tundra }) > 1, "grassland and cold-steppe expanses increase regional wild-herd density");
         var noviceEcology = Flat(); var skilledEcology = SaveCodec.Load(SaveCodec.Save(noviceEcology));
         skilledEcology.Camps[0].Experience[(int)Domain.Gathering] = skilledEcology.Config.ExperienceThreshold * skilledEcology.Config.PracticeBonusFull;
         var noviceHarvest = resolver.Resolve(noviceEcology, Idle()); var skilledHarvest = resolver.Resolve(skilledEcology, Idle());
