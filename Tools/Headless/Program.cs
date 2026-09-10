@@ -119,13 +119,13 @@ internal static class Program
         w = Flat(); var bytes = SaveCodec.Save(w); var loaded = SaveCodec.Load(bytes);
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), "Save round trip");
         resolver.Resolve(w, Orders()); resolver.Resolve(loaded, Orders()); Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), "Replay from save");
-        w = Flat(); w.Config.StartingReserveGenerations = w.Config.HunterCarryGenerations = w.Config.MinimumStorageGenerations = w.Config.MaximumStorageGenerations = w.Config.HunterForagePerPerson = w.Config.HuntBreedingReserveFraction = 0;
+        w = Flat(); w.Config.StartingReserveGenerations = w.Config.HunterCarryGenerations = w.Config.MinimumStorageGenerations = w.Config.MaximumStorageGenerations = w.Config.HunterForagePerPerson = w.Config.HuntBreedingReserveFraction = w.Config.SustainableHerdGrowthRetention = 0; w.Config.SustainableHuntPopulation = 0;
         foreach (var species in w.Config.Species) species.MaximumHerdSize = 32;
         w.Herds.Add(new Herd { Id = w.NextId++, Tile = w.Camps[0].Tile + 1, Species = "antelope", Animals = 30, Capacity = 32 });
         loaded = SaveCodec.Load(SaveCodec.Save(w));
-        Check(loaded.Config.StartingReserveGenerations == 1 && loaded.Config.HunterCarryGenerations == 1 && loaded.Config.MinimumStorageGenerations == 1 && loaded.Config.MaximumStorageGenerations == 4 && loaded.Config.HunterForagePerPerson == 1 && loaded.Config.HuntBreedingReserveFraction == .2, "Legacy saves gain generational defaults");
+        Check(loaded.Config.StartingReserveGenerations == 1 && loaded.Config.HunterCarryGenerations == 1 && loaded.Config.MinimumStorageGenerations == 1 && loaded.Config.MaximumStorageGenerations == 4 && loaded.Config.HunterForagePerPerson == 1 && loaded.Config.HuntBreedingReserveFraction == .2 && loaded.Config.SustainableHuntPopulation == 16 && loaded.Config.SustainableHerdGrowthRetention == .25, "Legacy saves gain generational and sustainable-hunting defaults");
         Check(loaded.Config.GetSpecies("antelope").MaximumHerdSize == 150 && loaded.Herds[0].Capacity == 150, "Legacy saves gain species herd thresholds");
-        w = Flat(); camp = w.Camps[0];
+        w = Flat(); w.Config.SustainableHuntPopulation = 8; camp = w.Camps[0];
         hunter = new Hunter { Id = w.NextId++, Tile = camp.Tile, Population = 12, Player = 0, SourceCamp = camp.Id }; w.Hunters.Add(hunter); camp.Population -= 12;
         var prey = new Herd { Id = w.NextId++, Tile = camp.Tile + 1, Animals = 8 }; w.Herds.Add(prey);
         int fleeing = TurnResolver.HerdDestination(w, prey);
@@ -230,6 +230,7 @@ internal static class Program
             for (int seed = 1; seed <= seeds; seed++)
             {
                 var config = SimulationConfig.Small(); var w = new WorldGenerator().Generate(seed, config);
+                int startingWildHerds = w.Herds.Count(herd => herd.DomesticCamp < 0);
                 var startingHabitats = w.Camps.ToDictionary(camp => camp.Id, camp => StartingHabitat(w, camp));
                 var startingPopulations = w.Camps.ToDictionary(camp => camp.Id, camp => (double)w.LinkedPopulation(camp));
                 aridRiverCorridors += w.Tiles.Count(tile => tile.River && w.Map.Neighbors(tile.Id).Any(neighbor => w.Tiles[neighbor].Terrain == Terrain.Desert));
@@ -283,6 +284,7 @@ internal static class Program
                     }
                     Check(fingerprint == replayFingerprint, "Deterministic replay diverged at seed " + seed + " turn " + (w.Turn - 1));
                 }
+                Check(w.Herds.Count(herd => herd.DomesticCamp < 0) <= startingWildHerds, "Wild herd entities proliferated while fission was disabled at seed " + seed);
                 foreach (var camp in w.Camps)
                 {
                     total++; if (w.LinkedPopulation(camp) > 0) survivors++; technologies[(int)camp.Technology]++;
@@ -300,7 +302,7 @@ internal static class Program
             if (args.Contains("--biome-paths"))
             {
                 endingPopulations.Sort(); int atLeastOneHundred = endingPopulations.Count(population => population >= 100);
-                Console.WriteLine("PALEOLITHIC_POPULATION p25=" + Percentile(endingPopulations, .25) + " median=" + Percentile(endingPopulations, .5) + " p75=" + Percentile(endingPopulations, .75) + " atLeast100=" + atLeastOneHundred + "/" + endingPopulations.Count);
+                Console.WriteLine("PALEOLITHIC_POPULATION p25=" + Percentile(endingPopulations, .25) + " median=" + Percentile(endingPopulations, .5) + " p75=" + Percentile(endingPopulations, .75) + " max=" + endingPopulations.LastOrDefault() + " atLeast100=" + atLeastOneHundred + "/" + endingPopulations.Count);
                 Console.WriteLine("GROWTH_RESPONSE opportunities=" + growthResponseOpportunities + " satisfied=" + growthResponses + " dispatches=" + dispatchResponses + " additionalDispatches=" + additionalDispatchResponses + " increasedGathering=" + gatheringResponses);
                 Console.WriteLine("HUNT_PURSUIT attempts=" + huntPursuits + " successful=" + successfulHuntPursuits + " rate=" + (100.0 * successfulHuntPursuits / Math.Max(1, huntPursuits)).ToString("F1") + "%");
                 foreach (var item in habitatPaths.OrderBy(item => item.Key, StringComparer.Ordinal))
@@ -309,7 +311,7 @@ internal static class Program
                     Console.WriteLine("PALEOLITHIC_PATH habitat=" + item.Key.Replace(' ', '_') + " tribes=" + path.Tribes + " survivors=" + path.Survivors + " meanPopulation=" + (path.EndingPopulation / Math.Max(1, path.Tribes)).ToString("F1") + " growthRatio=" + (path.EndingPopulation / Math.Max(1, path.StartingPopulation)).ToString("F2") + " huntFoodPerTribe=" + (path.HuntFood / Math.Max(1, path.Tribes)).ToString("F1") + " gatheredFoodPerTribe=" + (path.GatherFood / Math.Max(1, path.Tribes)).ToString("F1") + " husbandry=" + path.Husbandry);
                 }
                 Console.WriteLine("ARID_RIVER_CORRIDORS riverTilesAdjacentToDesert=" + aridRiverCorridors + " acrossSeeds=" + seeds);
-                if (seeds >= 30) Check(Percentile(endingPopulations, .25) >= 100 && atLeastOneHundred * 4 >= endingPopulations.Count * 3, "At least three quarters of tribes should approach a population of one hundred by the end of the Paleolithic opening");
+                if (seeds >= 30) Check(Percentile(endingPopulations, .5) >= 85 && Percentile(endingPopulations, .75) >= 100 && atLeastOneHundred * 5 >= endingPopulations.Count * 2 && endingPopulations.Last() < 250, "Typical tribes should approach one hundred people without explosive Paleolithic populations");
                 if (growthResponseOpportunities > 0) Check(growthResponses >= growthResponseOpportunities * .75, "Most observed population increases should be answered by more gathering or hunter dispatch");
             }
             Check(illegal == 0, "AI emitted illegal orders");

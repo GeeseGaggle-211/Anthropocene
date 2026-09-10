@@ -91,12 +91,15 @@ namespace Anthropocene.Simulation
         private static void MigrateGenerationalDefaults(WorldState world)
         {
             var config = world.Config;
+            foreach (var camp in world.Camps.Where(c => c.DemographicGrowthMultiplier <= 0)) camp.DemographicGrowthMultiplier = 1;
             bool legacyGenerationalConfig = config.StartingReserveGenerations <= 0 && config.HunterCarryGenerations <= 0 && config.MinimumStorageGenerations <= 0 && config.MaximumStorageGenerations <= 0;
             if (config.StartingReserveGenerations <= 0) config.StartingReserveGenerations = 1;
             if (config.HunterCarryGenerations <= 0) config.HunterCarryGenerations = 1;
             if (config.MinimumStorageGenerations <= 0) config.MinimumStorageGenerations = 1;
             if (config.MaximumStorageGenerations < config.MinimumStorageGenerations) config.MaximumStorageGenerations = 4;
             if (config.HuntBreedingReserveFraction <= 0) config.HuntBreedingReserveFraction = .2;
+            if (config.SustainableHuntPopulation <= 0) config.SustainableHuntPopulation = 16;
+            if (config.SustainableHerdGrowthRetention <= 0) config.SustainableHerdGrowthRetention = .25;
             if (legacyGenerationalConfig)
             {
                 config.HunterForagePerPerson = 1;

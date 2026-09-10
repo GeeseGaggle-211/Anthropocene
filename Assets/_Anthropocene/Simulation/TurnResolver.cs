@@ -195,7 +195,7 @@ namespace Anthropocene.Simulation
                 if (herd.Tile != target) record.Log("Herd " + herd.Id + " moved to " + target + "."); herd.Tile = target;
             }
         }
-        private static void Hunt(WorldState w, List<Order> orders, HashSet<int> establishedHunters, TurnRecord record, double time)
+        private static void Hunt(WorldState w, List<Order> orders, HashSet<int> establishedHunters, IReadOnlyDictionary<int, int> startingHerdPopulation, TurnRecord record, double time)
         {
             double practiceTime = time * w.Config.BaseDays / w.Config.PracticeDays;
             var requests = new List<Tuple<Hunter, Herd, int>>();
@@ -220,7 +220,15 @@ namespace Anthropocene.Simulation
                 var sorted = group.OrderBy(r => r.Item1.Id).ToArray(); var herd = sorted[0].Item2;
                 var species = w.Config.GetSpecies(herd.Species);
                 int breedingReserve = Math.Min(herd.Animals, Math.Max(species.MinimumAnimals, (int)Math.Ceiling(herd.Animals * w.Config.HuntBreedingReserveFraction)));
-                int total = sorted.Sum(r => r.Item3), available = Math.Min(total, Math.Max(0, herd.Animals - breedingReserve));
+                int huntingPopulation = sorted.Sum(r => r.Item1.Population);
+                int protectedPopulation = breedingReserve;
+                if (huntingPopulation <= w.Config.SustainableHuntPopulation && startingHerdPopulation.TryGetValue(herd.Id, out int startingAnimals))
+                {
+                    int naturalCeiling = Math.Min(herd.Capacity, herd.Animals);
+                    int retainedGrowth = (int)Math.Ceiling(Math.Max(0, naturalCeiling - startingAnimals) * w.Config.SustainableHerdGrowthRetention);
+                    protectedPopulation = Math.Max(protectedPopulation, Math.Min(herd.Capacity, startingAnimals + retainedGrowth));
+                }
+                int total = sorted.Sum(r => r.Item3), available = Math.Min(total, Math.Max(0, herd.Animals - protectedPopulation));
                 int[] kills = sorted.Select(r => total == 0 ? 0 : (int)((long)available * r.Item3 / total)).ToArray();
                 int remainder = available - kills.Sum();
                 foreach (int i in Enumerable.Range(0, sorted.Length).OrderByDescending(i => total == 0 ? 0 : (long)available * sorted[i].Item3 % total).ThenBy(i => sorted[i].Item1.Id))
@@ -234,6 +242,7 @@ namespace Anthropocene.Simulation
                 }
                 herd.Animals -= available;
                 if (available < total) record.Log("Herd " + herd.Id + " retained " + herd.Animals + " breeding animals after the generation's harvest.");
+                if (huntingPopulation <= w.Config.SustainableHuntPopulation && herd.Animals > startingHerdPopulation[herd.Id]) record.Log("Limited hunting pressure allowed herd " + herd.Id + " to keep growing.");
             }
             w.Herds.RemoveAll(h => h.Animals <= 0);
         }
@@ -284,7 +293,7 @@ namespace Anthropocene.Simulation
             var ids = w.Camps.Select(c => c.Id).Concat(w.Hunters.Select(h => h.Id)).Concat(w.Herds.Select(h => h.Id)).ToArray();
             if (ids.Distinct().Count() != ids.Length || ids.Any(i => i >= w.NextId)) throw new InvalidOperationException("Invalid stable IDs.");
             if (expectedPeople >= 0 && w.Camps.Sum(w.LinkedPopulation) != expectedPeople) throw new InvalidOperationException("Unexplained population change.");
-            if (w.Camps.Any(c => c.Population < 0 || c.Food < -1e-8 || !w.CanEnter(c.Tile, false)) || w.Hunters.Any(h => h.Population < 0 || !w.CanEnter(h.Tile, true, w.Camps.First(c => c.Id == h.SourceCamp))))
+            if (w.Camps.Any(c => c.Population < 0 || c.Food < -1e-8 || c.DemographicGrowthMultiplier <= 0 || double.IsNaN(c.DemographicGrowthMultiplier) || !w.CanEnter(c.Tile, false)) || w.Hunters.Any(h => h.Population < 0 || !w.CanEnter(h.Tile, true, w.Camps.First(c => c.Id == h.SourceCamp))))
                 throw new InvalidOperationException("Invalid people state or location.");
             if (w.Hunters.Any(h => h.CarriedFood < -1e-8 || h.CarriedFood > Supply.Capacity(w, h) + 1e-8) || w.Camps.Any(c => c.GrowthRemainder < 0 || c.GrowthRemainder >= 1)) throw new InvalidOperationException("Invalid carried provisions or demographic remainder.");
             if (w.Herds.Any(h => !w.Tiles[h.Tile].TraversableLand || h.Animals < 0)) throw new InvalidOperationException("Invalid herd population or peak/aquatic location.");

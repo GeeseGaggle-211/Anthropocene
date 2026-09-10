@@ -20,7 +20,7 @@ namespace Anthropocene.Simulation
         public int Width = 1024, Height = 512, Players = 32, PlateCount = 18;
         public WorldShape Shape = WorldShape.Continents;
         public double BaseDays = 91.25, TurnDays = 7300, MinDays = 1, MaxDays = 36500;
-        public double DaysPerYear = 365, PracticeDays = 7300, AnnualHumanGrowthRate = .035, GrowthSurplusRatio = .25;
+        public double DaysPerYear = 365, PracticeDays = 7300, AnnualHumanGrowthRate = .011, GrowthSurplusRatio = .25;
         public double HoverDelay = 2, HoverFadeIn = .2, HoverFadeOut = .15, HoverMotionPixels = 5;
         public double[] ElevationQuantiles = { .12, .25, .40, .55, .69, .81, .90, .96, .99 };
         public int HerdSmallCountThreshold = 10, HerdCountRounding = 10, HerdBroadCountSize = 100;
@@ -30,7 +30,8 @@ namespace Anthropocene.Simulation
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
         public double GatherFraction = .22, GatherPerPerson = 1.8, PopulationScale = 24;
         public double RichGatherableFraction = .25, GrasslandGatherableFraction = .10, AridGatherableFraction = .05, TundraGatherableFraction = .08, GatherableRecoveryBias = 1;
-        public double HuntEfficiency = .22, HuntVariance = .35, HuntBreedingReserveFraction = .2, FishPerPerson = 2.6;
+        public double HuntEfficiency = .22, HuntVariance = .35, HuntBreedingReserveFraction = .2, SustainableHerdGrowthRetention = .25, FishPerPerson = 2.6;
+        public int SustainableHuntPopulation = 16;
         public double WanderChance = .05;
         public double ExperienceThreshold = 225, UnproductivePracticeFraction = .1, CarryoverMultiplier = 1.25, CarryoverFloor = 100;
         public double CultivationMultiplier = 1.4, CultivationMoisture = .25, RelocationInertia = .18;
@@ -51,6 +52,7 @@ namespace Anthropocene.Simulation
         public double HillsProductivity = .95, HighlandProductivity = .8, MountainProductivity = .5;
         public int HerdRegionSize = 32;
         public double HerdsPerLandTile = .008, HerdRegionVariation = .35;
+        public bool WildHerdFissionEnabled;
         public double StartFreshwaterMinimum = 6, RainPoolRainThreshold = .035, RainPoolDrainageMinimum = 1;
         public int OasisRegionSize = 32, OasisSpacing = 7, OasisSurfaceWaterSeparation = 3, OasisMinimumRegionArea = 100;
         public double OasisDensity = .003, OasisViabilityThreshold = .18, OasisFreshwater = 70, OasisFood = 38, OasisFoodRegeneration = .3, OasisWaterRecovery = .14, OasisNeighborFalloff = .3;
@@ -67,11 +69,11 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
             if (StartingPopulation <= MinimumCamp || MinimumCamp < 1 || Consumption <= 0 || PopulationScale <= 0)
                 throw new ArgumentException("Invalid population configuration.");
-            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || HuntBreedingReserveFraction <= 0 || HuntBreedingReserveFraction >= 1 || UnproductivePracticeFraction < 0 || UnproductivePracticeFraction > 1 || RichGatherableFraction <= 0 || RichGatherableFraction > 1 || GrasslandGatherableFraction <= 0 || GrasslandGatherableFraction > RichGatherableFraction || AridGatherableFraction <= 0 || AridGatherableFraction > GrasslandGatherableFraction || TundraGatherableFraction <= 0 || TundraGatherableFraction > RichGatherableFraction || GatherableRecoveryBias < 0 || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || HerdsPerLandTile < 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
+            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || HuntBreedingReserveFraction <= 0 || HuntBreedingReserveFraction >= 1 || SustainableHuntPopulation < 1 || SustainableHerdGrowthRetention <= 0 || SustainableHerdGrowthRetention > 1 || UnproductivePracticeFraction < 0 || UnproductivePracticeFraction > 1 || RichGatherableFraction <= 0 || RichGatherableFraction > 1 || GrasslandGatherableFraction <= 0 || GrasslandGatherableFraction > RichGatherableFraction || AridGatherableFraction <= 0 || AridGatherableFraction > GrasslandGatherableFraction || TundraGatherableFraction <= 0 || TundraGatherableFraction > RichGatherableFraction || GatherableRecoveryBias < 0 || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || HerdsPerLandTile < 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
                 throw new ArgumentException("Invalid logistics, demographic or ecological configuration.");
             if (ElevationQuantiles == null || ElevationQuantiles.Length != 9 || ElevationQuantiles[0] <= 0 || ElevationQuantiles[8] >= 1 || !ElevationQuantiles.SequenceEqual(ElevationQuantiles.OrderBy(x => x).Distinct())) throw new ArgumentException("Elevation requires nine increasing quantile boundaries.");
             if (HerdSmallCountThreshold < 1 || HerdCountRounding < 1 || HerdBroadCountSize < HerdSmallCountThreshold) throw new ArgumentException("Invalid observable herd count thresholds.");
-            if (Species == null || Species.Count == 0 || Species.Select(s => s.Id).Distinct().Count() != Species.Count || Species.Any(s => string.IsNullOrWhiteSpace(s.Id) || s.FoodConsumption < 0 || s.FreshwaterConsumption <= 0 || s.FoodYield <= 0 || s.MaximumHerdSize < s.MaximumAnimals))
+            if (Species == null || Species.Count == 0 || Species.Select(s => s.Id).Distinct().Count() != Species.Count || Species.Any(s => string.IsNullOrWhiteSpace(s.Id) || s.FoodConsumption < 0 || s.FreshwaterConsumption <= 0 || s.GrowthRate < 0 || s.FoodYield <= 0 || s.MaximumHerdSize < s.MaximumAnimals))
                 throw new ArgumentException("Species definitions must have unique stable IDs and valid ecological rates.");
         }
         public static int MaximumPlayersFor(int width, int height)
@@ -115,7 +117,7 @@ namespace Anthropocene.Simulation
     public sealed class Camp
     {
         public int Id, Player, Tile, Population, DeficitTurns;
-        public double Food, DeficitSeverity, FoodDeficit, LastConsumed;
+        public double Food, DeficitSeverity, FoodDeficit, LastConsumed, DemographicGrowthMultiplier = 1;
         public double[] Experience = new double[3];
         public List<SpeciesPractice> SpeciesExperience = new List<SpeciesPractice>();
         public double GrowthRemainder, DeathRemainder, StepFoodIncome;

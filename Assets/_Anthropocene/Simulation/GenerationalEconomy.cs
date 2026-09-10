@@ -61,8 +61,11 @@ namespace Anthropocene.Simulation
             }
 
             // Movement happens once. Herd reproduction is realized before the generation's hunting harvest.
+            var startingHerdPopulation = w.Herds.OrderBy(h => h.Id).ToDictionary(h => h.Id, h => h.Animals);
             ReproduceHerds(w, intervals, years);
-            Hunt(w, orders, establishedHunters, record, intervals);
+            Hunt(w, orders, establishedHunters, startingHerdPopulation, record, intervals);
+            foreach (var herd in w.Herds.Where(h => h.DomesticCamp >= 0 || !w.Config.WildHerdFissionEnabled))
+                herd.Animals = Math.Min(herd.Animals, herd.Capacity);
             var demands = new List<Demand>();
             foreach (var order in orders.Where(o => o.Kind == OrderKind.Fish).OrderBy(o => o.Entity))
             {
@@ -114,7 +117,7 @@ namespace Anthropocene.Simulation
             SustainGeneration(w, record, intervals, generationScale, plans, foraged, recovering);
             Supply.Finish(w, record);
             ApplyStorage(w, record, intervals);
-            SplitHerds(w, record);
+            if (w.Config.WildHerdFissionEnabled) SplitHerds(w, record);
 
             w.Days += record.Duration;
             AdvanceEcology(w, resources, weights);
@@ -173,7 +176,8 @@ namespace Anthropocene.Simulation
             double baseRequired = populationBase;
             double surplus = Numbers.Clamp((camp.StepFoodIncome - baseRequired) / Math.Max(1e-9, baseRequired * w.Config.GrowthSurplusRatio), 0, 1);
             double reserves = Numbers.Clamp(camp.Food / Math.Max(1, baseRequired * w.Config.GrowthReserveTurns), 0, 1);
-            double rate = w.Config.AnnualHumanGrowthRate * Math.Min(surplus, reserves);
+            // Later-era systems can change this persisted multiplier while retaining the same food-limited model.
+            double rate = w.Config.AnnualHumanGrowthRate * camp.DemographicGrowthMultiplier * Math.Min(surplus, reserves);
             double growthBudget = Math.Min(camp.Food, camp.StepFoodIncome);
             for (int iteration = 0; iteration < 12 && rate > 0; iteration++)
             {
@@ -271,7 +275,8 @@ namespace Anthropocene.Simulation
             {
                 var species = w.Config.GetSpecies(herd.Species); double demand = herd.Animals * intervals;
                 double intake = Math.Min(1 - herd.UnmetFood / Math.Max(1e-9, demand * species.FoodConsumption), 1 - herd.UnmetFreshwater / Math.Max(1e-9, demand * species.FreshwaterConsumption));
-                double target = herd.Animals * Math.Exp(species.GrowthRate * years * Math.Max(0, intake)) + herd.GrowthRemainder;
+                double unrestricted = (herd.Animals + herd.GrowthRemainder) * Math.Exp(species.GrowthRate * years * Math.Max(0, intake));
+                double target = unrestricted;
                 int grown = Math.Max(0, (int)Math.Floor(target) - herd.Animals); herd.GrowthRemainder = target - Math.Floor(target); herd.Animals += grown;
             }
         }

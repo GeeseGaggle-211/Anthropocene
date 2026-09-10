@@ -74,7 +74,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 4;
+        public const int SchemaVersion = 5;
         public readonly int Player, CampId, CampTile, CampPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly bool Watercraft;
         public readonly IReadOnlyDictionary<int, TileObservation> Tiles;
@@ -83,7 +83,7 @@ namespace Anthropocene.Simulation
         public readonly IReadOnlyList<HerdObservation> Herds;
         public readonly IReadOnlyList<double> Experience;
         public readonly HexMap Map;
-        public readonly int MinimumCamp, HunterMovement, CampMovement, SupplyRange;
+        public readonly int MinimumCamp, HunterMovement, CampMovement, SupplyRange, SustainableHuntPopulation;
         public readonly double Inertia;
         internal AgentObservation(WorldState w, Camp camp)
         {
@@ -93,7 +93,7 @@ namespace Anthropocene.Simulation
             DeficitTurns = camp.DeficitTurns; Turn = w.Turn; PolicySeed = (int)Numbers.Hash(w.Seed, 90, camp.Player);
             Watercraft = camp.Technologies[(int)Technology.Watercraft]; Map = w.Map;
             MinimumCamp = w.Config.MinimumCamp; HunterMovement = w.Config.HunterMovement; CampMovement = w.Config.CampMovement; Inertia = w.Config.RelocationInertia;
-            SupplyRange = w.Config.SupplyRange;
+            SupplyRange = w.Config.SupplyRange; SustainableHuntPopulation = w.Config.SustainableHuntPopulation;
             Tiles = new ReadOnlyDictionary<int, TileObservation>(visible.OrderBy(n => n).ToDictionary(n => n, n => new TileObservation(w.Tiles[n], w.Ecology(n), w.Config, w.Rivers)));
             Hunters = Array.AsReadOnly(w.Hunters.Where(h => h.Player == Player).OrderBy(h => h.Id).Select(h => new UnitObservation(h.Id, h.Tile, h.Population, h.Player, Supply.Connected(w, h), Knowledge.Band(h.CarriedFood, Supply.Capacity(w, h), w.Config), h.DeficitTurns)).ToArray());
             Rivals = Array.AsReadOnly(w.Camps.Where(c => c.Player != Player && visible.Contains(c.Tile)).OrderBy(c => c.Id).Select(c => new UnitObservation(c.Id, c.Tile, 0, c.Player)).ToArray());
@@ -179,6 +179,7 @@ namespace Anthropocene.Simulation
             { campChoice = new Order(OrderKind.Dispatch, o.CampId, population: allocation); result.Trace.Candidates.Add(new CandidateTrace { Plan = campChoice.ToString(), Components = "Growing population and visible subsistence opportunity; hunter share expands while preserving the camp reserve", Score = 1, Selected = true }); }
             result.Orders.Add(campChoice);
             var observedHunters = o.Hunters.Concat(o.ForeignHunters).ToArray();
+            int preferredHerd = o.Herds.Where(h => !h.Domestic).OrderByDescending(h => h.Size).ThenBy(h => o.Map.Distance(o.CampTile, h.Tile)).ThenBy(h => h.Id).Select(h => h.Id).DefaultIfEmpty(-1).First();
             foreach (var hunter in o.Hunters)
             {
                 double logisticsUrgency = !hunter.InSupply ? hunter.Provisions <= 1 || hunter.DeficitTurns > 0 ? 4 : hunter.Provisions >= 3 ? 2.5 : .8 : 0;
@@ -195,7 +196,8 @@ namespace Anthropocene.Simulation
                         double likely = threatened ? (observedHunters.Min(h => o.Map.Distance(h.Tile, target)) == maximumEscape ? .45 : 0) : (target == herd.Tile ? .55 : .05);
                         likely += o.Tiles[target].Freshwater * .035 + o.Tiles[target].PotentialFood * .025;
                         var pursuit = target == hunter.Tile ? new Order(OrderKind.NoOp, hunter.Id) : new Order(OrderKind.Move, hunter.Id, destination: target);
-                        candidates.Add(new Candidate { Order = pursuit, Score = (2.3 + herd.Size * .35 + likely) * m.Hunting + Practice(o, Domain.Hunting, m) - o.Map.Distance(hunter.Tile, target) * .15 - need * (1 - m.Risk) * .25, Components = "HuntOpportunity + MigrationCoverage + SpecializationContinuity - TravelCost - PopulationRisk" });
+                        double concentration = assignedHunters > o.SustainableHuntPopulation && herd.Id == preferredHerd ? 2.5 : 0;
+                        candidates.Add(new Candidate { Order = pursuit, Score = (2.3 + herd.Size * .35 + likely + concentration) * m.Hunting + Practice(o, Domain.Hunting, m) - o.Map.Distance(hunter.Tile, target) * .15 - need * (1 - m.Risk) * .25, Components = "HuntOpportunity + MigrationCoverage + GroupConcentration + SpecializationContinuity - TravelCost - PopulationRisk" });
                     }
                 }
                 foreach (int shore in o.Map.Radius(hunter.Tile, o.HunterMovement).OrderBy(n => n))
