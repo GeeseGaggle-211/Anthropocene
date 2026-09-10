@@ -49,7 +49,7 @@ internal static class Milestone3Checks
         Check(rejectedSmall && SimulationConfig.MaximumPlayersFor(1024, 512) == 80, "tribe limits allow eighty only on worlds large enough to place them");
         w = Flat(); var provisionedHunter = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, Tile = w.Camps[0].Tile, Population = 8 }; w.Hunters.Add(provisionedHunter);
         var provisionRecord = new TurnRecord(); Supply.ProvisionDepartures(w, new List<Order> { new Order(OrderKind.Move, provisionedHunter.Id, destination: provisionedHunter.Tile + 2) }, provisionRecord);
-        Check(Math.Abs(provisionedHunter.CarriedFood - 8 * w.Config.Consumption * w.Config.GenerationIntervals) < 1e-8, "a departing hunter group can carry one complete generation of provisions");
+        Check(Math.Abs(provisionedHunter.CarriedFood - 8 * w.Config.Consumption * w.Config.GenerationIntervals * w.Config.HunterCarryGenerations) < 1e-8, "a departing hunter group can use its configured generational carrying capacity");
         w = Flat(); foreach (var tile in w.Tiles) for (int season = 0; season < 4; season++) { var ecology = tile.Seasons[season]; ecology.Temperature = 30; ecology.Moisture = 1; tile.Seasons[season] = ecology; }
         double warmStorage = TurnResolver.StorageGenerations(w, w.Camps[0].Tile);
         foreach (var tile in w.Tiles) for (int season = 0; season < 4; season++) { var ecology = tile.Seasons[season]; ecology.Temperature = -18; ecology.Moisture = .05f; tile.Seasons[season] = ecology; }
@@ -72,14 +72,37 @@ internal static class Milestone3Checks
         w = Flat(); w.Config.GatherPerPerson = .1; var huntingCamp = w.Camps[0]; huntingCamp.Population -= 8; var hunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = huntingCamp.Tile, Population = 8 }; w.Hunters.Add(hunters);
         var camels = new Herd { Id = w.NextId++, Tile = w.Map.Neighbors(huntingCamp.Tile).First(), Animals = 14, Capacity = 100, Species = "camel" }; w.Herds.Add(camels);
         int interception = TurnResolver.HerdDestination(w, camels); var sustainableHunt = resolver.Resolve(w, new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Move, hunters.Id, destination: interception) } });
-        Check(sustainableHunt.Transfers.Where(t => t.Kind == "Hunting").Sum(t => t.Food) == 480 && w.Config.GetSpecies("camel").FoodYield * 16 == 24 * w.Config.Consumption * w.Config.GenerationIntervals && camels.Animals == 16 && sustainableHunt.Events.Any(e => e.Contains("keep growing")), "one eight-person group takes only sustainable growth while sixteen camels still represent enough meat to feed 24 people for a generation");
-        Check(Math.Abs(huntingCamp.Experience.Sum() - 24) < 1e-8 && huntingCamp.Experience[(int)Domain.Hunting] > huntingCamp.Experience[(int)Domain.Gathering], "a fixed person-generation progress budget follows actual calorie shares and a hunt-dominant diet favors husbandry");
+        Check(sustainableHunt.Transfers.Where(t => t.Kind == "Hunting").Sum(t => t.Food) == 480 * w.Config.HuntingFoodYieldScale && w.Config.GetSpecies("camel").FoodYield * 16 == 24 * w.Config.Consumption * w.Config.GenerationIntervals && camels.Animals == 16 && sustainableHunt.Events.Any(e => e.Contains("keep growing")), "one eight-person group takes only sustainable growth; usable recovery scales without changing the baseline carcass balance or animal losses");
+        Check(huntingCamp.Experience.Sum() > 24 && huntingCamp.Experience[(int)Domain.Hunting] > huntingCamp.Experience[(int)Domain.Gathering], "food-weighted hunting practice receives its configured learning intensity without reducing other domain progress");
+        var practiceCamp = new Camp(); var practiceConfig = new SimulationConfig();
+        practiceCamp.Experience[(int)Domain.Hunting] = practiceConfig.ExperienceThreshold * practiceConfig.PracticeBonusStart;
+        Check(PracticeEffects.Ramp(practiceConfig, practiceCamp, Domain.Hunting) == 0, "practice bonuses do not begin before the configured quarter-proficiency threshold");
+        practiceCamp.Experience[(int)Domain.Hunting] = practiceConfig.ExperienceThreshold * practiceConfig.PracticeBonusFull;
+        Check(Math.Abs(PracticeEffects.HuntingYield(practiceConfig, practiceCamp) - practiceConfig.HuntingFoodYieldScale * 1.5) < 1e-8, "half proficiency grants the full fifty-percent hunting fieldcraft yield bonus");
+        practiceCamp.Experience[(int)Domain.Gathering] = practiceConfig.ExperienceThreshold * practiceConfig.PracticeBonusFull;
+        practiceCamp.Experience[(int)Domain.Fishing] = practiceConfig.ExperienceThreshold * practiceConfig.PracticeBonusFull;
+        Check(PracticeEffects.GatheringImpact(practiceConfig, practiceCamp) == .5 && PracticeEffects.FishingImpact(practiceConfig, practiceCamp) == .5, "half proficiency halves gathering and fishing environmental impact");
+        var noviceEcology = Flat(); var skilledEcology = SaveCodec.Load(SaveCodec.Save(noviceEcology));
+        skilledEcology.Camps[0].Experience[(int)Domain.Gathering] = skilledEcology.Config.ExperienceThreshold * skilledEcology.Config.PracticeBonusFull;
+        var noviceHarvest = resolver.Resolve(noviceEcology, Idle()); var skilledHarvest = resolver.Resolve(skilledEcology, Idle());
+        int worked = noviceEcology.Camps[0].Tile;
+        Check(Math.Abs(noviceHarvest.Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food) - skilledHarvest.Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food)) < 1e-8 && skilledEcology.Tiles[worked].LandCondition > noviceEcology.Tiles[worked].LandCondition, "gathering proficiency preserves more land condition for the same food");
+        var passiveFishing = Flat(); foreach (int tile in passiveFishing.Map.Radius(passiveFishing.Camps[0].Tile, 1)) { passiveFishing.Tiles[tile].Food = 0; passiveFishing.Tiles[tile].PotentialFood = 0; for (int season = 0; season < 4; season++) { var ecology = passiveFishing.Tiles[tile].Seasons[season]; ecology.FoodRate = 0; ecology.PotentialFoodRate = 0; passiveFishing.Tiles[tile].Seasons[season] = ecology; } }
+        int passiveCoast = passiveFishing.Map.Neighbors(passiveFishing.Camps[0].Tile).First(); Sea(passiveFishing.Tiles[passiveCoast]);
+        var skilledFishingImpact = SaveCodec.Load(SaveCodec.Save(passiveFishing)); skilledFishingImpact.Camps[0].Experience[(int)Domain.Fishing] = skilledFishingImpact.Config.ExperienceThreshold * skilledFishingImpact.Config.PracticeBonusFull;
+        var noviceFishingHarvest = resolver.Resolve(passiveFishing, Idle()); var skilledFishingHarvest = resolver.Resolve(skilledFishingImpact, Idle());
+        Check(passiveFishing.Camps[0].Experience[(int)Domain.Gathering] > 0 && Math.Abs(passiveFishing.Camps[0].Experience[(int)Domain.Gathering] / passiveFishing.Camps[0].Experience[(int)Domain.Fishing] - 3) < 1e-8, "passive aquatic harvest credits seventy-five percent Gathering and twenty-five percent Fishing practice");
+        Check(Math.Abs(noviceFishingHarvest.Transfers.Where(t => t.Kind == "Marine gathering").Sum(t => t.Food) - skilledFishingHarvest.Transfers.Where(t => t.Kind == "Marine gathering").Sum(t => t.Food)) < 1e-8 && skilledFishingImpact.Tiles[passiveCoast].AquaticCondition > passiveFishing.Tiles[passiveCoast].AquaticCondition, "fishing proficiency preserves more aquatic condition for the same passive coastal food");
+        var ledgerWorld = Flat(); ledgerWorld.Camps[0].Workforce.Assignments.Add(new PopulationAssignment { Role = "future.craft", Population = 5 }); ledgerWorld.Tiles[0].LandCondition = .42; ledgerWorld.Tiles[1].AquaticCondition = .37;
+        Check(ledgerWorld.Camps[0].GathererPopulation == 19 && resolver.Validate(ledgerWorld, 0, new Order(OrderKind.Dispatch, ledgerWorld.Camps[0].Id, population: 20)) != null, "the workforce ledger leaves unassigned Paleolithic residents as gatherers and prevents dispatching assigned people");
+        var ledgerCopy = SaveCodec.Load(SaveCodec.Save(ledgerWorld));
+        Check(ledgerCopy.Camps[0].GathererPopulation == 19 && ledgerCopy.Camps[0].Workforce.Assignments.Single().Role == "future.craft" && ledgerCopy.Tiles[0].LandCondition == .42 && ledgerCopy.Tiles[1].AquaticCondition == .37, "workforce assignments and persistent environmental condition survive save/load");
         foreach (int neighbor in w.Map.Neighbors(camels.Tile)) w.Tiles[neighbor].ElevationLevel = 10;
         var secondHunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = camels.Tile, Population = 8 };
         w.Hunters.Add(secondHunters); int beforeSecondHunt = camels.Animals; resolver.Resolve(w, Idle());
         Check(camels.Animals > beforeSecondHunt, "two eight-person groups over one herd still leave net herd growth");
         var thirdHunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = camels.Tile, Population = 8 };
-        w.Hunters.Add(thirdHunters); int beforeHeavyHunt = camels.Animals; resolver.Resolve(w, Idle());
+        w.Hunters.Add(thirdHunters); huntingCamp.Food = 0; int beforeHeavyHunt = camels.Animals; resolver.Resolve(w, Idle());
         Check(camels.Animals < beforeHeavyHunt, "more than two eight-person groups can exert net overhunting pressure on one herd");
         w = Flat(); w.Config.GatherPerPerson = .1; huntingCamp = w.Camps[0]; huntingCamp.Population -= 8; hunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = huntingCamp.Tile, Population = 8 }; w.Hunters.Add(hunters);
         camels = new Herd { Id = w.NextId++, Tile = huntingCamp.Tile, Animals = 100, Capacity = 100, Species = "camel" }; w.Herds.Add(camels);

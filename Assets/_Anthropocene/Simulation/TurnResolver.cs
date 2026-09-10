@@ -58,7 +58,7 @@ namespace Anthropocene.Simulation
             int tile = camp != null ? camp.Tile : hunter.Tile;
             if (order.Kind == OrderKind.NoOp) return null;
             if (order.Kind == OrderKind.Dispatch)
-                return camp == null || order.Population <= 0 || camp.Population - order.Population < w.Config.MinimumCamp ? "Dispatch must preserve the camp's minimum population." : null;
+                return camp == null || order.Population <= 0 || order.Population > camp.GathererPopulation || camp.Population - order.Population < w.Config.MinimumCamp ? "Dispatch must use available gatherers and preserve the camp's minimum population." : null;
             if (order.Kind == OrderKind.Reintegrate)
                 return hunter == null || order.Target != source.Id || hunter.Tile != source.Tile ? "Hunters must be at their source camp to reintegrate." : null;
             if (order.Kind == OrderKind.Move || order.Destination >= 0)
@@ -120,7 +120,7 @@ namespace Anthropocene.Simulation
             Move(w, locked, herdMoves, record);
             Supply.DepositReturns(w, record);
             var touched = new Dictionary<int, TileChange>();
-            Action<int> touch = id => { if (!touched.ContainsKey(id)) touched[id] = new TileChange { Tile = id, BeforeFood = w.Tiles[id].Food, BeforePotentialFood = w.Tiles[id].PotentialFood, BeforeFreshwater = w.Tiles[id].Freshwater }; };
+            Action<int> touch = id => { if (!touched.ContainsKey(id)) touched[id] = new TileChange { Tile = id, BeforeFood = w.Tiles[id].Food, BeforePotentialFood = w.Tiles[id].PotentialFood, BeforeFreshwater = w.Tiles[id].Freshwater, BeforeLandCondition = w.Tiles[id].LandCondition, BeforeAquaticCondition = w.Tiles[id].AquaticCondition }; };
             ResolveEcology(w, locked, establishedHunters, record, touch);
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Reintegrate).OrderBy(o => o.Entity))
             {
@@ -132,7 +132,7 @@ namespace Anthropocene.Simulation
             w.Hunters.RemoveAll(h => h.Population <= 0);
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) Breakthrough(w, camp, record);
             foreach (var change in touched.Values.OrderBy(t => t.Tile))
-            { change.AfterFood = w.Tiles[change.Tile].Food; change.AfterPotentialFood = w.Tiles[change.Tile].PotentialFood; change.AfterFreshwater = w.Tiles[change.Tile].Freshwater; record.Changes.Add(change); }
+            { change.AfterFood = w.Tiles[change.Tile].Food; change.AfterPotentialFood = w.Tiles[change.Tile].PotentialFood; change.AfterFreshwater = w.Tiles[change.Tile].Freshwater; change.AfterLandCondition = w.Tiles[change.Tile].LandCondition; change.AfterAquaticCondition = w.Tiles[change.Tile].AquaticCondition; record.Changes.Add(change); }
             // Untouched tiles follow the recorded configuration/clock regeneration rule; replay does not need world-sized snapshots each turn.
             Invariants(w, peopleBefore + record.Growth - record.Deaths);
             w.History.Add(record); w.Turn++;
@@ -153,9 +153,9 @@ namespace Anthropocene.Simulation
             if (candidates.Length == 0) return herd.Tile;
             if (threat)
                 return candidates.OrderByDescending(n => hunters.Min(h => map.Distance(n, h.Tile)))
-                    .ThenByDescending(n => Math.Min(1, FreshwaterAccess.Available(w, n) / Math.Max(1e-9, waterDemand)))
-                    .ThenByDescending(n => Math.Min(1, w.Tiles[n].PotentialFood / Math.Max(1e-9, foodDemand)))
-                    .ThenBy(n => Numbers.Hash(w.Seed, 70, herd.Id ^ n, w.Turn)).ThenBy(n => n).First();
+                    .ThenByDescending(n => Knowledge.Band(FreshwaterAccess.Available(w, n), 70, w.Config))
+                    .ThenByDescending(n => Knowledge.Band(w.Tiles[n].PotentialFood, Math.Max(1, w.Ecology(n).MaxPotentialFood), w.Config))
+                    .ThenBy(n => n).First();
             if (!thirsty && !hungry && Numbers.Random(w.Seed, 71, herd.Id, w.Turn) >= w.Config.WanderChance) return herd.Tile;
             return candidates.OrderByDescending(n => (thirsty ? FreshwaterAccess.Available(w, n) / Math.Max(1, waterDemand) : hungry ? w.Tiles[n].PotentialFood / Math.Max(1, foodDemand) : Numbers.Random(w.Seed, 72, herd.Id ^ n, w.Turn)) + species.Suitability(w.Tiles[n]) * species.MovementHabitatWeight)
                 .ThenBy(n => n == herd.Tile ? 0 : 1).ThenBy(n => n).First();
@@ -213,6 +213,19 @@ namespace Anthropocene.Simulation
                 double efficiency = w.Config.HuntEfficiency * (w.Tiles[hunter.Tile].Terrain == Terrain.Woodland ? .85 : 1);
                 double expectation = hunter.Population * efficiency * time * (1 - w.Config.HuntVariance + Numbers.Random(w.Seed, 80, hunter.Id, w.Turn) * w.Config.HuntVariance * 2);
                 int requested = (int)expectation + (Numbers.Random(w.Seed, 81, hunter.Id, w.Turn) < expectation % 1 ? 1 : 0);
+                double fieldcraft = PracticeEffects.Ramp(w.Config, camp, Domain.Hunting);
+                if (fieldcraft > 0)
+                {
+                    double yieldPerAnimal = w.Config.GetSpecies(herd.Species).FoodYield * PracticeEffects.HuntingYield(w.Config, camp);
+                    double usefulFood;
+                    if (Supply.Connected(w, hunter))
+                    {
+                        double generationNeed = w.LinkedPopulation(camp) * w.Config.Consumption * time;
+                        usefulFood = Math.Max(0, generationNeed * (1 + StorageGenerations(w, camp.Tile)) - camp.Food);
+                    }
+                    else usefulFood = Math.Max(0, Supply.Capacity(w, hunter) - hunter.CarriedFood);
+                    requested = Math.Min(requested, (int)Math.Ceiling(usefulFood / Math.Max(1e-9, yieldPerAnimal)));
+                }
                 requests.Add(Tuple.Create(hunter, herd, requested));
             }
             foreach (var group in requests.GroupBy(r => r.Item2.Id).OrderBy(g => g.Key))
@@ -235,7 +248,7 @@ namespace Anthropocene.Simulation
                     if (remainder > 0 && kills[i] < sorted[i].Item3) { kills[i]++; remainder--; }
                 for (int i = 0; i < sorted.Length; i++)
                 {
-                    var hunter = sorted[i].Item1; var camp = w.Camps.First(c => c.Id == hunter.SourceCamp); double yield = kills[i] * species.FoodYield;
+                    var hunter = sorted[i].Item1; var camp = w.Camps.First(c => c.Id == hunter.SourceCamp); double yield = kills[i] * species.FoodYield * PracticeEffects.HuntingYield(w.Config, camp);
                     Supply.Award(w, hunter, yield, record);
                     record.Transfers.Add(new Transfer { Entity = hunter.Id, Tile = hunter.Tile, Kind = "Hunting", Food = yield });
                     record.Log("Hunters " + hunter.Id + " killed " + kills[i] + " animals from herd " + herd.Id + ".");
@@ -293,7 +306,7 @@ namespace Anthropocene.Simulation
             var ids = w.Camps.Select(c => c.Id).Concat(w.Hunters.Select(h => h.Id)).Concat(w.Herds.Select(h => h.Id)).ToArray();
             if (ids.Distinct().Count() != ids.Length || ids.Any(i => i >= w.NextId)) throw new InvalidOperationException("Invalid stable IDs.");
             if (expectedPeople >= 0 && w.Camps.Sum(w.LinkedPopulation) != expectedPeople) throw new InvalidOperationException("Unexplained population change.");
-            if (w.Camps.Any(c => c.Population < 0 || c.Food < -1e-8 || c.DemographicGrowthMultiplier <= 0 || double.IsNaN(c.DemographicGrowthMultiplier) || !w.CanEnter(c.Tile, false)) || w.Hunters.Any(h => h.Population < 0 || !w.CanEnter(h.Tile, true, w.Camps.First(c => c.Id == h.SourceCamp))))
+            if (w.Camps.Any(c => c.Population < 0 || c.Food < -1e-8 || c.DemographicGrowthMultiplier <= 0 || double.IsNaN(c.DemographicGrowthMultiplier) || c.Workforce == null || c.Workforce.Assignments.Any(a => a == null || string.IsNullOrWhiteSpace(a.Role) || a.Population <= 0) || c.Workforce.Assignments.GroupBy(a => a.Role, StringComparer.Ordinal).Any(g => g.Count() != 1) || c.Workforce.Assigned > c.Population || !w.CanEnter(c.Tile, false)) || w.Hunters.Any(h => h.Population < 0 || !w.CanEnter(h.Tile, true, w.Camps.First(c => c.Id == h.SourceCamp))))
                 throw new InvalidOperationException("Invalid people state or location.");
             if (w.Hunters.Any(h => h.CarriedFood < -1e-8 || h.CarriedFood > Supply.Capacity(w, h) + 1e-8) || w.Camps.Any(c => c.GrowthRemainder < 0 || c.GrowthRemainder >= 1)) throw new InvalidOperationException("Invalid carried provisions or demographic remainder.");
             if (w.Herds.Any(h => !w.Tiles[h.Tile].TraversableLand || h.Animals < 0)) throw new InvalidOperationException("Invalid herd population or peak/aquatic location.");
@@ -302,7 +315,7 @@ namespace Anthropocene.Simulation
                 var ecology = w.Ecology(tile.Id); double multiplier = tile.Cultivated || tile.Fishery ? w.Config.CultivationMultiplier : 1;
                 if (tile.WaterBody == WaterKind.Saltwater && (tile.Freshwater > 0 || ecology.MaxFreshwater > 0 || tile.FreshwaterSource != FreshwaterSource.None)) throw new InvalidOperationException("Seawater is not drinkable.");
                 if (tile.Saltwater < 0 || tile.Saltwater > ecology.MaxSaltwater + 1e-6 || tile.FreshwaterSource == FreshwaterSource.None && tile.Freshwater > 1e-8) throw new InvalidOperationException("Water stock lacks a valid source or capacity.");
-                if (double.IsNaN(tile.Food) || double.IsInfinity(tile.Food) || tile.Food < -1e-8 || double.IsNaN(tile.PotentialFood) || double.IsInfinity(tile.PotentialFood) || tile.PotentialFood + 1e-8 < tile.Food || tile.PotentialFood > ecology.MaxPotentialFood * multiplier + 1e-5 || tile.Freshwater < -1e-8 || double.IsNaN(tile.Freshwater) ||
+                if (double.IsNaN(tile.LandCondition) || double.IsNaN(tile.AquaticCondition) || tile.LandCondition < -1e-8 || tile.LandCondition > 1 + 1e-8 || tile.AquaticCondition < -1e-8 || tile.AquaticCondition > 1 + 1e-8 || double.IsNaN(tile.Food) || double.IsInfinity(tile.Food) || tile.Food < -1e-8 || double.IsNaN(tile.PotentialFood) || double.IsInfinity(tile.PotentialFood) || tile.PotentialFood + 1e-8 < tile.Food || tile.PotentialFood > ecology.MaxPotentialFood * multiplier + 1e-5 || tile.Freshwater < -1e-8 || double.IsNaN(tile.Freshwater) ||
                     tile.Food > ecology.MaxFood * multiplier + 1e-6 || tile.Freshwater > ecology.MaxFreshwater + 1e-6)
                     throw new InvalidOperationException("Invalid ecology or capacity overflow.");
             }

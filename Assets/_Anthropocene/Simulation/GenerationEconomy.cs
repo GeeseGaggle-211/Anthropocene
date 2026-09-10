@@ -2,6 +2,19 @@ using System;
 
 namespace Anthropocene.Simulation
 {
+    public static class PracticeEffects
+    {
+        public static double Progress(SimulationConfig config, Camp camp, Domain domain) => Numbers.Clamp(camp.Experience[(int)domain] / Math.Max(1e-9, config.ExperienceThreshold), 0, 1);
+        public static double Ramp(SimulationConfig config, Camp camp, Domain domain)
+        {
+            double x = Numbers.Clamp((Progress(config, camp, domain) - config.PracticeBonusStart) / (config.PracticeBonusFull - config.PracticeBonusStart), 0, 1);
+            return x * x * (3 - 2 * x);
+        }
+        public static double GatheringImpact(SimulationConfig config, Camp camp) => 1 - config.GatheringImpactReduction * Ramp(config, camp, Domain.Gathering);
+        public static double FishingImpact(SimulationConfig config, Camp camp) => 1 - config.FishingImpactReduction * Ramp(config, camp, Domain.Fishing);
+        public static double HuntingYield(SimulationConfig config, Camp camp) => config.HuntingFoodYieldScale * (1 + config.HuntingYieldBonus * Ramp(config, camp, Domain.Hunting));
+    }
+
     [Serializable]
     public sealed class DemographicReport
     {

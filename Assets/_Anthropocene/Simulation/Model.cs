@@ -16,11 +16,11 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class SimulationConfig
     {
-        public int Version = 4;
+        public int Version = 5;
         public int Width = 1024, Height = 512, Players = 32, PlateCount = 18;
         public WorldShape Shape = WorldShape.Continents;
         public double BaseDays = 91.25, TurnDays = 7300, MinDays = 1, MaxDays = 36500;
-        public double DaysPerYear = 365, PracticeDays = 7300, AnnualHumanGrowthRate = .011, GrowthSurplusRatio = .25;
+        public double DaysPerYear = 365, PracticeDays = 7300, AnnualHumanGrowthRate = .01145, GrowthSurplusRatio = .25;
         public double HoverDelay = 2, HoverFadeIn = .2, HoverFadeOut = .15, HoverMotionPixels = 5;
         public double[] ElevationQuantiles = { .12, .25, .40, .55, .69, .81, .90, .96, .99 };
         public int HerdSmallCountThreshold = 10, HerdCountRounding = 10, HerdBroadCountSize = 100;
@@ -34,6 +34,9 @@ namespace Anthropocene.Simulation
         public int SustainableHuntPopulation = 16;
         public double WanderChance = .05;
         public double ExperienceThreshold = 225, UnproductivePracticeFraction = .1, CarryoverMultiplier = 1.25, CarryoverFloor = 100;
+        public double PracticeBonusStart = .25, PracticeBonusFull = .5;
+        public double GatheringImpactReduction = .5, FishingImpactReduction = .5, HuntingFoodYieldScale = 2.5, HuntingYieldBonus = .5, HuntingPracticeMultiplier = 3.25, PassiveAquaticFishingPracticeShare = .25;
+        public double LandDepletionPerGeneration = .08, AquaticDepletionPerGeneration = .08, EcologicalConditionRecovery = .06;
         public double CultivationMultiplier = 1.4, CultivationMoisture = .25, RelocationInertia = .18;
         public int InitialDomesticAnimals = 5;
         public double HabitableZonePosition = .5, InnerTemperature = 12, OuterTemperature = -12;
@@ -46,11 +49,11 @@ namespace Anthropocene.Simulation
         public int GenerationBudgetSeconds = 90, GenerationBudgetMegabytes = 1000;
         public double[] BandThresholds = { .03, .25, .5, .8 };
         public int SupplyRange = 3;
-        public double CarryingCapacityPerHunter = 5, HunterCarryGenerations = 1, ExpeditionProvisionTurns = 3, CampProvisionReserveTurns = .5;
+        public double CarryingCapacityPerHunter = 5, HunterCarryGenerations = 2.5, ExpeditionProvisionTurns = 3, CampProvisionReserveTurns = .5;
         public double MinimumStorageGenerations = 1, MaximumStorageGenerations = 4, HunterForagePerPerson = 1;
         public double GrowthReserveTurns = 1.5;
         public double HillsProductivity = .95, HighlandProductivity = .8, MountainProductivity = .5;
-        public int HerdRegionSize = 32;
+        public int HerdRegionSize = 32, MinimumOpeningHerds = 1;
         public double HerdsPerLandTile = .008, HerdRegionVariation = .35;
         public bool WildHerdFissionEnabled;
         public double StartFreshwaterMinimum = 6, RainPoolRainThreshold = .035, RainPoolDrainageMinimum = 1;
@@ -69,7 +72,7 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
             if (StartingPopulation <= MinimumCamp || MinimumCamp < 1 || Consumption <= 0 || PopulationScale <= 0)
                 throw new ArgumentException("Invalid population configuration.");
-            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || HuntBreedingReserveFraction <= 0 || HuntBreedingReserveFraction >= 1 || SustainableHuntPopulation < 1 || SustainableHerdGrowthRetention <= 0 || SustainableHerdGrowthRetention > 1 || UnproductivePracticeFraction < 0 || UnproductivePracticeFraction > 1 || RichGatherableFraction <= 0 || RichGatherableFraction > 1 || GrasslandGatherableFraction <= 0 || GrasslandGatherableFraction > RichGatherableFraction || AridGatherableFraction <= 0 || AridGatherableFraction > GrasslandGatherableFraction || TundraGatherableFraction <= 0 || TundraGatherableFraction > RichGatherableFraction || GatherableRecoveryBias < 0 || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || HerdsPerLandTile < 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
+            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || HuntBreedingReserveFraction <= 0 || HuntBreedingReserveFraction >= 1 || SustainableHuntPopulation < 1 || SustainableHerdGrowthRetention <= 0 || SustainableHerdGrowthRetention > 1 || UnproductivePracticeFraction < 0 || UnproductivePracticeFraction > 1 || PracticeBonusStart < 0 || PracticeBonusFull <= PracticeBonusStart || PracticeBonusFull > 1 || GatheringImpactReduction < 0 || GatheringImpactReduction > 1 || FishingImpactReduction < 0 || FishingImpactReduction > 1 || HuntingFoodYieldScale <= 0 || HuntingYieldBonus < 0 || HuntingPracticeMultiplier < 1 || PassiveAquaticFishingPracticeShare < 0 || PassiveAquaticFishingPracticeShare > 1 || LandDepletionPerGeneration < 0 || AquaticDepletionPerGeneration < 0 || EcologicalConditionRecovery < 0 || EcologicalConditionRecovery > 1 || RichGatherableFraction <= 0 || RichGatherableFraction > 1 || GrasslandGatherableFraction <= 0 || GrasslandGatherableFraction > RichGatherableFraction || AridGatherableFraction <= 0 || AridGatherableFraction > GrasslandGatherableFraction || TundraGatherableFraction <= 0 || TundraGatherableFraction > RichGatherableFraction || GatherableRecoveryBias < 0 || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || MinimumOpeningHerds < 1 || HerdsPerLandTile < 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
                 throw new ArgumentException("Invalid logistics, demographic or ecological configuration.");
             if (ElevationQuantiles == null || ElevationQuantiles.Length != 9 || ElevationQuantiles[0] <= 0 || ElevationQuantiles[8] >= 1 || !ElevationQuantiles.SequenceEqual(ElevationQuantiles.OrderBy(x => x).Distinct())) throw new ArgumentException("Elevation requires nine increasing quantile boundaries.");
             if (HerdSmallCountThreshold < 1 || HerdCountRounding < 1 || HerdBroadCountSize < HerdSmallCountThreshold) throw new ArgumentException("Invalid observable herd count thresholds.");
@@ -105,6 +108,7 @@ namespace Anthropocene.Simulation
         public bool Continental, Cultivated, Fishery, Oasis;
         public float Elevation, Volcanism, Flow, DepressionDepth, OasisInfluence;
         public double Food, PotentialFood, Freshwater, Saltwater;
+        public double LandCondition = 1, AquaticCondition = 1;
         public int[] RiverEdges;
         public bool River => RiverEdges != null && RiverEdges.Any(e => e >= 0);
         public double DrinkableWater => WaterBody != WaterKind.Saltwater && FreshwaterSource != FreshwaterSource.None ? Freshwater : 0;
@@ -112,6 +116,31 @@ namespace Anthropocene.Simulation
         public bool Aquatic => Terrain == Terrain.Shallows || Terrain == Terrain.Lake;
         public bool Land => Terrain != Terrain.Ocean && !Aquatic;
         public bool TraversableLand => Land && ElevationLevel < 10;
+    }
+    [Serializable]
+    public sealed class PopulationAssignment
+    {
+        public string Role;
+        public int Population;
+    }
+    [Serializable]
+    public sealed class PopulationLedger
+    {
+        public List<PopulationAssignment> Assignments = new List<PopulationAssignment>();
+        public int Assigned => Assignments.Where(a => a != null && a.Population > 0).Sum(a => a.Population);
+        public int Gatherers(int population) => Math.Max(0, population - Assigned);
+        public void Normalize(int population)
+        {
+            Assignments = Assignments.Where(a => a != null && !string.IsNullOrWhiteSpace(a.Role) && a.Population > 0)
+                .GroupBy(a => a.Role, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal)
+                .Select(g => new PopulationAssignment { Role = g.Key, Population = g.Sum(a => a.Population) }).ToList();
+            int excess = Math.Max(0, Assigned - population);
+            for (int i = Assignments.Count - 1; i >= 0 && excess > 0; i--)
+            {
+                int removed = Math.Min(excess, Assignments[i].Population); Assignments[i].Population -= removed; excess -= removed;
+                if (Assignments[i].Population == 0) Assignments.RemoveAt(i);
+            }
+        }
     }
     [Serializable]
     public sealed class Camp
@@ -126,6 +155,8 @@ namespace Anthropocene.Simulation
         public bool ForcedTransition;
         public bool[] Technologies = new bool[4];
         public Mandate Mandate = new Mandate();
+        public PopulationLedger Workforce = new PopulationLedger();
+        public int GathererPopulation => (Workforce ?? (Workforce = new PopulationLedger())).Gatherers(Population);
     }
     [Serializable]
     public sealed class Hunter
@@ -168,7 +199,8 @@ namespace Anthropocene.Simulation
     public sealed class TileChange
     {
         public int Tile;
-        public double BeforeFood, BeforePotentialFood, BeforeFreshwater, AfterFood, AfterPotentialFood, AfterFreshwater;
+        public double BeforeFood, BeforePotentialFood, BeforeFreshwater, BeforeLandCondition, BeforeAquaticCondition;
+        public double AfterFood, AfterPotentialFood, AfterFreshwater, AfterLandCondition, AfterAquaticCondition;
     }
     [Serializable]
     public sealed class TurnRecord
@@ -188,8 +220,8 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldState
     {
-        public const int GeneratorVersion = 4;
-        public int Version = 4, Seed, Turn = 1, NextId = 1;
+        public const int GeneratorVersion = 5;
+        public int Version = 5, Seed, Turn = 1, NextId = 1;
         public double Days;
         public SimulationConfig Config;
         public Tile[] Tiles;

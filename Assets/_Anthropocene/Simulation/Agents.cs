@@ -24,7 +24,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class TileObservation
     {
-        public readonly int Id, Food, PotentialFood, Freshwater, Productivity, Moisture, ElevationLevel, RidgeMask, FoodMaximum, PotentialMaximum, GatherablePercent;
+        public readonly int Id, Food, PotentialFood, Freshwater, Productivity, Moisture, Condition, ElevationLevel, RidgeMask, FoodMaximum, PotentialMaximum, GatherablePercent;
         public readonly Terrain Terrain;
         public readonly bool River, Cultivated, Fishery, Oasis;
         public readonly Relief Relief;
@@ -42,7 +42,8 @@ namespace Anthropocene.Simulation
             Rivers = Array.AsReadOnly(tile.RiverEdges == null ? new RiverObservation[0] : tile.RiverEdges.Select((id, side) => new { id, side }).Where(x => x.id >= 0).Select(x => new RiverObservation(x.side, rivers[x.id], tile.Id, new HexCorners(config.Width, config.Height))).ToArray());
             // Food bands describe absolute usable yield; a nearly full barren tile must not appear abundant.
             Food = Knowledge.Band(tile.Food, 70, config); Freshwater = Knowledge.Band(tile.DrinkableWater, 70, config);
-            Productivity = Knowledge.Band(ecology.MaxFood * ecology.FoodRate, 30, config); Moisture = Knowledge.Band(ecology.Moisture, 1, config);
+            double condition = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater ? tile.AquaticCondition : tile.LandCondition;
+            Condition = Knowledge.Band(condition, 1, config); Productivity = Knowledge.Band(ecology.MaxFood * ecology.FoodRate * condition, 30, config); Moisture = Knowledge.Band(ecology.Moisture, 1, config);
         }
     }
     public sealed class RiverObservation
@@ -74,13 +75,15 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 5;
-        public readonly int Player, CampId, CampTile, CampPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
+        public const int SchemaVersion = 6;
+        public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
+        public readonly double HuntingFieldcraft;
         public readonly bool Watercraft;
         public readonly IReadOnlyDictionary<int, TileObservation> Tiles;
         public readonly IReadOnlyDictionary<int, double> RecentOwnExtraction;
         public readonly IReadOnlyList<UnitObservation> Hunters, Rivals, ForeignHunters;
         public readonly IReadOnlyList<HerdObservation> Herds;
+        public readonly IReadOnlyDictionary<int, int> LikelyHerdDestinations;
         public readonly IReadOnlyList<double> Experience;
         public readonly HexMap Map;
         public readonly int MinimumCamp, HunterMovement, CampMovement, SupplyRange, SustainableHuntPopulation;
@@ -88,7 +91,7 @@ namespace Anthropocene.Simulation
         internal AgentObservation(WorldState w, Camp camp)
         {
             var visible = Knowledge.Visible(w, camp.Player);
-            Player = camp.Player; CampId = camp.Id; CampTile = camp.Tile; CampPopulation = camp.Population; LinkedPopulation = w.LinkedPopulation(camp);
+            Player = camp.Player; CampId = camp.Id; CampTile = camp.Tile; CampPopulation = camp.Population; GathererPopulation = camp.GathererPopulation; LinkedPopulation = w.LinkedPopulation(camp);
             FoodCondition = Knowledge.Band(camp.Food, Math.Max(1, LinkedPopulation * w.Config.Consumption * w.Config.GenerationIntervals), w.Config);
             DeficitTurns = camp.DeficitTurns; Turn = w.Turn; PolicySeed = (int)Numbers.Hash(w.Seed, 90, camp.Player);
             Watercraft = camp.Technologies[(int)Technology.Watercraft]; Map = w.Map;
@@ -99,11 +102,25 @@ namespace Anthropocene.Simulation
             Rivals = Array.AsReadOnly(w.Camps.Where(c => c.Player != Player && visible.Contains(c.Tile)).OrderBy(c => c.Id).Select(c => new UnitObservation(c.Id, c.Tile, 0, c.Player)).ToArray());
             ForeignHunters = Array.AsReadOnly(w.Hunters.Where(h => h.Player != Player && visible.Contains(h.Tile)).OrderBy(h => h.Id).Select(h => new UnitObservation(h.Id, h.Tile, 0, h.Player)).ToArray());
             Herds = Array.AsReadOnly(w.Herds.Where(h => visible.Contains(h.Tile)).OrderBy(h => h.Id).Select(h => new HerdObservation(h, w.Config, h.DomesticCamp < 0 ? -1 : w.Camps.First(c => c.Id == h.DomesticCamp).Player, Player)).ToArray());
+            HuntingFieldcraft = PracticeEffects.Ramp(w.Config, camp, Domain.Hunting);
+            var observedHunters = Hunters.Concat(ForeignHunters).ToArray();
+            LikelyHerdDestinations = new ReadOnlyDictionary<int, int>(HuntingFieldcraft <= 0 ? new Dictionary<int, int>() : Herds.Where(h => !h.Domestic).ToDictionary(h => h.Id, h => PredictHerdDestination(h, Tiles, observedHunters, Map)));
             var ownIds = new HashSet<int>(Hunters.Select(h => h.Id)) { CampId };
             var recent = w.History.LastOrDefault();
             if (recent != null) ownIds.UnionWith(recent.Logistics.Where(l => l.Camp == CampId).Select(l => l.Hunter));
             RecentOwnExtraction = new ReadOnlyDictionary<int, double>((recent?.Transfers ?? new List<Transfer>()).Where(t => ownIds.Contains(t.Entity) && visible.Contains(t.Tile)).GroupBy(t => t.Tile).ToDictionary(g => g.Key, g => g.Sum(t => t.Food)));
             Experience = Array.AsReadOnly((double[])camp.Experience.Clone());
+        }
+        private static int PredictHerdDestination(HerdObservation herd, IReadOnlyDictionary<int, TileObservation> tiles, IReadOnlyList<UnitObservation> hunters, HexMap map)
+        {
+            var candidates = map.Radius(herd.Tile, 1).Where(n => tiles.TryGetValue(n, out var tile) && tile.Land && tile.ElevationLevel < 10).ToArray();
+            if (candidates.Length == 0) return herd.Tile;
+            bool threatened = hunters.Any(h => map.Distance(herd.Tile, h.Tile) <= 1);
+            if (threatened)
+                return candidates.OrderByDescending(n => hunters.Min(h => map.Distance(n, h.Tile))).ThenByDescending(n => tiles[n].Freshwater).ThenByDescending(n => tiles[n].PotentialFood).ThenBy(n => n).First();
+            var current = tiles[herd.Tile];
+            if (current.Freshwater >= 2 && current.PotentialFood >= 2) return herd.Tile;
+            return candidates.OrderByDescending(n => tiles[n].Freshwater + tiles[n].PotentialFood).ThenBy(n => n == herd.Tile ? 0 : 1).ThenBy(n => n).First();
         }
     }
     public sealed class AgentObservationBuilder
@@ -147,9 +164,10 @@ namespace Anthropocene.Simulation
         {
             double score = 0;
             foreach (int n in o.Map.Radius(tile, 1))
-                if (o.Tiles.TryGetValue(n, out var t) && t.Terrain != Terrain.Ocean) score += t.Food * .22 + t.Productivity * .12;
+                if (o.Tiles.TryGetValue(n, out var t) && t.Terrain != Terrain.Ocean) score += t.Food * .22 + t.Productivity * .12 + t.Condition * .04;
             return score;
         }
+        private static double HerdSupport(AgentObservation o, int tile) => o.Herds.Where(h => !h.Domestic).Select(h => h.Size * .9 + Math.Max(0, 4 - o.Map.Distance(tile, h.Tile)) * .65).DefaultIfEmpty(0).Max();
         private static bool Enter(AgentObservation o, int tile, bool hunter) => o.Tiles.TryGetValue(tile, out var t) && t.ElevationLevel < 10 && (t.Land || hunter && o.Watercraft && t.Terrain == Terrain.Shallows);
         private static bool Reach(AgentObservation o, int start, int target, bool hunter) => o.Map.Reachable(start, target, hunter ? o.HunterMovement : o.CampMovement, n => Enter(o, n, hunter), n => o.Tiles[n].Aquatic ? 2 : 1);
         private static double Practice(AgentObservation o, Domain domain, Mandate m) => o.Experience[(int)domain] / Math.Max(1, o.Experience.Sum()) * m.Persistence;
@@ -157,6 +175,9 @@ namespace Anthropocene.Simulation
         {
             var result = new PolicyDecision { Trace = new DecisionTrace { Player = o.Player, Turn = o.Turn } };
             if (o.LinkedPopulation <= 0) return result;
+            // Stable policy cohorts keep the benchmark population diverse without reading global state: one in five tribes
+            // commits to the nomadic experiment, while every tribe can still reach Husbandry through successful hunting.
+            bool huntingFocus = o.Player % 5 == 0;
             double need = 1 + o.DeficitTurns * .5 + (o.FoodCondition <= 1 ? .5 : 0);
             var campCandidates = new List<Candidate>();
             double current = Gathering(o, o.CampTile);
@@ -165,23 +186,28 @@ namespace Anthropocene.Simulation
                 if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n)) continue;
                 double food = Gathering(o, n) * need * m.Gathering;
                 double continuity = n == o.CampTile ? Math.Max(.25, current * o.Inertia) : -(1 - m.Mobility) * .1;
-                campCandidates.Add(new Candidate { Order = n == o.CampTile ? new Order(OrderKind.NoOp, o.CampId) : new Order(OrderKind.Move, o.CampId, destination: n), Score = food + continuity, Components = "GatheringOpportunity + SurvivalNeed + RelocationInertia" });
+                double herdSupport = HerdSupport(o, n) * m.Hunting * (huntingFocus ? 4 : .35 + .85 * o.HuntingFieldcraft);
+                campCandidates.Add(new Candidate { Order = n == o.CampTile ? new Order(OrderKind.NoOp, o.CampId) : new Order(OrderKind.Move, o.CampId, destination: n), Score = food + continuity + herdSupport, Components = "GatheringOpportunity + HerdSupport + SurvivalNeed + RelocationInertia" });
             }
             var campChoice = Select(o, campCandidates, result.Trace);
             int plannedCamp = campChoice.Destination >= 0 ? campChoice.Destination : o.CampTile;
             bool huntOpportunity = o.Herds.Any(h => !h.Domestic && o.Map.Distance(o.CampTile, h.Tile) <= 2);
-            bool opportunity = huntOpportunity || o.Map.Radius(o.CampTile, 1).Any(n => o.Tiles.TryGetValue(n, out var t) && t.Aquatic && t.Food >= 2);
+            bool opportunity = huntingFocus || huntOpportunity || o.Map.Radius(o.CampTile, 1).Any(n => o.Tiles.TryGetValue(n, out var t) && t.Aquatic && t.Food >= 2);
             int assignedHunters = o.Hunters.Sum(h => h.Population);
-            double hunterShare = huntOpportunity ? .35 + m.Risk * .15 : .25 + m.Risk * .1;
+            double hunterShare = huntingFocus ? .55 + m.Risk * .1 : huntOpportunity ? .35 + m.Risk * .15 : .25 + m.Risk * .1;
             int desiredHunters = opportunity ? Math.Max(8, (int)Math.Round(o.LinkedPopulation * hunterShare)) : 0;
-            int allocation = Math.Min(Math.Max(0, desiredHunters - assignedHunters), o.CampPopulation - o.MinimumCamp - 4);
-            if (campChoice.Kind == OrderKind.NoOp && allocation >= 4 && opportunity && o.DeficitTurns == 0 && o.FoodCondition >= 1)
+            int dispatchable = Math.Min(o.GathererPopulation, o.CampPopulation - o.MinimumCamp - (huntingFocus ? 0 : 4));
+            int allocation = Math.Min(8, Math.Min(Math.Max(0, desiredHunters - assignedHunters), dispatchable));
+            if ((campChoice.Kind == OrderKind.NoOp || huntingFocus) && allocation >= 4 && opportunity && o.DeficitTurns == 0 && o.FoodCondition >= 1)
             { campChoice = new Order(OrderKind.Dispatch, o.CampId, population: allocation); result.Trace.Candidates.Add(new CandidateTrace { Plan = campChoice.ToString(), Components = "Growing population and visible subsistence opportunity; hunter share expands while preserving the camp reserve", Score = 1, Selected = true }); }
             result.Orders.Add(campChoice);
             var observedHunters = o.Hunters.Concat(o.ForeignHunters).ToArray();
-            int preferredHerd = o.Herds.Where(h => !h.Domestic).OrderByDescending(h => h.Size).ThenBy(h => o.Map.Distance(o.CampTile, h.Tile)).ThenBy(h => h.Id).Select(h => h.Id).DefaultIfEmpty(-1).First();
+            var wildHerds = o.Herds.Where(h => !h.Domestic).OrderByDescending(h => h.Size).ThenBy(h => o.Map.Distance(o.CampTile, h.Tile)).ThenBy(h => h.Id).ToArray();
+            int preferredHerd = wildHerds.Select(h => h.Id).DefaultIfEmpty(-1).First();
+            int hunterIndex = 0;
             foreach (var hunter in o.Hunters)
             {
+                int distributedHerd = wildHerds.Length == 0 ? -1 : wildHerds[hunterIndex++ % wildHerds.Length].Id;
                 double logisticsUrgency = !hunter.InSupply ? hunter.Provisions <= 1 || hunter.DeficitTurns > 0 ? 4 : hunter.Provisions >= 3 ? 2.5 : .8 : 0;
                 var candidates = new List<Candidate> { new Candidate { Order = new Order(OrderKind.NoOp, hunter.Id), Score = -.5, Components = "Wait" } };
                 foreach (var herd in o.Herds.Where(h => !h.Domestic))
@@ -193,28 +219,32 @@ namespace Anthropocene.Simulation
                     foreach (int target in o.Map.Radius(herd.Tile, 1).Where(n => Enter(o, n, false)).OrderBy(n => n))
                     {
                         if (!Reach(o, hunter.Tile, target, true)) continue;
-                        double likely = threatened ? (observedHunters.Min(h => o.Map.Distance(h.Tile, target)) == maximumEscape ? .45 : 0) : (target == herd.Tile ? .55 : .05);
-                        likely += o.Tiles[target].Freshwater * .035 + o.Tiles[target].PotentialFood * .025;
+                        double likely = threatened ? observedHunters.Min(h => o.Map.Distance(h.Tile, target)) == maximumEscape ? 2 + o.Tiles[target].Freshwater * .3 + o.Tiles[target].PotentialFood * .05 - target * 1e-6 : 0 : (target == herd.Tile ? .55 : .05) + o.Tiles[target].Freshwater * .035 + o.Tiles[target].PotentialFood * .025;
+                        if (o.LikelyHerdDestinations.TryGetValue(herd.Id, out int tracked) && tracked == target) likely += .8 + 1.2 * o.HuntingFieldcraft;
                         var pursuit = target == hunter.Tile ? new Order(OrderKind.NoOp, hunter.Id) : new Order(OrderKind.Move, hunter.Id, destination: target);
-                        double concentration = assignedHunters > o.SustainableHuntPopulation && herd.Id == preferredHerd ? 2.5 : 0;
-                        candidates.Add(new Candidate { Order = pursuit, Score = (2.3 + herd.Size * .35 + likely + concentration) * m.Hunting + Practice(o, Domain.Hunting, m) - o.Map.Distance(hunter.Tile, target) * .15 - need * (1 - m.Risk) * .25, Components = "HuntOpportunity + MigrationCoverage + GroupConcentration + SpecializationContinuity - TravelCost - PopulationRisk" });
+                        double concentration = assignedHunters > o.SustainableHuntPopulation ? herd.Id == preferredHerd ? 2.5 : 0 : huntingFocus && wildHerds.Length > 1 && herd.Id == distributedHerd ? 2.5 : 0;
+                        candidates.Add(new Candidate { Order = pursuit, Score = (2.3 + herd.Size * .35 + likely + concentration) * m.Hunting * (huntingFocus ? 1.6 : 1) + Practice(o, Domain.Hunting, m) - o.Map.Distance(hunter.Tile, target) * .15 - need * (1 - m.Risk) * .25, Components = "HuntOpportunity + MigrationCoverage + GroupConcentration + SpecializationContinuity - TravelCost - PopulationRisk" });
                     }
                 }
-                foreach (int shore in o.Map.Radius(hunter.Tile, o.HunterMovement).OrderBy(n => n))
-                {
-                    if (!Reach(o, hunter.Tile, shore, true)) continue;
-                    foreach (int fish in o.Map.Radius(shore, 1))
-                        if (o.Tiles.TryGetValue(fish, out var tile) && tile.Aquatic)
-                            candidates.Add(new Candidate { Order = new Order(OrderKind.Fish, hunter.Id, fish, shore), Score = (tile.Food * .8 + tile.Productivity * .15) * m.Fishing * need + Practice(o, Domain.Fishing, m) - o.Map.Distance(hunter.Tile, shore) * .12, Components = "FishingOpportunity + SurvivalNeed + SpecializationContinuity - TravelCost" });
-                }
+                if (!huntingFocus)
+                    foreach (int shore in o.Map.Radius(hunter.Tile, o.HunterMovement).OrderBy(n => n))
+                    {
+                        if (!Reach(o, hunter.Tile, shore, true)) continue;
+                        foreach (int fish in o.Map.Radius(shore, 1))
+                            if (o.Tiles.TryGetValue(fish, out var tile) && tile.Aquatic)
+                                candidates.Add(new Candidate { Order = new Order(OrderKind.Fish, hunter.Id, fish, shore), Score = (tile.Food * .8 + tile.Productivity * .15) * m.Fishing * need + Practice(o, Domain.Fishing, m) - o.Map.Distance(hunter.Tile, shore) * .12, Components = "FishingOpportunity + SurvivalNeed + SpecializationContinuity - TravelCost" });
+                    }
                 if (hunter.Tile == o.CampTile && plannedCamp == o.CampTile)
-                    candidates.Add(new Candidate { Order = new Order(OrderKind.Reintegrate, hunter.Id, o.CampId), Score = o.DeficitTurns > 0 ? 3.3 : 1.4, Components = "ReintegrationValue + PopulationRisk" });
+                    candidates.Add(new Candidate { Order = new Order(OrderKind.Reintegrate, hunter.Id, o.CampId), Score = o.DeficitTurns > 0 ? 3.3 : huntingFocus ? -1 : 1.4, Components = "ReintegrationValue + PopulationRisk" });
                 foreach (int n in o.Map.Radius(hunter.Tile, o.HunterMovement).OrderBy(n => n))
                 {
                     if (n == hunter.Tile || !Reach(o, hunter.Tile, n, true)) continue;
                     double returnValue = o.Map.Distance(hunter.Tile, plannedCamp) - o.Map.Distance(n, plannedCamp);
                     int unknown = o.Map.Radius(n, 2).Count(t => !o.Tiles.ContainsKey(t));
-                    candidates.Add(new Candidate { Order = new Order(OrderKind.Move, hunter.Id, destination: n), Score = returnValue * (.5 + logisticsUrgency) + unknown * .035 * m.Exploration - need * .15, Components = "SupplyReturn + ReintegrationValue + ExplorationValue - SurvivalNeed" });
+                    bool nomadicScouting = huntingFocus && wildHerds.Length == 0 && (hunter.InSupply || hunter.Provisions >= 2);
+                    double returnWeight = nomadicScouting ? .1 : .5 + logisticsUrgency;
+                    double explorationWeight = nomadicScouting ? .18 : .035;
+                    candidates.Add(new Candidate { Order = new Order(OrderKind.Move, hunter.Id, destination: n), Score = returnValue * returnWeight + unknown * explorationWeight * m.Exploration - need * .15, Components = "SupplyReturn + ReintegrationValue + ExplorationValue - SurvivalNeed" });
                 }
                 result.Orders.Add(Select(o, candidates, result.Trace));
             }

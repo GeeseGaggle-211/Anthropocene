@@ -101,10 +101,13 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 var reachable = w.Map.Radius(camp.Tile, w.Config.VisionRadius).Where(n => w.Map.Reachable(camp.Tile, n, w.Config.VisionRadius, p => w.Tiles[p].TraversableLand)).ToArray();
-                if (reachable.Any(occupied.Contains)) continue;
-                int selected = reachable.Where(n => !occupied.Contains(n) && !campTiles.Contains(n) && w.Config.Species.Any(s => Weight(w, w.Tiles[n], s) > 0)).OrderByDescending(n => w.Config.Species.Max(s => Weight(w, w.Tiles[n], s))).ThenBy(n => Numbers.Hash(w.Seed, 132, n, camp.Player)).DefaultIfEmpty(-1).First();
-                if (selected < 0) throw new InvalidOperationException("Start has no appropriate opening herd habitat.");
-                Add(w, w.Tiles[selected]); occupied.Add(selected);
+                int count = reachable.Count(occupied.Contains);
+                while (count < w.Config.MinimumOpeningHerds)
+                {
+                    int selected = reachable.Where(n => !occupied.Contains(n) && !campTiles.Contains(n) && w.Config.Species.Any(s => Weight(w, w.Tiles[n], s) > 0)).OrderByDescending(n => w.Config.Species.Max(s => Weight(w, w.Tiles[n], s))).ThenBy(n => Numbers.Hash(w.Seed, 132, n, camp.Player)).DefaultIfEmpty(-1).First();
+                    if (selected < 0) throw new InvalidOperationException("Start has too little appropriate opening herd habitat.");
+                    Add(w, w.Tiles[selected]); occupied.Add(selected); count++;
+                }
             }
         }
     }

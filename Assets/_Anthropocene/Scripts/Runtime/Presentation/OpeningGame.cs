@@ -38,7 +38,7 @@ namespace Anthropocene.Presentation
         private static readonly Color MoveColor = new Color(.30f, .78f, .58f), FishColor = new Color(.28f, .70f, .88f), InvalidColor = new Color(.88f, .28f, .24f);
         private static readonly string[] Sizes = { "Standard  1024 x 512", "Small  96 x 48", "Tiny  48 x 24" };
         private static readonly int[][] TribeChoices = { new[] { 8, 16, 24, 32, 48, 64, 80 }, new[] { 2, 4, 6, 8, 12, 16 }, new[] { 2, 4, 6, 8 } };
-        private string SavePath => Path.Combine(Application.persistentDataPath, "opening-v4.anthro");
+        private string SavePath => Path.Combine(Application.persistentDataPath, "opening-v5.anthro");
         public WorldState State => world;
 
         private void Awake()
@@ -216,7 +216,7 @@ namespace Anthropocene.Presentation
             double generationNeed = Math.Max(1, world.LinkedPopulation(camp) * world.Config.Consumption * world.Config.GenerationIntervals);
             double reserveGenerations = camp.Food / generationNeed, storageGenerations = TurnResolver.StorageGenerations(world, camp.Tile);
             string hunger = camp.DeficitTurns > 0 ? "\nHunger warning: " + camp.DeficitTurns + " generation" + (camp.DeficitTurns == 1 ? "" : "s") + " in deficit" : world.Turn == 1 ? "\nOne full starting generation is protected" : "\nNo unresolved generational deficit";
-            GUI.Label(new Rect(14, y, width, 78), world.LinkedPopulation(camp) + " people  |  " + camp.Population + " at camp\nReserve: " + reserveGenerations.ToString("0.0") + " generations (" + Knowledge.Bands[observation.FoodCondition] + ")\nLocal storage ceiling: " + storageGenerations.ToString("0.0") + " generations" + hunger, text); y += 90;
+            GUI.Label(new Rect(14, y, width, 78), world.LinkedPopulation(camp) + " people  |  " + camp.Population + " at camp (" + camp.GathererPopulation + " gathering)\nReserve: " + reserveGenerations.ToString("0.0") + " generations (" + Knowledge.Bands[observation.FoodCondition] + ")\nLocal storage ceiling: " + storageGenerations.ToString("0.0") + " generations" + hunger, text); y += 90;
 
             Fill(new Rect(10, y, width + 8, 62), new Color(.14f, .16f, .14f));
             GUI.Label(new Rect(20, y + 7, width - 12, 24), "SELECTED  ·  " + SelectedName, section);
@@ -234,7 +234,7 @@ namespace Anthropocene.Presentation
             if (Button(new Rect(14, y, width, 36), mode == "Move" ? "◆ MOVE [M]  ·  choose a green tile" : "◇ MOVE [M]  ·  preview range", mode == "Move")) BeginMode("Move"); y += 42;
             if (selected == camp.Id)
             {
-                int maximum = Math.Max(0, camp.Population - world.Config.MinimumCamp);
+                int maximum = Math.Max(0, Math.Min(camp.GathererPopulation, camp.Population - world.Config.MinimumCamp));
                 dispatch = Mathf.Clamp(dispatch, 1, Math.Max(1, maximum));
                 bool controls = GUI.enabled; GUI.enabled = controls && maximum > 0;
                 if (Button(new Rect(14, y, 38, 32), "−")) dispatch = Math.Max(1, dispatch - 1);
@@ -294,7 +294,9 @@ namespace Anthropocene.Presentation
             {
                 double progress = TurnResolver.NeolithicProgress(world, camp, domain) / world.Config.ExperienceThreshold;
                 string label = progress < .25 ? "Unpracticed" : progress < .5 ? "Taking root" : progress < .8 ? "Practiced" : "Well established";
-                GUI.Label(new Rect(14, y, width, 26), domain + ": " + label, text); y += 27;
+                double ramp = PracticeEffects.Ramp(world.Config, camp, domain);
+                string effect = domain == Domain.Hunting ? " · meat +" + Math.Round(100 * world.Config.HuntingYieldBonus * ramp) + "%" : " · impact -" + Math.Round(100 * (domain == Domain.Gathering ? world.Config.GatheringImpactReduction : world.Config.FishingImpactReduction) * ramp) + "%";
+                GUI.Label(new Rect(14, y, width, 26), domain + ": " + label + effect, text); y += 27;
             }
             y += 12; DrawDemographics(ref y, width);
             int target = inspected >= 0 ? inspected : hovered;
@@ -303,7 +305,7 @@ namespace Anthropocene.Presentation
                 GUI.Label(new Rect(14, y, width, 42), tile.Terrain.ToString().ToUpperInvariant() + " / " + tile.Relief + (tile.Oasis ? " / OASIS" : ""), small); y += 44;
                 string water = tile.WaterBody == WaterKind.Saltwater ? "Saltwater - undrinkable\nFreshwater: none" : "Freshwater: " + Knowledge.Bands[tile.Freshwater] + " (" + tile.FreshwaterSource + ")";
                 string rivers = tile.Rivers.Count == 0 ? "" : "\nRiver boundary: " + (tile.Rivers.Max(r => r.FlowBand) == 1 ? "small channel" : tile.Rivers.Max(r => r.FlowBand) == 2 ? "river" : "wide river");
-                GUI.Label(new Rect(14, y, width, 190), "Elevation " + tile.ElevationLevel + "/10: " + ElevationLevelStage.Description(tile.ElevationLevel) + "\nGatherable food: " + Knowledge.Bands[tile.Food] + "\nHerd forage: " + Knowledge.Bands[tile.PotentialFood] + " (" + tile.GatherablePercent + "% human-accessible)\n" + water + "\nRenewal: " + Knowledge.Bands[tile.Productivity] + rivers + "\n" + (tile.Cultivated ? "Cultivated land" : tile.Fishery ? "Coastal fishery" : tile.Oasis ? "Finite oasis spring; depletion matters" : tile.Aquatic ? "Shore fishing available" : "Wild landscape"), text); y += 193;
+                GUI.Label(new Rect(14, y, width, 210), "Elevation " + tile.ElevationLevel + "/10: " + ElevationLevelStage.Description(tile.ElevationLevel) + "\nGatherable food: " + Knowledge.Bands[tile.Food] + "\nHerd forage: " + Knowledge.Bands[tile.PotentialFood] + " (" + tile.GatherablePercent + "% human-accessible)\n" + water + "\nRenewal: " + Knowledge.Bands[tile.Productivity] + " · " + (tile.Aquatic || tile.WaterBody == WaterKind.Saltwater ? "aquatic" : "land") + " condition: " + Knowledge.Bands[tile.Condition] + rivers + "\n" + (tile.Cultivated ? "Cultivated land" : tile.Fishery ? "Coastal fishery" : tile.Oasis ? "Finite oasis spring; depletion matters" : tile.Aquatic ? "Shore fishing available" : "Wild landscape"), text); y += 213;
                 DrawStack(target, ref y, width);
                 if (debug) GUI.Label(new Rect(14, y, width, 75), "DEVELOPER: tile " + target + "\nFood " + world.Tiles[target].Food.ToString("F2") + " / water " + world.Tiles[target].Freshwater.ToString("F2"), small);
             }

@@ -38,7 +38,11 @@ namespace Anthropocene.Simulation
             foreach (var c in o.Rivals.Where(c => c.Tile == tile)) occupants.Add(new VisibleOccupant(c.Id, -1, 0, "entity.rivalcamp", "Tribe " + (c.Player + 1) + " camp; population unknown"));
             foreach (var h in o.Hunters.Where(h => h.Tile == tile)) occupants.Add(new VisibleOccupant(h.Id, h.Id, 1, "entity.hunter", "Hunters " + h.Id + ": " + h.Population + " people; " + (h.InSupply ? "supplied by camp" : "beyond supply; provisions " + Knowledge.Bands[h.Provisions])));
             foreach (var h in o.ForeignHunters.Where(h => h.Tile == tile)) occupants.Add(new VisibleOccupant(h.Id, -1, 1, "entity.rivalhunter", "Tribe " + (h.Player + 1) + " hunters; population/provisions unknown"));
-            foreach (var h in o.Herds.Where(h => h.Tile == tile)) occupants.Add(new VisibleOccupant(h.Id, -1, h.Domestic ? 3 : 2, h.Domestic ? "entity.domestic" : "species." + h.Species, (h.Domestic ? "Domestic " + h.Name.Replace("Wild ", "") : h.Name) + ": " + h.Count.Label + " animals" + (h.Domestic ? h.Owner == o.Player ? "; your livestock" : "; owner tribe " + (h.Owner + 1) : ""), h.Count.Compact));
+            foreach (var h in o.Herds.Where(h => h.Tile == tile))
+            {
+                string tracking = !h.Domestic && o.LikelyHerdDestinations.TryGetValue(h.Id, out int likely) ? "; trackers expect tile " + likely : "";
+                occupants.Add(new VisibleOccupant(h.Id, -1, h.Domestic ? 3 : 2, h.Domestic ? "entity.domestic" : "species." + h.Species, (h.Domestic ? "Domestic " + h.Name.Replace("Wild ", "") : h.Name) + ": " + h.Count.Label + " animals" + (h.Domestic ? h.Owner == o.Player ? "; your livestock" : "; owner tribe " + (h.Owner + 1) : "") + tracking, h.Count.Compact));
+            }
             return occupants.OrderBy(p => p.Rank).ThenBy(p => p.Id).ToArray();
         }
         public static string Describe(AgentObservation o, int id, IEnumerable<Order> queued)
@@ -49,7 +53,7 @@ namespace Anthropocene.Simulation
             b.AppendLine("Elevation " + t.ElevationLevel + "/10 · " + ElevationLevelStage.Description(t.ElevationLevel));
             b.AppendLine("FOOD · " + Knowledge.Bands[t.Food] + " stock; maximum " + Knowledge.Bands[t.FoodMaximum]);
             b.AppendLine("HERD FORAGE · " + Knowledge.Bands[t.PotentialFood] + " biomass; capacity " + Knowledge.Bands[t.PotentialMaximum] + "; about " + t.GatherablePercent + "% human-gatherable");
-            b.AppendLine("Renewal " + Knowledge.Bands[t.Productivity] + " per season within the generation; soil moisture " + Knowledge.Bands[t.Moisture]);
+            b.AppendLine("Renewal " + Knowledge.Bands[t.Productivity] + " per season within the generation; " + (t.Aquatic || t.WaterBody == WaterKind.Saltwater ? "aquatic" : "land") + " condition " + Knowledge.Bands[t.Condition] + "; soil moisture " + Knowledge.Bands[t.Moisture]);
             if (o.RecentOwnExtraction.TryGetValue(id, out double extracted)) b.AppendLine("Your recorded extraction last turn: " + extracted.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
             b.AppendLine("WATER · " + (t.WaterBody == WaterKind.Saltwater ? "Saltwater, undrinkable; " + (t.Terrain == Terrain.Shallows ? "coastal shallows" : "open ocean") : t.FreshwaterSource == FreshwaterSource.None ? "No accessible freshwater source" : t.FreshwaterSource + " freshwater: " + Knowledge.Bands[t.Freshwater]));
             foreach (var river in t.Rivers) b.AppendLine("River edge " + river.Side + ": flow " + new[] { "", "small", "medium", "large" }[river.FlowBand] + ", width " + river.Width.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));

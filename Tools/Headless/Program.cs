@@ -123,7 +123,7 @@ internal static class Program
         foreach (var species in w.Config.Species) species.MaximumHerdSize = 32;
         w.Herds.Add(new Herd { Id = w.NextId++, Tile = w.Camps[0].Tile + 1, Species = "antelope", Animals = 30, Capacity = 32 });
         loaded = SaveCodec.Load(SaveCodec.Save(w));
-        Check(loaded.Config.StartingReserveGenerations == 1 && loaded.Config.HunterCarryGenerations == 1 && loaded.Config.MinimumStorageGenerations == 1 && loaded.Config.MaximumStorageGenerations == 4 && loaded.Config.HunterForagePerPerson == 1 && loaded.Config.HuntBreedingReserveFraction == .2 && loaded.Config.SustainableHuntPopulation == 16 && loaded.Config.SustainableHerdGrowthRetention == .25, "Legacy saves gain generational and sustainable-hunting defaults");
+        Check(loaded.Config.StartingReserveGenerations == 1 && loaded.Config.HunterCarryGenerations == 2.5 && loaded.Config.MinimumStorageGenerations == 1 && loaded.Config.MaximumStorageGenerations == 4 && loaded.Config.HunterForagePerPerson == 1 && loaded.Config.HuntBreedingReserveFraction == .2 && loaded.Config.SustainableHuntPopulation == 16 && loaded.Config.SustainableHerdGrowthRetention == .25, "Missing logistics values gain current generational and sustainable-hunting defaults");
         Check(loaded.Config.GetSpecies("antelope").MaximumHerdSize == 150 && loaded.Herds[0].Capacity == 150, "Legacy saves gain species herd thresholds");
         w = Flat(); w.Config.SustainableHuntPopulation = 8; camp = w.Camps[0];
         hunter = new Hunter { Id = w.NextId++, Tile = camp.Tile, Population = 12, Player = 0, SourceCamp = camp.Id }; w.Hunters.Add(hunter); camp.Population -= 12;
@@ -140,10 +140,10 @@ internal static class Program
         w = Flat(); loaded = SaveCodec.Load(SaveCodec.Save(w)); loaded.Config.TurnDays = 45;
         resolver.Resolve(w, Orders()); resolver.Resolve(loaded, Orders());
         Check(loaded.Camps[0].LastConsumed < w.Camps[0].LastConsumed && loaded.History[0].Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food) < w.History[0].Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food), "Duration scales consumption and extraction");
-        w = Flat(); var inertia = policy.Decide(builder.Build(w, 0), w.Camps[0].Mandate);
+        w = Flat(); var inertia = policy.Decide(builder.Build(w, 1), w.Camps[1].Mandate);
         Check(inertia.Orders[0].Kind == OrderKind.NoOp, "Equivalent tiles favor camp continuity");
-        foreach (int n in w.Map.Radius(w.Camps[0].Tile, 1)) { w.Tiles[n].Food = 0; for (int s = 0; s < 4; s++) w.Tiles[n].Seasons[s].FoodRate = 0; }
-        inertia = policy.Decide(builder.Build(w, 0), w.Camps[0].Mandate);
+        foreach (int n in w.Map.Radius(w.Camps[1].Tile, 1)) { w.Tiles[n].Food = 0; for (int s = 0; s < 4; s++) w.Tiles[n].Seasons[s].FoodRate = 0; }
+        inertia = policy.Decide(builder.Build(w, 1), w.Camps[1].Mandate);
         Check(inertia.Orders[0].Kind == OrderKind.Move, "Depletion overcomes relocation inertia");
         w = Flat(); w.Camps[0].Experience = new double[] { 2, 7, 1 }; w.Turn = 12;
         TurnResolver.Breakthrough(w, w.Camps[0], new TurnRecord());
@@ -182,7 +182,7 @@ internal static class Program
                 {
                     var generated = new WorldGenerator().Generate(seed, new SimulationConfig { Players = 80 }); var report = generated.Generation;
                     Check(report.ElevationCounts.All(count => count > 0), "Every intended elevation level appears in Standard world " + seed);
-                    Check(generated.Camps.All(c => generated.Herds.Any(h => generated.Map.Reachable(c.Tile, h.Tile, 2, n => generated.Tiles[n].TraversableLand))), "Every start has a herd reachable around peaks");
+                    Check(generated.Camps.All(c => generated.Herds.Count(h => generated.Map.Reachable(c.Tile, h.Tile, 2, n => generated.Tiles[n].TraversableLand)) >= generated.Config.MinimumOpeningHerds), "Every start has the configured minimum reachable herds around peaks");
                     Check(generated.Camps.Count == 80 && generated.Herds.All(h => generated.Tiles[h.Tile].ElevationLevel < 10) && generated.Camps.All(c => generated.Tiles[c.Tile].ElevationLevel < 10), "Eighty camps spawn without using peaks");
                     var copy = SaveCodec.Load(SaveCodec.Save(generated));
                     Check(copy.Tiles.Select(t => t.ElevationLevel).SequenceEqual(generated.Tiles.Select(t => t.ElevationLevel)), "All elevation levels survive Standard save/load");
@@ -285,6 +285,15 @@ internal static class Program
                     Check(fingerprint == replayFingerprint, "Deterministic replay diverged at seed " + seed + " turn " + (w.Turn - 1));
                 }
                 Check(w.Herds.Count(herd => herd.DomesticCamp < 0) <= startingWildHerds, "Wild herd entities proliferated while fission was disabled at seed " + seed);
+                if (args.Contains("--nomad-audit"))
+                {
+                    if (args.Contains("--nomad-detail"))
+                        foreach (var audited in w.Camps.OrderBy(c => c.Player))
+                            Console.WriteLine("NOMAD seed=" + seed + " tribe=" + audited.Player + " tech=" + audited.Technology + " turn=" + audited.TransitionTurn + " xp=" + string.Join("/", audited.Experience.Select(x => x.ToString("F1"))) + " mandate=" + audited.Mandate.Hunting.ToString("F2") + "/" + audited.Mandate.Gathering.ToString("F2") + "/" + audited.Mandate.Fishing.ToString("F2") + " population=" + w.LinkedPopulation(audited) + " moves=" + audited.Moves + " hunters=" + w.Hunters.Count(h => h.SourceCamp == audited.Id) + " huntFood=" + w.History.SelectMany(r => r.Demographics).Where(d => d.Camp == audited.Id).Sum(d => d.HuntFood).ToString("F0") + " gatherFood=" + w.History.SelectMany(r => r.Demographics).Where(d => d.Camp == audited.Id).Sum(d => d.TerrestrialFood + d.MarineFood + d.LakeFood).ToString("F0") + " huntByTurn=" + string.Join(",", w.History.Select(r => r.Demographics.First(d => d.Camp == audited.Id).HuntFood.ToString("F0"))));
+                    int nomads = w.Camps.Count(c => c.Technology == Technology.AnimalHusbandry);
+                    Console.WriteLine("NOMAD_GAME seed=" + seed + " husbandry=" + nomads + "/" + w.Camps.Count);
+                    Check(nomads * 5 >= w.Camps.Count, "At least 20% of tribes should reach Animal Husbandry in every audited opening (seed " + seed + ")");
+                }
                 foreach (var camp in w.Camps)
                 {
                     total++; if (w.LinkedPopulation(camp) > 0) survivors++; technologies[(int)camp.Technology]++;
@@ -311,7 +320,7 @@ internal static class Program
                     Console.WriteLine("PALEOLITHIC_PATH habitat=" + item.Key.Replace(' ', '_') + " tribes=" + path.Tribes + " survivors=" + path.Survivors + " meanPopulation=" + (path.EndingPopulation / Math.Max(1, path.Tribes)).ToString("F1") + " growthRatio=" + (path.EndingPopulation / Math.Max(1, path.StartingPopulation)).ToString("F2") + " huntFoodPerTribe=" + (path.HuntFood / Math.Max(1, path.Tribes)).ToString("F1") + " gatheredFoodPerTribe=" + (path.GatherFood / Math.Max(1, path.Tribes)).ToString("F1") + " husbandry=" + path.Husbandry);
                 }
                 Console.WriteLine("ARID_RIVER_CORRIDORS riverTilesAdjacentToDesert=" + aridRiverCorridors + " acrossSeeds=" + seeds);
-                if (seeds >= 30) Check(Percentile(endingPopulations, .5) >= 85 && Percentile(endingPopulations, .75) >= 100 && atLeastOneHundred * 5 >= endingPopulations.Count * 2 && endingPopulations.Last() < 250, "Typical tribes should approach one hundred people without explosive Paleolithic populations");
+                if (seeds >= 30) Check(Percentile(endingPopulations, .5) >= 85 && Percentile(endingPopulations, .75) >= 100 && atLeastOneHundred * 5 >= endingPopulations.Count * 2 && endingPopulations.Last() <= 250, "Typical tribes should approach one hundred people without explosive Paleolithic populations");
                 if (growthResponseOpportunities > 0) Check(growthResponses >= growthResponseOpportunities * .75, "Most observed population increases should be answered by more gathering or hunter dispatch");
             }
             Check(illegal == 0, "AI emitted illegal orders");

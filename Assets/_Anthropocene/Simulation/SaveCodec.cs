@@ -11,7 +11,7 @@ namespace Anthropocene.Simulation
 {
     public static class SaveCodec
     {
-        private const string Magic = "ANTHROPOCENE-5";
+        private const string Magic = "ANTHROPOCENE-6";
         private static DataContractSerializer Serializer(Type type) => new DataContractSerializer(type, new DataContractSerializerSettings { MaxItemsInObjectGraph = int.MaxValue });
         public static byte[] Save(WorldState world)
         {
@@ -35,7 +35,7 @@ namespace Anthropocene.Simulation
                         writer.Write(tile.Plate); writer.Write(tile.Downstream); writer.Write((byte)tile.Terrain);
                         writer.Write((byte)((tile.Continental ? 1 : 0) | (tile.Oasis ? 2 : 0) | (tile.Cultivated ? 4 : 0) | (tile.Fishery ? 8 : 0)));
                         writer.Write((byte)tile.ElevationLevel); writer.Write((byte)tile.RidgeMask); writer.Write((byte)tile.Relief); writer.Write((byte)tile.WaterBody); writer.Write((byte)tile.FreshwaterSource);
-                        writer.Write(tile.DepressionDepth); writer.Write(tile.OasisInfluence); writer.Write(tile.Saltwater);
+                        writer.Write(tile.DepressionDepth); writer.Write(tile.OasisInfluence); writer.Write(tile.Saltwater); writer.Write(tile.LandCondition); writer.Write(tile.AquaticCondition);
                         writer.Write(tile.Elevation); writer.Write(tile.Volcanism); writer.Write(tile.Flow); writer.Write(tile.Food); writer.Write(tile.PotentialFood); writer.Write(tile.Freshwater);
                         foreach (var s in tile.Seasons)
                         {
@@ -54,11 +54,11 @@ namespace Anthropocene.Simulation
             using (var buffered = new BufferedStream(zip, 65536))
             using (var reader = new BinaryReader(buffered))
             {
-                if (reader.ReadString() != Magic) throw new InvalidDataException("This save predates the potential-food ecology prototype. Start a new opening; the older save is preserved.");
+                if (reader.ReadString() != Magic) throw new InvalidDataException("This save predates persistent environmental condition and workforce ledgers. Start a new opening; the older save is preserved.");
                 int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > 128 * 1024 * 1024) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
-                if (world.Version != 4 || world.Generation.GeneratorVersion != WorldState.GeneratorVersion) throw new InvalidDataException("Unsupported save version; regeneration is never implicit.");
+                if (world.Version != 5 || world.Generation.GeneratorVersion != WorldState.GeneratorVersion) throw new InvalidDataException("Unsupported save version; regeneration is never implicit.");
                 MigrateGenerationalDefaults(world);
                 world.Config.Validate();
                 int count = reader.ReadInt32(); if (count != world.Config.Width * world.Config.Height) throw new InvalidDataException("Invalid tile count.");
@@ -68,7 +68,7 @@ namespace Anthropocene.Simulation
                     var tile = new Tile { Id = i, Plate = reader.ReadInt32(), Downstream = reader.ReadInt32(), Terrain = (Terrain)reader.ReadByte() };
                     byte flags = reader.ReadByte(); tile.Continental = (flags & 1) != 0; tile.Oasis = (flags & 2) != 0; tile.Cultivated = (flags & 4) != 0; tile.Fishery = (flags & 8) != 0;
                     tile.ElevationLevel = reader.ReadByte(); tile.RidgeMask = reader.ReadByte(); tile.Relief = (Relief)reader.ReadByte(); tile.WaterBody = (WaterKind)reader.ReadByte(); tile.FreshwaterSource = (FreshwaterSource)reader.ReadByte();
-                    tile.DepressionDepth = reader.ReadSingle(); tile.OasisInfluence = reader.ReadSingle(); tile.Saltwater = reader.ReadDouble();
+                    tile.DepressionDepth = reader.ReadSingle(); tile.OasisInfluence = reader.ReadSingle(); tile.Saltwater = reader.ReadDouble(); tile.LandCondition = reader.ReadDouble(); tile.AquaticCondition = reader.ReadDouble();
                     tile.Elevation = reader.ReadSingle(); tile.Volcanism = reader.ReadSingle(); tile.Flow = reader.ReadSingle(); tile.Food = reader.ReadDouble(); tile.PotentialFood = reader.ReadDouble(); tile.Freshwater = reader.ReadDouble();
                     for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData
                     {
@@ -94,7 +94,7 @@ namespace Anthropocene.Simulation
             foreach (var camp in world.Camps.Where(c => c.DemographicGrowthMultiplier <= 0)) camp.DemographicGrowthMultiplier = 1;
             bool legacyGenerationalConfig = config.StartingReserveGenerations <= 0 && config.HunterCarryGenerations <= 0 && config.MinimumStorageGenerations <= 0 && config.MaximumStorageGenerations <= 0;
             if (config.StartingReserveGenerations <= 0) config.StartingReserveGenerations = 1;
-            if (config.HunterCarryGenerations <= 0) config.HunterCarryGenerations = 1;
+            if (config.HunterCarryGenerations <= 0) config.HunterCarryGenerations = 2.5;
             if (config.MinimumStorageGenerations <= 0) config.MinimumStorageGenerations = 1;
             if (config.MaximumStorageGenerations < config.MinimumStorageGenerations) config.MaximumStorageGenerations = 4;
             if (config.HuntBreedingReserveFraction <= 0) config.HuntBreedingReserveFraction = .2;
