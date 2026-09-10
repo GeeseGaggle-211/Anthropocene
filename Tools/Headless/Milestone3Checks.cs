@@ -35,6 +35,12 @@ internal static class Milestone3Checks
         Check(report.FoodRequired > 24 * 80 && report.FoodRequired > shorter.Demographics[0].FoodRequired * 2, "food demand grows with population within the generation");
         Check(result.Growth > shorter.Growth && shortRun.Days == 3650, "shorter technological-era duration scales demographics and clock");
         Check(report.StartingPopulation + report.Additions - report.Deaths == report.EndingPopulation && report.Explanation.Contains("Population") && report.LimitingFactor.Contains("surplus"), "demographic conservation and visible explanation data are explicit");
+        var secondGeneration = resolver.Resolve(w, Idle()).Demographics.Single();
+        Check(secondGeneration.StartingPopulation > report.StartingPopulation && secondGeneration.FoodRequired > report.FoodRequired && secondGeneration.TerrestrialFood > report.TerrestrialFood, "population growth raises demand and automatically expands local gathering in the next generation");
+        w = Flat(); w.Config.GatherPerPerson = 100; w.Camps[0].Population = 16;
+        var suppliedHunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, Tile = w.Camps[0].Tile, Population = 8 }; w.Hunters.Add(suppliedHunters);
+        resolver.Resolve(w, Idle());
+        Check(Math.Abs(w.LinkedPopulation(w.Camps[0]) + w.Camps[0].GrowthRemainder - 24 * Math.Exp(w.Config.AnnualHumanGrowthRate * 20)) < 1e-8 && suppliedHunters.Population == 8, "the entire supplied tribe forms the reproductive base while additions appear at camp");
         Check(w.Tiles.All(t => t.Food >= 0 && t.Food <= t.Seasons[0].MaxFood), "long turns replenish bounded stocks instead of draining one seasonal snapshot eighty times");
         var standardCapacity = new SimulationConfig { Players = 80 }; standardCapacity.Validate();
         bool rejectedSmall = false; try { SimulationConfig.Small(17).Validate(); } catch (ArgumentException) { rejectedSmall = true; }
@@ -56,8 +62,23 @@ internal static class Milestone3Checks
         Check(w.Herds.Count > 1 && w.Herds.All(h => h.Animals <= h.Capacity) && w.Herds.Sum(h => h.Animals) > herdPopulation && herdTurn.Events.Any(e => e.Contains("divided")), "well-fed herds grow toward 150 and split deterministically above their limit");
         w = Flat(); var huntingCamp = w.Camps[0]; huntingCamp.Population -= 8; var hunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = huntingCamp.Tile, Population = 8 }; w.Hunters.Add(hunters);
         var camels = new Herd { Id = w.NextId++, Tile = w.Map.Neighbors(huntingCamp.Tile).First(), Animals = 10, Capacity = 80, Species = "camel" }; w.Herds.Add(camels);
-        int interception = TurnResolver.HerdDestination(w, camels); var sustainableHunt = resolver.Resolve(w, new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Hunt, hunters.Id, camels.Id, interception) } });
+        int interception = TurnResolver.HerdDestination(w, camels); var sustainableHunt = resolver.Resolve(w, new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Move, hunters.Id, destination: interception) } });
         Check(sustainableHunt.Transfers.Where(t => t.Kind == "Hunting").Sum(t => t.Food) == 7680 && w.Config.GetSpecies("camel").FoodYield * 4 == 24 * w.Config.Consumption * w.Config.GenerationIntervals && camels.Animals == 4 && sustainableHunt.Events.Any(e => e.Contains("breeding animals")), "herds reproduce before harvest, four camels feed 24 people for a generation, and breeding stock remains");
+        Check(Math.Abs(huntingCamp.Experience.Sum() - 24) < 1e-8 && huntingCamp.Experience[(int)Domain.Hunting] > huntingCamp.Experience[(int)Domain.Gathering], "a fixed person-generation progress budget follows actual calorie shares and a hunt-dominant diet favors husbandry");
+        w = Flat(); huntingCamp = w.Camps[0]; huntingCamp.Population -= 8; hunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = huntingCamp.Tile, Population = 8 }; w.Hunters.Add(hunters);
+        foreach (int neighbor in w.Map.Neighbors(hunters.Tile)) w.Tiles[neighbor].ElevationLevel = 10;
+        camels = new Herd { Id = w.NextId++, Tile = hunters.Tile, Animals = 10, Capacity = 80, Species = "camel" }; w.Herds.Add(camels);
+        var automaticHunt = resolver.Resolve(w, Idle());
+        Check(automaticHunt.Transfers.Any(t => t.Entity == hunters.Id && t.Kind == "Hunting" && t.Food > 0), "an established hunter group automatically hunts wild prey sharing its resolved tile");
+        w = Flat(); var localHerd = new Herd { Id = w.NextId++, Tile = w.Camps[0].Tile, Animals = 10, Capacity = 80, Species = "camel" }; w.Herds.Add(localHerd);
+        foreach (int neighbor in w.Map.Neighbors(localHerd.Tile)) w.Tiles[neighbor].ElevationLevel = 10;
+        int animalsBeforeDispatch = localHerd.Animals; var dispatchTurn = resolver.Resolve(w, new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Dispatch, w.Camps[0].Id, population: 8) } });
+        Check(localHerd.Animals >= animalsBeforeDispatch && !dispatchTurn.Transfers.Any(t => t.Kind == "Hunting"), "a newly dispatched group cannot auto-hunt before its first planning phase");
+        w = Flat(); w.Camps[0].Population = 40;
+        var existingHunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, Tile = w.Camps[0].Tile, Population = 8 }; w.Hunters.Add(existingHunters);
+        w.Herds.Add(new Herd { Id = w.NextId++, Tile = w.Map.Neighbors(w.Camps[0].Tile).First(), Animals = 40, Capacity = 150, Species = "antelope" });
+        var growthResponse = new HeuristicTribePolicy().Decide(new AgentObservationBuilder().Build(w, 0), w.Camps[0].Mandate);
+        Check(growthResponse.Orders.Any(o => o.Kind == OrderKind.Dispatch && o.Population >= 4) && growthResponse.Orders.All(o => o.Kind != OrderKind.Hunt), "a larger tribe with visible prey can dispatch another group while pursuit uses movement rather than an explicit hunt order");
         w = Flat(30, .3f); w.Camps[0].Food = 48;
         for (int i = 0; i < 4; i++) resolver.Resolve(w, Idle()); int settled = w.Camps[0].Population;
         var plateau = resolver.Resolve(w, Idle()).Demographics[0];

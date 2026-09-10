@@ -59,7 +59,7 @@
   "FishPerPerson": 2.6,
   "WanderChance": 0.05,
   "ExperienceThreshold": 225,
-  "HarvestExperienceWeight": 0.08,
+  "UnproductivePracticeFraction": 0.1,
   "CarryoverMultiplier": 1.25,
   "CarryoverFloor": 100,
   "CultivationMultiplier": 1.4,

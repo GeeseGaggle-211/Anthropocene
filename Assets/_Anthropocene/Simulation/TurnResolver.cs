@@ -92,6 +92,8 @@ namespace Anthropocene.Simulation
             var record = new TurnRecord { Turn = w.Turn, Seed = w.Seed, StartDays = w.Days, Duration = w.Config.TurnDays };
             double time = record.Duration / w.Config.BaseDays;
             if (traces != null) record.Decisions.AddRange(traces.OrderBy(t => t.Player));
+            // Groups formed during this resolution cannot act until the next planning phase.
+            var establishedHunters = new HashSet<int>(w.Hunters.Where(h => h.Population > 0).Select(h => h.Id));
             var locked = new List<Order>();
             foreach (var camp in w.Camps.OrderBy(c => c.Player))
             {
@@ -119,7 +121,7 @@ namespace Anthropocene.Simulation
             Supply.DepositReturns(w, record);
             var touched = new Dictionary<int, TileChange>();
             Action<int> touch = id => { if (!touched.ContainsKey(id)) touched[id] = new TileChange { Tile = id, BeforeFood = w.Tiles[id].Food, BeforePotentialFood = w.Tiles[id].PotentialFood, BeforeFreshwater = w.Tiles[id].Freshwater }; };
-            ResolveEcology(w, locked, record, touch);
+            ResolveEcology(w, locked, establishedHunters, record, touch);
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Reintegrate).OrderBy(o => o.Entity))
             {
                 var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity); if (hunter == null) continue;
@@ -193,22 +195,21 @@ namespace Anthropocene.Simulation
                 if (herd.Tile != target) record.Log("Herd " + herd.Id + " moved to " + target + "."); herd.Tile = target;
             }
         }
-        private static void Hunt(WorldState w, List<Order> orders, TurnRecord record, double time)
+        private static void Hunt(WorldState w, List<Order> orders, HashSet<int> establishedHunters, TurnRecord record, double time)
         {
             double practiceTime = time * w.Config.BaseDays / w.Config.PracticeDays;
             var requests = new List<Tuple<Hunter, Herd, int>>();
-            foreach (var order in orders.Where(o => o.Kind == OrderKind.Hunt).OrderBy(o => o.Entity))
+            var committedElsewhere = new HashSet<int>(orders.Where(o => o.Kind == OrderKind.Fish || o.Kind == OrderKind.Reintegrate).Select(o => o.Entity));
+            foreach (var hunter in w.Hunters.Where(h => establishedHunters.Contains(h.Id) && h.Population > 0 && !committedElsewhere.Contains(h.Id)).OrderBy(h => h.Id))
             {
-                var hunter = w.Hunters.First(h => h.Id == order.Entity); var camp = w.Camps.First(c => c.Id == hunter.SourceCamp);
-                var herd = w.Herds.FirstOrDefault(h => h.Id == order.Target);
-                camp.Experience[(int)Domain.Hunting] += hunter.Population * practiceTime;
-                if (herd != null)
-                {
-                    var practice = camp.SpeciesExperience.FirstOrDefault(p => p.Species == herd.Species);
-                    if (practice == null) { practice = new SpeciesPractice { Species = herd.Species }; camp.SpeciesExperience.Add(practice); }
-                    practice.Experience += hunter.Population * practiceTime;
-                }
-                if (herd == null || hunter.Tile != herd.Tile) { record.Log("Hunters " + hunter.Id + " lost contact; hunting practice recorded."); continue; }
+                var herd = w.Herds.Where(h => h.DomesticCamp < 0 && h.Tile == hunter.Tile)
+                    .OrderByDescending(h => Math.Max(0, h.Animals - Math.Max(w.Config.GetSpecies(h.Species).MinimumAnimals, (int)Math.Ceiling(h.Animals * w.Config.HuntBreedingReserveFraction))))
+                    .ThenByDescending(h => h.Animals).ThenBy(h => h.Id).FirstOrDefault();
+                if (herd == null) continue;
+                var camp = w.Camps.First(c => c.Id == hunter.SourceCamp);
+                var practice = camp.SpeciesExperience.FirstOrDefault(p => p.Species == herd.Species);
+                if (practice == null) { practice = new SpeciesPractice { Species = herd.Species }; camp.SpeciesExperience.Add(practice); }
+                practice.Experience += hunter.Population * practiceTime;
                 double efficiency = w.Config.HuntEfficiency * (w.Tiles[hunter.Tile].Terrain == Terrain.Woodland ? .85 : 1);
                 double expectation = hunter.Population * efficiency * time * (1 - w.Config.HuntVariance + Numbers.Random(w.Seed, 80, hunter.Id, w.Turn) * w.Config.HuntVariance * 2);
                 int requested = (int)expectation + (Numbers.Random(w.Seed, 81, hunter.Id, w.Turn) < expectation % 1 ? 1 : 0);
@@ -227,7 +228,7 @@ namespace Anthropocene.Simulation
                 for (int i = 0; i < sorted.Length; i++)
                 {
                     var hunter = sorted[i].Item1; var camp = w.Camps.First(c => c.Id == hunter.SourceCamp); double yield = kills[i] * species.FoodYield;
-                    Supply.Award(w, hunter, yield, record); camp.Experience[(int)Domain.Hunting] += yield * w.Config.HarvestExperienceWeight;
+                    Supply.Award(w, hunter, yield, record);
                     record.Transfers.Add(new Transfer { Entity = hunter.Id, Tile = hunter.Tile, Kind = "Hunting", Food = yield });
                     record.Log("Hunters " + hunter.Id + " killed " + kills[i] + " animals from herd " + herd.Id + ".");
                 }

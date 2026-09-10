@@ -96,17 +96,6 @@ namespace Anthropocene.Presentation
             candidate = null;
             error = null;
             if (mode == "Move") candidate = new Order(OrderKind.Move, selected, destination: tile);
-            else if (mode == "Hunt")
-            {
-                var herd = observation.Herds.FirstOrDefault(h => tile == hovered && h.Id == hoveredOccupant && !h.Domestic) ?? observation.Herds.FirstOrDefault(h => h.Tile == tile && !h.Domestic);
-                if (!SelectedIsHunter) error = "Select a hunter group before choosing a hunt target.";
-                else if (herd == null) error = "No visible wild herd is on this tile.";
-                else
-                {
-                    int destination = planned.TryGetValue(selected, out var prior) && prior.Destination >= 0 ? prior.Destination : tile;
-                    candidate = new Order(OrderKind.Hunt, selected, herd.Id, destination);
-                }
-            }
             else if (mode == "Fish")
             {
                 if (!SelectedIsHunter) error = "Select a hunter group before choosing fishing water.";
@@ -127,13 +116,13 @@ namespace Anthropocene.Presentation
 
         private void DrawPlanningTile(Rect rect, int tile)
         {
-            bool active = mode == "Move" || mode == "Hunt" || mode == "Fish";
+            bool active = mode == "Move" || mode == "Fish";
             bool valid = active && IsValidTarget(tile);
             bool pointed = hovered == tile;
-            bool queued = planned.Values.Any(o => o.Destination == tile || o.Kind == OrderKind.Fish && o.Target == tile || o.Kind == OrderKind.Hunt && observation.Herds.Any(h => h.Id == o.Target && h.Tile == tile));
+            bool queued = planned.Values.Any(o => o.Destination == tile || o.Kind == OrderKind.Fish && o.Target == tile);
             if (valid)
             {
-                Color color = mode == "Move" ? MoveColor : mode == "Hunt" ? HuntColor : FishColor;
+                Color color = mode == "Move" ? MoveColor : FishColor;
                 color.a = pointed ? .30f : .13f;
                 Tint(new Rect(rect.x + 3, rect.y + 3, rect.width - 6, rect.height - 6), hex, color);
             }
@@ -168,10 +157,10 @@ namespace Anthropocene.Presentation
                 var path = PlanningPath.Find(observation.Map, origin, order.Destination, budget, Enter, n => hunter && observation.Tiles[n].Aquatic ? waterCost : 1);
                 DrawPath(path, area, Gold, 3);
             }
-            if (hovered >= 0 && (mode == "Move" || mode == "Hunt" || mode == "Fish") && TryTargetOrder(hovered, out var preview, out _))
+            if (hovered >= 0 && (mode == "Move" || mode == "Fish") && TryTargetOrder(hovered, out var preview, out _))
             {
                 var path = preview.Destination >= 0 ? PathTo(preview.Destination) : Array.Empty<int>();
-                DrawPath(path, area, mode == "Hunt" ? HuntColor : mode == "Fish" ? FishColor : MoveColor, 5);
+                DrawPath(path, area, mode == "Fish" ? FishColor : MoveColor, 5);
             }
         }
 
@@ -226,16 +215,15 @@ namespace Anthropocene.Presentation
         private string ModeInstruction()
         {
             if (mode == "Move") return "MOVE MODE  ·  Green tiles are reachable this generation  ·  click to queue  ·  Esc cancels mode";
-            if (mode == "Hunt") return "HUNT MODE  ·  Amber tiles contain a valid visible herd  ·  click to queue  ·  Esc cancels mode";
             if (mode == "Fish") return "FISH MODE  ·  Blue water is fishable from the group's final tile  ·  click to queue  ·  Esc cancels mode";
             return "INSPECT MODE  ·  click a unit slot to select  ·  right-click a tile for movement";
         }
 
         private string CommitPreview()
         {
-            if (planned.Count == 0) return "No explicit orders. The camp will gather locally and every group will hold position.";
+            if (planned.Count == 0) return "No explicit orders. The camp will gather locally; hunters hold position and automatically hunt co-located wild herds.";
             string orders = string.Join("  ·  ", planned.Values.OrderBy(o => o.Entity).Select(o => UnitName(o.Entity) + ": " + Describe(o)));
-            return planned.Count + " queued: " + orders + " Automatic camp gathering still occurs.";
+            return planned.Count + " queued: " + orders + " Camp gathering and co-located hunting still occur automatically.";
         }
 
         private string UnitName(int id) => id == observation.CampId ? "Camp" : "Hunters " + id;
@@ -251,7 +239,7 @@ namespace Anthropocene.Presentation
 
         private void BeginMode(string next)
         {
-            if ((next == "Hunt" || next == "Fish") && !SelectedIsHunter)
+            if (next == "Fish" && !SelectedIsHunter)
             {
                 status = "Select a hunter group to use " + next.ToLowerInvariant() + ".";
                 return;

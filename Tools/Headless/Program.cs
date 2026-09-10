@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Collections;
 using System.Linq;
+using System.Reflection;
 using Anthropocene.Simulation;
 
 internal static class Program
@@ -37,6 +39,36 @@ internal static class Program
             new { Name = "Cold steppe", Count = tiles.Count(tile => tile.Terrain == Terrain.Tundra) }
         };
         return counts.OrderByDescending(item => item.Count).ThenBy(item => item.Name, StringComparer.Ordinal).First().Name;
+    }
+    private static int Percentile(IReadOnlyList<int> sorted, double fraction) => sorted.Count == 0 ? 0 : sorted[(int)Math.Round((sorted.Count - 1) * fraction)];
+    private static string FirstDifference(object left, object right, string path = "world")
+    {
+        if (ReferenceEquals(left, right)) return null;
+        if (left == null || right == null) return path + ": " + (left ?? "null") + " != " + (right ?? "null");
+        var type = left.GetType();
+        if (type != right.GetType()) return path + ": " + type.Name + " != " + right.GetType().Name;
+        if (type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal))
+            return left.Equals(right) ? null : path + ": " + left + " != " + right;
+        if (left is IEnumerable leftItems && right is IEnumerable rightItems)
+        {
+            var a = leftItems.GetEnumerator(); var b = rightItems.GetEnumerator(); int index = 0;
+            while (true)
+            {
+                bool hasA = a.MoveNext(), hasB = b.MoveNext();
+                if (hasA != hasB) return path + ": collection lengths differ at " + index;
+                if (!hasA) return null;
+                string difference = FirstDifference(a.Current, b.Current, path + "[" + index + "]");
+                if (difference != null) return difference;
+                index++;
+            }
+        }
+        foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance).OrderBy(field => field.Name, StringComparer.Ordinal))
+        {
+            if (type == typeof(WorldState) && field.Name == nameof(WorldState.Generation)) continue;
+            string difference = FirstDifference(field.GetValue(left), field.GetValue(right), path + "." + field.Name);
+            if (difference != null) return difference;
+        }
+        return null;
     }
     private static void Tests()
     {
@@ -98,13 +130,13 @@ internal static class Program
         var prey = new Herd { Id = w.NextId++, Tile = camp.Tile + 1, Animals = 8 }; w.Herds.Add(prey);
         int fleeing = TurnResolver.HerdDestination(w, prey);
         Check(w.Map.Distance(fleeing, hunter.Tile) == w.Map.Radius(prey.Tile, 1).Max(n => w.Map.Distance(n, hunter.Tile)), "Herd maximizes escape distance");
-        var huntRecord = resolver.Resolve(w, Orders(new Order(OrderKind.Hunt, hunter.Id, prey.Id, fleeing)));
-        Check(huntRecord.Transfers.Any(t => t.Kind == "Hunting" && t.Food > 0), "Predictive interception succeeds");
+        var huntRecord = resolver.Resolve(w, Orders(new Order(OrderKind.Move, hunter.Id, destination: fleeing)));
+        Check(huntRecord.Transfers.Any(t => t.Kind == "Hunting" && t.Food > 0), "Movement into a herd's resolved tile triggers automatic hunting");
         Check(huntRecord.Transfers.Where(t => t.Entity == prey.Id && t.Kind == "Herd").Sum(t=>t.PotentialFood) > 0 && huntRecord.Transfers.Where(t => t.Entity == prey.Id && t.Kind == "Herd").Sum(t=>t.Freshwater) > 0, "Surviving herd consumes potential food and freshwater");
         w = Flat(); camp = w.Camps[0]; hunter = new Hunter { Id = w.NextId++, Tile = camp.Tile, Population = 8, Player = 0, SourceCamp = camp.Id }; w.Hunters.Add(hunter); camp.Population -= 8;
         prey = new Herd { Id = w.NextId++, Tile = camp.Tile + 1, Animals = 8 }; w.Herds.Add(prey);
-        huntRecord = resolver.Resolve(w, Orders(new Order(OrderKind.Hunt, hunter.Id, prey.Id)));
-        Check(prey.Animals >= 8 && camp.Experience[0] > 0 && !huntRecord.Transfers.Any(t => t.Kind == "Hunting"), "No contact means no kill but experience");
+        huntRecord = resolver.Resolve(w, Orders(new Order(OrderKind.Move, hunter.Id, destination: hunter.Tile + 1)));
+        Check(prey.Animals >= 8 && camp.Experience[0] == 0 && !huntRecord.Transfers.Any(t => t.Kind == "Hunting"), "Movement without herd contact causes neither kills nor hunting progress");
         w = Flat(); loaded = SaveCodec.Load(SaveCodec.Save(w)); loaded.Config.TurnDays = 45;
         resolver.Resolve(w, Orders()); resolver.Resolve(loaded, Orders());
         Check(loaded.Camps[0].LastConsumed < w.Camps[0].LastConsumed && loaded.History[0].Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food) < w.History[0].Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food), "Duration scales consumption and extraction");
@@ -132,6 +164,8 @@ internal static class Program
             Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20; int survivors = 0, total = 0, starvation = 0, growth = 0, illegal = 0;
             var habitatPaths = new Dictionary<string, HabitatPathStats>(StringComparer.Ordinal);
             int aridRiverCorridors = 0;
+            var endingPopulations = new List<int>(); int growthResponseOpportunities = 0, growthResponses = 0, dispatchResponses = 0, additionalDispatchResponses = 0, gatheringResponses = 0;
+            int huntPursuits = 0, successfulHuntPursuits = 0;
             if (args.Contains("--find-ui3"))
             {
                 var config = new SimulationConfig { Players = 32 }; var preview = new WorldGenerator().Generate(1729, config); var camp = preview.Camps[0];
@@ -201,23 +235,58 @@ internal static class Program
                 aridRiverCorridors += w.Tiles.Count(tile => tile.River && w.Map.Neighbors(tile.Id).Any(neighbor => w.Tiles[neighbor].Terrain == Terrain.Desert));
                 var replay = SaveCodec.Load(SaveCodec.Save(w));
                 var resolver = new TurnResolver(); var policy = new HeuristicTribePolicy(); var builder = new AgentObservationBuilder();
+                var previousPopulation = new Dictionary<int, int>(); var previousGathering = new Dictionary<int, double>();
                 while (!w.Finished && w.Turn <= 12)
                 {
                     var orders = new Dictionary<int, List<Order>>(); var traces = new List<DecisionTrace>();
+                    var hunterGroupsBefore = w.Camps.ToDictionary(camp => camp.Player, camp => w.Hunters.Count(h => h.SourceCamp == camp.Id));
                     foreach (var camp in w.Camps)
                     {
                         var decision = policy.Decide(builder.Build(w, camp.Player), camp.Mandate); orders[camp.Player] = decision.Orders; traces.Add(decision.Trace);
                         foreach (var order in decision.Orders) if (resolver.Validate(w, camp.Player, order) != null) illegal++;
                     }
+                    var pursuits = new List<int>();
+                    foreach (var hunter in w.Hunters.OrderBy(h => h.Id))
+                    {
+                        var order = orders[hunter.Player].FirstOrDefault(candidate => candidate.Entity == hunter.Id);
+                        int destination = order != null && order.Destination >= 0 ? order.Destination : hunter.Tile;
+                        var visible = Knowledge.Visible(w, hunter.Player);
+                        if (w.Herds.Any(herd => herd.DomesticCamp < 0 && visible.Contains(herd.Tile) && w.Map.Distance(herd.Tile, destination) <= 1)) pursuits.Add(hunter.Id);
+                    }
                     var record = resolver.Resolve(w, orders, traces); starvation += record.Deaths; growth += record.Growth;
+                    huntPursuits += pursuits.Count;
+                    successfulHuntPursuits += pursuits.Count(id => record.Transfers.Any(transfer => transfer.Entity == id && transfer.Kind == "Hunting" && transfer.Food > 0));
+                    foreach (var report in record.Demographics)
+                    {
+                        var camp = w.Camps.First(c => c.Id == report.Camp);
+                        double gathering = report.TerrestrialFood + report.MarineFood + report.LakeFood;
+                        if (previousPopulation.TryGetValue(camp.Id, out int priorPopulation) && report.StartingPopulation > priorPopulation)
+                        {
+                            growthResponseOpportunities++;
+                            bool dispatched = orders[camp.Player].Any(order => order.Kind == OrderKind.Dispatch);
+                            bool gatheredMore = previousGathering.TryGetValue(camp.Id, out double priorGathering) && gathering > priorGathering + 1e-6;
+                            if (dispatched) { dispatchResponses++; if (hunterGroupsBefore[camp.Player] > 0) additionalDispatchResponses++; }
+                            if (gatheredMore) gatheringResponses++;
+                            if (dispatched || gatheredMore) growthResponses++;
+                        }
+                        previousPopulation[camp.Id] = report.StartingPopulation; previousGathering[camp.Id] = gathering;
+                    }
                     // Reverse entity storage and order insertion to test collection-order independence.
                     replay.Camps.Reverse(); replay.Hunters.Reverse(); replay.Herds.Reverse();
                     resolver.Resolve(replay, orders.Reverse().ToDictionary(p => p.Key, p => p.Value.AsEnumerable().Reverse().ToList()), traces);
-                    Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(replay), "Deterministic replay diverged at seed " + seed + " turn " + (w.Turn - 1));
+                    string fingerprint = SaveCodec.Fingerprint(w), replayFingerprint = SaveCodec.Fingerprint(replay);
+                    if (fingerprint != replayFingerprint)
+                    {
+                        var canonical = new WorldState { Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Tiles = w.Tiles, Camps = w.Camps.OrderBy(c => c.Id).ToList(), Hunters = w.Hunters.OrderBy(h => h.Id).ToList(), Herds = w.Herds.OrderBy(h => h.Id).ToList(), Rivers = w.Rivers, History = w.History };
+                        var canonicalReplay = new WorldState { Version = replay.Version, Seed = replay.Seed, Turn = replay.Turn, NextId = replay.NextId, Days = replay.Days, Config = replay.Config, Tiles = replay.Tiles, Camps = replay.Camps.OrderBy(c => c.Id).ToList(), Hunters = replay.Hunters.OrderBy(h => h.Id).ToList(), Herds = replay.Herds.OrderBy(h => h.Id).ToList(), Rivers = replay.Rivers, History = replay.History };
+                        Console.Error.WriteLine("FIRST DIFFERENCE: " + FirstDifference(canonical, canonicalReplay));
+                    }
+                    Check(fingerprint == replayFingerprint, "Deterministic replay diverged at seed " + seed + " turn " + (w.Turn - 1));
                 }
                 foreach (var camp in w.Camps)
                 {
                     total++; if (w.LinkedPopulation(camp) > 0) survivors++; technologies[(int)camp.Technology]++;
+                    endingPopulations.Add(w.LinkedPopulation(camp));
                     string habitat = startingHabitats[camp.Id];
                     if (!habitatPaths.TryGetValue(habitat, out var path)) habitatPaths[habitat] = path = new HabitatPathStats();
                     path.Tribes++; path.StartingPopulation += startingPopulations[camp.Id]; path.EndingPopulation += w.LinkedPopulation(camp);
@@ -230,12 +299,18 @@ internal static class Program
             Console.WriteLine("BENCHMARK seeds=" + seeds + " survivors=" + survivors + "/" + total + " starvationDeaths=" + starvation + " netGrowth=" + growth + " illegalOrders=" + illegal + " techs=" + string.Join(",", technologies) + " elapsed=" + timer.Elapsed);
             if (args.Contains("--biome-paths"))
             {
+                endingPopulations.Sort(); int atLeastOneHundred = endingPopulations.Count(population => population >= 100);
+                Console.WriteLine("PALEOLITHIC_POPULATION p25=" + Percentile(endingPopulations, .25) + " median=" + Percentile(endingPopulations, .5) + " p75=" + Percentile(endingPopulations, .75) + " atLeast100=" + atLeastOneHundred + "/" + endingPopulations.Count);
+                Console.WriteLine("GROWTH_RESPONSE opportunities=" + growthResponseOpportunities + " satisfied=" + growthResponses + " dispatches=" + dispatchResponses + " additionalDispatches=" + additionalDispatchResponses + " increasedGathering=" + gatheringResponses);
+                Console.WriteLine("HUNT_PURSUIT attempts=" + huntPursuits + " successful=" + successfulHuntPursuits + " rate=" + (100.0 * successfulHuntPursuits / Math.Max(1, huntPursuits)).ToString("F1") + "%");
                 foreach (var item in habitatPaths.OrderBy(item => item.Key, StringComparer.Ordinal))
                 {
                     var path = item.Value;
                     Console.WriteLine("PALEOLITHIC_PATH habitat=" + item.Key.Replace(' ', '_') + " tribes=" + path.Tribes + " survivors=" + path.Survivors + " meanPopulation=" + (path.EndingPopulation / Math.Max(1, path.Tribes)).ToString("F1") + " growthRatio=" + (path.EndingPopulation / Math.Max(1, path.StartingPopulation)).ToString("F2") + " huntFoodPerTribe=" + (path.HuntFood / Math.Max(1, path.Tribes)).ToString("F1") + " gatheredFoodPerTribe=" + (path.GatherFood / Math.Max(1, path.Tribes)).ToString("F1") + " husbandry=" + path.Husbandry);
                 }
                 Console.WriteLine("ARID_RIVER_CORRIDORS riverTilesAdjacentToDesert=" + aridRiverCorridors + " acrossSeeds=" + seeds);
+                if (seeds >= 30) Check(Percentile(endingPopulations, .25) >= 100 && atLeastOneHundred * 4 >= endingPopulations.Count * 3, "At least three quarters of tribes should approach a population of one hundred by the end of the Paleolithic opening");
+                if (growthResponseOpportunities > 0) Check(growthResponses >= growthResponseOpportunities * .75, "Most observed population increases should be answered by more gathering or hunter dispatch");
             }
             Check(illegal == 0, "AI emitted illegal orders");
             if (args.Contains("--standard"))

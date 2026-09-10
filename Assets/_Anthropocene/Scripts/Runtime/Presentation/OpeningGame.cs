@@ -35,7 +35,7 @@ namespace Anthropocene.Presentation
         private bool menu = true, help, debug;
         private readonly List<string> journal = new List<string>();
         private static readonly Color Ink = new Color(.035f, .044f, .043f), Panel = new Color(.075f, .086f, .082f), Paper = new Color(.86f, .86f, .78f), Gold = new Color(.91f, .69f, .33f);
-        private static readonly Color MoveColor = new Color(.30f, .78f, .58f), HuntColor = new Color(.95f, .60f, .24f), FishColor = new Color(.28f, .70f, .88f), InvalidColor = new Color(.88f, .28f, .24f);
+        private static readonly Color MoveColor = new Color(.30f, .78f, .58f), FishColor = new Color(.28f, .70f, .88f), InvalidColor = new Color(.88f, .28f, .24f);
         private static readonly string[] Sizes = { "Standard  1024 x 512", "Small  96 x 48", "Tiny  48 x 24" };
         private static readonly int[][] TribeChoices = { new[] { 8, 16, 24, 32, 48, 64, 80 }, new[] { 2, 4, 6, 8, 12, 16 }, new[] { 2, 4, 6, 8 } };
         private string SavePath => Path.Combine(Application.persistentDataPath, "opening-v4.anthro");
@@ -220,7 +220,7 @@ namespace Anthropocene.Presentation
 
             Fill(new Rect(10, y, width + 8, 62), new Color(.14f, .16f, .14f));
             GUI.Label(new Rect(20, y + 7, width - 12, 24), "SELECTED  ·  " + SelectedName, section);
-            string selectedDetail = selected == camp.Id ? camp.Population + " people · movement " + observation.CampMovement + " · gathers automatically" : observation.Hunters.First(h => h.Id == selected).Population + " hunters · movement " + observation.HunterMovement + " · " + (observation.Hunters.First(h => h.Id == selected).InSupply ? "in supply" : "carrying provisions");
+            string selectedDetail = selected == camp.Id ? camp.Population + " people · movement " + observation.CampMovement + " · gathers automatically" : observation.Hunters.First(h => h.Id == selected).Population + " hunters · move " + observation.HunterMovement + " · auto-hunts on contact · " + (observation.Hunters.First(h => h.Id == selected).InSupply ? "supplied" : "carrying provisions");
             GUI.Label(new Rect(20, y + 32, width - 12, 22), selectedDetail, small); y += 70;
 
             GUI.Label(new Rect(14, y, width, 22), "UNIT STACK / ROSTER", section); y += 24;
@@ -254,7 +254,7 @@ namespace Anthropocene.Presentation
                     supply += "\n" + PlannedSupplyWarning(expedition);
                     GUI.Label(new Rect(14, y, width, 72), supply, small); y += 76;
                 }
-                if (Button(new Rect(14, y, width, 36), mode == "Hunt" ? "◆ HUNT [H]  ·  choose an amber herd" : "◇ HUNT [H]  ·  preview targets", mode == "Hunt")) BeginMode("Hunt"); y += 42;
+                GUI.Label(new Rect(14, y, width, 38), "AUTO-HUNT  ·  End the generation on a wild herd tile.", small); y += 42;
                 if (Button(new Rect(14, y, width, 36), mode == "Fish" ? "◆ FISH [F]  ·  choose blue water" : "◇ FISH [F]  ·  preview targets", mode == "Fish")) BeginMode("Fish"); y += 42;
                 var reintegrate = new Order(OrderKind.Reintegrate, selected, camp.Id);
                 string reintegrateError = resolver.Validate(world, 0, reintegrate, new HashSet<int>(observation.Tiles.Keys));
@@ -315,7 +315,7 @@ namespace Anthropocene.Presentation
             Fill(area, new Color(.065f, .078f, .071f));
             GUI.Label(new Rect(area.x + 16, area.y + 7, area.width - 32, 32), "SELECTED: " + SelectedName.ToUpperInvariant() + "    |    MODE: " + mode.ToUpperInvariant(), section);
             string feedback = status;
-            if (hovered >= 0 && (mode == "Move" || mode == "Hunt" || mode == "Fish"))
+            if (hovered >= 0 && (mode == "Move" || mode == "Fish"))
             {
                 if (TryTargetOrder(hovered, out _, out string error)) feedback = "Valid target: click to queue. The highlighted path is the route for this generation.";
                 else feedback = "Unavailable here: " + error;
@@ -335,7 +335,7 @@ namespace Anthropocene.Presentation
             {
                 inspected = hovered;
                 if (e.button == 1) Queue(new Order(OrderKind.Move, selected, destination: hovered));
-                else if (mode == "Move" || mode == "Hunt" || mode == "Fish")
+                else if (mode == "Move" || mode == "Fish")
                 {
                     if (TryTargetOrder(hovered, out var candidate, out string error)) Queue(candidate);
                     else status = "Unavailable: " + error;
@@ -351,7 +351,7 @@ namespace Anthropocene.Presentation
             {
                 case KeyCode.Return: EndTurn(); break;
                 case KeyCode.M: BeginMode("Move"); break;
-                case KeyCode.H: BeginMode("Hunt"); break;
+                case KeyCode.H: status = "Hunting is automatic when an established hunter group shares a tile with a wild herd."; break;
                 case KeyCode.F: BeginMode("Fish"); break;
                 case KeyCode.C: FocusCamp(); break;
                 case KeyCode.D: if (selected == observation.CampId) Queue(new Order(OrderKind.Dispatch, selected, population: dispatch)); else status = "Select the camp before dispatching a new group."; break;
@@ -397,12 +397,6 @@ namespace Anthropocene.Presentation
                 bool moved = ownOrder.Destination < 0 || location == ownOrder.Destination;
                 if (!moved) { journal.Add("Turn " + turn + ": your planned movement was blocked."); outcomes.Add(UnitName(ownOrder.Entity) + " movement was blocked"); }
                 else if (ownOrder.Destination >= 0) outcomes.Add(UnitName(ownOrder.Entity) + " reached tile " + ownOrder.Destination);
-                if (ownOrder.Kind == OrderKind.Hunt)
-                {
-                    bool success = record.Transfers.Any(t => t.Entity == ownOrder.Entity && t.Kind == "Hunting" && t.Food > 0);
-                    if (!success) journal.Add("Turn " + turn + ": the hunt brought no food; the hunters gained practice.");
-                    outcomes.Add("Hunters " + ownOrder.Entity + (success ? " returned with hunted food" : " found no food but gained practice"));
-                }
                 if (ownOrder.Kind == OrderKind.Fish)
                 {
                     bool success = record.Transfers.Any(t => t.Entity == ownOrder.Entity && t.Kind == "Fishing" && t.Food > 0);
@@ -414,6 +408,8 @@ namespace Anthropocene.Presentation
             planned.Clear(); Refresh();
             // Never show the authoritative global event log to the player: it contains hidden rival activity.
             var ownTransfers = record.Transfers.Where(t => ownIds.Contains(t.Entity)).ToArray();
+            foreach (var hunt in ownTransfers.Where(t => t.Kind == "Hunting" && t.Food > 0).GroupBy(t => t.Entity).OrderBy(group => group.Key))
+                outcomes.Add("Hunters " + hunt.Key + " automatically hunted " + hunt.Sum(t => t.Food).ToString("F0") + " food");
             bool gathered = ownTransfers.Any(t => t.Kind.Contains("gathering") || t.Kind == "Gathering");
             bool hunted = ownTransfers.Any(t => t.Kind == "Hunting" && t.Food > 0), fished = ownTransfers.Any(t => t.Kind == "Fishing" && t.Food > 0);
             var player = world.Camps.First(c => c.Player == 0);
@@ -471,7 +467,7 @@ namespace Anthropocene.Presentation
             Fill(r, new Color(.12f, .14f, .12f));
             GUI.Label(new Rect(r.x + 20, r.y + 15, width - 40, 38), "READING THE LAND", title);
             string helpText =
-                "@ Your camp (gold) / rival camp (red)   h Hunters\na Antelope   g Goats   b Bison   C Camels   H Horses   d Domestic herd\n. Grassland   T Woodland   & Jungle   : Desert\nMerged contours: elevation 1-10; shared edges at equal height disappear; X Impassable peak; o Oasis; w Freshwater\nRivers follow tile edges. Sea tiles contain undrinkable saltwater.\n\nDots beneath glyphs show food from Depleted (one) to Abundant (five). Select a tile for food, water and renewal bands.\n\nClick a unit slot or roster entry to select that exact unit. The selected slot has a gold frame. M or right-click enters movement planning: green tiles are valid this generation, a thick line previews the route, and red means the pointed tile is unavailable. Hunter Hunt targets are amber; fishing targets are blue.\n\nEach unit can queue one order. A new order for that unit replaces its previous order; Backspace or the Cancel button removes it. Gold paths and Q badges are committed previews. Enter resolves every queued order simultaneously. Units without orders hold position; camp gathering is automatic.\n\nD dispatches hunters. A dispatched group appears at camp after resolution and can first receive orders next generation. R reintegrates hunters already at their source camp. Escape leaves targeting without changing queued orders.\n\nWheel zooms; middle-drag or arrows pan; C centers camp.\nHunter tethers preview the planned camp connection: green is supplied, amber crosses unknown terrain, and red will be disconnected. Hunters outside supply forage locally for subsistence before consuming carried provisions. Return to deposit surplus food. V switches tilesets. Hold still on a visible tile for two seconds for details. Saltwater is undrinkable. Wild herd labels are estimates: fewer than 10, rounded tens (~40), then broad hundreds (100+). Your own livestock counts are exact.";
+                "@ Your camp (gold) / rival camp (red)   h Hunters\na Antelope   g Goats   b Bison   C Camels   H Horses   d Domestic herd\n. Grassland   T Woodland   & Jungle   : Desert\nMerged contours: elevation 1-10; shared edges at equal height disappear; X Impassable peak; o Oasis; w Freshwater\nRivers follow tile edges. Sea tiles contain undrinkable saltwater.\n\nDots beneath glyphs show food from Depleted (one) to Abundant (five). Select a tile for food, water and renewal bands.\n\nClick a unit slot or roster entry to select that exact unit. The selected slot has a gold frame. M or right-click enters movement planning: green tiles are valid this generation, a thick line previews the route, and red means the pointed tile is unavailable. Established hunter groups automatically hunt any wild herd sharing their final tile; fishing targets are blue.\n\nEach unit can queue one order. A new order for that unit replaces its previous order; Backspace or the Cancel button removes it. Gold paths and Q badges are committed previews. Enter resolves every queued order simultaneously. Units without orders hold position; camp gathering is automatic.\n\nD dispatches hunters. A dispatched group appears at camp after resolution and can first receive orders next generation. R reintegrates hunters already at their source camp. Escape leaves targeting without changing queued orders.\n\nWheel zooms; middle-drag or arrows pan; C centers camp.\nHunter tethers preview the planned camp connection: green is supplied, amber crosses unknown terrain, and red will be disconnected. Hunters outside supply forage locally for subsistence before consuming carried provisions. Return to deposit surplus food. V switches tilesets. Hold still on a visible tile for two seconds for details. Saltwater is undrinkable. Wild herd labels are estimates: fewer than 10, rounded tens (~40), then broad hundreds (100+). Your own livestock counts are exact.";
             float contentHeight = text.CalcHeight(new GUIContent(helpText), width - 62);
             helpScroll = GUI.BeginScrollView(new Rect(r.x + 20, r.y + 62, width - 40, r.height - 120), helpScroll, new Rect(0, 0, width - 62, contentHeight));
             GUI.Label(new Rect(0, 0, width - 62, contentHeight), helpText, text);

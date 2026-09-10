@@ -12,12 +12,12 @@ namespace Anthropocene.Simulation
 
     internal sealed class GrowthPlan
     {
-        public double Required, FinalPopulation;
+        public double Required, ReproductivePopulation, FinalPopulation;
     }
 
     public sealed partial class TurnResolver
     {
-        private void ResolveEcology(WorldState w, List<Order> orders, TurnRecord record, Action<int> touch)
+        private void ResolveEcology(WorldState w, List<Order> orders, HashSet<int> establishedHunters, TurnRecord record, Action<int> touch)
         {
             double intervals = record.Duration / w.Config.BaseDays;
             double years = record.Duration / w.Config.DaysPerYear;
@@ -56,18 +56,17 @@ namespace Anthropocene.Simulation
 
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
-                record.Demographics.Add(new DemographicReport { Camp = camp.Id, StartingPopulation = w.LinkedPopulation(camp), Years = years, InitialReserves = camp.Food + w.Hunters.Where(h => h.SourceCamp == camp.Id).Sum(h => h.CarriedFood) });
+                record.Demographics.Add(new DemographicReport { Camp = camp.Id, StartingPopulation = w.LinkedPopulation(camp), Years = years, InitialReserves = camp.Food + w.Hunters.Where(h => h.SourceCamp == camp.Id).OrderBy(h => h.Id).Sum(h => h.CarriedFood) });
                 camp.StepFoodIncome = 0;
             }
 
             // Movement happens once. Herd reproduction is realized before the generation's hunting harvest.
             ReproduceHerds(w, intervals, years);
-            Hunt(w, orders, record, intervals);
+            Hunt(w, orders, establishedHunters, record, intervals);
             var demands = new List<Demand>();
             foreach (var order in orders.Where(o => o.Kind == OrderKind.Fish).OrderBy(o => o.Entity))
             {
                 var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity); if (hunter == null || hunter.Population <= 0) continue;
-                var camp = w.Camps.First(c => c.Id == hunter.SourceCamp); camp.Experience[(int)Domain.Fishing] += hunter.Population * generationScale;
                 if (w.Map.Distance(hunter.Tile, order.Target) <= 1)
                 {
                     Resource(order.Target);
@@ -77,19 +76,16 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 if (camp.Population <= 0) continue;
-                var requests = new List<Demand>(); double aquatic = 0, total = 0;
+                var requests = new List<Demand>(); double total = 0;
                 foreach (int id in w.Map.Radius(camp.Tile, w.Config.GatherRadius).OrderBy(n => n))
                 {
                     if (!PassiveGathering.Eligible(w, camp, id)) continue;
                     var available = Resource(id); var tile = w.Tiles[id];
                     double food = available.AvailableFood * Math.Min(1, Numbers.Fraction(w.Config.GatherFraction, intervals) * camp.Population / w.Config.PopulationScale);
-                    requests.Add(new Demand { Entity = camp.Id, Tile = id, Kind = PassiveGathering.Kind(tile), Food = food }); total += food; if (tile.Aquatic) aquatic += food;
+                    requests.Add(new Demand { Entity = camp.Id, Tile = id, Kind = PassiveGathering.Kind(tile), Food = food }); total += food;
                 }
                 double scale = Math.Min(1, camp.Population * w.Config.GatherPerPerson * intervals / Math.Max(1e-12, total));
                 foreach (var request in requests) { request.Food *= scale; demands.Add(request); }
-                double share = aquatic / Math.Max(1e-12, total);
-                camp.Experience[(int)Domain.Gathering] += camp.Population * generationScale * (1 - share);
-                camp.Experience[(int)Domain.Fishing] += camp.Population * generationScale * share;
             }
             foreach (var hunter in w.Hunters.Where(h => h.Population > 0 && !Supply.Connected(w, h)).OrderBy(h => h.Id))
             {
@@ -122,7 +118,7 @@ namespace Anthropocene.Simulation
 
             w.Days += record.Duration;
             AdvanceEcology(w, resources, weights);
-            FinishDemographicReports(w, record);
+            FinishDemographicReports(w, record, orders);
         }
 
         private void CommitGenerationResources(WorldState w, List<Demand> demands, TurnRecord record, Action<int> touch, Dictionary<int, double> foraged)
@@ -146,14 +142,12 @@ namespace Anthropocene.Simulation
                 else if (transfer.Kind == "Foraging")
                 {
                     foraged[transfer.Entity] = (foraged.TryGetValue(transfer.Entity, out var existing) ? existing : 0) + transfer.Food;
-                    camps[hunters[transfer.Entity].SourceCamp].Experience[(int)Domain.Gathering] += transfer.Food * w.Config.HarvestExperienceWeight * Math.Min(1, w.Config.BaseDays / w.Config.PracticeDays);
                 }
                 else
                 {
                     var camp = transfer.Kind == "Fishing" ? camps[hunters[transfer.Entity].SourceCamp] : camps[transfer.Entity];
                     if (transfer.Kind == "Fishing") Supply.Award(w, hunters[transfer.Entity], transfer.Food, record);
                     else { camp.Food += transfer.Food; camp.StepFoodIncome += transfer.Food; }
-                    camp.Experience[transfer.Kind == "Gathering" ? (int)Domain.Gathering : (int)Domain.Fishing] += transfer.Food * w.Config.HarvestExperienceWeight * Math.Min(1, w.Config.BaseDays / w.Config.PracticeDays);
                 }
                 record.Transfers.Add(transfer);
             }
@@ -174,27 +168,26 @@ namespace Anthropocene.Simulation
 
         private static GrowthPlan PlanGrowth(WorldState w, Camp camp, double intervals, double years)
         {
-            int connectedHunters = w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
-            double staticRequired = connectedHunters * w.Config.Consumption * intervals;
-            double campBase = camp.Population * w.Config.Consumption * intervals;
-            double baseRequired = staticRequired + campBase;
+            int reproductivePopulation = camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
+            double populationBase = reproductivePopulation * w.Config.Consumption * intervals;
+            double baseRequired = populationBase;
             double surplus = Numbers.Clamp((camp.StepFoodIncome - baseRequired) / Math.Max(1e-9, baseRequired * w.Config.GrowthSurplusRatio), 0, 1);
             double reserves = Numbers.Clamp(camp.Food / Math.Max(1, baseRequired * w.Config.GrowthReserveTurns), 0, 1);
             double rate = w.Config.AnnualHumanGrowthRate * Math.Min(surplus, reserves);
             double growthBudget = Math.Min(camp.Food, camp.StepFoodIncome);
             for (int iteration = 0; iteration < 12 && rate > 0; iteration++)
             {
-                double required = GrowthRequirement(staticRequired, campBase, rate, years);
+                double required = GrowthRequirement(populationBase, rate, years);
                 if (required <= growthBudget + 1e-8) break;
                 rate *= growthBudget / Math.Max(required, 1e-9);
             }
-            return new GrowthPlan { Required = GrowthRequirement(staticRequired, campBase, rate, years), FinalPopulation = camp.Population * Math.Exp(rate * years) };
+            return new GrowthPlan { Required = GrowthRequirement(populationBase, rate, years), ReproductivePopulation = reproductivePopulation, FinalPopulation = reproductivePopulation * Math.Exp(rate * years) };
         }
 
-        private static double GrowthRequirement(double staticRequired, double campBase, double rate, double years)
+        private static double GrowthRequirement(double populationBase, double rate, double years)
         {
-            if (rate <= 1e-12 || years <= 0) return staticRequired + campBase;
-            double x = rate * years; return staticRequired + campBase * (Math.Exp(x) - 1) / x;
+            if (rate <= 1e-12 || years <= 0) return populationBase;
+            double x = rate * years; return populationBase * (Math.Exp(x) - 1) / x;
         }
 
         private static void SustainGeneration(WorldState w, TurnRecord record, double intervals, double generationScale, Dictionary<int, GrowthPlan> plans, Dictionary<int, double> foraged, HashSet<int> recovering)
@@ -249,9 +242,9 @@ namespace Anthropocene.Simulation
 
         private static void AddGrowth(WorldState w, Camp camp, GrowthPlan plan, TurnRecord record, DemographicReport summary)
         {
-            double progress = camp.GrowthRemainder + Math.Max(0, plan.FinalPopulation - camp.Population);
+            double progress = camp.GrowthRemainder + Math.Max(0, plan.FinalPopulation - plan.ReproductivePopulation);
             int added = (int)Math.Floor(progress); camp.GrowthRemainder = progress - added; camp.Population += added; record.Growth += added;
-            if (plan.FinalPopulation > camp.Population || added > 0) summary.SurplusSteps++;
+            if (plan.FinalPopulation > plan.ReproductivePopulation || added > 0) summary.SurplusSteps++;
             if (added > 0) record.PopulationChanges.Add(new PopulationChange { Camp = camp.Id, Entity = camp.Id, Kind = "Net growth", Count = added });
         }
 
@@ -327,7 +320,7 @@ namespace Anthropocene.Simulation
             }
         }
 
-        private static void FinishDemographicReports(WorldState w, TurnRecord record)
+        private static void FinishDemographicReports(WorldState w, TurnRecord record, IReadOnlyList<Order> orders)
         {
             record.Transfers = record.Transfers.GroupBy(t => (t.Tile, t.Entity, t.Kind)).OrderBy(g => g.Key.Tile).ThenBy(g => g.Key.Entity).ThenBy(g => g.Key.Kind, StringComparer.Ordinal)
                 .Select(g => new Transfer { Tile = g.Key.Tile, Entity = g.Key.Entity, Kind = g.Key.Kind, Food = g.Sum(t => t.Food), PotentialFood = g.Sum(t => t.PotentialFood), Freshwater = g.Sum(t => t.Freshwater) }).ToList();
@@ -342,10 +335,48 @@ namespace Anthropocene.Simulation
                 summary.DiscardedInventory += record.Logistics.Where(l => l.Camp == camp.Id).Sum(l => l.InventoryLoss);
                 summary.Additions = record.PopulationChanges.Where(p => p.Camp == camp.Id && p.Count > 0).Sum(p => p.Count); summary.Deaths = -record.PopulationChanges.Where(p => p.Camp == camp.Id && p.Count < 0).Sum(p => p.Count);
                 summary.EndingPopulation = w.LinkedPopulation(camp); summary.NetPercent = 100.0 * (summary.EndingPopulation - summary.StartingPopulation) / Math.Max(1, summary.StartingPopulation);
-                summary.FinalReserves = camp.Food + w.Hunters.Where(h => h.SourceCamp == camp.Id).Sum(h => h.CarriedFood); summary.FractionalProgress = camp.GrowthRemainder;
+                summary.FinalReserves = camp.Food + w.Hunters.Where(h => h.SourceCamp == camp.Id).OrderBy(h => h.Id).Sum(h => h.CarriedFood); summary.FractionalProgress = camp.GrowthRemainder;
                 if (Math.Abs(summary.InitialReserves + summary.FoodReceived - summary.FoodConsumed - summary.DiscardedInventory - summary.FinalReserves) > 1e-5) throw new InvalidOperationException("Unexplained food balance in demographic report.");
                 summary.LimitingFactor = summary.DeficitSteps > 0 ? "Food deficits limited growth" : summary.Additions > 0 ? "Growth supported by food surplus; demand rose with population" : summary.SurplusSteps > 0 ? "Demographic rounding; fractional progress " + summary.FractionalProgress.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : summary.RecoverySteps > 0 ? "Starvation recovery" : "No sustainable food surplus or insufficient reserves";
                 record.Log(summary.Explanation);
+            }
+            AwardLifestyleProgress(w, record, orders);
+        }
+
+        private static void AwardLifestyleProgress(WorldState w, TurnRecord record, IReadOnlyList<Order> orders)
+        {
+            double generationScale = record.Duration / w.Config.PracticeDays;
+            foreach (var summary in record.Demographics.OrderBy(report => report.Camp))
+            {
+                var camp = w.Camps.First(c => c.Id == summary.Camp);
+                var hunterIds = new HashSet<int>(w.Hunters.Where(h => h.SourceCamp == camp.Id).Select(h => h.Id));
+                double hunting = record.Transfers.Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Hunting").Sum(t => t.Food);
+                double gathering = record.Transfers.Where(t => (t.Entity == camp.Id && t.Kind == "Gathering") || hunterIds.Contains(t.Entity) && t.Kind == "Foraging").Sum(t => t.Food);
+                double fishing = record.Transfers.Where(t => (t.Entity == camp.Id && (t.Kind == "Marine gathering" || t.Kind == "Aquatic gathering")) || hunterIds.Contains(t.Entity) && t.Kind == "Fishing").Sum(t => t.Food);
+                foreach (var logistics in record.Logistics.Where(l => l.Camp == camp.Id && l.HarvestOverflow > 0))
+                {
+                    double overflow = logistics.HarvestOverflow;
+                    double fromHunting = Math.Min(overflow, record.Transfers.Where(t => t.Entity == logistics.Hunter && t.Kind == "Hunting").Sum(t => t.Food)); hunting -= fromHunting; overflow -= fromHunting;
+                    fishing -= Math.Min(overflow, record.Transfers.Where(t => t.Entity == logistics.Hunter && t.Kind == "Fishing").Sum(t => t.Food));
+                }
+                foreach (var hunt in record.Transfers.Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Hunting" && t.Food <= 0))
+                {
+                    var hunter = w.Hunters.FirstOrDefault(h => h.Id == hunt.Entity); if (hunter == null) continue;
+                    double practice = hunter.Population * w.Config.Consumption * w.Config.GenerationIntervals * w.Config.UnproductivePracticeFraction;
+                    hunting += practice;
+                }
+                foreach (var order in orders.Where(o => hunterIds.Contains(o.Entity) && o.Kind == OrderKind.Fish))
+                {
+                    bool successful = record.Transfers.Any(t => t.Entity == order.Entity && t.Food > 0 && t.Kind == "Fishing");
+                    if (successful) continue;
+                    var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity); if (hunter == null) continue;
+                    fishing += hunter.Population * w.Config.Consumption * w.Config.GenerationIntervals * w.Config.UnproductivePracticeFraction;
+                }
+                double total = hunting + gathering + fishing; if (total <= 1e-9) continue;
+                double budget = summary.StartingPopulation * generationScale;
+                camp.Experience[(int)Domain.Hunting] += budget * hunting / total;
+                camp.Experience[(int)Domain.Gathering] += budget * gathering / total;
+                camp.Experience[(int)Domain.Fishing] += budget * fishing / total;
             }
         }
     }

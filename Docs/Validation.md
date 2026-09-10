@@ -4,14 +4,15 @@ Windows x64, Unity 6000.5.10f1, Unity-bundled .NET 8.0.318. Timings are local de
 
 ## Automated checks
 
-- 140 headless assertions passed: 32 focused rules, 59 second-milestone rules and 49 third-milestone checks.
-- New checks cover annualized exponential growth, increasing food demand, a food-supported plateau, deficit decline, reserve-only non-growth, demographic rounding/explanations, twenty-year and shortened clocks, separate potential and human-gatherable food, finite seasonal replenishment, reproduction-before-harvest with retained breeding stock, passive marine food without freshwater credit, shared coastal/land labor, peak movement/AI/placement, stack occupants, hover timing/reset/fade and hidden-information isolation.
+- 146 headless assertions passed: 32 focused rules, 59 second-milestone rules and 55 third-milestone checks.
+- New checks cover annualized exponential growth of the entire connected tribe, increasing food demand, a food-supported plateau, deficit decline, reserve-only non-growth, demographic rounding/explanations, food-share-based lifestyle progress, automatic hunting only by established co-located groups, twenty-year and shortened clocks, separate potential and human-gatherable food, finite seasonal replenishment, reproduction-before-harvest with retained breeding stock, passive marine food without freshwater credit, shared coastal/land labor, peak movement/AI/placement, stack occupants, hover timing/reset/fade and hidden-information isolation.
 - Herd-count boundary checks cover 1, 9, 10, 14, 15, 25, 99, 100, 101, 199, 200 and 249. Own livestock remains exact; foreign livestock and wild herds remain approximate. Counts in the same bucket produce identical player details and AI size categories. Save/load and authoritative replay preserve the result.
 - All 14 Unity EditMode tests passed. Added visual tests verify exact contour counts, suppression of same-elevation shared edges, higher-tile ownership of unequal boundaries, no hidden-elevation leaks, nonoverlapping stack hit slots, hover layout, planning paths and connected/uncertain/disconnected supply previews.
+- Unity compiled the automatic-hunting presentation, all 14 EditMode tests passed again in 5.01 seconds, and the Windows development player rebuilt successfully.
 - 30 seeded four-tribe games completed with zero illegal AI orders and zero replay mismatches, including reversed entity and submitted-order collections. All population and food-report conservation checks passed.
-- With two-layer biomass and increased meat yield, the thirty-seed run recorded 18,291 net additions and 565 starvation deaths; all 120 tribes survived. First technologies were 14 Animal Husbandry, 52 Cultivation and 54 Watercraft/Fisheries. This is a material improvement over the previous 1/120 Husbandry result, though the heuristic AI still obtains much more food through gathering than hunting.
+- With food-share progress, connected-group growth and automatic co-located hunting, the thirty-seed run recorded 26,817 net additions and 345 starvation deaths; all 120 tribes survived. First technologies were 18 Animal Husbandry, 55 Cultivation and 47 Watercraft/Fisheries. The AI made 930 visible herd-pursuit commitments and converted 292 into food-producing contact (31.4%), compared with an 8.1% successful interception rate under explicit target orders.
 
-The habitat report grouped camps by their initial radius-one landscape. River/woodland starts averaged 215.1 people after twelve turns, grassland 206.8, desert 162.3 and cold-steppe/tundra 56.1, from 24 initially. Mean hunting food per tribe was 3,493, 3,387, 1,632 and 1,763 respectively; terrestrial gathering was 40,293, 46,551, 35,844 and 15,064. All groups survived. Across the same thirty Small worlds, 15 river tiles directly bordered desert, confirming that arid river corridors occur, although this is not yet a distribution target or guaranteed-per-map feature.
+The habitat report grouped camps by their initial radius-one landscape. River/woodland starts averaged 299.3 people after twelve turns, grassland 352.0, desert 214.1 and cold-steppe/tundra 131.1, from 24 initially. Mean hunting food per tribe was 42,236, 59,831, 23,862 and 30,057 respectively; terrestrial gathering was 36,086, 34,805, 27,410 and 15,090. All groups survived. End population had a 25th percentile of 115, median 194 and 75th percentile 296; 93 of 120 tribes ended at 100 or more. Of 493 turns following observed population increases, 443 (89.9%) answered with additional hunter dispatch or increased gathering. Across the same thirty Small worlds, 15 river tiles directly bordered desert, confirming that arid river corridors occur, although this is not yet a distribution target or guaranteed-per-map feature.
 
 The September 10 generational checks additionally cover one-generation starting reserves, one-to-four-generation climate storage, disconnected subsistence foraging with barren-site starvation retained, species herd thresholds/splitting and Standard-only support for 80 tribes.
 
@@ -27,9 +28,9 @@ The `ui/civ5-inspired` presentation experiment adds two EditMode checks for the 
 
 ## Generational resolver and scale validation — September 10, 2026
 
-- Standard seed 1729 generated all 524,288 tiles and 80 separated viable starts in 7.12 seconds.
-- The complete twelve-turn 80-tribe opening resolved in 6.83 seconds headlessly, using about 357 MB managed memory after adding total biomass.
-- Its 45.3 MB save completed in 1.85 seconds and loaded in 1.55 seconds.
+- Standard seed 1729 generated all 524,288 tiles and 80 separated viable starts in 6.96 seconds.
+- The complete twelve-turn 80-tribe opening resolved in 11.31 seconds headlessly, using about 390 MB managed memory with the larger hunter-group allocation.
+- Its 44.2 MB save completed in 1.80 seconds and loaded in 1.45 seconds.
 - The eight-seed Standard audit retained all elevation, coast/freshwater, oasis, river, start and save/load invariants with 80 camps in every world.
 - The Windows player visibly showed one full starting generation, climate storage, 24 → 34 first-generation growth, a green connected tether, and a red four-tile disconnected preview with a matching sidebar warning. A disconnected group remained present and reported its local-forage/provision state after resolution.
 
