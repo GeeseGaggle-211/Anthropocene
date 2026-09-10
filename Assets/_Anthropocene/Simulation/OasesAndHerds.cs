@@ -49,7 +49,7 @@ namespace Anthropocene.Simulation
                         data.MaxFood = Math.Max(data.MaxFood, (float)(cfg.OasisFood * factor)); data.FoodRate = Math.Max(data.FoodRate, (float)(cfg.OasisFoodRegeneration * factor));
                         data.FreshwaterRate = (float)cfg.OasisWaterRecovery; data.Habitat = Math.Max(data.Habitat, .25f * (float)factor); tile.Seasons[season] = data;
                     }
-                    tile.Freshwater = tile.Seasons[0].MaxFreshwater * .9; tile.Food = tile.Seasons[0].MaxFood * .9;
+                    tile.Freshwater = tile.Seasons[0].MaxFreshwater * .9; tile.Food = tile.Seasons[0].MaxFood * .9; FoodEcology.ConfigurePotential(tile, cfg, true);
                 }
             Validate(w);
         }
@@ -71,7 +71,7 @@ namespace Anthropocene.Simulation
     {
         public static double Weight(WorldState w, Tile tile, SpeciesDefinition species)
         {
-            double forage = tile.Seasons.Average(s => s.MaxFood) / Math.Max(1, species.FoodConsumption * species.MinimumAnimals * 3);
+            double forage = tile.Seasons.Average(s => s.MaxPotentialFood) / Math.Max(1, species.FoodConsumption * species.MinimumAnimals * 3);
             double fresh = tile.Seasons.Average(s => s.MaxFreshwater) / Math.Max(1, species.FreshwaterConsumption * species.MinimumAnimals * 5);
             return species.Suitability(tile) * (.15 + Math.Min(1, Math.Sqrt(Math.Max(0, forage)))) * (.2 + Math.Min(1, Math.Sqrt(Math.Max(0, fresh))));
         }

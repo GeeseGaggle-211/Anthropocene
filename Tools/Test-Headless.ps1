@@ -1,4 +1,4 @@
-param([int]$Seeds = 30, [switch]$Standard, [switch]$Geography, [switch]$Audit)
+param([int]$Seeds = 30, [switch]$Standard, [switch]$Geography, [switch]$Audit, [switch]$BiomePaths)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $sdkCandidates = @(
@@ -11,5 +11,6 @@ $runArgs = @('run', '--project', (Join-Path $projectRoot 'Tools/Headless/Anthrop
 if ($Standard) { $runArgs += '--standard' }
 if ($Geography) { $runArgs += '--geography' }
 if ($Audit) { $runArgs += '--audit3' }
+if ($BiomePaths) { $runArgs += '--biome-paths' }
 & $dotnetPath @runArgs
 if ($LASTEXITCODE -ne 0) { throw "Headless tests failed with exit code $LASTEXITCODE" }

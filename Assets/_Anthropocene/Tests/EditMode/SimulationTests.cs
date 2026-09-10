@@ -49,6 +49,10 @@ namespace Anthropocene.Tests.EditMode
                 Assert.That(LayeredTileRenderer.ContourCount(level, 100), Is.EqualTo(level));
                 if (level > 0) Assert.That(LayeredTileRenderer.ContourCount(level, 35), Is.GreaterThanOrEqualTo(LayeredTileRenderer.ContourCount(level - 1, 35)));
             }
+            Assert.That(LayeredTileRenderer.ContourEdgeMask(5, Enumerable.Repeat<int?>(5, 6).ToArray()), Is.Zero, "A same-level plateau must not retain internal tile borders.");
+            Assert.That(LayeredTileRenderer.ContourEdgeMask(5, new int?[] { 5, 4, 5, 5, 5, 5 }), Is.EqualTo(1 << 2), "The higher tile owns the southeast boundary.");
+            Assert.That(LayeredTileRenderer.ContourEdgeMask(5, new int?[] { 6, 5, 5, 5, 5, 5 }), Is.Zero, "The higher neighbor owns a shared elevation boundary.");
+            Assert.That(LayeredTileRenderer.ContourEdgeMask(5, new int?[] { null, 5, 5, 5, 5, 5 }), Is.EqualTo(1 << 1), "Unknown terrain remains visually sealed without revealing its elevation.");
             for (int i = 0; i < 6; i++)
                 for (int j = i + 1; j < 6; j++) Assert.That(LayeredTileRenderer.OccupantSlot(bounds, i, 7).Overlaps(LayeredTileRenderer.OccupantSlot(bounds, j, 7)), Is.False);
             foreach (var set in TilesetCatalog.Load())
@@ -83,7 +87,7 @@ namespace Anthropocene.Tests.EditMode
         public void Configuration_ContainsStableSpeciesAndFreshwaterTuning()
         {
             var config = new SimulationConfig(); JsonUtility.FromJsonOverwrite(Resources.Load<TextAsset>("OpeningConfig").text, config); config.Validate();
-            Assert.That(config.Version, Is.EqualTo(3)); Assert.That(config.GetSpecies("camel").FreshwaterConsumption, Is.GreaterThan(0));
+            Assert.That(config.Version, Is.EqualTo(4)); Assert.That(config.GetSpecies("camel").FreshwaterConsumption, Is.GreaterThan(0));
             Assert.That(config.GetSpecies("horse").FoodYield, Is.GreaterThan(0));
             Assert.That(config.StartFreshwaterMinimum, Is.GreaterThan(0));
         }

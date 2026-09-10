@@ -6,6 +6,11 @@ using Anthropocene.Simulation;
 
 internal static class Program
 {
+    private sealed class HabitatPathStats
+    {
+        public int Tribes, Survivors, Husbandry;
+        public double StartingPopulation, EndingPopulation, HuntFood, GatherFood;
+    }
     private static int assertions;
     private static void Check(bool condition, string message) { assertions++; if (!condition) throw new Exception(message); }
     private static WorldState Flat(int players = 2)
@@ -14,13 +19,25 @@ internal static class Program
         var w = new WorldState { Config = cfg, Seed = 42, Generation = new GenerationReport(), Tiles = new Tile[cfg.Width * cfg.Height] };
         for (int i = 0; i < w.Tiles.Length; i++)
         {
-            w.Tiles[i] = new Tile { Id = i, ElevationLevel = 1, Terrain = Terrain.Grassland, Food = 60, Freshwater = 60, FreshwaterSource = FreshwaterSource.RainPool };
-            for (int s = 0; s < 4; s++) w.Tiles[i].Seasons[s] = new SeasonData { MaxFood = 80, MaxFreshwater = 80, FoodRate = .3f, FreshwaterRate = .3f, Moisture = .5f, Habitat = .5f };
+            w.Tiles[i] = new Tile { Id = i, ElevationLevel = 1, Terrain = Terrain.Grassland, Food = 60, PotentialFood = 600, Freshwater = 60, FreshwaterSource = FreshwaterSource.RainPool };
+            for (int s = 0; s < 4; s++) w.Tiles[i].Seasons[s] = new SeasonData { MaxFood = 80, MaxPotentialFood = 800, MaxFreshwater = 80, FoodRate = .3f, PotentialFoodRate = .3f, FreshwaterRate = .3f, Moisture = .5f, Habitat = .5f };
         }
         for (int p = 0; p < players; p++) w.Camps.Add(new Camp { Id = w.NextId++, Player = p, Tile = 150 + p * 6, Population = 24, Food = 50 });
         return w;
     }
     private static Dictionary<int, List<Order>> Orders(params Order[] orders) => new Dictionary<int, List<Order>> { [0] = orders.ToList() };
+    private static string StartingHabitat(WorldState world, Camp camp)
+    {
+        var tiles = world.Map.Radius(camp.Tile, 1).Select(id => world.Tiles[id]).Where(tile => tile.Land).ToArray();
+        if (tiles.Any(tile => tile.River || tile.Oasis) || tiles.Count(tile => tile.Terrain == Terrain.Woodland || tile.Terrain == Terrain.Jungle) > tiles.Length / 2) return "River/woodland";
+        var counts = new[]
+        {
+            new { Name = "Desert", Count = tiles.Count(tile => tile.Terrain == Terrain.Desert) },
+            new { Name = "Grassland", Count = tiles.Count(tile => tile.Terrain == Terrain.Grassland) },
+            new { Name = "Cold steppe", Count = tiles.Count(tile => tile.Terrain == Terrain.Tundra) }
+        };
+        return counts.OrderByDescending(item => item.Count).ThenBy(item => item.Name, StringComparer.Ordinal).First().Name;
+    }
     private static void Tests()
     {
         var map = new HexMap(24, 16);
@@ -42,6 +59,8 @@ internal static class Program
         var demands = new[] { new Demand { Tile = 0, Entity = 2, Food = 15, Freshwater = 8, Kind = "a" }, new Demand { Tile = 0, Entity = 1, Food = 5, Freshwater = 2, Kind = "a" } };
         var allocator = new ProportionalAllocation(); var a = allocator.Allocate(demands, tiles); var b = allocator.Allocate(demands.Reverse(), tiles);
         Check(a.Select(t => t.Food).SequenceEqual(b.Select(t => t.Food)) && Math.Abs(a.Sum(t => t.Food) - 10) < 1e-9, "Order independent allocation");
+        tiles[0].PotentialFood = 100; demands = new[] { new Demand { Tile = 0, Entity = 1, Food = 10, Kind = "Gathering" }, new Demand { Tile = 0, Entity = 2, PotentialFood = 100, Kind = "Herd" } };
+        a = allocator.Allocate(demands, tiles); Check(a.Sum(t => t.Food) == 10 && a.Sum(t => t.PotentialFood) == 90, "Human gathering uses its subset while herds draw on remaining potential biomass");
         w = Flat(); w.Camps[1].Tile = w.Camps[0].Tile + 2;
         int destination = w.Camps[0].Tile + 1;
         resolver.Resolve(w, new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Move, w.Camps[0].Id, destination: destination) }, [1] = new List<Order> { new Order(OrderKind.Move, w.Camps[1].Id, destination: destination) } });
@@ -81,7 +100,7 @@ internal static class Program
         Check(w.Map.Distance(fleeing, hunter.Tile) == w.Map.Radius(prey.Tile, 1).Max(n => w.Map.Distance(n, hunter.Tile)), "Herd maximizes escape distance");
         var huntRecord = resolver.Resolve(w, Orders(new Order(OrderKind.Hunt, hunter.Id, prey.Id, fleeing)));
         Check(huntRecord.Transfers.Any(t => t.Kind == "Hunting" && t.Food > 0), "Predictive interception succeeds");
-        Check(huntRecord.Transfers.Where(t => t.Entity == prey.Id && t.Kind == "Herd").Sum(t=>t.Food) > 0 && huntRecord.Transfers.Where(t => t.Entity == prey.Id && t.Kind == "Herd").Sum(t=>t.Freshwater) > 0, "Surviving herd consumes both resources");
+        Check(huntRecord.Transfers.Where(t => t.Entity == prey.Id && t.Kind == "Herd").Sum(t=>t.PotentialFood) > 0 && huntRecord.Transfers.Where(t => t.Entity == prey.Id && t.Kind == "Herd").Sum(t=>t.Freshwater) > 0, "Surviving herd consumes potential food and freshwater");
         w = Flat(); camp = w.Camps[0]; hunter = new Hunter { Id = w.NextId++, Tile = camp.Tile, Population = 8, Player = 0, SourceCamp = camp.Id }; w.Hunters.Add(hunter); camp.Population -= 8;
         prey = new Herd { Id = w.NextId++, Tile = camp.Tile + 1, Animals = 8 }; w.Herds.Add(prey);
         huntRecord = resolver.Resolve(w, Orders(new Order(OrderKind.Hunt, hunter.Id, prey.Id)));
@@ -111,6 +130,8 @@ internal static class Program
                 return 0;
             }
             Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20; int survivors = 0, total = 0, starvation = 0, growth = 0, illegal = 0;
+            var habitatPaths = new Dictionary<string, HabitatPathStats>(StringComparer.Ordinal);
+            int aridRiverCorridors = 0;
             if (args.Contains("--find-ui3"))
             {
                 var config = new SimulationConfig { Players = 32 }; var preview = new WorldGenerator().Generate(1729, config); var camp = preview.Camps[0];
@@ -175,6 +196,9 @@ internal static class Program
             for (int seed = 1; seed <= seeds; seed++)
             {
                 var config = SimulationConfig.Small(); var w = new WorldGenerator().Generate(seed, config);
+                var startingHabitats = w.Camps.ToDictionary(camp => camp.Id, camp => StartingHabitat(w, camp));
+                var startingPopulations = w.Camps.ToDictionary(camp => camp.Id, camp => (double)w.LinkedPopulation(camp));
+                aridRiverCorridors += w.Tiles.Count(tile => tile.River && w.Map.Neighbors(tile.Id).Any(neighbor => w.Tiles[neighbor].Terrain == Terrain.Desert));
                 var replay = SaveCodec.Load(SaveCodec.Save(w));
                 var resolver = new TurnResolver(); var policy = new HeuristicTribePolicy(); var builder = new AgentObservationBuilder();
                 while (!w.Finished && w.Turn <= 12)
@@ -191,9 +215,28 @@ internal static class Program
                     resolver.Resolve(replay, orders.Reverse().ToDictionary(p => p.Key, p => p.Value.AsEnumerable().Reverse().ToList()), traces);
                     Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(replay), "Deterministic replay diverged at seed " + seed + " turn " + (w.Turn - 1));
                 }
-                foreach (var camp in w.Camps) { total++; if (w.LinkedPopulation(camp) > 0) survivors++; technologies[(int)camp.Technology]++; }
+                foreach (var camp in w.Camps)
+                {
+                    total++; if (w.LinkedPopulation(camp) > 0) survivors++; technologies[(int)camp.Technology]++;
+                    string habitat = startingHabitats[camp.Id];
+                    if (!habitatPaths.TryGetValue(habitat, out var path)) habitatPaths[habitat] = path = new HabitatPathStats();
+                    path.Tribes++; path.StartingPopulation += startingPopulations[camp.Id]; path.EndingPopulation += w.LinkedPopulation(camp);
+                    if (w.LinkedPopulation(camp) > 0) path.Survivors++;
+                    if (camp.Technology == Technology.AnimalHusbandry) path.Husbandry++;
+                    foreach (var demographic in w.History.SelectMany(record => record.Demographics).Where(report => report.Camp == camp.Id))
+                    { path.HuntFood += demographic.HuntFood; path.GatherFood += demographic.TerrestrialFood; }
+                }
             }
             Console.WriteLine("BENCHMARK seeds=" + seeds + " survivors=" + survivors + "/" + total + " starvationDeaths=" + starvation + " netGrowth=" + growth + " illegalOrders=" + illegal + " techs=" + string.Join(",", technologies) + " elapsed=" + timer.Elapsed);
+            if (args.Contains("--biome-paths"))
+            {
+                foreach (var item in habitatPaths.OrderBy(item => item.Key, StringComparer.Ordinal))
+                {
+                    var path = item.Value;
+                    Console.WriteLine("PALEOLITHIC_PATH habitat=" + item.Key.Replace(' ', '_') + " tribes=" + path.Tribes + " survivors=" + path.Survivors + " meanPopulation=" + (path.EndingPopulation / Math.Max(1, path.Tribes)).ToString("F1") + " growthRatio=" + (path.EndingPopulation / Math.Max(1, path.StartingPopulation)).ToString("F2") + " huntFoodPerTribe=" + (path.HuntFood / Math.Max(1, path.Tribes)).ToString("F1") + " gatheredFoodPerTribe=" + (path.GatherFood / Math.Max(1, path.Tribes)).ToString("F1") + " husbandry=" + path.Husbandry);
+                }
+                Console.WriteLine("ARID_RIVER_CORRIDORS riverTilesAdjacentToDesert=" + aridRiverCorridors + " acrossSeeds=" + seeds);
+            }
             Check(illegal == 0, "AI emitted illegal orders");
             if (args.Contains("--standard"))
             {

@@ -38,7 +38,7 @@ namespace Anthropocene.Presentation
         private static readonly Color MoveColor = new Color(.30f, .78f, .58f), HuntColor = new Color(.95f, .60f, .24f), FishColor = new Color(.28f, .70f, .88f), InvalidColor = new Color(.88f, .28f, .24f);
         private static readonly string[] Sizes = { "Standard  1024 x 512", "Small  96 x 48", "Tiny  48 x 24" };
         private static readonly int[][] TribeChoices = { new[] { 8, 16, 24, 32, 48, 64, 80 }, new[] { 2, 4, 6, 8, 12, 16 }, new[] { 2, 4, 6, 8 } };
-        private string SavePath => Path.Combine(Application.persistentDataPath, "opening-v3.anthro");
+        private string SavePath => Path.Combine(Application.persistentDataPath, "opening-v4.anthro");
         public WorldState State => world;
 
         private void Awake()
@@ -181,6 +181,16 @@ namespace Anthropocene.Presentation
                     bool visible = observation.Tiles.TryGetValue(id, out var tile);
                     var rect = new Rect(pos.x - radius * .866f, pos.y - radius, radius * 1.732f, radius * 2);
                     var visual = new TileRenderContext { Bounds = rect, Tile = visible ? tile : null, Inspected = inspected == id, Selected = SelectedTile == id, SelectedEntity = selected };
+                    if (visible)
+                    {
+                        var neighborLevels = new int?[6];
+                        for (int direction = 0; direction < neighborLevels.Length; direction++)
+                        {
+                            int neighbor = ElevationLevelStage.Neighbor(world, id, direction);
+                            if (neighbor >= 0 && observation.Tiles.TryGetValue(neighbor, out var neighborTile)) neighborLevels[direction] = neighborTile.ElevationLevel;
+                        }
+                        visual.ContourEdgeMask = LayeredTileRenderer.ContourEdgeMask(tile.ElevationLevel, neighborLevels);
+                    }
                     if (visible) visual.Entities.AddRange(TileDetails.Occupants(observation, id));
                     tileRenderer.Draw(visual);
                     if (!visible) continue;
@@ -293,7 +303,7 @@ namespace Anthropocene.Presentation
                 GUI.Label(new Rect(14, y, width, 42), tile.Terrain.ToString().ToUpperInvariant() + " / " + tile.Relief + (tile.Oasis ? " / OASIS" : ""), small); y += 44;
                 string water = tile.WaterBody == WaterKind.Saltwater ? "Saltwater - undrinkable\nFreshwater: none" : "Freshwater: " + Knowledge.Bands[tile.Freshwater] + " (" + tile.FreshwaterSource + ")";
                 string rivers = tile.Rivers.Count == 0 ? "" : "\nRiver boundary: " + (tile.Rivers.Max(r => r.FlowBand) == 1 ? "small channel" : tile.Rivers.Max(r => r.FlowBand) == 2 ? "river" : "wide river");
-                GUI.Label(new Rect(14, y, width, 165), "Elevation " + tile.ElevationLevel + "/10: " + ElevationLevelStage.Description(tile.ElevationLevel) + "\nFood: " + Knowledge.Bands[tile.Food] + "\n" + water + "\nRenewal: " + Knowledge.Bands[tile.Productivity] + rivers + "\n" + (tile.Cultivated ? "Cultivated land" : tile.Fishery ? "Coastal fishery" : tile.Oasis ? "Finite oasis spring; depletion matters" : tile.Aquatic ? "Shore fishing available" : "Wild landscape"), text); y += 168;
+                GUI.Label(new Rect(14, y, width, 190), "Elevation " + tile.ElevationLevel + "/10: " + ElevationLevelStage.Description(tile.ElevationLevel) + "\nGatherable food: " + Knowledge.Bands[tile.Food] + "\nHerd forage: " + Knowledge.Bands[tile.PotentialFood] + " (" + tile.GatherablePercent + "% human-accessible)\n" + water + "\nRenewal: " + Knowledge.Bands[tile.Productivity] + rivers + "\n" + (tile.Cultivated ? "Cultivated land" : tile.Fishery ? "Coastal fishery" : tile.Oasis ? "Finite oasis spring; depletion matters" : tile.Aquatic ? "Shore fishing available" : "Wild landscape"), text); y += 193;
                 DrawStack(target, ref y, width);
                 if (debug) GUI.Label(new Rect(14, y, width, 75), "DEVELOPER: tile " + target + "\nFood " + world.Tiles[target].Food.ToString("F2") + " / water " + world.Tiles[target].Freshwater.ToString("F2"), small);
             }
@@ -461,7 +471,7 @@ namespace Anthropocene.Presentation
             Fill(r, new Color(.12f, .14f, .12f));
             GUI.Label(new Rect(r.x + 20, r.y + 15, width - 40, 38), "READING THE LAND", title);
             string helpText =
-                "@ Your camp (gold) / rival camp (red)   h Hunters\na Antelope   g Goats   b Bison   C Camels   H Horses   d Domestic herd\n. Grassland   T Woodland   & Jungle   : Desert\nNested contours: elevation 1-10; X Impassable peak; o Oasis; w Freshwater\nRivers follow tile edges. Sea tiles contain undrinkable saltwater.\n\nDots beneath glyphs show food from Depleted (one) to Abundant (five). Select a tile for food, water and renewal bands.\n\nClick a unit slot or roster entry to select that exact unit. The selected slot has a gold frame. M or right-click enters movement planning: green tiles are valid this generation, a thick line previews the route, and red means the pointed tile is unavailable. Hunter Hunt targets are amber; fishing targets are blue.\n\nEach unit can queue one order. A new order for that unit replaces its previous order; Backspace or the Cancel button removes it. Gold paths and Q badges are committed previews. Enter resolves every queued order simultaneously. Units without orders hold position; camp gathering is automatic.\n\nD dispatches hunters. A dispatched group appears at camp after resolution and can first receive orders next generation. R reintegrates hunters already at their source camp. Escape leaves targeting without changing queued orders.\n\nWheel zooms; middle-drag or arrows pan; C centers camp.\nHunter tethers preview the planned camp connection: green is supplied, amber crosses unknown terrain, and red will be disconnected. Hunters outside supply forage locally for subsistence before consuming carried provisions. Return to deposit surplus food. V switches tilesets. Hold still on a visible tile for two seconds for details. Saltwater is undrinkable. Wild herd labels are estimates: fewer than 10, rounded tens (~40), then broad hundreds (100+). Your own livestock counts are exact.";
+                "@ Your camp (gold) / rival camp (red)   h Hunters\na Antelope   g Goats   b Bison   C Camels   H Horses   d Domestic herd\n. Grassland   T Woodland   & Jungle   : Desert\nMerged contours: elevation 1-10; shared edges at equal height disappear; X Impassable peak; o Oasis; w Freshwater\nRivers follow tile edges. Sea tiles contain undrinkable saltwater.\n\nDots beneath glyphs show food from Depleted (one) to Abundant (five). Select a tile for food, water and renewal bands.\n\nClick a unit slot or roster entry to select that exact unit. The selected slot has a gold frame. M or right-click enters movement planning: green tiles are valid this generation, a thick line previews the route, and red means the pointed tile is unavailable. Hunter Hunt targets are amber; fishing targets are blue.\n\nEach unit can queue one order. A new order for that unit replaces its previous order; Backspace or the Cancel button removes it. Gold paths and Q badges are committed previews. Enter resolves every queued order simultaneously. Units without orders hold position; camp gathering is automatic.\n\nD dispatches hunters. A dispatched group appears at camp after resolution and can first receive orders next generation. R reintegrates hunters already at their source camp. Escape leaves targeting without changing queued orders.\n\nWheel zooms; middle-drag or arrows pan; C centers camp.\nHunter tethers preview the planned camp connection: green is supplied, amber crosses unknown terrain, and red will be disconnected. Hunters outside supply forage locally for subsistence before consuming carried provisions. Return to deposit surplus food. V switches tilesets. Hold still on a visible tile for two seconds for details. Saltwater is undrinkable. Wild herd labels are estimates: fewer than 10, rounded tens (~40), then broad hundreds (100+). Your own livestock counts are exact.";
             float contentHeight = text.CalcHeight(new GUIContent(helpText), width - 62);
             helpScroll = GUI.BeginScrollView(new Rect(r.x + 20, r.y + 62, width - 40, r.height - 120), helpScroll, new Rect(0, 0, width - 62, contentHeight));
             GUI.Label(new Rect(0, 0, width - 62, contentHeight), helpText, text);

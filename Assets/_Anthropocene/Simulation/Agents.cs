@@ -24,7 +24,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class TileObservation
     {
-        public readonly int Id, Food, Freshwater, Productivity, Moisture, ElevationLevel, RidgeMask, FoodMaximum;
+        public readonly int Id, Food, PotentialFood, Freshwater, Productivity, Moisture, ElevationLevel, RidgeMask, FoodMaximum, PotentialMaximum, GatherablePercent;
         public readonly Terrain Terrain;
         public readonly bool River, Cultivated, Fishery, Oasis;
         public readonly Relief Relief;
@@ -37,6 +37,7 @@ namespace Anthropocene.Simulation
         public TileObservation(Tile tile, SeasonData ecology, SimulationConfig config, IReadOnlyList<RiverEdge> rivers)
         {
             Id = tile.Id; Terrain = tile.Terrain; River = tile.River; Cultivated = tile.Cultivated; Fishery = tile.Fishery; ElevationLevel = tile.ElevationLevel; RidgeMask = tile.RidgeMask; FoodMaximum = Knowledge.Band(ecology.MaxFood, 70, config);
+            PotentialFood = Knowledge.Band(tile.PotentialFood, Math.Max(1, ecology.MaxPotentialFood), config); PotentialMaximum = Knowledge.Band(ecology.MaxPotentialFood, 700, config); GatherablePercent = (int)Math.Round(100 * ecology.MaxFood / Math.Max(1e-9, ecology.MaxPotentialFood));
             Oasis = tile.Oasis; Relief = tile.Relief; Elevation = tile.Elevation; WaterBody = tile.WaterBody; FreshwaterSource = tile.FreshwaterSource;
             Rivers = Array.AsReadOnly(tile.RiverEdges == null ? new RiverObservation[0] : tile.RiverEdges.Select((id, side) => new { id, side }).Where(x => x.id >= 0).Select(x => new RiverObservation(x.side, rivers[x.id], tile.Id, new HexCorners(config.Width, config.Height))).ToArray());
             // Food bands describe absolute usable yield; a nearly full barren tile must not appear abundant.
@@ -73,7 +74,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 3;
+        public const int SchemaVersion = 4;
         public readonly int Player, CampId, CampTile, CampPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly bool Watercraft;
         public readonly IReadOnlyDictionary<int, TileObservation> Tiles;

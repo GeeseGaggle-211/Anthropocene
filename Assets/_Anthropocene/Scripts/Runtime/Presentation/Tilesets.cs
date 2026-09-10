@@ -37,6 +37,7 @@ namespace Anthropocene.Presentation
         public TileObservation Tile;
         public bool Inspected, Selected;
         public int SelectedEntity = -1;
+        public int ContourEdgeMask = 0x3f;
         public readonly List<VisibleOccupant> Entities = new List<VisibleOccupant>();
     }
     public interface ITileRenderer { void Draw(TileRenderContext context); }
@@ -60,6 +61,16 @@ namespace Anthropocene.Presentation
         }
         private static Color ColorOf(string text) => ColorUtility.TryParseHtmlString(text, out var color) ? color : Color.white;
         public static int ContourCount(int level, float height) => height >= 85 ? level : (int)Math.Ceiling(level / 2.0);
+        public static int ContourEdgeMask(int level, IReadOnlyList<int?> neighborLevels)
+        {
+            if (neighborLevels == null || neighborLevels.Count != 6) throw new ArgumentException("Contour topology requires six clockwise neighbor elevations.", nameof(neighborLevels));
+            int mask = 0;
+            // Neighbor order is east, southeast, southwest, west, northwest, northeast.
+            // Renderer sides begin at northeast, so each direction maps to the following side.
+            for (int direction = 0; direction < 6; direction++)
+                if (!neighborLevels[direction].HasValue || neighborLevels[direction].Value < level) mask |= 1 << ((direction + 1) % 6);
+            return mask;
+        }
         public static Rect OccupantSlot(Rect rect, int index, int count)
         {
             if (count == 1) return new Rect(rect.x + rect.width * .22f, rect.y + rect.height * .24f, rect.width * .56f, rect.height * .5f);
@@ -91,17 +102,15 @@ namespace Anthropocene.Presentation
             Tint(rect, hex, ColorOf(tileset.Find(border).Tint));
             Tint(new Rect(rect.x + 1.5f, rect.y + 1.5f, rect.width - 3, rect.height - 3), hex, ColorOf(ground.Background));
             if (tile == null) return;
-            // Biome, relief, water features, resources and entities are independent semantic layers.
-            var ridge = tileset.Find("elevation.ridge"); var ridgeColor = ColorOf(ridge.Tint); ridgeColor.a = ridge.Opacity;
-            Vector2[] ridgeEnds = { new Vector2(1, .5f), new Vector2(.75f, .875f), new Vector2(.25f, .875f), new Vector2(0, .5f), new Vector2(.25f, .125f), new Vector2(.75f, .125f) };
-            for (int direction = 0; direction < 6; direction++) if ((tile.RidgeMask & 1 << direction) != 0) Line(rect.center, rect.position + Vector2.Scale(ridgeEnds[direction], rect.size), ridge.LineWidth, ridgeColor);
+            // Biome, merged elevation topology, water features, resources and entities are independent semantic layers.
             var contours = tileset.Find("elevation.contours"); var contourColor = ColorOf(contours.Tint); contourColor.a = contours.Opacity;
             int count = ContourCount(tile.ElevationLevel, rect.height);
             float step = Mathf.Min(contours.Spacing, rect.width * .30f / Mathf.Max(1, count));
             for (int ring = 0; ring < count; ring++)
             {
                 float inset = 3 + ring * step; var inner = new Rect(rect.x + inset, rect.y + inset, rect.width - 2 * inset, rect.height - 2 * inset);
-                for (int side = 0; side < 6; side++) Line(inner.position + Vector2.Scale(Corners[side], inner.size), inner.position + Vector2.Scale(Corners[(side + 1) % 6], inner.size), contours.LineWidth, contourColor);
+                for (int side = 0; side < 6; side++)
+                    if ((context.ContourEdgeMask & 1 << side) != 0) Line(inner.position + Vector2.Scale(Corners[side], inner.size), inner.position + Vector2.Scale(Corners[(side + 1) % 6], inner.size), contours.LineWidth, contourColor);
             }
             Symbol(biome, context.Entities.Count == 0 ? rect : new Rect(rect.x + rect.width * .05f, rect.y + rect.height * .6f, rect.width * .22f, rect.height * .25f));
             if (tile.ElevationLevel == 10) Symbol("elevation.10", rect);

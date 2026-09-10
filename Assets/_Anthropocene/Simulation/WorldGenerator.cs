@@ -72,8 +72,9 @@ namespace Anthropocene.Simulation
                 if (tile.Land) report.LandTiles++;
                 if (tile.River) report.Rivers++;
                 foreach (var season in tile.Seasons)
-                    if (float.IsNaN(season.MaxFood) || season.MaxFood < 0 || season.MaxFreshwater < 0 || season.Moisture < 0)
+                    if (float.IsNaN(season.MaxFood) || season.MaxFood < 0 || float.IsNaN(season.MaxPotentialFood) || season.MaxPotentialFood < season.MaxFood || season.MaxFreshwater < 0 || season.Moisture < 0)
                         throw new InvalidOperationException("Invalid generated ecology at " + tile.Id);
+                if (tile.PotentialFood + 1e-6 < tile.Food) throw new InvalidOperationException("Gatherable food exceeds total potential food at " + tile.Id);
                 if (tile.Downstream >= 0 && world.Tiles[tile.Downstream].Elevation > tile.Elevation + .00001)
                     throw new InvalidOperationException("River flows uphill at " + tile.Id);
             }
@@ -322,7 +323,8 @@ namespace Anthropocene.Simulation
                     data.FreshwaterRate = (float)c.Config.WaterRecovery; data.Habitat = tile.Land ? (float)productivity : 0;
                     tile.Seasons[s] = data;
                 }
-                tile.Food = tile.Seasons[0].MaxFood * .9; tile.Freshwater = tile.Seasons[0].MaxFreshwater * .9; tile.Saltwater = tile.Seasons[0].MaxSaltwater;
+                tile.Food = tile.Seasons[0].MaxFood * .9; FoodEcology.ConfigurePotential(tile, c.Config, true);
+                tile.Freshwater = tile.Seasons[0].MaxFreshwater * .9; tile.Saltwater = tile.Seasons[0].MaxSaltwater;
             }
         }
     }

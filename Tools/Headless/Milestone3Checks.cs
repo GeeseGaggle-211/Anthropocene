@@ -14,16 +14,16 @@ internal static class Milestone3Checks
         var w = new WorldState { Config = cfg, Seed = 13, Tiles = new Tile[384], Generation = new GenerationReport() };
         for (int i = 0; i < w.Tiles.Length; i++)
         {
-            var t = new Tile { Id = i, Terrain = Terrain.Grassland, Elevation = .55f, ElevationLevel = 2, Food = capacity, Freshwater = 60, FreshwaterSource = FreshwaterSource.RainPool };
-            for (int s = 0; s < 4; s++) t.Seasons[s] = new SeasonData { MaxFood = capacity, FoodRate = recovery, Moisture = 1, MaxFreshwater = 80, FreshwaterRate = .3f };
+            var t = new Tile { Id = i, Terrain = Terrain.Grassland, Elevation = .55f, ElevationLevel = 2, Food = capacity, PotentialFood = capacity * 10, Freshwater = 60, FreshwaterSource = FreshwaterSource.RainPool };
+            for (int s = 0; s < 4; s++) t.Seasons[s] = new SeasonData { MaxFood = capacity, MaxPotentialFood = capacity * 10, FoodRate = recovery, PotentialFoodRate = recovery, Moisture = 1, MaxFreshwater = 80, FreshwaterRate = .3f };
             w.Tiles[i] = t;
         }
         w.Camps.Add(new Camp { Id = w.NextId++, Tile = 150, Player = 0, Population = 24, Food = 4000 }); return w;
     }
     private static void Sea(Tile t, bool open = false)
     {
-        t.Terrain = open ? Terrain.Ocean : Terrain.Shallows; t.ElevationLevel = 0; t.WaterBody = WaterKind.Saltwater; t.FreshwaterSource = FreshwaterSource.None; t.Freshwater = 0; t.Saltwater = 100; t.Food = 200;
-        for (int s = 0; s < 4; s++) t.Seasons[s] = new SeasonData { MaxFood = 200, FoodRate = .1f, MaxSaltwater = 100 };
+        t.Terrain = open ? Terrain.Ocean : Terrain.Shallows; t.ElevationLevel = 0; t.WaterBody = WaterKind.Saltwater; t.FreshwaterSource = FreshwaterSource.None; t.Freshwater = 0; t.Saltwater = 100; t.Food = 200; t.PotentialFood = 200;
+        for (int s = 0; s < 4; s++) t.Seasons[s] = new SeasonData { MaxFood = 200, MaxPotentialFood = 200, FoodRate = .1f, PotentialFoodRate = .1f, MaxSaltwater = 100 };
     }
     public static void Run()
     {
@@ -47,17 +47,21 @@ internal static class Milestone3Checks
         foreach (var tile in w.Tiles) for (int season = 0; season < 4; season++) { var ecology = tile.Seasons[season]; ecology.Temperature = -18; ecology.Moisture = .05f; tile.Seasons[season] = ecology; }
         double coldStorage = TurnResolver.StorageGenerations(w, w.Camps[0].Tile);
         Check(Math.Abs(warmStorage - 1) < 1e-8 && coldStorage > 3.5 && coldStorage <= 4, "warm moist storage lasts one generation while cold dry storage approaches four");
+        var ecologyConfig = new SimulationConfig(); var forestFood = new Tile { Terrain = Terrain.Woodland, Food = 20 }; var grassFood = new Tile { Terrain = Terrain.Grassland, Food = 20 }; var desertFood = new Tile { Terrain = Terrain.Desert, Food = 20 };
+        foreach (var tile in new[] { forestFood, grassFood, desertFood }) for (int season = 0; season < 4; season++) tile.Seasons[season] = new SeasonData { MaxFood = 100, FoodRate = .2f };
+        FoodEcology.ConfigurePotential(forestFood, ecologyConfig, true); FoodEcology.ConfigurePotential(grassFood, ecologyConfig, true); FoodEcology.ConfigurePotential(desertFood, ecologyConfig, true);
+        Check(forestFood.Seasons[0].MaxPotentialFood == 400 && grassFood.Seasons[0].MaxPotentialFood == 1000 && desertFood.Seasons[0].MaxPotentialFood == 2000 && forestFood.Food == 20 && grassFood.Food == 20 && desertFood.Food == 20, "potential biomass preserves depleted gatherable food at rich 25%, grassland 10% and desert 5% accessibility");
         w = Flat(); var growingHerd = new Herd { Id = w.NextId++, Tile = 160, Animals = 149, Capacity = 150, Species = "antelope" }; w.Herds.Add(growingHerd);
         int herdPopulation = w.Herds.Sum(h => h.Animals); var herdTurn = resolver.Resolve(w, Idle());
         Check(w.Herds.Count > 1 && w.Herds.All(h => h.Animals <= h.Capacity) && w.Herds.Sum(h => h.Animals) > herdPopulation && herdTurn.Events.Any(e => e.Contains("divided")), "well-fed herds grow toward 150 and split deterministically above their limit");
         w = Flat(); var huntingCamp = w.Camps[0]; huntingCamp.Population -= 8; var hunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = huntingCamp.Tile, Population = 8 }; w.Hunters.Add(hunters);
         var camels = new Herd { Id = w.NextId++, Tile = w.Map.Neighbors(huntingCamp.Tile).First(), Animals = 10, Capacity = 80, Species = "camel" }; w.Herds.Add(camels);
         int interception = TurnResolver.HerdDestination(w, camels); var sustainableHunt = resolver.Resolve(w, new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Hunt, hunters.Id, camels.Id, interception) } });
-        Check(sustainableHunt.Transfers.Where(t => t.Kind == "Hunting").Sum(t => t.Food) == 192 && camels.Animals == 4 && sustainableHunt.Events.Any(e => e.Contains("breeding animals")), "herds reproduce before harvest and an opening camel hunt retains breeding stock");
+        Check(sustainableHunt.Transfers.Where(t => t.Kind == "Hunting").Sum(t => t.Food) == 7680 && w.Config.GetSpecies("camel").FoodYield * 4 == 24 * w.Config.Consumption * w.Config.GenerationIntervals && camels.Animals == 4 && sustainableHunt.Events.Any(e => e.Contains("breeding animals")), "herds reproduce before harvest, four camels feed 24 people for a generation, and breeding stock remains");
         w = Flat(30, .3f); w.Camps[0].Food = 48;
         for (int i = 0; i < 4; i++) resolver.Resolve(w, Idle()); int settled = w.Camps[0].Population;
         var plateau = resolver.Resolve(w, Idle()).Demographics[0];
-        Check(settled > 24 && settled < 120 && w.Camps[0].Population <= settled && plateau.Additions == 0 && plateau.FoodReceived < plateau.FoodRequired, "limited recurring food creates carrying pressure without an arbitrary population cap");
+        Check(settled > 24 && settled < 240 && w.Camps[0].Population <= settled && plateau.Additions == 0 && plateau.FoodReceived < plateau.FoodRequired, "limited recurring food creates carrying pressure without an arbitrary population cap");
         w = Flat(0, 0); w.Camps[0].Food = 0; resolver.Resolve(w, Idle()); resolver.Resolve(w, Idle()); var declining = resolver.Resolve(w, Idle()).Demographics[0];
         Check(declining.Deaths > 0 && declining.EndingPopulation < 24 && declining.Additions == 0 && declining.LimitingFactor.Contains("deficit"), "food deficits cause recorded decline with a visible limiting factor");
         w = Flat(0, 0); w.Camps[0].Food = 10000; var noSurplus = resolver.Resolve(w, Idle()).Demographics[0];

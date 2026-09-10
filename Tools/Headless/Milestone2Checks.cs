@@ -13,8 +13,8 @@ internal static class Milestone2Checks
         var w = new WorldState { Seed = 11, Config = c, Tiles = new Tile[384], Generation = new GenerationReport() };
         for (int i = 0; i < w.Tiles.Length; i++)
         {
-            var tile = new Tile { Id = i, ElevationLevel = 1, Terrain = Terrain.Grassland, FreshwaterSource = FreshwaterSource.RainPool, Food = 60, Freshwater = 60, Elevation = .55f };
-            for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData { MaxFood = 80, MaxFreshwater = 80, FoodRate = .3f, FreshwaterRate = .3f, Moisture = .5f };
+            var tile = new Tile { Id = i, ElevationLevel = 1, Terrain = Terrain.Grassland, FreshwaterSource = FreshwaterSource.RainPool, Food = 60, PotentialFood = 600, Freshwater = 60, Elevation = .55f };
+            for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData { MaxFood = 80, MaxPotentialFood = 800, MaxFreshwater = 80, FoodRate = .3f, PotentialFoodRate = .3f, FreshwaterRate = .3f, Moisture = .5f };
             w.Tiles[i] = tile;
         }
         w.Camps.Add(new Camp { Id = w.NextId++, Tile = 150, Player = 0, Population = 16, Food = 100 }); return w;

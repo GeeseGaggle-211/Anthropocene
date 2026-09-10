@@ -48,6 +48,7 @@ namespace Anthropocene.Simulation
             b.AppendLine("LAND · (" + id % o.Map.Width + ", " + id / o.Map.Width + ") / tile " + id + " · " + t.Terrain);
             b.AppendLine("Elevation " + t.ElevationLevel + "/10 · " + ElevationLevelStage.Description(t.ElevationLevel));
             b.AppendLine("FOOD · " + Knowledge.Bands[t.Food] + " stock; maximum " + Knowledge.Bands[t.FoodMaximum]);
+            b.AppendLine("HERD FORAGE · " + Knowledge.Bands[t.PotentialFood] + " biomass; capacity " + Knowledge.Bands[t.PotentialMaximum] + "; about " + t.GatherablePercent + "% human-gatherable");
             b.AppendLine("Renewal " + Knowledge.Bands[t.Productivity] + " per season within the generation; soil moisture " + Knowledge.Bands[t.Moisture]);
             if (o.RecentOwnExtraction.TryGetValue(id, out double extracted)) b.AppendLine("Your recorded extraction last turn: " + extracted.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
             b.AppendLine("WATER · " + (t.WaterBody == WaterKind.Saltwater ? "Saltwater, undrinkable; " + (t.Terrain == Terrain.Shallows ? "coastal shallows" : "open ocean") : t.FreshwaterSource == FreshwaterSource.None ? "No accessible freshwater source" : t.FreshwaterSource + " freshwater: " + Knowledge.Bands[t.Freshwater]));

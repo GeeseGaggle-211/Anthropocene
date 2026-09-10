@@ -27,9 +27,9 @@ The default player turn is twenty years, resolved through seasonal economic inte
 - Continuous height and biome are independent of gameplay elevation. Marine tiles are level 0, traversable land and freshwater lakes are levels 1–9, and level 10 blocks movement and placement. Preserve freshwater, river-edge and coastline invariants.
 - Human growth depends on recurring food surplus and reserves, with rising consumption, fractional progress and separately recorded deaths. Do not introduce an arbitrary human population cap. Maintain population and food conservation and the persisted demographic explanation.
 - Passive coastal gathering uses adjacent Shallows and shares the camp's land-gathering labor. Ocean is excluded and marine food never supplies freshwater. Remote hunters retain finite carried provisions and respect traversable supply paths.
-- Keep terrain, elevation contours, water/features, food markers and occupants independently legible. Stacked units use stable slots shared by rendering and hit testing; overflow remains accessible in the inspector. Delayed hover must reset with navigation, use visible information only and never intercept input.
+- Keep terrain, merged elevation contours, water/features, food markers and occupants independently legible. Equal elevation buckets suppress their shared contour edges; unknown neighbors must not leak elevation. Stacked units use stable slots shared by rendering and hit testing; overflow remains accessible in the inspector. Delayed hover must reset with navigation, use visible information only and never intercept input.
 - Generation, turn resolution and save/load use workers. Do not read or mutate partially resolved world state from the UI; preserve the busy/progress guards.
-- Save/load must restore authoritative geography and history without regeneration. The current signature is `ANTHROPOCENE-4`, filename `opening-v3.anthro`, and world/config/generator/observation versions are 3. If a change breaks compatibility, explicitly version it or implement a migration and test rejection/round-trip behavior. Preserve older user saves.
+- Save/load must restore authoritative geography and history without regeneration. The current signature is `ANTHROPOCENE-5`, filename `opening-v4.anthro`, and world/config/generator/observation versions are 4. This prototype revision intentionally rejects earlier formats that lack total biomass. If a later change breaks compatibility, explicitly version it or implement a migration and test rejection/round-trip behavior. Preserve older user save files.
 
 ## Build and validate
 
@@ -46,9 +46,12 @@ From the repository root in PowerShell:
 
 # Standard-world elevation, viable-start and save/load audit
 ./Tools/Test-Headless.ps1 -Seeds 0 -Audit
+
+# Habitat-segmented Paleolithic balance report
+./Tools/Test-Headless.ps1 -Seeds 30 -BiomePaths
 ```
 
-The script finds the local or Unity-bundled .NET SDK, then falls back to `dotnet` on PATH. Run checks appropriate to the change: focused simulation checks for mechanics, the broader suites for generation/determinism/performance changes, and Unity EditMode tests for engine integration or presentation changes. Do not repeat unchanged expensive suites without a reason. The recorded baseline is 138 headless assertions and 14 Unity tests; counts can legitimately increase.
+The script finds the local or Unity-bundled .NET SDK, then falls back to `dotnet` on PATH. Run checks appropriate to the change: focused simulation checks for mechanics, the broader suites for generation/determinism/performance changes, and Unity EditMode tests for engine integration or presentation changes. Do not repeat unchanged expensive suites without a reason. The recorded baseline is 140 headless assertions and 14 Unity tests; counts can legitimately increase.
 
 Run EditMode tests in Unity's Test Runner. For batch runs, use the Unity executable with `-batchmode -nographics -projectPath <absolute-root> -runTests -testPlatform EditMode -testResults <absolute-xml-path> -logFile <absolute-log-path>`; let the test runner exit rather than adding `-quit`. Create the output directory first and inspect the XML result, not just the process exit code. Launch background batch processes hidden on Windows.
 
@@ -68,5 +71,5 @@ Use V to compare tilesets, the wheel to zoom, arrows to pan and C to center the 
 - Keep Unity `.meta` files with their assets and preserve existing GUIDs. Keep third-party packages outside `_Anthropocene`; document provenance/licensing for added assets and use only dependencies needed by the task.
 - Build output, `Library`, logs, local SDKs and `TestResults` are intentionally ignored. Commit source, configuration, metadata, tests and relevant documentation. Do not force-add generated artifacts to satisfy a documentation link.
 - Update the current mechanics and validation notes when behavior changes. Distinguish automated coverage from manually observed UI behavior, and record benchmark seed/configuration when reporting performance.
-- The present balance can produce severe decline at marginal sites and favors fishing over hunting; the recorded thirty-seed run had 84/120 surviving tribes and no husbandry-first outcomes. Treat these as known tuning limitations, not proof of balanced play. Climate and wind transport are also approximate.
+- The present thirty-seed balance run had 120/120 surviving tribes and 14 husbandry-first outcomes after two-layer plant biomass and increased meat yields. Hunting is materially viable but the heuristic AI still gathers substantially more food than it hunts; cold-steppe starts grow much less than desert, grassland or river/woodland starts. Treat this as a tuning baseline, not proof of balance. Climate, habitat classification and wind transport are also approximate.
 - Stay within the requested work. Do not start later eras, background monitoring or additional agent tasks merely because they appear in the roadmap. After completing an assignment, report the result and await further instructions.

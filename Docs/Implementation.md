@@ -1,6 +1,6 @@
 # Paleolithic prototype
 
-Current behavior is documented in [milestone three](Milestone3.md): twenty-year generational resolution, elevation levels 0–10 with nested contours, individual stack slots, demographic explanations, passive coastal food and delayed hover details. These supersede the earlier seasonal-turn and four-band interpretations.
+Current behavior is documented in [milestone three](Milestone3.md): twenty-year generational resolution, elevation levels 0–10 with merged topographic contours, separate human-gatherable food and herd forage, individual stack slots, demographic explanations, passive coastal food and delayed hover details. These supersede the earlier seasonal-turn and four-band interpretations.
 
 Source: [Google Drive design spec](https://docs.google.com/document/d/1kw3ZGhJTHkLGUgEAxFikl7pL0UW5ixCcIUV3A0sgSjQ/edit), retrieved September 9, 2026. `DesignSpec.txt` preserves the source text read during implementation.
 
@@ -20,7 +20,7 @@ Mouse wheel zooms; middle-drag and arrow keys pan; C centers the camp. Escape re
 
 Food, freshwater, renewal and reserve values are qualitative. Only currently visible terrain and units appear. The player journal is built from own orders, own population and own transfers; it never displays the authoritative global event log. Multiple stacked entities are listed in the tile inspector. V switches between the two data-driven tilesets. The inspector distinguishes biome, relief, river edges, oases and undrinkable saltwater.
 
-Save stores the committed turn, generated geography, complete configuration, clock, stable ID counter, camps, groups, herds, experience, mandates and event/decision history. Pending orders are not saved. Saves live in Unity's `Application.persistentDataPath/opening-v3.anthro`. Files use fixed binary tile records and a versioned metadata contract inside buffered gzip. Saving and loading run on a worker while order mutation is disabled. Loading never regenerates geography. Milestone three uses file signature `ANTHROPOCENE-4`, world/config/generator version 3 and observation schema 3. Incompatible old saves are rejected; the original `opening.anthro` is retained under its old filename.
+Save stores the committed turn, generated geography, complete configuration, clock, stable ID counter, camps, groups, herds, experience, mandates and event/decision history. Pending orders are not saved. Saves live in Unity's `Application.persistentDataPath/opening-v4.anthro`. Files use fixed binary tile records and a versioned metadata contract inside buffered gzip. Saving and loading run on a worker while order mutation is disabled. Loading never regenerates geography. This revision uses file signature `ANTHROPOCENE-5`, world/config/generator version 4 and observation schema 4. The prototype intentionally rejects earlier formats because they do not contain authoritative total plant biomass; older files remain untouched under their prior filenames.
 
 ## Code boundaries
 
@@ -39,7 +39,7 @@ AI consumes immutable observations with the same qualitative resource bands and 
 ## Resolved specification ambiguities
 
 - Explicit hunger and demographic requirements supersede the older population-only-by-splitting rule. Conservation is previous population plus recorded net growth minus recorded starvation deaths.
-- Hunters within a traversable supply path share the camp store. Distant hunters forage their occupied tile for immediate subsistence, then consume finite carried provisions. Herds reproduce before the generation's hunting harvest; hunting preserves the larger of the species minimum or 20% of the multiplied herd as breeding stock. Surplus hunting/fishing harvest is retained up to capacity and deposits on return; movement can continue beyond supply range.
+- Hunters within a traversable supply path share the camp store. Distant hunters forage their occupied tile for immediate subsistence, then consume finite carried provisions. Herds reproduce before the generation's hunting harvest; hunting preserves the larger of the species minimum or 20% of the multiplied herd as breeding stock. Herbivores eat total potential biomass, while people gather only the accessible layer. Surplus hunting/fishing harvest is retained up to capacity and deposits on return; movement can continue beyond supply range.
 - Dispatch has no same-turn compound follow-up. Existing hunters can combine movement with Hunt/Fish.
 - Seasonal profiles are weighted into one generation-scale renewable-resource window. All camp, hunter and herd demands use one sorted proportional allocation, followed by one demographic/herd update and one map pass.
 - Domain ties prefer Hunting, then Gathering, then Fishing. Turn-12 forced transitions preserve experience and expose secondary progress through the configured multiplier/floor.
@@ -47,7 +47,7 @@ AI consumes immutable observations with the same qualitative resource bands and 
 
 ## Validation and remaining scope
 
-Run `./Tools/Test-Headless.ps1 -Seeds 30 -Standard -Geography`. This exercises hex topology, split/reintegration, fishing, allocation, collision handling, hunger, threshold/grace/hard-cap transitions, carryover, fog, AI information isolation, hunting contact and fleeing, time scaling, inertia, save round trips and replay after reversing entity collections. The generation suite compares presets and checks viable starts, drainage cycles and stellar temperature response. The Standard benchmark generates 524,288 tiles and plays its opening headlessly.
+Run `./Tools/Test-Headless.ps1 -Seeds 30 -Standard -Geography`. This exercises hex topology, split/reintegration, fishing, two-layer food allocation, collision handling, hunger, threshold/grace/hard-cap transitions, carryover, fog, AI information isolation, hunting contact and fleeing, time scaling, inertia, save round trips and replay after reversing entity collections. Add `-BiomePaths` to print habitat-segmented hunting, gathering, population and first-technology outcomes. The generation suite compares presets and checks viable starts, drainage cycles and stellar temperature response. The Standard benchmark generates 524,288 tiles and plays its opening headlessly.
 
 Unity EditMode tests cover actual engine compilation, binary save compatibility, several complete AI/replay games and information boundaries. The build menu produces a local Windows development player for interactive QA.
 

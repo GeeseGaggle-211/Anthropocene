@@ -16,7 +16,7 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class SimulationConfig
     {
-        public int Version = 3;
+        public int Version = 4;
         public int Width = 1024, Height = 512, Players = 32, PlateCount = 18;
         public WorldShape Shape = WorldShape.Continents;
         public double BaseDays = 91.25, TurnDays = 7300, MinDays = 1, MaxDays = 36500;
@@ -29,6 +29,7 @@ namespace Anthropocene.Simulation
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
         public double GatherFraction = .22, GatherPerPerson = 1.8, PopulationScale = 24;
+        public double RichGatherableFraction = .25, GrasslandGatherableFraction = .10, AridGatherableFraction = .05, TundraGatherableFraction = .08, GatherableRecoveryBias = 1;
         public double HuntEfficiency = .22, HuntVariance = .35, HuntBreedingReserveFraction = .2, FishPerPerson = 2.6;
         public double WanderChance = .05;
         public double ExperienceThreshold = 225, HarvestExperienceWeight = .08, CarryoverMultiplier = 1.25, CarryoverFloor = 100;
@@ -66,7 +67,7 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
             if (StartingPopulation <= MinimumCamp || MinimumCamp < 1 || Consumption <= 0 || PopulationScale <= 0)
                 throw new ArgumentException("Invalid population configuration.");
-            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || HuntBreedingReserveFraction <= 0 || HuntBreedingReserveFraction >= 1 || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || HerdsPerLandTile < 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
+            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || HuntBreedingReserveFraction <= 0 || HuntBreedingReserveFraction >= 1 || RichGatherableFraction <= 0 || RichGatherableFraction > 1 || GrasslandGatherableFraction <= 0 || GrasslandGatherableFraction > RichGatherableFraction || AridGatherableFraction <= 0 || AridGatherableFraction > GrasslandGatherableFraction || TundraGatherableFraction <= 0 || TundraGatherableFraction > RichGatherableFraction || GatherableRecoveryBias < 0 || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || HerdsPerLandTile < 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
                 throw new ArgumentException("Invalid logistics, demographic or ecological configuration.");
             if (ElevationQuantiles == null || ElevationQuantiles.Length != 9 || ElevationQuantiles[0] <= 0 || ElevationQuantiles[8] >= 1 || !ElevationQuantiles.SequenceEqual(ElevationQuantiles.OrderBy(x => x).Distinct())) throw new ArgumentException("Elevation requires nine increasing quantile boundaries.");
             if (HerdSmallCountThreshold < 1 || HerdCountRounding < 1 || HerdBroadCountSize < HerdSmallCountThreshold) throw new ArgumentException("Invalid observable herd count thresholds.");
@@ -87,7 +88,7 @@ namespace Anthropocene.Simulation
     public struct SeasonData
     {
         public float Temperature, Rain, Snow, WindX, Runoff, Moisture, AccessibleFreshwater;
-        public float MaxFood, MaxFreshwater, MaxSaltwater, FoodRate, FreshwaterRate, Habitat;
+        public float MaxFood, MaxPotentialFood, MaxFreshwater, MaxSaltwater, FoodRate, PotentialFoodRate, FreshwaterRate, Habitat;
     }
     [Serializable]
     public sealed class Tile
@@ -101,7 +102,7 @@ namespace Anthropocene.Simulation
         public FreshwaterSource FreshwaterSource;
         public bool Continental, Cultivated, Fishery, Oasis;
         public float Elevation, Volcanism, Flow, DepressionDepth, OasisInfluence;
-        public double Food, Freshwater, Saltwater;
+        public double Food, PotentialFood, Freshwater, Saltwater;
         public int[] RiverEdges;
         public bool River => RiverEdges != null && RiverEdges.Any(e => e >= 0);
         public double DrinkableWater => WaterBody != WaterKind.Saltwater && FreshwaterSource != FreshwaterSource.None ? Freshwater : 0;
@@ -159,13 +160,13 @@ namespace Anthropocene.Simulation
     {
         public string Kind;
         public int Tile, Entity;
-        public double Food, Freshwater;
+        public double Food, PotentialFood, Freshwater;
     }
     [Serializable]
     public sealed class TileChange
     {
         public int Tile;
-        public double BeforeFood, BeforeFreshwater, AfterFood, AfterFreshwater;
+        public double BeforeFood, BeforePotentialFood, BeforeFreshwater, AfterFood, AfterPotentialFood, AfterFreshwater;
     }
     [Serializable]
     public sealed class TurnRecord
@@ -185,8 +186,8 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldState
     {
-        public const int GeneratorVersion = 3;
-        public int Version = 3, Seed, Turn = 1, NextId = 1;
+        public const int GeneratorVersion = 4;
+        public int Version = 4, Seed, Turn = 1, NextId = 1;
         public double Days;
         public SimulationConfig Config;
         public Tile[] Tiles;
