@@ -88,7 +88,7 @@ namespace Anthropocene.Simulation
         {
             var visible = Knowledge.Visible(w, camp.Player);
             Player = camp.Player; CampId = camp.Id; CampTile = camp.Tile; CampPopulation = camp.Population; LinkedPopulation = w.LinkedPopulation(camp);
-            FoodCondition = Knowledge.Band(camp.Food, Math.Max(1, LinkedPopulation * w.Config.Consumption * 3), w.Config);
+            FoodCondition = Knowledge.Band(camp.Food, Math.Max(1, LinkedPopulation * w.Config.Consumption * w.Config.GenerationIntervals), w.Config);
             DeficitTurns = camp.DeficitTurns; Turn = w.Turn; PolicySeed = (int)Numbers.Hash(w.Seed, 90, camp.Player);
             Watercraft = camp.Technologies[(int)Technology.Watercraft]; Map = w.Map;
             MinimumCamp = w.Config.MinimumCamp; HunterMovement = w.Config.HunterMovement; CampMovement = w.Config.CampMovement; Inertia = w.Config.RelocationInertia;

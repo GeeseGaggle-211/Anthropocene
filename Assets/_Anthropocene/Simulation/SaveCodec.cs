@@ -59,6 +59,7 @@ namespace Anthropocene.Simulation
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
                 if (world.Version != 3 || world.Generation.GeneratorVersion != WorldState.GeneratorVersion) throw new InvalidDataException("Unsupported save version; regeneration is never implicit.");
+                MigrateGenerationalDefaults(world);
                 world.Config.Validate();
                 int count = reader.ReadInt32(); if (count != world.Config.Width * world.Config.Height) throw new InvalidDataException("Invalid tile count.");
                 world.Tiles = new Tile[count];
@@ -85,6 +86,22 @@ namespace Anthropocene.Simulation
                     world.Tiles[edge.TileB].RiverEdges[edge.SideB] = edge.Id;
                 }
                 TurnResolver.Invariants(world); ElevationLevelStage.Validate(world); BoundaryRiverStage.Validate(world); return world;
+            }
+        }
+        private static void MigrateGenerationalDefaults(WorldState world)
+        {
+            var config = world.Config;
+            bool legacyGenerationalConfig = config.StartingReserveGenerations <= 0 && config.HunterCarryGenerations <= 0 && config.MinimumStorageGenerations <= 0 && config.MaximumStorageGenerations <= 0;
+            if (config.StartingReserveGenerations <= 0) config.StartingReserveGenerations = 1;
+            if (config.HunterCarryGenerations <= 0) config.HunterCarryGenerations = 1;
+            if (config.MinimumStorageGenerations <= 0) config.MinimumStorageGenerations = 1;
+            if (config.MaximumStorageGenerations < config.MinimumStorageGenerations) config.MaximumStorageGenerations = 4;
+            if (legacyGenerationalConfig)
+            {
+                config.HunterForagePerPerson = 1;
+                foreach (var species in config.Species.Where(s => s.MaximumHerdSize == 32))
+                    species.MaximumHerdSize = species.Id == "antelope" || species.Id == "bison" ? 150 : species.Id == "horse" ? 120 : species.Id == "goat" ? 90 : species.Id == "camel" ? 80 : 120;
+                foreach (var herd in world.Herds.Where(h => h.DomesticCamp < 0 && h.Capacity == 32)) herd.Capacity = config.GetSpecies(herd.Species).MaximumHerdSize;
             }
         }
         private static WorldState CopyWithoutTiles(WorldState w) => new WorldState { Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Camps = w.Camps, Hunters = w.Hunters, Herds = w.Herds, Rivers = w.Rivers, History = w.History, Generation = w.Generation, Tiles = null };

@@ -68,6 +68,12 @@ internal static class Program
         w = Flat(); var bytes = SaveCodec.Save(w); var loaded = SaveCodec.Load(bytes);
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), "Save round trip");
         resolver.Resolve(w, Orders()); resolver.Resolve(loaded, Orders()); Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), "Replay from save");
+        w = Flat(); w.Config.StartingReserveGenerations = w.Config.HunterCarryGenerations = w.Config.MinimumStorageGenerations = w.Config.MaximumStorageGenerations = w.Config.HunterForagePerPerson = 0;
+        foreach (var species in w.Config.Species) species.MaximumHerdSize = 32;
+        w.Herds.Add(new Herd { Id = w.NextId++, Tile = w.Camps[0].Tile + 1, Species = "antelope", Animals = 30, Capacity = 32 });
+        loaded = SaveCodec.Load(SaveCodec.Save(w));
+        Check(loaded.Config.StartingReserveGenerations == 1 && loaded.Config.HunterCarryGenerations == 1 && loaded.Config.MinimumStorageGenerations == 1 && loaded.Config.MaximumStorageGenerations == 4 && loaded.Config.HunterForagePerPerson == 1, "Legacy saves gain generational defaults");
+        Check(loaded.Config.GetSpecies("antelope").MaximumHerdSize == 150 && loaded.Herds[0].Capacity == 150, "Legacy saves gain species herd thresholds");
         w = Flat(); camp = w.Camps[0];
         hunter = new Hunter { Id = w.NextId++, Tile = camp.Tile, Population = 12, Player = 0, SourceCamp = camp.Id }; w.Hunters.Add(hunter); camp.Population -= 12;
         var prey = new Herd { Id = w.NextId++, Tile = camp.Tile + 1, Animals = 8 }; w.Herds.Add(prey);
@@ -107,30 +113,22 @@ internal static class Program
             Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20; int survivors = 0, total = 0, starvation = 0, growth = 0, illegal = 0;
             if (args.Contains("--find-ui3"))
             {
-                for (int seed = 1; seed <= 120; seed++)
-                {
-                    var preview = new WorldGenerator().Generate(seed, SimulationConfig.Small(6)); var camp = preview.Camps[0];
-                    if (Knowledge.Visible(preview, 0).Select(n => preview.Tiles[n].ElevationLevel).Distinct().Count() < 4) continue;
-                    var resolver = new TurnResolver(); var policy = new HeuristicTribePolicy(); var builder = new AgentObservationBuilder();
-                    for (int turn = 0; turn < 2 && !preview.Finished; turn++)
-                    {
-                        var orders = preview.Camps.Where(c => c.Player != 0).ToDictionary(c => c.Player, c => policy.Decide(builder.Build(preview, c.Player), c.Mandate).Orders);
-                        orders[0] = new List<Order> { new Order(OrderKind.Dispatch, camp.Id, population: 8) }; resolver.Resolve(preview, orders);
-                    }
-                    var report = preview.History.Last().Demographics.First(d => d.Camp == camp.Id);
-                    if (!preview.Finished && preview.Hunters.Count(h => h.Player == 0) >= 2 && report.Additions > 0 && report.MarineFood > 0)
-                    { Console.WriteLine("DEMO Small seed=" + seed + " tribes=6 dispatch=8,8 levels=" + string.Join(",", Knowledge.Visible(preview, 0).Select(n => preview.Tiles[n].ElevationLevel).Distinct().OrderBy(n => n)) + " people=" + report.StartingPopulation + "+" + report.Additions + "-" + report.Deaths + "=" + report.EndingPopulation + " marine=" + report.MarineFood.ToString("F1")); return 0; }
-                }
-                throw new Exception("No combined demonstration seed found.");
+                var config = new SimulationConfig { Players = 32 }; var preview = new WorldGenerator().Generate(1729, config); var camp = preview.Camps[0];
+                var resolver = new TurnResolver(); var policy = new HeuristicTribePolicy(); var builder = new AgentObservationBuilder();
+                var orders = preview.Camps.Where(c => c.Player != 0).ToDictionary(c => c.Player, c => policy.Decide(builder.Build(preview, c.Player), c.Mandate).Orders);
+                orders[0] = new List<Order> { new Order(OrderKind.Dispatch, camp.Id, population: 8) }; resolver.Resolve(preview, orders);
+                var report = preview.History.Last().Demographics.First(d => d.Camp == camp.Id); var hunter = preview.Hunters.First(h => h.Player == 0);
+                Check(report.Additions > 0 && report.Deaths == 0 && hunter.Population == 8, "Standard interactive demonstration grows and preserves the dispatched group");
+                Console.WriteLine("DEMO Standard seed=1729 tribes=32 dispatch=8 people=" + report.StartingPopulation + "+" + report.Additions + "-" + report.Deaths + "=" + report.EndingPopulation + " reserve=" + (camp.Food / Math.Max(1, preview.LinkedPopulation(camp) * config.Consumption * config.GenerationIntervals)).ToString("F2") + " storage=" + TurnResolver.StorageGenerations(preview, camp.Tile).ToString("F2")); return 0;
             }
             if (args.Contains("--audit3"))
             {
                 for (int seed = 1; seed <= 8; seed++)
                 {
-                    var generated = new WorldGenerator().Generate(seed, new SimulationConfig()); var report = generated.Generation;
+                    var generated = new WorldGenerator().Generate(seed, new SimulationConfig { Players = 80 }); var report = generated.Generation;
                     Check(report.ElevationCounts.All(count => count > 0), "Every intended elevation level appears in Standard world " + seed);
                     Check(generated.Camps.All(c => generated.Herds.Any(h => generated.Map.Reachable(c.Tile, h.Tile, 2, n => generated.Tiles[n].TraversableLand))), "Every start has a herd reachable around peaks");
-                    Check(generated.Herds.All(h => generated.Tiles[h.Tile].ElevationLevel < 10) && generated.Camps.All(c => generated.Tiles[c.Tile].ElevationLevel < 10), "No peak spawns");
+                    Check(generated.Camps.Count == 80 && generated.Herds.All(h => generated.Tiles[h.Tile].ElevationLevel < 10) && generated.Camps.All(c => generated.Tiles[c.Tile].ElevationLevel < 10), "Eighty camps spawn without using peaks");
                     var copy = SaveCodec.Load(SaveCodec.Save(generated));
                     Check(copy.Tiles.Select(t => t.ElevationLevel).SequenceEqual(generated.Tiles.Select(t => t.ElevationLevel)), "All elevation levels survive Standard save/load");
                     Console.WriteLine("ELEVATION seed=" + seed + " levels=" + string.Join(",", report.ElevationCounts) + " ridgeTiles=" + generated.Tiles.Count(t => t.RidgeMask != 0) + " herds=" + report.WildHerds + " starts=" + report.CampsWithVisibleHerds + " oases=" + report.OasisCount + " riverEdges=" + report.RiverEdges);
@@ -199,9 +197,10 @@ internal static class Program
             Check(illegal == 0, "AI emitted illegal orders");
             if (args.Contains("--standard"))
             {
-                timer.Restart(); var world = new WorldGenerator().Generate(1729, new SimulationConfig());
-                Console.WriteLine("STANDARD tiles=" + world.Tiles.Length + " generation=" + timer.Elapsed + " memoryMB=" + GC.GetTotalMemory(false) / 1048576 + " land=" + world.Generation.LandTiles + " continents=" + world.Generation.Continents);
+                timer.Restart(); var standardConfig = new SimulationConfig { Players = 80 }; var world = new WorldGenerator().Generate(1729, standardConfig);
+                Console.WriteLine("STANDARD tiles=" + world.Tiles.Length + " tribes=" + world.Camps.Count + " generation=" + timer.Elapsed + " memoryMB=" + GC.GetTotalMemory(false) / 1048576 + " land=" + world.Generation.LandTiles + " continents=" + world.Generation.Continents);
                 Check(world.Tiles.Length == 524288, "Standard dimensions");
+                Check(world.Camps.Count == 80, "Standard supports eighty separated viable starts");
                 timer.Restart(); var policy = new HeuristicTribePolicy(); var builder = new AgentObservationBuilder(); var resolver = new TurnResolver();
                 while (!world.Finished && world.Turn <= 12)
                 {

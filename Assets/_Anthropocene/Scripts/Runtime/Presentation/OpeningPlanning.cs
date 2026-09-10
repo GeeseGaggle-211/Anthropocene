@@ -46,6 +46,19 @@ namespace Anthropocene.Presentation
         }
     }
 
+    public enum SupplyPreviewState { Connected, Uncertain, Disconnected }
+
+    public static class PlanningSupply
+    {
+        public static SupplyPreviewState Classify(HexMap map, int camp, int hunter, int range, Func<int, bool> known, Func<int, bool> enter)
+        {
+            if (map.Distance(camp, hunter) > range) return SupplyPreviewState.Disconnected;
+            if (map.Reachable(camp, hunter, range, n => known(n) && enter(n))) return SupplyPreviewState.Connected;
+            bool unseenCorridor = map.Radius(camp, range).Any(n => map.Distance(camp, n) + map.Distance(n, hunter) <= range && !known(n));
+            return unseenCorridor ? SupplyPreviewState.Uncertain : SupplyPreviewState.Disconnected;
+        }
+    }
+
     public sealed partial class OpeningGame
     {
         private string resolvingSummary = "";
@@ -139,6 +152,7 @@ namespace Anthropocene.Presentation
 
         private void DrawPaths(Rect area)
         {
+            DrawSupplyTethers(area);
             foreach (var order in planned.Values.OrderBy(o => o.Entity))
             {
                 int origin = order.Entity == observation.CampId ? observation.CampTile : observation.Hunters.FirstOrDefault(h => h.Id == order.Entity)?.Tile ?? -1;
@@ -159,6 +173,44 @@ namespace Anthropocene.Presentation
                 var path = preview.Destination >= 0 ? PathTo(preview.Destination) : Array.Empty<int>();
                 DrawPath(path, area, mode == "Hunt" ? HuntColor : mode == "Fish" ? FishColor : MoveColor, 5);
             }
+        }
+
+        private int PlannedTile(int entity, int current)
+        {
+            return planned.TryGetValue(entity, out var order) && order.Destination >= 0 ? order.Destination : current;
+        }
+
+        private SupplyPreviewState PlannedSupply(UnitObservation hunter)
+        {
+            int camp = PlannedTile(observation.CampId, observation.CampTile), destination = PlannedTile(hunter.Id, hunter.Tile);
+            bool Known(int tile) => observation.Tiles.ContainsKey(tile);
+            bool Enter(int tile)
+            {
+                if (!observation.Tiles.TryGetValue(tile, out var seen) || seen.ElevationLevel >= 10) return false;
+                return seen.Land || observation.Watercraft && seen.Terrain == Terrain.Shallows;
+            }
+            return PlanningSupply.Classify(observation.Map, camp, destination, observation.SupplyRange, Known, Enter);
+        }
+
+        private void DrawSupplyTethers(Rect area)
+        {
+            int camp = PlannedTile(observation.CampId, observation.CampTile);
+            foreach (var hunter in observation.Hunters.OrderBy(h => h.Id))
+            {
+                int destination = PlannedTile(hunter.Id, hunter.Tile); var state = PlannedSupply(hunter);
+                Color color = state == SupplyPreviewState.Connected ? MoveColor : state == SupplyPreviewState.Disconnected ? InvalidColor : Gold;
+                color.a = state == SupplyPreviewState.Connected ? .55f : .92f;
+                MapLine(Position(camp, area), Position(destination, area), state == SupplyPreviewState.Disconnected ? 5 : 3, color);
+                var endpoint = Position(destination, area); Tint(new Rect(endpoint.x - 5, endpoint.y - 5, 10, 10), Texture2D.whiteTexture, color);
+            }
+        }
+
+        private string PlannedSupplyWarning(UnitObservation hunter)
+        {
+            var state = PlannedSupply(hunter);
+            if (state == SupplyPreviewState.Connected) return "Planned connection: supplied by camp.";
+            if (state == SupplyPreviewState.Uncertain) return "Planned connection uncertain: the route crosses unseen terrain.";
+            return "WARNING: planned position is disconnected. Hunters will rely on carried provisions and local forage.";
         }
 
         private void DrawPath(IReadOnlyList<int> path, Rect area, Color color, float width)
@@ -221,7 +273,7 @@ namespace Anthropocene.Presentation
             Fill(new Rect(0, 0, Screen.width, Screen.height), Ink);
             float width = Mathf.Min(760, Screen.width - 80), left = (Screen.width - width) / 2;
             GUI.Label(new Rect(left, Screen.height * .24f, width, 48), "RESOLVING THE GENERATION", title);
-            GUI.Label(new Rect(left, Screen.height * .24f + 58, width, 70), "All tribes committed simultaneously. Seasonal gathering, hunting, fishing, consumption, ecology and demographics are now advancing.", text);
+            GUI.Label(new Rect(left, Screen.height * .24f + 58, width, 70), "All tribes committed simultaneously. Generation-scale gathering, hunting, fishing, consumption, ecology and demographics are resolving in one pass.", text);
             Fill(new Rect(left, Screen.height * .24f + 145, width, 2), Gold);
             GUI.Label(new Rect(left, Screen.height * .24f + 170, width, 120), resolvingSummary, text);
             GUI.Label(new Rect(left, Screen.height * .24f + 300, width, 30), "Input is paused until the committed world is ready.", small);

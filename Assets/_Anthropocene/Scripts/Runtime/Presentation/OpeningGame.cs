@@ -28,7 +28,7 @@ namespace Anthropocene.Presentation
         private TilesetDefinition[] tilesets;
         private ITileRenderer tileRenderer;
         private int tilesetIndex;
-        private int selected, hovered = -1, inspected = -1, center, dispatch = 8, sizeIndex, shapeIndex, players = 6;
+        private int selected, hovered = -1, inspected = -1, center, dispatch = 8, sizeIndex, shapeIndex, players = 32;
         private float radius = 56;
         private Vector2 pan, sidebarScroll, logScroll, helpScroll;
         private string seedText = "1729", status = "Choose a world, then begin.", mode = "Inspect";
@@ -37,6 +37,7 @@ namespace Anthropocene.Presentation
         private static readonly Color Ink = new Color(.035f, .044f, .043f), Panel = new Color(.075f, .086f, .082f), Paper = new Color(.86f, .86f, .78f), Gold = new Color(.91f, .69f, .33f);
         private static readonly Color MoveColor = new Color(.30f, .78f, .58f), HuntColor = new Color(.95f, .60f, .24f), FishColor = new Color(.28f, .70f, .88f), InvalidColor = new Color(.88f, .28f, .24f);
         private static readonly string[] Sizes = { "Standard  1024 x 512", "Small  96 x 48", "Tiny  48 x 24" };
+        private static readonly int[][] TribeChoices = { new[] { 8, 16, 24, 32, 48, 64, 80 }, new[] { 2, 4, 6, 8, 12, 16 }, new[] { 2, 4, 6, 8 } };
         private string SavePath => Path.Combine(Application.persistentDataPath, "opening-v3.anthro");
         public WorldState State => world;
 
@@ -106,9 +107,9 @@ namespace Anthropocene.Presentation
             GUI.Label(new Rect(left, top + 55, width, 55), "The first generations\nA people without a fixed destiny. A landscape with limits.", text);
             GUI.Label(new Rect(left, top + 125, 100, 25), "World seed", text);
             seedText = GUI.TextField(new Rect(left + 110, top + 123, width - 110, 30), seedText, 12);
-            if (Button(new Rect(left, top + 169, width, 34), "World size: " + Sizes[sizeIndex])) sizeIndex = (sizeIndex + 1) % Sizes.Length;
+            if (Button(new Rect(left, top + 169, width, 34), "World size: " + Sizes[sizeIndex])) CycleWorldSize();
             if (Button(new Rect(left, top + 211, width, 34), "World shape: " + ((WorldShape)shapeIndex))) shapeIndex = (shapeIndex + 1) % 3;
-            if (Button(new Rect(left, top + 253, width, 34), "Tribes: " + players + "  (you + " + (players - 1) + " rivals)")) players = players >= 8 ? 2 : players + 1;
+            if (Button(new Rect(left, top + 253, width, 34), "Tribes: " + players + "  (you + " + (players - 1) + " rivals)")) CycleTribes();
             GUI.enabled = generating == null;
             if (Button(new Rect(left, top + 295, width, 34), "Tileset: " + tilesets[tilesetIndex].Name)) SetTileset(tilesetIndex + 1);
             if (Button(new Rect(left, top + 348, width, 42), "BEGIN THE PALEOLITHIC", true)) NewGame();
@@ -129,6 +130,17 @@ namespace Anthropocene.Presentation
             config.Players = players; config.Shape = (WorldShape)shapeIndex;
             operation = "Building plates, climate, rivers, ecology and viable starts";
             generating = Task.Run(() => new WorldGenerator().Generate(seed, config));
+        }
+        private void CycleWorldSize()
+        {
+            sizeIndex = (sizeIndex + 1) % Sizes.Length;
+            int maximum = TribeChoices[sizeIndex][TribeChoices[sizeIndex].Length - 1];
+            if (players > maximum) players = maximum;
+        }
+        private void CycleTribes()
+        {
+            var choices = TribeChoices[sizeIndex]; int next = Array.FindIndex(choices, value => value > players);
+            players = next < 0 ? choices[0] : choices[next];
         }
         private void Header(float side)
         {
@@ -191,7 +203,10 @@ namespace Anthropocene.Presentation
             float width = area.width - 38, y = 12;
             var camp = world.Camps.First(c => c.Player == 0);
             GUI.Label(new Rect(14, y, width, 24), "YOUR TRIBE", section); y += 26;
-            GUI.Label(new Rect(14, y, width, 58), world.LinkedPopulation(camp) + " people  |  " + camp.Population + " at camp\nFood reserves: " + Knowledge.Bands[observation.FoodCondition] + (camp.DeficitTurns > 0 ? "\nHunger: " + camp.DeficitTurns + " recent seasonal deficits" : world.Turn == 1 ? "\nThe first generation awaits" : "\nCamp supplied in the final interval"), text); y += 70;
+            double generationNeed = Math.Max(1, world.LinkedPopulation(camp) * world.Config.Consumption * world.Config.GenerationIntervals);
+            double reserveGenerations = camp.Food / generationNeed, storageGenerations = TurnResolver.StorageGenerations(world, camp.Tile);
+            string hunger = camp.DeficitTurns > 0 ? "\nHunger warning: " + camp.DeficitTurns + " generation" + (camp.DeficitTurns == 1 ? "" : "s") + " in deficit" : world.Turn == 1 ? "\nOne full starting generation is protected" : "\nNo unresolved generational deficit";
+            GUI.Label(new Rect(14, y, width, 78), world.LinkedPopulation(camp) + " people  |  " + camp.Population + " at camp\nReserve: " + reserveGenerations.ToString("0.0") + " generations (" + Knowledge.Bands[observation.FoodCondition] + ")\nLocal storage ceiling: " + storageGenerations.ToString("0.0") + " generations" + hunger, text); y += 90;
 
             Fill(new Rect(10, y, width + 8, 62), new Color(.14f, .16f, .14f));
             GUI.Label(new Rect(20, y + 7, width - 12, 24), "SELECTED  ·  " + SelectedName, section);
@@ -224,9 +239,10 @@ namespace Anthropocene.Presentation
                 var expedition = observation.Hunters.FirstOrDefault(h => h.Id == selected);
                 if (expedition != null)
                 {
-                    string supply = expedition.InSupply ? "Supplied by camp (path range " + observation.SupplyRange + ")." : "Beyond supply: provisions " + Knowledge.Bands[expedition.Provisions] + ".";
-                    if (expedition.DeficitTurns > 0) supply += " Hungry for " + expedition.DeficitTurns + " seasonal checks.";
-                    GUI.Label(new Rect(14, y, width, 45), supply, small); y += 49;
+                    string supply = expedition.InSupply ? "Supplied by camp (path range " + observation.SupplyRange + ")." : "Beyond supply: provisions " + Knowledge.Bands[expedition.Provisions] + "; local foraging supports immediate survival.";
+                    if (expedition.DeficitTurns > 0) supply += " Hungry for " + expedition.DeficitTurns + " generation" + (expedition.DeficitTurns == 1 ? "." : "s.");
+                    supply += "\n" + PlannedSupplyWarning(expedition);
+                    GUI.Label(new Rect(14, y, width, 72), supply, small); y += 76;
                 }
                 if (Button(new Rect(14, y, width, 36), mode == "Hunt" ? "◆ HUNT [H]  ·  choose an amber herd" : "◇ HUNT [H]  ·  preview targets", mode == "Hunt")) BeginMode("Hunt"); y += 42;
                 if (Button(new Rect(14, y, width, 36), mode == "Fish" ? "◆ FISH [F]  ·  choose blue water" : "◇ FISH [F]  ·  preview targets", mode == "Fish")) BeginMode("Fish"); y += 42;
@@ -445,7 +461,7 @@ namespace Anthropocene.Presentation
             Fill(r, new Color(.12f, .14f, .12f));
             GUI.Label(new Rect(r.x + 20, r.y + 15, width - 40, 38), "READING THE LAND", title);
             string helpText =
-                "@ Your camp (gold) / rival camp (red)   h Hunters\na Antelope   g Goats   b Bison   C Camels   H Horses   d Domestic herd\n. Grassland   T Woodland   & Jungle   : Desert\nNested contours: elevation 1-10; X Impassable peak; o Oasis; w Freshwater\nRivers follow tile edges. Sea tiles contain undrinkable saltwater.\n\nDots beneath glyphs show food from Depleted (one) to Abundant (five). Select a tile for food, water and renewal bands.\n\nClick a unit slot or roster entry to select that exact unit. The selected slot has a gold frame. M or right-click enters movement planning: green tiles are valid this generation, a thick line previews the route, and red means the pointed tile is unavailable. Hunter Hunt targets are amber; fishing targets are blue.\n\nEach unit can queue one order. A new order for that unit replaces its previous order; Backspace or the Cancel button removes it. Gold paths and Q badges are committed previews. Enter resolves every queued order simultaneously. Units without orders hold position; camp gathering is automatic.\n\nD dispatches hunters. A dispatched group appears at camp after resolution and can first receive orders next generation. R reintegrates hunters already at their source camp. Escape leaves targeting without changing queued orders.\n\nWheel zooms; middle-drag or arrows pan; C centers camp.\nHunters outside a traversable supply path carry and eat their own provisions. Return to deposit food. V switches tilesets. Hold still on a visible tile for two seconds for details. Saltwater is undrinkable. Wild herd labels are estimates: fewer than 10, rounded tens (~40), then broad hundreds (100+). Your own livestock counts are exact.";
+                "@ Your camp (gold) / rival camp (red)   h Hunters\na Antelope   g Goats   b Bison   C Camels   H Horses   d Domestic herd\n. Grassland   T Woodland   & Jungle   : Desert\nNested contours: elevation 1-10; X Impassable peak; o Oasis; w Freshwater\nRivers follow tile edges. Sea tiles contain undrinkable saltwater.\n\nDots beneath glyphs show food from Depleted (one) to Abundant (five). Select a tile for food, water and renewal bands.\n\nClick a unit slot or roster entry to select that exact unit. The selected slot has a gold frame. M or right-click enters movement planning: green tiles are valid this generation, a thick line previews the route, and red means the pointed tile is unavailable. Hunter Hunt targets are amber; fishing targets are blue.\n\nEach unit can queue one order. A new order for that unit replaces its previous order; Backspace or the Cancel button removes it. Gold paths and Q badges are committed previews. Enter resolves every queued order simultaneously. Units without orders hold position; camp gathering is automatic.\n\nD dispatches hunters. A dispatched group appears at camp after resolution and can first receive orders next generation. R reintegrates hunters already at their source camp. Escape leaves targeting without changing queued orders.\n\nWheel zooms; middle-drag or arrows pan; C centers camp.\nHunter tethers preview the planned camp connection: green is supplied, amber crosses unknown terrain, and red will be disconnected. Hunters outside supply forage locally for subsistence before consuming carried provisions. Return to deposit surplus food. V switches tilesets. Hold still on a visible tile for two seconds for details. Saltwater is undrinkable. Wild herd labels are estimates: fewer than 10, rounded tens (~40), then broad hundreds (100+). Your own livestock counts are exact.";
             float contentHeight = text.CalcHeight(new GUIContent(helpText), width - 62);
             helpScroll = GUI.BeginScrollView(new Rect(r.x + 20, r.y + 62, width - 40, r.height - 120), helpScroll, new Rect(0, 0, width - 62, contentHeight));
             GUI.Label(new Rect(0, 0, width - 62, contentHeight), helpText, text);

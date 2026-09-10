@@ -30,6 +30,17 @@ namespace Anthropocene.Tests.EditMode
         }
 
         [Test]
+        public void SupplyPreview_DistinguishesConnectedUnknownAndOutOfRangePlans()
+        {
+            var map = new HexMap(8, 5); int camp = map.At(1, 2), near = map.At(3, 2), far = map.At(5, 2);
+            var visible = new HashSet<int>(map.Radius(camp, 3));
+            Assert.That(PlanningSupply.Classify(map, camp, near, 3, visible.Contains, _ => true), Is.EqualTo(SupplyPreviewState.Connected));
+            visible.Clear(); visible.Add(camp); visible.Add(near);
+            Assert.That(PlanningSupply.Classify(map, camp, near, 3, visible.Contains, _ => true), Is.EqualTo(SupplyPreviewState.Uncertain));
+            Assert.That(PlanningSupply.Classify(map, camp, far, 2, visible.Contains, _ => true), Is.EqualTo(SupplyPreviewState.Disconnected));
+        }
+
+        [Test]
         public void ElevationContours_AndStackSlots_PreserveCountsAndHitGeometry()
         {
             var bounds = new Rect(0, 0, 110, 128);

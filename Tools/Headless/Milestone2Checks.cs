@@ -47,8 +47,11 @@ internal static class Milestone2Checks
         Check(h.CarriedFood == Supply.Capacity(w, h) && record.Logistics[0].Overflow > 0 && w.Camps[0].Food == campFood, "carrying capacity prevents excess transport");
         h.Tile = w.Camps[0].Tile + 1; var returned = resolver.Resolve(w, Orders());
         Check(returned.Logistics.Any(l => l.Deposited > 0) && h.CarriedFood == 0, "returning within supply range deposits provisions");
-        w = Flat(); h = Hunter(w, 158); for (int turn = 0; turn < 3; turn++) resolver.Resolve(w, Orders());
-        Check(w.Camps[0].FoodDeficit == 0 && h.Population < 8, "an isolated expedition can starve while camp has food");
+        w = Flat(); h = Hunter(w, 158); var subsistence = resolver.Resolve(w, Orders());
+        Check(w.Camps[0].FoodDeficit == 0 && h.Population == 8 && h.FoodDeficit == 0 && subsistence.Transfers.Any(t => t.Entity == h.Id && t.Kind == "Foraging" && t.Food > 0), "an isolated expedition gathers local subsistence without teleporting food to camp");
+        foreach (var tile in w.Tiles) { tile.Food = 0; for (int season = 0; season < 4; season++) { var ecology = tile.Seasons[season]; ecology.MaxFood = 0; ecology.FoodRate = 0; tile.Seasons[season] = ecology; } }
+        for (int turn = 0; turn < 3; turn++) resolver.Resolve(w, Orders());
+        Check(h.Population < 8, "an isolated expedition still starves after its grace period when local forage and carried food are exhausted");
         w = Flat(); h = Hunter(w, 150); double totalFood = w.Camps[0].Food; var provisionRecord = new TurnRecord();
         Supply.ProvisionDepartures(w, new List<Order> { new Order(OrderKind.Move, h.Id, destination: 152) }, provisionRecord);
         Check(h.CarriedFood > 0 && Math.Abs(w.Camps[0].Food + h.CarriedFood - totalFood) < 1e-8, "expedition provisions are withdrawn, not created");
@@ -102,6 +105,7 @@ internal static class Milestone2Checks
         var cfg = SimulationConfig.Small(3); var generated = new WorldGenerator().Generate(7, cfg); var replay = new WorldGenerator().Generate(7, SimulationConfig.Small(3));
         Check(SaveCodec.Fingerprint(generated) == SaveCodec.Fingerprint(replay), "all geography and species placement are deterministic");
         Check(generated.Camps.All(c => generated.Herds.Any(p => generated.Map.Reachable(c.Tile, p.Tile, cfg.VisionRadius, n => generated.Tiles[n].Land))), "every opening camp has a reachable visible wild herd");
+        Check(generated.Camps.All(c => c.Food >= cfg.StartingReserveFood), "every generated camp begins with at least one complete generation of sustenance");
         Check(generated.Herds.Select(p => p.Tile).Distinct().Count() == generated.Herds.Count && generated.Herds.All(p => generated.Tiles[p.Tile].Land), "wild placement has no duplicate or aquatic herd locations");
         Geography.Validate(generated); BoundaryRiverStage.Validate(generated); OasisStage.Validate(generated);
         var corners = new HexCorners(cfg.Width, cfg.Height);

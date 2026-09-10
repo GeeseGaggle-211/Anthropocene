@@ -36,11 +36,25 @@ internal static class Milestone3Checks
         Check(result.Growth > shorter.Growth && shortRun.Days == 3650, "shorter technological-era duration scales demographics and clock");
         Check(report.StartingPopulation + report.Additions - report.Deaths == report.EndingPopulation && report.Explanation.Contains("Population") && report.LimitingFactor.Contains("surplus"), "demographic conservation and visible explanation data are explicit");
         Check(w.Tiles.All(t => t.Food >= 0 && t.Food <= t.Seasons[0].MaxFood), "long turns replenish bounded stocks instead of draining one seasonal snapshot eighty times");
+        var standardCapacity = new SimulationConfig { Players = 80 }; standardCapacity.Validate();
+        bool rejectedSmall = false; try { SimulationConfig.Small(17).Validate(); } catch (ArgumentException) { rejectedSmall = true; }
+        Check(rejectedSmall && SimulationConfig.MaximumPlayersFor(1024, 512) == 80, "tribe limits allow eighty only on worlds large enough to place them");
+        w = Flat(); var provisionedHunter = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, Tile = w.Camps[0].Tile, Population = 8 }; w.Hunters.Add(provisionedHunter);
+        var provisionRecord = new TurnRecord(); Supply.ProvisionDepartures(w, new List<Order> { new Order(OrderKind.Move, provisionedHunter.Id, destination: provisionedHunter.Tile + 2) }, provisionRecord);
+        Check(Math.Abs(provisionedHunter.CarriedFood - 8 * w.Config.Consumption * w.Config.GenerationIntervals) < 1e-8, "a departing hunter group can carry one complete generation of provisions");
+        w = Flat(); foreach (var tile in w.Tiles) for (int season = 0; season < 4; season++) { var ecology = tile.Seasons[season]; ecology.Temperature = 30; ecology.Moisture = 1; tile.Seasons[season] = ecology; }
+        double warmStorage = TurnResolver.StorageGenerations(w, w.Camps[0].Tile);
+        foreach (var tile in w.Tiles) for (int season = 0; season < 4; season++) { var ecology = tile.Seasons[season]; ecology.Temperature = -18; ecology.Moisture = .05f; tile.Seasons[season] = ecology; }
+        double coldStorage = TurnResolver.StorageGenerations(w, w.Camps[0].Tile);
+        Check(Math.Abs(warmStorage - 1) < 1e-8 && coldStorage > 3.5 && coldStorage <= 4, "warm moist storage lasts one generation while cold dry storage approaches four");
+        w = Flat(); var growingHerd = new Herd { Id = w.NextId++, Tile = 160, Animals = 149, Capacity = 150, Species = "antelope" }; w.Herds.Add(growingHerd);
+        int herdPopulation = w.Herds.Sum(h => h.Animals); var herdTurn = resolver.Resolve(w, Idle());
+        Check(w.Herds.Count > 1 && w.Herds.All(h => h.Animals <= h.Capacity) && w.Herds.Sum(h => h.Animals) > herdPopulation && herdTurn.Events.Any(e => e.Contains("divided")), "well-fed herds grow toward 150 and split deterministically above their limit");
         w = Flat(30, .3f); w.Camps[0].Food = 48;
         for (int i = 0; i < 4; i++) resolver.Resolve(w, Idle()); int settled = w.Camps[0].Population;
         var plateau = resolver.Resolve(w, Idle()).Demographics[0];
-        Check(settled > 24 && settled < 60 && Math.Abs(w.Camps[0].Population - settled) <= 2, "limited recurring food produces a population plateau without a population cap");
-        w = Flat(0, 0); w.Camps[0].Food = 0; var declining = resolver.Resolve(w, Idle()).Demographics[0];
+        Check(settled > 24 && settled < 120 && w.Camps[0].Population <= settled && plateau.Additions == 0 && plateau.FoodReceived < plateau.FoodRequired, "limited recurring food creates carrying pressure without an arbitrary population cap");
+        w = Flat(0, 0); w.Camps[0].Food = 0; resolver.Resolve(w, Idle()); resolver.Resolve(w, Idle()); var declining = resolver.Resolve(w, Idle()).Demographics[0];
         Check(declining.Deaths > 0 && declining.EndingPopulation < 24 && declining.Additions == 0 && declining.LimitingFactor.Contains("deficit"), "food deficits cause recorded decline with a visible limiting factor");
         w = Flat(0, 0); w.Camps[0].Food = 10000; var noSurplus = resolver.Resolve(w, Idle()).Demographics[0];
         Check(noSurplus.Additions == 0 && noSurplus.EndingPopulation == 24 && noSurplus.LimitingFactor.Contains("surplus"), "stored reserves alone do not claim sustainable growth");

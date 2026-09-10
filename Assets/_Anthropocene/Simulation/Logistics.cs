@@ -8,7 +8,7 @@ namespace Anthropocene.Simulation
     {
         public static bool InRange(WorldState w, Camp camp, int tile) => w.Map.Reachable(camp.Tile, tile, w.Config.SupplyRange, n => w.CanEnter(n, true, camp));
         public static bool Connected(WorldState w, Hunter h) => InRange(w, w.Camps.First(c => c.Id == h.SourceCamp), h.Tile);
-        public static double Capacity(WorldState w, Hunter h) => h.Population * w.Config.CarryingCapacityPerHunter;
+        public static double Capacity(WorldState w, Hunter h) => h.Population * Math.Max(w.Config.CarryingCapacityPerHunter, w.Config.Consumption * w.Config.GenerationIntervals * w.Config.HunterCarryGenerations);
         private static LogisticsRecord Entry(TurnRecord record, Hunter h)
         {
             var entry = record.Logistics.FirstOrDefault(e => e.Hunter == h.Id);
@@ -23,8 +23,8 @@ namespace Anthropocene.Simulation
                 bool moving = orders.Any(o => (o.Entity == hunter.Id || o.Entity == camp.Id) && o.Destination >= 0);
                 if (!moving || !Connected(w, hunter)) continue;
                 // Withdraw while the old planning-position supply path still exists, before movement commits.
-                double desired = Math.Min(Capacity(w, hunter), hunter.Population * w.Config.Consumption * w.Config.ExpeditionProvisionTurns);
-                double reserve = camp.Population * w.Config.Consumption * w.Config.CampProvisionReserveTurns;
+                double desired = Math.Min(Capacity(w, hunter), hunter.Population * w.Config.Consumption * w.Config.GenerationIntervals * w.Config.ExpeditionProvisionTurns);
+                double reserve = camp.Population * w.Config.Consumption * w.Config.GenerationIntervals * w.Config.CampProvisionReserveTurns;
                 double loaded = Math.Min(Math.Max(0, desired - hunter.CarriedFood), Math.Max(0, camp.Food - reserve));
                 camp.Food -= loaded; hunter.CarriedFood += loaded; Entry(record, hunter).ProvisionsLoaded += loaded;
             }

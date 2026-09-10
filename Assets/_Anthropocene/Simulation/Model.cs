@@ -17,7 +17,7 @@ namespace Anthropocene.Simulation
     public sealed class SimulationConfig
     {
         public int Version = 3;
-        public int Width = 1024, Height = 512, Players = 6, PlateCount = 18;
+        public int Width = 1024, Height = 512, Players = 32, PlateCount = 18;
         public WorldShape Shape = WorldShape.Continents;
         public double BaseDays = 91.25, TurnDays = 7300, MinDays = 1, MaxDays = 36500;
         public double DaysPerYear = 365, PracticeDays = 7300, AnnualHumanGrowthRate = .035, GrowthSurplusRatio = .25;
@@ -27,7 +27,7 @@ namespace Anthropocene.Simulation
         public int CampMovement = 1, HunterMovement = 2, HerdMovement = 1, WaterMovement = 1;
         public int VisionRadius = 2, GatherRadius = 1, MinimumCamp = 6, StartingPopulation = 24;
         public int StartSeparation = 12, StarvationGraceTurns = 2;
-        public double StartingFood = 48, Consumption = 1, Mortality = .18;
+        public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
         public double GatherFraction = .22, GatherPerPerson = 1.8, PopulationScale = 24;
         public double HuntEfficiency = .22, HuntVariance = .35, FishPerPerson = 2.6;
         public double WanderChance = .05;
@@ -44,7 +44,8 @@ namespace Anthropocene.Simulation
         public int GenerationBudgetSeconds = 90, GenerationBudgetMegabytes = 1000;
         public double[] BandThresholds = { .03, .25, .5, .8 };
         public int SupplyRange = 3;
-        public double CarryingCapacityPerHunter = 5, ExpeditionProvisionTurns = 3, CampProvisionReserveTurns = .5;
+        public double CarryingCapacityPerHunter = 5, HunterCarryGenerations = 1, ExpeditionProvisionTurns = 3, CampProvisionReserveTurns = .5;
+        public double MinimumStorageGenerations = 1, MaximumStorageGenerations = 4, HunterForagePerPerson = 1;
         public double GrowthReserveTurns = 1.5;
         public double HillsProductivity = .95, HighlandProductivity = .8, MountainProductivity = .5;
         public int HerdRegionSize = 32;
@@ -57,7 +58,7 @@ namespace Anthropocene.Simulation
 
         public void Validate()
         {
-            if (Width < 12 || Height < 8 || Width > 2048 || Height > 1024 || Players < 1 || Players > 16)
+            if (Width < 12 || Height < 8 || Width > 2048 || Height > 1024 || Players < 1 || Players > MaximumPlayersFor(Width, Height))
                 throw new ArgumentException("Unsupported map dimensions or player count.");
             if (PlateCount < 2 || PlateCount > 64 || TurnDays < MinDays || TurnDays > MaxDays || BaseDays <= 0)
                 throw new ArgumentException("Invalid generation or clock configuration.");
@@ -65,13 +66,20 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
             if (StartingPopulation <= MinimumCamp || MinimumCamp < 1 || Consumption <= 0 || PopulationScale <= 0)
                 throw new ArgumentException("Invalid population configuration.");
-            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || HerdsPerLandTile < 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
+            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || HerdsPerLandTile < 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
                 throw new ArgumentException("Invalid logistics, demographic or ecological configuration.");
             if (ElevationQuantiles == null || ElevationQuantiles.Length != 9 || ElevationQuantiles[0] <= 0 || ElevationQuantiles[8] >= 1 || !ElevationQuantiles.SequenceEqual(ElevationQuantiles.OrderBy(x => x).Distinct())) throw new ArgumentException("Elevation requires nine increasing quantile boundaries.");
             if (HerdSmallCountThreshold < 1 || HerdCountRounding < 1 || HerdBroadCountSize < HerdSmallCountThreshold) throw new ArgumentException("Invalid observable herd count thresholds.");
-            if (Species == null || Species.Count == 0 || Species.Select(s => s.Id).Distinct().Count() != Species.Count || Species.Any(s => string.IsNullOrWhiteSpace(s.Id) || s.FoodConsumption < 0 || s.FreshwaterConsumption <= 0 || s.FoodYield <= 0))
+            if (Species == null || Species.Count == 0 || Species.Select(s => s.Id).Distinct().Count() != Species.Count || Species.Any(s => string.IsNullOrWhiteSpace(s.Id) || s.FoodConsumption < 0 || s.FreshwaterConsumption <= 0 || s.FoodYield <= 0 || s.MaximumHerdSize < s.MaximumAnimals))
                 throw new ArgumentException("Species definitions must have unique stable IDs and valid ecological rates.");
         }
+        public static int MaximumPlayersFor(int width, int height)
+        {
+            long tiles = (long)width * height;
+            return tiles <= 48L * 24 ? 8 : tiles <= 96L * 48 ? 16 : 80;
+        }
+        public double GenerationIntervals => TurnDays / BaseDays;
+        public double StartingReserveFood => StartingPopulation * Consumption * GenerationIntervals * StartingReserveGenerations;
         public static SimulationConfig Small(int players = 4) => new SimulationConfig { Width = 96, Height = 48, Players = players, StartSeparation = 9 };
     }
 

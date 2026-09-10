@@ -1,15 +1,17 @@
-# Validation — milestone three, September 9, 2026
+# Validation — milestone three, September 10, 2026
 
 Windows x64, Unity 6000.5.10f1, Unity-bundled .NET 8.0.318. Timings are local development measurements. [Milestone-two results](Validation-Milestone2.md) remain archived for comparison.
 
 ## Automated checks
 
-- 129 focused headless assertions passed: 29 original rules, 57 second-milestone rules and 43 third-milestone checks.
+- 137 focused headless assertions passed: 31 original rules, 59 second-milestone rules and 47 third-milestone checks.
 - New checks cover annualized exponential growth, increasing food demand, a food-supported plateau, deficit decline, reserve-only non-growth, demographic rounding/explanations, twenty-year and shortened clocks, finite seasonal replenishment, passive marine food without freshwater credit, shared coastal/land labor, peak movement/AI/placement, stack occupants, hover timing/reset/fade and hidden-information isolation.
 - Herd-count boundary checks cover 1, 9, 10, 14, 15, 25, 99, 100, 101, 199, 200 and 249. Own livestock remains exact; foreign livestock and wild herds remain approximate. Counts in the same bucket produce identical player details and AI size categories. Save/load and authoritative replay preserve the result.
-- All 11 Unity EditMode tests passed. Added visual tests verify exact contour counts at normal zoom, monotonic density at low zoom, nonoverlapping stack hit slots and hover-panel flipping/clamping. A touching-slot failure was fixed with explicit gutters.
+- All 14 Unity EditMode tests passed. Added visual tests verify exact contour counts, nonoverlapping stack hit slots, hover layout, planning paths and connected/uncertain/disconnected supply previews.
 - 30 seeded four-tribe games completed with zero illegal AI orders and zero replay mismatches, including reversed entity and submitted-order collections. All population and food-report conservation checks passed.
-- The new model recorded 10,752 additions and 2,001 starvation deaths; 84/120 tribes survived. First technologies: 0 Animal Husbandry, 37 Cultivation, 47 Watercraft/Fisheries; 36 tribes died before a breakthrough. This suite now spans human generations and is not directly comparable to the earlier ninety-day-turn survival figures. Marginal sites can decline severely, and the policy/balance still favors fishing over hunting.
+- The single-pass generational model recorded 12,583 additions and 656 starvation deaths; all 120 tribes survived. First technologies among completed openings were 53 Cultivation and 67 Watercraft/Fisheries. Animal Husbandry still did not emerge first, so hunting balance remains a known tuning issue.
+
+The September 10 generational checks additionally cover one-generation starting reserves, one-to-four-generation climate storage, disconnected subsistence foraging with barren-site starvation retained, species herd thresholds/splitting and Standard-only support for 80 tribes.
 
 The `ui/civ5-inspired` presentation experiment adds two EditMode checks for the planning path and queue feedback. The path check verifies that previews obey the displayed movement budget, weighted terrain cost and the filtered visible-tile boundary; the queue check distinguishes a newly queued command from replacement of the selected unit's earlier command. These presentation helpers do not mutate simulation state.
 
@@ -21,9 +23,17 @@ The `ui/civ5-inspired` presentation experiment adds two EditMode checks for the 
 - Automated player interaction was blocked at launch by a Windows firewall/security permission dialog. The dialog was not acted on, and only this experiment's player process was closed. Selection, target-mode and order-resolution interaction therefore remain a manual smoke-test risk for this branch; no screenshot was retained.
 - Standard seed 1729: 524,288 tiles generated in about 6.8 seconds; its four-turn AI opening took about 19.4 seconds headlessly. Sampled managed memory was 210–240 MB. Save was 33.0 MB in about 1.0 second; load about 0.85 seconds. Runtime turn resolution uses a worker/progress screen.
 
+## Generational resolver and scale validation — September 10, 2026
+
+- Standard seed 1729 generated all 524,288 tiles and 80 separated viable starts in 6.67–6.96 seconds.
+- The complete twelve-turn 80-tribe opening resolved in 1.74–1.85 seconds headlessly, using about 204–215 MB managed memory.
+- Its 33.8 MB save completed in 1.08–1.15 seconds and loaded in 0.82–1.01 seconds.
+- The eight-seed Standard audit retained all elevation, coast/freshwater, oasis, river, start and save/load invariants with 80 camps in every world.
+- The Windows player visibly showed one full starting generation, climate storage, 24 → 34 first-generation growth, a green connected tether, and a red four-tile disconnected preview with a matching sidebar warning. A disconnected group remained present and reported its local-forage/provision state after resolution.
+
 ## Elevation coverage
 
-Eight Standard Continents worlds, seeds 1–8, six camps each. Every world contained every level 0–10. All 48 camps had an opening herd reachable within two land steps around peaks. No camps or herds spawned on peaks. Every world passed freshwater/coast, oasis, river-graph and elevation validation, and all levels survived Standard save/load.
+Eight Standard Continents worlds, seeds 1–8, 80 camps each. Every world contained every level 0–10. All 640 camps had an opening herd reachable within two land steps around peaks. No camps or herds spawned on peaks. Every world passed freshwater/coast, oasis, river-graph and elevation validation, and all levels survived Standard save/load.
 
 | Level | Interpretation | Minimum tiles per world | Maximum tiles per world |
 |---:|---|---:|---:|
@@ -39,7 +49,7 @@ Eight Standard Continents worlds, seeds 1–8, six camps each. Every world conta
 | 9 | Mountains | 4,941 | 9,663 |
 | 10 | Impassable peaks | 1,646 | 3,220 |
 
-Counts include freshwater lakes at their above-sea level. Peaks target the top one percent of land elevation; other quantiles deliberately spread the traversable levels. Worlds retained 919–1,645 wild herds, 54–98 oases and 404–2,726 shared river edges. Continuous elevation and biome remain independent of the gameplay categories.
+Counts include freshwater lakes at their above-sea level. Peaks target the top one percent of land elevation; other quantiles deliberately spread the traversable levels. The 80-start audit retained 977–1,707 wild herds, 54–98 oases and 404–2,726 shared river edges. Continuous elevation and biome remain independent of the gameplay categories.
 
 Twelve Small seeds per preset still pass viable-start, drainage-cycle and stellar-temperature checks. Mean land fractions are 0.480 Continents, 0.245 Archipelagos and 0.480 Pangaea; mean islands are 10.9, 21.4 and 7.8 respectively.
 
@@ -57,4 +67,4 @@ The final Windows build completed successfully (`milestone3-build-final.log`) an
 
 Run `Tools/Test-Headless.ps1 -Seeds 30 -Standard -Geography` and `Tools/Test-Headless.ps1 -Audit`. Run Unity EditMode tests through the Test Runner or batch mode. Raw logs are in the ignored `TestResults/milestone3-headless.txt`, `milestone3-elevation.txt`, `milestone3-unity.xml` and `milestone3-build.log`.
 
-The headless `0 --find-ui3` diagnostic finds a combined demonstration. Select Small / Continents / seed 1 / six tribes. Dispatch eight people in each of the first two turns. The turn-three planning view has a camp and two hunter groups stacked, levels 0, 1, 2, 3, 6 and 7 in sight, and a second-generation report of 39 + 9 additions − 0 deaths = 48 people, including approximately 1,695.6 passive marine food over that generation. This is a deterministic play sequence, not a modified save or a special production seed rule.
+For the current interactive check, select Standard / Continents / seed 1729 / 32 tribes. The first view exposes the one-generation reserve and four-generation desert storage ceiling. Dispatch eight people, commit, then move that group two tiles east and commit. A second two-tile eastward plan is visibly beyond the range-three supply tether: the line and sidebar warning both turn red while the order remains legal.

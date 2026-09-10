@@ -1,6 +1,6 @@
 # Paleolithic prototype
 
-Current behavior is documented in [milestone three](Milestone3.md): twenty-year turns with seasonal economic intervals, elevation levels 0–10 with nested contours, individual stack slots, demographic explanations, passive coastal food and delayed hover details. These supersede the earlier seasonal-turn and four-band interpretations.
+Current behavior is documented in [milestone three](Milestone3.md): twenty-year generational resolution, elevation levels 0–10 with nested contours, individual stack slots, demographic explanations, passive coastal food and delayed hover details. These supersede the earlier seasonal-turn and four-band interpretations.
 
 Source: [Google Drive design spec](https://docs.google.com/document/d/1kw3ZGhJTHkLGUgEAxFikl7pL0UW5ixCcIUV3A0sgSjQ/edit), retrieved September 9, 2026. `DesignSpec.txt` preserves the source text read during implementation.
 
@@ -8,11 +8,11 @@ Source: [Google Drive design spec](https://docs.google.com/document/d/1kw3ZGhJTH
 
 Open this project in Unity 6000.5.10f1 and press Play in SampleScene. The bootstrap creates the opening UI automatically. A Windows build is available after invoking **Anthropocene > Build Windows prototype**; run `Builds/Windows/Anthropocene.exe`.
 
-The menu defaults to the specified 1024 x 512 Standard world. Small and Tiny are useful for fast iteration. Generation runs off the main thread. Seed, shape and tribe count are selectable. The glyph tiles and hex texture are generated with code and Unity's built-in font; there are no external art licenses or paid packages.
+The menu defaults to the 1024 x 512 Standard world and 32 tribes. Standard accepts presets through 80; Small is limited to 16 and Tiny to 8. Generation runs off the main thread. Seed, shape and tribe count are selectable. The glyph tiles and hex texture are generated with code and Unity's built-in font; there are no external art licenses or paid packages.
 
 Select the camp or a hunter group in the sidebar. Right-click a visible tile to queue movement, or choose Move and left-click. Dispatch splits population on resolution; the new group can be selected in the following planning phase. Select hunters and choose Hunt or Fish to target a herd or shore. To intercept prey, queue the expected destination first and then choose Hunt and click the herd. Reintegration requires the source camp's tile. Enter resolves all orders simultaneously. The sidebar explains invalid orders.
 
-The experimental planning presentation uses a familiar 4X interaction grammar without third-party artwork: a persistent selected-unit card, command modes, colored valid-target overlays, a hover path preview and a visible order queue. Green denotes reachable movement, amber a valid visible herd and blue accessible fishing water; only the currently pointed invalid tile is red so the map does not become an error field. Gold paths and `Q` badges are queued, not yet executed. Each unit can hold one order; choosing another command replaces it, while Backspace or **Cancel selected order** returns the unit to holding position. The commit panel states what will resolve and reminds the player that unassigned units hold while camp gathering remains automatic.
+The planning presentation uses a familiar 4X interaction grammar without third-party artwork: a persistent selected-unit card, command modes, colored valid-target overlays, a hover path preview and a visible order queue. Green denotes reachable movement, amber a valid visible herd and blue accessible fishing water. Camp-to-hunter tethers preview final ordered positions: green is supplied, amber crosses unseen terrain, and red is disconnected. The sidebar repeats the warning before commit. Gold paths and `Q` badges are queued, not yet executed. Each unit can hold one order; choosing another command replaces it, while Backspace or **Cancel selected order** returns the unit to holding position.
 
 Dispatch remains a camp order, not an immediately selectable unit: the new hunter group spawns at the camp after the generation resolves and can first receive an order in the next planning phase. During resolution the player sees the committed summary while input is paused. The next planning phase retains a concise player-only result summary alongside the existing filtered journal; it is derived from the player's orders, transfers, logistics and demographic report rather than the global event log.
 
@@ -39,9 +39,9 @@ AI consumes immutable observations with the same qualitative resource bands and 
 ## Resolved specification ambiguities
 
 - Explicit hunger and demographic requirements supersede the older population-only-by-splitting rule. Conservation is previous population plus recorded net growth minus recorded starvation deaths.
-- Hunters within a traversable supply path share the camp store. Distant hunters carry finite provisions, retain harvest up to capacity and eat separately. Return to supply deposits their food; movement can continue beyond supply range.
+- Hunters within a traversable supply path share the camp store. Distant hunters forage their occupied tile for immediate subsistence, then consume finite carried provisions. Surplus hunting/fishing harvest is retained up to capacity and deposits on return; movement can continue beyond supply range.
 - Dispatch has no same-turn compound follow-up. Existing hunters can combine movement with Hunt/Fish.
-- Active fishing uses a common aquatic snapshot in phase 6. Passive gathering and surviving-herd consumption use the next common snapshot in phases 7–8, following the listed phase order.
+- Seasonal profiles are weighted into one generation-scale renewable-resource window. All camp, hunter and herd demands use one sorted proportional allocation, followed by one demographic/herd update and one map pass.
 - Domain ties prefer Hunting, then Gathering, then Fishing. Turn-12 forced transitions preserve experience and expose secondary progress through the configured multiplier/floor.
 - Geographic fields are fixed; seasonal resource envelopes change with the clock. Only resources and the first cultivation/fishery improvements mutate during this opening.
 

@@ -48,7 +48,7 @@ From the repository root in PowerShell:
 ./Tools/Test-Headless.ps1 -Seeds 0 -Audit
 ```
 
-The script finds the local or Unity-bundled .NET SDK, then falls back to `dotnet` on PATH. Run checks appropriate to the change: focused simulation checks for mechanics, the broader suites for generation/determinism/performance changes, and Unity EditMode tests for engine integration or presentation changes. Do not repeat unchanged expensive suites without a reason. The recorded baseline is 129 headless assertions and 11 Unity tests; counts can legitimately increase.
+The script finds the local or Unity-bundled .NET SDK, then falls back to `dotnet` on PATH. Run checks appropriate to the change: focused simulation checks for mechanics, the broader suites for generation/determinism/performance changes, and Unity EditMode tests for engine integration or presentation changes. Do not repeat unchanged expensive suites without a reason. The recorded baseline is 137 headless assertions and 14 Unity tests; counts can legitimately increase.
 
 Run EditMode tests in Unity's Test Runner. For batch runs, use the Unity executable with `-batchmode -nographics -projectPath <absolute-root> -runTests -testPlatform EditMode -testResults <absolute-xml-path> -logFile <absolute-log-path>`; let the test runner exit rather than adding `-quit`. Create the output directory first and inspect the XML result, not just the process exit code. Launch background batch processes hidden on Windows.
 
@@ -58,7 +58,7 @@ Build through **Anthropocene > Build Windows prototype**, or use `-batchmode -no
 
 ## Reproducible interactive demo
 
-Choose **Small / Continents / seed 1 / six tribes**. Dispatch eight people in each of the first two turns. Turn-three planning should show 48 people, 40 elapsed years, the camp plus two hunter groups on one tile, and a last-generation report of 39 + 9 additions − 0 deaths. Passive marine gathering is approximately 1,695.6 food in that generation. This is a normal deterministic play sequence, not a special seed rule or edited save.
+Choose **Standard / Continents / seed 1729 / 32 tribes**. The opening view shows 24 people, one complete starting-generation reserve and a four-generation desert storage ceiling. Dispatch eight people and commit: turn two shows visible population growth and the camp/hunter stack. Move the hunters two tiles east and commit. Planning another two-tile eastward move draws a red camp tether and a matching disconnection warning; the group will forage locally and use carried provisions after committing. This is a normal deterministic play sequence, not a special seed rule or edited save.
 
 Use V to compare tilesets, the wheel to zoom, arrows to pan and C to center the camp. Check exact slot selection, hover after more than two stationary seconds, coastal saltwater/food information, and save/load restoration. Preserve any existing user save when setting up a new demonstration.
 
