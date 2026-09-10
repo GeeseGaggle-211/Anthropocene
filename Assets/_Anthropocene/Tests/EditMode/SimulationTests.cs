@@ -4,11 +4,118 @@ using Anthropocene.Simulation;
 using NUnit.Framework;
 using Anthropocene.Presentation;
 using UnityEngine;
+using System.Reflection;
+using System.Threading.Tasks;
 
 namespace Anthropocene.Tests.EditMode
 {
     public sealed class SimulationTests
     {
+        private static WorldState PlanningWorld(int hunterQ = 6, int supply = 3)
+        {
+            var w = new WorldState { Config = new SimulationConfig { Width = 24, Height = 12, Players = 1, SupplyRange = supply } };
+            w.Tiles = Enumerable.Range(0, 288).Select(id => new Tile { Id = id, Terrain = Anthropocene.Simulation.Terrain.Grassland, ElevationLevel = 1 }).ToArray();
+            w.Camps.Add(new Camp { Id = 1, Player = 0, Tile = w.Map.At(4, 4), Population = 24 });
+            w.Hunters.Add(new Hunter { Id = 2, Player = 0, SourceCamp = 1, Tile = w.Map.At(hunterQ, 4), Population = 8 });
+            return w;
+        }
+        [Test]
+        public void PlannedSupply_UsesBothDestinations_AndDoesNotPromiseSurvival()
+        {
+            var w = PlanningWorld(); var o = new AgentObservationBuilder().Build(w, 0);
+            var orders = new List<Order> { new Order(OrderKind.Move, 2, destination: w.Map.At(7, 4)) };
+            Assert.That(PlanningPreview.SupplyState(o, 2, orders), Is.EqualTo("visible supply path"));
+            orders.Add(new Order(OrderKind.Move, 1, destination: w.Map.At(3, 4)));
+            Assert.That(PlanningPreview.SupplyState(o, 2, orders), Does.StartWith("outside supply"));
+            orders[1].Destination = w.Map.At(5, 4);
+            Assert.That(PlanningPreview.SupplyState(o, 2, orders), Is.EqualTo("visible supply path"));
+            string connected = PlanningPreview.SupplyText(o, o.Hunters[0], orders);
+            Assert.That(connected, Does.Contain("Supply path now: connected"));
+            Assert.That(connected, Does.Contain("Shared camp reserves"));
+            Assert.That(connected, Does.Contain("Carried provisions: Depleted"));
+            Assert.That(connected, Does.Contain("does not mean this group is unfed"));
+            orders[1].Destination = w.Map.At(3, 4);
+            Assert.That(PlanningPreview.SupplyText(o, o.Hunters[0], orders), Does.Contain("can starve"));
+            Assert.That(w.Camps[0].Tile, Is.EqualTo(w.Map.At(4, 4)));
+        }
+        [Test]
+        public void FogSupply_IsUncertain_AndHiddenGeographyCannotChangePreview()
+        {
+            var w = PlanningWorld(10, 4); var o = new AgentObservationBuilder().Build(w, 0);
+            var orders = new[] { new Order(OrderKind.Move, 1, destination: w.Map.At(5, 4)), new Order(OrderKind.Move, 2, destination: w.Map.At(9, 4)) };
+            Assert.That(o.Tiles.ContainsKey(w.Map.At(7, 4)), Is.False);
+            string before = PlanningPreview.SupplyState(o, 2, orders);
+            Assert.That(before, Does.StartWith("uncertain supply"));
+            foreach (var tile in w.Tiles.Where(t => !o.Tiles.ContainsKey(t.Id))) { tile.Terrain = Anthropocene.Simulation.Terrain.Ocean; tile.ElevationLevel = 10; }
+            Assert.That(PlanningPreview.SupplyState(new AgentObservationBuilder().Build(w, 0), 2, orders), Is.EqualTo(before));
+        }
+        [Test]
+        public void MovementPreview_MatchesValidation_AndDistinguishesTerrainAndRange()
+        {
+            var w = PlanningWorld(); int peak = w.Map.At(5, 4), sea = w.Map.At(4, 5);
+            w.Tiles[peak].ElevationLevel = 10; w.Tiles[sea].Terrain = Anthropocene.Simulation.Terrain.Shallows;
+            var o = new AgentObservationBuilder().Build(w, 0); var resolver = new TurnResolver();
+            Assert.That(PlanningPreview.MovementError(o, 1, peak, 2), Does.Contain("peak"));
+            Assert.That(PlanningPreview.MovementError(o, 1, sea, 2), Does.Contain("Sea"));
+            Assert.That(PlanningPreview.MovementError(o, 1, w.Map.At(6, 4), 2), Does.Contain("range"));
+            Assert.That(PlanningPreview.MovementError(o, 1, w.Map.At(6, 4), 2), Does.Contain("allowance 1"));
+            foreach (int id in new[] { 1, 2 }) foreach (int tile in o.Tiles.Keys)
+                Assert.That(PlanningPreview.Path(o, id, tile, 2).Length > 0, Is.EqualTo(resolver.Validate(w, 0, new Order(OrderKind.Move, id, destination: tile)) == null));
+            w.Camps[0].Technologies[(int)Technology.Watercraft] = true;
+            o = new AgentObservationBuilder().Build(w, 0);
+            foreach (int tile in o.Tiles.Keys)
+                Assert.That(PlanningPreview.Path(o, 2, tile, 2).Length > 0, Is.EqualTo(resolver.Validate(w, 0, new Order(OrderKind.Move, 2, destination: tile)) == null));
+        }
+        [Test]
+        public void DispatchAndReplacementDescriptions_ExposeTimingHeadcountAndCoordinates()
+        {
+            var o = new AgentObservationBuilder().Build(PlanningWorld(), 0);
+            string dispatch = PlanningPreview.Describe(o, new Order(OrderKind.Dispatch, 1, population: 8));
+            Assert.That(dispatch, Does.Contain("24 -> 16")); Assert.That(dispatch, Does.Contain("orders next turn"));
+            string a = PlanningPreview.Describe(o, new Order(OrderKind.Move, 2, destination: o.Map.At(7, 4)));
+            string b = PlanningPreview.Describe(o, new Order(OrderKind.Move, 2, destination: o.Map.At(5, 4)));
+            Assert.That(a, Does.Contain("(7, 4)")); Assert.That(b, Does.Contain("(5, 4)")); Assert.That(a, Is.Not.EqualTo(b));
+        }
+        private static FieldInfo GameField(string name) => typeof(OpeningGame).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
+        private static void GameCall(OpeningGame game, string name) => typeof(OpeningGame).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic).Invoke(game, null);
+        [Test]
+        public void CommitAndEndTurn_RejectDuplicateCallsWhileWorkerOwnsState()
+        {
+            var go = new GameObject("planning guard test"); var game = go.AddComponent<OpeningGame>();
+            try
+            {
+                var w = PlanningWorld(); GameField("world").SetValue(game, w); GameField("observation").SetValue(game, new AgentObservationBuilder().Build(w, 0));
+                GameCall(game, "EndTurn"); Assert.That(GameField("reviewOrders").GetValue(game), Is.True);
+                var task = new TaskCompletionSource<TurnRecord>().Task; GameField("resolving").SetValue(game, task);
+                GameCall(game, "CommitTurn"); GameCall(game, "EndTurn");
+                Assert.That(GameField("resolving").GetValue(game), Is.SameAs(task)); Assert.That(w.Turn, Is.EqualTo(1));
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+        [Test]
+        public void Escape_CancelsTargetingBeforeControls_AndKeepsOrders()
+        {
+            var go = new GameObject("Escape integration test"); var game = go.AddComponent<OpeningGame>();
+            try
+            {
+                var w = PlanningWorld(); GameField("world").SetValue(game, w); GameField("observation").SetValue(game, new AgentObservationBuilder().Build(w, 0));
+                GameField("menu").SetValue(game, false); GameField("selected").SetValue(game, 1);
+                var orders = (Dictionary<int, Order>)GameField("planned").GetValue(game); orders[1] = new Order(OrderKind.Move, 1, destination: w.Map.At(3, 4));
+                foreach (string mode in new[] { "Move", "Hunt", "Fish" })
+                {
+                    GameField("mode").SetValue(game, mode);
+                    var escape = new Event { type = EventType.KeyDown, keyCode = KeyCode.Escape };
+                    typeof(OpeningGame).GetMethod("HandleEarlyInput", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(game, new object[] { escape });
+                    Assert.That(GameField("mode").GetValue(game), Is.EqualTo("Inspect")); Assert.That(orders.Count, Is.EqualTo(1));
+                    Assert.That(GameField("status").GetValue(game), Does.Contain("cancelled"));
+                }
+                GameField("reviewOrders").SetValue(game, true);
+                typeof(OpeningGame).GetMethod("HandleEarlyInput", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(game, new object[] { new Event { type = EventType.KeyDown, keyCode = KeyCode.Escape } });
+                Assert.That(GameField("reviewOrders").GetValue(game), Is.False);
+                Assert.That(GameField("status").GetValue(game), Does.Contain("review closed"));
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
         [Test]
         public void ElevationContours_AndStackSlots_PreserveCountsAndHitGeometry()
         {

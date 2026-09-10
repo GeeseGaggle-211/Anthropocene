@@ -36,6 +36,7 @@ namespace Anthropocene.Presentation
         public Rect Bounds;
         public TileObservation Tile;
         public bool Inspected, Selected;
+        public int SelectedEntity = -1;
         public readonly List<VisibleOccupant> Entities = new List<VisibleOccupant>();
     }
     public interface ITileRenderer { void Draw(TileRenderContext context); }
@@ -125,8 +126,11 @@ namespace Anthropocene.Presentation
             for (int i = 0; i < Math.Min(6, context.Entities.Count); i++)
             {
                 var slot = OccupantSlot(rect, i, context.Entities.Count);
+                if (context.Entities[i].SelectableId >= 0 && context.Entities[i].SelectableId == context.SelectedEntity)
+                    Tint(slot, Texture2D.whiteTexture, ColorOf(tileset.Find("selected").Tint));
                 // Opaque backplates preserve individual glyphs over dense elevation contours.
-                Tint(new Rect(slot.x + 1, slot.y + 1, slot.width - 2, slot.height - 2), Texture2D.whiteTexture, ColorOf(ground.Background));
+                float selectedInset = context.Entities[i].SelectableId >= 0 && context.Entities[i].SelectableId == context.SelectedEntity ? 3 : 1;
+                Tint(new Rect(slot.x + selectedInset, slot.y + selectedInset, slot.width - selectedInset * 2, slot.height - selectedInset * 2), Texture2D.whiteTexture, ColorOf(ground.Background));
                 bool countBadge = !string.IsNullOrEmpty(context.Entities[i].Badge) && slot.width >= 38 && slot.height >= 34;
                 Symbol(context.Entities[i].Key, countBadge ? new Rect(slot.x, slot.y, slot.width, slot.height - 14) : slot, context.Entities.Count > 1 ? 1.4f : 1.8f);
                 if (countBadge) { glyph.fontSize = 11; glyph.normal.textColor = ColorOf(tileset.Find("entity.stack").Tint); GUI.Label(new Rect(slot.x, slot.yMax - 14, slot.width, 14), context.Entities[i].Badge, glyph); }
