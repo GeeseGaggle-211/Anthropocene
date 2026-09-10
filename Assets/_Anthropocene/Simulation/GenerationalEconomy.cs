@@ -381,7 +381,7 @@ namespace Anthropocene.Simulation
                 double hunting = record.Transfers.Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Hunting").Sum(t => t.Food);
                 double passiveAquatic = record.Transfers.Where(t => t.Entity == camp.Id && (t.Kind == "Marine gathering" || t.Kind == "Aquatic gathering")).Sum(t => t.Food);
                 double gathering = record.Transfers.Where(t => (t.Entity == camp.Id && t.Kind == "Gathering") || hunterIds.Contains(t.Entity) && t.Kind == "Foraging").Sum(t => t.Food) + passiveAquatic * (1 - w.Config.PassiveAquaticFishingPracticeShare);
-                double fishing = record.Transfers.Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Fishing").Sum(t => t.Food) + passiveAquatic * w.Config.PassiveAquaticFishingPracticeShare;
+                double fishing = record.Transfers.Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Fishing").Sum(t => t.Food) * w.Config.ActiveFishingPracticeMultiplier + passiveAquatic * w.Config.PassiveAquaticFishingPracticeShare;
                 foreach (var logistics in record.Logistics.Where(l => l.Camp == camp.Id && l.HarvestOverflow > 0))
                 {
                     double overflow = logistics.HarvestOverflow;

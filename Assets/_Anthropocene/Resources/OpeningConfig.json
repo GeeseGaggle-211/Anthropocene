@@ -71,6 +71,7 @@
   "HuntingFoodYieldScale": 2.5,
   "HuntingYieldBonus": 0.5,
   "HuntingPracticeMultiplier": 3.25,
+  "ActiveFishingPracticeMultiplier": 4.25,
   "PassiveAquaticFishingPracticeShare": 0.25,
   "LandDepletionPerGeneration": 0.08,
   "AquaticDepletionPerGeneration": 0.08,

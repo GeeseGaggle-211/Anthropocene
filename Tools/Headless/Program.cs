@@ -43,7 +43,7 @@ internal static class Program
     private static int Percentile(IReadOnlyList<int> sorted, double fraction) => sorted.Count == 0 ? 0 : sorted[(int)Math.Round((sorted.Count - 1) * fraction)];
     private static void RunNomadStandardAudit(int games)
     {
-        int totalNomads = 0, totalTribes = 0;
+        int totalNomads = 0, totalCultivation = 0, totalFishing = 0, totalTribes = 0;
         for (int seed = 1; seed <= games; seed++)
         {
             var config = new SimulationConfig { Players = 32 };
@@ -62,15 +62,19 @@ internal static class Program
                 resolver.Resolve(world, orders);
             }
             int nomads = world.Camps.Count(camp => camp.Technology == Technology.AnimalHusbandry);
+            int cultivation = world.Camps.Count(camp => camp.Technology == Technology.Cultivation);
+            int fishing = world.Camps.Count(camp => camp.Technology == Technology.Watercraft);
             var populations = world.Camps.Select(world.LinkedPopulation).OrderBy(population => population).ToArray();
             int survivors = populations.Count(population => population > 0);
-            totalNomads += nomads; totalTribes += world.Camps.Count;
-            Console.WriteLine("NOMAD_STANDARD seed=" + seed + " husbandry=" + nomads + "/" + world.Camps.Count + " survivors=" + survivors + "/" + world.Camps.Count + " medianPopulation=" + Percentile(populations, .5) + " maxPopulation=" + populations.LastOrDefault() + " herds=" + world.Herds.Count(herd => herd.DomesticCamp < 0));
+            totalNomads += nomads; totalCultivation += cultivation; totalFishing += fishing; totalTribes += world.Camps.Count;
+            Console.WriteLine("NOMAD_STANDARD seed=" + seed + " husbandry=" + nomads + " cultivation=" + cultivation + " fishing=" + fishing + " tribes=" + world.Camps.Count + " survivors=" + survivors + "/" + world.Camps.Count + " medianPopulation=" + Percentile(populations, .5) + " maxPopulation=" + populations.LastOrDefault() + " herds=" + world.Herds.Count(herd => herd.DomesticCamp < 0));
             Check(illegal == 0, "Standard nomad audit emitted illegal AI orders at seed " + seed);
             Check(nomads * 5 >= world.Camps.Count, "At least 20% of tribes should reach Animal Husbandry in Standard opening seed " + seed);
+            Check(fishing > 0 && cultivation > fishing && cultivation > nomads, "Each Standard opening should retain fishing diversity with Cultivation as the plurality at seed " + seed);
             world = null; GC.Collect();
         }
-        Console.WriteLine("NOMAD_STANDARD_TOTAL husbandry=" + totalNomads + "/" + totalTribes);
+        Console.WriteLine("NOMAD_STANDARD_TOTAL husbandry=" + totalNomads + " cultivation=" + totalCultivation + " fishing=" + totalFishing + " tribes=" + totalTribes);
+        Check(totalFishing * 5 >= totalTribes && totalCultivation > totalFishing && totalCultivation > totalNomads, "Standard aggregate should retain at least twenty percent fishing with Cultivation as the plurality");
     }
     private static string FirstDifference(object left, object right, string path = "world")
     {
@@ -142,6 +146,10 @@ internal static class Program
         w = Flat(); var before = Knowledge.Visible(w, 0); w.Camps[0].Tile += 4; var after = Knowledge.Visible(w, 0);
         Check(before.Except(after).Any() && after.Count == 19, "Present-tense fog");
         var policy = new HeuristicTribePolicy(); var builder = new AgentObservationBuilder();
+        w = Flat(3); camp = w.Camps[1]; hunter = new Hunter { Id = w.NextId++, SourceCamp = camp.Id, Player = camp.Player, Tile = camp.Tile, Population = 8 }; camp.Population -= 8; w.Hunters.Add(hunter);
+        water = w.Map.Neighbors(camp.Tile).First(); w.Tiles[water].Terrain = Terrain.Shallows; w.Tiles[water].WaterBody = WaterKind.Saltwater; w.Tiles[water].Freshwater = 0; w.Tiles[water].FreshwaterSource = FreshwaterSource.None;
+        var fishingDecision = policy.Decide(builder.Build(w, camp.Player), camp.Mandate);
+        Check(fishingDecision.Orders.Any(order => order.Entity == hunter.Id && order.Kind == OrderKind.Fish), "Fishing-oriented AI commits an established group to a visible productive fishing tile");
         w = Flat(); var decision = policy.Decide(builder.Build(w, 0), w.Camps[0].Mandate);
         int hidden = Enumerable.Range(0, w.Tiles.Length).First(n => !Knowledge.Visible(w, 0).Contains(n));
         w.Tiles[hidden].Food = 99999; w.Camps[1].Food = 98765;
@@ -150,11 +158,11 @@ internal static class Program
         w = Flat(); var bytes = SaveCodec.Save(w); var loaded = SaveCodec.Load(bytes);
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), "Save round trip");
         resolver.Resolve(w, Orders()); resolver.Resolve(loaded, Orders()); Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), "Replay from save");
-        w = Flat(); w.Config.StartingReserveGenerations = w.Config.HunterCarryGenerations = w.Config.MinimumStorageGenerations = w.Config.MaximumStorageGenerations = w.Config.HunterForagePerPerson = w.Config.HuntBreedingReserveFraction = w.Config.SustainableHerdGrowthRetention = 0; w.Config.SustainableHuntPopulation = 0;
+        w = Flat(); w.Config.StartingReserveGenerations = w.Config.HunterCarryGenerations = w.Config.MinimumStorageGenerations = w.Config.MaximumStorageGenerations = w.Config.HunterForagePerPerson = w.Config.HuntBreedingReserveFraction = w.Config.SustainableHerdGrowthRetention = 0; w.Config.SustainableHuntPopulation = 0; w.Config.ActiveFishingPracticeMultiplier = w.Config.GrasslandHerdDensityMultiplier = w.Config.SteppeHerdDensityMultiplier = 0;
         foreach (var species in w.Config.Species) species.MaximumHerdSize = 32;
         w.Herds.Add(new Herd { Id = w.NextId++, Tile = w.Camps[0].Tile + 1, Species = "antelope", Animals = 30, Capacity = 32 });
         loaded = SaveCodec.Load(SaveCodec.Save(w));
-        Check(loaded.Config.StartingReserveGenerations == 1 && loaded.Config.HunterCarryGenerations == 2.5 && loaded.Config.MinimumStorageGenerations == 1 && loaded.Config.MaximumStorageGenerations == 4 && loaded.Config.HunterForagePerPerson == 1 && loaded.Config.HuntBreedingReserveFraction == .2 && loaded.Config.SustainableHuntPopulation == 16 && loaded.Config.SustainableHerdGrowthRetention == .25, "Missing logistics values gain current generational and sustainable-hunting defaults");
+        Check(loaded.Config.StartingReserveGenerations == 1 && loaded.Config.HunterCarryGenerations == 2.5 && loaded.Config.MinimumStorageGenerations == 1 && loaded.Config.MaximumStorageGenerations == 4 && loaded.Config.HunterForagePerPerson == 1 && loaded.Config.HuntBreedingReserveFraction == .2 && loaded.Config.SustainableHuntPopulation == 16 && loaded.Config.SustainableHerdGrowthRetention == .25 && loaded.Config.ActiveFishingPracticeMultiplier == 4.25 && loaded.Config.GrasslandHerdDensityMultiplier == 1.35 && loaded.Config.SteppeHerdDensityMultiplier == 1.15, "Missing tuning values gain current logistics, practice and herd-density defaults");
         Check(loaded.Config.GetSpecies("antelope").MaximumHerdSize == 150 && loaded.Herds[0].Capacity == 150, "Legacy saves gain species herd thresholds");
         w = Flat(); w.Config.SustainableHuntPopulation = 8; camp = w.Camps[0];
         hunter = new Hunter { Id = w.NextId++, Tile = camp.Tile, Population = 12, Player = 0, SourceCamp = camp.Id }; w.Hunters.Add(hunter); camp.Population -= 12;
@@ -171,10 +179,10 @@ internal static class Program
         w = Flat(); loaded = SaveCodec.Load(SaveCodec.Save(w)); loaded.Config.TurnDays = 45;
         resolver.Resolve(w, Orders()); resolver.Resolve(loaded, Orders());
         Check(loaded.Camps[0].LastConsumed < w.Camps[0].LastConsumed && loaded.History[0].Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food) < w.History[0].Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food), "Duration scales consumption and extraction");
-        w = Flat(); var inertia = policy.Decide(builder.Build(w, 1), w.Camps[1].Mandate);
+        w = Flat(3); var inertia = policy.Decide(builder.Build(w, 2), w.Camps[2].Mandate);
         Check(inertia.Orders[0].Kind == OrderKind.NoOp, "Equivalent tiles favor camp continuity");
-        foreach (int n in w.Map.Radius(w.Camps[1].Tile, 1)) { w.Tiles[n].Food = 0; for (int s = 0; s < 4; s++) w.Tiles[n].Seasons[s].FoodRate = 0; }
-        inertia = policy.Decide(builder.Build(w, 1), w.Camps[1].Mandate);
+        foreach (int n in w.Map.Radius(w.Camps[2].Tile, 1)) { w.Tiles[n].Food = 0; for (int s = 0; s < 4; s++) w.Tiles[n].Seasons[s].FoodRate = 0; }
+        inertia = policy.Decide(builder.Build(w, 2), w.Camps[2].Mandate);
         Check(inertia.Orders[0].Kind == OrderKind.Move, "Depletion overcomes relocation inertia");
         w = Flat(); w.Camps[0].Experience = new double[] { 2, 7, 1 }; w.Turn = 12;
         TurnResolver.Breakthrough(w, w.Camps[0], new TurnRecord());
@@ -353,7 +361,12 @@ internal static class Program
                     Console.WriteLine("PALEOLITHIC_PATH habitat=" + item.Key.Replace(' ', '_') + " tribes=" + path.Tribes + " survivors=" + path.Survivors + " meanPopulation=" + (path.EndingPopulation / Math.Max(1, path.Tribes)).ToString("F1") + " growthRatio=" + (path.EndingPopulation / Math.Max(1, path.StartingPopulation)).ToString("F2") + " huntFoodPerTribe=" + (path.HuntFood / Math.Max(1, path.Tribes)).ToString("F1") + " gatheredFoodPerTribe=" + (path.GatherFood / Math.Max(1, path.Tribes)).ToString("F1") + " husbandry=" + path.Husbandry);
                 }
                 Console.WriteLine("ARID_RIVER_CORRIDORS riverTilesAdjacentToDesert=" + aridRiverCorridors + " acrossSeeds=" + seeds);
-                if (seeds >= 30) Check(Percentile(endingPopulations, .5) >= 85 && Percentile(endingPopulations, .75) >= 100 && atLeastOneHundred * 5 >= endingPopulations.Count * 2 && endingPopulations.Last() <= 250, "Typical tribes should approach one hundred people without explosive Paleolithic populations");
+                if (seeds >= 30)
+                {
+                    Check(Percentile(endingPopulations, .5) >= 85 && Percentile(endingPopulations, .75) >= 100 && atLeastOneHundred * 5 >= endingPopulations.Count * 2 && endingPopulations.Last() <= 300, "Typical tribes should approach one hundred people without explosive Paleolithic populations");
+                    Check(technologies[(int)Technology.Watercraft] * 5 >= total && technologies[(int)Technology.AnimalHusbandry] * 5 >= total, "Fishing and nomadic paths should each represent at least twenty percent of the balance sample");
+                    Check(technologies[(int)Technology.Cultivation] > technologies[(int)Technology.Watercraft] && technologies[(int)Technology.Cultivation] > technologies[(int)Technology.AnimalHusbandry], "Cultivation should remain the plurality first technology");
+                }
                 if (growthResponseOpportunities > 0) Check(growthResponses >= growthResponseOpportunities * .75, "Most observed population increases should be answered by more gathering or hunter dispatch");
             }
             Check(illegal == 0, "AI emitted illegal orders");

@@ -100,6 +100,9 @@ namespace Anthropocene.Simulation
             if (config.HuntBreedingReserveFraction <= 0) config.HuntBreedingReserveFraction = .2;
             if (config.SustainableHuntPopulation <= 0) config.SustainableHuntPopulation = 16;
             if (config.SustainableHerdGrowthRetention <= 0) config.SustainableHerdGrowthRetention = .25;
+            if (config.ActiveFishingPracticeMultiplier <= 0) config.ActiveFishingPracticeMultiplier = 4.25;
+            if (config.GrasslandHerdDensityMultiplier <= 0) config.GrasslandHerdDensityMultiplier = 1.35;
+            if (config.SteppeHerdDensityMultiplier <= 0) config.SteppeHerdDensityMultiplier = 1.15;
             if (legacyGenerationalConfig)
             {
                 config.HunterForagePerPerson = 1;
