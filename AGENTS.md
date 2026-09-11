@@ -51,22 +51,15 @@ From the repository root in PowerShell:
 ./Tools/Test-Headless.ps1 -Seeds 30 -BiomePaths
 ```
 
-From a native Linux or WSL checkout, use the equivalent Bash launcher. Pass the seed count first, followed by the headless flags used by the test program:
+This workstation's authoritative checkout is `C:\Users\suyas\Documents\ChatGPT\Anthropocene`. Run implementation, Git operations, headless checks and documentation work directly from this Windows checkout. Do not route routine repository work through WSL or maintain a second authoritative checkout. `Tools/Test-Headless.sh` remains available for portability on other hosts but is not the current workstation workflow.
 
-```bash
-./Tools/Test-Headless.sh 0
-./Tools/Test-Headless.sh 30 --standard --geography
-./Tools/Test-Headless.sh 0 --audit3
-./Tools/Test-Headless.sh 30 --biome-paths
-```
-
-Keep the authoritative CLI checkout in the native Linux filesystem, not under `/mnt/c`. The Windows checkout is a Unity build/playtest mirror and should receive completed work through GitHub rather than being edited concurrently.
+GitHub authentication on this workstation is intentionally file-backed because Windows Credential Manager and the Schannel transport proved unreliable. Git uses the OpenSSL transport. Never print credentials, paste tokens into prompts, or commit them. Confirm unattended access with `gh auth status` and a normal fetch or push; if Git opens a credential GUI, stop and repair the CLI configuration instead of continuing through the dialog.
 
 The script finds the local or Unity-bundled .NET SDK, then falls back to `dotnet` on PATH. Run checks appropriate to the change: focused simulation checks for mechanics, the broader suites for generation/determinism/performance changes, and Unity EditMode tests for engine integration or presentation changes. Do not repeat unchanged expensive suites without a reason. The recorded baseline is 162 headless assertions plus one per simulated seed, and 14 Unity tests; counts can legitimately increase.
 
 Run EditMode tests in Unity's Test Runner. For batch runs, use the Unity executable with `-batchmode -nographics -projectPath <absolute-root> -runTests -testPlatform EditMode -testResults <absolute-xml-path> -logFile <absolute-log-path>`; let the test runner exit rather than adding `-quit`. Create the output directory first and inspect the XML result, not just the process exit code. Launch background batch processes hidden on Windows.
 
-Build through **Anthropocene > Build Windows prototype**, or use `-batchmode -nographics -quit -projectPath <absolute-root> -executeMethod Anthropocene.Editor.PrototypeBuild.Windows -logFile <absolute-log-path>`. Close the player from this checkout before replacing its build. Output is `Builds/Windows/Anthropocene.exe`. Inspect the build log for success and smoke-test UI changes in the player.
+Build through **Anthropocene > Build Windows prototype**, or use `-batchmode -nographics -quit -projectPath <absolute-root> -executeMethod Anthropocene.Editor.PrototypeBuild.Windows -logFile <absolute-log-path>`. Close the player from this checkout before replacing its build. Output is `Builds/Windows/Anthropocene.exe`. Inspect the build log for success and smoke-test UI changes in the player. On this workstation, if the headless editor stalls while reconnecting to `Unity.Licensing.Client`, stop that exact batch process and invoke the same `-quit -projectPath ... -executeMethod ... -logFile ...` command through the authenticated graphical editor without `-batchmode -nographics`; that route produced the validated build. Never launch a second Unity instance against the checkout while diagnosing licensing.
 
 `Open-Anthropocene.ps1` pulls with `git pull --ff-only` before opening Unity. Use it when synchronizing is intended; open the editor directly for ordinary local iteration.
 
