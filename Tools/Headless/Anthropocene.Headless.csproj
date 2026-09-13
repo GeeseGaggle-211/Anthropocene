@@ -20,5 +20,8 @@
     <Compile Include="AquaticChecks.cs" />
     <Compile Include="StartViabilityChecks.cs" />
     <Compile Include="ScenarioChecks.cs" />
+    <Compile Include="ClimateGenerationChecks.cs" />
+    <Compile Include="DrainageGenerationChecks.cs" />
+    <Compile Include="WorldMorphologyChecks.cs" />
   </ItemGroup>
 </Project>

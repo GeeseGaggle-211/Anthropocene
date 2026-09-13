@@ -29,6 +29,17 @@ namespace Anthropocene.Simulation
             if (a >= 0) yield return a; if (b >= 0) yield return b; if (c >= 0) yield return c;
         }
         public static ulong EdgeKey(int a, int b) => ((ulong)(uint)Math.Min(a, b) << 32) | (uint)Math.Max(a, b);
+        // Adjacent corner IDs make ulong's default (high XOR low) hash collapse into a few
+        // buckets. Mix all bits before lookup; wet worlds contain far more river edges.
+        internal static readonly IEqualityComparer<ulong> EdgeComparer = new MixedEdgeComparer();
+        private sealed class MixedEdgeComparer : IEqualityComparer<ulong>
+        {
+            public bool Equals(ulong a, ulong b) => a == b;
+            public int GetHashCode(ulong value)
+            {
+                unchecked { value ^= value >> 30; value *= 0xbf58476d1ce4e5b9UL; value ^= value >> 27; value *= 0x94d049bb133111ebUL; value ^= value >> 31; return (int)value; }
+            }
+        }
     }
     internal sealed class StableMinHeap
     {
@@ -113,7 +124,7 @@ namespace Anthropocene.Simulation
             for (int v = 0; v < size; v++)
                 if (parent[v] >= 0 && flow[v] >= w.Config.RiverThreshold)
                     w.Rivers.Add(new RiverEdge { Id = w.Rivers.Count, FromVertex = v, ToVertex = parent[v], Flow = flow[v], Width = (float)Numbers.Clamp(Math.Sqrt(flow[v] / w.Config.RiverThreshold), 1, 5), FromSurface = surface[v], ToSurface = surface[parent[v]], Mouth = outlet[parent[v]] });
-            var edges = w.Rivers.ToDictionary(e => HexCorners.EdgeKey(e.FromVertex, e.ToVertex));
+            var edges = w.Rivers.ToDictionary(e => HexCorners.EdgeKey(e.FromVertex, e.ToVertex), HexCorners.EdgeComparer);
             foreach (var tile in w.Tiles)
                 for (int side = 0; side < 6; side++)
                 {
@@ -129,7 +140,7 @@ namespace Anthropocene.Simulation
         {
             var geometry = new HexCorners(w.Config.Width, w.Config.Height);
             var outgoing = w.Rivers.ToDictionary(e => e.FromVertex);
-            var seenEdges = new HashSet<ulong>();
+            var seenEdges = new HashSet<ulong>(HexCorners.EdgeComparer);
             foreach (var edge in w.Rivers)
             {
                 if (float.IsNaN(edge.Flow) || float.IsInfinity(edge.Flow) || edge.Flow <= 0 || float.IsNaN(edge.Width) || float.IsInfinity(edge.Width) || edge.Width <= 0 || edge.ToSurface > edge.FromSurface + 1e-6 || !geometry.Neighbors(edge.FromVertex).Contains(edge.ToVertex)) throw new InvalidOperationException("Invalid river direction or boundary geometry.");

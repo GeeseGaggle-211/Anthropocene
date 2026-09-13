@@ -6,27 +6,31 @@ namespace Anthropocene.Simulation
     /// <summary>Reproducible natural starts. Selection changes human ownership, never the landscape.</summary>
     public static class PlaytestScenarios
     {
-        public const int Seed = 1729;
+        public const int Seed = 5;
         public static readonly string[] Names = { "Custom world", "Desert river valley", "Steppe hunters", "Cold coastal fishers" };
         public static readonly string[] Descriptions = {
             "Choose your own seed, world size and tribe count.",
             "Nile / Mesopotamia analogue: a warm desert river with riparian food and dry surroundings. Test gathering and cultivation.",
-            "Steppe analogue: open grassland, a freshwater river and nearby bison. Test mobile hunters and animal husbandry.",
-            "Scandinavian analogue: a cold shore with five adjacent shallows and freshwater on land. Test fishing and seasonal reserves."
+            "Steppe analogue: open grassland, a nearby freshwater river and reachable bison. Test mobile hunters and animal husbandry.",
+            "Scandinavian analogue: a cold wooded shore, two adjacent shallows and land freshwater. Test fishing and seasonal reserves."
         };
-        public static int Tile(int scenario) => scenario == 1 ? 217996 : scenario == 2 ? 148177 : scenario == 3 ? 408950 : -1;
+        public static int Tile(int scenario) => scenario == 1 ? 309013 : scenario == 2 ? 176325 : scenario == 3 ? 98992 : -1;
         public static void Configure(SimulationConfig config)
         { config.Width = 1024; config.Height = 512; config.Players = 80; config.Shape = WorldShape.Continents; config.StartSeparation = 12; }
 
         public static bool Matches(WorldState world, int scenario)
         {
             int id = Tile(scenario);
-            if (id < 0 || id >= world.Tiles.Length || world.Seed != Seed || world.Config.Width != 1024 || world.Config.Height != 512) return false;
+            if (id < 0 || id >= world.Tiles.Length || world.Seed != Seed || world.Config.Width != 1024 || world.Config.Height != 512 || world.Config.Shape != WorldShape.Continents || world.Config.Players != 80) return false;
             var tile = world.Tiles[id]; var near = world.Map.Radius(id, 1).Select(n => world.Tiles[n]).ToArray();
             if (!world.Camps.Any(c => c.Tile == id) || PlacementStage.Viability(world, id) < world.Config.StartViability) return false;
-            if (scenario == 1) return tile.Environment == EnvironmentKind.Desert && tile.River && tile.CurrentVegetation == VegetationTier.Medium && near.All(t => t.Environment == EnvironmentKind.Desert);
-            if (scenario == 2) return tile.Environment == EnvironmentKind.Grassland && near.Count(t => t.Environment == EnvironmentKind.Grassland) >= 5 && near.All(t => t.TraversableLand && t.CurrentVegetation != VegetationTier.High) && world.Herds.Any(h => h.Species == "bison" && world.Map.Reachable(id, h.Tile, 2, n => world.Tiles[n].TraversableLand));
-            return tile.Environment == EnvironmentKind.Cold && near.Count(t => t.Environment == EnvironmentKind.Shallows) >= 5 && tile.FreshwaterSource != FreshwaterSource.None;
+            if (scenario == 1) return tile.Environment == EnvironmentKind.Desert && tile.River && tile.CurrentVegetation == VegetationTier.Medium
+                && tile.Seasons.Average(s => s.Temperature) >= 18 && near.Count(t => t.Environment == EnvironmentKind.Desert) >= 5 && near.All(t => t.TraversableLand);
+            if (scenario == 2) return tile.Environment == EnvironmentKind.Grassland && tile.Seasons.Average(s => s.Temperature) < 21
+                && near.Count(t => t.Environment == EnvironmentKind.Grassland) >= 5 && near.All(t => t.TraversableLand && t.CurrentVegetation != VegetationTier.High)
+                && near.Any(t => t.FreshwaterSource != FreshwaterSource.None) && world.Herds.Any(h => h.Species == "bison" && world.Map.Reachable(id, h.Tile, 2, n => world.Tiles[n].TraversableLand));
+            return tile.Environment == EnvironmentKind.Cold && near.Count(t => t.Environment == EnvironmentKind.Shallows) >= 2 && tile.FreshwaterSource != FreshwaterSource.None
+                && near.Where(t => t.Environment == EnvironmentKind.Shallows).Sum(t => Food(world, t, -1)) > near.Where(t => t.Land).Sum(t => Food(world, t, -1));
         }
 
         public static void Select(WorldState world, int scenario)

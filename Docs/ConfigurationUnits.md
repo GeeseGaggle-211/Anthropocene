@@ -59,3 +59,11 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | `GenerationBudgetSeconds`, `GenerationBudgetMegabytes`, hover times | Diagnostics/UI budgets; they cannot influence authoritative simulation outcomes. |
 
 The time-invariance tests hold forcing and integrated claims constant. They do not require two separate player decisions to reproduce one combined decision: relocation, starvation grace, dispatch and policy reconsideration are deliberately decision-level events.
+
+## Generator 9 spatial units
+
+TerrainGeneration uses continuous longitude-periodic fields; lengths are normalized planetary distances, with local rasterization for hotspot cones. PlateCount controls tectonic provinces, not the number of continents. Hotspots/HotspotChainLength control ocean-origin tracks aligned to plate motion; radius and spacing scale with map width and vary by keyed seed/age. SeaLevel, Uplift, ElevationNoise and Erosion remain dimensionless elevation/smoothing inputs.
+
+ClimateGeneration limits its atmospheric grid to 256 x 128 and advects over 48 normalized travel steps per longitude circuit, with 240 spin-up iterations per season. MoistureDecay enters a per-transport-step retention proxy as pow(MoistureDecay,0.2), not once per gameplay tile. Evaporation, OrographicRain and Monsoon modulate ocean recharge, uplift extraction and seasonal winds. Rain/Snow/Runoff remain dimensionless forcing; they are not millimetres of precipitation.
+
+Drainage retains supplied connected depressions from 0.008 normalized depth and screens basin area against max(6,worldTileCount*0.0007). This represents limited basin retention plus geologic spillway erosion, not an arbitrary replacement of large blue lakes with dry raised plateaus. The inflow/evaporation screen uses calibrated dimensionless annual precipitation/temperature proxies. Residual filled land is audited independently. See [WorldGeneration.md](WorldGeneration.md) for exact scope and limits.

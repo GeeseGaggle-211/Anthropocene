@@ -56,14 +56,14 @@ internal static class AquaticChecks
 
         var generated = new WorldGenerator().Generate(83, SimulationConfig.Small(2));
         var copy = SaveCodec.Load(SaveCodec.Save(generated));
-        Check(generated.Generation.GeneratorVersion == 8 && SaveCodec.Fingerprint(copy) == SaveCodec.Fingerprint(generated), "new generated fishery profiles round-trip without regeneration");
+        Check(generated.Generation.GeneratorVersion == WorldState.GeneratorVersion && SaveCodec.Fingerprint(copy) == SaveCodec.Fingerprint(generated), "new generated fishery profiles round-trip without regeneration");
         // Same binary format as the previous release; preserve deliberately distinctive legacy forcing.
         generated.Generation.GeneratorVersion = 7; var legacyTile = generated.Tiles.First(t => t.Aquatic);
         for (int s = 0; s < 4; s++) { legacyTile.Seasons[s].MaxFood = legacyTile.Seasons[s].MaxPotentialFood = 77; legacyTile.Seasons[s].FoodRecoveryPerDay = legacyTile.Seasons[s].BiomassRecoveryPerDay = .000123f; }
         legacyTile.Food = legacyTile.PotentialFood = 1;
         copy = SaveCodec.Load(SaveCodec.Save(generated));
         Check(copy.Generation.GeneratorVersion == 7 && SaveCodec.Fingerprint(copy) == SaveCodec.Fingerprint(generated) && copy.Tiles[legacyTile.Id].Seasons[0].FoodRecoveryPerDay == .000123f, "generator-7 saves keep their exact stored fishery profiles and metadata");
-        generated.Generation.GeneratorVersion = 9; bool rejected = false;
+        generated.Generation.GeneratorVersion = WorldState.GeneratorVersion + 1; bool rejected = false;
         try { SaveCodec.Load(SaveCodec.Save(generated)); } catch (InvalidDataException) { rejected = true; }
         Check(rejected, "future generator versions remain explicitly unsupported");
         Console.WriteLine("PASS: " + checks + " aquatic productivity assertions");

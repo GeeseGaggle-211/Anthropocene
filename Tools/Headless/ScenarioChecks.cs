@@ -10,6 +10,11 @@ internal static class ScenarioChecks
         void Check(bool ok, string message) { checks++; if (!ok) throw new Exception("Playtest scenarios: " + message); }
         var config = new SimulationConfig(); PlaytestScenarios.Configure(config);
         var world = new WorldGenerator().Generate(PlaytestScenarios.Seed, config);
+        config.Shape = WorldShape.Pangaea;
+        Check(!PlaytestScenarios.Matches(world, 1), "a different world shape cannot masquerade as the fixed preset");
+        config.Shape = WorldShape.Continents; config.Players = 79;
+        Check(!PlaytestScenarios.Matches(world, 1), "a different tribe-count configuration cannot masquerade as the fixed preset");
+        config.Players = 80;
         string original = SaveCodec.Fingerprint(world);
         var players = world.Societies.ToDictionary(s => s.Id, s => s.Player);
         foreach (int scenario in new[] { 1, 2, 3 })
@@ -25,7 +30,11 @@ internal static class ScenarioChecks
             Check(SaveCodec.Fingerprint(restored) == SaveCodec.Fingerprint(world) && restored.Camps.Single(c => c.Player == 0).Tile == own.Tile, "save restores exact selected ownership without regenerating");
             double land = world.Map.Radius(own.Tile, 1).Where(id => world.Tiles[id].Land).Sum(id => PlaytestScenarios.Food(world, world.Tiles[id], -1));
             double water = world.Map.Radius(own.Tile, 1).Where(id => world.Tiles[id].Aquatic).Sum(id => PlaytestScenarios.Food(world, world.Tiles[id], -1));
-            Console.WriteLine($"PRESET {scenario} {PlaytestScenarios.Names[scenario]} seed={world.Seed} tile={own.Tile} landFood={land:F2} aquaticFood={water:F2} viability={PlaytestScenarios.Viability(world, own.Tile):F2}%");
+            var radius = world.Map.Radius(own.Tile, 1).Select(id => world.Tiles[id]).ToArray();
+            double minimumWater = Enumerable.Range(0, 4).Min(s => radius.Where(t => t.WaterBody != WaterKind.Saltwater && t.FreshwaterSource != FreshwaterSource.None).Sum(t => t.Seasons[s].MaxFreshwater));
+            Console.WriteLine($"PRESET {scenario} {PlaytestScenarios.Names[scenario]} seed={world.Seed} tile={own.Tile} landFood={land:F2} aquaticFood={water:F2} viability={PlaytestScenarios.Viability(world, own.Tile):F2}% freshwaterMinCapacity={minimumWater:F2}");
+            Console.WriteLine("PRESET seasonal land=" + string.Join("/", Enumerable.Range(0, 4).Select(s => radius.Where(t => t.Land).Sum(t => PlaytestScenarios.Food(world, t, s)).ToString("F2")))
+                + " aquatic=" + string.Join("/", Enumerable.Range(0, 4).Select(s => radius.Where(t => t.Aquatic).Sum(t => PlaytestScenarios.Food(world, t, s)).ToString("F2"))));
         }
         var probe = world.Tiles[PlaytestScenarios.Tile(3)];
         string beforePreview = SaveCodec.Fingerprint(world);
