@@ -60,7 +60,9 @@ namespace Anthropocene.Simulation
                 int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > 128 * 1024 * 1024) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
-                if (world.Version != 7 || world.Config.Version != 7 || world.Generation.GeneratorVersion != WorldState.GeneratorVersion) throw new InvalidDataException("Unsupported save version; regeneration is never implicit.");
+                // Generator 8 changes only generated profiles, already stored authoritatively
+                // in version 7 saves. Keep those older profiles instead of regenerating them.
+                if (world.Version != 7 || world.Config.Version != 7 || world.Generation.GeneratorVersion < 7 || world.Generation.GeneratorVersion > WorldState.GeneratorVersion) throw new InvalidDataException("Unsupported save version; regeneration is never implicit.");
                 Ownership.Bind(world);
                 MigrateGenerationalDefaults(world);
                 world.Config.Validate();

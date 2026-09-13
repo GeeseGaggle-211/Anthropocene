@@ -201,7 +201,7 @@ internal static class Program
                 System.IO.File.WriteAllText("Assets/_Anthropocene/Resources/OpeningConfig.json", System.Text.Json.JsonSerializer.Serialize(new SimulationConfig(), new System.Text.Json.JsonSerializerOptions { IncludeFields = true, WriteIndented = true }));
                 return 0;
             }
-            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); ClimateMoistureChecks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20;
+            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); ClimateMoistureChecks.Run(); AquaticChecks.Run(); StartViabilityChecks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20;
             var scaleArgument = args.FirstOrDefault(a => a.StartsWith("--scale=")); if (scaleArgument != null) { ExecutionChecks.Scale(int.Parse(scaleArgument.Substring(8))); return 0; }
             if (args.Contains("--nomad-standard")) { RunNomadStandardAudit(seeds); return 0; }
             int survivors = 0, total = 0, starvation = 0, growth = 0, illegal = 0;
@@ -227,6 +227,7 @@ internal static class Program
                     Check(report.ElevationCounts.All(count => count > 0), "Every intended elevation level appears in Standard world " + seed);
                     Check(generated.Camps.All(c => generated.Herds.Count(h => generated.Map.Reachable(c.Tile, h.Tile, 2, n => generated.Tiles[n].TraversableLand)) >= generated.Config.MinimumOpeningHerds), "Every start has the configured minimum reachable herds around peaks");
                     Check(generated.Camps.Count == 80 && generated.Herds.All(h => generated.Tiles[h.Tile].ElevationLevel < 10) && generated.Camps.All(c => generated.Tiles[c.Tile].ElevationLevel < 10), "Eighty camps spawn without using peaks");
+                    Check(generated.Camps.All(c => PlacementStage.Viability(generated, c.Tile) >= generated.Config.StartViability), "Every Standard start meets seasonal recurring-food and freshwater eligibility");
                     var copy = SaveCodec.Load(SaveCodec.Save(generated));
                     Check(copy.Tiles.Select(t => t.ElevationLevel).SequenceEqual(generated.Tiles.Select(t => t.ElevationLevel)), "All elevation levels survive Standard save/load");
                     Console.WriteLine("ELEVATION seed=" + seed + " levels=" + string.Join(",", report.ElevationCounts) + " ridgeTiles=" + generated.Tiles.Count(t => t.RidgeMask != 0) + " herds=" + report.WildHerds + " starts=" + report.CampsWithVisibleHerds + " oases=" + report.OasisCount + " riverEdges=" + report.RiverEdges);

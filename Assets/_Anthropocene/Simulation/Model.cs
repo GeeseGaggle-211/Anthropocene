@@ -53,7 +53,7 @@ namespace Anthropocene.Simulation
         public double Evaporation = .2, MoistureDecay = .97, OrographicRain = 2.5, Monsoon = .12;
         public double RiverThreshold = 28, WaterRecovery = .35, FoodRegeneration = .4;
         public int Hotspots = 8, HotspotChainLength = 4;
-        public double StartViability = 85;
+        public double StartViability = 85; // Percent of starting food need supported by conservative recurring gathering.
         public int GenerationBudgetSeconds = 90, GenerationBudgetMegabytes = 1000;
         public double[] BandThresholds = { .03, .25, .5, .8 };
         public int SupplyRange = 3;
@@ -261,7 +261,7 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldState
     {
-        public const int GeneratorVersion = 7;
+        public const int GeneratorVersion = 8;
         public int Version = 7, Seed, Turn = 1, NextId = 1;
         public double Days;
         public SimulationConfig Config;

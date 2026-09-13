@@ -82,6 +82,7 @@ internal static class Milestone2Checks
         Check(dryHerd.UnmetFreshwater > 0, "camels next to the sea still have unmet freshwater demand");
         Check(w.Tiles[149].Food > 1 && w.Tiles[149].Freshwater == 0, "marine food regenerates independently of potable water");
         w.Tiles[151].FreshwaterSource = FreshwaterSource.River; w.Tiles[151].Freshwater = 30;
+        for (int s = 0; s < 4; s++) { w.Tiles[151].Seasons[s].MaxFreshwater = 30; w.Tiles[151].Seasons[s].WaterRecoveryPerDay = .004f; }
         Check(PlacementStage.Viability(w, w.Camps[0].Tile) > 0, "a real river restores freshwater start viability");
         w = Flat(); foreach (var t in w.Tiles) { t.Freshwater = 0; t.FreshwaterSource = FreshwaterSource.None; for (int s = 0; s < 4; s++) t.Seasons[s].MaxFreshwater = 0; }
         int bank = 220, lake = w.Map.Neighbors(bank).First();

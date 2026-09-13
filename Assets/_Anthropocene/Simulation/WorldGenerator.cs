@@ -335,14 +335,15 @@ namespace Anthropocene.Simulation
                 {
                     var data = tile.Seasons[s];
                     double warmth = Numbers.Clamp((data.Temperature + 8) / 30, .015, 1);
-                    double productivity = tile.Aquatic ? .65 * warmth : (.12 + data.Moisture) * warmth;
-                    if (tile.Terrain == Terrain.Ocean) productivity = .005;
+                    bool water = tile.Aquatic || tile.Environment == EnvironmentKind.Ocean;
+                    double productivity = water ? AquaticEcology.Productivity(c.World, tile, s) : (.12 + data.Moisture) * warmth;
                     if (tile.Environment == EnvironmentKind.Ice) productivity = 0;
                     if (tile.Land) productivity *= tile.Relief == Relief.Mountain ? c.Config.MountainProductivity : tile.Relief == Relief.Highland ? c.Config.HighlandProductivity : tile.Relief == Relief.Hills ? c.Config.HillsProductivity : 1;
                     double fresh = tile.FreshwaterSource == FreshwaterSource.Lake ? 120 : tile.FreshwaterSource == FreshwaterSource.River ? Math.Min(150, 70 + Math.Sqrt(tile.Flow) * 4) : tile.FreshwaterSource == FreshwaterSource.RainPool ? 25 * Numbers.Clamp(data.Rain / Math.Max(.001, averageRain), .25, 1.5) : 0;
                     data.MaxFood = Math.Max(data.MaxFood, (float)(90 * productivity)); data.MaxFreshwater = Math.Max(data.MaxFreshwater, (float)fresh); data.AccessibleFreshwater = (float)fresh;
                     data.MaxSaltwater = tile.WaterBody == WaterKind.Saltwater ? 100 : 0;
-                    data.FoodRecoveryPerDay = Math.Max(data.FoodRecoveryPerDay, (float)EcologyMath.DailyRate(c.Config.FoodRegeneration * (.2 + data.Moisture) * warmth, c.Config.BaseDays));
+                    double recovery = water ? EcologyMath.DailyRate(c.Config.FoodRegeneration, c.Config.BaseDays) * productivity : EcologyMath.DailyRate(c.Config.FoodRegeneration * (.2 + data.Moisture) * warmth, c.Config.BaseDays);
+                    data.FoodRecoveryPerDay = Math.Max(data.FoodRecoveryPerDay, (float)recovery);
                     if (tile.FreshwaterSource != FreshwaterSource.Oasis) data.WaterRecoveryPerDay = (float)EcologyMath.DailyRate(c.Config.WaterRecovery, c.Config.BaseDays); data.Habitat = tile.Land ? (float)productivity : 0;
                     tile.Seasons[s] = data;
                 }
@@ -358,14 +359,32 @@ namespace Anthropocene.Simulation
         public string Name => "Viable asymmetric starts and herds"; public string Requires => "Ecology"; public string Produces => "Camps, herds, mandates";
         public static double Viability(WorldState world, int tile)
         {
-            double sum = 0, freshwater = 0;
+            if (!world.Tiles[tile].TraversableLand) return 0;
+            var cfg = world.Config;
+            double annualWater = 0;
+            Span<double> seasonalFood = stackalloc double[4]; seasonalFood.Clear();
+            Span<double> seasonalWater = stackalloc double[4]; seasonalWater.Clear();
             foreach (int n in world.Map.Radius(tile, 1))
             {
-                var t = world.Tiles[n]; if (t.Terrain == Terrain.Ocean) continue;
-                sum += t.Food + t.Seasons[0].MaxFood * (1 - Math.Exp(-t.Seasons[0].FoodRecoveryPerDay * world.Config.BaseDays));
-                freshwater += t.DrinkableWater;
+                var t = world.Tiles[n]; if (t.Environment == EnvironmentKind.Ocean || t.ElevationLevel >= 10) continue;
+                for (int s = 0; s < 4; s++)
+                {
+                    var profile = t.Seasons[s];
+                    // Count renewable human food, not total herd biomass or a one-time initial stock.
+                    seasonalFood[s] += profile.MaxFood * profile.FoodRecoveryPerDay * cfg.BaseDays * cfg.SustainableProductionFraction;
+                    if (t.WaterBody == WaterKind.Saltwater || t.FreshwaterSource == FreshwaterSource.None) continue;
+                    seasonalWater[s] += profile.MaxFreshwater;
+                    annualWater += profile.MaxFreshwater * profile.WaterRecoveryPerDay * cfg.BaseDays;
+                }
             }
-            return freshwater >= world.Config.StartFreshwaterMinimum ? sum : 0;
+            if (annualWater / 4 < cfg.StartFreshwaterMinimum) return 0;
+            for (int s = 0; s < 4; s++) if (seasonalWater[s] < cfg.StartFreshwaterMinimum) return 0;
+            // Same starting workforce share and single land/coastal labor ceiling as passive gathering.
+            // Annual averaging permits productive summers to support winters via the opening reserve.
+            double share = Math.Min(1, Numbers.Fraction(cfg.GatherFraction, cfg.GenerationIntervals) * cfg.StartingPopulation / cfg.PopulationScale);
+            double annualHarvest = 0;
+            for (int s = 0; s < 4; s++) annualHarvest += Math.Min(seasonalFood[s] * share, cfg.StartingPopulation * cfg.GatherPerPerson);
+            return 100 * annualHarvest / (4 * cfg.StartingPopulation * cfg.Consumption);
         }
         public void Generate(GenerationContext c)
         {
