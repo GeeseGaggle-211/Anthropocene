@@ -73,7 +73,9 @@ namespace Anthropocene.Simulation
                 if (tile.Land) report.LandTiles++;
                 if (tile.River) report.Rivers++;
                 foreach (var season in tile.Seasons)
-                    if (float.IsNaN(season.MaxFood) || season.MaxFood < 0 || float.IsNaN(season.MaxPotentialFood) || season.MaxPotentialFood < season.MaxFood || season.MaxFreshwater < 0 || season.Moisture < 0)
+                    if (float.IsNaN(season.MaxFood) || season.MaxFood < 0 || float.IsNaN(season.MaxPotentialFood) || season.MaxPotentialFood < season.MaxFood || season.MaxFreshwater < 0 ||
+                        float.IsNaN(season.RegionalMoisture) || season.RegionalMoisture < 0 || season.RegionalMoisture > 1 ||
+                        float.IsNaN(season.Moisture) || season.Moisture < season.RegionalMoisture || season.Moisture > 1)
                         throw new InvalidOperationException("Invalid generated ecology at " + tile.Id);
                 if (tile.PotentialFood + 1e-6 < tile.Food) throw new InvalidOperationException("Gatherable food exceeds total potential food at " + tile.Id);
                 if (tile.Downstream >= 0 && world.Tiles[tile.Downstream].Elevation > tile.Elevation + .00001)
@@ -289,23 +291,31 @@ namespace Anthropocene.Simulation
     }
     internal sealed class EcologyStage : IWorldGenerationStage
     {
-        public string Name => "Soil and environment"; public string Requires => "Climate, drainage"; public string Produces => "Environment, soil moisture and freshwater sources";
+        public string Name => "Soil and environment"; public string Requires => "Climate, drainage"; public string Produces => "Regional moisture, local soil moisture, environment and freshwater sources";
         public void Generate(GenerationContext c)
         {
             foreach (var tile in c.World.Tiles)
             {
-                double soil = .3;
+                // Boundary-edge flow is the river's water, unlike the separate tile drainage proxy.
+                double riverFlow = 0;
+                if (tile.RiverEdges != null)
+                    foreach (int edge in tile.RiverEdges)
+                        if (edge >= 0) riverFlow = Math.Max(riverFlow, c.World.Rivers[edge].Flow);
+                double subsidy = .65 * (tile.Environment == EnvironmentKind.Lake ? 1 : Numbers.Clamp(riverFlow / Math.Max(.001, c.Config.RiverThreshold), 0, 1));
+                double regional = .3, soil = .3;
                 for (int cycle = 0; cycle < 3; cycle++)
                     for (int s = 0; s < 4; s++)
                     {
                         var climate = tile.Seasons[s];
-                        double freshwater = tile.River || tile.Terrain == Terrain.Lake ? .65 : 0;
                         double snowmelt = climate.Temperature > 0 ? tile.Seasons[(s + 3) % 4].Snow * 2 : 0;
-                        soil = Numbers.Clamp(soil * .35 + climate.Rain * 7 + snowmelt + freshwater - Math.Max(0, climate.Temperature) * .002, 0, 1);
+                        double forcing = climate.Rain * 7 + snowmelt - Math.Max(0, climate.Temperature) * .002;
+                        regional = Numbers.Clamp(regional * .35 + forcing, 0, 1);
+                        soil = Numbers.Clamp(soil * .35 + forcing + subsidy, 0, 1);
+                        climate.RegionalMoisture = (float)regional;
                         climate.Moisture = (float)soil;
                         tile.Seasons[s] = climate;
                     }
-                double temperature = tile.Seasons.Average(s => s.Temperature), moisture = tile.Seasons.Average(s => s.Moisture);
+                double temperature = tile.Seasons.Average(s => s.Temperature), moisture = tile.Seasons.Average(s => s.RegionalMoisture);
                 if (tile.Land)
                     tile.Environment = Vegetation.Classify(temperature, moisture, c.Config);
                 double averageRain = tile.Seasons.Average(s => s.Rain);
@@ -320,7 +330,6 @@ namespace Anthropocene.Simulation
         {
             foreach (var tile in c.World.Tiles)
             {
-                tile.NaturalVegetationPotential = tile.CurrentVegetation = Vegetation.Potential(tile, c.Config);
                 double averageRain = tile.Seasons.Average(s => s.Rain);
                 for (int s = 0; s < 4; s++)
                 {
@@ -337,6 +346,8 @@ namespace Anthropocene.Simulation
                     if (tile.FreshwaterSource != FreshwaterSource.Oasis) data.WaterRecoveryPerDay = (float)EcologyMath.DailyRate(c.Config.WaterRecovery, c.Config.BaseDays); data.Habitat = tile.Land ? (float)productivity : 0;
                     tile.Seasons[s] = data;
                 }
+                // Potential consumes completed local water capacities, before gatherable shares are configured.
+                tile.NaturalVegetationPotential = tile.CurrentVegetation = Vegetation.Potential(tile, c.Config);
                 tile.Food = tile.Seasons[0].MaxFood * .9; FoodEcology.ConfigurePotential(tile, c.Config, true);
                 tile.Freshwater = tile.Seasons[0].MaxFreshwater * .9; tile.Saltwater = tile.Seasons[0].MaxSaltwater;
             }

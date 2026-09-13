@@ -11,7 +11,7 @@ namespace Anthropocene.Simulation
 {
     public static class SaveCodec
     {
-        private const string Magic = "ANTHROPOCENE-7";
+        private const string Magic = "ANTHROPOCENE-8";
         private static DataContractSerializer Serializer(Type type) => new DataContractSerializer(type, new DataContractSerializerSettings { MaxItemsInObjectGraph = int.MaxValue });
         public static byte[] Save(WorldState world)
         {
@@ -41,7 +41,7 @@ namespace Anthropocene.Simulation
                         writer.Write(tile.Elevation); writer.Write(tile.Volcanism); writer.Write(tile.Flow); writer.Write(tile.Food); writer.Write(tile.PotentialFood); writer.Write(tile.Freshwater);
                         foreach (var s in tile.Seasons)
                         {
-                            writer.Write(s.Temperature); writer.Write(s.Rain); writer.Write(s.Snow); writer.Write(s.WindX); writer.Write(s.Runoff); writer.Write(s.Moisture);
+                            writer.Write(s.Temperature); writer.Write(s.Rain); writer.Write(s.Snow); writer.Write(s.WindX); writer.Write(s.Runoff); writer.Write(s.RegionalMoisture); writer.Write(s.Moisture);
                             writer.Write(s.AccessibleFreshwater); writer.Write(s.MaxFood); writer.Write(s.MaxPotentialFood); writer.Write(s.MaxFreshwater); writer.Write(s.MaxSaltwater); writer.Write(s.FoodRecoveryPerDay); writer.Write(s.BiomassRecoveryPerDay); writer.Write(s.WaterRecoveryPerDay); writer.Write(s.Habitat);
                         }
                     }
@@ -56,11 +56,11 @@ namespace Anthropocene.Simulation
             using (var buffered = new BufferedStream(zip, 65536))
             using (var reader = new BinaryReader(buffered))
             {
-                if (reader.ReadString() != Magic) throw new InvalidDataException("This save predates society ownership and the ecology foundation. Start a new opening; the older save is preserved.");
+                if (reader.ReadString() != Magic) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. Start a new opening; the older save is preserved.");
                 int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > 128 * 1024 * 1024) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
-                if (world.Version != 6 || world.Generation.GeneratorVersion != WorldState.GeneratorVersion) throw new InvalidDataException("Unsupported save version; regeneration is never implicit.");
+                if (world.Version != 7 || world.Config.Version != 7 || world.Generation.GeneratorVersion != WorldState.GeneratorVersion) throw new InvalidDataException("Unsupported save version; regeneration is never implicit.");
                 Ownership.Bind(world);
                 MigrateGenerationalDefaults(world);
                 world.Config.Validate();
@@ -75,7 +75,7 @@ namespace Anthropocene.Simulation
                     tile.Elevation = reader.ReadSingle(); tile.Volcanism = reader.ReadSingle(); tile.Flow = reader.ReadSingle(); tile.Food = reader.ReadDouble(); tile.PotentialFood = reader.ReadDouble(); tile.Freshwater = reader.ReadDouble();
                     for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData
                     {
-                        Temperature = reader.ReadSingle(), Rain = reader.ReadSingle(), Snow = reader.ReadSingle(), WindX = reader.ReadSingle(), Runoff = reader.ReadSingle(), Moisture = reader.ReadSingle(),
+                        Temperature = reader.ReadSingle(), Rain = reader.ReadSingle(), Snow = reader.ReadSingle(), WindX = reader.ReadSingle(), Runoff = reader.ReadSingle(), RegionalMoisture = reader.ReadSingle(), Moisture = reader.ReadSingle(),
                         AccessibleFreshwater = reader.ReadSingle(), MaxFood = reader.ReadSingle(), MaxPotentialFood = reader.ReadSingle(), MaxFreshwater = reader.ReadSingle(), MaxSaltwater = reader.ReadSingle(), FoodRecoveryPerDay = reader.ReadSingle(), BiomassRecoveryPerDay = reader.ReadSingle(), WaterRecoveryPerDay = reader.ReadSingle(), Habitat = reader.ReadSingle()
                     };
                     world.Tiles[i] = tile;

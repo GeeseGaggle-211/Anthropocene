@@ -16,5 +16,6 @@
     <Compile Include="AgentContractChecks.cs" />
     <Compile Include="EcologyChecks.cs" />
     <Compile Include="FoundationChecks.cs" />
+    <Compile Include="ClimateMoistureChecks.cs" />
   </ItemGroup>
 </Project>

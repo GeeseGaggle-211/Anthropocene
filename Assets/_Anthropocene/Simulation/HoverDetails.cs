@@ -50,7 +50,7 @@ namespace Anthropocene.Simulation
             if (!o.Tiles.TryGetValue(id, out var t)) return "";
             var b = new StringBuilder();
             b.AppendLine("LAND · (" + id % o.Map.Width + ", " + id / o.Map.Width + ") / tile " + id + " · " + t.Environment);
-            if (t.Land) b.AppendLine("VEGETATION · " + Vegetation.Label(t.Environment, t.CurrentVegetation) + " · " + t.CurrentVegetation + " cover / " + t.NaturalVegetationPotential + " natural potential");
+            if (t.Land) b.AppendLine("VEGETATION · " + Vegetation.Label(t.Environment, t.CurrentVegetation, t.River) + " · " + t.CurrentVegetation + " cover / " + t.NaturalVegetationPotential + " natural potential");
             b.AppendLine("Elevation " + t.ElevationLevel + "/10 · " + ElevationLevelStage.Description(t.ElevationLevel));
             b.AppendLine("FOOD · " + Knowledge.Bands[t.Food] + " stock; maximum " + Knowledge.Bands[t.FoodMaximum]);
             b.AppendLine("HERD FORAGE · " + Knowledge.Bands[t.PotentialFood] + " biomass; capacity " + Knowledge.Bands[t.PotentialMaximum] + "; about " + t.GatherablePercent + "% human-gatherable");

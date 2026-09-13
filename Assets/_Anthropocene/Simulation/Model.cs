@@ -16,7 +16,7 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class SimulationConfig
     {
-        public int Version = 6;
+        public int Version = 7;
         public double MajorityEligibilityYears = 200, ForcedTransitionYears = 240;
         public bool OpeningCompatibilityEffects = true;
         public double IceTemperature = -10, ColdTemperature = 3, TropicalTemperature = 21, DesertMoisture = .12, SteppeMoisture = .32;
@@ -105,7 +105,9 @@ namespace Anthropocene.Simulation
     [Serializable]
     public struct SeasonData
     {
-        public float Temperature, Rain, Snow, WindX, Runoff, Moisture, AccessibleFreshwater;
+        public float Temperature, Rain, Snow, WindX, Runoff;
+        // Regional excludes local water subsidies; Moisture is the soil water used by productivity.
+        public float RegionalMoisture, Moisture, AccessibleFreshwater;
         public float MaxFood, MaxPotentialFood, MaxFreshwater, MaxSaltwater, FoodRecoveryPerDay, BiomassRecoveryPerDay, WaterRecoveryPerDay, Habitat;
     }
     [Serializable]
@@ -259,8 +261,8 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldState
     {
-        public const int GeneratorVersion = 6;
-        public int Version = 6, Seed, Turn = 1, NextId = 1;
+        public const int GeneratorVersion = 7;
+        public int Version = 7, Seed, Turn = 1, NextId = 1;
         public double Days;
         public SimulationConfig Config;
         public Tile[] Tiles;

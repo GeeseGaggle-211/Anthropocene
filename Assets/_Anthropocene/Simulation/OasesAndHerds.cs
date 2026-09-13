@@ -45,6 +45,8 @@ namespace Anthropocene.Simulation
                     for (int season = 0; season < 4; season++)
                     {
                         var data = tile.Seasons[season];
+                        // Groundwater greens the local soil; it never rewrites regional climate.
+                        data.Moisture = Math.Max(data.Moisture, (float)(cfg.OasisVegetationMoisture * tile.OasisInfluence));
                         data.MaxFreshwater = Math.Max(data.MaxFreshwater, (float)(cfg.OasisFreshwater * factor)); data.AccessibleFreshwater = data.MaxFreshwater;
                         data.MaxFood = Math.Max(data.MaxFood, (float)(cfg.OasisFood * factor)); data.FoodRecoveryPerDay = Math.Max(data.FoodRecoveryPerDay, (float)EcologyMath.DailyRate(cfg.OasisFoodRegeneration * factor, cfg.BaseDays));
                         data.WaterRecoveryPerDay = (float)EcologyMath.DailyRate(cfg.OasisWaterRecovery, cfg.BaseDays); data.Habitat = Math.Max(data.Habitat, .25f * (float)factor); tile.Seasons[season] = data;

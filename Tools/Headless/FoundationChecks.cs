@@ -30,7 +30,7 @@ internal static class FoundationChecks
         Check(Vegetation.Classify(-11, .8, cfg) == EnvironmentKind.Ice && Vegetation.Classify(0, .8, cfg) == EnvironmentKind.Cold && Vegetation.Classify(30, .1, cfg) == EnvironmentKind.Desert, "environment precedence preserves climate breakpoints");
         Check(Vegetation.Classify(25, .5, cfg) == EnvironmentKind.Tropical && Vegetation.Classify(15, .2, cfg) == EnvironmentKind.Grassland && Vegetation.Classify(15, .6, cfg) == EnvironmentKind.Temperate, "environment is independent of relief");
         var cover = new Tile { Terrain = Terrain.Woodland, Relief = Relief.Mountain };
-        for (int i = 0; i < 4; i++) cover.Seasons[i] = new SeasonData { Temperature = 15, Moisture = .8f, MaxFood = 100 };
+        for (int i = 0; i < 4; i++) cover.Seasons[i] = new SeasonData { Temperature = 15, RegionalMoisture = .8f, Moisture = .8f, MaxFood = 100 };
         Check(Vegetation.Potential(cover, cfg) == VegetationTier.High, "wet highland retains high vegetation potential");
         cover.CurrentVegetation = VegetationTier.High; FoodEcology.ConfigurePotential(cover, cfg, true); double biomassCapacity = cover.Seasons[0].MaxPotentialFood;
         cover.CurrentVegetation = VegetationTier.Low;

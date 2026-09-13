@@ -1,6 +1,6 @@
 # Configuration units
 
-Current contract: `SimulationConfig` and `OpeningConfig.json` version 6. Serialized defaults must match the C# defaults. [EcologyFoundation.md](EcologyFoundation.md) describes the equations and [Validation.md](Validation.md) records the tests. The prototype uses abstract food/water quantities, not kilograms or litres.
+Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Serialized defaults must match the C# defaults. [EcologyFoundation.md](EcologyFoundation.md) describes the equations and [Validation.md](Validation.md) records the tests. The prototype uses abstract food/water quantities, not kilograms or litres.
 
 | Fields | Meaning and units |
 |---|---|
@@ -44,6 +44,9 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 6. Seriali
 | Proficiency thresholds, impact reductions, yield/practice multipliers, passive aquatic practice share | Dimensionless task effects, separate from the society-owned practice histories that drive them. No independent specialist proficiency is active yet. |
 | Temperature thresholds, climate temperatures/amplitude/gradient/lapse inputs | Degrees Celsius or temperature contrasts over normalized latitude/elevation. Climate is an approximate generator, not a weather forecast. |
 | Rain, moisture, runoff, evaporation, moisture decay, wind, soil and oasis influence inputs | Dimensionless generator fields/transport coefficients. They create fixed seasonal profiles and are not per-turn ecology changes. |
+| Season `RegionalMoisture` / `Moisture` | Normalized 0–1 climate water balance excluding local subsidy / local soil water including river, lake and oasis subsidy. Environment and climatic vegetation use the former; productivity, habitat and observed moisture use the latter. Both are saved. |
+| `OasisVegetationMoisture` (0.45) | Local soil-moisture floor multiplied by oasis influence; never changes regional moisture. |
+| Hydrologic vegetation reference (70), river/lake soil subsidy (0.65) | Provisional generation constants: abstract seasonal freshwater capacity for full vegetation uplift, and normalized local soil subsidy. Uplift can reach Medium; High requires climatic support. |
 | `VegetationWarmthRange`, `VegetationMoistureRange`, potential thresholds and hysteresis | Temperature range, normalized moisture range and dimensionless classification/condition thresholds. Natural potential is generated once. |
 | `HillsProductivity`, `HighlandProductivity`, `MountainProductivity` | Dimensionless generated productivity modifiers. Vegetation does not apply a second total-biomass productivity bonus. |
 | `OasisFood`, `OasisFreshwater`, `StartFreshwaterMinimum`, `StartViability` | Abstract resource capacities or start-placement thresholds. |

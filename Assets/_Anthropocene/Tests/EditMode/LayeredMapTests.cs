@@ -10,6 +10,21 @@ namespace Anthropocene.Tests.EditMode
     public sealed class LayeredMapTests
     {
         [Test]
+        public void DesertRiver_UsesDesertGroundOneTreeAndRiparianLabel()
+        {
+            var cfg = new SimulationConfig();
+            var tile = new Tile { Environment = EnvironmentKind.Desert, NaturalVegetationPotential = VegetationTier.Medium, CurrentVegetation = VegetationTier.Medium, ElevationLevel = 1, FreshwaterSource = FreshwaterSource.River, RiverEdges = new[] { 0, -1, -1, -1, -1, -1 } };
+            var river = new RiverEdge { Id = 0, Flow = 280, Width = 3, TileA = 0, SideA = 0 };
+            var observed = new TileObservation(tile, tile.Seasons[0], cfg, new[] { river });
+            Assert.That(LayeredTileRenderer.BaseKey(observed), Is.EqualTo("terrain.desert"));
+            Assert.That(LayeredTileRenderer.VegetationKey(observed), Is.EqualTo("vegetation.tropical_tree"), "The existing palm silhouette represents dry river vegetation too.");
+            Assert.That(LayeredTileRenderer.VegetationCount(observed, 80), Is.EqualTo(1));
+            Assert.That(observed.Rivers.Count, Is.EqualTo(1));
+            Assert.That(Vegetation.Label(observed.Environment, observed.CurrentVegetation, observed.River), Is.EqualTo("Riparian vegetation"));
+            foreach (var set in TilesetCatalog.Load())
+                Assert.That(set.Find(LayeredTileRenderer.BaseKey(observed)).Key, Is.EqualTo("terrain.desert"));
+        }
+        [Test]
         public void StackedSprites_RemainInsideTheirExactHitSlotsAtEveryZoom()
         {
             foreach (float height in new[] { 30f, 80f, 115f })

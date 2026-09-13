@@ -37,7 +37,7 @@ namespace Anthropocene.Presentation
         private static readonly Color MoveColor = new Color(.30f, .78f, .58f), FishColor = new Color(.28f, .70f, .88f), InvalidColor = new Color(.88f, .28f, .24f);
         private static readonly string[] Sizes = { "Standard  1024 x 512", "Small  96 x 48", "Tiny  48 x 24" };
         private static readonly int[][] TribeChoices = { new[] { 8, 16, 24, 32, 48, 64, 80 }, new[] { 2, 4, 6, 8, 12, 16 }, new[] { 2, 4, 6, 8 } };
-        private string SavePath => Path.Combine(Application.persistentDataPath, "opening-v6.anthro");
+        private string SavePath => Path.Combine(Application.persistentDataPath, "opening-v7.anthro");
         public WorldState State => world;
 
         private void Awake()
