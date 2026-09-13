@@ -19,6 +19,10 @@ namespace Anthropocene.Presentation
             string output = Path.GetFullPath(args[option + 1]); Directory.CreateDirectory(output);
             NewGame(); while (generating != null) yield return null;
             if (world == null) throw new InvalidOperationException("Smoke world did not generate.");
+            artReviewMode = 2; yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "00-transparency.png")); yield return new WaitForSeconds(.4f);
+            artReviewMode = 1; yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "00-art-classic.png")); yield return new WaitForSeconds(.4f);
+            SetTileset(1); yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "00-art-contrast.png")); yield return new WaitForSeconds(.4f);
+            SetTileset(0); artReviewMode = 0;
             yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "01-opening.png")); yield return new WaitForSeconds(.4f);
             var camp = world.Camps.First(c => c.Player == 0); Queue(new Order(OrderKind.Dispatch, camp.Id, population: 8)); EndTurn();
             while (resolving != null) yield return null;
@@ -46,6 +50,10 @@ namespace Anthropocene.Presentation
             while (generating != null) yield return null;
             if (SaveCodec.Fingerprint(world) != before) throw new InvalidOperationException("Player save/load changed authoritative state.");
             yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "05-restored.png")); yield return new WaitForSeconds(.6f);
+            string[] captures = { "00-transparency", "00-art-classic", "00-art-contrast", "01-opening", "02-dispatch-stack", "03-high-contrast", "03b-distant-view", "04-supply-warning", "05-restored" };
+            float captureDeadline = Time.realtimeSinceStartup + 5;
+            while (captures.Any(name => !File.Exists(Path.Combine(output, name + ".png"))) && Time.realtimeSinceStartup < captureDeadline) yield return null;
+            if (captures.Any(name => !File.Exists(Path.Combine(output, name + ".png")))) throw new InvalidOperationException("Player screenshots are missing. Run this visual check in a visible game window.");
             File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: Standard / Continents / 1729 / 32 tribes. Dispatch, exact stack selection, both symbol sets, distant layer simplification, two eastward move previews, and separate save/load round trip. Final turn " + world.Turn + ", population " + world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) + ". Screenshots captured from the Windows player.\n");
             Application.Quit();
         }

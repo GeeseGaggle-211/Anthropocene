@@ -9,7 +9,8 @@ namespace Anthropocene.Editor
             if (!assetPath.StartsWith("Assets/_Anthropocene/Resources/MapArt/") || !assetPath.EndsWith(".png")) return;
             var importer = (TextureImporter)assetImporter;
             importer.textureType = TextureImporterType.Sprite; importer.spriteImportMode = SpriteImportMode.Single;
-            importer.alphaIsTransparency = true; importer.mipmapEnabled = false; importer.maxTextureSize = 256;
+            importer.alphaIsTransparency = true; importer.mipmapEnabled = true; importer.maxTextureSize = 256;
+            importer.filterMode = UnityEngine.FilterMode.Trilinear; importer.wrapMode = UnityEngine.TextureWrapMode.Clamp;
             importer.textureCompression = TextureImporterCompression.Uncompressed;
         }
     }

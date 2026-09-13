@@ -1,7 +1,7 @@
 {
   "Version": 1,
   "Id": "contrast",
-  "Name": "High contrast symbols",
+  "Name": "Cartography: high contrast",
   "Definitions": [
     {
       "Key": "fallback",
@@ -20,14 +20,14 @@
     {
       "Key": "border",
       "Glyph": "",
-      "Tint": "#344134",
+      "Tint": "#B8C2A5",
       "Background": "#111713",
       "Scale": 0.8
     },
     {
       "Key": "selected",
       "Glyph": "",
-      "Tint": "#E8B055",
+      "Tint": "#FFFFFF",
       "Background": "#111713",
       "Scale": 0.8
     },
@@ -134,19 +134,23 @@
       "Glyph": "o",
       "Tint": "#49DFD4",
       "Background": "#273722",
-      "Scale": 0.8
+      "Scale": 0.8,
+      "SpritePath": "MapArt/feature_oasis",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "feature.freshwater",
       "Glyph": "w",
       "Tint": "#63D1E2",
       "Background": "#273722",
-      "Scale": 0.8
+      "Scale": 0.8,
+      "SpritePath": "MapArt/feature_freshwater",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "feature.river",
       "Glyph": "",
-      "Tint": "#3CAEC6",
+      "Tint": "#429DB2",
       "Background": "#273722",
       "Scale": 0.8
     },
@@ -156,7 +160,8 @@
       "Tint": "#D1B76B",
       "Background": "#273722",
       "Scale": 0.8,
-      "SpritePath": "MapArt/landuse_cultivation_light"
+      "SpritePath": "MapArt/landuse_cultivation_light",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "feature.fishery",
@@ -164,12 +169,13 @@
       "Tint": "#70C9D6",
       "Background": "#273722",
       "Scale": 0.8,
-      "SpritePath": "MapArt/landuse_fishery"
+      "SpritePath": "MapArt/landuse_fishery",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "resource.food",
       "Glyph": "",
-      "Tint": "#D4D6BF",
+      "Tint": "#F5E5B1",
       "Background": "#273722",
       "Scale": 0.8
     },
@@ -179,7 +185,8 @@
       "Tint": "#F4BF63",
       "Background": "#273722",
       "Scale": 0.8,
-      "SpritePath": "MapArt/unit_camp"
+      "SpritePath": "MapArt/unit_camp",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "entity.hunter",
@@ -187,7 +194,8 @@
       "Tint": "#F1EAC2",
       "Background": "#273722",
       "Scale": 0.8,
-      "SpritePath": "MapArt/unit_hunters"
+      "SpritePath": "MapArt/unit_hunters",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "entity.rivalcamp",
@@ -195,7 +203,8 @@
       "Tint": "#ED7769",
       "Background": "#273722",
       "Scale": 0.8,
-      "SpritePath": "MapArt/unit_camp"
+      "SpritePath": "MapArt/unit_camp",
+      "SpriteTint": "#F0AFA1"
     },
     {
       "Key": "entity.rivalhunter",
@@ -203,12 +212,13 @@
       "Tint": "#ED7769",
       "Background": "#273722",
       "Scale": 0.8,
-      "SpritePath": "MapArt/unit_hunters"
+      "SpritePath": "MapArt/unit_hunters",
+      "SpriteTint": "#F0AFA1"
     },
     {
       "Key": "entity.stack",
       "Glyph": "+",
-      "Tint": "#FFFFD0",
+      "Tint": "#FFF4D2",
       "Background": "#273722",
       "Scale": 0.8
     },
@@ -218,7 +228,8 @@
       "Tint": "#D9AD72",
       "Background": "#273722",
       "Scale": 0.8,
-      "SpritePath": "MapArt/unit_herd_wild"
+      "SpritePath": "MapArt/unit_herd_wild",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "species.goat",
@@ -226,7 +237,8 @@
       "Tint": "#DCCBAC",
       "Background": "#273722",
       "Scale": 0.8,
-      "SpritePath": "MapArt/unit_herd_wild"
+      "SpritePath": "MapArt/unit_herd_goat",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "species.bison",
@@ -234,7 +246,8 @@
       "Tint": "#CDAD8F",
       "Background": "#273722",
       "Scale": 0.8,
-      "SpritePath": "MapArt/unit_herd_wild"
+      "SpritePath": "MapArt/unit_herd_bison",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "species.camel",
@@ -242,7 +255,8 @@
       "Tint": "#F0C885",
       "Background": "#273722",
       "Scale": 0.8,
-      "SpritePath": "MapArt/unit_herd_wild"
+      "SpritePath": "MapArt/unit_herd_camel",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "species.horse",
@@ -250,7 +264,8 @@
       "Tint": "#D4BDB0",
       "Background": "#273722",
       "Scale": 0.8,
-      "SpritePath": "MapArt/unit_herd_wild"
+      "SpritePath": "MapArt/unit_herd_horse",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "entity.domestic",
@@ -258,14 +273,15 @@
       "Tint": "#DBAF79",
       "Background": "#273722",
       "Scale": 0.8,
-      "SpritePath": "MapArt/unit_herd_domestic"
+      "SpritePath": "MapArt/unit_herd_domestic",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "elevation.contours",
       "Glyph": "",
       "Tint": "#FFFFFF",
-      "Opacity": 0.42,
-      "LineWidth": 1.0,
+      "Opacity": 0.88,
+      "LineWidth": 1.5,
       "Spacing": 2.8
     },
     {
@@ -345,73 +361,82 @@
       "Key": "terrain.desert",
       "Glyph": ".",
       "Tint": "#DFE9DD",
-      "Background": "#655138",
+      "Background": "#DEC580",
       "SpritePath": "MapArt/terrain_desert_base",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "terrain.grassland",
       "Glyph": ".",
       "Tint": "#DFE9DD",
-      "Background": "#3B5039",
+      "Background": "#99AD60",
       "SpritePath": "MapArt/terrain_grassland_base",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "terrain.temperate",
       "Glyph": ".",
       "Tint": "#DFE9DD",
-      "Background": "#354E43",
+      "Background": "#77965C",
       "SpritePath": "MapArt/terrain_temperate_base",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "terrain.tropical",
       "Glyph": ".",
       "Tint": "#DFE9DD",
-      "Background": "#2A5145",
+      "Background": "#668D56",
       "SpritePath": "MapArt/terrain_tropical_base",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "terrain.cold",
       "Glyph": ".",
       "Tint": "#DFE9DD",
-      "Background": "#515F63",
+      "Background": "#B4C6C4",
       "SpritePath": "MapArt/terrain_cold_base",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "terrain.highland",
       "Glyph": "^",
       "Tint": "#DFE9DD",
-      "Background": "#595653",
+      "Background": "#969589",
       "SpritePath": "MapArt/terrain_highland_base",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "terrain.ocean",
       "Glyph": "~",
       "Tint": "#DFE9DD",
-      "Background": "#1B3047",
+      "Background": "#236586",
       "SpritePath": "MapArt/terrain_ocean_base",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "terrain.shallows",
       "Glyph": "~",
       "Tint": "#DFE9DD",
-      "Background": "#315D6D",
+      "Background": "#4499AC",
       "SpritePath": "MapArt/terrain_shallows_base",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "terrain.lake",
       "Glyph": "~",
       "Tint": "#DFE9DD",
-      "Background": "#397073",
+      "Background": "#377F9C",
       "SpritePath": "MapArt/terrain_lake_base",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "vegetation.grass",
@@ -419,7 +444,8 @@
       "Tint": "#D4F0A9",
       "Background": "#354E43",
       "SpritePath": "MapArt/veg_grass",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "vegetation.shrub",
@@ -427,7 +453,8 @@
       "Tint": "#D4F0A9",
       "Background": "#354E43",
       "SpritePath": "MapArt/veg_shrub",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "vegetation.temperate_tree",
@@ -435,7 +462,8 @@
       "Tint": "#D4F0A9",
       "Background": "#354E43",
       "SpritePath": "MapArt/veg_temperate_tree",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "vegetation.tropical_tree",
@@ -443,7 +471,8 @@
       "Tint": "#D4F0A9",
       "Background": "#354E43",
       "SpritePath": "MapArt/veg_tropical_tree",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "vegetation.conifer",
@@ -451,7 +480,8 @@
       "Tint": "#D4F0A9",
       "Background": "#354E43",
       "SpritePath": "MapArt/veg_conifer",
-      "Scale": 1
+      "Scale": 1,
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "feature.cultivation_heavy",
@@ -459,7 +489,8 @@
       "Tint": "#E4CF91",
       "Background": "#354E43",
       "Scale": 1,
-      "SpritePath": "MapArt/landuse_cultivation_heavy"
+      "SpritePath": "MapArt/landuse_cultivation_heavy",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "settlement.camp",
@@ -467,7 +498,8 @@
       "Tint": "#E4CF91",
       "Background": "#354E43",
       "Scale": 1,
-      "SpritePath": "MapArt/settlement_camp"
+      "SpritePath": "MapArt/settlement_camp",
+      "SpriteTint": "#FFFFFF"
     },
     {
       "Key": "settlement.village",
@@ -475,7 +507,8 @@
       "Tint": "#E4CF91",
       "Background": "#354E43",
       "Scale": 1,
-      "SpritePath": "MapArt/settlement_village"
+      "SpritePath": "MapArt/settlement_village",
+      "SpriteTint": "#FFFFFF"
     }
   ]
 }

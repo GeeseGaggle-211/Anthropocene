@@ -29,20 +29,33 @@ namespace Anthropocene.Tests.EditMode
         public void SourceSprites_AreImportedAtThePromisedSizeAndBothTilesetsResolveThem()
         {
             var sprites = Resources.LoadAll<Sprite>("MapArt");
-            Assert.That(sprites.Length, Is.EqualTo(23));
+            Assert.That(sprites.Length, Is.EqualTo(29));
             Assert.That(sprites.All(s => s.texture.width == 256 && s.texture.height == 256), Is.True);
+            Assert.That(sprites.All(s => s.texture.mipmapCount > 1 && s.texture.filterMode == FilterMode.Trilinear), Is.True, "Zoomed artwork must be filtered instead of dropping thin outline pixels.");
             var texture = new Texture2D(2, 2);
             try
             {
                 foreach (var set in TilesetCatalog.Load())
                 {
                     var renderer = new LayeredTileRenderer(set, texture, Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"));
-                    foreach (string key in new[] { "terrain.desert", "terrain.temperate", "terrain.tropical", "terrain.highland", "terrain.lake", "vegetation.conifer", "feature.cultivation", "feature.cultivation_heavy", "settlement.camp", "settlement.village", "entity.camp", "entity.hunter", "entity.domestic", "species.camel" }) Assert.That(renderer.HasSprite(key), Is.True, key);
+                    foreach (string key in new[] { "terrain.desert", "terrain.temperate", "terrain.tropical", "terrain.highland", "terrain.lake", "vegetation.conifer", "feature.cultivation", "feature.cultivation_heavy", "feature.freshwater", "feature.oasis", "settlement.camp", "settlement.village", "entity.camp", "entity.hunter", "entity.domestic", "species.camel" }) Assert.That(renderer.HasSprite(key), Is.True, key);
                     Assert.That(renderer.HasSprite("missing.art"), Is.False);
                     Assert.That(set.Find("missing.art").Key, Is.EqualTo("fallback"));
                 }
             }
             finally { Object.DestroyImmediate(texture); }
+        }
+        [Test]
+        public void HerdSpeciesHaveDistinctArtAndColouredSpritesKeepTheirPalette()
+        {
+            foreach (var set in TilesetCatalog.Load())
+            {
+                var paths = new[] { "antelope", "goat", "bison", "camel", "horse" }.Select(s => set.Find("species." + s).SpritePath).ToArray();
+                Assert.That(paths.Distinct().Count(), Is.EqualTo(paths.Length), "Players must be able to distinguish prey species by shape.");
+                Assert.That(set.Find("entity.camp").SpriteTint, Is.EqualTo("#FFFFFF"));
+                Assert.That(set.Find("vegetation.conifer").SpriteTint, Is.EqualTo("#FFFFFF"));
+                Assert.That(set.Find("entity.rivalcamp").SpriteTint, Is.Not.EqualTo(set.Find("entity.camp").SpriteTint));
+            }
         }
         [Test]
         public void CoverChangesDensityAndClimateMotifsWhileReliefKeepsItsOwnBase()

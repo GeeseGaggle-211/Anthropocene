@@ -9,7 +9,7 @@ namespace Anthropocene.Presentation
     [Serializable]
     public sealed class VisualDefinition
     {
-        public string Key, Glyph, Tint = "#D4D6BF", Background = "#273722", SpritePath;
+        public string Key, Glyph, Tint = "#D4D6BF", Background = "#273722", SpritePath, SpriteTint;
         public float Scale = .8f;
         public float Opacity = .38f, LineWidth = 1, Spacing = 2.8f;
     }
@@ -38,6 +38,7 @@ namespace Anthropocene.Presentation
         public bool Inspected, Selected;
         public int SelectedEntity = -1;
         public int ContourEdgeMask = 0x3f;
+        public int ShoreEdgeMask;
         public readonly List<VisibleOccupant> Entities = new List<VisibleOccupant>();
     }
     public interface ITileRenderer { void Draw(TileRenderContext context); }
@@ -46,11 +47,18 @@ namespace Anthropocene.Presentation
         private readonly TilesetDefinition tileset;
         private readonly Texture2D hex;
         private readonly GUIStyle glyph;
+        private static Texture2D lineBrush;
         private readonly Dictionary<string, Sprite> sprites = new Dictionary<string, Sprite>();
         private static readonly Vector2[] Corners = { new Vector2(.5f, 0), new Vector2(1, .25f), new Vector2(1, .75f), new Vector2(.5f, 1), new Vector2(0, .75f), new Vector2(0, .25f) };
         public LayeredTileRenderer(TilesetDefinition tileset, Texture2D hex, Font font)
         {
             this.tileset = tileset; this.hex = hex;
+            if (lineBrush == null)
+            {
+                lineBrush = new Texture2D(1, 8, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave };
+                lineBrush.SetPixels(new[] { new Color(1, 1, 1, 0), new Color(1, 1, 1, .25f), Color.white, Color.white, Color.white, Color.white, new Color(1, 1, 1, .25f), new Color(1, 1, 1, 0) });
+                lineBrush.Apply(false, true);
+            }
             glyph = new GUIStyle { font = font, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
             foreach (var definition in tileset.Definitions.Where(d => !string.IsNullOrEmpty(d.SpritePath)))
             {
@@ -60,6 +68,18 @@ namespace Anthropocene.Presentation
             }
         }
         private static Color ColorOf(string text) => ColorUtility.TryParseHtmlString(text, out var color) ? color : Color.white;
+        public static Texture2D CreateHexTexture()
+        {
+            var texture = new Texture2D(256, 256, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp, name = "Antialiased map hex" };
+            var pixels = new Color32[256 * 256];
+            for (int y = 0; y < 256; y++) for (int x = 0; x < 256; x++)
+            {
+                float dx = Mathf.Abs((x + .5f) / 128 - 1), dy = Mathf.Abs((y + .5f) / 128 - 1);
+                float edge = Mathf.Min(1 - dx, (1 - dy) * 2 - dx);
+                pixels[y * 256 + x] = new Color32(255, 255, 255, (byte)(255 * Mathf.Clamp01(edge * 128 + .5f)));
+            }
+            texture.SetPixels32(pixels); texture.Apply(false, true); return texture;
+        }
         public static int ContourCount(int level, float height) => height >= 85 ? level : (int)Math.Ceiling(level / 2.0);
         public static int ContourEdgeMask(int level, IReadOnlyList<int?> neighborLevels)
         {
@@ -88,7 +108,13 @@ namespace Anthropocene.Presentation
             {
                 var uv = sprite.textureRect; uv = new Rect(uv.x / sprite.texture.width, uv.y / sprite.texture.height, uv.width / sprite.texture.width, uv.height / sprite.texture.height);
                 var target = SpriteBounds(rect, definition.Scale * scale);
-                var previous = GUI.color; GUI.color = ColorOf(definition.Tint); GUI.DrawTextureWithTexCoords(target, sprite.texture, uv); GUI.color = previous;
+                if (target.width < 13 && (key.StartsWith("entity.", StringComparison.Ordinal) || key.StartsWith("species.", StringComparison.Ordinal)))
+                {
+                    // At this size a detailed illustration becomes an indistinct dot.
+                    Badge(rect, definition.Glyph, Mathf.Max(6, Mathf.RoundToInt(Mathf.Min(rect.height, rect.width * 1.4f) * .88f))); return;
+                }
+                // Coloured art has its own palette; glyph colour must not flatten it.
+                var previous = GUI.color; GUI.color = ColorOf(definition.SpriteTint ?? definition.Tint); GUI.DrawTextureWithTexCoords(target, sprite.texture, uv); GUI.color = previous;
             }
             else if (!string.IsNullOrEmpty(definition.Glyph)) GUI.Label(rect, definition.Glyph, glyph);
         }
@@ -100,18 +126,19 @@ namespace Anthropocene.Presentation
         public bool HasSprite(string key) => sprites.TryGetValue(key, out var sprite) && sprite != null;
         public static string BaseKey(TileObservation tile) => tile == null ? "hidden" : "terrain." +
             (tile.Land && (tile.Relief == Relief.Highland || tile.Relief == Relief.Mountain) ? "highland" : tile.Environment == EnvironmentKind.Ice ? "cold" : tile.Environment.ToString().ToLowerInvariant());
-        public static int VegetationCount(TileObservation tile, float height) => !tile.Land || tile.Environment == EnvironmentKind.Ice || height < 42 ? 0 : tile.CurrentVegetation == VegetationTier.High ? 6 : tile.CurrentVegetation == VegetationTier.Medium ? 3 : 1;
+        public static int VegetationCount(TileObservation tile, float height) => !tile.Land || tile.Environment == EnvironmentKind.Ice || height < 42 ? 0 :
+            height < 75 ? (int)tile.CurrentVegetation + 1 : tile.CurrentVegetation == VegetationTier.High ? 7 : tile.CurrentVegetation == VegetationTier.Medium ? 4 : 3;
         public static string VegetationKey(TileObservation tile) => "vegetation." +
             (tile.Environment == EnvironmentKind.Desert ? "shrub" : tile.CurrentVegetation == VegetationTier.Low || tile.Environment == EnvironmentKind.Grassland ? "grass" : tile.Environment == EnvironmentKind.Cold ? "conifer" : tile.Environment == EnvironmentKind.Tropical ? "tropical_tree" : "temperate_tree");
-        private static readonly Vector2[] VegetationSlots = { new Vector2(.25f, .35f), new Vector2(.72f, .36f), new Vector2(.44f, .65f), new Vector2(.61f, .58f), new Vector2(.35f, .18f), new Vector2(.63f, .77f) };
-        private void VegetationLayer(TileObservation tile, Rect rect)
+        private static readonly Vector2[] VegetationSlots = { new Vector2(.28f, .29f), new Vector2(.72f, .37f), new Vector2(.37f, .65f), new Vector2(.66f, .65f), new Vector2(.50f, .23f), new Vector2(.24f, .52f), new Vector2(.53f, .48f) };
+        private void VegetationLayer(TileObservation tile, Rect rect, bool occupied)
         {
             int count = VegetationCount(tile, rect.height); string motif = VegetationKey(tile);
             // Deterministic interior slots leave contour/river edges and occupant hit regions intact.
             for (int i = 0; i < count; i++)
             {
-                float x = VegetationSlots[i].x, y = VegetationSlots[i].y;
-                float size = rect.height * .24f;
+                float x = VegetationSlots[i].x + ((tile.Id * 17 + i * 7) % 5 - 2) * .012f, y = VegetationSlots[i].y;
+                float size = rect.height * (occupied ? .23f : .34f);
                 Symbol(motif, new Rect(rect.x + rect.width * x - size / 2, rect.y + rect.height * y - size / 2, size, size));
             }
         }
@@ -122,9 +149,11 @@ namespace Anthropocene.Presentation
             var ground = tileset.Find(biome);
             string border = context.Selected ? "selected" : context.Inspected ? "friendly" : "border";
             Tint(rect, hex, ColorOf(tileset.Find(border).Tint));
-            Tint(new Rect(rect.x + 1.5f, rect.y + 1.5f, rect.width - 3, rect.height - 3), hex, ColorOf(ground.Background));
+            float rim = context.Selected || context.Inspected ? 1.7f : .65f;
+            var interior = new Rect(rect.x + rim, rect.y + rim, rect.width - 2 * rim, rect.height - 2 * rim);
+            Tint(interior, hex, ColorOf(ground.Background));
             if (tile == null) return;
-            if (HasSprite(biome)) Tint(new Rect(rect.x + 1.5f, rect.y + 1.5f, rect.width - 3, rect.height - 3), sprites[biome].texture, tileset.Id == "classic" ? Color.white : new Color(1.3f, 1.3f, 1.3f));
+            if (HasSprite(biome)) Tint(interior, sprites[biome].texture, tileset.Id == "classic" ? Color.white : new Color(.76f, .81f, .78f));
             // Terrain -> contours -> water -> vegetation -> land use -> settlements -> units -> UI.
             var contours = tileset.Find("elevation.contours"); var contourColor = ColorOf(contours.Tint); contourColor.a = contours.Opacity;
             int count = ContourCount(tile.ElevationLevel, rect.height);
@@ -136,13 +165,21 @@ namespace Anthropocene.Presentation
                     if ((context.ContourEdgeMask & 1 << side) != 0) Line(inner.position + Vector2.Scale(Corners[side], inner.size), inner.position + Vector2.Scale(Corners[(side + 1) % 6], inner.size), contours.LineWidth, contourColor);
             }
             if (!HasSprite(biome)) Symbol(biome, new Rect(rect.x + rect.width * .05f, rect.y + rect.height * .6f, rect.width * .22f, rect.height * .25f));
-            if (tile.ElevationLevel == 10) Symbol("elevation.10", rect);
-            if (tile.Oasis) Symbol("feature.oasis", new Rect(rect.x, rect.y + rect.height * .15f, rect.width * .5f, rect.height * .5f));
-            else if (tile.FreshwaterSource != FreshwaterSource.None && tile.WaterBody != WaterKind.Saltwater) Symbol("feature.freshwater", new Rect(rect.x + 2, rect.y + rect.height * .13f, rect.width * .36f, rect.height * .36f));
+            // Shorelines are derived only from observed neighbours, never guessed through fog.
+            for (int side = 0; side < 6; side++) if ((context.ShoreEdgeMask & 1 << side) != 0)
+            {
+                var shore = new Rect(rect.x + 3, rect.y + 3, rect.width - 6, rect.height - 6);
+                var a = shore.position + Vector2.Scale(Corners[side], shore.size); var b = shore.position + Vector2.Scale(Corners[(side + 1) % 6], shore.size);
+                Line(a, b, Mathf.Clamp(rect.height * .043f, 1.5f, 6), ColorOf("#DCCC9C"));
+                shore = new Rect(rect.x + 6, rect.y + 6, rect.width - 12, rect.height - 12);
+                Line(shore.position + Vector2.Scale(Corners[side], shore.size), shore.position + Vector2.Scale(Corners[(side + 1) % 6], shore.size), 1.2f, ColorOf("#9DCCD0"));
+            }
             foreach (var river in tile.Rivers)
             {
                 Vector2 a = rect.position + Vector2.Scale(Corners[river.Side], rect.size), b = rect.position + Vector2.Scale(Corners[(river.Side + 1) % 6], rect.size);
-                Line(a, b, Mathf.Clamp(river.Width * 1.25f, 1.5f, 5), ColorOf(tileset.Find("feature.river").Tint));
+                float width = Mathf.Clamp(river.Width * 1.25f, 1.5f, 5);
+                Line(a, b, width + 2, ColorOf("#C6C58D"));
+                Line(a, b, width, ColorOf(tileset.Find("feature.river").Tint));
                 if (river.FlowBand >= 2)
                 {
                     Vector2 direction = (river.Forward ? b - a : a - b).normalized, middle = (a + b) / 2;
@@ -151,41 +188,66 @@ namespace Anthropocene.Presentation
                     Line(middle + direction * 3, middle - direction * 2 - normal * 2, 1, ColorOf(tileset.Find("feature.freshwater").Tint));
                 }
             }
-            VegetationLayer(tile, rect);
+            VegetationLayer(tile, rect, context.Entities.Count > 0);
             if (rect.height >= 48)
             {
                 if (tile.Cultivated) Symbol("feature.cultivation", new Rect(rect.x + rect.width * .24f, rect.y + rect.height * .5f, rect.width * .5f, rect.height * .38f));
                 if (tile.Fishery) Symbol("feature.fishery", new Rect(rect.x + rect.width * .50f, rect.y + rect.height * .08f, rect.width * .4f, rect.height * .4f));
             }
-            if (rect.height >= 60 && context.Entities.Any(e => e.Key == "entity.camp" || e.Key == "entity.rivalcamp"))
-                Symbol("settlement.camp", new Rect(rect.x + rect.width * .09f, rect.y + rect.height * .58f, rect.width * .35f, rect.height * .3f));
-            if (rect.height >= 45)
-                for (int mark = 0; mark <= tile.Food; mark++) Tint(new Rect(rect.center.x - tile.Food * 2.5f + mark * 5 - 1.5f, rect.y + rect.height * .78f, 3, 3), Texture2D.whiteTexture, ColorOf(tileset.Find("resource.food").Tint));
+            // A mobile camp is already an occupant; do not paint a second tent beneath it.
             for (int i = 0; i < Math.Min(6, context.Entities.Count); i++)
             {
                 var slot = OccupantSlot(rect, i, context.Entities.Count);
-                // Opaque backplates preserve individual glyphs over dense elevation contours.
-                if (context.Entities[i].SelectableId == context.SelectedEntity)
-                {
-                    Color selected = ColorOf(tileset.Find("selected").Tint);
-                    Tint(new Rect(slot.x - 2, slot.y - 2, slot.width + 4, slot.height + 4), Texture2D.whiteTexture, selected);
-                }
-                Tint(new Rect(slot.x + 1, slot.y + 1, slot.width - 2, slot.height - 2), Texture2D.whiteTexture, ColorOf(ground.Background));
+                // Negative space belongs to the map. Only the icon silhouette covers it.
                 bool countBadge = !string.IsNullOrEmpty(context.Entities[i].Badge) && slot.width >= 38 && slot.height >= 34;
                 Symbol(context.Entities[i].Key, countBadge ? new Rect(slot.x, slot.y, slot.width, slot.height - 14) : slot, context.Entities.Count > 1 ? 1.4f : 1.8f);
-                if (countBadge) { glyph.fontSize = 11; glyph.normal.textColor = ColorOf(tileset.Find("entity.stack").Tint); GUI.Label(new Rect(slot.x, slot.yMax - 14, slot.width, 14), context.Entities[i].Badge, glyph); }
+                if (countBadge) Badge(new Rect(slot.x, slot.yMax - 14, slot.width, 14), context.Entities[i].Badge, 11);
+                if (context.SelectedEntity >= 0 && context.Entities[i].SelectableId == context.SelectedEntity) SelectionCorners(slot);
+                if (context.Entities[i].Key.StartsWith("entity.rival", StringComparison.Ordinal))
+                    Badge(new Rect(slot.xMax - 11, slot.y - 1, 12, 13), "◇", 12);
             }
+            // Small resource/water badges sit outside the occupant slots and remain on top.
+            if (rect.height >= 45)
+                for (int mark = 0; mark <= tile.Food; mark++)
+                {
+                    var dot = new Rect(rect.center.x - tile.Food * 3 + mark * 6 - 2, rect.y + rect.height * .83f, 4, 4);
+                    Tint(dot, Texture2D.whiteTexture, ColorOf("#414532"));
+                    Tint(new Rect(dot.x + 1, dot.y + 1, 2, 2), Texture2D.whiteTexture, ColorOf(tileset.Find("resource.food").Tint));
+                }
+            if (tile.Oasis) Symbol("feature.oasis", new Rect(rect.x + rect.width * .34f, rect.y + rect.height * .04f, rect.width * .34f, rect.height * .25f), 1.5f);
+            else if (tile.FreshwaterSource != FreshwaterSource.None && tile.WaterBody != WaterKind.Saltwater) Symbol("feature.freshwater", new Rect(rect.x + rect.width * .38f, rect.y + rect.height * .08f, rect.width * .24f, rect.height * .18f), 1.5f);
+            if (tile.ElevationLevel == 10) Badge(new Rect(rect.center.x - 7, rect.y + rect.height * .08f, 14, 15), "×", 16);
             if (context.Entities.Count > 6)
             {
                 glyph.fontSize = Mathf.Max(11, Mathf.RoundToInt(rect.height * .13f)); glyph.normal.textColor = ColorOf(tileset.Find("entity.stack").Tint);
                 GUI.Label(new Rect(rect.x, rect.y + rect.height * .8f, rect.width, rect.height * .2f), "+" + (context.Entities.Count - 6), glyph);
             }
         }
+        private void Badge(Rect rect, string label, int size)
+        {
+            glyph.fontSize = size; glyph.normal.textColor = ColorOf("#29372E");
+            GUI.Label(new Rect(rect.x - 1, rect.y, rect.width, rect.height), label, glyph);
+            GUI.Label(new Rect(rect.x + 1, rect.y, rect.width, rect.height), label, glyph);
+            GUI.Label(new Rect(rect.x, rect.y - 1, rect.width, rect.height), label, glyph);
+            GUI.Label(new Rect(rect.x, rect.y + 1, rect.width, rect.height), label, glyph);
+            glyph.normal.textColor = ColorOf(tileset.Find("entity.stack").Tint); GUI.Label(rect, label, glyph);
+        }
+        private void SelectionCorners(Rect slot)
+        {
+            float length = Mathf.Min(7, slot.width * .23f), width = tileset.Id == "classic" ? 1.5f : 2.2f;
+            foreach (var corner in new[] { new Vector2(slot.x, slot.y), new Vector2(slot.xMax, slot.y), new Vector2(slot.xMax, slot.yMax), new Vector2(slot.x, slot.yMax) })
+            {
+                var horizontal = corner + new Vector2(corner.x == slot.x ? length : -length, 0);
+                var vertical = corner + new Vector2(0, corner.y == slot.y ? length : -length);
+                Line(corner, horizontal, width + 2, ColorOf("#3D422E")); Line(corner, vertical, width + 2, ColorOf("#3D422E"));
+                Line(corner, horizontal, width, ColorOf(tileset.Find("selected").Tint)); Line(corner, vertical, width, ColorOf(tileset.Find("selected").Tint));
+            }
+        }
         private static void Line(Vector2 start, Vector2 end, float width, Color color)
         {
             var matrix = GUI.matrix; var previous = GUI.color; GUI.color = color;
             GUIUtility.RotateAroundPivot(Mathf.Atan2(end.y - start.y, end.x - start.x) * Mathf.Rad2Deg, start);
-            GUI.DrawTexture(new Rect(start.x, start.y - width / 2, Vector2.Distance(start, end) + .5f, width), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(start.x, start.y - (width + 1) / 2, Vector2.Distance(start, end) + .5f, width + 1), lineBrush);
             GUI.matrix = matrix; GUI.color = previous;
         }
     }

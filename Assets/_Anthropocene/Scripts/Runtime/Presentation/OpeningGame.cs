@@ -43,14 +43,7 @@ namespace Anthropocene.Presentation
         private void Awake()
         {
             Application.targetFrameRate = 60;
-            hex = new Texture2D(64, 74, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, name = "Generated hex tile" };
-            for (int y = 0; y < 74; y++) for (int x = 0; x < 64; x++)
-            {
-                float dy = Mathf.Abs(y - 36.5f) / 36.5f, dx = Mathf.Abs(x - 31.5f) / 31.5f;
-                bool inside = dy <= .5f || dx <= (1 - dy) * 2;
-                hex.SetPixel(x, y, inside ? Color.white : Color.clear);
-            }
-            hex.Apply();
+            hex = LayeredTileRenderer.CreateHexTexture();
             font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             tilesets = TilesetCatalog.Load(); SetTileset(0);
         }
@@ -84,6 +77,9 @@ namespace Anthropocene.Presentation
         private void OnGUI()
         {
             Styles(); GUI.depth = -20;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (artReviewMode != 0) { DrawArtReview(); return; }
+#endif
             Fill(new Rect(0, 0, Screen.width, Screen.height), Ink);
             if (resolving != null) { ResolutionScreen(); return; }
             if (menu || world == null || generating != null) { Menu(); return; }
@@ -186,7 +182,11 @@ namespace Anthropocene.Presentation
                         for (int direction = 0; direction < neighborLevels.Length; direction++)
                         {
                             int neighbor = ElevationLevelStage.Neighbor(world, id, direction);
-                            if (neighbor >= 0 && observation.Tiles.TryGetValue(neighbor, out var neighborTile)) neighborLevels[direction] = neighborTile.ElevationLevel;
+                            if (neighbor >= 0 && observation.Tiles.TryGetValue(neighbor, out var neighborTile))
+                            {
+                                neighborLevels[direction] = neighborTile.ElevationLevel;
+                                if (!tile.Land && neighborTile.Land) visual.ShoreEdgeMask |= 1 << ((direction + 1) % 6);
+                            }
                         }
                         visual.ContourEdgeMask = LayeredTileRenderer.ContourEdgeMask(tile.ElevationLevel, neighborLevels);
                     }
