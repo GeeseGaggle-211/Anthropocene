@@ -19,5 +19,6 @@
     <Compile Include="ClimateMoistureChecks.cs" />
     <Compile Include="AquaticChecks.cs" />
     <Compile Include="StartViabilityChecks.cs" />
+    <Compile Include="ScenarioChecks.cs" />
   </ItemGroup>
 </Project>
