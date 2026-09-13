@@ -9,6 +9,7 @@ namespace Anthropocene.Simulation
         public int Tile, Entity;
         public string Kind;
         public double Food, PotentialFood, Freshwater;
+        public double ImpactMultiplier = 1;
     }
     public interface IAllocationPolicy { List<Transfer> Allocate(IEnumerable<Demand> demands, Tile[] tiles); }
     public sealed class ProportionalAllocation : IAllocationPolicy
@@ -43,8 +44,6 @@ namespace Anthropocene.Simulation
     }
     public sealed partial class TurnResolver
     {
-        private readonly IAllocationPolicy allocation;
-        public TurnResolver(IAllocationPolicy allocation = null) { this.allocation = allocation ?? new ProportionalAllocation(); }
 
         public string Validate(WorldState w, int player, Order order, HashSet<int> visible = null)
         {
@@ -136,7 +135,7 @@ namespace Anthropocene.Simulation
             foreach (var change in touched.Values.OrderBy(t => t.Tile))
             { change.AfterFood = w.Tiles[change.Tile].Food; change.AfterPotentialFood = w.Tiles[change.Tile].PotentialFood; change.AfterFreshwater = w.Tiles[change.Tile].Freshwater; change.AfterLandCondition = w.Tiles[change.Tile].LandCondition; change.AfterAquaticCondition = w.Tiles[change.Tile].AquaticCondition; record.Changes.Add(change); }
             // Untouched tiles follow the recorded configuration/clock regeneration rule; replay does not need world-sized snapshots each turn.
-            Invariants(w, peopleBefore + record.Growth - record.Deaths);
+            Invariants(w, peopleBefore + record.Growth - record.Deaths, touched.Keys.Select(id => w.Tiles[id]));
             w.History.Add(record); w.Turn++;
             return record;
         }
@@ -150,16 +149,16 @@ namespace Anthropocene.Simulation
             double foodDemand = herd.Animals * species.FoodConsumption * Math.Min(w.Config.TurnDays, w.Config.BaseDays) / w.Config.BaseDays;
             double waterDemand = herd.Animals * species.FreshwaterConsumption * Math.Min(w.Config.TurnDays, w.Config.BaseDays) / w.Config.BaseDays;
             bool thirsty = FreshwaterAccess.Available(w, herd.Tile) < waterDemand || herd.UnmetFreshwater > waterDemand * .3;
-            bool hungry = w.Tiles[herd.Tile].PotentialFood < foodDemand || herd.UnmetFood > foodDemand * .3;
+            bool hungry = LazyEcology.ProjectEcology(w, herd.Tile, w.Days).PotentialFood < foodDemand || herd.UnmetFood > foodDemand * .3;
             var candidates = map.Radius(herd.Tile, 1).Where(n => w.Tiles[n].TraversableLand).ToArray();
             if (candidates.Length == 0) return herd.Tile;
             if (threat)
                 return candidates.OrderByDescending(n => hunters.Min(h => map.Distance(n, h.Tile)))
                     .ThenByDescending(n => Knowledge.Band(FreshwaterAccess.Available(w, n), 70, w.Config))
-                    .ThenByDescending(n => Knowledge.Band(w.Tiles[n].PotentialFood, Math.Max(1, w.Ecology(n).MaxPotentialFood), w.Config))
+                    .ThenByDescending(n => Knowledge.Band(LazyEcology.ProjectEcology(w, n, w.Days).PotentialFood, Math.Max(1, w.Ecology(n).MaxPotentialFood), w.Config))
                     .ThenBy(n => n).First();
             if (!thirsty && !hungry && Numbers.Random(w.Seed, 71, herd.Id, w.Turn) >= w.Config.WanderChance) return herd.Tile;
-            return candidates.OrderByDescending(n => (thirsty ? FreshwaterAccess.Available(w, n) / Math.Max(1, waterDemand) : hungry ? w.Tiles[n].PotentialFood / Math.Max(1, foodDemand) : Numbers.Random(w.Seed, 72, herd.Id ^ n, w.Turn)) + species.Suitability(w.Tiles[n]) * species.MovementHabitatWeight)
+            return candidates.OrderByDescending(n => (thirsty ? FreshwaterAccess.Available(w, n) / Math.Max(1, waterDemand) : hungry ? LazyEcology.ProjectEcology(w, n, w.Days).PotentialFood / Math.Max(1, foodDemand) : Numbers.Random(w.Seed, 72, herd.Id ^ n, w.Turn)) + species.Suitability(w.Tiles[n]) * species.MovementHabitatWeight)
                 .ThenBy(n => n == herd.Tile ? 0 : 1).ThenBy(n => n).First();
         }
         private static void Move(WorldState w, List<Order> orders, Dictionary<int, int> herds, TurnRecord record)
@@ -292,7 +291,7 @@ namespace Anthropocene.Simulation
             double experience = camp.Experience[(int)domain];
             return camp.ForcedTransition && camp.SecondaryDomain == (int)domain ? Math.Max(w.Config.CarryoverFloor, experience * w.Config.CarryoverMultiplier) : experience;
         }
-        public static void Invariants(WorldState w, int expectedPeople = -1)
+        public static void Invariants(WorldState w, int expectedPeople = -1, IEnumerable<Tile> ecologyScope = null)
         {
             if (w.Camps.Select(c => c.Tile).Distinct().Count() != w.Camps.Count) throw new InvalidOperationException("Rival camps overlap.");
             var ids = w.Camps.Select(c => c.Id).Concat(w.Hunters.Select(h => h.Id)).Concat(w.Herds.Select(h => h.Id)).ToArray();
@@ -302,13 +301,14 @@ namespace Anthropocene.Simulation
                 throw new InvalidOperationException("Invalid people state or location.");
             if (w.Hunters.Any(h => h.CarriedFood < -1e-8 || h.CarriedFood > Supply.Capacity(w, h) + 1e-8) || w.Camps.Any(c => c.GrowthRemainder < 0 || c.GrowthRemainder >= 1)) throw new InvalidOperationException("Invalid carried provisions or demographic remainder.");
             if (w.Herds.Any(h => !w.Tiles[h.Tile].TraversableLand || h.Animals < 0)) throw new InvalidOperationException("Invalid herd population or peak/aquatic location.");
-            foreach (var tile in w.Tiles)
+            foreach (var tile in ecologyScope ?? w.Tiles)
             {
+                var projected = LazyEcology.ProjectEcology(w, tile.Id, w.Days);
                 var ecology = w.Ecology(tile.Id); double multiplier = OpeningTransitions.FoodMultiplier(w, tile);
                 if (tile.WaterBody == WaterKind.Saltwater && (tile.Freshwater > 0 || ecology.MaxFreshwater > 0 || tile.FreshwaterSource != FreshwaterSource.None)) throw new InvalidOperationException("Seawater is not drinkable.");
                 if (tile.Saltwater < 0 || tile.Saltwater > ecology.MaxSaltwater + 1e-6 || tile.FreshwaterSource == FreshwaterSource.None && tile.Freshwater > 1e-8) throw new InvalidOperationException("Water stock lacks a valid source or capacity.");
-                if (double.IsNaN(tile.LandCondition) || double.IsNaN(tile.AquaticCondition) || tile.LandCondition < -1e-8 || tile.LandCondition > 1 + 1e-8 || tile.AquaticCondition < -1e-8 || tile.AquaticCondition > 1 + 1e-8 || double.IsNaN(tile.Food) || double.IsInfinity(tile.Food) || tile.Food < -1e-8 || double.IsNaN(tile.PotentialFood) || double.IsInfinity(tile.PotentialFood) || tile.PotentialFood + 1e-8 < tile.Food || tile.PotentialFood > ecology.MaxPotentialFood * multiplier + 1e-5 || tile.Freshwater < -1e-8 || double.IsNaN(tile.Freshwater) ||
-                    tile.Food > ecology.MaxFood * multiplier + 1e-6 || tile.Freshwater > ecology.MaxFreshwater + 1e-6)
+                if (double.IsNaN(projected.LandCondition) || double.IsNaN(projected.AquaticCondition) || projected.LandCondition < -1e-8 || projected.LandCondition > 1 + 1e-8 || projected.AquaticCondition < -1e-8 || projected.AquaticCondition > 1 + 1e-8 || double.IsNaN(projected.Food) || double.IsInfinity(projected.Food) || projected.Food < -1e-8 || double.IsNaN(projected.PotentialFood) || double.IsInfinity(projected.PotentialFood) || projected.PotentialFood + 1e-8 < projected.Food || projected.PotentialFood > ecology.MaxPotentialFood * multiplier + 1e-5 || projected.Freshwater < -1e-8 || double.IsNaN(projected.Freshwater) ||
+                    projected.Food > ecology.MaxFood * multiplier + 1e-6 || projected.Freshwater > ecology.MaxFreshwater + 1e-6)
                     throw new InvalidOperationException("Invalid ecology or capacity overflow.");
             }
         }

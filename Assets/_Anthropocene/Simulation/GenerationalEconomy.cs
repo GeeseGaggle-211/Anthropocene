@@ -7,7 +7,7 @@ namespace Anthropocene.Simulation
     internal sealed class GenerationResource
     {
         public int Tile;
-        public double AvailableFood, AvailablePotentialFood, AvailableFreshwater;
+        public double AvailableFood;
     }
 
     internal sealed class GrowthPlan
@@ -22,7 +22,6 @@ namespace Anthropocene.Simulation
             double intervals = record.Duration / w.Config.BaseDays;
             double years = record.Duration / w.Config.DaysPerYear;
             double generationScale = record.Duration / w.Config.PracticeDays;
-            var weights = SeasonWeights(record.StartDays, record.Duration, w.Config.BaseDays);
             var resources = new Dictionary<int, GenerationResource>();
             var foraged = new Dictionary<int, double>();
             var recovering = new HashSet<int>(w.Camps.Where(c => c.DeficitTurns > 0).Select(c => c.Id));
@@ -30,28 +29,7 @@ namespace Anthropocene.Simulation
             GenerationResource Resource(int tile)
             {
                 if (resources.TryGetValue(tile, out var value)) return value;
-                var source = w.Tiles[tile]; double foodProduction = 0, potentialProduction = 0, freshwaterProduction = 0;
-                double condition = source.Aquatic || source.WaterBody == WaterKind.Saltwater ? source.AquaticCondition : source.LandCondition;
-                for (int season = 0; season < 4; season++)
-                {
-                    var ecology = source.Seasons[season]; double weight = weights[season];
-                    double multiplier = OpeningTransitions.FoodMultiplier(w, source);
-                    double maxFood = ecology.MaxFood * multiplier;
-                    double maxPotential = ecology.MaxPotentialFood * multiplier;
-                    double moisture = source.WaterBody == WaterKind.Saltwater ? 1 : source.OasisInfluence > 0 || source.WaterBody == WaterKind.Freshwater ? 1 : ecology.Moisture;
-                    double gatherableDeficit = maxFood <= 0 ? 0 : Numbers.Clamp((maxFood - source.Food) / maxFood, 0, 1);
-                    foodProduction += maxFood * ecology.FoodRate * (.25 + .75 * moisture) * weight * (1 + w.Config.GatherableRecoveryBias * gatherableDeficit) * condition;
-                    potentialProduction += maxPotential * ecology.PotentialFoodRate * (.25 + .75 * moisture) * weight * condition;
-                    freshwaterProduction += ecology.MaxFreshwater * ecology.FreshwaterRate * weight;
-                }
-                double availablePotential = Math.Max(0, source.PotentialFood + potentialProduction);
-                value = new GenerationResource
-                {
-                    Tile = tile,
-                    AvailableFood = Math.Min(availablePotential, Math.Max(0, source.Food + foodProduction)),
-                    AvailablePotentialFood = availablePotential,
-                    AvailableFreshwater = source.WaterBody == WaterKind.Saltwater || source.FreshwaterSource == FreshwaterSource.None ? 0 : Math.Max(0, source.Freshwater + freshwaterProduction)
-                };
+                value = new GenerationResource { Tile = tile, AvailableFood = LazyEcology.AccessibleAvailability(w, tile, record.StartDays, record.Duration) };
                 resources.Add(tile, value); return value;
             }
 
@@ -73,8 +51,7 @@ namespace Anthropocene.Simulation
                 var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity); if (hunter == null || hunter.Population <= 0) continue;
                 if (w.Map.Distance(hunter.Tile, order.Target) <= 1)
                 {
-                    Resource(order.Target);
-                    demands.Add(new Demand { Tile = order.Target, Entity = hunter.Id, Kind = "Fishing", Food = hunter.Population * w.Config.FishPerPerson * intervals });
+                    demands.Add(new Demand { Tile = order.Target, Entity = hunter.Id, Kind = "Fishing", ImpactMultiplier = PracticeEffects.FishingImpact(w.Config, w.Camps.First(c => c.Id == hunter.SourceCamp)), Food = hunter.Population * w.Config.FishPerPerson * intervals });
                 }
             }
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
@@ -86,30 +63,25 @@ namespace Anthropocene.Simulation
                     if (!PassiveGathering.Eligible(w, camp, id)) continue;
                     var available = Resource(id); var tile = w.Tiles[id];
                     double food = available.AvailableFood * Math.Min(1, Numbers.Fraction(w.Config.GatherFraction, intervals) * gatherers / w.Config.PopulationScale);
-                    requests.Add(new Demand { Entity = camp.Id, Tile = id, Kind = PassiveGathering.Kind(tile), Food = food }); total += food;
+                    requests.Add(new Demand { Entity = camp.Id, Tile = id, Kind = PassiveGathering.Kind(tile), ImpactMultiplier = tile.Aquatic ? PracticeEffects.FishingImpact(w.Config, camp) : PracticeEffects.GatheringImpact(w.Config, camp), Food = food }); total += food;
                 }
                 double scale = Math.Min(1, gatherers * w.Config.GatherPerPerson * intervals / Math.Max(1e-12, total));
                 foreach (var request in requests) { request.Food *= scale; demands.Add(request); }
             }
             foreach (var hunter in w.Hunters.Where(h => h.Population > 0 && !Supply.Connected(w, h)).OrderBy(h => h.Id))
             {
-                Resource(hunter.Tile);
                 double need = hunter.Population * w.Config.Consumption * intervals;
-                demands.Add(new Demand { Tile = hunter.Tile, Entity = hunter.Id, Kind = "Foraging", Food = Math.Min(need, hunter.Population * w.Config.HunterForagePerPerson * intervals) });
+                demands.Add(new Demand { Tile = hunter.Tile, Entity = hunter.Id, Kind = "Foraging", ImpactMultiplier = PracticeEffects.GatheringImpact(w.Config, w.Camps.First(c => c.Id == hunter.SourceCamp)), Food = Math.Min(need, hunter.Population * w.Config.HunterForagePerPerson * intervals) });
             }
             foreach (var herd in w.Herds.OrderBy(h => h.Id))
             {
                 var species = w.Config.GetSpecies(herd.Species);
                 herd.UnmetFood = herd.Animals * species.FoodConsumption * intervals; herd.UnmetFreshwater = herd.Animals * species.FreshwaterConsumption * intervals;
-                int source = FreshwaterAccess.Source(w, herd.Tile); Resource(herd.Tile); if (source != herd.Tile) Resource(source);
+                int source = FreshwaterAccess.Source(w, herd.Tile);
                 demands.Add(new Demand { Tile = herd.Tile, Entity = herd.Id, Kind = "Herd", PotentialFood = herd.UnmetFood, Freshwater = source == herd.Tile ? herd.UnmetFreshwater : 0 });
                 if (source != herd.Tile) demands.Add(new Demand { Tile = source, Entity = herd.Id, Kind = "Herd", Freshwater = herd.UnmetFreshwater });
             }
 
-            foreach (var resource in resources.Values.OrderBy(r => r.Tile))
-            {
-                touch(resource.Tile); w.Tiles[resource.Tile].Food = resource.AvailableFood; w.Tiles[resource.Tile].PotentialFood = resource.AvailablePotentialFood; w.Tiles[resource.Tile].Freshwater = resource.AvailableFreshwater;
-            }
             CommitGenerationResources(w, demands, record, touch, foraged, intervals);
 
             var plans = w.Camps.OrderBy(c => c.Id).ToDictionary(c => c.Id, c => PlanGrowth(w, c, intervals, years));
@@ -121,24 +93,21 @@ namespace Anthropocene.Simulation
             if (w.Config.WildHerdFissionEnabled) SplitHerds(w, record);
 
             w.Days += record.Duration;
-            AdvanceEcology(w, resources, weights);
             FinishDemographicReports(w, record, orders);
         }
 
         private void CommitGenerationResources(WorldState w, List<Demand> demands, TurnRecord record, Action<int> touch, Dictionary<int, double> foraged, double intervals)
         {
             var herds = w.Herds.ToDictionary(h => h.Id); var camps = w.Camps.ToDictionary(c => c.Id); var hunters = w.Hunters.ToDictionary(h => h.Id);
-            foreach (var transfer in allocation.Allocate(demands, w.Tiles))
+            var transfers = new List<Transfer>();
+            foreach (var group in demands.GroupBy(d => d.Tile).OrderBy(g => g.Key))
             {
-                touch(transfer.Tile); var tile = w.Tiles[transfer.Tile];
-                if (transfer.Food > 0) { tile.Food = Math.Max(0, tile.Food - transfer.Food); tile.PotentialFood = Math.Max(0, tile.PotentialFood - transfer.Food); }
-                if (transfer.PotentialFood > 0)
-                {
-                    double nonGatherable = Math.Max(0, tile.PotentialFood - tile.Food);
-                    tile.Food = Math.Max(0, tile.Food - Math.Max(0, transfer.PotentialFood - nonGatherable));
-                    tile.PotentialFood = Math.Max(0, tile.PotentialFood - transfer.PotentialFood);
-                }
-                tile.Freshwater = Math.Max(0, tile.Freshwater - transfer.Freshwater);
+                touch(group.Key); LazyEcology.MaterializeEcology(w, group.Key, record.StartDays);
+                var result = EcologicalPressure.Integrate(w, group.Key, group, record.StartDays, record.Duration);
+                result.View.Commit(w.Tiles[group.Key]); record.Pressure.AddRange(result.Pressure); record.EcologyBalances.Add(result.Balance); transfers.AddRange(result.Transfers);
+            }
+            foreach (var transfer in transfers)
+            {
                 if (transfer.Kind == "Herd")
                 {
                     var herd = herds[transfer.Entity]; herd.UnmetFood = Math.Max(0, herd.UnmetFood - transfer.PotentialFood); herd.UnmetFreshwater = Math.Max(0, herd.UnmetFreshwater - transfer.Freshwater);
@@ -153,28 +122,11 @@ namespace Anthropocene.Simulation
                     if (transfer.Kind == "Fishing") Supply.Award(w, hunters[transfer.Entity], transfer.Food, record);
                     else { camp.Food += transfer.Food; camp.StepFoodIncome += transfer.Food; }
                 }
-                ApplyEnvironmentalImpact(w, transfer, camps, hunters, intervals);
                 record.Transfers.Add(transfer);
             }
         }
 
-        private static void ApplyEnvironmentalImpact(WorldState w, Transfer transfer, IReadOnlyDictionary<int, Camp> camps, IReadOnlyDictionary<int, Hunter> hunters, double intervals)
-        {
-            if (transfer.Food <= 0 || transfer.Kind == "Herd") return;
-            bool aquatic = transfer.Kind == "Fishing" || transfer.Kind == "Marine gathering" || transfer.Kind == "Aquatic gathering";
-            bool terrestrial = transfer.Kind == "Gathering" || transfer.Kind == "Foraging";
-            if (!aquatic && !terrestrial) return;
-            Camp camp;
-            if (transfer.Kind == "Gathering" || transfer.Kind == "Marine gathering" || transfer.Kind == "Aquatic gathering") camp = camps[transfer.Entity];
-            else camp = camps[hunters[transfer.Entity].SourceCamp];
-            var tile = w.Tiles[transfer.Tile];
-            double capacity = Math.Max(1, w.Ecology(transfer.Tile).MaxFood * Math.Max(1, intervals));
-            double impact = (aquatic ? w.Config.AquaticDepletionPerGeneration * PracticeEffects.FishingImpact(w.Config, camp) : w.Config.LandDepletionPerGeneration * PracticeEffects.GatheringImpact(w.Config, camp)) * transfer.Food / capacity;
-            if (aquatic) tile.AquaticCondition = Numbers.Clamp(tile.AquaticCondition - impact, 0, 1);
-            else tile.LandCondition = Numbers.Clamp(tile.LandCondition - impact, 0, 1);
-        }
-
-        private static double[] SeasonWeights(double startDays, double duration, double baseDays)
+        public static double[] ReferenceSeasonWeights(double startDays, double duration, double baseDays)
         {
             var weights = new double[4]; double position = startDays / baseDays, remaining = duration / baseDays;
             double first = Math.Min(remaining, Math.Ceiling(position + 1e-10) - position);
@@ -318,37 +270,6 @@ namespace Anthropocene.Simulation
             }
         }
 
-        private static void AdvanceEcology(WorldState w, Dictionary<int, GenerationResource> resources, double[] weights)
-        {
-            int endSeason = w.Season; double intervals = weights.Sum();
-            foreach (var tile in w.Tiles)
-            {
-                var end = tile.Seasons[endSeason]; double multiplier = OpeningTransitions.FoodMultiplier(w, tile);
-                if (!resources.ContainsKey(tile.Id))
-                {
-                    double averageMax = 0, averagePotentialMax = 0, averageFresh = 0, foodRate = 0, potentialRate = 0, freshRate = 0;
-                    for (int season = 0; season < 4; season++)
-                    {
-                        var ecology = tile.Seasons[season]; double weight = weights[season];
-                        averageMax += ecology.MaxFood * multiplier * weight; averagePotentialMax += ecology.MaxPotentialFood * multiplier * weight; averageFresh += ecology.MaxFreshwater * weight; foodRate += ecology.FoodRate * weight; potentialRate += ecology.PotentialFoodRate * weight; freshRate += ecology.FreshwaterRate * weight;
-                    }
-                    averageMax /= Math.Max(1e-9, intervals); averagePotentialMax /= Math.Max(1e-9, intervals); averageFresh /= Math.Max(1e-9, intervals);
-                    double deficit = averageMax <= 0 ? 0 : Numbers.Clamp((averageMax - tile.Food) / averageMax, 0, 1);
-                    double condition = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater ? tile.AquaticCondition : tile.LandCondition;
-                    tile.PotentialFood += Math.Max(0, averagePotentialMax - tile.PotentialFood) * Numbers.Fraction(potentialRate / Math.Max(1e-9, intervals) * condition, intervals);
-                    tile.Food += Math.Max(0, Math.Min(averageMax, tile.PotentialFood) - tile.Food) * Numbers.Fraction(foodRate / Math.Max(1e-9, intervals) * (1 + w.Config.GatherableRecoveryBias * deficit) * condition, intervals);
-                    if (tile.WaterBody != WaterKind.Saltwater && tile.FreshwaterSource != FreshwaterSource.None) tile.Freshwater += Math.Max(0, averageFresh - tile.Freshwater) * Numbers.Fraction(freshRate / Math.Max(1e-9, intervals), intervals);
-                }
-                tile.PotentialFood = Numbers.Clamp(tile.PotentialFood, 0, end.MaxPotentialFood * multiplier);
-                tile.Food = Numbers.Clamp(tile.Food, 0, Math.Min(end.MaxFood * multiplier, tile.PotentialFood));
-                tile.Freshwater = tile.WaterBody == WaterKind.Saltwater || tile.FreshwaterSource == FreshwaterSource.None ? 0 : Numbers.Clamp(tile.Freshwater, 0, end.MaxFreshwater);
-                tile.Saltwater = end.MaxSaltwater;
-                double recovery = Numbers.Fraction(w.Config.EcologicalConditionRecovery, intervals * w.Config.BaseDays / w.Config.PracticeDays);
-                tile.LandCondition += (1 - tile.LandCondition) * recovery;
-                tile.AquaticCondition += (1 - tile.AquaticCondition) * recovery;
-            }
-        }
-
         private static void FinishDemographicReports(WorldState w, TurnRecord record, IReadOnlyList<Order> orders)
         {
             record.Transfers = record.Transfers.GroupBy(t => (t.Tile, t.Entity, t.Kind)).OrderBy(g => g.Key.Tile).ThenBy(g => g.Key.Entity).ThenBy(g => g.Key.Kind, StringComparer.Ordinal)
@@ -358,7 +279,7 @@ namespace Anthropocene.Simulation
                 var camp = w.Camps.First(c => c.Id == summary.Camp); var ids = new HashSet<int>(w.Hunters.Where(h => h.SourceCamp == camp.Id).Select(h => h.Id)) { camp.Id };
                 var harvest = record.Transfers.Where(t => ids.Contains(t.Entity)).ToArray();
                 summary.TerrestrialFood = harvest.Where(t => t.Kind == "Gathering").Sum(t => t.Food); summary.MarineFood = harvest.Where(t => t.Kind == "Marine gathering").Sum(t => t.Food); summary.LakeFood = harvest.Where(t => t.Kind == "Aquatic gathering").Sum(t => t.Food);
-                summary.HuntFood = harvest.Where(t => t.Kind == "Hunting").Sum(t => t.Food); summary.FishFood = harvest.Where(t => t.Kind == "Fishing").Sum(t => t.Food); double forage = harvest.Where(t => t.Kind == "Foraging").Sum(t => t.Food);
+                summary.HuntFood = harvest.Where(t => t.Kind == "Hunting").Sum(t => t.Food); summary.FishFood = harvest.Where(t => t.Kind == "Fishing").Sum(t => t.Food); double forage = harvest.Where(t => t.Kind == "Foraging").Sum(t => t.Food); summary.ForageFood = forage;
                 summary.FoodProduced = summary.TerrestrialFood + summary.MarineFood + summary.LakeFood + summary.HuntFood + summary.FishFood + forage;
                 summary.FoodReceived = summary.FoodProduced - record.Logistics.Where(l => l.Camp == camp.Id).Sum(l => l.HarvestOverflow);
                 summary.DiscardedInventory += record.Logistics.Where(l => l.Camp == camp.Id).Sum(l => l.InventoryLoss);

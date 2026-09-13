@@ -13,7 +13,7 @@ internal static class FoundationChecks
         for (int i = 0; i < w.Tiles.Length; i++)
         {
             var t = new Tile { Id = i, Terrain = Terrain.Grassland, ElevationLevel = 1, Food = 40, PotentialFood = 400, Freshwater = 50, FreshwaterSource = FreshwaterSource.RainPool };
-            for (int s = 0; s < 4; s++) t.Seasons[s] = new SeasonData { MaxFood = 80, MaxPotentialFood = 800, MaxFreshwater = 80, FoodRate = .3f, PotentialFoodRate = .3f, FreshwaterRate = .3f, Moisture = .5f };
+            for (int s = 0; s < 4; s++) t.Seasons[s] = new SeasonData { MaxFood = 80, MaxPotentialFood = 800, MaxFreshwater = 80, FoodRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), BiomassRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), WaterRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), Moisture = .5f };
             w.Tiles[i] = t;
         }
         w.Camps.Add(new Camp { Id = w.NextId++, Population = 24, Food = 4000, Tile = 100 }); Ownership.Bind(w); return w;

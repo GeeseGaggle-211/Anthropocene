@@ -46,8 +46,8 @@ namespace Anthropocene.Simulation
                     {
                         var data = tile.Seasons[season];
                         data.MaxFreshwater = Math.Max(data.MaxFreshwater, (float)(cfg.OasisFreshwater * factor)); data.AccessibleFreshwater = data.MaxFreshwater;
-                        data.MaxFood = Math.Max(data.MaxFood, (float)(cfg.OasisFood * factor)); data.FoodRate = Math.Max(data.FoodRate, (float)(cfg.OasisFoodRegeneration * factor));
-                        data.FreshwaterRate = (float)cfg.OasisWaterRecovery; data.Habitat = Math.Max(data.Habitat, .25f * (float)factor); tile.Seasons[season] = data;
+                        data.MaxFood = Math.Max(data.MaxFood, (float)(cfg.OasisFood * factor)); data.FoodRecoveryPerDay = Math.Max(data.FoodRecoveryPerDay, (float)EcologyMath.DailyRate(cfg.OasisFoodRegeneration * factor, cfg.BaseDays));
+                        data.WaterRecoveryPerDay = (float)EcologyMath.DailyRate(cfg.OasisWaterRecovery, cfg.BaseDays); data.Habitat = Math.Max(data.Habitat, .25f * (float)factor); tile.Seasons[season] = data;
                     }
                     tile.Freshwater = tile.Seasons[0].MaxFreshwater * .9; tile.Food = tile.Seasons[0].MaxFood * .9; FoodEcology.ConfigurePotential(tile, cfg, true);
                 }

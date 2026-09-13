@@ -333,8 +333,8 @@ namespace Anthropocene.Simulation
                     double fresh = tile.FreshwaterSource == FreshwaterSource.Lake ? 120 : tile.FreshwaterSource == FreshwaterSource.River ? Math.Min(150, 70 + Math.Sqrt(tile.Flow) * 4) : tile.FreshwaterSource == FreshwaterSource.RainPool ? 25 * Numbers.Clamp(data.Rain / Math.Max(.001, averageRain), .25, 1.5) : 0;
                     data.MaxFood = Math.Max(data.MaxFood, (float)(90 * productivity)); data.MaxFreshwater = Math.Max(data.MaxFreshwater, (float)fresh); data.AccessibleFreshwater = (float)fresh;
                     data.MaxSaltwater = tile.WaterBody == WaterKind.Saltwater ? 100 : 0;
-                    data.FoodRate = Math.Max(data.FoodRate, (float)(c.Config.FoodRegeneration * (.2 + data.Moisture) * warmth));
-                    if (tile.FreshwaterSource != FreshwaterSource.Oasis) data.FreshwaterRate = (float)c.Config.WaterRecovery; data.Habitat = tile.Land ? (float)productivity : 0;
+                    data.FoodRecoveryPerDay = Math.Max(data.FoodRecoveryPerDay, (float)EcologyMath.DailyRate(c.Config.FoodRegeneration * (.2 + data.Moisture) * warmth, c.Config.BaseDays));
+                    if (tile.FreshwaterSource != FreshwaterSource.Oasis) data.WaterRecoveryPerDay = (float)EcologyMath.DailyRate(c.Config.WaterRecovery, c.Config.BaseDays); data.Habitat = tile.Land ? (float)productivity : 0;
                     tile.Seasons[s] = data;
                 }
                 tile.Food = tile.Seasons[0].MaxFood * .9; FoodEcology.ConfigurePotential(tile, c.Config, true);
@@ -351,7 +351,7 @@ namespace Anthropocene.Simulation
             foreach (int n in world.Map.Radius(tile, 1))
             {
                 var t = world.Tiles[n]; if (t.Terrain == Terrain.Ocean) continue;
-                sum += t.Food + t.Seasons[0].MaxFood * t.Seasons[0].FoodRate;
+                sum += t.Food + t.Seasons[0].MaxFood * (1 - Math.Exp(-t.Seasons[0].FoodRecoveryPerDay * world.Config.BaseDays));
                 freshwater += t.DrinkableWater;
             }
             return freshwater >= world.Config.StartFreshwaterMinimum ? sum : 0;

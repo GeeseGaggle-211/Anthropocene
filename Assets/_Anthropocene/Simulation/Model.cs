@@ -35,14 +35,15 @@ namespace Anthropocene.Simulation
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
         public double GatherFraction = .22, GatherPerPerson = 1.8, PopulationScale = 24;
-        public double RichGatherableFraction = .25, GrasslandGatherableFraction = .10, AridGatherableFraction = .05, TundraGatherableFraction = .08, GatherableRecoveryBias = 1;
+        public double RichGatherableFraction = .25, GrasslandGatherableFraction = .10, AridGatherableFraction = .05, TundraGatherableFraction = .08;
         public double HuntEfficiency = .22, HuntVariance = .35, HuntBreedingReserveFraction = .2, SustainableHerdGrowthRetention = .25, FishPerPerson = 2.6;
         public int SustainableHuntPopulation = 16;
         public double WanderChance = .05;
         public double ExperienceThreshold = 225, UnproductivePracticeFraction = .1, CarryoverMultiplier = 1.25, CarryoverFloor = 100;
         public double PracticeBonusStart = .25, PracticeBonusFull = .5;
         public double GatheringImpactReduction = .5, FishingImpactReduction = .5, HuntingFoodYieldScale = 2.5, HuntingYieldBonus = .5, HuntingPracticeMultiplier = 3.25, ActiveFishingPracticeMultiplier = 4.25, PassiveAquaticFishingPracticeShare = .25;
-        public double LandDepletionPerGeneration = .08, AquaticDepletionPerGeneration = .08, EcologicalConditionRecovery = .06;
+        public double ConditionRecoveryPerYear = .003093770185904377, SafeUseRatio = 1, SustainableProductionFraction = .5, LandUseDamagePerYear = .03, AquaticUseDamagePerYear = .03, PressureExponent = 2;
+        public double LowPotentialRecoveryMultiplier = .5, HighPotentialRecoveryMultiplier = 1.5;
         public double OpeningFoodMultiplier = 1.4, CultivationMoisture = .25, RelocationInertia = .18;
         public int InitialDomesticAnimals = 5;
         public double HabitableZonePosition = .5, InnerTemperature = 12, OuterTemperature = -12;
@@ -78,8 +79,11 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
             if (StartingPopulation <= MinimumCamp || MinimumCamp < 1 || Consumption <= 0 || PopulationScale <= 0)
                 throw new ArgumentException("Invalid population configuration.");
-            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || HuntBreedingReserveFraction <= 0 || HuntBreedingReserveFraction >= 1 || SustainableHuntPopulation < 1 || SustainableHerdGrowthRetention <= 0 || SustainableHerdGrowthRetention > 1 || UnproductivePracticeFraction < 0 || UnproductivePracticeFraction > 1 || PracticeBonusStart < 0 || PracticeBonusFull <= PracticeBonusStart || PracticeBonusFull > 1 || GatheringImpactReduction < 0 || GatheringImpactReduction > 1 || FishingImpactReduction < 0 || FishingImpactReduction > 1 || HuntingFoodYieldScale <= 0 || HuntingYieldBonus < 0 || HuntingPracticeMultiplier < 1 || ActiveFishingPracticeMultiplier < 1 || PassiveAquaticFishingPracticeShare < 0 || PassiveAquaticFishingPracticeShare > 1 || LandDepletionPerGeneration < 0 || AquaticDepletionPerGeneration < 0 || EcologicalConditionRecovery < 0 || EcologicalConditionRecovery > 1 || RichGatherableFraction <= 0 || RichGatherableFraction > 1 || GrasslandGatherableFraction <= 0 || GrasslandGatherableFraction > RichGatherableFraction || AridGatherableFraction <= 0 || AridGatherableFraction > GrasslandGatherableFraction || TundraGatherableFraction <= 0 || TundraGatherableFraction > RichGatherableFraction || GatherableRecoveryBias < 0 || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || MinimumOpeningHerds < 1 || HerdsPerLandTile < 0 || GrasslandHerdDensityMultiplier <= 0 || SteppeHerdDensityMultiplier <= 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
+            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || HuntBreedingReserveFraction <= 0 || HuntBreedingReserveFraction >= 1 || SustainableHuntPopulation < 1 || SustainableHerdGrowthRetention <= 0 || SustainableHerdGrowthRetention > 1 || UnproductivePracticeFraction < 0 || UnproductivePracticeFraction > 1 || PracticeBonusStart < 0 || PracticeBonusFull <= PracticeBonusStart || PracticeBonusFull > 1 || GatheringImpactReduction < 0 || GatheringImpactReduction > 1 || FishingImpactReduction < 0 || FishingImpactReduction > 1 || HuntingFoodYieldScale <= 0 || HuntingYieldBonus < 0 || HuntingPracticeMultiplier < 1 || ActiveFishingPracticeMultiplier < 1 || PassiveAquaticFishingPracticeShare < 0 || PassiveAquaticFishingPracticeShare > 1 || ConditionRecoveryPerYear < 0 || SafeUseRatio < 0 || SustainableProductionFraction <= 0 || SustainableProductionFraction > 1 || LowPotentialRecoveryMultiplier <= 0 || HighPotentialRecoveryMultiplier <= 0 || LandUseDamagePerYear < 0 || AquaticUseDamagePerYear < 0 || PressureExponent < 1 || RichGatherableFraction <= 0 || RichGatherableFraction > 1 || GrasslandGatherableFraction <= 0 || GrasslandGatherableFraction > RichGatherableFraction || AridGatherableFraction <= 0 || AridGatherableFraction > GrasslandGatherableFraction || TundraGatherableFraction <= 0 || TundraGatherableFraction > RichGatherableFraction || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || MinimumOpeningHerds < 1 || HerdsPerLandTile < 0 || GrasslandHerdDensityMultiplier <= 0 || SteppeHerdDensityMultiplier <= 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
                 throw new ArgumentException("Invalid logistics, demographic or ecological configuration.");
+            if (new[] { BaseDays, TurnDays, DaysPerYear, ConditionRecoveryPerYear, SafeUseRatio, SustainableProductionFraction, LandUseDamagePerYear, AquaticUseDamagePerYear, PressureExponent, LowPotentialRecoveryMultiplier, HighPotentialRecoveryMultiplier, IceTemperature, ColdTemperature, TropicalTemperature, DesertMoisture, SteppeMoisture, VegetationWarmthRange, VegetationMoistureRange }.Any(x => double.IsNaN(x) || double.IsInfinity(x)) ||
+                IceTemperature >= ColdTemperature || ColdTemperature >= TropicalTemperature || DesertMoisture < 0 || DesertMoisture >= SteppeMoisture || SteppeMoisture > 1 || VegetationWarmthRange <= 0 || VegetationMoistureRange <= 0 || VegetationMediumPotential < 0 || VegetationMediumPotential >= VegetationHighPotential || VegetationHighPotential > 1 || MediumVegetationDown >= MediumVegetationUp || HighPotentialLowDown >= HighPotentialLowUp || HighPotentialLowUp >= HighVegetationDown || HighVegetationDown >= HighVegetationUp || HighVegetationUp > 1)
+                throw new ArgumentException("Invalid environmental rates, climate thresholds or vegetation hysteresis.");
             if (ElevationQuantiles == null || ElevationQuantiles.Length != 9 || ElevationQuantiles[0] <= 0 || ElevationQuantiles[8] >= 1 || !ElevationQuantiles.SequenceEqual(ElevationQuantiles.OrderBy(x => x).Distinct())) throw new ArgumentException("Elevation requires nine increasing quantile boundaries.");
             if (HerdSmallCountThreshold < 1 || HerdCountRounding < 1 || HerdBroadCountSize < HerdSmallCountThreshold) throw new ArgumentException("Invalid observable herd count thresholds.");
             if (Species == null || Species.Count == 0 || Species.Select(s => s.Id).Distinct().Count() != Species.Count || Species.Any(s => string.IsNullOrWhiteSpace(s.Id) || s.FoodConsumption < 0 || s.FreshwaterConsumption <= 0 || s.GrowthRate < 0 || s.FoodYield <= 0 || s.MaximumHerdSize < s.MaximumAnimals))
@@ -99,7 +103,7 @@ namespace Anthropocene.Simulation
     public struct SeasonData
     {
         public float Temperature, Rain, Snow, WindX, Runoff, Moisture, AccessibleFreshwater;
-        public float MaxFood, MaxPotentialFood, MaxFreshwater, MaxSaltwater, FoodRate, PotentialFoodRate, FreshwaterRate, Habitat;
+        public float MaxFood, MaxPotentialFood, MaxFreshwater, MaxSaltwater, FoodRecoveryPerDay, BiomassRecoveryPerDay, WaterRecoveryPerDay, Habitat;
     }
     [Serializable]
     public sealed class Tile
@@ -240,6 +244,8 @@ namespace Anthropocene.Simulation
         public List<string> Events = new List<string>();
         public List<string> Orders = new List<string>();
         public List<Transfer> Transfers = new List<Transfer>();
+        public List<PressureEntry> Pressure = new List<PressureEntry>();
+        public List<EcologyBalance> EcologyBalances = new List<EcologyBalance>();
         public List<TileChange> Changes = new List<TileChange>();
         public List<DecisionTrace> Decisions = new List<DecisionTrace>();
         public List<LogisticsRecord> Logistics = new List<LogisticsRecord>();

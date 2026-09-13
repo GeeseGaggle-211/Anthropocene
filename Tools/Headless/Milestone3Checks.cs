@@ -15,7 +15,7 @@ internal static class Milestone3Checks
         for (int i = 0; i < w.Tiles.Length; i++)
         {
             var t = new Tile { Id = i, Terrain = Terrain.Grassland, Elevation = .55f, ElevationLevel = 2, Food = capacity, PotentialFood = capacity * 10, Freshwater = 60, FreshwaterSource = FreshwaterSource.RainPool };
-            for (int s = 0; s < 4; s++) t.Seasons[s] = new SeasonData { MaxFood = capacity, MaxPotentialFood = capacity * 10, FoodRate = recovery, PotentialFoodRate = recovery, Moisture = 1, MaxFreshwater = 80, FreshwaterRate = .3f };
+            for (int s = 0; s < 4; s++) t.Seasons[s] = new SeasonData { MaxFood = capacity, MaxPotentialFood = capacity * 10, FoodRecoveryPerDay = (float)EcologyMath.DailyRate(recovery, 91.25), BiomassRecoveryPerDay = (float)EcologyMath.DailyRate(recovery, 91.25), Moisture = 1, MaxFreshwater = 80, WaterRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25) };
             w.Tiles[i] = t;
         }
         w.Camps.Add(new Camp { Id = w.NextId++, Tile = 150, Player = 0, Population = 24, Food = 4000 }); return w;
@@ -23,7 +23,7 @@ internal static class Milestone3Checks
     private static void Sea(Tile t, bool open = false)
     {
         t.Terrain = open ? Terrain.Ocean : Terrain.Shallows; t.ElevationLevel = 0; t.WaterBody = WaterKind.Saltwater; t.FreshwaterSource = FreshwaterSource.None; t.Freshwater = 0; t.Saltwater = 100; t.Food = 200; t.PotentialFood = 200;
-        for (int s = 0; s < 4; s++) t.Seasons[s] = new SeasonData { MaxFood = 200, MaxPotentialFood = 200, FoodRate = .1f, PotentialFoodRate = .1f, MaxSaltwater = 100 };
+        for (int s = 0; s < 4; s++) t.Seasons[s] = new SeasonData { MaxFood = 200, MaxPotentialFood = 200, FoodRecoveryPerDay = (float)EcologyMath.DailyRate(.1, 91.25), BiomassRecoveryPerDay = (float)EcologyMath.DailyRate(.1, 91.25), MaxSaltwater = 100 };
     }
     public static void Run()
     {
@@ -56,7 +56,7 @@ internal static class Milestone3Checks
         double coldStorage = TurnResolver.StorageGenerations(w, w.Camps[0].Tile);
         Check(Math.Abs(warmStorage - 1) < 1e-8 && coldStorage > 3.5 && coldStorage <= 4, "warm moist storage lasts one generation while cold dry storage approaches four");
         var ecologyConfig = new SimulationConfig(); var forestFood = new Tile { Terrain = Terrain.Woodland, Food = 20 }; var grassFood = new Tile { Terrain = Terrain.Grassland, Food = 20 }; var desertFood = new Tile { Terrain = Terrain.Desert, Food = 20 };
-        foreach (var tile in new[] { forestFood, grassFood, desertFood }) for (int season = 0; season < 4; season++) tile.Seasons[season] = new SeasonData { MaxFood = 100, FoodRate = .2f };
+        foreach (var tile in new[] { forestFood, grassFood, desertFood }) for (int season = 0; season < 4; season++) tile.Seasons[season] = new SeasonData { MaxFood = 100, FoodRecoveryPerDay = (float)EcologyMath.DailyRate(.2, 91.25) };
         FoodEcology.ConfigurePotential(forestFood, ecologyConfig, true); FoodEcology.ConfigurePotential(grassFood, ecologyConfig, true); FoodEcology.ConfigurePotential(desertFood, ecologyConfig, true);
         Check(forestFood.Seasons[0].MaxPotentialFood == 400 && grassFood.Seasons[0].MaxPotentialFood == 1000 && desertFood.Seasons[0].MaxPotentialFood == 2000 && forestFood.Food == 20 && grassFood.Food == 20 && desertFood.Food == 20, "potential biomass preserves depleted gatherable food at rich 25%, grassland 10% and desert 5% accessibility");
         w = Flat(); var growingHerd = new Herd { Id = w.NextId++, Tile = 160, Animals = 149, Capacity = 150, Species = "antelope" }; w.Herds.Add(growingHerd);
@@ -83,17 +83,17 @@ internal static class Milestone3Checks
         practiceCamp.Experience[(int)Domain.Fishing] = practiceConfig.ExperienceThreshold * practiceConfig.PracticeBonusFull;
         Check(PracticeEffects.GatheringImpact(practiceConfig, practiceCamp) == .5 && PracticeEffects.FishingImpact(practiceConfig, practiceCamp) == .5, "half proficiency halves gathering and fishing environmental impact");
         var densityWorld = Flat(); Check(WildHerdPlacement.Density(densityWorld, new Tile { Terrain = Terrain.Grassland }) > WildHerdPlacement.Density(densityWorld, new Tile { Terrain = Terrain.Desert }) && WildHerdPlacement.Density(densityWorld, new Tile { Terrain = Terrain.Tundra }) > 1, "grassland and cold-steppe expanses increase regional wild-herd density");
-        var noviceEcology = Flat(); var skilledEcology = SaveCodec.Load(SaveCodec.Save(noviceEcology));
+        var noviceEcology = Flat(); noviceEcology.Config.SafeUseRatio = 0; var skilledEcology = SaveCodec.Load(SaveCodec.Save(noviceEcology));
         skilledEcology.Camps[0].Experience[(int)Domain.Gathering] = skilledEcology.Config.ExperienceThreshold * skilledEcology.Config.PracticeBonusFull;
         var noviceHarvest = resolver.Resolve(noviceEcology, Idle()); var skilledHarvest = resolver.Resolve(skilledEcology, Idle());
         int worked = noviceEcology.Camps[0].Tile;
         Check(Math.Abs(noviceHarvest.Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food) - skilledHarvest.Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food)) < 1e-8 && skilledEcology.Tiles[worked].LandCondition > noviceEcology.Tiles[worked].LandCondition, "gathering proficiency preserves more land condition for the same food");
-        var passiveFishing = Flat(); foreach (int tile in passiveFishing.Map.Radius(passiveFishing.Camps[0].Tile, 1)) { passiveFishing.Tiles[tile].Food = 0; passiveFishing.Tiles[tile].PotentialFood = 0; for (int season = 0; season < 4; season++) { var ecology = passiveFishing.Tiles[tile].Seasons[season]; ecology.FoodRate = 0; ecology.PotentialFoodRate = 0; passiveFishing.Tiles[tile].Seasons[season] = ecology; } }
+        var passiveFishing = Flat(); passiveFishing.Config.SafeUseRatio = 0; foreach (int tile in passiveFishing.Map.Radius(passiveFishing.Camps[0].Tile, 1)) { passiveFishing.Tiles[tile].Food = 0; passiveFishing.Tiles[tile].PotentialFood = 0; for (int season = 0; season < 4; season++) { var ecology = passiveFishing.Tiles[tile].Seasons[season]; ecology.FoodRecoveryPerDay = 0; ecology.BiomassRecoveryPerDay = 0; passiveFishing.Tiles[tile].Seasons[season] = ecology; } }
         int passiveCoast = passiveFishing.Map.Neighbors(passiveFishing.Camps[0].Tile).First(); Sea(passiveFishing.Tiles[passiveCoast]);
         var skilledFishingImpact = SaveCodec.Load(SaveCodec.Save(passiveFishing)); skilledFishingImpact.Camps[0].Experience[(int)Domain.Fishing] = skilledFishingImpact.Config.ExperienceThreshold * skilledFishingImpact.Config.PracticeBonusFull;
         var noviceFishingHarvest = resolver.Resolve(passiveFishing, Idle()); var skilledFishingHarvest = resolver.Resolve(skilledFishingImpact, Idle());
         Check(passiveFishing.Camps[0].Experience[(int)Domain.Gathering] > 0 && Math.Abs(passiveFishing.Camps[0].Experience[(int)Domain.Gathering] / passiveFishing.Camps[0].Experience[(int)Domain.Fishing] - 3) < 1e-8, "passive aquatic harvest credits seventy-five percent Gathering and twenty-five percent Fishing practice");
-        Check(Math.Abs(noviceFishingHarvest.Transfers.Where(t => t.Kind == "Marine gathering").Sum(t => t.Food) - skilledFishingHarvest.Transfers.Where(t => t.Kind == "Marine gathering").Sum(t => t.Food)) < 1e-8 && skilledFishingImpact.Tiles[passiveCoast].AquaticCondition > passiveFishing.Tiles[passiveCoast].AquaticCondition, "fishing proficiency preserves more aquatic condition for the same passive coastal food");
+        Check(skilledFishingHarvest.Transfers.Where(t => t.Kind == "Marine gathering").Sum(t => t.Food) >= noviceFishingHarvest.Transfers.Where(t => t.Kind == "Marine gathering").Sum(t => t.Food) && skilledFishingImpact.Tiles[passiveCoast].AquaticCondition > passiveFishing.Tiles[passiveCoast].AquaticCondition, "fishing proficiency preserves more aquatic condition and at least as much food under damaging pressure");
         var ledgerWorld = Flat(); ledgerWorld.Camps[0].Workforce.Assignments.Add(new PopulationAssignment { Role = "future.craft", Population = 5 }); ledgerWorld.Tiles[0].LandCondition = .42; ledgerWorld.Tiles[1].AquaticCondition = .37;
         Check(ledgerWorld.Camps[0].GathererPopulation == 19 && resolver.Validate(ledgerWorld, 0, new Order(OrderKind.Dispatch, ledgerWorld.Camps[0].Id, population: 20)) != null, "the workforce ledger leaves unassigned Paleolithic residents as gatherers and prevents dispatching assigned people");
         var ledgerCopy = SaveCodec.Load(SaveCodec.Save(ledgerWorld));

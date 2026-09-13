@@ -30,6 +30,11 @@ namespace Anthropocene.Simulation
             if (current == VegetationTier.Medium && condition > c.HighVegetationUp) current = VegetationTier.High;
             return current;
         }
+        public static Terrain LegacyTerrain(EnvironmentKind environment, VegetationTier vegetation) =>
+            environment == EnvironmentKind.Ocean ? Terrain.Ocean : environment == EnvironmentKind.Shallows ? Terrain.Shallows : environment == EnvironmentKind.Lake ? Terrain.Lake :
+            environment == EnvironmentKind.Desert ? Terrain.Desert : environment == EnvironmentKind.Cold ? Terrain.Tundra : environment == EnvironmentKind.Ice ? Terrain.Ice :
+            environment == EnvironmentKind.Tropical && vegetation == VegetationTier.High ? Terrain.Jungle :
+            (environment == EnvironmentKind.Temperate || environment == EnvironmentKind.Tropical) && vegetation >= VegetationTier.Medium ? Terrain.Woodland : Terrain.Grassland;
         public static string Label(EnvironmentKind environment, VegetationTier tier)
         {
             if (tier == VegetationTier.High) return environment == EnvironmentKind.Tropical ? "Rainforest" : environment == EnvironmentKind.Cold ? "Taiga" : environment == EnvironmentKind.Temperate ? "Forest" : environment == EnvironmentKind.Grassland ? "Lush grassland" : "Lush arid growth";

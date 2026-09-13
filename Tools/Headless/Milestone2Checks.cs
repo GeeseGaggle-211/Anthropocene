@@ -14,7 +14,7 @@ internal static class Milestone2Checks
         for (int i = 0; i < w.Tiles.Length; i++)
         {
             var tile = new Tile { Id = i, ElevationLevel = 1, Terrain = Terrain.Grassland, FreshwaterSource = FreshwaterSource.RainPool, Food = 60, PotentialFood = 600, Freshwater = 60, Elevation = .55f };
-            for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData { MaxFood = 80, MaxPotentialFood = 800, MaxFreshwater = 80, FoodRate = .3f, PotentialFoodRate = .3f, FreshwaterRate = .3f, Moisture = .5f };
+            for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData { MaxFood = 80, MaxPotentialFood = 800, MaxFreshwater = 80, FoodRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), BiomassRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), WaterRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), Moisture = .5f };
             w.Tiles[i] = tile;
         }
         w.Camps.Add(new Camp { Id = w.NextId++, Tile = 150, Player = 0, Population = 16, Food = 100 }); return w;
@@ -49,7 +49,7 @@ internal static class Milestone2Checks
         Check(returned.Logistics.Any(l => l.Deposited > 0) && h.CarriedFood == 0, "returning within supply range deposits provisions");
         w = Flat(); h = Hunter(w, 158); var subsistence = resolver.Resolve(w, Orders());
         Check(w.Camps[0].FoodDeficit == 0 && h.Population == 8 && h.FoodDeficit == 0 && subsistence.Transfers.Any(t => t.Entity == h.Id && t.Kind == "Foraging" && t.Food > 0), "an isolated expedition gathers local subsistence without teleporting food to camp");
-        foreach (var tile in w.Tiles) { tile.Food = 0; for (int season = 0; season < 4; season++) { var ecology = tile.Seasons[season]; ecology.MaxFood = 0; ecology.FoodRate = 0; tile.Seasons[season] = ecology; } }
+        foreach (var tile in w.Tiles) { tile.Food = 0; for (int season = 0; season < 4; season++) { var ecology = tile.Seasons[season]; ecology.MaxFood = 0; ecology.FoodRecoveryPerDay = 0; tile.Seasons[season] = ecology; } }
         for (int turn = 0; turn < 3; turn++) resolver.Resolve(w, Orders());
         Check(h.Population < 8, "an isolated expedition still starves after its grace period when local forage and carried food are exhausted");
         w = Flat(); h = Hunter(w, 150); double totalFood = w.Camps[0].Food; var provisionRecord = new TurnRecord();
@@ -68,7 +68,7 @@ internal static class Milestone2Checks
         Check(grown.Growth > partial.Growth && w.Camps[0].GrowthRemainder > 0, "net growth scales by duration and preserves its fraction");
         Check(w.Camps[0].Population == before + grown.Growth - grown.Deaths && grown.PopulationChanges.Any(p => p.Kind == "Net growth"), "growth has explicit conserved population events");
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(SaveCodec.Load(SaveCodec.Save(w))), "growth and logistics survive save/load");
-        w = Flat(); w.Config.AnnualHumanGrowthRate = .5; w.Camps[0].Food = 0; foreach (var t in w.Tiles) { t.Food = 0; for (int s = 0; s < 4; s++) t.Seasons[s].FoodRate = 0; }
+        w = Flat(); w.Config.AnnualHumanGrowthRate = .5; w.Camps[0].Food = 0; foreach (var t in w.Tiles) { t.Food = 0; for (int s = 0; s < 4; s++) t.Seasons[s].FoodRecoveryPerDay = 0; }
         Check(resolver.Resolve(w, Orders()).Growth == 0, "hunger blocks demographic growth");
         var salt = new Tile { WaterBody = WaterKind.Saltwater, Terrain = Terrain.Shallows, Saltwater = 1000, Freshwater = 99, FreshwaterSource = FreshwaterSource.None };
         var claim = new[] { new Demand { Tile = 0, Entity = 1, Kind = "Herd", Freshwater = 8 } };

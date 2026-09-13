@@ -1,0 +1,19 @@
+# Ecology foundation (implementation branch)
+
+This replaces Milestone 3 ecology and ownership rules. The reconciled Drive plan and the user decisions in EcologyImplementationPlan.md are authoritative. The historical DesignSpec.txt is unchanged.
+
+Environment, vegetation and relief are separate. Seasonal resources are generated after soil, environment and oasis placement. Natural vegetation is a generated target; current vegetation follows configurable condition hysteresis.
+
+Food is the human-accessible subset G of total edible biomass B. The resolver integrates G and non-gatherable B-G in ordered seasonal segments. Generated profiles give both components the same renewal rate, so their sum follows dB/dt = g(K-B)-H. Humans have first claim on G; herds consume B-G before spilling into G. Freshwater is a separate finite stock. Depletion uses an analytic zero crossing and ongoing recharge; unmet requests are recorded. Capacity loss at seasonal boundaries is accounted for as overflow.
+
+SeasonData recovery fields are per-day rates. Legacy configuration fractions (FoodRegeneration, WaterRecovery and oasis equivalents) are converted exactly once while generating profiles: -ln(1-f)/BaseDays. They remain migration inputs, not per-turn multipliers. ConditionRecoveryPerYear exactly preserves the old six-percent recovery over twenty years, before potential-based low/high modifiers. SafeUseRatio and SustainableProductionFraction are dimensionless; use damage is annual. Realized extraction is compared with a conservative fraction of renewable flow. Drinking has zero condition damage. Failed requests have zero damage. Pressure entries carry source, category, requested/realized/unmet flows, capacity exposure, recharge and integrated damage contribution; tile balances reconcile all three pools.
+
+Quiet tiles retain latent stocks and LastEcologyUpdateDays. ProjectEcology is pure; healthy quiet cycles compose capped affine transforms. Damaged tiles recover across ordered local season segments and update hysteresis on demand. MaterializeEcology commits that same projection before extraction. Observations and human details project visible tiles only. Production resolution checks affected tiles; full validation remains available to audits/load. Saving retains dormant timestamps and never regenerates geography.
+
+One player decision still resolves camp/hunter/herd movement once (1/2/1 tiles), provisions, hunting, one integrated demographic update and progression. Ecology seasons are internal math. Two player turns of starvation grace are intentional. Gatherer claims retain the previous population, accessibility and labor-cap formula; availability includes cumulative renewable flow, not merely final standing stock.
+
+Intentional regression changes: next-season capacity is checked through projection rather than requiring every stored tile to advance. Proficiency-impact fixtures explicitly exceed the safe-use band. Skilled aquatic harvesting may yield more food because lower damage preserves productive capacity.
+
+Society owns technology, practice, mandates and era state. Settlements retain local people, workforce and inventory. Mastery can complete the era early; majority eligibility begins at 200 years and forced completion at 240. Opening transition effects are an explicitly optional compatibility adapter with owned seed/improvement records. Workforce deaths use proportional largest remainder, with stable gatherer-first/ordinal-role tie breaks.
+
+Current branch save signature: ANTHROPOCENE-7; opening-v6.anthro; world/config/generator 6. Older saves are preserved and rejected explicitly. Remaining implementation work and final validation are tracked in EcologyImplementationPlan.md.

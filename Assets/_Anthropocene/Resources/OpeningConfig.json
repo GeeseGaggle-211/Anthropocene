@@ -52,7 +52,6 @@
   "GrasslandGatherableFraction": 0.1,
   "AridGatherableFraction": 0.05,
   "TundraGatherableFraction": 0.08,
-  "GatherableRecoveryBias": 1,
   "HuntEfficiency": 0.22,
   "HuntVariance": 0.35,
   "HuntBreedingReserveFraction": 0.2,
@@ -73,9 +72,6 @@
   "HuntingPracticeMultiplier": 3.25,
   "ActiveFishingPracticeMultiplier": 4.25,
   "PassiveAquaticFishingPracticeShare": 0.25,
-  "LandDepletionPerGeneration": 0.08,
-  "AquaticDepletionPerGeneration": 0.08,
-  "EcologicalConditionRecovery": 0.06,
   "CultivationMoisture": 0.25,
   "RelocationInertia": 0.18,
   "InitialDomesticAnimals": 5,
@@ -313,5 +309,13 @@
   "HighVegetationDown": 0.65,
   "HighVegetationUp": 0.75,
   "HighPotentialLowDown": 0.3,
-  "HighPotentialLowUp": 0.4
+  "HighPotentialLowUp": 0.4,
+  "ConditionRecoveryPerYear": 0.003093770185904377,
+  "LandUseDamagePerYear": 0.03,
+  "AquaticUseDamagePerYear": 0.03,
+  "PressureExponent": 2,
+  "SafeUseRatio": 1,
+  "SustainableProductionFraction": 0.5,
+  "LowPotentialRecoveryMultiplier": 0.5,
+  "HighPotentialRecoveryMultiplier": 1.5
 }

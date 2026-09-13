@@ -22,7 +22,7 @@ internal static class Program
         for (int i = 0; i < w.Tiles.Length; i++)
         {
             w.Tiles[i] = new Tile { Id = i, ElevationLevel = 1, Terrain = Terrain.Grassland, Food = 60, PotentialFood = 600, Freshwater = 60, FreshwaterSource = FreshwaterSource.RainPool };
-            for (int s = 0; s < 4; s++) w.Tiles[i].Seasons[s] = new SeasonData { MaxFood = 80, MaxPotentialFood = 800, MaxFreshwater = 80, FoodRate = .3f, PotentialFoodRate = .3f, FreshwaterRate = .3f, Moisture = .5f, Habitat = .5f };
+            for (int s = 0; s < 4; s++) w.Tiles[i].Seasons[s] = new SeasonData { MaxFood = 80, MaxPotentialFood = 800, MaxFreshwater = 80, FoodRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), BiomassRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), WaterRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), Moisture = .5f, Habitat = .5f };
         }
         for (int p = 0; p < players; p++) w.Camps.Add(new Camp { Id = w.NextId++, Player = p, Tile = 150 + p * 6, Population = 24, Food = 50 });
         return w;
@@ -133,7 +133,7 @@ internal static class Program
         resolver.Resolve(w, new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Move, w.Camps[0].Id, destination: destination) }, [1] = new List<Order> { new Order(OrderKind.Move, w.Camps[1].Id, destination: destination) } });
         Check(w.Camps[0].Tile == destination && w.Camps[1].Tile != destination, "Stable camp collision");
         w = Flat(); camp = w.Camps[0]; camp.Food = 0;
-        foreach (var tile in w.Tiles) { tile.Food = 0; for (int s = 0; s < 4; s++) tile.Seasons[s].FoodRate = 0; }
+        foreach (var tile in w.Tiles) { tile.Food = 0; for (int s = 0; s < 4; s++) tile.Seasons[s].FoodRecoveryPerDay = 0; }
         resolver.Resolve(w, Orders()); resolver.Resolve(w, Orders()); Check(camp.Population == 24, "Starvation grace");
         resolver.Resolve(w, Orders()); Check(camp.Population < 24, "Starvation attrition");
         w = Flat(); camp = w.Camps[0]; camp.Experience = new double[] { 100, 100, 100 }; w.Turn = 12; w.Days = 240 * w.Config.DaysPerYear;
@@ -181,14 +181,14 @@ internal static class Program
         Check(loaded.Camps[0].LastConsumed < w.Camps[0].LastConsumed && loaded.History[0].Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food) < w.History[0].Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food), "Duration scales consumption and extraction");
         w = Flat(3); var inertia = policy.Decide(builder.Build(w, 2), w.Camps[2].Mandate);
         Check(inertia.Orders[0].Kind == OrderKind.NoOp, "Equivalent tiles favor camp continuity");
-        foreach (int n in w.Map.Radius(w.Camps[2].Tile, 1)) { w.Tiles[n].Food = 0; for (int s = 0; s < 4; s++) w.Tiles[n].Seasons[s].FoodRate = 0; }
+        foreach (int n in w.Map.Radius(w.Camps[2].Tile, 1)) { w.Tiles[n].Food = 0; for (int s = 0; s < 4; s++) w.Tiles[n].Seasons[s].FoodRecoveryPerDay = 0; }
         inertia = policy.Decide(builder.Build(w, 2), w.Camps[2].Mandate);
         Check(inertia.Orders[0].Kind == OrderKind.Move, "Depletion overcomes relocation inertia");
         w = Flat(); w.Camps[0].Experience = new double[] { 2, 7, 1 }; w.Turn = 12; w.Days = 240 * w.Config.DaysPerYear;
         TurnResolver.Breakthrough(w, w.Camps[0], new TurnRecord());
         Check(w.Camps[0].ForcedTransition, "Turn twelve grants carryover even if a majority only appears at the cap");
         w = Flat(); foreach (var tile in w.Tiles) tile.Seasons[1].MaxFood = 4;
-        resolver.Resolve(w, Orders()); Check(w.Tiles.All(t => t.Food <= 4), "Resources respect the next season's carrying capacity");
+        resolver.Resolve(w, Orders()); Check(w.Tiles.All(t => LazyEcology.ProjectEcology(w, t.Id, w.Days).Food <= 4), "Projected resources respect the next season's carrying capacity without materializing quiet tiles");
         Console.WriteLine("PASS: " + assertions + " focused assertions");
     }
     private static int Main(string[] args)
@@ -200,7 +200,7 @@ internal static class Program
                 System.IO.File.WriteAllText("Assets/_Anthropocene/Resources/OpeningConfig.json", System.Text.Json.JsonSerializer.Serialize(new SimulationConfig(), new System.Text.Json.JsonSerializerOptions { IncludeFields = true, WriteIndented = true }));
                 return 0;
             }
-            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20;
+            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); EcologyChecks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20;
             if (args.Contains("--nomad-standard")) { RunNomadStandardAudit(seeds); return 0; }
             int survivors = 0, total = 0, starvation = 0, growth = 0, illegal = 0;
             var habitatPaths = new Dictionary<string, HabitatPathStats>(StringComparer.Ordinal);

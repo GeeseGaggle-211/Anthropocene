@@ -41,7 +41,7 @@ namespace Anthropocene.Simulation
                         foreach (var s in tile.Seasons)
                         {
                             writer.Write(s.Temperature); writer.Write(s.Rain); writer.Write(s.Snow); writer.Write(s.WindX); writer.Write(s.Runoff); writer.Write(s.Moisture);
-                            writer.Write(s.AccessibleFreshwater); writer.Write(s.MaxFood); writer.Write(s.MaxPotentialFood); writer.Write(s.MaxFreshwater); writer.Write(s.MaxSaltwater); writer.Write(s.FoodRate); writer.Write(s.PotentialFoodRate); writer.Write(s.FreshwaterRate); writer.Write(s.Habitat);
+                            writer.Write(s.AccessibleFreshwater); writer.Write(s.MaxFood); writer.Write(s.MaxPotentialFood); writer.Write(s.MaxFreshwater); writer.Write(s.MaxSaltwater); writer.Write(s.FoodRecoveryPerDay); writer.Write(s.BiomassRecoveryPerDay); writer.Write(s.WaterRecoveryPerDay); writer.Write(s.Habitat);
                         }
                     }
                 }
@@ -75,7 +75,7 @@ namespace Anthropocene.Simulation
                     for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData
                     {
                         Temperature = reader.ReadSingle(), Rain = reader.ReadSingle(), Snow = reader.ReadSingle(), WindX = reader.ReadSingle(), Runoff = reader.ReadSingle(), Moisture = reader.ReadSingle(),
-                        AccessibleFreshwater = reader.ReadSingle(), MaxFood = reader.ReadSingle(), MaxPotentialFood = reader.ReadSingle(), MaxFreshwater = reader.ReadSingle(), MaxSaltwater = reader.ReadSingle(), FoodRate = reader.ReadSingle(), PotentialFoodRate = reader.ReadSingle(), FreshwaterRate = reader.ReadSingle(), Habitat = reader.ReadSingle()
+                        AccessibleFreshwater = reader.ReadSingle(), MaxFood = reader.ReadSingle(), MaxPotentialFood = reader.ReadSingle(), MaxFreshwater = reader.ReadSingle(), MaxSaltwater = reader.ReadSingle(), FoodRecoveryPerDay = reader.ReadSingle(), BiomassRecoveryPerDay = reader.ReadSingle(), WaterRecoveryPerDay = reader.ReadSingle(), Habitat = reader.ReadSingle()
                     };
                     world.Tiles[i] = tile;
                 }
