@@ -1,5 +1,5 @@
 {
-  "Version": 5,
+  "Version": 6,
   "Width": 1024,
   "Height": 512,
   "Players": 32,
@@ -76,7 +76,6 @@
   "LandDepletionPerGeneration": 0.08,
   "AquaticDepletionPerGeneration": 0.08,
   "EcologicalConditionRecovery": 0.06,
-  "CultivationMultiplier": 1.4,
   "CultivationMoisture": 0.25,
   "RelocationInertia": 0.18,
   "InitialDomesticAnimals": 5,
@@ -293,5 +292,9 @@
         }
       ]
     }
-  ]
+  ],
+  "OpeningFoodMultiplier": 1.4,
+  "MajorityEligibilityYears": 200,
+  "ForcedTransitionYears": 240,
+  "OpeningCompatibilityEffects": true
 }

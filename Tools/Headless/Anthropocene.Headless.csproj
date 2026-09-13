@@ -12,5 +12,6 @@
     <Compile Include="Program.cs" />
     <Compile Include="Milestone2Checks.cs" />
     <Compile Include="Milestone3Checks.cs" />
+    <Compile Include="FoundationChecks.cs" />
   </ItemGroup>
 </Project>

@@ -35,7 +35,7 @@ namespace Anthropocene.Simulation
                 for (int season = 0; season < 4; season++)
                 {
                     var ecology = source.Seasons[season]; double weight = weights[season];
-                    double multiplier = source.Cultivated || source.Fishery ? w.Config.CultivationMultiplier : 1;
+                    double multiplier = OpeningTransitions.FoodMultiplier(w, source);
                     double maxFood = ecology.MaxFood * multiplier;
                     double maxPotential = ecology.MaxPotentialFood * multiplier;
                     double moisture = source.WaterBody == WaterKind.Saltwater ? 1 : source.OasisInfluence > 0 || source.WaterBody == WaterKind.Freshwater ? 1 : ecology.Moisture;
@@ -257,6 +257,7 @@ namespace Anthropocene.Simulation
             int total = camp.Population + linked.Sum(h => h.Population); int[] counts = new[] { camp.Population }.Concat(linked.Select(h => h.Population)).ToArray();
             int[] deaths = counts.Select(n => total == 0 ? 0 : (int)((long)n * losses / total)).ToArray(); int remainder = losses - deaths.Sum();
             foreach (int i in Enumerable.Range(0, counts.Length).OrderByDescending(i => total == 0 ? 0 : (long)counts[i] * losses % total).ThenBy(i => i)) if (remainder > 0 && deaths[i] < counts[i]) { deaths[i]++; remainder--; }
+            camp.Workforce.ApplyCasualties(camp.Population, deaths[0]);
             camp.Population -= deaths[0]; record.PopulationChanges.Add(new PopulationChange { Camp = camp.Id, Entity = camp.Id, Kind = "Starvation", Count = -deaths[0] });
             camp.Workforce.Normalize(camp.Population);
             for (int i = 0; i < linked.Length; i++) { linked[i].Population -= deaths[i + 1]; record.PopulationChanges.Add(new PopulationChange { Camp = camp.Id, Entity = linked[i].Id, Kind = "Starvation", Count = -deaths[i + 1] }); }
@@ -322,7 +323,7 @@ namespace Anthropocene.Simulation
             int endSeason = w.Season; double intervals = weights.Sum();
             foreach (var tile in w.Tiles)
             {
-                var end = tile.Seasons[endSeason]; double multiplier = tile.Cultivated || tile.Fishery ? w.Config.CultivationMultiplier : 1;
+                var end = tile.Seasons[endSeason]; double multiplier = OpeningTransitions.FoodMultiplier(w, tile);
                 if (!resources.ContainsKey(tile.Id))
                 {
                     double averageMax = 0, averagePotentialMax = 0, averageFresh = 0, foodRate = 0, potentialRate = 0, freshRate = 0;

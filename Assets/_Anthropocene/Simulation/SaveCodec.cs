@@ -11,10 +11,11 @@ namespace Anthropocene.Simulation
 {
     public static class SaveCodec
     {
-        private const string Magic = "ANTHROPOCENE-6";
+        private const string Magic = "ANTHROPOCENE-7";
         private static DataContractSerializer Serializer(Type type) => new DataContractSerializer(type, new DataContractSerializerSettings { MaxItemsInObjectGraph = int.MaxValue });
         public static byte[] Save(WorldState world)
         {
+            Ownership.Bind(world);
             using (var output = new MemoryStream())
             {
                 using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
@@ -54,11 +55,12 @@ namespace Anthropocene.Simulation
             using (var buffered = new BufferedStream(zip, 65536))
             using (var reader = new BinaryReader(buffered))
             {
-                if (reader.ReadString() != Magic) throw new InvalidDataException("This save predates persistent environmental condition and workforce ledgers. Start a new opening; the older save is preserved.");
+                if (reader.ReadString() != Magic) throw new InvalidDataException("This save predates society ownership and the ecology foundation. Start a new opening; the older save is preserved.");
                 int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > 128 * 1024 * 1024) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
-                if (world.Version != 5 || world.Generation.GeneratorVersion != WorldState.GeneratorVersion) throw new InvalidDataException("Unsupported save version; regeneration is never implicit.");
+                if (world.Version != 6 || world.Generation.GeneratorVersion != WorldState.GeneratorVersion) throw new InvalidDataException("Unsupported save version; regeneration is never implicit.");
+                Ownership.Bind(world);
                 MigrateGenerationalDefaults(world);
                 world.Config.Validate();
                 int count = reader.ReadInt32(); if (count != world.Config.Width * world.Config.Height) throw new InvalidDataException("Invalid tile count.");
@@ -111,7 +113,7 @@ namespace Anthropocene.Simulation
                 foreach (var herd in world.Herds.Where(h => h.DomesticCamp < 0 && h.Capacity == 32)) herd.Capacity = config.GetSpecies(herd.Species).MaximumHerdSize;
             }
         }
-        private static WorldState CopyWithoutTiles(WorldState w) => new WorldState { Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Camps = w.Camps, Hunters = w.Hunters, Herds = w.Herds, Rivers = w.Rivers, History = w.History, Generation = w.Generation, Tiles = null };
+        private static WorldState CopyWithoutTiles(WorldState w) => new WorldState { Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Camps = w.Camps, Societies = w.Societies, Improvements = w.Improvements, Hunters = w.Hunters, Herds = w.Herds, Rivers = w.Rivers, History = w.History, Generation = w.Generation, Tiles = null };
         public static string ConfigurationHash(SimulationConfig config)
         {
             using (var output = new MemoryStream())
@@ -123,7 +125,7 @@ namespace Anthropocene.Simulation
         public static string Fingerprint(WorldState w)
         {
             // Exclude wall-clock generation timings and memory warnings from authoritative state hashing.
-            var copy = new WorldState { Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Tiles = w.Tiles, Camps = w.Camps.OrderBy(c => c.Id).ToList(), Hunters = w.Hunters.OrderBy(h => h.Id).ToList(), Herds = w.Herds.OrderBy(h => h.Id).ToList(), Rivers = w.Rivers, History = w.History, Generation = null };
+            var copy = new WorldState { Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Tiles = w.Tiles, Camps = w.Camps.OrderBy(c => c.Id).ToList(), Societies = w.Societies.OrderBy(s => s.Id).ToList(), Improvements = w.Improvements.OrderBy(i => i.Id).ToList(), Hunters = w.Hunters.OrderBy(h => h.Id).ToList(), Herds = w.Herds.OrderBy(h => h.Id).ToList(), Rivers = w.Rivers, History = w.History, Generation = null };
             using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(Save(copy))).Replace("-", "");
         }
     }

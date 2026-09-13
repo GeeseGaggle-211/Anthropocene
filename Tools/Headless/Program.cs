@@ -136,13 +136,13 @@ internal static class Program
         foreach (var tile in w.Tiles) { tile.Food = 0; for (int s = 0; s < 4; s++) tile.Seasons[s].FoodRate = 0; }
         resolver.Resolve(w, Orders()); resolver.Resolve(w, Orders()); Check(camp.Population == 24, "Starvation grace");
         resolver.Resolve(w, Orders()); Check(camp.Population < 24, "Starvation attrition");
-        w = Flat(); camp = w.Camps[0]; camp.Experience = new double[] { 100, 100, 100 }; w.Turn = 12;
+        w = Flat(); camp = w.Camps[0]; camp.Experience = new double[] { 100, 100, 100 }; w.Turn = 12; w.Days = 240 * w.Config.DaysPerYear;
         TurnResolver.Breakthrough(w, camp, new TurnRecord());
         Check(camp.Technology == Technology.AnimalHusbandry && camp.ForcedTransition && camp.SecondaryDomain == 1, "Hard cap deterministic tie");
         Check(camp.Experience[1] == 100 && TurnResolver.NeolithicProgress(w, camp, Domain.Gathering) > 100, "Secondary experience preserved and boosted");
         w = Flat(); camp = w.Camps[0]; camp.Experience[1] = 120; w.Turn = 9;
         TurnResolver.Breakthrough(w, camp, new TurnRecord()); Check(camp.Technology == Technology.None, "No premature majority");
-        w.Turn = 10; TurnResolver.Breakthrough(w, camp, new TurnRecord()); Check(camp.Technology == Technology.Cultivation, "Turn ten majority");
+        w.Turn = 10; w.Days = 200 * w.Config.DaysPerYear; TurnResolver.Breakthrough(w, camp, new TurnRecord()); Check(camp.Technology == Technology.Cultivation, "Turn ten majority");
         w = Flat(); var before = Knowledge.Visible(w, 0); w.Camps[0].Tile += 4; var after = Knowledge.Visible(w, 0);
         Check(before.Except(after).Any() && after.Count == 19, "Present-tense fog");
         var policy = new HeuristicTribePolicy(); var builder = new AgentObservationBuilder();
@@ -184,7 +184,7 @@ internal static class Program
         foreach (int n in w.Map.Radius(w.Camps[2].Tile, 1)) { w.Tiles[n].Food = 0; for (int s = 0; s < 4; s++) w.Tiles[n].Seasons[s].FoodRate = 0; }
         inertia = policy.Decide(builder.Build(w, 2), w.Camps[2].Mandate);
         Check(inertia.Orders[0].Kind == OrderKind.Move, "Depletion overcomes relocation inertia");
-        w = Flat(); w.Camps[0].Experience = new double[] { 2, 7, 1 }; w.Turn = 12;
+        w = Flat(); w.Camps[0].Experience = new double[] { 2, 7, 1 }; w.Turn = 12; w.Days = 240 * w.Config.DaysPerYear;
         TurnResolver.Breakthrough(w, w.Camps[0], new TurnRecord());
         Check(w.Camps[0].ForcedTransition, "Turn twelve grants carryover even if a majority only appears at the cap");
         w = Flat(); foreach (var tile in w.Tiles) tile.Seasons[1].MaxFood = 4;
@@ -200,7 +200,7 @@ internal static class Program
                 System.IO.File.WriteAllText("Assets/_Anthropocene/Resources/OpeningConfig.json", System.Text.Json.JsonSerializer.Serialize(new SimulationConfig(), new System.Text.Json.JsonSerializerOptions { IncludeFields = true, WriteIndented = true }));
                 return 0;
             }
-            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20;
+            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20;
             if (args.Contains("--nomad-standard")) { RunNomadStandardAudit(seeds); return 0; }
             int survivors = 0, total = 0, starvation = 0, growth = 0, illegal = 0;
             var habitatPaths = new Dictionary<string, HabitatPathStats>(StringComparer.Ordinal);

@@ -16,7 +16,9 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class SimulationConfig
     {
-        public int Version = 5;
+        public int Version = 6;
+        public double MajorityEligibilityYears = 200, ForcedTransitionYears = 240;
+        public bool OpeningCompatibilityEffects = true;
         public int Width = 1024, Height = 512, Players = 32, PlateCount = 18;
         public WorldShape Shape = WorldShape.Continents;
         public double BaseDays = 91.25, TurnDays = 7300, MinDays = 1, MaxDays = 36500;
@@ -37,7 +39,7 @@ namespace Anthropocene.Simulation
         public double PracticeBonusStart = .25, PracticeBonusFull = .5;
         public double GatheringImpactReduction = .5, FishingImpactReduction = .5, HuntingFoodYieldScale = 2.5, HuntingYieldBonus = .5, HuntingPracticeMultiplier = 3.25, ActiveFishingPracticeMultiplier = 4.25, PassiveAquaticFishingPracticeShare = .25;
         public double LandDepletionPerGeneration = .08, AquaticDepletionPerGeneration = .08, EcologicalConditionRecovery = .06;
-        public double CultivationMultiplier = 1.4, CultivationMoisture = .25, RelocationInertia = .18;
+        public double OpeningFoodMultiplier = 1.4, CultivationMoisture = .25, RelocationInertia = .18;
         public int InitialDomesticAnimals = 5;
         public double HabitableZonePosition = .5, InnerTemperature = 12, OuterTemperature = -12;
         public double SeaLevel = .45, Uplift = .2, ElevationNoise = .11, Erosion = .12;
@@ -124,7 +126,7 @@ namespace Anthropocene.Simulation
         public int Population;
     }
     [Serializable]
-    public sealed class PopulationLedger
+    public sealed partial class PopulationLedger
     {
         public List<PopulationAssignment> Assignments = new List<PopulationAssignment>();
         public int Assigned => Assignments.Where(a => a != null && a.Population > 0).Sum(a => a.Population);
@@ -145,30 +147,37 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class Camp
     {
-        public int Id, Player, Tile, Population, DeficitTurns;
+        public int Id, Player, SocietyId, Tile, Population, DeficitTurns;
         public double Food, DeficitSeverity, FoodDeficit, LastConsumed, DemographicGrowthMultiplier = 1;
-        public double[] Experience = new double[3];
-        public List<SpeciesPractice> SpeciesExperience = new List<SpeciesPractice>();
+        [NonSerialized] private Society people = new Society();
+        internal Society People => people ?? (people = new Society());
+        internal void Bind(Society owner) { people = owner; SocietyId = owner.Id; Player = owner.Player; }
+        // Compatibility accessors for one-camp callers; society owns and serializes the data.
+        public double[] Experience { get => People.Experience; set => People.Experience = value; }
+        public List<SpeciesPractice> SpeciesExperience { get => People.SpeciesExperience; set => People.SpeciesExperience = value; }
         public double GrowthRemainder, DeathRemainder, StepFoodIncome;
-        public Technology Technology;
-        public int TransitionTurn, SecondaryDomain = -1, Moves, StationaryTurns;
-        public bool ForcedTransition;
-        public bool[] Technologies = new bool[4];
-        public Mandate Mandate = new Mandate();
+        public Technology Technology { get => People.Technology; set => People.Technology = value; }
+        public int TransitionTurn { get => People.TransitionTurn; set => People.TransitionTurn = value; }
+        public int SecondaryDomain { get => People.SecondaryDomain; set => People.SecondaryDomain = value; }
+        public int Moves, StationaryTurns;
+        public bool ForcedTransition { get => People.ForcedTransition; set => People.ForcedTransition = value; }
+        public bool[] Technologies { get => People.Technologies; set => People.Technologies = value; }
+        public Mandate Mandate { get => People.Mandate; set => People.Mandate = value; }
         public PopulationLedger Workforce = new PopulationLedger();
         public int GathererPopulation => (Workforce ?? (Workforce = new PopulationLedger())).Gatherers(Population);
     }
     [Serializable]
     public sealed class Hunter
     {
-        public int Id, Player, SourceCamp, Tile, Population;
+        public int Id, Player, SocietyId, SourceCamp, Tile, Population;
         public double CarriedFood, LastConsumed, FoodDeficit, DeficitSeverity, DeathRemainder;
         public int DeficitTurns;
     }
     [Serializable]
     public sealed class Herd
     {
-        public int Id, Tile, Animals, Capacity = 40, DomesticCamp = -1;
+        public int Id, Tile, Animals, Capacity = 40, DomesticCamp = -1, OwnerSociety = -1;
+        public bool OpeningCompatibility;
         public string Species = "antelope";
         public double GrowthRemainder, UnmetFood, UnmetFreshwater;
     }
@@ -220,12 +229,14 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldState
     {
-        public const int GeneratorVersion = 5;
-        public int Version = 5, Seed, Turn = 1, NextId = 1;
+        public const int GeneratorVersion = 6;
+        public int Version = 6, Seed, Turn = 1, NextId = 1;
         public double Days;
         public SimulationConfig Config;
         public Tile[] Tiles;
         public List<Camp> Camps = new List<Camp>();
+        public List<Society> Societies = new List<Society>();
+        public List<Improvement> Improvements = new List<Improvement>();
         public List<Hunter> Hunters = new List<Hunter>();
         public List<Herd> Herds = new List<Herd>();
         public List<RiverEdge> Rivers = new List<RiverEdge>();
@@ -234,7 +245,7 @@ namespace Anthropocene.Simulation
         public int Season => (int)(Days / Config.BaseDays) % 4;
         public HexMap Map => new HexMap(Config.Width, Config.Height);
         public SeasonData Ecology(int tile) => Tiles[tile].Seasons[Season];
-        public bool Finished => Camps.All(c => c.Technology != Technology.None || LinkedPopulation(c) == 0);
+        public bool Finished => Camps.All(c => c.People.Progression.Era != Era.Paleolithic || LinkedPopulation(c) == 0);
         public int LinkedPopulation(Camp camp) => camp.Population + Hunters.Where(h => h.SourceCamp == camp.Id).Sum(h => h.Population);
         public bool CanEnter(int tile, bool hunter, Camp camp = null) => tile >= 0 && tile < Tiles.Length &&
             Tiles[tile].ElevationLevel < 10 && (Tiles[tile].Land || (hunter && camp != null && camp.Technologies[(int)Technology.Watercraft] && Tiles[tile].Terrain == Terrain.Shallows));

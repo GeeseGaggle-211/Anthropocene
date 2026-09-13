@@ -38,7 +38,7 @@ namespace Anthropocene.Presentation
         private static readonly Color MoveColor = new Color(.30f, .78f, .58f), FishColor = new Color(.28f, .70f, .88f), InvalidColor = new Color(.88f, .28f, .24f);
         private static readonly string[] Sizes = { "Standard  1024 x 512", "Small  96 x 48", "Tiny  48 x 24" };
         private static readonly int[][] TribeChoices = { new[] { 8, 16, 24, 32, 48, 64, 80 }, new[] { 2, 4, 6, 8, 12, 16 }, new[] { 2, 4, 6, 8 } };
-        private string SavePath => Path.Combine(Application.persistentDataPath, "opening-v5.anthro");
+        private string SavePath => Path.Combine(Application.persistentDataPath, "opening-v6.anthro");
         public WorldState State => world;
 
         private void Awake()
@@ -148,7 +148,7 @@ namespace Anthropocene.Presentation
             GUI.Label(new Rect(18, 12, 245, 35), "ANTHROPOCENE", title);
             var camp = world.Camps.First(c => c.Player == 0);
             string season = (world.Config.TurnDays / world.Config.DaysPerYear).ToString("0.#") + " years per turn | " + (world.Days / world.Config.DaysPerYear).ToString("0.#") + " years elapsed";
-            GUI.Label(new Rect(270, 12, Mathf.Max(140, Screen.width - side - 280), 46), "Turn " + Math.Min(world.Turn, 12) + " / 12  |  " + (world.Finished ? "Opening complete" : season) + "\n" + (camp.Technology == Technology.None ? "Paleolithic" : "Neolithic: " + TechName(camp.Technology)), text);
+            GUI.Label(new Rect(270, 12, Mathf.Max(140, Screen.width - side - 280), 46), "Turn " + world.Turn + "  |  " + (world.Finished ? "Opening complete" : season) + "\n" + (camp.Technology == Technology.None ? "Paleolithic" : "Neolithic: " + TechName(camp.Technology)), text);
             float x = Screen.width - side + 10;
             if (Button(new Rect(x, 16, 66, 30), "Save")) Save();
             if (Button(new Rect(x + 72, 16, 66, 30), "Load")) Load();

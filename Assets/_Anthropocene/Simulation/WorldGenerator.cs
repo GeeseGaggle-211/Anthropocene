@@ -53,6 +53,7 @@ namespace Anthropocene.Simulation
             }
             if (total.Elapsed.TotalSeconds > config.GenerationBudgetSeconds) world.Generation.Warnings.Add("Generation exceeded configured time budget.");
             if (GC.GetTotalMemory(false) / 1048576 > config.GenerationBudgetMegabytes) world.Generation.Warnings.Add("Managed memory exceeds configured generation budget.");
+            Ownership.Bind(world);
             Validate(world);
             return world;
         }

@@ -86,7 +86,8 @@ namespace Anthropocene.Simulation
 
         public TurnRecord Resolve(WorldState w, IReadOnlyDictionary<int, List<Order>> submitted, IEnumerable<DecisionTrace> traces = null)
         {
-            if (w.Finished || w.Turn > 12) throw new InvalidOperationException("The Paleolithic opening has ended.");
+            Ownership.Bind(w);
+            if (w.Finished) throw new InvalidOperationException("The Paleolithic opening has ended.");
             w.Config.Validate();
             int peopleBefore = w.Camps.Sum(w.LinkedPopulation);
             var record = new TurnRecord { Turn = w.Turn, Seed = w.Seed, StartDays = w.Days, Duration = w.Config.TurnDays };
@@ -95,7 +96,7 @@ namespace Anthropocene.Simulation
             // Groups formed during this resolution cannot act until the next planning phase.
             var establishedHunters = new HashSet<int>(w.Hunters.Where(h => h.Population > 0).Select(h => h.Id));
             var locked = new List<Order>();
-            foreach (var camp in w.Camps.OrderBy(c => c.Player))
+            foreach (var camp in w.Camps.GroupBy(c => c.Player).OrderBy(g => g.Key).Select(g => g.OrderBy(c => c.Id).First()))
             {
                 var visible = Knowledge.Visible(w, camp.Player);
                 if (!submitted.TryGetValue(camp.Player, out var orders)) continue;
@@ -113,7 +114,7 @@ namespace Anthropocene.Simulation
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Dispatch).OrderBy(o => o.Entity))
             {
                 var camp = w.Camps.First(c => c.Id == order.Entity); camp.Population -= order.Population;
-                var hunter = new Hunter { Id = w.NextId++, SourceCamp = camp.Id, Player = camp.Player, Population = order.Population, Tile = camp.Tile };
+                var hunter = new Hunter { Id = w.NextId++, SourceCamp = camp.Id, SocietyId = camp.SocietyId, Player = camp.Player, Population = order.Population, Tile = camp.Tile };
                 w.Hunters.Add(hunter); record.Log("Tribe " + camp.Player + " dispatched " + hunter.Population + " hunters [" + hunter.Id + "].");
             }
             Supply.ProvisionDepartures(w, locked, record);
@@ -130,6 +131,7 @@ namespace Anthropocene.Simulation
                 camp.Population += hunter.Population; w.Hunters.Remove(hunter); record.Log("Hunters " + hunter.Id + " rejoined their camp.");
             }
             w.Hunters.RemoveAll(h => h.Population <= 0);
+            Ownership.Bind(w);
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) Breakthrough(w, camp, record);
             foreach (var change in touched.Values.OrderBy(t => t.Tile))
             { change.AfterFood = w.Tiles[change.Tile].Food; change.AfterPotentialFood = w.Tiles[change.Tile].PotentialFood; change.AfterFreshwater = w.Tiles[change.Tile].Freshwater; change.AfterLandCondition = w.Tiles[change.Tile].LandCondition; change.AfterAquaticCondition = w.Tiles[change.Tile].AquaticCondition; record.Changes.Add(change); }
@@ -261,15 +263,19 @@ namespace Anthropocene.Simulation
         }
         public static void Breakthrough(WorldState w, Camp camp, TurnRecord record)
         {
+            Ownership.Bind(w);
             if (w.LinkedPopulation(camp) <= 0) return;
+            var progression = camp.People.Progression;
+            if (progression.Era != Era.Paleolithic) return;
+            double elapsed = w.Days - progression.EraStartDays;
             int best = Enumerable.Range(0, 3).OrderByDescending(i => camp.Experience[i]).ThenBy(i => i).First();
             double total = camp.Experience.Sum();
             if (camp.Technology == Technology.None)
             {
                 bool threshold = camp.Experience[best] >= w.Config.ExperienceThreshold;
-                bool majority = (w.Turn == 10 || w.Turn == 11) && camp.Experience[best] > total * .5;
-                if (!threshold && !majority && w.Turn < 12) return;
-                camp.ForcedTransition = w.Turn == 12 && !threshold && !majority;
+                bool majority = (elapsed >= progression.MajorityEligibilityDays && elapsed < progression.ForcedTransitionDays) && camp.Experience[best] > total * .5;
+                if (!threshold && !majority && elapsed < progression.ForcedTransitionDays) return;
+                camp.ForcedTransition = elapsed >= progression.ForcedTransitionDays && !threshold && !majority;
                 camp.Technology = (Technology)(best + 1); camp.TransitionTurn = w.Turn;
                 if (camp.ForcedTransition)
                 {
@@ -277,28 +283,14 @@ namespace Anthropocene.Simulation
                     camp.SecondaryDomain = second;
                     // Keep accumulated experience intact; carryover is stored as progress separately at transition display/save.
                 }
-                Unlock(w, camp, camp.Technology); record.Log("Tribe " + camp.Player + " discovered " + camp.Technology + " and entered the Neolithic.");
+                progression.Era = Era.Neolithic; progression.CompletionDays = w.Days; progression.CompletionTurn = w.Turn; progression.CompletionRule = threshold ? "Mastery" : majority ? "Maturity" : "Forced";
+                OpeningTransitions.Apply(w, camp, camp.Technology); record.Log("Tribe " + camp.Player + " discovered " + camp.Technology + " and entered the Neolithic.");
             }
         }
         public static double NeolithicProgress(WorldState w, Camp camp, Domain domain)
         {
             double experience = camp.Experience[(int)domain];
             return camp.ForcedTransition && camp.SecondaryDomain == (int)domain ? Math.Max(w.Config.CarryoverFloor, experience * w.Config.CarryoverMultiplier) : experience;
-        }
-        private static void Unlock(WorldState w, Camp camp, Technology tech)
-        {
-            camp.Technologies[(int)tech] = true;
-            if (tech == Technology.AnimalHusbandry)
-            {
-                string species = w.Config.Species.Where(s => s.Domesticable).OrderByDescending(s => camp.SpeciesExperience.FirstOrDefault(p => p.Species == s.Id)?.Experience ?? 0).ThenBy(s => s.Id, StringComparer.Ordinal).First().Id;
-                w.Herds.Add(new Herd { Id = w.NextId++, Tile = camp.Tile, DomesticCamp = camp.Id, Species = species, Animals = w.Config.InitialDomesticAnimals });
-            }
-            else
-            {
-                var eligible = w.Map.Radius(camp.Tile, 1).Where(n => tech == Technology.Cultivation ? w.Tiles[n].Land && w.Ecology(n).Moisture >= w.Config.CultivationMoisture : w.Tiles[n].Terrain == Terrain.Shallows)
-                    .OrderByDescending(n => w.Ecology(n).MaxFood).ThenBy(n => n).ToArray();
-                if (eligible.Length > 0) { if (tech == Technology.Cultivation) w.Tiles[eligible[0]].Cultivated = true; else w.Tiles[eligible[0]].Fishery = true; }
-            }
         }
         public static void Invariants(WorldState w, int expectedPeople = -1)
         {
@@ -312,7 +304,7 @@ namespace Anthropocene.Simulation
             if (w.Herds.Any(h => !w.Tiles[h.Tile].TraversableLand || h.Animals < 0)) throw new InvalidOperationException("Invalid herd population or peak/aquatic location.");
             foreach (var tile in w.Tiles)
             {
-                var ecology = w.Ecology(tile.Id); double multiplier = tile.Cultivated || tile.Fishery ? w.Config.CultivationMultiplier : 1;
+                var ecology = w.Ecology(tile.Id); double multiplier = OpeningTransitions.FoodMultiplier(w, tile);
                 if (tile.WaterBody == WaterKind.Saltwater && (tile.Freshwater > 0 || ecology.MaxFreshwater > 0 || tile.FreshwaterSource != FreshwaterSource.None)) throw new InvalidOperationException("Seawater is not drinkable.");
                 if (tile.Saltwater < 0 || tile.Saltwater > ecology.MaxSaltwater + 1e-6 || tile.FreshwaterSource == FreshwaterSource.None && tile.Freshwater > 1e-8) throw new InvalidOperationException("Water stock lacks a valid source or capacity.");
                 if (double.IsNaN(tile.LandCondition) || double.IsNaN(tile.AquaticCondition) || tile.LandCondition < -1e-8 || tile.LandCondition > 1 + 1e-8 || tile.AquaticCondition < -1e-8 || tile.AquaticCondition > 1 + 1e-8 || double.IsNaN(tile.Food) || double.IsInfinity(tile.Food) || tile.Food < -1e-8 || double.IsNaN(tile.PotentialFood) || double.IsInfinity(tile.PotentialFood) || tile.PotentialFood + 1e-8 < tile.Food || tile.PotentialFood > ecology.MaxPotentialFood * multiplier + 1e-5 || tile.Freshwater < -1e-8 || double.IsNaN(tile.Freshwater) ||
