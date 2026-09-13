@@ -40,14 +40,15 @@ namespace Anthropocene.Simulation
         {
             var view = projected ?? new EcologyView(tile);
             Environment = tile.Environment; NaturalVegetationPotential = tile.NaturalVegetationPotential; CurrentVegetation = view.CurrentVegetation;
-            Id = tile.Id; Terrain = Vegetation.LegacyTerrain(tile.Environment, view.CurrentVegetation); River = tile.River; Cultivated = tile.Cultivated; Fishery = tile.Fishery; ElevationLevel = tile.ElevationLevel; RidgeMask = tile.RidgeMask; FoodMaximum = Knowledge.Band(ecology.MaxFood, 70, config);
-            PotentialFood = Knowledge.Band(view.PotentialFood, Math.Max(1, ecology.MaxPotentialFood), config); PotentialMaximum = Knowledge.Band(ecology.MaxPotentialFood, 700, config); GatherablePercent = (int)Math.Round(100 * ecology.MaxFood / Math.Max(1e-9, ecology.MaxPotentialFood));
+            double accessibility = FoodEcology.GatherableFraction(tile, config, view.CurrentVegetation) / FoodEcology.GatherableFraction(tile, config, tile.NaturalVegetationPotential);
+            Id = tile.Id; Terrain = Vegetation.LegacyTerrain(tile.Environment, view.CurrentVegetation); River = tile.River; Cultivated = tile.Cultivated; Fishery = tile.Fishery; ElevationLevel = tile.ElevationLevel; RidgeMask = tile.RidgeMask; FoodMaximum = Knowledge.Band(ecology.MaxFood * accessibility, 70, config);
+            PotentialFood = Knowledge.Band(view.PotentialFood, Math.Max(1, ecology.MaxPotentialFood), config); PotentialMaximum = Knowledge.Band(ecology.MaxPotentialFood, 700, config); GatherablePercent = (int)Math.Round(100 * ecology.MaxFood * accessibility / Math.Max(1e-9, ecology.MaxPotentialFood));
             Oasis = tile.Oasis; Relief = tile.Relief; Elevation = tile.Elevation; WaterBody = tile.WaterBody; FreshwaterSource = tile.FreshwaterSource;
             Rivers = Array.AsReadOnly(tile.RiverEdges == null ? new RiverObservation[0] : tile.RiverEdges.Select((id, side) => new { id, side }).Where(x => x.id >= 0).Select(x => new RiverObservation(x.side, rivers[x.id], tile.Id, new HexCorners(config.Width, config.Height))).ToArray());
             // Food bands describe absolute usable yield; a nearly full barren tile must not appear abundant.
             Food = Knowledge.Band(view.Food, 70, config); Freshwater = Knowledge.Band(view.Freshwater, 70, config);
             double condition = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater ? view.AquaticCondition : view.LandCondition;
-            Condition = Knowledge.Band(condition, 1, config); Productivity = Knowledge.Band(ecology.MaxFood * ecology.FoodRecoveryPerDay * config.BaseDays * condition, 30, config); Moisture = Knowledge.Band(ecology.Moisture, 1, config);
+            Condition = Knowledge.Band(condition, 1, config); Productivity = Knowledge.Band(ecology.MaxFood * accessibility * ecology.FoodRecoveryPerDay * config.BaseDays * condition, 30, config); Moisture = Knowledge.Band(ecology.Moisture, 1, config);
         }
     }
     public sealed class RiverObservation

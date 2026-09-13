@@ -48,7 +48,7 @@ internal static class Milestone2Checks
         h.Tile = w.Camps[0].Tile + 1; var returned = resolver.Resolve(w, Orders());
         Check(returned.Logistics.Any(l => l.Deposited > 0) && h.CarriedFood == 0, "returning within supply range deposits provisions");
         w = Flat(); h = Hunter(w, 158); var subsistence = resolver.Resolve(w, Orders());
-        Check(w.Camps[0].FoodDeficit == 0 && h.Population == 8 && h.FoodDeficit == 0 && subsistence.Transfers.Any(t => t.Entity == h.Id && t.Kind == "Foraging" && t.Food > 0), "an isolated expedition gathers local subsistence without teleporting food to camp");
+        Check(w.Camps[0].FoodDeficit == 0 && h.Population == 8 && h.FoodDeficit == 0 && subsistence.Demographics.Single().ForageFood > 0 && Math.Abs(subsistence.Demographics.Single().ForageFood - subsistence.Transfers.Where(t => t.Entity == h.Id && t.Kind == "Foraging").Sum(t => t.Food)) < 1e-8, "isolated subsistence is recorded in the forage report without teleporting food to camp");
         foreach (var tile in w.Tiles) { tile.Food = 0; for (int season = 0; season < 4; season++) { var ecology = tile.Seasons[season]; ecology.MaxFood = 0; ecology.FoodRecoveryPerDay = 0; tile.Seasons[season] = ecology; } }
         for (int turn = 0; turn < 3; turn++) resolver.Resolve(w, Orders());
         Check(h.Population < 8, "an isolated expedition still starves after its grace period when local forage and carried food are exhausted");

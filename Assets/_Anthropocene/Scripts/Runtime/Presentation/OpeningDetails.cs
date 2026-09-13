@@ -56,7 +56,7 @@ namespace Anthropocene.Presentation
                 "\nRequired / eaten: " + summary.FoodRequired.ToString("F0") + " / " + summary.FoodConsumed.ToString("F0") +
                 "\nLand gathering: " + summary.TerrestrialFood.ToString("F0") + " · Passive marine: " + summary.MarineFood.ToString("F0") +
                 "\nLake gathering: " + summary.LakeFood.ToString("F0") + " · Active fishing: " + summary.FishFood.ToString("F0") + " · Hunting: " + summary.HuntFood.ToString("F0") +
-                "\nFractional growth: " + summary.FractionalProgress.ToString("F2");
+                "\nRemote hunter forage: " + summary.ForageFood.ToString("F0") + " · Fractional growth: " + summary.FractionalProgress.ToString("F2");
             float height = text.CalcHeight(new GUIContent(value), width) + 12;
             GUI.Label(new Rect(14, y, width, height), value, text); y += height;
         }

@@ -34,7 +34,7 @@ namespace Anthropocene.Simulation
         {
             if (!o.Tiles.ContainsKey(tile)) return new VisibleOccupant[0];
             var occupants = new List<VisibleOccupant>();
-            if (o.CampTile == tile) occupants.Add(new VisibleOccupant(o.CampId, o.CampId, 0, "entity.camp", "Your camp: " + o.CampPopulation + " people"));
+            foreach (var c in o.Settlements.Where(c => c.Tile == tile)) occupants.Add(new VisibleOccupant(c.Id, c.Id, 0, "entity.camp", "Your camp: " + c.Population + " people"));
             foreach (var c in o.Rivals.Where(c => c.Tile == tile)) occupants.Add(new VisibleOccupant(c.Id, -1, 0, "entity.rivalcamp", "Tribe " + (c.Player + 1) + " camp; population unknown"));
             foreach (var h in o.Hunters.Where(h => h.Tile == tile)) occupants.Add(new VisibleOccupant(h.Id, h.Id, 1, "entity.hunter", "Hunters " + h.Id + ": " + h.Population + " people; " + (h.InSupply ? "supplied by camp" : "beyond supply; provisions " + Knowledge.Bands[h.Provisions])));
             foreach (var h in o.ForeignHunters.Where(h => h.Tile == tile)) occupants.Add(new VisibleOccupant(h.Id, -1, 1, "entity.rivalhunter", "Tribe " + (h.Player + 1) + " hunters; population/provisions unknown"));
@@ -49,7 +49,8 @@ namespace Anthropocene.Simulation
         {
             if (!o.Tiles.TryGetValue(id, out var t)) return "";
             var b = new StringBuilder();
-            b.AppendLine("LAND · (" + id % o.Map.Width + ", " + id / o.Map.Width + ") / tile " + id + " · " + t.Terrain);
+            b.AppendLine("LAND · (" + id % o.Map.Width + ", " + id / o.Map.Width + ") / tile " + id + " · " + t.Environment);
+            if (t.Land) b.AppendLine("VEGETATION · " + Vegetation.Label(t.Environment, t.CurrentVegetation) + " · " + t.CurrentVegetation + " cover / " + t.NaturalVegetationPotential + " natural potential");
             b.AppendLine("Elevation " + t.ElevationLevel + "/10 · " + ElevationLevelStage.Description(t.ElevationLevel));
             b.AppendLine("FOOD · " + Knowledge.Bands[t.Food] + " stock; maximum " + Knowledge.Bands[t.FoodMaximum]);
             b.AppendLine("HERD FORAGE · " + Knowledge.Bands[t.PotentialFood] + " biomass; capacity " + Knowledge.Bands[t.PotentialMaximum] + "; about " + t.GatherablePercent + "% human-gatherable");

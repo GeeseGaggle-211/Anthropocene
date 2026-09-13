@@ -87,22 +87,45 @@ namespace Anthropocene.Presentation
             if (sprites.TryGetValue(definition.Key, out var sprite) && sprite != null)
             {
                 var uv = sprite.textureRect; uv = new Rect(uv.x / sprite.texture.width, uv.y / sprite.texture.height, uv.width / sprite.texture.width, uv.height / sprite.texture.height);
-                float size = rect.height * definition.Scale * scale;
-                var target = new Rect(rect.center.x - size / 2, rect.center.y - size / 2, size, size);
+                var target = SpriteBounds(rect, definition.Scale * scale);
                 var previous = GUI.color; GUI.color = ColorOf(definition.Tint); GUI.DrawTextureWithTexCoords(target, sprite.texture, uv); GUI.color = previous;
             }
             else if (!string.IsNullOrEmpty(definition.Glyph)) GUI.Label(rect, definition.Glyph, glyph);
         }
+        public static Rect SpriteBounds(Rect slot, float scale)
+        {
+            float size = Mathf.Max(0, Mathf.Min(slot.width, slot.height) - 4) * Mathf.Clamp01(scale);
+            return new Rect(slot.center.x - size / 2, slot.center.y - size / 2, size, size);
+        }
+        public bool HasSprite(string key) => sprites.TryGetValue(key, out var sprite) && sprite != null;
+        public static string BaseKey(TileObservation tile) => tile == null ? "hidden" : "terrain." +
+            (tile.Land && (tile.Relief == Relief.Highland || tile.Relief == Relief.Mountain) ? "highland" : tile.Environment == EnvironmentKind.Ice ? "cold" : tile.Environment.ToString().ToLowerInvariant());
+        public static int VegetationCount(TileObservation tile, float height) => !tile.Land || tile.Environment == EnvironmentKind.Ice || height < 42 ? 0 : tile.CurrentVegetation == VegetationTier.High ? 6 : tile.CurrentVegetation == VegetationTier.Medium ? 3 : 1;
+        public static string VegetationKey(TileObservation tile) => "vegetation." +
+            (tile.Environment == EnvironmentKind.Desert ? "shrub" : tile.CurrentVegetation == VegetationTier.Low || tile.Environment == EnvironmentKind.Grassland ? "grass" : tile.Environment == EnvironmentKind.Cold ? "conifer" : tile.Environment == EnvironmentKind.Tropical ? "tropical_tree" : "temperate_tree");
+        private static readonly Vector2[] VegetationSlots = { new Vector2(.25f, .35f), new Vector2(.72f, .36f), new Vector2(.44f, .65f), new Vector2(.61f, .58f), new Vector2(.35f, .18f), new Vector2(.63f, .77f) };
+        private void VegetationLayer(TileObservation tile, Rect rect)
+        {
+            int count = VegetationCount(tile, rect.height); string motif = VegetationKey(tile);
+            // Deterministic interior slots leave contour/river edges and occupant hit regions intact.
+            for (int i = 0; i < count; i++)
+            {
+                float x = VegetationSlots[i].x, y = VegetationSlots[i].y;
+                float size = rect.height * .24f;
+                Symbol(motif, new Rect(rect.x + rect.width * x - size / 2, rect.y + rect.height * y - size / 2, size, size));
+            }
+        }
         public void Draw(TileRenderContext context)
         {
             var rect = context.Bounds; var tile = context.Tile;
-            string biome = tile == null ? "hidden" : "biome." + tile.Terrain.ToString().ToLowerInvariant();
+            string biome = BaseKey(tile);
             var ground = tileset.Find(biome);
             string border = context.Selected ? "selected" : context.Inspected ? "friendly" : "border";
             Tint(rect, hex, ColorOf(tileset.Find(border).Tint));
             Tint(new Rect(rect.x + 1.5f, rect.y + 1.5f, rect.width - 3, rect.height - 3), hex, ColorOf(ground.Background));
             if (tile == null) return;
-            // Biome, merged elevation topology, water features, resources and entities are independent semantic layers.
+            if (HasSprite(biome)) Tint(new Rect(rect.x + 1.5f, rect.y + 1.5f, rect.width - 3, rect.height - 3), sprites[biome].texture, tileset.Id == "classic" ? Color.white : new Color(1.3f, 1.3f, 1.3f));
+            // Terrain -> contours -> water -> vegetation -> land use -> settlements -> units -> UI.
             var contours = tileset.Find("elevation.contours"); var contourColor = ColorOf(contours.Tint); contourColor.a = contours.Opacity;
             int count = ContourCount(tile.ElevationLevel, rect.height);
             float step = Mathf.Min(contours.Spacing, rect.width * .30f / Mathf.Max(1, count));
@@ -112,12 +135,10 @@ namespace Anthropocene.Presentation
                 for (int side = 0; side < 6; side++)
                     if ((context.ContourEdgeMask & 1 << side) != 0) Line(inner.position + Vector2.Scale(Corners[side], inner.size), inner.position + Vector2.Scale(Corners[(side + 1) % 6], inner.size), contours.LineWidth, contourColor);
             }
-            Symbol(biome, context.Entities.Count == 0 ? rect : new Rect(rect.x + rect.width * .05f, rect.y + rect.height * .6f, rect.width * .22f, rect.height * .25f));
+            if (!HasSprite(biome)) Symbol(biome, new Rect(rect.x + rect.width * .05f, rect.y + rect.height * .6f, rect.width * .22f, rect.height * .25f));
             if (tile.ElevationLevel == 10) Symbol("elevation.10", rect);
             if (tile.Oasis) Symbol("feature.oasis", new Rect(rect.x, rect.y + rect.height * .15f, rect.width * .5f, rect.height * .5f));
             else if (tile.FreshwaterSource != FreshwaterSource.None && tile.WaterBody != WaterKind.Saltwater) Symbol("feature.freshwater", new Rect(rect.x + 2, rect.y + rect.height * .13f, rect.width * .36f, rect.height * .36f));
-            if (tile.Cultivated) Symbol("feature.cultivation", rect);
-            if (tile.Fishery) Symbol("feature.fishery", rect);
             foreach (var river in tile.Rivers)
             {
                 Vector2 a = rect.position + Vector2.Scale(Corners[river.Side], rect.size), b = rect.position + Vector2.Scale(Corners[(river.Side + 1) % 6], rect.size);
@@ -130,6 +151,14 @@ namespace Anthropocene.Presentation
                     Line(middle + direction * 3, middle - direction * 2 - normal * 2, 1, ColorOf(tileset.Find("feature.freshwater").Tint));
                 }
             }
+            VegetationLayer(tile, rect);
+            if (rect.height >= 48)
+            {
+                if (tile.Cultivated) Symbol("feature.cultivation", new Rect(rect.x + rect.width * .24f, rect.y + rect.height * .5f, rect.width * .5f, rect.height * .38f));
+                if (tile.Fishery) Symbol("feature.fishery", new Rect(rect.x + rect.width * .50f, rect.y + rect.height * .08f, rect.width * .4f, rect.height * .4f));
+            }
+            if (rect.height >= 60 && context.Entities.Any(e => e.Key == "entity.camp" || e.Key == "entity.rivalcamp"))
+                Symbol("settlement.camp", new Rect(rect.x + rect.width * .09f, rect.y + rect.height * .58f, rect.width * .35f, rect.height * .3f));
             if (rect.height >= 45)
                 for (int mark = 0; mark <= tile.Food; mark++) Tint(new Rect(rect.center.x - tile.Food * 2.5f + mark * 5 - 1.5f, rect.y + rect.height * .78f, 3, 3), Texture2D.whiteTexture, ColorOf(tileset.Find("resource.food").Tint));
             for (int i = 0; i < Math.Min(6, context.Entities.Count); i++)

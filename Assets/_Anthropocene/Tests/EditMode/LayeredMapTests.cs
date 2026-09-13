@@ -1,0 +1,65 @@
+using System.Linq;
+using Anthropocene.Presentation;
+using Anthropocene.Simulation;
+using NUnit.Framework;
+using UnityEngine;
+using Terrain = Anthropocene.Simulation.Terrain;
+
+namespace Anthropocene.Tests.EditMode
+{
+    public sealed class LayeredMapTests
+    {
+        [Test]
+        public void StackedSprites_RemainInsideTheirExactHitSlotsAtEveryZoom()
+        {
+            foreach (float height in new[] { 30f, 80f, 115f })
+                for (int count = 1; count <= 6; count++)
+                    for (int i = 0; i < count; i++)
+                    {
+                        var slot = LayeredTileRenderer.OccupantSlot(new Rect(0, 0, height * .86f, height), i, count);
+                        var art = LayeredTileRenderer.SpriteBounds(slot, 1.8f);
+                        Assert.That(art.xMin, Is.GreaterThanOrEqualTo(slot.xMin));
+                        Assert.That(art.yMin, Is.GreaterThanOrEqualTo(slot.yMin));
+                        Assert.That(art.xMax, Is.LessThanOrEqualTo(slot.xMax));
+                        Assert.That(art.yMax, Is.LessThanOrEqualTo(slot.yMax));
+                        Assert.That(art.width, Is.GreaterThan(0));
+                    }
+        }
+        [Test]
+        public void SourceSprites_AreImportedAtThePromisedSizeAndBothTilesetsResolveThem()
+        {
+            var sprites = Resources.LoadAll<Sprite>("MapArt");
+            Assert.That(sprites.Length, Is.EqualTo(23));
+            Assert.That(sprites.All(s => s.texture.width == 256 && s.texture.height == 256), Is.True);
+            var texture = new Texture2D(2, 2);
+            try
+            {
+                foreach (var set in TilesetCatalog.Load())
+                {
+                    var renderer = new LayeredTileRenderer(set, texture, Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"));
+                    foreach (string key in new[] { "terrain.desert", "terrain.temperate", "terrain.tropical", "terrain.highland", "terrain.lake", "vegetation.conifer", "feature.cultivation", "feature.cultivation_heavy", "settlement.camp", "settlement.village", "entity.camp", "entity.hunter", "entity.domestic", "species.camel" }) Assert.That(renderer.HasSprite(key), Is.True, key);
+                    Assert.That(renderer.HasSprite("missing.art"), Is.False);
+                    Assert.That(set.Find("missing.art").Key, Is.EqualTo("fallback"));
+                }
+            }
+            finally { Object.DestroyImmediate(texture); }
+        }
+        [Test]
+        public void CoverChangesDensityAndClimateMotifsWhileReliefKeepsItsOwnBase()
+        {
+            var cfg = new SimulationConfig();
+            var t = new Tile { Terrain = Terrain.Woodland, Relief = Relief.Highland, ElevationLevel = 8 };
+            TileObservation Observe() => new TileObservation(t, t.Seasons[0], cfg, new RiverEdge[0]);
+            var highland = Observe(); string ground = LayeredTileRenderer.BaseKey(highland);
+            t.CurrentVegetation = VegetationTier.Low; var sparse = Observe();
+            t.CurrentVegetation = VegetationTier.High; var dense = Observe();
+            Assert.That(LayeredTileRenderer.BaseKey(sparse), Is.EqualTo(ground));
+            Assert.That(LayeredTileRenderer.BaseKey(dense), Is.EqualTo(ground));
+            Assert.That(LayeredTileRenderer.VegetationCount(sparse, 80), Is.LessThan(LayeredTileRenderer.VegetationCount(dense, 80)));
+            Assert.That(LayeredTileRenderer.VegetationCount(dense, 30), Is.Zero);
+            Assert.That(LayeredTileRenderer.ContourCount(8, 30), Is.GreaterThan(0));
+            t.Environment = EnvironmentKind.Cold; Assert.That(LayeredTileRenderer.VegetationKey(Observe()), Is.EqualTo("vegetation.conifer"));
+            t.Environment = EnvironmentKind.Tropical; Assert.That(LayeredTileRenderer.VegetationKey(Observe()), Is.EqualTo("vegetation.tropical_tree"));
+        }
+    }
+}

@@ -87,7 +87,7 @@ namespace Anthropocene.Tests.EditMode
         public void Configuration_ContainsStableSpeciesAndFreshwaterTuning()
         {
             var config = new SimulationConfig(); JsonUtility.FromJsonOverwrite(Resources.Load<TextAsset>("OpeningConfig").text, config); config.Validate();
-            Assert.That(config.Version, Is.EqualTo(4)); Assert.That(config.GetSpecies("camel").FreshwaterConsumption, Is.GreaterThan(0));
+            Assert.That(config.Version, Is.EqualTo(6)); Assert.That(config.GetSpecies("camel").FreshwaterConsumption, Is.GreaterThan(0));
             Assert.That(config.GetSpecies("horse").FoodYield, Is.GreaterThan(0));
             Assert.That(config.StartFreshwaterMinimum, Is.GreaterThan(0));
         }
