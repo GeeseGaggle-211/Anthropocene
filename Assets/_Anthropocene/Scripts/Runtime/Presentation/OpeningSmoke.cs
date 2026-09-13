@@ -16,6 +16,8 @@ namespace Anthropocene.Presentation
         {
             var args = System.Environment.GetCommandLineArgs(); int option = Array.IndexOf(args, "--anthropocene-smoke-output");
             int presets = Array.IndexOf(args, "--anthropocene-presets-output");
+            int atlas = Array.IndexOf(args, "--anthropocene-atlas-output");
+            if (atlas >= 0 && atlas + 1 < args.Length) { yield return AtlasSmoke(args[atlas + 1]); yield break; }
             if (presets >= 0 && presets + 1 < args.Length) { yield return PresetSmoke(args[presets + 1]); yield break; }
             if (option < 0 || option + 1 >= args.Length) yield break;
             Application.runInBackground = true; // This opt-in capture run must survive focus returning to the review window.
@@ -65,6 +67,30 @@ namespace Anthropocene.Presentation
             while (captures.Any(name => !File.Exists(Path.Combine(output, name + ".png"))) && Time.realtimeSinceStartup < captureDeadline) yield return null;
             if (captures.Any(name => !File.Exists(Path.Combine(output, name + ".png")))) throw new InvalidOperationException("Player screenshots are missing. Run this visual check in a visible game window.");
             File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: Standard / Continents / 1729 / 32 tribes. Dispatch, exact stack selection, both symbol sets, distant layer simplification, generated two-hop supply route " + camp.Tile + " -> " + route.First + " -> " + route.Second + ", and separate save/load round trip. Final turn " + world.Turn + ", population " + world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) + ". Screenshots captured from the Windows player.\n");
+            Application.Quit();
+        }
+
+        private IEnumerator AtlasSmoke(string directory)
+        {
+            Application.runInBackground = true;
+            string output = Path.GetFullPath(directory); Directory.CreateDirectory(output);
+            scenarioIndex = 0; sizeIndex = 0; shapeIndex = (int)WorldShape.Archipelagos; players = 80; seedText = "42";
+            previewAfterGeneration = true; NewGame(); while (generating != null) yield return null;
+            if (world == null || world.Config.Shape != WorldShape.Archipelagos || world.Camps.Count != 80) throw new InvalidOperationException("Archipelago preview did not generate: " + status);
+            string before = SaveCodec.Fingerprint(world); int visible = observation.Tiles.Count;
+            for (int layer = 0; layer < previewLayers.Length; layer++)
+            {
+                previewLayer = layer; InvalidateWorldPreview();
+                yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "preview-" + layer + ".png")); yield return new WaitForSeconds(.3f);
+            }
+            if (SaveCodec.Fingerprint(world) != before || observation.Tiles.Count != visible) throw new InvalidOperationException("Archipelago preview mutated ecology or fog.");
+            previewOpen = false;
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "opening.png")); yield return new WaitForSeconds(.3f);
+            EndTurn(); while (resolving != null) yield return null;
+            if (world.Turn != 2) throw new InvalidOperationException("Archipelago opening could not resolve: " + status);
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "turn-2.png")); yield return new WaitForSeconds(1);
+            if (Directory.GetFiles(output, "*.png").Length != 7) throw new InvalidOperationException("Missing archipelago screenshots; use a visible player window.");
+            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS Standard / Archipelagos / 42 / 80 tribes / generator " + world.Generation.GeneratorVersion + ": five preview layers, unchanged authoritative fingerprint and fog (" + visible + " observed tiles), normal play and turn 2 population " + world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) + ". Seven frames captured from the actual Windows player. No user save slot used.\n");
             Application.Quit();
         }
 

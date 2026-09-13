@@ -166,7 +166,7 @@ namespace Anthropocene.Presentation
             GUI.Label(new Rect(12, y, w, 65), "Seed " + world.Seed + " · " + world.Camps.Count + " tribes · turn " + world.Turn + "\nWhite: tribes · Gold: your camp\n1 river · 2 steppe · 3 cold coast", text); y += 76;
             string legend = previewLayer == 0 ? "Ocean: dark blue\nShallows / lakes: blue\nDesert: ochre · river / oasis: olive\nGrassland: light green\nTemperate / tropical: dark green\nCold: grey green · ice: white"
                 : previewLayer == 3 ? "Continuous elevation\nDeep blue: ocean floor\nTeal: continental shelf\nGreen: lowland\nPale: high mountain belts\nThis is physical relief, not the 1–10 movement levels."
-                : previewLayer == 4 ? "Orange: volcanic activity\nOcean hotspot tracks follow plate motion. Islands vary in size and subside with age. Continental activity follows convergent margins. This is a generation proxy, not live tectonics."
+                : previewLayer == 4 ? "Orange: volcanic activity\nOlder island chains can survive after activity ends, so they may remain dark here. Moving hotspot paths leave islands and submerged remnants. This is a generation proxy, not live tectonics."
                 : "Dark = 0 · bright gold = 100+\nLog scale: 0 / 1 / 10 / 100\nUnits per base season (" + world.Config.BaseDays.ToString("0.##") + " days).\nProfile renewal potential, before labor, depletion and competition. Ocean food is excluded from accessible food.";
             GUI.Label(new Rect(12, y, w, 150), legend, small); y += 158;
             var own = world.Camps.First(c => c.Player == 0);

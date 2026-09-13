@@ -1,5 +1,7 @@
 # Generator 9: what failed, what changed, and the actual worlds
 
+This report preserves the generator-9 overhaul and its measured worlds. The current generator-10 archipelago and historical-track follow-up is documented in [ArchipelagoRefinement.md](ArchipelagoRefinement.md).
+
 September 13, 2026. This is a replacement of the geography and atmospheric-generation model, not a recoloring of the atlas. All example maps were rendered from Anthropocene's authoritative simulation state. The old generator was preserved and run with the same Standard / Continents / seed 1729 / 80-tribe settings for comparison.
 
 ## Why the initial result failed
