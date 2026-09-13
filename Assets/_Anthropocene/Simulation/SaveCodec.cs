@@ -33,7 +33,7 @@ namespace Anthropocene.Simulation
                     writer.Write(world.Tiles.Length);
                     foreach (var tile in world.Tiles)
                     {
-                        writer.Write(tile.Plate); writer.Write(tile.Downstream); writer.Write((byte)tile.Terrain);
+                        writer.Write(tile.Plate); writer.Write(tile.Downstream); writer.Write((byte)tile.Environment); writer.Write((byte)tile.NaturalVegetationPotential); writer.Write((byte)tile.CurrentVegetation); writer.Write(tile.LastEcologyUpdateDays);
                         writer.Write((byte)((tile.Continental ? 1 : 0) | (tile.Oasis ? 2 : 0) | (tile.Cultivated ? 4 : 0) | (tile.Fishery ? 8 : 0)));
                         writer.Write((byte)tile.ElevationLevel); writer.Write((byte)tile.RidgeMask); writer.Write((byte)tile.Relief); writer.Write((byte)tile.WaterBody); writer.Write((byte)tile.FreshwaterSource);
                         writer.Write(tile.DepressionDepth); writer.Write(tile.OasisInfluence); writer.Write(tile.Saltwater); writer.Write(tile.LandCondition); writer.Write(tile.AquaticCondition);
@@ -67,7 +67,7 @@ namespace Anthropocene.Simulation
                 world.Tiles = new Tile[count];
                 for (int i = 0; i < count; i++)
                 {
-                    var tile = new Tile { Id = i, Plate = reader.ReadInt32(), Downstream = reader.ReadInt32(), Terrain = (Terrain)reader.ReadByte() };
+                    var tile = new Tile { Id = i, Plate = reader.ReadInt32(), Downstream = reader.ReadInt32(), Environment = (EnvironmentKind)reader.ReadByte(), NaturalVegetationPotential = (VegetationTier)reader.ReadByte(), CurrentVegetation = (VegetationTier)reader.ReadByte(), LastEcologyUpdateDays = reader.ReadDouble() };
                     byte flags = reader.ReadByte(); tile.Continental = (flags & 1) != 0; tile.Oasis = (flags & 2) != 0; tile.Cultivated = (flags & 4) != 0; tile.Fishery = (flags & 8) != 0;
                     tile.ElevationLevel = reader.ReadByte(); tile.RidgeMask = reader.ReadByte(); tile.Relief = (Relief)reader.ReadByte(); tile.WaterBody = (WaterKind)reader.ReadByte(); tile.FreshwaterSource = (FreshwaterSource)reader.ReadByte();
                     tile.DepressionDepth = reader.ReadSingle(); tile.OasisInfluence = reader.ReadSingle(); tile.Saltwater = reader.ReadDouble(); tile.LandCondition = reader.ReadDouble(); tile.AquaticCondition = reader.ReadDouble();

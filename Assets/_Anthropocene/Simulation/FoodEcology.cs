@@ -7,8 +7,8 @@ namespace Anthropocene.Simulation
         public static double GatherableFraction(Tile tile, SimulationConfig config)
         {
             if (tile.Aquatic || tile.Terrain == Terrain.Ocean || tile.Terrain == Terrain.Ice) return 1;
-            double fraction = tile.Terrain == Terrain.Woodland || tile.Terrain == Terrain.Jungle ? config.RichGatherableFraction :
-                tile.Terrain == Terrain.Desert ? config.AridGatherableFraction : tile.Terrain == Terrain.Tundra ? config.TundraGatherableFraction : config.GrasslandGatherableFraction;
+            double fraction = tile.Environment == EnvironmentKind.Desert ? config.AridGatherableFraction : tile.Environment == EnvironmentKind.Cold ? config.TundraGatherableFraction : config.GrasslandGatherableFraction;
+            if ((tile.Environment == EnvironmentKind.Temperate || tile.Environment == EnvironmentKind.Tropical) && tile.CurrentVegetation >= VegetationTier.Medium) fraction = config.RichGatherableFraction;
             if (tile.River) fraction = Math.Max(fraction, config.RichGatherableFraction);
             if (tile.OasisInfluence > 0) fraction += (config.RichGatherableFraction - fraction) * tile.OasisInfluence;
             return Numbers.Clamp(fraction, .001, 1);

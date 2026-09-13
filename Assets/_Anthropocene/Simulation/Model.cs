@@ -19,6 +19,10 @@ namespace Anthropocene.Simulation
         public int Version = 6;
         public double MajorityEligibilityYears = 200, ForcedTransitionYears = 240;
         public bool OpeningCompatibilityEffects = true;
+        public double IceTemperature = -10, ColdTemperature = 3, TropicalTemperature = 21, DesertMoisture = .12, SteppeMoisture = .32;
+        public double OasisVegetationMoisture = .45, VegetationWarmthRange = 12, VegetationDryFloor = .05, VegetationMoistureRange = .45;
+        public double VegetationMediumPotential = .30, VegetationHighPotential = .60;
+        public double MediumVegetationDown = .40, MediumVegetationUp = .55, HighVegetationDown = .65, HighVegetationUp = .75, HighPotentialLowDown = .30, HighPotentialLowUp = .40;
         public int Width = 1024, Height = 512, Players = 32, PlateCount = 18;
         public WorldShape Shape = WorldShape.Continents;
         public double BaseDays = 91.25, TurnDays = 7300, MinDays = 1, MaxDays = 36500;
@@ -101,7 +105,24 @@ namespace Anthropocene.Simulation
     public sealed class Tile
     {
         public int Id, Plate, Downstream = -1;
-        public Terrain Terrain;
+        public EnvironmentKind Environment;
+        public VegetationTier NaturalVegetationPotential, CurrentVegetation;
+        public double LastEcologyUpdateDays;
+        // Legacy view for old callers/assets. Environment + vegetation are authoritative.
+        public Terrain Terrain
+        {
+            get => Environment == EnvironmentKind.Ocean ? Terrain.Ocean : Environment == EnvironmentKind.Shallows ? Terrain.Shallows : Environment == EnvironmentKind.Lake ? Terrain.Lake :
+                Environment == EnvironmentKind.Desert ? Terrain.Desert : Environment == EnvironmentKind.Cold ? Terrain.Tundra : Environment == EnvironmentKind.Ice ? Terrain.Ice :
+                Environment == EnvironmentKind.Tropical && CurrentVegetation == VegetationTier.High ? Terrain.Jungle :
+                (Environment == EnvironmentKind.Temperate || Environment == EnvironmentKind.Tropical) && CurrentVegetation >= VegetationTier.Medium ? Terrain.Woodland : Terrain.Grassland;
+            set
+            {
+                Environment = value == Terrain.Ocean ? EnvironmentKind.Ocean : value == Terrain.Shallows ? EnvironmentKind.Shallows : value == Terrain.Lake ? EnvironmentKind.Lake :
+                    value == Terrain.Desert ? EnvironmentKind.Desert : value == Terrain.Tundra ? EnvironmentKind.Cold : value == Terrain.Ice ? EnvironmentKind.Ice :
+                    value == Terrain.Woodland ? EnvironmentKind.Temperate : value == Terrain.Jungle ? EnvironmentKind.Tropical : EnvironmentKind.Grassland;
+                if (value == Terrain.Woodland || value == Terrain.Jungle) NaturalVegetationPotential = CurrentVegetation = value == Terrain.Jungle ? VegetationTier.High : VegetationTier.Medium;
+            }
+        }
         public Relief Relief;
         public int ElevationLevel;
         public int RidgeMask;

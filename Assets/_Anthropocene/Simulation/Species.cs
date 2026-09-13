@@ -24,7 +24,10 @@ namespace Anthropocene.Simulation
         public double Suitability(Tile tile)
         {
             if (!tile.TraversableLand) return 0;
-            double biome = Biomes.FirstOrDefault(b => b.Biome == tile.Terrain)?.Weight ?? DefaultHabitatWeight;
+            var woodland = tile.CurrentVegetation >= VegetationTier.Medium && (tile.Environment == EnvironmentKind.Temperate || tile.Environment == EnvironmentKind.Tropical);
+            var preference = Biomes.FirstOrDefault(b => b.Biome == Terrain.Jungle && tile.Environment == EnvironmentKind.Tropical && tile.CurrentVegetation == VegetationTier.High)
+                ?? Biomes.FirstOrDefault(b => woodland ? b.Biome == Terrain.Woodland : b.Biome == tile.Terrain);
+            double biome = preference?.Weight ?? DefaultHabitatWeight;
             double relief = tile.Relief == Relief.Hills || tile.Relief == Relief.Highland || tile.Relief == Relief.Mountain ? ReliefAffinity : 0;
             return Math.Max(0, biome * (1 + relief) * (1 + OasisAffinity * tile.OasisInfluence));
         }

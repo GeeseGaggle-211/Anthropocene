@@ -296,5 +296,22 @@
   "OpeningFoodMultiplier": 1.4,
   "MajorityEligibilityYears": 200,
   "ForcedTransitionYears": 240,
-  "OpeningCompatibilityEffects": true
+  "OpeningCompatibilityEffects": true,
+  "IceTemperature": -10,
+  "ColdTemperature": 3,
+  "TropicalTemperature": 21,
+  "DesertMoisture": 0.12,
+  "SteppeMoisture": 0.32,
+  "OasisVegetationMoisture": 0.45,
+  "VegetationWarmthRange": 12,
+  "VegetationDryFloor": 0.05,
+  "VegetationMoistureRange": 0.45,
+  "VegetationMediumPotential": 0.3,
+  "VegetationHighPotential": 0.6,
+  "MediumVegetationDown": 0.4,
+  "MediumVegetationUp": 0.55,
+  "HighVegetationDown": 0.65,
+  "HighVegetationUp": 0.75,
+  "HighPotentialLowDown": 0.3,
+  "HighPotentialLowUp": 0.4
 }

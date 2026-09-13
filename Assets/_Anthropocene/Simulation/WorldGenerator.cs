@@ -44,7 +44,7 @@ namespace Anthropocene.Simulation
             // Hash all effective tuning, not just the preset name.
             world.Generation.ConfigurationHash = SaveCodec.ConfigurationHash(config);
             var context = new GenerationContext { World = world, Map = world.Map };
-            IWorldGenerationStage[] stages = { new GeometryStage(), new PlateStage(), new ElevationStage(), new ClimateStage(), new HydrologyStage(), new BoundaryRiverStage(), new ElevationLevelStage(), new EcologyStage(), new OasisStage(), new PlacementStage() };
+            IWorldGenerationStage[] stages = { new GeometryStage(), new PlateStage(), new ElevationStage(), new ClimateStage(), new HydrologyStage(), new BoundaryRiverStage(), new ElevationLevelStage(), new EcologyStage(), new OasisStage(), new VegetationResourceStage(), new PlacementStage() };
             var total = Stopwatch.StartNew();
             foreach (var stage in stages)
             {
@@ -289,7 +289,7 @@ namespace Anthropocene.Simulation
     }
     internal sealed class EcologyStage : IWorldGenerationStage
     {
-        public string Name => "Soil moisture, biomes, seasonal resources"; public string Requires => "Climate, drainage"; public string Produces => "Biome, capacities, regeneration, habitat";
+        public string Name => "Soil and environment"; public string Requires => "Climate, drainage"; public string Produces => "Environment, soil moisture and freshwater sources";
         public void Generate(GenerationContext c)
         {
             foreach (var tile in c.World.Tiles)
@@ -307,21 +307,34 @@ namespace Anthropocene.Simulation
                     }
                 double temperature = tile.Seasons.Average(s => s.Temperature), moisture = tile.Seasons.Average(s => s.Moisture);
                 if (tile.Land)
-                    tile.Terrain = temperature < -10 ? Terrain.Ice : temperature < 3 ? Terrain.Tundra : moisture < .12 ? Terrain.Desert : moisture > .58 && temperature > 21 ? Terrain.Jungle : moisture > .32 ? Terrain.Woodland : Terrain.Grassland;
+                    tile.Environment = Vegetation.Classify(temperature, moisture, c.Config);
                 double averageRain = tile.Seasons.Average(s => s.Rain);
                 tile.FreshwaterSource = tile.WaterBody == WaterKind.Saltwater ? FreshwaterSource.None : tile.Terrain == Terrain.Lake ? FreshwaterSource.Lake : tile.River ? FreshwaterSource.River : averageRain >= c.Config.RainPoolRainThreshold && tile.Flow >= c.Config.RainPoolDrainageMinimum ? FreshwaterSource.RainPool : FreshwaterSource.None;
+            }
+        }
+    }
+    internal sealed class VegetationResourceStage : IWorldGenerationStage
+    {
+        public string Name => "Vegetation and seasonal resources"; public string Requires => "Environment, oases"; public string Produces => "Vegetation potential and renewable capacities";
+        public void Generate(GenerationContext c)
+        {
+            foreach (var tile in c.World.Tiles)
+            {
+                tile.NaturalVegetationPotential = tile.CurrentVegetation = Vegetation.Potential(tile, c.Config);
+                double averageRain = tile.Seasons.Average(s => s.Rain);
                 for (int s = 0; s < 4; s++)
                 {
                     var data = tile.Seasons[s];
                     double warmth = Numbers.Clamp((data.Temperature + 8) / 30, .015, 1);
                     double productivity = tile.Aquatic ? .65 * warmth : (.12 + data.Moisture) * warmth;
-                    if (tile.Terrain == Terrain.Ocean || tile.Terrain == Terrain.Ice) productivity = .005;
+                    if (tile.Terrain == Terrain.Ocean) productivity = .005;
+                    if (tile.Environment == EnvironmentKind.Ice) productivity = 0;
                     if (tile.Land) productivity *= tile.Relief == Relief.Mountain ? c.Config.MountainProductivity : tile.Relief == Relief.Highland ? c.Config.HighlandProductivity : tile.Relief == Relief.Hills ? c.Config.HillsProductivity : 1;
                     double fresh = tile.FreshwaterSource == FreshwaterSource.Lake ? 120 : tile.FreshwaterSource == FreshwaterSource.River ? Math.Min(150, 70 + Math.Sqrt(tile.Flow) * 4) : tile.FreshwaterSource == FreshwaterSource.RainPool ? 25 * Numbers.Clamp(data.Rain / Math.Max(.001, averageRain), .25, 1.5) : 0;
-                    data.MaxFood = (float)(90 * productivity); data.MaxFreshwater = (float)fresh; data.AccessibleFreshwater = (float)fresh;
+                    data.MaxFood = Math.Max(data.MaxFood, (float)(90 * productivity)); data.MaxFreshwater = Math.Max(data.MaxFreshwater, (float)fresh); data.AccessibleFreshwater = (float)fresh;
                     data.MaxSaltwater = tile.WaterBody == WaterKind.Saltwater ? 100 : 0;
-                    data.FoodRate = (float)(c.Config.FoodRegeneration * (.2 + data.Moisture) * warmth);
-                    data.FreshwaterRate = (float)c.Config.WaterRecovery; data.Habitat = tile.Land ? (float)productivity : 0;
+                    data.FoodRate = Math.Max(data.FoodRate, (float)(c.Config.FoodRegeneration * (.2 + data.Moisture) * warmth));
+                    if (tile.FreshwaterSource != FreshwaterSource.Oasis) data.FreshwaterRate = (float)c.Config.WaterRecovery; data.Habitat = tile.Land ? (float)productivity : 0;
                     tile.Seasons[s] = data;
                 }
                 tile.Food = tile.Seasons[0].MaxFood * .9; FoodEcology.ConfigurePotential(tile, c.Config, true);

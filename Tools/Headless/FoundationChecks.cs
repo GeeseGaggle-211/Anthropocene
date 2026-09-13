@@ -21,6 +21,17 @@ internal static class FoundationChecks
     public static int Run()
     {
         checks = 0;
+        var cfg = SimulationConfig.Small(1);
+        Check(Vegetation.Classify(-11, .8, cfg) == EnvironmentKind.Ice && Vegetation.Classify(0, .8, cfg) == EnvironmentKind.Cold && Vegetation.Classify(30, .1, cfg) == EnvironmentKind.Desert, "environment precedence preserves climate breakpoints");
+        Check(Vegetation.Classify(25, .5, cfg) == EnvironmentKind.Tropical && Vegetation.Classify(15, .2, cfg) == EnvironmentKind.Grassland && Vegetation.Classify(15, .6, cfg) == EnvironmentKind.Temperate, "environment is independent of relief");
+        var cover = new Tile { Terrain = Terrain.Woodland, Relief = Relief.Mountain };
+        for (int i = 0; i < 4; i++) cover.Seasons[i] = new SeasonData { Temperature = 15, Moisture = .8f, MaxFood = 100 };
+        Check(Vegetation.Potential(cover, cfg) == VegetationTier.High, "wet highland retains high vegetation potential");
+        cover.CurrentVegetation = VegetationTier.High; FoodEcology.ConfigurePotential(cover, cfg, true); double biomassCapacity = cover.Seasons[0].MaxPotentialFood;
+        cover.CurrentVegetation = VegetationTier.Low;
+        Check(cover.Seasons[0].MaxPotentialFood == biomassCapacity && Math.Abs(FoodEcology.GatherableFraction(cover, cfg) - .1) < 1e-10, "cover loss reduces accessibility without creating biomass");
+        Check(Vegetation.Update(VegetationTier.High, VegetationTier.High, .2, cfg) == VegetationTier.Low && Vegetation.Update(VegetationTier.High, VegetationTier.Low, .9, cfg) == VegetationTier.High, "long intervals cross multiple vegetation thresholds");
+        Check(Vegetation.Update(VegetationTier.Medium, VegetationTier.Low, .5, cfg) == VegetationTier.Low && Vegetation.Update(VegetationTier.Medium, VegetationTier.Medium, .5, cfg) == VegetationTier.Medium, "hysteresis retains the previous tier inside its band");
         var w = Fixture(); var first = w.Camps[0];
         var daughter = new Camp { Id = w.NextId++, SocietyId = first.SocietyId, Player = first.Player, Population = 10, Tile = 180, Food = 200 };
         w.Camps.Add(daughter); Ownership.Bind(w); first.Experience[1] = 70;
