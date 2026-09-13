@@ -100,12 +100,17 @@ namespace Anthropocene.Simulation
         {
             var herds = w.Herds.ToDictionary(h => h.Id); var camps = w.Camps.ToDictionary(c => c.Id); var hunters = w.Hunters.ToDictionary(h => h.Id);
             var transfers = new List<Transfer>();
-            foreach (var group in demands.GroupBy(d => d.Tile).OrderBy(g => g.Key))
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            var groups = demands.GroupBy(d => d.Tile).OrderBy(g => g.Key).Select(g => new { Tile = g.Key, Claims = g.ToArray() }).ToArray();
+            // Materialization is a sequential write barrier before any worker reads the active state.
+            foreach (var group in groups) { touch(group.Tile); LazyEcology.MaterializeEcology(w, group.Tile, record.StartDays); }
+            var results = execution.Map(groups, group => EcologicalPressure.Integrate(w, group.Tile, group.Claims, record.StartDays, record.Duration));
+            // No worker mutates entities, allocates IDs, appends history, or changes collection order.
+            for (int i = 0; i < groups.Length; i++)
             {
-                touch(group.Key); LazyEcology.MaterializeEcology(w, group.Key, record.StartDays);
-                var result = EcologicalPressure.Integrate(w, group.Key, group, record.StartDays, record.Duration);
-                result.View.Commit(w.Tiles[group.Key]); record.Pressure.AddRange(result.Pressure); record.EcologyBalances.Add(result.Balance); transfers.AddRange(result.Transfers);
+                var result = results[i]; result.View.Commit(w.Tiles[groups[i].Tile]); record.Pressure.AddRange(result.Pressure); record.EcologyBalances.Add(result.Balance); transfers.AddRange(result.Transfers);
             }
+            LastMetrics.ActiveTiles = groups.Length; LastMetrics.EcologyMilliseconds = timer.Elapsed.TotalMilliseconds;
             foreach (var transfer in transfers)
             {
                 if (transfer.Kind == "Herd")
@@ -270,57 +275,77 @@ namespace Anthropocene.Simulation
             }
         }
 
+        private sealed class ReportIndex
+        {
+            public readonly Dictionary<int, Camp> Camps;
+            public readonly Dictionary<int, Hunter> Hunters;
+            public readonly ILookup<int, Hunter> CampHunters;
+            public readonly ILookup<int, Transfer> Harvest;
+            public readonly ILookup<int, LogisticsRecord> Logistics;
+            public readonly ILookup<int, PopulationChange> Population;
+            public readonly ILookup<int, Order> Orders;
+            public ReportIndex(WorldState w, TurnRecord record, IReadOnlyList<Order> orders)
+            {
+                Camps = w.Camps.ToDictionary(c => c.Id); Hunters = w.Hunters.ToDictionary(h => h.Id); CampHunters = w.Hunters.ToLookup(h => h.SourceCamp);
+                var owners = Camps.Keys.ToDictionary(id => id, id => id); foreach (var h in w.Hunters) owners[h.Id] = h.SourceCamp;
+                Harvest = record.Transfers.Where(t => owners.ContainsKey(t.Entity)).ToLookup(t => owners[t.Entity]);
+                Logistics = record.Logistics.ToLookup(l => l.Camp); Population = record.PopulationChanges.ToLookup(p => p.Camp);
+                Orders = orders.Where(o => owners.ContainsKey(o.Entity)).ToLookup(o => owners[o.Entity]);
+            }
+        }
+
         private static void FinishDemographicReports(WorldState w, TurnRecord record, IReadOnlyList<Order> orders)
         {
             record.Transfers = record.Transfers.GroupBy(t => (t.Tile, t.Entity, t.Kind)).OrderBy(g => g.Key.Tile).ThenBy(g => g.Key.Entity).ThenBy(g => g.Key.Kind, StringComparer.Ordinal)
                 .Select(g => new Transfer { Tile = g.Key.Tile, Entity = g.Key.Entity, Kind = g.Key.Kind, Food = g.Sum(t => t.Food), PotentialFood = g.Sum(t => t.PotentialFood), Freshwater = g.Sum(t => t.Freshwater) }).ToList();
+            var index = new ReportIndex(w, record, orders);
             foreach (var summary in record.Demographics)
             {
-                var camp = w.Camps.First(c => c.Id == summary.Camp); var ids = new HashSet<int>(w.Hunters.Where(h => h.SourceCamp == camp.Id).Select(h => h.Id)) { camp.Id };
-                var harvest = record.Transfers.Where(t => ids.Contains(t.Entity)).ToArray();
+                var camp = index.Camps[summary.Camp];
+                var harvest = index.Harvest[camp.Id].ToArray();
                 summary.TerrestrialFood = harvest.Where(t => t.Kind == "Gathering").Sum(t => t.Food); summary.MarineFood = harvest.Where(t => t.Kind == "Marine gathering").Sum(t => t.Food); summary.LakeFood = harvest.Where(t => t.Kind == "Aquatic gathering").Sum(t => t.Food);
                 summary.HuntFood = harvest.Where(t => t.Kind == "Hunting").Sum(t => t.Food); summary.FishFood = harvest.Where(t => t.Kind == "Fishing").Sum(t => t.Food); double forage = harvest.Where(t => t.Kind == "Foraging").Sum(t => t.Food); summary.ForageFood = forage;
                 summary.FoodProduced = summary.TerrestrialFood + summary.MarineFood + summary.LakeFood + summary.HuntFood + summary.FishFood + forage;
-                summary.FoodReceived = summary.FoodProduced - record.Logistics.Where(l => l.Camp == camp.Id).Sum(l => l.HarvestOverflow);
-                summary.DiscardedInventory += record.Logistics.Where(l => l.Camp == camp.Id).Sum(l => l.InventoryLoss);
-                summary.Additions = record.PopulationChanges.Where(p => p.Camp == camp.Id && p.Count > 0).Sum(p => p.Count); summary.Deaths = -record.PopulationChanges.Where(p => p.Camp == camp.Id && p.Count < 0).Sum(p => p.Count);
+                summary.FoodReceived = summary.FoodProduced - index.Logistics[camp.Id].Sum(l => l.HarvestOverflow);
+                summary.DiscardedInventory += index.Logistics[camp.Id].Sum(l => l.InventoryLoss);
+                summary.Additions = index.Population[camp.Id].Where(p => p.Count > 0).Sum(p => p.Count); summary.Deaths = -index.Population[camp.Id].Where(p => p.Count < 0).Sum(p => p.Count);
                 summary.EndingPopulation = w.LinkedPopulation(camp); summary.NetPercent = 100.0 * (summary.EndingPopulation - summary.StartingPopulation) / Math.Max(1, summary.StartingPopulation);
-                summary.FinalReserves = camp.Food + w.Hunters.Where(h => h.SourceCamp == camp.Id).OrderBy(h => h.Id).Sum(h => h.CarriedFood); summary.FractionalProgress = camp.GrowthRemainder;
+                summary.FinalReserves = camp.Food + index.CampHunters[camp.Id].OrderBy(h => h.Id).Sum(h => h.CarriedFood); summary.FractionalProgress = camp.GrowthRemainder;
                 if (Math.Abs(summary.InitialReserves + summary.FoodReceived - summary.FoodConsumed - summary.DiscardedInventory - summary.FinalReserves) > 1e-5) throw new InvalidOperationException("Unexplained food balance in demographic report.");
                 summary.LimitingFactor = summary.DeficitSteps > 0 ? "Food deficits limited growth" : summary.Additions > 0 ? "Growth supported by food surplus; demand rose with population" : summary.SurplusSteps > 0 ? "Demographic rounding; fractional progress " + summary.FractionalProgress.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : summary.RecoverySteps > 0 ? "Starvation recovery" : "No sustainable food surplus or insufficient reserves";
                 record.Log(summary.Explanation);
             }
-            AwardLifestyleProgress(w, record, orders);
+            AwardLifestyleProgress(w, record, orders, index);
         }
 
-        private static void AwardLifestyleProgress(WorldState w, TurnRecord record, IReadOnlyList<Order> orders)
+        private static void AwardLifestyleProgress(WorldState w, TurnRecord record, IReadOnlyList<Order> orders, ReportIndex index)
         {
             double generationScale = record.Duration / w.Config.PracticeDays;
             foreach (var summary in record.Demographics.OrderBy(report => report.Camp))
             {
-                var camp = w.Camps.First(c => c.Id == summary.Camp);
-                var hunterIds = new HashSet<int>(w.Hunters.Where(h => h.SourceCamp == camp.Id).Select(h => h.Id));
-                double hunting = record.Transfers.Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Hunting").Sum(t => t.Food);
-                double passiveAquatic = record.Transfers.Where(t => t.Entity == camp.Id && (t.Kind == "Marine gathering" || t.Kind == "Aquatic gathering")).Sum(t => t.Food);
-                double gathering = record.Transfers.Where(t => (t.Entity == camp.Id && t.Kind == "Gathering") || hunterIds.Contains(t.Entity) && t.Kind == "Foraging").Sum(t => t.Food) + passiveAquatic * (1 - w.Config.PassiveAquaticFishingPracticeShare);
-                double fishing = record.Transfers.Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Fishing").Sum(t => t.Food) * w.Config.ActiveFishingPracticeMultiplier + passiveAquatic * w.Config.PassiveAquaticFishingPracticeShare;
-                foreach (var logistics in record.Logistics.Where(l => l.Camp == camp.Id && l.HarvestOverflow > 0))
+                var camp = index.Camps[summary.Camp];
+                var hunterIds = new HashSet<int>(index.CampHunters[camp.Id].Select(h => h.Id));
+                double hunting = index.Harvest[camp.Id].Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Hunting").Sum(t => t.Food);
+                double passiveAquatic = index.Harvest[camp.Id].Where(t => t.Entity == camp.Id && (t.Kind == "Marine gathering" || t.Kind == "Aquatic gathering")).Sum(t => t.Food);
+                double gathering = index.Harvest[camp.Id].Where(t => (t.Entity == camp.Id && t.Kind == "Gathering") || hunterIds.Contains(t.Entity) && t.Kind == "Foraging").Sum(t => t.Food) + passiveAquatic * (1 - w.Config.PassiveAquaticFishingPracticeShare);
+                double fishing = index.Harvest[camp.Id].Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Fishing").Sum(t => t.Food) * w.Config.ActiveFishingPracticeMultiplier + passiveAquatic * w.Config.PassiveAquaticFishingPracticeShare;
+                foreach (var logistics in index.Logistics[camp.Id].Where(l => l.HarvestOverflow > 0))
                 {
                     double overflow = logistics.HarvestOverflow;
-                    double fromHunting = Math.Min(overflow, record.Transfers.Where(t => t.Entity == logistics.Hunter && t.Kind == "Hunting").Sum(t => t.Food)); hunting -= fromHunting; overflow -= fromHunting;
-                    fishing -= Math.Min(overflow, record.Transfers.Where(t => t.Entity == logistics.Hunter && t.Kind == "Fishing").Sum(t => t.Food));
+                    double fromHunting = Math.Min(overflow, index.Harvest[camp.Id].Where(t => t.Entity == logistics.Hunter && t.Kind == "Hunting").Sum(t => t.Food)); hunting -= fromHunting; overflow -= fromHunting;
+                    fishing -= Math.Min(overflow, index.Harvest[camp.Id].Where(t => t.Entity == logistics.Hunter && t.Kind == "Fishing").Sum(t => t.Food));
                 }
-                foreach (var hunt in record.Transfers.Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Hunting" && t.Food <= 0))
+                foreach (var hunt in index.Harvest[camp.Id].Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Hunting" && t.Food <= 0))
                 {
-                    var hunter = w.Hunters.FirstOrDefault(h => h.Id == hunt.Entity); if (hunter == null) continue;
+                    var hunter = index.Hunters.TryGetValue(hunt.Entity, out var found) ? found : null; if (hunter == null) continue;
                     double practice = hunter.Population * w.Config.Consumption * w.Config.GenerationIntervals * w.Config.UnproductivePracticeFraction;
                     hunting += practice;
                 }
-                foreach (var order in orders.Where(o => hunterIds.Contains(o.Entity) && o.Kind == OrderKind.Fish))
+                foreach (var order in index.Orders[camp.Id].Where(o => hunterIds.Contains(o.Entity) && o.Kind == OrderKind.Fish))
                 {
-                    bool successful = record.Transfers.Any(t => t.Entity == order.Entity && t.Food > 0 && t.Kind == "Fishing");
+                    bool successful = index.Harvest[camp.Id].Any(t => t.Entity == order.Entity && t.Food > 0 && t.Kind == "Fishing");
                     if (successful) continue;
-                    var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity); if (hunter == null) continue;
+                    var hunter = index.Hunters.TryGetValue(order.Entity, out var found) ? found : null; if (hunter == null) continue;
                     fishing += hunter.Population * w.Config.Consumption * w.Config.GenerationIntervals * w.Config.UnproductivePracticeFraction;
                 }
                 double total = hunting + gathering + fishing; if (total <= 1e-9) continue;

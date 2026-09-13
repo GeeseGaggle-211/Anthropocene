@@ -1,4 +1,4 @@
-param([int]$Seeds = 30, [switch]$Standard, [switch]$Geography, [switch]$Audit, [switch]$BiomePaths, [switch]$NomadAudit, [switch]$NomadStandard)
+param([int]$Seeds = 30, [switch]$Standard, [switch]$Geography, [switch]$Audit, [switch]$BiomePaths, [switch]$NomadAudit, [switch]$NomadStandard, [int]$ScalePlayers = 0)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $sdkCandidates = @(
@@ -14,5 +14,6 @@ if ($Audit) { $runArgs += '--audit3' }
 if ($BiomePaths) { $runArgs += '--biome-paths' }
 if ($NomadAudit) { $runArgs += '--nomad-audit' }
 if ($NomadStandard) { $runArgs += '--nomad-standard' }
+if ($ScalePlayers -gt 0) { $runArgs += "--scale=$ScalePlayers" }
 & $dotnetPath @runArgs
 if ($LASTEXITCODE -ne 0) { throw "Headless tests failed with exit code $LASTEXITCODE" }

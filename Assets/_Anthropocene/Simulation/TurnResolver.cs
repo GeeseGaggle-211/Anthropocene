@@ -44,11 +44,16 @@ namespace Anthropocene.Simulation
     }
     public sealed partial class TurnResolver
     {
+        private readonly PhaseExecution execution;
+        public ResolutionMetrics LastMetrics { get; private set; } = new ResolutionMetrics();
+        public TurnResolver(PhaseExecution execution = null) { this.execution = execution ?? new PhaseExecution(); }
+
 
         public string Validate(WorldState w, int player, Order order, HashSet<int> visible = null) => OrderRules.Validate(new AgentObservationBuilder().Build(w, player), order);
 
         public TurnRecord Resolve(WorldState w, IReadOnlyDictionary<int, List<Order>> submitted, IEnumerable<DecisionTrace> traces = null)
         {
+            var resolutionTimer = System.Diagnostics.Stopwatch.StartNew(); LastMetrics = new ResolutionMetrics();
             Ownership.Bind(w);
             if (w.Finished) throw new InvalidOperationException("The Paleolithic opening has ended.");
             w.Config.Validate();
@@ -74,7 +79,11 @@ namespace Anthropocene.Simulation
                 }
             }
             // Herd intentions are computed before dispatch or movement reveals new hunter positions.
-            var herdMoves = w.Herds.OrderBy(h => h.Id).ToDictionary(h => h.Id, h => HerdDestination(w, h, planning));
+            var phaseTimer = System.Diagnostics.Stopwatch.StartNew();
+            var herdInputs = w.Herds.OrderBy(h => h.Id).ToArray();
+            var destinations = execution.Map(herdInputs, h => HerdDestination(w, h, planning));
+            var herdMoves = herdInputs.Select((h, i) => new { h.Id, Destination = destinations[i] }).ToDictionary(x => x.Id, x => x.Destination);
+            LastMetrics.HerdIntentMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Dispatch).OrderBy(o => o.Entity))
             {
                 var camp = w.Camps.First(c => c.Id == order.Entity); camp.Population -= order.Population;
@@ -96,13 +105,16 @@ namespace Anthropocene.Simulation
             }
             w.Hunters.RemoveAll(h => h.Population <= 0);
             Ownership.Bind(w);
-            foreach (var camp in w.Camps.OrderBy(c => c.Id)) Breakthrough(w, camp, record);
+            foreach (var camp in w.Camps.OrderBy(c => c.Id)) BreakthroughBound(w, camp, record);
             foreach (var change in touched.Values.OrderBy(t => t.Tile))
             { change.AfterFood = w.Tiles[change.Tile].Food; change.AfterPotentialFood = w.Tiles[change.Tile].PotentialFood; change.AfterFreshwater = w.Tiles[change.Tile].Freshwater; change.AfterLandCondition = w.Tiles[change.Tile].LandCondition; change.AfterAquaticCondition = w.Tiles[change.Tile].AquaticCondition; record.Changes.Add(change); }
             // Untouched tiles follow the recorded configuration/clock regeneration rule; replay does not need world-sized snapshots each turn.
             Invariants(w, peopleBefore + record.Growth - record.Deaths, touched.Keys.Select(id => w.Tiles[id]));
+            // Per-claim pressure and numerical balances are transient phase diagnostics.
+            // Persisted transfer receipts, condition changes and demographic history remain intact.
+            if (w.History.Count > 0) { w.History[w.History.Count - 1].Pressure?.Clear(); w.History[w.History.Count - 1].EcologyBalances?.Clear(); }
             w.History.Add(record); w.Turn++;
-            return record;
+            LastMetrics.TotalMilliseconds = resolutionTimer.Elapsed.TotalMilliseconds; return record;
         }
 
         public static int HerdDestination(WorldState w, Herd herd, PlanningIndex index = null)
@@ -123,7 +135,7 @@ namespace Anthropocene.Simulation
                     .ThenByDescending(n => Knowledge.Band(index.Ecology(n).PotentialFood, Math.Max(1, w.Ecology(n).MaxPotentialFood), w.Config))
                     .ThenBy(n => n).First();
             if (!thirsty && !hungry && Numbers.Random(w.Seed, 71, herd.Id, w.Turn) >= w.Config.WanderChance) return herd.Tile;
-            return candidates.OrderByDescending(n => (thirsty ? FreshwaterAccess.Available(w, n, index) / Math.Max(1, waterDemand) : hungry ? index.Ecology(n).PotentialFood / Math.Max(1, foodDemand) : Numbers.Random(w.Seed, 72, herd.Id ^ n, w.Turn)) + species.Suitability(w.Tiles[n]) * species.MovementHabitatWeight)
+            return candidates.OrderByDescending(n => (thirsty ? FreshwaterAccess.Available(w, n, index) / Math.Max(1, waterDemand) : hungry ? index.Ecology(n).PotentialFood / Math.Max(1, foodDemand) : Numbers.Random(w.Seed, 72, herd.Id ^ n, w.Turn)) + species.Suitability(w.Tiles[n], index.Ecology(n).CurrentVegetation) * species.MovementHabitatWeight)
                 .ThenBy(n => n == herd.Tile ? 0 : 1).ThenBy(n => n).First();
         }
         private static void Move(WorldState w, List<Order> orders, Dictionary<int, int> herds, TurnRecord record)
@@ -165,10 +177,11 @@ namespace Anthropocene.Simulation
         {
             double practiceTime = time * w.Config.BaseDays / w.Config.PracticeDays;
             var requests = new List<Tuple<Hunter, Herd, int>>();
+            var huntingIndex = new PlanningIndex(w);
             var committedElsewhere = new HashSet<int>(orders.Where(o => o.Kind == OrderKind.Fish || o.Kind == OrderKind.Reintegrate).Select(o => o.Entity));
             foreach (var hunter in w.Hunters.Where(h => establishedHunters.Contains(h.Id) && h.Population > 0 && !committedElsewhere.Contains(h.Id)).OrderBy(h => h.Id))
             {
-                var herd = w.Herds.Where(h => h.DomesticCamp < 0 && h.Tile == hunter.Tile)
+                var herd = huntingIndex.VisibleHerds(new[] { hunter.Tile }).Where(h => h.DomesticCamp < 0)
                     .OrderByDescending(h => Math.Max(0, h.Animals - Math.Max(w.Config.GetSpecies(h.Species).MinimumAnimals, (int)Math.Ceiling(h.Animals * w.Config.HuntBreedingReserveFraction))))
                     .ThenByDescending(h => h.Animals).ThenBy(h => h.Id).FirstOrDefault();
                 if (herd == null) continue;
@@ -176,7 +189,7 @@ namespace Anthropocene.Simulation
                 var practice = camp.SpeciesExperience.FirstOrDefault(p => p.Species == herd.Species);
                 if (practice == null) { practice = new SpeciesPractice { Species = herd.Species }; camp.SpeciesExperience.Add(practice); }
                 practice.Experience += hunter.Population * practiceTime;
-                double efficiency = w.Config.HuntEfficiency * (w.Tiles[hunter.Tile].Terrain == Terrain.Woodland ? .85 : 1);
+                double efficiency = w.Config.HuntEfficiency * (Vegetation.LegacyTerrain(w.Tiles[hunter.Tile].Environment, huntingIndex.Ecology(hunter.Tile).CurrentVegetation) == Terrain.Woodland ? .85 : 1);
                 double expectation = hunter.Population * efficiency * time * (1 - w.Config.HuntVariance + Numbers.Random(w.Seed, 80, hunter.Id, w.Turn) * w.Config.HuntVariance * 2);
                 int requested = (int)expectation + (Numbers.Random(w.Seed, 81, hunter.Id, w.Turn) < expectation % 1 ? 1 : 0);
                 double fieldcraft = PracticeEffects.Ramp(w.Config, camp, Domain.Hunting);
@@ -226,8 +239,9 @@ namespace Anthropocene.Simulation
             w.Herds.RemoveAll(h => h.Animals <= 0);
         }
         public static void Breakthrough(WorldState w, Camp camp, TurnRecord record)
+        { Ownership.Bind(w); BreakthroughBound(w, camp, record); }
+        private static void BreakthroughBound(WorldState w, Camp camp, TurnRecord record)
         {
-            Ownership.Bind(w);
             if (w.LinkedPopulation(camp) <= 0) return;
             var progression = camp.People.Progression;
             if (progression.Era != Era.Paleolithic) return;

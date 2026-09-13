@@ -14,7 +14,7 @@ namespace Anthropocene.Presentation
     {
         private WorldState world;
         private AgentObservation observation;
-        private readonly TurnResolver resolver = new TurnResolver();
+        private readonly TurnResolver resolver = new TurnResolver(PhaseExecution.Desktop);
         private readonly AgentObservationBuilder builder = new AgentObservationBuilder();
         private readonly HeuristicTribePolicy policy = new HeuristicTribePolicy();
         private readonly Dictionary<int, Order> planned = new Dictionary<int, Order>();
@@ -387,11 +387,8 @@ namespace Anthropocene.Presentation
             var playerOrders = planned.Values.OrderBy(o => o.Entity).Select(o => o.Copy()).ToList();
             resolving = Task.Run(() =>
             {
-                var orders = new Dictionary<int, List<Order>> { [0] = playerOrders }; var traces = new List<DecisionTrace>();
-                var planningIndex = new PlanningIndex(world);
-                foreach (var camp in world.Camps.Where(c => c.Player != 0).OrderBy(c => c.Player))
-                { var decision = policy.Decide(builder.Build(world, camp.Player, planningIndex), camp.Mandate); orders[camp.Player] = decision.Orders; traces.Add(decision.Trace); }
-                return resolver.Resolve(world, orders, traces);
+                var ai = AiPlanning.Decide(world, PhaseExecution.Desktop, 0); ai.Orders[0] = playerOrders;
+                return resolver.Resolve(world, ai.Orders, ai.Traces);
             });
         }
         private void FinishTurn(TurnRecord record)

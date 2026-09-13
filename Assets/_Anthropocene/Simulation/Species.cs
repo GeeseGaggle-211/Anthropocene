@@ -21,12 +21,13 @@ namespace Anthropocene.Simulation
         public bool Domesticable = true;
         public double DefaultHabitatWeight = .05, ReliefAffinity, OasisAffinity, MovementHabitatWeight = .3;
         public List<BiomePreference> Biomes = new List<BiomePreference>();
-        public double Suitability(Tile tile)
+        public double Suitability(Tile tile, VegetationTier? projectedVegetation = null)
         {
+            var vegetation = projectedVegetation ?? tile.CurrentVegetation;
             if (!tile.TraversableLand) return 0;
-            var woodland = tile.CurrentVegetation >= VegetationTier.Medium && (tile.Environment == EnvironmentKind.Temperate || tile.Environment == EnvironmentKind.Tropical);
-            var preference = Biomes.FirstOrDefault(b => b.Biome == Terrain.Jungle && tile.Environment == EnvironmentKind.Tropical && tile.CurrentVegetation == VegetationTier.High)
-                ?? Biomes.FirstOrDefault(b => woodland ? b.Biome == Terrain.Woodland : b.Biome == tile.Terrain);
+            var woodland = vegetation >= VegetationTier.Medium && (tile.Environment == EnvironmentKind.Temperate || tile.Environment == EnvironmentKind.Tropical);
+            var preference = Biomes.FirstOrDefault(b => b.Biome == Terrain.Jungle && tile.Environment == EnvironmentKind.Tropical && vegetation == VegetationTier.High)
+                ?? Biomes.FirstOrDefault(b => woodland ? b.Biome == Terrain.Woodland : b.Biome == Vegetation.LegacyTerrain(tile.Environment, vegetation));
             double biome = preference?.Weight ?? DefaultHabitatWeight;
             double relief = tile.Relief == Relief.Hills || tile.Relief == Relief.Highland || tile.Relief == Relief.Mountain ? ReliefAffinity : 0;
             return Math.Max(0, biome * (1 + relief) * (1 + OasisAffinity * tile.OasisInfluence));

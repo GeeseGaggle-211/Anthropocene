@@ -24,6 +24,7 @@ namespace Anthropocene.Simulation
         public double VegetationMediumPotential = .30, VegetationHighPotential = .60;
         public double MediumVegetationDown = .40, MediumVegetationUp = .55, HighVegetationDown = .65, HighVegetationUp = .75, HighPotentialLowDown = .30, HighPotentialLowUp = .40;
         public int Width = 1024, Height = 512, Players = 32, PlateCount = 18;
+        public bool BenchmarkScale;
         public WorldShape Shape = WorldShape.Continents;
         public double BaseDays = 91.25, TurnDays = 7300, MinDays = 1, MaxDays = 36500;
         public double DaysPerYear = 365, PracticeDays = 7300, AnnualHumanGrowthRate = .01145, GrowthSurplusRatio = .25;
@@ -71,7 +72,7 @@ namespace Anthropocene.Simulation
 
         public void Validate()
         {
-            if (Width < 12 || Height < 8 || Width > 2048 || Height > 1024 || Players < 1 || Players > MaximumPlayersFor(Width, Height))
+            if (Width < 12 || Height < 8 || Width > 2048 || Height > 1024 || Players < 1 || Players > (BenchmarkScale ? 320 : MaximumPlayersFor(Width, Height)))
                 throw new ArgumentException("Unsupported map dimensions or player count.");
             if (PlateCount < 2 || PlateCount > 64 || TurnDays < MinDays || TurnDays > MaxDays || BaseDays <= 0)
                 throw new ArgumentException("Invalid generation or clock configuration.");
@@ -244,8 +245,8 @@ namespace Anthropocene.Simulation
         public List<string> Events = new List<string>();
         public List<string> Orders = new List<string>();
         public List<Transfer> Transfers = new List<Transfer>();
-        public List<PressureEntry> Pressure = new List<PressureEntry>();
-        public List<EcologyBalance> EcologyBalances = new List<EcologyBalance>();
+        [NonSerialized] public List<PressureEntry> Pressure = new List<PressureEntry>();
+        [NonSerialized] public List<EcologyBalance> EcologyBalances = new List<EcologyBalance>();
         public List<TileChange> Changes = new List<TileChange>();
         public List<DecisionTrace> Decisions = new List<DecisionTrace>();
         public List<LogisticsRecord> Logistics = new List<LogisticsRecord>();

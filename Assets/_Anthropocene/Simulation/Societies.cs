@@ -55,9 +55,11 @@ namespace Anthropocene.Simulation
         // Explicit construction/load boundary. Never call from observation or tile projection.
         public static void Bind(WorldState world)
         {
+            var byId = world.Societies.ToDictionary(s => s.Id); var byPlayer = world.Societies.GroupBy(s => s.Player).ToDictionary(g => g.Key, g => g.OrderBy(s => s.Id).First());
+            var camps = world.Camps.ToDictionary(c => c.Id);
             foreach (var camp in world.Camps.OrderBy(c => c.Id))
             {
-                var society = world.Societies.FirstOrDefault(s => camp.SocietyId > 0 ? s.Id == camp.SocietyId : s.Player == camp.Player);
+                Society society; if (camp.SocietyId > 0) byId.TryGetValue(camp.SocietyId, out society); else byPlayer.TryGetValue(camp.Player, out society);
                 if (society == null)
                 {
                     society = camp.People;
@@ -66,13 +68,13 @@ namespace Anthropocene.Simulation
                     society.Policy = PolicyState.Seeded(society.PolicySeed);
                     society.Progression.MajorityEligibilityDays = world.Config.MajorityEligibilityYears * world.Config.DaysPerYear;
                     society.Progression.ForcedTransitionDays = world.Config.ForcedTransitionYears * world.Config.DaysPerYear;
-                    world.Societies.Add(society);
+                    world.Societies.Add(society); byId[society.Id] = society; byPlayer[society.Player] = society;
                 }
                 camp.Bind(society);
             }
             world.Societies.Sort((a, b) => a.Id.CompareTo(b.Id));
-            foreach (var hunter in world.Hunters) hunter.SocietyId = world.Camps.First(c => c.Id == hunter.SourceCamp).SocietyId;
-            foreach (var herd in world.Herds.Where(h => h.DomesticCamp >= 0)) herd.OwnerSociety = world.Camps.First(c => c.Id == herd.DomesticCamp).SocietyId;
+            foreach (var hunter in world.Hunters) hunter.SocietyId = camps[hunter.SourceCamp].SocietyId;
+            foreach (var herd in world.Herds.Where(h => h.DomesticCamp >= 0)) herd.OwnerSociety = camps[herd.DomesticCamp].SocietyId;
         }
     }
 

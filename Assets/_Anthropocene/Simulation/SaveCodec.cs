@@ -28,7 +28,7 @@ namespace Anthropocene.Simulation
                     using (var header = new MemoryStream())
                     {
                         using (var xml = XmlDictionaryWriter.CreateBinaryWriter(header, null, null, false)) Serializer(typeof(WorldState)).WriteObject(xml, metadata);
-                        byte[] bytes = header.ToArray(); writer.Write(bytes.Length); writer.Write(bytes);
+                        writer.Write(checked((int)header.Length)); header.Position = 0; header.CopyTo(buffered);
                     }
                     writer.Write(world.Tiles.Length);
                     foreach (var tile in world.Tiles)
@@ -87,6 +87,7 @@ namespace Anthropocene.Simulation
                     if (world.Tiles[edge.TileB].RiverEdges == null) world.Tiles[edge.TileB].RiverEdges = Enumerable.Repeat(-1, 6).ToArray();
                     world.Tiles[edge.TileB].RiverEdges[edge.SideB] = edge.Id;
                 }
+                foreach (var turn in world.History) { turn.Pressure = new System.Collections.Generic.List<PressureEntry>(); turn.EcologyBalances = new System.Collections.Generic.List<EcologyBalance>(); }
                 TurnResolver.Invariants(world); ElevationLevelStage.Validate(world); BoundaryRiverStage.Validate(world); return world;
             }
         }
