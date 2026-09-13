@@ -70,6 +70,16 @@ internal static class EcologyChecks
         for (int i = 0; i < 4; i++) { w.Tiles[0].Seasons[i].FoodRecoveryPerDay = 0; w.Tiles[0].Seasons[i].BiomassRecoveryPerDay = 0; }
         var failed = EcologicalPressure.Integrate(w, 0, claims, 0, 7300);
         Check(failed.View.LandCondition == 1 && failed.Pressure.Where(p => p.Pool != "Freshwater").All(p => p.Realized == 0 && p.ConditionDamage == 0), "unmet extraction cannot damage an exhausted tile");
+        var weekly = Fixture(); weekly.Config.SafeUseRatio = 1000;
+        for (int i = 1; i < 4; i++) weekly.Tiles[0].Seasons[i] = weekly.Tiles[0].Seasons[0];
+        var annualClaims = new[] { new Demand { Tile = 0, Entity = 1, Kind = "Gathering", Food = 100 }, new Demand { Tile = 0, Entity = 2, Kind = "Herd", PotentialFood = 2000, Freshwater = 1000 } };
+        var annual = EcologicalPressure.Integrate(weekly, 0, annualClaims, 0, 365); double weeklyHarvest = 0;
+        for (int i = 0; i < 52; i++)
+        {
+            var step = EcologicalPressure.Integrate(weekly, 0, annualClaims.Select(d => new Demand { Tile = 0, Entity = d.Entity, Kind = d.Kind, Food = d.Food / 52, PotentialFood = d.PotentialFood / 52, Freshwater = d.Freshwater / 52 }), i * 365.0 / 52, 365.0 / 52);
+            step.View.Commit(weekly.Tiles[0]); weeklyHarvest += step.Transfers.Sum(ti => ti.Food + ti.PotentialFood);
+        }
+        Check(Near(annual.View.Food, weekly.Tiles[0].Food) && Near(annual.View.PotentialFood, weekly.Tiles[0].PotentialFood) && Near(annual.View.Freshwater, weekly.Tiles[0].Freshwater) && Near(annual.Transfers.Sum(ti => ti.Food + ti.PotentialFood), weeklyHarvest), "fixed-capacity coupled human/herd/water flow agrees across annual and weekly action intervals");
         var light = Fixture(); var extreme = Fixture();
         for (int i = 0; i < 15; i++)
         {

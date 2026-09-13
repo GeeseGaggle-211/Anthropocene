@@ -37,6 +37,8 @@ internal static class FoundationChecks
         w.Camps.Add(daughter); Ownership.Bind(w); first.Experience[1] = 70;
         Check(w.Societies.Count == 1 && daughter.Experience[1] == 70, "one society shares tradition across two local populations");
         daughter.Food = 75; Check(first.Food == 4000 && first.Population == 24, "settlement inventory/demography remains local");
+        var societyOrder = w.Societies.Select(s => s.Id).ToArray(); var nextId = w.NextId;
+        SaveCodec.Save(w); SaveCodec.Fingerprint(w); Check(w.NextId == nextId && w.Societies.Select(s => s.Id).SequenceEqual(societyOrder), "save and fingerprint preserve authoritative ownership and ordering");
         var copy = SaveCodec.Load(SaveCodec.Save(w)); copy.Camps[0].Experience[2] = 55;
         Check(copy.Societies.Count == 1 && copy.Camps[1].Experience[2] == 55, "save/load rebinds shared ownership");
         var ledger = new PopulationLedger(); ledger.Assign("craft", 5, 20); ledger.Assign("tend", 7, 20); ledger.Reassign("craft", "tend", 2, 20); ledger.Release("tend", 1, 20);

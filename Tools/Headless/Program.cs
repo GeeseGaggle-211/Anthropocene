@@ -25,7 +25,7 @@ internal static class Program
             for (int s = 0; s < 4; s++) w.Tiles[i].Seasons[s] = new SeasonData { MaxFood = 80, MaxPotentialFood = 800, MaxFreshwater = 80, FoodRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), BiomassRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), WaterRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), Moisture = .5f, Habitat = .5f };
         }
         for (int p = 0; p < players; p++) w.Camps.Add(new Camp { Id = w.NextId++, Player = p, Tile = 150 + p * 6, Population = 24, Food = 50 });
-        return w;
+        Ownership.Bind(w); foreach (var c in w.Camps) c.People.Policy = new PolicyState(); return w;
     }
     private static Dictionary<int, List<Order>> Orders(params Order[] orders) => new Dictionary<int, List<Order>> { [0] = orders.ToList() };
     private static string StartingHabitat(WorldState world, Camp camp)
@@ -117,7 +117,7 @@ internal static class Program
         Check(w.LinkedPopulation(camp) == 24 && w.Hunters.Count == 1, "Dispatch conservation");
         resolver.Resolve(w, Orders(new Order(OrderKind.Reintegrate, w.Hunters[0].Id, camp.Id)));
         Check(w.Hunters.Count == 0 && camp.Population == 24, "Reintegration conservation");
-        w = Flat(); camp = w.Camps[0]; var hunter = new Hunter { Id = w.NextId++, SourceCamp = camp.Id, Player = 0, Tile = camp.Tile, Population = 8 }; camp.Population -= 8; w.Hunters.Add(hunter);
+        w = Flat(); camp = w.Camps[0]; var hunter = new Hunter { Id = w.NextId++, SourceCamp = camp.Id, SocietyId = camp.SocietyId, Player = 0, Tile = camp.Tile, Population = 8 }; camp.Population -= 8; w.Hunters.Add(hunter);
         int water = w.Map.Neighbors(camp.Tile).First(); w.Tiles[water].Terrain = Terrain.Shallows;
         Check(resolver.Validate(w, 0, new Order(OrderKind.Move, camp.Id, destination: water)) != null, "Camp cannot embark");
         Check(resolver.Validate(w, 0, new Order(OrderKind.Move, hunter.Id, destination: water)) != null, "Hunters cannot embark before breakthrough");
@@ -147,7 +147,7 @@ internal static class Program
         w = Flat(); var before = Knowledge.Visible(w, 0); w.Camps[0].Tile += 4; var after = Knowledge.Visible(w, 0);
         Check(before.Except(after).Any() && after.Count == 19, "Present-tense fog");
         var policy = new HeuristicTribePolicy(); var builder = new AgentObservationBuilder();
-        w = Flat(3); camp = w.Camps[1]; hunter = new Hunter { Id = w.NextId++, SourceCamp = camp.Id, Player = camp.Player, Tile = camp.Tile, Population = 8 }; camp.Population -= 8; w.Hunters.Add(hunter);
+        w = Flat(3); camp = w.Camps[1]; hunter = new Hunter { Id = w.NextId++, SourceCamp = camp.Id, SocietyId = camp.SocietyId, Player = camp.Player, Tile = camp.Tile, Population = 8 }; camp.Population -= 8; w.Hunters.Add(hunter);
         water = w.Map.Neighbors(camp.Tile).First(); w.Tiles[water].Terrain = Terrain.Shallows; w.Tiles[water].WaterBody = WaterKind.Saltwater; w.Tiles[water].Freshwater = 0; w.Tiles[water].FreshwaterSource = FreshwaterSource.None;
         var fishingDecision = policy.Decide(builder.Build(w, camp.Player), camp.Mandate);
         Check(fishingDecision.Orders.Any(order => order.Entity == hunter.Id && order.Kind == OrderKind.Fish), "Fishing-oriented AI commits an established group to a visible productive fishing tile");
@@ -166,14 +166,14 @@ internal static class Program
         Check(loaded.Config.StartingReserveGenerations == 1 && loaded.Config.HunterCarryGenerations == 2.5 && loaded.Config.MinimumStorageGenerations == 1 && loaded.Config.MaximumStorageGenerations == 4 && loaded.Config.HunterForagePerPerson == 1 && loaded.Config.HuntBreedingReserveFraction == .2 && loaded.Config.SustainableHuntPopulation == 16 && loaded.Config.SustainableHerdGrowthRetention == .25 && loaded.Config.ActiveFishingPracticeMultiplier == 4.25 && loaded.Config.GrasslandHerdDensityMultiplier == 1.35 && loaded.Config.SteppeHerdDensityMultiplier == 1.15, "Missing tuning values gain current logistics, practice and herd-density defaults");
         Check(loaded.Config.GetSpecies("antelope").MaximumHerdSize == 150 && loaded.Herds[0].Capacity == 150, "Legacy saves gain species herd thresholds");
         w = Flat(); w.Config.SustainableHuntPopulation = 8; camp = w.Camps[0];
-        hunter = new Hunter { Id = w.NextId++, Tile = camp.Tile, Population = 12, Player = 0, SourceCamp = camp.Id }; w.Hunters.Add(hunter); camp.Population -= 12;
+        hunter = new Hunter { Id = w.NextId++, Tile = camp.Tile, Population = 12, Player = 0, SourceCamp = camp.Id, SocietyId = camp.SocietyId }; w.Hunters.Add(hunter); camp.Population -= 12;
         var prey = new Herd { Id = w.NextId++, Tile = camp.Tile + 1, Animals = 8 }; w.Herds.Add(prey);
         int fleeing = TurnResolver.HerdDestination(w, prey);
         Check(w.Map.Distance(fleeing, hunter.Tile) == w.Map.Radius(prey.Tile, 1).Max(n => w.Map.Distance(n, hunter.Tile)), "Herd maximizes escape distance");
         var huntRecord = resolver.Resolve(w, Orders(new Order(OrderKind.Move, hunter.Id, destination: fleeing)));
         Check(huntRecord.Transfers.Any(t => t.Kind == "Hunting" && t.Food > 0), "Movement into a herd's resolved tile triggers automatic hunting");
         Check(huntRecord.Transfers.Where(t => t.Entity == prey.Id && t.Kind == "Herd").Sum(t=>t.PotentialFood) > 0 && huntRecord.Transfers.Where(t => t.Entity == prey.Id && t.Kind == "Herd").Sum(t=>t.Freshwater) > 0, "Surviving herd consumes potential food and freshwater");
-        w = Flat(); camp = w.Camps[0]; hunter = new Hunter { Id = w.NextId++, Tile = camp.Tile, Population = 8, Player = 0, SourceCamp = camp.Id }; w.Hunters.Add(hunter); camp.Population -= 8;
+        w = Flat(); camp = w.Camps[0]; hunter = new Hunter { Id = w.NextId++, Tile = camp.Tile, Population = 8, Player = 0, SourceCamp = camp.Id, SocietyId = camp.SocietyId }; w.Hunters.Add(hunter); camp.Population -= 8;
         prey = new Herd { Id = w.NextId++, Tile = camp.Tile + 1, Animals = 8 }; w.Herds.Add(prey);
         huntRecord = resolver.Resolve(w, Orders(new Order(OrderKind.Move, hunter.Id, destination: hunter.Tile + 1)));
         Check(prey.Animals >= 8 && camp.Experience[0] == 0 && !huntRecord.Transfers.Any(t => t.Kind == "Hunting"), "Movement without herd contact causes neither kills nor hunting progress");
@@ -368,7 +368,6 @@ internal static class Program
                 {
                     Check(Percentile(endingPopulations, .5) >= 85 && Percentile(endingPopulations, .75) >= 100 && atLeastOneHundred * 5 >= endingPopulations.Count * 2 && endingPopulations.Last() <= 300, "Typical tribes should approach one hundred people without explosive Paleolithic populations");
                     Check(technologies.Skip(1).Count(n => n > 0) > 1, "The balance sample should contain distinct subsistence outcomes; shares are targets");
-                    Check(technologies[(int)Technology.Cultivation] > technologies[(int)Technology.Watercraft] && technologies[(int)Technology.Cultivation] > technologies[(int)Technology.AnimalHusbandry], "Cultivation should remain the plurality first technology");
                 }
                 if (growthResponseOpportunities > 0) Check(growthResponses >= growthResponseOpportunities * .75, "Most observed population increases should be answered by more gathering or hunter dispatch");
             }

@@ -15,7 +15,8 @@ namespace Anthropocene.Simulation
         private static DataContractSerializer Serializer(Type type) => new DataContractSerializer(type, new DataContractSerializerSettings { MaxItemsInObjectGraph = int.MaxValue });
         public static byte[] Save(WorldState world)
         {
-            Ownership.Bind(world);
+            var owners = world.Societies.ToDictionary(s => s.Id);
+            if (world.Camps.Any(c => !owners.TryGetValue(c.SocietyId, out var owner) || !ReferenceEquals(c.People, owner))) throw new InvalidOperationException("Bind society ownership at the world-construction boundary before saving.");
             using (var output = new MemoryStream())
             {
                 using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))

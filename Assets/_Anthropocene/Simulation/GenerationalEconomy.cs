@@ -103,7 +103,7 @@ namespace Anthropocene.Simulation
             var timer = System.Diagnostics.Stopwatch.StartNew();
             var groups = demands.GroupBy(d => d.Tile).OrderBy(g => g.Key).Select(g => new { Tile = g.Key, Claims = g.ToArray() }).ToArray();
             // Materialization is a sequential write barrier before any worker reads the active state.
-            foreach (var group in groups) { touch(group.Tile); LazyEcology.MaterializeEcology(w, group.Tile, record.StartDays); }
+            foreach (var group in groups) { LazyEcology.MaterializeEcology(w, group.Tile, record.StartDays); touch(group.Tile); }
             var results = execution.Map(groups, group => EcologicalPressure.Integrate(w, group.Tile, group.Claims, record.StartDays, record.Duration));
             // No worker mutates entities, allocates IDs, appends history, or changes collection order.
             for (int i = 0; i < groups.Length; i++)

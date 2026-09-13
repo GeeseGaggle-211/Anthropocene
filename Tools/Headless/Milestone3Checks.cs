@@ -18,7 +18,7 @@ internal static class Milestone3Checks
             for (int s = 0; s < 4; s++) t.Seasons[s] = new SeasonData { MaxFood = capacity, MaxPotentialFood = capacity * 10, FoodRecoveryPerDay = (float)EcologyMath.DailyRate(recovery, 91.25), BiomassRecoveryPerDay = (float)EcologyMath.DailyRate(recovery, 91.25), Moisture = 1, MaxFreshwater = 80, WaterRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25) };
             w.Tiles[i] = t;
         }
-        w.Camps.Add(new Camp { Id = w.NextId++, Tile = 150, Player = 0, Population = 24, Food = 4000 }); return w;
+        w.Camps.Add(new Camp { Id = w.NextId++, Tile = 150, Player = 0, Population = 24, Food = 4000 }); Ownership.Bind(w); return w;
     }
     private static void Sea(Tile t, bool open = false)
     {
@@ -40,14 +40,14 @@ internal static class Milestone3Checks
         var secondGeneration = resolver.Resolve(w, Idle()).Demographics.Single();
         Check(secondGeneration.StartingPopulation > report.StartingPopulation && secondGeneration.FoodRequired > report.FoodRequired && secondGeneration.TerrestrialFood > report.TerrestrialFood, "population growth raises demand and automatically expands local gathering in the next generation");
         w = Flat(); w.Config.GatherPerPerson = 100; w.Camps[0].Population = 16;
-        var suppliedHunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, Tile = w.Camps[0].Tile, Population = 8 }; w.Hunters.Add(suppliedHunters);
+        var suppliedHunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, SocietyId = w.Camps[0].SocietyId, Tile = w.Camps[0].Tile, Population = 8 }; w.Hunters.Add(suppliedHunters);
         resolver.Resolve(w, Idle());
         Check(Math.Abs(w.LinkedPopulation(w.Camps[0]) + w.Camps[0].GrowthRemainder - 24 * Math.Exp(w.Config.AnnualHumanGrowthRate * 20)) < 1e-8 && suppliedHunters.Population == 8, "the entire supplied tribe forms the reproductive base while additions appear at camp");
         Check(w.Tiles.All(t => t.Food >= 0 && t.Food <= t.Seasons[0].MaxFood), "long turns replenish bounded stocks instead of draining one seasonal snapshot eighty times");
         var standardCapacity = new SimulationConfig { Players = 80 }; standardCapacity.Validate();
         bool rejectedSmall = false; try { SimulationConfig.Small(17).Validate(); } catch (ArgumentException) { rejectedSmall = true; }
         Check(rejectedSmall && SimulationConfig.MaximumPlayersFor(1024, 512) == 80, "tribe limits allow eighty only on worlds large enough to place them");
-        w = Flat(); var provisionedHunter = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, Tile = w.Camps[0].Tile, Population = 8 }; w.Hunters.Add(provisionedHunter);
+        w = Flat(); var provisionedHunter = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, SocietyId = w.Camps[0].SocietyId, Tile = w.Camps[0].Tile, Population = 8 }; w.Hunters.Add(provisionedHunter);
         var provisionRecord = new TurnRecord(); Supply.ProvisionDepartures(w, new List<Order> { new Order(OrderKind.Move, provisionedHunter.Id, destination: provisionedHunter.Tile + 2) }, provisionRecord);
         Check(Math.Abs(provisionedHunter.CarriedFood - 8 * w.Config.Consumption * w.Config.GenerationIntervals * w.Config.HunterCarryGenerations) < 1e-8, "a departing hunter group can use its configured generational carrying capacity");
         w = Flat(); foreach (var tile in w.Tiles) for (int season = 0; season < 4; season++) { var ecology = tile.Seasons[season]; ecology.Temperature = 30; ecology.Moisture = 1; tile.Seasons[season] = ecology; }
@@ -66,10 +66,10 @@ internal static class Milestone3Checks
         for (int generation = 0; generation < 6; generation++) resolver.Resolve(w, Idle());
         Check(growingHerd.Animals == 100 && w.Herds.Count == 1, "a nine-animal well-fed herd approaches its one-hundred-head ceiling in six generations");
         w = Flat(); w.Config.WildHerdFissionEnabled = true; growingHerd = new Herd { Id = w.NextId++, Tile = 160, Animals = 149, Capacity = 150, Species = "antelope" }; w.Herds.Add(growingHerd);
-        var managedHerd = new Herd { Id = w.NextId++, Tile = w.Camps[0].Tile, Animals = 100, Capacity = 100, Species = "camel", DomesticCamp = w.Camps[0].Id }; w.Herds.Add(managedHerd);
+        var managedHerd = new Herd { Id = w.NextId++, Tile = w.Camps[0].Tile, Animals = 100, Capacity = 100, Species = "camel", DomesticCamp = w.Camps[0].Id, OwnerSociety = w.Camps[0].SocietyId }; w.Herds.Add(managedHerd);
         herdPopulation = w.Herds.Sum(h => h.Animals); herdTurn = resolver.Resolve(w, Idle());
         Check(w.Herds.Count > 2 && w.Herds.All(h => h.Animals <= h.Capacity) && managedHerd.Animals == managedHerd.Capacity && w.Herds.Sum(h => h.Animals) > herdPopulation && herdTurn.Events.Any(e => e.Contains("divided")), "optional wild-herd fission remains available as an explicit later ruleset while managed herds stay bounded");
-        w = Flat(); w.Config.GatherPerPerson = .1; var huntingCamp = w.Camps[0]; huntingCamp.Population -= 8; var hunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = huntingCamp.Tile, Population = 8 }; w.Hunters.Add(hunters);
+        w = Flat(); w.Config.GatherPerPerson = .1; var huntingCamp = w.Camps[0]; huntingCamp.Population -= 8; var hunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, SocietyId = huntingCamp.SocietyId, Tile = huntingCamp.Tile, Population = 8 }; w.Hunters.Add(hunters);
         var camels = new Herd { Id = w.NextId++, Tile = w.Map.Neighbors(huntingCamp.Tile).First(), Animals = 14, Capacity = 100, Species = "camel" }; w.Herds.Add(camels);
         int interception = TurnResolver.HerdDestination(w, camels); var sustainableHunt = resolver.Resolve(w, new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Move, hunters.Id, destination: interception) } });
         Check(sustainableHunt.Transfers.Where(t => t.Kind == "Hunting").Sum(t => t.Food) == 480 * w.Config.HuntingFoodYieldScale && w.Config.GetSpecies("camel").FoodYield * 16 == 24 * w.Config.Consumption * w.Config.GenerationIntervals && camels.Animals == 16 && sustainableHunt.Events.Any(e => e.Contains("keep growing")), "one eight-person group takes only sustainable growth; usable recovery scales without changing the baseline carcass balance or animal losses");
@@ -99,18 +99,18 @@ internal static class Milestone3Checks
         var ledgerCopy = SaveCodec.Load(SaveCodec.Save(ledgerWorld));
         Check(ledgerCopy.Camps[0].GathererPopulation == 19 && ledgerCopy.Camps[0].Workforce.Assignments.Single().Role == "future.craft" && ledgerCopy.Tiles[0].LandCondition == .42 && ledgerCopy.Tiles[1].AquaticCondition == .37, "workforce assignments and persistent environmental condition survive save/load");
         foreach (int neighbor in w.Map.Neighbors(camels.Tile)) w.Tiles[neighbor].ElevationLevel = 10;
-        var secondHunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = camels.Tile, Population = 8 };
+        var secondHunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, SocietyId = huntingCamp.SocietyId, Tile = camels.Tile, Population = 8 };
         w.Hunters.Add(secondHunters); int beforeSecondHunt = camels.Animals; resolver.Resolve(w, Idle());
         Check(camels.Animals > beforeSecondHunt, "two eight-person groups over one herd still leave net herd growth");
-        var thirdHunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = camels.Tile, Population = 8 };
+        var thirdHunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, SocietyId = huntingCamp.SocietyId, Tile = camels.Tile, Population = 8 };
         w.Hunters.Add(thirdHunters); huntingCamp.Food = 0; int beforeHeavyHunt = camels.Animals; resolver.Resolve(w, Idle());
         Check(camels.Animals < beforeHeavyHunt, "more than two eight-person groups can exert net overhunting pressure on one herd");
-        w = Flat(); w.Config.GatherPerPerson = .1; huntingCamp = w.Camps[0]; huntingCamp.Population -= 8; hunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = huntingCamp.Tile, Population = 8 }; w.Hunters.Add(hunters);
+        w = Flat(); w.Config.GatherPerPerson = .1; huntingCamp = w.Camps[0]; huntingCamp.Population -= 8; hunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, SocietyId = huntingCamp.SocietyId, Tile = huntingCamp.Tile, Population = 8 }; w.Hunters.Add(hunters);
         camels = new Herd { Id = w.NextId++, Tile = huntingCamp.Tile, Animals = 100, Capacity = 100, Species = "camel" }; w.Herds.Add(camels);
         foreach (int neighbor in w.Map.Neighbors(camels.Tile)) w.Tiles[neighbor].ElevationLevel = 10;
         for (int generation = 0; generation < 10; generation++) resolver.Resolve(w, Idle());
         Check(huntingCamp.Technology == Technology.AnimalHusbandry && huntingCamp.Experience[(int)Domain.Hunting] > huntingCamp.Experience[(int)Domain.Gathering], "a sustained food-dominant hunting strategy remains a viable Paleolithic path to animal husbandry");
-        w = Flat(); huntingCamp = w.Camps[0]; huntingCamp.Population -= 8; hunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, Tile = huntingCamp.Tile, Population = 8 }; w.Hunters.Add(hunters);
+        w = Flat(); huntingCamp = w.Camps[0]; huntingCamp.Population -= 8; hunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = huntingCamp.Id, SocietyId = huntingCamp.SocietyId, Tile = huntingCamp.Tile, Population = 8 }; w.Hunters.Add(hunters);
         foreach (int neighbor in w.Map.Neighbors(hunters.Tile)) w.Tiles[neighbor].ElevationLevel = 10;
         camels = new Herd { Id = w.NextId++, Tile = hunters.Tile, Animals = 10, Capacity = 80, Species = "camel" }; w.Herds.Add(camels);
         var automaticHunt = resolver.Resolve(w, Idle());
@@ -120,7 +120,7 @@ internal static class Milestone3Checks
         int animalsBeforeDispatch = localHerd.Animals; var dispatchTurn = resolver.Resolve(w, new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Dispatch, w.Camps[0].Id, population: 8) } });
         Check(localHerd.Animals >= animalsBeforeDispatch && !dispatchTurn.Transfers.Any(t => t.Kind == "Hunting"), "a newly dispatched group cannot auto-hunt before its first planning phase");
         w = Flat(); w.Camps[0].Population = 40;
-        var existingHunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, Tile = w.Camps[0].Tile, Population = 8 }; w.Hunters.Add(existingHunters);
+        var existingHunters = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, SocietyId = w.Camps[0].SocietyId, Tile = w.Camps[0].Tile, Population = 8 }; w.Hunters.Add(existingHunters);
         w.Herds.Add(new Herd { Id = w.NextId++, Tile = w.Map.Neighbors(w.Camps[0].Tile).First(), Animals = 40, Capacity = 150, Species = "antelope" });
         var growthResponse = new HeuristicTribePolicy().Decide(new AgentObservationBuilder().Build(w, 0), w.Camps[0].Mandate);
         Check(growthResponse.Orders.Any(o => o.Kind == OrderKind.Dispatch && o.Population >= 4) && growthResponse.Orders.All(o => o.Kind != OrderKind.Hunt), "a larger tribe with visible prey can dispatch another group while pursuit uses movement rather than an explicit hunt order");
@@ -144,15 +144,15 @@ internal static class Milestone3Checks
         Check(mixed.Transfers.Where(t => t.Kind.Contains("gathering") || t.Kind == "Gathering").Sum(t => t.Food) <= 24 * w.Config.GatherPerPerson + 1e-8, "marine and terrestrial gathering share one labor budget");
         w = Flat(0, 0); w.Config.TurnDays = w.Config.BaseDays; Sea(w.Tiles[coast], true); Sea(w.Tiles[152]);
         Check(!resolver.Resolve(w, Idle()).Transfers.Any(t => t.Kind == "Marine gathering" && t.Food > 0), "open ocean and nonadjacent shallows are excluded from passive gathering");
-        w = Flat(); var h = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, Tile = 150, Population = 8 }; w.Hunters.Add(h);
+        w = Flat(); var h = new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, SocietyId = w.Camps[0].SocietyId, Tile = 150, Population = 8 }; w.Hunters.Add(h);
         w.Tiles[151].ElevationLevel = 10;
         Check(!w.CanEnter(151, false) && !w.CanEnter(151, true, w.Camps[0]) && resolver.Validate(w, 0, new Order(OrderKind.Move, h.Id, destination: 151)) != null, "peaks reject camp and hunter movement");
         var animal = new Herd { Id = w.NextId++, Tile = 150, Species = "goat", Animals = 6 }; w.Herds.Add(animal);
         Check(TurnResolver.HerdDestination(w, animal) != 151 && w.Config.GetSpecies("goat").Suitability(w.Tiles[151]) == 0, "peaks are unavailable to herds including goats");
         var view = new AgentObservationBuilder().Build(w, 0);
         Check(view.Tiles[151].ElevationLevel == 10 && new HeuristicTribePolicy().Decide(view, w.Camps[0].Mandate).Orders.All(o => o.Destination != 151), "AI observations and movement preserve peak blocking");
-        w.Hunters.Add(new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, Tile = 150, Population = 3, CarriedFood = 5 });
-        w.Herds.Add(new Herd { Id = w.NextId++, Tile = 150, Species = "horse", Animals = 4, DomesticCamp = w.Camps[0].Id });
+        w.Hunters.Add(new Hunter { Id = w.NextId++, Player = 0, SourceCamp = w.Camps[0].Id, SocietyId = w.Camps[0].SocietyId, Tile = 150, Population = 3, CarriedFood = 5 });
+        w.Herds.Add(new Herd { Id = w.NextId++, Tile = 150, Species = "horse", Animals = 4, DomesticCamp = w.Camps[0].Id, OwnerSociety = w.Camps[0].SocietyId });
         view = new AgentObservationBuilder().Build(w, 0); var occupants = TileDetails.Occupants(view, 150);
         Check(occupants.Length == 5 && occupants.Count(p => p.SelectableId >= 0) == 3 && occupants.Select(p => p.Id).Distinct().Count() == 5, "stack data contains camp, both friendly groups, wild herd and domestic livestock");
         string detail = TileDetails.Describe(view, 150, new[] { new Order(OrderKind.Move, h.Id, destination: 152) });
@@ -173,7 +173,7 @@ internal static class Milestone3Checks
         string[] labels = { "fewer than 10", "fewer than 10", "~10", "~10", "~20", "~30", "~100", "~100", "100+", "100+", "200+", "200+" };
         for (int i = 0; i < counts.Length; i++) Check(HerdCountKnowledge.Observe(counts[i], countConfig).Label == labels[i], "centralized herd count boundary " + counts[i]);
         w = Flat(); var wild = new Herd { Id = w.NextId++, Tile = 150, Animals = 41, Capacity = 200, Species = "camel" }; w.Herds.Add(wild);
-        var livestock = new Herd { Id = w.NextId++, Tile = 150, Animals = 17, Capacity = 200, Species = "goat", DomesticCamp = w.Camps[0].Id }; w.Herds.Add(livestock);
+        var livestock = new Herd { Id = w.NextId++, Tile = 150, Animals = 17, Capacity = 200, Species = "goat", DomesticCamp = w.Camps[0].Id, OwnerSociety = w.Camps[0].SocietyId }; w.Herds.Add(livestock);
         var observer = new AgentObservationBuilder(); var firstView = observer.Build(w, 0);
         Check(firstView.Herds.First(h => h.Id == livestock.Id).Count.Exact && firstView.Herds.First(h => h.Id == livestock.Id).Count.Label == "17", "own domestic livestock exposes a managed exact count");
         var outsider = new HerdObservation(livestock, countConfig, 0, 1);

@@ -17,11 +17,11 @@ internal static class Milestone2Checks
             for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData { MaxFood = 80, MaxPotentialFood = 800, MaxFreshwater = 80, FoodRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), BiomassRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), WaterRecoveryPerDay = (float)EcologyMath.DailyRate(.3, 91.25), Moisture = .5f };
             w.Tiles[i] = tile;
         }
-        w.Camps.Add(new Camp { Id = w.NextId++, Tile = 150, Player = 0, Population = 16, Food = 100 }); return w;
+        w.Camps.Add(new Camp { Id = w.NextId++, Tile = 150, Player = 0, Population = 16, Food = 100 }); Ownership.Bind(w); return w;
     }
     private static Hunter Hunter(WorldState w, int tile, double food = 0)
     {
-        var hunter = new Hunter { Id = w.NextId++, SourceCamp = w.Camps[0].Id, Tile = tile, Population = 8, Player = 0, CarriedFood = food }; w.Hunters.Add(hunter); return hunter;
+        var hunter = new Hunter { Id = w.NextId++, SourceCamp = w.Camps[0].Id, SocietyId = w.Camps[0].SocietyId, Tile = tile, Population = 8, Player = 0, CarriedFood = food }; w.Hunters.Add(hunter); return hunter;
     }
     private static Dictionary<int, List<Order>> Orders(params Order[] orders) => new Dictionary<int, List<Order>> { [0] = orders.ToList() };
     private static void Marine(Tile t)
