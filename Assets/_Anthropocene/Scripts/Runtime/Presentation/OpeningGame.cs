@@ -58,10 +58,10 @@ namespace Anthropocene.Presentation
             if (resolving != null && resolving.IsCompleted) { if (resolving.IsFaulted) status = "Turn failed: " + resolving.Exception.GetBaseException().Message; else FinishTurn(resolving.Result); resolving = null; }
             if (generating == null || !generating.IsCompleted) return;
             if (generating.IsFaulted) status = "World generation failed: " + generating.Exception.GetBaseException().Message;
-            else { world = generating.Result; menu = false; planned.Clear(); journal.Clear(); lastResolutionSummary = ""; FocusCamp(); Refresh(); status = operation == "Loading the saved opening" ? "Saved opening restored." : "Your people gather automatically. Choose orders, then commit the generation."; }
+            else { world = generating.Result; InvalidateWorldPreview(); previewOpen = previewAfterGeneration; previewAfterGeneration = false; menu = false; planned.Clear(); journal.Clear(); lastResolutionSummary = ""; FocusCamp(); Refresh(); status = operation == "Loading the saved opening" ? "Saved opening restored." : "Your people gather automatically. Choose orders, then commit the generation."; }
             generating = null;
         }
-        private void OnDestroy() { if (hex != null) Destroy(hex); }
+        private void OnDestroy() { if (hex != null) Destroy(hex); InvalidateWorldPreview(); }
         private void Styles()
         {
             if (text != null) return;
@@ -83,6 +83,7 @@ namespace Anthropocene.Presentation
             Fill(new Rect(0, 0, Screen.width, Screen.height), Ink);
             if (resolving != null) { ResolutionScreen(); return; }
             if (menu || world == null || generating != null) { Menu(); return; }
+            if (previewOpen) { DrawWorldPreview(); return; }
             GUIUtility.keyboardControl = 0;
             float side = Mathf.Min(390, Screen.width * .36f);
             var mapRect = new Rect(0, 64, Screen.width - side, Screen.height - 212);
@@ -93,30 +94,10 @@ namespace Anthropocene.Presentation
             GUI.enabled = true;
             if (help) Help(); else DrawHover(mapRect);
         }
-        private void Menu()
-        {
-            float width = Mathf.Min(580, Screen.width - 40), left = (Screen.width - width) / 2;
-            float top = Mathf.Max(20, (Screen.height - 620) / 2);
-            Fill(new Rect(left - 20, top - 10, width + 40, 620), Panel);
-            GUI.Label(new Rect(left, top + 10, width, 42), "A N T H R O P O C E N E", title);
-            GUI.Label(new Rect(left, top + 55, width, 55), "The first generations\nA people without a fixed destiny. A landscape with limits.", text);
-            GUI.Label(new Rect(left, top + 125, 100, 25), "World seed", text);
-            seedText = GUI.TextField(new Rect(left + 110, top + 123, width - 110, 30), seedText, 12);
-            if (Button(new Rect(left, top + 169, width, 34), "World size: " + Sizes[sizeIndex])) CycleWorldSize();
-            if (Button(new Rect(left, top + 211, width, 34), "World shape: " + ((WorldShape)shapeIndex))) shapeIndex = (shapeIndex + 1) % 3;
-            if (Button(new Rect(left, top + 253, width, 34), "Tribes: " + players + "  (you + " + (players - 1) + " rivals)")) CycleTribes();
-            GUI.enabled = generating == null;
-            if (Button(new Rect(left, top + 295, width, 34), "Tileset: " + tilesets[tilesetIndex].Name)) SetTileset(tilesetIndex + 1);
-            if (Button(new Rect(left, top + 348, width, 42), "BEGIN THE PALEOLITHIC", true)) NewGame();
-            if (File.Exists(SavePath) && Button(new Rect(left, top + 400, width, 34), "Load saved opening")) Load();
-            if (world != null && Button(new Rect(left, top + 442, width, 34), "Return to current opening")) menu = false;
-            GUI.enabled = true;
-            GUI.Label(new Rect(left, top + 488, width, 70), generating != null ? operation + "..." : status, text);
-            GUI.Label(new Rect(left, top + 568, width, 30), "Tent: camp   Spear: hunters   Hoofed animal: herd   o: oasis", small);
-        }
         private void NewGame()
         {
-            if (!int.TryParse(seedText, out int seed)) { status = "Enter a whole-number seed."; return; }
+            int seed = PlaytestScenarios.Seed;
+            if (scenarioIndex == 0 && !int.TryParse(seedText, out seed)) { status = "Enter a whole-number seed."; return; }
             var config = new SimulationConfig();
             var tuning = Resources.Load<TextAsset>("OpeningConfig");
             if (tuning != null) JsonUtility.FromJsonOverwrite(tuning.text, config);
@@ -124,7 +105,9 @@ namespace Anthropocene.Presentation
             if (sizeIndex == 2) { config.Width = 48; config.Height = 24; config.StartSeparation = 6; }
             config.Players = players; config.Shape = (WorldShape)shapeIndex;
             operation = "Building plates, climate, rivers, ecology and viable starts";
-            generating = Task.Run(() => new WorldGenerator().Generate(seed, config));
+            int preset = scenarioIndex;
+            if (preset > 0) { PlaytestScenarios.Configure(config); seed = PlaytestScenarios.Seed; }
+            generating = Task.Run(() => { var created = new WorldGenerator().Generate(seed, config); if (preset > 0) PlaytestScenarios.Select(created, preset); return created; });
         }
         private void CycleWorldSize()
         {
@@ -452,7 +435,7 @@ namespace Anthropocene.Presentation
         private void Load()
         {
             if (saving != null || generating != null) return;
-            string path = SavePath; operation = "Loading the saved opening";
+            previewAfterGeneration = false; string path = SavePath; operation = "Loading the saved opening";
             generating = Task.Run(() => SaveCodec.Load(File.ReadAllBytes(path)));
         }
         private void Transition(Rect rect)
