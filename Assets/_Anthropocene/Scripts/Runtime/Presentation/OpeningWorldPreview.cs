@@ -12,7 +12,7 @@ namespace Anthropocene.Presentation
         private Texture2D previewTexture;
         private float previewZoom = 1;
         private Vector2 previewPan, menuScroll, previewScroll;
-        private readonly string[] previewLayers = { "Environment", "Renewable food", "Freshwater renewal" };
+        private readonly string[] previewLayers = { "Environment", "Renewable food", "Freshwater renewal", "Elevation", "Volcanic activity" };
 
         private void Menu()
         {
@@ -36,7 +36,7 @@ namespace Anthropocene.Presentation
                 if (Button(new Rect(8, 328, w, 32), "World shape: " + ((WorldShape)shapeIndex))) shapeIndex = (shapeIndex + 1) % 3;
                 if (Button(new Rect(8, 366, w, 32), "Tribes: " + players + " (including you)")) CycleTribes();
             }
-            else GUI.Label(new Rect(8, 260, w, 130), "Standard · Continents · seed 1729 · 80 tribes\n\nSame natural world for all three starts. Food, prey and reserves use normal rules. Technology is earned through play. These are environmental analogues, not historical reconstructions.", text);
+            else GUI.Label(new Rect(8, 260, w, 130), "Standard · Continents · seed " + PlaytestScenarios.Seed + " · 80 tribes\n\nSame natural world for all three starts. Food, prey and reserves use normal rules. Technology is earned through play. These are environmental analogues, not historical reconstructions.", text);
             if (Button(new Rect(8, 410, w, 32), "Tileset: " + tilesets[tilesetIndex].Name)) SetTileset(tilesetIndex + 1);
             if (Button(new Rect(8, 454, w, 40), "BEGIN THIS OPENING", true)) { previewAfterGeneration = false; NewGame(); }
             if (Button(new Rect(8, 502, w, 36), "BUILD WORLD PREVIEW (DEV)")) { previewAfterGeneration = true; NewGame(); }
@@ -79,12 +79,19 @@ namespace Anthropocene.Presentation
             foreach (var t in world.Tiles)
             {
                 Color color = EnvironmentColor(t);
-                if (previewLayer > 0)
+                if (previewLayer == 1 || previewLayer == 2)
                 {
                     double value = previewLayer == 1 ? PlaytestScenarios.Food(world, t, previewSeason) : PlaytestScenarios.Water(world, t, previewSeason);
                     float fraction = Mathf.Clamp01((float)(Math.Log(1 + value) / Math.Log(101)));
                     color = Color.Lerp(new Color(.035f, .06f, .09f), new Color(.99f, .78f, .27f), fraction);
                 }
+                else if (previewLayer == 3)
+                {
+                    float altitude = t.Elevation - (float)world.Config.SeaLevel;
+                    color = altitude < 0 ? Color.Lerp(new Color(.04f, .10f, .20f), new Color(.15f, .46f, .55f), Mathf.Clamp01(1 + altitude / .3f))
+                        : Color.Lerp(new Color(.23f, .40f, .25f), new Color(.94f, .91f, .83f), Mathf.Clamp01(altitude / .38f));
+                }
+                else if (previewLayer == 4) color = Color.Lerp(color * .45f, new Color(1, .29f, .09f), Mathf.Clamp01(t.Volcanism * 5));
                 colors[(height - 1 - t.Id / width) * width + t.Id % width] = color;
             }
             previewTexture = new Texture2D(width, height, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
@@ -100,8 +107,9 @@ namespace Anthropocene.Presentation
             float side = Mathf.Min(350, Screen.width * .34f);
             GUI.Label(new Rect(20, 12, Screen.width - 230, 36), "WORLD PREVIEW · DEV / ALL TILES REVEALED", title);
             if (Button(new Rect(Screen.width - 200, 12, 180, 34), "PLAY CURRENT START", true)) { previewOpen = false; menu = false; }
-            for (int i = 0; i < 3; i++)
-                if (Button(new Rect(20 + i * 185, 58, 179, 32), previewLayers[i], previewLayer == i)) { previewLayer = i; Destroy(previewTexture); previewTexture = null; }
+            float layerWidth = Mathf.Min(185, (Screen.width - 40) / 5f);
+            for (int i = 0; i < previewLayers.Length; i++)
+                if (Button(new Rect(20 + i * layerWidth, 58, layerWidth - 6, 32), previewLayers[i], previewLayer == i)) { previewLayer = i; Destroy(previewTexture); previewTexture = null; }
             if (Button(new Rect(20, 100, 215, 30), previewSeason < 0 ? "Season: annual mean" : "Season: " + (previewSeason + 1))) { previewSeason = previewSeason == 3 ? -1 : previewSeason + 1; Destroy(previewTexture); previewTexture = null; }
             if (Button(new Rect(243, 100, 140, 30), "Fit world")) { previewZoom = 1; previewPan = Vector2.zero; }
             if (Button(new Rect(391, 100, 163, 30), "Find my camp"))
@@ -156,7 +164,11 @@ namespace Anthropocene.Presentation
             previewScroll = GUI.BeginScrollView(new Rect(0, 0, area.width, area.height), previewScroll, new Rect(0, 0, area.width - 20, 1060));
             float w = area.width - 40, y = 12;
             GUI.Label(new Rect(12, y, w, 65), "Seed " + world.Seed + " · " + world.Camps.Count + " tribes · turn " + world.Turn + "\nWhite: tribes · Gold: your camp\n1 river · 2 steppe · 3 cold coast", text); y += 76;
-            GUI.Label(new Rect(12, y, w, 150), previewLayer == 0 ? "Ocean: dark blue\nShallows / lakes: blue\nDesert: ochre · river / oasis: olive\nGrassland: light green\nTemperate / tropical: dark green\nCold: grey green · ice: white" : "Dark = 0 · bright gold = 100+\nLog scale: 0 / 1 / 10 / 100\nUnits per base season (" + world.Config.BaseDays.ToString("0.##") + " days).\nProfile renewal potential, before labor, depletion and competition. Ocean food is excluded from accessible food.", small); y += 158;
+            string legend = previewLayer == 0 ? "Ocean: dark blue\nShallows / lakes: blue\nDesert: ochre · river / oasis: olive\nGrassland: light green\nTemperate / tropical: dark green\nCold: grey green · ice: white"
+                : previewLayer == 3 ? "Continuous elevation\nDeep blue: ocean floor\nTeal: continental shelf\nGreen: lowland\nPale: high mountain belts\nThis is physical relief, not the 1–10 movement levels."
+                : previewLayer == 4 ? "Orange: volcanic activity\nOcean hotspot tracks follow plate motion. Islands vary in size and subside with age. Continental activity follows convergent margins. This is a generation proxy, not live tectonics."
+                : "Dark = 0 · bright gold = 100+\nLog scale: 0 / 1 / 10 / 100\nUnits per base season (" + world.Config.BaseDays.ToString("0.##") + " days).\nProfile renewal potential, before labor, depletion and competition. Ocean food is excluded from accessible food.";
+            GUI.Label(new Rect(12, y, w, 150), legend, small); y += 158;
             var own = world.Camps.First(c => c.Player == 0);
             GUI.Label(new Rect(12, y, w, 30), "YOUR CAMP · radius 1", section); y += 30;
             var near = world.Map.Radius(own.Tile, 1).Select(n => world.Tiles[n]).ToArray();

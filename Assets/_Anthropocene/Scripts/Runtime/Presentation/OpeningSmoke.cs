@@ -38,13 +38,20 @@ namespace Anthropocene.Presentation
             float normalRadius = radius; radius = 20;
             yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "03b-distant-view.png")); yield return new WaitForSeconds(.4f);
             radius = normalRadius;
-            int east = world.Map.At(hunter.Tile % world.Config.Width + 2, hunter.Tile / world.Config.Width);
-            var move = new Order(OrderKind.Move, hunter.Id, destination: east);
-            if (resolver.Validate(world, 0, move) != null) throw new InvalidOperationException("The documented eastward demonstration is no longer legal.");
+            // This opt-in test selects a repeatable traversable four-tile route from generated
+            // geography. A fixed eastward path from generator 8 is not a generation contract.
+            var route = (from first in world.Map.Radius(camp.Tile, 2)
+                         where world.Map.Distance(camp.Tile, first) == 2 && world.Map.Reachable(camp.Tile, first, 2, id => world.Tiles[id].TraversableLand)
+                         from second in world.Map.Radius(first, 2)
+                         where world.Map.Distance(camp.Tile, second) == 4 && world.Map.Reachable(first, second, 2, id => world.Tiles[id].TraversableLand)
+                         orderby first, second
+                         select new { First = first, Second = second }).FirstOrDefault();
+            if (route == null) throw new InvalidOperationException("No four-tile supply demonstration route from this generated camp.");
+            var move = new Order(OrderKind.Move, hunter.Id, destination: route.First);
+            if (resolver.Validate(world, 0, move) != null) throw new InvalidOperationException("The first generated demonstration move is not legal.");
             Queue(move); EndTurn(); while (resolving != null) yield return null;
-            east = world.Map.At(hunter.Tile % world.Config.Width + 2, hunter.Tile / world.Config.Width);
-            move = new Order(OrderKind.Move, hunter.Id, destination: east);
-            if (resolver.Validate(world, 0, move) != null) throw new InvalidOperationException("Second eastward demonstration order is no longer legal.");
+            move = new Order(OrderKind.Move, hunter.Id, destination: route.Second);
+            if (resolver.Validate(world, 0, move) != null) throw new InvalidOperationException("Second generated demonstration move is not legal.");
             Queue(move);
             yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "04-supply-warning.png")); yield return new WaitForSeconds(.4f);
             string before = SaveCodec.Fingerprint(world); var savedWorld = world;
@@ -57,7 +64,7 @@ namespace Anthropocene.Presentation
             float captureDeadline = Time.realtimeSinceStartup + 5;
             while (captures.Any(name => !File.Exists(Path.Combine(output, name + ".png"))) && Time.realtimeSinceStartup < captureDeadline) yield return null;
             if (captures.Any(name => !File.Exists(Path.Combine(output, name + ".png")))) throw new InvalidOperationException("Player screenshots are missing. Run this visual check in a visible game window.");
-            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: Standard / Continents / 1729 / 32 tribes. Dispatch, exact stack selection, both symbol sets, distant layer simplification, two eastward move previews, and separate save/load round trip. Final turn " + world.Turn + ", population " + world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) + ". Screenshots captured from the Windows player.\n");
+            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: Standard / Continents / 1729 / 32 tribes. Dispatch, exact stack selection, both symbol sets, distant layer simplification, generated two-hop supply route " + camp.Tile + " -> " + route.First + " -> " + route.Second + ", and separate save/load round trip. Final turn " + world.Turn + ", population " + world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) + ". Screenshots captured from the Windows player.\n");
             Application.Quit();
         }
 
@@ -73,7 +80,7 @@ namespace Anthropocene.Presentation
                 previewAfterGeneration = true; NewGame(); while (generating != null) yield return null;
                 if (world == null || world.Camps.Single(c => c.Player == 0).Tile != PlaytestScenarios.Tile(preset)) throw new InvalidOperationException("Preset did not load: " + status);
                 string before = SaveCodec.Fingerprint(world); int visible = observation.Tiles.Count;
-                for (int layer = 0; layer < 3; layer++)
+                for (int layer = 0; layer < previewLayers.Length; layer++)
                 {
                     previewLayer = layer; InvalidateWorldPreview();
                     yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, preset + "-preview-" + layer + ".png")); yield return new WaitForSeconds(.3f);
@@ -88,7 +95,7 @@ namespace Anthropocene.Presentation
                 report.AppendLine("PASS " + PlaytestScenarios.Names[preset] + ": all preview layers, local zoom, normal fog (" + visible + " observed tiles), unchanged preview fingerprint, turn 2 population " + world.LinkedPopulation(world.Camps.First(c => c.Player == 0)));
             }
             yield return new WaitForSeconds(1);
-            if (Directory.GetFiles(output, "*.png").Length != 18) throw new InvalidOperationException("Missing preset screenshots.");
+            if (Directory.GetFiles(output, "*.png").Length != 24) throw new InvalidOperationException("Missing preset screenshots.");
             File.WriteAllText(Path.Combine(output, "result.txt"), report.ToString()); Application.Quit();
         }
     }
