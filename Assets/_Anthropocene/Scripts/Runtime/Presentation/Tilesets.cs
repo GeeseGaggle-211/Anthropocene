@@ -127,18 +127,22 @@ namespace Anthropocene.Presentation
         public static string BaseKey(TileObservation tile) => tile == null ? "hidden" : "terrain." +
             (tile.Land && (tile.Relief == Relief.Highland || tile.Relief == Relief.Mountain) ? "highland" : tile.Environment == EnvironmentKind.Ice ? "cold" : tile.Environment.ToString().ToLowerInvariant());
         public static int VegetationCount(TileObservation tile, float height) => !tile.Land || tile.Environment == EnvironmentKind.Ice || height < 42 ? 0 :
-            height < 75 ? (int)tile.CurrentVegetation + 1 : tile.CurrentVegetation == VegetationTier.High ? 7 : tile.CurrentVegetation == VegetationTier.Medium ? 4 : 3;
+            tile.CurrentVegetation == VegetationTier.Medium ? 1 : 3;
         public static string VegetationKey(TileObservation tile) => "vegetation." +
-            (tile.Environment == EnvironmentKind.Desert ? "shrub" : tile.CurrentVegetation == VegetationTier.Low || tile.Environment == EnvironmentKind.Grassland ? "grass" : tile.Environment == EnvironmentKind.Cold ? "conifer" : tile.Environment == EnvironmentKind.Tropical ? "tropical_tree" : "temperate_tree");
-        private static readonly Vector2[] VegetationSlots = { new Vector2(.28f, .29f), new Vector2(.72f, .37f), new Vector2(.37f, .65f), new Vector2(.66f, .65f), new Vector2(.50f, .23f), new Vector2(.24f, .52f), new Vector2(.53f, .48f) };
+            (tile.CurrentVegetation == VegetationTier.Low ? tile.Environment == EnvironmentKind.Desert ? "shrub" : "grass" :
+                tile.Environment == EnvironmentKind.Cold ? "conifer" : tile.Environment == EnvironmentKind.Tropical || tile.Environment == EnvironmentKind.Desert ? "tropical_tree" : "temperate_tree");
+        private static readonly Vector2[] VegetationSlots = { new Vector2(.28f, .29f), new Vector2(.72f, .37f), new Vector2(.37f, .65f) };
+        private static readonly Vector2[] OccupiedVegetationSlots = { new Vector2(.5f, .16f), new Vector2(.105f, .54f), new Vector2(.895f, .54f) };
         private void VegetationLayer(TileObservation tile, Rect rect, bool occupied)
         {
             int count = VegetationCount(tile, rect.height); string motif = VegetationKey(tile);
+            // Low has only ground cover; Medium/High have exactly one/three trees.
             // Deterministic interior slots leave contour/river edges and occupant hit regions intact.
             for (int i = 0; i < count; i++)
             {
-                float x = VegetationSlots[i].x + ((tile.Id * 17 + i * 7) % 5 - 2) * .012f, y = VegetationSlots[i].y;
-                float size = rect.height * (occupied ? .23f : .34f);
+                var position = occupied ? OccupiedVegetationSlots[i] : VegetationSlots[i];
+                float x = position.x + (occupied ? 0 : ((tile.Id * 17 + i * 7) % 5 - 2) * .012f), y = position.y;
+                float size = rect.height * (occupied ? .20f : .34f);
                 Symbol(motif, new Rect(rect.x + rect.width * x - size / 2, rect.y + rect.height * y - size / 2, size, size));
             }
         }

@@ -56,7 +56,7 @@ namespace Anthropocene.Presentation
             Draw(2,0,"Temperate",EnvironmentKind.Temperate,VegetationTier.Medium); Draw(3,0,"Tropical",EnvironmentKind.Tropical,VegetationTier.High);
             Draw(4,0,"Cold",EnvironmentKind.Cold,VegetationTier.Medium); Draw(5,0,"Highland",EnvironmentKind.Grassland,VegetationTier.Low,8);
             Draw(6,0,"Ocean",EnvironmentKind.Ocean); Draw(7,0,"Shallows / shore",EnvironmentKind.Shallows); Draw(8,0,"Freshwater lake",EnvironmentKind.Lake);
-            Draw(0,1,"Low cover",EnvironmentKind.Temperate); Draw(1,1,"Medium cover",EnvironmentKind.Temperate,VegetationTier.Medium); Draw(2,1,"High cover",EnvironmentKind.Temperate,VegetationTier.High);
+            Draw(0,1,"Low / no trees",EnvironmentKind.Temperate); Draw(1,1,"Medium / 1 tree",EnvironmentKind.Temperate,VegetationTier.Medium); Draw(2,1,"High / 3 trees",EnvironmentKind.Temperate,VegetationTier.High);
             Draw(3,1,"Selected camp",EnvironmentKind.Grassland,VegetationTier.Low,2,112,"entity.camp");
             Draw(4,1,"Foreign camp ◇",EnvironmentKind.Grassland,VegetationTier.Low,2,112,"entity.rivalcamp");
             Draw(5,1,"Hunters",EnvironmentKind.Grassland,VegetationTier.Low,2,112,"entity.hunter");

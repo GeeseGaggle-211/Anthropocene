@@ -56,7 +56,8 @@ assets.landuse_fishery = shadow(137,226,76,9) + outline('<path d="m51 144 20-10 
 const hut = (x,y,s=1) => `<g transform="translate(${x} ${y}) scale(${s})">${outline('<path d="m15 59 48-25 48 25v61l-49 23-47-24z" fill="#c1a163"/><path d="m62 82 49-23v61l-49 23z" fill="#957747"/><path d="m0 61 62-60 65 59-65 25z" fill="#d8b773"/><path d="m62 1 65 59-65 25z" fill="#ac8a52"/><path d="m36 100 18-8v41l-18-9z" fill="#4c4330"/>')}</g>`;
 assets.settlement_village = shadow(133,230,99,12) + hut(41,10,.85) + hut(126,68,.79) + hut(15,109,.86) + hut(109,142,.69);
 assets.feature_freshwater = outline('<path d="M128 26C106 72 60 118 60 162a68 68 0 0 0 136 0c0-44-46-90-68-136z" fill="#398fa8"/>') + '<path d="M128 52c-30 58-53 81-51 115 6 29 16 34 35 40-32-54-9-102 16-155z" fill="#9ad4d5"/><path d="M149 187q21-8 27-32" fill="none" stroke="#24667f" stroke-width="9" stroke-linecap="round"/>';
-assets.feature_oasis = '<ellipse cx="124" cy="193" rx="103" ry="41" fill="#cbbd78"/><ellipse cx="124" cy="193" rx="85" ry="30" fill="#58abb3"/><ellipse cx="130" cy="195" rx="66" ry="22" fill="#347f98"/>' + `<g transform="translate(96 4) scale(.65)">${assets.veg_tropical_tree}</g>`;
+// The oasis marker must not add a tree that could be mistaken for vegetation state.
+assets.feature_oasis = '<ellipse cx="128" cy="144" rx="103" ry="49" fill="#cbbd78"/><ellipse cx="128" cy="144" rx="85" ry="37" fill="#58abb3"/><ellipse cx="132" cy="146" rx="66" ry="28" fill="#347f98"/>';
 (async () => {
   fs.mkdirSync(output, { recursive:true }); fs.mkdirSync(vectors, { recursive:true });
   for (const [name,body] of Object.entries(assets)) {

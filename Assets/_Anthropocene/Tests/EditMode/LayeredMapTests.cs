@@ -68,7 +68,22 @@ namespace Anthropocene.Tests.EditMode
             t.CurrentVegetation = VegetationTier.High; var dense = Observe();
             Assert.That(LayeredTileRenderer.BaseKey(sparse), Is.EqualTo(ground));
             Assert.That(LayeredTileRenderer.BaseKey(dense), Is.EqualTo(ground));
-            Assert.That(LayeredTileRenderer.VegetationCount(sparse, 80), Is.LessThan(LayeredTileRenderer.VegetationCount(dense, 80)));
+            Assert.That(LayeredTileRenderer.VegetationKey(sparse), Is.EqualTo("vegetation.grass"));
+            foreach (var environment in new[] { EnvironmentKind.Desert, EnvironmentKind.Grassland, EnvironmentKind.Temperate, EnvironmentKind.Tropical, EnvironmentKind.Cold })
+            {
+                t.Environment = environment;
+                foreach (float height in new[] { 42f, 64f, 80f, 112f })
+                {
+                    t.CurrentVegetation = VegetationTier.Low;
+                    Assert.That(LayeredTileRenderer.VegetationKey(Observe()), Is.EqualTo(environment == EnvironmentKind.Desert ? "vegetation.shrub" : "vegetation.grass"), "Low cover must contain no trees.");
+                    foreach (var tier in new[] { VegetationTier.Medium, VegetationTier.High })
+                    {
+                        t.CurrentVegetation = tier;
+                        Assert.That(new[] { "vegetation.temperate_tree", "vegetation.tropical_tree", "vegetation.conifer" }.Contains(LayeredTileRenderer.VegetationKey(Observe())), Is.True);
+                        Assert.That(LayeredTileRenderer.VegetationCount(Observe(), height), Is.EqualTo(tier == VegetationTier.Medium ? 1 : 3), "Tree counts must not change between detail zoom levels.");
+                    }
+                }
+            }
             Assert.That(LayeredTileRenderer.VegetationCount(dense, 30), Is.Zero);
             Assert.That(LayeredTileRenderer.ContourCount(8, 30), Is.GreaterThan(0));
             t.Environment = EnvironmentKind.Cold; Assert.That(LayeredTileRenderer.VegetationKey(Observe()), Is.EqualTo("vegetation.conifer"));

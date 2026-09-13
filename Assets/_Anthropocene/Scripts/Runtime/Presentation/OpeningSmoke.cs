@@ -16,6 +16,7 @@ namespace Anthropocene.Presentation
         {
             var args = System.Environment.GetCommandLineArgs(); int option = Array.IndexOf(args, "--anthropocene-smoke-output");
             if (option < 0 || option + 1 >= args.Length) yield break;
+            Application.runInBackground = true; // This opt-in capture run must survive focus returning to the review window.
             string output = Path.GetFullPath(args[option + 1]); Directory.CreateDirectory(output);
             NewGame(); while (generating != null) yield return null;
             if (world == null) throw new InvalidOperationException("Smoke world did not generate.");
