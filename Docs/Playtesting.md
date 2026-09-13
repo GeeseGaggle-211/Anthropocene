@@ -1,14 +1,14 @@
 # Playtest starts and developer atlas
 
-The opening menu offers three environmental presets alongside Custom world. Each uses Standard / Continents / seed **5** / **80 tribes** and normal tuning. They select an existing generated camp as the human tribe by exchanging player labels; geography, society policies, IDs, spacing, food, reserves and wild herds are unchanged. No technology is granted. Historical names are environmental analogues, not reconstructed civilizations.
+The opening menu offers three environmental presets alongside Custom world. Each uses Standard / Continents / seed **11** / **80 tribes** and normal tuning. They select an existing generated camp as the human tribe by exchanging player labels; geography, society policies, IDs, spacing, food, reserves and wild herds are unchanged. No technology is granted. Historical names are environmental analogues, not reconstructed civilizations.
 
-These sites were reselected for generator 9 after the terrain, drainage and atmospheric-transport correction. The former seed-1729 sites no longer describe the same habitats. Seed 5 supplies all three requested openings in one natural world; it was selected for the environmental contrast, without running simulations to pick technological outcomes.
+These sites were reselected for generator 10 after new offshore geography changed the generated camp cohort. The former seed-5 world no longer has qualifying steppe and cold-fishing camps among its 80 starts. Seed 11 supplies all three requested openings under the same habitat checks; it was selected for environmental contrast, without running simulations to pick technological outcomes.
 
 | Preset | Camp tile | Local setting | Land food | Aquatic food | Start viability |
 | --- | ---: | --- | ---: | ---: | ---: |
-| Desert river valley | 309013 | 22.3°C mean; seven desert tiles, five river tiles; two dry margins | 153.30 | 0 | 180.00% |
-| Steppe hunters | 176325 | 16.1°C mean; seven open grassland tiles, two river tiles; reachable bison | 45.11 | 0 | 174.72% |
-| Cold coastal fishers | 98992 | 1.8°C mean; five wooded Cold tiles, two adjacent shallows; land rain pools | 13.85 | 83.56 | 148.67% |
+| Desert river valley | 209873 | 20.1°C mean; seven desert river tiles | 139.63 | 0 | 180.00% |
+| Steppe hunters | 192746 | 17.8°C mean; seven open grassland tiles, five river tiles; adjacent bison | 96.94 | 0 | 180.00% |
+| Cold coastal fishers | 431802 | 2.2°C mean; four wooded Cold tiles, three adjacent shallows; land rain pools | 7.49 | 166.93 | 155.79% |
 
 Food columns are **annual-mean renewal potential per 91.25-day base season**, summed within radius 1. They are neither current stocks nor realized harvests. They use the same seasonal capacities, rates and sustainable production fraction as the viable-start check. Actual gathering shares one labor ceiling across land and passive coastal food; depletion, competing animals, workforce choices, freshwater and seasonal reserves also matter. The 180% ceiling here is the starting gathering labor ceiling, not a promise of population growth. All three meet the normal 85% viability threshold. The unequal densities are deliberately preserved for comparison.
 
@@ -16,14 +16,14 @@ The four stored seasonal profiles show why the fisher's annual mean is insuffici
 
 | Preset / food source | Season 1 | Season 2 | Season 3 | Season 4 | Minimum local freshwater capacity across seasons |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Desert river / land | 157.42 | 160.23 | 157.84 | 137.70 | 470.93 |
-| Steppe / land | 39.89 | 41.44 | 43.93 | 55.17 | 173.92 |
-| Cold shore / land | 12.84 | 0.65 | 12.84 | 29.06 | 31.25 |
-| Cold shore / shallows | 77.34 | 12.47 | 77.34 | 167.09 | 0: saltwater cannot be drunk |
+| Desert river / land | 140.46 | 116.31 | 139.15 | 162.60 | 661.27 |
+| Steppe / land | 95.76 | 69.72 | 95.06 | 127.23 | 483.40 |
+| Cold shore / land | 4.12 | 19.52 | 5.99 | 0.33 | 25.00 |
+| Cold shore / shallows | 153.81 | 340.45 | 153.81 | 19.63 | 0: saltwater cannot be drunk |
 
-Food is renewal potential in the same units as the first table; freshwater is **capacity**, not a food yield or a promise of realized recharge. Season 2 is the cold fisher's lean winter profile, and Season 4 is its productive summer. The viable-start rule checks every season's freshwater and annual renewable food with the normal shared labor limit. The seasonal reserve test is therefore more informative than comparing full initial food stocks.
+Food is renewal potential in the same units as the first table; freshwater is **capacity**, not a food yield or a promise of realized recharge. This cold fisher is in the Southern Hemisphere: Season 2 is productive summer and Season 4 is lean winter. The viable-start rule checks every season's freshwater and annual renewable food with the normal shared labor limit. The seasonal reserve test is therefore more informative than comparing full initial food stocks.
 
-For playtesting, compare generations with similar dispatched populations and note food produced/eaten, reserves, deaths, growth and first breakthrough in the existing outcome panels. Try river gathering, steppe expeditions onto the nearby bison (tile 175303), and coastal hunter fishing orders. The steppe camp accesses a nearby river rather than standing on its bank. The fisher's two shallows provide most renewable local food; its wooded shore supports less human food and must still supply drinking water. Choosing the preset does not force its expected technological path.
+For playtesting, compare generations with similar dispatched populations and note food produced/eaten, reserves, deaths, growth and first breakthrough in the existing outcome panels. Try river gathering, steppe expeditions onto the adjacent bison (tile 192745), and coastal hunter fishing orders. The steppe camp stands on a river in open country. The fisher's three shallows provide most renewable local food; its wooded shore supports less human food and must still supply drinking water. Choosing the preset does not force its expected technological path.
 
 **Build world preview (dev)** generates the selected setup and opens a full-world atlas before play. **Menu → Preview current world (dev)** inspects the existing committed world. Environment, elevation, volcanic activity, renewable food and freshwater renewal layers share the same coordinates. Cycle annual mean and four seasonal profiles; the heatmaps use a fixed logarithmic scale from zero to 100+ units per tile per base season. These show stored profile potential; the tile inspector separately projects current food and freshwater stock without materializing ecology.
 
@@ -33,4 +33,4 @@ The developer atlas intentionally reveals hidden geography and camp locations an
 
 The fixed preset habitat and viability checks fail explicitly if future generation/tuning invalidates a site. Update and remeasure the presets in that case; do not inject food to preserve the table. `ScenarioChecks` exercises the actual generated world, ownership-only changes, filtered observations, exact save restoration, profile averaging, freshwater separation and pure preview reads.
 
-The generator-9 preset revalidation passed **22 automated assertions**, including all three normal save round-trips and rejection of mismatched shape/tribe-count settings. The tables above were measured after the final basin-retention adjustment, from the same generated seed-5 world. This establishes reproducibility and environmental contrast; it does not establish multi-generation balance or player usability.
+The preset suite contains **22 automated assertions**, including all three normal save round-trips and rejection of mismatched shape/tribe-count settings. The tables above were measured from the generated seed-11 world; final test and rebuilt-player evidence is recorded in [Validation.md](Validation.md). This establishes reproducibility and environmental contrast; it does not establish multi-generation balance or player usability.

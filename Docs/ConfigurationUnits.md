@@ -60,9 +60,11 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 
 The time-invariance tests hold forcing and integrated claims constant. They do not require two separate player decisions to reproduce one combined decision: relocation, starvation grace, dispatch and policy reconsideration are deliberately decision-level events.
 
-## Generator 9 spatial units
+## Generator 10 spatial units
 
-TerrainGeneration uses continuous longitude-periodic fields; lengths are normalized planetary distances, with local rasterization for hotspot cones. PlateCount controls tectonic provinces, not the number of continents. Hotspots/HotspotChainLength control ocean-origin tracks aligned to plate motion; radius and spacing scale with map width and vary by keyed seed/age. SeaLevel, Uplift, ElevationNoise and Erosion remain dimensionless elevation/smoothing inputs.
+TerrainGeneration uses continuous longitude-periodic fields; lengths are normalized planetary distances, with local rasterization for hotspot cones. PlateCount controls tectonic provinces, not the number of continents. Archipelagos uses 30 narrow crustal ribbons with varied widths, branching and transverse rift gaps. Continents/Pangaea retain their generator-9 base crust fields.
+
+Hotspots is the active-track budget; generation also attempts two extinct tracks per active track, or five for Archipelagos. Zero disables both populations. HotspotChainLength controls trajectory duration: four movement samples per configured unit, or ten for Archipelagos; extinct trajectories add zero to three units. It is no longer an exact island count. A moving Gaussian uplift window along a correlated two-dimensional drift path creates intermittent island groups. Radius/stride scale with map width; deviations use deterministic bounded normal samples. Relative age increases by 0.18 per movement sample, with extinct tracks starting at age 2–6. Signed subsidence allows older peaks to lie below sea level; only the youngest active window adds activity. These are dimensionless procedural chronology proxies, not years, measured plate velocities or literal volcanic lifetimes. SeaLevel, Uplift, ElevationNoise and Erosion remain dimensionless elevation/smoothing inputs.
 
 ClimateGeneration limits its atmospheric grid to 256 x 128 and advects over 48 normalized travel steps per longitude circuit, with 240 spin-up iterations per season. MoistureDecay enters a per-transport-step retention proxy as pow(MoistureDecay,0.2), not once per gameplay tile. Evaporation, OrographicRain and Monsoon modulate ocean recharge, uplift extraction and seasonal winds. Rain/Snow/Runoff remain dimensionless forcing; they are not millimetres of precipitation.
 

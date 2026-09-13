@@ -23,5 +23,6 @@
     <Compile Include="ClimateGenerationChecks.cs" />
     <Compile Include="DrainageGenerationChecks.cs" />
     <Compile Include="WorldMorphologyChecks.cs" />
+    <Compile Include="ArchipelagoChecks.cs" />
   </ItemGroup>
 </Project>

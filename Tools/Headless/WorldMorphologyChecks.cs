@@ -77,7 +77,7 @@ internal static class WorldMorphologyChecks
         Check(emerged.Count >= 12, "hotspots produce new land on formerly marine cells");
         Check(islands.Length >= 4 && islands.Select(c => c.Count).Distinct().Count() >= 3, "volcanic tracks create separate islands with varied areas instead of identical repeated beads");
         Check(active.Tiles.All(t => !float.IsNaN(t.Elevation) && !float.IsInfinity(t.Elevation) && t.Elevation >= quiet.Tiles[t.Id].Elevation), "hotspot uplift stays finite and never excavates the baseline terrain");
-        Check(emerged.All(id => active.Tiles[id].Volcanism > quiet.Tiles[id].Volcanism), "new volcanic islands have added volcanic activity, not unrelated coastline changes");
+        Check(emerged.Count(id => active.Tiles[id].Volcanism > quiet.Tiles[id].Volcanism) >= 4 && active.Tiles.All(t => t.Volcanism >= quiet.Tiles[t.Id].Volcanism), "active tracks produce volcanic islands while extinct uplift may lack an active signature");
         Console.WriteLine("HOTSPOT_CONTROL seed=1729 256x128 tracks=0/8 emergedLand=" + emerged.Count
             + " newIslandAreas=" + string.Join(",", islands.Select(c => c.Count).OrderByDescending(n => n)));
     }

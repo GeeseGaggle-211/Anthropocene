@@ -24,6 +24,12 @@ namespace Anthropocene.Simulation
             return (a + (b - a) * fx) * (1 - fy) + (d + (e - d) * fx) * fy;
         }
         internal static double LongitudeDelta(double a, double b) { double d = a - b; return d - Math.Floor(d + .5); }
+        // Bounded normal samples keep rare excursions finite without making every track equally wavy.
+        internal static double Gaussian(int seed, int stream, int key)
+        {
+            double u = Math.Max(1e-12, Numbers.Random(seed, stream, key, 0));
+            return Numbers.Clamp(Math.Sqrt(-2 * Math.Log(u)) * Math.Cos(2 * Math.PI * Numbers.Random(seed, stream, key, 1)), -3, 3);
+        }
     }
 
     internal sealed class PlateStage : IWorldGenerationStage
@@ -74,12 +80,12 @@ namespace Anthropocene.Simulation
     {
         public string Name => "Continental shelves, mountain belts and hotspot tracks";
         public string Requires => "Tectonic provinces"; public string Produces => "Continuous relief, coastlines and volcanic islands";
-        private struct Lobe { public double X, Y, RX, RY, Angle; }
+        private struct Lobe { public double X, Y, RX, RY, Angle, Cos, Sin; }
         public void Generate(GenerationContext c)
         {
-            var w = c.World; var cfg = c.Config; var lobes = new List<Lobe>();
+            var w = c.World; var cfg = c.Config; var lobes = new List<Lobe>(); var rifts = new List<Lobe>();
             bool pangaea = cfg.Shape == WorldShape.Pangaea, islands = cfg.Shape == WorldShape.Archipelagos;
-            int nuclei = pangaea ? 1 : islands ? 10 : 3;
+            int nuclei = pangaea ? 1 : islands ? 0 : 3;
             double rotation = Numbers.Random(w.Seed, 330, 0);
             for (int i = 0; i < nuclei; i++)
             {
@@ -109,19 +115,30 @@ namespace Anthropocene.Simulation
                     }
                 }
             }
+            if (islands) ArchipelagoCrust(c, lobes, rifts);
+            for (int i = 0; i < lobes.Count; i++) { var l = lobes[i]; l.Cos = Math.Cos(l.Angle); l.Sin = Math.Sin(l.Angle); lobes[i] = l; }
+            for (int i = 0; i < rifts.Count; i++) { var l = rifts[i]; l.Cos = Math.Cos(l.Angle); l.Sin = Math.Sin(l.Angle); rifts[i] = l; }
             double Crust(double x, double y)
             {
-                double wx = x + .09 * TerrainNoise.Fractal(w.Seed, 340, x, y, 4, 4);
-                double wy = y + .18 * TerrainNoise.Fractal(w.Seed, 345, x, y, 4, 4);
+                double wx = x + (islands ? .025 : .09) * TerrainNoise.Fractal(w.Seed, 340, x, y, islands ? 8 : 4, 4);
+                double wy = y + (islands ? .05 : .18) * TerrainNoise.Fractal(w.Seed, 345, x, y, islands ? 8 : 4, 4);
                 double value = -10;
                 foreach (var l in lobes)
                 {
                     double dx = TerrainNoise.LongitudeDelta(wx, l.X), dy = (wy - l.Y) / 2;
-                    double co = Math.Cos(l.Angle), si = Math.Sin(l.Angle);
+                    double co = l.Cos, si = l.Sin;
                     double a = (dx * co - dy * si) / l.RX, b = (dx * si + dy * co) / (l.RY / 2);
                     value = Math.Max(value, 1 - Math.Sqrt(a * a + b * b));
                 }
-                return value + .52 * TerrainNoise.Fractal(w.Seed, 350, x, y, 10, 5);
+                if (islands)
+                    foreach (var r in rifts)
+                    {
+                        double dx = TerrainNoise.LongitudeDelta(wx, r.X), dy = (wy - r.Y) / 2;
+                        double a = (dx * r.Cos - dy * r.Sin) / r.RX, b = (dx * r.Sin + dy * r.Cos) / (r.RY / 2);
+                        double d = a * a + b * b;
+                        if (d < 8) value -= 1.65 * Math.Exp(-d * 1.5);
+                    }
+                return value + (islands ? .60 : .52) * TerrainNoise.Fractal(w.Seed, 350, x, y, islands ? 64 : 10, 5);
             }
             for (int p = 0; p < cfg.PlateCount; p++) c.Continental[p] = Crust(c.PlateCenters[p] % cfg.Width / (double)cfg.Width, c.PlateCenters[p] / cfg.Width / (double)cfg.Height) > 0;
             foreach (var t in w.Tiles)
@@ -154,39 +171,137 @@ namespace Anthropocene.Simulation
             foreach (var t in w.Tiles) t.Terrain = t.Elevation < cfg.SeaLevel - .018 ? Terrain.Ocean : t.Elevation < cfg.SeaLevel ? Terrain.Shallows : Terrain.Grassland;
             Geography.Classify(w);
         }
-        private static void Hotspots(GenerationContext c)
+        private static void ArchipelagoCrust(GenerationContext c, List<Lobe> lobes, List<Lobe> rifts)
+        {
+            // Many narrow, curved crustal ribbons, broken by transverse rifts. These are
+            // a procedural fragmentation model, not plate labels or a simulated geological history.
+            int seed = c.World.Seed; var centers = new List<Lobe>();
+            for (int chain = 0; chain < 30; chain++)
+            {
+                double x = 0, y = 0, best = -1;
+                for (int trial = 0; trial < 16; trial++)
+                {
+                    int key = chain * 16 + trial;
+                    double px = Numbers.Random(seed, 410, key), py = .12 + .76 * Numbers.Random(seed, 411, key);
+                    double separation = centers.Count == 0 ? 1 : centers.Min(l => Math.Pow(TerrainNoise.LongitudeDelta(px, l.X) * 2, 2) + Math.Pow(py - l.Y, 2));
+                    if (separation > best) { best = separation; x = px; y = py; }
+                }
+                centers.Add(new Lobe { X = x, Y = y });
+                double heading = Numbers.Random(seed, 412, chain) * Math.PI * 2;
+                double curvature = TerrainNoise.Gaussian(seed, 413, chain) * .15;
+                double size = .8 + .45 * Numbers.Random(seed, 414, chain);
+                int count = 4 + (int)(Numbers.Random(seed, 415, chain) * 4);
+                for (int piece = 0; piece < count; piece++)
+                {
+                    int key = chain * 32 + piece;
+                    double major = (.012 + .014 * Numbers.Random(seed, 416, key)) * size;
+                    double minor = (.0045 + .0055 * Numbers.Random(seed, 417, key)) * size;
+                    lobes.Add(new Lobe { X = x, Y = y, RX = minor, RY = major * 2, Angle = Math.PI / 2 - heading });
+                    if (Numbers.Random(seed, 422, key) < .30)
+                        lobes.Add(new Lobe { X = x + Math.Cos(heading + 1.1) * minor * .8, Y = y + Math.Sin(heading + 1.1) * minor * 1.6,
+                            RX = minor * .7, RY = major * 1.3, Angle = Math.PI / 2 - heading - .8 });
+                    double stride = .026 * Math.Exp(.28 * TerrainNoise.Gaussian(seed, 418, key)) * size;
+                    if (piece < count - 1 && Numbers.Random(seed, 419, key) < .60)
+                        rifts.Add(new Lobe { X = x + Math.Cos(heading) * stride * .5, Y = y + Math.Sin(heading) * stride,
+                            RX = .003 + .003 * Numbers.Random(seed, 420, key), RY = minor * 5, Angle = -heading });
+                    x += Math.Cos(heading) * stride; y += Math.Sin(heading) * stride * 2;
+                    heading += curvature + .15 * TerrainNoise.Gaussian(seed, 421, key);
+                    // Bend tracks back toward the inhabited latitude range without a hard coastline cutoff.
+                    if (y < .10 || y > .90) heading = Math.Atan2((.5 - y) * 2, Math.Cos(heading));
+                }
+            }
+        }
+        internal struct HotspotSample
+        {
+            public double X, Y, Age, Radius, Peak, Activity, Uplift;
+        }
+        internal static List<HotspotSample> HotspotTrack(GenerationContext c, int origin, int track, bool extinct)
+        {
+            var cfg = c.Config; int seed = c.World.Seed, plate = c.World.Tiles[origin].Plate;
+            bool archipelago = cfg.Shape == WorldShape.Archipelagos;
+            double scale = Math.Max(.65, cfg.Width / 256.0), x = origin % cfg.Width, y = origin / cfg.Width;
+            double motion = Math.Atan2(c.PlateY[plate] * .75, c.PlateX[plate]);
+            double heading = motion + .25 * TerrainNoise.Gaussian(seed, 430, track);
+            double curvature = .018 * TerrainNoise.Gaussian(seed, 431, track), angular = 0, lateral = 0;
+            double startAge = extinct ? 2 + 4 * Numbers.Random(seed, 432, track) : 0;
+            int episodes = cfg.HotspotChainLength + (extinct ? (int)(Numbers.Random(seed, 433, track) * 4) : 0);
+            int steps = episodes * (archipelago ? 10 : 4);
+            var result = new List<HotspotSample>(steps);
+            double window = 0, width = .7 + .35 * Numbers.Random(seed, 443, track), previousWindow = -20, previousWidth = 1;
+            for (int step = 0; step < steps; step++)
+            {
+                int key = unchecked(track * 65537 + step);
+                // A stochastic moving uplift window follows one continuous trajectory.
+                // Correlated heading/lateral innovations retain a chain's direction, while
+                // its regional flow field bends it smoothly through x, y and diagonals.
+                angular = .8 * angular + .035 * TerrainNoise.Gaussian(seed, 434, key);
+                double target = motion + .65 * TerrainNoise.Fractal(seed, 442, x / cfg.Width, y / cfg.Height, 8, 3);
+                double turn = Math.Atan2(Math.Sin(target - heading), Math.Cos(target - heading));
+                heading += .06 * turn + curvature + angular;
+                lateral = .8 * lateral + .12 * TerrainNoise.Gaussian(seed, 435, key);
+                if (step > 0)
+                {
+                    double stride = scale * 1.25 * Math.Exp(.14 * TerrainNoise.Gaussian(seed, 436, key));
+                    x += Math.Cos(heading) * stride; y += Math.Sin(heading) * stride;
+                }
+                if (step > window)
+                {
+                    previousWindow = window; previousWidth = width;
+                    window += Math.Max(3, Math.Round(4.7 * Math.Exp(.25 * TerrainNoise.Gaussian(seed, 444, key))));
+                    width = .55 + .65 * Numbers.Random(seed, 445, key);
+                }
+                double pulse = Math.Max(Math.Exp(-.5 * Math.Pow((step - window) / width, 2)), Math.Exp(-.5 * Math.Pow((step - previousWindow) / previousWidth, 2)));
+                double elapsed = startAge + step * .18;
+                double radius = Math.Max(.65, scale * 1.20 * Math.Exp(.17 * TerrainNoise.Gaussian(seed, 437, key) - elapsed * .035));
+                double relief = .12 * Math.Exp(.17 * TerrainNoise.Gaussian(seed, 438, key) - elapsed * .14);
+                double peak = cfg.SeaLevel - .10 + (.10 + relief) * pulse - .006 * Math.Max(0, elapsed - 4);
+                result.Add(new HotspotSample { X = x - Math.Sin(heading) * lateral * scale, Y = y + Math.Cos(heading) * lateral * scale,
+                    Age = elapsed, Radius = radius, Peak = peak, Uplift = pulse, Activity = extinct || step > 2 ? 0 : pulse * Math.Exp(-step * 2) });
+            }
+            return result;
+        }
+        internal static void Hotspots(GenerationContext c, bool includeExtinct = true)
         {
             var w = c.World; var cfg = c.Config; double scale = Math.Max(.65, cfg.Width / 256.0);
             var origins = new List<int>();
-            for (int h = 0; h < cfg.Hotspots; h++)
+            // Every moving window stamps against the same initial ocean floor. It can
+            // overlap earlier uplift in its own track without rejecting it as new land.
+            var oceanFloor = w.Tiles.Select(t => t.Elevation).ToArray();
+            var tectonicActivity = w.Tiles.Select(t => t.Volcanism).ToArray(); var hotspotActivity = new float[w.Tiles.Length];
+            int historical = includeExtinct ? cfg.Hotspots * (cfg.Shape == WorldShape.Archipelagos ? 5 : 2) : 0;
+            for (int h = 0; h < cfg.Hotspots + historical; h++)
             {
+                bool extinct = h >= cfg.Hotspots;
                 int origin = -1;
                 for (int trial = 0; trial < 200; trial++)
                 {
                     int id = (int)(Numbers.Random(w.Seed, 380, h * 200 + trial) * w.Tiles.Length);
                     int row = id / cfg.Width;
-                    if (row < cfg.Height * .12 || row > cfg.Height * .88 || w.Tiles[id].Elevation > cfg.SeaLevel - .07 || origins.Any(o => c.Map.Distance(o, id) < scale * 15)) continue;
+                    if (row < cfg.Height * .10 || row > cfg.Height * .90 || oceanFloor[id] > cfg.SeaLevel - .07 || origins.Any(o => c.Map.Distance(o, id) < scale * (extinct ? 8 : 15))) continue;
                     origin = id; break;
                 }
-                if (origin < 0) continue; origins.Add(origin); int plate = w.Tiles[origin].Plate;
-                for (int age = 0; age < cfg.HotspotChainLength; age++)
+                if (origin < 0) continue; origins.Add(origin);
+                foreach (var sample in HotspotTrack(c, origin, h, extinct))
                 {
-                    double bend = .22 * Math.Sin(age * .8 + h);
-                    double spacing = 3.7 + 1.8 * Numbers.Random(w.Seed, 381, h * 37 + age);
-                    int col = origin % cfg.Width + (int)Math.Round((c.PlateX[plate] + bend) * age * scale * spacing);
-                    int row = origin / cfg.Width + (int)Math.Round(c.PlateY[plate] * age * scale * spacing * .75);
-                    int center = c.Map.At(col, row); if (center < 0 || w.Tiles[center].Elevation > cfg.SeaLevel - .025) continue;
-                    double radius = scale * (.95 + .55 * Numbers.Random(w.Seed, 382, h * 37 + age)) * Math.Exp(-age * .10);
-                    radius = Math.Max(.65, radius);
-                    double peak = cfg.SeaLevel + (.07 + .07 * Numbers.Random(w.Seed, 383, h * 37 + age)) * Math.Exp(-age * .27);
+                    int col = (int)Math.Round(sample.X), row = (int)Math.Round(sample.Y);
+                    int center = c.Map.At(col, row); if (center < 0 || oceanFloor[center] > cfg.SeaLevel - .025) continue;
+                    double radius = sample.Radius, peak = sample.Peak;
                     foreach (int id in c.Map.Radius(center, Math.Max(2, (int)Math.Ceiling(radius * 2))))
                     {
                         var t = w.Tiles[id]; double dr = id / cfg.Width - center / cfg.Width;
                         double dq = TerrainNoise.LongitudeDelta(id % cfg.Width / (double)cfg.Width, center % cfg.Width / (double)cfg.Width) * cfg.Width + dr * .5;
                         double d = Math.Sqrt(dq * dq + dr * dr * .75) / radius;
+                        if (d >= 2) continue;
                         double rough = 1 + .20 * TerrainNoise.Fractal(w.Seed, 390, id % cfg.Width / (double)cfg.Width, id / cfg.Width / (double)cfg.Height, 128, 2);
-                        double target = cfg.SeaLevel - .10 + (peak - cfg.SeaLevel + .10) * Math.Exp(-d * d * rough);
-                        if (target > t.Elevation) { t.Volcanism += (float)((target - t.Elevation) * Math.Exp(-age * .3)); t.Elevation = (float)target; }
+                        // Fade into the actual seabed, not a shared raised floor that would
+                        // connect long tracks with flat, sharp-edged underwater roads.
+                        double edge = Numbers.Clamp((d - 1.5) * 2, 0, 1), taper = 1 - edge * edge * (3 - 2 * edge);
+                        double target = oceanFloor[id] + Math.Max(0, peak - oceanFloor[id]) * Math.Exp(-d * d * rough) * taper;
+                        if (target > t.Elevation) t.Elevation = (float)target;
+                        // Activity is a separate maximum envelope. An older overlapping
+                        // landform must not suppress a younger active window's signature.
+                        hotspotActivity[id] = Math.Max(hotspotActivity[id], (float)((target - oceanFloor[id]) * sample.Activity));
+                        t.Volcanism = tectonicActivity[id] + hotspotActivity[id];
                     }
                 }
             }

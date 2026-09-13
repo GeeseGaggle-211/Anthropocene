@@ -6,7 +6,7 @@ namespace Anthropocene.Simulation
     /// <summary>Reproducible natural starts. Selection changes human ownership, never the landscape.</summary>
     public static class PlaytestScenarios
     {
-        public const int Seed = 5;
+        public const int Seed = 11;
         public static readonly string[] Names = { "Custom world", "Desert river valley", "Steppe hunters", "Cold coastal fishers" };
         public static readonly string[] Descriptions = {
             "Choose your own seed, world size and tribe count.",
@@ -14,7 +14,7 @@ namespace Anthropocene.Simulation
             "Steppe analogue: open grassland, a nearby freshwater river and reachable bison. Test mobile hunters and animal husbandry.",
             "Scandinavian analogue: a cold wooded shore, two adjacent shallows and land freshwater. Test fishing and seasonal reserves."
         };
-        public static int Tile(int scenario) => scenario == 1 ? 309013 : scenario == 2 ? 176325 : scenario == 3 ? 98992 : -1;
+        public static int Tile(int scenario) => scenario == 1 ? 209873 : scenario == 2 ? 192746 : scenario == 3 ? 431802 : -1;
         public static void Configure(SimulationConfig config)
         { config.Width = 1024; config.Height = 512; config.Players = 80; config.Shape = WorldShape.Continents; config.StartSeparation = 12; }
 
