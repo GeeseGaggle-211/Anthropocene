@@ -21,6 +21,11 @@ internal static class FoundationChecks
     public static int Run()
     {
         checks = 0;
+        foreach (var invalid in new[] { new SimulationConfig { MediumVegetationUp = double.NaN }, new SimulationConfig { ForcedTransitionYears = 100 }, new SimulationConfig { FoodRegeneration = 1 } })
+        {
+            bool invalidRejected = false; try { invalid.Validate(); } catch (ArgumentException) { invalidRejected = true; }
+            Check(invalidRejected, "invalid environmental rates or era thresholds are rejected before generation");
+        }
         var cfg = SimulationConfig.Small(1);
         Check(Vegetation.Classify(-11, .8, cfg) == EnvironmentKind.Ice && Vegetation.Classify(0, .8, cfg) == EnvironmentKind.Cold && Vegetation.Classify(30, .1, cfg) == EnvironmentKind.Desert, "environment precedence preserves climate breakpoints");
         Check(Vegetation.Classify(25, .5, cfg) == EnvironmentKind.Tropical && Vegetation.Classify(15, .2, cfg) == EnvironmentKind.Grassland && Vegetation.Classify(15, .6, cfg) == EnvironmentKind.Temperate, "environment is independent of relief");
