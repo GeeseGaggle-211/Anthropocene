@@ -45,49 +45,14 @@ namespace Anthropocene.Simulation
     public sealed partial class TurnResolver
     {
 
-        public string Validate(WorldState w, int player, Order order, HashSet<int> visible = null)
-        {
-            if (order == null) return "Missing order.";
-            var camp = w.Camps.FirstOrDefault(c => c.Id == order.Entity && c.Player == player);
-            var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity && h.Player == player);
-            if (camp == null && hunter == null) return "Entity is not controlled by this tribe.";
-            var source = camp ?? w.Camps.First(c => c.Id == hunter.SourceCamp);
-            if (w.LinkedPopulation(source) == 0) return "The tribe has no surviving people.";
-            visible = visible ?? Knowledge.Visible(w, player);
-            int tile = camp != null ? camp.Tile : hunter.Tile;
-            if (order.Kind == OrderKind.NoOp) return null;
-            if (order.Kind == OrderKind.Dispatch)
-                return camp == null || order.Population <= 0 || order.Population > camp.GathererPopulation || camp.Population - order.Population < w.Config.MinimumCamp ? "Dispatch must use available gatherers and preserve the camp's minimum population." : null;
-            if (order.Kind == OrderKind.Reintegrate)
-                return hunter == null || order.Target != source.Id || hunter.Tile != source.Tile ? "Hunters must be at their source camp to reintegrate." : null;
-            if (order.Kind == OrderKind.Move || order.Destination >= 0)
-            {
-                if (!visible.Contains(order.Destination)) return "Destination is outside current sight.";
-                int budget = hunter != null ? w.Config.HunterMovement : w.Config.CampMovement;
-                if (!w.Map.Reachable(tile, order.Destination, budget, n => visible.Contains(n) && w.CanEnter(n, hunter != null, source),
-                    n => hunter != null && w.Tiles[n].Aquatic ? Math.Max(1, w.Config.HunterMovement / w.Config.WaterMovement) : 1))
-                    return "Destination is unreachable within this turn's movement allowance.";
-            }
-            if (order.Kind == OrderKind.Move) return null;
-            if (hunter == null) return "This order requires a hunter group.";
-            if (order.Kind == OrderKind.Hunt)
-            {
-                var herd = w.Herds.FirstOrDefault(h => h.Id == order.Target && h.DomesticCamp < 0);
-                return herd == null || !visible.Contains(herd.Tile) ? "Hunt target is not a currently visible wild herd." : null;
-            }
-            if (order.Kind == OrderKind.Fish)
-            {
-                int final = order.Destination >= 0 ? order.Destination : tile;
-                return !visible.Contains(order.Target) || !w.Tiles[order.Target].Aquatic || w.Map.Distance(final, order.Target) > 1 ? "Fishing requires an accessible adjacent freshwater or shallow tile." : null;
-            }
-            return "Unknown order.";
-        }
+        public string Validate(WorldState w, int player, Order order, HashSet<int> visible = null) => OrderRules.Validate(new AgentObservationBuilder().Build(w, player), order);
 
         public TurnRecord Resolve(WorldState w, IReadOnlyDictionary<int, List<Order>> submitted, IEnumerable<DecisionTrace> traces = null)
         {
             Ownership.Bind(w);
             if (w.Finished) throw new InvalidOperationException("The Paleolithic opening has ended.");
             w.Config.Validate();
+            var planning = new PlanningIndex(w);
             int peopleBefore = w.Camps.Sum(w.LinkedPopulation);
             var record = new TurnRecord { Turn = w.Turn, Seed = w.Seed, StartDays = w.Days, Duration = w.Config.TurnDays };
             double time = record.Duration / w.Config.BaseDays;
@@ -97,19 +62,19 @@ namespace Anthropocene.Simulation
             var locked = new List<Order>();
             foreach (var camp in w.Camps.GroupBy(c => c.Player).OrderBy(g => g.Key).Select(g => g.OrderBy(c => c.Id).First()))
             {
-                var visible = Knowledge.Visible(w, camp.Player);
+                var observation = new AgentObservationBuilder().Build(w, camp.Player, planning);
                 if (!submitted.TryGetValue(camp.Player, out var orders)) continue;
                 foreach (var group in orders.Where(o => o != null).GroupBy(o => o.Entity).OrderBy(g => g.Key))
                 {
                     // Conflicting duplicates are all rejected, independent of submission order.
                     if (group.Count() != 1) { record.Log("Rejected conflicting orders for " + group.Key); continue; }
-                    var order = group.First(); string error = Validate(w, camp.Player, order, visible);
+                    var order = group.First(); string error = OrderRules.Validate(observation, order);
                     record.Orders.Add(camp.Player + ":" + order + ":" + (error ?? "accepted"));
                     if (error != null) record.Log("Rejected " + order.Entity + ": " + error); else locked.Add(order.Copy());
                 }
             }
             // Herd intentions are computed before dispatch or movement reveals new hunter positions.
-            var herdMoves = w.Herds.OrderBy(h => h.Id).ToDictionary(h => h.Id, h => HerdDestination(w, h));
+            var herdMoves = w.Herds.OrderBy(h => h.Id).ToDictionary(h => h.Id, h => HerdDestination(w, h, planning));
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Dispatch).OrderBy(o => o.Entity))
             {
                 var camp = w.Camps.First(c => c.Id == order.Entity); camp.Population -= order.Population;
@@ -140,25 +105,25 @@ namespace Anthropocene.Simulation
             return record;
         }
 
-        public static int HerdDestination(WorldState w, Herd herd)
+        public static int HerdDestination(WorldState w, Herd herd, PlanningIndex index = null)
         {
             if (herd.DomesticCamp >= 0) return herd.Tile;
-            var map = w.Map; var hunters = w.Hunters.OrderBy(h => h.Id).ToArray();
+            var map = w.Map; index = index ?? new PlanningIndex(w); var hunters = index.VisibleHunters(map.Radius(herd.Tile, 3)).ToArray();
             bool threat = hunters.Any(h => map.Distance(herd.Tile, h.Tile) <= 1);
             var species = w.Config.GetSpecies(herd.Species);
             double foodDemand = herd.Animals * species.FoodConsumption * Math.Min(w.Config.TurnDays, w.Config.BaseDays) / w.Config.BaseDays;
             double waterDemand = herd.Animals * species.FreshwaterConsumption * Math.Min(w.Config.TurnDays, w.Config.BaseDays) / w.Config.BaseDays;
-            bool thirsty = FreshwaterAccess.Available(w, herd.Tile) < waterDemand || herd.UnmetFreshwater > waterDemand * .3;
-            bool hungry = LazyEcology.ProjectEcology(w, herd.Tile, w.Days).PotentialFood < foodDemand || herd.UnmetFood > foodDemand * .3;
+            bool thirsty = FreshwaterAccess.Available(w, herd.Tile, index) < waterDemand || herd.UnmetFreshwater > waterDemand * .3;
+            bool hungry = index.Ecology(herd.Tile).PotentialFood < foodDemand || herd.UnmetFood > foodDemand * .3;
             var candidates = map.Radius(herd.Tile, 1).Where(n => w.Tiles[n].TraversableLand).ToArray();
             if (candidates.Length == 0) return herd.Tile;
             if (threat)
                 return candidates.OrderByDescending(n => hunters.Min(h => map.Distance(n, h.Tile)))
-                    .ThenByDescending(n => Knowledge.Band(FreshwaterAccess.Available(w, n), 70, w.Config))
-                    .ThenByDescending(n => Knowledge.Band(LazyEcology.ProjectEcology(w, n, w.Days).PotentialFood, Math.Max(1, w.Ecology(n).MaxPotentialFood), w.Config))
+                    .ThenByDescending(n => Knowledge.Band(FreshwaterAccess.Available(w, n, index), 70, w.Config))
+                    .ThenByDescending(n => Knowledge.Band(index.Ecology(n).PotentialFood, Math.Max(1, w.Ecology(n).MaxPotentialFood), w.Config))
                     .ThenBy(n => n).First();
             if (!thirsty && !hungry && Numbers.Random(w.Seed, 71, herd.Id, w.Turn) >= w.Config.WanderChance) return herd.Tile;
-            return candidates.OrderByDescending(n => (thirsty ? FreshwaterAccess.Available(w, n) / Math.Max(1, waterDemand) : hungry ? LazyEcology.ProjectEcology(w, n, w.Days).PotentialFood / Math.Max(1, foodDemand) : Numbers.Random(w.Seed, 72, herd.Id ^ n, w.Turn)) + species.Suitability(w.Tiles[n]) * species.MovementHabitatWeight)
+            return candidates.OrderByDescending(n => (thirsty ? FreshwaterAccess.Available(w, n, index) / Math.Max(1, waterDemand) : hungry ? index.Ecology(n).PotentialFood / Math.Max(1, foodDemand) : Numbers.Random(w.Seed, 72, herd.Id ^ n, w.Turn)) + species.Suitability(w.Tiles[n]) * species.MovementHabitatWeight)
                 .ThenBy(n => n == herd.Tile ? 0 : 1).ThenBy(n => n).First();
         }
         private static void Move(WorldState w, List<Order> orders, Dictionary<int, int> herds, TurnRecord record)

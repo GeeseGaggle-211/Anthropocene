@@ -59,10 +59,10 @@ namespace Anthropocene.Simulation
     }
     public sealed class UnitObservation
     {
-        public readonly int Id, Tile, Population, Player;
+        public readonly int Id, Tile, Population, Player, SourceCamp;
         public readonly bool InSupply;
         public readonly int Provisions, DeficitTurns;
-        public UnitObservation(int id, int tile, int population, int player, bool inSupply = false, int provisions = 0, int deficitTurns = 0) { Id = id; Tile = tile; Population = population; Player = player; InSupply = inSupply; Provisions = provisions; DeficitTurns = deficitTurns; }
+        public UnitObservation(int id, int tile, int population, int player, bool inSupply = false, int provisions = 0, int deficitTurns = 0, int sourceCamp = -1) { SourceCamp = sourceCamp; Id = id; Tile = tile; Population = population; Player = player; InSupply = inSupply; Provisions = provisions; DeficitTurns = deficitTurns; }
     }
     public sealed class HerdObservation
     {
@@ -79,9 +79,10 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 6;
+        public const int SchemaVersion = 7;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
-        public readonly double HuntingFieldcraft;
+        public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
+        public readonly IReadOnlyList<SettlementObservation> Settlements;
         public readonly bool Watercraft;
         public readonly IReadOnlyDictionary<int, TileObservation> Tiles;
         public readonly IReadOnlyDictionary<int, double> RecentOwnExtraction;
@@ -90,29 +91,31 @@ namespace Anthropocene.Simulation
         public readonly IReadOnlyDictionary<int, int> LikelyHerdDestinations;
         public readonly IReadOnlyList<double> Experience;
         public readonly HexMap Map;
-        public readonly int MinimumCamp, HunterMovement, CampMovement, SupplyRange, SustainableHuntPopulation;
+        public readonly int MinimumCamp, HunterMovement, CampMovement, WaterMovementCost, SupplyRange, SustainableHuntPopulation;
         public readonly double Inertia;
-        internal AgentObservation(WorldState w, Camp camp)
+        internal AgentObservation(WorldState w, Camp camp, PlanningIndex index)
         {
-            var visible = Knowledge.Visible(w, camp.Player);
-            Player = camp.Player; CampId = camp.Id; CampTile = camp.Tile; CampPopulation = camp.Population; GathererPopulation = camp.GathererPopulation; LinkedPopulation = w.LinkedPopulation(camp);
+            var visible = index.Visible(camp.Player);
+            Days = w.Days; Settlements = Array.AsReadOnly(index.OwnCamps(camp.Player).Select(c => new SettlementObservation(c, index)).ToArray());
+            var preferences = camp.People.Policy; HuntingInclination = preferences.HuntingInclination; GatheringInclination = preferences.GatheringInclination; FishingInclination = preferences.FishingInclination;
+            Player = camp.Player; CampId = camp.Id; CampTile = camp.Tile; CampPopulation = camp.Population; GathererPopulation = camp.GathererPopulation; LinkedPopulation = index.Population(camp);
             FoodCondition = Knowledge.Band(camp.Food, Math.Max(1, LinkedPopulation * w.Config.Consumption * w.Config.GenerationIntervals), w.Config);
-            DeficitTurns = camp.DeficitTurns; Turn = w.Turn; PolicySeed = (int)Numbers.Hash(w.Seed, 90, camp.Player);
+            DeficitTurns = camp.DeficitTurns; Turn = w.Turn; PolicySeed = camp.People.PolicySeed;
             Watercraft = camp.Technologies[(int)Technology.Watercraft]; Map = w.Map;
-            MinimumCamp = w.Config.MinimumCamp; HunterMovement = w.Config.HunterMovement; CampMovement = w.Config.CampMovement; Inertia = w.Config.RelocationInertia;
+            WaterMovementCost = Math.Max(1, w.Config.HunterMovement / w.Config.WaterMovement); MinimumCamp = w.Config.MinimumCamp; HunterMovement = w.Config.HunterMovement; CampMovement = w.Config.CampMovement; Inertia = w.Config.RelocationInertia;
             SupplyRange = w.Config.SupplyRange; SustainableHuntPopulation = w.Config.SustainableHuntPopulation;
-            Tiles = new ReadOnlyDictionary<int, TileObservation>(visible.OrderBy(n => n).ToDictionary(n => n, n => new TileObservation(w.Tiles[n], w.Ecology(n), w.Config, w.Rivers, LazyEcology.ProjectEcology(w, n, w.Days))));
-            Hunters = Array.AsReadOnly(w.Hunters.Where(h => h.Player == Player).OrderBy(h => h.Id).Select(h => new UnitObservation(h.Id, h.Tile, h.Population, h.Player, Supply.Connected(w, h), Knowledge.Band(h.CarriedFood, Supply.Capacity(w, h), w.Config), h.DeficitTurns)).ToArray());
-            Rivals = Array.AsReadOnly(w.Camps.Where(c => c.Player != Player && visible.Contains(c.Tile)).OrderBy(c => c.Id).Select(c => new UnitObservation(c.Id, c.Tile, 0, c.Player)).ToArray());
-            ForeignHunters = Array.AsReadOnly(w.Hunters.Where(h => h.Player != Player && visible.Contains(h.Tile)).OrderBy(h => h.Id).Select(h => new UnitObservation(h.Id, h.Tile, 0, h.Player)).ToArray());
-            Herds = Array.AsReadOnly(w.Herds.Where(h => visible.Contains(h.Tile)).OrderBy(h => h.Id).Select(h => new HerdObservation(h, w.Config, h.DomesticCamp < 0 ? -1 : w.Camps.First(c => c.Id == h.DomesticCamp).Player, Player)).ToArray());
+            Tiles = new ReadOnlyDictionary<int, TileObservation>(visible.OrderBy(n => n).ToDictionary(n => n, n => new TileObservation(w.Tiles[n], w.Ecology(n), w.Config, w.Rivers, index.Ecology(n))));
+            Hunters = Array.AsReadOnly(index.OwnHunters(Player).Select(h => new UnitObservation(h.Id, h.Tile, h.Population, h.Player, Supply.Connected(w, h), Knowledge.Band(h.CarriedFood, Supply.Capacity(w, h), w.Config), h.DeficitTurns, h.SourceCamp)).ToArray());
+            Rivals = Array.AsReadOnly(index.VisibleCamps(visible).Where(c => c.Player != Player).Select(c => new UnitObservation(c.Id, c.Tile, 0, c.Player)).ToArray());
+            ForeignHunters = Array.AsReadOnly(index.VisibleHunters(visible).Where(h => h.Player != Player).Select(h => new UnitObservation(h.Id, h.Tile, 0, h.Player)).ToArray());
+            Herds = Array.AsReadOnly(index.VisibleHerds(visible).Select(h => new HerdObservation(h, w.Config, h.DomesticCamp < 0 ? -1 : index.Camps[h.DomesticCamp].Player, Player)).ToArray());
             HuntingFieldcraft = PracticeEffects.Ramp(w.Config, camp, Domain.Hunting);
             var observedHunters = Hunters.Concat(ForeignHunters).ToArray();
             LikelyHerdDestinations = new ReadOnlyDictionary<int, int>(HuntingFieldcraft <= 0 ? new Dictionary<int, int>() : Herds.Where(h => !h.Domestic).ToDictionary(h => h.Id, h => PredictHerdDestination(h, Tiles, observedHunters, Map)));
             var ownIds = new HashSet<int>(Hunters.Select(h => h.Id)) { CampId };
             var recent = w.History.LastOrDefault();
             if (recent != null) ownIds.UnionWith(recent.Logistics.Where(l => l.Camp == CampId).Select(l => l.Hunter));
-            RecentOwnExtraction = new ReadOnlyDictionary<int, double>((recent?.Transfers ?? new List<Transfer>()).Where(t => ownIds.Contains(t.Entity) && visible.Contains(t.Tile)).GroupBy(t => t.Tile).ToDictionary(g => g.Key, g => g.Sum(t => t.Food)));
+            RecentOwnExtraction = new ReadOnlyDictionary<int, double>(index.Extraction(ownIds).Where(t => visible.Contains(t.Tile)).GroupBy(t => t.Tile).ToDictionary(g => g.Key, g => g.Sum(t => t.Food)));
             Experience = Array.AsReadOnly((double[])camp.Experience.Clone());
         }
         private static int PredictHerdDestination(HerdObservation herd, IReadOnlyDictionary<int, TileObservation> tiles, IReadOnlyList<UnitObservation> hunters, HexMap map)
@@ -129,7 +132,8 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservationBuilder
     {
-        public AgentObservation Build(WorldState world, int player) => new AgentObservation(world, world.Camps.First(c => c.Player == player));
+        public AgentObservation Build(WorldState world, int player, PlanningIndex index = null)
+        { index = index ?? new PlanningIndex(world); return new AgentObservation(world, index.OwnCamps(player).First(), index); }
     }
     [Serializable]
     public sealed class CandidateTrace
@@ -180,11 +184,12 @@ namespace Anthropocene.Simulation
         {
             var result = new PolicyDecision { Trace = new DecisionTrace { Player = o.Player, Turn = o.Turn } };
             if (o.LinkedPopulation <= 0) return result;
-            // Stable policy cohorts keep the benchmark population diverse without reading global state. One in five tribes
-            // commits to a nomadic experiment and another one in five develops a fishing tradition when visible water permits it.
-            bool huntingFocus = o.Player % 5 == 0;
             bool knownFishingWater = o.Tiles.Values.Any(tile => tile.Aquatic && tile.Food >= 1);
-            bool fishingFocus = !huntingFocus && knownFishingWater && (o.Player % 5 == 1 || m.Fishing >= Math.Max(m.Hunting, m.Gathering));
+            double huntPreference = m.Hunting * o.HuntingInclination + Practice(o, Domain.Hunting, m);
+            double gatherPreference = m.Gathering * o.GatheringInclination + Practice(o, Domain.Gathering, m);
+            double fishPreference = knownFishingWater ? m.Fishing * o.FishingInclination + Practice(o, Domain.Fishing, m) : 0;
+            bool huntingFocus = huntPreference > Math.Max(gatherPreference, fishPreference);
+            bool fishingFocus = fishPreference > Math.Max(huntPreference, gatherPreference);
             double need = 1 + o.DeficitTurns * .5 + (o.FoodCondition <= 1 ? .5 : 0);
             var campCandidates = new List<Candidate>();
             double current = Gathering(o, o.CampTile);
@@ -263,6 +268,7 @@ namespace Anthropocene.Simulation
         }
         private static Order Select(AgentObservation o, List<Candidate> candidates, DecisionTrace trace)
         {
+            candidates = candidates.Where(c => OrderRules.Validate(o, c.Order) == null).ToList();
             if (candidates.Count == 0) return new Order(OrderKind.NoOp, o.CampId);
             var best = candidates.OrderByDescending(c => c.Score).ThenBy(c => Numbers.Hash(o.PolicySeed, 91, c.Order.Entity ^ c.Order.Target ^ c.Order.Destination, o.Turn)).ThenBy(c => c.Order.ToString(), StringComparer.Ordinal).First();
             foreach (var c in candidates) trace.Candidates.Add(new CandidateTrace { Plan = c.Order.ToString(), Score = c.Score, Components = c.Components, Selected = c == best });

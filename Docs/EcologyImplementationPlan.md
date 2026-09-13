@@ -9,7 +9,7 @@ User decisions: starvation has **two player turns of grace**, deliberately indep
 - [x] Environment and vegetation overlay, generation dependencies and configuration migration.
 - [x] Exact seasonal stock/condition integration, sparse pressure ledger, pure lazy projection/materialization.
 - [x] Preserve gathering claims, supply, demography, strategic movement and human/herd food conservation.
-- [ ] Spatial occupant index, legal action contract, serializable filtered observations, policy state without player-ID cohorts.
+- [x] Spatial occupant index, legal action contract, serializable filtered observations, policy state without player-ID cohorts.
 - [ ] Deterministic reference/parallel phase execution and 80/320-tribe performance reports.
 - [ ] Versioned save/load and focused/metamorphic/ownership/AI tests.
 - [ ] Approved layered symbolic art, glyph fallback, terrain/vegetation/land-use/settlement/entity layers and UI smoke.
@@ -22,3 +22,5 @@ Checkpoint 1: existing 162 assertions plus 14 ownership/workforce/progression ch
 Checkpoint 2: climate-based environments, generated vegetation potential and configurable hysteresis are in place. All 182 focused assertions, three seeded replay games (12/12 survivors, zero illegal orders), and the three-shape geography sample pass. Seasonal resources remain on the old resolver until the next checkpoint.
 
 Checkpoint 3: 206 focused assertions pass, including exact rate migration, depletion/recharge conservation, seasonal/annual/weekly metamorphic checks, pure lazy projection and latent save/load. Three-century calibration distinguishes sustainable light use from extreme collapse, with recovery after abandonment. A three-seed gameplay replay sample has 12/12 survivors and zero illegal orders. AI policy replacement and final balance measurements are still pending.
+
+Checkpoint 4: 216 focused assertions pass. The filtered JSON contract includes legal masks, local settlement/source identities and estimated wild/foreign livestock counts. Human and AI validation share OrderRules. Society preferences and generated mandates are seeded by origin/state, never player-number cohorts. A 12-seed replay sample produced 48/48 surviving tribes, 17 Husbandry / 23 Cultivation / 8 Watercraft outcomes, 38 starvation deaths across the full sample, median final population 87, and zero illegal AI orders. These shares are measurements, not quotas.

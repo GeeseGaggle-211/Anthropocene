@@ -374,7 +374,7 @@ namespace Anthropocene.Simulation
                 if (w.Camps.Any(camp => c.Map.Distance(camp.Tile, entry.Key) < c.Config.StartSeparation)) continue;
                 int player = w.Camps.Count;
                 var camp = new Camp { Id = w.NextId++, Player = player, Tile = entry.Key, Population = c.Config.StartingPopulation, Food = Math.Max(c.Config.StartingFood, c.Config.StartingReserveFood) };
-                camp.Mandate = new Mandate { Risk = Numbers.Random(w.Seed, 51, player), Mobility = Numbers.Random(w.Seed, 52, player), Exploration = Numbers.Random(w.Seed, 53, player), Reserve = Numbers.Random(w.Seed, 54, player), Hunting = .85 + Numbers.Random(w.Seed, 55, player) * .3, Gathering = .85 + Numbers.Random(w.Seed, 56, player) * .3, Fishing = .85 + Numbers.Random(w.Seed, 57, player) * .3 };
+                camp.Mandate = new Mandate { Risk = Numbers.Random(w.Seed, 51, entry.Key), Mobility = Numbers.Random(w.Seed, 52, entry.Key), Exploration = Numbers.Random(w.Seed, 53, entry.Key), Reserve = Numbers.Random(w.Seed, 54, entry.Key), Hunting = .85 + Numbers.Random(w.Seed, 55, entry.Key) * .3, Gathering = .85 + Numbers.Random(w.Seed, 56, entry.Key) * .3, Fishing = .85 + Numbers.Random(w.Seed, 57, entry.Key) * .3 };
                 w.Camps.Add(camp); w.Generation.MeanStartViability += Viability(w, entry.Key);
                 if (w.Camps.Count == c.Config.Players) break;
             }

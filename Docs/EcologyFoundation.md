@@ -16,4 +16,6 @@ Intentional regression changes: next-season capacity is checked through projecti
 
 Society owns technology, practice, mandates and era state. Settlements retain local people, workforce and inventory. Mastery can complete the era early; majority eligibility begins at 200 years and forced completion at 240. Opening transition effects are an explicitly optional compatibility adapter with owned seed/improvement records. Workforce deaths use proportional largest remainder, with stable gatherer-first/ordinal-role tie breaks.
 
-Current branch save signature: ANTHROPOCENE-7; opening-v6.anthro; world/config/generator 6. Older saves are preserved and rejected explicitly. Remaining implementation work and final validation are tracked in EcologyImplementationPlan.md.
+Current branch save signature: ANTHROPOCENE-7; opening-v6.anthro; world/config/generator 6. Older saves are preserved and rejected explicitly. Observation schema is 7. Filtered observation/action DTOs and legal action masks share the human validator. Society policy inclinations persist independently of player labels; mandates, practice and observed opportunities drive specialization. A planning snapshot indexes occupants and recent own extraction once, and AI planning runs on the resolution worker.
+
+Remaining implementation work and final validation are tracked in EcologyImplementationPlan.md.

@@ -1,0 +1,83 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Anthropocene.Simulation
+{
+    public static class OrderRules
+    {
+        // Human controls, policies and action masks all consume this filtered contract.
+        public static string Validate(AgentObservation o, Order order)
+        {
+            if (order == null) return "Missing order.";
+            var settlement = o.Settlements.FirstOrDefault(c => c.Id == order.Entity);
+            var hunter = o.Hunters.FirstOrDefault(h => h.Id == order.Entity);
+            if (settlement == null && hunter == null) return "Entity is not controlled by this tribe.";
+            var source = settlement ?? o.Settlements.FirstOrDefault(c => c.Id == hunter.SourceCamp);
+            if (source == null || source.LinkedPopulation == 0) return "The tribe has no surviving people.";
+            int tile = settlement != null ? settlement.Tile : hunter.Tile;
+            if (order.Kind == OrderKind.NoOp) return order.Destination >= 0 || order.Target >= 0 || order.Population != 0 ? "Wait cannot include movement or another action." : null;
+            if (order.Kind == OrderKind.Dispatch)
+                return settlement == null || order.Destination >= 0 || order.Target >= 0 || order.Population <= 0 || order.Population > settlement.Gatherers || settlement.Population - order.Population < o.MinimumCamp ? "Dispatch must use available gatherers and preserve the camp's minimum population." : null;
+            if (order.Kind == OrderKind.Reintegrate)
+                return hunter == null || order.Destination >= 0 || order.Population != 0 || order.Target != source.Id || hunter.Tile != source.Tile ? "Hunters must be at their source camp to reintegrate." : null;
+            if (order.Kind == OrderKind.Move || order.Destination >= 0)
+            {
+                if (!o.Tiles.ContainsKey(order.Destination)) return "Destination is outside current sight.";
+                int budget = hunter == null ? o.CampMovement : o.HunterMovement;
+                if (!o.Map.Reachable(tile, order.Destination, budget, n => Enter(o, n, hunter != null), n => hunter != null && o.Tiles[n].Aquatic ? o.WaterMovementCost : 1)) return "Destination is unreachable within this turn's movement allowance.";
+            }
+            if (order.Kind == OrderKind.Move) return order.Population != 0 || order.Target >= 0 ? "Movement cannot include a separate target or dispatch." : null;
+            if (hunter == null) return "This order requires a hunter group.";
+            if (order.Population != 0) return "This order cannot change the group population.";
+            if (order.Kind == OrderKind.Hunt) return o.Herds.Any(h => h.Id == order.Target && !h.Domestic) ? null : "Hunt target is not a currently visible wild herd.";
+            if (order.Kind == OrderKind.Fish)
+            {
+                int final = order.Destination >= 0 ? order.Destination : tile;
+                return !o.Tiles.TryGetValue(order.Target, out var target) || !target.Aquatic || o.Map.Distance(final, order.Target) > 1 ? "Fishing requires an accessible adjacent freshwater or shallow tile." : null;
+            }
+            return "Unknown order.";
+        }
+        private static bool Enter(AgentObservation o, int n, bool hunter) => o.Tiles.TryGetValue(n, out var t) && t.ElevationLevel < 10 && (t.Land || hunter && o.Watercraft && t.Terrain == Terrain.Shallows);
+    }
+    [Serializable]
+    public sealed class EntityActionMask
+    {
+        public int Entity, MinimumDispatch, MaximumDispatch;
+        public List<Order> Actions = new List<Order>();
+        public bool Allows(Order order) => order != null && order.Entity == Entity && (order.Kind == OrderKind.Dispatch ? order.Target < 0 && order.Destination < 0 && order.Population >= MinimumDispatch && order.Population <= MaximumDispatch && MinimumDispatch > 0 : Actions.Any(a => a.ToString() == order.ToString()));
+    }
+    public static class LegalActions
+    {
+        public static EntityActionMask[] Build(AgentObservation o)
+        {
+            var result = new List<EntityActionMask>();
+            foreach (int entity in o.Settlements.Select(c => c.Id).Concat(o.Hunters.Select(h => h.Id)).OrderBy(n => n))
+            {
+                var mask = new EntityActionMask { Entity = entity };
+                void Add(Order order) { if (OrderRules.Validate(o, order) == null) mask.Actions.Add(order); }
+                Add(new Order(OrderKind.NoOp, entity));
+                var camp = o.Settlements.FirstOrDefault(c => c.Id == entity); var hunter = o.Hunters.FirstOrDefault(h => h.Id == entity);
+                int origin = camp != null ? camp.Tile : hunter.Tile;
+                var destinations = o.Map.Radius(origin, camp == null ? o.HunterMovement : o.CampMovement).OrderBy(n => n).ToArray();
+                foreach (int n in destinations) Add(new Order(OrderKind.Move, entity, destination: n));
+                if (camp != null)
+                {
+                    int max = Math.Min(camp.Gatherers, camp.Population - o.MinimumCamp);
+                    if (OrderRules.Validate(o, new Order(OrderKind.Dispatch, entity, population: max)) == null) { mask.MinimumDispatch = 1; mask.MaximumDispatch = max; }
+                }
+                else
+                {
+                    Add(new Order(OrderKind.Reintegrate, entity, hunter.SourceCamp));
+                    foreach (int destination in new[] { -1 }.Concat(destinations))
+                    {
+                        foreach (var herd in o.Herds.Where(h => !h.Domestic)) Add(new Order(OrderKind.Hunt, entity, herd.Id, destination));
+                        foreach (int fish in o.Map.Radius(destination < 0 ? origin : destination, 1)) Add(new Order(OrderKind.Fish, entity, fish, destination));
+                    }
+                }
+                mask.Actions = mask.Actions.OrderBy(a => a.ToString(), StringComparer.Ordinal).ToList(); result.Add(mask);
+            }
+            return result.ToArray();
+        }
+    }
+}

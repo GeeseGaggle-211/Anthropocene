@@ -384,10 +384,15 @@ namespace Anthropocene.Presentation
         {
             if (saving != null || world.Finished || world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) == 0) return;
             resolvingSummary = CommitPreview();
-            var orders = new Dictionary<int, List<Order>> { [0] = planned.Values.OrderBy(o => o.Entity).ToList() }; var traces = new List<DecisionTrace>();
-            foreach (var camp in world.Camps.Where(c => c.Player != 0).OrderBy(c => c.Player))
-            { var decision = policy.Decide(builder.Build(world, camp.Player), camp.Mandate); orders[camp.Player] = decision.Orders; traces.Add(decision.Trace); }
-            resolving = Task.Run(() => resolver.Resolve(world, orders, traces));
+            var playerOrders = planned.Values.OrderBy(o => o.Entity).Select(o => o.Copy()).ToList();
+            resolving = Task.Run(() =>
+            {
+                var orders = new Dictionary<int, List<Order>> { [0] = playerOrders }; var traces = new List<DecisionTrace>();
+                var planningIndex = new PlanningIndex(world);
+                foreach (var camp in world.Camps.Where(c => c.Player != 0).OrderBy(c => c.Player))
+                { var decision = policy.Decide(builder.Build(world, camp.Player, planningIndex), camp.Mandate); orders[camp.Player] = decision.Orders; traces.Add(decision.Trace); }
+                return resolver.Resolve(world, orders, traces);
+            });
         }
         private void FinishTurn(TurnRecord record)
         {

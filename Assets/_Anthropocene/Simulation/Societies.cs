@@ -28,6 +28,7 @@ namespace Anthropocene.Simulation
         public int TransitionTurn, SecondaryDomain = -1;
         public bool ForcedTransition;
         public Mandate Mandate = new Mandate();
+        public PolicyState Policy = new PolicyState();
         public EraProgression Progression = new EraProgression();
         public List<TransitionSeed> TransitionSeeds = new List<TransitionSeed>();
     }
@@ -62,6 +63,7 @@ namespace Anthropocene.Simulation
                     society = camp.People;
                     society.Id = world.NextId++; society.Player = camp.Player;
                     society.PolicySeed = (int)Numbers.Hash(world.Seed, 190, camp.Tile);
+                    society.Policy = PolicyState.Seeded(society.PolicySeed);
                     society.Progression.MajorityEligibilityDays = world.Config.MajorityEligibilityYears * world.Config.DaysPerYear;
                     society.Progression.ForcedTransitionDays = world.Config.ForcedTransitionYears * world.Config.DaysPerYear;
                     world.Societies.Add(society);
