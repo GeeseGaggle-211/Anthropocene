@@ -1,3 +1,5 @@
+> Historical milestone. [EcologyFoundation.md](EcologyFoundation.md), [Implementation.md](Implementation.md) and [Validation.md](Validation.md) describe the current rules. Their society ownership, elapsed-time progression, renewable ecology and layered symbolic presentation supersede conflicting rules below.
+
 # Milestone three — generations, elevation and tile information
 
 This milestone supersedes the four-band elevation presentation and 90-day player turns described in the older notes. The source Drive document and milestone-two notes remain historical references.

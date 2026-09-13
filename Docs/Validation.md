@@ -1,79 +1,80 @@
-# Validation — milestone three, September 10, 2026
+# Validation - September 13, 2026
 
-Windows x64, Unity 6000.5.10f1, Unity-bundled .NET 8.0.318. Timings are local development measurements. [Milestone-two results](Validation-Milestone2.md) remain archived for comparison.
+Current mechanics: [EcologyFoundation.md](EcologyFoundation.md). Windows x64, Unity **6000.5.10f1**, bundled .NET **8.0.318**. Earlier results are preserved in [Validation-Milestone3.md](Validation-Milestone3.md); they are not current balance measurements.
 
 ## Automated checks
 
-- 162 fixed headless assertions passed: 33 focused rules, 59 second-milestone rules and 70 third-milestone checks. Seeded benchmarks add one no-wild-herd-proliferation assertion per world.
-- New checks cover proficiency ramp thresholds and full hunting yield, reduced land impact for the same gathered food, passive-aquatic 75/25 Gathering/Fishing practice attribution, workforce-restricted dispatch, workforce/environment save round trips, annualized exponential growth, increasing food demand, food-constrained growth and decline, food-share-based lifestyle progress, automatic hunting, sustainable herd pressure, twenty-year and shortened clocks, two-layer food, disabled-by-default herd fission, passive marine food without freshwater credit, peak movement/AI/placement, stack occupants, hover behavior and hidden-information isolation.
-- Herd-count boundary checks cover 1, 9, 10, 14, 15, 25, 99, 100, 101, 199, 200 and 249. Own livestock remains exact; foreign livestock and wild herds remain approximate. Counts in the same bucket produce identical player details and AI size categories. Save/load and authoritative replay preserve the result.
-- All 14 Unity EditMode tests passed in 6.31 seconds. Visual tests verify exact contour counts, suppression of same-elevation shared edges, higher-tile ownership of unequal boundaries, no hidden-elevation leaks, nonoverlapping stack hit slots, hover layout, planning paths and connected/uncertain/disconnected supply previews.
-- A fresh batch rerun for the proficiency/workforce revision was blocked before normal compilation because the local Unity Licensing Client repeatedly disconnected and Package Manager consequently registered zero built-in modules, including IMGUI and the Test Framework. The resulting missing-`GUIStyle` diagnostics are an environment/licensing failure rather than a source-specific diagnostic. Headless compilation of the authoritative simulation succeeds; current presentation text still needs a Unity-licensed rerun or manual editor open.
-- Unity compiled the revised demographic, herd and AI observation rules, and the Windows development player rebuilt successfully (`Build Finished, Result: Success`).
-- 30 seeded four-tribe games completed with zero illegal AI orders, zero replay mismatches and no increase in wild-herd entity count while fission was disabled, including reversed entity and submitted-order collections. All population, food-report and workforce conservation checks passed.
-- The final thirty-seed Small-world regression run recorded 9,344 net additions and 51 starvation deaths; all 120 tribes survived. First technologies were 25 Animal Husbandry, 58 Cultivation and 37 Watercraft/Fishing: 20.8%, 48.3% and 30.8%. Four-player worlds overrepresent the stable fishing cohort because one matching player is already 25% of the roster before fishing-mandate candidates are added, so this suite remains a mechanics/population regression rather than the representative path-distribution target. The AI made 1,732 visible herd-pursuit commitments and converted 642 into food-producing contact (37.1%). End population had a 25th percentile of 54, median 86, 75th percentile 144 and maximum 274; 56/120 tribes ended at 100 or more. Of 727 turns following observed population increases, 694 answered with additional hunter dispatch or increased gathering.
-- The primary path acceptance audit uses three Standard / Continents worlds with 32 tribes. Seeds 1–3 produced Husbandry/Cultivation/Fishing splits of 8/17/7, 9/14/9 and 10/18/4. Aggregate outcome was 27/49/20, or 28.1%/51.0%/20.8%. Every sampled world exceeded 20% Husbandry, produced fishing-first tribes and retained Cultivation as the plurality; all 96 tribes survived. Median end populations were 102, 101 and 125. Wild-herd counts were 1,128, 1,607 and 1,150 with fission disabled. This demonstrates the requested robust sampled target; it is not a mathematical guarantee for every possible seed.
+- **221 fixed headless assertions** pass: 33 original, 59 milestone two, 70 milestone three, 24 ownership/progression/environment, 25 ecology and 10 observation/action-contract assertions. Seeded and geography audits add their own checks.
+- Scalar resolution matches two workers and four workers with changed/reversed partitions and reversed entity lists across ten resolutions. The 80/320 audits additionally compare every turn and final save/load against scalar replay.
+- Exact condition and renewable-stock updates, analytic depletion/recharge, zero/near-zero rates, seasonal exposure, requested/realized/unmet conservation, human/herd competition and finite source water pass. Twenty-year versus annual seasonal integrations and constant-capacity annual versus 52 equal weekly integrations agree within tolerance. The generic condition equation also passes subdivision checks. These hold forcing/intents fixed; they do not equate different player decision sequences.
+- Three-century calibration keeps light productive-tile use near natural condition, permits extreme sustained grazing to collapse local condition, and restores condition after abandonment. Unmet demand and drinking cause no condition damage. Low/high natural-potential recovery modifiers are explicit.
+- Pure projection, project/materialize agreement, century-long dormant recovery, multiple vegetation hysteresis crossings, query-order invariance and latent save/load continuation pass. Old signatures are explicitly rejected; save/fingerprint reads do not bind new ownership or allocate IDs.
+- Multiple local camps can share one society's tradition while retaining separate stores/populations. Workforce assignment/reassignment/release, proportional named-role casualties, owned improvements, optional transition rewards and elapsed-time era gates pass. Mastery remains available before 200 years; ten-year turns do not trigger premature turn-number gates. Starvation still has two player turns of grace.
+- Human and AI legal actions share a validator. Serializable masks/observations preserve exact own and estimated foreign/wild information. Hidden tiles, foreign private state, rival orders and changes within the same herd-count band cannot change the contract. Relabeling player identity cannot change policy choices. Existing continuity/depletion checks cover relocation inertia.
+- Growth, food reports (including remote forage), finite expedition provisions, passive coastal gathering and source freshwater conservation remain covered. All seeded runs retain population/food/workforce conservation and zero illegal AI orders.
+- **17/17 Unity EditMode tests passed**, zero failures/skips, in **7.04 seconds**. These include actual config/save integration, contour boundaries/fog, stack hit slots, hover layout/timing, planning/supply previews, all 23 sprite imports at 256 x 256, both semantic contrast sets/glyph fallbacks, vegetation/relief separation, and sprite containment within hit slots at multiple zooms.
 
-The updated habitat report grouped camps by their initial radius-one landscape. Desert starts averaged 94.7 people and produced twelve Husbandry-first outcomes; grassland averaged 119.9 with one; river/woodland averaged 126.1 with ten; cold-steppe/tundra averaged 42.1 with two. All groups survived. These results show that the nomadic and fishing paths coexist with an agricultural plurality, while cold starts remain the weakest demographic case and the stable policy cohorts are deliberately testable behavioral approximations. The earlier geography batch found river tiles directly bordering desert, confirming that arid river corridors occur, although this is not yet a distribution target or guaranteed-per-map feature.
+The first Unity attempt exposed a missing Screen Capture module in the optional player-validation harness. The bundled module and its image-conversion dependency were added; subsequent tests and builds passed. The final source-text changes were also compiled by the final Windows build.
 
-The broad generation/geography suite also passed. Standard seed 1729 generated 524,288 tiles and 80 viable starts in 7.306 seconds, resolved its opening in 3.168 seconds, saved 40,772,174 bytes in 1.388 seconds and loaded in 1.068 seconds. The eight-seed Standard elevation, viable-start and save/load audit completed without an invariant failure.
+## Gameplay samples
 
-The September 10 generational checks additionally cover one-generation starting reserves, one-to-four-generation climate storage, disconnected subsistence foraging with barren-site starvation retained, species herd ceilings and opt-in fission, sustainable hunting pressure and Standard-only support for 80 tribes.
+Thirty Small / Continents worlds, seeds 1-30, four tribes each:
 
-The `ui/civ5-inspired` presentation experiment adds two EditMode checks for the planning path and queue feedback. The path check verifies that previews obey the displayed movement budget, weighted terrain cost and the filtered visible-tile boundary; the queue check distinguishes a newly queued command from replacement of the selected unit's earlier command. These presentation helpers do not mutate simulation state.
+| Measure | Result |
+|---|---:|
+| Survivors | 120 / 120 |
+| Husbandry / Cultivation / Watercraft first | 35 / 67 / 18 |
+| Shares | 29.2% / 55.8% / 15.0% |
+| Net additions / starvation deaths | 8,661 / 117 |
+| End population: lower quartile / median / upper quartile | 49 / 93 / 129 |
+| Maximum / at least 100 people | 283 / 52 of 120 |
+| Pursuit commitments producing food | 774 / 1,778 (43.5%) |
+| Responses to observed population increases | 632 / 687 |
 
-## Civ-inspired UI experiment — September 10, 2026
+All 30 games replayed without mismatch, including reversed entity/submission collections. Wild-herd entity count did not increase with fission disabled. Cold-steppe starts averaged 35.1 people, desert 91.1, grassland 95.6 and river/woodland 119.2. These approximate starting-habitat groups all survived; cold starts remain demographically weaker.
 
-- The focused headless suite passed all 129 assertions (29 original, 57 milestone-two and 43 milestone-three). No simulation source or gameplay tuning changed.
-- Unity 6000.5.10f1 compiled the presentation and all 13 EditMode tests passed in 9.11 seconds with no failures or skips. This includes the two new planning-presentation checks above.
-- The Windows x64 development player built successfully through `Anthropocene.Editor.PrototypeBuild.Windows`. Unity reported `Build Finished, Result: Success` and exited with code 0.
-- Automated player interaction was blocked at launch by a Windows firewall/security permission dialog. The dialog was not acted on, and only this experiment's player process was closed. Selection, target-mode and order-resolution interaction therefore remain a manual smoke-test risk for this branch; no screenshot was retained.
-- Standard seed 1729: 524,288 tiles generated in about 6.8 seconds; its four-turn AI opening took about 19.4 seconds headlessly. Sampled managed memory was 210–240 MB. Save was 33.0 MB in about 1.0 second; load about 0.85 seconds. Runtime turn resolution uses a worker/progress screen.
+Representative Standard / Continents sample, 32 tribes per world:
 
-## Generational resolver and scale validation — September 10, 2026
+| Seed | Husbandry | Cultivation | Watercraft | Survivors | Median people |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 9 | 21 | 2 | 32 / 32 | 94 |
+| 2 | 13 | 17 | 2 | 32 / 32 | 78 |
+| 3 | 7 | 21 | 4 | 32 / 32 | 126 |
+| Total | 29 | 59 | 8 | 96 / 96 | - |
 
-- Standard seed 1729 generated all 524,288 tiles and 80 separated viable starts in 6.88 seconds.
-- The complete twelve-turn 80-tribe opening resolved in 2.71 seconds headlessly, using about 229 MB managed memory with bounded wild-herd entities.
-- Its 40.35 MB save completed in 1.36 seconds and loaded in 1.07 seconds.
-- The eight-seed Standard audit retained all elevation, coast/freshwater, oasis, river, start and save/load invariants with 80 camps in every world.
-- The Windows player visibly showed one full starting generation, climate storage, 24 → 34 first-generation growth, a green connected tether, and a red four-tile disconnected preview with a matching sidebar warning. A disconnected group remained present and reported its local-forage/provision state after resolution.
+Aggregate shares are 30.2% / 61.5% / 8.3%. All three paths occur without player-ID cohorts, but fishing is less common than in the earlier cohort-driven baseline. The user specified **targets, not quotas**: these are measured balance findings, not guarantees or assertions of a required per-world split.
 
-## Elevation coverage
+## Geography and scale
 
-Eight Standard Continents worlds, seeds 1–8, 80 camps each. Every world contained every level 0–10. All 640 camps had an opening herd reachable within two land steps around peaks. No camps or herds spawned on peaks. Every world passed freshwater/coast, oasis, river-graph and elevation validation, and all levels survived Standard save/load.
+Twelve Small seeds per shape passed generation/topology/drainage/viable-start checks. Mean land fractions were 0.480 Continents, 0.245 Archipelagos and 0.480 Pangaea; mean island counts 10.9, 21.4 and 7.8. The 30-world habitat sample contained 15 river tiles adjacent to desert.
 
-| Level | Interpretation | Minimum tiles per world | Maximum tiles per world |
-|---:|---|---:|---:|
-| 0 | Marine | 158,958 | 353,095 |
-| 1 | Lowland | 20,298 | 46,718 |
-| 2 | Lowland | 23,896 | 54,426 |
-| 3 | Rolling hills | 24,703 | 77,222 |
-| 4 | Rolling hills | 28,150 | 87,696 |
-| 5 | Ridges/highland | 23,059 | 45,093 |
-| 6 | Ridges/highland | 19,797 | 38,650 |
-| 7 | Mountains | 14,822 | 28,988 |
-| 8 | Mountains | 9,881 | 19,356 |
-| 9 | Mountains | 4,941 | 9,663 |
-| 10 | Impassable peaks | 1,646 | 3,220 |
+Eight Standard / Continents worlds, seeds 1-8, retained all elevation levels 0-10, 80 viable starts each, reachable opening prey, no peak placement, valid river/freshwater/coast/oasis topology and authoritative save/load. All 640 starts passed.
 
-Counts include freshwater lakes at their above-sea level. Peaks target the top one percent of land elevation; other quantiles deliberately spread the traversable levels. The 80-start audit retained 1,049–1,830 wild herds, 54–98 oases and 404–2,726 shared river edges. Continuous elevation and biome remain independent of the gameplay categories.
+[Performance.md](Performance.md) records full 80/320-tribe timing, active-tile counts, managed/process memory, saves and deterministic replay. At seed 1729 the 80-tribe twelve-turn resolution took 1.931 seconds plus 0.755 seconds AI; the benchmark-only 320-tribe case took 9.113 plus 1.795 seconds. The 320 single-world heap after generation was about 852 MiB; dense storage compaction remains a prerequisite for a public large preset.
 
-Twelve Small seeds per preset still pass viable-start, drainage-cycle and stellar-temperature checks. Mean land fractions are 0.480 Continents, 0.245 Archipelagos and 0.480 Pangaea; mean islands are 10.9, 21.4 and 7.8 respectively.
+## Windows player and visual inspection
 
-## Interactive Windows checks
+The final Windows development build reported **Build Finished, Result: Success** and exited successfully. The opt-in automated player route exercised Standard / Continents / seed 1729 / 32 tribes with the real presentation helpers. It captured the opening, eight-person dispatch stack, both contrast sets, distant detail reduction, the eastward disconnection preview and a separate save/load restoration. It never wrote the user's normal save slot.
 
-The Windows player reproduced the Small seed-1 opening: 24 → 39 → 48 people, twenty years per turn, and 1,696 passive marine food rounded in the second-generation report. The camp and two eight-person hunter groups occupied three distinct slots. Clicking each hunter glyph selected its corresponding ID (26 and 31); delayed hover listed the camp and both groups together. Moving to the header removed the hover panel.
+Captured frames were inspected: the opening shows 24 people and one generation of reserves; the dispatch resolves to 28 people, with camp and hunter in distinct selectable slots. The next eastward move resolves to 36 people. A further legal two-tile move displays the red supply tether and matching sidebar warning. Sprites now remain inside their click slots; distant zoom removes vegetation/food detail while keeping units and elevation boundaries. Terrain, vegetation, approximate herd badge and actor identity remain separate. Save/load preserves the authoritative fingerprint and restores turn three with 36 people; pending previews are cleared.
 
-Save/load was checked against a changed state: after saving turn three, advancing produced turn four with 80 people and 60 elapsed years. Loading restored turn three, 48 people, 40 elapsed years, both hunter groups and the persisted demographic report. Classic and high-contrast tilesets retained the same occupants, approximate herd badges and elevation information. Zooming out simplified contour density; zooming in restored the detailed outlines.
+This is automated player execution plus visual inspection of captured frames, **not a manual mouse/keyboard usability playtest**. Hover behavior, slot geometry and hidden-information limits are covered by automated checks; this run did not physically exercise every input device or all possible map/vegetation combinations. The original code-native art follows the written symbolic style contract; the proposal's embedded image was not retrievable, as recorded in [ArtProvenance.md](ArtProvenance.md).
 
-Review captures are in `TestResults/milestone3-hover-stack.png`, `TestResults/milestone3-contours-demographics.png` and `TestResults/milestone3-hover-coast.png`. Coastal hover shows level 0, undrinkable saltwater, passive marine eligibility and the camp's gathering reach. Panning clears the panel immediately; edge flipping/clamping is covered by the automated layout test. The final rebuild also corrects the journal's hunger sentence to use all seasonal deficit intervals in the generation rather than just the final interval.
+Local evidence lives in ignored `TestResults`: `EcologyFocusedFinal.txt`, `EcologyFinalHeadless.txt`, `EcologyStandard32.txt`, `EcologyElevationAudit.txt`, `EcologyUnity/final-results.xml`, `EcologyBuildFinal.log`, and the `EcologyPlayerFinal` captures/result/log. Generated builds, screenshots, logs and saves are deliberately not committed.
 
-The final Windows build completed successfully (`milestone3-build-final.log`) and reloaded the saved demonstration. No managed exceptions appeared in the player log. Source diff whitespace checks pass; Unity's reserialized settings retain generated whitespace and schema changes. An attempted baseline cleanup was rejected by automatic approval review because tracked files could contain existing edits, so those settings remain intact.
+## Reproduce
 
-The biomass/contour revision again passed all 14 Unity EditMode tests and produced a successful Windows build. Automated presentation checks prove that equal elevation buckets suppress shared edges, the higher tile owns unequal boundaries and fogged neighbors remain sealed. Native screenshot inspection was unavailable in this task because its Windows control surface exposed browser tabs but no native application windows; normal-zoom contour readability therefore remains an explicit manual playtest item.
+```powershell
+./Tools/Test-Headless.ps1 -Seeds 0
+./Tools/Test-Headless.ps1 -Seeds 30 -BiomePaths -Geography
+./Tools/Test-Headless.ps1 -Seeds 3 -NomadStandard
+./Tools/Test-Headless.ps1 -Seeds 0 -Audit
+./Tools/Test-Headless.ps1 -Seeds 0 -ScalePlayers 80
+./Tools/Test-Headless.ps1 -Seeds 0 -ScalePlayers 320
+```
 
-## Reproduction commands
+Use Unity's EditMode Test Runner and **Anthropocene > Build Windows prototype**. The development player accepts `--anthropocene-smoke-output <absolute-output-directory>` for the isolated demo; see [AGENTS.md](../AGENTS.md) for the single-editor, save-preservation and Windows workflow requirements.
 
-Run `Tools/Test-Headless.ps1 -Seeds 30 -Standard -Geography`, `Tools/Test-Headless.ps1 -Seeds 30 -BiomePaths`, `Tools/Test-Headless.ps1 -Seeds 3 -NomadStandard` and `Tools/Test-Headless.ps1 -Audit`. Run Unity EditMode tests through the Test Runner or batch mode. Raw logs are in the ignored `TestResults` directory.
+## Remaining scope
 
-For the current interactive check, select Standard / Continents / seed 1729 / 32 tribes. The first view exposes the one-generation reserve and four-generation desert storage ceiling. Dispatch eight people, commit, then move that group two tiles east and commit. A second two-tile eastward plan is visibly beyond the range-three supply tether: the line and sidebar warning both turn red while the order remains legal.
+Paleolithic remains a coarse strategic chronology with approximate climate/habitats, generation-level storage/provision horizons and explicit opening prey/transition aids. Independent specialist proficiency, daughter-settlement gameplay, cultivation intensity, domestication management, later eras and RL training are deferred. The new ownership, time, pressure and filtered-action contracts provide their entry points. Performance is measured locally; the reports do not prove behavior for every seed or hardware configuration.

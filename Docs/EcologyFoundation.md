@@ -1,6 +1,6 @@
-# Ecology foundation (implementation branch)
+# Paleolithic completion and ecology foundation
 
-This replaces Milestone 3 ecology and ownership rules. The reconciled Drive plan and the user decisions in EcologyImplementationPlan.md are authoritative. The historical DesignSpec.txt is unchanged.
+This replaces Milestone 3 ecology and ownership rules. The reconciled [Drive plan](https://docs.google.com/document/d/1bghyyEUw55bhM0NQRyzHP6RlfU5JM6LV/edit), particularly section 14, and the user decisions in [EcologyImplementationPlan.md](EcologyImplementationPlan.md) are authoritative. Starvation has two player turns of grace; subsistence shares are balance targets, not quotas. The historical DesignSpec.txt is unchanged.
 
 Environment, vegetation and relief are separate. Seasonal resources are generated after soil, environment and oasis placement. Natural vegetation is a generated target; current vegetation follows configurable condition hysteresis.
 
@@ -16,8 +16,15 @@ Intentional regression changes: next-season capacity is checked through projecti
 
 Society owns technology, practice, mandates and era state. Settlements retain local people, workforce and inventory. Mastery can complete the era early; majority eligibility begins at 200 years and forced completion at 240. Opening transition effects are an explicitly optional compatibility adapter with owned seed/improvement records. Workforce deaths use proportional largest remainder, with stable gatherer-first/ordinal-role tie breaks.
 
-Current branch save signature: ANTHROPOCENE-7; opening-v6.anthro; world/config/generator 6. Older saves are preserved and rejected explicitly. Observation schema is 7. Filtered observation/action DTOs and legal action masks share the human validator. Society policy inclinations persist independently of player labels; mandates, practice and observed opportunities drive specialization. A planning snapshot indexes occupants and recent own extraction once, and AI planning runs on the resolution worker.
+Current save signature: ANTHROPOCENE-7; opening-v6.anthro; world/config/generator 6. Older saves are preserved and rejected explicitly. Observation schema is 7. Filtered observation/action DTOs and legal action masks share the human validator. Society policy inclinations persist independently of player labels; mandates, practice and observed opportunities drive specialization. A planning snapshot indexes occupants and recent own extraction once, and AI planning runs on the resolution worker.
 
-Remaining implementation work and final validation are tracked in EcologyImplementationPlan.md.
+Validation evidence is recorded in [Validation.md](Validation.md); [ConfigurationUnits.md](ConfigurationUnits.md) audits the tuning fields and [Performance.md](Performance.md) records the scale limits.
 
-PhaseExecution provides a scalar reference and optional bounded parallel workers. AI/herd intent phases read a planning index; ecological workers read materialized tile inputs and return local results. Main-thread simulation barriers commit in tile/entity order. Movement collisions, ID allocation and history remain canonical. Worker counts, partition order and timings are not saved state. Current desktop execution uses at most four workers and avoids parallel dispatch below 64 items.
+PhaseExecution provides a scalar reference and optional bounded parallel workers. AI/herd intent phases read a planning index; ecological workers read materialized tile inputs and return local results. Sequential simulation barriers commit in tile/entity order on the resolution worker. Movement collisions, ID allocation and history remain canonical. Worker counts, partition order and timings are not saved state. Current desktop execution uses at most four workers and avoids parallel dispatch below 64 items.
+
+
+The map uses nine broad ground/water families with separate climate-specific vegetation motifs, land-use hooks, settlement overlays and unit icons. Rivers and merged elevation contours remain procedural. Both contrast sets retain glyph fallbacks and the same semantic keys. Zoom removes vegetation and land-use detail before occupants/contours; actor artwork stays inside the exact selectable slots. [ArtProvenance.md](ArtProvenance.md) records the original 23-sprite set and the limits of access to the proposal's embedded visual reference.
+
+Paleolithic claims retain radius-one gathering, finite stores, passive adjacent Shallows, one strategic relocation and food-limited population growth. The default starting population is 24 with one complete generation's reserve; there is no human population cap. First-generation dispatch creates an eight-person group in the documented demo; it becomes active in the following planning phase. Owned people and livestock are exact; wild/foreign herd counts remain estimated.
+
+The current scope ends at the first breakthrough. Society/settlement sharing, named workforce roles, transition seeds, generic pressure integration and filtered action/observation contracts are foundations for later work. They do not enable daughter-settlement creation, deliberate domestication, cultivation intensity, specialist production, diplomacy, trade, warfare or RL training. Weather, habitats, opening-herd guarantees and climate-based storage horizons remain approximations/gameplay scaffolds.

@@ -1,52 +1,32 @@
 # Anthropocene
 
-A Unity 6 2D URP project for sprite-, shape-, and particle-driven gameplay.
+A deterministic, simultaneous-turn strategy game following mobile Paleolithic camps and hunter groups toward their first technological breakthrough. One player decision normally covers twenty years. The map uses readable symbolic tiles, separate vegetation and elevation layers, and explained food/population outcomes.
 
-For follow-on development, read [AGENTS.md](AGENTS.md) for architecture, simulation contracts, validation commands and the reproducible demo.
+## Play
 
-## Open the project
+Use Unity **6000.5.10f1**, open `Assets/Scenes/SampleScene.unity`, then press Play. Build the Windows player through **Anthropocene > Build Windows prototype**; output is `Builds/Windows/Anthropocene.exe`.
 
-Use Unity Hub or open this folder with Unity Editor `6000.5.10f1`. The first import can take several minutes because Unity generates the ignored `Library` folder.
+Choose a seed, world shape and tribe count. Standard is 1,024 x 512 tiles and supports up to 80 tribes; the default is 32. Small/Tiny offer quicker iteration. The 2,048 x 1,024 / 320-tribe configuration is restricted to benchmarks.
 
-On Windows, run `Open-Anthropocene.ps1` to fast-forward the local `main` branch from GitHub and then open this checkout in the installed editor. The script deliberately uses `git pull --ff-only`, so it stops instead of creating an unexpected merge when local and remote history diverge.
+Select a camp or hunter group. Right-click queues movement; **M** enters movement targeting and **F** fishing targeting. Dispatch separates people when the generation resolves. Established hunters automatically hunt wild herds sharing their resolved tile. **Enter** commits simultaneous orders; **Backspace** cancels the selected order. Supply lines show whether the planned expedition remains connected to its source camp.
 
-Repository: <https://github.com/GeeseGaggle-211/Anthropocene>
+Use the mouse wheel to zoom, arrows or middle-drag to pan, **C** to center the camp, and **V** to compare contrast sets. Hover while stationary for two seconds to inspect visible land and stacked units. Help explains the symbols and controls.
 
-## Foundation
+People need recurring food surplus and reserves to grow. Disconnected hunters forage locally and use finite carried provisions. Starvation has two player turns of grace. Hunting, gathering and fishing histories drive the first breakthrough; mastery can complete the opening early, majority eligibility begins after 200 simulated years, and completion is forced by 240 years. Later eras are not playable yet.
 
-- Unity 6 (`6000.5.10f1`)
-- Universal Render Pipeline with the 2D Renderer
-- Input System package
-- Sprite and tilemap tooling, with optional art importers deferred until needed
-- Runtime code isolated in `Anthropocene.Runtime`
-- Edit-mode tests isolated in `Anthropocene.Tests.EditMode`
-- Text serialization and visible `.meta` files for reliable version control
+Save/load restores committed geography, history and latent ecology without regenerating the world. Current saves use `opening-v6.anthro` in Unity's persistent-data directory; older save files remain preserved under their previous names. Pending orders are not saved.
 
-## Project layout
+## Develop and validate
 
-- `Assets/_Anthropocene/Scripts/Runtime` — game code shipped in builds
-- `Assets/_Anthropocene/Tests/EditMode` — fast editor tests
-- `Assets/Scenes` — playable scenes; the template scene is the current startup scene
-- `Assets/Settings` — URP, renderer, input, and scene-template assets
+Work directly from the Windows checkout. `Open-Anthropocene.ps1` performs `git pull --ff-only` on the current branch before opening Unity; use it when synchronization is intended, and open Unity directly for local iteration.
 
-Keep third-party packages outside `_Anthropocene`. This makes ownership clear and keeps future upgrades manageable.
+```powershell
+./Tools/Test-Headless.ps1 -Seeds 0
+./Tools/Test-Headless.ps1 -Seeds 30 -BiomePaths -Geography
+./Tools/Test-Headless.ps1 -Seeds 3 -NomadStandard
+./Tools/Test-Headless.ps1 -Seeds 0 -Audit
+```
 
-## First milestone
+The headless runner compiles the actual Unity-independent simulation sources. Run engine/presentation checks in Unity's EditMode Test Runner. Do not open concurrent Unity instances against one checkout.
 
-The bootstrap creates a persistent `[Anthropocene]` root before the first scene loads. It is intentionally small: new systems can attach to the root later without committing us to a large framework before the game loop is known.
-
-## Playable Paleolithic opening
-
-Press Play in `SampleScene` to open the game menu. The prototype now includes a glyph-based hex map, simultaneous seasonal orders, camps and hunters, hunting/fishing/gathering, food consumption and starvation, herd ecology, current-sight fog, heuristic rival tribes, and a first-technology transition by Turn 12.
-
-Select a unit in the sidebar, choose an action, then press Enter to resolve the season. Right-click queues movement. Help explains glyphs and controls. Standard worlds are 1024 x 512 tiles; Small and Tiny are available for iteration.
-
-Use **Anthropocene > Build Windows prototype** to create `Builds/Windows/Anthropocene.exe`. Tune rates and generation values in `Assets/_Anthropocene/Resources/OpeningConfig.json`.
-
-Run `./Tools/Test-Headless.ps1 -Seeds 30 -Standard -Geography` for deterministic simulation, AI, save/load and generation checks. Unity EditMode tests are under `Assets/_Anthropocene/Tests/EditMode`.
-
-See [implementation notes](Docs/Implementation.md) for architecture, design decisions, save behavior and remaining scope.
-
-Milestone two adds interchangeable glyph tilesets (V), biome/relief layers, boundary rivers, oases, explicit freshwater, regional wildlife including camels and horses, expedition provisions outside supply range, and nutrition-gated net population growth. See the [mechanics and tileset guide](Docs/Milestone2.md) and [validation results](Docs/Validation.md).
-
-The current [third milestone](Docs/Milestone3.md) uses twenty-year turns, nested elevation contours (levels 0–10), impassable peaks, individual stacked-unit slots, approximate wild-herd counts and a two-second hover detail panel. Every turn explains population additions/deaths and food production/demand, including passive marine gathering. A combined demo uses Small / Continents / seed 1 / six tribes, with eight-person dispatches in the first two turns.
+Read [AGENTS.md](AGENTS.md) before follow-on work, [current mechanics](Docs/EcologyFoundation.md), [architecture](Docs/Implementation.md), [configuration units](Docs/ConfigurationUnits.md), [validation](Docs/Validation.md), [scale measurements](Docs/Performance.md) and [art provenance](Docs/ArtProvenance.md). `Docs/DesignSpec.txt` and earlier milestone notes preserve historical specifications; current mechanics supersede their conflicting rules.
