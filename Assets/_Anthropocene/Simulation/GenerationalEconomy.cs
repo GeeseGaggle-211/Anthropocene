@@ -335,7 +335,7 @@ namespace Anthropocene.Simulation
                     double fromHunting = Math.Min(overflow, index.Harvest[camp.Id].Where(t => t.Entity == logistics.Hunter && t.Kind == "Hunting").Sum(t => t.Food)); hunting -= fromHunting; overflow -= fromHunting;
                     fishing -= Math.Min(overflow, index.Harvest[camp.Id].Where(t => t.Entity == logistics.Hunter && t.Kind == "Fishing").Sum(t => t.Food));
                 }
-                // Double only successful, retained hunting's experience after food-share normalization.
+                // Add 50% to successful, retained hunting's experience after food-share normalization.
                 // Keep the food ledger, other domains' shares and failed-hunt practice unchanged.
                 double successfulHunting = Math.Max(0, hunting);
                 foreach (var hunt in index.Harvest[camp.Id].Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Hunting" && t.Food <= 0))
@@ -353,7 +353,7 @@ namespace Anthropocene.Simulation
                 }
                 double total = hunting + gathering + fishing; if (total <= 1e-9) continue;
                 double budget = summary.StartingPopulation * generationScale;
-                camp.Experience[(int)Domain.Hunting] += budget * (hunting + successfulHunting) / total * w.Config.HuntingPracticeMultiplier;
+                camp.Experience[(int)Domain.Hunting] += budget * (hunting + .5 * successfulHunting) / total * w.Config.HuntingPracticeMultiplier;
                 camp.Experience[(int)Domain.Gathering] += budget * gathering / total;
                 camp.Experience[(int)Domain.Fishing] += budget * fishing / total;
             }
