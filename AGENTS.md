@@ -4,21 +4,73 @@
 
 Anthropocene is a deterministic, simultaneous-turn strategy simulation. The playable opening follows mobile camps and hunter groups through the Paleolithic to their first technological breakthrough, normally within twelve turns. Prioritize information a player can act on: readable Dwarf Fortress-style symbolic tiles with glyph fallbacks, clear terrain and resource distinctions, understandable orders, and explained outcomes. Decorative art is secondary.
 
-Read `Docs/WorldGeneration.md` and `Docs/ArchipelagoRefinement.md` for generation and morphology validation. Read `Docs/EcologyFoundation.md` and `Docs/ConfigurationUnits.md` for current mechanics and tuning units and `Docs/Validation.md` for tested behavior and known limitations. `Docs/Implementation.md` describes the architecture. `Docs/DesignSpec.txt` preserves the original Google Drive specification; do not silently rewrite that historical source. Earlier milestone notes contain superseded rules. Current user instructions take precedence over these documents.
+Use the source map below to locate the relevant subsystem before reading whole files. Read deeper documentation according to the task: `Docs/WorldGeneration.md` and `Docs/ArchipelagoRefinement.md` for generation; `Docs/EcologyFoundation.md` and `Docs/ConfigurationUnits.md` for mechanics and tuning units; `Docs/Playtesting.md` for presets; `Docs/ArtProvenance.md` for assets; `Docs/Performance.md` for scaling. `Docs/Implementation.md` explains cross-system architecture and `Docs/Validation.md` records tested behavior and limitations. There is no need to load every document for a localized change. `Docs/DesignSpec.txt` preserves the original Google Drive specification; do not silently rewrite that historical source. Earlier milestone notes contain superseded rules. Current user instructions take precedence over these documents.
 
 The default player turn is twenty years, resolved through seasonal economic intervals. Earlier references to ninety-day player turns and four elevation bands are historical. A complete Neolithic era, trade, diplomacy, warfare, construction and RL training are outside the current implementation.
 
 ## Repository map
 
-- `Assets/_Anthropocene/Simulation/`: authoritative, Unity-independent C# state, generation, turn resolution, logistics, observations, AI policies and saves.
-- `Assets/_Anthropocene/Scripts/Runtime/Presentation/`: Unity immediate-mode UI, layered symbolic renderer, hover details and order controls.
-- `Assets/_Anthropocene/Scripts/Runtime/Core/GameBootstrap.cs`: creates the persistent game root and opening UI.
+`Anthropocene.Runtime` references `Anthropocene.Simulation`; the simulation assembly has no Unity engine references. The Editor-only test assembly references both. The UI uses immediate-mode `OnGUI`, not a scene-authored Canvas hierarchy. Most gameplay lives in plain C#; `SampleScene.unity` is the build scene, not the simulation composition root.
+
+In the tables below, simulation filenames are relative to `Assets/_Anthropocene/Simulation/`, and presentation filenames are relative to `Assets/_Anthropocene/Scripts/Runtime/Presentation/`.
+
+### Simulation source map
+
+| Concern | Files and entry points |
+| --- | --- |
+| Authoritative state and tuning | `Model.cs`: `WorldState`, `SimulationConfig`, `Tile`, `SeasonData`, camps/hunters/herds, orders and turn records; `Numbers` supplies keyed randomness. |
+| Ownership and progression | `Societies.cs`: `Society`, `EraProgression`, `Ownership.Bind`, `OpeningTransitions`. `Workforce.cs`: `PopulationLedger`. Breakthrough eligibility is in `TurnResolver.cs`. |
+| Geometry and geography | `HexMap.cs`: wrapping axial coordinates, neighbors, distance and reachable tiles. `Hydrology.cs`: `Geography`, river edges and `BoundaryRiverStage`. `ElevationLevels.cs`: gameplay levels. There is no separate `Geography.cs`. |
+| Generation orchestration | `WorldGenerator.cs`: `WorldGenerator.Generate`, stage interface/context/report, geometry, ecology, seasonal resources and `PlacementStage.Viability`. |
+| Terrain, atmosphere and drainage | `TerrainGeneration.cs`: noise, plates, continental/rifted crust and moving hotspot tracks. `ClimateGeneration.cs`: `ClimateStage`. `DrainageGeneration.cs`: `HydrologyStage` basin routing/lake retention. |
+| Habitat and resource profiles | `Environment.cs`: environment/vegetation classification and legacy terrain projection. `FoodEcology.cs`: gatherable share/potential. `AquaticEcology.cs`: marine/lake productivity. `FreshwaterAccess.cs`: actual drinking source. `OasesAndHerds.cs`: oasis stage and wild-herd placement; `Species.cs`: species definitions. |
+| Turn orchestration | `TurnResolver.cs`: `Resolve`, movement, hunting, breakthrough and invariants. Orders are validated and copied before authoritative changes. |
+| Seasonal economy and demographics | `GenerationalEconomy.cs` is the other **partial `TurnResolver`**: active resources, integrated demand, growth and sustain. **`GenerationEconomy.cs` is a different file**, containing `PracticeEffects`, `DemographicReport` and `PassiveGathering` helpers. |
+| Stocks and regeneration | `LazyEcology.cs`: pure `ProjectEcology` versus committing `MaterializeEcology`. `EcologicalPressure.cs`: coupled claims/realized flows. `EcologyMath.cs`: analytic stock/condition integration. |
+| Logistics and phase execution | `Logistics.cs`: `Supply`, carried food, departures and returns. `PlanningIndex.cs`: scoped occupancy/history/projection caches. `PhaseExecution.cs`: scalar/worker mapping and `AiPlanning.Decide`. |
+| Information, AI and orders | `Agents.cs`: observations, `AgentObservationBuilder`, `HeuristicTribePolicy` and decision traces. `ObservationContract.cs`: serializable observation DTOs. `ActionContract.cs`: `OrderRules`, masks and `LegalActions`. `HerdCountKnowledge.cs`: count estimates. |
+| Persistence and fixtures | `SaveCodec.cs`: `Save`, `Load`, `Fingerprint`, `ConfigurationHash`. `PlaytestScenarios.cs`: preset configuration, habitat checks and ownership-only start selection. |
+
+### Presentation and tooling source map
+
+| Concern | Files and entry points |
+| --- | --- |
+| Startup and lifecycle | `Assets/_Anthropocene/Scripts/Runtime/Core/GameBootstrap.cs`: `CreateBeforeFirstScene` creates persistent root and attaches `OpeningGame`. `OpeningGame.cs`: menu, world/task ownership, `NewGame`, `EndTurn`, `Refresh`, save/load and main drawing. |
+| Planning and inspection | `OpeningPlanning.cs`: orders, movement paths and supply previews. `OpeningDetails.cs`: inspector and delayed hover. Simulation-side `HoverDetails.cs` supplies `TileDetails` and stable visible occupants. |
+| Map rendering | `Tilesets.cs`: `TilesetCatalog` and `LayeredTileRenderer`, semantic layers and occupant slots. `OpeningWorldPreview.cs`: preset menu and explicitly global developer atlas. |
+| Player verification | `OpeningSmoke.cs`: opt-in normal/preset/atlas smoke routes. `OpeningArtReview.cs`: synthetic fixtures through the production renderer. |
+| Build and import | `Assets/_Anthropocene/Editor/PrototypeBuild.cs`: `PrototypeBuild.Windows`. `Assets/_Anthropocene/Editor/SymbolicTextureImport.cs`: sprite import settings. |
+| Headless checks | `Tools/Headless/Program.cs`: fixed checks, CLI switches and seeded reports; `Tools/Test-Headless.ps1` drives it. `Tools/WorldAtlas/Export-Worlds.ps1` exports actual generated geography, metrics and optional separate saves. |
+
+The `Opening*.cs` UI files share one partial `OpeningGame` class; they are not independent components. Keep changes in the appropriate partial file.
+
 - `Assets/_Anthropocene/Resources/OpeningConfig.json`: simulation tuning. Keep serialized values and `SimulationConfig` defaults consistent when changing defaults.
 - `Assets/_Anthropocene/Resources/Tilesets/`: classic and high-contrast semantic symbol definitions with glyph fallbacks. Both must convey the same gameplay information.
 - `Assets/_Anthropocene/Resources/MapArt/`: 29 original cartographic sprites; preserve GUIDs, alpha and semantic layers. `Tools/Art/Build-SymbolicAssets.cjs` recreates PNGs and SVG exports in `Tools/Art/Sources`; provenance and the approved visual target are in `Docs/ArtProvenance.md`. Judge art in the actual Unity render, not only a source contact sheet. Never add opaque occupant backplates or flatten coloured sprites with glyph tint.
-- `Assets/_Anthropocene/Editor/PrototypeBuild.cs`: Windows development build entry point.
-- `Tools/Headless/`: console checks and benchmarks compiling the actual simulation source files, not a duplicate implementation.
-- `Assets/_Anthropocene/Tests/EditMode/`: Unity/NUnit integration and presentation checks.
+
+### Execution and data flow
+
+1. `OpeningGame.NewGame` loads defaults plus `OpeningConfig`, applies menu/preset settings, and generates on a worker. `WorldGenerator.Generate` validates config and runs Geometry -> Plate -> Elevation -> Climate -> Hydrology -> BoundaryRiver -> ElevationLevel -> Ecology -> Oasis -> VegetationResource -> Placement, then binds owners and validates the result.
+2. `OpeningGame.Update` adopts completed generation/load results. `Refresh` builds player 0's filtered observation. Planning edits queued orders; it does not resolve the world. `AiPlanning.Decide` builds each policy's filtered view, and `EndTurn` substitutes the human's submitted orders for player 0 before worker resolution.
+3. `TurnResolver.Resolve` locks legal orders, computes herd intentions, dispatches, provisions departures, moves and deposits returns. Its economy partial handles reproduction/hunting, seasonal claims, realized resource flows, sustain and growth. Reintegration, progression, invariants and canonical history finish the turn. `Update` refreshes observations after completion.
+4. Save/load use `SaveCodec` on workers and the same busy guards. Loading restores geography and latent ecology directly. `Fingerprint` supports deterministic replay comparisons; timings and transient diagnostics are not authoritative inputs.
+
+`WorldState.Tiles` is a dense array indexed by tile ID; entity IDs come from `NextId` and must not be treated as list positions. `HexMap` wraps longitude but bounds latitude; use its path/distance helpers. `Days` is elapsed simulation time and `Turn` counts player decisions. Stored seasonal potential is not current stock: readers project latent ecology at the current clock. `Camp.Population` counts residents; `LinkedPopulation` also includes its hunter groups, even disconnected ones. `Camp.People` exposes shared society state through compatibility accessors, not a second technology owner. `Terrain` is a compatibility projection; new habitat logic should use explicit environment, water and vegetation fields.
+
+### Route changes to validation
+
+Headless check files below are in `Tools/Headless/`. The runner compiles the actual simulation `*.cs` files with .NET 8/C# 9. New check files need an explicit entry in `Anthropocene.Headless.csproj` **and** invocation from `Program.cs`; new simulation subdirectories also need project inclusion because the source wildcard is not recursive.
+
+| Change | Relevant checks and additional verification |
+| --- | --- |
+| Terrain/climate/drainage/hotspots | `ClimateGenerationChecks.cs`, `DrainageGenerationChecks.cs`, `WorldMorphologyChecks.cs`, `ArchipelagoChecks.cs`; broad geography audits and exported atlas inspection. |
+| Food, water, vegetation or viable starts | `ClimateMoistureChecks.cs`, `AquaticChecks.cs`, `StartViabilityChecks.cs`, `ScenarioChecks.cs`; remeasure presets when their inputs change. |
+| Economy, ownership, growth or regeneration | `FoundationChecks.cs`, `EcologyChecks.cs`, `Milestone3Checks.cs`; conservation/replay and relevant balance samples. |
+| AI, orders, information or workers | `AgentContractChecks.cs`, `ExecutionChecks.cs`, existing `Milestone2Checks.cs`; scalar/parallel and collection-order replay. |
+| Save fields or versions | Extend affected subsystem round-trip/rejection checks; verify continuation fingerprints and old compatible versions. Update `SaveCodec`, defaults/versions and format documentation together. |
+| Unity/UI/art | `Assets/_Anthropocene/Tests/EditMode/` contains `GameBootstrapTests.cs`, `SimulationTests.cs`, `LayeredMapTests.cs`; rebuild and inspect the actual player when presentation changes. |
+
+Start with the relevant symbols and check methods rather than dumping all of `Model.cs`, `Agents.cs` or the test runner. Keep this navigation map current when moving responsibilities or adding entry points; put long explanations and measured reports in `Docs/`.
 
 ## Preserve these contracts
 
