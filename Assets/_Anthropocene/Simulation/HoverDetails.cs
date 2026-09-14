@@ -49,12 +49,13 @@ namespace Anthropocene.Simulation
         {
             if (!o.Tiles.TryGetValue(id, out var t)) return "";
             var b = new StringBuilder();
-            b.AppendLine("LAND · (" + id % o.Map.Width + ", " + id / o.Map.Width + ") / tile " + id + " · " + t.Environment);
+            b.AppendLine((t.Land ? "LAND" : "WATER TILE") + " · (" + id % o.Map.Width + ", " + id / o.Map.Width + ") / tile " + id + " · " + t.Environment);
             if (t.Land) b.AppendLine("VEGETATION · " + Vegetation.Label(t.Environment, t.CurrentVegetation, t.River) + " · " + t.CurrentVegetation + " cover / " + t.NaturalVegetationPotential + " natural potential");
+            else b.AppendLine("PLANKTON / ALGAE · " + t.CurrentVegetation + " abundance / " + t.NaturalVegetationPotential + " natural potential");
             b.AppendLine("Elevation " + t.ElevationLevel + "/10 · " + ElevationLevelStage.Description(t.ElevationLevel));
             b.AppendLine("FOOD · " + Knowledge.Bands[t.Food] + " stock; maximum " + Knowledge.Bands[t.FoodMaximum]);
-            b.AppendLine("HERD FORAGE · " + Knowledge.Bands[t.PotentialFood] + " biomass; capacity " + Knowledge.Bands[t.PotentialMaximum] + "; about " + t.GatherablePercent + "% human-gatherable");
-            b.AppendLine("Renewal " + Knowledge.Bands[t.Productivity] + " per season within the generation; " + (t.Aquatic || t.WaterBody == WaterKind.Saltwater ? "aquatic" : "land") + " condition " + Knowledge.Bands[t.Condition] + "; soil moisture " + Knowledge.Bands[t.Moisture]);
+            b.AppendLine((t.Land ? "HERD FORAGE" : "AQUATIC BIOMASS") + " · " + Knowledge.Bands[t.PotentialFood] + " biomass; capacity " + Knowledge.Bands[t.PotentialMaximum] + "; about " + t.GatherablePercent + "% human-gatherable");
+            b.AppendLine("Renewal " + Knowledge.Bands[t.Productivity] + " per season within the generation; " + (t.Land ? "land" : "aquatic") + " condition " + Knowledge.Bands[t.Condition] + (t.Land ? "; soil moisture " + Knowledge.Bands[t.Moisture] : ""));
             if (o.RecentOwnExtraction.TryGetValue(id, out double extracted)) b.AppendLine("Your recorded extraction last turn: " + extracted.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
             b.AppendLine("WATER · " + (t.WaterBody == WaterKind.Saltwater ? "Saltwater, undrinkable; " + (t.Terrain == Terrain.Shallows ? "coastal shallows" : "open ocean") : t.FreshwaterSource == FreshwaterSource.None ? "No accessible freshwater source" : t.FreshwaterSource + " freshwater: " + Knowledge.Bands[t.Freshwater]));
             foreach (var river in t.Rivers) b.AppendLine("River edge " + river.Side + ": flow " + new[] { "", "small", "medium", "large" }[river.FlowBand] + ", width " + river.Width.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));

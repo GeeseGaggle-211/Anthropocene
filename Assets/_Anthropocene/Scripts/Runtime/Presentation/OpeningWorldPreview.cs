@@ -176,7 +176,7 @@ namespace Anthropocene.Presentation
             if (previewTile < 0) previewTile = own.Tile;
             var tile = world.Tiles[previewTile];
             GUI.Label(new Rect(12, y, w, 30), "INSPECTED TILE " + tile.Id, section); y += 32;
-            GUI.Label(new Rect(12, y, w, 108), tile.Environment + " · " + tile.CurrentVegetation + " vegetation\nElevation " + tile.ElevationLevel + " · river " + (tile.River ? "yes" : "no") + "\nFreshwater source: " + tile.FreshwaterSource + "\nMean temperature: " + tile.Seasons.Average(s => s.Temperature).ToString("0.0") + " C", text); y += 116;
+            GUI.Label(new Rect(12, y, w, 108), tile.Environment + " · " + tile.CurrentVegetation + (tile.Land ? " vegetation" : " plankton/algae") + "\nElevation " + tile.ElevationLevel + " · river " + (tile.River ? "yes" : "no") + "\nFreshwater source: " + tile.FreshwaterSource + "\nMean temperature: " + tile.Seasons.Average(s => s.Temperature).ToString("0.0") + " C", text); y += 116;
             GUI.Label(new Rect(12, y, w, 22), "Season       Food       Freshwater", section); y += 25;
             for (int s = 0; s < 4; s++) { GUI.Label(new Rect(12, y, w, 25), (s + 1) + "                 " + PlaytestScenarios.Food(world, tile, s).ToString("0.0") + "          " + PlaytestScenarios.Water(world, tile, s).ToString("0.0"), small); y += 27; }
             var current = LazyEcology.ProjectEcology(world, tile.Id, world.Days);

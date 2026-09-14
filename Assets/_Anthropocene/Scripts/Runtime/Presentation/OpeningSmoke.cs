@@ -115,6 +115,13 @@ namespace Anthropocene.Presentation
                 yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, preset + "-preview-close.png")); yield return new WaitForSeconds(.3f);
                 if (SaveCodec.Fingerprint(world) != before || observation.Tiles.Count != visible) throw new InvalidOperationException("Preview mutated ecology or fog.");
                 previewOpen = false;
+                if (preset == 3)
+                {
+                    inspected = world.Map.Neighbors(observation.CampTile).First(id => observation.Tiles.TryGetValue(id, out var tile) && tile.Environment == EnvironmentKind.Shallows);
+                    string details = TileDetails.Describe(observation, inspected, planned.Values);
+                    if (!details.Contains("PLANKTON / ALGAE") || !details.Contains("50% human-gatherable")) throw new InvalidOperationException("Aquatic inspector did not expose the new food-web profile.");
+                    sidebarScroll = new Vector2(0, 100000);
+                }
                 yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, preset + "-play.png")); yield return new WaitForSeconds(.3f);
                 EndTurn(); while (resolving != null) yield return null;
                 if (world.Turn != 2) throw new InvalidOperationException("Preset could not resolve a turn: " + status);
