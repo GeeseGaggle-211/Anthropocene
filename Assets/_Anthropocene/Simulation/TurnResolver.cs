@@ -173,7 +173,7 @@ namespace Anthropocene.Simulation
                 if (herd.Tile != target) record.Log("Herd " + herd.Id + " moved to " + target + "."); herd.Tile = target;
             }
         }
-        private static void Hunt(WorldState w, List<Order> orders, HashSet<int> establishedHunters, IReadOnlyDictionary<int, int> startingHerdPopulation, TurnRecord record, double time)
+        private static void Hunt(WorldState w, List<Order> orders, HashSet<int> establishedHunters, IReadOnlyDictionary<int, int> startingHerdPopulation, TurnRecord record, double time, double years)
         {
             double practiceTime = time * w.Config.BaseDays / w.Config.PracticeDays;
             var requests = new List<Tuple<Hunter, Herd, int>>();
@@ -192,19 +192,6 @@ namespace Anthropocene.Simulation
                 double efficiency = w.Config.HuntEfficiency * (Vegetation.LegacyTerrain(w.Tiles[hunter.Tile].Environment, huntingIndex.Ecology(hunter.Tile).CurrentVegetation) == Terrain.Woodland ? .85 : 1);
                 double expectation = hunter.Population * efficiency * time * (1 - w.Config.HuntVariance + Numbers.Random(w.Seed, 80, hunter.Id, w.Turn) * w.Config.HuntVariance * 2);
                 int requested = (int)expectation + (Numbers.Random(w.Seed, 81, hunter.Id, w.Turn) < expectation % 1 ? 1 : 0);
-                double fieldcraft = PracticeEffects.Ramp(w.Config, camp, Domain.Hunting);
-                if (fieldcraft > 0)
-                {
-                    double yieldPerAnimal = w.Config.GetSpecies(herd.Species).FoodYield * PracticeEffects.HuntingYield(w.Config, camp);
-                    double usefulFood;
-                    if (Supply.Connected(w, hunter))
-                    {
-                        double generationNeed = w.LinkedPopulation(camp) * w.Config.Consumption * time;
-                        usefulFood = Math.Max(0, generationNeed * (1 + StorageGenerations(w, camp.Tile)) - camp.Food);
-                    }
-                    else usefulFood = Math.Max(0, Supply.Capacity(w, hunter) - hunter.CarriedFood);
-                    requested = Math.Min(requested, (int)Math.Ceiling(usefulFood / Math.Max(1e-9, yieldPerAnimal)));
-                }
                 requests.Add(Tuple.Create(hunter, herd, requested));
             }
             foreach (var group in requests.GroupBy(r => r.Item2.Id).OrderBy(g => g.Key))
@@ -227,13 +214,23 @@ namespace Anthropocene.Simulation
                     if (remainder > 0 && kills[i] < sorted[i].Item3) { kills[i]++; remainder--; }
                 for (int i = 0; i < sorted.Length; i++)
                 {
-                    var hunter = sorted[i].Item1; var camp = w.Camps.First(c => c.Id == hunter.SourceCamp); double yield = kills[i] * species.FoodYield * PracticeEffects.HuntingYield(w.Config, camp);
+                    var hunter = sorted[i].Item1; var camp = w.Camps.First(c => c.Id == hunter.SourceCamp);
+                    double yieldPerAnimal = species.FoodYield * PracticeEffects.HuntingYield(w.Config, camp);
+                    double usefulFood = Supply.Connected(w, hunter) ? UsefulCampFoodDemand(w, camp, time, years) : Math.Max(0, Supply.Capacity(w, hunter) - hunter.CarriedFood);
+                    int allocatedKills = kills[i];
+                    kills[i] = Math.Min(kills[i], (int)Math.Floor((usefulFood + 1e-9) / Math.Max(1e-9, yieldPerAnimal)));
+                    double yield = kills[i] * yieldPerAnimal;
                     Supply.Award(w, hunter, yield, record);
-                    record.Transfers.Add(new Transfer { Entity = hunter.Id, Tile = hunter.Tile, Kind = "Hunting", Food = yield });
-                    record.Log("Hunters " + hunter.Id + " killed " + kills[i] + " animals from herd " + herd.Id + ".");
+                    // Preserve a zero-yield receipt for an actually unsuccessful hunt, but not
+                    // when hunters deliberately leave prey because a whole carcass cannot fit.
+                    if (kills[i] > 0 || allocatedKills == 0)
+                        record.Transfers.Add(new Transfer { Entity = hunter.Id, Tile = hunter.Tile, Kind = "Hunting", Food = yield });
+                    if (kills[i] > 0) record.Log("Hunters " + hunter.Id + " killed " + kills[i] + " animals from herd " + herd.Id + ".");
+                    else if (allocatedKills > 0) record.Log("Hunters " + hunter.Id + " left the herd unharmed because no whole carcass could be retained.");
                 }
-                herd.Animals -= available;
-                if (available < total) record.Log("Herd " + herd.Id + " retained " + herd.Animals + " breeding animals after the generation's harvest.");
+                int realizedKills = kills.Sum();
+                herd.Animals -= realizedKills;
+                if (realizedKills < total) record.Log("Herd " + herd.Id + " retained " + herd.Animals + " breeding animals after the generation's harvest.");
                 if (huntingPopulation <= w.Config.SustainableHuntPopulation && herd.Animals > startingHerdPopulation[herd.Id]) record.Log("Limited hunting pressure allowed herd " + herd.Id + " to keep growing.");
             }
             w.Herds.RemoveAll(h => h.Animals <= 0);

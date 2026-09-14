@@ -165,7 +165,7 @@ internal static class Program
         loaded = SaveCodec.Load(SaveCodec.Save(w));
         Check(loaded.Config.StartingReserveGenerations == 1 && loaded.Config.HunterCarryGenerations == 2.5 && loaded.Config.MinimumStorageGenerations == 1 && loaded.Config.MaximumStorageGenerations == 4 && loaded.Config.HunterForagePerPerson == 1 && loaded.Config.HuntBreedingReserveFraction == .2 && loaded.Config.SustainableHuntPopulation == 16 && loaded.Config.SustainableHerdGrowthRetention == .25 && loaded.Config.ActiveFishingPracticeMultiplier == 4.25 && loaded.Config.GrasslandHerdDensityMultiplier == 1.35 && loaded.Config.SteppeHerdDensityMultiplier == 1.15, "Missing tuning values gain current logistics, practice and herd-density defaults");
         Check(loaded.Config.GetSpecies("antelope").MaximumHerdSize == 150 && loaded.Herds[0].Capacity == 150, "Legacy saves gain species herd thresholds");
-        w = Flat(); w.Config.SustainableHuntPopulation = 8; camp = w.Camps[0];
+        w = Flat(); w.Config.SustainableHuntPopulation = 8; w.Config.HuntingFoodYieldScale = .25; camp = w.Camps[0];
         hunter = new Hunter { Id = w.NextId++, Tile = camp.Tile, Population = 12, Player = 0, SourceCamp = camp.Id, SocietyId = camp.SocietyId }; w.Hunters.Add(hunter); camp.Population -= 12;
         var prey = new Herd { Id = w.NextId++, Tile = camp.Tile + 1, Animals = 8 }; w.Herds.Add(prey);
         int fleeing = TurnResolver.HerdDestination(w, prey);

@@ -42,16 +42,23 @@ namespace Anthropocene.Simulation
             // Movement happens once. Herd reproduction is realized before the generation's hunting harvest.
             var startingHerdPopulation = w.Herds.OrderBy(h => h.Id).ToDictionary(h => h.Id, h => h.Animals);
             ReproduceHerds(w, intervals, years);
-            Hunt(w, orders, establishedHunters, startingHerdPopulation, record, intervals);
+            Hunt(w, orders, establishedHunters, startingHerdPopulation, record, intervals, years);
             foreach (var herd in w.Herds.Where(h => h.DomesticCamp >= 0 || !w.Config.WildHerdFissionEnabled))
                 herd.Animals = Math.Min(herd.Animals, herd.Capacity);
             var demands = new List<Demand>();
+            var campClaims = w.Camps.ToDictionary(c => c.Id, c => new List<Demand>());
             foreach (var order in orders.Where(o => o.Kind == OrderKind.Fish).OrderBy(o => o.Entity))
             {
                 var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity); if (hunter == null || hunter.Population <= 0) continue;
                 if (w.Map.Distance(hunter.Tile, order.Target) <= 1)
                 {
-                    demands.Add(new Demand { Tile = order.Target, Entity = hunter.Id, Kind = "Fishing", ImpactMultiplier = PracticeEffects.FishingImpact(w.Config, w.Camps.First(c => c.Id == hunter.SourceCamp)), Food = hunter.Population * w.Config.FishPerPerson * intervals });
+                    var claim = new Demand { Tile = order.Target, Entity = hunter.Id, Kind = "Fishing", ImpactMultiplier = PracticeEffects.FishingImpact(w.Config, w.Camps.First(c => c.Id == hunter.SourceCamp)), Food = hunter.Population * w.Config.FishPerPerson * intervals };
+                    if (Supply.Connected(w, hunter)) campClaims[hunter.SourceCamp].Add(claim);
+                    else
+                    {
+                        claim.Food = Math.Min(claim.Food, Math.Max(0, Supply.Capacity(w, hunter) - hunter.CarriedFood));
+                        demands.Add(claim);
+                    }
                 }
             }
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
@@ -66,7 +73,19 @@ namespace Anthropocene.Simulation
                     requests.Add(new Demand { Entity = camp.Id, Tile = id, Kind = PassiveGathering.Kind(tile), ImpactMultiplier = tile.Aquatic ? PracticeEffects.FishingImpact(w.Config, camp) : PracticeEffects.GatheringImpact(w.Config, camp), Food = food }); total += food;
                 }
                 double scale = Math.Min(1, gatherers * w.Config.GatherPerPerson * intervals / Math.Max(1e-12, total));
-                foreach (var request in requests) { request.Food *= scale; demands.Add(request); }
+                foreach (var request in requests) { request.Food *= scale; campClaims[camp.Id].Add(request); }
+            }
+            foreach (var camp in w.Camps.OrderBy(c => c.Id))
+            {
+                var claims = campClaims[camp.Id];
+                double total = claims.Sum(d => d.Food);
+                double useful = UsefulCampFoodDemand(w, camp, intervals, years);
+                double scale = Math.Min(1, useful / Math.Max(1e-12, total));
+                foreach (var claim in claims)
+                {
+                    claim.Food *= scale;
+                    demands.Add(claim);
+                }
             }
             foreach (var hunter in w.Hunters.Where(h => h.Population > 0 && !Supply.Connected(w, h)).OrderBy(h => h.Id))
             {
@@ -144,16 +163,19 @@ namespace Anthropocene.Simulation
             return weights;
         }
 
-        private static GrowthPlan PlanGrowth(WorldState w, Camp camp, double intervals, double years)
+        private static GrowthPlan PlanGrowth(WorldState w, Camp camp, double intervals, double years) =>
+            PlanGrowth(w, camp, intervals, years, camp.Food, camp.StepFoodIncome);
+
+        private static GrowthPlan PlanGrowth(WorldState w, Camp camp, double intervals, double years, double availableFood, double stepFoodIncome)
         {
             int reproductivePopulation = camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
             double populationBase = reproductivePopulation * w.Config.Consumption * intervals;
             double baseRequired = populationBase;
-            double surplus = Numbers.Clamp((camp.StepFoodIncome - baseRequired) / Math.Max(1e-9, baseRequired * w.Config.GrowthSurplusRatio), 0, 1);
-            double reserves = Numbers.Clamp(camp.Food / Math.Max(1, baseRequired * w.Config.GrowthReserveTurns), 0, 1);
+            double surplus = Numbers.Clamp((stepFoodIncome - baseRequired) / Math.Max(1e-9, baseRequired * w.Config.GrowthSurplusRatio), 0, 1);
+            double reserves = Numbers.Clamp(availableFood / Math.Max(1, baseRequired * w.Config.GrowthReserveTurns), 0, 1);
             // Later-era systems can change this persisted multiplier while retaining the same food-limited model.
             double rate = w.Config.AnnualHumanGrowthRate * camp.DemographicGrowthMultiplier * Math.Min(surplus, reserves);
-            double growthBudget = Math.Min(camp.Food, camp.StepFoodIncome);
+            double growthBudget = Math.Min(availableFood, stepFoodIncome);
             for (int iteration = 0; iteration < 12 && rate > 0; iteration++)
             {
                 double required = GrowthRequirement(populationBase, rate, years);
@@ -161,6 +183,36 @@ namespace Anthropocene.Simulation
                 rate *= growthBudget / Math.Max(required, 1e-9);
             }
             return new GrowthPlan { Required = GrowthRequirement(populationBase, rate, years), ReproductivePopulation = reproductivePopulation, FinalPopulation = reproductivePopulation * Math.Exp(rate * years) };
+        }
+
+        // Maximum additional food that can be consumed this generation or remain below the
+        // post-growth storage ceiling. Re-evaluating the existing growth model makes already
+        // realized hunting income part of the budget and preserves food-supported growth.
+        private static double UsefulCampFoodDemand(WorldState w, Camp camp, double intervals, double years)
+        {
+            int linkedPopulation = w.LinkedPopulation(camp);
+            int reproductivePopulation = camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
+            double populationBase = reproductivePopulation * w.Config.Consumption * intervals;
+            double maximumRate = w.Config.AnnualHumanGrowthRate * camp.DemographicGrowthMultiplier;
+            double maximumRequired = GrowthRequirement(populationBase, maximumRate, years);
+            double maximumGrowth = Math.Max(0, reproductivePopulation * Math.Exp(maximumRate * years) - reproductivePopulation);
+            int maximumAdditions = (int)Math.Floor(camp.GrowthRemainder + maximumGrowth);
+            double storagePerPerson = w.Config.Consumption * intervals * StorageGenerations(w, camp.Tile);
+            double candidate = Math.Max(0, maximumRequired + (linkedPopulation + maximumAdditions) * storagePerPerson - camp.Food);
+
+            // A high existing reserve or previously realized income can make the theoretical
+            // full-growth bound unreachable. Descend to the greatest self-consistent amount
+            // whose modeled consumption and storage can accept the whole harvest.
+            for (int iteration = 0; iteration < 64 && candidate > 1e-9; iteration++)
+            {
+                var plan = PlanGrowth(w, camp, intervals, years, camp.Food + candidate, camp.StepFoodIncome + candidate);
+                int additions = (int)Math.Floor(camp.GrowthRemainder + Math.Max(0, plan.FinalPopulation - plan.ReproductivePopulation));
+                double storage = (linkedPopulation + additions) * storagePerPerson;
+                double overflow = camp.Food + candidate - plan.Required - storage;
+                if (overflow <= 1e-8) break;
+                candidate = Math.Max(0, candidate - overflow);
+            }
+            return candidate;
         }
 
         private static double GrowthRequirement(double populationBase, double rate, double years)
