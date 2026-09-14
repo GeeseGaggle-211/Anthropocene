@@ -86,15 +86,17 @@ namespace Anthropocene.Simulation
             double n = EcologyMath.Stock(Math.Max(0, v.PotentialFood - v.Food), k.Biomass - k.Food, k.BiomassRate, 0, segment.Days).Stock;
             v.Food = EcologyMath.Stock(v.Food, k.Food, k.FoodRate, 0, segment.Days).Stock; v.PotentialFood = v.Food + n;
             v.Freshwater = EcologyMath.Stock(v.Freshwater, k.Water, k.WaterRate, 0, segment.Days).Stock;
-            RecoverCondition(w.Config, t, ref v, segment.Days, 0); v.Days += segment.Days;
+            RecoverCondition(w, t, ref v, segment.Days, 0); v.Days += segment.Days;
         }
-        internal static void RecoverCondition(SimulationConfig c, Tile t, ref EcologyView v, double days, double damagePerDay)
+        internal static void RecoverCondition(WorldState w, Tile t, ref EcologyView v, double days, double damagePerDay)
         {
+            var c = w.Config;
             bool aquatic = t.Aquatic || t.WaterBody == WaterKind.Saltwater;
             double recovery = c.ConditionRecoveryPerYear / c.DaysPerYear * (t.NaturalVegetationPotential == VegetationTier.Low ? c.LowPotentialRecoveryMultiplier : t.NaturalVegetationPotential == VegetationTier.High ? c.HighPotentialRecoveryMultiplier : 1);
+            bool plankton = aquatic && (w.Generation?.GeneratorVersion ?? WorldState.GeneratorVersion) >= 11;
             v.LandCondition = EcologyMath.Condition(v.LandCondition, 1, recovery, aquatic ? 0 : damagePerDay, days);
-            v.AquaticCondition = EcologyMath.Condition(v.AquaticCondition, 1, recovery, aquatic ? damagePerDay : 0, days);
-            v.CurrentVegetation = Vegetation.Update(t.NaturalVegetationPotential, v.CurrentVegetation, v.LandCondition, c);
+            v.AquaticCondition = EcologyMath.Condition(v.AquaticCondition, 1, plankton ? AquaticEcology.ConditionRecoveryPerDay(t) : recovery, aquatic ? damagePerDay : 0, days);
+            v.CurrentVegetation = Vegetation.Update(t.NaturalVegetationPotential, v.CurrentVegetation, plankton ? v.AquaticCondition : v.LandCondition, c);
         }
         public static EcologyView MaterializeEcology(WorldState w, int tile, double queryDays)
         { var view = ProjectEcology(w, tile, queryDays); view.Commit(w.Tiles[tile]); return view; }
@@ -106,7 +108,7 @@ namespace Anthropocene.Simulation
             {
                 var k = new EcologyCapacity(w, t, view, segment.Season);
                 available += k.Food * k.FoodRate * segment.Days;
-                RecoverCondition(w.Config, t, ref view, segment.Days, 0);
+                RecoverCondition(w, t, ref view, segment.Days, 0);
             }
             return Math.Max(0, available);
         }

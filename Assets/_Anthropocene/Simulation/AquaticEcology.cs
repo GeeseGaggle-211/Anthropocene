@@ -3,14 +3,36 @@ using System.Linq;
 
 namespace Anthropocene.Simulation
 {
-    // Generation-only proxies, not a current/upwelling or sea-ice simulation. The resulting
-    // capacities and daily rates are saved; runtime ecology never recomputes this forcing.
+    // Light/nutrient/upwelling proxies, not a physical current or sea-ice simulation.
+    // Generated capacities/rates and aquatic vegetation are saved, never regenerated on load.
     public static class AquaticEcology
     {
+        public const double ShallowsHarvestableShare = .5, OceanHarvestableShare = .1;
+        public const double ShallowsRenewalFraction = .65, OceanRenewalFraction = .08;
+        public const double UpwellingBiomassBonus = 4, UpwellingRenewalBonus = 1;
+        public const double ConditionRenewalFraction = .1;
+
+        public static double UpwellingStrength(WorldState world, Tile tile)
+        {
+            if (tile.Environment != EnvironmentKind.Shallows) return 0;
+            // One deep-ocean neighbor supplies half the bonus; two or more supply all of it.
+            // HexMap handles the longitude seam. Inland lakes never receive marine nutrients.
+            return Math.Min(1, world.Map.Neighbors(tile.Id).Count(id => world.Tiles[id].Environment == EnvironmentKind.Ocean) / 2.0);
+        }
+        public static double HarvestableShare(Tile tile) => tile.Environment == EnvironmentKind.Ocean ? OceanHarvestableShare : ShallowsHarvestableShare;
+        public static VegetationTier PlanktonPotential(Tile tile) => tile.Environment == EnvironmentKind.Shallows ? VegetationTier.High : tile.Environment == EnvironmentKind.Lake ? VegetationTier.Medium : VegetationTier.Low;
+        public static double RenewalPerDay(SimulationConfig config, Tile tile, double productivity, double upwelling)
+        {
+            double fraction = tile.Environment == EnvironmentKind.Ocean ? OceanRenewalFraction : tile.Environment == EnvironmentKind.Shallows ? ShallowsRenewalFraction : config.FoodRegeneration;
+            return EcologyMath.DailyRate(fraction, config.BaseDays) * productivity * (1 + UpwellingRenewalBonus * upwelling);
+        }
+        // Ecosystem condition responds to the stored biological turnover, independently of
+        // terrestrial vegetation. The coefficient transfers 10% of biomass renewal to recovery.
+        public static double ConditionRecoveryPerDay(Tile tile) => ConditionRenewalFraction * tile.Seasons.Average(s => s.BiomassRecoveryPerDay);
+
         public static double Productivity(WorldState world, Tile tile, int season)
         {
-            if (tile.Environment == EnvironmentKind.Ocean) return .005; // Outside opening harvest reach.
-            if (!tile.Aquatic) throw new ArgumentException("Aquatic productivity requires a water tile.");
+            if (!tile.Aquatic && tile.Environment != EnvironmentKind.Ocean) throw new ArgumentException("Aquatic productivity requires a water tile.");
             double meanTemperature = tile.Seasons.Average(s => s.Temperature);
             double temperature = tile.Seasons[season].Temperature;
             double latitude = (tile.Id / world.Config.Width) / (double)(world.Config.Height - 1) * 2 - 1;

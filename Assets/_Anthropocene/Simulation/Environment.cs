@@ -14,7 +14,8 @@ namespace Anthropocene.Simulation
             temperature > c.TropicalTemperature ? EnvironmentKind.Tropical : EnvironmentKind.Temperate;
         public static VegetationTier Potential(Tile t, SimulationConfig c)
         {
-            if (!t.Land || t.Environment == EnvironmentKind.Ice) return VegetationTier.Low;
+            if (!t.Land) return AquaticEcology.PlanktonPotential(t);
+            if (t.Environment == EnvironmentKind.Ice) return VegetationTier.Low;
             double temperature = t.Seasons.Average(s => s.Temperature), regional = t.Seasons.Average(s => s.RegionalMoisture);
             double warmth = Numbers.Clamp((temperature - c.IceTemperature) / c.VegetationWarmthRange, 0, 1);
             double Score(double moisture) => warmth * Numbers.Clamp((moisture - c.VegetationDryFloor) / c.VegetationMoistureRange, 0, 1);

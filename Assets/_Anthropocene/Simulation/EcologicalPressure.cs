@@ -66,7 +66,7 @@ namespace Anthropocene.Simulation
                 double impact = humanHarvest + herdHarvest <= 0 ? 1 : (humanHarvest * humanImpact + herdHarvest) / (humanHarvest + herdHarvest);
                 double damagePerDay = coefficient * impact * Math.Pow(Math.Max(0, utilization - w.Config.SafeUseRatio), w.Config.PressureExponent) / w.Config.DaysPerYear;
                 damage += damagePerDay * dt;
-                LazyEcology.RecoverCondition(w.Config, tile, ref v, dt, damagePerDay); v.Days += dt;
+                LazyEcology.RecoverCondition(w, tile, ref v, dt, damagePerDay); v.Days += dt;
             }
             foreach (var d in requests)
             {

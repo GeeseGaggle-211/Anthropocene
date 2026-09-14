@@ -154,6 +154,7 @@ namespace Anthropocene.Simulation
             foreach (var tile in c.World.Tiles)
             {
                 double averageRain = tile.Seasons.Average(s => s.Rain);
+                double upwelling = AquaticEcology.UpwellingStrength(c.World, tile);
                 for (int s = 0; s < 4; s++)
                 {
                     var data = tile.Seasons[s];
@@ -163,10 +164,10 @@ namespace Anthropocene.Simulation
                     if (tile.Environment == EnvironmentKind.Ice) productivity = 0;
                     if (tile.Land) productivity *= tile.Relief == Relief.Mountain ? c.Config.MountainProductivity : tile.Relief == Relief.Highland ? c.Config.HighlandProductivity : tile.Relief == Relief.Hills ? c.Config.HillsProductivity : 1;
                     double fresh = tile.FreshwaterSource == FreshwaterSource.Lake ? 120 : tile.FreshwaterSource == FreshwaterSource.River ? Math.Min(150, 70 + Math.Sqrt(tile.Flow) * 4) : tile.FreshwaterSource == FreshwaterSource.RainPool ? 25 * Numbers.Clamp(data.Rain / Math.Max(.001, averageRain), .25, 1.5) : 0;
-                    data.MaxFood = Math.Max(data.MaxFood, (float)(90 * productivity)); data.MaxFreshwater = Math.Max(data.MaxFreshwater, (float)fresh); data.AccessibleFreshwater = (float)fresh;
+                    data.MaxFood = water ? (float)(90 * productivity * (1 + AquaticEcology.UpwellingBiomassBonus * upwelling)) : Math.Max(data.MaxFood, (float)(90 * productivity)); data.MaxFreshwater = Math.Max(data.MaxFreshwater, (float)fresh); data.AccessibleFreshwater = (float)fresh;
                     data.MaxSaltwater = tile.WaterBody == WaterKind.Saltwater ? 100 : 0;
-                    double recovery = water ? EcologyMath.DailyRate(c.Config.FoodRegeneration, c.Config.BaseDays) * productivity : EcologyMath.DailyRate(c.Config.FoodRegeneration * (.2 + data.Moisture) * warmth, c.Config.BaseDays);
-                    data.FoodRecoveryPerDay = Math.Max(data.FoodRecoveryPerDay, (float)recovery);
+                    double recovery = water ? AquaticEcology.RenewalPerDay(c.Config, tile, productivity, upwelling) : EcologyMath.DailyRate(c.Config.FoodRegeneration * (.2 + data.Moisture) * warmth, c.Config.BaseDays);
+                    data.FoodRecoveryPerDay = water ? (float)recovery : Math.Max(data.FoodRecoveryPerDay, (float)recovery);
                     if (tile.FreshwaterSource != FreshwaterSource.Oasis) data.WaterRecoveryPerDay = (float)EcologyMath.DailyRate(c.Config.WaterRecovery, c.Config.BaseDays); data.Habitat = tile.Land ? (float)productivity : 0;
                     tile.Seasons[s] = data;
                 }

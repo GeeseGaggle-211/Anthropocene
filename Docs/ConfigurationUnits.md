@@ -14,8 +14,10 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | Season `MaxFood`, `MaxPotentialFood`, `MaxFreshwater` | Generated seasonal capacity targets before current condition/accessibility and the optional opening adapter. |
 | Season `FoodRecoveryPerDay`, `BiomassRecoveryPerDay`, `WaterRecoveryPerDay` | Daily exponential relaxation rates. These are authoritative generated/saved rates; the resolver never treats them as per-turn fractions. |
 | `FoodRegeneration`, `WaterRecovery`, `OasisFoodRegeneration`, `OasisWaterRecovery` | Legacy generation inputs: dimensionless recovered fractions over `BaseDays`, converted once using `-ln(1-f)/BaseDays`. Land climate modifies the input before conversion; aquatic productivity scales the converted daily rate. They do not directly multiply stocks in resolution. |
-| Aquatic productivity `P` | Dimensionless generated fertility × regional variation × seasonal light × open-water availability. Aquatic food/biomass capacity is `90*P` and daily renewal is `DailyRate(FoodRegeneration, BaseDays)*P`; aquatic renewal never uses soil moisture. Unlike the legacy land formula, the aquatic modifier scales the converted daily rate. |
-| Aquatic generation constants | Cool coastal fertility 0.70–1.30; regional multiplier 0.85–1.15; light multiplier 0.25–1.5; cold availability floor 0.04. Lakes have separate warmth/catchment fertility and cold availability. Temperatures are °C climate proxies. Exact equations and limitations are in EcologyFoundation.md. No new serialized configuration fields. |
+
+
+| Aquatic productivity and upwelling | See [AquaticFoodWeb.md](AquaticFoodWeb.md): Shallows/lakes G/B=0.5; Ocean=0.1. Ordinary G=90P; upwelling multiplies shallow capacity by 1+4u and renewal by 1+u. Renewal inputs are 0.65/Shallows, 0.08/Ocean and FoodRegeneration/lakes, converted to daily rates before multiplying by P. |
+| Aquatic condition recovery | Generator 11 uses 0.1 times the mean saved daily biomass-renewal rate, independent of terrestrial vegetation. Generator 7–10 retains its original recovery. |
 | `LandCondition`, `AquaticCondition` | Normalized condition stocks, 0 to 1. Natural target is currently 1. |
 | `ConditionRecoveryPerYear` (0.003093770185904377) | Annual relaxation rate: exactly `-ln(0.94)/20`, before potential modifiers. |
 | `LowPotentialRecoveryMultiplier` (0.5), `HighPotentialRecoveryMultiplier` (1.5) | Dimensionless recovery multipliers; Medium uses 1. |

@@ -29,7 +29,7 @@ internal static class StartViabilityChecks
         checks = 0;
         var cool = Coast(4); var warm = Coast(28); var frozen = Coast(-15);
         double score = PlacementStage.Viability(cool, Center);
-        Check(score >= cool.Config.StartViability && score > PlacementStage.Viability(warm, Center) && PlacementStage.Viability(frozen, Center) < cool.Config.StartViability, "new coastal fertility affects viable starts without rewarding extreme-cold water");
+        Check(score >= cool.Config.StartViability && score >= PlacementStage.Viability(warm, Center) && PlaytestScenarios.Food(cool, cool.Tiles[Center + 1], -1) > PlaytestScenarios.Food(warm, warm.Tiles[Center + 1], -1) && PlacementStage.Viability(frozen, Center) < cool.Config.StartViability, "coastal fertility improves recurring support up to the shared labor cap without rewarding extreme-cold water");
         var food = cool.Tiles[Center + 1]; var bank = cool.Tiles[Center];
         food.Food = food.PotentialFood = 1e6;
         Check(PlacementStage.Viability(cool, Center) == score, "an initial stock or large herd-biomass store cannot inflate recurring support");

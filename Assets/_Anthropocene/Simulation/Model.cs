@@ -261,7 +261,7 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldState
     {
-        public const int GeneratorVersion = 10;
+        public const int GeneratorVersion = 11;
         public int Version = 7, Seed, Turn = 1, NextId = 1;
         public double Days;
         public SimulationConfig Config;
