@@ -2,9 +2,36 @@
 
 Current mechanics: [EcologyFoundation.md](EcologyFoundation.md). Windows x64, Unity **6000.5.10f1**, bundled .NET **8.0.318**. Earlier results are preserved in [Validation-Milestone3.md](Validation-Milestone3.md); they are not current balance measurements.
 
-## Automated checks
+## Current generator-11 aquatic food web
 
-- Current 1.5x hunting revision: all 411 fixed assertions and scalar/2/4-worker replay through nine resolutions passed; the Windows player rebuilt successfully. Logs: ignored `TestResults/PracticeTuning-1_5x-Headless.log` and `TestResults/PracticeTuning-1_5x-Build.log`. Passive aquatic practice remains 50/50; harvest food and unsuccessful practice are unchanged. No new nine-world distribution sample or UI smoke run was performed for this revision.
+The current model is documented in [AquaticFoodWeb.md](AquaticFoodWeb.md). Passive aquatic practice remains 50/50 and successful-hunt experience remains 1.5x; this revision changes aquatic biomass, renewal, condition recovery and new-world placement inputs.
+
+- **428 fixed headless assertions passed**, including 37 aquatic checks, plus scalar/2/4-worker replay through opening completion at eight resolutions. Coverage includes 50%/10% accessibility, graded Ocean adjacency and longitude wrapping, lake exclusion, sustained harvest, biomass conservation, pure recovery, plankton hysteresis, and saved-profile continuation for generators 7–10. Matched ordinary cool/warm/frozen shores have daily renewal 0.014266/0.007682/0.000571; sustained cool/warm harvest ratio is 3.42. A fully upwelled shore has ten times the recurring food potential of an otherwise identical ordinary shore.
+- **20/20 Unity EditMode tests passed**, zero failures, in 8.49 seconds. The added presentation check verifies aquatic labels and absence of land trees on water at multiple zooms. Later sidebar sizing and player-capture changes compiled in the final successful Windows build and were checked in the running player.
+- A dedicated eight-seed Standard/80 audit passed seasonal food/freshwater viability, reachable prey, peak/elevation rules and authoritative save restoration. The audit command returns before other benchmark modes; the broader run below was executed separately.
+- Thirty Small worlds (seeds 1–30, four tribes each) retained **120/120 tribes**, with first unlocks **49 Husbandry / 36 Cultivation / 35 Watercraft**, net growth **11,315**, five individual starvation deaths and zero illegal orders. Standard/Continents/1729/80 completed its opening and save/load check. Twelve geography seeds per shape passed; mean land fraction / island count was 0.334 / 74.8 for Continents, 0.176 / 218.4 for Archipelagos and 0.261 / 87.4 for Pangaea.
+- The rebuilt visible Windows player completed all three seed-11 presets, captured 24 frames, preserved preview fingerprints and normal fog, and reached turn 2 with 30 people in each case. The cold-coast screenshot was inspected: aquatic biomass, 50% accessibility, High plankton and undrinkable saltwater are readable without clipping or trees on water. This is automated gameplay and screenshot inspection, not a manual usability playtest. User saves were untouched.
+- Standard atlases were exported for seeds 42, 1729 and 6 in all three shapes. Environment/elevation/volcanism maps for six representative worlds were checked by visual inspection or comparison with approved exports; all twelve compared geometry images were byte-identical. Food maps show productive coastal bands with Ocean excluded from opening harvest.
+- Generator 11 adds no authoritative tile fields or save-format change. Generator-7 through generator-10 saves retain their stored profiles and earlier aquatic recovery. New fisheries require a newly generated world; future generator versions remain rejected.
+
+Nine Standard/80 worlds, three per shape, used seeds **259491288, 421530206 and 770404656** with unchanged 1.5x hunt / 50% passive experience settings. All **720 tribes survived and unlocked**, with zero illegal orders; openings finished at 180–240 years. The same-seed regenerated cohorts retained 716/720 prior camp locations, so this is not a fully matched causal comparison.
+
+| Shape (240 tribes each) | Husbandry | Cultivation | Watercraft |
+|---|---:|---:|---:|
+| Continents | 94 (39.2%) | 135 (56.3%) | 11 (4.6%) |
+| Pangaea | 90 (37.5%) | 140 (58.3%) | 10 (4.2%) |
+| Archipelagos | 105 (43.8%) | 91 (37.9%) | 44 (18.3%) |
+| Total | 289 (40.1%) | 366 (50.8%) | 65 (9.0%) |
+
+The preceding generator-10 sample with these experience settings had 276 Husbandry / 392 Cultivation / 52 Watercraft. Watercraft increased from 7.2% to 9.0% overall, and from 35 to 44 archipelago tribes. These are measured outcomes, not technology quotas.
+
+Evidence is ignored under `TestResults`: `AquaticProductivity-Headless.log`, `AquaticProductivity-Broad.log` (the dedicated eight-world audit), `AquaticProductivity-GenerationBalance.log`, `AquaticProductivity-EditMode.xml`, `AquaticProductivity-Build.log`, `AquaticProductivity-Player/`, `AquaticProductivity-Atlas/` and `AquaticProductivity-Balance/Report.md`. The balance report's independent verification passed 152 checks and records source hashes, configuration, seeds and per-tribe results.
+
+## Earlier validation history
+
+The remaining sections preserve earlier revisions and measurements; their counts, profiles and balance figures are historical unless explicitly identified above.
+
+- Pre-food-web 1.5x hunting revision: all 411 fixed assertions and scalar/2/4-worker replay through nine resolutions passed; the Windows player rebuilt successfully. Logs: ignored `TestResults/PracticeTuning-1_5x-Headless.log` and `TestResults/PracticeTuning-1_5x-Build.log`. Passive aquatic practice remained 50/50; harvest food and unsuccessful practice were unchanged. The subsequent nine-world sample is the generator-10 comparison recorded above.
 
 - **411 fixed headless assertions** pass: 33 original, 59 milestone two, 73 milestone three, 24 ownership/progression/environment, 25 regional/local moisture, 15 atmospheric generation, 20 drainage/longitude, 20 world morphology, 51 archipelago/history, 20 aquatic productivity, 14 seasonal start viability, 22 preset/preview, 25 ecology and 10 observation/action-contract assertions. Seeded and geography audits add their own checks.
 - The initial September 14 tuning used 50/50 passive aquatic practice and 2x successful-hunt experience. Its 411 checks passed, including fixed carcass food, unchanged failed-hunt practice, passive food/condition equality and eight-resolution worker replay (`TestResults/PracticeTuning-Headless.log`). A matched nine-world / 720-tribe sample then shifted first unlocks from 126/551/43 Husbandry/Cultivation/Watercraft to 360/308/52, with 720 survivors and zero illegal orders. Initial states matched after normalizing only the passive-share config field. See ignored `TestResults/LandmassBalance-20260914/Report.md`. The user rejected that hunting increase as excessive; the current successful-hunt reward is 1.5x the original, with passive practice still 50/50. The 2x sample and older balance tables are historical, not measurements of the 1.5x revision.
