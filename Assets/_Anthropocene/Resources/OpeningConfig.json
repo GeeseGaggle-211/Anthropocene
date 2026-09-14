@@ -71,7 +71,7 @@
   "HuntingYieldBonus": 0.5,
   "HuntingPracticeMultiplier": 3.25,
   "ActiveFishingPracticeMultiplier": 4.25,
-  "PassiveAquaticFishingPracticeShare": 0.25,
+  "PassiveAquaticFishingPracticeShare": 0.5,
   "CultivationMoisture": 0.25,
   "RelocationInertia": 0.18,
   "InitialDomesticAnimals": 5,
