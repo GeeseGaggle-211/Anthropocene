@@ -94,6 +94,8 @@ Start with the relevant symbols and check methods rather than dumping all of `Mo
 
 ## Build and validate
 
+For rebuild requests or Unity licensing failures, read `Docs/UnityBuildRecovery.md` first. It records the verified graphical build with the observed Hub licensing pipe, safe process inspection without exposing tokens, handling of the separate Git checkpoint-ref failure, and player verification. Do not repeat stalled batch launches or install Unity MCP as a licensing workaround.
+
 Use Unity **6000.5.10f1**, matching `ProjectSettings/ProjectVersion.txt`. Open `Assets/Scenes/SampleScene.unity` and press Play. Do not launch concurrent Unity editor/batch instances against the same checkout. Check the process project path before closing an editor; other checkouts may be running.
 
 From the repository root in PowerShell:
