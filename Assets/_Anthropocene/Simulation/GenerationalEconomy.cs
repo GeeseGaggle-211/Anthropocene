@@ -12,7 +12,7 @@ namespace Anthropocene.Simulation
 
     internal sealed class GrowthPlan
     {
-        public double Required, ReproductivePopulation, FinalPopulation;
+        public double Required, ConsumptionRequired, GrowthFood, ReproductivePopulation, FinalPopulation;
     }
 
     public sealed partial class TurnResolver
@@ -163,62 +163,71 @@ namespace Anthropocene.Simulation
             return weights;
         }
 
-        private static GrowthPlan PlanGrowth(WorldState w, Camp camp, double intervals, double years) =>
-            PlanGrowth(w, camp, intervals, years, camp.Food, camp.StepFoodIncome);
-
-        private static GrowthPlan PlanGrowth(WorldState w, Camp camp, double intervals, double years, double availableFood, double stepFoodIncome)
+        private static GrowthPlan PlanGrowth(WorldState w, Camp camp, double intervals, double years)
         {
             int reproductivePopulation = camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
             double populationBase = reproductivePopulation * w.Config.Consumption * intervals;
-            double baseRequired = populationBase;
-            double surplus = Numbers.Clamp((stepFoodIncome - baseRequired) / Math.Max(1e-9, baseRequired * w.Config.GrowthSurplusRatio), 0, 1);
-            double reserves = Numbers.Clamp(availableFood / Math.Max(1, baseRequired * w.Config.GrowthReserveTurns), 0, 1);
-            // Later-era systems can change this persisted multiplier while retaining the same food-limited model.
-            double rate = w.Config.AnnualHumanGrowthRate * camp.DemographicGrowthMultiplier * Math.Min(surplus, reserves);
-            double growthBudget = Math.Min(availableFood, stepFoodIncome);
-            for (int iteration = 0; iteration < 12 && rate > 0; iteration++)
-            {
-                double required = GrowthRequirement(populationBase, rate, years);
-                if (required <= growthBudget + 1e-8) break;
-                rate *= growthBudget / Math.Max(required, 1e-9);
-            }
-            return new GrowthPlan { Required = GrowthRequirement(populationBase, rate, years), ReproductivePopulation = reproductivePopulation, FinalPopulation = reproductivePopulation * Math.Exp(rate * years) };
+            double initialFood = Math.Max(0, camp.Food - camp.StepFoodIncome);
+            FoodBucketTargets(w, camp, intervals, years, populationBase, initialFood, out double consumptionIncome, out double reserveTarget, out double reserveFill, out double maximumGrowthFood);
+            double priorityIncome = consumptionIncome + reserveFill;
+            double availableGrowthFood = camp.StepFoodIncome + 1e-8 >= priorityIncome && camp.Food + 1e-8 >= populationBase + reserveTarget
+                ? Math.Min(maximumGrowthFood, Math.Min(Math.Max(0, camp.StepFoodIncome - priorityIncome), Math.Max(0, camp.Food - populationBase - reserveTarget)))
+                : 0;
+            // New people appear after resolution. Current people eat first; retained reserves
+            // are protected second; only the remaining explicit growth-food bucket supports births.
+            double maximumRate = w.Config.AnnualHumanGrowthRate * camp.DemographicGrowthMultiplier;
+            double rate = GrowthRateForFood(populationBase, maximumRate, years, availableGrowthFood);
+            double growthFood = GrowthFood(populationBase, rate, years);
+            return new GrowthPlan { Required = populationBase + growthFood, ConsumptionRequired = populationBase, GrowthFood = growthFood, ReproductivePopulation = reproductivePopulation, FinalPopulation = reproductivePopulation * Math.Exp(rate * years) };
         }
 
-        // Maximum additional food that can be consumed this generation or remain below the
-        // post-growth storage ceiling. Re-evaluating the existing growth model makes already
-        // realized hunting income part of the budget and preserves food-supported growth.
+        private static void FoodBucketTargets(WorldState w, Camp camp, double intervals, double years, double populationBase, double initialFood, out double consumptionIncome, out double reserveTarget, out double reserveFill, out double maximumGrowthFood)
+        {
+            double maximumRate = camp.DeficitTurns <= 0 ? w.Config.AnnualHumanGrowthRate * camp.DemographicGrowthMultiplier : 0;
+            // The reserve bucket belongs to the people who exist when this turn resolves.
+            // Refill their complete configured operating reserve, bounded by what local
+            // storage can retain, before funding births. Newborns happen afterward and
+            // neither consume nor acquire reserves retroactively.
+            reserveTarget = populationBase * Math.Min(w.Config.GrowthReserveTurns, StorageGenerations(w, camp.Tile));
+            double expiringInventory = Math.Max(0, initialFood - reserveTarget);
+            double inventoryConsumedFirst = Math.Min(populationBase, expiringInventory);
+            consumptionIncome = populationBase - inventoryConsumedFirst;
+            double inventoryAfterConsumption = initialFood - inventoryConsumedFirst;
+            reserveFill = Math.Max(0, reserveTarget - inventoryAfterConsumption);
+            maximumGrowthFood = GrowthFood(populationBase, maximumRate, years);
+        }
+
+        private static double GrowthFood(double populationBase, double rate, double years)
+        {
+            if (rate <= 1e-12 || years <= 0) return 0;
+            double x = rate * years;
+            return populationBase * ((Math.Exp(x) - 1) / x - 1);
+        }
+
+        private static double GrowthRateForFood(double populationBase, double maximumRate, double years, double availableGrowthFood)
+        {
+            if (maximumRate <= 1e-12 || years <= 0 || availableGrowthFood <= 1e-12) return 0;
+            if (GrowthFood(populationBase, maximumRate, years) <= availableGrowthFood + 1e-8) return maximumRate;
+            double low = 0, high = maximumRate;
+            for (int iteration = 0; iteration < 64; iteration++)
+            {
+                double middle = (low + high) * .5;
+                if (GrowthFood(populationBase, middle, years) <= availableGrowthFood) low = middle; else high = middle;
+            }
+            return low;
+        }
+
+        // Human acceptance is ordered: current-population consumption, complete refill of
+        // the configured operating reserve, then the food budget for maximum growth.
+        // Already-realized connected hunting consumes this budget.
         private static double UsefulCampFoodDemand(WorldState w, Camp camp, double intervals, double years)
         {
-            int linkedPopulation = w.LinkedPopulation(camp);
             int reproductivePopulation = camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
             double populationBase = reproductivePopulation * w.Config.Consumption * intervals;
-            double maximumRate = w.Config.AnnualHumanGrowthRate * camp.DemographicGrowthMultiplier;
-            double maximumRequired = GrowthRequirement(populationBase, maximumRate, years);
-            double maximumGrowth = Math.Max(0, reproductivePopulation * Math.Exp(maximumRate * years) - reproductivePopulation);
-            int maximumAdditions = (int)Math.Floor(camp.GrowthRemainder + maximumGrowth);
-            double storagePerPerson = w.Config.Consumption * intervals * StorageGenerations(w, camp.Tile);
-            double candidate = Math.Max(0, maximumRequired + (linkedPopulation + maximumAdditions) * storagePerPerson - camp.Food);
-
-            // A high existing reserve or previously realized income can make the theoretical
-            // full-growth bound unreachable. Descend to the greatest self-consistent amount
-            // whose modeled consumption and storage can accept the whole harvest.
-            for (int iteration = 0; iteration < 64 && candidate > 1e-9; iteration++)
-            {
-                var plan = PlanGrowth(w, camp, intervals, years, camp.Food + candidate, camp.StepFoodIncome + candidate);
-                int additions = (int)Math.Floor(camp.GrowthRemainder + Math.Max(0, plan.FinalPopulation - plan.ReproductivePopulation));
-                double storage = (linkedPopulation + additions) * storagePerPerson;
-                double overflow = camp.Food + candidate - plan.Required - storage;
-                if (overflow <= 1e-8) break;
-                candidate = Math.Max(0, candidate - overflow);
-            }
-            return candidate;
-        }
-
-        private static double GrowthRequirement(double populationBase, double rate, double years)
-        {
-            if (rate <= 1e-12 || years <= 0) return populationBase;
-            double x = rate * years; return populationBase * (Math.Exp(x) - 1) / x;
+            double initialFood = Math.Max(0, camp.Food - camp.StepFoodIncome);
+            FoodBucketTargets(w, camp, intervals, years, populationBase, initialFood, out double consumptionIncome, out _, out double reserveFill, out double maximumGrowthFood);
+            double totalIncomeTarget = consumptionIncome + reserveFill + maximumGrowthFood;
+            return Math.Max(0, totalIncomeTarget - camp.StepFoodIncome);
         }
 
         private static void SustainGeneration(WorldState w, TurnRecord record, double intervals, double generationScale, Dictionary<int, GrowthPlan> plans, Dictionary<int, double> foraged, HashSet<int> recovering)
@@ -226,7 +235,7 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 var linked = w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).OrderBy(h => h.Id).ToArray();
-                int total = camp.Population + linked.Sum(h => h.Population); double required = plans[camp.Id].Required;
+                int total = camp.Population + linked.Sum(h => h.Population); double required = plans[camp.Id].ConsumptionRequired;
                 camp.LastConsumed = Math.Min(required, camp.Food); camp.Food -= camp.LastConsumed; camp.FoodDeficit = required - camp.LastConsumed;
                 if (camp.FoodDeficit > 1e-8) { camp.DeficitTurns++; camp.DeficitSeverity += camp.FoodDeficit / Math.Max(1, required) * generationScale; }
                 else { camp.DeficitTurns = 0; camp.DeficitSeverity = 0; }
@@ -237,10 +246,16 @@ namespace Anthropocene.Simulation
                     ApplySharedDeaths(camp, linked, losses, record); record.Log("Tribe " + camp.Player + " lost " + losses + " people to sustained hunger.");
                 }
                 foreach (var h in linked) { h.DeficitTurns = camp.DeficitTurns; h.FoodDeficit = camp.FoodDeficit * h.Population / Math.Max(1, total); h.LastConsumed = Math.Max(0, h.Population * w.Config.Consumption * intervals - h.FoodDeficit); }
-                var summary = record.Demographics.First(d => d.Camp == camp.Id); summary.FoodConsumed += camp.LastConsumed;
+                var summary = record.Demographics.First(d => d.Camp == camp.Id);
                 if (camp.FoodDeficit > 1e-8) summary.DeficitSteps++;
                 else if (recovering.Contains(camp.Id)) summary.RecoverySteps++;
-                else AddGrowth(w, camp, plans[camp.Id], record, summary);
+                else
+                {
+                    double growthFood = Math.Min(plans[camp.Id].GrowthFood, camp.Food);
+                    camp.Food -= growthFood; camp.LastConsumed += growthFood;
+                    AddGrowth(w, camp, plans[camp.Id], record, summary);
+                }
+                summary.FoodConsumed += camp.LastConsumed;
             }
             foreach (var hunter in w.Hunters.Where(h => !Supply.Connected(w, h)).OrderBy(h => h.Id))
             {
@@ -387,9 +402,6 @@ namespace Anthropocene.Simulation
                     double fromHunting = Math.Min(overflow, index.Harvest[camp.Id].Where(t => t.Entity == logistics.Hunter && t.Kind == "Hunting").Sum(t => t.Food)); hunting -= fromHunting; overflow -= fromHunting;
                     fishing -= Math.Min(overflow, index.Harvest[camp.Id].Where(t => t.Entity == logistics.Hunter && t.Kind == "Fishing").Sum(t => t.Food));
                 }
-                // Add 50% to successful, retained hunting's experience after food-share normalization.
-                // Keep the food ledger, other domains' shares and failed-hunt practice unchanged.
-                double successfulHunting = Math.Max(0, hunting);
                 foreach (var hunt in index.Harvest[camp.Id].Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Hunting" && t.Food <= 0))
                 {
                     var hunter = index.Hunters.TryGetValue(hunt.Entity, out var found) ? found : null; if (hunter == null) continue;
@@ -405,7 +417,7 @@ namespace Anthropocene.Simulation
                 }
                 double total = hunting + gathering + fishing; if (total <= 1e-9) continue;
                 double budget = summary.StartingPopulation * generationScale;
-                camp.Experience[(int)Domain.Hunting] += budget * (hunting + .5 * successfulHunting) / total * w.Config.HuntingPracticeMultiplier;
+                camp.Experience[(int)Domain.Hunting] += budget * hunting / total * w.Config.HuntingPracticeMultiplier;
                 camp.Experience[(int)Domain.Gathering] += budget * gathering / total;
                 camp.Experience[(int)Domain.Fishing] += budget * fishing / total;
             }

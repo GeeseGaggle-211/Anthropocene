@@ -119,7 +119,7 @@ namespace Anthropocene.Presentation
                 {
                     inspected = world.Map.Neighbors(observation.CampTile).First(id => observation.Tiles.TryGetValue(id, out var tile) && tile.Environment == EnvironmentKind.Shallows);
                     string details = TileDetails.Describe(observation, inspected, planned.Values);
-                    if (!details.Contains("PLANKTON / ALGAE") || !details.Contains("50% human-gatherable")) throw new InvalidOperationException("Aquatic inspector did not expose the new food-web profile.");
+                    if (!details.Contains("PLANKTON / ALGAE") || !details.Contains("25% human-gatherable")) throw new InvalidOperationException("Aquatic inspector did not expose the new food-web profile.");
                     sidebarScroll = new Vector2(0, 100000);
                 }
                 yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, preset + "-play.png")); yield return new WaitForSeconds(.3f);

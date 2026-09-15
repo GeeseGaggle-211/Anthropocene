@@ -29,7 +29,7 @@ internal static class AquaticChecks
         var cool = Profile(4); var warm = Profile(28); var frozen = Profile(-15);
         var c = cool.Tiles[Center].Seasons[0]; var h = warm.Tiles[Center].Seasons[0]; var f = frozen.Tiles[Center].Seasons[0];
         Check(c.MaxFood > 1.7 * h.MaxFood && c.FoodRecoveryPerDay > 1.7 * h.FoodRecoveryPerDay, "cool unfrozen coast has greater capacity and renewal than equally situated warm coast");
-        Check(h.MaxFood > 50 && h.FoodRecoveryPerDay > .002, "warm coastal waters retain useful food and renewal");
+        Check(h.MaxFood > 25 && h.FoodRecoveryPerDay > .002, "warm coastal waters retain useful food and renewal");
         Check(f.MaxFood < .1 * c.MaxFood && f.FoodRecoveryPerDay < .1 * c.FoodRecoveryPerDay, "extreme cold limits both food availability and renewal");
         var wet = Profile(4, moisture: 1);
         Check(cool.Tiles.SelectMany(t => t.Seasons).Select(s => (s.MaxFood, s.FoodRecoveryPerDay)).SequenceEqual(wet.Tiles.SelectMany(t => t.Seasons).Select(s => (s.MaxFood, s.FoodRecoveryPerDay))), "marine food ignores soil moisture, rainfall and snow inputs");
@@ -46,12 +46,12 @@ internal static class AquaticChecks
         Check(Profile(5, EnvironmentKind.Lake, moisture: 1).Tiles[Center].Seasons[0].FoodRecoveryPerDay == lakeCool.Seasons[0].FoodRecoveryPerDay, "lake renewal also excludes soil moisture");
         var twin = Profile(4); var varied = Profile(4, seed: 42);
         Check(twin.Tiles[Center].Seasons[0].MaxFood == c.MaxFood && varied.Tiles[Center].Seasons[0].MaxFood != c.MaxFood, "regional fertility variation is seeded and reproducible");
-        Check(cool.Tiles.All(t => t.Seasons.All(s => s.MaxFood >= 0 && s.MaxPotentialFood == 2 * s.MaxFood && s.FoodRecoveryPerDay == s.BiomassRecoveryPerDay && !float.IsNaN(s.FoodRecoveryPerDay))), "shallows retain fifty percent human-harvestable biomass and consistent daily rates");
+        Check(cool.Tiles.All(t => t.Seasons.All(s => s.MaxFood >= 0 && s.MaxPotentialFood == 4 * s.MaxFood && s.FoodRecoveryPerDay == s.BiomassRecoveryPerDay && !float.IsNaN(s.FoodRecoveryPerDay))), "shallows retain twenty-five percent human-harvestable biomass and consistent daily rates");
         Check(Math.Abs(ocean.Seasons[0].MaxFood / ocean.Seasons[0].MaxPotentialFood - .1) < 1e-7 && ocean.NaturalVegetationPotential == VegetationTier.Low && cool.Tiles[Center].NaturalVegetationPotential == VegetationTier.High, "ocean has ten percent harvestable biomass and Low plankton; shallows have High plankton");
         var upwelling = Profile(4, oceanNeighbors: 2); var edge = Profile(4, oceanNeighbors: 1);
         var u = upwelling.Tiles[Center].Seasons[0];
         Check(AquaticEcology.UpwellingStrength(cool, cool.Tiles[Center]) == 0 && AquaticEcology.UpwellingStrength(edge, edge.Tiles[Center]) == .5 && AquaticEcology.UpwellingStrength(upwelling, upwelling.Tiles[Center]) == 1, "deep-ocean contact provides bounded graded upwelling without random forcing");
-        Check(Math.Abs(u.MaxPotentialFood / c.MaxPotentialFood - 5) < 1e-6 && Math.Abs(u.FoodRecoveryPerDay / c.FoodRecoveryPerDay - 2) < 1e-6 && Math.Abs(u.MaxFood / u.MaxPotentialFood - .5) < 1e-7, "ocean-fed shallows combine fivefold biomass with twice the shallow-water renewal and fifty percent access");
+        Check(Math.Abs(u.MaxPotentialFood / c.MaxPotentialFood - 5) < 1e-6 && Math.Abs(u.FoodRecoveryPerDay / c.FoodRecoveryPerDay - 2) < 1e-6 && Math.Abs(u.MaxFood / u.MaxPotentialFood - .25) < 1e-7, "ocean-fed shallows combine fivefold biomass with twice the shallow-water renewal and twenty-five percent access");
         Check(PlaytestScenarios.Food(upwelling, upwelling.Tiles[Center], -1) > 9.9 * PlaytestScenarios.Food(cool, cool.Tiles[Center], -1), "strong upwelling produces tenfold recurring food potential, not just a starting stock windfall");
         var neighboringLake = Profile(5, EnvironmentKind.Lake, oceanNeighbors: 2);
         Check(AquaticEcology.UpwellingStrength(neighboringLake, neighboringLake.Tiles[Center]) == 0 && neighboringLake.Tiles[Center].Seasons[0].MaxFood == lakeCool.Seasons[0].MaxFood, "lake cannot receive ocean nutrients through a land barrier or adjacency");

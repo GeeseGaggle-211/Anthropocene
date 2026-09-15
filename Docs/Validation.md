@@ -1,10 +1,20 @@
-# Validation - September 14, 2026
+# Validation - September 15, 2026
 
 Current mechanics: [EcologyFoundation.md](EcologyFoundation.md). Windows x64, Unity **6000.5.10f1**, bundled .NET **8.0.318**. Earlier results are preserved in [Validation-Milestone3.md](Validation-Milestone3.md); they are not current balance measurements.
 
-## Current generator-11 aquatic food web
+Current production tuning now allocates food to current-population consumption, full operating-reserve refill and then growth; removes the additional successful-hunt experience bonus; and exposes 25% of newly generated Shallows biomass as Paleolithic human food while preserving total biomass and lake/Ocean shares. Land-adjacent Shallows cannot upwell; existing upwelling multipliers apply only to outer-shelf Shallows with no adjacent land. The experimental calibration harness and its additional reporting/tests were intentionally not promoted to `main`.
 
-The current model is documented in [AquaticFoodWeb.md](AquaticFoodWeb.md). Passive aquatic practice remains 50/50 and successful-hunt experience remains 1.5x; this revision changes aquatic biomass, renewal, condition recovery and new-world placement inputs.
+## Current ordered allocation and offshore-upwelling tuning
+
+- The unchanged canonical suite passes **437 headless assertions** plus scalar/2/4-worker replay through opening completion at twelve resolutions. **20/20 Unity EditMode tests passed** in 8.44 seconds. Only existing fixtures and expectations were maintained for the new production semantics; the experimental calibration programs, switches and additional assertions remain outside `main`.
+- Nine final-source Standard/80 worlds, seeds 1–3 in each shape, retained **720/720 tribes**. Continents unlocked 75 Husbandry / 164 Cultivation / 1 Watercraft; Pangaea 91 / 144 / 5; Archipelagos 75 / 136 / 29. The combined split is **241 / 444 / 35**.
+- In the three Archipelago worlds, final population P25/median/P75 was Husbandry **72/106/142**, Cultivation **86/130/167** and Watercraft **110/138/199**. Under the preceding land-adjacent-upwelling rule, the matched-seed Watercraft result was 48 unlocks and **284/305/368**; the new cohort has 29 unlocks and **110/138/199**. Start-site selection is regenerated, so this is strong balance evidence rather than a fully site-matched causal estimate.
+- No camp radius-one footprint had upwelling in any of the nine worlds. In Archipelagos, Watercraft tribes nevertheless obtained 63.6% of their cumulative food from aquatic harvest. Six of 29 later reached outer-shelf upwelling by active fishing after unlocking Watercraft: 91,486 food across 21 tribe-turns, 6.7% of Watercraft aquatic harvest and 4.3% of their total food. Pre-Watercraft upwelling harvest was zero. Their median population was already 93 at unlock, versus 62 for eventual Husbandry and 68 for eventual Cultivation; ordinary coastal productivity is therefore the main remaining advantage. The 1.4x opening fishery compatibility seed and post-unlock fishing contribute secondarily.
+- Of aquatic food harvested by the final Archipelago Watercraft cohort, 91.1% came from coastal tiles that the old rule would have classified as upwelling. This explains the former runaway result: those recurring land-adjacent flows previously received up to fivefold capacity and twice renewal before Watercraft was unlocked. The diagnostic reporting code used for this attribution remains only in the uncommitted experimental worktree.
+
+## Pre-tuning generator-11 aquatic food web baseline
+
+This section records the preceding 50%-Shallows / 1.5x successful-hunt baseline and is historical. The current model is documented in [AquaticFoodWeb.md](AquaticFoodWeb.md).
 
 - **437 fixed headless assertions passed**, including nine focused human food-acceptance checks and 37 aquatic checks, plus scalar/2/4-worker replay through opening completion at eight resolutions. The acceptance checks cover full stores, an exact reserve shortfall, preserved food-supported growth, connected and remote fishing, connected and remote whole-carcass hunting, extraction-to-consumption/reserve conservation, and reversed claim/entity/partition ordering. Aquatic coverage includes 50%/10% accessibility, graded Ocean adjacency and longitude wrapping, lake exclusion, sustained harvest, biomass conservation, pure recovery, plankton hysteresis, and saved-profile continuation for generators 7–10. Matched ordinary cool/warm/frozen shores have daily renewal 0.014266/0.007682/0.000571; sustained cool/warm harvest ratio is 3.42. A fully upwelled shore has ten times the recurring food potential of an otherwise identical ordinary shore.
 

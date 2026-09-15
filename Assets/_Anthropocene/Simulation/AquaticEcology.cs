@@ -7,7 +7,8 @@ namespace Anthropocene.Simulation
     // Generated capacities/rates and aquatic vegetation are saved, never regenerated on load.
     public static class AquaticEcology
     {
-        public const double ShallowsHarvestableShare = .5, OceanHarvestableShare = .1;
+        public const double ShallowsHarvestableShare = .25, LakeHarvestableShare = .5, OceanHarvestableShare = .1;
+        public const double ShallowsBaseBiomass = 180;
         public const double ShallowsRenewalFraction = .65, OceanRenewalFraction = .08;
         public const double UpwellingBiomassBonus = 4, UpwellingRenewalBonus = 1;
         public const double ConditionRenewalFraction = .1;
@@ -15,11 +16,14 @@ namespace Anthropocene.Simulation
         public static double UpwellingStrength(WorldState world, Tile tile)
         {
             if (tile.Environment != EnvironmentKind.Shallows) return 0;
+            // Land-adjacent shallows are the ordinary coastal harvest zone. Upwelling is
+            // reserved for the outer shelf, where a shallow tile has no land neighbor.
+            if (world.Map.Neighbors(tile.Id).Any(id => world.Tiles[id].Land)) return 0;
             // One deep-ocean neighbor supplies half the bonus; two or more supply all of it.
             // HexMap handles the longitude seam. Inland lakes never receive marine nutrients.
             return Math.Min(1, world.Map.Neighbors(tile.Id).Count(id => world.Tiles[id].Environment == EnvironmentKind.Ocean) / 2.0);
         }
-        public static double HarvestableShare(Tile tile) => tile.Environment == EnvironmentKind.Ocean ? OceanHarvestableShare : ShallowsHarvestableShare;
+        public static double HarvestableShare(Tile tile) => tile.Environment == EnvironmentKind.Ocean ? OceanHarvestableShare : tile.Environment == EnvironmentKind.Shallows ? ShallowsHarvestableShare : LakeHarvestableShare;
         public static VegetationTier PlanktonPotential(Tile tile) => tile.Environment == EnvironmentKind.Shallows ? VegetationTier.High : tile.Environment == EnvironmentKind.Lake ? VegetationTier.Medium : VegetationTier.Low;
         public static double RenewalPerDay(SimulationConfig config, Tile tile, double productivity, double upwelling)
         {

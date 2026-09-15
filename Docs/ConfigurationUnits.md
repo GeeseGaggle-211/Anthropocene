@@ -16,7 +16,7 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | `FoodRegeneration`, `WaterRecovery`, `OasisFoodRegeneration`, `OasisWaterRecovery` | Legacy generation inputs: dimensionless recovered fractions over `BaseDays`, converted once using `-ln(1-f)/BaseDays`. Land climate modifies the input before conversion; aquatic productivity scales the converted daily rate. They do not directly multiply stocks in resolution. |
 
 
-| Aquatic productivity and upwelling | See [AquaticFoodWeb.md](AquaticFoodWeb.md): Shallows/lakes G/B=0.5; Ocean=0.1. Ordinary G=90P; upwelling multiplies shallow capacity by 1+4u and renewal by 1+u. Renewal inputs are 0.65/Shallows, 0.08/Ocean and FoodRegeneration/lakes, converted to daily rates before multiplying by P. |
+| Aquatic productivity and upwelling | See [AquaticFoodWeb.md](AquaticFoodWeb.md): Shallows G/B=0.25; lakes G/B=0.5; Ocean=0.1. Ordinary Shallows G=45P. Land-adjacent Shallows cannot upwell; on outer-shelf Shallows, upwelling multiplies capacity by 1+4u and renewal by 1+u. Renewal inputs are 0.65/Shallows, 0.08/Ocean and FoodRegeneration/lakes, converted to daily rates before multiplying by P. |
 | Aquatic condition recovery | Generator 11 uses 0.1 times the mean saved daily biomass-renewal rate, independent of terrestrial vegetation. Generator 7–10 retains its original recovery. |
 | `LandCondition`, `AquaticCondition` | Normalized condition stocks, 0 to 1. Natural target is currently 1. |
 | `ConditionRecoveryPerYear` (0.003093770185904377) | Annual relaxation rate: exactly `-ln(0.94)/20`, before potential modifiers. |
@@ -28,9 +28,10 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | `PopulationScale` | Person-count normalization in the preserved gathering claim formula. |
 | `RichGatherableFraction`, `GrasslandGatherableFraction`, `AridGatherableFraction`, `TundraGatherableFraction` | Dimensionless human-accessible shares of total biomass, selected by environment and current vegetation. Rivers/oasis influence can raise the share. |
 | `Consumption` | Abstract food per person per `BaseDays`; named roles do not change consumption. |
-| `AnnualHumanGrowthRate` | Annual exponential growth rate, reduced by recurring surplus, reserves and the integrated food budget. |
-| `DemographicGrowthMultiplier`, `GrowthSurplusRatio` | Dimensionless local growth modifier and surplus support threshold. |
-| `GrowthReserveTurns` | Reserve-support multiple of the resolved interval's baseline food need; a gameplay planning horizon. |
+| `AnnualHumanGrowthRate` | Maximum annual exponential growth rate. After current-population consumption and reserve refill, available growth food is inverted through the integrated exponential food equation to obtain the realized rate. |
+| `DemographicGrowthMultiplier` | Dimensionless local modifier on the maximum annual growth rate. |
+| `GrowthSurplusRatio` | Legacy serialized surplus-support setting retained for save/config compatibility; ordered food allocation no longer uses it. |
+| `GrowthReserveTurns` | Full operating-reserve target as a multiple of the current supplied population's interval consumption, bounded by local physical storage. It is refilled before growth food. |
 | `Mortality` | Dimensionless attrition fraction per reference practice interval, converted with elapsed duration after the two-turn grace. Fractional deaths are carried forward. |
 | `StartingReserveGenerations`, `MinimumStorageGenerations`, `MaximumStorageGenerations` | Gameplay multiples of one decision interval's consumption. Current storage interpolates from one to four intervals with climate; this is not a physical spoilage model. |
 | `StartingFood` | Legacy nominal stock; generated camps receive the calculated complete starting reserve. |
@@ -47,7 +48,7 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | `ExperienceThreshold`, `CarryoverFloor` | Practice-point thresholds. Carryover multiplier is dimensionless. |
 | Proficiency thresholds, impact reductions, yield/practice multipliers, passive aquatic practice share | Dimensionless task effects, separate from the society-owned practice histories that drive them. No independent specialist proficiency is active yet. |
 | `PassiveAquaticFishingPracticeShare` (0.5) | Fraction of passive aquatic food's practice weight credited to Fishing; the remainder goes to Gathering. Does not scale harvested food. |
-| `HuntingPracticeMultiplier` (3.25) | Base hunting experience intensity after food-share normalization. The resolver multiplies the successful retained-harvest contribution by 1.5 (effective 4.875); unsuccessful practice keeps the base intensity. Neither multiplier changes carcass food. |
+| `HuntingPracticeMultiplier` (3.25) | Hunting experience intensity after food-share normalization. Successful retained harvest and unsuccessful practice both use this base weight; no additional successful-hunt multiplier applies. It does not change carcass food. |
 | Temperature thresholds, climate temperatures/amplitude/gradient/lapse inputs | Degrees Celsius or temperature contrasts over normalized latitude/elevation. Climate is an approximate generator, not a weather forecast. |
 | Rain, moisture, runoff, evaporation, moisture decay, wind, soil and oasis influence inputs | Dimensionless generator fields/transport coefficients. They create fixed seasonal profiles and are not per-turn ecology changes. |
 | Season `RegionalMoisture` / `Moisture` | Normalized 0–1 climate water balance excluding local subsidy / local soil water including river, lake and oasis subsidy. Environment and climatic vegetation use the former; land productivity, habitat and observed moisture use the latter. Aquatic food uses separate profiles. Both are saved. |

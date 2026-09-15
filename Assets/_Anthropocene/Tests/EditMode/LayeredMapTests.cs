@@ -14,15 +14,15 @@ namespace Anthropocene.Tests.EditMode
         {
             var world = new WorldGenerator().Generate(83, SimulationConfig.Small(2));
             int id = world.Map.Neighbors(world.Camps[0].Tile).First();
-            var tile = new Tile { Id = id, Environment = EnvironmentKind.Shallows, WaterBody = WaterKind.Saltwater, ElevationLevel = 0, NaturalVegetationPotential = VegetationTier.High, CurrentVegetation = VegetationTier.High, Food = 90, PotentialFood = 180 };
-            for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData { MaxFood = 100, MaxPotentialFood = 200, MaxSaltwater = 100, FoodRecoveryPerDay = .01f, BiomassRecoveryPerDay = .01f };
+            var tile = new Tile { Id = id, Environment = EnvironmentKind.Shallows, WaterBody = WaterKind.Saltwater, ElevationLevel = 0, NaturalVegetationPotential = VegetationTier.High, CurrentVegetation = VegetationTier.High, Food = 90, PotentialFood = 360 };
+            for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData { MaxFood = 100, MaxPotentialFood = 400, MaxSaltwater = 100, FoodRecoveryPerDay = .01f, BiomassRecoveryPerDay = .01f };
             world.Tiles[id] = tile;
             var observation = new AgentObservationBuilder().Build(world, world.Camps[0].Player);
             foreach (float zoom in new[] { 35f, 80f, 160f }) Assert.That(LayeredTileRenderer.VegetationCount(observation.Tiles[id], zoom), Is.Zero);
             string details = TileDetails.Describe(observation, id, new Order[0]);
             Assert.That(details, Does.Contain("PLANKTON / ALGAE · High"));
             Assert.That(details, Does.Contain("AQUATIC BIOMASS"));
-            Assert.That(details, Does.Contain("50% human-gatherable"));
+            Assert.That(details, Does.Contain("25% human-gatherable"));
             Assert.That(details, Does.Not.Contain("HERD FORAGE"));
             Assert.That(details, Does.Not.Contain("soil moisture"));
         }

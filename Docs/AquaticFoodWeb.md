@@ -8,17 +8,17 @@ Water uses the existing total biomass B, human-harvestable food G, seasonal rene
 
 | Profile | Natural plankton/algae | Human-harvestable share G/B | Food capacity G | Biomass capacity B | Renewal fraction per BaseDays before P |
 | --- | --- | --- | --- | --- | --- |
-| Ordinary Shallows | High | 50% | 90P | 180P | 0.65 |
+| Ordinary Shallows | High | 25% | 45P | 180P | 0.65 |
 | Deep Ocean | Low | 10% | 90P | 900P | 0.08 |
 | Freshwater Lake | Medium | 50% | 90P | 180P | Existing FoodRegeneration configuration |
 
-Fractions are converted to daily exponential rates with `DailyRate(fraction, BaseDays)`, then multiplied by P. Food and non-harvestable biomass use the same rate, preserving the coupled pool equations and conservation. The 50% and 10% values are biomass accessibility fractions, not renewal percentages or permission to harvest Ocean. Ocean remains excluded from Paleolithic gathering, fishing and viable-start food, regardless of its larger biomass. Marine production never provides freshwater. Lakes keep their finite freshwater and distinct climate response.
+Fractions are converted to daily exponential rates with `DailyRate(fraction, BaseDays)`, then multiplied by P. Food and non-harvestable biomass use the same rate, preserving the coupled pool equations and conservation. The 25% Shallows and 10% Ocean values are biomass accessibility fractions, not renewal percentages or permission to harvest Ocean. Ocean remains excluded from Paleolithic gathering, fishing and viable-start food, regardless of its larger biomass. Marine production never provides freshwater. Lakes keep their finite freshwater and distinct climate response.
 
 ## Upwelling proxy
 
-For a Shallows tile, `u = min(1, adjacent Ocean count / 2)`. Hex adjacency wraps longitude. One ocean neighbor supplies half the bonus; two or more supply all of it. Lakes and Ocean itself receive no shallow-upwelling bonus. This is a coastal deep-water contact proxy, not simulated wind-driven currents, moving nutrients or depletion of an ocean reservoir.
+Land-adjacent Shallows always have `u = 0` and use the ordinary coastal profile. For an outer-shelf Shallows tile with no adjacent land, `u = min(1, adjacent Ocean count / 2)`. Hex adjacency wraps longitude. One ocean neighbor supplies half the bonus; two or more supply all of it. Lakes and Ocean itself receive no shallow-upwelling bonus. This is an offshore deep-water contact proxy, not simulated wind-driven currents, moving nutrients or depletion of an ocean reservoir.
 
-Shallows food/biomass capacities are multiplied by `1 + 4u`; their daily renewal rate by `1 + u`. Thus full upwelling combines deep-ocean-scale biomass (900P) with 50% accessibility (450P) and twice normal shallow renewal. Its conservative recurring food potential is ten times that of the same ordinary shallow profile. Light and cold still limit both capacity and renewal. The constants are provisional gameplay tuning in AquaticEcology.cs, not physical calibration.
+Shallows food/biomass capacities are multiplied by `1 + 4u`; their daily renewal rate by `1 + u`. Thus full upwelling combines deep-ocean-scale biomass (900P) with 25% accessibility (225P) and twice normal shallow renewal. Its recurring human-food potential remains ten times that of the same ordinary shallow profile. Light and cold still limit both capacity and renewal. The constants are provisional gameplay tuning in AquaticEcology.cs, not physical calibration.
 
 ## Depletion, resilience and practice
 
@@ -28,7 +28,7 @@ For generator 11 aquatic tiles, condition recovery per day is `0.1 * mean(season
 
 The starting workforce and shared land/water labor ceiling still limit passive gathering. Viability consumes the final seasonal human-food profiles, excludes inaccessible biomass/Ocean, and checks freshwater every season. Increased aquatic potential can change eligible start sites and starting tribe cohorts even when seeds and terrain are unchanged. Presets must be revalidated after tuning.
 
-Experience remains 50/50 Gathering/Fishing for passive aquatic food and 1.5x original successful-hunt experience. Active Fishing's practice weighting is unchanged. Changes to technology shares arise from ecology and opportunity, not player-ID quotas.
+Experience remains 50/50 Gathering/Fishing for passive aquatic food. Successful hunting now uses the base hunting experience weight with no additional retained-harvest bonus; Active Fishing's practice weighting is unchanged. Changes to technology shares arise from ecology and opportunity, not player-ID quotas.
 
 ## Persistence and presentation
 
@@ -38,4 +38,4 @@ Filtered tile details label water vegetation as PLANKTON / ALGAE and the wider p
 
 ## Verification
 
-AquaticChecks covers 50%/10% shares, High/Low plankton, relative ocean/shallow turnover, graded ocean contact, longitude wrapping, lake exclusion, tenfold upwelling potential, sustained-demand resilience, food/biomass conservation, pure damaged-fishery recovery, aquatic hysteresis, saved profiles and legacy continuation. Existing start checks cover all-season food, shared labor, freshwater and Ocean exclusion. LayeredMapTests checks aquatic labels, accessibility and the absence of land trees at every detail zoom. See Validation.md for run results and measured balance limitations.
+AquaticChecks covers Shallows/Ocean accessibility, High/Low plankton, relative ocean/shallow turnover, graded ocean contact, longitude wrapping, lake exclusion, tenfold upwelling potential, sustained-demand resilience, food/biomass conservation, pure damaged-fishery recovery, aquatic hysteresis, saved profiles and legacy continuation. Existing start checks cover all-season food, shared labor, freshwater and Ocean exclusion. LayeredMapTests checks aquatic labels, accessibility and the absence of land trees at every detail zoom. See Validation.md for run results and measured balance limitations.

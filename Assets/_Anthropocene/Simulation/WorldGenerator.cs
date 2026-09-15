@@ -164,7 +164,8 @@ namespace Anthropocene.Simulation
                     if (tile.Environment == EnvironmentKind.Ice) productivity = 0;
                     if (tile.Land) productivity *= tile.Relief == Relief.Mountain ? c.Config.MountainProductivity : tile.Relief == Relief.Highland ? c.Config.HighlandProductivity : tile.Relief == Relief.Hills ? c.Config.HillsProductivity : 1;
                     double fresh = tile.FreshwaterSource == FreshwaterSource.Lake ? 120 : tile.FreshwaterSource == FreshwaterSource.River ? Math.Min(150, 70 + Math.Sqrt(tile.Flow) * 4) : tile.FreshwaterSource == FreshwaterSource.RainPool ? 25 * Numbers.Clamp(data.Rain / Math.Max(.001, averageRain), .25, 1.5) : 0;
-                    data.MaxFood = water ? (float)(90 * productivity * (1 + AquaticEcology.UpwellingBiomassBonus * upwelling)) : Math.Max(data.MaxFood, (float)(90 * productivity)); data.MaxFreshwater = Math.Max(data.MaxFreshwater, (float)fresh); data.AccessibleFreshwater = (float)fresh;
+                    double accessibleAquaticBase = tile.Environment == EnvironmentKind.Shallows ? AquaticEcology.ShallowsBaseBiomass * AquaticEcology.ShallowsHarvestableShare : 90;
+                    data.MaxFood = water ? (float)(accessibleAquaticBase * productivity * (1 + AquaticEcology.UpwellingBiomassBonus * upwelling)) : Math.Max(data.MaxFood, (float)(90 * productivity)); data.MaxFreshwater = Math.Max(data.MaxFreshwater, (float)fresh); data.AccessibleFreshwater = (float)fresh;
                     data.MaxSaltwater = tile.WaterBody == WaterKind.Saltwater ? 100 : 0;
                     double recovery = water ? AquaticEcology.RenewalPerDay(c.Config, tile, productivity, upwelling) : EcologyMath.DailyRate(c.Config.FoodRegeneration * (.2 + data.Moisture) * warmth, c.Config.BaseDays);
                     data.FoodRecoveryPerDay = water ? (float)recovery : Math.Max(data.FoodRecoveryPerDay, (float)recovery);
