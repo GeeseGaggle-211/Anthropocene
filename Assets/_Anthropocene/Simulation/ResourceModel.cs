@@ -11,20 +11,21 @@ namespace Anthropocene.Simulation
     public enum MarineSetting : byte { Land, Lake, Shelf, Slope, AbyssalPlain, Seamount, HydrothermalRidge }
     public enum BurialDepth : byte { Surface, Shallow, Deep }
     public enum DepositShape : byte { Lens, Vein, Bed, Seam, Reservoir, Field }
+    public enum MineralConcentration : byte { Deposit, Scattered }
     [Serializable]
     public sealed class ResourceGenerationOptions
     {
         public bool Enabled = true;
         public int MaximumQuantity = ResourceCatalog.MaximumQuantity;
-        public double Density = 1, WoodRecoveryPerYear = .05;
+        public double Density = 1, ScatteredDensity = 1, WoodRecoveryPerYear = .05;
         public int[] DisabledProfiles = Array.Empty<int>();
         public void Validate()
         {
-            if (MaximumQuantity < 1000 || MaximumQuantity > ResourceCatalog.MaximumQuantity || !Finite(Density) || Density < 0 || Density > 4 || !Finite(WoodRecoveryPerYear) || WoodRecoveryPerYear < 0 || WoodRecoveryPerYear > 1 || DisabledProfiles == null || DisabledProfiles.Any(id => !GeologicalProfiles.All.Any(p => p.Id == id)))
+            if (MaximumQuantity < 1000 || MaximumQuantity > ResourceCatalog.MaximumQuantity || !Finite(Density) || Density < 0 || Density > 4 || !Finite(ScatteredDensity) || ScatteredDensity < 0 || ScatteredDensity > 4 || !Finite(WoodRecoveryPerYear) || WoodRecoveryPerYear < 0 || WoodRecoveryPerYear > 1 || DisabledProfiles == null || DisabledProfiles.Any(id => !GeologicalProfiles.All.Any(p => p.Id == id)))
                 throw new ArgumentException("Invalid resource-generation options.");
         }
         internal static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
-        public string Hash => ResourceCatalog.Digest(MaximumQuantity + ":" + Density.ToString("R", CultureInfo.InvariantCulture) + ":" + WoodRecoveryPerYear.ToString("R", CultureInfo.InvariantCulture) + ":" + string.Join(",", DisabledProfiles.Distinct().OrderBy(x => x)));
+        public string Hash => ResourceCatalog.Digest(MaximumQuantity + ":" + Density.ToString("R", CultureInfo.InvariantCulture) + ":" + ScatteredDensity.ToString("R", CultureInfo.InvariantCulture) + ":" + WoodRecoveryPerYear.ToString("R", CultureInfo.InvariantCulture) + ":" + string.Join(",", DisabledProfiles.Distinct().OrderBy(x => x)));
     }
     [Serializable]
     public sealed class GeologicalProvince
@@ -56,6 +57,7 @@ namespace Anthropocene.Simulation
         public int Profile, OriginTile;
         public double InitialQuantity, Quantity;
         public DepositShape Shape;
+        public MineralConcentration Concentration;
         public byte Hardness, Quality;
         public DepositComponent[] Components;
         public DepositSite[] Sites;
@@ -65,7 +67,7 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldResourceState
     {
-        public const int CurrentVersion = 1, CurrentGenerationVersion = 1;
+        public const int CurrentVersion = 2, CurrentGenerationVersion = 2;
         public int Version = CurrentVersion, GenerationVersion = CurrentGenerationVersion, CoreGeneratorVersion = WorldState.GeneratorVersion;
         public string CatalogHash, ConfigurationHash, ProfileHash;
         public int MaximumQuantity;
@@ -84,7 +86,7 @@ namespace Anthropocene.Simulation
         public double SurfaceAccessible(int tile, MaterialId material) => SurfaceTotal(tile, material) * AccessibleFraction(material);
         public double ComponentQuantity(DepositBody body, MaterialId material) => body.Quantity * body.Components.Where(c => c.Material == material).Sum(c => (int)c.PartsPerTenThousand) / 10000;
         public double AccessibleAt(DepositBody body, DepositSite site, MaterialId material) => ComponentQuantity(body, material) * site.Share / 10000 * site.Exposure / 10000 * AccessibleFraction(material);
-        public long PackedBytes => Province.LongLength * 12 + Provinces.LongLength * 48 + Bodies.Sum(b => 64L + b.Components.LongLength * 4 + b.Sites.LongLength * 10 + b.TransportPath.LongLength * 4);
+        public long PackedBytes => Province.LongLength * 12 + Provinces.LongLength * 48 + Bodies.Sum(b => 65L + b.Components.LongLength * 4 + b.Sites.LongLength * 10 + b.TransportPath.LongLength * 4);
     }
     public static class ResourceValidation
     {
@@ -93,7 +95,7 @@ namespace Anthropocene.Simulation
             var r = w.Resources; if (r == null) return;
             int count = w.Tiles.Length;
             if (r.GenerationVersion < 1 || r.GenerationVersion > WorldResourceState.CurrentGenerationVersion) throw new InvalidOperationException("Unsupported resource generator.");
-            if (r.Version != WorldResourceState.CurrentVersion || r.CoreGeneratorVersion < 7 || r.CoreGeneratorVersion > WorldState.GeneratorVersion || r.MaximumQuantity < 1000 || r.MaximumQuantity > ResourceCatalog.MaximumQuantity || !ResourceGenerationOptions.Finite(r.WoodRecoveryPerYear) || r.WoodRecoveryPerYear < 0 || r.WoodRecoveryPerYear > 1 || string.IsNullOrEmpty(r.CatalogHash) || string.IsNullOrEmpty(r.ProfileHash) || string.IsNullOrEmpty(r.ConfigurationHash)) throw new InvalidOperationException("Invalid resource metadata.");
+            if ((r.Version < 1 || r.Version > WorldResourceState.CurrentVersion) || r.CoreGeneratorVersion < 7 || r.CoreGeneratorVersion > WorldState.GeneratorVersion || r.MaximumQuantity < 1000 || r.MaximumQuantity > ResourceCatalog.MaximumQuantity || !ResourceGenerationOptions.Finite(r.WoodRecoveryPerYear) || r.WoodRecoveryPerYear < 0 || r.WoodRecoveryPerYear > 1 || string.IsNullOrEmpty(r.CatalogHash) || string.IsNullOrEmpty(r.ProfileHash) || string.IsNullOrEmpty(r.ConfigurationHash)) throw new InvalidOperationException("Invalid resource metadata.");
             if (r.Provinces == null || r.Provinces.Length > ushort.MaxValue || r.Bodies == null || r.Province?.Length != count || r.History?.Length != count || r.Host?.Length != count || r.Marine?.Length != count || r.Stone?.Length != count || r.Clay?.Length != count || r.Wood?.Length != count) throw new InvalidOperationException("Invalid resource raster dimensions.");
             if (r.AccessibleParts?.Length != 69 || r.DiscoveryTechnologies?.Length != 69 || r.AccessibleParts.Any(v => v > 10000) || ResourceCatalog.Materials.Any(m => r.DiscoveryTechnologies[(int)m.Id] == null)) throw new InvalidOperationException("Invalid saved material catalog.");
             for (int i = 0; i < r.Provinces.Length; i++)
@@ -109,6 +111,10 @@ namespace Anthropocene.Simulation
             foreach (var b in r.Bodies)
             {
                 if (b == null || b.Id <= 0 || !ids.Add(b.Id) || !GeologicalProfiles.All.Any(p => p.Id == b.Profile) || b.OriginTile < 0 || b.OriginTile >= count || !ResourceGenerationOptions.Finite(b.Quantity) || !ResourceGenerationOptions.Finite(b.InitialQuantity) || b.Quantity < 0 || b.Quantity > b.InitialQuantity || b.InitialQuantity > r.MaximumQuantity || b.InitialQuantity <= 0 || b.Components == null || b.Components.Length == 0 || b.Sites == null || b.Sites.Length == 0 || b.TransportPath == null) throw new InvalidOperationException("Invalid deposit body.");
+                if (b.Concentration > MineralConcentration.Scattered || r.Version == 1 && b.Concentration != MineralConcentration.Deposit)
+                    throw new InvalidOperationException("Invalid resource concentration kind.");
+                if (b.Concentration == MineralConcentration.Scattered && (b.SourceBody != 0 || b.Shape != DepositShape.Field || b.InitialQuantity > r.MaximumQuantity * .08 + 1e-6 || b.Sites.Any(s => s.Setting != MarineSetting.Land || s.Burial != BurialDepth.Surface)))
+                    throw new InvalidOperationException("Invalid scattered occurrence field.");
                 if (b.Shape > DepositShape.Field || b.Components.Select(c => c.Material).Distinct().Count() != b.Components.Length || b.Components.Sum(c => (int)c.PartsPerTenThousand) > 10000 || b.Components.Any(c => c.PartsPerTenThousand == 0 || ResourceCatalog.Get(c.Material).Reserved)) throw new InvalidOperationException("Invalid deposit composition.");
                 if (b.Sites.Sum(s => (int)s.Share) != 10000 || b.Sites.Select(s => s.Tile).Distinct().Count() != b.Sites.Length || b.Sites.Any(s => s.Tile < 0 || s.Tile >= count || s.Exposure > 10000 || s.Share == 0 || s.Burial > BurialDepth.Deep || (byte)s.Setting != r.Marine[s.Tile])) throw new InvalidOperationException("Invalid deposit access sites.");
             }

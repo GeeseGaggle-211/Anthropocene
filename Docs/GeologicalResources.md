@@ -4,7 +4,7 @@ This is a world-generation overlay, not a Neolithic economy. It implements the a
 
 ## Pipeline and invariants
 
-`WorldGenerator.CreateStages(placement)` is shared by normal generation and the geography-only atlas. After the existing VegetationResource stage it runs GeologicalProvince → MineralDeposit → SurfaceMaterial, then optional Placement and ResourceAccessAudit. The overlay reads existing physical/ecological fields and writes only `WorldState.Resources`; the audit emits diagnostics. Core terrain generator **11**, world/config **7**, observation schema **7**, food/water placement, camps, herds and `NextId` are unchanged. The separate resource schema and generator are both **1**.
+`WorldGenerator.CreateStages(placement)` is shared by normal generation and the geography-only atlas. After the existing VegetationResource stage it runs GeologicalProvince → MineralDeposit → SurfaceMaterial, then optional Placement and ResourceAccessAudit. The overlay reads existing physical/ecological fields and writes only `WorldState.Resources`; the audit emits diagnostics. Core terrain generator **11**, world/config **7**, observation schema **7**, food/water placement, camps, herds and `NextId` are unchanged. The separate resource schema and generator are both **2**; existing version-1 resources load and save unchanged.
 
 `Generate(seed, config, new ResourceGenerationOptions { Enabled = false })` provides the comparison baseline. `SaveCodec.LegacyFingerprint` compares original authoritative fields without mutating either world. A full fingerprint additionally includes resource state. The normal opening's observations and turn resolver do not consume this new state.
 
@@ -13,9 +13,10 @@ This is a world-generation overlay, not a Neolithic economy. It implements the a
 | Quantity | Convention |
 | --- | --- |
 | Material unit | Abstract game quantity; not tonnes, cubic metres, or an Earth-area conversion. |
-| Deposit host stock | Initially 55–100% of the configured maximum, capped at 100,000 per shared body. Components occupy fractions of that host. |
+| Rich deposit host stock | Initially 55–100% of the configured maximum, capped at 100,000 per shared body. Components occupy fractions of that host. Solid mineral deposits have richer cores and poorer margins. |
+| Scattered occurrence field | A sparse set of surface occurrences within a broader eligible geological district. One shared 1–8% host budget (up to 8,000 units at defaults), additionally bounded by 100 host units per occurrence before share rounding and material composition. Separate from rich deposits. |
 | Local body allocation | Site shares sum to 100%. A multi-hex reservoir does not repeat its full reserve in every tile. |
-| Secondary stock | 5–15% transferred from one primary source. The parent loses exactly the host quantity transferred; component proportions are preserved. |
+| Secondary stock | 5–15% transferred from one rich primary source, spread along up to six final drainage/coastal-path tiles. The parent loses exactly the host quantity transferred; component proportions are preserved. |
 | Surface Stone/Clay | Up to 100,000 units per present tile source, encoded in ten-unit increments. Local absence is allowed. |
 | Wood capacity | High vegetation: 80,000–100,000; Medium: 44,000–55,000; Low: 4,000–5,000 units of woody brush. Ice and water have none. Lower configured maxima scale these ranges. |
 | Surface accessibility | Stone 100%, Clay 100%, Wood 25%. |
@@ -33,7 +34,11 @@ The 144 overlapping, warped provinces store host rock and procedural history: ba
 
 There are 36 primary profiles plus a derived placer profile: intrusive/sediment-hosted copper, granite tin/tungsten, carbonate/clastic lead-zinc, gold, ancient iron, nickel/chromium, laterites/bauxite, coal, petroleum, evaporites, limestone/quartz, phosphate/manganese/sulfur, lithium variants, rare-earth variants, graphite, uranium, titanium, shelf aggregate, nodules, crusts, hydrothermal sulfides and rare nitrate basins. Associated components include selected cobalt, silver, molybdenum, gallium and trace porphyry outputs. Registry-only extensions remain explicitly inactive.
 
-Host/process gates precede occurrence sampling. Compatible regions can be barren. Bodies use irregular, region-oriented footprints, clipped to compatible geology and the connected component containing their origin. Composition is bounded by host stock. Hardness and quality are provisional descriptors; quality is not applied as a universal extraction or recipe multiplier. More detailed coal-rank, coking, clay-firing and industrial-purity behavior remains for later material/recipe design.
+Host/process gates precede occurrence sampling. Compatible regions can be barren. Rich bodies use irregular, region-oriented footprints, clipped to compatible geology and the connected component containing their origin. Composition is bounded by host stock. Hardness and quality are provisional descriptors; quality is not applied as a universal extraction or recipe multiplier. More detailed coal-rank, coking, clay-firing and industrial-purity behavior remains for later material/recipe design.
+
+Resource generator 2 adds `MineralConcentration.Scattered` for 23 land-solid profiles: metal ores, bauxite, phosphates, sulfur, hard-rock/clay lithium, rare earths and graphite. Scattered fields are deliberately discontinuous: only a sparse selection of eligible land tiles holds material, with the same host/history requirements as the parent profile. A field uses a broader rotated footprint and an independent keyed occurrence stream, so disabling it with `ScatteredDensity = 0` leaves all rich deposits/placers unchanged. Fields never feed placers. Coal, petroleum/gas, lithium brines, evaporites, offshore-only profiles, and surface Stone/Clay/Wood retain their generation rules.
+
+Primary copper occurrence probability is multiplied by 1.6 and granite tin by 2.5. Other rich-profile frequencies are unchanged. Solid deposits allocate stock using a central concentration kernel and integer shares that still sum exactly to 10,000. These are explicit game tuning choices, not measured real-world geological rates. Existing discovery requirements and accessibility fractions remain authoritative.
 
 Petroleum requires basin, source, maturity, reservoir, seal/trap and preservation context; the occurrence draw abstracts successful charging/preservation. Bodies can cross a coastline with one identity and one reserve. Water setting and burial depth are separate. Phosphorites occupy land/relict marine formations, margins and eligible seamounts, independent of current fishing productivity. Nodules, crusts and hydrothermal sulfides have distinct substrate/setting gates. Nodule/crust material is at the seabed surface but still underwater; passing vessels gain no knowledge or extraction ability.
 
@@ -41,7 +46,7 @@ Placers inherit tin, gold, titanium or rare-earth source composition and an expl
 
 ## Persistence and discovery boundary
 
-New resource-bearing saves use **ANTHROPOCENE-9**. The fixed core tile layout remains unchanged, and `ResourceCodec` writes an explicit compact resource block outside the XML header. It includes province/raster data, body/site/component records, source paths, stocks, Wood renewal, saved accessibility/discovery metadata, and separate schema/generator/catalog/profile/configuration identities. Timings and caches are excluded from authoritative fingerprints. Bodies, components and sites serialize canonically.
+New resource-bearing saves use **ANTHROPOCENE-9**. The fixed core tile layout remains unchanged, and `ResourceCodec` writes an explicit compact resource block outside the XML header. It includes province/raster data, body/site/component records, source paths, stocks, Wood renewal, saved accessibility/discovery metadata, and separate schema/generator/catalog/profile/configuration identities. Schema 2 adds one concentration-kind byte per body. Schema 1 omits it and restores the original deposit kind; saving an old world retains its version-1 byte layout and resource fingerprint. Timings and caches are excluded from authoritative fingerprints. Bodies, components and sites serialize canonically.
 
 **ANTHROPOCENE-8** saves remain readable and keep `Resources == null`. Null means absent, not surveyed/barren. Saving such a world retains the old envelope. Loading never generates or attaches resources; no old save migration command is provided. Existing generator-7–11 ecology compatibility remains unchanged. The user filename remains `opening-v7.anthro`.
 
@@ -53,7 +58,7 @@ In the Windows player, choose **BUILD WORLD PREVIEW (DEV)** (or preview the curr
 
 `WorldResourcePreview` computes pure per-tile quantities; `OpeningResourcePreview` supplies the controls and inspector. A body's component quantity is distributed by site share, never copied in full to every tile. The accessible view additionally applies local exposure and saved material accessibility. The developer atlas reveals all eras without changing player knowledge. Texture/value caches are rebuilt on selection, not every frame.
 
-The opt-in development-player argument `--anthropocene-resources-output <fresh-absolute-directory>` captures both modes for every material, a deposit close-up, the selector and normal fog, then verifies the unchanged world fingerprint and observed-tile count. It leaves the atlas open for interactive checks and does not use the normal save slot.
+The opt-in development-player argument `--anthropocene-resources-output <fresh-absolute-directory>` captures both modes for every material, rich/scattered Copper close-ups, the selector and normal fog (78 frames), then verifies the unchanged world fingerprint and observed-tile count. It leaves the atlas open for interactive checks and does not use the normal save slot.
 
 The atlas exports actual state to `geology.html`, `geology.json` and PNGs. The map selector covers host rock, provinces, marine settings, deposit profiles, burial, exposure, source paths, total/accessibility for every active material, and Wood renewal potential. All material heatmaps use a fixed logarithmic 0–100,000 scale. A blank layer is valid. `geology.json` records per-profile counts/absence reasons, shared-body summaries and start opportunities. Per-start radius-one quantities and radius-two traversable opportunities are **developer diagnostics**, not known supply or validated delivery throughput.
 

@@ -53,6 +53,7 @@ internal static class GeologyGenerationChecks
             Check(ResourceCodec.Fingerprint(world.Resources) == original, shape + " opening economy does not mutate resource stocks");
         }
         OffshoreFixtures();
+        OccurrenceFixtures();
         var small = new WorldGenerator().Generate(1, SimulationConfig.Small(4));
         var body = small.Resources.Bodies.First(b => b.SourceBody == 0);
         double originalQuantity = body.Quantity;
@@ -72,9 +73,37 @@ internal static class GeologyGenerationChecks
     }
     private static bool Connected(WorldState w, DepositBody b)
     {
+        if (b.Concentration == MineralConcentration.Scattered) return true; // Deliberately separate occurrences within one district.
         var sites = new HashSet<int>(b.Sites.Select(s => s.Tile)); var reached = new HashSet<int> { b.OriginTile }; var queue = new Queue<int>(); queue.Enqueue(b.OriginTile);
         while (queue.Count > 0) foreach (int n in w.Map.Neighbors(queue.Dequeue())) if (sites.Contains(n) && reached.Add(n)) queue.Enqueue(n);
         return reached.Count == sites.Count;
+    }
+    private static void OccurrenceFixtures()
+    {
+        var config = new SimulationConfig { Width = 256, Height = 128, Players = 4, StartSeparation = 9 };
+        var generator = new WorldGenerator(); var w = generator.Generate(42, config); var r = w.Resources;
+        var without = generator.Generate(42, config, new ResourceGenerationOptions { ScatteredDensity = 0 });
+        var fields = r.Bodies.Where(b => b.Concentration == MineralConcentration.Scattered).ToArray();
+        Check(fields.Length > 0 && fields.Any(b => b.Sites.Length > 10), "low-quantity fields cover broad districts");
+        Check(fields.All(b => b.InitialQuantity <= 8000 && b.Sites.All(s => b.InitialQuantity * s.Share / 10000 <= 101)), "scattered local host stocks remain small before component fractions");
+        Check(fields.All(b => MineralDepositStage.HasScatteredOccurrences(b.Profile) && b.Sites.All(s => w.Tiles[s.Tile].Land && s.Exposure == 10000)), "scattered solids respect land/exposure and exclude fuel systems");
+        Check(BodyHash(r.Bodies.Where(b => b.Concentration == MineralConcentration.Deposit).ToArray(), r) == BodyHash(without.Resources.Bodies, r), "scattered density cannot reshuffle or dilute rich deposits");
+        Check(r.Bodies.Where(b => b.SourceBody != 0).Any(b => b.Sites.Length > 1), "source-funded placer reaches extend across multiple connected tiles");
+        foreach (var m in new[] { MaterialId.Copper, MaterialId.Tin, MaterialId.Iron })
+        {
+            var deposits = r.Bodies.Where(b => b.Concentration == MineralConcentration.Deposit && r.ComponentQuantity(b, m) > 0).ToArray();
+            var scattered = fields.Where(b => r.ComponentQuantity(b, m) > 0).ToArray();
+            var richTiles = new HashSet<int>(deposits.SelectMany(b => b.Sites).Select(s => s.Tile));
+            Check(scattered.Any(b => b.Sites.Any(s => !richTiles.Contains(s.Tile))), m + " low occurrences extend beyond rich deposit footprints");
+            Check(deposits.Max(b => b.Sites.Max(s => r.ComponentQuantity(b, m) * s.Share / 10000)) > 5 * scattered.Max(b => b.Sites.Max(s => r.ComponentQuantity(b, m) * s.Share / 10000)), m + " concentrated deposits remain distinctly richer");
+        }
+        Check(r.Bodies.Any(b => b.SourceBody == 0 && b.Concentration == MineralConcentration.Deposit && b.Sites.Length > 8 && b.Sites.Max(s => (int)s.Share) > 3 * b.Sites.Min(s => (int)s.Share)), "rich deposits have cores and poorer margins");
+        without.Resources.Version = 1; without.Resources.GenerationVersion = 1;
+        string legacy = SaveCodec.Fingerprint(without); var restored = SaveCodec.Load(SaveCodec.Save(without));
+        Check(restored.Resources.Version == 1 && restored.Resources.GenerationVersion == 1 && SaveCodec.Fingerprint(restored) == legacy, "schema-1 resources retain their exact payload without regeneration");
+        r.GenerationVersion = WorldResourceState.CurrentGenerationVersion + 1;
+        bool rejected = false; try { SaveCodec.Load(SaveCodec.Save(w)); } catch (InvalidOperationException) { rejected = true; }
+        Check(rejected, "future resource generator versions rejected");
     }
     public static void Audit(bool large)
     {

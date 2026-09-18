@@ -48,10 +48,10 @@ namespace Anthropocene.Presentation
                 foreach (var site in body.Sites.Where(s => s.Tile == tile))
                 {
                     total += amount * site.Share / 10000; accessible += r.AccessibleAt(body, site, material); count++;
-                    deposits.Append("\nBody ").Append(body.Id).Append(" · ").Append(body.Shape)
+                    deposits.Append("\nBody ").Append(body.Id).Append(" · ").Append(body.Concentration == MineralConcentration.Scattered ? "Scattered occurrences" : body.Shape.ToString())
                         .Append("\n").Append(site.Burial).Append(" · ").Append(site.Setting)
                         .Append(" · exposure ").Append((site.Exposure / 100.0).ToString("0.#")).Append("%")
-                        .Append("\nShared reserve: ").Append(body.Quantity.ToString("N0"))
+                        .Append(body.Concentration == MineralConcentration.Scattered ? "\nSmall occurrences share: " : "\nShared reserve: ").Append(body.Quantity.ToString("N0"))
                         .Append(" units across ").Append(body.Sites.Length).Append(" tiles\n");
                 }
             }
@@ -68,7 +68,7 @@ namespace Anthropocene.Presentation
                     .Append("\nRecovery coefficient: ").Append((r.WoodRecoveryPerYear * 100).ToString("0.#"))
                     .Append("% / year\nGeneration metadata; harvesting and regrowth are deferred to the economy pass.");
             else if (material != MaterialId.Stone && material != MaterialId.Clay)
-                text.Append("\n\n").Append(count).Append(" intersecting deposit(s)").Append(deposits)
+                text.Append("\n\n").Append(count).Append(" intersecting resource source(s)").Append(deposits)
                     .Append("\nTile totals allocate each shared body's material by its tile share. Accessibility also includes local exposure. A shared reserve is counted once across the whole deposit.");
             return text.ToString();
         }

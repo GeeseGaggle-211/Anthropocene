@@ -23,6 +23,7 @@ namespace Anthropocene.Simulation
             foreach (var b in r.Bodies.OrderBy(b => b.Id))
             {
                 writer.Write(b.Id); writer.Write(b.SourceBody); writer.Write(b.Profile); writer.Write(b.OriginTile); writer.Write(b.InitialQuantity); writer.Write(b.Quantity); writer.Write((byte)b.Shape); writer.Write(b.Hardness); writer.Write(b.Quality);
+                if (r.Version >= 2) writer.Write((byte)b.Concentration);
                 writer.Write(b.Components.Length);
                 foreach (var part in b.Components.OrderBy(part => part.Material)) { writer.Write((ushort)part.Material); writer.Write(part.PartsPerTenThousand); }
                 writer.Write(b.Sites.Length);
@@ -37,7 +38,7 @@ namespace Anthropocene.Simulation
         public static WorldResourceState Read(BinaryReader reader, int tiles)
         {
             var r = new WorldResourceState { Version = reader.ReadInt32(), GenerationVersion = reader.ReadInt32(), CoreGeneratorVersion = reader.ReadInt32() };
-            if (r.Version != WorldResourceState.CurrentVersion) throw new InvalidDataException("Unsupported resource schema; regeneration is never implicit.");
+            if (r.Version < 1 || r.Version > WorldResourceState.CurrentVersion) throw new InvalidDataException("Unsupported resource schema; regeneration is never implicit.");
             r.CatalogHash = Identity(reader); r.ProfileHash = Identity(reader); r.ConfigurationHash = Identity(reader);
             r.MaximumQuantity = reader.ReadInt32(); r.WoodRecoveryPerYear = reader.ReadDouble();
             int materials = Count(reader, 69); if (materials != 69) throw new InvalidDataException("Invalid saved material catalog size.");
@@ -52,6 +53,7 @@ namespace Anthropocene.Simulation
             for (int i = 0; i < r.Bodies.Length; i++)
             {
                 var b = new DepositBody { Id = reader.ReadInt64(), SourceBody = reader.ReadInt64(), Profile = reader.ReadInt32(), OriginTile = reader.ReadInt32(), InitialQuantity = reader.ReadDouble(), Quantity = reader.ReadDouble(), Shape = (DepositShape)reader.ReadByte(), Hardness = reader.ReadByte(), Quality = reader.ReadByte() };
+                if (r.Version >= 2) b.Concentration = (MineralConcentration)reader.ReadByte();
                 b.Components = new DepositComponent[Count(reader, ResourceCatalog.Materials.Count)];
                 for (int j = 0; j < b.Components.Length; j++) b.Components[j] = new DepositComponent((MaterialId)reader.ReadUInt16(), reader.ReadUInt16());
                 int count = Count(reader, Math.Min(10000, tiles)); sites += count;

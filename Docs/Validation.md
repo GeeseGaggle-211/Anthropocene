@@ -6,6 +6,29 @@ Current production tuning now allocates food to current-population consumption, 
 
 ## Geological resource generation — September 18
 
+### Broader occurrences and rich cores — resource generator 2
+
+The requested distribution change adds sparse low-quantity fields across eligible land geology, more primary copper/tin occurrences, centrally concentrated solid deposits and source-funded placer reaches. It applies to 23 land-solid profiles. Surface Stone/Clay/Wood, fuel/reservoir systems, discovery requirements, accessibility fractions and the opening economy are unchanged. Resource schema/generator are now 2; schema/generator-1 worlds preserve their original byte layout, quantities and fingerprint on save/load.
+
+Six matched **Continents / 1024×512 / 80-tribe** seeds (**1, 2, 3, 11, 42, 1729**) give the following arithmetic means. Coverage counts land tiles with any positive material; totals include offshore deposits. Shared body/component stocks are counted once.
+
+| Material | Previous land coverage | Revised land coverage | Previous mean world total | Revised mean world total | Revised mean accessible |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Copper | 1.375% | 6.50% | 467,885 | 649,982 | 36,782 |
+| Tin | 0.064% | 1.16% | 94,363 | 282,820 | 17,160 |
+| Clay | 32.35% | 32.67% | 4.089B | 4.089B | 4.089B |
+| Stone | 83.93% | 83.93% | 11.494B | 11.494B | 11.494B |
+| Wood | 94.04% | 94.04% | 8.732B | 8.732B | 2.183B |
+
+Scattered fields hold **5.97% of copper** and **5.34% of tin** across this sample; deposits/placers retain the rest. For the three displayed seeds (11/42/1729), positive scattered tile medians are **2.74 copper** and **6.54 tin** units; P95 is 13.04/18.20. Rich local concentrations reach thousands of units. Clay's small increase is an associated component of scattered lithium-clay profiles, not changed surface generation. Quantities remain abstract tuning, not physical ore-grade measurements or validated economic throughput.
+
+- **77 focused geology assertions pass**, including district extent, low local quantities, eligible land-only solids, independent scatter toggles, source-conserved connected placer reaches, rich/poor contrast, concentrated cores, version-1 byte compatibility and rejection of future resource generators. Existing base-state, observation, deterministic profile-order and profile-toggle checks still pass.
+- The full regression passes the core suite, resource fixtures, scalar/2/4-worker replay over **12 resolutions**, **30 Small seeds / 120 survivors / zero starvation deaths or illegal orders**, a Standard/80 opening/save/load, and **36 geography worlds**. Eighteen additional small resource audits and the **2048×1024 Archipelagos/42/80** audit pass; the latter uses 25.63 MiB packed resource data, 918.40 MiB collected heap and a 230,773,224-byte round-tripping save.
+- Two real original version-1 **Continents/42 and /1729** saves round-trip with identical resource fingerprints. Comparing them against the newly exported version-2 worlds confirms identical original geography, ecology, camp/herd state, IDs and gameplay fingerprint. Four exports (those two plus Archipelagos/42 and Pangaea/42) retain **20/20 byte-identical environment/elevation/volcanism/food/freshwater PNGs**. Resource maps and before/after Continents comparisons were inspected.
+- **24/24 Unity EditMode tests pass**. The separate `Builds/GeologicalResources` Windows build succeeds. The actual Standard/Archipelagos/42/80 player captures **78 frames**, including both modes for all 37 materials, the selector, rich/scattered Copper close-ups and normal fog. Fingerprint and 19 observed tiles remain unchanged. Inspected captures show a 2.4-unit scattered copper tile and a 4,146-unit rich tile, with source type, burial and accessibility displayed. This is automated real-player rendering and image inspection, not a new physical-input usability test. No normal save slot was used.
+
+Evidence is ignored under `TestResults/ResourceDistributionV2`: `distribution.json`, `distribution.csv`, the before/after PNGs and `report.md`, `regression.log`, `audit.log`, `legacy.log`, `Atlas/`, `EditMode.xml`, `Build.log`, and `Player/`. The original distribution data remains under `TestResults/ResourceDistribution`. The change is on `feature/geological-resource-generation`.
+
 ### World-generator GUI follow-up
 
 - **24/24 Unity EditMode tests pass**, including four resource-preview tests. These cover shared-body/component mass accounting, saved access fractions and local exposure, Wood's 25% share, unchanged fingerprints/observations across every active material, explicit legacy absence and trace color visibility. A later maximum-value cache optimization compiled in the successful Windows development build and was exercised by the player captures.

@@ -108,7 +108,19 @@ namespace Anthropocene.Simulation
                     int tile = Math.Min(c.Config.Height - 1, (int)(y * c.Config.Height)) * c.Config.Width + Math.Min(c.Config.Width - 1, (int)(x * c.Config.Width));
                     bool marine = c.World.Tiles[tile].WaterBody == WaterKind.Saltwater;
                     if (marine != (domain == 1) || !profile.Eligible(c.World, tile)) continue;
+                    bool varied = HasScatteredOccurrences(profile.Id);
+                    if (varied && !marine && GeologicalProvinceStage.Roll(seed, 230, semantic) < .18 * c.ResourceOptions.Density * c.ResourceOptions.ScatteredDensity)
+                    {
+                        var scattered = Sites(c, profile, tile, semantic, true);
+                        // A broad mineralized district holds sparse, small occurrences, not one giant ore body.
+                        double stock = Math.Min(r.MaximumQuantity * (.01 + .07 * GeologicalProvinceStage.Roll(seed, 231, semantic)), scattered.Length * r.MaximumQuantity / 1000.0);
+                        bodies.Add(new DepositBody { Id = 1000000000L + (long)profile.Id * 1000000 + key + 1, Profile = profile.Id, OriginTile = tile,
+                            InitialQuantity = stock, Quantity = stock, Shape = DepositShape.Field, Concentration = MineralConcentration.Scattered,
+                            Hardness = 1, Quality = 15, Components = profile.Composition.ToArray(), Sites = scattered });
+                    }
                     double chance = profile.Id == 36 ? .025 : profile.Shape == DepositShape.Bed ? .13 : .085;
+                    if (profile.Id == 1 || profile.Id == 2) chance *= 1.6;
+                    else if (profile.Id == 3) chance *= 2.5;
                     if (GeologicalProvinceStage.Roll(seed, 203, semantic) >= chance * c.ResourceOptions.Density) continue;
                     var sites = Sites(c, profile, tile, semantic); if (sites.Length == 0) continue;
                     double grade = .65 + .35 * GeologicalProvinceStage.Roll(seed, 204, semantic);
@@ -127,11 +139,14 @@ namespace Anthropocene.Simulation
             }
             r.Bodies = bodies.OrderBy(b => b.Id).ToArray();
         }
-        private static DepositSite[] Sites(GenerationContext c, GeologicalProfile profile, int origin, int key)
+        public static bool HasScatteredOccurrences(int profile) => profile >= 1 && profile <= 12 || profile >= 20 && profile <= 31 && profile != 24;
+        private static DepositSite[] Sites(GenerationContext c, GeologicalProfile profile, int origin, int key, bool scattered = false)
         {
             int width = c.Config.Width, height = c.Config.Height;
             double radius = profile.Shape == DepositShape.Reservoir || profile.Shape == DepositShape.Field || profile.Shape == DepositShape.Bed ? .012 : .006;
+            if (scattered) radius = .035;
             double rx = radius * (1 + GeologicalProvinceStage.Roll(c.World.Seed, 210, key)), ry = profile.Shape == DepositShape.Vein ? radius * .25 : radius * .8;
+            if (scattered) ry = radius * .65;
             int province = c.World.Resources.Province[origin];
             double angle = (province > 0 ? c.World.Resources.Provinces[province - 1].Angle : Math.PI * GeologicalProvinceStage.Roll(c.World.Seed, 213, key)) + .5 * (GeologicalProvinceStage.Roll(c.World.Seed, 214, key) - .5);
             double cos = Math.Cos(angle), sin = Math.Sin(angle), bound = Math.Max(rx, ry) * 1.15;
@@ -144,9 +159,11 @@ namespace Anthropocene.Simulation
                 double a = (dx * cos + dy * sin) / rx, b = (-dx * sin + dy * cos) / ry;
                 double edge = 1 + .18 * TerrainNoise.Fractal(c.World.Seed, 12250, (x % width + width) % width / (double)width, y / (double)height, 128, 2);
                 if ((tile != origin && a * a + b * b > edge) || !profile.Eligible(c.World, tile)) continue;
+                if (scattered && (!c.World.Tiles[tile].Land || tile != origin && GeologicalProvinceStage.Roll(c.World.Seed, 232, key, tile) >= .04 + .18 * Math.Max(0, 1 - a * a - b * b))) continue;
                 bool buried = profile.Shape == DepositShape.Reservoir || profile.Shape == DepositShape.Seam;
                 double cover = GeologicalProvinceStage.Roll(c.World.Seed, 211, key) + (c.World.Tiles[origin].Elevation - c.World.Tiles[tile].Elevation) * 3;
                 var depth = buried ? (cover < .65 ? BurialDepth.Deep : BurialDepth.Shallow) : cover < .4 ? BurialDepth.Surface : BurialDepth.Shallow;
+                if (scattered) depth = BurialDepth.Surface;
                 if (profile.Id == 33 || profile.Id == 34) depth = BurialDepth.Surface;
                 // Access is a fraction of local material, not discovery permission or equipment authorization.
                 sites.Add(new DepositSite { Tile = tile, Burial = depth, Setting = (MarineSetting)c.World.Resources.Marine[tile], Exposure = (ushort)(depth == BurialDepth.Surface ? 10000 : depth == BurialDepth.Shallow ? 2000 : 200) });
@@ -154,9 +171,27 @@ namespace Anthropocene.Simulation
             // Keep only the connected piece containing the origin after geological clipping.
             var available = new HashSet<int>(sites.Select(s => s.Tile)); var connected = new HashSet<int> { origin }; var queue = new Queue<int>(); queue.Enqueue(origin);
             while (queue.Count > 0) foreach (int n in c.Map.Neighbors(queue.Dequeue())) if (available.Contains(n) && connected.Add(n)) queue.Enqueue(n);
-            sites = sites.Where(s => connected.Contains(s.Tile)).OrderBy(s => s.Tile).ToList();
-            for (int i = 0; i < sites.Count; i++) { var s = sites[i]; s.Share = (ushort)(10000 / sites.Count + (i < 10000 % sites.Count ? 1 : 0)); sites[i] = s; }
+            sites = sites.Where(s => scattered || connected.Contains(s.Tile)).OrderBy(s => s.Tile).ToList();
+            var weights = sites.Select(s => {
+                if (scattered || !HasScatteredOccurrences(profile.Id)) return 1.0;
+                double dx = TerrainNoise.LongitudeDelta(s.Tile % width / (double)width, ox / (double)width), dy = (s.Tile / width - oy) / (double)height;
+                double a = (dx * cos + dy * sin) / rx, b = (-dx * sin + dy * cos) / ry;
+                return .025 + Math.Exp(-9 * (a * a + b * b));
+            }).ToArray();
+            AssignShares(sites, weights);
             return sites.ToArray();
+        }
+        internal static void AssignShares(List<DepositSite> sites, double[] weights)
+        {
+            double sum = weights.Sum(); int remaining = 10000 - sites.Count, assigned = 0;
+            var fractions = new double[sites.Count];
+            for (int i = 0; i < sites.Count; i++)
+            {
+                double exact = weights[i] / sum * remaining; int share = 1 + (int)Math.Floor(exact);
+                var site = sites[i]; site.Share = (ushort)share; sites[i] = site; assigned += share; fractions[i] = exact - Math.Floor(exact);
+            }
+            foreach (int i in Enumerable.Range(0, sites.Count).OrderByDescending(i => fractions[i]).ThenBy(i => sites[i].Tile).Take(10000 - assigned))
+            { var site = sites[i]; site.Share++; sites[i] = site; }
         }
     }
     public sealed class SurfaceMaterialStage : IWorldGenerationStage
@@ -189,7 +224,7 @@ namespace Anthropocene.Simulation
         private static void AddPlacers(GenerationContext c)
         {
             var r = c.World.Resources; var result = r.Bodies.ToList(); var map = c.Map;
-            foreach (var source in r.Bodies.Where(b => b.Profile == 3 || b.Profile == 7 || b.Profile == 31 || b.Profile == 26).OrderBy(b => b.Id))
+            foreach (var source in r.Bodies.Where(b => b.Concentration == MineralConcentration.Deposit && (b.Profile == 3 || b.Profile == 7 || b.Profile == 31 || b.Profile == 26)).OrderBy(b => b.Id))
             {
                 var path = new List<int> { source.OriginTile }; int current = source.OriginTile;
                 // The drainage graph is acyclic; no river-edge substitutions or material replication.
@@ -214,8 +249,10 @@ namespace Anthropocene.Simulation
                 if (path.Count < 2 || c.World.Tiles[current].Environment == EnvironmentKind.Lake) continue;
                 double mass = source.InitialQuantity * (.05 + .10 * GeologicalProvinceStage.Roll(c.World.Seed, 307, (int)source.Id));
                 source.Quantity -= mass;
+                var placerSites = path.Skip(Math.Max(1, path.Count - 6)).Select(id => new DepositSite { Tile = id, Exposure = 10000, Burial = BurialDepth.Surface, Setting = (MarineSetting)r.Marine[id] }).ToList();
+                MineralDepositStage.AssignShares(placerSites, Enumerable.Range(1, placerSites.Count).Select(i => (double)i).ToArray());
                 result.Add(new DepositBody { Id = 10000000000L + source.Id, SourceBody = source.Id, Profile = 100, OriginTile = current, InitialQuantity = mass, Quantity = mass, Shape = DepositShape.Bed, Hardness = 1, Quality = source.Quality,
-                    Components = (DepositComponent[])source.Components.Clone(), TransportPath = path.ToArray(), Sites = new[] { new DepositSite { Tile = current, Share = 10000, Exposure = 10000, Burial = BurialDepth.Surface, Setting = (MarineSetting)r.Marine[current] } } });
+                    Components = (DepositComponent[])source.Components.Clone(), TransportPath = path.ToArray(), Sites = placerSites.ToArray() });
             }
             r.Bodies = result.OrderBy(b => b.Id).ToArray();
         }

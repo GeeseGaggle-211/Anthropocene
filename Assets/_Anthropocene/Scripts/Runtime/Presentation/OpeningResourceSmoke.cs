@@ -35,6 +35,10 @@ namespace Anthropocene.Presentation
             previewResourcePicker = true;
             yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "selector.png")); frames++; yield return new WaitForSeconds(.3f);
             previewResourcePicker = false;
+            previewTile = world.Resources.Bodies.Where(b => b.Concentration == MineralConcentration.Scattered && world.Resources.ComponentQuantity(b, MaterialId.Copper) > 0)
+                .SelectMany(b => b.Sites).Select(s => s.Tile).OrderBy(t => previewResourceValues[t]).First();
+            previewZoom = 12; previewPan = Vector2.zero;
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "copper-scattered.png")); frames++; yield return new WaitForSeconds(.3f);
             if (SaveCodec.Fingerprint(world) != before || observation.Tiles.Count != visible) throw new InvalidOperationException("Resource preview changed world state or fog.");
             previewOpen = false;
             yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "normal-fog.png")); frames++; yield return new WaitForSeconds(1);
