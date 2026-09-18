@@ -6,6 +6,15 @@ Current production tuning now allocates food to current-population consumption, 
 
 ## Geological resource generation — September 18
 
+### World-generator GUI follow-up
+
+- **24/24 Unity EditMode tests pass**, including four resource-preview tests. These cover shared-body/component mass accounting, saved access fractions and local exposure, Wood's 25% share, unchanged fingerprints/observations across every active material, explicit legacy absence and trace color visibility. A later maximum-value cache optimization compiled in the successful Windows development build and was exercised by the player captures.
+- **Build Finished, Result: Success.** The actual player generated **Standard / Archipelagos / 42 / 80** and captured every one of the 37 active materials in total and accessible modes, plus a Copper close-up, material picker and normal fog: **77 PNGs**. Authoritative fingerprint and **19 observed tiles** remained unchanged. No user save slot was used. The player log has no managed exceptions.
+- Inspected actual GUI captures include the complete selector, Copper deposit/zoom, Wood accessibility/renewal metadata, offshore Petroleum with overlapping shared reservoirs, Stone at 100,000 units, an absent Nitrate layer and normal fog. Labels and inspector content fit the captured 1600×1000 player. This is automated UI execution and rendered-image inspection. The native-control tool timed out waiting for app access, so physical mouse/keyboard interaction was not verified; no workaround was used. The resource smoke route leaves the preview open for interaction.
+- Evidence is ignored under `TestResults/ResourceGUI`: `EditMode.xml`, `EditMode.log`, `Build.log`, `Player.log`, and `Player/result.txt` with its captures. The source work remains on `feature/geological-resource-generation`; main is unchanged.
+
+### Generation and exported-map checks
+
 The world-generation-only implementation is on `feature/geological-resource-generation`; the underlying checkout baseline is `e472cf7`. See [GeologicalResources.md](GeologicalResources.md) for units, compatibility and limitations.
 
 - **63 new focused geology assertions pass** on the final source: original state/IDs and observations unchanged with the overlay enabled, repeat/profile-order determinism, offshore profile isolation, connected footprints, source mass conservation, technology gates, shared coast-crossing reservoirs, independent water/burial depth, barren ocean, distinct seabed profiles, new/legacy saves, retained depleted stocks/access tuning, continuation and future-schema rejection.

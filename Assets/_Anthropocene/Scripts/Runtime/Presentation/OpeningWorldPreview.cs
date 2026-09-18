@@ -12,7 +12,7 @@ namespace Anthropocene.Presentation
         private Texture2D previewTexture;
         private float previewZoom = 1;
         private Vector2 previewPan, menuScroll, previewScroll;
-        private readonly string[] previewLayers = { "Environment", "Renewable food", "Freshwater renewal", "Elevation", "Volcanic activity" };
+        private readonly string[] previewLayers = { "Environment", "Renewable food", "Freshwater renewal", "Elevation", "Volcanic activity", "Resources" };
 
         private void Menu()
         {
@@ -56,6 +56,7 @@ namespace Anthropocene.Presentation
         {
             if (previewTexture != null) Destroy(previewTexture);
             previewTexture = null; previewTile = -1; previewPan = Vector2.zero; previewZoom = 1;
+            previewResourceValues = null; previewResourcePicker = false;
         }
         private static Color EnvironmentColor(Tile t)
         {
@@ -76,6 +77,11 @@ namespace Anthropocene.Presentation
         {
             // Explicit, on-demand dev read of a committed world. No observations or ecology are mutated.
             var colors = new Color32[world.Tiles.Length]; int width = world.Config.Width, height = world.Config.Height;
+            if (previewLayer == 5)
+            {
+                previewResourceValues = WorldResourcePreview.Values(world, previewMaterial, previewAccessible);
+                previewResourceMaximum = previewResourceValues.Max();
+            }
             foreach (var t in world.Tiles)
             {
                 Color color = EnvironmentColor(t);
@@ -92,6 +98,7 @@ namespace Anthropocene.Presentation
                         : Color.Lerp(new Color(.23f, .40f, .25f), new Color(.94f, .91f, .83f), Mathf.Clamp01(altitude / .38f));
                 }
                 else if (previewLayer == 4) color = Color.Lerp(color * .45f, new Color(1, .29f, .09f), Mathf.Clamp01(t.Volcanism * 5));
+                else if (previewLayer == 5) color = WorldResourcePreview.ColorFor(previewResourceValues[t.Id], color);
                 colors[(height - 1 - t.Id / width) * width + t.Id % width] = color;
             }
             previewTexture = new Texture2D(width, height, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
@@ -105,14 +112,18 @@ namespace Anthropocene.Presentation
             // OnGUI routes here only after generation/resolution guards. There are no orders in this view.
             if (previewTexture == null) BuildPreviewTexture();
             float side = Mathf.Min(350, Screen.width * .34f);
+            GUI.enabled = !previewResourcePicker;
             GUI.Label(new Rect(20, 12, Screen.width - 230, 36), "WORLD PREVIEW · DEV / ALL TILES REVEALED", title);
             if (Button(new Rect(Screen.width - 200, 12, 180, 34), "PLAY CURRENT START", true)) { previewOpen = false; menu = false; }
-            float layerWidth = Mathf.Min(185, (Screen.width - 40) / 5f);
+            GUI.enabled = !previewResourcePicker;
+            float layerWidth = Mathf.Min(185, (Screen.width - 40) / (float)previewLayers.Length);
             for (int i = 0; i < previewLayers.Length; i++)
                 if (Button(new Rect(20 + i * layerWidth, 58, layerWidth - 6, 32), previewLayers[i], previewLayer == i)) { previewLayer = i; Destroy(previewTexture); previewTexture = null; }
-            if (Button(new Rect(20, 100, 215, 30), previewSeason < 0 ? "Season: annual mean" : "Season: " + (previewSeason + 1))) { previewSeason = previewSeason == 3 ? -1 : previewSeason + 1; Destroy(previewTexture); previewTexture = null; }
-            if (Button(new Rect(243, 100, 140, 30), "Fit world")) { previewZoom = 1; previewPan = Vector2.zero; }
-            if (Button(new Rect(391, 100, 163, 30), "Find my camp"))
+            if (previewLayer == 5) DrawResourceControls();
+            else if (Button(new Rect(20, 100, 215, 30), previewSeason < 0 ? "Season: annual mean" : "Season: " + (previewSeason + 1))) { previewSeason = previewSeason == 3 ? -1 : previewSeason + 1; Destroy(previewTexture); previewTexture = null; }
+            float controlsX = previewLayer == 5 ? 456 : 243;
+            if (Button(new Rect(controlsX, 100, 110, 30), "Fit world")) { previewZoom = 1; previewPan = Vector2.zero; }
+            if (Button(new Rect(controlsX + 118, 100, 150, 30), "Find my camp"))
             {
                 previewTile = world.Camps.First(c => c.Player == 0).Tile; previewZoom = 12; previewPan = Vector2.zero;
             }
@@ -138,7 +149,7 @@ namespace Anthropocene.Presentation
                     GUI.Label(new Rect(p.x - 8, p.y - 8, 16, 16), i.ToString(), badge);
                 }
             var evt = Event.current; Vector2 mouse = evt.mousePosition;
-            if (new Rect(0, 0, area.width, area.height).Contains(mouse))
+            if (!previewResourcePicker && new Rect(0, 0, area.width, area.height).Contains(mouse))
             {
                 if (evt.type == EventType.ScrollWheel)
                 {
@@ -156,10 +167,13 @@ namespace Anthropocene.Presentation
             GUI.EndGroup();
             GUI.Label(new Rect(20, Screen.height - 30, area.width, 26), "Wheel: zoom · Drag: pan · Click: inspect · Rectangular atlas of axial rows", small);
             DrawPreviewDetails(new Rect(Screen.width - side, 146, side - 16, Screen.height - 158));
+            GUI.enabled = true;
+            if (previewResourcePicker) DrawResourcePicker();
         }
 
         private void DrawPreviewDetails(Rect area)
         {
+            if (previewLayer == 5) { DrawResourceDetails(area); return; }
             Fill(area, Panel); GUI.BeginGroup(area);
             previewScroll = GUI.BeginScrollView(new Rect(0, 0, area.width, area.height), previewScroll, new Rect(0, 0, area.width - 20, 1060));
             float w = area.width - 40, y = 12;

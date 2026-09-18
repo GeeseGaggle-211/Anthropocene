@@ -17,6 +17,8 @@ namespace Anthropocene.Presentation
             var args = System.Environment.GetCommandLineArgs(); int option = Array.IndexOf(args, "--anthropocene-smoke-output");
             int presets = Array.IndexOf(args, "--anthropocene-presets-output");
             int atlas = Array.IndexOf(args, "--anthropocene-atlas-output");
+            int resources = Array.IndexOf(args, "--anthropocene-resources-output");
+            if (resources >= 0 && resources + 1 < args.Length) { yield return ResourceSmoke(args[resources + 1]); yield break; }
             if (atlas >= 0 && atlas + 1 < args.Length) { yield return AtlasSmoke(args[atlas + 1]); yield break; }
             if (presets >= 0 && presets + 1 < args.Length) { yield return PresetSmoke(args[presets + 1]); yield break; }
             if (option < 0 || option + 1 >= args.Length) yield break;
@@ -89,8 +91,8 @@ namespace Anthropocene.Presentation
             EndTurn(); while (resolving != null) yield return null;
             if (world.Turn != 2) throw new InvalidOperationException("Archipelago opening could not resolve: " + status);
             yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "turn-2.png")); yield return new WaitForSeconds(1);
-            if (Directory.GetFiles(output, "*.png").Length != 7) throw new InvalidOperationException("Missing archipelago screenshots; use a visible player window.");
-            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS Standard / Archipelagos / 42 / 80 tribes / generator " + world.Generation.GeneratorVersion + ": five preview layers, unchanged authoritative fingerprint and fog (" + visible + " observed tiles), normal play and turn 2 population " + world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) + ". Seven frames captured from the actual Windows player. No user save slot used.\n");
+            if (Directory.GetFiles(output, "*.png").Length != previewLayers.Length + 2) throw new InvalidOperationException("Missing archipelago screenshots; use a visible player window.");
+            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS Standard / Archipelagos / 42 / 80 tribes / generator " + world.Generation.GeneratorVersion + ": " + previewLayers.Length + " preview layers, unchanged authoritative fingerprint and fog (" + visible + " observed tiles), normal play and turn 2 population " + world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) + ". Actual Windows player captures. No user save slot used.\n");
             Application.Quit();
         }
 
@@ -128,7 +130,7 @@ namespace Anthropocene.Presentation
                 report.AppendLine("PASS " + PlaytestScenarios.Names[preset] + ": all preview layers, local zoom, normal fog (" + visible + " observed tiles), unchanged preview fingerprint, turn 2 population " + world.LinkedPopulation(world.Camps.First(c => c.Player == 0)));
             }
             yield return new WaitForSeconds(1);
-            if (Directory.GetFiles(output, "*.png").Length != 24) throw new InvalidOperationException("Missing preset screenshots.");
+            if (Directory.GetFiles(output, "*.png").Length != 3 * (previewLayers.Length + 3)) throw new InvalidOperationException("Missing preset screenshots.");
             File.WriteAllText(Path.Combine(output, "result.txt"), report.ToString()); Application.Quit();
         }
     }

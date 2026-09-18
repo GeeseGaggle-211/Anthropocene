@@ -49,6 +49,12 @@ Material discovery requirements are stable string capability identifiers, separa
 
 ## Maps, audits and reproduction
 
+In the Windows player, choose **BUILD WORLD PREVIEW (DEV)** (or preview the current world), then **Resources**. Select any of the 37 active materials and toggle **Total quantity / Human accessible**. The map uses a fixed logarithmic scale to 100,000, with dim terrain for absence and teal for trace quantities. **Find largest stock**, Fit world, camp centering, wheel zoom, dragging and tile inspection work on this layer. The inspector explains saved discovery/access requirements, host rock, shared deposit reserves, burial/exposure, and Wood capacity/recovery metadata. Reserved catalog entries are excluded. Older worlds without resources are explicitly labelled as having no layer.
+
+`WorldResourcePreview` computes pure per-tile quantities; `OpeningResourcePreview` supplies the controls and inspector. A body's component quantity is distributed by site share, never copied in full to every tile. The accessible view additionally applies local exposure and saved material accessibility. The developer atlas reveals all eras without changing player knowledge. Texture/value caches are rebuilt on selection, not every frame.
+
+The opt-in development-player argument `--anthropocene-resources-output <fresh-absolute-directory>` captures both modes for every material, a deposit close-up, the selector and normal fog, then verifies the unchanged world fingerprint and observed-tile count. It leaves the atlas open for interactive checks and does not use the normal save slot.
+
 The atlas exports actual state to `geology.html`, `geology.json` and PNGs. The map selector covers host rock, provinces, marine settings, deposit profiles, burial, exposure, source paths, total/accessibility for every active material, and Wood renewal potential. All material heatmaps use a fixed logarithmic 0–100,000 scale. A blank layer is valid. `geology.json` records per-profile counts/absence reasons, shared-body summaries and start opportunities. Per-start radius-one quantities and radius-two traversable opportunities are **developer diagnostics**, not known supply or validated delivery throughput.
 
 ```powershell
