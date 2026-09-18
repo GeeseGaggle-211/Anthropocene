@@ -11,6 +11,7 @@ namespace Anthropocene.Simulation
         {
             writer.Write(r.Version); writer.Write(r.GenerationVersion); writer.Write(r.CoreGeneratorVersion); writer.Write(r.CatalogHash); writer.Write(r.ProfileHash); writer.Write(r.ConfigurationHash);
             writer.Write(r.MaximumQuantity); writer.Write(r.WoodRecoveryPerYear);
+            if (r.Version >= 3) writer.Write(r.SurfaceUnit);
             writer.Write(r.AccessibleParts.Length);
             for (int i = 0; i < r.AccessibleParts.Length; i++) { writer.Write(r.AccessibleParts[i]); writer.Write(r.DiscoveryTechnologies[i] ?? ""); }
             writer.Write(r.Provinces.Length);
@@ -41,6 +42,7 @@ namespace Anthropocene.Simulation
             if (r.Version < 1 || r.Version > WorldResourceState.CurrentVersion) throw new InvalidDataException("Unsupported resource schema; regeneration is never implicit.");
             r.CatalogHash = Identity(reader); r.ProfileHash = Identity(reader); r.ConfigurationHash = Identity(reader);
             r.MaximumQuantity = reader.ReadInt32(); r.WoodRecoveryPerYear = reader.ReadDouble();
+            r.SurfaceUnit = r.Version >= 3 ? reader.ReadInt32() : WorldResourceState.LegacySurfaceUnit;
             int materials = Count(reader, 69); if (materials != 69) throw new InvalidDataException("Invalid saved material catalog size.");
             r.AccessibleParts = new ushort[materials]; r.DiscoveryTechnologies = new string[materials];
             for (int i = 0; i < materials; i++) { r.AccessibleParts[i] = reader.ReadUInt16(); r.DiscoveryTechnologies[i] = reader.ReadString(); if (r.DiscoveryTechnologies[i].Length > 128) throw new InvalidDataException("Invalid discovery capability."); }

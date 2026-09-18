@@ -18,7 +18,7 @@ namespace Anthropocene.Simulation
         // Historical generator-2 defaults must retain their original configuration identity.
         private const string LegacyTuningStamp = "144:0.12:0.045:0.055:0.06:0.1:0.7:0.7:0.7:0.6:0.35:0.45:0.7:0.7:0.6:0.5:0.5:0.4|0.085:0.13:0.025:1.6:2.5:0.18:0.01:0.07:1000:0.012:0.006:0.035:0.25:0.8:0.65:0.04:0.18:0.025:9:0.55:0.45|0.55:0.45:0.45:0.88:0.28:0.02:0.27:0.18:0.45:0.55:1:0.55:0.05:0.8:0.2|0.05:0.1:6:3";
         public bool Enabled = true;
-        public int MaximumQuantity = ResourceCatalog.MaximumQuantity;
+        public int MaximumQuantity = ResourceCatalog.DefaultMaximumQuantity;
         public double Density = 1, ScatteredDensity = 1, WoodRecoveryPerYear = .05;
         public int[] DisabledProfiles = Array.Empty<int>();
         public ProvinceTuning Province = new ProvinceTuning();
@@ -27,7 +27,7 @@ namespace Anthropocene.Simulation
         public PlacerTuning Placer = new PlacerTuning();
         public void Validate()
         {
-            if (MaximumQuantity < 1000 || MaximumQuantity > ResourceCatalog.MaximumQuantity || !Finite(Density) || Density < 0 || Density > 4 || !Finite(ScatteredDensity) || ScatteredDensity < 0 || ScatteredDensity > 4 || !Finite(WoodRecoveryPerYear) || WoodRecoveryPerYear < 0 || WoodRecoveryPerYear > 1 || DisabledProfiles == null || DisabledProfiles.Any(id => !GeologicalProfiles.All.Any(p => p.Id == id)) || Province == null || Deposit == null || Surface == null || Placer == null)
+            if (MaximumQuantity < 1000 || !Finite(Density) || Density < 0 || Density > 4 || !Finite(ScatteredDensity) || ScatteredDensity < 0 || ScatteredDensity > 4 || !Finite(WoodRecoveryPerYear) || WoodRecoveryPerYear < 0 || WoodRecoveryPerYear > 1 || DisabledProfiles == null || DisabledProfiles.Any(id => !GeologicalProfiles.All.Any(p => p.Id == id)) || Province == null || Deposit == null || Surface == null || Placer == null)
                 throw new ArgumentException("Invalid resource-generation options.");
             Province.Validate(); Deposit.Validate(); Surface.Validate(); Placer.Validate();
         }
@@ -82,7 +82,9 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldResourceState
     {
-        public const int CurrentVersion = 2, CurrentGenerationVersion = 2;
+        public const int CurrentVersion = 3, CurrentGenerationVersion = 2;
+        // Schema 1/2 used ten-unit surface stocks and rejected maxima above 100,000.
+        public const int LegacyMaximumQuantity = 100000, LegacySurfaceUnit = 10;
         public int Version = CurrentVersion, GenerationVersion = CurrentGenerationVersion, CoreGeneratorVersion = WorldState.GeneratorVersion;
         public string CatalogHash, ConfigurationHash, ProfileHash;
         public int MaximumQuantity;
@@ -94,9 +96,10 @@ namespace Anthropocene.Simulation
         public ushort[] Province, History, Stone, Clay, Wood;
         public byte[] Host, Marine;
         public DepositBody[] Bodies = Array.Empty<DepositBody>();
-        // Surface stocks are stored in ten-unit increments; 10,000 means 100,000 units.
-        public const int SurfaceUnit = 10;
-        public double SurfaceTotal(int tile, MaterialId material) => SurfaceUnit * (material == MaterialId.Stone ? Stone[tile] : material == MaterialId.Clay ? Clay[tile] : material == MaterialId.Wood ? Wood[tile] : 0);
+        // Scale the compact raster, not its memory footprint, for large configured stocks.
+        public int SurfaceUnit = LegacySurfaceUnit;
+        public static int SurfaceUnitFor(int maximum) => Math.Max(LegacySurfaceUnit, (int)Math.Ceiling(maximum / (double)ushort.MaxValue));
+        public double SurfaceTotal(int tile, MaterialId material) => (double)SurfaceUnit * (material == MaterialId.Stone ? Stone[tile] : material == MaterialId.Clay ? Clay[tile] : material == MaterialId.Wood ? Wood[tile] : 0);
         public double AccessibleFraction(MaterialId material) => AccessibleParts[(int)material] / 10000.0;
         public double SurfaceAccessible(int tile, MaterialId material) => SurfaceTotal(tile, material) * AccessibleFraction(material);
         public double ComponentQuantity(DepositBody body, MaterialId material) => body.Quantity * body.Components.Where(c => c.Material == material).Sum(c => (int)c.PartsPerTenThousand) / 10000;
@@ -109,8 +112,10 @@ namespace Anthropocene.Simulation
         {
             var r = w.Resources; if (r == null) return;
             int count = w.Tiles.Length;
+            if (r.SurfaceUnit != WorldResourceState.SurfaceUnitFor(r.MaximumQuantity) || r.Version < 3 && (r.MaximumQuantity > WorldResourceState.LegacyMaximumQuantity || r.SurfaceUnit != WorldResourceState.LegacySurfaceUnit))
+                throw new InvalidOperationException("Invalid resource quantity encoding.");
             if (r.GenerationVersion < 1 || r.GenerationVersion > WorldResourceState.CurrentGenerationVersion) throw new InvalidOperationException("Unsupported resource generator.");
-            if ((r.Version < 1 || r.Version > WorldResourceState.CurrentVersion) || r.CoreGeneratorVersion < 7 || r.CoreGeneratorVersion > WorldState.GeneratorVersion || r.MaximumQuantity < 1000 || r.MaximumQuantity > ResourceCatalog.MaximumQuantity || !ResourceGenerationOptions.Finite(r.WoodRecoveryPerYear) || r.WoodRecoveryPerYear < 0 || r.WoodRecoveryPerYear > 1 || string.IsNullOrEmpty(r.CatalogHash) || string.IsNullOrEmpty(r.ProfileHash) || string.IsNullOrEmpty(r.ConfigurationHash)) throw new InvalidOperationException("Invalid resource metadata.");
+            if ((r.Version < 1 || r.Version > WorldResourceState.CurrentVersion) || r.CoreGeneratorVersion < 7 || r.CoreGeneratorVersion > WorldState.GeneratorVersion || r.MaximumQuantity < 1000 || !ResourceGenerationOptions.Finite(r.WoodRecoveryPerYear) || r.WoodRecoveryPerYear < 0 || r.WoodRecoveryPerYear > 1 || string.IsNullOrEmpty(r.CatalogHash) || string.IsNullOrEmpty(r.ProfileHash) || string.IsNullOrEmpty(r.ConfigurationHash)) throw new InvalidOperationException("Invalid resource metadata.");
             if (r.Provinces == null || r.Provinces.Length > ushort.MaxValue || r.Bodies == null || r.Province?.Length != count || r.History?.Length != count || r.Host?.Length != count || r.Marine?.Length != count || r.Stone?.Length != count || r.Clay?.Length != count || r.Wood?.Length != count) throw new InvalidOperationException("Invalid resource raster dimensions.");
             if (r.AccessibleParts?.Length != 69 || r.DiscoveryTechnologies?.Length != 69 || r.AccessibleParts.Any(v => v > 10000) || ResourceCatalog.Materials.Any(m => r.DiscoveryTechnologies[(int)m.Id] == null)) throw new InvalidOperationException("Invalid saved material catalog.");
             for (int i = 0; i < r.Provinces.Length; i++)
@@ -120,7 +125,7 @@ namespace Anthropocene.Simulation
             }
             for (int i = 0; i < count; i++)
             {
-                if (r.Province[i] > r.Provinces.Length || r.Host[i] > (byte)HostRock.Alkaline || r.Marine[i] > (byte)MarineSetting.HydrothermalRidge || r.Stone[i] * 10 > r.MaximumQuantity || r.Clay[i] * 10 > r.MaximumQuantity || r.Wood[i] * 10 > r.MaximumQuantity || (!w.Tiles[i].Land && (r.Stone[i] != 0 || r.Clay[i] != 0 || r.Wood[i] != 0))) throw new InvalidOperationException("Invalid resource tile " + i);
+                if (r.Province[i] > r.Provinces.Length || r.Host[i] > (byte)HostRock.Alkaline || r.Marine[i] > (byte)MarineSetting.HydrothermalRidge || r.Stone[i] * (double)r.SurfaceUnit > r.MaximumQuantity || r.Clay[i] * (double)r.SurfaceUnit > r.MaximumQuantity || r.Wood[i] * (double)r.SurfaceUnit > r.MaximumQuantity || (!w.Tiles[i].Land && (r.Stone[i] != 0 || r.Clay[i] != 0 || r.Wood[i] != 0))) throw new InvalidOperationException("Invalid resource tile " + i);
             }
             var ids = new HashSet<long>();
             foreach (var b in r.Bodies)

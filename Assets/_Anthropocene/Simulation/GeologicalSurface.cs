@@ -31,6 +31,6 @@ namespace Anthropocene.Simulation
             }
             if (!c.ResourceOptions.DisabledProfiles.Contains(100)) GeologicalPlacers.AddPlacers(c);
         }
-        private static ushort Pack(WorldResourceState r, double fraction) => (ushort)Math.Min(r.MaximumQuantity / 10, Math.Round(r.MaximumQuantity * fraction / 10));
+        private static ushort Pack(WorldResourceState r, double fraction) => (ushort)Math.Min(r.MaximumQuantity / r.SurfaceUnit, Math.Round(r.MaximumQuantity * fraction / r.SurfaceUnit));
     }
 }

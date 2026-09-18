@@ -29,7 +29,7 @@ namespace Anthropocene.Simulation
     }
     public static class ResourceCatalog
     {
-        public const int Version = 1, MaximumQuantity = 100000;
+        public const int Version = 1, DefaultMaximumQuantity = 100000;
         private static MaterialDefinition M(MaterialId id, string tech, double fraction, bool reserved = false) => new MaterialDefinition(id, tech, fraction, reserved);
         public static readonly IReadOnlyList<MaterialDefinition> Materials = Array.AsReadOnly(new[] {
             M(MaterialId.Stone, "", 1), M(MaterialId.Clay, "", 1), M(MaterialId.Wood, "", .25),

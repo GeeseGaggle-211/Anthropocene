@@ -101,13 +101,29 @@ namespace Anthropocene.Presentation
             var config = new SimulationConfig();
             var tuning = Resources.Load<TextAsset>("OpeningConfig");
             if (tuning != null) JsonUtility.FromJsonOverwrite(tuning.text, config);
+            var resourceOptions = new ResourceGenerationOptions();
+            try
+            {
+                var resourceTuning = Resources.Load<TextAsset>("ResourceGenerationConfig");
+                if (resourceTuning != null) JsonUtility.FromJsonOverwrite(resourceTuning.text, resourceOptions);
+                var args = System.Environment.GetCommandLineArgs();
+                int option = Array.IndexOf(args, "--anthropocene-resource-maximum");
+                if (option >= 0)
+                {
+                    if (option + 1 >= args.Length || !int.TryParse(args[option + 1], out int maximum))
+                        throw new ArgumentException("Resource maximum must be a whole number.");
+                    resourceOptions.MaximumQuantity = maximum;
+                }
+                resourceOptions.Validate();
+            }
+            catch (ArgumentException error) { status = error.Message; return; }
             if (sizeIndex == 1) { config.Width = 96; config.Height = 48; config.StartSeparation = 9; }
             if (sizeIndex == 2) { config.Width = 48; config.Height = 24; config.StartSeparation = 6; }
             config.Players = players; config.Shape = (WorldShape)shapeIndex;
             operation = "Building plates, climate, rivers, ecology and viable starts";
             int preset = scenarioIndex;
             if (preset > 0) { PlaytestScenarios.Configure(config); seed = PlaytestScenarios.Seed; }
-            generating = Task.Run(() => { var created = new WorldGenerator().Generate(seed, config); if (preset > 0) PlaytestScenarios.Select(created, preset); return created; });
+            generating = Task.Run(() => { var created = new WorldGenerator().Generate(seed, config, resourceOptions); if (preset > 0) PlaytestScenarios.Select(created, preset); return created; });
         }
         private void CycleWorldSize()
         {

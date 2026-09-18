@@ -19,6 +19,9 @@ namespace Anthropocene.Simulation
             var r = new WorldResourceState { CatalogHash = ResourceCatalog.Hash, ProfileHash = GeologicalProfiles.Hash, ConfigurationHash = options.Hash, MaximumQuantity = options.MaximumQuantity, WoodRecoveryPerYear = options.WoodRecoveryPerYear,
                 Province = new ushort[count], Host = new byte[count], History = new ushort[count], Marine = new byte[count], Stone = new ushort[count], Clay = new ushort[count], Wood = new ushort[count] };
             c.World.Resources = r;
+            // Keep default and older-range worlds byte-compatible with schema 2.
+            r.Version = options.MaximumQuantity <= WorldResourceState.LegacyMaximumQuantity ? 2 : 3;
+            r.SurfaceUnit = WorldResourceState.SurfaceUnitFor(options.MaximumQuantity);
             foreach (var t in c.World.Tiles)
             {
                 bool marine = t.WaterBody == WaterKind.Saltwater;

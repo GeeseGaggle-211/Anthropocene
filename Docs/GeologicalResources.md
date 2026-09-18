@@ -1,10 +1,10 @@
 # Geological resources and diagnostic maps
 
-This is a world-generation overlay, not a Neolithic economy. It implements the additive architecture in the [geological design proposal](https://docs.google.com/document/d/1ZwRBd-Zb2_wCEScVgV8pogeQUClh9oIzqe8LB0GMA8o/edit), with the subsequent user decisions: high stocks capped at **100,000 units**, separate human-accessible percentages, technology-gated material recognition, and renewable Wood with **25% accessibility**. Generation does not add harvesting, cargo, recipes, research, expeditions, trade, or player-map disclosures.
+This is a world-generation overlay, not a Neolithic economy. It implements the additive architecture in the [geological design proposal](https://docs.google.com/document/d/1ZwRBd-Zb2_wCEScVgV8pogeQUClh9oIzqe8LB0GMA8o/edit), with the subsequent user decisions: high stocks with a **tunable per-source cap (100,000 units by default)**, separate human-accessible percentages, technology-gated material recognition, and renewable Wood with **25% accessibility**. Generation does not add harvesting, cargo, recipes, research, expeditions, trade, or player-map disclosures.
 
 ## Pipeline and invariants
 
-`WorldGenerator.CreateStages(placement)` is shared by normal generation and the geography-only atlas. After the existing VegetationResource stage it runs GeologicalProvince → MineralDeposit → SurfaceMaterial, then optional Placement and ResourceAccessAudit. The overlay reads existing physical/ecological fields and writes only `WorldState.Resources`; the audit emits diagnostics. Core terrain generator **11**, world/config **7**, observation schema **7**, food/water placement, camps, herds and `NextId` are unchanged. The separate resource schema and generator are both **2**; existing version-1 resources load and save unchanged.
+`WorldGenerator.CreateStages(placement)` is shared by normal generation and the geography-only atlas. After the existing VegetationResource stage it runs GeologicalProvince → MineralDeposit → SurfaceMaterial, then optional Placement and ResourceAccessAudit. The overlay reads existing physical/ecological fields and writes only `WorldState.Resources`; the audit emits diagnostics. Core terrain generator **11**, world/config **7**, observation schema **7**, food/water placement, camps, herds and `NextId` are unchanged. Resource generator remains **2**. Caps up to 100,000 retain schema **2**; larger caps use schema **3** with a saved surface-stock unit. Existing version-1/2 resources load and save unchanged.
 
 `Generate(seed, config, new ResourceGenerationOptions { Enabled = false })` provides the comparison baseline. `SaveCodec.LegacyFingerprint` compares original authoritative fields without mutating either world. A full fingerprint additionally includes resource state. The normal opening's observations and turn resolver do not consume this new state.
 
@@ -23,21 +23,30 @@ Each nondefault tuning group contributes invariant-culture values to the saved r
 
 ## Quantities and units
 
+Set `MaximumQuantity` in `Assets/_Anthropocene/Resources/ResourceGenerationConfig.json` for newly generated player worlds. It accepts **1,000–2,147,483,647** units per shared body or surface source; the upper bound is the integer representation limit, not a balance target. The file can also override the other generation options and tuning groups. Defaults remain 100,000. The player command line overrides just the cap without rebuilding:
+
+```powershell
+./Builds/GeologicalResources/Anthropocene.exe --anthropocene-resource-maximum 1000000
+./Tools/WorldAtlas/Export-Worlds.ps1 -Seeds '42' -ResourceMaximum 1000000 -Output TestResults/MillionUnitAtlas -Save
+```
+
+Changing this cap scales source quantities and Wood capacity; it does not increase deposit frequency or change accessible percentages. Existing worlds retain their saved cap. Schema 3 persists `SurfaceUnit = max(10, ceil(MaximumQuantity / 65535))`, keeping surface rasters at two bytes per material per tile. At one million, the unit is 16; capacities round to that resolution without exceeding the cap. Default and older worlds keep ten-unit surface encoding and their original resource fingerprints. Deposit reserves remain double precision. This avoids increasing map memory just to raise stock sizes.
+
 | Quantity | Convention |
 | --- | --- |
 | Material unit | Abstract game quantity; not tonnes, cubic metres, or an Earth-area conversion. |
-| Rich deposit host stock | Initially 55–100% of the configured maximum, capped at 100,000 per shared body. Components occupy fractions of that host. Solid mineral deposits have richer cores and poorer margins. |
+| Rich deposit host stock | Initially 55–100% of the configured maximum, capped at the selected maximum per shared body. Components occupy fractions of that host. Solid mineral deposits have richer cores and poorer margins. |
 | Scattered occurrence field | A sparse set of surface occurrences within a broader eligible geological district. One shared 1–8% host budget (up to 8,000 units at defaults), additionally bounded by 100 host units per occurrence before share rounding and material composition. Separate from rich deposits. |
 | Local body allocation | Site shares sum to 100%. A multi-hex reservoir does not repeat its full reserve in every tile. |
 | Secondary stock | 5–15% transferred from one rich primary source, spread along up to six final drainage/coastal-path tiles. The parent loses exactly the host quantity transferred; component proportions are preserved. |
-| Surface Stone/Clay | Up to 100,000 units per present tile source, encoded in ten-unit increments. Local absence is allowed. |
-| Wood capacity | High vegetation: 80,000–100,000; Medium: 44,000–55,000; Low: 4,000–5,000 units of woody brush. Ice and water have none. Lower configured maxima scale these ranges. |
+| Surface Stone/Clay | Up to the configured maximum per present tile source; ten-unit increments at the default cap. Local absence is allowed. |
+| Wood capacity | High vegetation: 80,000–100,000; Medium: 44,000–55,000; Low: 4,000–5,000 units of woody brush. Ice and water have none. Higher or lower configured maxima scale these ranges. |
 | Surface accessibility | Stone 100%, Clay 100%, Wood 25%. |
 | Later materials | Base access generally 10%, then 5%, 2%, 0.5% and 0.1% for successively later families; see the catalog for each material. These are provisional game tuning, not historical extraction measurements. |
 | Deposit accessibility | Component stock × local share × exposed fraction × saved material access fraction. Surface/shallow/deep exposure is 100%/20%/2%. This does not authorize extraction or imply discovery. |
 | Renewal | Minerals are finite. Wood stores a 0.05/year recovery coefficient for future `dW/dt = k(capacity − W)`. The maximum empty-stock annual renewal is `k × capacity`; a full stock has no net growth. No harvest or Wood time integration runs yet. |
 
-Overlapping independent bodies and surface sources may sum above 100,000 at a tile; the cap is per source/body, not per world or aggregate inventory. An ore component is not another full copy of its host quantity. Grade/composition, body size, local allocation and accessibility remain separate.
+Overlapping independent bodies and surface sources may sum above the configured maximum at a tile; the cap is per source/body, not per world or aggregate inventory. An ore component is not another full copy of its host quantity. Grade/composition, body size, local allocation and accessibility remain separate.
 
 Surface capacities are deliberately per playable hex, preserving local opportunities with the existing fixed-hex gathering/movement model. Mineral candidates use a fixed normalized 64 × 32 lattice per profile and land/marine domain; body quantities do not multiply with raster area. Rasterization and shoreline eligibility can change which candidates survive across resolutions. World-total surface capacity therefore grows with map area; it is not an equal-area physical mass estimate.
 
@@ -67,13 +76,13 @@ Material discovery requirements are stable string capability identifiers, separa
 
 ## Maps, audits and reproduction
 
-In the Windows player, choose **BUILD WORLD PREVIEW (DEV)** (or preview the current world), then **Resources**. Select any of the 37 active materials and toggle **Total quantity / Human accessible**. The map uses a fixed logarithmic scale to 100,000, with dim terrain for absence and teal for trace quantities. **Find largest stock**, Fit world, camp centering, wheel zoom, dragging and tile inspection work on this layer. The inspector explains saved discovery/access requirements, host rock, shared deposit reserves, burial/exposure, and Wood capacity/recovery metadata. Reserved catalog entries are excluded. Older worlds without resources are explicitly labelled as having no layer.
+In the Windows player, choose **BUILD WORLD PREVIEW (DEV)** (or preview the current world), then **Resources**. Select any of the 37 active materials and toggle **Total quantity / Human accessible**. The map uses a logarithmic scale to the saved per-source maximum, with dim terrain for absence and teal for trace quantities. **Find largest stock**, Fit world, camp centering, wheel zoom, dragging and tile inspection work on this layer. The inspector explains saved discovery/access requirements, host rock, shared deposit reserves, burial/exposure, and Wood capacity/recovery metadata. Reserved catalog entries are excluded. Older worlds without resources are explicitly labelled as having no layer.
 
 `WorldResourcePreview` computes pure per-tile quantities; `OpeningResourcePreview` supplies the controls and inspector. A body's component quantity is distributed by site share, never copied in full to every tile. The accessible view additionally applies local exposure and saved material accessibility. The developer atlas reveals all eras without changing player knowledge. Texture/value caches are rebuilt on selection, not every frame.
 
 The opt-in development-player argument `--anthropocene-resources-output <fresh-absolute-directory>` captures both modes for every material, rich/scattered Copper close-ups, the selector and normal fog (78 frames), then verifies the unchanged world fingerprint and observed-tile count. It leaves the atlas open for interactive checks and does not use the normal save slot.
 
-The atlas exports actual state to `geology.html`, `geology.json` and PNGs. The map selector covers host rock, provinces, marine settings, deposit profiles, burial, exposure, source paths, total/accessibility for every active material, and Wood renewal potential. All material heatmaps use a fixed logarithmic 0–100,000 scale. A blank layer is valid. `geology.json` records per-profile counts/absence reasons, shared-body summaries and start opportunities. Per-start radius-one quantities and radius-two traversable opportunities are **developer diagnostics**, not known supply or validated delivery throughput.
+The atlas exports actual state to `geology.html`, `geology.json` and PNGs. The map selector covers host rock, provinces, marine settings, deposit profiles, burial, exposure, source paths, total/accessibility for every active material, and Wood renewal potential. All material heatmaps use a logarithmic scale from zero to the saved per-source maximum. A blank layer is valid. `geology.json` records per-profile counts/absence reasons, shared-body summaries and start opportunities. Per-start radius-one quantities and radius-two traversable opportunities are **developer diagnostics**, not known supply or validated delivery throughput.
 
 ```powershell
 ./Tools/WorldAtlas/Export-Worlds.ps1 -Seeds '42,1729' -Shape Continents -Output TestResults/Geology/Final -Save

@@ -6,6 +6,16 @@ Current production tuning now allocates food to current-population consumption, 
 
 ## Geological resource generation — September 18
 
+### Configurable quantity caps
+
+`MaximumQuantity` now accepts 1,000 through the signed integer limit, with **100,000 unchanged as the default**. Player configuration and a command-line override expose it; the atlas exporter has the same option. Larger caps use resource schema 3 with a saved surface unit while keeping the existing two-byte surface rasters. Generator 2 and all discovery/access rules remain unchanged.
+
+- **118 geology checks pass**. Added cases use caps 1,006, 250,000, 1,000,000 and 2,147,483,647, verifying bounded stocks, unchanged core geography and body placement, scaled Wood capacity and exact save/load. Invalid saved units and larger caps labelled as legacy schemas are rejected. The three original default resource fingerprints still match.
+- Real schema-1 and schema-2 Continents/42 saves match their original export-manifest resource fingerprints before and after save/load.
+- **25/25 Unity tests pass** (10.00 seconds), including JSON configuration/default preservation and resource heatmap scaling. A complete Continents/42/96×48/4 export at one million succeeds with schema 3 and a 16-unit surface quantum.
+
+Evidence is ignored under `TestResults/ResourceLimits`: `headless.log`, `legacy.log`, `EditMode.xml`, `atlas.log` and `Atlas/`. Previous full core/replay and large-world audits below remain the baseline; this change adds no terrain or economy behavior.
+
 ### Modular generation and tuning refactor
 
 This refactor separates provinces, deposit creation, footprints/share allocation, surface stocks, placer transport and opportunity audits. `ResourceGenerationOptions` now contains four validated tuning groups. Default behavior, resource schema/generator 2 and core generator 11 remain unchanged.

@@ -63,7 +63,8 @@ namespace Anthropocene.Presentation
                 resourceDescription = WorldResourcePreview.Describe(world, previewTile, previewMaterial);
             }
             string heading = "Seed " + world.Seed + " · " + WorldResourcePreview.Name(previewMaterial) + "\n" + (previewAccessible ? "Human accessible units / tile" : "Total units / tile");
-            string legend = "Dim terrain: absent · teal: traces\nGold: 100,000+ units · logarithmic scale\nShared deposit maximum: " + (world.Resources?.MaximumQuantity ?? 100000).ToString("N0") + " units\nWhite: tribes · gold square: your camp\n\nDeveloper view shows all resources. Player discovery requires the relevant technology; this view does not change knowledge.";
+            string maximum = (world.Resources?.MaximumQuantity ?? ResourceCatalog.DefaultMaximumQuantity).ToString("N0");
+            string legend = "Dim terrain: absent · teal: traces\nGold: " + maximum + "+ units · logarithmic scale\nPer-source maximum: " + maximum + " units\nWhite: tribes · gold square: your camp\n\nDeveloper view shows all resources. Player discovery requires the relevant technology; this view does not change knowledge.";
             if (world.Resources != null && previewResourceValues != null && previewResourceMaximum == 0) legend += "\n\nNo " + WorldResourcePreview.Name(previewMaterial) + " in this world.";
             float legendHeight = small.CalcHeight(new GUIContent(legend), width), detailHeight = text.CalcHeight(new GUIContent(resourceDescription), width);
             GUI.BeginGroup(area);

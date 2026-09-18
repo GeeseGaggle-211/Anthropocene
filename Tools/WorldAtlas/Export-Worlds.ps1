@@ -7,7 +7,8 @@ param(
     [string]$Output = 'TestResults/WorldGeneration/Atlas',
     [switch]$GeographyOnly,
     [switch]$Save,
-    [string]$SimulationSource
+    [string]$SimulationSource,
+    [int]$ResourceMaximum
 )
 $ErrorActionPreference = 'Stop'
 $atlasRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -33,5 +34,6 @@ $atlasArgs = @((Join-Path $PSScriptRoot 'bin/Release/net8.0/Anthropocene.WorldAt
 $atlasArgs += @('--source-sha256', $atlasSourceHash, '--source-description', $(if ($SimulationSource) { 'Preserved simulation source snapshot' } else { 'Current checkout simulation source files' }))
 if ($GeographyOnly) { $atlasArgs += '--geography-only' }
 if ($Save) { $atlasArgs += '--save' }
+if ($PSBoundParameters.ContainsKey('ResourceMaximum')) { $atlasArgs += @('--resource-maximum', "$ResourceMaximum") }
 & $sdk @atlasArgs
 if ($LASTEXITCODE -ne 0) { throw 'World atlas export failed.' }

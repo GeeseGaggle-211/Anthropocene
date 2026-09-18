@@ -54,6 +54,23 @@ namespace Anthropocene.Tests.EditMode
             var terrain = Color.blue;
             Assert.That(WorldResourcePreview.ColorFor(.001, terrain), Is.Not.EqualTo(WorldResourcePreview.ColorFor(0, terrain)));
             Assert.That(WorldResourcePreview.ColorFor(100000, terrain), Is.EqualTo(WorldResourcePreview.ColorFor(200000, terrain)));
+            Assert.That(WorldResourcePreview.ColorFor(100000, terrain, 1000000), Is.Not.EqualTo(WorldResourcePreview.ColorFor(1000000, terrain, 1000000)));
+            Assert.That(WorldResourcePreview.ColorFor(1000000, terrain, 1000000), Is.EqualTo(WorldResourcePreview.ColorFor(2000000, terrain, 1000000)));
+        }
+
+        [Test]
+        public void LargerConfiguredStocks_RetainSurfaceUnitsAndDefaultTuning()
+        {
+            var options = new ResourceGenerationOptions();
+            var config = Resources.Load<TextAsset>("ResourceGenerationConfig");
+            Assert.That(config, Is.Not.Null);
+            JsonUtility.FromJsonOverwrite(config.text, options);
+            Assert.That(options.MaximumQuantity, Is.EqualTo(ResourceCatalog.DefaultMaximumQuantity));
+            JsonUtility.FromJsonOverwrite("{\"MaximumQuantity\":1000000}", options);
+            options.Validate();
+            Assert.That(options.Deposit.CopperChanceMultiplier, Is.EqualTo(1.6));
+            var r = new WorldResourceState { MaximumQuantity = options.MaximumQuantity, SurfaceUnit = WorldResourceState.SurfaceUnitFor(options.MaximumQuantity), Stone = new ushort[] { 62500 } };
+            Assert.That(r.SurfaceTotal(0, MaterialId.Stone), Is.EqualTo(1000000));
         }
     }
 }

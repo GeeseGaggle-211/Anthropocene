@@ -24,13 +24,15 @@ internal static class Program
             int players = int.Parse(Option(args, "--players", "80"));
             int width = int.Parse(Option(args, "--width", "1024")), height = int.Parse(Option(args, "--height", "512"));
             bool geographyOnly = args.Contains("--geography-only"), saves = args.Contains("--save");
+            var resources = new ResourceGenerationOptions { MaximumQuantity = int.Parse(Option(args, "--resource-maximum", ResourceCatalog.DefaultMaximumQuantity.ToString(System.Globalization.CultureInfo.InvariantCulture))) };
+            resources.Validate();
             var seeds = Option(args, "--seeds", "1729").Split(',').Select(int.Parse).ToArray();
             foreach (int seed in seeds)
             {
                 Console.WriteLine($"Generating {shape} / {seed} / {width}x{height} / {players} requested camps ({(geographyOnly ? "geography only" : "complete world")}).");
                 var config = new SimulationConfig { Width = width, Height = height, Players = players, Shape = shape, StartSeparation = width <= 48 ? 6 : width <= 96 ? 9 : 12 };
                 var timer = Stopwatch.StartNew();
-                var world = geographyOnly ? GenerateGeography(seed, config) : new WorldGenerator().Generate(seed, config);
+                var world = geographyOnly ? GenerateGeography(seed, config, resources) : new WorldGenerator().Generate(seed, config, resources);
                 double generationSeconds = timer.Elapsed.TotalSeconds;
                 string name = $"{shape.ToString().ToLowerInvariant()}-{seed}";
                 string directory = Path.Combine(output, name); Directory.CreateDirectory(directory);
@@ -102,12 +104,12 @@ internal static class Program
         catch (Exception error) { Console.Error.WriteLine(error); return 1; }
     }
 
-    private static WorldState GenerateGeography(int seed, SimulationConfig config)
+    private static WorldState GenerateGeography(int seed, SimulationConfig config, ResourceGenerationOptions resources)
     {
         config.Validate();
         var world = new WorldState { Seed = seed, Config = config, Tiles = new Tile[config.Width * config.Height], Generation = new GenerationReport() };
         world.Generation.ConfigurationHash = SaveCodec.ConfigurationHash(config);
-        var context = new GenerationContext { World = world, Map = world.Map };
+        var context = new GenerationContext { World = world, Map = world.Map, ResourceOptions = resources };
         var stages = WorldGenerator.CreateStages(false);
         foreach (var stage in stages)
         {

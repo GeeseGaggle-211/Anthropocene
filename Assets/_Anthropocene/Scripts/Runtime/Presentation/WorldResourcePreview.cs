@@ -28,10 +28,10 @@ namespace Anthropocene.Presentation
             return values;
         }
 
-        public static Color ColorFor(double value, Color terrain)
+        public static Color ColorFor(double value, Color terrain, int maximum = ResourceCatalog.DefaultMaximumQuantity)
         {
             if (value <= 0) return terrain * .35f;
-            float strength = Mathf.Clamp01((float)(Math.Log(1 + value) / Math.Log(100001)));
+            float strength = Mathf.Clamp01((float)(Math.Log(1 + value) / Math.Log(1.0 + maximum)));
             // A visible minimum distinguishes even a trace component from absent material.
             return Color.Lerp(new Color(.13f, .43f, .46f), new Color(1, .83f, .22f), strength);
         }

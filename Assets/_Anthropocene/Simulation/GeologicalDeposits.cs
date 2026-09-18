@@ -35,7 +35,7 @@ namespace Anthropocene.Simulation
                     {
                         var scattered = GeologicalFootprints.Sites(c, profile, tile, semantic, true);
                         // A broad mineralized district holds sparse, small occurrences, not one giant ore body.
-                        double stock = Math.Min(r.MaximumQuantity * (tuning.ScatteredStockMinimum + tuning.ScatteredStockRange * GeologicalProvinceStage.Roll(seed, 231, semantic)), scattered.Length * r.MaximumQuantity / tuning.ScatteredSiteStockDivisor);
+                        double stock = Math.Min(r.MaximumQuantity * (tuning.ScatteredStockMinimum + tuning.ScatteredStockRange * GeologicalProvinceStage.Roll(seed, 231, semantic)), scattered.Length * (double)r.MaximumQuantity / tuning.ScatteredSiteStockDivisor);
                         if (stock > 0)
                         {
                             bodies.Add(new DepositBody
@@ -74,7 +74,7 @@ namespace Anthropocene.Simulation
                             new DepositComponent(MaterialId.Sulfur, 200)
                         };
                     }
-                    double quantity = Math.Round(r.MaximumQuantity * (tuning.RichStockMinimum + tuning.RichStockRange * GeologicalProvinceStage.Roll(seed, 207, semantic)) / 10) * 10;
+                    double quantity = Math.Min(r.MaximumQuantity, Math.Round(r.MaximumQuantity * (tuning.RichStockMinimum + tuning.RichStockRange * GeologicalProvinceStage.Roll(seed, 207, semantic)) / 10) * 10);
                     bodies.Add(new DepositBody
                     {
                         Id = (long)profile.Id * 1000000 + domain * 100000 + key + 1,

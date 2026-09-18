@@ -62,6 +62,7 @@ internal static class GeologyGenerationChecks
         OffshoreFixtures();
         OccurrenceFixtures();
         TuningFixtures();
+        QuantityLimitFixtures();
         var small = new WorldGenerator().Generate(1, SimulationConfig.Small(4));
         var body = small.Resources.Bodies.First(b => b.SourceBody == 0);
         double originalQuantity = body.Quantity;
@@ -74,7 +75,7 @@ internal static class GeologyGenerationChecks
         small.Resources.AccessibleParts[(int)MaterialId.Copper] = 777;
         var oldRates = SaveCodec.Load(SaveCodec.Save(small));
         Check(oldRates.Resources.Bodies.Single(b => b.Id == depleted.Id).Quantity == 0 && oldRates.Resources.AccessibleFraction(MaterialId.Copper) == .0777, "depleted stocks and saved access tuning survive without regeneration");
-        small.Resources.Version++;
+        small.Resources.Version = WorldResourceState.CurrentVersion + 1;
         rejected = false; try { SaveCodec.Load(SaveCodec.Save(small)); } catch (InvalidDataException) { rejected = true; }
         Check(rejected, "future resource schemas rejected");
         Console.WriteLine("PASS: " + checks + " geology assertions");
@@ -85,6 +86,35 @@ internal static class GeologyGenerationChecks
         var sites = new HashSet<int>(b.Sites.Select(s => s.Tile)); var reached = new HashSet<int> { b.OriginTile }; var queue = new Queue<int>(); queue.Enqueue(b.OriginTile);
         while (queue.Count > 0) foreach (int n in w.Map.Neighbors(queue.Dequeue())) if (sites.Contains(n) && reached.Add(n)) queue.Enqueue(n);
         return reached.Count == sites.Count;
+    }
+    private static void QuantityLimitFixtures()
+    {
+        var generator = new WorldGenerator();
+        var config = SimulationConfig.Small(4);
+        var baseline = generator.Generate(42, config);
+        foreach (int maximum in new[] { 1006, 250000, 1000000, int.MaxValue })
+        {
+            var options = new ResourceGenerationOptions { MaximumQuantity = maximum };
+            var world = generator.Generate(42, config, options);
+            var r = world.Resources;
+            Check(r.MaximumQuantity == maximum && r.ConfigurationHash == options.Hash && r.Bodies.All(b => b.InitialQuantity <= maximum), "configured cap bounds bodies at " + maximum);
+            Check(SaveCodec.LegacyFingerprint(world) == SaveCodec.LegacyFingerprint(baseline) && r.Bodies.Select(b => b.Id).SequenceEqual(baseline.Resources.Bodies.Select(b => b.Id)), "quantity cap preserves core world and deposit placement at " + maximum);
+            Check(new[] { MaterialId.Stone, MaterialId.Clay, MaterialId.Wood }.All(m => world.Tiles.All(t => r.SurfaceTotal(t.Id, m) >= 0 && r.SurfaceTotal(t.Id, m) <= maximum)), "compact surface stocks do not overflow at " + maximum);
+            Check(world.Tiles.Where(t => t.Land && t.Environment != EnvironmentKind.Ice && t.NaturalVegetationPotential == VegetationTier.High).All(t => r.SurfaceTotal(t.Id, MaterialId.Wood) >= maximum * .8 - r.SurfaceUnit), "wood capacity scales with configured cap at " + maximum);
+            Check(SaveCodec.Fingerprint(SaveCodec.Load(SaveCodec.Save(world))) == SaveCodec.Fingerprint(world), "configured quantity encoding roundtrip at " + maximum);
+            if (maximum <= WorldResourceState.LegacyMaximumQuantity) continue;
+            Check(r.Version == 3 && r.SurfaceUnit == WorldResourceState.SurfaceUnitFor(maximum), "larger caps use explicit schema-3 encoding");
+            int unit = r.SurfaceUnit;
+            r.SurfaceUnit = 0;
+            bool rejected = false;
+            try { SaveCodec.Load(SaveCodec.Save(world)); } catch (InvalidOperationException) { rejected = true; }
+            Check(rejected, "invalid saved surface scale rejected");
+            r.SurfaceUnit = unit;
+            r.Version = 2;
+            rejected = false;
+            try { ResourceValidation.Validate(world); } catch (InvalidOperationException) { rejected = true; }
+            Check(rejected, "large quantities cannot masquerade as a legacy resource schema");
+        }
     }
     private static void TuningFixtures()
     {
