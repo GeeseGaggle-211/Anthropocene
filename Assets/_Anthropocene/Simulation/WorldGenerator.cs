@@ -18,6 +18,8 @@ namespace Anthropocene.Simulation
         public int[] ReliefCounts = new int[4];
         public int[] ElevationCounts = new int[11];
         public int OasisCount, WildHerds, CampsWithVisibleHerds, FreshwaterTiles, SaltwaterTiles, RiverEdges, CamelHerds, CamelsNearOases;
+        public float[] AncientOrogenUplift;
+        public float[] AncientOrogenAge;
     }
     public interface IWorldGenerationStage
     {
@@ -36,6 +38,8 @@ namespace Anthropocene.Simulation
         public bool[] Continental;
         internal int[] OtherPlate;
         internal float[] BoundaryDistance;
+        public float[] AncientOrogenStrength;
+        public float[] AncientOrogenAge;
         public ResourceGenerationOptions ResourceOptions = new ResourceGenerationOptions();
     }
     public sealed class WorldGenerator
@@ -46,7 +50,11 @@ namespace Anthropocene.Simulation
             var world = new WorldState { Seed = seed, Config = config, Tiles = new Tile[config.Width * config.Height], Generation = new GenerationReport() };
             // Hash all effective tuning, not just the preset name.
             world.Generation.ConfigurationHash = SaveCodec.ConfigurationHash(config);
-            var context = new GenerationContext { World = world, Map = world.Map, ResourceOptions = resources ?? new ResourceGenerationOptions() };
+            var context = new GenerationContext
+            {
+                World = world, Map = world.Map, ResourceOptions = resources ?? new ResourceGenerationOptions(),
+                AncientOrogenStrength = new float[world.Tiles.Length], AncientOrogenAge = new float[world.Tiles.Length]
+            };
             context.ResourceOptions.Validate();
             var stages = CreateStages();
             var total = Stopwatch.StartNew();

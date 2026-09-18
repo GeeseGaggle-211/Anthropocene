@@ -163,10 +163,35 @@ namespace Anthropocene.Simulation
                 else if (convergence > .15) height -= .025 * belt;
                 t.Elevation = (float)Numbers.Clamp(height, .025, 1.2);
             }
-            // Short-range erosion smooths slopes, not province-wide coast boundaries.
-            var heights = new float[w.Tiles.Length];
-            foreach (var t in w.Tiles) heights[t.Id] = (float)(t.Elevation * (1 - cfg.Erosion) + c.Map.Neighbors(t.Id).Average(n => w.Tiles[n].Elevation) * cfg.Erosion);
-            foreach (var t in w.Tiles) t.Elevation = heights[t.Id];
+            int orogenCount = cfg.Shape == WorldShape.Continents ? 3 : cfg.Shape == WorldShape.Pangaea ? 4 : 0;
+            if (orogenCount > 0)
+            {
+                var baseline = w.Tiles.Select(t => t.Elevation).ToArray();
+                AncientOrogens(c, orogenCount);
+                // Short-range erosion smooths slopes, not province-wide coast boundaries.
+                var heights = new float[w.Tiles.Length];
+                foreach (var t in w.Tiles)
+                {
+                    if (baseline[t.Id] < cfg.SeaLevel)
+                        heights[t.Id] = (float)(baseline[t.Id] * (1 - cfg.Erosion) + c.Map.Neighbors(t.Id).Average(n => baseline[n]) * cfg.Erosion);
+                    else
+                        heights[t.Id] = (float)(t.Elevation * (1 - cfg.Erosion) + c.Map.Neighbors(t.Id).Average(n => w.Tiles[n].Elevation) * cfg.Erosion);
+                }
+                foreach (var t in w.Tiles) t.Elevation = heights[t.Id];
+                if (w.Generation != null)
+                {
+                    w.Generation.AncientOrogenUplift = new float[w.Tiles.Length];
+                    for (int id = 0; id < w.Tiles.Length; id++)
+                        w.Generation.AncientOrogenUplift[id] = baseline[id] >= cfg.SeaLevel ? Math.Max(0f, w.Tiles[id].Elevation - baseline[id]) : 0f;
+                    if (c.AncientOrogenAge != null) w.Generation.AncientOrogenAge = c.AncientOrogenAge;
+                }
+            }
+            else
+            {
+                var heights = new float[w.Tiles.Length];
+                foreach (var t in w.Tiles) heights[t.Id] = (float)(t.Elevation * (1 - cfg.Erosion) + c.Map.Neighbors(t.Id).Average(n => w.Tiles[n].Elevation) * cfg.Erosion);
+                foreach (var t in w.Tiles) t.Elevation = heights[t.Id];
+            }
             Hotspots(c);
             foreach (var t in w.Tiles) t.Terrain = t.Elevation < cfg.SeaLevel - .018 ? Terrain.Ocean : t.Elevation < cfg.SeaLevel ? Terrain.Shallows : Terrain.Grassland;
             Geography.Classify(w);
@@ -302,6 +327,106 @@ namespace Anthropocene.Simulation
                         // landform must not suppress a younger active window's signature.
                         hotspotActivity[id] = Math.Max(hotspotActivity[id], (float)((target - oceanFloor[id]) * sample.Activity));
                         t.Volcanism = tectonicActivity[id] + hotspotActivity[id];
+                    }
+                }
+            }
+        }
+        internal struct OrogenSample
+        {
+            public double X, Y, Age, Width, Relief, Heading;
+        }
+        internal static List<OrogenSample> AncientOrogenTrack(GenerationContext c, int origin, int eventId, double age)
+        {
+            var cfg = c.Config; int seed = c.World.Seed, plate = c.World.Tiles[origin].Plate;
+            double scale = Math.Max(.65, cfg.Width / 256.0), x = origin % cfg.Width, y = origin / cfg.Width;
+            double motion = Math.Atan2(c.PlateY[plate] * .75, c.PlateX[plate]);
+            double rotation = TerrainNoise.Gaussian(seed, 470, eventId) * .85;
+            double heading = motion + rotation;
+            double curvature = .015 * TerrainNoise.Gaussian(seed, 471, eventId), angular = 0, lateral = 0;
+            int steps = (int)Math.Round(scale * (18 + 12 * Numbers.Random(seed, 472, eventId)));
+            double baseWidth = scale * (2.8 + 1.2 * Numbers.Random(seed, 473, eventId));
+            double width = baseWidth * (1.0 + .65 * (age / 600.0));
+            double initialRelief = .12 + .04 * Numbers.Random(seed, 474, eventId);
+            double relief = initialRelief * Math.Exp(-age / 320.0);
+            var result = new List<OrogenSample>(steps);
+            for (int step = 0; step < steps; step++)
+            {
+                int key = unchecked(eventId * 65537 + step);
+                angular = .82 * angular + .035 * TerrainNoise.Gaussian(seed, 475, key);
+                heading += .04 * curvature + angular;
+                lateral = .80 * lateral + .10 * TerrainNoise.Gaussian(seed, 476, key);
+                if (step > 0)
+                {
+                    double stride = scale * 1.50 * Math.Exp(.10 * TerrainNoise.Gaussian(seed, 477, key));
+                    x += Math.Cos(heading) * stride; y += Math.Sin(heading) * stride;
+                }
+                double sx = x - Math.Sin(heading) * lateral * scale;
+                double sy = y + Math.Cos(heading) * lateral * scale;
+                result.Add(new OrogenSample { X = sx, Y = sy, Age = age, Width = width, Relief = relief, Heading = heading });
+            }
+            return result;
+        }
+        internal static void AncientOrogens(GenerationContext c, int count)
+        {
+            var w = c.World; var cfg = c.Config; double scale = Math.Max(.65, cfg.Width / 256.0);
+            var origins = new List<int>();
+            var baselineElevation = w.Tiles.Select(t => t.Elevation).ToArray();
+            for (int e = 0; e < count; e++)
+            {
+                int origin = -1;
+                for (int trial = 0; trial < 300; trial++)
+                {
+                    int id = (int)(Numbers.Random(w.Seed, 480, e * 300 + trial) * w.Tiles.Length);
+                    int row = id / cfg.Width;
+                    if (row < cfg.Height * .15 || row > cfg.Height * .85) continue;
+                    if (!w.Tiles[id].Continental || baselineElevation[id] < cfg.SeaLevel + .02) continue;
+                    if (c.BoundaryDistance != null && c.BoundaryDistance[id] < .045f) continue;
+                    if (origins.Any(o => c.Map.Distance(o, id) < scale * 25)) continue;
+                    origin = id; break;
+                }
+                if (origin < 0) continue;
+                origins.Add(origin);
+                double age = 80 + 480 * Numbers.Random(w.Seed, 481, e);
+                foreach (var sample in AncientOrogenTrack(c, origin, e, age))
+                {
+                    int col = (int)Math.Round(sample.X), row = (int)Math.Round(sample.Y);
+                    int center = c.Map.At(col, row);
+                    if (center < 0 || baselineElevation[center] < cfg.SeaLevel) continue;
+                    int radius = Math.Max(2, (int)Math.Ceiling(sample.Width * 2.0));
+                    foreach (int id in c.Map.Radius(center, radius))
+                    {
+                        // Strict seawater preservation: zero modification to any submerged cell.
+                        if (baselineElevation[id] < cfg.SeaLevel) continue;
+
+                        double dr = id / cfg.Width - center / cfg.Width;
+                        double dq = TerrainNoise.LongitudeDelta(id % cfg.Width / (double)cfg.Width, center % cfg.Width / (double)cfg.Width) * cfg.Width + dr * .5;
+                        double cos = Math.Cos(sample.Heading), sin = Math.Sin(sample.Heading);
+                        double u = dq * cos + dr * sin;
+                        double v = -dq * sin + dr * cos;
+                        double dt = Math.Abs(v) / sample.Width;
+                        double dl = Math.Abs(u) / (scale * 2.0);
+                        if (dt >= 2.0 || dl >= 1.5) continue;
+
+                        double envelope = Math.Exp(-dt * dt * 1.5) * (1 - (dl / 1.5) * (dl / 1.5));
+                        double ridges = 1 - Math.Abs(TerrainNoise.Fractal(w.Seed, 490, id % cfg.Width / (double)cfg.Width, id / cfg.Width / (double)cfg.Height, 24, 3));
+                        double profile = (.40 + .60 * ridges) * envelope;
+                        double resistance = .80 + .35 * TerrainNoise.Fractal(w.Seed, 492, id % cfg.Width / (double)cfg.Width, id / cfg.Width / (double)cfg.Height, 32, 2);
+                        double frag = TerrainNoise.Fractal(w.Seed, 495, id % cfg.Width / (double)cfg.Width, id / cfg.Width / (double)cfg.Height, 8, 2);
+                        double continuity = Math.Max(0, 1 - (.30 + .50 * (sample.Age / 600.0)) * Math.Max(0, frag));
+                        double coastalFade = Numbers.Clamp((baselineElevation[id] - cfg.SeaLevel) / .03, 0, 1);
+
+                        double added = sample.Relief * profile * resistance * continuity * coastalFade;
+                        if (added <= 0) continue;
+
+                        var t = w.Tiles[id];
+                        t.Elevation += (float)added;
+                        if (t.Elevation > .95f) t.Elevation = .95f;
+
+                        if (c.AncientOrogenStrength != null)
+                        {
+                            c.AncientOrogenStrength[id] = Math.Max(c.AncientOrogenStrength[id], (float)(envelope * continuity));
+                            c.AncientOrogenAge[id] = Math.Max(c.AncientOrogenAge[id], (float)sample.Age);
+                        }
                     }
                 }
             }

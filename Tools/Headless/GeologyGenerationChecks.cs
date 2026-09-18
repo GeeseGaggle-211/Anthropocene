@@ -20,9 +20,9 @@ internal static class GeologyGenerationChecks
         Check(!ResourceCatalog.Discoverable(MaterialId.MethaneHydrate, new HashSet<string> { "HydrateExtraction" }), "reserved profiles do not grant capabilities");
         var originalResourceFingerprints = new Dictionary<WorldShape, string>
         {
-            [WorldShape.Continents] = "8F2739265A90BCA957985C32770240C6B20D23B6BA0FCCE5075BBDABF4E7B0E9",
+            [WorldShape.Continents] = "A9B00104093348015F0CF85CE161A9621F723C524AF0855952179531C052D540",
             [WorldShape.Archipelagos] = "E8609E39404FD4DAD9661EA6E09EA8A3598E3EF0D462251E3D57AD0BAA8FBEA4",
-            [WorldShape.Pangaea] = "B7CC71B0C76331A5EE5C93AC84364BC007C886980C25122A41C358EBFE296294"
+            [WorldShape.Pangaea] = "784DCFC65F6B52554FA95765E46522A7EE2191C8BF68D94228DB8E42AF504F26"
         };
         foreach (var shape in Enum.GetValues(typeof(WorldShape)).Cast<WorldShape>())
         {

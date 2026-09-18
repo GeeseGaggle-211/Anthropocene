@@ -83,9 +83,9 @@ internal static class ArchipelagoChecks
         }
 
         // Elevation-only baseline, captured immediately before the archipelago/history change.
-        // A later intentional continental redesign may update these after visual review.
-        Check(ElevationHash(Relief(42, WorldShape.Continents, 256, 128).World) == "RiYqemTWLD0A3ydMQz46HbDUStQkx7gLGGKxaKQCUvw=", "the archipelago change preserves the existing Continents crust exactly");
-        Check(ElevationHash(Relief(42, WorldShape.Pangaea, 256, 128).World) == "30hiD0XKiMR6yT4BuxSsg+uGLhLfVtLHF00ntdArIsg=", "the archipelago change preserves the existing Pangaea crust exactly");
+        // Updated for intentional ancient orogen continental redesign.
+        Check(ElevationHash(Relief(42, WorldShape.Continents, 256, 128).World) == "6jq2SEYQihfpkNime1l1nnLzioL6BFNSpjvkXlgoAfM=", "ancient orogen continental redesign updates Continents elevation baseline");
+        Check(ElevationHash(Relief(42, WorldShape.Pangaea, 256, 128).World) == "a+G4lPvrki+VvJJf4/htsskFI88qFMsHy3L3tul7gfk=", "ancient orogen continental redesign updates Pangaea elevation baseline");
         GaussianDistribution();
         HistoricalTracks();
         MovingWindowTracks();

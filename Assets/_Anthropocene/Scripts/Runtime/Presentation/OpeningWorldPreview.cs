@@ -12,7 +12,7 @@ namespace Anthropocene.Presentation
         private Texture2D previewTexture;
         private float previewZoom = 1;
         private Vector2 previewPan, menuScroll, previewScroll;
-        private readonly string[] previewLayers = { "Environment", "Renewable food", "Freshwater renewal", "Elevation", "Volcanic activity", "Resources" };
+        private readonly string[] previewLayers = { "Environment", "Renewable food", "Freshwater renewal", "Elevation", "Volcanic activity", "Resources", "Ancient elevation" };
 
         private void Menu()
         {
@@ -83,6 +83,13 @@ namespace Anthropocene.Presentation
                 previewResourceValues = WorldResourcePreview.Values(world, previewMaterial, previewAccessible);
                 previewResourceMaximum = previewResourceValues.Max();
             }
+            float maxUplift = 0f;
+            if (previewLayer == 6 && world.Generation?.AncientOrogenUplift != null)
+            {
+                for (int i = 0; i < world.Generation.AncientOrogenUplift.Length; i++)
+                    if (world.Generation.AncientOrogenUplift[i] > maxUplift) maxUplift = world.Generation.AncientOrogenUplift[i];
+            }
+            if (maxUplift <= 0f) maxUplift = 0.15f;
             foreach (var t in world.Tiles)
             {
                 Color color = EnvironmentColor(t);
@@ -100,6 +107,37 @@ namespace Anthropocene.Presentation
                 }
                 else if (previewLayer == 4) color = Color.Lerp(color * .45f, new Color(1, .29f, .09f), Mathf.Clamp01(t.Volcanism * 5));
                 else if (previewLayer == 5) color = WorldResourcePreview.ColorFor(previewResourceValues[t.Id], color, resourceScale);
+                else if (previewLayer == 6)
+                {
+                    if (t.WaterBody == WaterKind.Saltwater || t.Elevation < world.Config.SeaLevel)
+                    {
+                        float depth = (float)(world.Config.SeaLevel - t.Elevation);
+                        color = Color.Lerp(new Color(.08f, .22f, .34f), new Color(.03f, .07f, .14f), Mathf.Clamp01(depth / .3f));
+                    }
+                    else
+                    {
+                        float uplift = world.Generation?.AncientOrogenUplift != null && t.Id < world.Generation.AncientOrogenUplift.Length
+                            ? world.Generation.AncientOrogenUplift[t.Id]
+                            : 0f;
+                        if (uplift > 0.0005f)
+                        {
+                            float frac = Mathf.Clamp01(uplift / maxUplift);
+                            Color low = new Color(.55f, .22f, .08f);
+                            Color mid = new Color(.95f, .55f, .12f);
+                            Color high = new Color(.98f, .88f, .45f);
+                            Color crest = new Color(1.0f, .98f, .95f);
+                            color = frac < 0.33f
+                                ? Color.Lerp(low, mid, frac / 0.33f)
+                                : frac < 0.70f
+                                    ? Color.Lerp(mid, high, (frac - 0.33f) / 0.37f)
+                                    : Color.Lerp(high, crest, (frac - 0.70f) / 0.30f);
+                        }
+                        else
+                        {
+                            color = Color.Lerp(EnvironmentColor(t) * 0.32f, new Color(0.18f, 0.20f, 0.19f), 0.65f);
+                        }
+                    }
+                }
                 colors[(height - 1 - t.Id / width) * width + t.Id % width] = color;
             }
             previewTexture = new Texture2D(width, height, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
@@ -121,12 +159,36 @@ namespace Anthropocene.Presentation
             for (int i = 0; i < previewLayers.Length; i++)
                 if (Button(new Rect(20 + i * layerWidth, 58, layerWidth - 6, 32), previewLayers[i], previewLayer == i)) { previewLayer = i; Destroy(previewTexture); previewTexture = null; }
             if (previewLayer == 5) DrawResourceControls();
-            else if (Button(new Rect(20, 100, 215, 30), previewSeason < 0 ? "Season: annual mean" : "Season: " + (previewSeason + 1))) { previewSeason = previewSeason == 3 ? -1 : previewSeason + 1; Destroy(previewTexture); previewTexture = null; }
-            float controlsX = previewLayer == 5 ? 456 : 243;
-            if (Button(new Rect(controlsX, 100, 110, 30), "Fit world")) { previewZoom = 1; previewPan = Vector2.zero; }
-            if (Button(new Rect(controlsX + 118, 100, 150, 30), "Find my camp"))
+            else if (previewLayer == 6)
             {
-                previewTile = world.Camps.First(c => c.Player == 0).Tile; previewZoom = 12; previewPan = Vector2.zero;
+                if (Button(new Rect(20, 100, 110, 30), "Fit world")) { previewZoom = 1; previewPan = Vector2.zero; }
+                if (Button(new Rect(138, 100, 150, 30), "Find my camp"))
+                {
+                    previewTile = world.Camps.First(c => c.Player == 0).Tile; previewZoom = 12; previewPan = Vector2.zero;
+                }
+                if (Button(new Rect(296, 100, 175, 30), "Find highest orogen") && world.Generation?.AncientOrogenUplift != null)
+                {
+                    int bestTile = -1; float bestUplift = 0;
+                    for (int i = 0; i < world.Generation.AncientOrogenUplift.Length; i++)
+                    {
+                        if (world.Generation.AncientOrogenUplift[i] > bestUplift)
+                        {
+                            bestUplift = world.Generation.AncientOrogenUplift[i];
+                            bestTile = i;
+                        }
+                    }
+                    if (bestTile >= 0) { previewTile = bestTile; previewZoom = 12; previewPan = Vector2.zero; }
+                }
+            }
+            else
+            {
+                if (Button(new Rect(20, 100, 215, 30), previewSeason < 0 ? "Season: annual mean" : "Season: " + (previewSeason + 1))) { previewSeason = previewSeason == 3 ? -1 : previewSeason + 1; Destroy(previewTexture); previewTexture = null; }
+                float controlsX = 243;
+                if (Button(new Rect(controlsX, 100, 110, 30), "Fit world")) { previewZoom = 1; previewPan = Vector2.zero; }
+                if (Button(new Rect(controlsX + 118, 100, 150, 30), "Find my camp"))
+                {
+                    previewTile = world.Camps.First(c => c.Player == 0).Tile; previewZoom = 12; previewPan = Vector2.zero;
+                }
             }
             var area = new Rect(16, 146, Screen.width - side - 32, Screen.height - 184);
             Fill(area, Panel); GUI.BeginGroup(area);
@@ -182,6 +244,7 @@ namespace Anthropocene.Presentation
             string legend = previewLayer == 0 ? "Ocean: dark blue\nShallows / lakes: blue\nDesert: ochre · river / oasis: olive\nGrassland: light green\nTemperate / tropical: dark green\nCold: grey green · ice: white"
                 : previewLayer == 3 ? "Continuous elevation\nDeep blue: ocean floor\nTeal: continental shelf\nGreen: lowland\nPale: high mountain belts\nThis is physical relief, not the 1–10 movement levels."
                 : previewLayer == 4 ? "Orange: volcanic activity\nOlder island chains can survive after activity ends, so they may remain dark here. Moving hotspot paths leave islands and submerged remnants. This is a generation proxy, not live tectonics."
+                : previewLayer == 6 ? "Ancient orogen elevation\nWarm gradient: net elevation added by extinct Wilson-cycle mountain belts (sienna -> amber -> gold -> ivory crest).\nMuted land: unaffected continental interior.\nDeep ocean: strictly preserved marine bathymetry (0.0 uplift)."
                 : "Dark = 0 · bright gold = 100+\nLog scale: 0 / 1 / 10 / 100\nUnits per base season (" + world.Config.BaseDays.ToString("0.##") + " days).\nProfile renewal potential, before labor, depletion and competition. Ocean food is excluded from accessible food.";
             GUI.Label(new Rect(12, y, w, 150), legend, small); y += 158;
             var own = world.Camps.First(c => c.Player == 0);
@@ -191,7 +254,11 @@ namespace Anthropocene.Presentation
             if (previewTile < 0) previewTile = own.Tile;
             var tile = world.Tiles[previewTile];
             GUI.Label(new Rect(12, y, w, 30), "INSPECTED TILE " + tile.Id, section); y += 32;
-            GUI.Label(new Rect(12, y, w, 108), tile.Environment + " · " + tile.CurrentVegetation + (tile.Land ? " vegetation" : " plankton/algae") + "\nElevation " + tile.ElevationLevel + " · river " + (tile.River ? "yes" : "no") + "\nFreshwater source: " + tile.FreshwaterSource + "\nMean temperature: " + tile.Seasons.Average(s => s.Temperature).ToString("0.0") + " C", text); y += 116;
+            float orogenUplift = world.Generation?.AncientOrogenUplift != null && tile.Id < world.Generation.AncientOrogenUplift.Length ? world.Generation.AncientOrogenUplift[tile.Id] : 0f;
+            float orogenAge = world.Generation?.AncientOrogenAge != null && tile.Id < world.Generation.AncientOrogenAge.Length ? world.Generation.AncientOrogenAge[tile.Id] : 0f;
+            string orogenInfo = orogenUplift > 0.0005f ? $"\nAncient orogen uplift: +{orogenUplift:0.000} ({orogenAge:0} Ma)" : (previewLayer == 6 ? "\nAncient orogen uplift: None (0.000)" : "");
+            int orogenExtra = previewLayer == 6 || orogenUplift > 0.0005f ? 18 : 0;
+            GUI.Label(new Rect(12, y, w, 108 + orogenExtra), tile.Environment + " · " + tile.CurrentVegetation + (tile.Land ? " vegetation" : " plankton/algae") + "\nElevation " + tile.ElevationLevel + " · river " + (tile.River ? "yes" : "no") + "\nFreshwater source: " + tile.FreshwaterSource + "\nMean temperature: " + tile.Seasons.Average(s => s.Temperature).ToString("0.0") + " C" + orogenInfo, text); y += 116 + orogenExtra;
             GUI.Label(new Rect(12, y, w, 22), "Season       Food       Freshwater", section); y += 25;
             for (int s = 0; s < 4; s++) { GUI.Label(new Rect(12, y, w, 25), (s + 1) + "                 " + PlaytestScenarios.Food(world, tile, s).ToString("0.0") + "          " + PlaytestScenarios.Water(world, tile, s).ToString("0.0"), small); y += 27; }
             var current = LazyEcology.ProjectEcology(world, tile.Id, world.Days);

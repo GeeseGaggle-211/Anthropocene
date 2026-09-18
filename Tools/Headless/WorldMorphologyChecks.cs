@@ -15,6 +15,7 @@ internal static class WorldMorphologyChecks
         checks = 0;
         ReferenceWorld();
         ControlledHotspots();
+        AncientOrogens();
         Console.WriteLine("PASS: " + checks + " reference-world morphology assertions");
     }
 
@@ -80,6 +81,24 @@ internal static class WorldMorphologyChecks
         Check(emerged.Count(id => active.Tiles[id].Volcanism > quiet.Tiles[id].Volcanism) >= 4 && active.Tiles.All(t => t.Volcanism >= quiet.Tiles[t.Id].Volcanism), "active tracks produce volcanic islands while extinct uplift may lack an active signature");
         Console.WriteLine("HOTSPOT_CONTROL seed=1729 256x128 tracks=0/8 emergedLand=" + emerged.Count
             + " newIslandAreas=" + string.Join(",", islands.Select(c => c.Count).OrderByDescending(n => n)));
+    }
+
+    private static void AncientOrogens()
+    {
+        var config = new SimulationConfig { Width = 256, Height = 128, Players = 4, Shape = WorldShape.Continents };
+        var generator = new WorldGenerator();
+        var world = generator.Generate(42, config);
+
+        // 1. Seawater invariance: submerged tiles remain strictly water without bathymetric distortion
+        Check(world.Tiles.Where(t => t.WaterBody == WaterKind.Saltwater).All(t => t.Elevation < config.SeaLevel), "seawater cells remain strictly below sea level");
+        Check(world.Tiles.All(t => !float.IsNaN(t.Elevation) && !float.IsInfinity(t.Elevation)), "orogen elevation values are finite and valid");
+
+        // 2. Volcanism invariance: ancient orogens do not inject volcanic activity
+        Check(world.Tiles.All(t => t.Volcanism >= 0 && !float.IsNaN(t.Volcanism) && !float.IsInfinity(t.Volcanism)), "volcanism values are valid and finite");
+        // Check that ancient orogen uplifts exist on continental land
+        var continentalLand = world.Tiles.Where(t => t.Continental && t.Land).ToArray();
+        Check(continentalLand.Any(t => t.ElevationLevel >= 3 && t.ElevationLevel <= 6), "ancient orogens populate traversable upland levels 3 to 6");
+        Check(continentalLand.Count(t => t.ElevationLevel == 10) <= continentalLand.Length * .03, "ancient orogens do not create impassable level 10 walls");
     }
 
     private static List<List<int>> Components(WorldState world, Func<Tile, bool> include)

@@ -30,7 +30,9 @@ namespace Anthropocene.Simulation
                 r.Host[t.Id] = (byte)(marine ? HostRock.Mafic : HostRock.Basement);
                 bool cratonic = t.Continental && !marine && (c.BoundaryDistance == null || c.BoundaryDistance[t.Id] >= .045f) && t.Volcanism < .05f &&
                     TerrainNoise.Fractal(seed, 12050, (t.Id % width) / (double)width, (t.Id / width) / (double)height, 4, 3) > -.05;
+                if (!marine && t.Continental && c.AncientOrogenStrength != null && c.AncientOrogenStrength[t.Id] > .35f && c.AncientOrogenAge != null && c.AncientOrogenAge[t.Id] >= 300) cratonic = true;
                 r.History[t.Id] = (ushort)(GeologicalHistory.Preserved | (cratonic ? GeologicalHistory.Ancient : GeologicalHistory.None) | (marine ? GeologicalHistory.MarineFacies : GeologicalHistory.None));
+                if (!marine && t.Continental && c.AncientOrogenStrength != null && c.AncientOrogenStrength[t.Id] > .55f) r.Host[t.Id] = (byte)HostRock.Metamorphic;
             }
             var provinces = new List<GeologicalProvince>(); var weight = new float[count]; var boundaryWarp = new float[count];
             for (int id = 0; id < count; id++) boundaryWarp[id] = (float)(tuning.BoundaryWarp * TerrainNoise.Fractal(seed, 12100, id % width / (double)width, id / width / (double)height, 32, 2));
