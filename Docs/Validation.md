@@ -6,6 +6,10 @@ Current production tuning now allocates food to current-population consumption, 
 
 ## Geological resource generation — September 18
 
+### Resource access from spawned tribes
+
+A read-only audit of **five Standard worlds × 80 tribes** (Continents 11/42/1729, Pangaea 42, Archipelagos 42; default 100,000 cap) retained all world fingerprints. Independent camp-origin checks passed **3,246 comparisons**. Nearby Stone/Clay/Wood are broadly available; Copper/Tin access is much less common, especially when excluding traces or requiring land connectivity. Methodology, all 13 materials, quantity thresholds, per-world results and reproduction commands are in [SpawnResourceAccess.md](SpawnResourceAccess.md). No simulation settings changed.
+
 ### Configurable quantity caps
 
 `MaximumQuantity` now accepts 1,000 through the signed integer limit, with **100,000 unchanged as the default**. Player configuration and a command-line override expose it; the atlas exporter has the same option. Larger caps use resource schema 3 with a saved surface unit while keeping the existing two-byte surface rasters. Generator 2 and all discovery/access rules remain unchanged.
