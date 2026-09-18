@@ -23,7 +23,7 @@ Each nondefault tuning group contributes invariant-culture values to the saved r
 
 ## Quantities and units
 
-Set `MaximumQuantity` in `Assets/_Anthropocene/Resources/ResourceGenerationConfig.json` for newly generated player worlds. It accepts **1,000–2,147,483,647** units per shared body or surface source; the upper bound is the integer representation limit, not a balance target. The file can also override the other generation options and tuning groups. Defaults remain 100,000. The player command line overrides just the cap without rebuilding:
+Set `MaximumQuantity` in `Assets/_Anthropocene/Resources/ResourceGenerationConfig.json` for Editor runs and future builds. It accepts **1,000–2,147,483,647** units per shared body or surface source; the upper bound is the integer representation limit, not a balance target. The file can also override the other generation options and tuning groups. Defaults remain 100,000. The built player's command line overrides just the cap without rebuilding:
 
 ```powershell
 ./Builds/GeologicalResources/Anthropocene.exe --anthropocene-resource-maximum 1000000

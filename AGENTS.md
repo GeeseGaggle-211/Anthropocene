@@ -47,6 +47,7 @@ In the tables below, simulation filenames are relative to `Assets/_Anthropocene/
 The `Opening*.cs` UI files share one partial `OpeningGame` class; they are not independent components. Keep changes in the appropriate partial file.
 
 - `Assets/_Anthropocene/Resources/OpeningConfig.json`: simulation tuning. Keep serialized values and `SimulationConfig` defaults consistent when changing defaults.
+- `Assets/_Anthropocene/Resources/ResourceGenerationConfig.json`: per-generation resource overrides, including `MaximumQuantity` (default 100,000; 1,000–int.MaxValue supported). The player accepts `--anthropocene-resource-maximum`; the atlas script accepts `-ResourceMaximum`. New limits affect new worlds, never loaded saves.
 - `Assets/_Anthropocene/Resources/Tilesets/`: classic and high-contrast semantic symbol definitions with glyph fallbacks. Both must convey the same gameplay information.
 - `Assets/_Anthropocene/Resources/MapArt/`: 29 original cartographic sprites; preserve GUIDs, alpha and semantic layers. `Tools/Art/Build-SymbolicAssets.cjs` recreates PNGs and SVG exports in `Tools/Art/Sources`; provenance and the approved visual target are in `Docs/ArtProvenance.md`. Judge art in the actual Unity render, not only a source contact sheet. Never add opaque occupant backplates or flatten coloured sprites with glyph tint.
 

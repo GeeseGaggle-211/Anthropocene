@@ -13,8 +13,9 @@ Current production tuning now allocates food to current-population consumption, 
 - **118 geology checks pass**. Added cases use caps 1,006, 250,000, 1,000,000 and 2,147,483,647, verifying bounded stocks, unchanged core geography and body placement, scaled Wood capacity and exact save/load. Invalid saved units and larger caps labelled as legacy schemas are rejected. The three original default resource fingerprints still match.
 - Real schema-1 and schema-2 Continents/42 saves match their original export-manifest resource fingerprints before and after save/load.
 - **25/25 Unity tests pass** (10.00 seconds), including JSON configuration/default preservation and resource heatmap scaling. A complete Continents/42/96×48/4 export at one million succeeds with schema 3 and a 16-unit surface quantum.
+- The separate Windows build from **1d8efd8** succeeds. Its **Standard/Archipelagos/42/80** GUI run with `--anthropocene-resource-maximum 1000000` passes all six preview layers, unchanged state/fog and turn two (30 people). The inspected resource frame shows the one-million legend and 974,528 Stone units at the selected tile. All seven non-resource atlas/gameplay captures are byte-identical to the earlier 100,000-cap run. This is automated actual-player rendering and image review; no user save slot was used.
 
-Evidence is ignored under `TestResults/ResourceLimits`: `headless.log`, `legacy.log`, `EditMode.xml`, `atlas.log` and `Atlas/`. Previous full core/replay and large-world audits below remain the baseline; this change adds no terrain or economy behavior.
+Evidence is ignored under `TestResults/ResourceLimits`: `headless.log`, `legacy.log`, `EditMode.xml`, `atlas.log`, `Atlas/`, `Build.log` and `PlayerAtlas/`. Previous full core/replay and large-world audits below remain the baseline; this change adds no terrain or economy behavior.
 
 ### Modular generation and tuning refactor
 
