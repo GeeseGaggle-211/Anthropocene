@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -11,7 +12,8 @@ internal static class Program
 {
     private static readonly MaterialId[] Materials = { MaterialId.Stone, MaterialId.Clay, MaterialId.Wood,
         MaterialId.Copper, MaterialId.Tin, MaterialId.Gold, MaterialId.Lead, MaterialId.Zinc,
-        MaterialId.Silver, MaterialId.Salt, MaterialId.Limestone, MaterialId.Silica, MaterialId.Gypsum };
+        MaterialId.Silver, MaterialId.Salt, MaterialId.Limestone, MaterialId.Silica, MaterialId.Gypsum,
+        MaterialId.Iron };
     private static readonly double[] Thresholds = { 0, 1, 10, 100 };
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions { IncludeFields = true, WriteIndented = true };
     private static string Option(string[] args, string key, string fallback)
@@ -28,6 +30,7 @@ internal static class Program
             Directory.CreateDirectory(output);
             var options = JsonSerializer.Deserialize<ResourceGenerationOptions>(File.ReadAllText("Assets/_Anthropocene/Resources/ResourceGenerationConfig.json"), Json);
             options.MaximumQuantity = int.Parse(Option(args, "--maximum", options.MaximumQuantity.ToString()));
+            options.DeepReserveMultiplier = double.Parse(Option(args, "--deep-reserve-multiplier", options.DeepReserveMultiplier.ToString(CultureInfo.InvariantCulture)), CultureInfo.InvariantCulture);
             options.Validate();
             if (!options.Enabled) throw new ArgumentException("The audit requires resource generation enabled.");
             var report = new AuditReport { SourceCommit = Option(args, "--source-commit", "unrecorded"), ResourceOptions = options };
@@ -41,10 +44,16 @@ internal static class Program
                 var world = new WorldGenerator().Generate(seed, config, options);
                 if (world.Camps.Count != 80) throw new Exception("Expected 80 spawned camps.");
                 var measured = Measure(world);
+                byte[] save = SaveCodec.Save(world);
+                var restored = SaveCodec.Load(save);
+                if (SaveCodec.Fingerprint(restored) != measured.WorldFingerprint || !save.SequenceEqual(SaveCodec.Save(restored)))
+                    throw new Exception("Resource audit save round trip changed authoritative state.");
+                measured.SaveRoundTripVerified = true;
+                restored = null;
                 measured.ElapsedSeconds = timer.Elapsed.TotalSeconds;
                 report.Worlds.Add(measured);
                 File.WriteAllText(Path.Combine(output, measured.Key + ".json"), JsonSerializer.Serialize(measured, Json));
-                Console.WriteLine($"PASS {measured.Key}: 80 tribes, {Materials.Length} materials, {timer.Elapsed.TotalSeconds:F1}s; state unchanged.");
+                Console.WriteLine($"PASS {measured.Key}: 80 tribes, {Materials.Length} materials, {timer.Elapsed.TotalSeconds:F1}s; state unchanged; save round trip exact.");
                 world = null;
                 GC.Collect();
             }
@@ -65,6 +74,39 @@ internal static class Program
             ConfigurationHash = world.Generation.ConfigurationHash, ResourceConfigurationHash = world.Resources.ConfigurationHash,
             LandTiles = world.Tiles.Count(t => t.Land), TraversableTiles = world.Tiles.Count(t => t.TraversableLand)
         };
+        foreach (var definition in ResourceCatalog.Materials.Where(m => !m.Reserved))
+        {
+            var r = world.Resources; var material = definition.Id;
+            double total = 0, accessible = 0, deep = 0, scatteredAccessible = 0, scatteredDeep = 0;
+            for (int tile = 0; tile < size; tile++)
+            {
+                total += r.SurfaceTotal(tile, material);
+                accessible += r.SurfaceAccessible(tile, material);
+                deep += r.SurfaceDeepTotal(tile, material);
+            }
+            foreach (var body in r.Bodies)
+            {
+                double allocatedTotal = 0, allocatedDeep = 0;
+                foreach (var site in body.Sites)
+                {
+                    double siteAccess = r.AccessibleAt(body, site, material), siteDeep = r.DeepAt(body, site, material);
+                    accessible += siteAccess; deep += siteDeep;
+                    allocatedTotal += r.TotalAt(body, site, material); allocatedDeep += siteDeep;
+                    if (body.Concentration == MineralConcentration.Scattered) { scatteredAccessible += siteAccess; scatteredDeep += siteDeep; }
+                }
+                Near(allocatedTotal, r.TotalComponentQuantity(body, material), "Total component allocation");
+                Near(allocatedDeep, r.DeepComponentQuantity(body, material), "Deep component allocation");
+                total += allocatedTotal;
+            }
+            if (r.Version >= 4)
+            {
+                Near(deep, material == MaterialId.Wood ? 0 : accessible * r.DeepReserveMultiplier, "Deep/accessible pool ratio");
+                Near(scatteredDeep, material == MaterialId.Wood ? 0 : scatteredAccessible * r.DeepReserveMultiplier, "Scattered deep/accessible pool ratio");
+                if (material != MaterialId.Wood) Near(total, accessible + deep, "Total pool reconciliation");
+            }
+            result.MaterialTotals.Add(new MaterialTotal { Material = material.ToString(), Total = total,
+                Accessible = accessible, Deep = deep, ScatteredAccessible = scatteredAccessible, ScatteredDeep = scatteredDeep });
+        }
         var graph = new int[size * 6];
         Array.Fill(graph, -1);
         for (int i = 0; i < size; i++)
@@ -96,27 +138,29 @@ internal static class Program
         foreach (MaterialId material in Materials)
         {
             var r = world.Resources;
-            var total = new double[size]; var accessible = new double[size];
+            var total = new double[size]; var accessible = new double[size]; var deep = new double[size];
             var scattered = new double[size]; var rich = new double[size];
             for (int i = 0; i < size; i++)
             {
                 total[i] = r.SurfaceTotal(i, material);
+                deep[i] = r.SurfaceDeepTotal(i, material);
                 accessible[i] = rich[i] = r.SurfaceAccessible(i, material);
             }
             foreach (var body in r.Bodies)
             {
-                double component = r.ComponentQuantity(body, material);
+                double component = r.TotalComponentQuantity(body, material);
                 if (component <= 0) continue;
                 foreach (var site in body.Sites)
                 {
                     double potential = r.AccessibleAt(body, site, material);
-                    total[site.Tile] += component * site.Share / 10000;
+                    total[site.Tile] += r.TotalAt(body, site, material);
+                    deep[site.Tile] += r.DeepAt(body, site, material);
                     accessible[site.Tile] += potential;
                     if (body.Concentration == MineralConcentration.Scattered) scattered[site.Tile] += potential;
                     else rich[site.Tile] += potential;
                 }
             }
-            double expected = world.Tiles.Sum(t => r.SurfaceTotal(t.Id, material)) + r.Bodies.Sum(b => r.ComponentQuantity(b, material));
+            double expected = world.Tiles.Sum(t => r.SurfaceTotal(t.Id, material)) + r.Bodies.Sum(b => r.TotalComponentQuantity(b, material));
             if (Math.Abs(expected - total.Sum()) > Math.Max(.01, expected * 1e-10)) throw new Exception("Shared-body accounting failed.");
             var geometric = Nearest(graph, walkable, accessible, 0, false);
             var deposited = Nearest(graph, walkable, rich, 0, true);
@@ -125,13 +169,14 @@ internal static class Program
             {
                 var row = new ResourceRow { Material = material.ToString(), DiscoveryTechnology = r.DiscoveryTechnologies[(int)material],
                     BaseAccessFraction = r.AccessibleFraction(material), GeometricDistance = Distance(geometric.distance[camp.Tile]),
-                    RichDistance = Distance(deposited.distance[camp.Tile]), RichTile = Distance(deposited.owner[camp.Tile]), AtCamp = accessible[camp.Tile] };
+                    RichDistance = Distance(deposited.distance[camp.Tile]), RichTile = Distance(deposited.owner[camp.Tile]), AtCamp = accessible[camp.Tile], DeepAtCamp = deep[camp.Tile] };
                 foreach (var (tile, distance) in catchments[camp.Tile])
                 {
                     if (distance <= 1) row.Within1 += accessible[tile];
-                    if (distance <= 2) { row.Within2 += accessible[tile]; row.ScatteredWithin2 += scattered[tile]; }
+                    if (distance <= 2) { row.Within2 += accessible[tile]; row.ScatteredWithin2 += scattered[tile]; row.DeepWithin2 += deep[tile]; }
                     if (distance <= 5) row.Within5 += accessible[tile];
                     row.Within10 += accessible[tile];
+                    row.DeepWithin10 += deep[tile];
                 }
                 for (int j = 0; j < nearest.Length; j++)
                 {
@@ -147,6 +192,11 @@ internal static class Program
     }
 
     private static int? Distance(int value) => value < 0 ? (int?)null : value;
+    private static void Near(double actual, double expected, string label)
+    {
+        if (Math.Abs(actual - expected) > Math.Max(.000001, Math.Abs(expected) * 1e-9))
+            throw new Exception(label + " failed: " + actual + " versus " + expected);
+    }
 
     private static (int[] distance, int[] owner) Nearest(int[] graph, bool[] walkable, double[] values, double threshold, bool landOnly)
     {
@@ -211,7 +261,7 @@ internal static class Program
 
 internal sealed class AuditReport
 {
-    public int Schema = 1;
+    public int Schema = 2;
     public string SourceCommit;
     public ResourceGenerationOptions ResourceOptions;
     public string Scope = "Provisional early-material basket; catalog has no official Neolithic era tags.";
@@ -224,6 +274,8 @@ internal sealed class WorldReport
     public string Key, Shape, ResourceFingerprint, WorldFingerprint, ConfigurationHash, ResourceConfigurationHash;
     public int Seed, Width, Height, MaximumQuantity, LandTiles, TraversableTiles;
     public double ElapsedSeconds;
+    public bool SaveRoundTripVerified;
+    public List<MaterialTotal> MaterialTotals = new List<MaterialTotal>();
     public List<int[]> LandRuns = new List<int[]>();
     public List<CampReport> Camps = new List<CampReport>();
 }
@@ -233,11 +285,17 @@ internal sealed class CampReport
     public string Environment;
     public List<ResourceRow> Resources = new List<ResourceRow>();
 }
+internal sealed class MaterialTotal
+{
+    public string Material;
+    public double Total, Accessible, Deep, ScatteredAccessible, ScatteredDeep;
+}
 internal sealed class ResourceRow
 {
     public string Material, DiscoveryTechnology;
     public int? GeometricDistance, RichDistance, RichTile;
     public double BaseAccessFraction, AtCamp, Within1, Within2, Within5, Within10, ScatteredWithin2;
+    public double DeepAtCamp, DeepWithin2, DeepWithin10;
     public List<NearestResult> Nearest = new List<NearestResult>();
 }
 internal sealed class NearestResult

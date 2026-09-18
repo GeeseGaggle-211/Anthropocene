@@ -1,5 +1,7 @@
 # Resource access from spawned tribes — September 18, 2026
 
+This is the historical **100k-cap / no-deep** baseline. The later 100× early-accessible and 50:1 deep tuning is reported in [ResourceRichness.md](ResourceRichness.md).
+
 The five-world audit finds plentiful nearby Stone, Clay and Wood, but distant and uneven metal opportunities. Broader scattered fields do not yet give most starts a nearby substantial Copper or Tin supply. No generation, placement or economy settings were changed for this audit.
 
 ## Sample and meaning
@@ -76,11 +78,11 @@ The evidence suggests two separate tuning questions: quantities in scattered fie
 From the repository root:
 
 ```powershell
-./Tools/ResourceAccess/Measure-Starts.ps1
+./Tools/ResourceAccess/Measure-Starts.ps1 -Maximum 100000 -DeepReserveMultiplier 0
 python ./Tools/ResourceAccess/Summarize.py
 
 # Optional comparison with a different cap, in a separate output directory:
-./Tools/ResourceAccess/Measure-Starts.ps1 -Maximum 1000000 -Output TestResults/TribeResourceAccess1M
+./Tools/ResourceAccess/Measure-Starts.ps1 -Maximum 1000000 -DeepReserveMultiplier 0 -Output TestResults/TribeResourceAccess1M
 python ./Tools/ResourceAccess/Summarize.py TestResults/TribeResourceAccess1M
 ```
 

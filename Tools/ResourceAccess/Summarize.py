@@ -23,6 +23,13 @@ with (root / "tribes.csv").open("w", newline="") as f:
     writer.writeheader()
     writer.writerows(flat)
 
+totals = [dict(World=w["Key"], **m) for w in data["Worlds"] for m in w.get("MaterialTotals", [])]
+if totals:
+    with (root / "material-totals.csv").open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(totals[0]))
+        writer.writeheader()
+        writer.writerows(totals)
+
 def quantile(values, p):
     values = sorted(values)
     if not values:
@@ -50,8 +57,9 @@ with (root / "summary.csv").open("w", newline="") as f:
     writer = csv.DictWriter(f, fieldnames=list(summary[0]))
     writer.writeheader()
     writer.writerows(summary)
+metals = ("Copper", "Tin", "Zinc", "Iron")
 for s in summary:
-    if (s["World"] == "All" and (s["Threshold"] == 0 or s["Material"] in ("Copper", "Tin"))) or (s["World"] != "All" and s["Material"] in ("Copper", "Tin") and s["Threshold"] in (0, 10)):
+    if (s["World"] == "All" and (s["Threshold"] == 0 or s["Material"] in metals)) or (s["World"] != "All" and s["Material"] in metals and s["Threshold"] in (0, 10)):
         print(s)
 
 # Compact view data: distances by threshold, target tiles, radius stocks, straight-line and rich distances.
@@ -62,5 +70,6 @@ for w in data["Worlds"]:
             {"d": [n["LandDistance"] for n in r["Nearest"]], "target": [n["Tile"] for n in r["Nearest"]],
              "units": [float(format(n["Accessible"], ".6g")) for n in r["Nearest"]],
              "local": [float(format(r[k], ".6g")) for k in ("AtCamp", "Within2", "Within5", "Within10")],
+             "deep": [float(format(r.get(k, 0), ".6g")) for k in ("DeepAtCamp", "DeepWithin2", "DeepWithin10")],
              "geo": r["GeometricDistance"], "rich": r["RichDistance"]} for r in c["Resources"]]} for c in w["Camps"]]})
 (root / "view-data.json").write_text(json.dumps(view, separators=(",", ":")))

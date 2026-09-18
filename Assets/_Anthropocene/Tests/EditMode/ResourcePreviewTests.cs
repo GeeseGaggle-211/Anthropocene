@@ -23,15 +23,15 @@ namespace Anthropocene.Tests.EditMode
         [Test]
         public void AllResourceViews_ArePureAndWoodIsQuarterAccessible()
         {
-            var world = new WorldGenerator().Generate(42, SimulationConfig.Small(2));
+            var world = new WorldGenerator().Generate(42, SimulationConfig.Small(2), new ResourceGenerationOptions { MaximumQuantity = 10000000, DeepReserveMultiplier = 50 });
             string before = SaveCodec.Fingerprint(world);
             var observation = new AgentObservationBuilder().Build(world, 0); var visible = observation.Tiles.Keys.OrderBy(x => x).ToArray();
             foreach (var material in ResourceCatalog.Materials.Where(m => !m.Reserved))
             {
                 var totals = WorldResourcePreview.Values(world, material.Id, false);
                 var accessible = WorldResourcePreview.Values(world, material.Id, true);
-                double expected = world.Tiles.Sum(t => world.Resources.SurfaceTotal(t.Id, material.Id)) + world.Resources.Bodies.Sum(b => world.Resources.ComponentQuantity(b, material.Id));
-                Assert.That(totals.Sum(), Is.EqualTo(expected).Within(.0001), material.Name);
+                double expected = world.Tiles.Sum(t => world.Resources.SurfaceTotal(t.Id, material.Id)) + world.Resources.Bodies.Sum(b => world.Resources.TotalComponentQuantity(b, material.Id));
+                Assert.That(totals.Sum(), Is.EqualTo(expected).Within(System.Math.Max(.0001, expected * 1e-12)), material.Name);
                 Assert.That(accessible.Zip(totals, (a, t) => a <= t && a >= 0).All(x => x), Is.True, material.Name);
                 WorldResourcePreview.Describe(world, world.Camps[0].Tile, material.Id);
                 if (material.Id == MaterialId.Wood) Assert.That(accessible.Sum(), Is.EqualTo(totals.Sum() * .25).Within(.0001));
@@ -65,12 +65,32 @@ namespace Anthropocene.Tests.EditMode
             var config = Resources.Load<TextAsset>("ResourceGenerationConfig");
             Assert.That(config, Is.Not.Null);
             JsonUtility.FromJsonOverwrite(config.text, options);
-            Assert.That(options.MaximumQuantity, Is.EqualTo(ResourceCatalog.DefaultMaximumQuantity));
+            Assert.That(options.MaximumQuantity, Is.EqualTo(10000000));
+            Assert.That(options.DeepReserveMultiplier, Is.EqualTo(50));
             JsonUtility.FromJsonOverwrite("{\"MaximumQuantity\":1000000}", options);
             options.Validate();
             Assert.That(options.Deposit.CopperChanceMultiplier, Is.EqualTo(1.6));
             var r = new WorldResourceState { MaximumQuantity = options.MaximumQuantity, SurfaceUnit = WorldResourceState.SurfaceUnitFor(options.MaximumQuantity), Stone = new ushort[] { 62500 } };
             Assert.That(r.SurfaceTotal(0, MaterialId.Stone), Is.EqualTo(1000000));
+        }
+
+        [Test]
+        public void DeepReserve_IsIncludedOnlyInTotalAndHasASeparateLegendScale()
+        {
+            var world = new WorldState { Tiles = new[] { new Tile(), new Tile() } };
+            var body = new DepositBody { Quantity = 10000000, SiteExposureWeightTotal = 40000000,
+                Components = new[] { new DepositComponent(MaterialId.Copper, 6000) { AccessibleQuantity = 240000, DeepQuantity = 12000000 } },
+                Sites = new[] { new DepositSite { Tile = 0, Share = 2500, Exposure = 10000 }, new DepositSite { Tile = 1, Share = 7500, Exposure = 2000 } } };
+            world.Resources = new WorldResourceState { Version = 4, MaximumQuantity = 10000000, DeepReserveMultiplier = 50,
+                Stone = new ushort[2], Clay = new ushort[2], Wood = new ushort[2], DeepStone = new ushort[2], DeepClay = new ushort[2], Bodies = new[] { body } };
+            Assert.That(WorldResourcePreview.Values(world, MaterialId.Copper, false), Is.EqualTo(new[] { 7650000.0, 4590000.0 }).Within(.0001));
+            Assert.That(WorldResourcePreview.Values(world, MaterialId.Copper, true), Is.EqualTo(new[] { 150000.0, 90000.0 }));
+            Assert.That(WorldResourcePreview.ScaleMaximum(world.Resources, MaterialId.Copper, false), Is.EqualTo(510000000));
+            Assert.That(WorldResourcePreview.ScaleMaximum(world.Resources, MaterialId.Copper, true), Is.EqualTo(10000000));
+            Assert.That(WorldResourcePreview.ScaleMaximum(world.Resources, MaterialId.Wood, false), Is.EqualTo(10000000));
+            var depleted = body.Components[0]; depleted.AccessibleQuantity = 0; body.Components[0] = depleted;
+            Assert.That(WorldResourcePreview.Values(world, MaterialId.Copper, true), Is.EqualTo(new[] { 0.0, 0.0 }));
+            Assert.That(WorldResourcePreview.Values(world, MaterialId.Copper, false).Sum(), Is.EqualTo(12000000).Within(.0001));
         }
     }
 }

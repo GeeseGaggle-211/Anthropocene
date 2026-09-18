@@ -63,6 +63,7 @@ internal static class GeologyGenerationChecks
         OccurrenceFixtures();
         TuningFixtures();
         QuantityLimitFixtures();
+        DeepReserveFixtures();
         var small = new WorldGenerator().Generate(1, SimulationConfig.Small(4));
         var body = small.Resources.Bodies.First(b => b.SourceBody == 0);
         double originalQuantity = body.Quantity;
@@ -115,6 +116,81 @@ internal static class GeologyGenerationChecks
             try { ResourceValidation.Validate(world); } catch (InvalidOperationException) { rejected = true; }
             Check(rejected, "large quantities cannot masquerade as a legacy resource schema");
         }
+    }
+    private static void DeepReserveFixtures()
+    {
+        var config = SimulationConfig.Small(4);
+        var generator = new WorldGenerator();
+        var old = generator.Generate(42, config);
+        var shallowOptions = new ResourceGenerationOptions { MaximumQuantity = 10000000 };
+        var shallow = generator.Generate(42, config, shallowOptions);
+        var options = new ResourceGenerationOptions { MaximumQuantity = 10000000, DeepReserveMultiplier = 50 };
+        var deep = generator.Generate(42, config, options);
+        var r = deep.Resources;
+        Check(r.Version == 4 && r.GenerationVersion == 3 && r.DeepMiningTechnology == "AdvancedMining" && r.DeepReserveMultiplier == 50, "deep worlds use independent schema and capability metadata");
+        Check(r.ConfigurationHash == options.Hash && options.Hash != shallowOptions.Hash && shallow.Resources.ConfigurationHash == shallowOptions.Hash, "deep setting has its own configuration identity");
+        Check(SaveCodec.LegacyFingerprint(deep) == SaveCodec.LegacyFingerprint(shallow) &&
+            r.Bodies.Select(b => b.Id).SequenceEqual(shallow.Resources.Bodies.Select(b => b.Id)), "deep setting preserves core world and body placement");
+        foreach (var b in r.Bodies)
+        {
+            var counterpart = shallow.Resources.Bodies.Single(v => v.Id == b.Id);
+            Check(b.InitialQuantity == counterpart.InitialQuantity && b.Quantity == counterpart.Quantity && b.Sites.SequenceEqual(counterpart.Sites), "deep setting preserves near-surface stocks and sites");
+            foreach (var part in b.Components)
+            {
+                double expected = counterpart.Components.Single(c => c.Material == part.Material).PartsPerTenThousand * b.Quantity / 10000.0 *
+                    b.Sites.Sum(s => s.Share * (double)s.Exposure) / 100000000.0 * r.AccessibleFraction(part.Material);
+                Check(Math.Abs(part.AccessibleQuantity - expected) < 1e-6 && Math.Abs(part.DeepQuantity - 50 * expected) < 1e-5,
+                    "accessible and deep pools preserve exposure-weighted access at every concentration");
+                Check(Math.Abs(b.Sites.Sum(s => r.AccessibleAt(b, s, part.Material)) - part.AccessibleQuantity) < 1e-6 &&
+                    Math.Abs(b.Sites.Sum(s => r.DeepAt(b, s, part.Material)) - part.DeepQuantity) < 1e-5,
+                    "site access and deep shares conserve each material pool");
+            }
+        }
+        Check(r.Bodies.Any(b => b.Components.Any(c => c.DeepQuantity > 0)) && r.Bodies.Any(b => b.Concentration == MineralConcentration.Scattered), "deep and scattered fixtures present");
+        var oldById = old.Resources.Bodies.ToDictionary(b => b.Id);
+        foreach (var b in r.Bodies.Where(b => oldById.ContainsKey(b.Id)))
+            Check(Math.Abs(b.InitialQuantity - oldById[b.Id].InitialQuantity * 100) <= 510 &&
+                Math.Abs(b.Quantity - oldById[b.Id].Quantity * 100) <= 510, "rich and trace stocks scale one hundredfold within ten-unit rounding");
+        Check(r.Bodies.Where(b => b.SourceBody != 0).GroupBy(b => b.SourceBody).All(g =>
+            Math.Abs(r.Bodies.Single(b => b.Id == g.Key).Quantity + g.Sum(b => b.InitialQuantity) - r.Bodies.Single(b => b.Id == g.Key).InitialQuantity) < 1e-5), "placers conserve near-surface stock and leave deep reserves separate");
+        Check(r.Bodies.Where(b => b.SourceBody != 0).GroupBy(b => b.SourceBody).All(g =>
+            r.Bodies.Single(b => b.Id == g.Key).Components.All(c =>
+            Math.Abs(c.AccessibleQuantity + g.Sum(b => b.Components.Single(v => v.Material == c.Material).InitialAccessibleQuantity) - c.InitialAccessibleQuantity) < 1e-6 &&
+            Math.Abs(c.DeepQuantity + g.Sum(b => b.Components.Single(v => v.Material == c.Material).InitialDeepQuantity) - c.InitialDeepQuantity) < 1e-5)),
+            "placers conserve explicit accessible and deep component pools");
+        foreach (var b in r.Bodies.Where(b => b.Components.Any(c => c.DeepQuantity > 0)).Take(10))
+        {
+            var material = b.Components[0].Material;
+            Check(r.TotalComponentQuantity(b, material) == b.Components.Single(c => c.Material == material).AccessibleQuantity + r.DeepComponentQuantity(b, material) &&
+                b.Sites.All(s => r.AccessibleAt(b, s, material) <= r.ComponentQuantity(b, material)), "deep stock is excluded from human accessible amounts");
+        }
+        Check(SaveCodec.Fingerprint(SaveCodec.Load(SaveCodec.Save(deep))) == SaveCodec.Fingerprint(deep), "schema-4 deep quantities round trip");
+        int stoneTile = Array.FindIndex(r.DeepStone, v => v > 0);
+        Check(stoneTile >= 0 && r.SurfaceDeepTotal(stoneTile, MaterialId.Stone) == 50 * r.SurfaceAccessible(stoneTile, MaterialId.Stone), "stone's deep pool starts at fifty times accessible stone");
+        double deepStone = r.SurfaceDeepTotal(stoneTile, MaterialId.Stone);
+        r.Stone[stoneTile] = 0;
+        ResourceValidation.Validate(deep);
+        Check(r.SurfaceAccessible(stoneTile, MaterialId.Stone) == 0 && r.SurfaceDeepTotal(stoneTile, MaterialId.Stone) == deepStone, "surface depletion does not draw down deep stone");
+        r.DeepStone[stoneTile] = 0;
+        ResourceValidation.Validate(deep);
+        Check(r.SurfaceDeepTotal(stoneTile, MaterialId.Stone) == 0, "deep depletion is independent of surface stone");
+        var target = r.Bodies.First(b => b.Components.Any(c => c.DeepQuantity > 0));
+        var changed = target.Components[0]; double original = changed.DeepQuantity;
+        changed.AccessibleQuantity = 0; target.Components[0] = changed;
+        ResourceValidation.Validate(deep);
+        Check(r.DeepComponentQuantity(target, changed.Material) == original && target.Components[0].AccessibleQuantity == 0, "component accessible depletion leaves deep stock intact");
+        changed.AccessibleQuantity = target.Components[0].InitialAccessibleQuantity; target.Components[0] = changed;
+        changed.DeepQuantity = double.NaN; target.Components[0] = changed;
+        bool rejected = false; try { ResourceValidation.Validate(deep); } catch (InvalidOperationException) { rejected = true; }
+        Check(rejected, "nonfinite deep stock rejected");
+        changed.DeepQuantity = original; target.Components[0] = changed;
+        changed.InitialAccessibleQuantity = target.InitialQuantity * changed.PartsPerTenThousand / 10000 * r.AccessibleFraction(changed.Material) + 1000;
+        changed.InitialDeepQuantity = changed.InitialAccessibleQuantity * r.DeepReserveMultiplier; target.Components[0] = changed;
+        rejected = false; try { ResourceValidation.Validate(deep); } catch (InvalidOperationException) { rejected = true; }
+        Check(rejected, "excessive saved component pool rejected");
+        r.DeepReserveMultiplier = 0;
+        rejected = false; try { ResourceValidation.Validate(deep); } catch (InvalidOperationException) { rejected = true; }
+        Check(rejected, "invalid deep metadata rejected");
     }
     private static void TuningFixtures()
     {

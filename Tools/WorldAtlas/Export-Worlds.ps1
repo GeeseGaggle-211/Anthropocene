@@ -8,7 +8,8 @@ param(
     [switch]$GeographyOnly,
     [switch]$Save,
     [string]$SimulationSource,
-    [int]$ResourceMaximum
+    [int]$ResourceMaximum,
+    [double]$DeepReserveMultiplier
 )
 $ErrorActionPreference = 'Stop'
 $atlasRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -32,8 +33,10 @@ if ($LASTEXITCODE -ne 0) { throw 'World atlas build failed.' }
 if ((Get-SimulationSourceFingerprint $atlasSource) -ne $atlasSourceHash) { throw 'Simulation sources changed during compilation. Rerun the export once edits are complete.' }
 $atlasArgs = @((Join-Path $PSScriptRoot 'bin/Release/net8.0/Anthropocene.WorldAtlas.dll'), '--seeds', $Seeds, '--shape', $Shape, '--players', "$Players", '--width', "$Width", '--height', "$Height", '--output', $Output)
 $atlasArgs += @('--source-sha256', $atlasSourceHash, '--source-description', $(if ($SimulationSource) { 'Preserved simulation source snapshot' } else { 'Current checkout simulation source files' }))
+$atlasArgs += @('--resource-config', (Join-Path $atlasRoot 'Assets/_Anthropocene/Resources/ResourceGenerationConfig.json'))
 if ($GeographyOnly) { $atlasArgs += '--geography-only' }
 if ($Save) { $atlasArgs += '--save' }
 if ($PSBoundParameters.ContainsKey('ResourceMaximum')) { $atlasArgs += @('--resource-maximum', "$ResourceMaximum") }
+if ($PSBoundParameters.ContainsKey('DeepReserveMultiplier')) { $atlasArgs += @('--deep-reserve-multiplier', $DeepReserveMultiplier.ToString('R', [Globalization.CultureInfo]::InvariantCulture)) }
 & $sdk @atlasArgs
 if ($LASTEXITCODE -ne 0) { throw 'World atlas export failed.' }

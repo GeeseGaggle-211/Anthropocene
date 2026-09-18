@@ -24,8 +24,13 @@ internal static class Program
             int players = int.Parse(Option(args, "--players", "80"));
             int width = int.Parse(Option(args, "--width", "1024")), height = int.Parse(Option(args, "--height", "512"));
             bool geographyOnly = args.Contains("--geography-only"), saves = args.Contains("--save");
-            var resources = new ResourceGenerationOptions { MaximumQuantity = int.Parse(Option(args, "--resource-maximum", ResourceCatalog.DefaultMaximumQuantity.ToString(System.Globalization.CultureInfo.InvariantCulture))) };
+            string resourceConfigPath = Path.GetFullPath(Option(args, "--resource-config", "Assets/_Anthropocene/Resources/ResourceGenerationConfig.json"));
+            var resources = JsonSerializer.Deserialize<ResourceGenerationOptions>(File.ReadAllText(resourceConfigPath), Json)
+                ?? throw new InvalidDataException("Resource generation configuration is empty.");
+            resources.MaximumQuantity = int.Parse(Option(args, "--resource-maximum", resources.MaximumQuantity.ToString(System.Globalization.CultureInfo.InvariantCulture)), System.Globalization.CultureInfo.InvariantCulture);
+            resources.DeepReserveMultiplier = double.Parse(Option(args, "--deep-reserve-multiplier", resources.DeepReserveMultiplier.ToString("R", System.Globalization.CultureInfo.InvariantCulture)), System.Globalization.CultureInfo.InvariantCulture);
             resources.Validate();
+            Console.WriteLine($"Resource configuration: reference cap {resources.MaximumQuantity:N0}; deep reserves {resources.DeepReserveMultiplier:0.###}x initial accessible minerals.");
             var seeds = Option(args, "--seeds", "1729").Split(',').Select(int.Parse).ToArray();
             foreach (int seed in seeds)
             {
@@ -39,6 +44,7 @@ internal static class Program
                 var metrics = Metrics(world, geographyOnly, generationSeconds);
                 WriteJson(Path.Combine(directory, "metrics.json"), metrics);
                 WriteJson(Path.Combine(directory, "config.json"), config);
+                WriteJson(Path.Combine(directory, "resource-config.json"), resources);
                 WriteJson(Path.Combine(directory, "camps.json"), Camps(world));
                 foreach (string layer in new[] { "environment", "elevation", "food", "freshwater", "volcanism" })
                     Png.Write(Path.Combine(directory, layer + ".png"), width, height, Image(world, layer));
@@ -60,6 +66,8 @@ internal static class Program
                     WorldSaveSha256 = hasSave ? FileHash(Path.Combine(directory, "world.anthro")) : null,
                     ResourceGenerationVersion = world.Resources?.GenerationVersion, ResourceSchemaVersion = world.Resources?.Version, ResourceFingerprint = world.Resources == null ? null : ResourceCodec.Fingerprint(world.Resources),
                     ResourceCatalogHash = world.Resources?.CatalogHash, ResourceConfigurationHash = world.Resources?.ConfigurationHash,
+                    ResourceConfigurationFile = "resource-config.json", ResourceConfigurationFileSha256 = FileHash(Path.Combine(directory, "resource-config.json")),
+                    ResourceMaximumQuantity = world.Resources?.MaximumQuantity, DeepReserveMultiplier = world.Resources?.DeepReserveMultiplier, DeepMiningTechnology = world.Resources?.DeepMiningTechnology,
                     ResourceReportFile = "geology.json", ResourceGalleryFile = "geology.html",
                     MapFiles = new[] { "environment.png", "elevation.png", "food.png", "freshwater.png", "volcanism.png" }.Concat(resourceMaps).ToArray()
                 });

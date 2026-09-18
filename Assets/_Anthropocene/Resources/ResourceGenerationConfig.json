@@ -1,3 +1,4 @@
 {
-  "MaximumQuantity": 100000
+  "MaximumQuantity": 10000000,
+  "DeepReserveMultiplier": 50
 }

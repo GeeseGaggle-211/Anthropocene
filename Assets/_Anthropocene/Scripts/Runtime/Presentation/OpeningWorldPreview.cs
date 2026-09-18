@@ -77,6 +77,7 @@ namespace Anthropocene.Presentation
         {
             // Explicit, on-demand dev read of a committed world. No observations or ecology are mutated.
             var colors = new Color32[world.Tiles.Length]; int width = world.Config.Width, height = world.Config.Height;
+            double resourceScale = WorldResourcePreview.ScaleMaximum(world.Resources, previewMaterial, previewAccessible);
             if (previewLayer == 5)
             {
                 previewResourceValues = WorldResourcePreview.Values(world, previewMaterial, previewAccessible);
@@ -98,7 +99,7 @@ namespace Anthropocene.Presentation
                         : Color.Lerp(new Color(.23f, .40f, .25f), new Color(.94f, .91f, .83f), Mathf.Clamp01(altitude / .38f));
                 }
                 else if (previewLayer == 4) color = Color.Lerp(color * .45f, new Color(1, .29f, .09f), Mathf.Clamp01(t.Volcanism * 5));
-                else if (previewLayer == 5) color = WorldResourcePreview.ColorFor(previewResourceValues[t.Id], color, world.Resources?.MaximumQuantity ?? ResourceCatalog.DefaultMaximumQuantity);
+                else if (previewLayer == 5) color = WorldResourcePreview.ColorFor(previewResourceValues[t.Id], color, resourceScale);
                 colors[(height - 1 - t.Id / width) * width + t.Id % width] = color;
             }
             previewTexture = new Texture2D(width, height, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };

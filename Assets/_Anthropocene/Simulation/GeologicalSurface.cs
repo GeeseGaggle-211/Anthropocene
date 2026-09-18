@@ -30,6 +30,7 @@ namespace Anthropocene.Simulation
                 r.Wood[id] = Pack(r, wood * (tuning.WoodMinimum + tuning.WoodRange * GeologicalProvinceStage.Roll(c.World.Seed, 305, id)));
             }
             if (!c.ResourceOptions.DisabledProfiles.Contains(100)) GeologicalPlacers.AddPlacers(c);
+            if (r.Version >= 4) GeologicalResourcePools.Initialize(r);
         }
         private static ushort Pack(WorldResourceState r, double fraction) => (ushort)Math.Min(r.MaximumQuantity / r.SurfaceUnit, Math.Round(r.MaximumQuantity * fraction / r.SurfaceUnit));
     }
