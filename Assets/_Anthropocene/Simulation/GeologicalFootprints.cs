@@ -46,7 +46,7 @@ namespace Anthropocene.Simulation
                 double cover = GeologicalProvinceStage.Roll(c.World.Seed, 211, key) + (c.World.Tiles[origin].Elevation - c.World.Tiles[tile].Elevation) * 3;
                 var depth = buried ? (cover < .65 ? BurialDepth.Deep : BurialDepth.Shallow) : cover < .4 ? BurialDepth.Surface : BurialDepth.Shallow;
                 if (scattered) depth = BurialDepth.Surface;
-                if (profile.Id == 33 || profile.Id == 34) depth = BurialDepth.Surface;
+                if (profile.Id == 33 || profile.Id == 34 || profile.Id == 40) depth = BurialDepth.Surface;
                 // Access is a fraction of local material, not discovery permission or equipment authorization.
                 sites.Add(new DepositSite
                 {

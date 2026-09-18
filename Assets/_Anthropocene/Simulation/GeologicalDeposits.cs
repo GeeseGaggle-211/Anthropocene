@@ -75,6 +75,9 @@ namespace Anthropocene.Simulation
                         };
                     }
                     double quantity = Math.Min(r.MaximumQuantity, Math.Round(r.MaximumQuantity * (tuning.RichStockMinimum + tuning.RichStockRange * GeologicalProvinceStage.Roll(seed, 207, semantic)) / 10) * 10);
+                    // Bog iron is a modest supplemental surface source; industrial reserves remain concentrated in BIFs and deeper formations.
+                    // Hook for future deposit regeneration: Bog iron (profile 40) precipitates biogenically in active wetlands and can regenerate over century scales.
+                    if (profile.Id == 40) quantity = Math.Max(10, Math.Round(quantity * .20 / 10) * 10);
                     bodies.Add(new DepositBody
                     {
                         Id = (long)profile.Id * 1000000 + domain * 100000 + key + 1,
@@ -92,6 +95,6 @@ namespace Anthropocene.Simulation
             }
             r.Bodies = bodies.OrderBy(b => b.Id).ToArray();
         }
-        public static bool HasScatteredOccurrences(int profile) => profile >= 1 && profile <= 12 || profile >= 20 && profile <= 31 && profile != 24;
+        public static bool HasScatteredOccurrences(int profile) => profile >= 1 && profile <= 12 || profile >= 20 && profile <= 31 && profile != 24 || profile >= 37 && profile <= 40;
     }
 }

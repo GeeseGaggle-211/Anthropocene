@@ -28,7 +28,9 @@ namespace Anthropocene.Simulation
             {
                 bool marine = t.WaterBody == WaterKind.Saltwater;
                 r.Host[t.Id] = (byte)(marine ? HostRock.Mafic : HostRock.Basement);
-                r.History[t.Id] = (ushort)(GeologicalHistory.Ancient | GeologicalHistory.Preserved | (marine ? GeologicalHistory.MarineFacies : GeologicalHistory.None));
+                bool cratonic = t.Continental && !marine && (c.BoundaryDistance == null || c.BoundaryDistance[t.Id] >= .045f) && t.Volcanism < .05f &&
+                    TerrainNoise.Fractal(seed, 12050, (t.Id % width) / (double)width, (t.Id / width) / (double)height, 4, 3) > -.05;
+                r.History[t.Id] = (ushort)(GeologicalHistory.Preserved | (cratonic ? GeologicalHistory.Ancient : GeologicalHistory.None) | (marine ? GeologicalHistory.MarineFacies : GeologicalHistory.None));
             }
             var provinces = new List<GeologicalProvince>(); var weight = new float[count]; var boundaryWarp = new float[count];
             for (int id = 0; id < count; id++) boundaryWarp[id] = (float)(tuning.BoundaryWarp * TerrainNoise.Fractal(seed, 12100, id % width / (double)width, id / width / (double)height, 32, 2));
@@ -67,7 +69,9 @@ namespace Anthropocene.Simulation
                     double strength = 1 - a * a - b * b + warp;
                     if (strength <= 0) continue;
                     // Histories overlap; the dominant soft field determines exposed host rock.
-                    r.History[id] |= (ushort)history;
+                    var tileHistory = history;
+                    if (!c.World.Tiles[id].Continental || c.World.Tiles[id].WaterBody == WaterKind.Saltwater) tileHistory &= ~GeologicalHistory.Ancient;
+                    r.History[id] |= (ushort)tileHistory;
                     if (strength > weight[id]) { weight[id] = (float)strength; r.Province[id] = (ushort)key; r.Host[id] = (byte)host; }
                 }
             }

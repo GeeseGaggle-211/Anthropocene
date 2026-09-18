@@ -20,9 +20,9 @@ internal static class GeologyGenerationChecks
         Check(!ResourceCatalog.Discoverable(MaterialId.MethaneHydrate, new HashSet<string> { "HydrateExtraction" }), "reserved profiles do not grant capabilities");
         var originalResourceFingerprints = new Dictionary<WorldShape, string>
         {
-            [WorldShape.Continents] = "00518DC664E0E2E6A7184B113775859376A3D226D4ACA4BC89311FF9B85F63AD",
-            [WorldShape.Archipelagos] = "36581FE41D2C7DCAE920458A643A2AC867A007257EB5F742B65A29AB7D98F11C",
-            [WorldShape.Pangaea] = "F826BECE22029B6829D64E0A2B0D688578D21DE73E43CB19939963BD741F73FD"
+            [WorldShape.Continents] = "8F2739265A90BCA957985C32770240C6B20D23B6BA0FCCE5075BBDABF4E7B0E9",
+            [WorldShape.Archipelagos] = "E8609E39404FD4DAD9661EA6E09EA8A3598E3EF0D462251E3D57AD0BAA8FBEA4",
+            [WorldShape.Pangaea] = "B7CC71B0C76331A5EE5C93AC84364BC007C886980C25122A41C358EBFE296294"
         };
         foreach (var shape in Enum.GetValues(typeof(WorldShape)).Cast<WorldShape>())
         {
@@ -61,6 +61,7 @@ internal static class GeologyGenerationChecks
         }
         OffshoreFixtures();
         OccurrenceFixtures();
+        IronPathwayFixtures();
         TuningFixtures();
         QuantityLimitFixtures();
         DeepReserveFixtures();
@@ -254,6 +255,69 @@ internal static class GeologyGenerationChecks
         r.GenerationVersion = WorldResourceState.CurrentGenerationVersion + 1;
         bool rejected = false; try { SaveCodec.Load(SaveCodec.Save(w)); } catch (InvalidOperationException) { rejected = true; }
         Check(rejected, "future resource generator versions rejected");
+    }
+    private static void IronPathwayFixtures()
+    {
+        var config = new SimulationConfig { Width = 256, Height = 128, Players = 4, StartSeparation = 9 };
+        var generator = new WorldGenerator();
+        var world = generator.Generate(42, config);
+        var r = world.Resources;
+
+        // 1. Regression test: Ancient history is not universally true
+        Check(world.Tiles.Any(t => (r.History[t.Id] & (ushort)GeologicalHistory.Ancient) == 0), "Ancient history is no longer universal across all tiles");
+        Check(world.Tiles.Where(t => t.WaterBody == WaterKind.Saltwater).All(t => (r.History[t.Id] & (ushort)GeologicalHistory.Ancient) == 0), "marine tiles never have Ancient cratonic history");
+        Check(world.Tiles.Any(t => t.Continental && (r.History[t.Id] & (ushort)GeologicalHistory.Ancient) != 0), "cratonic continental terranes retain Ancient history");
+
+        // Verify dependent profiles requiring Ancient are not suppressed
+        int[] ancientProfiles = { 7, 8, 21, 28, 30 };
+        foreach (int pid in ancientProfiles)
+        {
+            var profile = GeologicalProfiles.All.Single(p => p.Id == pid);
+            Check((profile.Required & GeologicalHistory.Ancient) == GeologicalHistory.Ancient, pid + " requires Ancient history");
+            Check(world.Tiles.Any(t => profile.Eligible(world, t.Id)), pid + " has eligible tiles across cratonic terranes");
+        }
+
+        // 2. Iron occurrence pathway eligibility and incompatibility tests
+        var bif = GeologicalProfiles.All.Single(p => p.Id == 8);
+        var ironstone = GeologicalProfiles.All.Single(p => p.Id == 37);
+        var weathered = GeologicalProfiles.All.Single(p => p.Id == 38);
+        var titanomagnetite = GeologicalProfiles.All.Single(p => p.Id == 39);
+        var bog = GeologicalProfiles.All.Single(p => p.Id == 40);
+
+        Check(bif.Name == "Ancient iron formation" && bif.Hosts.SequenceEqual(new[] { HostRock.Basement, HostRock.Metamorphic }) && bif.Required == GeologicalHistory.Ancient && bif.Composition[0].PartsPerTenThousand == 7000, "BIF specification");
+        Check(ironstone.Name == "Sedimentary ironstone" && ironstone.Hosts.SequenceEqual(new[] { HostRock.Clastic, HostRock.Carbonate }) && ironstone.Required == GeologicalHistory.Basin && ironstone.Composition[0].PartsPerTenThousand == 3800, "sedimentary ironstone specification");
+        Check(weathered.Name == "Weathered iron ore" && weathered.Hosts.SequenceEqual(new[] { HostRock.Mafic, HostRock.Ultramafic, HostRock.Basement }) && weathered.Required == (GeologicalHistory.Weathered | GeologicalHistory.Preserved) && weathered.Composition[0].PartsPerTenThousand == 4500, "weathered iron ore specification");
+        Check(titanomagnetite.Name == "Titaniferous magnetite" && titanomagnetite.Hosts.SequenceEqual(new[] { HostRock.Mafic, HostRock.Ultramafic }) && titanomagnetite.Required == GeologicalHistory.Intrusive && titanomagnetite.Composition.Any(c => c.Material == MaterialId.Iron && c.PartsPerTenThousand == 5200) && titanomagnetite.Composition.Any(c => c.Material == MaterialId.Titanium && c.PartsPerTenThousand == 1200), "titaniferous magnetite specification");
+        Check(bog.Name == "Bog iron" && bog.Domain == 7 && bog.Composition[0].PartsPerTenThousand == 2800, "bog iron specification");
+
+        // Incompatible host rejection
+        Check(!bif.Hosts.Contains(HostRock.Granite) && !bif.Hosts.Contains(HostRock.Clastic) && !bif.Hosts.Contains(HostRock.Carbonate), "BIF rejects granite and sedimentary hosts");
+        Check(!ironstone.Hosts.Contains(HostRock.Granite) && !ironstone.Hosts.Contains(HostRock.Basement) && !ironstone.Hosts.Contains(HostRock.Mafic), "ironstone rejects igneous and basement hosts");
+        Check(!weathered.Hosts.Contains(HostRock.Granite) && !weathered.Hosts.Contains(HostRock.Clastic) && !weathered.Hosts.Contains(HostRock.Carbonate), "weathered iron rejects granite and sedimentary hosts");
+        Check(!titanomagnetite.Hosts.Contains(HostRock.Granite) && !titanomagnetite.Hosts.Contains(HostRock.Clastic), "titanomagnetite rejects felsic and sedimentary hosts");
+
+        // Domain 7 wetland checks
+        var desertTile = world.Tiles.FirstOrDefault(t => t.Environment == EnvironmentKind.Desert);
+        if (desertTile != null) Check(!bog.Eligible(world, desertTile.Id), "bog iron rejects desert tiles");
+        var iceTile = world.Tiles.FirstOrDefault(t => t.Environment == EnvironmentKind.Ice);
+        if (iceTile != null) Check(!bog.Eligible(world, iceTile.Id), "bog iron rejects ice tiles");
+
+        // 3. World deposit verification for iron
+        var ironBodies = r.Bodies.Where(b => b.Components.Any(c => c.Material == MaterialId.Iron)).ToArray();
+        Check(ironBodies.Length > 0, "iron deposits and occurrences exist");
+        Check(ironBodies.Any(b => b.Profile == 8), "BIF deposits generated");
+        Check(ironBodies.Any(b => b.Profile == 37 || b.Profile == 38 || b.Profile == 39 || b.Profile == 40), "new iron pathways generated");
+
+        // Bog iron is surface-exposed and modest in reserve size
+        var bogBodies = r.Bodies.Where(b => b.Profile == 40).ToArray();
+        if (bogBodies.Length > 0)
+        {
+            Check(bogBodies.All(b => b.Sites.All(s => s.Burial == BurialDepth.Surface && s.Exposure == 10000)), "bog iron is strictly surface-exposed");
+            var bogRich = bogBodies.Where(b => b.Concentration == MineralConcentration.Deposit).ToArray();
+            var bifRich = r.Bodies.Where(b => b.Profile == 8 && b.Concentration == MineralConcentration.Deposit).ToArray();
+            if (bogRich.Length > 0 && bifRich.Length > 0)
+                Check(bifRich.Max(b => b.InitialQuantity) >= 3 * bogRich.Max(b => b.InitialQuantity), "BIF industrial motherlodes far exceed modest bog iron reserves");
+        }
     }
     public static void Audit(bool large)
     {

@@ -12,7 +12,7 @@ namespace Anthropocene.Simulation
         public readonly GeologicalHistory Required;
         public readonly DepositShape Shape;
         public readonly DepositComponent[] Composition;
-        public readonly int Domain; // 0 land, 1 either, 2 shelf/slope, 3 abyssal, 4 rocky seamount, 5 hydrothermal, 6 land/margins/seamounts.
+        public readonly int Domain; // 0 land, 1 either, 2 shelf/slope, 3 abyssal, 4 rocky seamount, 5 hydrothermal, 6 land/margins/seamounts, 7 wetland/freshwater lowlands.
         public readonly bool Secondary;
         public GeologicalProfile(int id, string name, HostRock[] hosts, GeologicalHistory required, DepositShape shape, int domain, bool secondary, params DepositComponent[] composition)
         { Id = id; Name = name; Hosts = hosts; Required = required; Shape = shape; Domain = domain; Secondary = secondary; Composition = composition; }
@@ -21,6 +21,7 @@ namespace Anthropocene.Simulation
             var r = w.Resources; var t = w.Tiles[tile]; var marine = (MarineSetting)r.Marine[tile];
             if (t.Environment == EnvironmentKind.Lake || Domain == 0 && !t.Land || Domain == 2 && marine != MarineSetting.Shelf && marine != MarineSetting.Slope || Domain == 3 && marine != MarineSetting.AbyssalPlain || Domain == 4 && marine != MarineSetting.Seamount || Domain == 5 && marine != MarineSetting.HydrothermalRidge) return false;
             if (Domain == 6 && !t.Land && marine != MarineSetting.Shelf && marine != MarineSetting.Slope && marine != MarineSetting.Seamount) return false;
+            if (Domain == 7 && (!t.Land || t.Environment == EnvironmentKind.Desert || t.Environment == EnvironmentKind.Ice || !(t.River || t.FreshwaterSource == FreshwaterSource.River || t.FreshwaterSource == FreshwaterSource.Lake || t.Flow > .05f || t.DepressionDepth > 0 || (t.Relief == Relief.Lowland && t.Seasons.Any(s => s.Moisture > .45f))))) return false;
             return (Hosts.Length == 0 || Hosts.Contains((HostRock)r.Host[tile])) && (((GeologicalHistory)r.History[tile] & Required) == Required);
         }
     }
@@ -68,6 +69,10 @@ namespace Anthropocene.Simulation
             P(34, "Ferromanganese crust", H(HostRock.Mafic, HostRock.Ultramafic), GeologicalHistory.Preserved, DepositShape.Field, 4, C(MaterialId.Manganese, 3000), C(MaterialId.Cobalt, 1500), C(MaterialId.Nickel, 700)),
             P(35, "Seafloor massive sulfide", H(HostRock.Mafic, HostRock.Ultramafic, HostRock.Alkaline), GeologicalHistory.Hydrothermal | GeologicalHistory.Mineralized, DepositShape.Lens, 5, C(MaterialId.Copper, 2600), C(MaterialId.Zinc, 2200), C(MaterialId.Gold, 50), C(MaterialId.Silver, 100)),
             P(36, "Relict nitrate basin", H(HostRock.Clastic), GeologicalHistory.Evaporite | GeologicalHistory.Preserved | GeologicalHistory.Source, DepositShape.Bed, 0, C(MaterialId.Nitrate, 4000)),
+            P(37, "Sedimentary ironstone", H(HostRock.Clastic, HostRock.Carbonate), GeologicalHistory.Basin, DepositShape.Bed, 0, C(MaterialId.Iron, 3800)),
+            P(38, "Weathered iron ore", H(HostRock.Mafic, HostRock.Ultramafic, HostRock.Basement), GeologicalHistory.Weathered | GeologicalHistory.Preserved, DepositShape.Bed, 0, C(MaterialId.Iron, 4500)),
+            P(39, "Titaniferous magnetite", H(HostRock.Mafic, HostRock.Ultramafic), GeologicalHistory.Intrusive, DepositShape.Lens, 0, C(MaterialId.Iron, 5200), C(MaterialId.Titanium, 1200)),
+            P(40, "Bog iron", Any, GeologicalHistory.None, DepositShape.Bed, 7, C(MaterialId.Iron, 2800)),
             new GeologicalProfile(100, "Source-derived placer", Any, GeologicalHistory.None, DepositShape.Bed, 1, true)
         });
         public static string Hash => ResourceCatalog.Digest(string.Join(";", All.OrderBy(p => p.Id).Select(p => p.Id + ":" + p.Name + ":" + string.Join(",", p.Hosts.Select(h => (int)h)) + ":" + (int)p.Required + ":" + (int)p.Shape + ":" + p.Domain + ":" + p.Secondary + ":" + string.Join(",", p.Composition.Select(c => (int)c.Material + "=" + c.PartsPerTenThousand)))));
