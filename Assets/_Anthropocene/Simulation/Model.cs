@@ -274,6 +274,8 @@ namespace Anthropocene.Simulation
         public List<RiverEdge> Rivers = new List<RiverEdge>();
         public List<TurnRecord> History = new List<TurnRecord>();
         public GenerationReport Generation;
+        // Null means legacy/disabled resource layer, never a surveyed barren world.
+        public WorldResourceState Resources;
         public int Season => (int)(Days / Config.BaseDays) % 4;
         public HexMap Map => new HexMap(Config.Width, Config.Height);
         public SeasonData Ecology(int tile) => Tiles[tile].Seasons[Season];

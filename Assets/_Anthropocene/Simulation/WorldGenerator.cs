@@ -36,17 +36,19 @@ namespace Anthropocene.Simulation
         public bool[] Continental;
         internal int[] OtherPlate;
         internal float[] BoundaryDistance;
+        public ResourceGenerationOptions ResourceOptions = new ResourceGenerationOptions();
     }
     public sealed class WorldGenerator
     {
-        public WorldState Generate(int seed, SimulationConfig config)
+        public WorldState Generate(int seed, SimulationConfig config, ResourceGenerationOptions resources = null)
         {
             config.Validate();
             var world = new WorldState { Seed = seed, Config = config, Tiles = new Tile[config.Width * config.Height], Generation = new GenerationReport() };
             // Hash all effective tuning, not just the preset name.
             world.Generation.ConfigurationHash = SaveCodec.ConfigurationHash(config);
-            var context = new GenerationContext { World = world, Map = world.Map };
-            IWorldGenerationStage[] stages = { new GeometryStage(), new PlateStage(), new ElevationStage(), new ClimateStage(), new HydrologyStage(), new BoundaryRiverStage(), new ElevationLevelStage(), new EcologyStage(), new OasisStage(), new VegetationResourceStage(), new PlacementStage() };
+            var context = new GenerationContext { World = world, Map = world.Map, ResourceOptions = resources ?? new ResourceGenerationOptions() };
+            context.ResourceOptions.Validate();
+            var stages = CreateStages();
             var total = Stopwatch.StartNew();
             foreach (var stage in stages)
             {
@@ -58,6 +60,13 @@ namespace Anthropocene.Simulation
             Ownership.Bind(world);
             Validate(world);
             return world;
+        }
+        public static IWorldGenerationStage[] CreateStages(bool placement = true)
+        {
+            var stages = new List<IWorldGenerationStage> { new GeometryStage(), new PlateStage(), new ElevationStage(), new ClimateStage(), new HydrologyStage(), new BoundaryRiverStage(), new ElevationLevelStage(), new EcologyStage(), new OasisStage(), new VegetationResourceStage(), new GeologicalProvinceStage(), new MineralDepositStage(), new SurfaceMaterialStage() };
+            if (placement) stages.Add(new PlacementStage());
+            stages.Add(new ResourceAccessAuditStage());
+            return stages.ToArray();
         }
         private static void Validate(WorldState world)
         {

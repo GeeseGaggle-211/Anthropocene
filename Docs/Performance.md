@@ -43,3 +43,9 @@ Reproduce from the Windows checkout:
 ```
 
 Raw JSON is written to ignored `TestResults/EcologyScale-80.json` and `TestResults/EcologyScale-320.json`. The checked-in table preserves the measured results without committing generated logs or saves.
+
+## Resource overlay measurement — September 18, 2026
+
+The generation-only geology overlay adds compact rasters (12 bytes/tile) and sparse deposit bodies. Six Standard/80 worlds (seeds 42/1729, all shapes) measured 6.24–6.88 MiB of estimated packed resource payload and 153–284 ms of overlay generation/validation. These are .NET 8 Release exporter observations, not Unity timing guarantees.
+
+The 2048×1024 Archipelagos/42/**80-tribe** audit measured 25.14 MiB packed resource payload, 917.73 MiB total managed heap after collection, and 434 ms overlay time. The existing 1,000 MiB budget was retained. Its full resource-bearing save was 230,574,431 bytes and passed resource fingerprint restoration. This is distinct from the historical 320-tribe benchmark above. Peak transient allocation was not instrumented; no claim of a 64 MiB managed-overhead cap or new public large preset follows from the packed-payload measurement.

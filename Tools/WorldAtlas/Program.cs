@@ -40,6 +40,7 @@ internal static class Program
                 WriteJson(Path.Combine(directory, "camps.json"), Camps(world));
                 foreach (string layer in new[] { "environment", "elevation", "food", "freshwater", "volcanism" })
                     Png.Write(Path.Combine(directory, layer + ".png"), width, height, Image(world, layer));
+                var resourceMaps = GeologyAtlas.Export(world, directory);
                 bool hasSave = saves && !geographyOnly;
                 if (hasSave) { File.WriteAllBytes(Path.Combine(directory, "world.anthro"), SaveCodec.Save(world)); }
                 WriteJson(Path.Combine(directory, "manifest.json"), new {
@@ -55,7 +56,10 @@ internal static class Program
                     MetricsFile = "metrics.json", CampsFile = "camps.json", GalleryFile = "index.html",
                     WorldSaveFile = hasSave ? "world.anthro" : null,
                     WorldSaveSha256 = hasSave ? FileHash(Path.Combine(directory, "world.anthro")) : null,
-                    MapFiles = new[] { "environment.png", "elevation.png", "food.png", "freshwater.png", "volcanism.png" }
+                    ResourceGenerationVersion = world.Resources?.GenerationVersion, ResourceSchemaVersion = world.Resources?.Version, ResourceFingerprint = world.Resources == null ? null : ResourceCodec.Fingerprint(world.Resources),
+                    ResourceCatalogHash = world.Resources?.CatalogHash, ResourceConfigurationHash = world.Resources?.ConfigurationHash,
+                    ResourceReportFile = "geology.json", ResourceGalleryFile = "geology.html",
+                    MapFiles = new[] { "environment.png", "elevation.png", "food.png", "freshwater.png", "volcanism.png" }.Concat(resourceMaps).ToArray()
                 });
                 WritePage(directory, name, world, metrics, saves && !geographyOnly);
                 Console.WriteLine($"Exported {name}: {generationSeconds:F2}s generation; {world.Camps.Count} camps. {directory}");
@@ -104,7 +108,7 @@ internal static class Program
         var world = new WorldState { Seed = seed, Config = config, Tiles = new Tile[config.Width * config.Height], Generation = new GenerationReport() };
         world.Generation.ConfigurationHash = SaveCodec.ConfigurationHash(config);
         var context = new GenerationContext { World = world, Map = world.Map };
-        IWorldGenerationStage[] stages = { new GeometryStage(), new PlateStage(), new ElevationStage(), new ClimateStage(), new HydrologyStage(), new BoundaryRiverStage(), new ElevationLevelStage(), new EcologyStage(), new OasisStage(), new VegetationResourceStage() };
+        var stages = WorldGenerator.CreateStages(false);
         foreach (var stage in stages)
         {
             var timer = Stopwatch.StartNew(); stage.Generate(context);
@@ -271,7 +275,7 @@ internal static class Program
 
     private static void WritePage(string directory, string name, WorldState w, Dictionary<string, object> metrics, bool save)
     {
-        string details = $"<h1>{name}</h1><p>Generator {w.Generation.GeneratorVersion}; {w.Config.Width} × {w.Config.Height}; {w.Camps.Count} placed camps. Native axial coordinates. Longitude wraps; the left and right edges join.</p><p><a href='metrics.json'>Measured geography</a> · <a href='config.json'>Exact tuning</a> · <a href='camps.json'>Start food and freshwater</a> · <a href='manifest.json'>Source, configuration and save fingerprints</a>" + (save ? " · <a href='world.anthro'>Playable save copy</a>" : "") + "</p>";
+        string details = $"<h1>{name}</h1><p>Generator {w.Generation.GeneratorVersion}; {w.Config.Width} × {w.Config.Height}; {w.Camps.Count} placed camps. Native axial coordinates. Longitude wraps; the left and right edges join.</p><p><a href='geology.html'>Geological resource maps</a> · <a href='metrics.json'>Measured geography</a> · <a href='config.json'>Exact tuning</a> · <a href='camps.json'>Start food and freshwater</a> · <a href='manifest.json'>Source, configuration and save fingerprints</a>" + (save ? " · <a href='world.anthro'>Playable save copy</a>" : "") + "</p>";
         foreach (var entry in new[] {
             ("environment", "Environment", "Gold: desert. Pale green: grassland. Green: temperate forest. Dark green: tropical forest. Grey-green: cold. White: ice. Light blue: lakes. Turquoise: shallows. Dark blue: ocean."),
             ("elevation", "Topography", "Marine depth in blue; low land in green; uplands brown; highest elevations pale. Lakes use a distinct blue. Continuous height, not movement levels."),

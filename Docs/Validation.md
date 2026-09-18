@@ -1,10 +1,22 @@
-# Validation - September 15, 2026
+# Validation - September 18, 2026
 
 Current mechanics: [EcologyFoundation.md](EcologyFoundation.md). Windows x64, Unity **6000.5.10f1**, bundled .NET **8.0.318**. Earlier results are preserved in [Validation-Milestone3.md](Validation-Milestone3.md); they are not current balance measurements.
 
 Current production tuning now allocates food to current-population consumption, full operating-reserve refill and then growth; removes the additional successful-hunt experience bonus; and exposes 25% of newly generated Shallows biomass as Paleolithic human food while preserving total biomass and lake/Ocean shares. Land-adjacent Shallows cannot upwell; existing upwelling multipliers apply only to outer-shelf Shallows with no adjacent land. The experimental calibration harness and its additional reporting/tests were intentionally not promoted to `main`.
 
-## Current ordered allocation and offshore-upwelling tuning
+## Geological resource generation — September 18
+
+The world-generation-only implementation is on `feature/geological-resource-generation`; the underlying checkout baseline is `e472cf7`. See [GeologicalResources.md](GeologicalResources.md) for units, compatibility and limitations.
+
+- **63 new focused geology assertions pass** on the final source: original state/IDs and observations unchanged with the overlay enabled, repeat/profile-order determinism, offshore profile isolation, connected footprints, source mass conservation, technology gates, shared coast-crossing reservoirs, independent water/burial depth, barren ocean, distinct seabed profiles, new/legacy saves, retained depleted stocks/access tuning, continuation and future-schema rejection.
+- The broader regression run passed the existing 437 assertions plus the initial 53 geology fixtures, scalar/2/4-worker replay over twelve resolutions, 30 Small opening seeds (**120/120 survivors**, no starvation deaths or illegal orders), a Standard/80 opening/save/load audit and 36 geography worlds. Subsequent resource-only footprint/catalog-persistence refinements were checked with the expanded final 63 fixtures and resource audits; the original terrain, ecology and gameplay code did not change.
+- Final resource audits cover seeds **0, 1, 5, 42, 1729, 31415** in all three shapes at 96×48, plus **Archipelagos/42/80 at 2048×1024**. The large world contains 239 bodies, approximately **25.14 MiB packed resource payload**, **917.73 MiB managed heap after collection**, and **434 ms** overlay time. Total generation plus the measurement collection took 17.51 seconds. A **230,574,431-byte** full save restored the exact resource fingerprint. This 80-tribe memory sample is not a new 320-tribe performance claim, nor a peak-allocation measurement.
+- Six final Standard/80 exports use seeds **42 and 1729 in every shape**. All **480/480** placed camps remain food/water viable. Each includes 82 resource PNGs plus the five original maps, a local map selector, resource report, manifest and isolated playable save: **522 maps** total. Resource payload ranges **6.24–6.88 MiB** and measured overlay time **153–284 ms**. No normal user save slot is used.
+- All six manifests share simulation-source SHA256 `DB729CD08EDAF9F105A191FEB883F63535222C23AAFF3A90EEDF304AAECB3A2D`. Map presence and save checksums were verified. Ten original Continents maps across seeds 42/1729 are byte-identical between the initial and final resource revisions. Representative deposit, host, Wood, petroleum, marine and placer PNGs were inspected directly. The browser blocked local HTML URLs, so the map selector has not received a live browser interaction test. No Unity player rebuild or manual playtest is claimed for these exporter-only map additions.
+
+Evidence is ignored under `TestResults/Geology/Final`, `TestResults/geology-headless.log`, and `TestResults/geology-audit-final.log`. Physical quantities, access fractions and density remain provisional generation tuning; these checks do not establish later-era economic balance or geological realism.
+
+## Ordered allocation and offshore-upwelling tuning baseline
 
 - The unchanged canonical suite passes **437 headless assertions** plus scalar/2/4-worker replay through opening completion at twelve resolutions. **20/20 Unity EditMode tests passed** in 8.44 seconds. Only existing fixtures and expectations were maintained for the new production semantics; the experimental calibration programs, switches and additional assertions remain outside `main`.
 - Nine final-source Standard/80 worlds, seeds 1–3 in each shape, retained **720/720 tribes**. Continents unlocked 75 Husbandry / 164 Cultivation / 1 Watercraft; Pangaea 91 / 144 / 5; Archipelagos 75 / 136 / 29. The combined split is **241 / 444 / 35**.

@@ -24,5 +24,6 @@
     <Compile Include="DrainageGenerationChecks.cs" />
     <Compile Include="WorldMorphologyChecks.cs" />
     <Compile Include="ArchipelagoChecks.cs" />
+    <Compile Include="GeologyGenerationChecks.cs" />
   </ItemGroup>
 </Project>

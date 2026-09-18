@@ -1,0 +1,63 @@
+# Geological resources and diagnostic maps
+
+This is a world-generation overlay, not a Neolithic economy. It implements the additive architecture in the [geological design proposal](https://docs.google.com/document/d/1ZwRBd-Zb2_wCEScVgV8pogeQUClh9oIzqe8LB0GMA8o/edit), with the subsequent user decisions: high stocks capped at **100,000 units**, separate human-accessible percentages, technology-gated material recognition, and renewable Wood with **25% accessibility**. Generation does not add harvesting, cargo, recipes, research, expeditions, trade, or player-map disclosures.
+
+## Pipeline and invariants
+
+`WorldGenerator.CreateStages(placement)` is shared by normal generation and the geography-only atlas. After the existing VegetationResource stage it runs GeologicalProvince → MineralDeposit → SurfaceMaterial, then optional Placement and ResourceAccessAudit. The overlay reads existing physical/ecological fields and writes only `WorldState.Resources`; the audit emits diagnostics. Core terrain generator **11**, world/config **7**, observation schema **7**, food/water placement, camps, herds and `NextId` are unchanged. The separate resource schema and generator are both **1**.
+
+`Generate(seed, config, new ResourceGenerationOptions { Enabled = false })` provides the comparison baseline. `SaveCodec.LegacyFingerprint` compares original authoritative fields without mutating either world. A full fingerprint additionally includes resource state. The normal opening's observations and turn resolver do not consume this new state.
+
+## Quantities and units
+
+| Quantity | Convention |
+| --- | --- |
+| Material unit | Abstract game quantity; not tonnes, cubic metres, or an Earth-area conversion. |
+| Deposit host stock | Initially 55–100% of the configured maximum, capped at 100,000 per shared body. Components occupy fractions of that host. |
+| Local body allocation | Site shares sum to 100%. A multi-hex reservoir does not repeat its full reserve in every tile. |
+| Secondary stock | 5–15% transferred from one primary source. The parent loses exactly the host quantity transferred; component proportions are preserved. |
+| Surface Stone/Clay | Up to 100,000 units per present tile source, encoded in ten-unit increments. Local absence is allowed. |
+| Wood capacity | High vegetation: 80,000–100,000; Medium: 44,000–55,000; Low: 4,000–5,000 units of woody brush. Ice and water have none. Lower configured maxima scale these ranges. |
+| Surface accessibility | Stone 100%, Clay 100%, Wood 25%. |
+| Later materials | Base access generally 10%, then 5%, 2%, 0.5% and 0.1% for successively later families; see the catalog for each material. These are provisional game tuning, not historical extraction measurements. |
+| Deposit accessibility | Component stock × local share × exposed fraction × saved material access fraction. Surface/shallow/deep exposure is 100%/20%/2%. This does not authorize extraction or imply discovery. |
+| Renewal | Minerals are finite. Wood stores a 0.05/year recovery coefficient for future `dW/dt = k(capacity − W)`. The maximum empty-stock annual renewal is `k × capacity`; a full stock has no net growth. No harvest or Wood time integration runs yet. |
+
+Overlapping independent bodies and surface sources may sum above 100,000 at a tile; the cap is per source/body, not per world or aggregate inventory. An ore component is not another full copy of its host quantity. Grade/composition, body size, local allocation and accessibility remain separate.
+
+Surface capacities are deliberately per playable hex, preserving local opportunities with the existing fixed-hex gathering/movement model. Mineral candidates use a fixed normalized 64 × 32 lattice per profile and land/marine domain; body quantities do not multiply with raster area. Rasterization and shoreline eligibility can change which candidates survive across resolutions. World-total surface capacity therefore grows with map area; it is not an equal-area physical mass estimate.
+
+## Geology and coverage
+
+The 144 overlapping, warped provinces store host rock and procedural history: basins, intrusions, mineralization, redox context, weathering, preservation, organic facies, maturation, evaporites and marine sedimentation. They are seeded historical hypotheses, not reconstructed geology. They do not copy present plate polygons or infer coal from today's trees. Current terrain and boundary context help classify marine settings without changing elevation or coastlines.
+
+There are 36 primary profiles plus a derived placer profile: intrusive/sediment-hosted copper, granite tin/tungsten, carbonate/clastic lead-zinc, gold, ancient iron, nickel/chromium, laterites/bauxite, coal, petroleum, evaporites, limestone/quartz, phosphate/manganese/sulfur, lithium variants, rare-earth variants, graphite, uranium, titanium, shelf aggregate, nodules, crusts, hydrothermal sulfides and rare nitrate basins. Associated components include selected cobalt, silver, molybdenum, gallium and trace porphyry outputs. Registry-only extensions remain explicitly inactive.
+
+Host/process gates precede occurrence sampling. Compatible regions can be barren. Bodies use irregular, region-oriented footprints, clipped to compatible geology and the connected component containing their origin. Composition is bounded by host stock. Hardness and quality are provisional descriptors; quality is not applied as a universal extraction or recipe multiplier. More detailed coal-rank, coking, clay-firing and industrial-purity behavior remains for later material/recipe design.
+
+Petroleum requires basin, source, maturity, reservoir, seal/trap and preservation context; the occurrence draw abstracts successful charging/preservation. Bodies can cross a coastline with one identity and one reserve. Water setting and burial depth are separate. Phosphorites occupy land/relict marine formations, margins and eligible seamounts, independent of current fishing productivity. Nodules, crusts and hydrothermal sulfides have distinct substrate/setting gates. Nodule/crust material is at the seabed surface but still underwater; passing vessels gain no knowledge or extraction ability.
+
+Placers inherit tin, gold, titanium or rare-earth source composition and an explicit source-body ID. Their saved path follows `Tile.Downstream`; at a marine outlet a bounded, source-funded shelf-neighbor sorting proxy may continue seaward. This is not a current/ocean-sediment simulation. Relict-source records and palaeochannel reconstruction are deferred; this version never invents those sources. Surface Clay uses weathered host and fine-sediment context, with river proximity increasing opportunity rather than guaranteeing it.
+
+## Persistence and discovery boundary
+
+New resource-bearing saves use **ANTHROPOCENE-9**. The fixed core tile layout remains unchanged, and `ResourceCodec` writes an explicit compact resource block outside the XML header. It includes province/raster data, body/site/component records, source paths, stocks, Wood renewal, saved accessibility/discovery metadata, and separate schema/generator/catalog/profile/configuration identities. Timings and caches are excluded from authoritative fingerprints. Bodies, components and sites serialize canonically.
+
+**ANTHROPOCENE-8** saves remain readable and keep `Resources == null`. Null means absent, not surveyed/barren. Saving such a world retains the old envelope. Loading never generates or attaches resources; no old save migration command is provided. Existing generator-7–11 ecology compatibility remains unchanged. The user filename remains `opening-v7.anthro`.
+
+Material discovery requirements are stable string capability identifiers, separate from today's four-value `Technology` enum. Copper requires `CopperWorking`; future player integration must apply the saved requirement before presenting a material. The current observation DTO has no resource fields. Resource generation awards no technology and no knowledge; identifying copper is not a prerequisite for discovering Copper Working under the user's revised rule.
+
+## Maps, audits and reproduction
+
+The atlas exports actual state to `geology.html`, `geology.json` and PNGs. The map selector covers host rock, provinces, marine settings, deposit profiles, burial, exposure, source paths, total/accessibility for every active material, and Wood renewal potential. All material heatmaps use a fixed logarithmic 0–100,000 scale. A blank layer is valid. `geology.json` records per-profile counts/absence reasons, shared-body summaries and start opportunities. Per-start radius-one quantities and radius-two traversable opportunities are **developer diagnostics**, not known supply or validated delivery throughput.
+
+```powershell
+./Tools/WorldAtlas/Export-Worlds.ps1 -Seeds '42,1729' -Shape Continents -Output TestResults/Geology/Final -Save
+./Tools/WorldAtlas/Export-Worlds.ps1 -Seeds '42,1729' -Shape Pangaea -Output TestResults/Geology/Final -Save
+./Tools/WorldAtlas/Export-Worlds.ps1 -Seeds '42,1729' -Shape Archipelagos -Output TestResults/Geology/Final -Save
+# Focused resource fixtures and optional six-seed/all-shape plus large-world audit:
+& 'C:/Program Files/Unity/Hub/Editor/6000.5.10f1/Editor/Data/DotNetSdk/dotnet.exe' run --project Tools/Headless/Anthropocene.Headless.csproj -c Release -- 0 --geology-only
+& 'C:/Program Files/Unity/Hub/Editor/6000.5.10f1/Editor/Data/DotNetSdk/dotnet.exe' run --project Tools/Headless/Anthropocene.Headless.csproj -c Release -- 0 --geology-audit --large
+```
+
+The generation pass is scalar; profile-order and profile-toggle checks protect independent keyed generation. Existing scalar/parallel opening replay includes the persisted layer without changing it. Resource arrays occupy 12 bytes per tile, plus sparse bodies/provinces and catalog metadata. `PackedStateBytes` is an estimate of compact payload, not a managed-heap or peak-allocation measurement. Current test evidence and limitations are recorded in [Validation.md](Validation.md).

@@ -11,7 +11,7 @@ namespace Anthropocene.Simulation
 {
     public static class SaveCodec
     {
-        private const string Magic = "ANTHROPOCENE-8";
+        private const string Magic = "ANTHROPOCENE-9", LegacyMagic = "ANTHROPOCENE-8";
         private static DataContractSerializer Serializer(Type type) => new DataContractSerializer(type, new DataContractSerializerSettings { MaxItemsInObjectGraph = int.MaxValue });
         public static byte[] Save(WorldState world)
         {
@@ -23,7 +23,7 @@ namespace Anthropocene.Simulation
                 using (var buffered = new BufferedStream(zip, 65536))
                 using (var writer = new BinaryWriter(buffered))
                 {
-                    writer.Write(Magic);
+                    writer.Write(world.Resources == null ? LegacyMagic : Magic);
                     // Geography dominates the save. Fixed primitive records avoid reflection and repeated XML member names for every tile.
                     var metadata = CopyWithoutTiles(world);
                     using (var header = new MemoryStream())
@@ -45,6 +45,7 @@ namespace Anthropocene.Simulation
                             writer.Write(s.AccessibleFreshwater); writer.Write(s.MaxFood); writer.Write(s.MaxPotentialFood); writer.Write(s.MaxFreshwater); writer.Write(s.MaxSaltwater); writer.Write(s.FoodRecoveryPerDay); writer.Write(s.BiomassRecoveryPerDay); writer.Write(s.WaterRecoveryPerDay); writer.Write(s.Habitat);
                         }
                     }
+                    if (world.Resources != null) ResourceCodec.Write(writer, world.Resources);
                 }
                 return output.ToArray();
             }
@@ -56,7 +57,8 @@ namespace Anthropocene.Simulation
             using (var buffered = new BufferedStream(zip, 65536))
             using (var reader = new BinaryReader(buffered))
             {
-                if (reader.ReadString() != Magic) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. Start a new opening; the older save is preserved.");
+                string magic = reader.ReadString();
+                if (magic != Magic && magic != LegacyMagic) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
                 int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > 128 * 1024 * 1024) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
@@ -83,6 +85,7 @@ namespace Anthropocene.Simulation
                     };
                     world.Tiles[i] = tile;
                 }
+                world.Resources = magic == Magic ? ResourceCodec.Read(reader, count) : null;
                 foreach (var edge in world.Rivers)
                 {
                     if (world.Tiles[edge.TileA].RiverEdges == null) world.Tiles[edge.TileA].RiverEdges = Enumerable.Repeat(-1, 6).ToArray();
@@ -92,7 +95,7 @@ namespace Anthropocene.Simulation
                     world.Tiles[edge.TileB].RiverEdges[edge.SideB] = edge.Id;
                 }
                 foreach (var turn in world.History) { turn.Pressure = new System.Collections.Generic.List<PressureEntry>(); turn.EcologyBalances = new System.Collections.Generic.List<EcologyBalance>(); }
-                TurnResolver.Invariants(world); ElevationLevelStage.Validate(world); BoundaryRiverStage.Validate(world); return world;
+                TurnResolver.Invariants(world); ElevationLevelStage.Validate(world); BoundaryRiverStage.Validate(world); ResourceValidation.Validate(world); return world;
             }
         }
         private static void MigrateGenerationalDefaults(WorldState world)
@@ -130,8 +133,13 @@ namespace Anthropocene.Simulation
         public static string Fingerprint(WorldState w)
         {
             // Exclude wall-clock generation timings and memory warnings from authoritative state hashing.
-            var copy = new WorldState { Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Tiles = w.Tiles, Camps = w.Camps.OrderBy(c => c.Id).ToList(), Societies = w.Societies.OrderBy(s => s.Id).ToList(), Improvements = w.Improvements.OrderBy(i => i.Id).ToList(), Hunters = w.Hunters.OrderBy(h => h.Id).ToList(), Herds = w.Herds.OrderBy(h => h.Id).ToList(), Rivers = w.Rivers, History = w.History, Generation = null };
+            var copy = new WorldState { Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Tiles = w.Tiles, Camps = w.Camps.OrderBy(c => c.Id).ToList(), Societies = w.Societies.OrderBy(s => s.Id).ToList(), Improvements = w.Improvements.OrderBy(i => i.Id).ToList(), Hunters = w.Hunters.OrderBy(h => h.Id).ToList(), Herds = w.Herds.OrderBy(h => h.Id).ToList(), Rivers = w.Rivers, History = w.History, Generation = null, Resources = w.Resources };
             using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(Save(copy))).Replace("-", "");
+        }
+        // Compare pre-overlay authoritative fields without mutating the original world.
+        public static string LegacyFingerprint(WorldState w)
+        {
+            var copy = CopyWithoutTiles(w); copy.Tiles = w.Tiles; return Fingerprint(copy);
         }
     }
 }
