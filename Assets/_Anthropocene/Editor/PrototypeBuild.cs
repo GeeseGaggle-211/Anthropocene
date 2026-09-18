@@ -10,7 +10,12 @@ namespace Anthropocene.Editor
         [MenuItem("Anthropocene/Build Windows prototype")]
         public static void Windows()
         {
-            Directory.CreateDirectory("Builds/Windows");
+            var args = Environment.GetCommandLineArgs();
+            int outputOption = Array.IndexOf(args, "--anthropocene-build-output");
+            if (outputOption >= 0 && (outputOption + 1 >= args.Length || args[outputOption + 1].StartsWith("-")))
+                throw new ArgumentException("--anthropocene-build-output requires an output directory.");
+            string outputDirectory = outputOption < 0 ? "Builds/Windows" : args[outputOption + 1];
+            Directory.CreateDirectory(outputDirectory);
             PlayerSettings.defaultScreenWidth = 1280;
             PlayerSettings.defaultScreenHeight = 800;
             PlayerSettings.fullScreenMode = UnityEngine.FullScreenMode.Windowed;
@@ -18,7 +23,7 @@ namespace Anthropocene.Editor
             var result = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
                 scenes = new[] { "Assets/Scenes/SampleScene.unity" },
-                locationPathName = "Builds/Windows/Anthropocene.exe",
+                locationPathName = Path.Combine(outputDirectory, "Anthropocene.exe"),
                 target = BuildTarget.StandaloneWindows64,
                 options = BuildOptions.Development
             });
