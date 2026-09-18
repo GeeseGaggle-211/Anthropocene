@@ -18,12 +18,19 @@ internal static class GeologyGenerationChecks
         Check(ResourceCatalog.Get(MaterialId.Stone).BaseAccessibleFraction == 1 && ResourceCatalog.Get(MaterialId.Clay).BaseAccessibleFraction == 1 && ResourceCatalog.Get(MaterialId.Wood).BaseAccessibleFraction == .25, "surface accessibility contracts");
         Check(!ResourceCatalog.Discoverable(MaterialId.Copper, new HashSet<string>()) && ResourceCatalog.Discoverable(MaterialId.Copper, new HashSet<string> { "CopperWorking" }), "copper requires copper working");
         Check(!ResourceCatalog.Discoverable(MaterialId.MethaneHydrate, new HashSet<string> { "HydrateExtraction" }), "reserved profiles do not grant capabilities");
+        var originalResourceFingerprints = new Dictionary<WorldShape, string>
+        {
+            [WorldShape.Continents] = "00518DC664E0E2E6A7184B113775859376A3D226D4ACA4BC89311FF9B85F63AD",
+            [WorldShape.Archipelagos] = "36581FE41D2C7DCAE920458A643A2AC867A007257EB5F742B65A29AB7D98F11C",
+            [WorldShape.Pangaea] = "F826BECE22029B6829D64E0A2B0D688578D21DE73E43CB19939963BD741F73FD"
+        };
         foreach (var shape in Enum.GetValues(typeof(WorldShape)).Cast<WorldShape>())
         {
             var config = SimulationConfig.Small(4); config.Shape = shape;
             var generator = new WorldGenerator();
             var before = generator.Generate(42, config, new ResourceGenerationOptions { Enabled = false });
             var world = generator.Generate(42, config); var r = world.Resources;
+            Check(ResourceCodec.Fingerprint(r) == originalResourceFingerprints[shape], shape + " original resource generation fingerprint");
             Check(SaveCodec.LegacyFingerprint(before) == SaveCodec.LegacyFingerprint(world), shape + " preserves all legacy state and IDs");
             Check(ObservationContract.Serialize(new AgentObservationBuilder().Build(before, 0), before.Camps[0].Mandate) == ObservationContract.Serialize(new AgentObservationBuilder().Build(world, 0), world.Camps[0].Mandate), shape + " latent minerals do not leak into observations");
             Check(ResourceCodec.Fingerprint(r) == ResourceCodec.Fingerprint(generator.Generate(42, config).Resources), shape + " repeated generation");
@@ -54,6 +61,7 @@ internal static class GeologyGenerationChecks
         }
         OffshoreFixtures();
         OccurrenceFixtures();
+        TuningFixtures();
         var small = new WorldGenerator().Generate(1, SimulationConfig.Small(4));
         var body = small.Resources.Bodies.First(b => b.SourceBody == 0);
         double originalQuantity = body.Quantity;
@@ -77,6 +85,42 @@ internal static class GeologyGenerationChecks
         var sites = new HashSet<int>(b.Sites.Select(s => s.Tile)); var reached = new HashSet<int> { b.OriginTile }; var queue = new Queue<int>(); queue.Enqueue(b.OriginTile);
         while (queue.Count > 0) foreach (int n in w.Map.Neighbors(queue.Dequeue())) if (sites.Contains(n) && reached.Add(n)) queue.Enqueue(n);
         return reached.Count == sites.Count;
+    }
+    private static void TuningFixtures()
+    {
+        var config = SimulationConfig.Small(4);
+        var generator = new WorldGenerator();
+        var baseline = generator.Generate(42, config);
+        var province = new ResourceGenerationOptions { Province = new ProvinceTuning { Count = 1, SourceChance = 0 } };
+        var changedProvince = generator.Generate(42, config, province);
+        Check(changedProvince.Resources.Provinces.Length == 1 && changedProvince.Resources.ConfigurationHash == province.Hash, "province geometry/history tuning is applied and identified");
+        Check(SaveCodec.LegacyFingerprint(changedProvince) == SaveCodec.LegacyFingerprint(baseline), "province tuning leaves core world unchanged");
+        Check(SaveCodec.Fingerprint(SaveCodec.Load(SaveCodec.Save(changedProvince))) == SaveCodec.Fingerprint(changedProvince), "nondefault resource tuning survives save and load");
+
+        var noDeposits = new ResourceGenerationOptions { Deposit = new DepositTuning { OrdinaryChance = 0, BedChance = 0, RareBasinChance = 0, ScatteredChance = 0 } };
+        var barren = generator.Generate(42, config, noDeposits);
+        Check(barren.Resources.Bodies.Length == 0 && barren.Resources.Stone.SequenceEqual(baseline.Resources.Stone), "deposit chance tuning affects deposits without changing surface stone");
+
+        var noStone = new ResourceGenerationOptions { Surface = new SurfaceTuning { ClasticStoneChance = 0, OtherStoneChance = 0 } };
+        var stoneless = generator.Generate(42, config, noStone);
+        Check(stoneless.Resources.Stone.All(v => v == 0) && BodyHash(stoneless.Resources.Bodies, baseline.Resources) == ResourceCodec.Fingerprint(baseline.Resources), "surface tuning affects stone without changing any deposit state");
+
+        var noTransfer = new ResourceGenerationOptions { Placer = new PlacerTuning { TransferMinimum = 0, TransferRange = 0 } };
+        var withoutPlacers = generator.Generate(42, config, noTransfer);
+        Check(withoutPlacers.Resources.Bodies.All(b => b.SourceBody == 0 && b.Quantity == b.InitialQuantity), "zero placer transfer leaves primary stock intact");
+
+        var noScatteredStock = new ResourceGenerationOptions { Deposit = new DepositTuning { ScatteredStockMinimum = 0, ScatteredStockRange = 0 } };
+        var withoutScatteredStock = generator.Generate(42, config, noScatteredStock);
+        Check(withoutScatteredStock.Resources.Bodies.All(b => b.Concentration != MineralConcentration.Scattered), "zero scattered stock omits empty fields");
+
+        bool rejected = false;
+        try { new ResourceGenerationOptions { Deposit = new DepositTuning { ScatteredStockRange = .081 } }.Validate(); }
+        catch (ArgumentException) { rejected = true; }
+        Check(rejected, "scattered stock settings cannot exceed persisted eight-percent limit");
+        rejected = false;
+        try { new ResourceGenerationOptions { Province = new ProvinceTuning { SourceChance = double.NaN } }.Validate(); }
+        catch (ArgumentException) { rejected = true; }
+        Check(rejected, "nonfinite province tuning rejected");
     }
     private static void OccurrenceFixtures()
     {

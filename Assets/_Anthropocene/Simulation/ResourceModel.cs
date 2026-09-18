@@ -15,17 +15,32 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class ResourceGenerationOptions
     {
+        // Historical generator-2 defaults must retain their original configuration identity.
+        private const string LegacyTuningStamp = "144:0.12:0.045:0.055:0.06:0.1:0.7:0.7:0.7:0.6:0.35:0.45:0.7:0.7:0.6:0.5:0.5:0.4|0.085:0.13:0.025:1.6:2.5:0.18:0.01:0.07:1000:0.012:0.006:0.035:0.25:0.8:0.65:0.04:0.18:0.025:9:0.55:0.45|0.55:0.45:0.45:0.88:0.28:0.02:0.27:0.18:0.45:0.55:1:0.55:0.05:0.8:0.2|0.05:0.1:6:3";
         public bool Enabled = true;
         public int MaximumQuantity = ResourceCatalog.MaximumQuantity;
         public double Density = 1, ScatteredDensity = 1, WoodRecoveryPerYear = .05;
         public int[] DisabledProfiles = Array.Empty<int>();
+        public ProvinceTuning Province = new ProvinceTuning();
+        public DepositTuning Deposit = new DepositTuning();
+        public SurfaceTuning Surface = new SurfaceTuning();
+        public PlacerTuning Placer = new PlacerTuning();
         public void Validate()
         {
-            if (MaximumQuantity < 1000 || MaximumQuantity > ResourceCatalog.MaximumQuantity || !Finite(Density) || Density < 0 || Density > 4 || !Finite(ScatteredDensity) || ScatteredDensity < 0 || ScatteredDensity > 4 || !Finite(WoodRecoveryPerYear) || WoodRecoveryPerYear < 0 || WoodRecoveryPerYear > 1 || DisabledProfiles == null || DisabledProfiles.Any(id => !GeologicalProfiles.All.Any(p => p.Id == id)))
+            if (MaximumQuantity < 1000 || MaximumQuantity > ResourceCatalog.MaximumQuantity || !Finite(Density) || Density < 0 || Density > 4 || !Finite(ScatteredDensity) || ScatteredDensity < 0 || ScatteredDensity > 4 || !Finite(WoodRecoveryPerYear) || WoodRecoveryPerYear < 0 || WoodRecoveryPerYear > 1 || DisabledProfiles == null || DisabledProfiles.Any(id => !GeologicalProfiles.All.Any(p => p.Id == id)) || Province == null || Deposit == null || Surface == null || Placer == null)
                 throw new ArgumentException("Invalid resource-generation options.");
+            Province.Validate(); Deposit.Validate(); Surface.Validate(); Placer.Validate();
         }
         internal static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
-        public string Hash => ResourceCatalog.Digest(MaximumQuantity + ":" + Density.ToString("R", CultureInfo.InvariantCulture) + ":" + ScatteredDensity.ToString("R", CultureInfo.InvariantCulture) + ":" + WoodRecoveryPerYear.ToString("R", CultureInfo.InvariantCulture) + ":" + string.Join(",", DisabledProfiles.Distinct().OrderBy(x => x)));
+        public string Hash
+        {
+            get
+            {
+                string legacy = MaximumQuantity + ":" + Density.ToString("R", CultureInfo.InvariantCulture) + ":" + ScatteredDensity.ToString("R", CultureInfo.InvariantCulture) + ":" + WoodRecoveryPerYear.ToString("R", CultureInfo.InvariantCulture) + ":" + string.Join(",", DisabledProfiles.Distinct().OrderBy(x => x));
+                string tuning = Province.Stamp + "|" + Deposit.Stamp + "|" + Surface.Stamp + "|" + Placer.Stamp;
+                return ResourceCatalog.Digest(tuning == LegacyTuningStamp ? legacy : legacy + "|tuning-v1|" + tuning);
+            }
+        }
     }
     [Serializable]
     public sealed class GeologicalProvince

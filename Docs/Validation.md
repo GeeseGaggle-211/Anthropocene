@@ -6,6 +6,17 @@ Current production tuning now allocates food to current-population consumption, 
 
 ## Geological resource generation — September 18
 
+### Modular generation and tuning refactor
+
+This refactor separates provinces, deposit creation, footprints/share allocation, surface stocks, placer transport and opportunity audits. `ResourceGenerationOptions` now contains four validated tuning groups. Default behavior, resource schema/generator 2 and core generator 11 remain unchanged.
+
+- An independent runner compiled the pre-refactor source from **a18f964** and the revised source separately. All **27 cases** match exactly for full/core/resource fingerprints, every player's observation and saved-world restoration. The 24 smaller cases also match after one held-order turn and its save continuation. Cases cover six 96×48 seeds in each shape, one 1024×512/80-tribe world per shape, and six 256×128 variants of the existing resource options.
+- An independent probe checks all **58 tuning fields** for configuration-hash coverage, invariant-culture formatting, independent defaults and rejection of nonfinite floating-point values. Two preserved version-1 Continents saves (42 and 1729) retain exact resource fingerprints through save/load.
+- The **437 core assertions**, **89 geology assertions** and scalar-versus-2/4-worker replay across **12 resolutions** pass. Eighteen small-world resource audits and the **2048×1024 Archipelagos/42/80** resource audit pass. The large world retains 426 bodies and 25.63 MiB packed resource data; collected heap is 918.39 MiB, and its resource fingerprint survives the full save round trip. The measured overlay was 648 ms; concurrent validation makes this unsuitable for a speed comparison.
+- **24/24 Unity EditMode tests pass** (11.64 seconds), including resource-preview accounting and state/observation purity.
+
+Evidence is ignored under `TestResults/ResourceRefactor`: the preserved `BeforeSource`, comparison runner, `before.json`, `after.json`, `comparison.log`, `tuning-probe.log`, `headless.log`, `geology-final.log`, `audit.log` and `EditMode.xml`. These checks establish default equivalence and extensibility; they are not a claim of faster generation or changed gameplay balance.
+
 ### Broader occurrences and rich cores — resource generator 2
 
 The requested distribution change adds sparse low-quantity fields across eligible land geology, more primary copper/tin occurrences, centrally concentrated solid deposits and source-funded placer reaches. It applies to 23 land-solid profiles. Surface Stone/Clay/Wood, fuel/reservoir systems, discovery requirements, accessibility fractions and the opening economy are unchanged. Resource schema/generator are now 2; schema/generator-1 worlds preserve their original byte layout, quantities and fingerprint on save/load.

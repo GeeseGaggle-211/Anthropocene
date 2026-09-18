@@ -8,6 +8,19 @@ This is a world-generation overlay, not a Neolithic economy. It implements the a
 
 `Generate(seed, config, new ResourceGenerationOptions { Enabled = false })` provides the comparison baseline. `SaveCodec.LegacyFingerprint` compares original authoritative fields without mutating either world. A full fingerprint additionally includes resource state. The normal opening's observations and turn resolver do not consume this new state.
 
+Generation tuning is supplied per call through `ResourceGenerationOptions`. Its existing `MaximumQuantity`, `Density`, `ScatteredDensity`, `WoodRecoveryPerYear` and `DisabledProfiles` fields remain available. Four strongly typed groups in `GeologicalTuning.cs` expose the geological choices:
+
+| Group | Main controls | Units and interpretation |
+| --- | --- | --- |
+| `Province` | Count, warp, radii, history probabilities | Radii are fractions of world width/height; probabilities are 0–1. |
+| `Deposit` | Occurrence chances, copper/tin multipliers, footprint sizes, scattered stocks, rich cores | Stocks are fractions of `MaximumQuantity`. Higher `ScatteredSiteStockDivisor` lowers the per-site stock ceiling; higher `CoreDecay` makes cores narrower, while higher `CoreFloor` gives margins more stock. |
+| `Surface` | Stone/Clay occurrence and quantity, Wood capacity | Capacities and vegetation factors are fractions of `MaximumQuantity`; Wood also applies its local variation factor. |
+| `Placer` | Source transfer, retained sites, shelf steps | Transfer is a fraction of the original source stock; sites and steps are counts. |
+
+Paired `Minimum` and `Range` fields evaluate as `Minimum + Range × seededDraw`. Keeping this expression preserves the original floating-point arithmetic. For example, `new ResourceGenerationOptions { Deposit = new DepositTuning { CopperChanceMultiplier = 2 } }` changes only that generation request. Generation validates finite values and bounds before running. These settings do not change stream IDs, candidate lattice keys, source IDs, catalog/profile hashes or save layouts. They are a generation API, not new player economy controls.
+
+Each nondefault tuning group contributes invariant-culture values to the saved resource configuration hash; historical defaults retain their original hash exactly. Saved worlds store the generated state and hash, not the settings object. Scattered initial stock is limited to 8% of `MaximumQuantity` by the persisted schema-2 validation contract, so `ScatteredStockMinimum + ScatteredStockRange` cannot exceed 0.08. The minimum rich stock is kept positive at the smallest supported maximum quantity, and zero scattered stock or zero placer transfer simply omits those bodies. Very broad footprints that exceed the 10,000-part site-share budget fail generation with an explicit tuning error rather than producing invalid shares.
+
 ## Quantities and units
 
 | Quantity | Convention |
