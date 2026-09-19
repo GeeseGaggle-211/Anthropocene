@@ -90,6 +90,7 @@ internal static class NeolithicChecks
         TestVillageTransitionAndQoL();
         TestConvergenceTechnologies();
         TestSaveLoadRoundTrip();
+        TestNeolithicTurnContinuation();
         Console.WriteLine($"PASS: {checks} Neolithic Part I assertions");
         return checks;
     }
@@ -349,5 +350,26 @@ internal static class NeolithicChecks
         Check(loadedCamp.Inventory.Cloth == 88, "Loaded camp preserves Inventory Cloth");
         Check(loadedCamp.Inventory.FarmTools == 19, "Loaded camp preserves Inventory FarmTools");
         Check(loadedCamp.Inventory.Houses == 15, "Loaded camp preserves Inventory Houses");
+    }
+
+    private static void TestNeolithicTurnContinuation()
+    {
+        var w = CreateNeolithicWorld();
+        var camp = w.Camps[0];
+        camp.Technology = Technology.Cultivation;
+        camp.People.Progression.Era = Era.Neolithic;
+        Check(w.Finished, "World evaluates as Finished for Paleolithic opening when all tribes are Neolithic");
+
+        var resolver = new TurnResolver();
+        var orders = new Dictionary<int, List<Order>> { [0] = new List<Order>() };
+
+        // Ensure resolving turns past tech discovery proceeds smoothly without throwing
+        for (int i = 1; i <= 3; i++)
+        {
+            int turnBefore = w.Turn;
+            var record = resolver.Resolve(w, orders);
+            Check(record != null && w.Turn == turnBefore + 1, "TurnResolver successfully resolves continuous turns in Neolithic era");
+        }
+        Check(w.Turn == 4, "World successfully reached turn 4 in the Neolithic era");
     }
 }

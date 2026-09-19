@@ -196,14 +196,21 @@ namespace Anthropocene.Simulation
             double need = 1 + o.DeficitTurns * .5 + (o.FoodCondition <= 1 ? .5 : 0);
             var campCandidates = new List<Candidate>();
             double current = Gathering(o, o.CampTile);
-            foreach (int n in o.Map.Radius(o.CampTile, o.CampMovement).OrderBy(n => n))
+            if (o.Settlements.Any(s => s.Id == o.CampId && s.IsVillage))
             {
-                if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n)) continue;
-                double food = Gathering(o, n) * need * m.Gathering;
-                double continuity = n == o.CampTile ? Math.Max(.25, current * o.Inertia) : -(1 - m.Mobility) * .1;
-                double herdSupport = HerdSupport(o, n) * m.Hunting * (huntingFocus ? 4 : .35 + .85 * o.HuntingFieldcraft);
-                double fishingSupport = FishingSupport(o, n) * m.Fishing * (fishingFocus ? 3 : .2);
-                campCandidates.Add(new Candidate { Order = n == o.CampTile ? new Order(OrderKind.NoOp, o.CampId) : new Order(OrderKind.Move, o.CampId, destination: n), Score = food + continuity + herdSupport + fishingSupport, Components = "GatheringOpportunity + HerdSupport + FishingSupport + SurvivalNeed + RelocationInertia" });
+                campCandidates.Add(new Candidate { Order = new Order(OrderKind.NoOp, o.CampId), Score = 100, Components = "VillageContinuity" });
+            }
+            else
+            {
+                foreach (int n in o.Map.Radius(o.CampTile, o.CampMovement).OrderBy(n => n))
+                {
+                    if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n)) continue;
+                    double food = Gathering(o, n) * need * m.Gathering;
+                    double continuity = n == o.CampTile ? Math.Max(.25, current * o.Inertia) : -(1 - m.Mobility) * .1;
+                    double herdSupport = HerdSupport(o, n) * m.Hunting * (huntingFocus ? 4 : .35 + .85 * o.HuntingFieldcraft);
+                    double fishingSupport = FishingSupport(o, n) * m.Fishing * (fishingFocus ? 3 : .2);
+                    campCandidates.Add(new Candidate { Order = n == o.CampTile ? new Order(OrderKind.NoOp, o.CampId) : new Order(OrderKind.Move, o.CampId, destination: n), Score = food + continuity + herdSupport + fishingSupport, Components = "GatheringOpportunity + HerdSupport + FishingSupport + SurvivalNeed + RelocationInertia" });
+                }
             }
             var campChoice = Select(o, campCandidates, result.Trace);
             int plannedCamp = campChoice.Destination >= 0 ? campChoice.Destination : o.CampTile;

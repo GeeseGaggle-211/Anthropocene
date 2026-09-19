@@ -23,6 +23,7 @@ namespace Anthropocene.Simulation
                 return hunter == null || order.Destination >= 0 || order.Population != 0 || order.Target != source.Id || hunter.Tile != source.Tile ? "Hunters must be at their source camp to reintegrate." : null;
             if (order.Kind == OrderKind.Move || order.Destination >= 0)
             {
+                if (settlement != null && settlement.IsVillage) return "A permanent village cannot relocate.";
                 if (!o.Tiles.ContainsKey(order.Destination)) return "Destination is outside current sight.";
                 int budget = hunter == null ? o.CampMovement : o.HunterMovement;
                 if (!o.Map.Reachable(tile, order.Destination, budget, n => Enter(o, n, hunter != null), n => hunter != null && o.Tiles[n].Aquatic ? o.WaterMovementCost : 1)) return "Destination is unreachable within this turn's movement allowance.";

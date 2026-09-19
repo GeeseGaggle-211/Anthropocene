@@ -55,7 +55,7 @@ namespace Anthropocene.Simulation
         {
             var resolutionTimer = System.Diagnostics.Stopwatch.StartNew(); LastMetrics = new ResolutionMetrics();
             Ownership.Bind(w);
-            if (w.Finished) throw new InvalidOperationException("The Paleolithic opening has ended.");
+            if (w.Camps.All(c => w.LinkedPopulation(c) <= 0)) throw new InvalidOperationException("All tribes have perished.");
             w.Config.Validate();
             var planning = new PlanningIndex(w);
             int peopleBefore = w.Camps.Sum(w.LinkedPopulation);

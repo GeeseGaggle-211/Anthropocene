@@ -31,7 +31,7 @@ namespace Anthropocene.Presentation
         private float radius = 56;
         private Vector2 pan, sidebarScroll, logScroll, helpScroll;
         private string seedText = "1729", status = "Choose a world, then begin.", mode = "Inspect";
-        private bool menu = true, help, debug;
+        private bool menu = true, help, debug, transitionDismissed;
         private readonly List<string> journal = new List<string>();
         private static readonly Color Ink = new Color(.035f, .044f, .043f), Panel = new Color(.075f, .086f, .082f), Paper = new Color(.86f, .86f, .78f), Gold = new Color(.91f, .69f, .33f);
         private static readonly Color MoveColor = new Color(.30f, .78f, .58f), FishColor = new Color(.28f, .70f, .88f), InvalidColor = new Color(.88f, .28f, .24f);
@@ -58,7 +58,7 @@ namespace Anthropocene.Presentation
             if (resolving != null && resolving.IsCompleted) { if (resolving.IsFaulted) status = "Turn failed: " + resolving.Exception.GetBaseException().Message; else FinishTurn(resolving.Result); resolving = null; }
             if (generating == null || !generating.IsCompleted) return;
             if (generating.IsFaulted) status = "World generation failed: " + generating.Exception.GetBaseException().Message;
-            else { world = generating.Result; InvalidateWorldPreview(); previewOpen = previewAfterGeneration; previewAfterGeneration = false; menu = false; planned.Clear(); journal.Clear(); lastResolutionSummary = ""; FocusCamp(); Refresh(); status = operation == "Loading the saved opening" ? "Saved opening restored." : "Your people gather automatically. Choose orders, then commit the generation."; }
+            else { world = generating.Result; InvalidateWorldPreview(); previewOpen = previewAfterGeneration; previewAfterGeneration = false; menu = false; planned.Clear(); journal.Clear(); lastResolutionSummary = ""; FocusCamp(); Refresh(); status = operation == "Loading the saved opening" ? "Saved opening restored." : "Your people gather automatically. Choose orders, then commit the generation."; transitionDismissed = operation == "Loading the saved opening" && (world.Camps.FirstOrDefault(c => c.Player == 0)?.Technology ?? Technology.None) != Technology.None; }
             generating = null;
         }
         private void OnDestroy() { if (hex != null) Destroy(hex); InvalidateWorldPreview(); }
@@ -143,8 +143,8 @@ namespace Anthropocene.Presentation
             Fill(new Rect(0, 0, Screen.width, 64), Panel);
             GUI.Label(new Rect(18, 12, 245, 35), "ANTHROPOCENE", title);
             var camp = world.Camps.First(c => c.Player == 0);
-            string season = (world.Config.TurnDays / world.Config.DaysPerYear).ToString("0.#") + " years per turn | " + (world.Days / world.Config.DaysPerYear).ToString("0.#") + " years elapsed";
-            GUI.Label(new Rect(270, 12, Mathf.Max(140, Screen.width - side - 280), 46), "Turn " + world.Turn + "  |  " + (world.Finished ? "Opening complete" : season) + "\n" + (camp.Technology == Technology.None ? "Paleolithic" : "Neolithic: " + TechName(camp.Technology)), text);
+            string timeState = world.LinkedPopulation(camp) <= 0 ? "Tribe extinct" : season;
+            GUI.Label(new Rect(270, 12, Mathf.Max(140, Screen.width - side - 280), 46), "Turn " + world.Turn + "  |  " + timeState + "\n" + (camp.Technology == Technology.None ? "Paleolithic" : "Neolithic: " + TechName(camp.Technology)), text);
             float x = Screen.width - side + 10;
             if (Button(new Rect(x, 16, 66, 30), "Save")) Save();
             if (Button(new Rect(x + 72, 16, 66, 30), "Load")) Load();
@@ -202,7 +202,8 @@ namespace Anthropocene.Presentation
             DrawPaths(area);
             Fill(new Rect(12, 10, Mathf.Min(area.width - 24, 720), 32), new Color(.035f, .044f, .043f, .92f));
             GUI.Label(new Rect(24, 17, Mathf.Min(area.width - 48, 696), 22), ModeInstruction(), small);
-            if (world.Finished || world.LinkedPopulation(camp) <= 0) Transition(new Rect(30, 55, Mathf.Min(550, area.width - 60), 225));
+            if (world.LinkedPopulation(camp) <= 0) TransitionGameOver(new Rect(30, 55, Mathf.Min(550, area.width - 60), 225));
+            else if (camp.Technology != Technology.None && !transitionDismissed) TransitionBreakthrough(new Rect(30, 55, Mathf.Min(550, area.width - 60), 275));
             GUI.EndGroup();
         }
         private void Sidebar(Rect area)
@@ -240,7 +241,10 @@ namespace Anthropocene.Presentation
                 }
                 y += 42;
             }
-            if (Button(new Rect(14, y, width, 36), mode == "Move" ? "◆ MOVE [M]  ·  choose a green tile" : "◇ MOVE [M]  ·  preview range", mode == "Move")) BeginMode("Move"); y += 42;
+            if (selected != camp.Id || !camp.IsVillage)
+            {
+                if (Button(new Rect(14, y, width, 36), mode == "Move" ? "◆ MOVE [M]  ·  choose a green tile" : "◇ MOVE [M]  ·  preview range", mode == "Move")) BeginMode("Move"); y += 42;
+            }
             if (selected == camp.Id)
             {
                 int maximum = Math.Max(0, Math.Min(camp.GathererPopulation, camp.Population - world.Config.MinimumCamp));
@@ -289,7 +293,7 @@ namespace Anthropocene.Presentation
             string commit = CommitPreview(); float commitHeight = small.CalcHeight(new GUIContent(commit), width);
             Fill(new Rect(10, y, width + 8, commitHeight + 68), new Color(.13f, .145f, .12f));
             GUI.Label(new Rect(20, y + 8, width - 12, commitHeight), commit, small); y += commitHeight + 14;
-            GUI.enabled = saving == null && !world.Finished && world.LinkedPopulation(camp) > 0;
+            GUI.enabled = saving == null && world.LinkedPopulation(camp) > 0;
             if (Button(new Rect(14, y, width, 44), "COMMIT ORDERS / END GENERATION  [Enter]", true)) EndTurn(); GUI.enabled = saving == null; y += 58;
 
             if (!string.IsNullOrEmpty(lastResolutionSummary))
@@ -383,7 +387,8 @@ namespace Anthropocene.Presentation
             if (e.type != EventType.KeyDown) return;
             switch (e.keyCode)
             {
-                case KeyCode.Return: EndTurn(); break;
+                case KeyCode.Return:
+                case KeyCode.Space: EndTurn(); break;
                 case KeyCode.M: BeginMode("Move"); break;
                 case KeyCode.H: status = "Hunting is automatic when an established hunter group shares a tile with a wild herd."; break;
                 case KeyCode.F: BeginMode("Fish"); break;
@@ -404,7 +409,7 @@ namespace Anthropocene.Presentation
         }
         private void Queue(Order order)
         {
-            if (world.Finished || saving != null) return;
+            if (saving != null || world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) <= 0) return;
             string error = resolver.Validate(world, 0, order, new HashSet<int>(observation.Tiles.Keys));
             if (error != null) { status = "Unavailable: " + error; return; }
             string previous = planned.TryGetValue(order.Entity, out var prior) ? Describe(prior) : null;
@@ -414,7 +419,7 @@ namespace Anthropocene.Presentation
         }
         private void EndTurn()
         {
-            if (saving != null || world.Finished || world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) == 0) return;
+            if (saving != null || world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) <= 0) return;
             resolvingSummary = CommitPreview();
             var playerOrders = planned.Values.OrderBy(o => o.Entity).Select(o => o.Copy()).ToList();
             resolving = Task.Run(() =>
@@ -488,14 +493,31 @@ namespace Anthropocene.Presentation
             previewAfterGeneration = false; string path = SavePath; operation = "Loading the saved opening";
             generating = Task.Run(() => SaveCodec.Load(File.ReadAllBytes(path)));
         }
-        private void Transition(Rect rect)
+        private void TransitionGameOver(Rect rect)
         {
-            Fill(rect, Panel); var camp = world.Camps.First(c => c.Player == 0);
-            GUI.Label(new Rect(rect.x + 18, rect.y + 16, rect.width - 36, 38), camp.Technology == Technology.None ? "The camp has fallen silent" : "A new way of living", title);
-            string body = camp.Technology == Technology.None ? "Your people could not sustain themselves. A different route or division of labor may change their fate." : "Through practice, your people discovered " + TechName(camp.Technology) + ". The first breakthrough sets a direction; it does not close the other paths.";
-            if (camp.ForcedTransition) body += " Your balanced experience carries forward, with a bonus toward " + (Domain)camp.SecondaryDomain + ".";
+            Fill(rect, Panel);
+            GUI.Label(new Rect(rect.x + 18, rect.y + 16, rect.width - 36, 38), "The camp has fallen silent", title);
+            string body = "Your people could not sustain themselves. A different route or division of labor may change their fate.";
             GUI.Label(new Rect(rect.x + 18, rect.y + 62, rect.width - 36, 95), body, text);
             if (Button(new Rect(rect.x + 18, rect.y + 175, rect.width - 36, 32), "Explore another beginning")) menu = true;
+        }
+        private void TransitionBreakthrough(Rect rect)
+        {
+            Fill(rect, Panel); var camp = world.Camps.First(c => c.Player == 0);
+            GUI.Label(new Rect(rect.x + 18, rect.y + 16, rect.width - 36, 38), "A new way of living · The Neolithic Era", title);
+            string body = "Through generations of practice, your people discovered " + TechName(camp.Technology) + "! Your camp has settled permanently into an agricultural village.\n\nYou now have direct control over crop cultivation, craft workshops (pottery, weaving, toolmaking, housing), and village workforce management.";
+            if (camp.ForcedTransition) body += " Your balanced experience carries forward, with a bonus toward " + (Domain)camp.SecondaryDomain + ".";
+            GUI.Label(new Rect(rect.x + 18, rect.y + 62, rect.width - 36, 120), body, text);
+            if (Button(new Rect(rect.x + 18, rect.y + 190, rect.width - 36, 36), "CONTINUE PLAYING (NEOLITHIC)", true))
+            {
+                transitionDismissed = true;
+                selected = camp.Id;
+                inspected = camp.Tile;
+                mode = "Inspect";
+                villageInspectorOpen = true;
+                villageInspectorCampId = camp.Id;
+            }
+            if (Button(new Rect(rect.x + 18, rect.y + 232, rect.width - 36, 28), "Explore another beginning")) menu = true;
         }
         private void Help()
         {
