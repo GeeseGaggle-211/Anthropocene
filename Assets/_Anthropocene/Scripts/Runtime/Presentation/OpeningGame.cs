@@ -143,6 +143,7 @@ namespace Anthropocene.Presentation
             Fill(new Rect(0, 0, Screen.width, 64), Panel);
             GUI.Label(new Rect(18, 12, 245, 35), "ANTHROPOCENE", title);
             var camp = world.Camps.First(c => c.Player == 0);
+            string season = (world.Config.TurnDays / world.Config.DaysPerYear).ToString("0.#") + " years per turn | " + (world.Days / world.Config.DaysPerYear).ToString("0.#") + " years elapsed";
             string timeState = world.LinkedPopulation(camp) <= 0 ? "Tribe extinct" : season;
             GUI.Label(new Rect(270, 12, Mathf.Max(140, Screen.width - side - 280), 46), "Turn " + world.Turn + "  |  " + timeState + "\n" + (camp.Technology == Technology.None ? "Paleolithic" : "Neolithic: " + TechName(camp.Technology)), text);
             float x = Screen.width - side + 10;
