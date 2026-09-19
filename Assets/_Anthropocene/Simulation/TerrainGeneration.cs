@@ -184,6 +184,7 @@ namespace Anthropocene.Simulation
                     for (int id = 0; id < w.Tiles.Length; id++)
                         w.Generation.AncientOrogenUplift[id] = baseline[id] >= cfg.SeaLevel ? Math.Max(0f, w.Tiles[id].Elevation - baseline[id]) : 0f;
                     if (c.AncientOrogenAge != null) w.Generation.AncientOrogenAge = c.AncientOrogenAge;
+                    if (c.AncientOrogenStrength != null) w.Generation.AncientOrogenStrength = c.AncientOrogenStrength;
                 }
             }
             else
@@ -339,9 +340,8 @@ namespace Anthropocene.Simulation
         {
             var cfg = c.Config; int seed = c.World.Seed, plate = c.World.Tiles[origin].Plate;
             double scale = Math.Max(.65, cfg.Width / 256.0), x = origin % cfg.Width, y = origin / cfg.Width;
-            double motion = Math.Atan2(c.PlateY[plate] * .75, c.PlateX[plate]);
-            double rotation = TerrainNoise.Gaussian(seed, 470, eventId) * .85;
-            double heading = motion + rotation;
+            double historicalConvergence = Math.Atan2(c.PlateY[plate] * .75, c.PlateX[plate]);
+            double heading = historicalConvergence + Math.PI / 2.0 + TerrainNoise.Gaussian(seed, 470, eventId) * .45;
             double curvature = .015 * TerrainNoise.Gaussian(seed, 471, eventId), angular = 0, lateral = 0;
             int steps = (int)Math.Round(scale * (18 + 12 * Numbers.Random(seed, 472, eventId)));
             double baseWidth = scale * (2.8 + 1.2 * Numbers.Random(seed, 473, eventId));
@@ -419,13 +419,19 @@ namespace Anthropocene.Simulation
                         if (added <= 0) continue;
 
                         var t = w.Tiles[id];
-                        t.Elevation += (float)added;
-                        if (t.Elevation > .95f) t.Elevation = .95f;
+                        if (baselineElevation[id] < .95f)
+                            t.Elevation = Math.Min(.95f, t.Elevation + (float)added);
+                        else
+                            t.Elevation += (float)added;
 
                         if (c.AncientOrogenStrength != null)
                         {
-                            c.AncientOrogenStrength[id] = Math.Max(c.AncientOrogenStrength[id], (float)(envelope * continuity));
-                            c.AncientOrogenAge[id] = Math.Max(c.AncientOrogenAge[id], (float)sample.Age);
+                            float str = (float)(envelope * continuity);
+                            if (str > c.AncientOrogenStrength[id])
+                            {
+                                c.AncientOrogenStrength[id] = str;
+                                c.AncientOrogenAge[id] = (float)sample.Age;
+                            }
                         }
                     }
                 }

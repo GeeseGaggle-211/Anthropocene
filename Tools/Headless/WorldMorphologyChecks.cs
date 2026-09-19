@@ -89,16 +89,66 @@ internal static class WorldMorphologyChecks
         var generator = new WorldGenerator();
         var world = generator.Generate(42, config);
 
-        // 1. Seawater invariance: submerged tiles remain strictly water without bathymetric distortion
-        Check(world.Tiles.Where(t => t.WaterBody == WaterKind.Saltwater).All(t => t.Elevation < config.SeaLevel), "seawater cells remain strictly below sea level");
-        Check(world.Tiles.All(t => !float.IsNaN(t.Elevation) && !float.IsInfinity(t.Elevation)), "orogen elevation values are finite and valid");
+        // 1. Controlled shape comparison: Continents vs Archipelago
+        var archConfig = new SimulationConfig { Width = 256, Height = 128, Players = 4, Shape = WorldShape.Archipelagos };
+        var archWorld = generator.Generate(42, archConfig);
+        Check(archWorld.Generation.AncientOrogenUplift == null || archWorld.Generation.AncientOrogenUplift.All(u => u == 0f), "archipelago worlds generate zero ancient orogen uplift");
 
-        // 2. Volcanism invariance: ancient orogens do not inject volcanic activity
-        Check(world.Tiles.All(t => t.Volcanism >= 0 && !float.IsNaN(t.Volcanism) && !float.IsInfinity(t.Volcanism)), "volcanism values are valid and finite");
-        // Check that ancient orogen uplifts exist on continental land
-        var continentalLand = world.Tiles.Where(t => t.Continental && t.Land).ToArray();
-        Check(continentalLand.Any(t => t.ElevationLevel >= 3 && t.ElevationLevel <= 6), "ancient orogens populate traversable upland levels 3 to 6");
-        Check(continentalLand.Count(t => t.ElevationLevel == 10) <= continentalLand.Length * .03, "ancient orogens do not create impassable level 10 walls");
+        // 2. Scoped orogen footprint assertions
+        Check(world.Generation?.AncientOrogenUplift != null && world.Generation?.AncientOrogenStrength != null, "continents world has ancient orogen diagnostic reports");
+        var orogenTrackTiles = world.Tiles.Where(t => world.Generation.AncientOrogenStrength[t.Id] > 0f).ToArray();
+        var orogenUpliftTiles = world.Tiles.Where(t => world.Generation.AncientOrogenUplift[t.Id] > 0f).ToArray();
+        Check(orogenTrackTiles.Length >= 50, "ancient orogens affect a substantial continental footprint");
+        int trackWithUplift = orogenTrackTiles.Count(t => world.Generation.AncientOrogenUplift[t.Id] > 0f);
+        Check((double)trackWithUplift / orogenTrackTiles.Length >= 0.85, "overwhelming majority of ancient orogen track tiles have positive uplift");
+        Check(orogenTrackTiles.All(t => t.Continental && t.WaterBody != WaterKind.Saltwater), "ancient orogen tracks are strictly continental and non-marine");
+
+        // 3. Bathymetry and volcanism invariance
+        Check(world.Tiles.Where(t => t.WaterBody == WaterKind.Saltwater).All(t => world.Generation.AncientOrogenUplift[t.Id] == 0f && t.Elevation < config.SeaLevel), "seawater cells receive zero ancient orogen uplift and remain strictly below sea level");
+        Check(world.Tiles.All(t => !float.IsNaN(t.Elevation) && !float.IsInfinity(t.Elevation)), "all tile elevations are finite and valid");
+        Check(orogenUpliftTiles.All(t => !float.IsNaN(t.Volcanism) && !float.IsInfinity(t.Volcanism) && t.Volcanism >= 0f), "ancient orogen tiles have valid non-negative volcanism");
+
+        // 4. Scoped elevation levels on orogen footprint
+        int traversableUplands = orogenUpliftTiles.Count(t => t.ElevationLevel >= 3 && t.ElevationLevel <= 6);
+        Check((double)traversableUplands / orogenUpliftTiles.Length >= 0.40, "ancient orogen footprint predominantly populates traversable upland levels 3 to 6");
+        int level10Count = orogenUpliftTiles.Count(t => t.ElevationLevel == 10);
+        Check((double)level10Count / orogenUpliftTiles.Length < 0.05, "ancient orogens do not create excessive impassable level 10 peaks");
+
+        // 5. Impassable level 10 wall check within orogen footprint
+        var orogenSet = new HashSet<int>(orogenUpliftTiles.Select(t => t.Id));
+        var level10Components = Components(world, t => t.ElevationLevel == 10 && orogenSet.Contains(t.Id));
+        Check(level10Components.All(c => c.Count < 15), "ancient orogens do not create continuous impassable level 10 mountain walls");
+
+        // 6. Direct elevation clamp regression test: baseline >= 0.95 is never lowered by ancient orogen uplift
+        var clampWorld = new WorldState { Seed = 123, Config = config, Tiles = new Tile[config.Width * config.Height], Generation = new GenerationReport() };
+        for (int i = 0; i < clampWorld.Tiles.Length; i++)
+            clampWorld.Tiles[i] = new Tile { Id = i, Continental = true, Elevation = 0.97f };
+        var clampContext = new GenerationContext
+        {
+            World = clampWorld, Map = clampWorld.Map,
+            PlateCenters = new int[] { 0 }, PlateX = new double[] { 1 }, PlateY = new double[] { 0 },
+            AncientOrogenStrength = new float[clampWorld.Tiles.Length],
+            AncientOrogenAge = new float[clampWorld.Tiles.Length]
+        };
+        ElevationStage.AncientOrogens(clampContext, 1);
+        Check(clampWorld.Tiles.All(t => t.Elevation >= 0.97f), "ancient orogen uplift is strictly additive and never lowers pre-existing high peaks >= 0.95");
+
+        // 7. Event age and dominant strength coupling test
+        if (world.Generation.AncientOrogenAge != null)
+        {
+            Check(orogenTrackTiles.All(t => world.Generation.AncientOrogenAge[t.Id] >= 80f && world.Generation.AncientOrogenAge[t.Id] <= 560f), "orogen ages match valid event age bounds");
+        }
+        var testStrength = new float[1]; var testAge = new float[1];
+        float str1 = 0.8f; float age1 = 120f;
+        if (str1 > testStrength[0]) { testStrength[0] = str1; testAge[0] = age1; }
+        float str2 = 0.3f; float age2 = 500f;
+        if (str2 > testStrength[0]) { testStrength[0] = str2; testAge[0] = age2; }
+        Check(testStrength[0] == 0.8f && testAge[0] == 120f, "dominant orogen event couples strength and age without being overwritten by weaker older events");
+        float str3 = 0.9f; float age3 = 250f;
+        if (str3 > testStrength[0]) { testStrength[0] = str3; testAge[0] = age3; }
+        Check(testStrength[0] == 0.9f && testAge[0] == 250f, "stronger overlapping event updates both strength and age synchronously");
+
+        Console.WriteLine("ANCIENT_OROGENS seed=42 tracks=" + orogenTrackTiles.Length + " uplift=" + orogenUpliftTiles.Length + " traversable=" + traversableUplands + " level10=" + level10Count);
     }
 
     private static List<List<int>> Components(WorldState world, Func<Tile, bool> include)

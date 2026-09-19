@@ -39,9 +39,10 @@ namespace Anthropocene.Simulation
                 {
                     r.Host[t.Id] = (byte)HostRock.Clastic;
                     r.History[t.Id] |= (ushort)(GeologicalHistory.Basin | GeologicalHistory.Preserved);
-                    if (t.River || t.FreshwaterSource != FreshwaterSource.None || t.Flow > .01f || t.DepressionDepth > 0 || t.Seasons.Any(s => s.Moisture > .35f))
+                    bool paleoMire = TerrainNoise.Fractal(seed, 12060, (t.Id % width) / (double)width, (t.Id / width) / (double)height, 6, 2) > -0.15;
+                    if (paleoMire)
                         r.History[t.Id] |= (ushort)GeologicalHistory.Peat;
-                    if (c.AncientOrogenAge != null && c.AncientOrogenAge[t.Id] >= 150)
+                    if (c.AncientOrogenAge != null && c.AncientOrogenAge[t.Id] >= 140)
                         r.History[t.Id] |= (ushort)GeologicalHistory.Mature;
                 }
             }
@@ -95,8 +96,14 @@ namespace Anthropocene.Simulation
                     {
                         weight[id] = (float)strength;
                         r.Province[id] = (ushort)key;
-                        bool forelandSediment = !c.World.Tiles[id].Land ? false : c.World.Tiles[id].Continental && c.AncientOrogenStrength != null && c.AncientOrogenStrength[id] > .05f && c.AncientOrogenStrength[id] <= .50f && (c.World.Tiles[id].Relief <= Relief.Lowland || c.World.Tiles[id].Elevation < .65f || c.World.Tiles[id].River || c.World.Tiles[id].DepressionDepth > 0);
-                        r.Host[id] = (byte)(forelandSediment && (host == HostRock.Basement || host == HostRock.Metamorphic || host == HostRock.Mafic) ? HostRock.Clastic : host);
+                        bool isCore = c.World.Tiles[id].Land && c.World.Tiles[id].Continental && c.AncientOrogenStrength != null && c.AncientOrogenStrength[id] > .55f;
+                        bool forelandSediment = c.World.Tiles[id].Land && c.World.Tiles[id].Continental && c.AncientOrogenStrength != null && c.AncientOrogenStrength[id] > .05f && c.AncientOrogenStrength[id] <= .50f && (c.World.Tiles[id].Relief <= Relief.Lowland || c.World.Tiles[id].Elevation < .65f || c.World.Tiles[id].River || c.World.Tiles[id].DepressionDepth > 0);
+                        if (isCore && host != HostRock.Granite && host != HostRock.Alkaline)
+                            r.Host[id] = (byte)HostRock.Metamorphic;
+                        else if (forelandSediment && (host == HostRock.Basement || host == HostRock.Metamorphic || host == HostRock.Mafic))
+                            r.Host[id] = (byte)HostRock.Clastic;
+                        else
+                            r.Host[id] = (byte)host;
                     }
                 }
             }

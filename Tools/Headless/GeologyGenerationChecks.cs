@@ -20,9 +20,9 @@ internal static class GeologyGenerationChecks
         Check(!ResourceCatalog.Discoverable(MaterialId.MethaneHydrate, new HashSet<string> { "HydrateExtraction" }), "reserved profiles do not grant capabilities");
         var originalResourceFingerprints = new Dictionary<WorldShape, string>
         {
-            [WorldShape.Continents] = "2E6E9577D994EAB119BD4333F5FB63C3771437FE161CBB1EFFB0222396B20A83",
+            [WorldShape.Continents] = "72591CF6711279BD78A70B357787292B12DB9C090BD2AF9B855F05EC59ECB487",
             [WorldShape.Archipelagos] = "7659C4489EBF3D7CCA28D6B37ADA37F8C798A9E44C34DBBE931CCBB58FF613ED",
-            [WorldShape.Pangaea] = "57A9BCF803714D0A35977F714317603714618D1D39395F1F3C8C11FDE8E1F462"
+            [WorldShape.Pangaea] = "0EBB280332A44B0CE81EF13B764FF25D2A2D08EB401D19214655EE9DA1FC0FCC"
         };
         foreach (var shape in Enum.GetValues(typeof(WorldShape)).Cast<WorldShape>())
         {
@@ -30,6 +30,14 @@ internal static class GeologyGenerationChecks
             var generator = new WorldGenerator();
             var before = generator.Generate(42, config, new ResourceGenerationOptions { Enabled = false });
             var world = generator.Generate(42, config); var r = world.Resources;
+            var coreTiles = world.Tiles.Where(t => t.Land && t.Continental && world.Generation?.AncientOrogenStrength != null && world.Generation.AncientOrogenStrength[t.Id] > 0.55f).ToArray();
+            if (coreTiles.Length > 0)
+            {
+                Check(coreTiles.All(t => {
+                    var host = (HostRock)r.Host[t.Id];
+                    return host == HostRock.Metamorphic || host == HostRock.Granite || host == HostRock.Alkaline;
+                }), shape + " ancient orogen metamorphic cores survive normal province overwrites");
+            }
             Check(ResourceCodec.Fingerprint(r) == originalResourceFingerprints[shape], shape + " original resource generation fingerprint");
             Check(SaveCodec.LegacyFingerprint(before) == SaveCodec.LegacyFingerprint(world), shape + " preserves all legacy state and IDs");
             Check(ObservationContract.Serialize(new AgentObservationBuilder().Build(before, 0), before.Camps[0].Mandate) == ObservationContract.Serialize(new AgentObservationBuilder().Build(world, 0), world.Camps[0].Mandate), shape + " latent minerals do not leak into observations");

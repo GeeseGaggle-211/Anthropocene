@@ -6,9 +6,9 @@ These sites remain valid under generator 11; food figures below were remeasured 
 
 | Preset | Camp tile | Local setting | Land food | Aquatic food | Start viability |
 | --- | ---: | --- | ---: | ---: | ---: |
-| Desert river valley | 225046 | 20.1°C mean; seven desert river tiles | 112.30 | 0 | 180.00% |
-| Steppe hunters | 345605 | 15.9°C mean; seven open grassland tiles, river tiles; reachable horses | 97.79 | 0 | 180.00% |
-| Cold coastal fishers | 431802 | 2.2°C mean; four wooded Cold tiles, three adjacent shallows; land rain pools | 7.49 | 171.53 | 156.35% |
+| Desert river valley | 225046 | 20.1°C mean; seven desert river tiles | 112.31 | 0 | 180.00% |
+| Steppe hunters | 173240 | 15.7°C mean; seven open grassland tiles, river tiles; reachable horses | 100.05 | 0 | 180.00% |
+| Cold coastal fishers | 431802 | 2.2°C mean; four wooded Cold tiles, three adjacent shallows; land rain pools | 7.47 | 171.53 | 156.35% |
 
 Food columns are **annual-mean renewal potential per 91.25-day base season**, summed within radius 1. They are neither current stocks nor realized harvests. They use the same seasonal capacities, rates and sustainable production fraction as the viable-start check. Actual gathering shares one labor ceiling across land and passive coastal food; depletion, competing animals, workforce choices, freshwater and seasonal reserves also matter. The 180% ceiling here is the starting gathering labor ceiling, not a promise of population growth. All three meet the normal 85% viability threshold. The unequal densities are deliberately preserved for comparison.
 
@@ -16,9 +16,9 @@ The four stored seasonal profiles show why the fisher's annual mean is insuffici
 
 | Preset / food source | Season 1 | Season 2 | Season 3 | Season 4 | Minimum local freshwater capacity across seasons |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Desert river / land | 113.06 | 92.89 | 112.83 | 130.40 | 370.20 |
-| Steppe / land | 95.71 | 133.61 | 94.40 | 67.43 | 485.12 |
-| Cold shore / land | 4.12 | 19.51 | 5.99 | 0.33 | 25.00 |
+| Desert river / land | 113.11 | 92.86 | 112.86 | 130.43 | 370.56 |
+| Steppe / land | 97.25 | 69.29 | 98.28 | 135.37 | 405.01 |
+| Cold shore / land | 4.12 | 19.46 | 5.98 | 0.33 | 25.00 |
 | Cold shore / shallows | 158.05 | 349.84 | 158.05 | 20.17 | 0: saltwater cannot be drunk |
 
 Food is renewal potential in the same units as the first table; freshwater is **capacity**, not a food yield or a promise of realized recharge. This cold fisher is in the Southern Hemisphere: Season 2 is productive summer and Season 4 is lean winter. The viable-start rule checks every season's freshwater and annual renewable food with the normal shared labor limit. The seasonal reserve test is therefore more informative than comparing full initial food stocks.

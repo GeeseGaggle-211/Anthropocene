@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.Serialization;
 
 namespace Anthropocene.Simulation
 {
@@ -18,8 +19,12 @@ namespace Anthropocene.Simulation
         public int[] ReliefCounts = new int[4];
         public int[] ElevationCounts = new int[11];
         public int OasisCount, WildHerds, CampsWithVisibleHerds, FreshwaterTiles, SaltwaterTiles, RiverEdges, CamelHerds, CamelsNearOases;
+        [IgnoreDataMember]
         public float[] AncientOrogenUplift;
+        [IgnoreDataMember]
         public float[] AncientOrogenAge;
+        [IgnoreDataMember]
+        public float[] AncientOrogenStrength;
     }
     public interface IWorldGenerationStage
     {

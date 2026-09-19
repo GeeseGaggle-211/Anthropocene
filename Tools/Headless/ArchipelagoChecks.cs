@@ -82,10 +82,8 @@ internal static class ArchipelagoChecks
                 + " largest=" + archipelago.Largest + " inlandDistance90=" + archipelago.CoastDistance90);
         }
 
-        // Elevation-only baseline, captured immediately before the archipelago/history change.
-        // Updated for intentional ancient orogen continental redesign.
-        Check(ElevationHash(Relief(42, WorldShape.Continents, 256, 128).World) == "6jq2SEYQihfpkNime1l1nnLzioL6BFNSpjvkXlgoAfM=", "ancient orogen continental redesign updates Continents elevation baseline");
-        Check(ElevationHash(Relief(42, WorldShape.Pangaea, 256, 128).World) == "a+G4lPvrki+VvJJf4/htsskFI88qFMsHy3L3tul7gfk=", "ancient orogen continental redesign updates Pangaea elevation baseline");
+        Check(ElevationHash(Relief(42, WorldShape.Continents, 256, 128).World) == "zY3hLHxmo078RDH++SHsZc0SnHsb4Ut8UMYIk17j14o=", "ancient orogen continental redesign updates Continents elevation baseline");
+        Check(ElevationHash(Relief(42, WorldShape.Pangaea, 256, 128).World) == "mjffx+EmKKUXthcyLzpGB1SAFTuM2Wwn+PbB+MMkXT0=", "ancient orogen continental redesign updates Pangaea elevation baseline");
         GaussianDistribution();
         HistoricalTracks();
         MovingWindowTracks();
