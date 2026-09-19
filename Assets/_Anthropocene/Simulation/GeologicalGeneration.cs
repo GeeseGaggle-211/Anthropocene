@@ -18,6 +18,7 @@ namespace Anthropocene.Simulation
             int count = c.World.Tiles.Length, seed = c.World.Seed, width = c.Config.Width, height = c.Config.Height;
             var r = new WorldResourceState { CatalogHash = ResourceCatalog.Hash, ProfileHash = GeologicalProfiles.Hash, ConfigurationHash = options.Hash, MaximumQuantity = options.MaximumQuantity, WoodRecoveryPerYear = options.WoodRecoveryPerYear,
                 DeepReserveMultiplier = options.DeepReserveMultiplier, DeepMiningTechnology = options.DeepReserveMultiplier > 0 ? "AdvancedMining" : "",
+                Concentrations = ResourceCatalog.Materials.Aggregate(new double[69], (a, m) => { a[(int)m.Id] = m.Concentration; return a; }),
                 Province = new ushort[count], Host = new byte[count], History = new ushort[count], Marine = new byte[count], Stone = new ushort[count], Clay = new ushort[count], Wood = new ushort[count] };
             c.World.Resources = r;
             // Keep default and older-range worlds byte-compatible with schema 2.

@@ -15,7 +15,12 @@ namespace Anthropocene.Simulation
             if (r.Version >= 3) writer.Write(r.SurfaceUnit);
             if (r.Version >= 4) { writer.Write(r.DeepReserveMultiplier); writer.Write(r.DeepMiningTechnology ?? ""); }
             writer.Write(r.AccessibleParts.Length);
-            for (int i = 0; i < r.AccessibleParts.Length; i++) { writer.Write(r.AccessibleParts[i]); writer.Write(r.DiscoveryTechnologies[i] ?? ""); }
+            for (int i = 0; i < r.AccessibleParts.Length; i++)
+            {
+                writer.Write(r.AccessibleParts[i]);
+                writer.Write(r.DiscoveryTechnologies[i] ?? "");
+                if (r.Version >= 4) writer.Write(r.Concentrations != null && i < r.Concentrations.Length ? r.Concentrations[i] : 1.0);
+            }
             writer.Write(r.Provinces.Length);
             foreach (var p in r.Provinces.OrderBy(p => p.Id))
             { writer.Write(p.Id); writer.Write(p.X); writer.Write(p.Y); writer.Write(p.RadiusX); writer.Write(p.RadiusY); writer.Write(p.Angle); writer.Write((byte)p.Host); writer.Write((ushort)p.History); }
@@ -48,7 +53,14 @@ namespace Anthropocene.Simulation
             if (r.Version >= 4) { r.DeepReserveMultiplier = reader.ReadDouble(); r.DeepMiningTechnology = reader.ReadString(); if (r.DeepMiningTechnology.Length > 128) throw new InvalidDataException("Invalid deep mining capability."); }
             int materials = Count(reader, 69); if (materials != 69) throw new InvalidDataException("Invalid saved material catalog size.");
             r.AccessibleParts = new ushort[materials]; r.DiscoveryTechnologies = new string[materials];
-            for (int i = 0; i < materials; i++) { r.AccessibleParts[i] = reader.ReadUInt16(); r.DiscoveryTechnologies[i] = reader.ReadString(); if (r.DiscoveryTechnologies[i].Length > 128) throw new InvalidDataException("Invalid discovery capability."); }
+            if (r.Version >= 4) r.Concentrations = new double[materials];
+            for (int i = 0; i < materials; i++)
+            {
+                r.AccessibleParts[i] = reader.ReadUInt16();
+                r.DiscoveryTechnologies[i] = reader.ReadString();
+                if (r.DiscoveryTechnologies[i].Length > 128) throw new InvalidDataException("Invalid discovery capability.");
+                if (r.Version >= 4) r.Concentrations[i] = reader.ReadDouble();
+            }
             r.Provinces = new GeologicalProvince[Count(reader, 4096)];
             for (int i = 0; i < r.Provinces.Length; i++) r.Provinces[i] = new GeologicalProvince { Id = reader.ReadInt32(), X = reader.ReadDouble(), Y = reader.ReadDouble(), RadiusX = reader.ReadDouble(), RadiusY = reader.ReadDouble(), Angle = reader.ReadDouble(), Host = (HostRock)reader.ReadByte(), History = (GeologicalHistory)reader.ReadUInt16() };
             if (Count(reader, tiles) != tiles) throw new InvalidDataException("Resource dimensions do not match geography.");
