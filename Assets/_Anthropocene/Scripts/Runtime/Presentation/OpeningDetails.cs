@@ -60,7 +60,11 @@ namespace Anthropocene.Presentation
             var camp = world.Camps.FirstOrDefault(c => c.Id == observation.CampId);
             if (camp != null && camp.IsVillage)
             {
-                value += "\nVillage QoL: " + (camp.QoL * 100).ToString("F0") + "% (Food " + (camp.FoodNeedsMetRatio * 100).ToString("F0") + "%, Cloth " + (camp.ClothPerCapita * 100).ToString("F0") + "%, Shelter " + (camp.HousingPerCapita * 100).ToString("F0") + "%) · Fission risk: " + (camp.FissionWilling >= 25 ? "IMMINENT" : "low");
+                var inv = camp.Inventory;
+                value += "\nVillage QoL: " + (camp.QoL * 100).ToString("F0") + "% (Food " + (camp.FoodNeedsMetRatio * 100).ToString("F0") + "%, Cloth " + (camp.ClothPerCapita * 100).ToString("F0") + "%, Shelter " + (camp.HousingPerCapita * 100).ToString("F0") + "%) · Fission risk: " + (camp.FissionWilling >= 25 ? "IMMINENT" : "low") +
+                         "\nStores: Houses " + inv.Houses.ToString("F0") + " · Cloth " + inv.Cloth.ToString("F0") + " · Pots " + inv.Pots.ToString("F0") + " · Tools " + inv.HandTools.ToString("F0") +
+                         "\nRaw Stockpile: Stone " + inv.Stone.ToString("F0") + " · Clay " + inv.Clay.ToString("F0") + " · Wood " + inv.Wood.ToString("F0") +
+                         "\n[Double-click village tile to manage]";
             }
             float height = text.CalcHeight(new GUIContent(value), width) + 12;
             GUI.Label(new Rect(14, y, width, height), value, text); y += height;

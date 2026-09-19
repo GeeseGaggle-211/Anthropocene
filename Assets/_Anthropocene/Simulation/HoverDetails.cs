@@ -61,7 +61,8 @@ namespace Anthropocene.Simulation
             foreach (var river in t.Rivers) b.AppendLine("River edge " + river.Side + ": flow " + new[] { "", "small", "medium", "large" }[river.FlowBand] + ", width " + river.Width.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
             bool gather = o.Map.Distance(o.CampTile, id) <= 1 && t.Terrain != Terrain.Ocean && t.ElevationLevel < 10;
             b.AppendLine("GATHERING · " + (t.Terrain == Terrain.Shallows ? "Passive marine harvest eligible. " : t.Terrain == Terrain.Ocean ? "Open ocean excluded. " : "Land/lake gathering. ") + (gather ? "In your camp's gathering reach." : "Outside current camp gathering reach."));
-            b.AppendLine("FEATURES · " + (t.Oasis ? "Oasis spring (finite). " : "") + (t.Cultivated ? "Cultivated. " : "") + (t.Fishery ? "Fishery. " : "") + (!t.Oasis && !t.Cultivated && !t.Fishery ? "Unimproved" : ""));
+            string cultFeature = t.Cultivated ? ("Cultivated (q=" + t.Cultivation.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + (t.Irrigated ? ", irrigated canal" : "") + "). ") : "";
+            b.AppendLine("FEATURES · " + (t.Oasis ? "Oasis spring (finite). " : "") + cultFeature + (t.Fishery ? "Fishery. " : "") + (!t.Oasis && !t.Cultivated && !t.Fishery ? "Unimproved" : ""));
             var occupants = Occupants(o, id); b.AppendLine("OCCUPANTS · " + occupants.Length);
             foreach (var occupant in occupants) b.AppendLine(occupant.Description);
             foreach (var order in queued.OrderBy(p => p.Entity))
