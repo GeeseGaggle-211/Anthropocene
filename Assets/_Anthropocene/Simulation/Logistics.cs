@@ -39,10 +39,17 @@ namespace Anthropocene.Simulation
                 entry.Deposited += hunter.CarriedFood; camp.Food += hunter.CarriedFood; hunter.CarriedFood = 0;
             }
         }
-        public static void Award(WorldState w, Hunter hunter, double food, TurnRecord record)
+        public static void Award(WorldState w, Hunter hunter, double food, TurnRecord record, string kind = null)
         {
             var entry = Entry(record, hunter); entry.InSupply = Connected(w, hunter);
-            if (entry.InSupply) { var camp = w.Camps.First(c => c.Id == hunter.SourceCamp); camp.Food += food; camp.StepFoodIncome += food; }
+            if (entry.InSupply)
+            {
+                var camp = w.Camps.First(c => c.Id == hunter.SourceCamp);
+                if (kind == "Hunting") camp.AnimalFood += food;
+                else if (kind == "Fishing") camp.AquaticFood += food;
+                else camp.PlantFood += food;
+                camp.StepFoodIncome += food;
+            }
             else
             {
                 double retained = Math.Min(food, Math.Max(0, Capacity(w, hunter) - hunter.CarriedFood));

@@ -11,7 +11,7 @@ namespace Anthropocene.Simulation
 {
     public static class SaveCodec
     {
-        private const string Magic = "ANTHROPOCENE-9", LegacyMagic = "ANTHROPOCENE-8";
+        private const string Magic = "ANTHROPOCENE-10", LegacyMagic9 = "ANTHROPOCENE-9", LegacyMagic8 = "ANTHROPOCENE-8";
         private static DataContractSerializer Serializer(Type type) => new DataContractSerializer(type, new DataContractSerializerSettings { MaxItemsInObjectGraph = int.MaxValue });
         public static byte[] Save(WorldState world)
         {
@@ -23,7 +23,7 @@ namespace Anthropocene.Simulation
                 using (var buffered = new BufferedStream(zip, 65536))
                 using (var writer = new BinaryWriter(buffered))
                 {
-                    writer.Write(world.Resources == null ? LegacyMagic : Magic);
+                    writer.Write(Magic);
                     // Geography dominates the save. Fixed primitive records avoid reflection and repeated XML member names for every tile.
                     var metadata = CopyWithoutTiles(world);
                     using (var header = new MemoryStream())
@@ -35,16 +35,18 @@ namespace Anthropocene.Simulation
                     foreach (var tile in world.Tiles)
                     {
                         writer.Write(tile.Plate); writer.Write(tile.Downstream); writer.Write((byte)tile.Environment); writer.Write((byte)tile.NaturalVegetationPotential); writer.Write((byte)tile.CurrentVegetation); writer.Write(tile.LastEcologyUpdateDays);
-                        writer.Write((byte)((tile.Continental ? 1 : 0) | (tile.Oasis ? 2 : 0) | (tile.Cultivated ? 4 : 0) | (tile.Fishery ? 8 : 0)));
+                        writer.Write((byte)((tile.Continental ? 1 : 0) | (tile.Oasis ? 2 : 0) | (tile.Cultivated ? 4 : 0) | (tile.Fishery ? 8 : 0) | (tile.Irrigated ? 16 : 0)));
                         writer.Write((byte)tile.ElevationLevel); writer.Write((byte)tile.RidgeMask); writer.Write((byte)tile.Relief); writer.Write((byte)tile.WaterBody); writer.Write((byte)tile.FreshwaterSource);
                         writer.Write(tile.DepressionDepth); writer.Write(tile.OasisInfluence); writer.Write(tile.Saltwater); writer.Write(tile.LandCondition); writer.Write(tile.AquaticCondition);
                         writer.Write(tile.Elevation); writer.Write(tile.Volcanism); writer.Write(tile.Flow); writer.Write(tile.Food); writer.Write(tile.PotentialFood); writer.Write(tile.Freshwater);
+                        writer.Write(tile.Cultivation);
                         foreach (var s in tile.Seasons)
                         {
                             writer.Write(s.Temperature); writer.Write(s.Rain); writer.Write(s.Snow); writer.Write(s.WindX); writer.Write(s.Runoff); writer.Write(s.RegionalMoisture); writer.Write(s.Moisture);
                             writer.Write(s.AccessibleFreshwater); writer.Write(s.MaxFood); writer.Write(s.MaxPotentialFood); writer.Write(s.MaxFreshwater); writer.Write(s.MaxSaltwater); writer.Write(s.FoodRecoveryPerDay); writer.Write(s.BiomassRecoveryPerDay); writer.Write(s.WaterRecoveryPerDay); writer.Write(s.Habitat);
                         }
                     }
+                    writer.Write(world.Resources != null);
                     if (world.Resources != null) ResourceCodec.Write(writer, world.Resources);
                 }
                 return output.ToArray();
@@ -58,7 +60,7 @@ namespace Anthropocene.Simulation
             using (var reader = new BinaryReader(buffered))
             {
                 string magic = reader.ReadString();
-                if (magic != Magic && magic != LegacyMagic) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
+                if (magic != Magic && magic != LegacyMagic9 && magic != LegacyMagic8) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
                 int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > 128 * 1024 * 1024) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
@@ -74,10 +76,16 @@ namespace Anthropocene.Simulation
                 for (int i = 0; i < count; i++)
                 {
                     var tile = new Tile { Id = i, Plate = reader.ReadInt32(), Downstream = reader.ReadInt32(), Environment = (EnvironmentKind)reader.ReadByte(), NaturalVegetationPotential = (VegetationTier)reader.ReadByte(), CurrentVegetation = (VegetationTier)reader.ReadByte(), LastEcologyUpdateDays = reader.ReadDouble() };
-                    byte flags = reader.ReadByte(); tile.Continental = (flags & 1) != 0; tile.Oasis = (flags & 2) != 0; tile.Cultivated = (flags & 4) != 0; tile.Fishery = (flags & 8) != 0;
+                    byte flags = reader.ReadByte(); 
+                    tile.Continental = (flags & 1) != 0; 
+                    tile.Oasis = (flags & 2) != 0; 
+                    tile.Cultivated = (flags & 4) != 0; 
+                    tile.Fishery = (flags & 8) != 0;
+                    tile.Irrigated = (magic == Magic) && (flags & 16) != 0;
                     tile.ElevationLevel = reader.ReadByte(); tile.RidgeMask = reader.ReadByte(); tile.Relief = (Relief)reader.ReadByte(); tile.WaterBody = (WaterKind)reader.ReadByte(); tile.FreshwaterSource = (FreshwaterSource)reader.ReadByte();
                     tile.DepressionDepth = reader.ReadSingle(); tile.OasisInfluence = reader.ReadSingle(); tile.Saltwater = reader.ReadDouble(); tile.LandCondition = reader.ReadDouble(); tile.AquaticCondition = reader.ReadDouble();
                     tile.Elevation = reader.ReadSingle(); tile.Volcanism = reader.ReadSingle(); tile.Flow = reader.ReadSingle(); tile.Food = reader.ReadDouble(); tile.PotentialFood = reader.ReadDouble(); tile.Freshwater = reader.ReadDouble();
+                    tile.Cultivation = (magic == Magic) ? reader.ReadSingle() : (tile.Cultivated ? 0.35f : 0.0f);
                     for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData
                     {
                         Temperature = reader.ReadSingle(), Rain = reader.ReadSingle(), Snow = reader.ReadSingle(), WindX = reader.ReadSingle(), Runoff = reader.ReadSingle(), RegionalMoisture = reader.ReadSingle(), Moisture = reader.ReadSingle(),
@@ -85,7 +93,7 @@ namespace Anthropocene.Simulation
                     };
                     world.Tiles[i] = tile;
                 }
-                world.Resources = magic == Magic ? ResourceCodec.Read(reader, count) : null;
+                world.Resources = magic == Magic ? (reader.ReadBoolean() ? ResourceCodec.Read(reader, count) : null) : (magic == LegacyMagic9 ? ResourceCodec.Read(reader, count) : null);
                 foreach (var edge in world.Rivers)
                 {
                     if (world.Tiles[edge.TileA].RiverEdges == null) world.Tiles[edge.TileA].RiverEdges = Enumerable.Repeat(-1, 6).ToArray();
@@ -101,7 +109,22 @@ namespace Anthropocene.Simulation
         private static void MigrateGenerationalDefaults(WorldState world)
         {
             var config = world.Config;
-            foreach (var camp in world.Camps.Where(c => c.DemographicGrowthMultiplier <= 0)) camp.DemographicGrowthMultiplier = 1;
+            foreach (var camp in world.Camps)
+            {
+                if (camp.DemographicGrowthMultiplier <= 0) camp.DemographicGrowthMultiplier = 1;
+                if (camp.Inventory == null) camp.Inventory = new CampInventory();
+                if (camp.CraftingPriorities == null) camp.CraftingPriorities = new CraftingPriorities();
+                if (camp.QoL <= 0) camp.QoL = 1.0;
+                if (camp.FoodNeedsMetRatio <= 0) camp.FoodNeedsMetRatio = 1.0;
+                if (camp.ClothPerCapita <= 0) camp.ClothPerCapita = 1.0;
+                if (camp.HousingPerCapita <= 0) camp.HousingPerCapita = 1.0;
+            }
+            foreach (var soc in world.Societies)
+            {
+                if (soc.CraftExperience == null) soc.CraftExperience = new System.Collections.Generic.Dictionary<string, double>();
+                if (soc.UnlockedSpecialists == null) soc.UnlockedSpecialists = new System.Collections.Generic.List<string>();
+                if (soc.NeolithicTechnologies == null) soc.NeolithicTechnologies = new System.Collections.Generic.List<string>();
+            }
             bool legacyGenerationalConfig = config.StartingReserveGenerations <= 0 && config.HunterCarryGenerations <= 0 && config.MinimumStorageGenerations <= 0 && config.MaximumStorageGenerations <= 0;
             if (config.StartingReserveGenerations <= 0) config.StartingReserveGenerations = 1;
             if (config.HunterCarryGenerations <= 0) config.HunterCarryGenerations = 2.5;

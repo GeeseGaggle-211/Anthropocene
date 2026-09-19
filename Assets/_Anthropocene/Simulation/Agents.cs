@@ -28,7 +28,8 @@ namespace Anthropocene.Simulation
         public readonly Terrain Terrain;
         public readonly EnvironmentKind Environment;
         public readonly VegetationTier NaturalVegetationPotential, CurrentVegetation;
-        public readonly bool River, Cultivated, Fishery, Oasis;
+        public readonly bool River, Cultivated, Fishery, Oasis, Irrigated;
+        public readonly double Cultivation;
         public readonly Relief Relief;
         public readonly float Elevation;
         public readonly WaterKind WaterBody;
@@ -42,6 +43,7 @@ namespace Anthropocene.Simulation
             Environment = tile.Environment; NaturalVegetationPotential = tile.NaturalVegetationPotential; CurrentVegetation = view.CurrentVegetation;
             double accessibility = FoodEcology.GatherableFraction(tile, config, view.CurrentVegetation) / FoodEcology.GatherableFraction(tile, config, tile.NaturalVegetationPotential);
             Id = tile.Id; Terrain = Vegetation.LegacyTerrain(tile.Environment, view.CurrentVegetation); River = tile.River; Cultivated = tile.Cultivated; Fishery = tile.Fishery; ElevationLevel = tile.ElevationLevel; RidgeMask = tile.RidgeMask; FoodMaximum = Knowledge.Band(ecology.MaxFood * accessibility, 70, config);
+            Cultivation = tile.Cultivation; Irrigated = tile.Irrigated;
             PotentialFood = Knowledge.Band(view.PotentialFood, Math.Max(1, ecology.MaxPotentialFood), config); PotentialMaximum = Knowledge.Band(ecology.MaxPotentialFood, 700, config); GatherablePercent = (int)Math.Round(100 * ecology.MaxFood * accessibility / Math.Max(1e-9, ecology.MaxPotentialFood));
             Oasis = tile.Oasis; Relief = tile.Relief; Elevation = tile.Elevation; WaterBody = tile.WaterBody; FreshwaterSource = tile.FreshwaterSource;
             Rivers = Array.AsReadOnly(tile.RiverEdges == null ? new RiverObservation[0] : tile.RiverEdges.Select((id, side) => new { id, side }).Where(x => x.id >= 0).Select(x => new RiverObservation(x.side, rivers[x.id], tile.Id, new HexCorners(config.Width, config.Height))).ToArray());

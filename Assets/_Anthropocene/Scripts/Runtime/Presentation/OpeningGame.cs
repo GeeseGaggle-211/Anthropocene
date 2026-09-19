@@ -92,7 +92,9 @@ namespace Anthropocene.Presentation
             Footer(new Rect(0, Screen.height - 148, Screen.width - side, 148));
             HandleInput(mapRect);
             GUI.enabled = true;
-            if (help) Help(); else DrawHover(mapRect);
+            if (villageInspectorOpen) DrawVillageDetailedInspector();
+            else if (help) Help();
+            else DrawHover(mapRect);
         }
         private void NewGame()
         {
@@ -217,18 +219,27 @@ namespace Anthropocene.Presentation
             GUI.Label(new Rect(14, y, width, 78), world.LinkedPopulation(camp) + " people  |  " + camp.Population + " at camp (" + camp.GathererPopulation + " gathering)\nReserve: " + reserveGenerations.ToString("0.0") + " generations (" + Knowledge.Bands[observation.FoodCondition] + ")\nLocal storage ceiling: " + storageGenerations.ToString("0.0") + " generations" + hunger, text); y += 90;
 
             Fill(new Rect(10, y, width + 8, 62), new Color(.14f, .16f, .14f));
-            GUI.Label(new Rect(20, y + 7, width - 12, 24), "SELECTED  ·  " + SelectedName, section);
-            string selectedDetail = selected == camp.Id ? camp.Population + " people · movement " + observation.CampMovement + " · gathers automatically" : observation.Hunters.First(h => h.Id == selected).Population + " hunters · move " + observation.HunterMovement + " · auto-hunts on contact · " + (observation.Hunters.First(h => h.Id == selected).InSupply ? "supplied" : "carrying provisions");
+            GUI.Label(new Rect(20, y + 7, width - 12, 24), "SELECTED  ·  " + (selected == camp.Id && camp.IsVillage ? "VILLAGE" : SelectedName), section);
+            string selectedDetail = selected == camp.Id ? (camp.IsVillage ? camp.Population + " people · permanent village · QoL " + (camp.QoL * 100).ToString("F0") + "%" : camp.Population + " people · movement " + observation.CampMovement + " · gathers automatically") : observation.Hunters.First(h => h.Id == selected).Population + " hunters · move " + observation.HunterMovement + " · auto-hunts on contact · " + (observation.Hunters.First(h => h.Id == selected).InSupply ? "supplied" : "carrying provisions");
             GUI.Label(new Rect(20, y + 32, width - 12, 22), selectedDetail, small); y += 70;
 
             GUI.Label(new Rect(14, y, width, 22), "UNIT STACK / ROSTER", section); y += 24;
-            if (Button(new Rect(14, y, width, 34), (selected == camp.Id ? "◆  " : "◇  ") + "@  Camp  ·  tile " + camp.Tile)) { SelectUnit(camp.Id, camp.Tile); } y += 40;
+            if (Button(new Rect(14, y, width, 34), (selected == camp.Id ? "◆  " : "◇  ") + (camp.IsVillage ? "⌂  Village  ·  tile " : "@  Camp  ·  tile ") + camp.Tile)) { SelectUnit(camp.Id, camp.Tile); } y += 40;
             foreach (var h in observation.Hunters)
             {
                 if (Button(new Rect(14, y, width, 34), (selected == h.Id ? "◆  " : "◇  ") + "h  Hunters " + h.Id + "  ·  " + h.Population + " people  ·  tile " + h.Tile)) { SelectUnit(h.Id, h.Tile); } y += 40;
             }
 
             y += 6; GUI.Label(new Rect(14, y, width, 23), "COMMANDS  ·  " + mode.ToUpperInvariant(), section); y += 26;
+            if (selected == camp.Id && camp.IsVillage)
+            {
+                if (Button(new Rect(14, y, width, 36), "MANAGE VILLAGE [Double-Click]", true))
+                {
+                    villageInspectorOpen = true;
+                    villageInspectorCampId = camp.Id;
+                }
+                y += 42;
+            }
             if (Button(new Rect(14, y, width, 36), mode == "Move" ? "◆ MOVE [M]  ·  choose a green tile" : "◇ MOVE [M]  ·  preview range", mode == "Move")) BeginMode("Move"); y += 42;
             if (selected == camp.Id)
             {
@@ -331,11 +342,31 @@ namespace Anthropocene.Presentation
         private void HandleInput(Rect mapArea)
         {
             var e = Event.current; if (help || saving != null || generating != null) return;
+            if (villageInspectorOpen)
+            {
+                if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)
+                {
+                    villageInspectorOpen = false;
+                    e.Use();
+                }
+                return;
+            }
             if (e.type == EventType.ScrollWheel && mapArea.Contains(e.mousePosition)) { radius = Mathf.Clamp(radius - e.delta.y * 2, 20, 96); e.Use(); }
             if (e.type == EventType.MouseDrag && e.button == 2 && mapArea.Contains(e.mousePosition)) { pan += e.delta; e.Use(); }
             if (e.type == EventType.MouseDown && mapArea.Contains(e.mousePosition) && hovered >= 0)
             {
                 inspected = hovered;
+                if (e.clickCount == 2 && e.button == 0)
+                {
+                    var clickedCamp = world.Camps.FirstOrDefault(c => c.Player == 0 && c.Tile == hovered);
+                    if (clickedCamp != null && clickedCamp.IsVillage)
+                    {
+                        villageInspectorOpen = true;
+                        villageInspectorCampId = clickedCamp.Id;
+                        e.Use();
+                        return;
+                    }
+                }
                 if (e.button == 1) Queue(new Order(OrderKind.Move, selected, destination: hovered));
                 else if (mode == "Move" || mode == "Fish")
                 {

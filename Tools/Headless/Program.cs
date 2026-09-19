@@ -202,8 +202,7 @@ internal static class Program
                 return 0;
             }
             if (args.Contains("--geology-only")) { GeologyGenerationChecks.Run(); return 0; }
-            if (args.Contains("--geology-audit")) { GeologyGenerationChecks.Run(); GeologyGenerationChecks.Audit(args.Contains("--large")); return 0; }
-            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); ClimateMoistureChecks.Run(); ClimateGenerationChecks.Run(); DrainageGenerationChecks.Run(); WorldMorphologyChecks.Run(); ArchipelagoChecks.Run(); GeologyGenerationChecks.Run(); AquaticChecks.Run(); StartViabilityChecks.Run(); ScenarioChecks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20;
+            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); ClimateMoistureChecks.Run(); ClimateGenerationChecks.Run(); DrainageGenerationChecks.Run(); WorldMorphologyChecks.Run(); ArchipelagoChecks.Run(); GeologyGenerationChecks.Run(); AquaticChecks.Run(); StartViabilityChecks.Run(); ScenarioChecks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); NeolithicChecks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20;
             var scaleArgument = args.FirstOrDefault(a => a.StartsWith("--scale=")); if (scaleArgument != null) { ExecutionChecks.Scale(int.Parse(scaleArgument.Substring(8))); return 0; }
             if (args.Contains("--nomad-standard")) { RunNomadStandardAudit(seeds); return 0; }
             int survivors = 0, total = 0, starvation = 0, growth = 0, illegal = 0;

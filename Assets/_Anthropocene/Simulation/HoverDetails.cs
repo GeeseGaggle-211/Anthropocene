@@ -34,7 +34,7 @@ namespace Anthropocene.Simulation
         {
             if (!o.Tiles.ContainsKey(tile)) return new VisibleOccupant[0];
             var occupants = new List<VisibleOccupant>();
-            foreach (var c in o.Settlements.Where(c => c.Tile == tile)) occupants.Add(new VisibleOccupant(c.Id, c.Id, 0, "entity.camp", "Your camp: " + c.Population + " people"));
+            foreach (var c in o.Settlements.Where(c => c.Tile == tile)) occupants.Add(new VisibleOccupant(c.Id, c.Id, 0, c.IsVillage ? "settlement.village" : "entity.camp", (c.IsVillage ? "Your village: " : "Your camp: ") + c.Population + " people"));
             foreach (var c in o.Rivals.Where(c => c.Tile == tile)) occupants.Add(new VisibleOccupant(c.Id, -1, 0, "entity.rivalcamp", "Tribe " + (c.Player + 1) + " camp; population unknown"));
             foreach (var h in o.Hunters.Where(h => h.Tile == tile)) occupants.Add(new VisibleOccupant(h.Id, h.Id, 1, "entity.hunter", "Hunters " + h.Id + ": " + h.Population + " people; " + (h.InSupply ? "supplied by camp" : "beyond supply; provisions " + Knowledge.Bands[h.Provisions])));
             foreach (var h in o.ForeignHunters.Where(h => h.Tile == tile)) occupants.Add(new VisibleOccupant(h.Id, -1, 1, "entity.rivalhunter", "Tribe " + (h.Player + 1) + " hunters; population/provisions unknown"));

@@ -31,6 +31,12 @@ namespace Anthropocene.Simulation
         public PolicyState Policy = new PolicyState();
         public EraProgression Progression = new EraProgression();
         public List<TransitionSeed> TransitionSeeds = new List<TransitionSeed>();
+
+        // Neolithic Craft Tracks & Convergence Techs
+        public Dictionary<string, double> CraftExperience = new Dictionary<string, double>();
+        public List<string> UnlockedSpecialists = new List<string>();
+        public List<string> NeolithicTechnologies = new List<string>();
+        public bool HasTech(string tech) => NeolithicTechnologies != null && NeolithicTechnologies.Contains(tech);
     }
 
     [Serializable]

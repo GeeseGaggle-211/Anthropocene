@@ -3,6 +3,21 @@ using System.Linq;
 
 namespace Anthropocene.Simulation
 {
+    public static class WorkforceRoles
+    {
+        public const string Gatherer = "Gatherer";
+        public const string Farmer = "Farmer";
+        public const string Craftsperson = "Craftsperson";
+        public const string Toolmaker = "Toolmaker";
+        public const string Potter = "Potter";
+        public const string Weaver = "Weaver";
+        public const string Carpenter = "Carpenter";
+        public const string Builder = "Builder";
+
+        public static readonly string[] Specialists = { Toolmaker, Potter, Weaver, Carpenter, Builder };
+        public static readonly string[] All = { Gatherer, Farmer, Craftsperson, Toolmaker, Potter, Weaver, Carpenter, Builder };
+    }
+
     public sealed partial class PopulationLedger
     {
         public void Assign(string role, int count, int residents) => Reassign(null, role, count, residents);

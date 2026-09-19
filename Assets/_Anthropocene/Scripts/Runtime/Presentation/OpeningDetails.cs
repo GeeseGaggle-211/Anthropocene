@@ -57,6 +57,11 @@ namespace Anthropocene.Presentation
                 "\nLand gathering: " + summary.TerrestrialFood.ToString("F0") + " · Passive marine: " + summary.MarineFood.ToString("F0") +
                 "\nLake gathering: " + summary.LakeFood.ToString("F0") + " · Active fishing: " + summary.FishFood.ToString("F0") + " · Hunting: " + summary.HuntFood.ToString("F0") +
                 "\nRemote hunter forage: " + summary.ForageFood.ToString("F0") + " · Fractional growth: " + summary.FractionalProgress.ToString("F2");
+            var camp = world.Camps.FirstOrDefault(c => c.Id == observation.CampId);
+            if (camp != null && camp.IsVillage)
+            {
+                value += "\nVillage QoL: " + (camp.QoL * 100).ToString("F0") + "% (Food " + (camp.FoodNeedsMetRatio * 100).ToString("F0") + "%, Cloth " + (camp.ClothPerCapita * 100).ToString("F0") + "%, Shelter " + (camp.HousingPerCapita * 100).ToString("F0") + "%) · Fission risk: " + (camp.FissionWilling >= 25 ? "IMMINENT" : "low");
+            }
             float height = text.CalcHeight(new GUIContent(value), width) + 12;
             GUI.Label(new Rect(14, y, width, height), value, text); y += height;
         }

@@ -193,9 +193,18 @@ namespace Anthropocene.Presentation
                 }
             }
             VegetationLayer(tile, rect, context.Entities.Count > 0);
-            if (rect.height >= 48)
+            if (rect.height >= 40)
             {
-                if (tile.Cultivated) Symbol("feature.cultivation", new Rect(rect.x + rect.width * .24f, rect.y + rect.height * .5f, rect.width * .5f, rect.height * .38f));
+                if (tile.Cultivated)
+                {
+                    string cultivationKey = tile.Cultivation > 0.60 ? "feature.cultivation_heavy" : "feature.cultivation";
+                    float scale = tile.Cultivation <= 0.25 ? 0.7f : 1.0f;
+                    Symbol(cultivationKey, new Rect(rect.x + rect.width * .24f, rect.y + rect.height * .5f, rect.width * .5f, rect.height * .38f), scale);
+                }
+                if (tile.Irrigated)
+                {
+                    Badge(new Rect(rect.x + rect.width * .14f, rect.y + rect.height * .66f, 16, 16), "≈", 13, "#6FD1E3");
+                }
                 if (tile.Fishery) Symbol("feature.fishery", new Rect(rect.x + rect.width * .50f, rect.y + rect.height * .08f, rect.width * .4f, rect.height * .4f));
             }
             // A mobile camp is already an occupant; do not paint a second tent beneath it.
@@ -227,14 +236,14 @@ namespace Anthropocene.Presentation
                 GUI.Label(new Rect(rect.x, rect.y + rect.height * .8f, rect.width, rect.height * .2f), "+" + (context.Entities.Count - 6), glyph);
             }
         }
-        private void Badge(Rect rect, string label, int size)
+        private void Badge(Rect rect, string label, int size, string colorHex = null)
         {
             glyph.fontSize = size; glyph.normal.textColor = ColorOf("#29372E");
             GUI.Label(new Rect(rect.x - 1, rect.y, rect.width, rect.height), label, glyph);
             GUI.Label(new Rect(rect.x + 1, rect.y, rect.width, rect.height), label, glyph);
             GUI.Label(new Rect(rect.x, rect.y - 1, rect.width, rect.height), label, glyph);
             GUI.Label(new Rect(rect.x, rect.y + 1, rect.width, rect.height), label, glyph);
-            glyph.normal.textColor = ColorOf(tileset.Find("entity.stack").Tint); GUI.Label(rect, label, glyph);
+            glyph.normal.textColor = ColorOf(colorHex ?? tileset.Find("entity.stack").Tint); GUI.Label(rect, label, glyph);
         }
         private void SelectionCorners(Rect slot)
         {

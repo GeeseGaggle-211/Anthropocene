@@ -57,6 +57,7 @@ namespace Anthropocene.Simulation
     public sealed class SettlementObservation
     {
         public readonly int Id, Tile, Population, Gatherers, LinkedPopulation;
-        public SettlementObservation(Camp c, PlanningIndex index) { Id = c.Id; Tile = c.Tile; Population = c.Population; Gatherers = c.GathererPopulation; LinkedPopulation = index.Population(c); }
+        public readonly bool IsVillage;
+        public SettlementObservation(Camp c, PlanningIndex index) { Id = c.Id; Tile = c.Tile; Population = c.Population; Gatherers = c.GathererPopulation; LinkedPopulation = index.Population(c); IsVillage = c.IsVillage; }
     }
 }

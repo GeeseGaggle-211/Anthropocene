@@ -103,12 +103,25 @@ namespace Anthropocene.Simulation
 
             CommitGenerationResources(w, demands, record, touch, foraged, intervals);
 
+            // Neolithic Agriculture: Field maintenance, expansion, and crop harvest
+            foreach (var camp in w.Camps.OrderBy(c => c.Id))
+            {
+                NeolithicProduction.ResolveAgriculture(w, camp, intervals, years, record);
+            }
+
             var plans = w.Camps.OrderBy(c => c.Id).ToDictionary(c => c.Id, c => PlanGrowth(w, c, intervals, years));
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) record.Demographics.First(d => d.Camp == camp.Id).FoodRequired += plans[camp.Id].Required;
             foreach (var hunter in w.Hunters.Where(h => !Supply.Connected(w, h))) record.Demographics.First(d => d.Camp == hunter.SourceCamp).FoodRequired += hunter.Population * w.Config.Consumption * intervals;
             SustainGeneration(w, record, intervals, generationScale, plans, foraged, recovering);
             Supply.Finish(w, record);
             ApplyStorage(w, record, intervals);
+
+            // Neolithic Village Economy: Crafting, housing upkeep, cloth wear, QoL, and fission
+            foreach (var camp in w.Camps.OrderBy(c => c.Id).ToArray())
+            {
+                NeolithicProduction.ResolveCampNeolithic(w, camp, intervals, years, record);
+            }
+
             if (w.Config.WildHerdFissionEnabled) SplitHerds(w, record);
 
             w.Days += record.Duration;
@@ -143,8 +156,16 @@ namespace Anthropocene.Simulation
                 else
                 {
                     var camp = transfer.Kind == "Fishing" ? camps[hunters[transfer.Entity].SourceCamp] : camps[transfer.Entity];
-                    if (transfer.Kind == "Fishing") Supply.Award(w, hunters[transfer.Entity], transfer.Food, record);
-                    else { camp.Food += transfer.Food; camp.StepFoodIncome += transfer.Food; }
+                    if (transfer.Kind == "Fishing")
+                    {
+                        Supply.Award(w, hunters[transfer.Entity], transfer.Food, record, "Fishing");
+                    }
+                    else
+                    {
+                        if (transfer.Kind == "Hunting") camp.AnimalFood += transfer.Food;
+                        else camp.PlantFood += transfer.Food;
+                        camp.StepFoodIncome += transfer.Food;
+                    }
                 }
                 record.Transfers.Add(transfer);
             }
@@ -307,7 +328,8 @@ namespace Anthropocene.Simulation
         {
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
-                double cap = w.LinkedPopulation(camp) * w.Config.Consumption * intervals * StorageGenerations(w, camp.Tile);
+                double potMultiplier = NeolithicProduction.StorageCapacityMultiplier(camp);
+                double cap = w.LinkedPopulation(camp) * w.Config.Consumption * intervals * StorageGenerations(w, camp.Tile) * potMultiplier;
                 double loss = Math.Max(0, camp.Food - cap); camp.Food -= loss;
                 var summary = record.Demographics.First(d => d.Camp == camp.Id); summary.DiscardedInventory += loss;
             }
@@ -370,7 +392,7 @@ namespace Anthropocene.Simulation
             {
                 var camp = index.Camps[summary.Camp];
                 var harvest = index.Harvest[camp.Id].ToArray();
-                summary.TerrestrialFood = harvest.Where(t => t.Kind == "Gathering").Sum(t => t.Food); summary.MarineFood = harvest.Where(t => t.Kind == "Marine gathering").Sum(t => t.Food); summary.LakeFood = harvest.Where(t => t.Kind == "Aquatic gathering").Sum(t => t.Food);
+                summary.TerrestrialFood = harvest.Where(t => t.Kind == "Gathering" || t.Kind == "Cultivation").Sum(t => t.Food); summary.MarineFood = harvest.Where(t => t.Kind == "Marine gathering").Sum(t => t.Food); summary.LakeFood = harvest.Where(t => t.Kind == "Aquatic gathering").Sum(t => t.Food);
                 summary.HuntFood = harvest.Where(t => t.Kind == "Hunting").Sum(t => t.Food); summary.FishFood = harvest.Where(t => t.Kind == "Fishing").Sum(t => t.Food); double forage = harvest.Where(t => t.Kind == "Foraging").Sum(t => t.Food); summary.ForageFood = forage;
                 summary.FoodProduced = summary.TerrestrialFood + summary.MarineFood + summary.LakeFood + summary.HuntFood + summary.FishFood + forage;
                 summary.FoodReceived = summary.FoodProduced - index.Logistics[camp.Id].Sum(l => l.HarvestOverflow);
@@ -378,7 +400,8 @@ namespace Anthropocene.Simulation
                 summary.Additions = index.Population[camp.Id].Where(p => p.Count > 0).Sum(p => p.Count); summary.Deaths = -index.Population[camp.Id].Where(p => p.Count < 0).Sum(p => p.Count);
                 summary.EndingPopulation = w.LinkedPopulation(camp); summary.NetPercent = 100.0 * (summary.EndingPopulation - summary.StartingPopulation) / Math.Max(1, summary.StartingPopulation);
                 summary.FinalReserves = camp.Food + index.CampHunters[camp.Id].OrderBy(h => h.Id).Sum(h => h.CarriedFood); summary.FractionalProgress = camp.GrowthRemainder;
-                if (Math.Abs(summary.InitialReserves + summary.FoodReceived - summary.FoodConsumed - summary.DiscardedInventory - summary.FinalReserves) > 1e-5) throw new InvalidOperationException("Unexplained food balance in demographic report.");
+                double balanceDiff = summary.InitialReserves + summary.FoodReceived - summary.FoodConsumed - summary.DiscardedInventory - summary.FinalReserves;
+                if (Math.Abs(balanceDiff) > 1e-5) throw new InvalidOperationException($"Unexplained food balance in demographic report for Camp {camp.Id}: Initial={summary.InitialReserves:F4}, Recv={summary.FoodReceived:F4}, Consumed={summary.FoodConsumed:F4}, Discarded={summary.DiscardedInventory:F4}, Final={summary.FinalReserves:F4}, Diff={balanceDiff:F6}");
                 summary.LimitingFactor = summary.DeficitSteps > 0 ? "Food deficits limited growth" : summary.Additions > 0 ? "Growth supported by food surplus; demand rose with population" : summary.SurplusSteps > 0 ? "Demographic rounding; fractional progress " + summary.FractionalProgress.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : summary.RecoverySteps > 0 ? "Starvation recovery" : "No sustainable food surplus or insufficient reserves";
                 record.Log(summary.Explanation);
             }

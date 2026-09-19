@@ -220,7 +220,7 @@ namespace Anthropocene.Simulation
                     int allocatedKills = kills[i];
                     kills[i] = Math.Min(kills[i], (int)Math.Floor((usefulFood + 1e-9) / Math.Max(1e-9, yieldPerAnimal)));
                     double yield = kills[i] * yieldPerAnimal;
-                    Supply.Award(w, hunter, yield, record);
+                    Supply.Award(w, hunter, yield, record, "Hunting");
                     // Preserve a zero-yield receipt for an actually unsuccessful hunt, but not
                     // when hunters deliberately leave prey because a whole carcass cannot fit.
                     if (kills[i] > 0 || allocatedKills == 0)

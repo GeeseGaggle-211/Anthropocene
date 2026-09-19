@@ -46,6 +46,11 @@ namespace Anthropocene.Simulation
         public double ConditionRecoveryPerYear = .003093770185904377, SafeUseRatio = 1, SustainableProductionFraction = .5, LandUseDamagePerYear = .03, AquaticUseDamagePerYear = .03, PressureExponent = 2;
         public double LowPotentialRecoveryMultiplier = .5, HighPotentialRecoveryMultiplier = 1.5;
         public double OpeningFoodMultiplier = 1.4, CultivationMoisture = .25, RelocationInertia = .18;
+        public double CraftBaseThreshold = 5000, CraftConvergenceThreshold = 10000;
+        public double GatheringMaterialBonus = 0.25, RequisitionBufferMultiplier = 1.25;
+        public double PotDegradationRate = 0.10;
+        public double FarmerProductivity = 1.50, ReferenceIntensity = 0.40, CultivationRegenFlux = 0.65, MaintenanceCoefficient = 0.40;
+        public double GathererBridgeCeiling = 0.25, GathererBridgeEfficiency = 0.50;
         public int InitialDomesticAnimals = 5;
         public double HabitableZonePosition = .5, InnerTemperature = 12, OuterTemperature = -12;
         public double SeaLevel = .45, Uplift = .2, ElevationNoise = .11, Erosion = .12;
@@ -137,8 +142,8 @@ namespace Anthropocene.Simulation
         public int RidgeMask;
         public WaterKind WaterBody;
         public FreshwaterSource FreshwaterSource;
-        public bool Continental, Cultivated, Fishery, Oasis;
-        public float Elevation, Volcanism, Flow, DepressionDepth, OasisInfluence;
+        public bool Continental, Cultivated, Fishery, Oasis, Irrigated;
+        public float Elevation, Volcanism, Flow, DepressionDepth, OasisInfluence, Cultivation;
         public double Food, PotentialFood, Freshwater, Saltwater;
         public double LandCondition = 1, AquaticCondition = 1;
         public int[] RiverEdges;
@@ -148,6 +153,30 @@ namespace Anthropocene.Simulation
         public bool Aquatic => Terrain == Terrain.Shallows || Terrain == Terrain.Lake;
         public bool Land => Terrain != Terrain.Ocean && !Aquatic;
         public bool TraversableLand => Land && ElevationLevel < 10;
+    }
+    [Serializable]
+    public sealed class CampInventory
+    {
+        public double HandTools;
+        public double Tools;
+        public double Pots;
+        public double Cloth;
+        public double FarmTools;
+        public double ImprovedCeramics;
+        public double HousingUnits;
+        public double Houses;
+        public double Stone;
+        public double Clay;
+        public double Wood;
+    }
+    [Serializable]
+    public sealed class CraftingPriorities
+    {
+        public double HandTools = 0.15;
+        public double Pots = 0.10;
+        public double Cloth = 0.45;
+        public double FarmTools = 0.10;
+        public double Housing = 0.20;
     }
     [Serializable]
     public sealed class PopulationAssignment
@@ -178,7 +207,31 @@ namespace Anthropocene.Simulation
     public sealed class Camp
     {
         public int Id, Player, SocietyId, Tile, Population, DeficitTurns;
-        public double Food, DeficitSeverity, FoodDeficit, LastConsumed, DemographicGrowthMultiplier = 1;
+        public double PlantFood, AnimalFood, AquaticFood;
+        public double Food
+        {
+            get => PlantFood + AnimalFood + AquaticFood;
+            set
+            {
+                double total = PlantFood + AnimalFood + AquaticFood;
+                if (total > 1e-9)
+                {
+                    double ratio = value / total;
+                    PlantFood *= ratio; AnimalFood *= ratio; AquaticFood *= ratio;
+                }
+                else
+                {
+                    PlantFood = value; AnimalFood = 0; AquaticFood = 0;
+                }
+            }
+        }
+        public double DeficitSeverity, FoodDeficit, LastConsumed, DemographicGrowthMultiplier = 1;
+        public CampInventory Inventory = new CampInventory();
+        public CraftingPriorities CraftingPriorities = new CraftingPriorities();
+        public int CultivationFocusTile = -1;
+        public double QoL = 1.0, FoodNeedsMetRatio = 1.0, ClothPerCapita = 1.0, HousingPerCapita = 1.0, FissionWilling = 0.0;
+        public bool IsVillage;
+        public int VillageTurns;
         [NonSerialized] private Society people = new Society();
         internal Society People => people ?? (people = new Society());
         internal void Bind(Society owner) { people = owner; SocietyId = owner.Id; Player = owner.Player; }
