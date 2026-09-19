@@ -33,6 +33,17 @@ namespace Anthropocene.Simulation
                 if (!marine && t.Continental && c.AncientOrogenStrength != null && c.AncientOrogenStrength[t.Id] > .35f && c.AncientOrogenAge != null && c.AncientOrogenAge[t.Id] >= 300) cratonic = true;
                 r.History[t.Id] = (ushort)(GeologicalHistory.Preserved | (cratonic ? GeologicalHistory.Ancient : GeologicalHistory.None) | (marine ? GeologicalHistory.MarineFacies : GeologicalHistory.None));
                 if (!marine && t.Continental && c.AncientOrogenStrength != null && c.AncientOrogenStrength[t.Id] > .55f) r.Host[t.Id] = (byte)HostRock.Metamorphic;
+                // Foreland flexural basins flanking ancient mountain ranges and orogenic collisions:
+                // Uplifted orogens shed thick wedges of clastic sediment (molasse/flysch) into adjacent lowlands and river valleys.
+                if (!marine && t.Continental && c.AncientOrogenStrength != null && c.AncientOrogenStrength[t.Id] > .05f && c.AncientOrogenStrength[t.Id] <= .50f && (t.Relief <= Relief.Lowland || t.Elevation < .65f || t.River || t.DepressionDepth > 0))
+                {
+                    r.Host[t.Id] = (byte)HostRock.Clastic;
+                    r.History[t.Id] |= (ushort)(GeologicalHistory.Basin | GeologicalHistory.Preserved);
+                    if (t.River || t.FreshwaterSource != FreshwaterSource.None || t.Flow > .01f || t.DepressionDepth > 0 || t.Seasons.Any(s => s.Moisture > .35f))
+                        r.History[t.Id] |= (ushort)GeologicalHistory.Peat;
+                    if (c.AncientOrogenAge != null && c.AncientOrogenAge[t.Id] >= 150)
+                        r.History[t.Id] |= (ushort)GeologicalHistory.Mature;
+                }
             }
             var provinces = new List<GeologicalProvince>(); var weight = new float[count]; var boundaryWarp = new float[count];
             for (int id = 0; id < count; id++) boundaryWarp[id] = (float)(tuning.BoundaryWarp * TerrainNoise.Fractal(seed, 12100, id % width / (double)width, id / width / (double)height, 32, 2));
@@ -45,8 +56,14 @@ namespace Anthropocene.Simulation
                     history |= GeologicalHistory.Basin | GeologicalHistory.MarineFacies;
                     if (Roll(seed, 2, key) < tuning.SourceChance) history |= GeologicalHistory.Source;
                     if (Roll(seed, 3, key) < tuning.MatureChance) history |= GeologicalHistory.Mature;
-                    if (Roll(seed, 4, key) < tuning.ReservoirChance) history |= GeologicalHistory.Reservoir;
-                    if (Roll(seed, 5, key) < tuning.SealChance) history |= GeologicalHistory.SealTrap;
+                    // Active Petroleum Fairway Coupling (Idea A):
+                    // In real geology, basins where rich organic source rocks reach thermal maturity
+                    // concurrently undergo tectonic subsidence and deformation that form reservoir sands and anticlinal seal traps.
+                    bool matureSource = (history & (GeologicalHistory.Source | GeologicalHistory.Mature)) == (GeologicalHistory.Source | GeologicalHistory.Mature);
+                    double reservoirProb = matureSource ? Math.Min(1.0, tuning.ReservoirChance * 1.3) : tuning.ReservoirChance;
+                    double sealProb = matureSource ? Math.Min(1.0, tuning.SealChance * 1.4) : tuning.SealChance;
+                    if (Roll(seed, 4, key) < reservoirProb) history |= GeologicalHistory.Reservoir;
+                    if (Roll(seed, 5, key) < sealProb) history |= GeologicalHistory.SealTrap;
                     if (Roll(seed, 6, key) < tuning.EvaporiteChance) history |= GeologicalHistory.Evaporite;
                     if (Roll(seed, 7, key) < tuning.PeatChance) history |= GeologicalHistory.Peat;
                     if (Roll(seed, 8, key) < tuning.SortedChance) history |= GeologicalHistory.Sorted;
@@ -74,7 +91,13 @@ namespace Anthropocene.Simulation
                     var tileHistory = history;
                     if (!c.World.Tiles[id].Continental || c.World.Tiles[id].WaterBody == WaterKind.Saltwater) tileHistory &= ~GeologicalHistory.Ancient;
                     r.History[id] |= (ushort)tileHistory;
-                    if (strength > weight[id]) { weight[id] = (float)strength; r.Province[id] = (ushort)key; r.Host[id] = (byte)host; }
+                    if (strength > weight[id])
+                    {
+                        weight[id] = (float)strength;
+                        r.Province[id] = (ushort)key;
+                        bool forelandSediment = !c.World.Tiles[id].Land ? false : c.World.Tiles[id].Continental && c.AncientOrogenStrength != null && c.AncientOrogenStrength[id] > .05f && c.AncientOrogenStrength[id] <= .50f && (c.World.Tiles[id].Relief <= Relief.Lowland || c.World.Tiles[id].Elevation < .65f || c.World.Tiles[id].River || c.World.Tiles[id].DepressionDepth > 0);
+                        r.Host[id] = (byte)(forelandSediment && (host == HostRock.Basement || host == HostRock.Metamorphic || host == HostRock.Mafic) ? HostRock.Clastic : host);
+                    }
                 }
             }
             r.Provinces = provinces.ToArray();

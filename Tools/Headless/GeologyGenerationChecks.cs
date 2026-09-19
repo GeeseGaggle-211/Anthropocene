@@ -20,9 +20,9 @@ internal static class GeologyGenerationChecks
         Check(!ResourceCatalog.Discoverable(MaterialId.MethaneHydrate, new HashSet<string> { "HydrateExtraction" }), "reserved profiles do not grant capabilities");
         var originalResourceFingerprints = new Dictionary<WorldShape, string>
         {
-            [WorldShape.Continents] = "A9B00104093348015F0CF85CE161A9621F723C524AF0855952179531C052D540",
-            [WorldShape.Archipelagos] = "E8609E39404FD4DAD9661EA6E09EA8A3598E3EF0D462251E3D57AD0BAA8FBEA4",
-            [WorldShape.Pangaea] = "784DCFC65F6B52554FA95765E46522A7EE2191C8BF68D94228DB8E42AF504F26"
+            [WorldShape.Continents] = "2E6E9577D994EAB119BD4333F5FB63C3771437FE161CBB1EFFB0222396B20A83",
+            [WorldShape.Archipelagos] = "7659C4489EBF3D7CCA28D6B37ADA37F8C798A9E44C34DBBE931CCBB58FF613ED",
+            [WorldShape.Pangaea] = "57A9BCF803714D0A35977F714317603714618D1D39395F1F3C8C11FDE8E1F462"
         };
         foreach (var shape in Enum.GetValues(typeof(WorldShape)).Cast<WorldShape>())
         {
@@ -62,6 +62,7 @@ internal static class GeologyGenerationChecks
         OffshoreFixtures();
         OccurrenceFixtures();
         IronPathwayFixtures();
+        FossilFuelPathwayFixtures();
         TuningFixtures();
         QuantityLimitFixtures();
         DeepReserveFixtures();
@@ -237,7 +238,7 @@ internal static class GeologyGenerationChecks
         var fields = r.Bodies.Where(b => b.Concentration == MineralConcentration.Scattered).ToArray();
         Check(fields.Length > 0 && fields.Any(b => b.Sites.Length > 10), "low-quantity fields cover broad districts");
         Check(fields.All(b => b.InitialQuantity <= 8000 && b.Sites.All(s => b.InitialQuantity * s.Share / 10000 <= 101)), "scattered local host stocks remain small before component fractions");
-        Check(fields.All(b => MineralDepositStage.HasScatteredOccurrences(b.Profile) && b.Sites.All(s => w.Tiles[s.Tile].Land && s.Exposure == 10000)), "scattered solids respect land/exposure and exclude fuel systems");
+        Check(fields.All(b => MineralDepositStage.HasScatteredOccurrences(b.Profile) && b.Sites.All(s => w.Tiles[s.Tile].Land && s.Exposure == 10000)), "scattered occurrences respect land and surface exposure");
         Check(BodyHash(r.Bodies.Where(b => b.Concentration == MineralConcentration.Deposit).ToArray(), r) == BodyHash(without.Resources.Bodies, r), "scattered density cannot reshuffle or dilute rich deposits");
         Check(r.Bodies.Where(b => b.SourceBody != 0).Any(b => b.Sites.Length > 1), "source-funded placer reaches extend across multiple connected tiles");
         foreach (var m in new[] { MaterialId.Copper, MaterialId.Tin, MaterialId.Iron })
@@ -317,6 +318,48 @@ internal static class GeologyGenerationChecks
             var bifRich = r.Bodies.Where(b => b.Profile == 8 && b.Concentration == MineralConcentration.Deposit).ToArray();
             if (bogRich.Length > 0 && bifRich.Length > 0)
                 Check(bifRich.Max(b => b.InitialQuantity) >= 3 * bogRich.Max(b => b.InitialQuantity), "BIF industrial motherlodes far exceed modest bog iron reserves");
+        }
+    }
+    private static void FossilFuelPathwayFixtures()
+    {
+        var config = new SimulationConfig { Width = 256, Height = 128, Players = 4, StartSeparation = 9 };
+        var generator = new WorldGenerator();
+        var world = generator.Generate(42, config);
+        var r = world.Resources;
+
+        // 1. Profile specifications
+        var coalSeam = GeologicalProfiles.All.Single(p => p.Id == 13);
+        var paralicCoal = GeologicalProfiles.All.Single(p => p.Id == 41);
+        var petroDeep = GeologicalProfiles.All.Single(p => p.Id == 14);
+        var petroStrat = GeologicalProfiles.All.Single(p => p.Id == 42);
+
+        Check(coalSeam.Name == "Coal seam" && coalSeam.Hosts.SequenceEqual(new[] { HostRock.Clastic }) && coalSeam.Required == (GeologicalHistory.Basin | GeologicalHistory.Peat | GeologicalHistory.Mature) && coalSeam.Domain == 0 && coalSeam.Shape == DepositShape.Seam, "coal seam specification");
+        Check(paralicCoal.Name == "Paralic coal basin" && paralicCoal.Hosts.SequenceEqual(new[] { HostRock.Clastic }) && paralicCoal.Required == (GeologicalHistory.Basin | GeologicalHistory.Peat) && paralicCoal.Domain == 0 && paralicCoal.Shape == DepositShape.Bed && paralicCoal.Composition[0].PartsPerTenThousand == 8500, "paralic coal basin specification");
+        Check(petroDeep.Name == "Petroleum system" && petroDeep.Hosts.SequenceEqual(new[] { HostRock.Clastic, HostRock.Carbonate }) && petroDeep.Required == (GeologicalHistory.Basin | GeologicalHistory.Source | GeologicalHistory.Mature | GeologicalHistory.Reservoir | GeologicalHistory.SealTrap | GeologicalHistory.Preserved) && petroDeep.Domain == 1 && petroDeep.Shape == DepositShape.Reservoir, "deep petroleum system specification");
+        Check(petroStrat.Name == "Stratigraphic petroleum & surface seeps" && petroStrat.Hosts.SequenceEqual(new[] { HostRock.Clastic, HostRock.Carbonate }) && petroStrat.Required == (GeologicalHistory.Basin | GeologicalHistory.Source | GeologicalHistory.Preserved) && petroStrat.Domain == 1 && petroStrat.Shape == DepositShape.Bed && petroStrat.Composition[0].PartsPerTenThousand == 8000, "stratigraphic petroleum specification");
+
+        // Host restrictions
+        Check(!coalSeam.Hosts.Contains(HostRock.Granite) && !coalSeam.Hosts.Contains(HostRock.Basement) && !coalSeam.Hosts.Contains(HostRock.Carbonate), "coal rejects igneous and carbonate hosts");
+        Check(!paralicCoal.Hosts.Contains(HostRock.Granite) && !paralicCoal.Hosts.Contains(HostRock.Basement) && !paralicCoal.Hosts.Contains(HostRock.Carbonate), "paralic coal rejects igneous and carbonate hosts");
+        Check(!petroDeep.Hosts.Contains(HostRock.Granite) && !petroDeep.Hosts.Contains(HostRock.Basement) && !petroDeep.Hosts.Contains(HostRock.Mafic), "petroleum system rejects igneous and basement hosts");
+        Check(!petroStrat.Hosts.Contains(HostRock.Granite) && !petroStrat.Hosts.Contains(HostRock.Basement) && !petroStrat.Hosts.Contains(HostRock.Mafic), "stratigraphic petroleum rejects igneous and basement hosts");
+
+        // Deposits in world
+        var coalBodies = r.Bodies.Where(b => b.Profile == 13 || b.Profile == 41).ToArray();
+        Check(coalBodies.Length > 0, "coal deposits generated");
+        Check(coalBodies.Any(b => b.Profile == 13), "bituminous coal seams generated");
+        Check(coalBodies.Any(b => b.Profile == 41), "paralic coal beds generated");
+
+        var petroBodies = r.Bodies.Where(b => b.Profile == 14 || b.Profile == 42).ToArray();
+        Check(petroBodies.Length > 0, "petroleum bodies generated");
+        Check(petroBodies.Any(b => b.Profile == 14), "deep structural petroleum reservoirs generated");
+        Check(petroBodies.Any(b => b.Profile == 42), "stratigraphic petroleum & seeps generated");
+
+        // Scattered surface petroleum seeps
+        var seeps = r.Bodies.Where(b => b.Profile == 42 && b.Concentration == MineralConcentration.Scattered).ToArray();
+        if (seeps.Length > 0)
+        {
+            Check(seeps.All(b => b.Sites.All(s => s.Burial == BurialDepth.Surface && s.Exposure == 10000)), "scattered petroleum seeps are strictly surface-exposed");
         }
     }
     public static void Audit(bool large)

@@ -73,6 +73,8 @@ namespace Anthropocene.Simulation
             P(38, "Weathered iron ore", H(HostRock.Mafic, HostRock.Ultramafic, HostRock.Basement), GeologicalHistory.Weathered | GeologicalHistory.Preserved, DepositShape.Bed, 0, C(MaterialId.Iron, 4500)),
             P(39, "Titaniferous magnetite", H(HostRock.Mafic, HostRock.Ultramafic), GeologicalHistory.Intrusive, DepositShape.Lens, 0, C(MaterialId.Iron, 5200), C(MaterialId.Titanium, 1200)),
             P(40, "Bog iron", Any, GeologicalHistory.None, DepositShape.Bed, 7, C(MaterialId.Iron, 2800)),
+            P(41, "Paralic coal basin", H(HostRock.Clastic), GeologicalHistory.Basin | GeologicalHistory.Peat, DepositShape.Bed, 0, C(MaterialId.Coal, 8500), C(MaterialId.Clay, 1000), C(MaterialId.Sulfur, 200)),
+            P(42, "Stratigraphic petroleum & surface seeps", H(HostRock.Clastic, HostRock.Carbonate), GeologicalHistory.Basin | GeologicalHistory.Source | GeologicalHistory.Preserved, DepositShape.Bed, 1, C(MaterialId.Petroleum, 8000), C(MaterialId.NaturalGas, 1000), C(MaterialId.Sulfur, 300)),
             new GeologicalProfile(100, "Source-derived placer", Any, GeologicalHistory.None, DepositShape.Bed, 1, true)
         });
         public static string Hash => ResourceCatalog.Digest(string.Join(";", All.OrderBy(p => p.Id).Select(p => p.Id + ":" + p.Name + ":" + string.Join(",", p.Hosts.Select(h => (int)h)) + ":" + (int)p.Required + ":" + (int)p.Shape + ":" + p.Domain + ":" + p.Secondary + ":" + string.Join(",", p.Composition.Select(c => (int)c.Material + "=" + c.PartsPerTenThousand)))));

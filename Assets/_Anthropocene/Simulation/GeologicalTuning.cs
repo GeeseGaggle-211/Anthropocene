@@ -24,7 +24,7 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class DepositTuning
     {
-        public double OrdinaryChance = .085, BedChance = .13, RareBasinChance = .025, CopperChanceMultiplier = 1.6, TinChanceMultiplier = 2.5;
+        public double OrdinaryChance = .085, BedChance = .13, RareBasinChance = .025, CopperChanceMultiplier = 1.6, TinChanceMultiplier = 2.5, CoalChanceMultiplier = 2.0, PetroleumChanceMultiplier = 2.5;
         public double ScatteredChance = .18, ScatteredStockMinimum = .01, ScatteredStockRange = .07, ScatteredSiteStockDivisor = 1000;
         public double BroadRadius = .012, NarrowRadius = .006, ScatteredRadius = .035, VeinWidth = .25, OtherWidth = .8, ScatteredWidth = .65;
         public double ScatteredSiteBaseChance = .04, ScatteredSiteCenterBonus = .18, CoreFloor = .025, CoreDecay = 9;
@@ -32,13 +32,14 @@ namespace Anthropocene.Simulation
         internal void Validate()
         {
             if (!GeologicalTuning.Valid(OrdinaryChance, 0, 1) || !GeologicalTuning.Valid(BedChance, 0, 1) || !GeologicalTuning.Valid(RareBasinChance, 0, 1) || !GeologicalTuning.Valid(CopperChanceMultiplier, 0, 10) || !GeologicalTuning.Valid(TinChanceMultiplier, 0, 10) ||
+                !GeologicalTuning.Valid(CoalChanceMultiplier, 0, 10) || !GeologicalTuning.Valid(PetroleumChanceMultiplier, 0, 10) ||
                 !GeologicalTuning.Valid(ScatteredChance, 0, 1) || !GeologicalTuning.Valid(ScatteredStockMinimum, 0, .08) || !GeologicalTuning.Valid(ScatteredStockRange, 0, .08) || ScatteredStockMinimum + ScatteredStockRange > .08 || !GeologicalTuning.Valid(ScatteredSiteStockDivisor, 100, 100000) ||
                 !GeologicalTuning.Valid(BroadRadius, .00001, .2) || !GeologicalTuning.Valid(NarrowRadius, .00001, .2) || !GeologicalTuning.Valid(ScatteredRadius, .00001, .2) || !GeologicalTuning.Valid(VeinWidth, .01, 2) || !GeologicalTuning.Valid(OtherWidth, .01, 2) || !GeologicalTuning.Valid(ScatteredWidth, .01, 2) ||
                 !GeologicalTuning.Valid(ScatteredSiteBaseChance, 0, 1) || !GeologicalTuning.Valid(ScatteredSiteCenterBonus, 0, 1) || !GeologicalTuning.Valid(CoreFloor, .00001, 10) || !GeologicalTuning.Valid(CoreDecay, 0, 100) ||
                 !GeologicalTuning.Valid(RichStockMinimum, .01, 1) || !GeologicalTuning.Valid(RichStockRange, 0, 1) || RichStockMinimum + RichStockRange > 1)
                 throw new ArgumentException("Invalid mineral deposit tuning.");
         }
-        internal string Stamp => GeologicalTuning.Join(OrdinaryChance, BedChance, RareBasinChance, CopperChanceMultiplier, TinChanceMultiplier, ScatteredChance, ScatteredStockMinimum, ScatteredStockRange, ScatteredSiteStockDivisor, BroadRadius, NarrowRadius, ScatteredRadius, VeinWidth, OtherWidth, ScatteredWidth, ScatteredSiteBaseChance, ScatteredSiteCenterBonus, CoreFloor, CoreDecay, RichStockMinimum, RichStockRange);
+        internal string Stamp => GeologicalTuning.Join(OrdinaryChance, BedChance, RareBasinChance, CopperChanceMultiplier, TinChanceMultiplier, CoalChanceMultiplier, PetroleumChanceMultiplier, ScatteredChance, ScatteredStockMinimum, ScatteredStockRange, ScatteredSiteStockDivisor, BroadRadius, NarrowRadius, ScatteredRadius, VeinWidth, OtherWidth, ScatteredWidth, ScatteredSiteBaseChance, ScatteredSiteCenterBonus, CoreFloor, CoreDecay, RichStockMinimum, RichStockRange);
     }
 
     [Serializable]

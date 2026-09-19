@@ -57,6 +57,8 @@ namespace Anthropocene.Simulation
                     double chance = profile.Id == 36 ? tuning.RareBasinChance : profile.Shape == DepositShape.Bed ? tuning.BedChance : tuning.OrdinaryChance;
                     if (profile.Id == 1 || profile.Id == 2) chance *= tuning.CopperChanceMultiplier;
                     else if (profile.Id == 3) chance *= tuning.TinChanceMultiplier;
+                    else if (profile.Id == 13 || profile.Id == 41) chance *= tuning.CoalChanceMultiplier;
+                    else if (profile.Id == 14) chance *= tuning.PetroleumChanceMultiplier;
                     if (GeologicalProvinceStage.Roll(seed, 203, semantic) >= chance * c.ResourceOptions.Density) continue;
                     var sites = GeologicalFootprints.Sites(c, profile, tile, semantic);
                     if (sites.Length == 0) continue;
@@ -72,6 +74,16 @@ namespace Anthropocene.Simulation
                             new DepositComponent(MaterialId.Petroleum, (int)(9000 * oilShare)),
                             new DepositComponent(MaterialId.NaturalGas, (int)(9000 * (1 - oilShare))),
                             new DepositComponent(MaterialId.Sulfur, 200)
+                        };
+                    }
+                    else if (profile.Id == 42)
+                    {
+                        double oilShare = .75 + .20 * GeologicalProvinceStage.Roll(seed, 206, semantic);
+                        composition = new[]
+                        {
+                            new DepositComponent(MaterialId.Petroleum, (int)(9000 * oilShare)),
+                            new DepositComponent(MaterialId.NaturalGas, (int)(9000 * (1 - oilShare))),
+                            new DepositComponent(MaterialId.Sulfur, 300)
                         };
                     }
                     double quantity = Math.Min(r.MaximumQuantity, Math.Round(r.MaximumQuantity * (tuning.RichStockMinimum + tuning.RichStockRange * GeologicalProvinceStage.Roll(seed, 207, semantic)) / 10) * 10);
@@ -95,6 +107,6 @@ namespace Anthropocene.Simulation
             }
             r.Bodies = bodies.OrderBy(b => b.Id).ToArray();
         }
-        public static bool HasScatteredOccurrences(int profile) => profile >= 1 && profile <= 12 || profile >= 20 && profile <= 31 && profile != 24 || profile >= 37 && profile <= 40;
+        public static bool HasScatteredOccurrences(int profile) => profile >= 1 && profile <= 13 || profile >= 20 && profile <= 31 && profile != 24 || profile >= 37 && profile <= 42;
     }
 }
