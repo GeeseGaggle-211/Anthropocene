@@ -257,16 +257,17 @@ namespace Anthropocene.Simulation
             int pop = camp.Population;
             if (pop <= 0) return;
 
-            // 1. Village Transition Check (Average q > 0.25 across 1-radius footprint)
+            // 1. Village Transition Check (q >= 0.245 on any field or mean q >= 0.20 across footprint)
             int[] footprint = w.Map.Radius(camp.Tile, 1).Where(id => w.Tiles[id].TraversableLand).ToArray();
-            double avgQ = footprint.Length > 0 ? footprint.Average(tid => w.Tiles[tid].Cultivation) : 0.0;
-            if (avgQ > 0.25)
+            double avgQ = footprint.Length > 0 ? footprint.Average(tid => (double)w.Tiles[tid].Cultivation) : 0.0;
+            double maxQ = footprint.Length > 0 ? footprint.Max(tid => (double)w.Tiles[tid].Cultivation) : 0.0;
+            if (avgQ >= 0.20 || maxQ >= (w.Config.GathererBridgeCeiling - 0.005))
             {
                 if (!camp.IsVillage)
                 {
                     camp.IsVillage = true;
                     camp.VillageTurns = 0;
-                    record.Log($"Camp {camp.Id} (Player {camp.Player}) has transitioned into a permanent Village (Avg Cultivation {avgQ:F2}).");
+                    record.Log($"Camp {camp.Id} (Player {camp.Player}) has transitioned into a permanent Village (Avg Cultivation {avgQ:F2}, Max {maxQ:F2}).");
                 }
                 camp.VillageTurns++;
             }

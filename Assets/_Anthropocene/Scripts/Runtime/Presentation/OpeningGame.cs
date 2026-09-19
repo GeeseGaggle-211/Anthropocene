@@ -470,7 +470,22 @@ namespace Anthropocene.Presentation
             bool hungry = demography.DeficitSteps > 0;
             journal.Add("Turn " + turn + ": " + (gathered ? "gathered wild food" : "gathering yielded little") + (hunted ? ", successful hunt" : "") + (fished ? ", brought in fish" : "") + ". " + (hungry ? "Some people went hungry." : "Everyone was fed."));
             logScroll.y = 100000;
-            status = player.Technology == Technology.None ? "A new generation. Inspect the land and plan your next orders." : "Your people discovered " + TechName(player.Technology) + ".";
+            if (player.IsVillage)
+            {
+                if (player.VillageTurns == 1)
+                {
+                    journal.Add("Turn " + turn + ": With mature cultivated fields established, your camp has settled permanently into an agricultural Village!");
+                    status = "Village established! Click MANAGE VILLAGE in the sidebar or double-click the village to allocate workforce and manage workshops.";
+                }
+                else
+                {
+                    status = "Agricultural Village. Manage cultivation and craft workshops in the Village Inspector.";
+                }
+            }
+            else
+            {
+                status = player.Technology == Technology.None ? "A new generation. Inspect the land and plan your next orders." : "Your people discovered " + TechName(player.Technology) + ". Tending fields brings cultivation to 0.25 to settle permanently as a Village.";
+            }
             if (!world.Hunters.Any(h => h.Id == selected)) selected = player.Id;
         }
         private void Refresh() { observation = builder.Build(world, 0); if (!observation.Tiles.ContainsKey(inspected)) inspected = -1; }
