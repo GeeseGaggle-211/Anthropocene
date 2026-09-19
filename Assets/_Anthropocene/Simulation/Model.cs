@@ -233,7 +233,7 @@ namespace Anthropocene.Simulation
         public bool IsVillage;
         public int VillageTurns;
         [NonSerialized] private Society people = new Society();
-        internal Society People => people ?? (people = new Society());
+        public Society People => people ?? (people = new Society());
         internal void Bind(Society owner) { people = owner; SocietyId = owner.Id; Player = owner.Player; }
         // Compatibility accessors for one-camp callers; society owns and serializes the data.
         public double[] Experience { get => People.Experience; set => People.Experience = value; }
