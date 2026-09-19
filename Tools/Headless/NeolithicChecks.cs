@@ -224,6 +224,9 @@ internal static class NeolithicChecks
         Check(camp.Inventory.FarmTools < 100, "Farm tools degrade over agricultural turn");
         Check(Math.Abs(camp.Inventory.FarmTools - 85.0) < 1e-4, "Farm tools suffer 15% degradation");
         Check(camp.Inventory.Pots > 0, "Pots maintained through crafting and degradation");
+        Check(camp.Inventory.Wood > 150, "Gatherers harvest wood to replenish raw material reserves");
+        Check(camp.Inventory.Clay > 0, "Gatherers harvest clay to replenish raw material reserves");
+        Check(camp.Inventory.Stone > 0, "Gatherers harvest stone to replenish raw material reserves");
     }
 
     private static void TestVillageTransitionAndQoL()

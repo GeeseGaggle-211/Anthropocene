@@ -274,6 +274,17 @@ namespace Anthropocene.Simulation
             // 2. Pots Degradation (10% per turn)
             inv.Pots = Math.Max(0.0, inv.Pots * (1.0 - w.Config.PotDegradationRate));
 
+            // Gatherers harvest raw materials (Stone, Clay, Wood) from the surrounding landscape
+            int gatherers = camp.GathererPopulation;
+            if (gatherers > 0)
+            {
+                double rawGathered = gatherers * 2.0; // 2 units of raw materials per gatherer per generation
+                double maxStockpile = Math.Max(200.0, pop * 10.0);
+                inv.Stone = Math.Min(maxStockpile, inv.Stone + rawGathered);
+                inv.Clay = Math.Min(maxStockpile, inv.Clay + rawGathered);
+                inv.Wood = Math.Min(maxStockpile, inv.Wood + rawGathered);
+            }
+
             // 3. Crafting Execution (Only in Village with crafters)
             int crafters = camp.Workforce?.Assignments?.FirstOrDefault(a => a.Role == WorkforceRoles.Craftsperson)?.Population ?? 0;
             foreach (var specialistRole in WorkforceRoles.Specialists)
@@ -575,11 +586,22 @@ namespace Anthropocene.Simulation
                     HandTools = parentCamp.Inventory.HandTools * share,
                     Pots = Math.Ceiling(parentCamp.Inventory.Pots * share),
                     Cloth = parentCamp.Inventory.Cloth * share,
+                    Stone = parentCamp.Inventory.Stone * share,
+                    Clay = parentCamp.Inventory.Clay * share,
+                    Wood = parentCamp.Inventory.Wood * share,
                     Houses = Math.Ceiling(splinterCount / 8.0)
                 }
             };
             newCamp.Bind(parentCamp.People);
             w.Camps.Add(newCamp);
+
+            // Deduct transferred inventory from parent village
+            parentCamp.Inventory.HandTools = Math.Max(0.0, parentCamp.Inventory.HandTools - newCamp.Inventory.HandTools);
+            parentCamp.Inventory.Pots = Math.Max(0.0, parentCamp.Inventory.Pots - newCamp.Inventory.Pots);
+            parentCamp.Inventory.Cloth = Math.Max(0.0, parentCamp.Inventory.Cloth - newCamp.Inventory.Cloth);
+            parentCamp.Inventory.Stone = Math.Max(0.0, parentCamp.Inventory.Stone - newCamp.Inventory.Stone);
+            parentCamp.Inventory.Clay = Math.Max(0.0, parentCamp.Inventory.Clay - newCamp.Inventory.Clay);
+            parentCamp.Inventory.Wood = Math.Max(0.0, parentCamp.Inventory.Wood - newCamp.Inventory.Wood);
 
             record.Log($"Settlement Fission: {splinterCount} residents split from Village {parentCamp.Id} and founded Camp {newCamp.Id} on Tile {bestTile}.");
         }
