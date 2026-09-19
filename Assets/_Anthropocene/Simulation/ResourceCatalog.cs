@@ -22,15 +22,30 @@ namespace Anthropocene.Simulation
     {
         public readonly MaterialId Id;
         public readonly string Name, DiscoveryTechnology;
-        public readonly double BaseAccessibleFraction;
+        public readonly double BaseAccessibleFraction, Concentration;
         public readonly bool Reserved;
-        public MaterialDefinition(MaterialId id, string technology, double access, bool reserved = false)
-        { Id = id; Name = id.ToString(); DiscoveryTechnology = technology; BaseAccessibleFraction = access; Reserved = reserved; }
+        public MaterialDefinition(MaterialId id, string technology, double access, double concentration = 1.0, bool reserved = false)
+        { Id = id; Name = id.ToString(); DiscoveryTechnology = technology; BaseAccessibleFraction = access; Concentration = concentration; Reserved = reserved; }
     }
     public static class ResourceCatalog
     {
         public const int Version = 1, DefaultMaximumQuantity = 100000;
-        private static MaterialDefinition M(MaterialId id, string tech, double fraction, bool reserved = false) => new MaterialDefinition(id, tech, fraction, reserved);
+        public static readonly IReadOnlyDictionary<MaterialId, double> Concentrations = new Dictionary<MaterialId, double>
+        {
+            [MaterialId.Stone] = 1.0, [MaterialId.Clay] = 1.0, [MaterialId.Wood] = 1.0,
+            [MaterialId.Copper] = 1.0, [MaterialId.Tin] = 1.0, [MaterialId.Gold] = 1.0, [MaterialId.Lead] = 1.0, [MaterialId.Zinc] = 1.0, [MaterialId.Silver] = 1.0,
+            [MaterialId.Salt] = 1.0, [MaterialId.Limestone] = 1.0, [MaterialId.Silica] = 1.0, [MaterialId.Gypsum] = 1.0,
+            [MaterialId.Iron] = 1.0, [MaterialId.Sulfur] = 1.0, [MaterialId.Nitrate] = 1.0,
+            [MaterialId.Coal] = 10.0, [MaterialId.Petroleum] = 1.0, [MaterialId.NaturalGas] = 1.0,
+            [MaterialId.Bauxite] = 1.0, [MaterialId.Phosphate] = 1.0, [MaterialId.Potash] = 1.0, [MaterialId.Manganese] = 1.0,
+            [MaterialId.Nickel] = 1.0, [MaterialId.Chromium] = 1.0, [MaterialId.Cobalt] = 1.0, [MaterialId.Tungsten] = 1.0, [MaterialId.Titanium] = 1.0, [MaterialId.Uranium] = 1.0,
+            [MaterialId.Lithium] = 1.0, [MaterialId.Graphite] = 1.0, [MaterialId.RareEarths] = 1.0,
+            [MaterialId.Molybdenum] = 1.0, [MaterialId.Rhenium] = 1.0, [MaterialId.Selenium] = 1.0, [MaterialId.Tellurium] = 1.0, [MaterialId.Gallium] = 1.0,
+            [MaterialId.Germanium] = 1.0, [MaterialId.Indium] = 1.0, [MaterialId.PlatinumGroup] = 1.0, [MaterialId.Niobium] = 1.0, [MaterialId.Tantalum] = 1.0, [MaterialId.Borate] = 1.0,
+            [MaterialId.Gemstones] = 1.0, [MaterialId.MethaneHydrate] = 1.0, [MaterialId.RareEarthMud] = 1.0
+        };
+        public static double Concentration(MaterialId id) => Concentrations.TryGetValue(id, out double value) ? value : 1.0;
+        private static MaterialDefinition M(MaterialId id, string tech, double fraction, bool reserved = false) => new MaterialDefinition(id, tech, fraction, Concentration(id), reserved);
         public static readonly IReadOnlyList<MaterialDefinition> Materials = Array.AsReadOnly(new[] {
             M(MaterialId.Stone, "", 1), M(MaterialId.Clay, "", 1), M(MaterialId.Wood, "", .25),
             M(MaterialId.Copper, "CopperWorking", .10), M(MaterialId.Tin, "BronzeWorking", .10), M(MaterialId.Gold, "GoldWorking", .10),
@@ -53,7 +68,7 @@ namespace Anthropocene.Simulation
         // A capability contract only: does not add research, observations, or knowledge to the opening.
         public static bool Discoverable(MaterialId id, ISet<string> technologies)
         { var m = Get(id); return !m.Reserved && (m.DiscoveryTechnology.Length == 0 || technologies != null && technologies.Contains(m.DiscoveryTechnology)); }
-        public static string Hash => Digest(string.Join(";", Materials.Select(m => ((int)m.Id) + ":" + m.Name + ":" + m.DiscoveryTechnology + ":" + m.BaseAccessibleFraction.ToString("R", CultureInfo.InvariantCulture) + ":" + m.Reserved)));
+        public static string Hash => Digest(string.Join(";", Materials.Select(m => ((int)m.Id) + ":" + m.Name + ":" + m.DiscoveryTechnology + ":" + m.BaseAccessibleFraction.ToString("R", CultureInfo.InvariantCulture) + ":" + m.Concentration.ToString("R", CultureInfo.InvariantCulture) + ":" + m.Reserved)));
         internal static string Digest(string value)
         { using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(value))).Replace("-", ""); }
     }

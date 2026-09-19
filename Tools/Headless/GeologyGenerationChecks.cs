@@ -17,12 +17,16 @@ internal static class GeologyGenerationChecks
         Check(ResourceCatalog.Materials.Select(m => m.Id).Distinct().Count() == ResourceCatalog.Materials.Count, "stable unique material IDs");
         Check(ResourceCatalog.Get(MaterialId.Stone).BaseAccessibleFraction == 1 && ResourceCatalog.Get(MaterialId.Clay).BaseAccessibleFraction == 1 && ResourceCatalog.Get(MaterialId.Wood).BaseAccessibleFraction == .25, "surface accessibility contracts");
         Check(!ResourceCatalog.Discoverable(MaterialId.Copper, new HashSet<string>()) && ResourceCatalog.Discoverable(MaterialId.Copper, new HashSet<string> { "CopperWorking" }), "copper requires copper working");
-        Check(!ResourceCatalog.Discoverable(MaterialId.MethaneHydrate, new HashSet<string> { "HydrateExtraction" }), "reserved profiles do not grant capabilities");
+        Check(ResourceCatalog.Materials.All(m => ResourceCatalog.Concentrations.ContainsKey(m.Id)), "every catalog material has an entry in the concentrations lookup table");
+        Check(ResourceCatalog.Concentration(MaterialId.Coal) == 10.0, "coal concentration is 10.0");
+        Check(ResourceCatalog.Concentration(MaterialId.Petroleum) == 1.0, "petroleum oil concentration is 1.0");
+        Check(ResourceCatalog.Concentration(MaterialId.Coal) == 10.0 * ResourceCatalog.Concentration(MaterialId.Petroleum), "coal concentration is 10x that of oil");
+        Check(ResourceCatalog.Materials.Where(m => m.Id != MaterialId.Coal).All(m => ResourceCatalog.Concentration(m.Id) == 1.0), "all other resources remain at baseline concentration 1.0");
         var originalResourceFingerprints = new Dictionary<WorldShape, string>
         {
-            [WorldShape.Continents] = "72591CF6711279BD78A70B357787292B12DB9C090BD2AF9B855F05EC59ECB487",
-            [WorldShape.Archipelagos] = "7659C4489EBF3D7CCA28D6B37ADA37F8C798A9E44C34DBBE931CCBB58FF613ED",
-            [WorldShape.Pangaea] = "0EBB280332A44B0CE81EF13B764FF25D2A2D08EB401D19214655EE9DA1FC0FCC"
+            [WorldShape.Continents] = "01EC7A6F0A665D3D897F41D33A9DE9902E5C95F46406BC4F18E8D785F56AE79B",
+            [WorldShape.Archipelagos] = "831385E7BC40465059312F1D229610B0F023A987DB6191E2A4B8DBA519B884E0",
+            [WorldShape.Pangaea] = "F689F7E83659FE2BF0624170AD1C034D042D338C35016B8880F35DBBC18340E8"
         };
         foreach (var shape in Enum.GetValues(typeof(WorldShape)).Cast<WorldShape>())
         {
@@ -148,7 +152,7 @@ internal static class GeologyGenerationChecks
             foreach (var part in b.Components)
             {
                 double expected = counterpart.Components.Single(c => c.Material == part.Material).PartsPerTenThousand * b.Quantity / 10000.0 *
-                    b.Sites.Sum(s => s.Share * (double)s.Exposure) / 100000000.0 * r.AccessibleFraction(part.Material);
+                    b.Sites.Sum(s => s.Share * (double)s.Exposure) / 100000000.0 * r.AccessibleFraction(part.Material) * r.Concentration(part.Material);
                 Check(Math.Abs(part.AccessibleQuantity - expected) < 1e-6 && Math.Abs(part.DeepQuantity - 50 * expected) < 1e-5,
                     "accessible and deep pools preserve exposure-weighted access at every concentration");
                 Check(Math.Abs(b.Sites.Sum(s => r.AccessibleAt(b, s, part.Material)) - part.AccessibleQuantity) < 1e-6 &&
@@ -194,7 +198,7 @@ internal static class GeologyGenerationChecks
         bool rejected = false; try { ResourceValidation.Validate(deep); } catch (InvalidOperationException) { rejected = true; }
         Check(rejected, "nonfinite deep stock rejected");
         changed.DeepQuantity = original; target.Components[0] = changed;
-        changed.InitialAccessibleQuantity = target.InitialQuantity * changed.PartsPerTenThousand / 10000 * r.AccessibleFraction(changed.Material) + 1000;
+        changed.InitialAccessibleQuantity = target.InitialQuantity * changed.PartsPerTenThousand / 10000 * r.AccessibleFraction(changed.Material) * r.Concentration(changed.Material) + 1000;
         changed.InitialDeepQuantity = changed.InitialAccessibleQuantity * r.DeepReserveMultiplier; target.Components[0] = changed;
         rejected = false; try { ResourceValidation.Validate(deep); } catch (InvalidOperationException) { rejected = true; }
         Check(rejected, "excessive saved component pool rejected");

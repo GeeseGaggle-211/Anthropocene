@@ -72,6 +72,18 @@ Petroleum requires basin, source, maturity, reservoir, seal/trap and preservatio
 
 Placers inherit tin, gold, titanium or rare-earth source composition and an explicit source-body ID. Their saved path follows `Tile.Downstream`; at a marine outlet a bounded, source-funded shelf-neighbor sorting proxy may continue seaward. This is not a current/ocean-sediment simulation. Relict-source records and palaeochannel reconstruction are deferred; this version never invents those sources. Surface Clay uses weathered host and fine-sediment context, with river proximity increasing opportunity rather than guaranteeing it.
 
+## Resource concentration lookup table
+
+Deposit sizing and mineral concentration are decoupled from raw host body rock mass (`DepositBody.InitialQuantity`). Each material in `ResourceCatalog` has a distinct concentration number defined in `ResourceCatalog.Concentrations`, also exposed via `MaterialDefinition.Concentration` and frozen with the generated world in `WorldResourceState.Concentrations`:
+
+| Resource | Concentration | Description |
+| --- | --- | --- |
+| `Coal` | **10.0** | 10× higher concentration per deposit than baseline; reflects massive organic carbon seam volumes in both rich seams and paralic basins (~11M units average per deposit in Standard worlds). |
+| `Petroleum` | **1.0** | Baseline hydrocarbon concentration in reservoir formations (~1.15M units average per deposit in Standard worlds). |
+| All other 44 materials (Gold, Iron, Copper, etc.) | **1.0** | Baseline concentration for metals, industrial minerals, and surface materials. Allows future calibration (e.g. low ppm gold concentration vs high deposit counts) without modifying deposit placement or unrelated co-products. |
+
+Concentration scales accessible and deep component pools in `GeologicalResourcePools` and legacy reference allocations in `WorldResourceState.ComponentQuantity`, while host rock bounds (`DepositBody.InitialQuantity <= MaximumQuantity`) and rock composition fractions (`PartsPerTenThousand <= 10000`) remain strictly conserved. Co-products within a deposit (such as sulfur or clay in coal formations) scale according to their own distinct concentration numbers.
+
 ## Persistence and discovery boundary
 
 New resource-bearing saves use **ANTHROPOCENE-9**. The fixed core tile layout remains unchanged, and `ResourceCodec` writes an explicit compact resource block outside the XML header. Schema 4 adds the deep multiplier/capability, two deep surface rasters, and four doubles per component for initial/remaining accessible/deep quantities. Schema 3 persists the surface unit; schema 2 adds the concentration kind. Saving any older resource world retains that world's layout and fingerprint; no deep pools are attached on load. Timings and derived site-weight caches are excluded from authoritative fingerprints. Bodies, components and sites serialize canonically.

@@ -101,6 +101,7 @@ namespace Anthropocene.Simulation
         public double WoodRecoveryPerYear;
         // Freeze catalog-dependent access and discovery semantics with the generated world.
         public ushort[] AccessibleParts = ResourceCatalog.Materials.Aggregate(new ushort[69], (a, m) => { a[(int)m.Id] = (ushort)Math.Round(m.BaseAccessibleFraction * 10000); return a; });
+        public double[] Concentrations = ResourceCatalog.Materials.Aggregate(new double[69], (a, m) => { a[(int)m.Id] = m.Concentration; return a; });
         public string[] DiscoveryTechnologies = ResourceCatalog.Materials.Aggregate(Enumerable.Repeat("", 69).ToArray(), (a, m) => { a[(int)m.Id] = m.DiscoveryTechnology; return a; });
         public GeologicalProvince[] Provinces;
         public ushort[] Province, History, Stone, Clay, Wood, DeepStone, DeepClay;
@@ -113,8 +114,9 @@ namespace Anthropocene.Simulation
         public double SurfaceDeepTotal(int tile, MaterialId material) => Version >= 4 ? SurfaceUnit * DeepReserveMultiplier * (material == MaterialId.Stone ? DeepStone[tile] : material == MaterialId.Clay ? DeepClay[tile] : 0) : 0;
         public double SurfaceTotal(int tile, MaterialId material) => BaseSurfaceTotal(tile, material) + SurfaceDeepTotal(tile, material);
         public double AccessibleFraction(MaterialId material) => AccessibleParts[(int)material] / 10000.0;
+        public double Concentration(MaterialId material) => Concentrations != null && (int)material < Concentrations.Length && Concentrations[(int)material] > 0 ? Concentrations[(int)material] : ResourceCatalog.Concentration(material);
         public double SurfaceAccessible(int tile, MaterialId material) => BaseSurfaceTotal(tile, material) * AccessibleFraction(material);
-        public double ComponentQuantity(DepositBody body, MaterialId material) => body.Quantity * body.Components.Where(c => c.Material == material).Sum(c => (int)c.PartsPerTenThousand) / 10000;
+        public double ComponentQuantity(DepositBody body, MaterialId material) => body.Quantity * body.Components.Where(c => c.Material == material).Sum(c => (int)c.PartsPerTenThousand) / 10000.0 * Concentration(material);
         public double DeepComponentQuantity(DepositBody body, MaterialId material) => Version >= 4 ? body.Components.Where(c => c.Material == material).Sum(c => c.DeepQuantity) : 0;
         public double TotalComponentQuantity(DepositBody body, MaterialId material) => Version >= 4 ? body.Components.Where(c => c.Material == material).Sum(c => c.AccessibleQuantity + c.DeepQuantity) : ComponentQuantity(body, material);
         private static double SiteWeight(DepositBody body, DepositSite site)
@@ -147,6 +149,7 @@ namespace Anthropocene.Simulation
             if ((r.Version < 1 || r.Version > WorldResourceState.CurrentVersion) || r.CoreGeneratorVersion < 7 || r.CoreGeneratorVersion > WorldState.GeneratorVersion || r.MaximumQuantity < 1000 || !ResourceGenerationOptions.Finite(r.WoodRecoveryPerYear) || r.WoodRecoveryPerYear < 0 || r.WoodRecoveryPerYear > 1 || string.IsNullOrEmpty(r.CatalogHash) || string.IsNullOrEmpty(r.ProfileHash) || string.IsNullOrEmpty(r.ConfigurationHash)) throw new InvalidOperationException("Invalid resource metadata.");
             if (r.Provinces == null || r.Provinces.Length > ushort.MaxValue || r.Bodies == null || r.Province?.Length != count || r.History?.Length != count || r.Host?.Length != count || r.Marine?.Length != count || r.Stone?.Length != count || r.Clay?.Length != count || r.Wood?.Length != count) throw new InvalidOperationException("Invalid resource raster dimensions.");
             if (r.AccessibleParts?.Length != 69 || r.DiscoveryTechnologies?.Length != 69 || r.AccessibleParts.Any(v => v > 10000) || ResourceCatalog.Materials.Any(m => r.DiscoveryTechnologies[(int)m.Id] == null)) throw new InvalidOperationException("Invalid saved material catalog.");
+            if (r.Concentrations != null && (r.Concentrations.Length != 69 || ResourceCatalog.Materials.Any(m => !ResourceGenerationOptions.Finite(r.Concentrations[(int)m.Id]) || r.Concentrations[(int)m.Id] <= 0))) throw new InvalidOperationException("Invalid saved material concentrations.");
             for (int i = 0; i < r.Provinces.Length; i++)
             {
                 var p = r.Provinces[i];
@@ -163,7 +166,7 @@ namespace Anthropocene.Simulation
                 if (b == null || b.Id <= 0 || !ids.Add(b.Id) || !GeologicalProfiles.All.Any(p => p.Id == b.Profile) || b.OriginTile < 0 || b.OriginTile >= count || !ResourceGenerationOptions.Finite(b.Quantity) || !ResourceGenerationOptions.Finite(b.InitialQuantity) || b.Quantity < 0 || b.Quantity > b.InitialQuantity || b.InitialQuantity > r.MaximumQuantity || b.InitialQuantity <= 0 || b.Components == null || b.Components.Length == 0 || b.Sites == null || b.Sites.Length == 0 || b.TransportPath == null) throw new InvalidOperationException("Invalid deposit body.");
                 foreach (var component in b.Components)
                 {
-                    double upper = b.InitialQuantity * component.PartsPerTenThousand / 10000.0 * r.AccessibleFraction(component.Material);
+                    double upper = b.InitialQuantity * component.PartsPerTenThousand / 10000.0 * r.AccessibleFraction(component.Material) * r.Concentration(component.Material);
                     bool valid = ResourceGenerationOptions.Finite(component.InitialAccessibleQuantity) && ResourceGenerationOptions.Finite(component.AccessibleQuantity) &&
                         ResourceGenerationOptions.Finite(component.InitialDeepQuantity) && ResourceGenerationOptions.Finite(component.DeepQuantity) &&
                         component.InitialAccessibleQuantity >= 0 && component.InitialAccessibleQuantity <= upper + Math.Max(1e-6, upper * 1e-10) && component.AccessibleQuantity >= 0 && component.AccessibleQuantity <= component.InitialAccessibleQuantity + 1e-6 &&

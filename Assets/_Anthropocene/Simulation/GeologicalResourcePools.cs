@@ -17,7 +17,7 @@ namespace Anthropocene.Simulation
                 for (int i = 0; i < body.Components.Length; i++)
                 {
                     var part = body.Components[i];
-                    part.AccessibleQuantity = body.Quantity * part.PartsPerTenThousand / 10000.0 * weightedExposure * resources.AccessibleFraction(part.Material);
+                    part.AccessibleQuantity = body.Quantity * part.PartsPerTenThousand / 10000.0 * weightedExposure * resources.AccessibleFraction(part.Material) * resources.Concentration(part.Material);
                     part.DeepQuantity = part.AccessibleQuantity * resources.DeepReserveMultiplier;
                     part.InitialAccessibleQuantity = part.AccessibleQuantity;
                     part.InitialDeepQuantity = part.DeepQuantity;
