@@ -222,7 +222,12 @@ namespace Anthropocene.Presentation
 
             Fill(new Rect(10, y, width + 8, 62), new Color(.14f, .16f, .14f));
             GUI.Label(new Rect(20, y + 7, width - 12, 24), "SELECTED  ·  " + (selected == camp.Id && camp.IsVillage ? "VILLAGE" : SelectedName), section);
-            string selectedDetail = selected == camp.Id ? (camp.IsVillage ? camp.Population + " people · permanent village · QoL " + (camp.QoL * 100).ToString("F0") + "%" : camp.Population + " people · movement " + observation.CampMovement + " · gathers automatically") : observation.Hunters.First(h => h.Id == selected).Population + " hunters · move " + observation.HunterMovement + " · auto-hunts on contact · " + (observation.Hunters.First(h => h.Id == selected).InSupply ? "supplied" : "carrying provisions");
+            var selectedHunter = observation.Hunters.FirstOrDefault(h => h.Id == selected);
+            string selectedDetail = selected == camp.Id
+                ? (camp.IsVillage ? camp.Population + " people · permanent village · QoL " + (camp.QoL * 100).ToString("F0") + "%" : camp.Population + " people · movement " + observation.CampMovement + " · gathers automatically")
+                : selectedHunter != null
+                    ? selectedHunter.Population + " hunters · move " + observation.HunterMovement + " · auto-hunts on contact · " + (selectedHunter.InSupply ? "supplied" : "carrying provisions")
+                    : "Unit " + selected;
             GUI.Label(new Rect(20, y + 32, width - 12, 22), selectedDetail, small); y += 70;
 
             GUI.Label(new Rect(14, y, width, 22), "UNIT STACK / ROSTER", section); y += 24;

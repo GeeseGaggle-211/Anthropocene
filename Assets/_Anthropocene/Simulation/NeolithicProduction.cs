@@ -536,16 +536,18 @@ namespace Anthropocene.Simulation
             int splinterCount = Math.Min(parentCamp.Population / 2, Math.Min(maxSplinter, (int)Math.Floor(parentCamp.FissionWilling)));
             if (splinterCount < 25 || parentCamp.Population - splinterCount < 25) return;
 
-            // Find nearest viable unowned traversable land tile with freshwater
+            // Find nearest viable unowned traversable land tile with freshwater access
             int bestTile = -1;
             int bestDist = int.MaxValue;
-            foreach (int n in w.Map.Radius(parentCamp.Tile, 5))
+            foreach (int n in w.Map.Radius(parentCamp.Tile, 6))
             {
                 int dist = w.Map.Distance(parentCamp.Tile, n);
                 if (dist < 2) continue;
 
                 var t = w.Tiles[n];
-                if (!t.TraversableLand || t.DrinkableWater <= 0) continue;
+                if (!t.TraversableLand) continue;
+                bool hasWater = w.Map.Radius(n, 1).Any(tid => w.Tiles[tid].FreshwaterSource != FreshwaterSource.None && w.Tiles[tid].WaterBody != WaterKind.Saltwater);
+                if (!hasWater) continue;
                 if (w.Camps.Any(c => c.Tile == n)) continue;
 
                 if (dist < bestDist)
@@ -557,9 +559,10 @@ namespace Anthropocene.Simulation
 
             if (bestTile < 0) return; // No suitable colonization site found
 
-            // Deduct population from parent village
+            // Deduct population from parent village and reset fission willingness
             parentCamp.Population -= splinterCount;
             parentCamp.Workforce?.Normalize(parentCamp.Population);
+            parentCamp.FissionWilling = 0.0;
 
             // Create splinter camp
             double share = (double)splinterCount / (parentCamp.Population + splinterCount);
@@ -571,11 +574,63 @@ namespace Anthropocene.Simulation
                 if (dem != null) dem.DiscardedInventory += splinterFood;
             }
 
+            // Determine next independent AI player ID
+            int nextPlayer = (w.Camps.Count > 0 ? w.Camps.Max(c => c.Player) : 0) + 1;
+            if (w.Societies != null && w.Societies.Count > 0)
+            {
+                nextPlayer = Math.Max(nextPlayer, w.Societies.Max(s => s.Player) + 1);
+            }
+
+            // Establish an independent society for the splinter tribe, inheriting parent cultural knowledge
+            var newSociety = new Society
+            {
+                Id = w.NextId++,
+                Player = nextPlayer,
+                PolicySeed = (int)Numbers.Hash(w.Seed, 190, bestTile),
+                Progression = new EraProgression
+                {
+                    Era = parentCamp.People?.Progression?.Era ?? Era.Neolithic,
+                    EraStartDays = w.Days,
+                    MajorityEligibilityDays = w.Config.MajorityEligibilityYears * w.Config.DaysPerYear,
+                    ForcedTransitionDays = w.Config.ForcedTransitionYears * w.Config.DaysPerYear
+                }
+            };
+            newSociety.Policy = PolicyState.Seeded(newSociety.PolicySeed);
+            newSociety.Mandate = new Mandate
+            {
+                Risk = Numbers.Random(w.Seed, 51, bestTile),
+                Mobility = Numbers.Random(w.Seed, 52, bestTile),
+                Exploration = Numbers.Random(w.Seed, 53, bestTile),
+                Reserve = Numbers.Random(w.Seed, 54, bestTile),
+                Hunting = .85 + Numbers.Random(w.Seed, 55, bestTile) * .3,
+                Gathering = .85 + Numbers.Random(w.Seed, 56, bestTile) * .3,
+                Fishing = .85 + Numbers.Random(w.Seed, 57, bestTile) * .3
+            };
+
+            if (parentCamp.People != null)
+            {
+                if (parentCamp.People.Technologies != null)
+                    newSociety.Technologies = (bool[])parentCamp.People.Technologies.Clone();
+                if (parentCamp.People.Experience != null)
+                    newSociety.Experience = (double[])parentCamp.People.Experience.Clone();
+                if (parentCamp.People.NeolithicTechnologies != null)
+                    newSociety.NeolithicTechnologies = new List<string>(parentCamp.People.NeolithicTechnologies);
+                if (parentCamp.People.UnlockedSpecialists != null)
+                    newSociety.UnlockedSpecialists = new List<string>(parentCamp.People.UnlockedSpecialists);
+                if (parentCamp.People.CraftExperience != null)
+                    newSociety.CraftExperience = new Dictionary<string, double>(parentCamp.People.CraftExperience);
+                if (parentCamp.People.SpeciesExperience != null)
+                    newSociety.SpeciesExperience = parentCamp.People.SpeciesExperience
+                        .Select(p => new SpeciesPractice { Species = p.Species, Experience = p.Experience })
+                        .ToList();
+            }
+            w.Societies.Add(newSociety);
+
             var newCamp = new Camp
             {
                 Id = w.NextId++,
-                Player = parentCamp.Player,
-                SocietyId = parentCamp.SocietyId,
+                Player = nextPlayer,
+                SocietyId = newSociety.Id,
                 Tile = bestTile,
                 Population = splinterCount,
                 IsVillage = false,
@@ -593,7 +648,7 @@ namespace Anthropocene.Simulation
                     Houses = Math.Ceiling(splinterCount / 8.0)
                 }
             };
-            newCamp.Bind(parentCamp.People);
+            newCamp.Bind(newSociety);
             w.Camps.Add(newCamp);
 
             // Deduct transferred inventory from parent village
@@ -604,7 +659,9 @@ namespace Anthropocene.Simulation
             parentCamp.Inventory.Clay = Math.Max(0.0, parentCamp.Inventory.Clay - newCamp.Inventory.Clay);
             parentCamp.Inventory.Wood = Math.Max(0.0, parentCamp.Inventory.Wood - newCamp.Inventory.Wood);
 
-            record.Log($"Settlement Fission: {splinterCount} residents split from Village {parentCamp.Id} and founded Camp {newCamp.Id} on Tile {bestTile}.");
+            Ownership.Bind(w);
+
+            record.Log($"Settlement Fission: {splinterCount} residents split from Village {parentCamp.Id} and founded independent AI Tribe {nextPlayer} (Camp {newCamp.Id}) on Tile {bestTile}.");
         }
     }
 }

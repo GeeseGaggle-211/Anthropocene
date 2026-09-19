@@ -277,6 +277,11 @@ internal static class NeolithicChecks
         Check(camp.QoL < 0.50, "Severe deficits lower QoL");
         Check(w.Camps.Count > campsBefore, "Fission creates splinter camp when deficit exceeds 25 people");
         Check(camp.Population < popBefore, "Parent village population reduced by splinter group");
+        var splinterCamp = w.Camps.Last();
+        Check(splinterCamp.Player != camp.Player, "Splinter camp is handed off to independent AI player");
+        Check(splinterCamp.SocietyId != camp.SocietyId, "Splinter camp has independent society");
+        Check(w.Societies.Any(s => s.Id == splinterCamp.SocietyId && s.Player == splinterCamp.Player), "Splinter society registered in world");
+        Check(splinterCamp.Population + camp.Population == popBefore, "Population is conserved across fission");
     }
 
     private static void TestConvergenceTechnologies()
