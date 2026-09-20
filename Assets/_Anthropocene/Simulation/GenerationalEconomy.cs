@@ -69,19 +69,28 @@ namespace Anthropocene.Simulation
                 if (CultivationEconomy.Enabled(camp))
                 {
                     var eligible = w.Map.Radius(camp.Tile, w.Config.GatherRadius).Where(id => PassiveGathering.Eligible(w, camp, id)).OrderBy(id => id).ToArray();
-                    double available = eligible.Sum(id => Resource(id).AvailableFood);
                     var fields = new HashSet<int>(labor.Footprint.Where(id => w.Tiles[id].CultivationCapital > 0 && w.Tiles[id].CultivationOperator == camp.Id));
-                    double fieldAvailable = fields.Sum(id => Resource(id).AvailableFood);
-                    double useful = UsefulCampFoodDemand(w, camp, intervals, years);
-                    double farm = Math.Min(fieldAvailable, Math.Min(useful, labor.OperatingFarmers * w.Config.FarmerProductivity * w.Config.GatherPerPerson * intervals));
-                    double gather = Math.Min(Math.Max(0, available - farm), Math.Min(Math.Max(0, useful - farm), gatherers * w.Config.GatherPerPerson * intervals));
-                    foreach (int id in eligible)
+                    var remaining = eligible.ToDictionary(id => id, id => Resource(id).AvailableFood);
+                    double Allocate(IEnumerable<int> candidates, double requested, bool farmer, bool manufacturing)
                     {
-                        double fieldShare = fieldAvailable > 0 && fields.Contains(id) ? Resource(id).AvailableFood / fieldAvailable : 0;
-                        double share = available > farm ? Math.Max(0, Resource(id).AvailableFood - farm * fieldShare) / (available - farm) : 0;
-                        if (farm * fieldShare > 0) campClaims[camp.Id].Add(new Demand { Entity = camp.Id, Tile = id, Kind = "Cultivation", Food = farm * fieldShare, ImpactMultiplier = PracticeEffects.GatheringImpact(w.Config, camp) });
-                        if (gather > 0) campClaims[camp.Id].Add(new Demand { Entity = camp.Id, Tile = id, Kind = PassiveGathering.Kind(w.Tiles[id]), Food = gather * share, ImpactMultiplier = PracticeEffects.GatheringImpact(w.Config, camp) });
+                        var ids = candidates.Where(remaining.ContainsKey).OrderBy(id => id).ToArray();
+                        double available = ids.Sum(id => remaining[id]); double accepted = Math.Min(Math.Max(0, requested), available);
+                        if (accepted <= 0) return 0;
+                        foreach (int id in ids)
+                        {
+                            double amount = accepted * remaining[id] / available; remaining[id] = Math.Max(0, remaining[id] - amount);
+                            campClaims[camp.Id].Add(new Demand { Entity = camp.Id, Tile = id, Kind = farmer ? "Cultivation" : PassiveGathering.Kind(w.Tiles[id]), Food = amount, Manufacturing = manufacturing, ImpactMultiplier = PracticeEffects.GatheringImpact(w.Config, camp) });
+                        }
+                        return accepted;
                     }
+                    double farmCapacity = labor.OperatingFarmers * w.Config.FarmerProductivity * w.Config.GatherPerPerson * intervals;
+                    double gatherCapacity = gatherers * w.Config.GatherPerPerson * intervals;
+                    double feedstock = FabricFeedstockShortfall(w, camp, intervals, years);
+                    double farmInput = Allocate(fields, Math.Min(farmCapacity, feedstock), true, true);
+                    double gatheredInput = Allocate(eligible.Where(id => w.Tiles[id].Land), Math.Min(gatherCapacity, feedstock - farmInput), false, true);
+                    double biological = BiologicalFoodDemand(w, camp, intervals, years);
+                    double farm = Allocate(fields, Math.Min(farmCapacity - farmInput, biological), true, false);
+                    Allocate(eligible, Math.Min(gatherCapacity - gatheredInput, biological - farm), false, false);
                     // Keep operated ecology active even when accepted food demand is zero.
                     foreach (int id in labor.Footprint.Where(id => w.Tiles[id].CultivationOperator == camp.Id)) demands.Add(new Demand { Tile = id, Entity = camp.Id, Kind = "Field operation" });
                     continue;
@@ -101,12 +110,11 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 var claims = campClaims[camp.Id];
-                double total = claims.Sum(d => d.Food);
-                double useful = UsefulCampFoodDemand(w, camp, intervals, years);
-                double scale = Math.Min(1, useful / Math.Max(1e-12, total));
+                double scale = Math.Min(1, BiologicalFoodDemand(w, camp, intervals, years) / Math.Max(1e-12, claims.Where(d => !d.Manufacturing).Sum(d => d.Food)));
+                double inputScale = Math.Min(1, FabricFeedstockShortfall(w, camp, intervals, years) / Math.Max(1e-12, claims.Where(d => d.Manufacturing).Sum(d => d.Food)));
                 foreach (var claim in claims)
                 {
-                    claim.Food *= scale;
+                    claim.Food *= claim.Manufacturing ? inputScale : scale;
                     demands.Add(claim);
                 }
             }
@@ -287,6 +295,8 @@ namespace Anthropocene.Simulation
         // the configured operating reserve, then the food budget for maximum growth.
         // Already-realized connected hunting consumes this budget.
         public static double UsefulCampFoodDemand(WorldState w, Camp camp, double intervals, double years)
+            => BiologicalFoodDemand(w, camp, intervals, years) + FabricFeedstockShortfall(w, camp, intervals, years);
+        private static double BiologicalFoodDemand(WorldState w, Camp camp, double intervals, double years)
         {
             int reproductivePopulation = camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
             double populationBase = reproductivePopulation * w.Config.Consumption * intervals;
@@ -296,13 +306,35 @@ namespace Anthropocene.Simulation
             return Math.Max(0, totalIncomeTarget - camp.StepFoodIncome);
         }
 
+        private static double FabricFeedstockShortfall(WorldState w, Camp camp, double intervals, double years)
+        {
+            double input = NeolithicProduction.FabricFeedstockNeed(w, camp, intervals, years);
+            if (input <= 0) return 0;
+            int population = camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
+            double consumption = population * w.Config.Consumption * intervals;
+            double reserve = consumption * Math.Min(w.Config.GrowthReserveTurns, StorageGenerations(w, camp.Tile));
+            double sparePlant = Math.Min(camp.PlantFood, Math.Max(0, camp.Food - consumption - reserve));
+            return Math.Max(0, input - sparePlant);
+        }
+        private static void ConsumeCampFood(WorldState w, Camp camp, double amount, double intervals, double years)
+        {
+            // Basic needs always get paid. Preserve plant feedstock only to the extent
+            // other food can cover this debit; there is still one conserved inventory.
+            double protectedPlant = Math.Min(camp.PlantFood, Math.Min(Math.Max(0, camp.Food - amount), NeolithicProduction.FabricFeedstockNeed(w, camp, intervals, years)));
+            if (protectedPlant <= 0) { camp.Food -= amount; return; }
+            double available = camp.Food - protectedPlant;
+            double retained = available > 0 ? Math.Max(0, available - amount) / available : 0;
+            camp.PlantFood = protectedPlant + (camp.PlantFood - protectedPlant) * retained;
+            camp.AnimalFood *= retained; camp.AquaticFood *= retained;
+        }
+
         private static void SustainGeneration(WorldState w, TurnRecord record, double intervals, double generationScale, Dictionary<int, GrowthPlan> plans, Dictionary<int, double> foraged, HashSet<int> recovering)
         {
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 var linked = w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).OrderBy(h => h.Id).ToArray();
                 int total = camp.Population + linked.Sum(h => h.Population); double required = plans[camp.Id].ConsumptionRequired;
-                camp.LastConsumed = Math.Min(required, camp.Food); camp.Food -= camp.LastConsumed; camp.FoodDeficit = required - camp.LastConsumed;
+                camp.LastConsumed = Math.Min(required, camp.Food); ConsumeCampFood(w, camp, camp.LastConsumed, intervals, record.Duration / w.Config.DaysPerYear); camp.FoodDeficit = required - camp.LastConsumed;
                 camp.FoodNeedsMetRatio = required > 0 ? camp.LastConsumed / required : 1;
                 if (camp.FoodDeficit > 1e-8) { camp.DeficitTurns++; camp.DeficitSeverity += camp.FoodDeficit / Math.Max(1, required) * generationScale; }
                 else { camp.DeficitTurns = 0; camp.DeficitSeverity = 0; }
@@ -319,7 +351,7 @@ namespace Anthropocene.Simulation
                 else
                 {
                     double growthFood = Math.Min(plans[camp.Id].GrowthFood, camp.Food);
-                    camp.Food -= growthFood; camp.LastConsumed += growthFood;
+                    ConsumeCampFood(w, camp, growthFood, intervals, record.Duration / w.Config.DaysPerYear); camp.LastConsumed += growthFood;
                     AddGrowth(w, camp, plans[camp.Id], record, summary);
                 }
                 summary.FoodConsumed += camp.LastConsumed;

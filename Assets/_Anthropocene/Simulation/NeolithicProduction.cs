@@ -93,6 +93,13 @@ namespace Anthropocene.Simulation
             return Math.Max(0, target - Stock(c, good));
         }
         public static double StorageCapacityMultiplier(Camp c) => 1;
+        public static double FabricFeedstockNeed(WorldState w, Camp c, double intervals, double years)
+        {
+            if (!CultivationEconomy.Enabled(c) || c.Population <= 0 || c.CraftingPriorities.Cloth <= 0) return 0;
+            var coverage = new ToolCoverageBudget(w, c, intervals);
+            var planned = MaterialEconomy.Forecast(w, c, Recipes(w.Config), intervals, years, coverage.Remaining, true);
+            return planned[CraftGood.Cloth] * w.Config.Neolithic.PlantFoodPerFabricUnit;
+        }
         public static double FarmerMaintenanceMultiplier(Camp c) => 1;
         public static double DomesticExpectationFactor(Camp c) => c.RudimentaryExpectation;
         public static bool CanIrrigateTile(WorldState w, Camp c, int tile, out string reason) { reason = "Irrigation construction and effects are deferred."; return false; }

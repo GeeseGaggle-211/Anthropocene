@@ -142,11 +142,11 @@ namespace Anthropocene.Simulation
         public static double Inventory(Camp c, MaterialId material) => material == MaterialId.Stone ? c.Inventory.Stone : material == MaterialId.Clay ? c.Inventory.Clay : c.Inventory.Wood;
         // Mirror the ordered recipe/role plan without changing stock or gaining progress.
         // Each worker and tool interval is forecast only once, not once per recipe.
-        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment)
+        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand = false)
         {
             var planned = recipes.ToDictionary(r => r.Good, r => 0.0);
             var tools = new ToolCoverageBudget(w, c, intervals, equipment);
-            double plant = c.PlantFood;
+            double plant = includePlantDemand ? double.PositiveInfinity : c.PlantFood;
             foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
             {
                 double labor = CultivationEconomy.Workers(c, role) * intervals;

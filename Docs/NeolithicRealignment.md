@@ -50,8 +50,12 @@ historical repository design notes are not authority over these contracts.
   Cultivation changes accessible capacity and bounded managed renewal; it does
   not generate inventory independently. Competing claims share the same tile
   supply. Operating farmers receive their settlement's capped food share first;
-  gathering fills the actual gap. The common consumption/reserve/growth budget
-  caps accepted food. The old Cultivated flag has no flat food bonus.
+  gathering fills the actual gap. The common consumption/reserve/growth and
+  manufacturing-input budget caps accepted food. Fabric adds a plant-only
+  accepted-input sub-budget; ample animal/aquatic food cannot hide that shortage
+  or fill that input claim. Basic consumption is always paid first, preserving
+  plant feedstock only when other food covers the debit. There is no second
+  food inventory. The old Cultivated flag has no flat food bonus.
 - Construction and abandonment are coupled at canonical seasonal barriers,
   rather than depositing twenty years of capital after twenty years of ecology.
   Abandoned E persists and decays. Canonical wooded predicates, not a High
@@ -134,7 +138,7 @@ Implementation revisions: `89507bd1a9430f463d428deab79f4ae5afaefc84`
 (realignment, validated intents, persistence and tests) and
 `aef585738a3fae21b692827160ca096da0a3a555` (depopulated-field reclamation).
 
-The headless focused runner `--neolithic-only` now has 194 assertions. Coverage
+The headless focused runner `--neolithic-only` now has 202 assertions. Coverage
 includes capability/q-zero gates, exact recipes, role efficiency, input/tool
 constraints, graded QoL, all listed Fabric/Housing sweep combinations,
 parameterized legal masks, invalid/zero save states, legacy migration, shared
@@ -145,7 +149,7 @@ Time checks compare twenty years against one-year partitions under fixed
 forcing, including combined construction/decay/ecology at seasonal boundaries.
 They do not claim continuous within-season crop physiology. The seed-101
 five-generation economic smoke agrees between scalar and parallel execution
-with reload after each generation: population 100, maximum q 0.11239706, QoL 1,
+with reload after each generation: population 100, maximum q 0.11247694, QoL 1,
 60 extraction receipts, no discarded useful food and no excess workforce.
 
 The complete headless regression with three seeded opening simulations passed:
@@ -153,11 +157,15 @@ The complete headless regression with three seeded opening simulations passed:
 aquatic, preset, ecology, agent and parallel replay suites. Three seeded games:
 12/12 survivors, zero starvation deaths, zero illegal orders, net growth 874.
 After the final usable-Copper-demand and absent-field migration corrections,
-`--economy-only` passed again with all 194 Neolithic assertions, including
+`--economy-only` passed again with all 202 Neolithic assertions, including
 reclaiming a depopulated settlement's fields without erasing capital. Added fields
 are optional in the serialization contract; defaults apply only when a member
 is absent. Explicit zero priorities survive. Impossible legacy pre-Agriculture
 jobs are released to real gatherers without changing population.
+The Fabric feedstock regression starts with full biological reserves consisting
+entirely of animal food and zero plant stock. It gathers exactly 100 plant Food,
+produces/consumes 100 Fabric, retains the 8,000-unit food reserve, and records
+zero harvest waste. Without tool coverage it creates no speculative input demand.
 Unity EditMode: 26/26 passed. The Windows
 development player builds in a separate Neolithic output directory.
 

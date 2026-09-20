@@ -8,6 +8,7 @@ namespace Anthropocene.Simulation
     {
         public int Tile, Entity;
         public string Kind;
+        public bool Manufacturing;
         public double Food, PotentialFood, Freshwater;
         public double ImpactMultiplier = 1;
     }

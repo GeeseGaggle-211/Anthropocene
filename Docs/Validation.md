@@ -3,7 +3,7 @@
 ## Neolithic realignment — September 20, 2026
 
 See [NeolithicRealignment.md](NeolithicRealignment.md#verification-and-boundaries)
-for the source hierarchy, replacement architecture, 194 focused acceptance
+for the source hierarchy, replacement architecture, 202 focused acceptance
 assertions, five-generation deterministic economic smoke, successful full
 three-seed regression, 26/26 Unity EditMode tests, and explicit deferred systems.
 The final focused economic regression includes scalar/2/4-worker comparisons

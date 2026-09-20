@@ -252,6 +252,22 @@ internal static class NeolithicChecks
         Near(urbanTurn.Transfers.Sum(t => t.Food), 0, "import compatibility does not create local yield");
         Near(town.PlantFood, 5000 * urban.Config.GenerationIntervals, "imported food is consumed and retained in ordinary reserve budget");
 
+        var textileTown = Fixture(); var textileCamp = textileTown.Camps[0];
+        textileCamp.PlantFood = 0; textileCamp.AnimalFood = 16000;
+        textileCamp.Workforce.Assign(WorkforceRoles.Craftsperson, 5, 100); textileCamp.Inventory.HandTools = 5;
+        textileCamp.Inventory.HousingUnits = 25; textileTown.Config.Neolithic.UsefulFinishedGoodsReserveTurns = 0;
+        Near(TurnResolver.UsefulCampFoodDemand(textileTown, textileCamp, 80, 20), 100, "real Fabric need adds plant feedstock to the shared useful food budget");
+        var textileTurn = new TurnResolver().Resolve(textileTown, new Dictionary<int, List<Order>>());
+        Near(textileTurn.Transfers.Where(t => t.Entity == textileCamp.Id).Sum(t => t.Food), 100, "non-plant reserves cannot mask useful plant-feedstock gathering");
+        Near(textileCamp.FabricConsumed, 100, "gathered plant feedstock survives ordinary food accounting until actual Fabric consumption");
+        Near(textileCamp.PlantFood, 0, "exactly one gathered PlantFood per Fabric is debited");
+        Near(textileCamp.Food, 8000, "manufacturing preserves the biological reserve without a second food pool");
+        Near(textileTurn.Demographics.Single().ManufacturingFood, 100, "Fabric inputs appear in the conserved food report");
+        Near(textileTurn.Demographics.Single().DiscardedInventory, 0, "industrial food acceptance cannot cause harvest waste");
+        var uncoveredTextile = Fixture(); uncoveredTextile.Camps[0].PlantFood = 0; uncoveredTextile.Camps[0].AnimalFood = 16000;
+        uncoveredTextile.Camps[0].Workforce.Assign(WorkforceRoles.Craftsperson, 5, 100);
+        Near(TurnResolver.UsefulCampFoodDemand(uncoveredTextile, uncoveredTextile.Camps[0], 80, 20), 0, "missing tool coverage cannot create speculative textile feedstock demand");
+
         foreach (double consumption in new[] { .25, .5, 1, 2, 4 })
         {
             var sweep = Fixture(); var person = sweep.Camps[0]; sweep.Config.Neolithic.FabricConsumptionPerPersonTurn = consumption;
