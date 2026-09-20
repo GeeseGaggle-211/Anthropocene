@@ -1,5 +1,7 @@
 # Current-engine Neolithic sweeps — September 20, 2026
 
+**Historical pre-automation measurements.** The saved demand planner and specialist adoption now replace the limitations diagnosed in this pass. See [EconomicAutomation.md](EconomicAutomation.md) and [NeolithicAutomationResults.md](NeolithicAutomationResults.md) for the later implementation and rerun. The original results below are preserved for comparison, not presented as current behavior.
+
 Simulation source revision: `1c95bf6a7ec3ece9513e781211e1f24b29cef029`.
 This measurement pass changes no gameplay source or production constants.
 

@@ -18,6 +18,8 @@ The settlement inspector offers **Allocate once**, **Off**, **Next N turns**, an
 
 The pure `EconomicPlanner` sizes useful manufacturing from stock-adjusted Clothing, once-depreciated Housing including anticipated growth, and explicit Pots/Farm Tools targets. It uses current recipe-local productivity and shared tool coverage, prefers unlocked matching specialists, checks known accessible source capacity, and budgets input gathering and plant-food demand. Integer job assignments use a bounded fulfillment search to fit one resident workforce. This is a deterministic local heuristic, not a global optimum or a promise that all demand is feasible.
 
+The plant-input projection first accounts for meals for residents and connected hunters. A known subsistence shortfall cannot simultaneously justify textile jobs using those same forecast food units. Realized ecological yield may still differ from the projection, so actual production retains independent input checks.
+
 Existing fields receive operating farmers first. Those farmers may harvest the settlement's shared accessible food, subject to the same ecological cap and demand as gathering. Supplemental food gatherers fill the remaining gap. Material-gathering worker-time is explicitly reserved and cannot also harvest food. Expansion farmers are separately reserved; at q=0 they cannot harvest. Extra operating farmers do not multiply the field-operation factor above one. Old manual plans with no explicit labor plan retain their maintenance/surplus-expansion split.
 
 Expansion is considered against the next demand forecast, not an assumed century of exponential population growth. The planner checks net marginal ecological benefit, including canonical clearing pressure and the existing sustainable-production thresholds. This does not impose a new physical q cap, change the cultivation equation, or prevent manual investment. The resolver still uses its repeated marginal tile allocator and real labor cost.
@@ -44,4 +46,4 @@ Source ledgers remain authoritative. Neighboring settlements can forecast demand
 
 Pots and Farm Tools still default to zero target because their broader effects remain deferred. Default runs therefore need not unlock Pottery/Carpentry or their extractors. Toolmaking cannot be forced through stockpiling after useful durable-tool demand is satisfied. No artificial wear, invented demand, free technology, Copper progression, irrigation effect, generic tool bonus, automatic fission, full trade, or expedition formula was added.
 
-Validation evidence and measured sweep results are recorded separately after execution.
+Validation evidence and measured sweep results are recorded in [NeolithicAutomationResults.md](NeolithicAutomationResults.md) and [Validation.md](Validation.md).

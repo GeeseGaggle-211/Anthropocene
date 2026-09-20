@@ -1,4 +1,15 @@
-# Validation - September 18, 2026
+# Validation - September 21, 2026
+
+## Saved Neolithic demand automation — September 21, 2026
+
+Current behavior and reproducible measurements are in [EconomicAutomation.md](EconomicAutomation.md) and [NeolithicAutomationResults.md](NeolithicAutomationResults.md). Tested simulation revision: `abe3e685ea17dda4ee3cf19b8e6c8fa837fe53b8` after foundation commit `ab54ecf090ad89e56897cba2b4dbfc94b017f8e3`.
+
+- Final headless economic pass: 209 existing Neolithic and 76 new automation assertions; material capacity/receipts, matching specialists, no-source/zero states, operating-versus-expansion/material labor, imported-food compatibility, invalid intent rejection, finite/continuous/off automation, exact save/load continuation, and subsistence/Fabric/growth separation. Existing economic/AI suites and scalar-versus-two/four-worker replay pass. The broader fixed suite also passed before the last food-projection refinement, including 8,948 geology assertions; final economic checks were rerun afterward. No worldgen calibration changed.
+- Final Unity EditMode: 28/28 pass. Windows player build succeeds. Automated player verification checks ordinary validated intent submission without live mutation, E growth, Fabric inventory debit, no Irrigation grant, exact isolated save/load and two-turn automation continuing through load without resubmission. All five captures exist and the controls were visually inspected. This is not a human usability playtest; normal user save slots were not touched.
+- 168 current-engine runs / 4,200 twenty-year generation records completed with zero resolver errors, source/recipe conservation failures or workforce violations. All 75 independently replayed baseline generation records match exactly. Baseline configuration hash matches the prior sweep. Four rows have numerical food-discard residuals above 1e-6, with maximum 1.6023550415411592e-6 Food (at most 2.1400654500575367e-11 of harvest); they remain explicitly reported diagnostic flags.
+- Seed-11 river reference: population 250 to 942 over 500 years, zero deaths, full needs, 2.25% productive craft work, approximately 100% farmer food attribution, Weaving/Construction at year 40. Food-poor open fixtures remain constrained and can lose population. This is neither a random global sample nor historical validation.
+
+Evidence: ignored `TestResults/NeolithicAutomation-Validated`, `NeolithicAutomation-Validated-Replay`, `Automation-Unity/tests-final.xml`, `Automation-Unity/build-final.log`, and `Automation-Unity/Player-final`. Raw JSON/JSONL, configuration snapshots, summaries and replay are packaged by `Tools/NeolithicSweeps/SummarizeAutomation.py`; generated evidence/builds are deliberately not committed. Global source-reservation optimization and all explicitly deferred later-era systems remain out of scope.
 
 ## Neolithic realignment — September 20, 2026
 

@@ -60,7 +60,9 @@ internal static class Program
         Console.WriteLine("GENERATING seed=" + seed);
         var world = new WorldGenerator().Generate(seed, cfg, resources); var sites = SelectSites(world);
         world.Camps.Clear(); world.Societies.Clear(); world.Hunters.Clear(); world.Herds.Clear(); world.Improvements.Clear();
-        var original = SaveCodec.Save(world); var variants = Variants(pilot).Where(v => !args.Contains("--replicate") || v.Family == "baseline" || v.Family == "fabric" || v.Family == "farmer").Where(v => !args.Contains("--managed") || new[] { "baseline", "fabric", "farmer", "flux", "decay", "builder", "extraction" }.Contains(v.Family)).ToArray();
+        int parts = int.Parse(Value("--parts", "1")), part = int.Parse(Value("--part", "0"));
+        if (parts < 1 || part < 0 || part >= parts) throw new ArgumentException("Invalid sweep partition.");
+        var original = SaveCodec.Save(world); var variants = Variants(pilot).Where(v => !args.Contains("--replicate") || v.Family == "baseline" || v.Family == "fabric" || v.Family == "farmer").Where(v => !args.Contains("--managed") || new[] { "baseline", "fabric", "farmer", "flux", "decay", "builder", "extraction" }.Contains(v.Family)).Where((v, index) => index % parts == part).ToArray();
         File.WriteAllText(Path.Combine(output, "variants-" + seed + ".json"), JsonSerializer.Serialize(variants, Json));
         using var trajectories = new StreamWriter(Path.Combine(output, "trajectories-" + seed + ".jsonl"));
         using var finals = new StreamWriter(Path.Combine(output, "runs-" + seed + ".jsonl"));
