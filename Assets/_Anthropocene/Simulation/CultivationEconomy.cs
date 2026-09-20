@@ -26,13 +26,13 @@ namespace Anthropocene.Simulation
         public static AgriculturalLabor Prepare(WorldState w, Camp camp, double start)
         {
             var plan = new AgriculturalLabor { Gatherers = camp.GathererPopulation + Workers(camp, WorkforceRoles.Gatherer) };
-            if (!Enabled(camp)) return plan;
+            if (!Enabled(camp) || camp.Population <= 0) return plan;
             plan.Footprint = Footprint(w, camp);
             double required = 0;
             foreach (int id in plan.Footprint)
             {
                 var t = w.Tiles[id]; LazyEcology.MaterializeEcology(w, id, start);
-                if (t.CultivationOperator >= 0 && !w.Camps.Any(c => c.Id == t.CultivationOperator && Enabled(c) && w.Map.Distance(c.Tile, id) <= 1)) t.CultivationOperator = -1;
+                if (t.CultivationOperator >= 0 && !w.Camps.Any(c => c.Id == t.CultivationOperator && c.Population > 0 && Enabled(c) && w.Map.Distance(c.Tile, id) <= 1)) t.CultivationOperator = -1;
                 if (t.CultivationCapital > 0 && t.CultivationOperator < 0) t.CultivationOperator = camp.Id;
                 if (t.CultivationOperator != camp.Id) continue;
                 Factors(w.Config, t, out _, out double maint);
@@ -48,7 +48,7 @@ namespace Anthropocene.Simulation
         // Each increment is scored again against the current capital and upkeep costs.
         public static double Expand(WorldState w, Camp camp, double workerYears, bool bridge, TurnRecord record)
         {
-            if (!Enabled(camp) || workerYears <= 0 || bridge && w.Config.GathererBridgeEfficiency <= 0) return 0;
+            if (!Enabled(camp) || camp.Population <= 0 || workerYears <= 0 || bridge && w.Config.GathererBridgeEfficiency <= 0) return 0;
             var c = w.Config; var n = c.Neolithic;
             double remaining = workerYears * (bridge ? c.GathererBridgeEfficiency : 1);
             double ceiling = Math.Pow((bridge ? c.GathererBridgeCeiling : 1) / c.ReferenceIntensity, 2);

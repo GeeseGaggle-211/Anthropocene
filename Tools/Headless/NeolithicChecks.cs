@@ -82,6 +82,8 @@ internal static class NeolithicChecks
         first.CultivationFocusTile = first.Tile; second.CultivationFocusTile = first.Tile;
         CultivationEconomy.Expand(overlapping, first, cost, false, new TurnRecord()); CultivationEconomy.Expand(overlapping, second, cost, false, new TurnRecord());
         Check(overlapping.Tiles[first.Tile].CultivationOperator == first.Id, "one operator wins shared field"); Near(overlapping.Tiles[first.Tile].CultivationCapital, 1, "losing claimant invests elsewhere");
+        first.Population = 0; first.Workforce.Assignments.Clear(); CultivationEconomy.Prepare(overlapping, second, 0);
+        Check(overlapping.Tiles[first.Tile].CultivationOperator == second.Id && Math.Abs(overlapping.Tiles[first.Tile].CultivationCapital - 1) < 1e-8 && CultivationEconomy.Prepare(overlapping, first, 0).Footprint.Length == 0, "abandoned dead-settlement fields are reusable without erasing physical capital");
         var bridge = Fixture(); var bc = bridge.Camps[0]; bc.IsVillage = true; bc.CultivationFocusTile = bc.Tile;
         CultivationEconomy.Expand(bridge, bc, cost * 100, true, new TurnRecord()); Check(bridge.Tiles.All(tile => tile.Cultivation <= .25000001), "bridge cap applies in villages");
         var zero = Fixture(); zero.Camps[0].Workforce.Assign(WorkforceRoles.Farmer, 100, 100); var before = zero.Camps[0].PlantFood;
