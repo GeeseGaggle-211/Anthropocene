@@ -43,6 +43,7 @@ In the tables below, simulation filenames are relative to `Assets/_Anthropocene/
 | Player verification | `OpeningSmoke.cs`: opt-in normal/preset/atlas smoke routes. `OpeningArtReview.cs`: synthetic fixtures through the production renderer. |
 | Build and import | `Assets/_Anthropocene/Editor/PrototypeBuild.cs`: `PrototypeBuild.Windows`. `Assets/_Anthropocene/Editor/SymbolicTextureImport.cs`: sprite import settings. |
 | Headless checks | `Tools/Headless/Program.cs`: fixed checks, CLI switches and seeded reports; `Tools/Test-Headless.ps1` drives it. `Tools/WorldAtlas/Export-Worlds.ps1` exports actual generated geography, metrics and optional separate saves. |
+| Neolithic coupled sweeps | `Tools/NeolithicSweeps/Program.cs`: paired 500-year current-engine experiments, explicit stock/replan/managed-control policies and conditional tool probes. `Summarize.py` validates run counts/replay and exports measured tables and charts. Read `Docs/NeolithicSweepResults.md` for scenario assumptions and known allocation limitations. |
 | Spawned-tribe resource audit | `Tools/ResourceAccess/Measure-Starts.ps1` generates five Standard/80-tribe worlds and measures nearest land/geometric sources and local accessible stocks without changing state. `Summarize.py` produces per-tribe and aggregate CSV; methodology/results are in `Docs/SpawnResourceAccess.md`. |
 
 The `Opening*.cs` UI files share one partial `OpeningGame` class; they are not independent components. Keep changes in the appropriate partial file.

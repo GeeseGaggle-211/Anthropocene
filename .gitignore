@@ -44,3 +44,4 @@ Desktop.ini
 TestResults/
 !Tools/Headless/Anthropocene.Headless.csproj
 !Tools/ResourceAccess/Anthropocene.ResourceAccess.csproj
+!Tools/NeolithicSweeps/Anthropocene.NeolithicSweeps.csproj

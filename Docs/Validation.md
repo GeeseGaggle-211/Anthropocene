@@ -2,6 +2,13 @@
 
 ## Neolithic realignment — September 20, 2026
 
+The subsequent [coupled sweep report](NeolithicSweepResults.md) separates recipe
+contract checks from 500-year economy balance. Revised craft labor rates agree
+with the design, but default allocation can starve tool bootstrap and does not
+adopt unlocked specialists. A roughly 0.000160652-Food discard residual also
+appears outside the original zero-waste fixture. No gameplay retuning was made
+as part of that measurement pass.
+
 See [NeolithicRealignment.md](NeolithicRealignment.md#verification-and-boundaries)
 for the source hierarchy, replacement architecture, 202 focused acceptance
 assertions, five-generation deterministic economic smoke, successful full
