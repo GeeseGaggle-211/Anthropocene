@@ -18,6 +18,8 @@ namespace Anthropocene.Presentation
             int presets = Array.IndexOf(args, "--anthropocene-presets-output");
             int atlas = Array.IndexOf(args, "--anthropocene-atlas-output");
             int resources = Array.IndexOf(args, "--anthropocene-resources-output");
+            int neolithic = Array.IndexOf(args, "--anthropocene-neolithic-smoke-output");
+            if (neolithic >= 0 && neolithic + 1 < args.Length) { yield return NeolithicSmoke(args[neolithic + 1]); yield break; }
             if (resources >= 0 && resources + 1 < args.Length) { yield return ResourceSmoke(args[resources + 1]); yield break; }
             if (atlas >= 0 && atlas + 1 < args.Length) { yield return AtlasSmoke(args[atlas + 1]); yield break; }
             if (presets >= 0 && presets + 1 < args.Length) { yield return PresetSmoke(args[presets + 1]); yield break; }
@@ -72,6 +74,43 @@ namespace Anthropocene.Presentation
             Application.Quit();
         }
 
+        private IEnumerator NeolithicSmoke(string directory)
+        {
+            Application.runInBackground = true;
+            string output = Path.GetFullPath(directory); Directory.CreateDirectory(output);
+            NewGame(); while (generating != null) yield return null;
+            if (world == null) throw new InvalidOperationException("Neolithic smoke generation failed.");
+            // Explicit synthetic capability/inventory fixture on real generated geography.
+            // This opt-in route neither grants a technology through player controls nor
+            // uses a user's save slot; it tests the production UI after capability unlock.
+            var camp = world.Camps.Single(c => c.Player == 0);
+            camp.Population = 100; camp.PlantFood = 12000; camp.Technology = Technology.Cultivation;
+            camp.Technologies[(int)Technology.Cultivation] = true; camp.People.Progression.Era = Era.Neolithic;
+            camp.Inventory.HandTools = 20; camp.Inventory.Cloth = 100; camp.Inventory.HousingUnits = 25;
+            world.Config.AnnualHumanGrowthRate = 0; transitionDismissed = true;
+            Refresh(); villageInspectorOpen = true; villageInspectorCampId = camp.Id;
+            string before = SaveCodec.Fingerprint(world);
+            var intent = EconomicIntent.From(camp); intent.Assignments.Clear();
+            intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = 20 });
+            intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = 10 });
+            intent.Priorities.Cloth = .37; Queue(new Order(OrderKind.Economy, camp.Id) { Economy = intent });
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "01-queued-economy.png")); yield return new WaitForSeconds(.4f);
+            if (SaveCodec.Fingerprint(world) != before) throw new InvalidOperationException("Queued economic controls changed live state before commit.");
+            EndTurn(); while (resolving != null) yield return null;
+            double fabricOutput = world.History.Last().Production.Where(p => p.Camp == camp.Id && p.Good == CraftGood.Cloth).Sum(p => p.Output);
+            if (camp.Workforce.Assigned != 30 || camp.CraftingPriorities.Cloth != .37 || camp.FabricConsumed <= 0 || Math.Abs(100 + fabricOutput - camp.FabricConsumed - camp.Inventory.Cloth) > 1e-8 || !world.Tiles.Any(t => t.CultivationCapital > 0) || camp.People.HasTech(NeolithicTech.Irrigation)) throw new InvalidOperationException("Neolithic player intent/needs contract failed: " + status);
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "02-resolved-economy.png")); yield return new WaitForSeconds(.4f);
+            string saved = SaveCodec.Fingerprint(world); var snapshot = world;
+            operation = "Restoring Neolithic validation state";
+            generating = Task.Run(() => { var bytes = SaveCodec.Save(snapshot); File.WriteAllBytes(Path.Combine(output, "validation.anthro"), bytes); return SaveCodec.Load(bytes); });
+            while (generating != null) yield return null;
+            if (SaveCodec.Fingerprint(world) != saved) throw new InvalidOperationException("Neolithic player save/load changed authoritative state.");
+            villageInspectorOpen = true; villageInspectorCampId = camp.Id;
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "03-restored-economy.png")); yield return new WaitForSeconds(1);
+            if (Directory.GetFiles(output, "*.png").Length != 3) throw new InvalidOperationException("Missing Neolithic player captures; use a visible player window.");
+            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: synthetic Agriculture fixture on Standard/Continents/1729 generated geography. Economic plan queued without live mutation, committed through normal turn resolution, real E growth, recurring Fabric debit, no Irrigation grant, and isolated exact save/load. Three actual Windows player captures. Not a natural-progression balance study or a human usability test.\n");
+            Application.Quit();
+        }
         private IEnumerator AtlasSmoke(string directory)
         {
             Application.runInBackground = true;

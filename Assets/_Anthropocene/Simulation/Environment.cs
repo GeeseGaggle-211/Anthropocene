@@ -8,6 +8,8 @@ namespace Anthropocene.Simulation
 
     public static class Vegetation
     {
+        public static bool IsWooded(Tile t) => t.Land && t.CurrentVegetation >= VegetationTier.Medium &&
+            (t.Environment == EnvironmentKind.Temperate || t.Environment == EnvironmentKind.Tropical || t.Environment == EnvironmentKind.Cold);
         public static EnvironmentKind Classify(double temperature, double regionalMoisture, SimulationConfig c) =>
             temperature < c.IceTemperature ? EnvironmentKind.Ice : temperature < c.ColdTemperature ? EnvironmentKind.Cold :
             regionalMoisture < c.DesertMoisture ? EnvironmentKind.Desert : regionalMoisture < c.SteppeMoisture ? EnvironmentKind.Grassland :

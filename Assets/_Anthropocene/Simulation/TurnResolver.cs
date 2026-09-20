@@ -79,6 +79,7 @@ namespace Anthropocene.Simulation
                 }
             }
             // Herd intentions are computed before dispatch or movement reveals new hunter positions.
+            foreach (var order in locked.Where(o => o.Kind == OrderKind.Economy).OrderBy(o => o.Entity)) EconomicIntents.Apply(w.Camps.First(c => c.Id == order.Entity), order.Economy);
             var phaseTimer = System.Diagnostics.Stopwatch.StartNew();
             var herdInputs = w.Herds.OrderBy(h => h.Id).ToArray();
             var destinations = execution.Map(herdInputs, h => HerdDestination(w, h, planning));
@@ -158,7 +159,7 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 int target = destinations[camp.Id];
-                if (target != camp.Tile) { camp.Moves++; camp.StationaryTurns = 0; record.Log("Camp " + camp.Id + " moved from " + camp.Tile + " to " + target + "."); }
+                if (target != camp.Tile) { camp.Moves++; camp.StationaryTurns = 0; camp.StationaryYears = 0; record.Log("Camp " + camp.Id + " moved from " + camp.Tile + " to " + target + "."); }
                 else camp.StationaryTurns++;
                 camp.Tile = target;
             }
@@ -269,6 +270,11 @@ namespace Anthropocene.Simulation
         }
         public static void Invariants(WorldState w, int expectedPeople = -1, IEnumerable<Tile> ecologyScope = null)
         {
+            if (w.MaterialSources == null || w.MaterialKnowledge == null || w.MaterialSources.Any(s => s == null || string.IsNullOrWhiteSpace(s.Id) || !MaterialEconomy.Materials.Contains(s.Material) || new[] { s.Initial, s.Remaining, s.LastDays }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || s.Remaining > s.Initial + 1e-8 || s.LastDays > w.Days + 1e-8) || w.MaterialSources.Select(s => s.Id).Distinct().Count() != w.MaterialSources.Count) throw new InvalidOperationException("Invalid authoritative material source state.");
+            foreach (var c in w.Camps)
+            {
+                if (c.Inventory == null || typeof(CampInventory).GetFields().Where(f => f.FieldType == typeof(double)).Select(f => (double)f.GetValue(c.Inventory)).Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < -1e-8) || new[] { c.PlantFood, c.AnimalFood, c.AquaticFood, c.StationaryYears, c.HousingDemand, c.FabricConsumed }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < -1e-8) || new[] { c.QoL, c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita, c.RudimentaryExpectation }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0 || v > 1 + 1e-8)) throw new InvalidOperationException("Invalid economic inventory or needs state.");
+            }
             if (w.Camps.Select(c => c.Tile).Distinct().Count() != w.Camps.Count) throw new InvalidOperationException("Rival camps overlap.");
             var ids = w.Camps.Select(c => c.Id).Concat(w.Hunters.Select(h => h.Id)).Concat(w.Herds.Select(h => h.Id)).ToArray();
             if (ids.Distinct().Count() != ids.Length || ids.Any(i => i >= w.NextId)) throw new InvalidOperationException("Invalid stable IDs.");
@@ -279,12 +285,14 @@ namespace Anthropocene.Simulation
             if (w.Herds.Any(h => !w.Tiles[h.Tile].TraversableLand || h.Animals < 0)) throw new InvalidOperationException("Invalid herd population or peak/aquatic location.");
             foreach (var tile in ecologyScope ?? w.Tiles)
             {
+                if (double.IsNaN(tile.CultivationCapital) || double.IsInfinity(tile.CultivationCapital) || tile.CultivationCapital < 0 || tile.CultivationCapital > 1 / (w.Config.ReferenceIntensity * w.Config.ReferenceIntensity) + 1e-8 || tile.CultivationOperator < -1) throw new InvalidOperationException("Invalid cultivation capital or operator.");
                 var projected = LazyEcology.ProjectEcology(w, tile.Id, w.Days);
                 var ecology = w.Ecology(tile.Id); double multiplier = OpeningTransitions.FoodMultiplier(w, tile);
+                var capacity = new EcologyCapacity(w, tile, projected, w.Season);
                 if (tile.WaterBody == WaterKind.Saltwater && (tile.Freshwater > 0 || ecology.MaxFreshwater > 0 || tile.FreshwaterSource != FreshwaterSource.None)) throw new InvalidOperationException("Seawater is not drinkable.");
                 if (tile.Saltwater < 0 || tile.Saltwater > ecology.MaxSaltwater + 1e-6 || tile.FreshwaterSource == FreshwaterSource.None && tile.Freshwater > 1e-8) throw new InvalidOperationException("Water stock lacks a valid source or capacity.");
                 if (double.IsNaN(projected.LandCondition) || double.IsNaN(projected.AquaticCondition) || projected.LandCondition < -1e-8 || projected.LandCondition > 1 + 1e-8 || projected.AquaticCondition < -1e-8 || projected.AquaticCondition > 1 + 1e-8 || double.IsNaN(projected.Food) || double.IsInfinity(projected.Food) || projected.Food < -1e-8 || double.IsNaN(projected.PotentialFood) || double.IsInfinity(projected.PotentialFood) || projected.PotentialFood + 1e-8 < projected.Food || projected.PotentialFood > ecology.MaxPotentialFood * multiplier + 1e-5 || projected.Freshwater < -1e-8 || double.IsNaN(projected.Freshwater) ||
-                    projected.Food > ecology.MaxFood * multiplier + 1e-6 || projected.Freshwater > ecology.MaxFreshwater + 1e-6)
+                    projected.Food > capacity.Food + 1e-6 || projected.Freshwater > ecology.MaxFreshwater + 1e-6)
                     throw new InvalidOperationException("Invalid ecology or capacity overflow.");
             }
         }

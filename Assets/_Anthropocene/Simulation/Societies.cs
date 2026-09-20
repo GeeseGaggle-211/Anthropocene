@@ -33,9 +33,11 @@ namespace Anthropocene.Simulation
         public List<TransitionSeed> TransitionSeeds = new List<TransitionSeed>();
 
         // Neolithic Craft Tracks & Convergence Techs
-        public Dictionary<string, double> CraftExperience = new Dictionary<string, double>();
-        public List<string> UnlockedSpecialists = new List<string>();
-        public List<string> NeolithicTechnologies = new List<string>();
+#pragma warning disable SYSLIB0050 // OptionalField permits older DataContractSerializer metadata.
+        [System.Runtime.Serialization.OptionalField] public Dictionary<string, double> CraftExperience = new Dictionary<string, double>();
+        [System.Runtime.Serialization.OptionalField] public List<string> UnlockedSpecialists = new List<string>();
+        [System.Runtime.Serialization.OptionalField] public List<string> NeolithicTechnologies = new List<string>();
+#pragma warning restore SYSLIB0050
         public bool HasTech(string tech) => NeolithicTechnologies != null && NeolithicTechnologies.Contains(tech);
     }
 
@@ -107,6 +109,6 @@ namespace Anthropocene.Simulation
                 if (technology == Technology.Cultivation) w.Tiles[tile].Cultivated = true; else w.Tiles[tile].Fishery = true;
             }
         }
-        public static double FoodMultiplier(WorldState w, Tile tile) => w.Config.OpeningCompatibilityEffects && (tile.Cultivated || tile.Fishery) ? w.Config.OpeningFoodMultiplier : 1;
+        public static double FoodMultiplier(WorldState w, Tile tile) => w.Config.OpeningCompatibilityEffects && tile.Fishery ? w.Config.OpeningFoodMultiplier : 1;
     }
 }

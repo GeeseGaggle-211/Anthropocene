@@ -6,10 +6,10 @@ namespace Anthropocene.Simulation
 {
     public struct EcologyView
     {
-        public double Food, PotentialFood, Freshwater, Saltwater, LandCondition, AquaticCondition, Days;
+        public double Food, PotentialFood, Freshwater, Saltwater, LandCondition, AquaticCondition, Days, CultivationCapital;
         public VegetationTier CurrentVegetation;
-        public EcologyView(Tile t) { Food = t.Food; PotentialFood = t.PotentialFood; Freshwater = t.Freshwater; Saltwater = t.Saltwater; LandCondition = t.LandCondition; AquaticCondition = t.AquaticCondition; Days = t.LastEcologyUpdateDays; CurrentVegetation = t.CurrentVegetation; }
-        public void Commit(Tile t) { t.Food = Food; t.PotentialFood = PotentialFood; t.Freshwater = Freshwater; t.Saltwater = Saltwater; t.LandCondition = LandCondition; t.AquaticCondition = AquaticCondition; t.CurrentVegetation = CurrentVegetation; t.LastEcologyUpdateDays = Days; }
+        public EcologyView(Tile t) { Food = t.Food; PotentialFood = t.PotentialFood; Freshwater = t.Freshwater; Saltwater = t.Saltwater; LandCondition = t.LandCondition; AquaticCondition = t.AquaticCondition; Days = t.LastEcologyUpdateDays; CurrentVegetation = t.CurrentVegetation; CultivationCapital = t.CultivationCapital; }
+        public void Commit(Tile t) { t.Food = Food; t.PotentialFood = PotentialFood; t.Freshwater = Freshwater; t.Saltwater = Saltwater; t.LandCondition = LandCondition; t.AquaticCondition = AquaticCondition; t.CurrentVegetation = CurrentVegetation; t.LastEcologyUpdateDays = Days; t.CultivationCapital = CultivationCapital; }
     }
     public readonly struct EcologySegment
     {
@@ -18,13 +18,16 @@ namespace Anthropocene.Simulation
     }
     public readonly struct EcologyCapacity
     {
-        public readonly double Food, Biomass, Water, FoodRate, BiomassRate, WaterRate;
+        public readonly double Food, WildFood, ManagedFlow, Biomass, Water, FoodRate, BiomassRate, WaterRate;
         public EcologyCapacity(WorldState w, Tile t, EcologyView view, int season)
         {
             var s = t.Seasons[season]; double multiplier = OpeningTransitions.FoodMultiplier(w, t);
             double condition = t.Aquatic || t.WaterBody == WaterKind.Saltwater ? view.AquaticCondition : view.LandCondition;
             Biomass = s.MaxPotentialFood * multiplier * condition;
-            Food = Math.Min(Biomass, s.MaxFood * multiplier * condition * FoodEcology.GatherableFraction(t, w.Config, view.CurrentVegetation) / FoodEcology.GatherableFraction(t, w.Config, t.NaturalVegetationPotential));
+            WildFood = Math.Min(Biomass, s.MaxFood * multiplier * condition * FoodEcology.GatherableFraction(t, w.Config, view.CurrentVegetation) / FoodEcology.GatherableFraction(t, w.Config, t.NaturalVegetationPotential));
+            double q = CultivationEconomy.Intensity(w.Config, view.CultivationCapital);
+            Food = WildFood + (Biomass - WildFood) * q * q;
+            ManagedFlow = w.Config.CultivationRegenFlux * q * Biomass * s.BiomassRecoveryPerDay * t.CultivationOperatingFraction;
             Water = t.WaterBody == WaterKind.Saltwater || t.FreshwaterSource == FreshwaterSource.None ? 0 : s.MaxFreshwater;
             FoodRate = s.FoodRecoveryPerDay; BiomassRate = s.BiomassRecoveryPerDay; WaterRate = s.WaterRecoveryPerDay;
         }
@@ -54,7 +57,7 @@ namespace Anthropocene.Simulation
             if (queryDays < v.Days - 1e-8) throw new ArgumentOutOfRangeException(nameof(queryDays), "Cannot project before stored ecology.");
             double cycleDays = w.Config.BaseDays * 4;
             // Healthy, undisturbed pools have time-independent targets within each season.
-            bool quiet = composeCycles && v.LandCondition == 1 && v.AquaticCondition == 1 && v.CurrentVegetation == t.NaturalVegetationPotential;
+            bool quiet = composeCycles && v.CultivationCapital == 0 && v.LandCondition == 1 && v.AquaticCondition == 1 && v.CurrentVegetation == t.NaturalVegetationPotential;
             double prefix = Math.Min(queryDays - v.Days, (Math.Ceiling(v.Days / cycleDays - 1e-10) * cycleDays - v.Days + cycleDays) % cycleDays);
             foreach (var s in Segments(v.Days, prefix, w.Config.BaseDays)) Recover(w, t, ref v, s);
             long cycles = quiet ? (long)Math.Floor((queryDays - v.Days) / cycleDays + 1e-10) : 0;
@@ -82,11 +85,13 @@ namespace Anthropocene.Simulation
         }
         private static void Recover(WorldState w, Tile t, ref EcologyView v, EcologySegment segment)
         {
+            if (v.CultivationCapital > 0) ClampCapacity(w, t, ref v);
             var k = new EcologyCapacity(w, t, v, segment.Season);
             double n = EcologyMath.Stock(Math.Max(0, v.PotentialFood - v.Food), k.Biomass - k.Food, k.BiomassRate, 0, segment.Days).Stock;
             v.Food = EcologyMath.Stock(v.Food, k.Food, k.FoodRate, 0, segment.Days).Stock; v.PotentialFood = v.Food + n;
             v.Freshwater = EcologyMath.Stock(v.Freshwater, k.Water, k.WaterRate, 0, segment.Days).Stock;
             RecoverCondition(w, t, ref v, segment.Days, 0); v.Days += segment.Days;
+            v.CultivationCapital = CultivationEconomy.Decay(w.Config, v.CultivationCapital, 0, segment.Days / w.Config.DaysPerYear);
         }
         internal static void RecoverCondition(WorldState w, Tile t, ref EcologyView v, double days, double damagePerDay)
         {
@@ -99,7 +104,7 @@ namespace Anthropocene.Simulation
             v.CurrentVegetation = Vegetation.Update(t.NaturalVegetationPotential, v.CurrentVegetation, plankton ? v.AquaticCondition : v.LandCondition, c);
         }
         public static EcologyView MaterializeEcology(WorldState w, int tile, double queryDays)
-        { var view = ProjectEcology(w, tile, queryDays); view.Commit(w.Tiles[tile]); return view; }
+        { var view = ProjectEcology(w, tile, queryDays); view.Commit(w.Tiles[tile]); w.Tiles[tile].Cultivation = (float)CultivationEconomy.Intensity(w.Config, view.CultivationCapital); return view; }
         // Cumulative accessible stock + renewable flow envelope, never the final standing stock.
         public static double AccessibleAvailability(WorldState w, int tile, double start, double duration)
         {
@@ -107,8 +112,9 @@ namespace Anthropocene.Simulation
             foreach (var segment in Segments(start, duration, w.Config.BaseDays))
             {
                 var k = new EcologyCapacity(w, t, view, segment.Season);
-                available += k.Food * k.FoodRate * segment.Days;
+                available += (k.Food * k.FoodRate + k.ManagedFlow) * segment.Days;
                 RecoverCondition(w, t, ref view, segment.Days, 0);
+                view.CultivationCapital = CultivationEconomy.Decay(w.Config, view.CultivationCapital, t.CultivationOperatingFraction, segment.Days / w.Config.DaysPerYear);
             }
             return Math.Max(0, available);
         }

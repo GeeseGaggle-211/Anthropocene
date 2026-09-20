@@ -16,6 +16,8 @@ namespace Anthropocene.Simulation
             var source = settlement ?? o.Settlements.FirstOrDefault(c => c.Id == hunter.SourceCamp);
             if (source == null || source.LinkedPopulation == 0) return "The tribe has no surviving people.";
             int tile = settlement != null ? settlement.Tile : hunter.Tile;
+            if (order.Kind == OrderKind.Economy) return order.Target >= 0 || order.Destination >= 0 || order.Population != 0 ? "Economic plans cannot bundle movement or dispatch." : EconomicIntents.Validate(o, settlement, order.Economy);
+            if (order.Economy != null) return "Economic payload requires an economic order.";
             if (order.Kind == OrderKind.NoOp) return order.Destination >= 0 || order.Target >= 0 || order.Population != 0 ? "Wait cannot include movement or another action." : null;
             if (order.Kind == OrderKind.Dispatch)
                 return settlement == null || order.Destination >= 0 || order.Target >= 0 || order.Population <= 0 || order.Population > settlement.Gatherers || settlement.Population - order.Population < o.MinimumCamp ? "Dispatch must use available gatherers and preserve the camp's minimum population." : null;
@@ -45,8 +47,9 @@ namespace Anthropocene.Simulation
     public sealed class EntityActionMask
     {
         public int Entity, MinimumDispatch, MaximumDispatch;
+        public EconomicConstraints Economy;
         public List<Order> Actions = new List<Order>();
-        public bool Allows(Order order) => order != null && order.Entity == Entity && (order.Kind == OrderKind.Dispatch ? order.Target < 0 && order.Destination < 0 && order.Population >= MinimumDispatch && order.Population <= MaximumDispatch && MinimumDispatch > 0 : Actions.Any(a => a.ToString() == order.ToString()));
+        public bool Allows(Order order) => order != null && order.Entity == Entity && (order.Kind == OrderKind.Economy ? order.Target < 0 && order.Destination < 0 && order.Population == 0 && EconomicIntents.Validate(Economy, order.Economy) == null : order.Economy == null && (order.Kind == OrderKind.Dispatch ? order.Target < 0 && order.Destination < 0 && order.Population >= MinimumDispatch && order.Population <= MaximumDispatch && MinimumDispatch > 0 : Actions.Any(a => a.ToString() == order.ToString())));
     }
     public static class LegalActions
     {
@@ -64,6 +67,7 @@ namespace Anthropocene.Simulation
                 foreach (int n in destinations) Add(new Order(OrderKind.Move, entity, destination: n));
                 if (camp != null)
                 {
+                    if (camp.Agriculture) { mask.Economy = EconomicIntents.Constraints(o, camp); Add(new Order(OrderKind.Economy, entity) { Economy = camp.Economy.Copy() }); }
                     int max = Math.Min(camp.Gatherers, camp.Population - o.MinimumCamp);
                     if (OrderRules.Validate(o, new Order(OrderKind.Dispatch, entity, population: max)) == null) { mask.MinimumDispatch = 1; mask.MaximumDispatch = max; }
                 }

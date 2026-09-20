@@ -28,7 +28,7 @@ namespace Anthropocene.Simulation
         public readonly Terrain Terrain;
         public readonly EnvironmentKind Environment;
         public readonly VegetationTier NaturalVegetationPotential, CurrentVegetation;
-        public readonly bool River, Cultivated, Fishery, Oasis, Irrigated;
+        public readonly bool River, Cultivated, Fishery, Oasis, Irrigated, Cultivable;
         public readonly double Cultivation;
         public readonly Relief Relief;
         public readonly float Elevation;
@@ -40,10 +40,11 @@ namespace Anthropocene.Simulation
         public TileObservation(Tile tile, SeasonData ecology, SimulationConfig config, IReadOnlyList<RiverEdge> rivers, EcologyView? projected = null)
         {
             var view = projected ?? new EcologyView(tile);
+            Cultivable = tile.TraversableLand && tile.Environment != EnvironmentKind.Ice && tile.Seasons.Any(s => s.MaxPotentialFood > 0);
             Environment = tile.Environment; NaturalVegetationPotential = tile.NaturalVegetationPotential; CurrentVegetation = view.CurrentVegetation;
             double accessibility = FoodEcology.GatherableFraction(tile, config, view.CurrentVegetation) / FoodEcology.GatherableFraction(tile, config, tile.NaturalVegetationPotential);
             Id = tile.Id; Terrain = Vegetation.LegacyTerrain(tile.Environment, view.CurrentVegetation); River = tile.River; Cultivated = tile.Cultivated; Fishery = tile.Fishery; ElevationLevel = tile.ElevationLevel; RidgeMask = tile.RidgeMask; FoodMaximum = Knowledge.Band(ecology.MaxFood * accessibility, 70, config);
-            Cultivation = tile.Cultivation; Irrigated = tile.Irrigated;
+            Cultivation = CultivationEconomy.Intensity(config, view.CultivationCapital); Irrigated = tile.Irrigated;
             PotentialFood = Knowledge.Band(view.PotentialFood, Math.Max(1, ecology.MaxPotentialFood), config); PotentialMaximum = Knowledge.Band(ecology.MaxPotentialFood, 700, config); GatherablePercent = (int)Math.Round(100 * ecology.MaxFood * accessibility / Math.Max(1e-9, ecology.MaxPotentialFood));
             Oasis = tile.Oasis; Relief = tile.Relief; Elevation = tile.Elevation; WaterBody = tile.WaterBody; FreshwaterSource = tile.FreshwaterSource;
             Rivers = Array.AsReadOnly(tile.RiverEdges == null ? new RiverObservation[0] : tile.RiverEdges.Select((id, side) => new { id, side }).Where(x => x.id >= 0).Select(x => new RiverObservation(x.side, rivers[x.id], tile.Id, new HexCorners(config.Width, config.Height))).ToArray());
@@ -82,7 +83,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 7;
+        public const int SchemaVersion = 8;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
@@ -224,6 +225,8 @@ namespace Anthropocene.Simulation
             int allocation = Math.Min(8, Math.Min(Math.Max(0, desiredHunters - assignedHunters), dispatchable));
             if ((campChoice.Kind == OrderKind.NoOp || huntingFocus || fishingFocus && fishingOpportunity) && allocation >= 4 && opportunity && o.DeficitTurns == 0 && o.FoodCondition >= 1)
             { campChoice = new Order(OrderKind.Dispatch, o.CampId, population: allocation); result.Trace.Candidates.Add(new CandidateTrace { Plan = campChoice.ToString(), Components = "Growing population and visible subsistence opportunity; hunter share expands while preserving the camp reserve", Score = 1, Selected = true }); }
+            var agriculturalCamp = o.Settlements.FirstOrDefault(c => c.Id == o.CampId && c.Agriculture);
+            if (agriculturalCamp != null) { campChoice = new Order(OrderKind.Economy, o.CampId) { Economy = agriculturalCamp.RecommendedEconomy.Copy() }; plannedCamp = o.CampTile; }
             result.Orders.Add(campChoice);
             var observedHunters = o.Hunters.Concat(o.ForeignHunters).ToArray();
             var wildHerds = o.Herds.Where(h => !h.Domestic).OrderByDescending(h => h.Size).ThenBy(h => o.Map.Distance(o.CampTile, h.Tile)).ThenBy(h => h.Id).ToArray();

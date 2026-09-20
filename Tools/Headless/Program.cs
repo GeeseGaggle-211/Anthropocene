@@ -194,6 +194,8 @@ internal static class Program
     }
     private static int Main(string[] args)
     {
+        if (args.Contains("--neolithic-only")) { NeolithicChecks.Run(); return 0; }
+        if (args.Contains("--economy-only")) { Milestone2Checks.Run(); Milestone3Checks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); NeolithicChecks.Run(); return 0; }
         try
         {
             if (args.Contains("--write-config"))

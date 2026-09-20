@@ -11,7 +11,7 @@ namespace Anthropocene.Simulation
 {
     public static class SaveCodec
     {
-        private const string Magic = "ANTHROPOCENE-10", LegacyMagic9 = "ANTHROPOCENE-9", LegacyMagic8 = "ANTHROPOCENE-8";
+        private const string Magic = "ANTHROPOCENE-11", LegacyMagic10 = "ANTHROPOCENE-10", LegacyMagic9 = "ANTHROPOCENE-9", LegacyMagic8 = "ANTHROPOCENE-8";
         private static DataContractSerializer Serializer(Type type) => new DataContractSerializer(type, new DataContractSerializerSettings { MaxItemsInObjectGraph = int.MaxValue });
         public static byte[] Save(WorldState world)
         {
@@ -40,6 +40,7 @@ namespace Anthropocene.Simulation
                         writer.Write(tile.DepressionDepth); writer.Write(tile.OasisInfluence); writer.Write(tile.Saltwater); writer.Write(tile.LandCondition); writer.Write(tile.AquaticCondition);
                         writer.Write(tile.Elevation); writer.Write(tile.Volcanism); writer.Write(tile.Flow); writer.Write(tile.Food); writer.Write(tile.PotentialFood); writer.Write(tile.Freshwater);
                         writer.Write(tile.Cultivation);
+                        writer.Write(tile.CultivationCapital); writer.Write(tile.CultivationOperator);
                         foreach (var s in tile.Seasons)
                         {
                             writer.Write(s.Temperature); writer.Write(s.Rain); writer.Write(s.Snow); writer.Write(s.WindX); writer.Write(s.Runoff); writer.Write(s.RegionalMoisture); writer.Write(s.Moisture);
@@ -60,7 +61,7 @@ namespace Anthropocene.Simulation
             using (var reader = new BinaryReader(buffered))
             {
                 string magic = reader.ReadString();
-                if (magic != Magic && magic != LegacyMagic9 && magic != LegacyMagic8) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
+                if (magic != Magic && magic != LegacyMagic10 && magic != LegacyMagic9 && magic != LegacyMagic8) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
                 int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > 128 * 1024 * 1024) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
@@ -70,6 +71,20 @@ namespace Anthropocene.Simulation
                 if (world.Version != 7 || world.Config.Version != 7 || world.Generation.GeneratorVersion < 7 || world.Generation.GeneratorVersion > WorldState.GeneratorVersion) throw new InvalidDataException("Unsupported save version; regeneration is never implicit.");
                 Ownership.Bind(world);
                 MigrateGenerationalDefaults(world);
+                if (magic != Magic)
+                {
+                    foreach (var camp in world.Camps)
+                    {
+                        // Legacy HousingUnits were construction progress at ten per house;
+                        // finished Houses each sheltered eight people. Convert once.
+                        camp.Inventory.HousingUnits = (camp.Inventory.Houses + camp.Inventory.HousingUnits / 10) * 8 / world.Config.Neolithic.HousingPeoplePerUnit;
+                        camp.Inventory.Houses = 0; camp.WaterNeedsMetRatio = 1;
+                        camp.StationaryYears = camp.StationaryTurns * world.Config.TurnDays / world.Config.DaysPerYear;
+                        // The old automatic-village path could assign agricultural jobs
+                        // without Agriculture. Release only those impossible legacy jobs.
+                        if (!CultivationEconomy.Enabled(camp)) camp.Workforce.Assignments.RemoveAll(a => a.Role != WorkforceRoles.Gatherer);
+                    }
+                }
                 world.Config.Validate();
                 int count = reader.ReadInt32(); if (count != world.Config.Width * world.Config.Height) throw new InvalidDataException("Invalid tile count.");
                 world.Tiles = new Tile[count];
@@ -81,11 +96,13 @@ namespace Anthropocene.Simulation
                     tile.Oasis = (flags & 2) != 0; 
                     tile.Cultivated = (flags & 4) != 0; 
                     tile.Fishery = (flags & 8) != 0;
-                    tile.Irrigated = (magic == Magic) && (flags & 16) != 0;
+                    tile.Irrigated = (magic == Magic || magic == LegacyMagic10) && (flags & 16) != 0;
                     tile.ElevationLevel = reader.ReadByte(); tile.RidgeMask = reader.ReadByte(); tile.Relief = (Relief)reader.ReadByte(); tile.WaterBody = (WaterKind)reader.ReadByte(); tile.FreshwaterSource = (FreshwaterSource)reader.ReadByte();
                     tile.DepressionDepth = reader.ReadSingle(); tile.OasisInfluence = reader.ReadSingle(); tile.Saltwater = reader.ReadDouble(); tile.LandCondition = reader.ReadDouble(); tile.AquaticCondition = reader.ReadDouble();
                     tile.Elevation = reader.ReadSingle(); tile.Volcanism = reader.ReadSingle(); tile.Flow = reader.ReadSingle(); tile.Food = reader.ReadDouble(); tile.PotentialFood = reader.ReadDouble(); tile.Freshwater = reader.ReadDouble();
-                    tile.Cultivation = (magic == Magic) ? reader.ReadSingle() : (tile.Cultivated ? 0.35f : 0.0f);
+                    tile.Cultivation = (magic == Magic || magic == LegacyMagic10) ? reader.ReadSingle() : 0;
+                    tile.CultivationCapital = magic == Magic ? reader.ReadDouble() : Math.Pow(tile.Cultivation / world.Config.ReferenceIntensity, 2);
+                    tile.CultivationOperator = magic == Magic ? reader.ReadInt32() : -1;
                     for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData
                     {
                         Temperature = reader.ReadSingle(), Rain = reader.ReadSingle(), Snow = reader.ReadSingle(), WindX = reader.ReadSingle(), Runoff = reader.ReadSingle(), RegionalMoisture = reader.ReadSingle(), Moisture = reader.ReadSingle(),
@@ -93,7 +110,7 @@ namespace Anthropocene.Simulation
                     };
                     world.Tiles[i] = tile;
                 }
-                world.Resources = magic == Magic ? (reader.ReadBoolean() ? ResourceCodec.Read(reader, count) : null) : (magic == LegacyMagic9 ? ResourceCodec.Read(reader, count) : null);
+                world.Resources = magic == Magic || magic == LegacyMagic10 ? (reader.ReadBoolean() ? ResourceCodec.Read(reader, count) : null) : (magic == LegacyMagic9 ? ResourceCodec.Read(reader, count) : null);
                 foreach (var edge in world.Rivers)
                 {
                     if (world.Tiles[edge.TileA].RiverEdges == null) world.Tiles[edge.TileA].RiverEdges = Enumerable.Repeat(-1, 6).ToArray();
@@ -102,22 +119,20 @@ namespace Anthropocene.Simulation
                     if (world.Tiles[edge.TileB].RiverEdges == null) world.Tiles[edge.TileB].RiverEdges = Enumerable.Repeat(-1, 6).ToArray();
                     world.Tiles[edge.TileB].RiverEdges[edge.SideB] = edge.Id;
                 }
-                foreach (var turn in world.History) { turn.Pressure = new System.Collections.Generic.List<PressureEntry>(); turn.EcologyBalances = new System.Collections.Generic.List<EcologyBalance>(); }
+                foreach (var turn in world.History) { turn.Pressure = new System.Collections.Generic.List<PressureEntry>(); turn.EcologyBalances = new System.Collections.Generic.List<EcologyBalance>(); turn.Production = turn.Production ?? new System.Collections.Generic.List<ProductionReceipt>(); turn.MaterialTransfers = turn.MaterialTransfers ?? new System.Collections.Generic.List<MaterialReceipt>(); }
                 TurnResolver.Invariants(world); ElevationLevelStage.Validate(world); BoundaryRiverStage.Validate(world); ResourceValidation.Validate(world); return world;
             }
         }
         private static void MigrateGenerationalDefaults(WorldState world)
         {
             var config = world.Config;
+            world.MaterialSources = world.MaterialSources ?? new System.Collections.Generic.List<MaterialSourceState>();
+            world.MaterialKnowledge = world.MaterialKnowledge ?? new System.Collections.Generic.List<MaterialKnowledge>();
             foreach (var camp in world.Camps)
             {
-                if (camp.DemographicGrowthMultiplier <= 0) camp.DemographicGrowthMultiplier = 1;
                 if (camp.Inventory == null) camp.Inventory = new CampInventory();
+                if (camp.Workforce == null) camp.Workforce = new PopulationLedger();
                 if (camp.CraftingPriorities == null) camp.CraftingPriorities = new CraftingPriorities();
-                if (camp.QoL <= 0) camp.QoL = 1.0;
-                if (camp.FoodNeedsMetRatio <= 0) camp.FoodNeedsMetRatio = 1.0;
-                if (camp.ClothPerCapita <= 0) camp.ClothPerCapita = 1.0;
-                if (camp.HousingPerCapita <= 0) camp.HousingPerCapita = 1.0;
             }
             foreach (var soc in world.Societies)
             {
@@ -144,7 +159,7 @@ namespace Anthropocene.Simulation
                 foreach (var herd in world.Herds.Where(h => h.DomesticCamp < 0 && h.Capacity == 32)) herd.Capacity = config.GetSpecies(herd.Species).MaximumHerdSize;
             }
         }
-        private static WorldState CopyWithoutTiles(WorldState w) => new WorldState { Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Camps = w.Camps, Societies = w.Societies, Improvements = w.Improvements, Hunters = w.Hunters, Herds = w.Herds, Rivers = w.Rivers, History = w.History, Generation = w.Generation, Tiles = null };
+        private static WorldState CopyWithoutTiles(WorldState w) => new WorldState { MaterialSources = w.MaterialSources, MaterialKnowledge = w.MaterialKnowledge, Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Camps = w.Camps, Societies = w.Societies, Improvements = w.Improvements, Hunters = w.Hunters, Herds = w.Herds, Rivers = w.Rivers, History = w.History, Generation = w.Generation, Tiles = null };
         public static string ConfigurationHash(SimulationConfig config)
         {
             using (var output = new MemoryStream())
@@ -156,7 +171,7 @@ namespace Anthropocene.Simulation
         public static string Fingerprint(WorldState w)
         {
             // Exclude wall-clock generation timings and memory warnings from authoritative state hashing.
-            var copy = new WorldState { Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Tiles = w.Tiles, Camps = w.Camps.OrderBy(c => c.Id).ToList(), Societies = w.Societies.OrderBy(s => s.Id).ToList(), Improvements = w.Improvements.OrderBy(i => i.Id).ToList(), Hunters = w.Hunters.OrderBy(h => h.Id).ToList(), Herds = w.Herds.OrderBy(h => h.Id).ToList(), Rivers = w.Rivers, History = w.History, Generation = null, Resources = w.Resources };
+            var copy = new WorldState { MaterialSources = w.MaterialSources, MaterialKnowledge = w.MaterialKnowledge, Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Tiles = w.Tiles, Camps = w.Camps.OrderBy(c => c.Id).ToList(), Societies = w.Societies.OrderBy(s => s.Id).ToList(), Improvements = w.Improvements.OrderBy(i => i.Id).ToList(), Hunters = w.Hunters.OrderBy(h => h.Id).ToList(), Herds = w.Herds.OrderBy(h => h.Id).ToList(), Rivers = w.Rivers, History = w.History, Generation = null, Resources = w.Resources };
             using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(Save(copy))).Replace("-", "");
         }
         // Compare pre-overlay authoritative fields without mutating the original world.

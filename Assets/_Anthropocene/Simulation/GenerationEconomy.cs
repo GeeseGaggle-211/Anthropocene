@@ -21,6 +21,9 @@ namespace Anthropocene.Simulation
         public int Camp, StartingPopulation, Additions, Deaths, EndingPopulation, SurplusSteps, DeficitSteps, RecoverySteps;
         public double Years, FoodProduced, FoodReceived, TerrestrialFood, MarineFood, LakeFood, HuntFood, FishFood, ForageFood;
         public double FoodRequired, FoodConsumed, InitialReserves, FinalReserves, DiscardedInventory, FractionalProgress, NetPercent;
+#pragma warning disable SYSLIB0050 // OptionalField permits older DataContractSerializer metadata.
+        [System.Runtime.Serialization.OptionalField] public double ManufacturingFood;
+#pragma warning restore SYSLIB0050
         public string LimitingFactor;
         public string Explanation => "Population " + StartingPopulation + " + " + Additions + " additions - " + Deaths + " deaths = " + EndingPopulation + " (" + NetPercent.ToString("+0.0;-0.0;0.0", System.Globalization.CultureInfo.InvariantCulture) + "%). " + LimitingFactor + ".";
     }

@@ -10,6 +10,19 @@ namespace Anthropocene.Simulation
     }
     public static class EcologyMath
     {
+        // Bounded stock with additive managed renewal, integrated before any transfer.
+        public static StockFlow ManagedStock(double initial, double capacity, double rate, double inflow, double request, double days)
+        {
+            if (inflow <= 0) return Stock(initial, capacity, rate, request, days);
+            double overflow = Math.Max(0, initial - capacity), start = Numbers.Clamp(initial, 0, capacity);
+            double supply = rate * capacity + inflow, depletion = double.PositiveInfinity;
+            double end;
+            if (rate <= 1e-18) { if (request > inflow) depletion = start / (request - inflow); end = start + (inflow - request) * days; }
+            else { double equilibrium = (supply - request) / rate; end = equilibrium + (start - equilibrium) * Math.Exp(-rate * days); if (equilibrium < 0) depletion = Math.Log((start - equilibrium) / -equilibrium) / rate; }
+            double realized = request * Math.Min(days, depletion) + Math.Min(request, supply) * Math.Max(0, days - depletion);
+            end = Numbers.Clamp(end, 0, capacity);
+            return new StockFlow(end, realized, Math.Max(0, request * days - realized), Math.Max(0, end - start + realized), overflow, depletion);
+        }
         // Configuration migration: legacy fractions described one BaseDays interval.
         public static double DailyRate(double fraction, double baseDays) => -Math.Log(1 - Numbers.Clamp(fraction, 0, 1 - 1e-12)) / baseDays;
         public static double Condition(double initial, double natural, double recoveryPerDay, double damagePerDay, double days)

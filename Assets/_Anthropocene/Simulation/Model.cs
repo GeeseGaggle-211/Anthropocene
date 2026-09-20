@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+#pragma warning disable SYSLIB0050 // OptionalField supports DataContractSerializer legacy saves, not BinaryFormatter.
 
 namespace Anthropocene.Simulation
 {
     public enum Terrain { Ocean, Shallows, Lake, Grassland, Woodland, Jungle, Desert, Tundra, Mountain, Ice }
     public enum Domain { Hunting, Gathering, Fishing }
     public enum Technology { None, AnimalHusbandry, Cultivation, Watercraft }
-    public enum OrderKind { NoOp, Move, Dispatch, Hunt, Fish, Reintegrate }
+    public enum OrderKind { NoOp, Move, Dispatch, Hunt, Fish, Reintegrate, Economy }
     public enum WorldShape { Continents, Archipelagos, Pangaea }
     public enum Relief { Lowland, Hills, Highland, Mountain }
     public enum WaterKind { None, Freshwater, Saltwater }
@@ -16,6 +17,13 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class SimulationConfig
     {
+        [System.Runtime.Serialization.OptionalField] public NeolithicConfig Neolithic = new NeolithicConfig();
+        [System.Runtime.Serialization.OnDeserializing]
+        private void InitializeNeolithic(System.Runtime.Serialization.StreamingContext context)
+        {
+            var defaults = new SimulationConfig(); Neolithic = defaults.Neolithic;
+            FarmerProductivity = defaults.FarmerProductivity; ReferenceIntensity = defaults.ReferenceIntensity; CultivationRegenFlux = defaults.CultivationRegenFlux; MaintenanceCoefficient = defaults.MaintenanceCoefficient; GathererBridgeCeiling = defaults.GathererBridgeCeiling; GathererBridgeEfficiency = defaults.GathererBridgeEfficiency;
+        }
         public int Version = 7;
         public double MajorityEligibilityYears = 200, ForcedTransitionYears = 240;
         public bool OpeningCompatibilityEffects = true;
@@ -46,11 +54,8 @@ namespace Anthropocene.Simulation
         public double ConditionRecoveryPerYear = .003093770185904377, SafeUseRatio = 1, SustainableProductionFraction = .5, LandUseDamagePerYear = .03, AquaticUseDamagePerYear = .03, PressureExponent = 2;
         public double LowPotentialRecoveryMultiplier = .5, HighPotentialRecoveryMultiplier = 1.5;
         public double OpeningFoodMultiplier = 1.4, CultivationMoisture = .25, RelocationInertia = .18;
-        public double CraftBaseThreshold = 5000, CraftConvergenceThreshold = 10000;
-        public double GatheringMaterialBonus = 0.25, RequisitionBufferMultiplier = 1.25;
-        public double PotDegradationRate = 0.10;
-        public double FarmerProductivity = 1.50, ReferenceIntensity = 0.40, CultivationRegenFlux = 0.65, MaintenanceCoefficient = 0.40;
-        public double GathererBridgeCeiling = 0.25, GathererBridgeEfficiency = 0.50;
+        [System.Runtime.Serialization.OptionalField] public double FarmerProductivity = 1.50, ReferenceIntensity = 0.40, CultivationRegenFlux = 0.65, MaintenanceCoefficient = 0.40;
+        [System.Runtime.Serialization.OptionalField] public double GathererBridgeCeiling = 0.25, GathererBridgeEfficiency = 0.50;
         public int InitialDomesticAnimals = 5;
         public double HabitableZonePosition = .5, InnerTemperature = 12, OuterTemperature = -12;
         public double SeaLevel = .45, Uplift = .2, ElevationNoise = .11, Erosion = .12;
@@ -77,6 +82,8 @@ namespace Anthropocene.Simulation
 
         public void Validate()
         {
+            Neolithic.Validate();
+            if (new[] { FarmerProductivity, ReferenceIntensity, CultivationRegenFlux, MaintenanceCoefficient, GathererBridgeCeiling, GathererBridgeEfficiency }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || ReferenceIntensity <= 0 || ReferenceIntensity > 1 || GathererBridgeCeiling > 1 || GathererBridgeEfficiency > 1) throw new ArgumentException("Invalid cultivation calibration.");
             if (Width < 12 || Height < 8 || Width > 2048 || Height > 1024 || Players < 1 || Players > (BenchmarkScale ? 320 : MaximumPlayersFor(Width, Height)))
                 throw new ArgumentException("Unsupported map dimensions or player count.");
             if (PlateCount < 2 || PlateCount > 64 || TurnDays < MinDays || TurnDays > MaxDays || BaseDays <= 0 || StarvationGraceTurns < 0 || MajorityEligibilityYears < 0 || ForcedTransitionYears <= MajorityEligibilityYears)
@@ -144,6 +151,9 @@ namespace Anthropocene.Simulation
         public FreshwaterSource FreshwaterSource;
         public bool Continental, Cultivated, Fishery, Oasis, Irrigated;
         public float Elevation, Volcanism, Flow, DepressionDepth, OasisInfluence, Cultivation;
+        public double CultivationCapital;
+        public int CultivationOperator = -1;
+        [NonSerialized] public double CultivationOperatingFraction;
         public double Food, PotentialFood, Freshwater, Saltwater;
         public double LandCondition = 1, AquaticCondition = 1;
         public int[] RiverEdges;
@@ -159,6 +169,7 @@ namespace Anthropocene.Simulation
     {
         public double HandTools;
         public double Tools;
+        [System.Runtime.Serialization.OptionalField] public double CopperTools;
         public double Pots;
         public double Cloth;
         public double FarmTools;
@@ -172,11 +183,14 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class CraftingPriorities
     {
+        [System.Runtime.Serialization.OnDeserializing]
+        private void InitializeNewRecipeDefaults(System.Runtime.Serialization.StreamingContext context) { Tools = new CraftingPriorities().Tools; }
         public double HandTools = 0.15;
         public double Pots = 0.10;
         public double Cloth = 0.45;
         public double FarmTools = 0.10;
         public double Housing = 0.20;
+        [System.Runtime.Serialization.OptionalField] public double Tools = .15;
     }
     [Serializable]
     public sealed class PopulationAssignment
@@ -206,6 +220,15 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class Camp
     {
+        [System.Runtime.Serialization.OnDeserializing]
+        private void InitializeEconomicDefaults(System.Runtime.Serialization.StreamingContext context)
+        {
+            // Deserializers do not run field initializers. Values present in the save,
+            // including legitimate zeros, overwrite these absent-field defaults.
+            CultivationFocusTile = -1; StonePriority = ClayPriority = WoodPriority = 1;
+            QoL = FoodNeedsMetRatio = WaterNeedsMetRatio = ClothPerCapita = HousingPerCapita = 1;
+            DemographicGrowthMultiplier = 1;
+        }
         public int Id, Player, SocietyId, Tile, Population, DeficitTurns;
         public double PlantFood, AnimalFood, AquaticFood;
         public double Food
@@ -226,12 +249,16 @@ namespace Anthropocene.Simulation
             }
         }
         public double DeficitSeverity, FoodDeficit, LastConsumed, DemographicGrowthMultiplier = 1;
-        public CampInventory Inventory = new CampInventory();
-        public CraftingPriorities CraftingPriorities = new CraftingPriorities();
-        public int CultivationFocusTile = -1;
-        public double QoL = 1.0, FoodNeedsMetRatio = 1.0, ClothPerCapita = 1.0, HousingPerCapita = 1.0, FissionWilling = 0.0;
-        public bool IsVillage;
-        public int VillageTurns;
+        [System.Runtime.Serialization.OptionalField] public CampInventory Inventory = new CampInventory();
+        [System.Runtime.Serialization.OptionalField] public CraftingPriorities CraftingPriorities = new CraftingPriorities();
+        [System.Runtime.Serialization.OptionalField] public int CultivationFocusTile = -1;
+        [System.Runtime.Serialization.OptionalField] public double QoL = 1.0, FoodNeedsMetRatio = 1.0, ClothPerCapita = 1.0, HousingPerCapita = 1.0, FissionWilling = 0.0;
+        [System.Runtime.Serialization.OptionalField] public double StationaryYears, RudimentaryExpectation, WaterNeedsMetRatio = 1;
+        [System.Runtime.Serialization.OptionalField] public double FabricConsumed, HousingDemand, HousingReplacementDemand, HousingGrowthDemand;
+        [System.Runtime.Serialization.OptionalField] public double StonePriority = 1, ClayPriority = 1, WoodPriority = 1;
+        [System.Runtime.Serialization.OptionalField] public double PotsTarget, FarmToolsTarget;
+        [System.Runtime.Serialization.OptionalField] public bool IsVillage;
+        [System.Runtime.Serialization.OptionalField] public int VillageTurns;
         [NonSerialized] private Society people = new Society();
         public Society People => people ?? (people = new Society());
         internal void Bind(Society owner) { people = owner; SocietyId = owner.Id; Player = owner.Player; }
@@ -246,7 +273,7 @@ namespace Anthropocene.Simulation
         public bool ForcedTransition { get => People.ForcedTransition; set => People.ForcedTransition = value; }
         public bool[] Technologies { get => People.Technologies; set => People.Technologies = value; }
         public Mandate Mandate { get => People.Mandate; set => People.Mandate = value; }
-        public PopulationLedger Workforce = new PopulationLedger();
+        [System.Runtime.Serialization.OptionalField] public PopulationLedger Workforce = new PopulationLedger();
         public int GathererPopulation => (Workforce ?? (Workforce = new PopulationLedger())).Gatherers(Population);
     }
     [Serializable]
@@ -272,13 +299,14 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class Order
     {
+        [System.Runtime.Serialization.OptionalField] public EconomicIntent Economy;
         public OrderKind Kind;
         public int Entity, Target = -1, Destination = -1, Population;
         public Order() { }
         public Order(OrderKind kind, int entity, int target = -1, int destination = -1, int population = 0)
         { Kind = kind; Entity = entity; Target = target; Destination = destination; Population = population; }
-        public Order Copy() => new Order(Kind, Entity, Target, Destination, Population);
-        public override string ToString() => Kind + ":" + Entity + ":" + Target + ":" + Destination + ":" + Population;
+        public Order Copy() => new Order(Kind, Entity, Target, Destination, Population) { Economy = Economy?.Copy() };
+        public override string ToString() => Kind + ":" + Entity + ":" + Target + ":" + Destination + ":" + Population + (Economy == null ? "" : ":" + Economy.Stamp);
     }
     [Serializable]
     public sealed class Transfer
@@ -302,6 +330,8 @@ namespace Anthropocene.Simulation
         public List<string> Events = new List<string>();
         public List<string> Orders = new List<string>();
         public List<Transfer> Transfers = new List<Transfer>();
+        [System.Runtime.Serialization.OptionalField] public List<ProductionReceipt> Production = new List<ProductionReceipt>();
+        [System.Runtime.Serialization.OptionalField] public List<MaterialReceipt> MaterialTransfers = new List<MaterialReceipt>();
         [NonSerialized] public List<PressureEntry> Pressure = new List<PressureEntry>();
         [NonSerialized] public List<EcologyBalance> EcologyBalances = new List<EcologyBalance>();
         public List<TileChange> Changes = new List<TileChange>();
@@ -328,7 +358,9 @@ namespace Anthropocene.Simulation
         public List<TurnRecord> History = new List<TurnRecord>();
         public GenerationReport Generation;
         // Null means legacy/disabled resource layer, never a surveyed barren world.
-        public WorldResourceState Resources;
+        [System.Runtime.Serialization.OptionalField] public WorldResourceState Resources;
+        [System.Runtime.Serialization.OptionalField] public List<MaterialSourceState> MaterialSources = new List<MaterialSourceState>();
+        [System.Runtime.Serialization.OptionalField] public List<MaterialKnowledge> MaterialKnowledge = new List<MaterialKnowledge>();
         public int Season => (int)(Days / Config.BaseDays) % 4;
         public HexMap Map => new HexMap(Config.Width, Config.Height);
         public SeasonData Ecology(int tile) => Tiles[tile].Seasons[Season];

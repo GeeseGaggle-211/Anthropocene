@@ -13,9 +13,10 @@ namespace Anthropocene.Simulation
         public const string Weaver = "Weaver";
         public const string Carpenter = "Carpenter";
         public const string Builder = "Builder";
+        public const string Woodcutter = "Woodcutter", Stonecutter = "Stonecutter";
 
         public static readonly string[] Specialists = { Toolmaker, Potter, Weaver, Carpenter, Builder };
-        public static readonly string[] All = { Gatherer, Farmer, Craftsperson, Toolmaker, Potter, Weaver, Carpenter, Builder };
+        public static readonly string[] All = { Gatherer, Farmer, Craftsperson, Toolmaker, Potter, Weaver, Carpenter, Builder, Woodcutter, Stonecutter };
     }
 
     public sealed partial class PopulationLedger
