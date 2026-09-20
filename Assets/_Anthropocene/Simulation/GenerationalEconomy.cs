@@ -143,7 +143,8 @@ namespace Anthropocene.Simulation
         private static void AddAgriculturalClaims(WorldState w, Camp camp, AgriculturalLabor labor, double intervals, double biological, double feedstock, Func<int, double> availability, List<Demand> claims)
         {
             var eligible = w.Map.Radius(camp.Tile, w.Config.GatherRadius).Where(id => PassiveGathering.Eligible(w, camp, id)).OrderBy(id => id).ToArray();
-            var fields = labor.Footprint.Where(id => w.Tiles[id].CultivationCapital > 0 && w.Tiles[id].CultivationOperator == camp.Id).ToArray();
+            // Operators harvest the same accessible supply as gatherers, not a crop-only pool.
+            var fields = eligible;
             var remaining = eligible.ToDictionary(id => id, availability);
             double Allocate(IEnumerable<int> candidates, double requested, bool farmer, bool manufacturing)
             {
@@ -158,8 +159,8 @@ namespace Anthropocene.Simulation
                 return accepted;
             }
             double farmCapacity = labor.OperatingFarmers * w.Config.FarmerProductivity * w.Config.GatherPerPerson * intervals;
-            double gatherCapacity = labor.Gatherers * w.Config.GatherPerPerson * intervals;
-            double farmInput = Allocate(fields, Math.Min(farmCapacity, feedstock), true, true);
+            double gatherCapacity = labor.FoodGatherers * w.Config.GatherPerPerson * intervals;
+            double farmInput = Allocate(fields.Where(id => w.Tiles[id].Land), Math.Min(farmCapacity, feedstock), true, true);
             double gatheredInput = Allocate(eligible.Where(id => w.Tiles[id].Land), Math.Min(gatherCapacity, feedstock - farmInput), false, true);
             double farm = Allocate(fields, Math.Min(farmCapacity - farmInput, biological), true, false);
             Allocate(eligible, Math.Min(gatherCapacity - gatheredInput, biological - farm), false, false);
@@ -282,8 +283,10 @@ namespace Anthropocene.Simulation
             double initialFood = Math.Max(0, camp.Food - camp.StepFoodIncome);
             FoodBucketTargets(w, camp, intervals, years, populationBase, initialFood, out double consumptionIncome, out double reserveTarget, out double reserveFill, out double maximumGrowthFood);
             double priorityIncome = consumptionIncome + reserveFill;
+            // Food harvested for Fabric is not simultaneously surplus for births.
+            double manufacturingInput = NeolithicProduction.FabricFeedstockNeed(w, camp, intervals, years);
             double availableGrowthFood = camp.StepFoodIncome + 1e-8 >= priorityIncome && camp.Food + 1e-8 >= populationBase + reserveTarget
-                ? Math.Min(maximumGrowthFood, Math.Min(Math.Max(0, camp.StepFoodIncome - priorityIncome), Math.Max(0, camp.Food - populationBase - reserveTarget)))
+                ? Math.Min(maximumGrowthFood, Math.Min(Math.Max(0, camp.StepFoodIncome - priorityIncome - manufacturingInput), Math.Max(0, camp.Food - populationBase - reserveTarget - manufacturingInput)))
                 : 0;
             // New people appear after resolution. Current people eat first; retained reserves
             // are protected second; only the remaining explicit growth-food bucket supports births.
@@ -334,6 +337,23 @@ namespace Anthropocene.Simulation
         // Already-realized connected hunting consumes this budget.
         public static double UsefulCampFoodDemand(WorldState w, Camp camp, double intervals, double years)
             => BiologicalFoodDemand(w, camp, intervals, years) + FabricFeedstockShortfall(w, camp, intervals, years);
+        // Turn-start planning uses the very same consumption/reserve/growth buckets,
+        // but never mistakes last turn's StepFoodIncome for an incoming shipment.
+        public static double PlanningFoodDemand(WorldState w, Camp camp)
+        {
+            double populationBase = PlanningPopulation(w, camp) * w.Config.Consumption * w.Config.GenerationIntervals;
+            FoodBucketTargets(w, camp, w.Config.GenerationIntervals, w.Config.TurnDays / w.Config.DaysPerYear, populationBase, camp.Food, out double consumption, out _, out double reserve, out double growth);
+            return consumption + reserve + growth;
+        }
+        private static int PlanningPopulation(WorldState w, Camp camp) => camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
+        public static double PlanningResidentPopulation(WorldState w, Camp camp, double biologicalIncome)
+        {
+            double years = w.Config.TurnDays / w.Config.DaysPerYear;
+            double populationBase = PlanningPopulation(w, camp) * w.Config.Consumption * w.Config.GenerationIntervals;
+            FoodBucketTargets(w, camp, w.Config.GenerationIntervals, years, populationBase, camp.Food, out double consumption, out _, out double reserve, out double growth);
+            double rate = GrowthRateForFood(populationBase, camp.DeficitTurns > 0 ? 0 : w.Config.AnnualHumanGrowthRate * camp.DemographicGrowthMultiplier, years, Math.Min(growth, Math.Max(0, biologicalIncome - consumption - reserve)));
+            return camp.Population * Math.Exp(rate * years);
+        }
         private static double BiologicalFoodDemand(WorldState w, Camp camp, double intervals, double years)
         {
             int reproductivePopulation = camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);

@@ -26,5 +26,6 @@
     <Compile Include="ArchipelagoChecks.cs" />
     <Compile Include="GeologyGenerationChecks.cs" />
     <Compile Include="NeolithicChecks.cs" />
+    <Compile Include="EconomicAutomationChecks.cs" />
   </ItemGroup>
 </Project>

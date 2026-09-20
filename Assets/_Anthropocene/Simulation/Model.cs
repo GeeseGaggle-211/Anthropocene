@@ -257,6 +257,9 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double FabricConsumed, HousingDemand, HousingReplacementDemand, HousingGrowthDemand;
         [System.Runtime.Serialization.OptionalField] public double StonePriority = 1, ClayPriority = 1, WoodPriority = 1;
         [System.Runtime.Serialization.OptionalField] public double PotsTarget, FarmToolsTarget;
+        // 0 = manual, -1 = continuous, positive = remaining automated resolutions.
+        [System.Runtime.Serialization.OptionalField] public int EconomyAutomationTurns;
+        [System.Runtime.Serialization.OptionalField] public EconomicLaborPlan EconomicLabor;
         [System.Runtime.Serialization.OptionalField] public bool IsVillage;
         [System.Runtime.Serialization.OptionalField] public int VillageTurns;
         [NonSerialized] private Society people = new Society();

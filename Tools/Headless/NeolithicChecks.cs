@@ -35,7 +35,7 @@ internal static class NeolithicChecks
     }
     public static int Run()
     {
-        checks = 0; Cultivation(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); Smoke();
+        checks = 0; Cultivation(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); Smoke(); EconomicAutomationChecks.Run();
         Console.WriteLine("PASS: " + checks + " Neolithic realignment assertions"); return checks;
     }
     private static void Cultivation()
@@ -150,7 +150,7 @@ internal static class NeolithicChecks
     }
     private static void IntentsAndSaves()
     {
-        var w = Fixture(); var c = w.Camps[0]; var builder = new AgentObservationBuilder(); var o = builder.Build(w, 0);
+        var w = Fixture(); AddResources(w); var c = w.Camps[0]; var builder = new AgentObservationBuilder(); var o = builder.Build(w, 0);
         var e = EconomicIntents.Automatic(w, c); var order = new Order(OrderKind.Economy, c.Id) { Economy = e };
         Check(OrderRules.Validate(o, order) == null, "automatic policy uses legal economic intent");
         var clone = order.Copy(); e.Assignments.Clear(); Check(clone.Economy.Assignments.Count > 0, "submitted intents deep copied");

@@ -77,6 +77,7 @@ internal static class Program
             foreach (var v in variants)
             {
                 if (v.Family == "joint" && site.Habitat != "river") continue;
+                if (args.Contains("--automatic")) { Run(baseline, v, "automatic", site.Habitat, seed, trajectories, finals); continue; }
                 if (args.Contains("--managed")) { Run(baseline, v, "managed-control", site.Habitat, seed, trajectories, finals); continue; }
                 Run(baseline, v, "stock", site.Habitat, seed, trajectories, finals);
                 if (v.Family == "baseline" || v.Family == "fabric" || v.Family == "farmer") Run(baseline, v, "replan", site.Habitat, seed, trajectories, finals);
@@ -121,14 +122,16 @@ internal static class Program
         {
             for (int turn = 1; turn <= 25 && c.Population > 0; turn++)
             {
-                int population = c.Population; var intent = policy == "managed-control" ? ManagedControl(w, c) : EconomicIntents.Automatic(w, c, policy == "replan");
+                int population = c.Population; var intent = policy == "managed-control" ? ManagedControl(w, c) : EconomicIntents.Automatic(w, c, policy == "replan" || policy == "automatic");
+                if (policy == "automatic") intent.AutomationTurns = -1;
                 var order = new Order(OrderKind.Economy, c.Id) { Economy = intent }; var resolver = new TurnResolver();
                 string validation = resolver.Validate(w, c.Player, order);
                 if (validation != null) throw new Exception("Invalid audit order: " + validation);
                 var assigned = intent.Assignments.ToDictionary(a => a.Role, a => a.Population);
                 double Assigned(string role) => assigned.TryGetValue(role, out int n) ? n : 0;
                 double crafts = Assigned(WorkforceRoles.Craftsperson), specialists = WorkforceRoles.Specialists.Sum(Assigned), farmers = Assigned(WorkforceRoles.Farmer);
-                var r = resolver.Resolve(w, new Dictionary<int, List<Order>> { [c.Player] = new List<Order> { order } });
+                // Submit the toggle once; subsequent turns exercise saved automation.
+                var r = resolver.Resolve(w, new Dictionary<int, List<Order>> { [c.Player] = policy == "automatic" && turn > 1 ? new List<Order>() : new List<Order> { order } });
                 double year = w.Days / w.Config.DaysPerYear;
                 foreach (string tech in c.People.NeolithicTechnologies) if (!unlock.ContainsKey(tech)) unlock[tech] = year;
                 var d = r.Demographics.Single(); deaths += r.Deaths; waste += d.DiscardedInventory;
@@ -142,12 +145,14 @@ internal static class Program
                 double craftWork = r.Production.Sum(p => p.WorkerIntervals), materialWork = r.MaterialTransfers.Sum(p => p.WorkerIntervals);
                 bool conserved = r.Production.All(p => Math.Abs(p.PlantFood - (p.Good == CraftGood.Cloth ? p.Output * w.Config.Neolithic.PlantFoodPerFabricUnit : 0)) < 1e-7 && (p.Good != CraftGood.Housing || Math.Abs(p.Wood + p.Clay - p.Output * w.Config.Neolithic.HousingMaterialUnitsPerHousing) < 1e-7)) && r.MaterialTransfers.All(t => Math.Abs(t.Before - t.After - t.Amount) < 1e-6);
                 double gatheringCapacity = (population - assigned.Values.Sum() + Assigned(WorkforceRoles.Gatherer)) * w.Config.GenerationIntervals;
-                bool labor = c.Workforce.Assigned <= c.Population && materialWork + gathered / w.Config.GatherPerPerson <= gatheringCapacity + 1e-6;
+                double generalistMaterialWork = r.MaterialTransfers.Where(t => t.Role == WorkforceRoles.Gatherer).Sum(t => t.WorkerIntervals);
+                bool labor = c.Workforce.Assigned <= c.Population && generalistMaterialWork + gathered / w.Config.GatherPerPerson <= gatheringCapacity + 1e-6 && WorkforceRoles.Extractors.All(role => r.MaterialTransfers.Where(t => t.Role == role).Sum(t => t.WorkerIntervals) <= Assigned(role) * w.Config.GenerationIntervals + 1e-6);
                 if (!conserved || !labor || d.DiscardedInventory > 1e-6) failures++;
                 last = new { run, seed, habitat, policy, variant = variant.Id, family = variant.Family, turn, year, startPopulation = population, population = c.Population, deaths = r.Deaths,
                     craftAssignedPct = 100 * crafts / population, specialistAssignedPct = 100 * specialists / population, farmerAssignedPct = 100 * farmers / population,
                     craftUsedPct = 100 * craftWork / (population * w.Config.GenerationIntervals), materialUsedPct = 100 * materialWork / (population * w.Config.GenerationIntervals),
                     craftAssignedCount = crafts, farmerAssignedCount = farmers, qMean = q, qMax = fields.Max(id => CultivationEconomy.Intensity(w.Config, w.Tiles[id].CultivationCapital)),
+                    assignments = assigned, materialGatherersReserved = intent.Labor?.MaterialGatherers ?? 0, expansionFarmersReserved = intent.Labor?.ExpansionFarmers ?? 0, automationTurns = c.EconomyAutomationTurns,
                     farmerFoodShare = food > 0 ? farmFood / food : 0, foodHarvest = food, farmFood, gatheredFood = gathered,
                     foodReserves = c.Food, foodReserveTurns = c.Population > 0 ? c.Food / (c.Population * w.Config.Consumption * w.Config.GenerationIntervals) : 0,
                     foodSatisfaction = c.FoodNeedsMetRatio, clothing = c.ClothPerCapita, housing = c.HousingPerCapita, qol = c.QoL, expectation = c.RudimentaryExpectation,

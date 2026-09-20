@@ -80,7 +80,7 @@ namespace Anthropocene.Simulation
             if (!CultivationEconomy.Enabled(c) || workerIntervals <= 0 || useful <= 0) return 0;
             var source = KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
             if (source == null) return 0;
-            bool specialist = role == WorkforceRoles.Stonecutter && source.Material == MaterialId.Stone && c.People.HasTech(NeolithicTech.Toolmaking) || role == WorkforceRoles.Woodcutter && source.Material == MaterialId.Wood && c.People.HasTech(NeolithicTech.Carpentry);
+            bool specialist = role == Specialist(source.Material) && c.People.HasTech(EconomicIntents.RequiredTechnology(role));
             if (!specialist && role != WorkforceRoles.Gatherer) return 0;
             double rate = w.Config.Neolithic.SpecialistMaterialExtractionRate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
             double amount = Math.Min(source.Available, Math.Min(useful, workerIntervals * rate));
@@ -124,12 +124,12 @@ namespace Anthropocene.Simulation
                 double spareClay = Math.Max(0, c.Inventory.Clay - forecast[MaterialId.Clay] * horizon);
                 return direct + (material == MaterialId.Stone ? 0 : Math.Max(0, housingForecast * horizon - spareWood - spareClay));
             }
-            foreach (string role in new[] { WorkforceRoles.Stonecutter, WorkforceRoles.Woodcutter, WorkforceRoles.Gatherer })
+            foreach (string role in WorkforceRoles.Extractors.Concat(new[] { WorkforceRoles.Gatherer }))
             {
                 double labor = role == WorkforceRoles.Gatherer ? generalistIntervals : CultivationEconomy.Workers(c, role) * intervals;
                 while (labor > 1e-10)
                 {
-                    var candidates = KnownSources(w, c, days).Where(s => s.Available > 1e-10 && (role == WorkforceRoles.Gatherer || role == WorkforceRoles.Stonecutter && s.Material == MaterialId.Stone || role == WorkforceRoles.Woodcutter && s.Material == MaterialId.Wood));
+                    var candidates = KnownSources(w, c, days).Where(s => s.Available > 1e-10 && (role == WorkforceRoles.Gatherer || role == Specialist(s.Material)));
                     var selected = candidates.Select(s => new { Source = s, Demand = Shortfall(s.Material), Priority = s.Material == MaterialId.Stone ? c.StonePriority : s.Material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority }).Where(x => x.Demand * x.Priority > 1e-10).OrderByDescending(x => x.Demand * x.Priority).ThenBy(x => x.Source.Distance).ThenBy(x => x.Source.Id, StringComparer.Ordinal).FirstOrDefault();
                     if (selected == null) break;
                     // One BaseDays worker interval, reassessing after each source receipt.
@@ -140,6 +140,7 @@ namespace Anthropocene.Simulation
             }
         }
         public static double Inventory(Camp c, MaterialId material) => material == MaterialId.Stone ? c.Inventory.Stone : material == MaterialId.Clay ? c.Inventory.Clay : c.Inventory.Wood;
+        public static string Specialist(MaterialId material) => material == MaterialId.Stone ? WorkforceRoles.Stonecutter : material == MaterialId.Clay ? WorkforceRoles.ClayMiner : material == MaterialId.Wood ? WorkforceRoles.Woodcutter : null;
         // Mirror the ordered recipe/role plan without changing stock or gaining progress.
         // Each worker and tool interval is forecast only once, not once per recipe.
         public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand = false)

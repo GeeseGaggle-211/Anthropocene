@@ -95,6 +95,7 @@ namespace Anthropocene.Simulation
             Supply.ProvisionDepartures(w, locked, record);
             Move(w, locked, herdMoves, record);
             Supply.DepositReturns(w, record);
+            EconomicPlanner.ResolveEnabled(w, record);
             var touched = new Dictionary<int, TileChange>();
             Action<int> touch = id => { if (!touched.ContainsKey(id)) touched[id] = new TileChange { Tile = id, BeforeFood = w.Tiles[id].Food, BeforePotentialFood = w.Tiles[id].PotentialFood, BeforeFreshwater = w.Tiles[id].Freshwater, BeforeLandCondition = w.Tiles[id].LandCondition, BeforeAquaticCondition = w.Tiles[id].AquaticCondition }; };
             ResolveEcology(w, locked, establishedHunters, record, touch);
@@ -274,6 +275,7 @@ namespace Anthropocene.Simulation
             if (w.MaterialSources == null || w.MaterialKnowledge == null || w.MaterialSources.Any(s => s == null || string.IsNullOrWhiteSpace(s.Id) || !MaterialEconomy.Materials.Contains(s.Material) || new[] { s.Initial, s.Remaining, s.LastDays }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || s.Remaining > s.Initial + 1e-8 || s.LastDays > w.Days + 1e-8) || w.MaterialSources.Select(s => s.Id).Distinct().Count() != w.MaterialSources.Count) throw new InvalidOperationException("Invalid authoritative material source state.");
             foreach (var c in w.Camps)
             {
+                if (c.EconomyAutomationTurns < -1 || c.EconomicLabor != null && c.EconomicLabor.Values().Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0)) throw new InvalidOperationException("Invalid saved economic automation state.");
                 if (c.Inventory == null || typeof(CampInventory).GetFields().Where(f => f.FieldType == typeof(double)).Select(f => (double)f.GetValue(c.Inventory)).Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < -1e-8) || new[] { c.PlantFood, c.AnimalFood, c.AquaticFood, c.StationaryYears, c.HousingDemand, c.FabricConsumed }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < -1e-8) || new[] { c.QoL, c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita, c.RudimentaryExpectation }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0 || v > 1 + 1e-8)) throw new InvalidOperationException("Invalid economic inventory or needs state.");
             }
             if (w.Camps.Select(c => c.Tile).Distinct().Count() != w.Camps.Count) throw new InvalidOperationException("Rival camps overlap.");

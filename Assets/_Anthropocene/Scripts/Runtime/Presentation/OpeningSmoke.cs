@@ -107,8 +107,21 @@ namespace Anthropocene.Presentation
             if (SaveCodec.Fingerprint(world) != saved) throw new InvalidOperationException("Neolithic player save/load changed authoritative state.");
             villageInspectorOpen = true; villageInspectorCampId = camp.Id;
             yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "03-restored-economy.png")); yield return new WaitForSeconds(1);
-            if (Directory.GetFiles(output, "*.png").Length != 3) throw new InvalidOperationException("Missing Neolithic player captures; use a visible player window.");
-            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: synthetic Agriculture fixture on Standard/Continents/1729 generated geography. Economic plan queued without live mutation, committed through normal turn resolution, real E growth, recurring Fabric debit, no Irrigation grant, and isolated exact save/load. Three actual Windows player captures. Not a natural-progression balance study or a human usability test.\n");
+            camp = world.Camps.Single(c => c.Player == 0);
+            var automated = EconomicIntent.From(camp); automated.AutomationTurns = 2;
+            Queue(new Order(OrderKind.Economy, camp.Id) { Economy = automated });
+            EndTurn(); while (resolving != null) yield return null;
+            if (camp.EconomyAutomationTurns != 1 || camp.EconomicLabor == null) throw new InvalidOperationException("Player automation did not run/count down.");
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "04-automation-active.png")); yield return new WaitForSeconds(.4f);
+            saved = SaveCodec.Fingerprint(world); snapshot = world;
+            generating = Task.Run(() => SaveCodec.Load(SaveCodec.Save(snapshot))); while (generating != null) yield return null;
+            camp = world.Camps.Single(c => c.Player == 0);
+            if (saved != SaveCodec.Fingerprint(world) || camp.EconomyAutomationTurns != 1) throw new InvalidOperationException("Active player automation did not survive load.");
+            EndTurn(); while (resolving != null) yield return null;
+            if (camp.EconomyAutomationTurns != 0 || !world.History.Last().Orders.Any(s => s.Contains(":automation:"))) throw new InvalidOperationException("Saved automation did not finish without resubmission.");
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "05-automation-complete.png")); yield return new WaitForSeconds(1);
+            if (Directory.GetFiles(output, "*.png").Length != 5) throw new InvalidOperationException("Missing Neolithic player captures; use a visible player window.");
+            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: synthetic Agriculture fixture on Standard/Continents/1729 generated geography. Economic plan queued without live mutation, normal turn resolution, real E growth, recurring Fabric debit, no Irrigation grant, isolated exact save/load, and a two-turn automation toggle continuing through save/load without resubmission. Five actual Windows player captures. Not a natural-progression balance study or a human usability test.\n");
             Application.Quit();
         }
         private IEnumerator AtlasSmoke(string directory)

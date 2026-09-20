@@ -84,6 +84,9 @@ namespace Anthropocene.Simulation
         {
             var n = w.Config.Neolithic;
             double craftWorkers = c.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Craftsperson || a.Role == WorkforceRoles.Potter || a.Role == WorkforceRoles.Weaver || a.Role == WorkforceRoles.Carpenter || a.Role == WorkforceRoles.Builder).Sum(a => a.Population);
+            // Automation may bootstrap equipment for the next feasible production plan;
+            // manufacturing still cannot use newly made tools retroactively.
+            craftWorkers = Math.Max(craftWorkers, Math.Min(c.Population, c.EconomicLabor?.EquipmentTarget ?? 0));
             double usableCopper = c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools : 0;
             double target = good == CraftGood.Cloth ? c.Population * n.FabricConsumptionPerPersonTurn * (years / n.ReferenceTurnYears + n.UsefulFinishedGoodsReserveTurns) :
                 good == CraftGood.Housing ? c.Population / n.HousingPeoplePerUnit :

@@ -10,6 +10,27 @@ namespace Anthropocene.Tests.EditMode
     public sealed class SimulationTests
     {
         [Test]
+        public void EconomicAutomation_CopyKeepsIndependentReservationsAndDuration()
+        {
+            var original = new EconomicIntent { AutomationTurns = 5, Labor = new EconomicLaborPlan { MaterialGatherers = 2, ExpansionFarmers = 3, EquipmentTarget = 4 } };
+            var copy = original.Copy(); copy.Labor.MaterialGatherers = 0; copy.AutomationTurns = -1;
+            Assert.That(original.AutomationTurns, Is.EqualTo(5)); Assert.That(original.Labor.MaterialGatherers, Is.EqualTo(2));
+            Assert.That(original.Stamp, Is.Not.EqualTo(copy.Stamp));
+        }
+
+        [Test]
+        public void ClayMiner_UsesPotteryUnlockAndStoneQuarrierKeepsSavedIdentifier()
+        {
+            Assert.That(EconomicIntents.RequiredTechnology(WorkforceRoles.ClayMiner), Is.EqualTo(NeolithicTech.Pottery));
+            Assert.That(WorkforceRoles.Label(WorkforceRoles.Stonecutter), Is.EqualTo("Stone Quarrier"));
+            Assert.That(WorkforceRoles.Stonecutter, Is.EqualTo("Stonecutter"));
+            var constraints = new EconomicConstraints { Agriculture = true, Population = 10 };
+            var plan = new EconomicIntent { AutomationTurns = -1, Assignments = new List<PopulationAssignment> { new PopulationAssignment { Role = WorkforceRoles.ClayMiner, Population = 1 } } };
+            Assert.That(EconomicIntents.Validate(constraints, plan), Is.Not.Null);
+            constraints.Technologies = new[] { NeolithicTech.Pottery };
+            Assert.That(EconomicIntents.Validate(constraints, plan), Is.Null);
+        }
+        [Test]
         public void PlanningPath_UsesOnlyAllowedTilesAndMovementBudget()
         {
             var map = new HexMap(5, 5);

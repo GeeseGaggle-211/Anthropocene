@@ -39,21 +39,30 @@ namespace Anthropocene.Presentation
                 int free = camp.Population - draft.Assignments.Sum(a => a.Population);
                 string tech = EconomicIntents.RequiredTechnology(role);
                 bool available = tech == null || camp.People.HasTech(tech);
-                GUI.Label(new Rect(x, wy, col - 78, 24), role + ": " + count + (available ? "" : " (locked)"), small);
+                GUI.Label(new Rect(x, wy, col - 78, 24), WorkforceRoles.Label(role) + ": " + count + (available ? "" : " (locked)"), small);
                 if (Button(new Rect(x + col - 74, wy, 32, 22), "−") && count > 0)
                 {
                     var a = draft.Assignments.First(v => v.Role == role); a.Population--; if (a.Population == 0) draft.Assignments.Remove(a);
+                    draft.AutomationTurns = 0; draft.Labor = null;
                 }
                 if (Button(new Rect(x + col - 38, wy, 32, 22), "+") && available && free > 0)
                 {
                     var a = draft.Assignments.FirstOrDefault(v => v.Role == role);
                     if (a == null) draft.Assignments.Add(new PopulationAssignment { Role = role, Population = 1 }); else a.Population++;
+                    draft.AutomationTurns = 0; draft.Labor = null;
                 }
                 wy += 28;
             }
             GUI.Label(new Rect(x, wy, col, 36), "Unassigned food/material gatherers: " + (camp.Population - draft.Assignments.Sum(a => a.Population)), small); wy += 40;
-            if (Button(new Rect(x, wy, col - 8, 28), "Reset to gatherers")) draft.Assignments.Clear(); wy += 34;
-            if (Button(new Rect(x, wy, col - 8, 28), "Demand-based allocation")) draft.Assignments = EconomicIntents.Automatic(world, camp, true).Assignments;
+            if (Button(new Rect(x, wy, col - 8, 28), "Reset to gatherers")) { draft.Assignments.Clear(); draft.AutomationTurns = 0; draft.Labor = null; } wy += 34;
+            if (Button(new Rect(x, wy, col - 8, 28), "Allocate once")) { draft.AutomationTurns = 0; draft = EconomicPlanner.Plan(world, camp, draft); } wy += 34;
+            GUI.Label(new Rect(x, wy, col - 8, 42), "Automation: " + (draft.AutomationTurns == 0 ? "Off" : draft.AutomationTurns < 0 ? "Until disabled" : draft.AutomationTurns + " turns remaining"), small); wy += 44;
+            if (Button(new Rect(x, wy, 65, 26), "Off")) draft.AutomationTurns = 0;
+            if (Button(new Rect(x + 70, wy, col - 78, 26), "Until disabled")) { draft.AutomationTurns = -1; draft = EconomicPlanner.Plan(world, camp, draft); } wy += 32;
+            if (Button(new Rect(x, wy, col - 80, 26), "Next " + Math.Max(1, villageAutomationTurns) + " turns")) { draft.AutomationTurns = Math.Max(1, villageAutomationTurns); draft = EconomicPlanner.Plan(world, camp, draft); }
+            if (Button(new Rect(x + col - 76, wy, 30, 26), "−")) villageAutomationTurns = Math.Max(1, villageAutomationTurns - 1);
+            if (Button(new Rect(x + col - 40, wy, 30, 26), "+")) villageAutomationTurns = Math.Min(999, villageAutomationTurns + 1); wy += 36;
+            GUI.Label(new Rect(x, wy, col - 8, 96), "Replans each turn against demand, stocks and unlocked jobs. Manual workforce edits turn automation off.\n" + (draft.Labor == null ? "" : $"Reserved material gathering: {draft.Labor.MaterialGatherers:F1} workers\nExpansion: {draft.Labor.ExpansionFarmers:F1} farmers"), small);
             x += col + 10; float cy = y;
             GUI.Label(new Rect(x, cy, col, 24), "PRODUCTION PRIORITIES", section); cy += 28;
             DrawEconomicValue("Hand tools", ref draft.Priorities.HandTools, x, ref cy, col, .05);
@@ -88,6 +97,7 @@ namespace Anthropocene.Presentation
             GUI.EndScrollView(); GUI.EndGroup();
             if (draft.Stamp != before) Queue(new Order(OrderKind.Economy, camp.Id) { Economy = draft });
         }
+        private int villageAutomationTurns = 5;
         private void DrawEconomicValue(string label, ref double value, float x, ref float y, float width, double step)
         {
             GUI.Label(new Rect(x, y, width - 76, 22), label + ": " + value.ToString("F2"), small);

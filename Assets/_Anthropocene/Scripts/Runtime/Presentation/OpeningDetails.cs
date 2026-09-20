@@ -64,7 +64,7 @@ namespace Anthropocene.Presentation
                 value += "\nSettlement QoL: " + (camp.QoL * 100).ToString("F0") + "% (Food " + (camp.FoodNeedsMetRatio * 100).ToString("F0") + "%, Cloth " + (camp.ClothPerCapita * 100).ToString("F0") + "%, Shelter " + (camp.HousingPerCapita * 100).ToString("F0") + "%) · Automatic fission deferred" +
                          "\nStores: Housing " + inv.HousingUnits.ToString("F2") + " · Cloth " + inv.Cloth.ToString("F0") + " · Pots " + inv.Pots.ToString("F0") + " · Tools " + inv.HandTools.ToString("F0") +
                          "\nRaw Stockpile: Stone " + inv.Stone.ToString("F0") + " · Clay " + inv.Clay.ToString("F0") + " · Wood " + inv.Wood.ToString("F0") +
-                         "\n[Double-click village tile to manage]";
+                         "\nEconomy automation: " + (camp.EconomyAutomationTurns == 0 ? "Off" : camp.EconomyAutomationTurns < 0 ? "Until disabled" : camp.EconomyAutomationTurns + " turns remaining") + "\n[Double-click village tile to manage]";
             }
             float height = text.CalcHeight(new GUIContent(value), width) + 12;
             GUI.Label(new Rect(14, y, width, height), value, text); y += height;

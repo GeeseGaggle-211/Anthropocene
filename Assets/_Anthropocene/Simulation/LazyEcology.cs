@@ -19,7 +19,7 @@ namespace Anthropocene.Simulation
     public readonly struct EcologyCapacity
     {
         public readonly double Food, WildFood, ManagedFlow, Biomass, Water, FoodRate, BiomassRate, WaterRate;
-        public EcologyCapacity(WorldState w, Tile t, EcologyView view, int season)
+        public EcologyCapacity(WorldState w, Tile t, EcologyView view, int season, double? operatingFraction = null)
         {
             var s = t.Seasons[season]; double multiplier = OpeningTransitions.FoodMultiplier(w, t);
             double condition = t.Aquatic || t.WaterBody == WaterKind.Saltwater ? view.AquaticCondition : view.LandCondition;
@@ -27,7 +27,7 @@ namespace Anthropocene.Simulation
             WildFood = Math.Min(Biomass, s.MaxFood * multiplier * condition * FoodEcology.GatherableFraction(t, w.Config, view.CurrentVegetation) / FoodEcology.GatherableFraction(t, w.Config, t.NaturalVegetationPotential));
             double q = CultivationEconomy.Intensity(w.Config, view.CultivationCapital);
             Food = WildFood + (Biomass - WildFood) * q * q;
-            ManagedFlow = w.Config.CultivationRegenFlux * q * Biomass * s.BiomassRecoveryPerDay * t.CultivationOperatingFraction;
+            ManagedFlow = w.Config.CultivationRegenFlux * q * Biomass * s.BiomassRecoveryPerDay * (operatingFraction ?? t.CultivationOperatingFraction);
             Water = t.WaterBody == WaterKind.Saltwater || t.FreshwaterSource == FreshwaterSource.None ? 0 : s.MaxFreshwater;
             FoodRate = s.FoodRecoveryPerDay; BiomassRate = s.BiomassRecoveryPerDay; WaterRate = s.WaterRecoveryPerDay;
         }
@@ -106,15 +106,15 @@ namespace Anthropocene.Simulation
         public static EcologyView MaterializeEcology(WorldState w, int tile, double queryDays)
         { var view = ProjectEcology(w, tile, queryDays); view.Commit(w.Tiles[tile]); w.Tiles[tile].Cultivation = (float)CultivationEconomy.Intensity(w.Config, view.CultivationCapital); return view; }
         // Cumulative accessible stock + renewable flow envelope, never the final standing stock.
-        public static double AccessibleAvailability(WorldState w, int tile, double start, double duration)
+        public static double AccessibleAvailability(WorldState w, int tile, double start, double duration, double? operatingFraction = null)
         {
             var t = w.Tiles[tile]; var view = ProjectEcology(w, tile, start); double available = view.Food;
             foreach (var segment in Segments(start, duration, w.Config.BaseDays))
             {
-                var k = new EcologyCapacity(w, t, view, segment.Season);
+                var k = new EcologyCapacity(w, t, view, segment.Season, operatingFraction);
                 available += (k.Food * k.FoodRate + k.ManagedFlow) * segment.Days;
                 RecoverCondition(w, t, ref view, segment.Days, 0);
-                view.CultivationCapital = CultivationEconomy.Decay(w.Config, view.CultivationCapital, t.CultivationOperatingFraction, segment.Days / w.Config.DaysPerYear);
+                view.CultivationCapital = CultivationEconomy.Decay(w.Config, view.CultivationCapital, operatingFraction ?? t.CultivationOperatingFraction, segment.Days / w.Config.DaysPerYear);
             }
             return Math.Max(0, available);
         }

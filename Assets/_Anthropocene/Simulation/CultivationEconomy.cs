@@ -6,7 +6,7 @@ namespace Anthropocene.Simulation
 {
     public sealed class AgriculturalLabor
     {
-        public double OperatingFarmers, ExpansionFarmers, Gatherers, GatheringWorkerIntervals;
+        public double OperatingFarmers, ExpansionFarmers, Gatherers, FoodGatherers, GatheringWorkerIntervals;
         public int[] Footprint = Array.Empty<int>();
     }
 
@@ -26,6 +26,7 @@ namespace Anthropocene.Simulation
         public static AgriculturalLabor Prepare(WorldState w, Camp camp, double start)
         {
             var plan = new AgriculturalLabor { Gatherers = camp.GathererPopulation + Workers(camp, WorkforceRoles.Gatherer) };
+            plan.FoodGatherers = Math.Max(0, plan.Gatherers - (camp.EconomicLabor?.MaterialGatherers ?? 0));
             if (!Enabled(camp) || camp.Population <= 0) return plan;
             plan.Footprint = Footprint(w, camp);
             double required = 0;
@@ -41,8 +42,16 @@ namespace Anthropocene.Simulation
             double farmers = Workers(camp, WorkforceRoles.Farmer);
             plan.OperatingFarmers = Math.Min(farmers, required);
             plan.ExpansionFarmers = Math.Max(0, farmers - plan.OperatingFarmers);
+            bool established = plan.Footprint.Any(id => w.Tiles[id].CultivationOperator == camp.Id && w.Tiles[id].CultivationCapital > 0);
+            if (camp.EconomicLabor != null)
+            {
+                // Maintenance is a minimum, not a ceiling on harvesting employment.
+                // Explicit expansion time cannot simultaneously harvest or do upkeep.
+                plan.ExpansionFarmers = Math.Min(plan.ExpansionFarmers, camp.EconomicLabor.ExpansionFarmers);
+                plan.OperatingFarmers = established ? farmers - plan.ExpansionFarmers : 0;
+            }
             foreach (int id in plan.Footprint.Where(id => w.Tiles[id].CultivationOperator == camp.Id))
-                w.Tiles[id].CultivationOperatingFraction = required > 0 ? plan.OperatingFarmers / required : 0;
+                w.Tiles[id].CultivationOperatingFraction = required > 0 ? Math.Min(1, plan.OperatingFarmers / required) : plan.OperatingFarmers > 0 ? 1 : 0;
             return plan;
         }
         // Each increment is scored again against the current capital and upkeep costs.

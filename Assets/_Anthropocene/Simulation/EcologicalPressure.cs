@@ -91,10 +91,10 @@ namespace Anthropocene.Simulation
                 double f = Share(humans, d.Food, foodRequest), p = Share(herds, d.PotentialFood, herdRequest), q = Share(water, d.Freshwater, waterRequest);
                 // Allocate this settlement's capped share to operating farmers first;
                 // gatherers fill the remaining actual gap, never the pre-cap forecast.
-                if (d.Kind == "Cultivation" || d.Kind == "Gathering")
+                if (d.Kind == "Cultivation" || d.Kind == "Gathering" || d.Kind == "Marine gathering" || d.Kind == "Aquatic gathering")
                 {
                     double farmClaim = requests.Where(x => x.Entity == d.Entity && x.Kind == "Cultivation").Sum(x => x.Food);
-                    double gatherClaim = requests.Where(x => x.Entity == d.Entity && x.Kind == "Gathering").Sum(x => x.Food);
+                    double gatherClaim = requests.Where(x => x.Entity == d.Entity && (x.Kind == "Gathering" || x.Kind == "Marine gathering" || x.Kind == "Aquatic gathering")).Sum(x => x.Food);
                     double accepted = Share(humans, farmClaim + gatherClaim, foodRequest);
                     double farmAccepted = Math.Min(farmClaim, accepted);
                     f = d.Kind == "Cultivation" ? Share(farmAccepted, d.Food, farmClaim) : Share(Math.Max(0, accepted - farmAccepted), d.Food, gatherClaim);
