@@ -242,6 +242,18 @@ internal static class NeolithicChecks
             Near(LazyEcology.ProjectEcology(yearly, tile, yearly.Days).Food, LazyEcology.ProjectEcology(building, tile, building.Days).Food, "construction and ecology use the same seasonal work barriers");
         }
 
+        var maintained = Fixture(); var annualMaintenance = Fixture();
+        foreach (var example in new[] { maintained, annualMaintenance })
+        {
+            example.Config.Mortality = 0;
+            example.Camps[0].Workforce.Assign(WorkforceRoles.Farmer, 100, 100);
+        }
+        annualMaintenance.Config.TurnDays = 365;
+        new TurnResolver().Resolve(maintained, new Dictionary<int, List<Order>>());
+        for (int year = 0; year < 20; year++) new TurnResolver().Resolve(annualMaintenance, new Dictionary<int, List<Order>>());
+        foreach (int tile in CultivationEconomy.Footprint(maintained, maintained.Camps[0]))
+            Near(annualMaintenance.Tiles[tile].CultivationCapital, maintained.Tiles[tile].CultivationCapital, "seasonal upkeep and expansion split is invariant for a constant farmer assignment");
+
         var urban = Fixture(); var town = urban.Camps[0]; town.Population = 5000;
         // Food already delivered by an upstream logistics system enters ordinary stock.
         // Its provenance is outside this pass; local cultivation is deliberately absent.
