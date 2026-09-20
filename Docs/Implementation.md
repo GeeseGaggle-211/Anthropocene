@@ -1,5 +1,9 @@
 # Implementation architecture
 
+Neolithic economy contracts and the September 20 reconciliation are documented
+in [NeolithicRealignment.md](NeolithicRealignment.md). Its source hierarchy
+supersedes historical cultivation, manufacturing and QoL descriptions below.
+
 [EcologyFoundation.md](EcologyFoundation.md) is the current mechanics contract; [ConfigurationUnits.md](ConfigurationUnits.md) defines parameter meanings. [Validation.md](Validation.md) and [Performance.md](Performance.md) distinguish measured behavior from remaining limitations. The original `DesignSpec.txt` and earlier milestone reports are historical sources, not current rules when they conflict.
 
 ## Ownership and boundaries
@@ -8,7 +12,7 @@
 
 `Ownership.Bind` is an explicit construction/load/resolution boundary. It installs shared society references; observation, projection and saving must not create owners or IDs. Compatibility accessors on Camp delegate to Society and are not separately serialized histories. `PracticeEffects` derives task efficiency from society-owned practice; future specialist proficiency can replace that policy without moving ownership again.
 
-`OpeningTransitions` records owned transition seeds and optionally applies the existing immediate opening rewards. Cultivation/fishery booleans, the food multiplier and five starting domestic animals are isolated compatibility outputs. They are not Neolithic cultivation intensity, domestication or construction systems. Era completion belongs to society state; the opening ends when each society has completed it or has no surviving people.
+`OpeningTransitions` records owned transition seeds and optional immediate opening rewards. Only the fishery flag retains the compatibility food multiplier; Cultivated grants no flat food bonus. Five starting domestic animals retain their existing opening behavior. Physical cultivation now uses E/q and the shared ecology/labor model in `CultivationEconomy`. Era completion belongs to society state; the opening ends when each society has completed it or has no surviving people.
 
 ## Generation
 

@@ -1,5 +1,10 @@
 # Configuration units
 
+The September 20 Neolithic recipe, absolute worker-time, Housing, Fabric and
+expectation constants/sweeps are listed in
+[NeolithicRealignment.md](NeolithicRealignment.md#centralized-calibration-and-sweeps).
+Both recipe coefficients are 1.0; Housing uses one total Wood/Clay unit.
+
 Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Serialized defaults must match the C# defaults. [EcologyFoundation.md](EcologyFoundation.md) describes the equations and [Validation.md](Validation.md) records the tests. The prototype uses abstract food/water quantities, not kilograms or litres.
 
 | Fields | Meaning and units |

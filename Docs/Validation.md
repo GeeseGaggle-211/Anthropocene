@@ -1,5 +1,15 @@
 # Validation - September 18, 2026
 
+## Neolithic realignment — September 20, 2026
+
+See [NeolithicRealignment.md](NeolithicRealignment.md#verification-and-boundaries)
+for the source hierarchy, replacement architecture, 194 focused acceptance
+assertions, five-generation deterministic economic smoke, successful full
+three-seed regression, 26/26 Unity EditMode tests, and explicit deferred systems.
+The final focused economic regression includes scalar/2/4-worker comparisons
+and exact save/reload continuation. Historical balance numbers below remain
+Paleolithic measurements, not Neolithic balance claims.
+
 Current mechanics: [EcologyFoundation.md](EcologyFoundation.md). Windows x64, Unity **6000.5.10f1**, bundled .NET **8.0.318**. Earlier results are preserved in [Validation-Milestone3.md](Validation-Milestone3.md); they are not current balance measurements.
 
 Current production tuning now allocates food to current-population consumption, full operating-reserve refill and then growth; removes the additional successful-hunt experience bonus; and exposes 25% of newly generated Shallows biomass as Paleolithic human food while preserving total biomass and lake/Ocean shares. Land-adjacent Shallows cannot upwell; existing upwelling multipliers apply only to outer-shelf Shallows with no adjacent land. The experimental calibration harness and its additional reporting/tests were intentionally not promoted to `main`.
