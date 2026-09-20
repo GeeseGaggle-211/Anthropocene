@@ -28,8 +28,8 @@ namespace Anthropocene.Simulation
             double upkeep = operated.Sum(id => { CultivationEconomy.Factors(cfg, w.Tiles[id], out _, out double m); return LazyEcology.ProjectEcology(w, id, w.Days).CultivationCapital * n.MaintenanceWorkersPerTileE(cfg.MaintenanceCoefficient) * m; });
             bool established = operated.Any(id => LazyEcology.ProjectEcology(w, id, w.Days).CultivationCapital > 0);
             var eligible = w.Map.Radius(c.Tile, cfg.GatherRadius).Where(id => visible.Contains(id) && PassiveGathering.Eligible(w, c, id)).OrderBy(id => id).ToArray();
-            double Supply(int id) => LazyEcology.AccessibleAvailability(w, id, w.Days, cfg.TurnDays, operated.Contains(id) ? 1 : 0);
-            double supply = eligible.Sum(Supply), plantSupply = eligible.Where(id => w.Tiles[id].Land).Sum(Supply);
+            double FoodAvailability(int id) => LazyEcology.AccessibleAvailability(w, id, w.Days, cfg.TurnDays, operated.Contains(id) ? 1 : 0);
+            double supply = eligible.Sum(FoodAvailability), plantSupply = eligible.Where(id => w.Tiles[id].Land).Sum(FoodAvailability);
             double biological = TurnResolver.PlanningFoodDemand(w, c);
             double nextPopulation = TurnResolver.PlanningResidentPopulation(w, c, Math.Min(biological, supply));
             var sources = MaterialEconomy.KnownSources(w, c, w.Days);
@@ -41,6 +41,8 @@ namespace Anthropocene.Simulation
             var goods = recipes.Where(r => r.Good != CraftGood.HandTools && r.Good != CraftGood.Tools).ToArray();
             var goals = goods.ToDictionary(r => r.Good, r => NeolithicProduction.Priority(preview, r.Good) > 0 ? NeolithicProduction.Demand(w, preview, r.Good, years) : 0);
             double sparePlant = Math.Min(c.PlantFood, Math.Max(0, c.Food - c.Population * cfg.Consumption * intervals * (1 + cfg.GrowthReserveTurns)));
+            int consumers = c.Population + w.Hunters.Where(h => h.SourceCamp == c.Id && Supply.Connected(w, h)).Sum(h => h.Population);
+            double plantEnvelope = Math.Min(plantSupply + sparePlant, Math.Max(0, c.Food + supply - consumers * cfg.Consumption * intervals));
 
             Proposal Evaluate(double fulfillment)
             {
@@ -48,7 +50,7 @@ namespace Anthropocene.Simulation
                 var candidate = Preview(c, intent, nextPopulation);
                 NeolithicProduction.DepreciateHousing(w, candidate, years);
                 var room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]);
-                double plant = plantSupply + sparePlant;
+                double plant = plantEnvelope;
                 var requested = recipes.ToDictionary(r => r.Good, r => 0d);
                 var futureRoles = new Dictionary<string, double>();
                 string Role(CraftRecipe r) => c.People.HasTech(r.Track) ? r.Specialist : WorkforceRoles.Craftsperson;
@@ -83,7 +85,7 @@ namespace Anthropocene.Simulation
                 candidate.EconomicLabor = intent.Labor;
                 var rolesNow = new Dictionary<string, double>();
                 var coverage = new ToolCoverageBudget(w, c, intervals);
-                room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]); plant = plantSupply + sparePlant;
+                room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]); plant = plantEnvelope;
                 // Match production's role/recipe ordering and share one tool-time budget.
                 foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
                     foreach (var r in recipes.OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))

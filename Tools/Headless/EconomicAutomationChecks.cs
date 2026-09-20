@@ -110,6 +110,10 @@ internal static class EconomicAutomationChecks
         var se = EconomicIntents.Automatic(stocked, sc, true); Budget(stocked, se);
         Check(!se.Assignments.Any(a => a.Role == WorkforceRoles.Craftsperson || WorkforceRoles.Specialists.Contains(a.Role)), "finished stock bridging removes redundant manufacture");
         sc.AnimalFood = 1000000; Near(TurnResolver.PlanningFoodDemand(stocked, sc), 0, "imported/stored food shares the useful demand budget");
+        var scarce = Fixture(); var fc = scarce.Camps[0]; Field(scarce); fc.PlantFood = 0; fc.Inventory.HandTools = 100; fc.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
+        foreach (var t in scarce.Tiles) { t.Food = 0; for (int season = 0; season < t.Seasons.Length; season++) { t.Seasons[season].MaxFood = 40; t.Seasons[season].FoodRecoveryPerDay = .002f; t.Seasons[season].BiomassRecoveryPerDay = 0; } }
+        var shortage = EconomicIntents.Automatic(scarce, fc, true); Budget(scarce, shortage);
+        Check(!shortage.Assignments.Any(a => a.Role == WorkforceRoles.Weaver), "food needed for meals cannot also justify idle Weavers");
         foreach (int population in new[] { 1, 2, 7, 24, 250, 1000 })
         { var tiny = Fixture(); tiny.Camps[0].Population = population; Budget(tiny, EconomicIntents.Automatic(tiny, tiny.Camps[0], true)); }
     }
