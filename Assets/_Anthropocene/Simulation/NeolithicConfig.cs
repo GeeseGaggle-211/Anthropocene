@@ -18,14 +18,21 @@ namespace Anthropocene.Simulation
         public double StonePerHandTool = 1, ClayPerPot = 1, WoodPerFarmTool = 1, StonePerTool = 1, WoodPerTool = 1;
         public double ToolCoveragePerWorker = 1, CraftMasteryThreshold = 400, UsefulFinishedGoodsReserveTurns = 1;
         public double FabricConsumptionPerPersonTurn = 1, HousingPeoplePerUnit = 4, HousingDecayPerTurn = .10;
+        [System.Runtime.Serialization.OptionalField] public double PotStorageFoodPerUnit = 80, PotDecayPerReferenceTurn = .10;
         public double RudimentaryWeightClothing = .5, RudimentaryWeightHousing = .5, RudimentaryExpectationFloor = .25, RudimentaryExpectationRampYears = 100;
         public double BuildWorkerYearsPerTileE => ReferencePopulation * ReferenceTurnYears * IntensificationTurns / ReferenceFootprintTiles;
         public double MaintenanceWorkersPerTileE(double coefficient) => ReferencePopulation * coefficient / ReferenceFootprintTiles;
+        [System.Runtime.Serialization.OnDeserializing]
+        private void InitializePotStorageDefaults(System.Runtime.Serialization.StreamingContext context)
+        {
+            PotStorageFoodPerUnit = 80;
+            PotDecayPerReferenceTurn = .10;
+        }
         public void Validate()
         {
             if (new[] { OpenBuild, WoodlandBuild, ForestBuild, WeaverFabricOutputPerBaseDays, BuilderHousingOutputPerBaseDays, GeneralistTaskEfficiency }.Any(v => v <= 0)) throw new ArgumentException("Neolithic construction and allocation rates must be positive.");
             var values = GetType().GetFields().Where(f => f.FieldType == typeof(double)).Select(f => (double)f.GetValue(this));
-            if (values.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || ReferencePopulation <= 0 || ReferenceFootprintTiles != 7 || ReferenceTurnYears <= 0 || IntensificationTurns <= 0 || AllocationStepE <= 0 || DecayHalfLifeYears <= 0 || HousingPeoplePerUnit <= 0 || HousingDecayPerTurn >= 1 || ToolCoveragePerWorker <= 0 || RudimentaryExpectationRampYears <= 0 || RudimentaryExpectationFloor > 1 || Math.Abs(RudimentaryWeightClothing + RudimentaryWeightHousing - 1) > 1e-10 || GeneralistTaskEfficiency > 1 || CraftMasteryThreshold <= 0)
+            if (values.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || ReferencePopulation <= 0 || ReferenceFootprintTiles != 7 || ReferenceTurnYears <= 0 || IntensificationTurns <= 0 || AllocationStepE <= 0 || DecayHalfLifeYears <= 0 || HousingPeoplePerUnit <= 0 || HousingDecayPerTurn >= 1 || PotStorageFoodPerUnit <= 0 || PotDecayPerReferenceTurn >= 1 || ToolCoveragePerWorker <= 0 || RudimentaryExpectationRampYears <= 0 || RudimentaryExpectationFloor > 1 || Math.Abs(RudimentaryWeightClothing + RudimentaryWeightHousing - 1) > 1e-10 || GeneralistTaskEfficiency > 1 || CraftMasteryThreshold <= 0)
                 throw new ArgumentException("Invalid Neolithic calibration.");
         }
     }

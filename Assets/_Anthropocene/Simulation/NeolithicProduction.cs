@@ -110,18 +110,20 @@ namespace Anthropocene.Simulation
         }
         public static double Stock(Camp c, CraftGood good) => good == CraftGood.HandTools ? c.Inventory.HandTools : good == CraftGood.Pots ? c.Inventory.Pots : good == CraftGood.Cloth ? c.Inventory.Cloth : good == CraftGood.FarmTools ? c.Inventory.FarmTools : good == CraftGood.Housing ? c.Inventory.HousingUnits : c.Inventory.Tools;
         public static double Priority(Camp c, CraftGood good) => good == CraftGood.HandTools ? c.CraftingPriorities.HandTools : good == CraftGood.Pots ? c.CraftingPriorities.Pots : good == CraftGood.Cloth ? c.CraftingPriorities.Cloth : good == CraftGood.FarmTools ? c.CraftingPriorities.FarmTools : good == CraftGood.Housing ? c.CraftingPriorities.Housing : c.CraftingPriorities.Tools;
-        public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation = -1)
+        public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation = -1, bool potsAlreadyDecayed = false)
         {
             var n = w.Config.Neolithic;
             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
             if (good == CraftGood.HandTools || good == CraftGood.Tools)
-                return ToolReplacementDemand(w, c, good, years, residents);
+                return ToolReplacementDemand(w, c, good, years, residents, potsAlreadyDecayed);
+            if (good == CraftGood.Pots)
+                return potsAlreadyDecayed ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
             double target = good == CraftGood.Cloth ? residents * n.FabricConsumptionPerPersonTurn * (years / n.ReferenceTurnYears + n.UsefulFinishedGoodsReserveTurns) :
                 good == CraftGood.Housing ? residents / n.HousingPeoplePerUnit :
-                good == CraftGood.Pots ? c.PotsTarget : c.FarmToolsTarget;
+                c.FarmToolsTarget;
             return Math.Max(0, target - Stock(c, good));
         }
-        private static double ToolReplacementDemand(WorldState w, Camp c, CraftGood good, double years, double residents)
+        private static double ToolReplacementDemand(WorldState w, Camp c, CraftGood good, double years, double residents, bool potsAlreadyDecayed = false)
         {
             var n = w.Config.Neolithic;
             var recipes = Recipes(w.Config).Where(r => r.Equipment).OrderByDescending(r => Priority(c, r.Good)).ThenBy(r => r.Good).ToArray();
@@ -155,7 +157,7 @@ namespace Anthropocene.Simulation
                     if (role != WorkforceRoles.Craftsperson && (!specialist || role != recipe.Specialist)) continue;
                     if (role == WorkforceRoles.Craftsperson && recipe.SpecialistOnly) continue;
                     double rate = recipe.Rate * (role == recipe.Specialist && specialist ? 1 : n.GeneralistTaskEfficiency);
-                    double wanted = Math.Max(0, DemandWithoutToolReplacement(w, c, recipe.Good, years, residents) - planned[recipe.Good]);
+                    double wanted = Math.Max(0, DemandWithoutToolReplacement(w, c, recipe.Good, years, residents, potsAlreadyDecayed) - planned[recipe.Good]);
                     double amount = Math.Min(wanted, availableLabor * rate);
                     if (recipe.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / recipe.Stone);
                     if (recipe.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / recipe.Clay);
@@ -194,15 +196,48 @@ namespace Anthropocene.Simulation
             if (good == CraftGood.HandTools && !regularFeasible) return deficit;
             return 0;
         }
-        private static double DemandWithoutToolReplacement(WorldState w, Camp c, CraftGood good, double years, double residents)
+        private static double DemandWithoutToolReplacement(WorldState w, Camp c, CraftGood good, double years, double residents, bool potsAlreadyDecayed = false)
         {
             var n = w.Config.Neolithic;
+            if (good == CraftGood.Pots) return potsAlreadyDecayed ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
             double target = good == CraftGood.Cloth ? residents * n.FabricConsumptionPerPersonTurn * (years / n.ReferenceTurnYears + n.UsefulFinishedGoodsReserveTurns) :
                 good == CraftGood.Housing ? residents / n.HousingPeoplePerUnit :
-                good == CraftGood.Pots ? c.PotsTarget : c.FarmToolsTarget;
+                c.FarmToolsTarget;
             return Math.Max(0, target - Stock(c, good));
         }
-        public static double StorageCapacityMultiplier(Camp c) => 1;
+        private static double IntervalsForYears(WorldState w, double years) => Math.Max(0, years) * w.Config.DaysPerYear / w.Config.BaseDays;
+        public static double NaturalStorageCapacity(WorldState w, Camp c, double intervals, double residents = -1)
+        {
+            double population = StoragePopulation(w, c, residents);
+            return Math.Max(0, population * w.Config.Consumption * intervals * TurnResolver.StorageGenerations(w, c.Tile));
+        }
+        public static double StoragePopulation(WorldState w, Camp c, double residents = -1)
+            => residents < 0 ? w.LinkedPopulation(c) : Math.Max(0, residents + w.Hunters.Where(h => h.SourceCamp == c.Id && Supply.Connected(w, h)).Sum(h => h.Population));
+        public static double DesiredReserveFood(WorldState w, double population, double intervals)
+            => Math.Max(0, population * w.Config.Consumption * intervals * w.Config.GrowthReserveTurns);
+        public static double TargetPots(WorldState w, Camp c, double years, double residents = -1)
+        {
+            double population = StoragePopulation(w, c, residents);
+            double intervals = IntervalsForYears(w, years);
+            double natural = Math.Max(0, population * w.Config.Consumption * intervals * TurnResolver.StorageGenerations(w, c.Tile));
+            double desired = DesiredReserveFood(w, population, intervals);
+            return Math.Max(0, desired - natural) / w.Config.Neolithic.PotStorageFoodPerUnit;
+        }
+        public static double PotDemand(WorldState w, Camp c, double years, double residents = -1)
+        {
+            var n = w.Config.Neolithic;
+            double retained = Math.Max(0, c.Inventory.Pots) * Math.Pow(1 - n.PotDecayPerReferenceTurn, Math.Max(0, years) / n.ReferenceTurnYears);
+            return Math.Max(0, TargetPots(w, c, years, residents) - retained);
+        }
+        public static double PotDemandFromCurrentStock(WorldState w, Camp c, double years, double residents = -1)
+            => Math.Max(0, TargetPots(w, c, years, residents) - Math.Max(0, c.Inventory.Pots));
+        public static void DepreciatePots(WorldState w, Camp c, double years)
+        {
+            var n = w.Config.Neolithic;
+            c.Inventory.Pots = Math.Max(0, c.Inventory.Pots) * Math.Pow(1 - n.PotDecayPerReferenceTurn, Math.Max(0, years) / n.ReferenceTurnYears);
+        }
+        public static double StorageCapacity(WorldState w, Camp c, double intervals)
+            => NaturalStorageCapacity(w, c, intervals) + Math.Max(0, c.Inventory.Pots) * w.Config.Neolithic.PotStorageFoodPerUnit;
         public static double FabricFeedstockNeed(WorldState w, Camp c, double intervals, double years, double residentPopulation = -1)
         {
             if (!CultivationEconomy.Enabled(c) || c.Population <= 0 || c.CraftingPriorities.Cloth <= 0) return 0;
@@ -281,19 +316,20 @@ namespace Anthropocene.Simulation
         {
             if (c.Population <= 0) return;
             DepreciateHousing(w, c, years);
+            DepreciatePots(w, c, years);
             if (CultivationEconomy.Enabled(c))
             {
                 var recipes = Recipes(w.Config);
                 double equipment = (c.Inventory.HandTools + c.Inventory.Tools + (c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools : 0)) * intervals / w.Config.Neolithic.ToolCoveragePerWorker;
                 var coverage = new ToolCoverageBudget(w, c, intervals);
-                MaterialEconomy.Gather(w, c, recipes, intervals, years, gatheringWorkerIntervals, ref equipment, record);
+                MaterialEconomy.Gather(w, c, recipes, intervals, years, gatheringWorkerIntervals, ref equipment, record, true);
                 foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
                 {
                     double labor = CultivationEconomy.Workers(c, role) * intervals;
                     foreach (var recipe in recipes.OrderByDescending(r => Priority(c, r.Good)).ThenBy(r => r.Good))
                     {
                         if (Priority(c, recipe.Good) <= 0) continue;
-                        labor -= Produce(w, c, recipe, role, labor, intervals, Demand(w, c, recipe.Good, years), ref equipment, record, coverage);
+                        labor -= Produce(w, c, recipe, role, labor, intervals, Demand(w, c, recipe.Good, years, -1, true), ref equipment, record, coverage);
                     }
                 }
             }

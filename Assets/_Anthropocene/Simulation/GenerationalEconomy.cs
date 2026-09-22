@@ -330,7 +330,9 @@ namespace Anthropocene.Simulation
             // Refill their complete configured operating reserve, bounded by what local
             // storage can retain, before funding births. Newborns happen afterward and
             // neither consume nor acquire reserves retroactively.
-            reserveTarget = populationBase * Math.Min(w.Config.GrowthReserveTurns, StorageGenerations(w, camp.Tile));
+            double desiredReserve = NeolithicProduction.DesiredReserveFood(w, populationBase / Math.Max(1e-12, w.Config.Consumption * intervals), intervals);
+            double achievableStorage = NeolithicProduction.StorageCapacity(w, camp, intervals);
+            reserveTarget = Math.Min(desiredReserve, achievableStorage);
             double expiringInventory = Math.Max(0, initialFood - reserveTarget);
             double inventoryConsumedFirst = Math.Min(populationBase, expiringInventory);
             consumptionIncome = populationBase - inventoryConsumedFirst;
@@ -420,7 +422,7 @@ namespace Anthropocene.Simulation
             if (input <= 0) return 0;
             int population = camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
             double consumption = population * w.Config.Consumption * intervals;
-            double reserve = consumption * Math.Min(w.Config.GrowthReserveTurns, StorageGenerations(w, camp.Tile));
+            double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, population, intervals), NeolithicProduction.StorageCapacity(w, camp, intervals));
             double sparePlant = Math.Min(camp.PlantFood, Math.Max(0, camp.Food - consumption - reserve));
             return Math.Max(0, input - sparePlant);
         }
@@ -514,8 +516,7 @@ namespace Anthropocene.Simulation
         {
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
-                double potMultiplier = NeolithicProduction.StorageCapacityMultiplier(camp);
-                double cap = w.LinkedPopulation(camp) * w.Config.Consumption * intervals * StorageGenerations(w, camp.Tile) * potMultiplier;
+                double cap = NeolithicProduction.StorageCapacity(w, camp, intervals);
                 double loss = Math.Max(0, camp.Food - cap); camp.Food -= loss;
                 var summary = record.Demographics.First(d => d.Camp == camp.Id); summary.DiscardedInventory += loss;
             }

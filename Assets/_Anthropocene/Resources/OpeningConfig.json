@@ -40,6 +40,8 @@
     "FabricConsumptionPerPersonTurn": 1,
     "HousingPeoplePerUnit": 4,
     "HousingDecayPerTurn": 0.1,
+    "PotStorageFoodPerUnit": 80,
+    "PotDecayPerReferenceTurn": 0.1,
     "RudimentaryWeightClothing": 0.5,
     "RudimentaryWeightHousing": 0.5,
     "RudimentaryExpectationFloor": 0.25,
