@@ -225,7 +225,9 @@ namespace Anthropocene.Simulation
                 // No worker mutates entities, allocates IDs, or appends history.
                 for (int i = 0; i < stepGroups.Length; i++)
                 {
-                    var result = results[i]; result.View.Commit(w.Tiles[stepGroups[i].Tile]); record.Pressure.AddRange(result.Pressure); record.EcologyBalances.Add(result.Balance); transfers.AddRange(result.Transfers);
+                    var result = results[i]; result.View.Commit(w.Tiles[stepGroups[i].Tile]);
+                    if (result.HasWoodSource) MaterialEconomy.CommitWoodProjection(w, stepGroups[i].Tile, result.WoodRemaining, result.WoodDays);
+                    record.Pressure.AddRange(result.Pressure); record.EcologyBalances.Add(result.Balance); transfers.AddRange(result.Transfers);
                     foreach (var transfer in result.Transfers)
                     {
                         int camp = FoodCamp(transfer.Kind, transfer.Entity);

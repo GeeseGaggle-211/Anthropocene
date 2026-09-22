@@ -51,7 +51,10 @@ namespace Anthropocene.Simulation
             foreach (var segment in Segments(start, days, baseDays)) weights[segment.Season] += segment.Days / baseDays;
             return weights;
         }
-        public static EcologyView ProjectEcology(WorldState w, int tile, double queryDays, bool composeCycles = true)
+        // `recovered` observes the same ordered recovery segments without changing the
+        // ecological projection. Sparse dependent stocks can use it for a pure
+        // companion projection and commit only at the caller's existing write barrier.
+        internal static EcologyView ProjectEcology(WorldState w, int tile, double queryDays, bool composeCycles, Action<EcologyView, EcologyView, double> recovered)
         {
             var t = w.Tiles[tile]; var v = new EcologyView(t);
             if (queryDays < v.Days - 1e-8) throw new ArgumentOutOfRangeException(nameof(queryDays), "Cannot project before stored ecology.");
@@ -59,10 +62,14 @@ namespace Anthropocene.Simulation
             // Healthy, undisturbed pools have time-independent targets within each season.
             bool quiet = composeCycles && v.CultivationCapital == 0 && v.LandCondition == 1 && v.AquaticCondition == 1 && v.CurrentVegetation == t.NaturalVegetationPotential;
             double prefix = Math.Min(queryDays - v.Days, (Math.Ceiling(v.Days / cycleDays - 1e-10) * cycleDays - v.Days + cycleDays) % cycleDays);
-            foreach (var s in Segments(v.Days, prefix, w.Config.BaseDays)) Recover(w, t, ref v, s);
+            foreach (var s in Segments(v.Days, prefix, w.Config.BaseDays))
+            {
+                var before = v; Recover(w, t, ref v, s); recovered?.Invoke(before, v, s.Days);
+            }
             long cycles = quiet ? (long)Math.Floor((queryDays - v.Days) / cycleDays + 1e-10) : 0;
             if (cycles > 0)
             {
+                var before = v;
                 var food = SeasonalAffine.Identity; var nonfood = SeasonalAffine.Identity; var water = SeasonalAffine.Identity;
                 for (int s = 0; s < 4; s++)
                 {
@@ -73,11 +80,16 @@ namespace Anthropocene.Simulation
                 }
                 double n = nonfood.Repeat(Math.Max(0, v.PotentialFood - v.Food), cycles);
                 v.Food = food.Repeat(v.Food, cycles); v.PotentialFood = v.Food + n; v.Freshwater = water.Repeat(v.Freshwater, cycles); v.Days += cycles * cycleDays;
+                recovered?.Invoke(before, v, cycles * cycleDays);
             }
-            foreach (var s in Segments(v.Days, queryDays - v.Days, w.Config.BaseDays)) Recover(w, t, ref v, s);
+            foreach (var s in Segments(v.Days, queryDays - v.Days, w.Config.BaseDays))
+            {
+                var before = v; Recover(w, t, ref v, s); recovered?.Invoke(before, v, s.Days);
+            }
             v.Days = queryDays; v.Saltwater = t.Seasons[(int)Math.Floor(queryDays / w.Config.BaseDays) % 4].MaxSaltwater;
             ClampCapacity(w, t, ref v); return v;
         }
+        public static EcologyView ProjectEcology(WorldState w, int tile, double queryDays, bool composeCycles = true) => ProjectEcology(w, tile, queryDays, composeCycles, null);
         internal static void ClampCapacity(WorldState w, Tile t, ref EcologyView v)
         {
             var k = new EcologyCapacity(w, t, v, (int)Math.Floor(v.Days / w.Config.BaseDays) % 4);
@@ -97,14 +109,21 @@ namespace Anthropocene.Simulation
         {
             var c = w.Config;
             bool aquatic = t.Aquatic || t.WaterBody == WaterKind.Saltwater;
-            double recovery = c.ConditionRecoveryPerYear / c.DaysPerYear * (t.NaturalVegetationPotential == VegetationTier.Low ? c.LowPotentialRecoveryMultiplier : t.NaturalVegetationPotential == VegetationTier.High ? c.HighPotentialRecoveryMultiplier : 1);
+            double recovery = LandConditionRecoveryPerDay(w, t);
             bool plankton = aquatic && (w.Generation?.GeneratorVersion ?? WorldState.GeneratorVersion) >= 11;
             v.LandCondition = EcologyMath.Condition(v.LandCondition, 1, recovery, aquatic ? 0 : damagePerDay, days);
             v.AquaticCondition = EcologyMath.Condition(v.AquaticCondition, 1, plankton ? AquaticEcology.ConditionRecoveryPerDay(t) : recovery, aquatic ? damagePerDay : 0, days);
             v.CurrentVegetation = Vegetation.Update(t.NaturalVegetationPotential, v.CurrentVegetation, plankton ? v.AquaticCondition : v.LandCondition, c);
         }
+        internal static double LandConditionRecoveryPerDay(WorldState w, Tile t) => w.Config.ConditionRecoveryPerYear / w.Config.DaysPerYear *
+            (t.NaturalVegetationPotential == VegetationTier.Low ? w.Config.LowPotentialRecoveryMultiplier : t.NaturalVegetationPotential == VegetationTier.High ? w.Config.HighPotentialRecoveryMultiplier : 1);
         public static EcologyView MaterializeEcology(WorldState w, int tile, double queryDays)
-        { var view = ProjectEcology(w, tile, queryDays); view.Commit(w.Tiles[tile]); w.Tiles[tile].Cultivation = (float)CultivationEconomy.Intensity(w.Config, view.CultivationCapital); return view; }
+        {
+            var wood = MaterialEconomy.ProjectWoodSource(w, tile);
+            var view = ProjectEcology(w, tile, queryDays, true, wood == null ? null : wood.Recover);
+            view.Commit(w.Tiles[tile]); w.Tiles[tile].Cultivation = (float)CultivationEconomy.Intensity(w.Config, view.CultivationCapital);
+            wood?.Commit(); return view;
+        }
         // Cumulative accessible stock + renewable flow envelope, never the final standing stock.
         public static double AccessibleAvailability(WorldState w, int tile, double start, double duration, double? operatingFraction = null)
         {

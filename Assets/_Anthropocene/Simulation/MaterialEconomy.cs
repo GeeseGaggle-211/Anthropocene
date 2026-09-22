@@ -41,6 +41,39 @@ namespace Anthropocene.Simulation
         public MaterialId Material;
         public double Initial, Available, Share, RecoveryPerYear;
     }
+    // A local, pure companion to an existing Wood source. It has no ecological
+    // fields of its own: every capacity target comes from the authoritative
+    // EcologyView supplied by LazyEcology or EcologicalPressure.
+    internal sealed class WoodSourceProjection
+    {
+        private readonly WorldState world;
+        private readonly int tile;
+        private readonly MaterialSourceState state;
+        private double remaining;
+        internal WoodSourceProjection(WorldState world, int tile, MaterialSourceState state)
+        {
+            this.world = world; this.tile = tile; this.state = state;
+            remaining = Math.Max(0, state.Remaining);
+            var stored = new EcologyView(world.Tiles[tile]);
+            if (state.LastDays > stored.Days + 1e-8) throw new InvalidOperationException("Wood source cannot be ahead of authoritative ecology.");
+            // Older saves can have a source clock behind a later ecology commit.
+            // Do not reconstruct unrecorded ecological history: establish the
+            // current authoritative ceiling and continue from this boundary.
+            remaining = Math.Min(remaining, MaterialEconomy.WoodCapacity(state.Initial, world.Tiles[tile], stored));
+        }
+        internal double Remaining => remaining;
+        internal void Recover(EcologyView before, EcologyView after, double days) => Recover(before, after, days, 0);
+        internal void Recover(EcologyView before, EcologyView after, double days, double conditionDamagePerDay)
+        {
+            if (days <= 0) { remaining = Math.Min(remaining, MaterialEconomy.WoodCapacity(state.Initial, world.Tiles[tile], after)); return; }
+            remaining = MaterialEconomy.RecoverWood(world, world.Tiles[tile], state.Initial, remaining, before, after, days, conditionDamagePerDay);
+        }
+        internal void Commit()
+        {
+            state.Remaining = remaining;
+            state.LastDays = world.Tiles[tile].LastEcologyUpdateDays;
+        }
+    }
     // A turn-local production aid.  It never owns material: inventory and source
     // state remain authoritative.  Its fixed ratio prevents Housing from changing
     // Wood/Clay policy as gathering and earlier specialist work exchange stock.
@@ -126,6 +159,67 @@ namespace Anthropocene.Simulation
             woodShare = total > 0 ? wood / total : 0;
             clayShare = total > 0 ? clay / total : 0;
         }
+        private static string SurfaceId(int tile, MaterialId material) => "surface:" + tile + ":" + (int)material;
+        internal static WoodSourceProjection ProjectWoodSource(WorldState w, int tile)
+        {
+            var state = w.MaterialSources.FirstOrDefault(s => s.Id == SurfaceId(tile, MaterialId.Wood) && s.Material == MaterialId.Wood);
+            return state == null ? null : new WoodSourceProjection(w, tile, state);
+        }
+        // The ordinal fraction is a biological support ratio, not a replacement
+        // for the generated Wood raster. A naturally Low tile therefore keeps
+        // its generated brush capacity, while High -> Medium -> Low follows the
+        // same current-vegetation hysteresis as the rest of ecology.
+        internal static double WoodCapacity(double initial, Tile tile, EcologyView ecology)
+        {
+            if (!tile.Land || initial <= 0) return 0;
+            double natural = (int)tile.NaturalVegetationPotential + 1;
+            double current = Math.Min((int)tile.NaturalVegetationPotential, (int)ecology.CurrentVegetation) + 1;
+            return Math.Max(0, initial) * Numbers.Clamp(ecology.LandCondition, 0, 1) * current / natural;
+        }
+        // Integrate Wood toward the ecological support present through this same
+        // condition segment. Condition is an affine exponential, so this remains
+        // duration-aware without adding a second vegetation clock.
+        internal static double RecoverWood(WorldState w, Tile tile, double initial, double remaining, EcologyView before, EcologyView after, double days, double conditionDamagePerDay)
+        {
+            double capacityBefore = WoodCapacity(initial, tile, before);
+            remaining = Math.Min(Math.Max(0, remaining), capacityBefore);
+            double woodRate = w.Resources == null ? 0 : Math.Max(0, w.Resources.WoodRecoveryPerYear) / w.Config.DaysPerYear;
+            if (woodRate <= 1e-18 || days <= 0) return Math.Min(remaining, WoodCapacity(initial, tile, after));
+            double vegetation = Math.Min((int)tile.NaturalVegetationPotential, (int)before.CurrentVegetation) + 1;
+            vegetation /= (double)((int)tile.NaturalVegetationPotential + 1);
+            bool aquatic = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater;
+            double recovery = aquatic ? 0 : LazyEcology.LandConditionRecoveryPerDay(w, tile);
+            double conditionRate = recovery + Math.Max(0, conditionDamagePerDay);
+            double endpoint;
+            if (conditionRate <= 1e-18)
+                endpoint = EcologyMath.Stock(remaining, initial * vegetation * Numbers.Clamp(before.LandCondition, 0, 1), woodRate, 0, days).Stock;
+            else
+            {
+                double equilibrium = recovery / conditionRate;
+                double a = initial * vegetation * equilibrium;
+                double b = initial * vegetation * (Numbers.Clamp(before.LandCondition, 0, 1) - equilibrium);
+                double woodDecay = Math.Exp(-woodRate * days), conditionDecay = Math.Exp(-conditionRate * days);
+                double integral = Math.Abs(woodRate - conditionRate) <= 1e-12 ? woodRate * days * woodDecay :
+                    woodRate * (conditionDecay - woodDecay) / (woodRate - conditionRate);
+                endpoint = remaining * woodDecay + a * (1 - woodDecay) + b * integral;
+            }
+            return Math.Min(Math.Max(0, endpoint), WoodCapacity(initial, tile, after));
+        }
+        internal static double ClampWoodSource(WorldState w, int tile, EcologyView ecology)
+        {
+            var state = w.MaterialSources.FirstOrDefault(s => s.Id == SurfaceId(tile, MaterialId.Wood) && s.Material == MaterialId.Wood);
+            if (state == null) return 0;
+            double before = state.Remaining;
+            state.Remaining = Math.Min(Math.Max(0, state.Remaining), WoodCapacity(state.Initial, w.Tiles[tile], ecology));
+            state.LastDays = ecology.Days;
+            return Math.Max(0, before - state.Remaining);
+        }
+        internal static void CommitWoodProjection(WorldState w, int tile, double remaining, double days)
+        {
+            var state = w.MaterialSources.FirstOrDefault(s => s.Id == SurfaceId(tile, MaterialId.Wood) && s.Material == MaterialId.Wood);
+            if (state == null) return;
+            state.Remaining = Math.Max(0, remaining); state.LastDays = days;
+        }
         // Packed geological rasters remain provenance. Sparse fractional continuation is
         // authoritative after first extraction; all economic queries pass through here.
         public static KnownMaterialSource[] KnownSources(WorldState w, Camp c, double days)
@@ -152,7 +246,22 @@ namespace Anthropocene.Simulation
             void Add(string id, int tile, MaterialId material, double initial, double share, double recovery)
             {
                 var state = w.MaterialSources.FirstOrDefault(s => s.Id == id);
-                double remaining = state == null ? initial : recovery > 0 ? initial + (state.Remaining - initial) * Math.Exp(-recovery * Math.Max(0, days - state.LastDays) / w.Config.DaysPerYear) : state.Remaining;
+                double remaining;
+                if (material == MaterialId.Wood)
+                {
+                    var projection = ProjectWoodSource(w, tile);
+                    if (projection == null)
+                    {
+                        var projected = LazyEcology.ProjectEcology(w, tile, Math.Max(days, w.Tiles[tile].LastEcologyUpdateDays));
+                        remaining = WoodCapacity(initial, w.Tiles[tile], projected);
+                    }
+                    else
+                    {
+                        LazyEcology.ProjectEcology(w, tile, Math.Max(days, w.Tiles[tile].LastEcologyUpdateDays), true, projection.Recover);
+                        remaining = projection.Remaining;
+                    }
+                }
+                else remaining = state == null ? initial : recovery > 0 ? initial + (state.Remaining - initial) * Math.Exp(-recovery * Math.Max(0, days - state.LastDays) / w.Config.DaysPerYear) : state.Remaining;
                 result.Add(new KnownMaterialSource { Id = id, Tile = tile, Material = material, Initial = initial, Share = share, Available = remaining * share, RecoveryPerYear = recovery, Distance = w.Map.Distance(c.Tile, tile) });
             }
         }
@@ -161,6 +270,14 @@ namespace Anthropocene.Simulation
             if (!CultivationEconomy.Enabled(c) || workerIntervals <= 0 || useful <= 0) return 0;
             var source = KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
             if (source == null) return 0;
+            if (source.Material == MaterialId.Wood)
+            {
+                // Establish the source at the same ecology boundary before its
+                // first persisted debit; queries above remain pure.
+                LazyEcology.MaterializeEcology(w, source.Tile, days);
+                source = KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
+                if (source == null) return 0;
+            }
             bool specialist = role == Specialist(source.Material) && c.People.HasTech(EconomicIntents.RequiredTechnology(role));
             if (!specialist && role != WorkforceRoles.Gatherer) return 0;
             double rate = w.Config.Neolithic.SpecialistMaterialExtractionRate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);

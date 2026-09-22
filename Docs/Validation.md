@@ -1,5 +1,35 @@
 # Validation - September 22, 2026
 
+## Issue #6 ecological Wood support
+
+Wood now follows the authoritative ecology timeline. Capacity is its generated
+source quantity times LandCondition and the ordinal current/natural vegetation
+fraction; recovery integrates toward that changing support, using the existing
+recovery coefficient. Sparse source state commits beside existing ecology commits.
+Queries remain pure and quiet-cycle ecological projection arithmetic is unchanged.
+Instant conversion loss is reported separately from the extraction receipt.
+Older sources behind the saved ecological clock are capped at that boundary;
+unrecorded historical recovery is not reconstructed. Stone/Clay and save layouts
+are unchanged.
+
+Astra independently passed the full fixed headless suite (`Seeds=0`) on both the
+pre-change baseline and final implementation, including 8,948 geology assertions,
+all geography/aquatic/start/preset checks, 12-resolution scalar/2/4-worker replay,
+and the affected economy suites: 21 Wood, 37 Housing, 271 Neolithic, 87 automation,
+58 production-tool, 45 field-tool, 1,149 planner and 12 chronology assertions.
+Separate probes passed 84 boundary, recovery, capacity, genuine old-save,
+conversion-loss and active-source replay assertions. Eight actual extraction turns
+matched scalar/four-worker/save continuation with reversed source order, normalized
+for fingerprint comparison. Another 72 cases matched an independent numerical
+integration, including zero/equal rates. The depleted-source 30-day recovery probe
+measured 1.025289 Wood on healthy land versus 0.034176 on degraded Low vegetation;
+Stone and Clay exactly matched the earlier finite-source baseline.
+
+Review corrected the proposed recover-to-original-quantity clamp, equal-clock
+capacity handling and quiet-cycle consistency before integration, and strengthened
+nonzero conversion-loss coverage. No gameplay constants were retuned. Evidence is
+retained under ignored `TestResults/Issue20/`, including the full before/after logs.
+
 ## Issue #8 residual Housing materials
 
 Housing uses the residual inventory-plus-reachable-source Wood:Clay ratio after
