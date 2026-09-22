@@ -14,14 +14,14 @@ Wood/Clay, with free substitution, are mandatory configurable recipe inputs.
 | Food | Independent farm generator plus wild extraction and flat Cultivated multiplier | Shared ecological state, claims and demographic/reserve acceptance budget |
 | Land | Vegetation-tier-only clearing modifiers, no persistent operator | Canonical wooded predicate, one operator, abandonment decay |
 | Materials | Population creates Stone/Clay/Wood | Known reachable source queries, depletion and receipts |
-| Manufacturing | Specialists pooled, inputs clamped after output, generic rates and invented bonuses | Recipe-specific labor, atomic inputs, useful demand, durable tool coverage |
+| Manufacturing | Specialists pooled, inputs clamped after output, generic rates and invented bonuses | Recipe-specific labor, atomic inputs, useful demand, realized output-capacity tool consumption |
 | QoL | Cloth wear proxy, double housing conversion/upkeep, hard shortfalls and fission | Inventory consumption, durable housing deficit, compensable expectation-adjusted utility |
 | Controls | UI mutates assignments, focus and technologies | Validated replayable player/AI economic intents |
 | Persistence | Non-positive QoL values replaced by defaults | Versioned migration, exact legitimate zero preservation |
 | Tests | Existing Neolithic tests assert superseded behavior | Contract acceptance, deterministic simulation and Paleo regression coverage |
 
 Deferred: automatic fission, expedition formulas, irrigation construction/yield/
-withdrawal, SoilCondition, tool wear, broad tool bonuses, Plough/Farm Tool effects,
+withdrawal, SoilCondition, Copper tool durability, broad tool bonuses, Plough/Farm Tool effects,
 pot storage bonuses, and full trade/logistics.
 
 ## Source hierarchy and traceability
@@ -77,9 +77,12 @@ historical repository design notes are not authority over these contracts.
   Fabric production consumes real PlantFood; animal/aquatic food cannot stand
   in for that feedstock. Material/coverage constraints bind before output.
 - `NeolithicProduction` uses recipe-specific rates and atomic input debits.
-  Durable tool time is tracked separately by Hand/Improved/Copper grade, shared
-  across recipes. Better-tool productivity applies only to Housing. Equipment
-  made during a production phase cannot backdate coverage into that phase.
+  Hand Tools provide one finished output each and Regular/Improved Tools four;
+  their fractional inventory is consumed by realized useful output through one
+  deterministic budget shared across recipes. Better-tool productivity applies
+  only to Housing. Copper retains its worker-coverage hook pending a durability
+  design. Equipment made during a production phase cannot backdate capacity into
+  that phase.
   Useful output alone earns normalized specialist-equivalent craft experience;
   raw stockpiling and idle capacity earn none.
 - Housing is durable capital: depreciate once, then compute one deficit against
@@ -128,7 +131,7 @@ Serialized production defaults are in `Resources/OpeningConfig.json`.
 | HousingDecayPerTurn | .10 | {.05, .10, .15, .20}; duration-scaled exponential retention |
 | Rudimentary clothing / housing weights | .5 / .5 | Sum to one; compensable, no hidden hard gate |
 | RudimentaryExpectationFloor / RampYears | .25 / 100 | Floor 0–.40; ramp 60–160 years |
-| ToolCoveragePerWorker / CraftMasteryThreshold | 1 / 400 | Durable coverage; useful specialist-equivalent work |
+| ToolCoveragePerWorker / CraftMasteryThreshold | 1 / 400 | Legacy Copper worker coverage; useful specialist-equivalent work |
 | ClearingConversionPressure / TimberConversionPressure | 1 / 1 | Explicit provisional integrated hazard per realized converted/extracted fraction; not a hidden material cost |
 
 At baseline, housing replacement needs 0.1/(4*2.5)=1% of population as Builders
@@ -170,7 +173,8 @@ jobs are released to real gatherers without changing population.
 The Fabric feedstock regression starts with full biological reserves consisting
 entirely of animal food and zero plant stock. It gathers exactly 100 plant Food,
 produces/consumes 100 Fabric, retains the 8,000-unit food reserve, and records
-zero harvest waste. Without tool coverage it creates no speculative input demand.
+zero harvest waste. Without available output capacity it creates no speculative
+input demand.
 Unity EditMode: 26/26 passed. The Windows
 development player builds in a separate Neolithic output directory.
 

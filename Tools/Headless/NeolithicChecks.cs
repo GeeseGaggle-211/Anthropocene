@@ -171,6 +171,20 @@ internal static class NeolithicChecks
         var w = Fixture(); var c = w.Camps[0]; c.Inventory.HandTools = 100; c.Inventory.Wood = 100; c.Inventory.Clay = 100; c.Inventory.Stone = 100;
         c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving); double food = c.PlantFood;
         Near(Make(w, CraftGood.Cloth, WorkforceRoles.Weaver, 1, 1, out var r), 1, "one useful Fabric output"); Near(food - c.PlantFood, 1, "Fabric debits exactly one PlantFood");
+        Near(r.Production.Single().HandToolsConsumed, 1, "one realized output consumes one Hand Tool"); Near(c.Inventory.HandTools, 99, "Hand Tool inventory is debited atomically");
+        var regular = Fixture(); var rc = regular.Camps[0]; rc.Inventory.Tools = 1; rc.PlantFood = 100; rc.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
+        var regularRecord = new TurnRecord(); double regularEquipment = 0;
+        NeolithicProduction.Produce(regular, rc, NeolithicProduction.Recipes(regular.Config).Single(x => x.Good == CraftGood.Cloth), WorkforceRoles.Weaver, 80, 80, 4, ref regularEquipment, regularRecord);
+        Near(regularRecord.Production.Single().Output, 4, "one Regular Tool supports four useful outputs"); Near(regularRecord.Production.Single().ToolsConsumed, 1, "four outputs consume one Regular Tool"); Near(rc.Inventory.Tools, 0, "Regular Tool inventory is debited atomically");
+        var idle = Fixture(); var ic = idle.Camps[0]; ic.Inventory.HandTools = 1; ic.People.NeolithicTechnologies.Add(NeolithicTech.Weaving); var idleRecord = new TurnRecord(); double idleEquipment = 0;
+        NeolithicProduction.Produce(idle, ic, NeolithicProduction.Recipes(idle.Config).Single(x => x.Good == CraftGood.Cloth), WorkforceRoles.Weaver, 80, 80, 0, ref idleEquipment, idleRecord);
+        Near(ic.Inventory.HandTools, 1, "idle tools do not wear"); Check(idleRecord.Production.Count == 0, "idle production emits no receipt");
+        var blocked = Fixture(); var bc = blocked.Camps[0]; bc.Inventory.HandTools = 1; bc.PlantFood = 0; bc.People.NeolithicTechnologies.Add(NeolithicTech.Weaving); var blockedRecord = new TurnRecord(); double blockedEquipment = 0;
+        NeolithicProduction.Produce(blocked, bc, NeolithicProduction.Recipes(blocked.Config).Single(x => x.Good == CraftGood.Cloth), WorkforceRoles.Weaver, 80, 80, 1, ref blockedEquipment, blockedRecord);
+        Near(bc.Inventory.HandTools, 1, "blocked production does not wear tools"); Check(blockedRecord.Production.Count == 0, "blocked production emits no receipt");
+        var fractional = Fixture(); var fc = fractional.Camps[0]; fc.Inventory.Tools = .25; fc.PlantFood = 100; fc.People.NeolithicTechnologies.Add(NeolithicTech.Weaving); var fractionalRecord = new TurnRecord(); double fractionalEquipment = 0;
+        NeolithicProduction.Produce(fractional, fc, NeolithicProduction.Recipes(fractional.Config).Single(x => x.Good == CraftGood.Cloth), WorkforceRoles.Weaver, 80, 80, .3, ref fractionalEquipment, fractionalRecord);
+        Near(fc.Inventory.Tools, .175, "fractional Regular Tool inventory is conserved"); var fractionalLoaded = SaveCodec.Load(SaveCodec.Save(fractional)); Near(fractionalLoaded.Camps[0].Inventory.Tools, .175, "fractional tool inventory survives save/load");
         Near(r.Production.Single().WorkerIntervals, 1, "Weaver specialist BaseDays output"); Near(Make(w, CraftGood.Cloth, WorkforceRoles.Craftsperson, 1, 1000, out _), 20, "generalist textiles at 25 percent");
         Near(Make(w, CraftGood.Cloth, WorkforceRoles.Potter, 1, 1000, out _), 0, "unrelated specialist has no textile bonus");
         c.People.NeolithicTechnologies.Add(NeolithicTech.Construction);
@@ -185,7 +199,7 @@ internal static class NeolithicChecks
         Near(Make(w, CraftGood.Housing, WorkforceRoles.Builder, 1, 1000, out _), 5, "copper housing multiplier");
         Near(Make(w, CraftGood.Cloth, WorkforceRoles.Weaver, 1, 1000, out _), 80, "housing tool multipliers stay recipe-local");
         c.Inventory.HandTools = c.Inventory.Tools = c.Inventory.CopperTools = 0; Near(Make(w, CraftGood.Cloth, WorkforceRoles.Weaver, 1, 10, out _), 0, "missing tool coverage prevents output");
-        c.Inventory.HandTools = .25; Near(Make(w, CraftGood.Cloth, WorkforceRoles.Weaver, 1, 1000, out _), 20, "partial tool coverage constrains first");
+        c.Inventory.HandTools = .25; Near(Make(w, CraftGood.Cloth, WorkforceRoles.Weaver, 1, 1000, out _), .25, "partial tool output capacity constrains first");
         c.PlantFood = 0; c.AnimalFood = c.AquaticFood = 100; Near(Make(w, CraftGood.Cloth, WorkforceRoles.Weaver, 1, 1000, out _), 0, "dietary animal or aquatic food is not plant feedstock");
         c.Inventory.Stone = 0; Near(Make(w, CraftGood.HandTools, WorkforceRoles.Craftsperson, 1, 10, out _), 0, "no stone no tools");
         c.Inventory.Stone = 100; double exp = c.People.CraftExperience.Values.Sum(); Near(Make(w, CraftGood.HandTools, WorkforceRoles.Craftsperson, 1, 0, out _), 0, "no useful demand no output"); Near(c.People.CraftExperience.Values.Sum(), exp, "no progress for unused capacity");
@@ -244,7 +258,9 @@ internal static class NeolithicChecks
     {
         var w = Fixture(); AddResources(w); var c = w.Camps[0];
         c.Workforce.Assign(WorkforceRoles.Craftsperson, 4, c.Population);
-        c.Inventory.CopperTools = 4; Near(NeolithicProduction.Demand(w, c, CraftGood.HandTools, 20), 4, "locked Copper Tools cannot suppress usable tool demand"); c.Inventory.CopperTools = 0;
+        c.Inventory.CopperTools = 4; Check(NeolithicProduction.Demand(w, c, CraftGood.HandTools, 20) > 0, "Copper tools do not suppress consumable tool demand before CopperWorking"); c.Inventory.CopperTools = 0;
+        var copperHousing = Fixture(); var chc = copperHousing.Camps[0]; chc.Inventory.CopperTools = 1; chc.Inventory.HousingUnits = 20; chc.Inventory.Wood = 100; chc.Workforce.Assign(WorkforceRoles.Builder, 2, chc.Population); chc.People.NeolithicTechnologies.Add(NeolithicTech.Construction); chc.People.NeolithicTechnologies.Add(NeolithicTech.CopperWorking);
+        Check(NeolithicProduction.Demand(copperHousing, chc, CraftGood.HandTools, 20) <= 1e-8, "Copper worker coverage satisfies recipe-local Housing work without primitive replacement demand");
         c.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 0, Cloth = 0, FarmTools = 0, Housing = 1, Tools = 0 };
         double equipment = 0; var r = new TurnRecord();
         MaterialEconomy.Gather(w, c, NeolithicProduction.Recipes(w.Config), 80, 20, 800, ref equipment, r);
@@ -289,7 +305,7 @@ internal static class NeolithicChecks
         var housingRecipe = NeolithicProduction.Recipes(covered.Config).Single(x => x.Good == CraftGood.Housing); var production = new TurnRecord();
         NeolithicProduction.Produce(covered, cc, housingRecipe, WorkforceRoles.Builder, 80, 80, 100, ref toolTime, production, coverage);
         NeolithicProduction.Produce(covered, cc, housingRecipe, WorkforceRoles.Craftsperson, 80, 80, 100, ref toolTime, production, coverage);
-        Near(cc.Inventory.HousingUnits, 3.75 + .625, "Improved Tool time cannot be reused by another housing role"); Near(toolTime, 0, "shared coverage exhausted exactly");
+        Near(cc.Inventory.HousingUnits, 4.458333333333333, "improved tool output is capped by realized labor and shared output capacity"); Near(cc.Inventory.Tools, 0, "regular tools are consumed by realized housing output"); Near(cc.Inventory.HandTools, .541666666666667, "hand tools finish the remaining realized output"); Near(coverage.Remaining, .541666666666667, "shared output capacity is exhausted only by realized work");
         var bootstrap = Fixture(); bootstrap.Camps[0].Inventory.Stone = 10; var noCoverage = new ToolCoverageBudget(bootstrap, bootstrap.Camps[0], 80); toolTime = 0;
         NeolithicProduction.Produce(bootstrap, bootstrap.Camps[0], NeolithicProduction.Recipes(bootstrap.Config)[0], WorkforceRoles.Craftsperson, 80, 80, 1, ref toolTime, new TurnRecord(), noCoverage);
         Near(noCoverage.Remaining + toolTime, 0, "newly produced tools cannot backdate coverage");
@@ -336,7 +352,7 @@ internal static class NeolithicChecks
 
         var textileTown = Fixture(); var textileCamp = textileTown.Camps[0];
         textileCamp.PlantFood = 0; textileCamp.AnimalFood = 16000;
-        textileCamp.Workforce.Assign(WorkforceRoles.Craftsperson, 5, 100); textileCamp.Inventory.HandTools = 5;
+        textileCamp.Workforce.Assign(WorkforceRoles.Craftsperson, 5, 100); textileCamp.Inventory.HandTools = 100;
         textileCamp.Inventory.HousingUnits = 25; textileTown.Config.Neolithic.UsefulFinishedGoodsReserveTurns = 0;
         Near(TurnResolver.UsefulCampFoodDemand(textileTown, textileCamp, 80, 20), 100, "real Fabric need adds plant feedstock to the shared useful food budget");
         var textileTurn = new TurnResolver().Resolve(textileTown, new Dictionary<int, List<Order>>());
