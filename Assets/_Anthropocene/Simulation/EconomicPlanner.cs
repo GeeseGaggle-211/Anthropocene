@@ -18,7 +18,8 @@ namespace Anthropocene.Simulation
         public static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings)
         {
             var e = settings.Copy(); e.Assignments.Clear(); e.Labor = null;
-            if (!CultivationEconomy.Enabled(c) || c.Population <= 0) { e.AutomationTurns = 0; return e; }
+            if (c.Population <= 0 || !CultivationEconomy.EconomyEnabled(c)) { e.AutomationTurns = 0; return e; }
+            if (!CultivationEconomy.Enabled(c)) return PlanHusbandry(w, c, e);
             var cfg = w.Config; var n = cfg.Neolithic;
             double intervals = cfg.GenerationIntervals, years = cfg.TurnDays / cfg.DaysPerYear;
             var visible = Knowledge.Visible(w, c.Player);
@@ -52,6 +53,14 @@ namespace Anthropocene.Simulation
             Proposal Evaluate(double fulfillment)
             {
                 var intent = e.Copy(); intent.Labor = new EconomicLaborPlan();
+                // Managed-herd work is a resident reservation, not an output
+                // appended after the agricultural proposal.  Put it on the
+                // resolver-shaped candidate before craft, food, material, and
+                // field feasibility are evaluated so every later worker budget
+                // sees the same bounded resident pool.
+                int reservedHerders = ManagedHerderReservation(w, c);
+                if (reservedHerders > 0)
+                    intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = reservedHerders });
                 var candidate = Preview(c, intent, nextPopulation);
                 NeolithicProduction.DepreciateHousing(w, candidate, years);
                 var room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]);
@@ -147,7 +156,7 @@ namespace Anthropocene.Simulation
                     int foodReserve = !established && gatherRate > 0
                         ? (int)Math.Ceiling(Math.Max(0, fieldFoodTarget) / gatherRate - Epsilon)
                         : 0;
-                    double fieldWorkers = Math.Max(0, c.Population - roleWorkers - foodReserve);
+                    double fieldWorkers = Math.Max(0, c.Population - reservedHerders - roleWorkers - foodReserve);
                     double maintenance = CultivationEconomy.PlannedMaintenanceFarmers(w, c, fieldWorkers);
                     double plannedFarmRate = cfg.FarmerProductivity * cfg.GatherPerPerson * intervals;
                     double plannedFoodTarget = Math.Min(supply, biological + goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit);
@@ -156,8 +165,8 @@ namespace Anthropocene.Simulation
                     double expansion = intendedExpansion ? Math.Max(0, fieldWorkers - plannedOperating) : 0;
                     proposedFarmers = (int)Math.Ceiling(plannedOperating + expansion - Epsilon);
                     if (proposedFarmers > 0)
-                        candidate.Workforce.Assignments = futureRoles.OrderBy(p => p.Key, StringComparer.Ordinal)
-                            .Select(p => new PopulationAssignment { Role = p.Key, Population = (int)Math.Ceiling(p.Value - Epsilon) })
+                        candidate.Workforce.Assignments = intent.Assignments
+                            .Concat(futureRoles.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new PopulationAssignment { Role = p.Key, Population = (int)Math.Ceiling(p.Value - Epsilon) }))
                             .Concat(new[] { new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = proposedFarmers } }).ToList();
                     proposedExpansion = Math.Min(expansion, proposedFarmers);
                     intent.Labor.ExpansionFarmers = proposedExpansion;
@@ -347,6 +356,28 @@ namespace Anthropocene.Simulation
             best.Intent.Assignments = best.Intent.Assignments.OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
             return best.Intent;
         }
+        private static EconomicIntent PlanHusbandry(WorldState w, Camp c, EconomicIntent intent)
+        {
+            AddManagedHerders(w, c, intent);
+            intent.Assignments = intent.Assignments.OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
+            return intent;
+        }
+        private static void AddManagedHerders(WorldState w, Camp c, EconomicIntent intent)
+        {
+            if (!CultivationEconomy.HusbandryEnabled(c)) return;
+            int desired = ManagedHerderReservation(w, c);
+            var existing = intent.Assignments.FirstOrDefault(a => a.Role == WorkforceRoles.Herder);
+            int other = intent.Assignments.Where(a => a.Role != WorkforceRoles.Herder).Sum(a => a.Population);
+            int herders = Math.Min(desired, Math.Max(0, c.Population - other));
+            if (herders <= 0) { if (existing != null) intent.Assignments.Remove(existing); return; }
+            if (existing == null) intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = herders }); else existing.Population = herders;
+        }
+        private static int ManagedHerderReservation(WorldState w, Camp c)
+        {
+            if (!CultivationEconomy.HusbandryEnabled(c)) return 0;
+            double animals = w.Herds.Where(h => h.DomesticCamp == c.Id && h.Animals > 0).OrderBy(h => h.Id).Sum(h => h.Animals);
+            return Math.Min(c.Population, Math.Max(0, (int)Math.Ceiling(animals / Math.Max(1e-12, w.Config.AnimalsPerHerder))));
+        }
         private static double ExpansionGain(WorldState w, int id)
         {
             var cfg = w.Config; var n = cfg.Neolithic; var tile = w.Tiles[id];
@@ -384,7 +415,7 @@ namespace Anthropocene.Simulation
         }
         public static void ResolveEnabled(WorldState w, TurnRecord record)
         {
-            foreach (var c in w.Camps.Where(c => c.Population > 0 && c.EconomyAutomationTurns != 0 && CultivationEconomy.Enabled(c)).OrderBy(c => c.Id))
+            foreach (var c in w.Camps.Where(c => c.Population > 0 && c.EconomyAutomationTurns != 0 && CultivationEconomy.EconomyEnabled(c)).OrderBy(c => c.Id))
             {
                 var intent = Plan(w, c, EconomicIntent.From(c));
                 var observation = new AgentObservationBuilder().Build(w, c.Player);

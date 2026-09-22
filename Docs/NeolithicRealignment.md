@@ -96,6 +96,14 @@ historical repository design notes are not authority over these contracts.
   and depreciation creates replacement demand once per resolved duration. Natural
   capacity includes the linked population; reserve appetite includes residents and
   connected hunters, while disconnected hunters do not create a second camp reserve.
+- Managed husbandry uses the same Economy control surface and resident ledger. One
+  Herder role is shared across domestic species at the configured baseline capacity;
+  uncovered animals still consume forage and water, while managed output enters the
+  common useful-food budget as AnimalFood. Current-generation nutrition is resolved
+  before managed starvation, renewable output and survivor reproduction. AnimalFood
+  acceptance shares the human consumption/reserve/growth and post-depreciation storage
+  projection, so plant Fabric input remains provenance-constrained and no accepted
+  source is later discarded solely because existing Pots depreciated.
 - Housing is durable capital: depreciate once, then compute one deficit against
   the post-demography population. Replacement/growth are a decomposition of
   that deficit, not additional demand. Fabric stock is consumed on each use.
@@ -105,7 +113,9 @@ historical repository design notes are not authority over these contracts.
 - `EconomicIntent` is a copied, validated queued plan for assignments, priorities,
   targets and cultivation focus. Player UI, policy proposals, action masks and
   the resolver use the same validation. Controls cannot directly award Irrigation
-  or mutate live assignments. Observation schema is 8; resource observations
+  or mutate live assignments. Observation schema is 9; owned domestic observations
+  include the camp link and generation diagnostics, while foreign domestic and wild
+  observations retain only filtered estimated/public fields. Resource observations
   omit hidden deposit totals and geometry.
 - Save envelope is 11; resource schema remains 4. E, operator, inventory, needs,
   expectation, workforce, intents, source depletion/knowledge and receipts are
@@ -113,6 +123,18 @@ historical repository design notes are not authority over these contracts.
   Legacy q becomes E=(q/qT)^2. Legacy Houses plus partial construction convert
   once using their historical eight-person/ten-progress-unit normalization.
   Invalid numeric economic states are rejected on load.
+
+Managed-herd defaults are serialized in `OpeningConfig.json` with the simulation
+defaults: `AnimalsPerHerder=2`, `AnimalFoodPerManagedAnimal=1`, and beta/gamma
+nutrition and management exponents of 1. A `ManagedHerdDefaultsInitialized` marker
+distinguishes absent legacy fields from saved legitimate zero values; migration only
+fills fields absent from the old envelope and rejects non-finite values. The same
+marker-based rule applies to zero diagnostic nutrition, management, yield and
+starvation remainder fields. The shared useful-food projection clamps unavailable
+plant Fabric input inside the growth search, disables growth during starvation
+recovery, and projects the one scheduled Pot depreciation before sizing the common
+reserve. Focused managed-husbandry checks cover the four-Weaver birth threshold,
+recovery, post-depreciation storage acceptance and no-discard food conservation.
 
 ## Centralized calibration and sweeps
 

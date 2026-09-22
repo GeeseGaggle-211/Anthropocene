@@ -13,7 +13,7 @@ namespace Anthropocene.Presentation
         private void DrawVillageDetailedInspector()
         {
             var camp = world.Camps.FirstOrDefault(c => c.Id == villageInspectorCampId && c.Player == 0);
-            if (camp == null || !CultivationEconomy.Enabled(camp)) { villageInspectorOpen = false; return; }
+            if (camp == null || !CultivationEconomy.EconomyEnabled(camp)) { villageInspectorOpen = false; return; }
             var draft = planned.TryGetValue(camp.Id, out var pending) && pending.Kind == OrderKind.Economy ? pending.Economy.Copy() : EconomicIntent.From(camp);
             string before = draft.Stamp;
             float width = Mathf.Min(1040, Screen.width - 32), height = Mathf.Min(820, Screen.height - 32);
@@ -23,7 +23,9 @@ namespace Anthropocene.Presentation
             GUI.BeginGroup(panel);
             GUI.Label(new Rect(18, 12, width - 170, 28), "SETTLEMENT ECONOMY · changes apply on turn commit", title);
             if (Button(new Rect(width - 120, 10, 100, 30), "CLOSE")) villageInspectorOpen = false;
-            villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, width - 44, 980));
+            var ownedLivestock = observation.Herds.Where(h => h.OwnedDomestic && h.DomesticCamp == camp.Id).OrderBy(h => h.Id).ToArray();
+            float contentHeight = 980 + (CultivationEconomy.HusbandryEnabled(camp) ? ownedLivestock.Length * 54 : 0);
+            villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, width - 44, contentHeight));
             float y = 4;
             GUI.Label(new Rect(4, y, width - 60, 76),
                 $"Population {camp.Population} · QoL {camp.QoL:P0} · food {camp.FoodNeedsMetRatio:P0} · water {camp.WaterNeedsMetRatio:P0}\n" +
@@ -31,6 +33,18 @@ namespace Anthropocene.Presentation
                 $"Housing {camp.HousingPerCapita:P0} · {camp.Inventory.HousingUnits:F2} units · capacity {camp.Inventory.HousingUnits * world.Config.Neolithic.HousingPeoplePerUnit:F1}\n" +
                 $"Expectations {camp.RudimentaryExpectation:P0} · stationary {camp.StationaryYears:F1} years · shortfalls are graded; automatic fission is deferred.", text);
             y += 90;
+            if (CultivationEconomy.HusbandryEnabled(camp))
+            {
+                int animals = ownedLivestock.Sum(h => h.Count.Representative);
+                int herders = draft.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population);
+                double accepted = ownedLivestock.Sum(h => h.AcceptedFood), potential = ownedLivestock.Sum(h => h.PotentialFood);
+                GUI.Label(new Rect(4, y, width - 60, 28), $"Last generation: livestock {animals} · AnimalFood {accepted:F1}/{potential:F1} accepted potential · drafted Herders {herders} · baseline capacity {world.Config.AnimalsPerHerder:F0} animals per Herder", small); y += 32;
+                foreach (var herd in ownedLivestock)
+                {
+                    GUI.Label(new Rect(4, y, width - 60, 46), $"{herd.Species} herd {herd.Count.Representative} · food {herd.FoodNutrition:P0} · water {herd.WaterNutrition:P0} · management {herd.ManagementFulfillment:P0} · deficit {herd.DeficitTurns} · output {herd.AcceptedFood:F1}/{herd.PotentialFood:F1} · births {herd.NewbornAnimals} · deaths {herd.StarvationDeaths}", small);
+                    y += 54;
+                }
+            }
             float col = (width - 70) / 3, x = 4, wy = y;
             GUI.Label(new Rect(x, wy, col, 24), "WORKFORCE", section); wy += 28;
             foreach (string role in WorkforceRoles.All.Where(r => r != WorkforceRoles.Gatherer))
@@ -38,7 +52,7 @@ namespace Anthropocene.Presentation
                 int count = draft.Assignments.Where(a => a.Role == role).Sum(a => a.Population);
                 int free = camp.Population - draft.Assignments.Sum(a => a.Population);
                 string tech = EconomicIntents.RequiredTechnology(role);
-                bool available = tech == null || camp.People.HasTech(tech);
+                bool available = role == WorkforceRoles.Farmer ? CultivationEconomy.Enabled(camp) : role == WorkforceRoles.Herder ? CultivationEconomy.HusbandryEnabled(camp) : tech == null || camp.People.HasTech(tech);
                 GUI.Label(new Rect(x, wy, col - 78, 24), WorkforceRoles.Label(role) + ": " + count + (available ? "" : " (locked)"), small);
                 if (Button(new Rect(x + col - 74, wy, 32, 22), "−") && count > 0)
                 {

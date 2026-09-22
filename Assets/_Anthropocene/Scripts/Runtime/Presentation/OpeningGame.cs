@@ -238,9 +238,9 @@ namespace Anthropocene.Presentation
             }
 
             y += 6; GUI.Label(new Rect(14, y, width, 23), "COMMANDS  ·  " + mode.ToUpperInvariant(), section); y += 26;
-            if (selected == camp.Id && CultivationEconomy.Enabled(camp))
+            if (selected == camp.Id && CultivationEconomy.EconomyEnabled(camp))
             {
-                if (Button(new Rect(14, y, width, 36), "MANAGE VILLAGE [Double-Click]", true))
+                if (Button(new Rect(14, y, width, 36), "MANAGE ECONOMY [Double-Click]", true))
                 {
                     villageInspectorOpen = true;
                     villageInspectorCampId = camp.Id;
@@ -370,7 +370,7 @@ namespace Anthropocene.Presentation
                 if (e.clickCount == 2 && e.button == 0)
                 {
                     var clickedCamp = world.Camps.FirstOrDefault(c => c.Player == 0 && c.Tile == hovered);
-                    if (clickedCamp != null && CultivationEconomy.Enabled(clickedCamp))
+                    if (clickedCamp != null && CultivationEconomy.EconomyEnabled(clickedCamp))
                     {
                         villageInspectorOpen = true;
                         villageInspectorCampId = clickedCamp.Id;
@@ -526,7 +526,7 @@ namespace Anthropocene.Presentation
         {
             Fill(rect, Panel); var camp = world.Camps.First(c => c.Player == 0);
             GUI.Label(new Rect(rect.x + 18, rect.y + 16, rect.width - 36, 38), "A new way of living · The Neolithic Era", title);
-            string body = "Through generations of practice, your people discovered " + TechName(camp.Technology) + "!" + (CultivationEconomy.Enabled(camp) ? "\n\nAgriculture enables cultivation and settlement workforce planning. Crafts require useful demand, real materials, tools and labor. Queue an economic plan to manage these choices." : "\n\nYour new capability carries your existing way of life forward. Agriculture and its settlement economy require their own discovery.");
+            string body = "Through generations of practice, your people discovered " + TechName(camp.Technology) + "!" + (CultivationEconomy.EconomyEnabled(camp) ? "\n\nThis capability enables settlement workforce planning. Managed herds use the same Economy controls; Agriculture adds cultivation. Crafts require useful demand, real materials, tools and labor. Queue an economic plan to manage these choices." : "\n\nYour new capability carries your existing way of life forward. Agriculture and its settlement economy require their own discovery.");
             if (camp.ForcedTransition) body += " Your balanced experience carries forward, with a bonus toward " + (Domain)camp.SecondaryDomain + ".";
             GUI.Label(new Rect(rect.x + 18, rect.y + 62, rect.width - 36, 120), body, text);
             if (Button(new Rect(rect.x + 18, rect.y + 190, rect.width - 36, 36), "CONTINUE PLAYING (NEOLITHIC)", true))
@@ -535,7 +535,7 @@ namespace Anthropocene.Presentation
                 selected = camp.Id;
                 inspected = camp.Tile;
                 mode = "Inspect";
-                villageInspectorOpen = CultivationEconomy.Enabled(camp);
+                villageInspectorOpen = CultivationEconomy.EconomyEnabled(camp);
                 villageInspectorCampId = camp.Id;
             }
             if (Button(new Rect(rect.x + 18, rect.y + 232, rect.width - 36, 28), "Explore another beginning")) menu = true;

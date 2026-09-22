@@ -38,6 +38,8 @@ namespace Anthropocene.Simulation
     public static class CultivationEconomy
     {
         public static bool Enabled(Camp camp) => camp.Technology == Technology.Cultivation || camp.Technologies[(int)Technology.Cultivation];
+        public static bool HusbandryEnabled(Camp camp) => camp.Technology == Technology.AnimalHusbandry || camp.Technologies != null && camp.Technologies[(int)Technology.AnimalHusbandry];
+        public static bool EconomyEnabled(Camp camp) => Enabled(camp) || HusbandryEnabled(camp);
         public static double Intensity(SimulationConfig c, double capital) => Math.Min(1, c.ReferenceIntensity * Math.Sqrt(Math.Max(0, capital)));
         public static double Decay(SimulationConfig c, double capital, double operatingFraction, double years) => capital * Math.Exp(-Math.Log(2) / c.Neolithic.DecayHalfLifeYears * (1 - Numbers.Clamp(operatingFraction, 0, 1)) * years);
         public static void Factors(SimulationConfig c, Tile t, out double build, out double maintenance)

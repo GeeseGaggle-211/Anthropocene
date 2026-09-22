@@ -47,9 +47,12 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | `HuntEfficiency` | Expected animals harvested per participating hunter per `BaseDays`, before variance, contact, breeding protection and fieldcraft. |
 | `HuntVariance`, `HuntBreedingReserveFraction`, `SustainableHerdGrowthRetention` | Dimensionless harvest variance and animal protection fractions. |
 | `SustainableHuntPopulation` | Person threshold for preserving part of the herd's growth. Opening balance scaffolding. |
-| Species `FoodConsumption`, `FreshwaterConsumption` | Abstract food/water per animal per `BaseDays`. |
-| Species `GrowthRate` | Annual exponential reproduction rate. Previous food/hydration shortfalls reduce reproduction; hunting follows growth, then the configured herd ceiling applies when fission is disabled (and always to owned livestock). |
+| Species `FoodConsumption`, `FreshwaterConsumption` | Abstract food/water per animal per `BaseDays`; managed animals use the same source ledgers as human ecological claims. |
+| Species `GrowthRate` | Annual exponential reproduction rate. Managed reproduction uses current-generation realized nutrition after starvation; wild reproduction retains the existing capacity/fission rules. Managed herds have no domestic capacity clamp. |
 | Species `FoodYield`, `MaximumHerdSize`, `MinimumAnimals`, `MaximumAnimals` | Food per killed animal; herd ceiling and generation/placement count bounds. |
+| `AnimalsPerHerder` (2), `AnimalFoodPerManagedAnimal` (1) | Managed baseline capacity in animals per Herder and dimensionless renewable AnimalFood support per fully fed/managed animal. Actual food multiplies live `Consumption` by elapsed `BaseDays` intervals; AnimalFood enters the common useful-food budget. |
+| `AnimalFoodNutritionExponent`, `AnimalManagementExponent` (both 1) | Dimensionless exponents applied to renewable output only. They do not alter biological reproduction nutrition. |
+| `ManagedHerdDefaultsInitialized` | Optional save migration marker. Missing legacy managed-herd tuning fields receive current defaults; a present marker preserves legitimate zero values and rejects non-finite values. |
 | Species environment/relief/oasis affinities, `MovementHabitatWeight` | Dimensionless habitat preferences. They do not alter elapsed movement allowance. |
 | `ExperienceThreshold`, `CarryoverFloor` | Practice-point thresholds. Carryover multiplier is dimensionless. |
 | Proficiency thresholds, impact reductions, yield/practice multipliers, passive aquatic practice share | Dimensionless task effects, separate from the society-owned practice histories that drive them. No independent specialist proficiency is active yet. |

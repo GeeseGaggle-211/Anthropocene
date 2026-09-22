@@ -271,6 +271,28 @@ public static class FarmPlannerChecks
         Check(farm && manufacturing, "sourced field lifecycle bootstraps manufacturing and Farm Tools within eight turns");
     }
 
+    private static void ManagedLaborEnvelope()
+    {
+        var mixed = Fixture(.1, 0);
+        var c = mixed.Camps[0]; c.Population = 24;
+        c.Technology = Technology.Cultivation; c.Technologies[(int)Technology.Cultivation] = true;
+        c.Technologies[(int)Technology.AnimalHusbandry] = true; c.People.Progression.Era = Era.Neolithic;
+        c.CraftingPriorities = new CraftingPriorities { HandTools = 1, Tools = 1, Pots = 1, Cloth = 1, FarmTools = 1, Housing = 1 };
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Toolmaking); c.People.NeolithicTechnologies.Add(NeolithicTech.Pottery);
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving); c.People.NeolithicTechnologies.Add(NeolithicTech.Carpentry); c.People.NeolithicTechnologies.Add(NeolithicTech.Construction);
+        mixed.Herds.Add(new Herd { Id = mixed.NextId++, Tile = c.Tile, Species = "antelope", Animals = 50, DomesticCamp = c.Id, OwnerSociety = c.SocietyId });
+        var observation = new AgentObservationBuilder().Build(mixed, c.Player); var settlement = observation.Settlements.Single();
+        var plan = EconomicPlanner.Plan(mixed, c, EconomicIntent.From(c));
+        Check(Assigned(plan, WorkforceRoles.Herder) == 24, "managed-herd planner reserves the resident-bounded Herder envelope");
+        Check(plan.Assignments.Sum(a => a.Population) <= c.Population, "mixed Agriculture/Husbandry proposal stays resident-bounded");
+        Check(plan.Labor == null || plan.Labor.MaterialGatherers <= c.Population - plan.Assignments.Where(a => a.Role != WorkforceRoles.Gatherer).Sum(a => a.Population) + 1e-8, "material labor is computed after Herder reservation");
+        Check(EconomicIntents.Validate(observation, settlement, plan) == null, "mixed planner proposal validates with Herder labor reserved before crafts");
+
+        var agricultureOnly = Fixture(.1, 0); var ac = agricultureOnly.Camps[0]; ac.Population = 24;
+        var before = SaveCodec.Fingerprint(agricultureOnly); var noHerd = EconomicPlanner.Plan(agricultureOnly, ac, EconomicIntent.From(ac));
+        Check(Assigned(noHerd, WorkforceRoles.Herder) == 0 && before == SaveCodec.Fingerprint(agricultureOnly), "Agriculture-only planner remains unchanged without managed herds");
+    }
+
     public static int Run()
     {
         checks = 0;
@@ -281,6 +303,7 @@ public static class FarmPlannerChecks
         FieldPriorityCase();
         PlanMatrix();
         FieldLifecycle();
+        ManagedLaborEnvelope();
         Console.WriteLine("PASS: " + checks + " Stone Farm Tool planner assertions");
         return checks;
     }

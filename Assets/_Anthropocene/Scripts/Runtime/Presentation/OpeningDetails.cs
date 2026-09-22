@@ -58,7 +58,7 @@ namespace Anthropocene.Presentation
                 "\nLake gathering: " + summary.LakeFood.ToString("F0") + " · Active fishing: " + summary.FishFood.ToString("F0") + " · Hunting: " + summary.HuntFood.ToString("F0") +
                 "\nRemote hunter forage: " + summary.ForageFood.ToString("F0") + " · Fractional growth: " + summary.FractionalProgress.ToString("F2");
             var camp = world.Camps.FirstOrDefault(c => c.Id == observation.CampId);
-            if (camp != null && CultivationEconomy.Enabled(camp))
+            if (camp != null && CultivationEconomy.EconomyEnabled(camp))
             {
                 var inv = camp.Inventory;
                 value += "\nSettlement QoL: " + (camp.QoL * 100).ToString("F0") + "% (Food " + (camp.FoodNeedsMetRatio * 100).ToString("F0") + "%, Cloth " + (camp.ClothPerCapita * 100).ToString("F0") + "%, Shelter " + (camp.HousingPerCapita * 100).ToString("F0") + "%) · Automatic fission deferred" +

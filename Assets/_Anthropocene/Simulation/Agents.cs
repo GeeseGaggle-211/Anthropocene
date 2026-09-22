@@ -70,20 +70,26 @@ namespace Anthropocene.Simulation
     }
     public sealed class HerdObservation
     {
-        public readonly int Id, Tile, Size, Owner;
+        public readonly int Id, Tile, Size, Owner, DomesticCamp, DeficitTurns, StartingAnimals, SurvivingAnimals, NewbornAnimals, StarvationDeaths;
         public readonly string Species, Name;
-        public readonly bool Domestic;
+        public readonly bool Domestic, OwnedDomestic;
+        public readonly double DeficitSeverity, DeathRemainder, FoodNutrition, WaterNutrition, Nutrition, ManagementFulfillment, PotentialFood, AcceptedFood;
         public readonly HerdCountEstimate Count;
         public HerdObservation(Herd herd, SimulationConfig config, int owner = -1, int viewer = -2)
         {
             Id = herd.Id; Tile = herd.Tile; Species = herd.Species; Name = config.GetSpecies(Species).Name; Domestic = herd.DomesticCamp >= 0; Owner = owner;
-            Count = HerdCountKnowledge.Observe(herd.Animals, config, Domestic && owner == viewer);
+            OwnedDomestic = Domestic && owner == viewer; DomesticCamp = OwnedDomestic ? herd.DomesticCamp : -1;
+            DeficitTurns = OwnedDomestic ? herd.DeficitTurns : 0; DeficitSeverity = OwnedDomestic ? herd.DeficitSeverity : 0; DeathRemainder = OwnedDomestic ? herd.DeathRemainder : 0;
+            StartingAnimals = OwnedDomestic ? herd.StartingAnimals : 0; SurvivingAnimals = OwnedDomestic ? herd.SurvivingAnimals : 0; NewbornAnimals = OwnedDomestic ? herd.NewbornAnimals : 0; StarvationDeaths = OwnedDomestic ? herd.StarvationDeaths : 0;
+            FoodNutrition = OwnedDomestic ? herd.LastFoodNutrition : 0; WaterNutrition = OwnedDomestic ? herd.LastWaterNutrition : 0; Nutrition = OwnedDomestic ? herd.LastNutrition : 0; ManagementFulfillment = OwnedDomestic ? herd.ManagementFulfillment : 0;
+            PotentialFood = OwnedDomestic ? herd.AnimalFoodPotential : 0; AcceptedFood = OwnedDomestic ? herd.AnimalFoodProduced : 0;
+            Count = HerdCountKnowledge.Observe(herd.Animals, config, OwnedDomestic);
             Size = Count.Representative < config.HerdSmallCountThreshold ? 1 : Count.Representative <= 20 ? 2 : 3;
         }
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 8;
+        public const int SchemaVersion = 9;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
@@ -225,7 +231,7 @@ namespace Anthropocene.Simulation
             int allocation = Math.Min(8, Math.Min(Math.Max(0, desiredHunters - assignedHunters), dispatchable));
             if ((campChoice.Kind == OrderKind.NoOp || huntingFocus || fishingFocus && fishingOpportunity) && allocation >= 4 && opportunity && o.DeficitTurns == 0 && o.FoodCondition >= 1)
             { campChoice = new Order(OrderKind.Dispatch, o.CampId, population: allocation); result.Trace.Candidates.Add(new CandidateTrace { Plan = campChoice.ToString(), Components = "Growing population and visible subsistence opportunity; hunter share expands while preserving the camp reserve", Score = 1, Selected = true }); }
-            var agriculturalCamp = o.Settlements.FirstOrDefault(c => c.Id == o.CampId && c.Agriculture);
+            var agriculturalCamp = o.Settlements.FirstOrDefault(c => c.Id == o.CampId && (c.Agriculture || c.Husbandry));
             if (agriculturalCamp != null) { campChoice = new Order(OrderKind.Economy, o.CampId) { Economy = agriculturalCamp.RecommendedEconomy.Copy() }; plannedCamp = o.CampTile; }
             result.Orders.Add(campChoice);
             var observedHunters = o.Hunters.Concat(o.ForeignHunters).ToArray();

@@ -322,6 +322,16 @@ namespace Anthropocene.Simulation
         }
         public static double StorageCapacity(WorldState w, Camp c, double intervals)
             => NaturalStorageCapacity(w, c, intervals) + Math.Max(0, c.Inventory.Pots) * w.Config.Neolithic.PotStorageFoodPerUnit;
+        // Managed AnimalFood is received before ResolveCampNeolithic depreciates
+        // existing Pots.  Project that one scheduled depreciation without mutating
+        // the camp so the common food budget cannot accept inventory that will be
+        // discarded at the end of the same generation.
+        public static double StorageCapacityAfterPotDepreciation(WorldState w, Camp c, double intervals, double years)
+        {
+            var n = w.Config.Neolithic;
+            double retainedPots = Math.Max(0, c.Inventory.Pots) * Math.Pow(1 - n.PotDecayPerReferenceTurn, Math.Max(0, years) / n.ReferenceTurnYears);
+            return NaturalStorageCapacity(w, c, intervals) + retainedPots * n.PotStorageFoodPerUnit;
+        }
         public static double FabricFeedstockNeed(WorldState w, Camp c, double intervals, double years, double residentPopulation = -1, bool fieldWorkAlreadyResolved = false, bool potsAlreadyDecayed = false)
         {
             if (!CultivationEconomy.Enabled(c) || c.Population <= 0 || c.CraftingPriorities.Cloth <= 0) return 0;
