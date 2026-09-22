@@ -435,3 +435,39 @@ The current generator and visual evidence are described in [WorldGeneration.md](
 - A real generator-9 Archipelagos/42/80 save loads under generator 10, retains generator-9 metadata, and restores exact terrain, seasonal profiles and fingerprint through a new save/load. Its original SHA-256 remains unchanged. Save signature/world/config/observation formats are unchanged; no user save slot was touched.
 - Evidence is ignored under `TestResults/ArchipelagoRefinement`: `regression-final.log`, `tests.xml`, `build.log`, `PlayerAtlas`, `OpeningAudit`, `PresetSearch`, `legacy-generator9-save.log`, `Before`, the intermediate iterations and `Final`. Final world manifests record configuration and simulation-source fingerprints. Release export timings are separate from Debug/Unity timings.
 - The refreshed seed-11 player presets also pass: 24 captures across three menus, five-layer previews, local zoom and normal play; each preserves 19 observed tiles and the world fingerprint through inspection, then reaches turn 2 with 30 people. The cold-fisher playable view was inspected in the rebuilt player. Evidence: `PlayerPresets/result.txt` and its PNGs.
+
+## Managed Husbandry core validation — September 23, 2026
+
+Issue #16 adds managed livestock to the existing workforce, ecology and useful-food
+budget. Astra independently reviewed implementation `4c1ba3b` and reran the affected
+economy suite: 159 Husbandry assertions, 1,154 field-planner assertions, all existing
+Neolithic/tool/Housing/Wood checks, and scalar versus two/four-worker replay with
+reversed collections across twelve resolutions passed. The full fixed suite also
+passed, including 8,948 geological assertions; its simulation sources were unchanged
+by the subsequent regression-test additions. All 576 agricultural Fabric oracle
+cases remained identical to the previously integrated baseline.
+
+Independent fixtures checked current-nutrition chronology, newborn exclusions,
+shared human/herd starvation and fractional remainders, split-species staffing,
+5/10/20/40-year output scaling, real source and food ledgers, mixed Agriculture and
+Husbandry workforce feasibility, owned/foreign observation privacy, and genuine
+pre-change saves. Review caught and corrected phantom Fabric feedstock suppressing
+births, frozen pre-birth feedstock projections, hypothetical recovery births, and
+Animal Product accepted into capacity subsequently lost to scheduled Pot decay.
+The final tests cover all four cases without wasted accepted food. No balance
+constants were changed to obtain these results.
+
+Unity 6000.5.10f1 passed 28/28 EditMode tests and built the Windows development
+player successfully. The Husbandry-only player route passed normal Herder orders,
+owned-herd diagnostics, isolated save/load, and two-turn automation continuation;
+all five screenshots were captured, and the actual panel was visually inspected.
+Runtime source hashes matched the tested commit. These synthetic fixtures establish
+integration behavior, not natural-progression balance or native mouse usability.
+The live breeding/ecology comparison remains the separate #18 validation task.
+Evidence is ignored under `TestResults/Issue20`, including
+`Issue16-Unity-20260923-024235`, the independent review harnesses, and regression logs.
+
+The existing Agriculture player route also passed all five captures: queued plans,
+normal field growth, recurring Fabric accounting, exact save/load, and saved
+two-turn automation completion. Restored and final panels were visually inspected;
+both player logs contained no gameplay exceptions.
