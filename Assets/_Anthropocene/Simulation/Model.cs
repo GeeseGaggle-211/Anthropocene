@@ -262,6 +262,8 @@ namespace Anthropocene.Simulation
         // 0 = manual, -1 = continuous, positive = remaining automated resolutions.
         [System.Runtime.Serialization.OptionalField] public int EconomyAutomationTurns;
         [System.Runtime.Serialization.OptionalField] public EconomicLaborPlan EconomicLabor;
+        [System.Runtime.Serialization.OptionalField] public double ManagedBreedingIntensity = .55;
+        [System.Runtime.Serialization.OptionalField] public bool ManagedBreedingPolicyInitialized = true;
         [System.Runtime.Serialization.OptionalField] public bool IsVillage;
         [System.Runtime.Serialization.OptionalField] public int VillageTurns;
         [NonSerialized] private Society people = new Society();

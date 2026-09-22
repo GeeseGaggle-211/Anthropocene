@@ -161,6 +161,14 @@ namespace Anthropocene.Simulation
             foreach (var turn in world.History) turn.ManagedHerds ??= new System.Collections.Generic.List<ManagedHerdReport>();
             foreach (var herd in world.Herds)
                 if (!herd.NutritionInitialized) { herd.LastNutrition = herd.LastFoodNutrition = herd.LastWaterNutrition = herd.ManagementFulfillment = 1; herd.NutritionInitialized = true; }
+            foreach (var camp in world.Camps)
+            {
+                if (!camp.ManagedBreedingPolicyInitialized)
+                    camp.ManagedBreedingIntensity = .55;
+                else if (double.IsNaN(camp.ManagedBreedingIntensity) || double.IsInfinity(camp.ManagedBreedingIntensity) || camp.ManagedBreedingIntensity < 0 || camp.ManagedBreedingIntensity > 1)
+                    throw new InvalidDataException("Invalid managed breeding intensity.");
+                camp.ManagedBreedingPolicyInitialized = true;
+            }
             if (config.ActiveFishingPracticeMultiplier <= 0) config.ActiveFishingPracticeMultiplier = 4.25;
             if (config.GrasslandHerdDensityMultiplier <= 0) config.GrasslandHerdDensityMultiplier = 1.35;
             if (config.SteppeHerdDensityMultiplier <= 0) config.SteppeHerdDensityMultiplier = 1.15;

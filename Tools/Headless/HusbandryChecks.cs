@@ -27,7 +27,7 @@ internal static class HusbandryChecks
 
     public static int Run()
     {
-        checks = 0; FullManagedOutput(); UnderManagementAndNoCap(); CurrentNutritionAndNewbornBoundary(); ProportionalSpeciesManagement(); SharedControlAndSave(); ObservationAndOrderContracts(); PartitionedExposure(); MixedFoodInputBoundary(); MixedAnimalOnlyDoesNotChargePlant(); StorageReceivingCapacity(); SharedStarvationAndSourceLedgers(); SpeciesReplayAndContinuation(); StaleNutritionAndNewbornBoundary();
+        checks = 0; FullManagedOutput(); UnderManagementAndNoCap(); CurrentNutritionAndNewbornBoundary(); ProportionalSpeciesManagement(); SharedControlAndSave(); ObservationAndOrderContracts(); PartitionedExposure(); MixedFoodInputBoundary(); MixedAnimalOnlyDoesNotChargePlant(); StorageReceivingCapacity(); SharedStarvationAndSourceLedgers(); SpeciesReplayAndContinuation(); StaleNutritionAndNewbornBoundary(); BreedingIntensityPolicy();
         Console.WriteLine("PASS: " + checks + " managed husbandry assertions"); return checks;
     }
     private static void FullManagedOutput()
@@ -84,6 +84,8 @@ internal static class HusbandryChecks
         Check(OrderRules.Validate(noAgrObservation, new Order(OrderKind.Economy, noAgr.Camps[0].Id) { Economy = farmer }) != null, "Farmer remains illegal without Agriculture");
         var noHerd = NeolithicChecks.Fixture(true); var noHerdObservation = new AgentObservationBuilder().Build(noHerd, noHerd.Camps[0].Player); var herder = EconomicIntent.From(noHerd.Camps[0]); herder.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = 1 });
         Check(OrderRules.Validate(noHerdObservation, new Order(OrderKind.Economy, noHerd.Camps[0].Id) { Economy = herder }) != null, "Herder remains illegal without Husbandry");
+        c.Moves = 1; c.StationaryTurns = 0; var movedDto = ObservationContract.Deserialize(ObservationContract.Serialize(new AgentObservationBuilder().Build(w, c.Player), new Mandate()));
+        Check(movedDto.Schema == AgentObservation.SchemaVersion && movedDto.Settlements.Single(s => s.Id == c.Id).RecentlyMoved && Math.Abs(movedDto.Settlements.Single(s => s.Id == c.Id).Economy.ManagedBreedingIntensity - c.ManagedBreedingIntensity) < 1e-8, "schema-ten DTO carries own movement and shared breeding policy"); c.Moves = 0;
 
         int foreignTile = w.Map.Neighbors(c.Tile).First(); var foreignCamp = new Camp { Id = w.NextId++, Player = 1, Tile = foreignTile, Population = 20 }; w.Camps.Add(foreignCamp); Ownership.Bind(w);
         var foreign = new Herd { Id = w.NextId++, Tile = foreignTile, Species = "goat", Animals = 17, DomesticCamp = foreignCamp.Id, OwnerSociety = foreignCamp.SocietyId, LastNutrition = .2, ManagementFulfillment = .1, AnimalFoodProduced = 999 };
@@ -216,9 +218,56 @@ internal static class HusbandryChecks
     private static void StaleNutritionAndNewbornBoundary()
     {
         var w = Fixture(100, 50); var herd = w.Herds.Single(); var species = w.Config.GetSpecies(herd.Species); species.GrowthRate = .02; herd.LastNutrition = 0; herd.UnmetFood = herd.UnmetFreshwater = 1e9;
-        var r = Resolve(w); var report = r.ManagedHerds.Single(); int expectedAnimals = (int)Math.Floor(100 * Math.Exp(species.GrowthRate * 20));
+        var r = Resolve(w); var report = r.ManagedHerds.Single(); int expectedAnimals = (int)Math.Floor(100 * Math.Exp(species.GrowthRate * w.Camps[0].ManagedBreedingIntensity * 20));
         Check(report.Nutrition > .999999 && herd.Animals == expectedAnimals, "current nutrition overrides stale prior-generation nutrition for reproduction");
         Near(report.PotentialFood, 8000, "newborns receive no retroactive renewable output");
         Near(r.Transfers.Where(t => t.Entity == herd.Id && t.Kind == "Herd").Sum(t => t.PotentialFood), 100 * species.FoodConsumption * 80, "newborns receive no retroactive forage demand");
+    }
+    private static void BreedingIntensityPolicy()
+    {
+        WorldState Case(double b, double years = 20)
+        {
+            var w = Fixture(100, 50); w.Config.TurnDays = years * w.Config.DaysPerYear; w.Config.Species.Single(s => s.Id == "antelope").GrowthRate = .02;
+            w.Camps[0].ManagedBreedingIntensity = b; return w;
+        }
+        var zero = Case(0); zero.Herds.Single().GrowthRemainder = .37; Resolve(zero); Check(zero.Herds.Single().Animals == 100 && zero.Herds.Single().NewbornAnimals == 0 && Math.Abs(zero.Herds.Single().GrowthRemainder - .37) < 1e-8, "b zero creates no intentional managed births or fractional progress");
+        var half = Case(.5); Resolve(half); double halfTotal = half.Herds.Single().Animals + half.Herds.Single().GrowthRemainder;
+        var full = Case(1); Resolve(full); double fullTotal = full.Herds.Single().Animals + full.Herds.Single().GrowthRemainder;
+        Check(fullTotal > halfTotal && halfTotal > 100, "higher b monotonically raises equal-nutrition reproductive intent");
+        foreach (double years in new[] { 5d, 10d, 20d, 40d })
+        {
+            var healthy = Case(.6, years); Resolve(healthy); double total = healthy.Herds.Single().Animals + healthy.Herds.Single().GrowthRemainder;
+            Near(total, 100 * Math.Exp(.02 * .6 * years), "managed b reproduction uses " + years + " year duration");
+        }
+        var whole = Case(.55, 20); Resolve(whole); double wholeTotal = whole.Herds.Single().Animals + whole.Herds.Single().GrowthRemainder;
+        var split = Case(.55, 10); Resolve(split); Resolve(split); Near(split.Herds.Single().Animals + split.Herds.Single().GrowthRemainder, wholeTotal, "managed b reproduction is duration partition invariant in animals plus remainder");
+        var underfed = Case(1); var underfedTile = underfed.Tiles[underfed.Camps[0].Tile]; underfedTile.PotentialFood = underfedTile.Freshwater = 0; for (int s = 0; s < underfedTile.Seasons.Length; s++) { underfedTile.Seasons[s].MaxPotentialFood = underfedTile.Seasons[s].MaxFreshwater = 0; underfedTile.Seasons[s].FoodRecoveryPerDay = underfedTile.Seasons[s].BiomassRecoveryPerDay = underfedTile.Seasons[s].WaterRecoveryPerDay = 0; }
+        underfed.Config.StarvationGraceTurns = 99; Resolve(underfed); Check(underfed.Herds.Single().Animals == 100 && underfed.Herds.Single().NewbornAnimals == 0, "current zero nutrition blocks managed reproduction even at b one");
+        var legacy = Case(0); legacy.Camps[0].ManagedBreedingPolicyInitialized = false; var legacyLoaded = SaveCodec.Load(SaveCodec.Save(legacy)); Near(legacyLoaded.Camps[0].ManagedBreedingIntensity, .55, "prepolicy absence migrates to healthy breeding default");
+        string prepolicyFixture = System.IO.Path.Combine("TestResults", "Issue20", "issue17-prepolicy.anthro");
+        if (System.IO.File.Exists(prepolicyFixture))
+        {
+            var historic = SaveCodec.Load(System.IO.File.ReadAllBytes(prepolicyFixture));
+            Check(historic.Camps.All(camp => camp.ManagedBreedingPolicyInitialized && Math.Abs(camp.ManagedBreedingIntensity - .55) < 1e-8), "genuine prepolicy save migrates to the healthy breeding default");
+        }
+        var genuineZero = Case(0); var zeroLoaded = SaveCodec.Load(SaveCodec.Save(genuineZero)); Near(zeroLoaded.Camps[0].ManagedBreedingIntensity, 0, "genuine saved b zero remains authoritative");
+        var bad = Case(0); bad.Camps[0].ManagedBreedingIntensity = 2; try { SaveCodec.Load(SaveCodec.Save(bad)); Check(false, "invalid present b rejects"); } catch (System.IO.InvalidDataException) { Check(true, "invalid present b rejects"); }
+        var policy = Fixture(20, 10); var c = policy.Camps[0]; var herd = policy.Herds.Single();
+        double Recommend() { var o = new AgentObservationBuilder().Build(policy, c.Player); return ManagedBreedingPolicy.Recommend(o, o.Settlements.Single()); }
+        Near(Recommend(), .55, "healthy AI breeding band uses .55"); herd.LastNutrition = .5; Near(Recommend(), .45, "observed nutrition pressure lowers AI breeding");
+        herd.LastNutrition = 0; herd.StartingAnimals = 100; herd.SurvivingAnimals = 50; herd.ManagementFulfillment = 1; Near(Recommend(), .65, "major loss with visible ample current pasture enables recovery");
+        herd.StartingAnimals = herd.SurvivingAnimals = 0; herd.LastNutrition = 1; c.Moves = 1; c.StationaryTurns = 0; Near(Recommend(), .65, "recent move into visible ample pasture enables expansion");
+        c.Moves = 0; Near(Recommend(), .55, "unmoved new camp is not treated as expansion");
+        herd.StartingAnimals = 50; herd.SurvivingAnimals = 25; var clone = new Herd { Id = policy.NextId++, Tile = herd.Tile, Species = herd.Species, Animals = 10, DomesticCamp = c.Id, OwnerSociety = c.SocietyId, StartingAnimals = 50, SurvivingAnimals = 25, LastNutrition = 1, ManagementFulfillment = 1 }; policy.Herds.Add(clone); Near(Recommend(), .65, "split domestic herds retain summed-loss policy result"); policy.Herds.Remove(clone);
+        policy.Tiles[c.Tile].PotentialFood = 0; policy.Tiles[c.Tile].Freshwater = 0; herd.StartingAnimals = 100; herd.SurvivingAnimals = 50; Near(Recommend(), .45, "rich adjacent land cannot recover a herd on depleted occupied pasture"); policy.Tiles[c.Tile].PotentialFood = policy.Tiles[c.Tile].Freshwater = 100000;
+        foreach (int n in policy.Map.Neighbors(c.Tile)) policy.Tiles[n].ElevationLevel = 10;
+        Near(Recommend(), .45, "impassable peak neighbors do not provide AI destination room");
+        foreach (int n in policy.Map.Neighbors(c.Tile)) policy.Tiles[n].ElevationLevel = 1;
+        c.Workforce.Assignments = new List<PopulationAssignment> { new PopulationAssignment { Role = WorkforceRoles.Herder, Population = 70 } }; Near(Recommend(), .45, "high observed Herder burden lowers AI breeding"); c.Workforce.Assignments = new List<PopulationAssignment> { new PopulationAssignment { Role = WorkforceRoles.Herder, Population = 10 } };
+        var observation = new AgentObservationBuilder().Build(policy, c.Player); var decision = new HeuristicTribePolicy().Decide(observation, c.Mandate); var economic = decision.Orders.Single(o => o.Kind == OrderKind.Economy);
+        Check(OrderRules.Validate(observation, economic) == null && economic.Economy.ManagedBreedingIntensity == .65, "Heuristic submits its visible breeding recommendation through the ordinary validated Economy intent");
+        var foreignCamp = new Camp { Id = policy.NextId++, Player = 1, Tile = policy.Map.Neighbors(c.Tile).First(), Population = 100 }; policy.Camps.Add(foreignCamp); Ownership.Bind(policy);
+        var foreignHerd = new Herd { Id = policy.NextId++, Tile = foreignCamp.Tile, Species = herd.Species, Animals = 100, DomesticCamp = foreignCamp.Id, OwnerSociety = foreignCamp.SocietyId, StartingAnimals = 100, SurvivingAnimals = 1, LastNutrition = 1, ManagementFulfillment = 1 }; policy.Herds.Add(foreignHerd);
+        var privateObservation = new AgentObservationBuilder().Build(policy, c.Player); Near(ManagedBreedingPolicy.Recommend(privateObservation, privateObservation.Settlements.Single()), .65, "foreign herd loss stays filtered from the owner AI breeding policy");
     }
 }

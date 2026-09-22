@@ -89,7 +89,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 9;
+        public const int SchemaVersion = 10;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
@@ -164,6 +164,27 @@ namespace Anthropocene.Simulation
         public DecisionTrace Trace = new DecisionTrace();
     }
     public interface IAgentPolicy { PolicyDecision Decide(AgentObservation observation, Mandate mandate); }
+    public static class ManagedBreedingPolicy
+    {
+        public static double Recommend(AgentObservation o, SettlementObservation settlement)
+        {
+            var herds = o.Herds.Where(h => h.OwnedDomestic && h.DomesticCamp == settlement.Id && (h.Count.Representative > 0 || h.StartingAnimals > 0)).ToArray();
+            if (herds.Length == 0) return .55;
+            double starting = herds.Sum(h => Math.Max(0, h.StartingAnimals));
+            double loss = starting <= 0 ? 0 : herds.Sum(h => Math.Max(0, h.StartingAnimals - h.SurvivingAnimals)) / starting;
+            double nutrition = herds.Min(h => h.Nutrition), management = herds.Min(h => h.ManagementFulfillment);
+            double burden = settlement.Population <= 0 ? 1 : settlement.Economy.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population) / (double)settlement.Population;
+            // These policy levels are first-pass AI heuristics, not biological constants.
+            // They use only the observer's own herd diagnostics and visible traversable land.
+            var local = o.Map.Radius(settlement.Tile, 1).Where(id => id != settlement.Tile && o.Tiles.TryGetValue(id, out var t) && t.Land && t.ElevationLevel < 10).Select(id => o.Tiles[id]).ToArray();
+            bool room = local.Count(t => t.PotentialFood >= 2 && t.Freshwater >= 2) >= 3;
+            bool occupiedAdequate = herds.All(h => o.Tiles.TryGetValue(h.Tile, out var t) && t.PotentialFood >= 2 && t.Freshwater >= 2);
+            bool occupiedAmple = herds.All(h => o.Tiles.TryGetValue(h.Tile, out var t) && t.PotentialFood >= 3 && t.Freshwater >= 3);
+            if (management >= .8 && burden <= .6 && occupiedAmple && room && (loss >= .25 || settlement.RecentlyMoved)) return .65;
+            if (nutrition < .95 || management < .8 || burden > .6 || !occupiedAdequate || !room) return .45;
+            return .55;
+        }
+    }
     public sealed class ScriptedTestPolicy : IAgentPolicy
     {
         private readonly Func<AgentObservation, List<Order>> script;
@@ -232,7 +253,7 @@ namespace Anthropocene.Simulation
             if ((campChoice.Kind == OrderKind.NoOp || huntingFocus || fishingFocus && fishingOpportunity) && allocation >= 4 && opportunity && o.DeficitTurns == 0 && o.FoodCondition >= 1)
             { campChoice = new Order(OrderKind.Dispatch, o.CampId, population: allocation); result.Trace.Candidates.Add(new CandidateTrace { Plan = campChoice.ToString(), Components = "Growing population and visible subsistence opportunity; hunter share expands while preserving the camp reserve", Score = 1, Selected = true }); }
             var agriculturalCamp = o.Settlements.FirstOrDefault(c => c.Id == o.CampId && (c.Agriculture || c.Husbandry));
-            if (agriculturalCamp != null) { campChoice = new Order(OrderKind.Economy, o.CampId) { Economy = agriculturalCamp.RecommendedEconomy.Copy() }; plannedCamp = o.CampTile; }
+            if (agriculturalCamp != null) { var economy = agriculturalCamp.RecommendedEconomy.Copy(); if (agriculturalCamp.Husbandry) economy.ManagedBreedingIntensity = ManagedBreedingPolicy.Recommend(o, agriculturalCamp); campChoice = new Order(OrderKind.Economy, o.CampId) { Economy = economy }; plannedCamp = o.CampTile; }
             result.Orders.Add(campChoice);
             var observedHunters = o.Hunters.Concat(o.ForeignHunters).ToArray();
             var wildHerds = o.Herds.Where(h => !h.Domestic).OrderByDescending(h => h.Size).ThenBy(h => o.Map.Distance(o.CampTile, h.Tile)).ThenBy(h => h.Id).ToArray();

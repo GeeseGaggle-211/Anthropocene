@@ -24,7 +24,7 @@ namespace Anthropocene.Presentation
             GUI.Label(new Rect(18, 12, width - 170, 28), "SETTLEMENT ECONOMY · changes apply on turn commit", title);
             if (Button(new Rect(width - 120, 10, 100, 30), "CLOSE")) villageInspectorOpen = false;
             var ownedLivestock = observation.Herds.Where(h => h.OwnedDomestic && h.DomesticCamp == camp.Id).OrderBy(h => h.Id).ToArray();
-            float contentHeight = 980 + (CultivationEconomy.HusbandryEnabled(camp) ? ownedLivestock.Length * 54 : 0);
+            float contentHeight = 1012 + (CultivationEconomy.HusbandryEnabled(camp) ? ownedLivestock.Length * 54 : 0);
             villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, width - 44, contentHeight));
             float y = 4;
             GUI.Label(new Rect(4, y, width - 60, 76),
@@ -44,6 +44,10 @@ namespace Anthropocene.Presentation
                     GUI.Label(new Rect(4, y, width - 60, 46), $"{herd.Species} herd {herd.Count.Representative} · food {herd.FoodNutrition:P0} · water {herd.WaterNutrition:P0} · management {herd.ManagementFulfillment:P0} · deficit {herd.DeficitTurns} · output {herd.AcceptedFood:F1}/{herd.PotentialFood:F1} · births {herd.NewbornAnimals} · deaths {herd.StarvationDeaths}", small);
                     y += 54;
                 }
+                GUI.Label(new Rect(4, y, width - 150, 24), "Breeding intensity: " + draft.ManagedBreedingIntensity.ToString("F2") + " (0 stops intentional reproduction; 1 uses biological rate)", small);
+                if (Button(new Rect(width - 130, y, 52, 22), "−")) draft.ManagedBreedingIntensity = Math.Max(0, draft.ManagedBreedingIntensity - .05);
+                if (Button(new Rect(width - 72, y, 52, 22), "+")) draft.ManagedBreedingIntensity = Math.Min(1, draft.ManagedBreedingIntensity + .05);
+                y += 30;
             }
             float col = (width - 70) / 3, x = 4, wy = y;
             GUI.Label(new Rect(x, wy, col, 24), "WORKFORCE", section); wy += 28;
