@@ -72,10 +72,14 @@ namespace Anthropocene.Presentation
             DrawEconomicValue("Housing", ref draft.Priorities.Housing, x, ref cy, col, .05);
             DrawEconomicValue("Improved tools", ref draft.Priorities.Tools, x, ref cy, col, .05);
             cy += 12;
-            DrawEconomicValue("Pots target", ref draft.PotsTarget, x, ref cy, col, 1);
+            double potYears = world.Config.TurnDays / world.Config.DaysPerYear;
+            GUI.Label(new Rect(x, cy, col - 8, 22), "Pots target: " + NeolithicProduction.TargetPots(world, camp, potYears).ToString("F2"), small); cy += 28;
             DrawEconomicValue("Farm tools target", ref draft.FarmToolsTarget, x, ref cy, col, 1);
-            GUI.Label(new Rect(x, cy, col - 8, 96), $"Stone {camp.Inventory.Stone:F2}\nClay {camp.Inventory.Clay:F2}\nWood {camp.Inventory.Wood:F2}\nHand tools {camp.Inventory.HandTools:F2}\nImproved tools {camp.Inventory.Tools:F2}", small); cy += 108;
-            GUI.Label(new Rect(x, cy, col - 8, 90), "Tools are durable coverage. Improved/Copper tools speed Housing only. Pot storage and Farm Tool effects are deferred.", small);
+            double storageIntervals = world.Config.TurnDays / world.Config.BaseDays;
+            double potStorage = camp.Inventory.Pots * world.Config.Neolithic.PotStorageFoodPerUnit;
+            double storageCapacity = NeolithicProduction.StorageCapacity(world, camp, storageIntervals);
+            GUI.Label(new Rect(x, cy, col - 8, 110), $"Stone {camp.Inventory.Stone:F2}\nClay {camp.Inventory.Clay:F2}\nWood {camp.Inventory.Wood:F2}\nPots {camp.Inventory.Pots:F2} (+{potStorage:F2} storage)\nStorage capacity {storageCapacity:F2}\nHand tools {camp.Inventory.HandTools:F2}\nImproved tools {camp.Inventory.Tools:F2}", small); cy += 122;
+            GUI.Label(new Rect(x, cy, col - 8, 90), $"Crafting consumes tools with useful output. Pots add {world.Config.Neolithic.PotStorageFoodPerUnit:F0} food storage each and retain {100 * (1 - world.Config.Neolithic.PotDecayPerReferenceTurn):F0}% per {world.Config.Neolithic.ReferenceTurnYears:F0}-year reference turn. Farm Tool effects remain deferred.", small);
             x += col + 10; float fy = y;
             GUI.Label(new Rect(x, fy, col, 24), "FIELDS & SOURCING", section); fy += 28;
             foreach (var t in observation.Tiles.Values.Where(t => t.Cultivable && world.Map.Distance(camp.Tile, t.Id) <= 1).OrderBy(t => t.Id))

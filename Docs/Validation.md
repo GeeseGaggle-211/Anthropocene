@@ -1,5 +1,19 @@
 # Validation - September 22, 2026
 
+## Issue #4 additive Pot storage
+
+Pots add `PotStorageFoodPerUnit=80` absolute food capacity to the existing natural
+storage cap. The target uses the existing desired reserve policy and fills only the
+gap beyond natural storage; natural capacity follows linked population, while the
+desired camp reserve follows residents plus connected hunters. Pot inventory retains
+`1-PotDecayPerReferenceTurn` exponentially over `ReferenceTurnYears` and generates
+replacement demand once per resolved duration before useful material gathering and
+production. Planned Pots do not raise the end-of-turn cap until they are realized.
+The focused run covers the 250-person/125-Pot fixture, connected and disconnected
+hunters, additive capacity, duration partitioning, blocked and realized production,
+fractional save/load, legacy missing configuration fields, legitimate zero decay,
+and deterministic replay.
+
 ## Issue #3 realized-output tool consumption
 
 The issue #3 implementation keeps `EconomicLaborPlan.EquipmentTarget` as a worker staffing reservation while replacing permanent worker-time coverage with physical output capacity. Hand Tools support one finished unit each, Regular/Improved Tools support four, and the shared planner/resolver budget debits only realized useful production. Production receipts record fractional Hand Tool and Regular Tool consumption; Copper remains a legacy coverage hook without an invented durability multiplier. Focused capacity, material, labor, blocked/idle, shared-grade, replacement-demand, lifecycle, determinism, and save-continuation probes passed. The final focused run passed 231 Neolithic and 87 automation assertions plus 58 named tool-consumption regressions; the broader economy run passed 59 milestone-two, 82 milestone-three, 25 ecology, 10 agent-contract, 12-resolution scalar/2/4-worker replay, and the same focused checks. Independent `ToolReview` passed 1,944 recipe/capacity/material/labor/demand/duration cases with 11,725 assertions, plus lifecycle conservation and exact save continuation for sourced and unsourced runs. Logs are retained under ignored `TestResults/Issue20/`.

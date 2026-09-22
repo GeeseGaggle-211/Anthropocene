@@ -208,19 +208,25 @@ namespace Anthropocene.Simulation
         private static double IntervalsForYears(WorldState w, double years) => Math.Max(0, years) * w.Config.DaysPerYear / w.Config.BaseDays;
         public static double NaturalStorageCapacity(WorldState w, Camp c, double intervals, double residents = -1)
         {
-            double population = StoragePopulation(w, c, residents);
+            double population = NaturalStoragePopulation(w, c, residents);
             return Math.Max(0, population * w.Config.Consumption * intervals * TurnResolver.StorageGenerations(w, c.Tile));
         }
-        public static double StoragePopulation(WorldState w, Camp c, double residents = -1)
-            => residents < 0 ? w.LinkedPopulation(c) : Math.Max(0, residents + w.Hunters.Where(h => h.SourceCamp == c.Id && Supply.Connected(w, h)).Sum(h => h.Population));
+        public static double NaturalStoragePopulation(WorldState w, Camp c, double residents = -1)
+        {
+            double projectedDelta = residents < 0 ? 0 : residents - c.Population;
+            return Math.Max(0, w.LinkedPopulation(c) + projectedDelta);
+        }
+        public static double ReservePopulation(WorldState w, Camp c, double residents = -1)
+            => Math.Max(0, (residents < 0 ? c.Population : residents) + w.Hunters.Where(h => h.SourceCamp == c.Id && Supply.Connected(w, h)).Sum(h => h.Population));
         public static double DesiredReserveFood(WorldState w, double population, double intervals)
             => Math.Max(0, population * w.Config.Consumption * intervals * w.Config.GrowthReserveTurns);
         public static double TargetPots(WorldState w, Camp c, double years, double residents = -1)
         {
-            double population = StoragePopulation(w, c, residents);
+            double reservePopulation = ReservePopulation(w, c, residents);
+            double naturalPopulation = NaturalStoragePopulation(w, c, residents);
             double intervals = IntervalsForYears(w, years);
-            double natural = Math.Max(0, population * w.Config.Consumption * intervals * TurnResolver.StorageGenerations(w, c.Tile));
-            double desired = DesiredReserveFood(w, population, intervals);
+            double natural = Math.Max(0, naturalPopulation * w.Config.Consumption * intervals * TurnResolver.StorageGenerations(w, c.Tile));
+            double desired = DesiredReserveFood(w, reservePopulation, intervals);
             return Math.Max(0, desired - natural) / w.Config.Neolithic.PotStorageFoodPerUnit;
         }
         public static double PotDemand(WorldState w, Camp c, double years, double residents = -1)

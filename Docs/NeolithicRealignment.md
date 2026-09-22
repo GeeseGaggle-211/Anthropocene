@@ -22,7 +22,8 @@ Wood/Clay, with free substitution, are mandatory configurable recipe inputs.
 
 Deferred: automatic fission, expedition formulas, irrigation construction/yield/
 withdrawal, SoilCondition, Copper tool durability, broad tool bonuses, Plough/Farm Tool effects,
-pot storage bonuses, and full trade/logistics.
+and full trade/logistics. Pots now provide additive food-storage capacity with configured
+duration-aware depreciation; Farm Tool field effects remain deferred.
 
 ## Source hierarchy and traceability
 
@@ -85,6 +86,11 @@ historical repository design notes are not authority over these contracts.
   that phase.
   Useful output alone earns normalized specialist-equivalent craft experience;
   raw stockpiling and idle capacity earn none.
+- Pots use the existing desired food-reserve policy. Their target is the gap between
+  that reserve and natural storage, their capacity is additive per inventory unit,
+  and depreciation creates replacement demand once per resolved duration. Natural
+  capacity includes the linked population; reserve appetite includes residents and
+  connected hunters, while disconnected hunters do not create a second camp reserve.
 - Housing is durable capital: depreciate once, then compute one deficit against
   the post-demography population. Replacement/growth are a decomposition of
   that deficit, not additional demand. Fabric stock is consumed on each use.

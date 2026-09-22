@@ -119,11 +119,17 @@ internal static class NeolithicChecks
         Near(NeolithicProduction.StorageCapacity(w, c, w.Config.TurnDays / w.Config.BaseDays), 20000, "zero pots preserve natural storage cap");
         c.Inventory.Pots = 1; Near(NeolithicProduction.StorageCapacity(w, c, w.Config.TurnDays / w.Config.BaseDays), 20080, "one pot adds absolute storage capacity");
         c.Inventory.Pots = 125; Near(NeolithicProduction.PotDemand(w, c, years), 12.5, "stable pot stock creates useful replacement demand");
-        double retained = 125 * Math.Pow(1 - w.Config.Neolithic.PotDecayPerReferenceTurn, .5);
-        Near(125 * Math.Pow(1 - w.Config.Neolithic.PotDecayPerReferenceTurn, 1), retained * Math.Pow(1 - w.Config.Neolithic.PotDecayPerReferenceTurn, .5), "two half turns equal one reference decay");
+        var split = Fixture(); split.Camps[0].Population = 250; split.Config.TurnDays = 7300; split.Camps[0].Inventory.Pots = 125; NeolithicProduction.DepreciatePots(split, split.Camps[0], 10); NeolithicProduction.DepreciatePots(split, split.Camps[0], 10);
+        var whole = Fixture(); whole.Camps[0].Population = 250; whole.Config.TurnDays = 7300; whole.Camps[0].Inventory.Pots = 125; NeolithicProduction.DepreciatePots(whole, whole.Camps[0], 20);
+        Near(split.Camps[0].Inventory.Pots, whole.Camps[0].Inventory.Pots, "two half turns equal one reference decay");
         c.Inventory.Pots = 125; NeolithicProduction.DepreciatePots(w, c, years); Near(c.Inventory.Pots, 112.5, "reference turn pot depreciation is ten percent");
         Near(NeolithicProduction.PotDemandFromCurrentStock(w, c, years), 12.5, "resolver demand uses already depreciated stock once");
-        c.Inventory.Pots = 125; string before = SaveCodec.Fingerprint(w); var loaded = SaveCodec.Load(SaveCodec.Save(w)); Near(loaded.Camps[0].Inventory.Pots, 125, "fractional pot inventory saves exactly"); Check(before == SaveCodec.Fingerprint(loaded), "pot inventory save/load replay is deterministic");
+        var connected = Fixture(); var cc = connected.Camps[0]; cc.Population = 250; connected.Hunters.Add(new Hunter { Id = connected.NextId++, SourceCamp = cc.Id, Tile = cc.Tile, Population = 100 });
+        Near(NeolithicProduction.TargetPots(connected, cc, years), 175, "connected hunter residents share desired reserve and natural capacity");
+        var remote = Fixture(); var rc = remote.Camps[0]; rc.Population = 250; remote.Hunters.Add(new Hunter { Id = remote.NextId++, SourceCamp = rc.Id, Tile = remote.Tiles.Length - 1, Population = 100 });
+        Near(NeolithicProduction.TargetPots(remote, rc, years), 25, "remote hunters remain in natural storage capacity without camp reserve appetite");
+        Near(NeolithicProduction.TargetPots(remote, rc, years, rc.Population), 25, "explicit current residents agree with default Pot target");
+        c.Inventory.Pots = 125.25; string before = SaveCodec.Fingerprint(w); var loaded = SaveCodec.Load(SaveCodec.Save(w)); Near(loaded.Camps[0].Inventory.Pots, 125.25, "fractional pot inventory saves exactly"); Check(before == SaveCodec.Fingerprint(loaded), "pot inventory save/load replay is deterministic");
         var zero = SimulationConfig.Small(1); zero.Neolithic.PotDecayPerReferenceTurn = 0; zero.Validate(); Check(zero.Neolithic.PotDecayPerReferenceTurn == 0, "zero pot decay remains a legitimate configured value");
     }
     private static void Cultivation()
