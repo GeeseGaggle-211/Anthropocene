@@ -9,10 +9,22 @@ desired camp reserve follows residents plus connected hunters. Pot inventory ret
 `1-PotDecayPerReferenceTurn` exponentially over `ReferenceTurnYears` and generates
 replacement demand once per resolved duration before useful material gathering and
 production. Planned Pots do not raise the end-of-turn cap until they are realized.
-The focused run covers the 250-person/125-Pot fixture, connected and disconnected
-hunters, additive capacity, duration partitioning, blocked and realized production,
-fractional save/load, legacy missing configuration fields, legitimate zero decay,
-and deterministic replay.
+The final focused run passed 257 Neolithic, 87 automation, and 58 tool-consumption
+assertions. Tracked regressions cover the 250-person/125-Pot fixture, connected and
+disconnected hunters, projected residents, additive capacity, duration partitioning,
+once-only replacement/material demand, blocked production, fractional save/load,
+legacy missing configuration fields, and legitimate zero decay. Independent Astra
+probes passed 80 assertions, including a genuine pre-field save, realized new Pots
+versus blocked production at the final storage cap, full food conservation, and
+actual one-20-year versus two-10-year resolutions. The affected economy suite passed
+59 milestone-two, 82 milestone-three, 25 ecology, 10 agent-contract assertions and
+12-resolution scalar/2/4-worker and reordered replay. Unity EditMode passed 28/28.
+The Windows build succeeded; its five-frame Neolithic player smoke passed queued
+intent purity, real field expansion, needs accounting, exact save/load, and saved
+two-turn automation continuation. Astra inspected queued, restored, and completed
+inspector captures for the derived Pot target and actual storage display. This is
+automated UI verification, not a human usability or natural-transition balance test.
+Evidence is retained under ignored `TestResults/Issue20/`.
 
 ## Issue #3 realized-output tool consumption
 
