@@ -110,20 +110,32 @@ namespace Anthropocene.Simulation
         }
         public static double Stock(Camp c, CraftGood good) => good == CraftGood.HandTools ? c.Inventory.HandTools : good == CraftGood.Pots ? c.Inventory.Pots : good == CraftGood.Cloth ? c.Inventory.Cloth : good == CraftGood.FarmTools ? c.Inventory.FarmTools : good == CraftGood.Housing ? c.Inventory.HousingUnits : c.Inventory.Tools;
         public static double Priority(Camp c, CraftGood good) => good == CraftGood.HandTools ? c.CraftingPriorities.HandTools : good == CraftGood.Pots ? c.CraftingPriorities.Pots : good == CraftGood.Cloth ? c.CraftingPriorities.Cloth : good == CraftGood.FarmTools ? c.CraftingPriorities.FarmTools : good == CraftGood.Housing ? c.CraftingPriorities.Housing : c.CraftingPriorities.Tools;
-        public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation = -1, bool potsAlreadyDecayed = false)
+        // postAgriculturalResolution is true only after this turn's field work
+        // and pot depreciation have been resolved. It is shared by both goods so
+        // FarmTools cannot be worn twice while Pots are also kept phase-correct.
+        public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation = -1, bool postAgriculturalResolution = false)
         {
             var n = w.Config.Neolithic;
             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
             if (good == CraftGood.HandTools || good == CraftGood.Tools)
-                return ToolReplacementDemand(w, c, good, years, residents, potsAlreadyDecayed);
+                return ToolReplacementDemand(w, c, good, years, residents, postAgriculturalResolution);
             if (good == CraftGood.Pots)
-                return potsAlreadyDecayed ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
+                return postAgriculturalResolution ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
             double target = good == CraftGood.Cloth ? residents * n.FabricConsumptionPerPersonTurn * (years / n.ReferenceTurnYears + n.UsefulFinishedGoodsReserveTurns) :
                 good == CraftGood.Housing ? residents / n.HousingPeoplePerUnit :
+                good == CraftGood.FarmTools ? FarmToolDemand(w, c, years, postAgriculturalResolution) + Stock(c, good) :
                 c.FarmToolsTarget;
             return Math.Max(0, target - Stock(c, good));
         }
-        private static double ToolReplacementDemand(WorldState w, Camp c, CraftGood good, double years, double residents, bool potsAlreadyDecayed = false)
+        public static double FarmToolDemand(WorldState w, Camp c, double years, bool postAgriculturalResolution = false)
+        {
+            double forecast = CultivationEconomy.ForecastFarmToolWorkerYears(w, c, years) / w.Config.Neolithic.FarmToolFarmerYearsPerUnit;
+            double stock = Math.Max(0, c.Inventory.FarmTools);
+            if (postAgriculturalResolution) return Math.Max(0, forecast - stock);
+            double expectedUse = Math.Min(stock, forecast);
+            return Math.Max(0, forecast - Math.Max(0, stock - expectedUse));
+        }
+        private static double ToolReplacementDemand(WorldState w, Camp c, CraftGood good, double years, double residents, bool postAgriculturalResolution = false)
         {
             var n = w.Config.Neolithic;
             var recipes = Recipes(w.Config).Where(r => r.Equipment).OrderByDescending(r => Priority(c, r.Good)).ThenBy(r => r.Good).ToArray();
@@ -157,7 +169,7 @@ namespace Anthropocene.Simulation
                     if (role != WorkforceRoles.Craftsperson && (!specialist || role != recipe.Specialist)) continue;
                     if (role == WorkforceRoles.Craftsperson && recipe.SpecialistOnly) continue;
                     double rate = recipe.Rate * (role == recipe.Specialist && specialist ? 1 : n.GeneralistTaskEfficiency);
-                    double wanted = Math.Max(0, DemandWithoutToolReplacement(w, c, recipe.Good, years, residents, potsAlreadyDecayed) - planned[recipe.Good]);
+                    double wanted = Math.Max(0, DemandWithoutToolReplacement(w, c, recipe.Good, years, residents, postAgriculturalResolution) - planned[recipe.Good]);
                     double amount = Math.Min(wanted, availableLabor * rate);
                     if (recipe.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / recipe.Stone);
                     if (recipe.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / recipe.Clay);
@@ -196,12 +208,13 @@ namespace Anthropocene.Simulation
             if (good == CraftGood.HandTools && !regularFeasible) return deficit;
             return 0;
         }
-        private static double DemandWithoutToolReplacement(WorldState w, Camp c, CraftGood good, double years, double residents, bool potsAlreadyDecayed = false)
+        private static double DemandWithoutToolReplacement(WorldState w, Camp c, CraftGood good, double years, double residents, bool postAgriculturalResolution = false)
         {
             var n = w.Config.Neolithic;
-            if (good == CraftGood.Pots) return potsAlreadyDecayed ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
+            if (good == CraftGood.Pots) return postAgriculturalResolution ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
             double target = good == CraftGood.Cloth ? residents * n.FabricConsumptionPerPersonTurn * (years / n.ReferenceTurnYears + n.UsefulFinishedGoodsReserveTurns) :
                 good == CraftGood.Housing ? residents / n.HousingPeoplePerUnit :
+                good == CraftGood.FarmTools ? FarmToolDemand(w, c, years, postAgriculturalResolution) + Stock(c, good) :
                 c.FarmToolsTarget;
             return Math.Max(0, target - Stock(c, good));
         }
