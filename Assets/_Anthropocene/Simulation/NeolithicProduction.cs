@@ -80,27 +80,28 @@ namespace Anthropocene.Simulation
         }
         public static double Stock(Camp c, CraftGood good) => good == CraftGood.HandTools ? c.Inventory.HandTools : good == CraftGood.Pots ? c.Inventory.Pots : good == CraftGood.Cloth ? c.Inventory.Cloth : good == CraftGood.FarmTools ? c.Inventory.FarmTools : good == CraftGood.Housing ? c.Inventory.HousingUnits : c.Inventory.Tools;
         public static double Priority(Camp c, CraftGood good) => good == CraftGood.HandTools ? c.CraftingPriorities.HandTools : good == CraftGood.Pots ? c.CraftingPriorities.Pots : good == CraftGood.Cloth ? c.CraftingPriorities.Cloth : good == CraftGood.FarmTools ? c.CraftingPriorities.FarmTools : good == CraftGood.Housing ? c.CraftingPriorities.Housing : c.CraftingPriorities.Tools;
-        public static double Demand(WorldState w, Camp c, CraftGood good, double years)
+        public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation = -1)
         {
             var n = w.Config.Neolithic;
+            double residents = residentPopulation < 0 ? c.Population : residentPopulation;
             double craftWorkers = c.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Craftsperson || a.Role == WorkforceRoles.Potter || a.Role == WorkforceRoles.Weaver || a.Role == WorkforceRoles.Carpenter || a.Role == WorkforceRoles.Builder).Sum(a => a.Population);
             // Automation may bootstrap equipment for the next feasible production plan;
             // manufacturing still cannot use newly made tools retroactively.
             craftWorkers = Math.Max(craftWorkers, Math.Min(c.Population, c.EconomicLabor?.EquipmentTarget ?? 0));
             double usableCopper = c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools : 0;
-            double target = good == CraftGood.Cloth ? c.Population * n.FabricConsumptionPerPersonTurn * (years / n.ReferenceTurnYears + n.UsefulFinishedGoodsReserveTurns) :
-                good == CraftGood.Housing ? c.Population / n.HousingPeoplePerUnit :
+            double target = good == CraftGood.Cloth ? residents * n.FabricConsumptionPerPersonTurn * (years / n.ReferenceTurnYears + n.UsefulFinishedGoodsReserveTurns) :
+                good == CraftGood.Housing ? residents / n.HousingPeoplePerUnit :
                 good == CraftGood.HandTools ? Math.Max(0, craftWorkers * n.ToolCoveragePerWorker - c.Inventory.Tools - usableCopper) :
                 good == CraftGood.Tools ? Math.Max(0, craftWorkers * n.ToolCoveragePerWorker - usableCopper) :
                 good == CraftGood.Pots ? c.PotsTarget : c.FarmToolsTarget;
             return Math.Max(0, target - Stock(c, good));
         }
         public static double StorageCapacityMultiplier(Camp c) => 1;
-        public static double FabricFeedstockNeed(WorldState w, Camp c, double intervals, double years)
+        public static double FabricFeedstockNeed(WorldState w, Camp c, double intervals, double years, double residentPopulation = -1)
         {
             if (!CultivationEconomy.Enabled(c) || c.Population <= 0 || c.CraftingPriorities.Cloth <= 0) return 0;
             var coverage = new ToolCoverageBudget(w, c, intervals);
-            var planned = MaterialEconomy.Forecast(w, c, Recipes(w.Config), intervals, years, coverage.Remaining, true);
+            var planned = MaterialEconomy.Forecast(w, c, Recipes(w.Config), intervals, years, coverage.Remaining, true, residentPopulation);
             return planned[CraftGood.Cloth] * w.Config.Neolithic.PlantFoodPerFabricUnit;
         }
         public static double FarmerMaintenanceMultiplier(Camp c) => 1;

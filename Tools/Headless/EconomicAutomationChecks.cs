@@ -32,7 +32,7 @@ internal static class EconomicAutomationChecks
     }
     public static int Run()
     {
-        checks = 0; RolesAndRates(); Labor(); Planning(); Persistence(); FabricDoesNotFundBirths();
+        checks = 0; RolesAndRates(); Labor(); Planning(); Persistence(); FabricDoesNotFundBirths(); FabricUsesPostGrowthResidents(); PlanningResidentPopulationIgnoresStaleIncome();
         Console.WriteLine("PASS: " + checks + " demand automation assertions"); return checks;
     }
     private static void RolesAndRates()
@@ -151,5 +151,56 @@ internal static class EconomicAutomationChecks
         Check(r.Growth == 0 && c.Population == 100, "manufacturing feedstock is not reused to fund births");
         Near(r.Demographics.Single().ManufacturingFood, 100, "planned plant input actually consumed");
         Near(c.Food, 8000, "full operating reserve retained after manufacturing", 1e-5);
+    }
+    private static void FabricUsesPostGrowthResidents()
+    {
+        WorldState GrowingFixture(bool hunter)
+        {
+            var w = Fixture(); var c = w.Camps[0]; Field(w); w.Config.MaintenanceCoefficient = 0; w.Config.AnnualHumanGrowthRate = .01145;
+            c.Population = 10; c.PlantFood = c.AnimalFood = c.AquaticFood = 0; c.Inventory.HandTools = 1; c.Inventory.HousingUnits = 10;
+            c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
+            c.Workforce.Assign(WorkforceRoles.Farmer, 9, c.Population); c.Workforce.Assign(WorkforceRoles.Weaver, 1, c.Population);
+            c.EconomicLabor = new EconomicLaborPlan();
+            if (hunter)
+            {
+                // Give the linked group a stock buffer so this case isolates
+                // reproductive population from Clothing's resident population.
+                c.AnimalFood = 4000;
+                w.Hunters.Add(new Hunter { Id = w.NextId++, Player = c.Player, SourceCamp = c.Id, SocietyId = c.SocietyId, Tile = c.Tile, Population = 4 });
+            }
+            return w;
+        }
+
+        var w = GrowingFixture(false); var c = w.Camps[0]; var record = Resolve(w);
+        Check(record.Growth > 0 && c.Population > 10, "zero-reserve fixture reaches positive post-growth resident population");
+        Near(record.Demographics.Single().ManufacturingFood, 2 * c.Population, "zero reserve accepts exactly useful Fabric feedstock for post-growth residents");
+        Near(c.FabricConsumed + c.Inventory.Cloth, 2 * c.Population, "post-growth Fabric production splits into current use and retained reserve");
+        Check(c.PlantFood >= 0 && c.Food >= c.PlantFood, "plant stock remains part of the conserved food reserve after Fabric consumption");
+
+        var withHunter = GrowingFixture(true); var camp = withHunter.Camps[0]; var hunterRecord = Resolve(withHunter);
+        Check(hunterRecord.Growth > 0 && camp.Population > 10, "connected-hunter fixture grows at the camp");
+        Near(hunterRecord.Demographics.Single().ManufacturingFood, 2 * camp.Population, "connected hunters affect biological growth but do not add Clothing demand");
+        Check(withHunter.Hunters.Single().Population == 4, "connected hunters remain residents only for biological demand and birth placement");
+    }
+    private static void PlanningResidentPopulationIgnoresStaleIncome()
+    {
+        WorldState Make(bool stale, double remainder)
+        {
+            var w = Fixture(); var c = w.Camps[0];
+            w.Config.AnnualHumanGrowthRate = .01145;
+            c.PlantFood = 8000; c.GrowthRemainder = remainder; c.Inventory.HandTools = 10;
+            c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
+            c.Workforce.Assign(WorkforceRoles.Weaver, 10, c.Population);
+            c.StepFoodIncome = stale ? 10000 : 0;
+            return w;
+        }
+        foreach (double remainder in new[] { 0d, .37 })
+        {
+            var clean = Make(false, remainder); var stale = Make(true, remainder);
+            double cleanPopulation = TurnResolver.PlanningResidentPopulation(clean, clean.Camps[0], 10000);
+            double stalePopulation = TurnResolver.PlanningResidentPopulation(stale, stale.Camps[0], 10000);
+            Check(cleanPopulation > clean.Camps[0].Population, "resident planning preserves positive growth with a stock buffer");
+            Near(stalePopulation, cleanPopulation, "turn-start resident planning ignores stale prior-turn income");
+        }
     }
 }
