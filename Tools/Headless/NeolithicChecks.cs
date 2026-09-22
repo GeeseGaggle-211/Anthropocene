@@ -35,7 +35,7 @@ internal static class NeolithicChecks
     }
     public static int Run()
     {
-        checks = 0; Cultivation(); TerrestrialFarmerClaims(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); Smoke(); EconomicAutomationChecks.Run();
+        checks = 0; Cultivation(); TerrestrialFarmerClaims(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); PotStorage(); Smoke(); EconomicAutomationChecks.Run();
         Console.WriteLine("PASS: " + checks + " Neolithic realignment assertions"); return checks;
     }
 
@@ -107,6 +107,40 @@ internal static class NeolithicChecks
         Check(record.Transfers.Any(t => t.Kind == "Aquatic gathering" && t.Tile == neighbors[0] && t.Food > 0), "Lake gathering remains available");
         Check(record.Transfers.Any(t => t.Kind == "Marine gathering" && t.Tile == neighbors[1] && t.Food > 0), "Shallows gathering remains available");
         Near(record.Demographics.Single().DiscardedInventory, 0, "aquatic filtering preserves no-waste accounting", 1e-7);
+    }
+
+    private static void PotStorage()
+    {
+        var w = Fixture(); var c = w.Camps[0];
+        w.Config.TurnDays = 7300; c.Population = 250; c.Inventory.Pots = 0;
+        double years = w.Config.TurnDays / w.Config.DaysPerYear;
+        Near(NeolithicProduction.NaturalStorageCapacity(w, c, w.Config.TurnDays / w.Config.BaseDays, c.Population), 20000, "natural storage remains one generation in warm fixture");
+        Near(NeolithicProduction.TargetPots(w, c, years), 125, "pot target fills desired reserve gap");
+        Near(NeolithicProduction.StorageCapacity(w, c, w.Config.TurnDays / w.Config.BaseDays), 20000, "zero pots preserve natural storage cap");
+        c.Inventory.Pots = 1; Near(NeolithicProduction.StorageCapacity(w, c, w.Config.TurnDays / w.Config.BaseDays), 20080, "one pot adds absolute storage capacity");
+        c.Inventory.Pots = 125; Near(NeolithicProduction.PotDemand(w, c, years), 12.5, "stable pot stock creates useful replacement demand");
+        var split = Fixture(); split.Camps[0].Population = 250; split.Config.TurnDays = 7300; split.Camps[0].Inventory.Pots = 125; NeolithicProduction.DepreciatePots(split, split.Camps[0], 10); NeolithicProduction.DepreciatePots(split, split.Camps[0], 10);
+        var whole = Fixture(); whole.Camps[0].Population = 250; whole.Config.TurnDays = 7300; whole.Camps[0].Inventory.Pots = 125; NeolithicProduction.DepreciatePots(whole, whole.Camps[0], 20);
+        Near(split.Camps[0].Inventory.Pots, whole.Camps[0].Inventory.Pots, "two half turns equal one reference decay");
+        c.Inventory.Pots = 125; NeolithicProduction.DepreciatePots(w, c, years); Near(c.Inventory.Pots, 112.5, "reference turn pot depreciation is ten percent");
+        Near(NeolithicProduction.PotDemandFromCurrentStock(w, c, years), 12.5, "resolver demand uses already depreciated stock once");
+        var connected = Fixture(); var cc = connected.Camps[0]; cc.Population = 250; connected.Hunters.Add(new Hunter { Id = connected.NextId++, SourceCamp = cc.Id, Tile = cc.Tile, Population = 100 });
+        Near(NeolithicProduction.TargetPots(connected, cc, years), 175, "connected hunter residents share desired reserve and natural capacity");
+        var remote = Fixture(); var rc = remote.Camps[0]; rc.Population = 250; remote.Hunters.Add(new Hunter { Id = remote.NextId++, SourceCamp = rc.Id, Tile = remote.Tiles.Length - 1, Population = 100 });
+        Near(NeolithicProduction.TargetPots(remote, rc, years), 25, "remote hunters remain in natural storage capacity without camp reserve appetite");
+        Near(NeolithicProduction.TargetPots(remote, rc, years, rc.Population), 25, "explicit current residents agree with default Pot target");
+        Near(NeolithicProduction.TargetPots(remote, rc, years, 300), 50, "projected residents affect desired reserve and natural storage once");
+        var stable = Fixture(); var sc = stable.Camps[0]; sc.Population = 250; sc.Food = 30000; sc.PlantFood = 100000; sc.Inventory.Pots = 125; sc.Inventory.HandTools = 500; sc.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 1, Cloth = 0, FarmTools = 0, Housing = 0, Tools = 0 }; sc.People.NeolithicTechnologies.Add(NeolithicTech.Pottery); sc.Workforce.Assign(WorkforceRoles.Potter, 1, sc.Population); AddResources(stable); stable.Resources.Clay[sc.Tile] = 1000;
+        var resolver = new TurnResolver(); var stableRecord = resolver.Resolve(stable, new Dictionary<int, List<Order>>());
+        Near(stableRecord.Production.Where(p => p.Good == CraftGood.Pots).Sum(p => p.Output), 12.5, "stable Pot replacement is useful once after decay");
+        Near(stableRecord.MaterialTransfers.Where(t => t.Material == MaterialId.Clay).Sum(t => t.Amount), 25, "Pot replacement gathers one configured Clay reserve without double decay");
+        Near(sc.Inventory.Clay, 12.5, "realized Pot input leaves only gathered reserve Clay");
+        var blocked = Fixture(); var bc = blocked.Camps[0]; bc.Population = 250; bc.Food = 40000; bc.Inventory.Pots = 0; bc.Inventory.HandTools = 500; bc.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 1, Cloth = 0, FarmTools = 0, Housing = 0, Tools = 0 }; bc.People.NeolithicTechnologies.Add(NeolithicTech.Pottery); bc.Workforce.Assign(WorkforceRoles.Potter, 1, bc.Population); AddResources(blocked); blocked.Resources.Clay[bc.Tile] = 0;
+        var blockedRecord = resolver.Resolve(blocked, new Dictionary<int, List<Order>>());
+        Near(blockedRecord.Production.Where(p => p.Good == CraftGood.Pots).Sum(p => p.Output), 0, "blocked Pot production creates no output");
+        Near(bc.Inventory.HandTools, 500, "blocked Pot production consumes no tools"); Near(bc.Food, 20000, "blocked Pot production preserves end storage");
+        c.Inventory.Pots = 125.25; string before = SaveCodec.Fingerprint(w); var loaded = SaveCodec.Load(SaveCodec.Save(w)); Near(loaded.Camps[0].Inventory.Pots, 125.25, "fractional pot inventory saves exactly"); Check(before == SaveCodec.Fingerprint(loaded), "pot inventory save/load replay is deterministic");
+        var zero = Fixture(); zero.Config.Neolithic.PotDecayPerReferenceTurn = 0; zero.Config.Validate(); var zeroLoaded = SaveCodec.Load(SaveCodec.Save(zero)); Check(zeroLoaded.Config.Neolithic.PotDecayPerReferenceTurn == 0, "zero pot decay remains a legitimate saved value");
     }
     private static void Cultivation()
     {
@@ -292,9 +326,16 @@ internal static class NeolithicChecks
         var legacy = Fixture(); legacy.Camps[0].Inventory.Houses = 3; legacy.Camps[0].Inventory.HousingUnits = 5;
         legacy.Tiles[legacy.Camps[0].Tile].Cultivation = .2f;
         var migrated = SaveCodec.Load(Legacy10(legacy));
+        Near(migrated.Config.Neolithic.PotStorageFoodPerUnit, 80, "absent legacy Pot capacity receives current default");
+        Near(migrated.Config.Neolithic.PotDecayPerReferenceTurn, .1, "absent legacy Pot decay receives current default");
         Near(migrated.Camps[0].Inventory.HousingUnits, 7, "legacy houses plus partial construction migrate once");
         Near(migrated.Camps[0].StonePriority + migrated.Camps[0].ClayPriority + migrated.Camps[0].WoodPriority, 3, "absent legacy sourcing fields receive real defaults");
         Check(migrated.Camps[0].CultivationFocusTile == -1, "absent legacy focus is not tile zero");
+        var partialConfig = Fixture(); partialConfig.Config.Neolithic.ReferencePopulation = 333;
+        var partial = SaveCodec.Load(MissingPotFields(partialConfig));
+        Near(partial.Config.Neolithic.PotStorageFoodPerUnit, 80, "missing Pot capacity field in existing Neolithic config receives default");
+        Near(partial.Config.Neolithic.PotDecayPerReferenceTurn, .1, "missing Pot decay field in existing Neolithic config receives default");
+        Near(partial.Config.Neolithic.ReferencePopulation, 333, "existing Neolithic config fields survive missing Pot migration");
         var preAgriculture = Fixture(false); preAgriculture.Camps[0].Workforce.Assign(WorkforceRoles.Farmer, 10, 100);
         Check(SaveCodec.Load(Legacy10(preAgriculture)).Camps[0].Workforce.Assigned == 0, "impossible legacy pre-Agriculture jobs are released to real gatherers");
         Near(migrated.Tiles[legacy.Camps[0].Tile].CultivationCapital, .25, "legacy q migrates to physical E", 1e-7);
@@ -422,6 +463,31 @@ internal static class NeolithicChecks
                 }
                 int tiles = reader.ReadInt32(); writer.Write(tiles);
                 for (int i = 0; i < tiles; i++) { writer.Write(reader.ReadBytes(97)); reader.ReadDouble(); reader.ReadInt32(); writer.Write(reader.ReadBytes(256)); }
+                unzip.CopyTo(zip);
+            }
+            return output.ToArray();
+        }
+    }
+    private static byte[] MissingPotFields(WorldState world)
+    {
+        using (var input = new MemoryStream(SaveCodec.Save(world)))
+        using (var unzip = new GZipStream(input, CompressionMode.Decompress))
+        using (var reader = new BinaryReader(unzip))
+        using (var output = new MemoryStream())
+        {
+            using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
+            using (var writer = new BinaryWriter(zip))
+            {
+                writer.Write(reader.ReadString()); int header = reader.ReadInt32();
+                using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(header), XmlDictionaryReaderQuotas.Max))
+                using (var metadata = new MemoryStream())
+                {
+                    var document = XDocument.Load(xml);
+                    string[] absent = { "PotStorageFoodPerUnit", "PotDecayPerReferenceTurn" };
+                    document.Descendants().Where(element => absent.Contains(element.Name.LocalName)).Remove();
+                    using (var binary = XmlDictionaryWriter.CreateBinaryWriter(metadata, null, null, false)) document.WriteTo(binary);
+                    writer.Write((int)metadata.Length); writer.Write(metadata.ToArray());
+                }
                 unzip.CopyTo(zip);
             }
             return output.ToArray();

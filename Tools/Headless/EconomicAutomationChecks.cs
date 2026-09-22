@@ -109,7 +109,7 @@ internal static class EconomicAutomationChecks
         var noSource = Fixture(false); var nc = noSource.Camps[0]; nc.Inventory.HandTools = 100; nc.CraftingPriorities.Cloth = 0;
         var ne = EconomicIntents.Automatic(noSource, nc, true); Budget(noSource, ne);
         Check(!ne.Assignments.Any(a => a.Role == WorkforceRoles.Craftsperson || WorkforceRoles.Specialists.Contains(a.Role) || WorkforceRoles.Extractors.Contains(a.Role)), "missing materials do not recruit idle manufacturers or extractors");
-        var stocked = Fixture(); var sc = stocked.Camps[0]; sc.Inventory.HandTools = 100; sc.Inventory.Cloth = 10000; sc.Inventory.HousingUnits = 1000;
+        var stocked = Fixture(); var sc = stocked.Camps[0]; sc.Inventory.HandTools = 100; sc.Inventory.Cloth = 10000; sc.Inventory.HousingUnits = 1000; sc.Inventory.Pots = 1000;
         var se = EconomicIntents.Automatic(stocked, sc, true); Budget(stocked, se);
         Check(!se.Assignments.Any(a => a.Role == WorkforceRoles.Craftsperson || WorkforceRoles.Specialists.Contains(a.Role)), "finished stock bridging removes redundant manufacture");
         sc.AnimalFood = 1000000; Near(TurnResolver.PlanningFoodDemand(stocked, sc), 0, "imported/stored food shares the useful demand budget");
