@@ -307,7 +307,7 @@ internal static class ToolConsumptionChecks
         c.Inventory.HandTools = 2;
         c.Inventory.Tools = 0;
         c.EconomyAutomationTurns = -1;
-        c.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 0, Cloth = 1, FarmTools = 0, Housing = 0, Tools = 0 };
+        c.CraftingPriorities = new CraftingPriorities { HandTools = 1, Pots = 0, Cloth = 1, FarmTools = 0, Housing = 0, Tools = 1 };
         c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
         double early = 0, late = 0;
         for (int turn = 0; turn < 8; turn++)

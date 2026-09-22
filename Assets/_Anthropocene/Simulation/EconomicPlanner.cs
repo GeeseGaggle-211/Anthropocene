@@ -98,8 +98,6 @@ namespace Anthropocene.Simulation
                     {
                         if (Role(r) != role || NeolithicProduction.Priority(candidate, r.Good) <= 0) continue;
                         double wanted = r.Good == CraftGood.HandTools || r.Good == CraftGood.Tools ? NeolithicProduction.Demand(w, candidate, r.Good, years) : requested[r.Good];
-                        // Prefer improved coverage once unlocked, without making redundant hand tools.
-                        if (r.Good == CraftGood.HandTools && c.People.HasTech(NeolithicTech.Toolmaking) && e.Priorities.Tools > 0 && accessible[MaterialId.Wood] + c.Inventory.Wood > 0) wanted = 0;
                         double amount = Capped(r, wanted, false);
                         if (r.Equipment) amount = Math.Min(amount, coverage.Capacity(r.Good, Rate(r), c.Population * intervals));
                         amount = Capped(r, amount, true);
