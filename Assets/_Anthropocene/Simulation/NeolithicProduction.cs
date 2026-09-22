@@ -162,7 +162,51 @@ namespace Anthropocene.Simulation
                 double missingEquipmentWorkers = Math.Max(0, Math.Min(c.Population, c.EconomicLabor.EquipmentTarget) - assignedEquipmentWorkers);
                 labor[WorkforceRoles.Craftsperson] += missingEquipmentWorkers * w.Config.GenerationIntervals;
             }
+            // First retain the direct material inputs that the normal
+            // priority-ordered workforce schedule can actually use.  This is a
+            // material reservation pass only: it does not reorder workers, and
+            // it still lets Housing consume its place in each role's priority
+            // schedule.  The reservation is then applied to the same schedule
+            // so a Builder cannot consume Wood needed by a later Farm Tool job
+            // without moving that job ahead of Housing.
+            var directReserve = MaterialEconomy.Materials.ToDictionary(m => m, _ => 0d);
+            var probeRoom = new Dictionary<MaterialId, double>(room);
+            var probePlant = plant;
+            var probePlanned = recipes.ToDictionary(r => r.Good, r => 0d);
+            var probeLabor = labor.ToDictionary(p => p.Key, p => p.Value);
+            foreach (var role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
+            {
+                if (!probeLabor.TryGetValue(role, out double availableLabor)) continue;
+                foreach (var recipe in recipes)
+                {
+                    if (Priority(c, recipe.Good) <= 0) continue;
+                    bool specialist = c.People.HasTech(recipe.Track);
+                    if (role != WorkforceRoles.Craftsperson && (!specialist || role != recipe.Specialist)) continue;
+                    if (role == WorkforceRoles.Craftsperson && recipe.SpecialistOnly) continue;
+                    double rate = recipe.Rate * (role == recipe.Specialist && specialist ? 1 : n.GeneralistTaskEfficiency);
+                    double wanted = Math.Max(0, DemandWithoutToolReplacement(w, c, recipe.Good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed) - probePlanned[recipe.Good]);
+                    double amount = Math.Min(wanted, availableLabor * rate);
+                    if (recipe.Stone > 0) amount = Math.Min(amount, probeRoom[MaterialId.Stone] / recipe.Stone);
+                    if (recipe.Clay > 0) amount = Math.Min(amount, probeRoom[MaterialId.Clay] / recipe.Clay);
+                    if (recipe.Wood > 0) amount = Math.Min(amount, probeRoom[MaterialId.Wood] / recipe.Wood);
+                    if (recipe.PlantFood > 0) amount = Math.Min(amount, probePlant / recipe.PlantFood);
+                    if (amount <= 1e-12) continue;
+                    availableLabor -= amount / rate;
+                    probePlanned[recipe.Good] += amount;
+                    probeRoom[MaterialId.Stone] -= amount * recipe.Stone;
+                    probeRoom[MaterialId.Clay] -= amount * recipe.Clay;
+                    probeRoom[MaterialId.Wood] -= amount * recipe.Wood;
+                    directReserve[MaterialId.Stone] += amount * recipe.Stone;
+                    directReserve[MaterialId.Clay] += amount * recipe.Clay;
+                    directReserve[MaterialId.Wood] += amount * recipe.Wood;
+                    probePlant -= amount * recipe.PlantFood;
+                }
+                probeLabor[role] = availableLabor;
+            }
+
             var planned = recipes.ToDictionary(r => r.Good, r => 0d);
+            double availableWood = room[MaterialId.Wood], availableClay = room[MaterialId.Clay];
+            MaterialEconomy.HousingShares(availableWood, availableClay, directReserve[MaterialId.Wood], directReserve[MaterialId.Clay], out double housingWoodShare, out double housingClayShare);
             foreach (var role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
             {
                 if (!labor.TryGetValue(role, out double availableLabor)) continue;
@@ -178,7 +222,16 @@ namespace Anthropocene.Simulation
                     if (recipe.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / recipe.Stone);
                     if (recipe.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / recipe.Clay);
                     if (recipe.Wood > 0) amount = Math.Min(amount, room[MaterialId.Wood] / recipe.Wood);
-                    if (recipe.ConstructionMaterial > 0) amount = Math.Min(amount, (room[MaterialId.Wood] + room[MaterialId.Clay]) / recipe.ConstructionMaterial);
+                    if (recipe.ConstructionMaterial > 0)
+                    {
+                        if (housingWoodShare + housingClayShare <= 0) amount = 0;
+                        else
+                        {
+                            double freeWood = Math.Max(0, room[MaterialId.Wood] - directReserve[MaterialId.Wood]);
+                            double freeClay = Math.Max(0, room[MaterialId.Clay] - directReserve[MaterialId.Clay]);
+                            amount = Math.Min(amount, (freeWood + freeClay) / recipe.ConstructionMaterial);
+                        }
+                    }
                     if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                     if (amount <= 1e-12) continue;
                     availableLabor -= amount / rate;
@@ -189,14 +242,23 @@ namespace Anthropocene.Simulation
                     copperOutput += copperAmount;
                     copperLabor -= copperRate > 0 ? copperAmount / copperRate : 0;
                     room[MaterialId.Stone] -= amount * recipe.Stone; room[MaterialId.Clay] -= amount * recipe.Clay; room[MaterialId.Wood] -= amount * recipe.Wood;
+                    directReserve[MaterialId.Stone] = Math.Max(0, directReserve[MaterialId.Stone] - amount * recipe.Stone);
+                    directReserve[MaterialId.Clay] = Math.Max(0, directReserve[MaterialId.Clay] - amount * recipe.Clay);
+                    directReserve[MaterialId.Wood] = Math.Max(0, directReserve[MaterialId.Wood] - amount * recipe.Wood);
                     if (recipe.ConstructionMaterial > 0)
                     {
-                        double construction = amount * recipe.ConstructionMaterial;
-                        double wood = Math.Min(room[MaterialId.Wood], construction);
-                        room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= construction - wood;
+                        double used = amount * recipe.ConstructionMaterial;
+                        double freeWood = Math.Max(0, room[MaterialId.Wood] - directReserve[MaterialId.Wood]);
+                        double freeClay = Math.Max(0, room[MaterialId.Clay] - directReserve[MaterialId.Clay]);
+                        double wood = Math.Min(freeWood, used * housingWoodShare);
+                        double clay = Math.Min(freeClay, used - wood);
+                        wood += Math.Min(freeWood - wood, used - wood - clay);
+                        clay += Math.Min(freeClay - clay, used - wood - clay);
+                        room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= clay;
                     }
                     plant -= amount * recipe.PlantFood;
                 }
+                labor[role] = availableLabor;
             }
             double capacity = c.Inventory.HandTools + c.Inventory.Tools * 4;
             // Copper remains the legacy worker-time hook. Its contribution above
@@ -287,7 +349,7 @@ namespace Anthropocene.Simulation
             c.HousingReplacementDemand = Math.Min(before - c.Inventory.HousingUnits, c.HousingDemand);
             c.HousingGrowthDemand = Math.Max(0, c.HousingDemand - c.HousingReplacementDemand);
         }
-        public static double Produce(WorldState w, Camp c, CraftRecipe recipe, string role, double workerIntervals, double intervals, double usefulDemand, ref double equipmentIntervals, TurnRecord record, ToolCoverageBudget coverage = null)
+        public static double Produce(WorldState w, Camp c, CraftRecipe recipe, string role, double workerIntervals, double intervals, double usefulDemand, ref double equipmentIntervals, TurnRecord record, ToolCoverageBudget coverage = null, HousingMaterialPlan housing = null)
         {
             if (!CultivationEconomy.Enabled(c) || workerIntervals <= 0 || recipe.Rate <= 0 || usefulDemand <= 0 || intervals <= 0) return 0;
             bool specialist = role == recipe.Specialist && c.People.HasTech(recipe.Track);
@@ -295,6 +357,16 @@ namespace Anthropocene.Simulation
             double rate = recipe.Rate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
             if (rate <= 0) return 0;
             coverage = coverage ?? new ToolCoverageBudget(w, c, intervals, equipmentIntervals);
+            // Direct callers retain the public production entry point.  Give a
+            // standalone Housing receipt the same source-aware policy; the
+            // resolver supplies one shared plan so sequential role calls do not
+            // recompute it after stock changes.
+            if (recipe.ConstructionMaterial > 0 && housing == null)
+            {
+                var planned = Recipes(w.Config).ToDictionary(r => r.Good, r => 0d);
+                planned[recipe.Good] = Math.Min(usefulDemand, recipe.Equipment ? coverage.Capacity(recipe.Good, rate, workerIntervals) : workerIntervals * rate);
+                housing = MaterialEconomy.PlanHousingMaterials(w, c, Recipes(w.Config), planned, intervals * w.Config.BaseDays / w.Config.DaysPerYear, w.Days);
+            }
             // The shared budget limits finished output.  The legacy equipment
             // interval argument is retained for callers but is no longer a
             // second, worker-count capacity gate.
@@ -305,10 +377,22 @@ namespace Anthropocene.Simulation
             if (recipe.Clay > 0) amount = Math.Min(amount, inv.Clay / recipe.Clay);
             if (recipe.Wood > 0) amount = Math.Min(amount, inv.Wood / recipe.Wood);
             if (recipe.PlantFood > 0) amount = Math.Min(amount, c.PlantFood / recipe.PlantFood);
-            if (recipe.ConstructionMaterial > 0) amount = Math.Min(amount, (inv.Wood + inv.Clay) / recipe.ConstructionMaterial);
+            if (recipe.ConstructionMaterial > 0)
+            {
+                if (housing == null) amount = Math.Min(amount, (inv.Wood + inv.Clay) / recipe.ConstructionMaterial);
+                else amount = housing.LimitHousing(c, amount, recipe.ConstructionMaterial, out _, out _);
+            }
             if (amount <= 1e-12) return 0;
             double wood = amount * recipe.Wood, clay = amount * recipe.Clay;
-            if (recipe.ConstructionMaterial > 0) { double materials = amount * recipe.ConstructionMaterial; wood += Math.Min(inv.Wood, materials); clay += materials - Math.Min(inv.Wood, materials); }
+            if (recipe.ConstructionMaterial > 0)
+            {
+                if (housing == null)
+                {
+                    double materials = amount * recipe.ConstructionMaterial;
+                    wood += Math.Min(inv.Wood, materials); clay += materials - Math.Min(inv.Wood, materials);
+                }
+                else housing.LimitHousing(c, amount, recipe.ConstructionMaterial, out wood, out clay);
+            }
             double handBeforeBudget = recipe.Equipment ? coverage.HandToolsConsumed : 0;
             double toolsBeforeBudget = recipe.Equipment ? coverage.ToolsConsumed : 0;
             double used = recipe.Equipment ? coverage.Spend(recipe.Good, rate, amount) : amount / rate;
@@ -318,6 +402,7 @@ namespace Anthropocene.Simulation
             double consumedTools = recipe.Equipment ? coverage.ToolsConsumed - toolsBeforeBudget : 0;
             inv.HandTools -= consumedHand; inv.Tools -= consumedTools;
             inv.Stone -= amount * recipe.Stone; inv.Wood -= wood; inv.Clay -= clay; c.PlantFood -= amount * recipe.PlantFood;
+            if (housing != null) housing.CompleteDirect(recipe, amount);
             switch (recipe.Good) { case CraftGood.HandTools: inv.HandTools += amount; break; case CraftGood.Pots: inv.Pots += amount; break; case CraftGood.Cloth: inv.Cloth += amount; break; case CraftGood.FarmTools: inv.FarmTools += amount; break; case CraftGood.Housing: inv.HousingUnits += amount; break; case CraftGood.Tools: inv.Tools += amount; break; }
             // Finished equipment becomes available at the next production interval;
             // it cannot supply worker-time retroactively to the interval that made it.
@@ -344,14 +429,14 @@ namespace Anthropocene.Simulation
                 var recipes = Recipes(w.Config);
                 double equipment = (c.Inventory.HandTools + c.Inventory.Tools + (c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools : 0)) * intervals / w.Config.Neolithic.ToolCoveragePerWorker;
                 var coverage = new ToolCoverageBudget(w, c, intervals);
-                MaterialEconomy.Gather(w, c, recipes, intervals, years, gatheringWorkerIntervals, ref equipment, record, true, true);
+                var housing = MaterialEconomy.Gather(w, c, recipes, intervals, years, gatheringWorkerIntervals, ref equipment, record, true, true);
                 foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
                 {
                     double labor = CultivationEconomy.Workers(c, role) * intervals;
                     foreach (var recipe in recipes.OrderByDescending(r => Priority(c, r.Good)).ThenBy(r => r.Good))
                     {
                         if (Priority(c, recipe.Good) <= 0) continue;
-                        labor -= Produce(w, c, recipe, role, labor, intervals, Demand(w, c, recipe.Good, years, -1, true, true), ref equipment, record, coverage);
+                        labor -= Produce(w, c, recipe, role, labor, intervals, Demand(w, c, recipe.Good, years, -1, true, true), ref equipment, record, coverage, housing);
                     }
                 }
             }

@@ -35,7 +35,7 @@ internal static class NeolithicChecks
     }
     public static int Run()
     {
-        checks = 0; Cultivation(); TerrestrialFarmerClaims(); ReserveHorizons(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); PotStorage(); Smoke(); EconomicAutomationChecks.Run();
+        checks = 0; Cultivation(); TerrestrialFarmerClaims(); ReserveHorizons(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); PotStorage(); Smoke(); HousingMaterialChecks.Run(); EconomicAutomationChecks.Run();
         Console.WriteLine("PASS: " + checks + " Neolithic realignment assertions"); return checks;
     }
 

@@ -55,20 +55,16 @@ namespace Anthropocene.Simulation
                 var candidate = Preview(c, intent, nextPopulation);
                 NeolithicProduction.DepreciateHousing(w, candidate, years);
                 var room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]);
+                double initialWood = room[MaterialId.Wood], initialClay = room[MaterialId.Clay];
+                double directWood = 0, directClay = 0;
+                double housingWoodShare = 0, housingClayShare = 0;
+                bool finalRolePass = false;
                 double plant = plantEnvelope;
                 var requested = recipes.ToDictionary(r => r.Good, r => 0d);
                 var futureRoles = new Dictionary<string, double>();
                 int proposedFarmers = 0;
                 double proposedExpansion = 0;
                 var farmRecipe = goods.FirstOrDefault(r => r.Good == CraftGood.FarmTools);
-                double farmPriority = farmRecipe == null ? 0 : NeolithicProduction.Priority(candidate, CraftGood.FarmTools);
-                bool FarmPrecedes(CraftRecipe r)
-                {
-                    if (farmRecipe == null || farmPriority <= 0) return false;
-                    double otherPriority = NeolithicProduction.Priority(candidate, r.Good);
-                    return farmPriority > otherPriority + Epsilon ||
-                        Math.Abs(farmPriority - otherPriority) <= Epsilon && CraftGood.FarmTools.CompareTo(r.Good) < 0;
-                }
                 string Role(CraftRecipe r) => c.People.HasTech(r.Track) ? r.Specialist : WorkforceRoles.Craftsperson;
                 double Rate(CraftRecipe r) => r.Rate * (c.People.HasTech(r.Track) ? 1 : n.GeneralistTaskEfficiency);
                 void Add(Dictionary<string, double> roles, string role, double workers) { if (workers > Epsilon) roles[role] = (roles.TryGetValue(role, out double old) ? old : 0) + workers; }
@@ -78,20 +74,55 @@ namespace Anthropocene.Simulation
                     if (r.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / r.Stone);
                     if (r.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / r.Clay);
                     if (r.Wood > 0) amount = Math.Min(amount, room[MaterialId.Wood] / r.Wood);
-                    if (r.ConstructionMaterial > 0) amount = Math.Min(amount, (room[MaterialId.Wood] + room[MaterialId.Clay]) / r.ConstructionMaterial);
+                    if (r.ConstructionMaterial > 0)
+                    {
+                        double woodShare, clayShare;
+                        if (finalRolePass) { woodShare = housingWoodShare; clayShare = housingClayShare; }
+                        else MaterialEconomy.HousingShares(initialWood, initialClay, directWood, directClay, out woodShare, out clayShare);
+                        if (woodShare + clayShare <= 0) amount = 0;
+                        else
+                        {
+                            double freeWood = Math.Max(0, room[MaterialId.Wood] - (finalRolePass ? directWood : 0));
+                            double freeClay = Math.Max(0, room[MaterialId.Clay] - (finalRolePass ? directClay : 0));
+                            amount = Math.Min(amount, (freeWood + freeClay) / r.ConstructionMaterial);
+                        }
+                    }
                     if (r.PlantFood > 0) amount = Math.Min(amount, plant / r.PlantFood);
                     if (debit)
                     {
                         room[MaterialId.Stone] -= amount * r.Stone; room[MaterialId.Clay] -= amount * r.Clay; room[MaterialId.Wood] -= amount * r.Wood;
-                        double construction = amount * r.ConstructionMaterial, wood = Math.Min(room[MaterialId.Wood], construction);
-                        room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= construction - wood; plant -= amount * r.PlantFood;
+                        if (r.ConstructionMaterial <= 0)
+                        {
+                            if (finalRolePass)
+                            {
+                                directWood = Math.Max(0, directWood - amount * r.Wood);
+                                directClay = Math.Max(0, directClay - amount * r.Clay);
+                            }
+                            else
+                            {
+                                directWood += amount * r.Wood;
+                                directClay += amount * r.Clay;
+                            }
+                        }
+                        double construction = amount * r.ConstructionMaterial;
+                        double currentWoodShare;
+                        if (finalRolePass) currentWoodShare = housingWoodShare;
+                        else MaterialEconomy.HousingShares(initialWood, initialClay, directWood, directClay, out currentWoodShare, out _);
+                        double freeWood = Math.Max(0, room[MaterialId.Wood] - (finalRolePass ? directWood : 0));
+                        double freeClay = Math.Max(0, room[MaterialId.Clay] - (finalRolePass ? directClay : 0));
+                        double wood = Math.Min(freeWood, construction * currentWoodShare);
+                        double clay = Math.Min(freeClay, construction - wood);
+                        wood += Math.Min(freeWood - wood, construction - wood - clay);
+                        clay += Math.Min(freeClay - clay, construction - wood - clay);
+                        room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= clay; plant -= amount * r.PlantFood;
                     }
                     return Math.Max(0, amount);
                 }
-                // Size ordinary goods in priority order. A higher-priority FarmTool
-                // recipe is deferred until its bounded field intent is known, so it
-                // can consume its own material share in the same ordered pass.
-                foreach (var r in goods.Where(r => r.Good != CraftGood.FarmTools && !FarmPrecedes(r)).OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
+                // All direct-input work reserves its own material before flexible
+                // construction. FarmTools remains deferred until field intent is
+                // bounded, but no Housing priority can spend a Wood/Clay input
+                // that another feasible recipe cannot substitute.
+                foreach (var r in goods.Where(r => r.Good != CraftGood.FarmTools && r.ConstructionMaterial <= 0).OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
                 {
                     double amount = Capped(r, goals[r.Good] * fulfillment, true);
                     requested[r.Good] = amount;
@@ -157,11 +188,10 @@ namespace Anthropocene.Simulation
                         }
                     }
                 }
-                // Complete the same priority-ordered pass after FarmTools have
-                // taken their actual current-turn material. Prospective field-tool
-                // roles above remain visible to replacement-demand forecasting,
-                // while blocked output does not consume material needed elsewhere.
-                foreach (var r in goods.Where(r => r.Good != CraftGood.FarmTools && FarmPrecedes(r)).OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
+                // Construction is the final flexible material consumer.  Its
+                // provisional mix uses this same post-direct room; final
+                // gathering and resolver debits use MaterialEconomy's fixed plan.
+                foreach (var r in goods.Where(r => r.Good != CraftGood.FarmTools && r.ConstructionMaterial > 0).OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
                 {
                     double amount = Capped(r, goals[r.Good] * fulfillment, true);
                     requested[r.Good] = amount;
@@ -184,7 +214,14 @@ namespace Anthropocene.Simulation
                     candidate.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = proposedFarmers });
                 var rolesNow = new Dictionary<string, double>();
                 var coverage = new ToolCoverageBudget(w, c, intervals);
-                room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]); plant = plantEnvelope;
+                room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]);
+                // Rebuild the final role pass from fresh stock while carrying
+                // the provisional direct reservation forward. It protects a
+                // later specialist job without counting those inputs twice;
+                // each realized direct receipt releases its reservation below.
+                MaterialEconomy.HousingShares(initialWood, initialClay, directWood, directClay, out housingWoodShare, out housingClayShare);
+                finalRolePass = true;
+                plant = plantEnvelope;
                 // Match production's role/recipe ordering and share one tool-time budget.
                 foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
                     foreach (var r in recipes.OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
@@ -216,23 +253,20 @@ namespace Anthropocene.Simulation
                 // Reforecast rounded staffing through the actual recipe planner. This
                 // catches shared generalist time, mixed inputs and reserve replenishment.
                 var outputs = MaterialEconomy.Forecast(w, candidate, recipes, intervals, years, new ToolCoverageBudget(w, c, intervals).Remaining, true);
+                var housing = MaterialEconomy.PlanHousingMaterials(w, c, recipes, outputs, years, w.Days);
                 var raw = MaterialEconomy.Materials.ToDictionary(m => m, m => 0d);
-                double constructionDemand = 0;
                 foreach (var r in recipes)
                 {
+                    if (r.ConstructionMaterial > 0) continue;
                     raw[MaterialId.Stone] += outputs[r.Good] * r.Stone;
                     raw[MaterialId.Clay] += outputs[r.Good] * r.Clay;
                     raw[MaterialId.Wood] += outputs[r.Good] * r.Wood;
-                    constructionDemand += outputs[r.Good] * r.ConstructionMaterial;
                 }
                 double horizon = n.MaterialReserveMultiplier(years);
+                double construction = outputs[CraftGood.Housing] * recipes.Single(r => r.Good == CraftGood.Housing).ConstructionMaterial;
+                raw[MaterialId.Wood] += construction * housing.WoodShare;
+                raw[MaterialId.Clay] += construction * housing.ClayShare;
                 foreach (var m in MaterialEconomy.Materials) raw[m] = Math.Max(0, raw[m] * horizon - MaterialEconomy.Inventory(c, m));
-                // Existing wood/clay reserves substitute once, never once per source.
-                double spareWood = Math.Max(0, c.Inventory.Wood - outputs.Sum(p => recipes.First(r => r.Good == p.Key).Wood * p.Value) * horizon);
-                double spareClay = Math.Max(0, c.Inventory.Clay - outputs.Sum(p => recipes.First(r => r.Good == p.Key).Clay * p.Value) * horizon);
-                double materials = Math.Max(0, constructionDemand * horizon - spareWood - spareClay);
-                foreach (var m in new[] { MaterialId.Wood, MaterialId.Clay }.OrderByDescending(m => c.People.HasTech(EconomicIntents.RequiredTechnology(MaterialEconomy.Specialist(m)))).ThenByDescending(Priority).ThenBy(m => m))
-                { double take = Math.Min(materials, Math.Max(0, accessible[m] - raw[m])); raw[m] += take; materials -= take; }
                 double generalistMaterials = 0;
                 foreach (var m in MaterialEconomy.Materials)
                 {
