@@ -20,6 +20,7 @@ namespace Anthropocene.Simulation
     {
         public int Camp, StartingPopulation, Additions, Deaths, EndingPopulation, SurplusSteps, DeficitSteps, RecoverySteps;
         public double Years, FoodProduced, FoodReceived, TerrestrialFood, MarineFood, LakeFood, HuntFood, FishFood, ForageFood;
+        [System.Runtime.Serialization.OptionalField] public double AnimalFood;
         public double FoodRequired, FoodConsumed, InitialReserves, FinalReserves, DiscardedInventory, FractionalProgress, NetPercent;
 #pragma warning disable SYSLIB0050 // OptionalField permits older DataContractSerializer metadata.
         [System.Runtime.Serialization.OptionalField] public double ManufacturingFood;

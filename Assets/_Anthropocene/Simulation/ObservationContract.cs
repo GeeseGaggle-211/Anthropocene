@@ -17,7 +17,7 @@ namespace Anthropocene.Simulation
         internal static ObservedTileDto From(TileObservation t) => new ObservedTileDto { Id = t.Id, Food = t.Food, Biomass = t.PotentialFood, Freshwater = t.Freshwater, Productivity = t.Productivity, Moisture = t.Moisture, Condition = t.Condition, ElevationLevel = t.ElevationLevel, RidgeMask = t.RidgeMask, FoodMaximum = t.FoodMaximum, BiomassMaximum = t.PotentialMaximum, GatherablePercent = t.GatherablePercent, Terrain = t.Terrain, Environment = t.Environment, NaturalVegetation = t.NaturalVegetationPotential, CurrentVegetation = t.CurrentVegetation, Relief = t.Relief, Elevation = t.Elevation, WaterBody = t.WaterBody, FreshwaterSource = t.FreshwaterSource, River = t.River, Cultivated = t.Cultivated, Fishery = t.Fishery, Oasis = t.Oasis, Rivers = t.Rivers.Select(r => new ObservedRiverDto { Side = r.Side, FlowBand = r.FlowBand, Forward = r.Forward, Mouth = r.Mouth, Width = r.Width }).ToArray() };
     }
     [Serializable] public sealed class ObservedRiverDto { public int Side, FlowBand; public bool Forward, Mouth; public float Width; }
-    [Serializable] public sealed class ObservedSettlementDto { public int Id, Tile, Population, Gatherers, LinkedPopulation; public bool Agriculture, IsVillage; public EconomicIntent Economy; public MaterialSourceObservation[] MaterialSources; }
+    [Serializable] public sealed class ObservedSettlementDto { public int Id, Tile, Population, Gatherers, LinkedPopulation; public bool Agriculture, Husbandry, IsVillage; public EconomicIntent Economy; public MaterialSourceObservation[] MaterialSources; }
     [Serializable]
     public sealed class ObservedUnitDto
     {
@@ -27,7 +27,10 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class ObservedHerdDto
     {
-        public int Id, Tile, Size, Owner, RepresentativeCount; public string Species, Name, CountLabel; public bool Domestic, ExactCount;
+        public int Id, Tile, Size, Owner, DomesticCamp, DeficitTurns, StartingAnimals, SurvivingAnimals, NewbornAnimals, StarvationDeaths, RepresentativeCount;
+        public string Species, Name, CountLabel;
+        public bool Domestic, OwnedDomestic, ExactCount;
+        public double DeficitSeverity, DeathRemainder, FoodNutrition, WaterNutrition, Nutrition, ManagementFulfillment, PotentialFood, AcceptedFood;
     }
     [Serializable] public sealed class ObservedExtractionDto { public int Tile; public double Food; }
     [Serializable] public sealed class ObservedPredictionDto { public int Herd, Tile; }
@@ -52,9 +55,9 @@ namespace Anthropocene.Simulation
             Player = o.Player, Turn = o.Turn, PolicySeed = o.PolicySeed, CampId = o.CampId, CampTile = o.CampTile, CampPopulation = o.CampPopulation, GathererPopulation = o.GathererPopulation, LinkedPopulation = o.LinkedPopulation, FoodCondition = o.FoodCondition, DeficitTurns = o.DeficitTurns, Width = o.Map.Width, Height = o.Map.Height, MinimumCamp = o.MinimumCamp, HunterMovement = o.HunterMovement, CampMovement = o.CampMovement, WaterMovementCost = o.WaterMovementCost, SupplyRange = o.SupplyRange, SustainableHuntPopulation = o.SustainableHuntPopulation,
             Days = o.Days, Inertia = o.Inertia, HuntingFieldcraft = o.HuntingFieldcraft, HuntingInclination = o.HuntingInclination, GatheringInclination = o.GatheringInclination, FishingInclination = o.FishingInclination, Watercraft = o.Watercraft, Experience = o.Experience.ToArray(),
             Mandate = new Mandate { Risk = mandate.Risk, Mobility = mandate.Mobility, Exploration = mandate.Exploration, Reserve = mandate.Reserve, Hunting = mandate.Hunting, Gathering = mandate.Gathering, Fishing = mandate.Fishing, Persistence = mandate.Persistence },
-            Settlements = o.Settlements.Select(c => new ObservedSettlementDto { Id = c.Id, Tile = c.Tile, Population = c.Population, Gatherers = c.Gatherers, LinkedPopulation = c.LinkedPopulation, Agriculture = c.Agriculture, IsVillage = c.IsVillage, Economy = c.Economy.Copy(), MaterialSources = c.MaterialSources }).ToArray(),
+            Settlements = o.Settlements.Select(c => new ObservedSettlementDto { Id = c.Id, Tile = c.Tile, Population = c.Population, Gatherers = c.Gatherers, LinkedPopulation = c.LinkedPopulation, Agriculture = c.Agriculture, Husbandry = c.Husbandry, IsVillage = c.IsVillage, Economy = c.Economy.Copy(), MaterialSources = c.MaterialSources }).ToArray(),
             Tiles = o.Tiles.OrderBy(p => p.Key).Select(p => ObservedTileDto.From(p.Value)).ToArray(), Hunters = o.Hunters.Select(ObservedUnitDto.From).ToArray(), Rivals = o.Rivals.Select(ObservedUnitDto.From).ToArray(), ForeignHunters = o.ForeignHunters.Select(ObservedUnitDto.From).ToArray(),
-            Herds = o.Herds.Select(h => new ObservedHerdDto { Id = h.Id, Tile = h.Tile, Size = h.Size, Owner = h.Owner, RepresentativeCount = h.Count.Representative, Species = h.Species, Name = h.Name, CountLabel = h.Count.Label, Domestic = h.Domestic, ExactCount = h.Count.Exact }).ToArray(),
+            Herds = o.Herds.Select(h => new ObservedHerdDto { Id = h.Id, Tile = h.Tile, Size = h.Size, Owner = h.Owner, DomesticCamp = h.DomesticCamp, DeficitTurns = h.DeficitTurns, StartingAnimals = h.StartingAnimals, SurvivingAnimals = h.SurvivingAnimals, NewbornAnimals = h.NewbornAnimals, StarvationDeaths = h.StarvationDeaths, RepresentativeCount = h.Count.Representative, Species = h.Species, Name = h.Name, CountLabel = h.Count.Label, Domestic = h.Domestic, OwnedDomestic = h.OwnedDomestic, ExactCount = h.Count.Exact, DeficitSeverity = h.DeficitSeverity, DeathRemainder = h.DeathRemainder, FoodNutrition = h.FoodNutrition, WaterNutrition = h.WaterNutrition, Nutrition = h.Nutrition, ManagementFulfillment = h.ManagementFulfillment, PotentialFood = h.PotentialFood, AcceptedFood = h.AcceptedFood }).ToArray(),
             RecentOwnExtraction = o.RecentOwnExtraction.OrderBy(p => p.Key).Select(p => new ObservedExtractionDto { Tile = p.Key, Food = p.Value }).ToArray(), LikelyHerdDestinations = o.LikelyHerdDestinations.OrderBy(p => p.Key).Select(p => new ObservedPredictionDto { Herd = p.Key, Tile = p.Value }).ToArray(),
             LegalActions = Simulation.LegalActions.Build(o)
         };

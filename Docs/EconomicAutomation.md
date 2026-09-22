@@ -18,6 +18,15 @@ The generation resolver now projects Fabric against the same resident population
 
 The resolver keeps pre-turn stock separate from current-turn income. In particular, connected hunting can add `StepFoodIncome` after the planning barrier; it is passed as income to the forecast while the prior stock is passed separately, so the same hunt is not counted twice. Plant feedstock is accepted using the projected resident demand, then actual ecological receipts and inventory determine what production can consume. Existing food stockpiles can bridge a shortfall. Fabric input remains protected from the consumption/reserve/growth ordering and cannot fund births.
 
+Managed Husbandry uses this same projection. Starting animals resolve current forage and
+water before starvation, output and survivor reproduction; newborns begin in the next
+generation. AnimalFood is accepted only into the common consumption/reserve/growth
+budget. The projection clamps Fabric to actual plant provenance inside the growth-rate
+search, disables growth during starvation recovery, and accounts for the one scheduled
+depreciation of existing Pots before sizing the shared reserve. This preserves food,
+biomass and freshwater ledgers without creating a second demographic or animal-only
+storage budget.
+
 This is a deterministic coupled feasibility search, not a promise that a pre-allocation forecast equals realized yield. Shared tiles, seasonal ecological limits, prior claims, and changing food stocks can reduce actual receipts; the resolver reconciles those receipts and the next turn replans from authoritative state. The one-unit Fabric Plant Food input and all growth, reserve, and production constants are unchanged.
 
 ## Operation

@@ -236,7 +236,9 @@ namespace Anthropocene.Simulation
                 if (realizedKills < total) record.Log("Herd " + herd.Id + " retained " + herd.Animals + " breeding animals after the generation's harvest.");
                 if (huntingPopulation <= w.Config.SustainableHuntPopulation && herd.Animals > startingHerdPopulation[herd.Id]) record.Log("Limited hunting pressure allowed herd " + herd.Id + " to keep growing.");
             }
-            w.Herds.RemoveAll(h => h.Animals <= 0);
+            // Managed herds retain legitimate zero state for persistence and later
+            // husbandry decisions; only wild carcasses are removed here.
+            w.Herds.RemoveAll(h => h.DomesticCamp < 0 && h.Animals <= 0);
         }
         public static void Breakthrough(WorldState w, Camp camp, TurnRecord record)
         { Ownership.Bind(w); BreakthroughBound(w, camp, record); }

@@ -57,6 +57,8 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double FarmerProductivity = 1.50, ReferenceIntensity = 0.40, CultivationRegenFlux = 0.65, MaintenanceCoefficient = 0.40;
         [System.Runtime.Serialization.OptionalField] public double GathererBridgeCeiling = 0.25, GathererBridgeEfficiency = 0.50;
         public int InitialDomesticAnimals = 5;
+        [System.Runtime.Serialization.OptionalField] public double AnimalsPerHerder = 2, AnimalFoodPerManagedAnimal = 1, AnimalFoodNutritionExponent = 1, AnimalManagementExponent = 1;
+        [System.Runtime.Serialization.OptionalField] public bool ManagedHerdDefaultsInitialized = true;
         public double HabitableZonePosition = .5, InnerTemperature = 12, OuterTemperature = -12;
         public double SeaLevel = .45, Uplift = .2, ElevationNoise = .11, Erosion = .12;
         public double SeasonalAmplitude = 13, LatitudeGradient = 48, LapseRate = 28, OceanModeration = .45;
@@ -101,7 +103,7 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Environmental fractions and hysteresis must lie within their physical ranges.");
             if (ElevationQuantiles == null || ElevationQuantiles.Length != 9 || ElevationQuantiles[0] <= 0 || ElevationQuantiles[8] >= 1 || !ElevationQuantiles.SequenceEqual(ElevationQuantiles.OrderBy(x => x).Distinct())) throw new ArgumentException("Elevation requires nine increasing quantile boundaries.");
             if (HerdSmallCountThreshold < 1 || HerdCountRounding < 1 || HerdBroadCountSize < HerdSmallCountThreshold) throw new ArgumentException("Invalid observable herd count thresholds.");
-            if (Species == null || Species.Count == 0 || Species.Select(s => s.Id).Distinct().Count() != Species.Count || Species.Any(s => string.IsNullOrWhiteSpace(s.Id) || s.FoodConsumption < 0 || s.FreshwaterConsumption <= 0 || s.GrowthRate < 0 || s.FoodYield <= 0 || s.MaximumHerdSize < s.MaximumAnimals))
+            if (new[] { AnimalsPerHerder, AnimalFoodPerManagedAnimal, AnimalFoodNutritionExponent, AnimalManagementExponent }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || AnimalsPerHerder <= 0 || AnimalFoodPerManagedAnimal < 0 || AnimalFoodNutritionExponent <= 0 || AnimalManagementExponent <= 0 || Species == null || Species.Count == 0 || Species.Select(s => s.Id).Distinct().Count() != Species.Count || Species.Any(s => string.IsNullOrWhiteSpace(s.Id) || s.FoodConsumption < 0 || s.FreshwaterConsumption <= 0 || s.GrowthRate < 0 || s.FoodYield <= 0 || s.MaximumHerdSize < s.MaximumAnimals))
                 throw new ArgumentException("Species definitions must have unique stable IDs and valid ecological rates.");
         }
         public static int MaximumPlayersFor(int width, int height)
@@ -293,6 +295,17 @@ namespace Anthropocene.Simulation
         public bool OpeningCompatibility;
         public string Species = "antelope";
         public double GrowthRemainder, UnmetFood, UnmetFreshwater;
+        [System.Runtime.Serialization.OptionalField] public int DeficitTurns;
+        [System.Runtime.Serialization.OptionalField] public double DeficitSeverity, DeathRemainder, LastNutrition = 1, LastFoodNutrition = 1, LastWaterNutrition = 1, ManagementFulfillment = 1, AnimalFoodPotential, AnimalFoodProduced;
+        [System.Runtime.Serialization.OptionalField] public int StartingAnimals, SurvivingAnimals, NewbornAnimals, StarvationDeaths;
+        [System.Runtime.Serialization.OptionalField] public bool NutritionInitialized = true;
+    }
+    [Serializable]
+    public sealed class ManagedHerdReport
+    {
+        public int Herd, Camp, StartingAnimals, SurvivingAnimals, NewbornAnimals, StarvationDeaths;
+        public string Species;
+        public double FoodNutrition, WaterNutrition, Nutrition, ManagementFulfillment, PotentialFood, AcceptedFood;
     }
     [Serializable]
     public sealed class Mandate
@@ -342,6 +355,7 @@ namespace Anthropocene.Simulation
         public List<LogisticsRecord> Logistics = new List<LogisticsRecord>();
         public List<PopulationChange> PopulationChanges = new List<PopulationChange>();
         public List<DemographicReport> Demographics = new List<DemographicReport>();
+        [System.Runtime.Serialization.OptionalField] public List<ManagedHerdReport> ManagedHerds = new List<ManagedHerdReport>();
         public void Log(string message) => Events.Add(message);
     }
     [Serializable]

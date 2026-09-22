@@ -67,7 +67,7 @@ namespace Anthropocene.Simulation
                 foreach (int n in destinations) Add(new Order(OrderKind.Move, entity, destination: n));
                 if (camp != null)
                 {
-                    if (camp.Agriculture) { mask.Economy = EconomicIntents.Constraints(o, camp); Add(new Order(OrderKind.Economy, entity) { Economy = camp.Economy.Copy() }); }
+                    if (camp.Agriculture || camp.Husbandry) { mask.Economy = EconomicIntents.Constraints(o, camp); Add(new Order(OrderKind.Economy, entity) { Economy = camp.Economy.Copy() }); }
                     int max = Math.Min(camp.Gatherers, camp.Population - o.MinimumCamp);
                     if (OrderRules.Validate(o, new Order(OrderKind.Dispatch, entity, population: max)) == null) { mask.MinimumDispatch = 1; mask.MaximumDispatch = max; }
                 }

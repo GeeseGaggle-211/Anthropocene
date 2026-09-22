@@ -149,6 +149,18 @@ namespace Anthropocene.Simulation
             if (config.HuntBreedingReserveFraction <= 0) config.HuntBreedingReserveFraction = .2;
             if (config.SustainableHuntPopulation <= 0) config.SustainableHuntPopulation = 16;
             if (config.SustainableHerdGrowthRetention <= 0) config.SustainableHerdGrowthRetention = .25;
+            if (!config.ManagedHerdDefaultsInitialized)
+            {
+                if (config.AnimalsPerHerder <= 0 || double.IsNaN(config.AnimalsPerHerder) || double.IsInfinity(config.AnimalsPerHerder)) config.AnimalsPerHerder = 2;
+                if (config.AnimalFoodPerManagedAnimal <= 0 || double.IsNaN(config.AnimalFoodPerManagedAnimal) || double.IsInfinity(config.AnimalFoodPerManagedAnimal)) config.AnimalFoodPerManagedAnimal = 1;
+                if (config.AnimalFoodNutritionExponent <= 0 || double.IsNaN(config.AnimalFoodNutritionExponent) || double.IsInfinity(config.AnimalFoodNutritionExponent)) config.AnimalFoodNutritionExponent = 1;
+                if (config.AnimalManagementExponent <= 0 || double.IsNaN(config.AnimalManagementExponent) || double.IsInfinity(config.AnimalManagementExponent)) config.AnimalManagementExponent = 1;
+                config.ManagedHerdDefaultsInitialized = true;
+            }
+            world.History ??= new System.Collections.Generic.List<TurnRecord>();
+            foreach (var turn in world.History) turn.ManagedHerds ??= new System.Collections.Generic.List<ManagedHerdReport>();
+            foreach (var herd in world.Herds)
+                if (!herd.NutritionInitialized) { herd.LastNutrition = herd.LastFoodNutrition = herd.LastWaterNutrition = herd.ManagementFulfillment = 1; herd.NutritionInitialized = true; }
             if (config.ActiveFishingPracticeMultiplier <= 0) config.ActiveFishingPracticeMultiplier = 4.25;
             if (config.GrasslandHerdDensityMultiplier <= 0) config.GrasslandHerdDensityMultiplier = 1.35;
             if (config.SteppeHerdDensityMultiplier <= 0) config.SteppeHerdDensityMultiplier = 1.15;

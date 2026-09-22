@@ -31,10 +31,10 @@ namespace Anthropocene.Simulation
         public static string RequiredTechnology(string role) => role == WorkforceRoles.Toolmaker || role == WorkforceRoles.Stonecutter ? NeolithicTech.Toolmaking : role == WorkforceRoles.Potter || role == WorkforceRoles.ClayMiner ? NeolithicTech.Pottery : role == WorkforceRoles.Weaver ? NeolithicTech.Weaving : role == WorkforceRoles.Carpenter || role == WorkforceRoles.Woodcutter ? NeolithicTech.Carpentry : role == WorkforceRoles.Builder ? NeolithicTech.Construction : null;
         public static string Validate(AgentObservation o, SettlementObservation c, EconomicIntent e)
             => Validate(Constraints(o, c), e);
-        public static EconomicConstraints Constraints(AgentObservation o, SettlementObservation c) => c == null ? null : new EconomicConstraints { Agriculture = c.Agriculture, Population = c.Population, Technologies = c.Technologies.ToArray(), FocusTiles = o.Tiles.Values.Where(t => t.Cultivable && o.Map.Distance(c.Tile, t.Id) <= 1).Select(t => t.Id).OrderBy(id => id).ToArray() };
+        public static EconomicConstraints Constraints(AgentObservation o, SettlementObservation c) => c == null ? null : new EconomicConstraints { Agriculture = c.Agriculture, Husbandry = c.Husbandry, Population = c.Population, Technologies = c.Technologies.ToArray(), FocusTiles = o.Tiles.Values.Where(t => t.Cultivable && o.Map.Distance(c.Tile, t.Id) <= 1).Select(t => t.Id).OrderBy(id => id).ToArray() };
         public static string Validate(EconomicConstraints c, EconomicIntent e)
         {
-            if (c == null || !c.Agriculture || e == null || e.Assignments == null || e.Priorities == null) return "Agriculture and a complete economic plan are required.";
+            if (c == null || !(c.Agriculture || c.Husbandry) || e == null || e.Assignments == null || e.Priorities == null) return "Agriculture or Animal Husbandry and a complete economic plan are required.";
             if (e.Assignments.Any(a => a == null || !WorkforceRoles.All.Contains(a.Role) || a.Population <= 0) || e.Assignments.GroupBy(a => a.Role).Any(g => g.Count() > 1) || e.Assignments.Sum(a => (long)a.Population) > c.Population) return "Invalid workforce allocation.";
             if (e.Assignments.Any(a => RequiredTechnology(a.Role) != null && !c.Technologies.Contains(RequiredTechnology(a.Role)))) return "Specialist technology is not mastered.";
             if (e.Values().Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0)) return "Economic values must be finite and nonnegative.";
@@ -43,6 +43,8 @@ namespace Anthropocene.Simulation
                 e.Labor.MaterialGatherers > c.Population - e.Assignments.Where(a => a.Role != WorkforceRoles.Gatherer).Sum(a => a.Population) + 1e-8 ||
                 e.Labor.ExpansionFarmers > e.Assignments.Where(a => a.Role == WorkforceRoles.Farmer).Sum(a => a.Population) + 1e-8 || e.Labor.EquipmentTarget > c.Population)) return "Labor reservations exceed the real workforce.";
             if (e.Focus < -1 || e.Focus >= 0 && !c.FocusTiles.Contains(e.Focus)) return "Cultivation focus must be visible eligible radius-1 land.";
+            if (!c.Agriculture && e.Assignments.Any(a => a.Role == WorkforceRoles.Farmer)) return "Farmer assignments require Cultivation.";
+            if (!c.Husbandry && e.Assignments.Any(a => a.Role == WorkforceRoles.Herder)) return "Herder assignments require Animal Husbandry.";
             return null;
         }
         public static void Apply(Camp c, EconomicIntent intent)
@@ -62,6 +64,7 @@ namespace Anthropocene.Simulation
     public sealed class EconomicConstraints
     {
         public bool Agriculture;
+        public bool Husbandry;
         public int Population;
         public string[] Technologies = Array.Empty<string>();
         public int[] FocusTiles = Array.Empty<int>();

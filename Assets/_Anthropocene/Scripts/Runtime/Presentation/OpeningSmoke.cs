@@ -19,7 +19,9 @@ namespace Anthropocene.Presentation
             int atlas = Array.IndexOf(args, "--anthropocene-atlas-output");
             int resources = Array.IndexOf(args, "--anthropocene-resources-output");
             int neolithic = Array.IndexOf(args, "--anthropocene-neolithic-smoke-output");
+            int husbandry = Array.IndexOf(args, "--anthropocene-husbandry-smoke-output");
             if (neolithic >= 0 && neolithic + 1 < args.Length) { yield return NeolithicSmoke(args[neolithic + 1]); yield break; }
+            if (husbandry >= 0 && husbandry + 1 < args.Length) { yield return HusbandrySmoke(args[husbandry + 1]); yield break; }
             if (resources >= 0 && resources + 1 < args.Length) { yield return ResourceSmoke(args[resources + 1]); yield break; }
             if (atlas >= 0 && atlas + 1 < args.Length) { yield return AtlasSmoke(args[atlas + 1]); yield break; }
             if (presets >= 0 && presets + 1 < args.Length) { yield return PresetSmoke(args[presets + 1]); yield break; }
@@ -122,6 +124,51 @@ namespace Anthropocene.Presentation
             yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "05-automation-complete.png")); yield return new WaitForSeconds(1);
             if (Directory.GetFiles(output, "*.png").Length != 5) throw new InvalidOperationException("Missing Neolithic player captures; use a visible player window.");
             File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: synthetic Agriculture fixture on Standard/Continents/1729 generated geography. Economic plan queued without live mutation, normal turn resolution, real E growth, recurring Fabric debit, no Irrigation grant, isolated exact save/load, and a two-turn automation toggle continuing through save/load without resubmission. Five actual Windows player captures. Not a natural-progression balance study or a human usability test.\n");
+            Application.Quit();
+        }
+
+        private IEnumerator HusbandrySmoke(string directory)
+        {
+            Application.runInBackground = true;
+            string output = Path.GetFullPath(directory); Directory.CreateDirectory(output);
+            NewGame(); while (generating != null) yield return null;
+            if (world == null) throw new InvalidOperationException("Husbandry smoke generation failed.");
+            var camp = world.Camps.Single(c => c.Player == 0);
+            camp.Population = 100; camp.PlantFood = camp.AnimalFood = camp.AquaticFood = 0;
+            camp.Technology = Technology.AnimalHusbandry; camp.Technologies[(int)Technology.AnimalHusbandry] = true;
+            camp.People.Progression.Era = Era.Neolithic; camp.Workforce = new PopulationLedger();
+            camp.Workforce.Assign(WorkforceRoles.Herder, 50, camp.Population);
+            world.Herds.RemoveAll(h => h.DomesticCamp == camp.Id);
+            world.Herds.Add(new Herd { Id = world.NextId++, Tile = camp.Tile, Species = world.Config.Species.First().Id, Animals = 100, Capacity = 1, DomesticCamp = camp.Id, OwnerSociety = camp.SocietyId });
+            world.Config.AnnualHumanGrowthRate = 0; transitionDismissed = true; Refresh(); villageInspectorOpen = true; villageInspectorCampId = camp.Id;
+            string before = SaveCodec.Fingerprint(world);
+            var intent = EconomicIntent.From(camp); intent.Assignments.Clear(); intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = 50 }); intent.AutomationTurns = 0;
+            Queue(new Order(OrderKind.Economy, camp.Id) { Economy = intent });
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "01-queued-husbandry.png")); yield return new WaitForSeconds(.4f);
+            if (SaveCodec.Fingerprint(world) != before) throw new InvalidOperationException("Queued Husbandry controls changed live state before commit.");
+            EndTurn(); while (resolving != null) yield return null;
+            camp = world.Camps.Single(c => c.Player == 0); var owned = observation.Herds.Single(h => h.OwnedDomestic && h.DomesticCamp == camp.Id);
+            if (camp.Workforce.Assignments.Any(a => a.Role == WorkforceRoles.Farmer) || !camp.Workforce.Assignments.Any(a => a.Role == WorkforceRoles.Herder) || owned.AcceptedFood < 0 || world.History.Last().ManagedHerds.Count == 0) throw new InvalidOperationException("Husbandry control or owned managed report failed: " + status);
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "02-resolved-husbandry.png")); yield return new WaitForSeconds(.4f);
+            string saved = SaveCodec.Fingerprint(world); var snapshot = world; operation = "Restoring Husbandry validation state";
+            generating = Task.Run(() => { var bytes = SaveCodec.Save(snapshot); File.WriteAllBytes(Path.Combine(output, "validation.anthro"), bytes); return SaveCodec.Load(bytes); });
+            while (generating != null) yield return null;
+            if (SaveCodec.Fingerprint(world) != saved) throw new InvalidOperationException("Husbandry player save/load changed authoritative state.");
+            Refresh(); villageInspectorOpen = true; villageInspectorCampId = world.Camps.Single(c => c.Player == 0).Id;
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "03-restored-husbandry.png")); yield return new WaitForSeconds(.4f);
+            var automated = EconomicIntent.From(world.Camps.Single(c => c.Player == 0)); automated.AutomationTurns = 2;
+            Queue(new Order(OrderKind.Economy, world.Camps.Single(c => c.Player == 0).Id) { Economy = automated });
+            EndTurn(); while (resolving != null) yield return null;
+            camp = world.Camps.Single(c => c.Player == 0); if (camp.EconomyAutomationTurns != 1) throw new InvalidOperationException("Husbandry automation did not activate after save/load.");
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "04-automation-active.png")); yield return new WaitForSeconds(.4f);
+            saved = SaveCodec.Fingerprint(world); snapshot = world;
+            generating = Task.Run(() => SaveCodec.Load(SaveCodec.Save(snapshot))); while (generating != null) yield return null;
+            if (saved != SaveCodec.Fingerprint(world) || world.Camps.Single(c => c.Player == 0).EconomyAutomationTurns != 1) throw new InvalidOperationException("Active Husbandry automation did not survive load.");
+            EndTurn(); while (resolving != null) yield return null;
+            camp = world.Camps.Single(c => c.Player == 0); if (camp.EconomyAutomationTurns != 0) throw new InvalidOperationException("Husbandry automation did not complete.");
+            yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "05-automation-complete.png")); yield return new WaitForSeconds(1);
+            if (Directory.GetFiles(output, "*.png").Length != 5) throw new InvalidOperationException("Missing Husbandry player captures; use a visible player window.");
+            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: synthetic Husbandry-only fixture on generated geography. Shared Economy Herder order, no Agriculture/Farmer assignment, owned managed-herd diagnostics, isolated save/load, and two-turn automation continuation. Five actual Windows player captures. Not a natural-progression balance study or a human usability test.\n");
             Application.Quit();
         }
         private IEnumerator AtlasSmoke(string directory)
