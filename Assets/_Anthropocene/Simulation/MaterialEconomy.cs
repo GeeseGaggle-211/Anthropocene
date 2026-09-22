@@ -83,8 +83,8 @@ namespace Anthropocene.Simulation
         public static readonly MaterialId[] Materials = { MaterialId.Stone, MaterialId.Clay, MaterialId.Wood };
         // Construction is the flexible consumer.  Use all visible, reachable
         // source stock to choose its mix, after retaining the source- and
-        // labor-feasible direct recipe plan.  The ratio sees the same physical
-        // material reserve horizon as gathering, while the mutable reservation
+        // labor-feasible direct recipe plan. The ratio sees current residual
+        // material after that committed work, while the mutable reservation
         // below protects only this turn's remaining direct work.
         public static HousingMaterialPlan PlanHousingMaterials(WorldState w, Camp c, CraftRecipe[] recipes, IDictionary<CraftGood, double> planned, double years, double days)
         {

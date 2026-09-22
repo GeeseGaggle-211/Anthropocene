@@ -192,7 +192,12 @@ namespace Anthropocene.Simulation
                     candidate.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = proposedFarmers });
                 var rolesNow = new Dictionary<string, double>();
                 var coverage = new ToolCoverageBudget(w, c, intervals);
-                room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]); plant = plantEnvelope;
+                room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]);
+                // The provisional output pass above only sizes field and
+                // construction intent. Rebuild the final role pass from fresh
+                // stock so direct inputs are reserved exactly once.
+                directWood = directClay = 0;
+                plant = plantEnvelope;
                 // Match production's role/recipe ordering and share one tool-time budget.
                 foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
                     foreach (var r in recipes.OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))

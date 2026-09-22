@@ -130,11 +130,14 @@ internal static class HousingMaterialChecks
     }
     private static void PlannerHonorsZeroResidualHousing()
     {
-        var w = NeolithicChecks.Fixture(); var c = w.Camps[0]; c.Population = 4; c.Inventory.Wood = 0; c.Inventory.Clay = 2; c.Inventory.Pots = 1; c.PlantFood = 100000;
+        var w = NeolithicChecks.Fixture(); var c = w.Camps[0]; c.Population = 4; c.Inventory.Wood = 0; c.Inventory.Clay = 2; c.Inventory.HandTools = 1000; c.Inventory.Pots = 1; c.PlantFood = 100000;
         w.Config.Neolithic.PotDecayPerReferenceTurn = 0;
         c.People.NeolithicTechnologies.Add(NeolithicTech.Construction); c.People.NeolithicTechnologies.Add(NeolithicTech.Pottery);
         c.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 1, Cloth = 0, FarmTools = 0, Housing = 2, Tools = 0 };
         var plan = EconomicPlanner.Plan(w, c, EconomicIntent.From(c));
+        Near(plan.Assignments.Where(a => a.Role == WorkforceRoles.Builder).Sum(a => a.Population), 1, "planner staffs current Housing from residual Clay");
+        c.Inventory.Clay = 1;
+        plan = EconomicPlanner.Plan(w, c, EconomicIntent.From(c));
         Near(plan.Assignments.Where(a => a.Role == WorkforceRoles.Builder).Sum(a => a.Population), 0, "planner does not staff Housing with zero residual material");
     }
 }
