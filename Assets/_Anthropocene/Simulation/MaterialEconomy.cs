@@ -143,7 +143,7 @@ namespace Anthropocene.Simulation
         public static string Specialist(MaterialId material) => material == MaterialId.Stone ? WorkforceRoles.Stonecutter : material == MaterialId.Clay ? WorkforceRoles.ClayMiner : material == MaterialId.Wood ? WorkforceRoles.Woodcutter : null;
         // Mirror the ordered recipe/role plan without changing stock or gaining progress.
         // Each worker and tool interval is forecast only once, not once per recipe.
-        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand = false)
+        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand = false, double residentPopulation = -1)
         {
             var planned = recipes.ToDictionary(r => r.Good, r => 0.0);
             var tools = new ToolCoverageBudget(w, c, intervals, equipment);
@@ -158,7 +158,7 @@ namespace Anthropocene.Simulation
                     if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) continue;
                     double rate = recipe.Rate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
                     if (rate <= 0) continue;
-                    double amount = Math.Min(Math.Max(0, NeolithicProduction.Demand(w, c, recipe.Good, years) - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
+                    double amount = Math.Min(Math.Max(0, NeolithicProduction.Demand(w, c, recipe.Good, years, residentPopulation) - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
                     if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                     if (amount <= 0) continue;
                     labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : amount / rate;
