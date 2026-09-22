@@ -1,5 +1,31 @@
 # Validation - September 22, 2026
 
+## Issue #8 residual Housing materials
+
+Housing uses the residual inventory-plus-reachable-source Wood:Clay ratio after
+current feasible non-substitutable recipe inputs are reserved. Gathering applies
+the physical stockpile horizon afterward; it does not reserve future inputs a
+second time. Housing consumes exactly one total material unit per output, with
+fallback limited to unreserved inventory. The turn-local plan changes no saved
+inventory or ecology authority.
+
+Independent final verification passed 37 Housing, 271 Neolithic, 87 automation,
+58 manufacturing-tool, 45 field-tool, 1,149 planner and 12 mixed-phase assertions,
+plus 59/82 milestone, 25 ecology, 10 agent checks and 12-resolution scalar/2/4-worker
+and reordered replay. Astra's separate probes cover source-aware ratios, atomic
+debits, earlier/later direct recipes, priority-preserving replacement demand,
+zero/partial residuals and planner/gatherer/resolver agreement. Sixteen resolved
+Housing turns passed 48 material-ledger assertions and save/reordered continuation
+comparisons (collection order normalized before fingerprint comparison).
+
+The 1,944-case manufacturing matrix passed 11,725 assertions. The 576-case Fabric
+sweep had zero continuation mismatches; maximum food-balance and discard residuals
+were `2.201e-10` and `1.237e-10`. Review caught missing later-input reservations,
+labor priority reordering, duplicate planner reservation, and loss of later-role
+staffing. All were corrected before integration, including a regression requiring
+two Craftspersons to realize 21 Pots after Housing. No balance constants changed.
+Evidence is retained under ignored `TestResults/Issue20/`.
+
 ## Issue #7 physical reserve horizons
 
 Material and finished-goods reserve horizons now use years, with 20-year defaults.
