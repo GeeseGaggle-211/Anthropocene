@@ -13,6 +13,7 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | `TurnDays` (7,300), `MinDays`, `MaxDays` | Player-decision duration and allowed limits, in days. Resolution captures its duration once. |
 | `DaysPerYear` (365) | Converts days to annual rates. |
 | `PracticeDays` (7,300) | Reference days for one unit of lifestyle/practice exposure. Changing player-turn duration does not change this reference. |
+| `Neolithic.MaterialReserveHorizonYears` (20), `UsefulFinishedGoodsReserveYears` (20) | Physical reserve durations in years. Current-turn material demand adds `MaterialReserveHorizonYears` at the current turn rate; Cloth adds the finished-goods duration to current consumption. The defaults equal one 20-year reference turn, while legacy `*Turns` fields migrate at load. |
 | `MajorityEligibilityYears` (200), `ForcedTransitionYears` (240) | Society-era durations in years, converted to persisted day thresholds when ownership is created. |
 | `StarvationGraceTurns` (2) | **Player turns**, intentionally independent of elapsed years. This is the user's gameplay compromise. |
 | `Food`, `PotentialFood`, `Freshwater`, `CarriedFood`, camp `Food` | Stocks. Human-gatherable Food is part of PotentialFood, not an extra stock. |

@@ -35,8 +35,50 @@ internal static class NeolithicChecks
     }
     public static int Run()
     {
-        checks = 0; Cultivation(); TerrestrialFarmerClaims(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); PotStorage(); Smoke(); EconomicAutomationChecks.Run();
+        checks = 0; Cultivation(); TerrestrialFarmerClaims(); ReserveHorizons(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); PotStorage(); Smoke(); EconomicAutomationChecks.Run();
         Console.WriteLine("PASS: " + checks + " Neolithic realignment assertions"); return checks;
+    }
+
+    private static void ReserveHorizons()
+    {
+        var w = Fixture();
+        var n = w.Config.Neolithic;
+        Near(n.MaterialReserveMultiplier(20), 2, "20-year material reserve preserves the reference-turn target");
+        Near(n.MaterialReserveMultiplier(10), 3, "10-year material turn adds the same 20-year physical reserve");
+        Near((n.MaterialReserveMultiplier(40) - 1) * 40, 20, "material reserve component is invariant in elapsed years");
+        Near(n.UsefulFinishedGoodsReserveReferenceTurns, 1, "20-year finished-goods reserve preserves one reference turn");
+        Near(NeolithicProduction.Demand(w, w.Camps[0], CraftGood.Cloth, 10), 150, "finished-goods target adds physical reserve to a shorter turn");
+        n.MaterialReserveHorizonYears = 7.5;
+        n.UsefulFinishedGoodsReserveYears = 0;
+        Near((n.MaterialReserveMultiplier(10) - 1) * 10, 7.5, "fractional material duration is dimensional");
+        Near(n.UsefulFinishedGoodsReserveReferenceTurns, 0, "legitimate zero finished-goods reserve is preserved");
+        var loaded = SaveCodec.Load(SaveCodec.Save(w));
+        Near(loaded.Config.Neolithic.MaterialReserveHorizonYears, 7.5, "physical material duration survives save/load");
+        Near(loaded.Config.Neolithic.UsefulFinishedGoodsReserveYears, 0, "zero physical finished-goods duration survives save/load");
+        var legacy = Fixture();
+        legacy.Config.TurnDays = 3650;
+        legacy.Config.Neolithic.MaterialReserveHorizonTurns = .5;
+        legacy.Config.Neolithic.UsefulFinishedGoodsReserveTurns = .5;
+        var migrated = SaveCodec.Load(MissingReserveFields(legacy));
+        Near(migrated.Config.Neolithic.MaterialReserveHorizonYears, 5, "legacy material turns migrate using actual turn duration");
+        Near(migrated.Config.Neolithic.UsefulFinishedGoodsReserveYears, 10, "legacy finished-goods turns migrate using reference duration");
+        var material = Fixture(); var materialCamp = material.Camps[0];
+        materialCamp.Population = 1000; material.Config.TurnDays = 10 * material.Config.DaysPerYear;
+        material.Config.Neolithic.MaterialReserveHorizonYears = 7.5;
+        AddResources(material); material.Resources.Clay[materialCamp.Tile] = 10000;
+        materialCamp.Inventory.HandTools = 10000;
+        materialCamp.CraftingPriorities = new CraftingPriorities { Pots = 1 };
+        materialCamp.People.NeolithicTechnologies.Add(NeolithicTech.Pottery);
+        materialCamp.Workforce.Assign(WorkforceRoles.Potter, 1, materialCamp.Population);
+        materialCamp.Workforce.Assign(WorkforceRoles.ClayMiner, 100, materialCamp.Population);
+        double intervals = material.Config.TurnDays / material.Config.BaseDays, equipment = 10000 * intervals / material.Config.Neolithic.ToolCoveragePerWorker;
+        var materialRecord = new TurnRecord { Duration = material.Config.TurnDays };
+        MaterialEconomy.Gather(material, materialCamp, NeolithicProduction.Recipes(material.Config), intervals, 10, 0, ref equipment, materialRecord);
+        Near(materialCamp.Inventory.Clay, 70, "material gathering reserves current output plus physical horizon");
+        var potRecipe = NeolithicProduction.Recipes(material.Config).Single(r => r.Good == CraftGood.Pots);
+        NeolithicProduction.Produce(material, materialCamp, potRecipe, WorkforceRoles.Potter, intervals, intervals, 10000, ref equipment, materialRecord, new ToolCoverageBudget(material, materialCamp, intervals));
+        Near(materialCamp.Inventory.Pots, 40, "material production remains proportional to current elapsed turn");
+        Near(materialCamp.Inventory.Clay, 30, "physical reserve remains after current production");
     }
 
     private static void TerrestrialFarmerClaims()
@@ -394,7 +436,7 @@ internal static class NeolithicChecks
         var textileTown = Fixture(); var textileCamp = textileTown.Camps[0];
         textileCamp.PlantFood = 0; textileCamp.AnimalFood = 16000;
         textileCamp.Workforce.Assign(WorkforceRoles.Craftsperson, 5, 100); textileCamp.Inventory.HandTools = 100;
-        textileCamp.Inventory.HousingUnits = 25; textileTown.Config.Neolithic.UsefulFinishedGoodsReserveTurns = 0;
+        textileCamp.Inventory.HousingUnits = 25; textileTown.Config.Neolithic.UsefulFinishedGoodsReserveYears = 0;
         Near(TurnResolver.UsefulCampFoodDemand(textileTown, textileCamp, 80, 20), 100, "real Fabric need adds plant feedstock to the shared useful food budget");
         var textileTurn = new TurnResolver().Resolve(textileTown, new Dictionary<int, List<Order>>());
         Near(textileTurn.Transfers.Where(t => t.Entity == textileCamp.Id).Sum(t => t.Food), 100, "non-plant reserves cannot mask useful plant-feedstock gathering");
@@ -484,6 +526,31 @@ internal static class NeolithicChecks
                 {
                     var document = XDocument.Load(xml);
                     string[] absent = { "PotStorageFoodPerUnit", "PotDecayPerReferenceTurn" };
+                    document.Descendants().Where(element => absent.Contains(element.Name.LocalName)).Remove();
+                    using (var binary = XmlDictionaryWriter.CreateBinaryWriter(metadata, null, null, false)) document.WriteTo(binary);
+                    writer.Write((int)metadata.Length); writer.Write(metadata.ToArray());
+                }
+                unzip.CopyTo(zip);
+            }
+            return output.ToArray();
+        }
+    }
+    private static byte[] MissingReserveFields(WorldState world)
+    {
+        using (var input = new MemoryStream(SaveCodec.Save(world)))
+        using (var unzip = new GZipStream(input, CompressionMode.Decompress))
+        using (var reader = new BinaryReader(unzip))
+        using (var output = new MemoryStream())
+        {
+            using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
+            using (var writer = new BinaryWriter(zip))
+            {
+                writer.Write(reader.ReadString()); int header = reader.ReadInt32();
+                using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(header), XmlDictionaryReaderQuotas.Max))
+                using (var metadata = new MemoryStream())
+                {
+                    var document = XDocument.Load(xml);
+                    string[] absent = { "MaterialReserveHorizonYears", "UsefulFinishedGoodsReserveYears" };
                     document.Descendants().Where(element => absent.Contains(element.Name.LocalName)).Remove();
                     using (var binary = XmlDictionaryWriter.CreateBinaryWriter(metadata, null, null, false)) document.WriteTo(binary);
                     writer.Write((int)metadata.Length); writer.Write(metadata.ToArray());

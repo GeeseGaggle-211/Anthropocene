@@ -125,7 +125,7 @@ namespace Anthropocene.Simulation
                 return ToolReplacementDemand(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed);
             if (good == CraftGood.Pots)
                 return potsAlreadyDecayed ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
-            double target = good == CraftGood.Cloth ? residents * n.FabricConsumptionPerPersonTurn * (years / n.ReferenceTurnYears + n.UsefulFinishedGoodsReserveTurns) :
+            double target = good == CraftGood.Cloth ? residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears) :
                 good == CraftGood.Housing ? residents / n.HousingPeoplePerUnit :
                 good == CraftGood.FarmTools ? FarmToolDemand(w, c, years, fieldWorkAlreadyResolved) + Stock(c, good) :
                 c.FarmToolsTarget;
@@ -216,7 +216,7 @@ namespace Anthropocene.Simulation
         {
             var n = w.Config.Neolithic;
             if (good == CraftGood.Pots) return potsAlreadyDecayed ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
-            double target = good == CraftGood.Cloth ? residents * n.FabricConsumptionPerPersonTurn * (years / n.ReferenceTurnYears + n.UsefulFinishedGoodsReserveTurns) :
+            double target = good == CraftGood.Cloth ? residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears) :
                 good == CraftGood.Housing ? residents / n.HousingPeoplePerUnit :
                 good == CraftGood.FarmTools ? FarmToolDemand(w, c, years, fieldWorkAlreadyResolved) + Stock(c, good) :
                 c.FarmToolsTarget;
