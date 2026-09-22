@@ -24,9 +24,11 @@ Deferred: automatic fission, expedition formulas, irrigation construction/yield/
 withdrawal, SoilCondition, Copper tool durability, broad tool bonuses, Plough and later
 agricultural tiers, and full trade/logistics. Pots now provide additive food-storage capacity
 with configured duration-aware depreciation. Stone Farm Tools provide the first labor-side
-field-work tier only: covered maintenance and expansion use the derived `.45/.40` efficiency,
-consume realized covered worker-years, and never directly modify physical q/E, Farmer harvest,
-or ecology.
+field-work tier only: covered maintenance and expansion use the derived `.45/.40` efficiency
+and consume realized covered worker-years. Acquiring or losing tools leaves physical q/E
+unchanged. More effective expansion work can raise persisted q, allowing the existing
+q-dependent ecology to raise managed regeneration. Tools add no direct Farmer harvest
+or ecological yield multiplier.
 
 ## Source hierarchy and traceability
 
