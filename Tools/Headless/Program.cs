@@ -194,8 +194,9 @@ internal static class Program
     }
     private static int Main(string[] args)
     {
-        if (args.Contains("--neolithic-only")) { NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); return 0; }
-        if (args.Contains("--economy-only")) { Milestone2Checks.Run(); Milestone3Checks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); return 0; }
+        if (args.Contains("--neolithic-only")) { NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); FarmPlannerChecks.Run(); FarmFoodPhaseChecks.Run(); return 0; }
+        if (args.Contains("--economy-only")) { Milestone2Checks.Run(); Milestone3Checks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); FarmPlannerChecks.Run(); FarmFoodPhaseChecks.Run(); return 0; }
+        if (args.Contains("--farm-food-phase")) { FarmFoodPhaseChecks.Run(); return 0; }
         try
         {
             if (args.Contains("--write-config"))
@@ -204,7 +205,7 @@ internal static class Program
                 return 0;
             }
             if (args.Contains("--geology-only")) { GeologyGenerationChecks.Run(); return 0; }
-            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); ClimateMoistureChecks.Run(); ClimateGenerationChecks.Run(); DrainageGenerationChecks.Run(); WorldMorphologyChecks.Run(); ArchipelagoChecks.Run(); GeologyGenerationChecks.Run(); AquaticChecks.Run(); StartViabilityChecks.Run(); ScenarioChecks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20;
+            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); ClimateMoistureChecks.Run(); ClimateGenerationChecks.Run(); DrainageGenerationChecks.Run(); WorldMorphologyChecks.Run(); ArchipelagoChecks.Run(); GeologyGenerationChecks.Run(); AquaticChecks.Run(); StartViabilityChecks.Run(); ScenarioChecks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); FarmPlannerChecks.Run(); FarmFoodPhaseChecks.Run(); int seeds = args.Length > 0 ? int.Parse(args[0]) : 20;
             var scaleArgument = args.FirstOrDefault(a => a.StartsWith("--scale=")); if (scaleArgument != null) { ExecutionChecks.Scale(int.Parse(scaleArgument.Substring(8))); return 0; }
             if (args.Contains("--nomad-standard")) { RunNomadStandardAudit(seeds); return 0; }
             int survivors = 0, total = 0, starvation = 0, growth = 0, illegal = 0;

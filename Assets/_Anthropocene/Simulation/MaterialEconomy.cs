@@ -99,12 +99,16 @@ namespace Anthropocene.Simulation
             }
             return amount / rate;
         }
+        // Compatibility wrapper for the resolver's post-field/post-pot phase.
         public static void Gather(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double generalistIntervals, ref double equipment, TurnRecord record, bool postAgriculturalResolution = false)
+            => Gather(w, c, recipes, intervals, years, generalistIntervals, ref equipment, record, postAgriculturalResolution, postAgriculturalResolution);
+
+        public static void Gather(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double generalistIntervals, ref double equipment, TurnRecord record, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed)
         {
             double days = record.StartDays + record.Duration;
             double housingForecast = 0;
             var forecast = new Dictionary<MaterialId, double> { [MaterialId.Stone] = 0, [MaterialId.Clay] = 0, [MaterialId.Wood] = 0 };
-            var planned = Forecast(w, c, recipes, intervals, years, equipment, false, -1, postAgriculturalResolution);
+            var planned = Forecast(w, c, recipes, intervals, years, equipment, false, -1, fieldWorkAlreadyResolved, potsAlreadyDecayed);
             foreach (var recipe in recipes)
             {
                 double amount = planned[recipe.Good];
@@ -143,7 +147,12 @@ namespace Anthropocene.Simulation
         public static string Specialist(MaterialId material) => material == MaterialId.Stone ? WorkforceRoles.Stonecutter : material == MaterialId.Clay ? WorkforceRoles.ClayMiner : material == MaterialId.Wood ? WorkforceRoles.Woodcutter : null;
         // Mirror the ordered recipe/role plan without changing stock or gaining progress.
         // Each worker and tool interval is forecast only once, not once per recipe.
+        // Compatibility wrapper for callers whose production phase has completed
+        // both field work and pot depreciation.
         public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand = false, double residentPopulation = -1, bool postAgriculturalResolution = false)
+            => Forecast(w, c, recipes, intervals, years, equipment, includePlantDemand, residentPopulation, postAgriculturalResolution, postAgriculturalResolution);
+
+        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed)
         {
             var planned = recipes.ToDictionary(r => r.Good, r => 0.0);
             var tools = new ToolCoverageBudget(w, c, intervals, equipment);
@@ -158,7 +167,7 @@ namespace Anthropocene.Simulation
                     if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) continue;
                     double rate = recipe.Rate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
                     if (rate <= 0) continue;
-                    double amount = Math.Min(Math.Max(0, NeolithicProduction.Demand(w, c, recipe.Good, years, residentPopulation, postAgriculturalResolution) - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
+                    double amount = Math.Min(Math.Max(0, NeolithicProduction.Demand(w, c, recipe.Good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed) - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
                     if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                     if (amount <= 0) continue;
                     labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : amount / rate;

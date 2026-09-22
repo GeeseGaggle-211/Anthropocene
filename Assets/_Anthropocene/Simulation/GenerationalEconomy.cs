@@ -310,7 +310,9 @@ namespace Anthropocene.Simulation
                 double growthFood = GrowthFood(populationBase, rate, years);
                 double finalPopulation = reproductivePopulation * Math.Exp(rate * years);
                 int residents = camp.Population + (int)Math.Floor(camp.GrowthRemainder + Math.Max(0, finalPopulation - reproductivePopulation));
-                double input = NeolithicProduction.FabricFeedstockNeed(w, camp, intervals, years, residents);
+                // Field work has already consumed the turn-start FarmTools when
+                // growth is planned; Pots still depreciate in ResolveCampNeolithic.
+                double input = NeolithicProduction.FabricFeedstockNeed(w, camp, intervals, years, residents, true, false);
                 return new GrowthPlan { Required = populationBase + growthFood, ConsumptionRequired = populationBase, GrowthFood = growthFood, ReproductivePopulation = reproductivePopulation, FinalPopulation = finalPopulation, ManufacturingInput = input };
             }
             // The integer birth outcome is the Fabric customer. Search the monotone
