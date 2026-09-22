@@ -31,5 +31,6 @@
   <Compile Include="FarmToolChecks.cs" />
   <Compile Include="FarmPlannerChecks.cs" />
   <Compile Include="FarmFoodPhaseChecks.cs" />
+  <Compile Include="HousingMaterialChecks.cs" />
   </ItemGroup>
 </Project>

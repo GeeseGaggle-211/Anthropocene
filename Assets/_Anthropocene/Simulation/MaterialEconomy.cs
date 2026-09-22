@@ -41,10 +41,80 @@ namespace Anthropocene.Simulation
         public MaterialId Material;
         public double Initial, Available, Share, RecoveryPerYear;
     }
+    // A turn-local production aid.  It never owns material: inventory and source
+    // state remain authoritative.  Its fixed ratio prevents Housing from changing
+    // Wood/Clay policy as gathering and earlier specialist work exchange stock.
+    public sealed class HousingMaterialPlan
+    {
+        public readonly double WoodShare, ClayShare;
+        private double reservedWood, reservedClay;
+        internal HousingMaterialPlan(double woodShare, double clayShare, double directWood, double directClay)
+        {
+            WoodShare = woodShare; ClayShare = clayShare;
+            reservedWood = Math.Max(0, directWood); reservedClay = Math.Max(0, directClay);
+        }
+        public void CompleteDirect(CraftRecipe recipe, double output)
+        {
+            if (recipe == null || recipe.ConstructionMaterial > 0 || output <= 0) return;
+            reservedWood = Math.Max(0, reservedWood - output * recipe.Wood);
+            reservedClay = Math.Max(0, reservedClay - output * recipe.Clay);
+        }
+        public double LimitHousing(Camp c, double desired, double materialPerHousing, out double wood, out double clay)
+        {
+            wood = clay = 0;
+            if (desired <= 0 || materialPerHousing <= 0 || WoodShare + ClayShare <= 0) return 0;
+            double freeWood = Math.Max(0, c.Inventory.Wood - reservedWood);
+            double freeClay = Math.Max(0, c.Inventory.Clay - reservedClay);
+            double amount = Math.Min(desired, (freeWood + freeClay) / materialPerHousing);
+            if (amount <= 1e-12) return 0;
+            double total = amount * materialPerHousing;
+            wood = Math.Min(freeWood, total * WoodShare);
+            clay = Math.Min(freeClay, total * ClayShare);
+            double remaining = total - wood - clay;
+            double addWood = Math.Min(remaining, freeWood - wood);
+            wood += addWood; remaining -= addWood;
+            clay += Math.Min(remaining, freeClay - clay);
+            return amount;
+        }
+    }
     public static class MaterialEconomy
     {
         public static MaterialSourceObservation[] Observe(WorldState w, Camp c, double days) => KnownSources(w, c, days).Select(s => new MaterialSourceObservation { Id = s.Id, Tile = s.Tile, Distance = s.Distance, Material = s.Material, Available = s.Available }).ToArray();
         public static readonly MaterialId[] Materials = { MaterialId.Stone, MaterialId.Clay, MaterialId.Wood };
+        // Construction is the flexible consumer.  Use all visible, reachable
+        // source stock to choose its mix, after retaining the source- and
+        // labor-feasible direct recipe plan.  The ratio sees the same physical
+        // material reserve horizon as gathering, while the mutable reservation
+        // below protects only this turn's remaining direct work.
+        public static HousingMaterialPlan PlanHousingMaterials(WorldState w, Camp c, CraftRecipe[] recipes, IDictionary<CraftGood, double> planned, double years, double days)
+        {
+            var sources = KnownSources(w, c, days);
+            var room = Materials.ToDictionary(material => material, material => Inventory(c, material) + sources.Where(s => s.Material == material).Sum(s => s.Available));
+            double directWood = 0, directClay = 0;
+            // Forecast is already role-, tool-, plant- and demand-capped.  Give
+            // its direct recipes one deterministic source/material feasibility
+            // pass before they can reserve anything from Housing.  In particular,
+            // a Tool job lacking Stone cannot reserve its Wood merely because a
+            // visible Wood source exists.
+            foreach (var recipe in recipes.Where(r => r.ConstructionMaterial <= 0).OrderByDescending(r => NeolithicProduction.Priority(c, r.Good)).ThenBy(r => r.Good))
+            {
+                if (!planned.TryGetValue(recipe.Good, out double output) || output <= 0) continue;
+                if (recipe.Stone > 0) output = Math.Min(output, room[MaterialId.Stone] / recipe.Stone);
+                if (recipe.Clay > 0) output = Math.Min(output, room[MaterialId.Clay] / recipe.Clay);
+                if (recipe.Wood > 0) output = Math.Min(output, room[MaterialId.Wood] / recipe.Wood);
+                if (output <= 1e-12) continue;
+                room[MaterialId.Stone] -= output * recipe.Stone;
+                room[MaterialId.Clay] -= output * recipe.Clay;
+                room[MaterialId.Wood] -= output * recipe.Wood;
+                directWood += output * recipe.Wood;
+                directClay += output * recipe.Clay;
+            }
+            double horizon = w.Config.Neolithic.MaterialReserveMultiplier(years);
+            double wood = Math.Max(0, Inventory(c, MaterialId.Wood) + sources.Where(s => s.Material == MaterialId.Wood).Sum(s => s.Available) - directWood * horizon);
+            double clay = Math.Max(0, Inventory(c, MaterialId.Clay) + sources.Where(s => s.Material == MaterialId.Clay).Sum(s => s.Available) - directClay * horizon);
+            double total = wood + clay;
+            return new HousingMaterialPlan(total > 0 ? wood / total : 0, total > 0 ? clay / total : 0, directWood, directClay);
+        }
         // Packed geological rasters remain provenance. Sparse fractional continuation is
         // authoritative after first extraction; all economic queries pass through here.
         public static KnownMaterialSource[] KnownSources(WorldState w, Camp c, double days)
@@ -100,33 +170,32 @@ namespace Anthropocene.Simulation
             return amount / rate;
         }
         // Compatibility wrapper for the resolver's post-field/post-pot phase.
-        public static void Gather(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double generalistIntervals, ref double equipment, TurnRecord record, bool postAgriculturalResolution = false)
+        public static HousingMaterialPlan Gather(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double generalistIntervals, ref double equipment, TurnRecord record, bool postAgriculturalResolution = false)
             => Gather(w, c, recipes, intervals, years, generalistIntervals, ref equipment, record, postAgriculturalResolution, postAgriculturalResolution);
 
-        public static void Gather(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double generalistIntervals, ref double equipment, TurnRecord record, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed)
+        public static HousingMaterialPlan Gather(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double generalistIntervals, ref double equipment, TurnRecord record, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed)
         {
             double days = record.StartDays + record.Duration;
             double housingForecast = 0;
             var forecast = new Dictionary<MaterialId, double> { [MaterialId.Stone] = 0, [MaterialId.Clay] = 0, [MaterialId.Wood] = 0 };
             var planned = Forecast(w, c, recipes, intervals, years, equipment, false, -1, fieldWorkAlreadyResolved, potsAlreadyDecayed);
+            var housing = PlanHousingMaterials(w, c, recipes, planned, years, days);
             foreach (var recipe in recipes)
             {
                 double amount = planned[recipe.Good];
                 forecast[MaterialId.Stone] += amount * recipe.Stone;
                 forecast[MaterialId.Clay] += amount * recipe.Clay;
                 forecast[MaterialId.Wood] += amount * recipe.Wood;
-                if (recipe.ConstructionMaterial > 0)
-                {
-                    housingForecast += amount * recipe.ConstructionMaterial;
-                }
+                if (recipe.ConstructionMaterial > 0) housingForecast += amount * recipe.ConstructionMaterial;
             }
             double Shortfall(MaterialId material)
             {
                 double horizon = w.Config.Neolithic.MaterialReserveMultiplier(years);
                 double direct = Math.Max(0, forecast[material] * horizon - Inventory(c, material));
-                double spareWood = Math.Max(0, c.Inventory.Wood - forecast[MaterialId.Wood] * horizon);
-                double spareClay = Math.Max(0, c.Inventory.Clay - forecast[MaterialId.Clay] * horizon);
-                return direct + (material == MaterialId.Stone ? 0 : Math.Max(0, housingForecast * horizon - spareWood - spareClay));
+                if (material == MaterialId.Stone) return direct;
+                double share = material == MaterialId.Wood ? housing.WoodShare : housing.ClayShare;
+                double total = forecast[material] * horizon + housingForecast * horizon * share;
+                return Math.Max(0, total - Inventory(c, material));
             }
             foreach (string role in WorkforceRoles.Extractors.Concat(new[] { WorkforceRoles.Gatherer }))
             {
@@ -142,6 +211,7 @@ namespace Anthropocene.Simulation
                     labor -= spent;
                 }
             }
+            return housing;
         }
         public static double Inventory(Camp c, MaterialId material) => material == MaterialId.Stone ? c.Inventory.Stone : material == MaterialId.Clay ? c.Inventory.Clay : c.Inventory.Wood;
         public static string Specialist(MaterialId material) => material == MaterialId.Stone ? WorkforceRoles.Stonecutter : material == MaterialId.Clay ? WorkforceRoles.ClayMiner : material == MaterialId.Wood ? WorkforceRoles.Woodcutter : null;
