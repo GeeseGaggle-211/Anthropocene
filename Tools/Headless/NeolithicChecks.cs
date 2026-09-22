@@ -129,8 +129,17 @@ internal static class NeolithicChecks
         var remote = Fixture(); var rc = remote.Camps[0]; rc.Population = 250; remote.Hunters.Add(new Hunter { Id = remote.NextId++, SourceCamp = rc.Id, Tile = remote.Tiles.Length - 1, Population = 100 });
         Near(NeolithicProduction.TargetPots(remote, rc, years), 25, "remote hunters remain in natural storage capacity without camp reserve appetite");
         Near(NeolithicProduction.TargetPots(remote, rc, years, rc.Population), 25, "explicit current residents agree with default Pot target");
+        var stable = Fixture(); var sc = stable.Camps[0]; sc.Population = 250; sc.Food = 30000; sc.PlantFood = 100000; sc.Inventory.Pots = 125; sc.Inventory.HandTools = 500; sc.CraftingPriorities = new CraftingPriorities { Pots = 1 }; sc.People.NeolithicTechnologies.Add(NeolithicTech.Pottery); sc.Workforce.Assign(WorkforceRoles.Potter, 1, sc.Population); AddResources(stable); stable.Resources.Clay[sc.Tile] = 1000;
+        var resolver = new TurnResolver(); var stableRecord = resolver.Resolve(stable, new Dictionary<int, List<Order>>());
+        Near(stableRecord.Production.Where(p => p.Good == CraftGood.Pots).Sum(p => p.Output), 12.5, "stable Pot replacement is useful once after decay");
+        Near(stableRecord.MaterialTransfers.Where(t => t.Material == MaterialId.Clay).Sum(t => t.Amount), 25, "Pot replacement gathers one configured Clay reserve without double decay");
+        Near(sc.Inventory.Clay, 12.5, "realized Pot input leaves only gathered reserve Clay");
+        var blocked = Fixture(); var bc = blocked.Camps[0]; bc.Population = 250; bc.Food = 40000; bc.Inventory.Pots = 0; bc.Inventory.HandTools = 500; bc.CraftingPriorities = new CraftingPriorities { Pots = 1 }; bc.People.NeolithicTechnologies.Add(NeolithicTech.Pottery); bc.Workforce.Assign(WorkforceRoles.Potter, 1, bc.Population); AddResources(blocked); blocked.Resources.Clay[bc.Tile] = 0;
+        var blockedRecord = resolver.Resolve(blocked, new Dictionary<int, List<Order>>());
+        Near(blockedRecord.Production.Where(p => p.Good == CraftGood.Pots).Sum(p => p.Output), 0, "blocked Pot production creates no output");
+        Near(bc.Inventory.HandTools, 500, "blocked Pot production consumes no tools"); Near(bc.Food, 20000, "blocked Pot production preserves end storage");
         c.Inventory.Pots = 125.25; string before = SaveCodec.Fingerprint(w); var loaded = SaveCodec.Load(SaveCodec.Save(w)); Near(loaded.Camps[0].Inventory.Pots, 125.25, "fractional pot inventory saves exactly"); Check(before == SaveCodec.Fingerprint(loaded), "pot inventory save/load replay is deterministic");
-        var zero = SimulationConfig.Small(1); zero.Neolithic.PotDecayPerReferenceTurn = 0; zero.Validate(); Check(zero.Neolithic.PotDecayPerReferenceTurn == 0, "zero pot decay remains a legitimate configured value");
+        var zero = Fixture(); zero.Config.Neolithic.PotDecayPerReferenceTurn = 0; zero.Config.Validate(); var zeroLoaded = SaveCodec.Load(SaveCodec.Save(zero)); Check(zeroLoaded.Config.Neolithic.PotDecayPerReferenceTurn == 0, "zero pot decay remains a legitimate saved value");
     }
     private static void Cultivation()
     {
@@ -316,6 +325,8 @@ internal static class NeolithicChecks
         var legacy = Fixture(); legacy.Camps[0].Inventory.Houses = 3; legacy.Camps[0].Inventory.HousingUnits = 5;
         legacy.Tiles[legacy.Camps[0].Tile].Cultivation = .2f;
         var migrated = SaveCodec.Load(Legacy10(legacy));
+        Near(migrated.Config.Neolithic.PotStorageFoodPerUnit, 80, "absent legacy Pot capacity receives current default");
+        Near(migrated.Config.Neolithic.PotDecayPerReferenceTurn, .1, "absent legacy Pot decay receives current default");
         Near(migrated.Camps[0].Inventory.HousingUnits, 7, "legacy houses plus partial construction migrate once");
         Near(migrated.Camps[0].StonePriority + migrated.Camps[0].ClayPriority + migrated.Camps[0].WoodPriority, 3, "absent legacy sourcing fields receive real defaults");
         Check(migrated.Camps[0].CultivationFocusTile == -1, "absent legacy focus is not tile zero");

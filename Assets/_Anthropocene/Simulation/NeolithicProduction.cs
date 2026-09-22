@@ -223,9 +223,8 @@ namespace Anthropocene.Simulation
         public static double TargetPots(WorldState w, Camp c, double years, double residents = -1)
         {
             double reservePopulation = ReservePopulation(w, c, residents);
-            double naturalPopulation = NaturalStoragePopulation(w, c, residents);
             double intervals = IntervalsForYears(w, years);
-            double natural = Math.Max(0, naturalPopulation * w.Config.Consumption * intervals * TurnResolver.StorageGenerations(w, c.Tile));
+            double natural = NaturalStorageCapacity(w, c, intervals, residents);
             double desired = DesiredReserveFood(w, reservePopulation, intervals);
             return Math.Max(0, desired - natural) / w.Config.Neolithic.PotStorageFoodPerUnit;
         }
