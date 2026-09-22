@@ -32,7 +32,9 @@ internal static class ToolConsumptionChecks
         NewlyMadeToolsAreNotRetroactive();
         ReceiptAndFractionalSaveRoundTrip();
         ReplacementDemandIsUsefulAndSourceBound();
+        PlannerReplacementRegressionCases();
         NoReplacementEventuallyExhaustsCapacity();
+        HandToolFallbackAfterDownstreamWoodUse();
         OrganicReplacementLifecycle();
         Console.WriteLine("PASS: " + checks + " tool-consumption assertions");
         return checks;
@@ -273,6 +275,42 @@ internal static class ToolConsumptionChecks
         Near(NeolithicProduction.Demand(regularNoSource, rnc, CraftGood.Tools, 20), 0, "infeasible useful demand creates no regular replacement demand");
     }
 
+    private static void PlannerReplacementRegressionCases()
+    {
+        var specialist = NeolithicChecks.Fixture();
+        var sc = specialist.Camps[0];
+        sc.Workforce.Assign(WorkforceRoles.Weaver, 1, sc.Population);
+        sc.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
+        sc.CraftingPriorities = new CraftingPriorities { HandTools = 1, Tools = 0, Pots = 0, Cloth = 1, FarmTools = 0, Housing = 0 };
+        sc.EconomicLabor = new EconomicLaborPlan { EquipmentTarget = 1 };
+        Near(NeolithicProduction.Demand(specialist, sc, CraftGood.HandTools, 20), 80, "one Weaver and one equipment target request only its 80-interval replacement need");
+
+        var fallback = NeolithicChecks.Fixture();
+        var fc = fallback.Camps[0];
+        fc.Inventory.Stone = 100;
+        fc.Inventory.Wood = 2;
+        fc.FarmToolsTarget = 2;
+        fc.People.NeolithicTechnologies.Add(NeolithicTech.Toolmaking);
+        fc.CraftingPriorities = new CraftingPriorities { HandTools = 1, Tools = 1, FarmTools = 1, Pots = 0, Cloth = 0, Housing = 0 };
+        var proposal = EconomicPlanner.Plan(fallback, fc, EconomicIntent.From(fc));
+        Check(proposal.Assignments.Any(a => a.Role == WorkforceRoles.Toolmaker && a.Population > 0), "planner retains Hand Tool fallback when downstream Farm Tools reserve all Wood");
+
+        var held = NeolithicChecks.Fixture();
+        var hc = held.Camps[0];
+        hc.Inventory.Stone = .1;
+        hc.Inventory.Wood = .1;
+        hc.People.NeolithicTechnologies.Add(NeolithicTech.Toolmaking);
+        hc.Inventory.HandTools = 0;
+        var toolsRecord = new TurnRecord();
+        double equipment = 0;
+        NeolithicProduction.Produce(held, hc, Recipe(held, CraftGood.Tools), WorkforceRoles.Craftsperson, 80, 80, 1, ref equipment, toolsRecord);
+        Near(toolsRecord.Production.Single().Output, .1, "fractional Stone and Wood permit fractional regular Tool production");
+
+        fc.StonePriority = fc.WoodPriority = 0;
+        var stockedMaterialProposal = EconomicPlanner.Plan(fallback, fc, EconomicIntent.From(fc));
+        Check(stockedMaterialProposal.Assignments.Any(a => a.Role == WorkforceRoles.Toolmaker && a.Population > 0), "held Stone and Wood remain usable when gathering priorities are zero");
+    }
+
     private static void OrganicReplacementLifecycle()
     {
         var w = ReplacementFixture(true);
@@ -319,5 +357,25 @@ internal static class ToolConsumptionChecks
         Check(early > 0, "existing tools support useful work before depletion");
         Near(late, 0, "a settlement without replacement materials eventually loses productive capacity");
         Near(c.Inventory.HandTools + 4 * c.Inventory.Tools, 0, "unreplaced tool capacity is exhausted");
+    }
+
+    private static void HandToolFallbackAfterDownstreamWoodUse()
+    {
+        var w = Fixture();
+        var c = w.Camps[0];
+        c.Inventory.Stone = 10;
+        c.Inventory.Wood = 1;
+        c.CraftingPriorities = new CraftingPriorities { HandTools = 1, Tools = 1, FarmTools = 1 };
+        c.FarmToolsTarget = 1;
+        c.Workforce.Assign(WorkforceRoles.Toolmaker, 1, c.Population);
+        c.Workforce.Assign(WorkforceRoles.Carpenter, 1, c.Population);
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Toolmaking);
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Carpentry);
+        Check(NeolithicProduction.Demand(w, c, CraftGood.HandTools, 20) > 0, "Hand Tools remain useful when downstream Wood is fully allocated");
+        Near(NeolithicProduction.Demand(w, c, CraftGood.Tools, 20), 0, "Regular Tools are not demanded without replacement Wood");
+        var first = new TurnRecord(); double equipment = 0;
+        Near(NeolithicProduction.Produce(w, c, Recipe(w, CraftGood.HandTools), WorkforceRoles.Toolmaker, 80, 80, 1, ref equipment, first), 1, "Hand Tool fallback can be produced from available Stone");
+        var nextBudget = new ToolCoverageBudget(w, c, 80); var second = new TurnRecord(); equipment = nextBudget.Remaining;
+        Near(NeolithicProduction.Produce(w, c, Recipe(w, CraftGood.FarmTools), WorkforceRoles.Carpenter, 80, 80, 1, ref equipment, second, nextBudget), 1, "Downstream Farm Tool work resumes after Hand Tool fallback");
     }
 }
