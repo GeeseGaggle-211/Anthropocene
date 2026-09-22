@@ -9,7 +9,7 @@ namespace Anthropocene.Simulation
     {
         public int Tile, Entity;
         public string Kind, Pool;
-        public double Requested, Realized, Unmet, CapacityDays, Recharge, ConditionDamage, GatherableSpill;
+        public double Requested, Realized, Unmet, CapacityDays, Recharge, ConditionDamage, GatherableSpill, WoodCapacityLoss;
     }
     [Serializable]
     public sealed class EcologyBalance
@@ -22,6 +22,8 @@ namespace Anthropocene.Simulation
     public sealed class TileEcologyResult
     {
         public EcologyView View;
+        public bool HasWoodSource;
+        public double WoodRemaining, WoodDays;
         public List<Transfer> Transfers = new List<Transfer>();
         public List<PressureEntry> Pressure = new List<PressureEntry>();
         public EcologyBalance Balance;
@@ -37,14 +39,16 @@ namespace Anthropocene.Simulation
             view.LandCondition = EcologyMath.Condition(view.LandCondition, 1, 0, Math.Max(0, pressure), 1);
             view.CurrentVegetation = Vegetation.Update(t.NaturalVegetationPotential, view.CurrentVegetation, view.LandCondition, w.Config);
             var before = view; LazyEcology.ClampCapacity(w, t, ref view); view.Commit(t);
+            double woodCapacityLoss = MaterialEconomy.ClampWoodSource(w, tile, view);
             var balance = record.EcologyBalances.LastOrDefault(b => b.Tile == tile);
             if (balance != null) { balance.BiomassOverflow += before.PotentialFood - view.PotentialFood; balance.FoodOverflow += before.Food - view.Food; balance.EndingBiomass = view.PotentialFood; balance.EndingFood = view.Food; }
-            record.Pressure.Add(new PressureEntry { Tile = tile, Entity = entity, Kind = kind, Pool = pool, Requested = requested, Realized = realized, Unmet = Math.Max(0, requested - realized), ConditionDamage = pressure });
+            record.Pressure.Add(new PressureEntry { Tile = tile, Entity = entity, Kind = kind, Pool = pool, Requested = requested, Realized = realized, Unmet = Math.Max(0, requested - realized), ConditionDamage = pressure, WoodCapacityLoss = woodCapacityLoss });
         }
         // Inputs are read-only. Results can be merged by tile/entity ID after a worker barrier.
         public static TileEcologyResult Integrate(WorldState w, int tileId, IEnumerable<Demand> claims, double start, double duration)
         {
-            var tile = w.Tiles[tileId]; var v = LazyEcology.ProjectEcology(w, tileId, start);
+            var tile = w.Tiles[tileId]; var wood = MaterialEconomy.ProjectWoodSource(w, tileId);
+            var v = LazyEcology.ProjectEcology(w, tileId, start, true, wood == null ? null : wood.Recover);
             var result = new TileEcologyResult { Balance = new EcologyBalance { Tile = tileId, StartingBiomass = v.PotentialFood, StartingFood = v.Food, StartingWater = v.Freshwater } };
             var requests = claims.OrderBy(d => d.Entity).ThenBy(d => d.Kind, StringComparer.Ordinal).ToArray();
             double foodRequest = requests.Sum(d => d.Food), herdRequest = requests.Sum(d => d.PotentialFood), waterRequest = requests.Sum(d => d.Freshwater);
@@ -84,6 +88,7 @@ namespace Anthropocene.Simulation
                 double damagePerDay = coefficient * impact * Math.Pow(Math.Max(0, utilization - w.Config.SafeUseRatio), w.Config.PressureExponent) / w.Config.DaysPerYear;
                 damage += damagePerDay * dt;
                 LazyEcology.RecoverCondition(w, tile, ref v, dt, damagePerDay); v.Days += dt;
+                wood?.Recover(previous, v, dt, damagePerDay);
                 v.CultivationCapital = CultivationEconomy.Decay(w.Config, v.CultivationCapital, tile.CultivationOperatingFraction, dt / w.Config.DaysPerYear);
             }
             foreach (var d in requests)
@@ -108,7 +113,9 @@ namespace Anthropocene.Simulation
             var beforeClamp = v; LazyEcology.ClampCapacity(w, tile, ref v);
             result.Balance.BiomassOverflow += beforeClamp.PotentialFood - v.PotentialFood; result.Balance.FoodOverflow += beforeClamp.Food - v.Food; result.Balance.WaterOverflow += beforeClamp.Freshwater - v.Freshwater;
             result.Balance.EndingBiomass = v.PotentialFood; result.Balance.EndingFood = v.Food; result.Balance.EndingWater = v.Freshwater;
-            result.View = v; return result;
+            result.View = v;
+            if (wood != null) { result.HasWoodSource = true; result.WoodRemaining = wood.Remaining; result.WoodDays = v.Days; }
+            return result;
         }
         private static double Share(double total, double claim, double claims) => claims <= 0 ? 0 : total * claim / claims;
         private static void AddPressure(TileEcologyResult result, Demand d, string pool, double request, double realized, double capacity, double recharge, double damage, double spill) =>
