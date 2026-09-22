@@ -44,9 +44,10 @@ namespace Anthropocene.Presentation
                     GUI.Label(new Rect(4, y, width - 60, 46), $"{herd.Species} herd {herd.Count.Representative} · food {herd.FoodNutrition:P0} · water {herd.WaterNutrition:P0} · management {herd.ManagementFulfillment:P0} · deficit {herd.DeficitTurns} · output {herd.AcceptedFood:F1}/{herd.PotentialFood:F1} · births {herd.NewbornAnimals} · deaths {herd.StarvationDeaths}", small);
                     y += 54;
                 }
-                GUI.Label(new Rect(4, y, width - 150, 24), "Breeding intensity: " + draft.ManagedBreedingIntensity.ToString("F2") + " (0 stops intentional reproduction; 1 uses biological rate)", small);
-                if (Button(new Rect(width - 130, y, 52, 22), "−")) draft.ManagedBreedingIntensity = Math.Max(0, draft.ManagedBreedingIntensity - .05);
-                if (Button(new Rect(width - 72, y, 52, 22), "+")) draft.ManagedBreedingIntensity = Math.Min(1, draft.ManagedBreedingIntensity + .05);
+                float contentWidth = width - 44;
+                GUI.Label(new Rect(4, y, contentWidth - 150, 24), "Breeding intensity: " + draft.ManagedBreedingIntensity.ToString("F2") + " (0 stops intentional reproduction; 1 uses biological rate)", small);
+                if (Button(new Rect(contentWidth - 130, y, 52, 22), "−")) draft.ManagedBreedingIntensity = Math.Max(0, draft.ManagedBreedingIntensity - .05);
+                if (Button(new Rect(contentWidth - 72, y, 52, 22), "+")) draft.ManagedBreedingIntensity = Math.Min(1, draft.ManagedBreedingIntensity + .05);
                 y += 30;
             }
             float col = (width - 70) / 3, x = 4, wy = y;
