@@ -289,7 +289,15 @@ internal static class ToolConsumptionChecks
         var fc = fallback.Camps[0];
         fc.Inventory.Stone = 100;
         fc.Inventory.Wood = 2;
+        // The fallback must be driven by real field work; the legacy target is
+        // retained only to prove it is no longer an authority for demand.
         fc.FarmToolsTarget = 2;
+        fc.Workforce.Assign(WorkforceRoles.Farmer, 1, fc.Population);
+        var fallbackField = fallback.Tiles[fc.Tile];
+        fallbackField.CultivationCapital = .1;
+        fallbackField.Cultivation = (float)CultivationEconomy.Intensity(fallback.Config, fallbackField.CultivationCapital);
+        fallbackField.Cultivated = true;
+        fallbackField.CultivationOperator = fc.Id;
         fc.People.NeolithicTechnologies.Add(NeolithicTech.Toolmaking);
         fc.CraftingPriorities = new CraftingPriorities { HandTools = 1, Tools = 1, FarmTools = 1, Pots = 0, Cloth = 0, Housing = 0 };
         var proposal = EconomicPlanner.Plan(fallback, fc, EconomicIntent.From(fc));
@@ -367,6 +375,10 @@ internal static class ToolConsumptionChecks
         c.Inventory.Wood = 1;
         c.CraftingPriorities = new CraftingPriorities { HandTools = 1, Tools = 1, FarmTools = 1 };
         c.FarmToolsTarget = 1;
+        c.Workforce.Assign(WorkforceRoles.Farmer, 1, c.Population);
+        w.Tiles[c.Tile].CultivationCapital = 1;
+        w.Tiles[c.Tile].Cultivation = .4f;
+        w.Tiles[c.Tile].CultivationOperator = c.Id;
         c.Workforce.Assign(WorkforceRoles.Toolmaker, 1, c.Population);
         c.Workforce.Assign(WorkforceRoles.Carpenter, 1, c.Population);
         c.People.NeolithicTechnologies.Add(NeolithicTech.Toolmaking);

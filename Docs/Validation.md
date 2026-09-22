@@ -1,5 +1,43 @@
 # Validation - September 22, 2026
 
+## Issue #5 Stone Farm Tool field work
+
+Stone Farm Tools apply the `.45/.40` supported-intensity ratio squared
+(`1.265625`) only to covered maintenance and expansion work. Maintenance has
+first claim on the turn-start inventory. Consumption follows realized covered
+farmer-years divided by 20; idle stock and blocked expansion consume nothing.
+Physical cultivation capital remains authoritative. Tools can fund more actual
+expansion and therefore higher persisted q, but do not directly multiply harvest
+or ecological regeneration. Newly manufactured tools serve later work.
+
+Independent final verification passed 257 Neolithic, 87 automation, 58 production
+tool, 45 field-tool, 1,149 planner, and 12 production-phase assertions. The affected
+economy suite also passed 59 milestone-two, 82 milestone-three, 25 ecology and 10
+agent-contract assertions, plus scalar/2/4-worker and reordered replay through 12
+resolutions. The planner checks cover 540 workforce/stock/material combinations,
+useful replacement, priority ordering, scarce sources and an eight-turn bootstrap
+with exact save continuation and food conservation.
+
+Astra's separate probes passed 667 field-work assertions, eight replacement and
+eight forecast/migration assertions, and the near-cap expansion case. All 64
+zero-Farm-Tool scenarios exactly matched the pre-issue baseline. The 576-case
+Fabric sweep had zero continuation mismatches; maximum food-balance and discard
+residuals were respectively `2.201e-10` and `1.237e-10`. The mixed Farm Tool/Cloth
+regression preserves the 8,000-food operating reserve after field wear, growth and
+manufacturing; separate phase flags prevent forecasting field wear twice while
+still accounting for the later Pot depreciation. The existing 1,944-case
+manufacturing matrix also passed 11,725 assertions on the unchanged production
+debit core. These are contract and conservation checks, not the natural-transition
+balance matrix scheduled for issue #14. Evidence is in ignored
+`TestResults/Issue20/`.
+
+Unity 6000.5.10f1 EditMode passed 28/28 and the Windows build succeeded. The
+five-frame Neolithic player smoke passed queued-intent purity, real E growth,
+Fabric debit, exact isolated save/load and two-turn automation continuation.
+Astra inspected the queued, restored and completed Economy captures: the Farm
+Tool forecast, inventory and labor-effect explanation remain readable. This is
+automated player verification, not a human usability test.
+
 ## Issue #4 additive Pot storage
 
 Pots add `PotStorageFoodPerUnit=80` absolute food capacity to the existing natural
