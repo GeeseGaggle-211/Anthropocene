@@ -1,5 +1,15 @@
 # Validation - September 22, 2026
 
+## Issue #14 Paleo→Agriculture transition matrix
+
+[NeolithicTransitionValidation.md](NeolithicTransitionValidation.md) records the
+20-case, activity-driven Paleo→Agriculture matrix on the stabilized agricultural
+branch. It distinguishes controlled generated-site/fixed-settlement fixtures from
+ordinary mobile-policy rows, reports actual movement and finite eight-generation
+Paleo-support estimates, and preserves raw food/material/ecology conservation
+evidence. The report measures the observed late food-flow deficits and material
+constraints without retuning production or ecology constants.
+
 ## Issue #6 ecological Wood support
 
 Wood now follows the authoritative ecology timeline. Capacity is its generated
