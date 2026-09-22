@@ -34,7 +34,7 @@ internal static class HousingMaterialChecks
     public static int Run()
     {
         checks = 0;
-        RatioAndFallback(); SourceRatio(); MandatoryReservations(); BlockedDirectDoesNotReserve();
+        RatioAndFallback(); SourceRatio(); MandatoryReservations(); BlockedDirectDoesNotReserve(); ResolverChronology(); ReplacementForecast(); ReplacementPriorityPreservesLaborOrder(); ReplacementHorizonBlocksZeroResidualHousing(); PlannerHonorsZeroResidualHousing();
         Console.WriteLine("PASS: " + checks + " residual Housing material assertions"); return checks;
     }
     private static void RatioAndFallback()
@@ -81,5 +81,60 @@ internal static class HousingMaterialChecks
         var plan = MaterialEconomy.PlanHousingMaterials(w, c, NeolithicProduction.Recipes(w.Config), planned, 20, w.Days);
         Near(plan.WoodShare, 2d / 3, "Stone-blocked Tools do not reserve Wood"); Near(plan.ClayShare, 1d / 3, "Stone-blocked Tools retain raw Clay ratio");
         ProduceHousing(w, c, 6, plan); Near(c.Inventory.Wood, 2, "blocked direct work cannot phantom-reserve Housing Wood"); Near(c.Inventory.Clay, 1, "blocked direct work cannot phantom-reserve Housing Clay");
+    }
+    private static void ResolverChronology()
+    {
+        var w = NeolithicChecks.Fixture(); var c = w.Camps[0]; Enable(c); c.Population = 1000; c.Inventory.Wood = 100; c.Inventory.Clay = 200;
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Pottery); c.Workforce.Assign(WorkforceRoles.Potter, 1, c.Population); c.Workforce.Assign(WorkforceRoles.Builder, 1, c.Population);
+        c.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 1, Cloth = 0, FarmTools = 0, Housing = 2, Tools = 0 };
+        var record = new TurnRecord(); NeolithicProduction.ResolveCampNeolithic(w, c, 80, 20, record);
+        var housing = record.Production.Where(p => p.Good == CraftGood.Housing).ToArray();
+        Near(record.Production.Where(p => p.Good == CraftGood.Pots).Sum(p => p.Output), 80, "earlier specialist direct work realizes");
+        Near(housing.Sum(p => p.Output), 2.5, "Housing labor is unchanged after direct reservation");
+        Near(housing.Sum(p => p.Wood), 2.5 * 100 / 220, "resolver keeps fixed residual Wood ratio");
+        Near(housing.Sum(p => p.Clay), 2.5 * 120 / 220, "resolver keeps fixed residual Clay ratio");
+        var later = NeolithicChecks.Fixture(); var lc = later.Camps[0]; Enable(lc); lc.Population = 11; lc.Inventory.Wood = .1; lc.Inventory.Clay = 5.5;
+        lc.Workforce.Assign(WorkforceRoles.Builder, 1, lc.Population); lc.Workforce.Assign(WorkforceRoles.Craftsperson, 1, lc.Population); lc.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 1, Cloth = 0, FarmTools = 0, Housing = 2, Tools = 0 };
+        var laterRecord = new TurnRecord(); NeolithicProduction.ResolveCampNeolithic(later, lc, 80, 20, laterRecord);
+        Near(laterRecord.Production.Where(p => p.Good == CraftGood.Pots).Sum(p => p.Output), 5.5, "later generalist direct work remains reserved");
+        Near(laterRecord.Production.Where(p => p.Good == CraftGood.Housing).Sum(p => p.Output), .1, "earlier Builder cannot spend later generalist Clay");
+    }
+    private static void ReplacementForecast()
+    {
+        var w = NeolithicChecks.Fixture(); var c = w.Camps[0]; c.People.NeolithicTechnologies.Add(NeolithicTech.Construction); c.Population = 4; c.Inventory.HandTools = 0; c.Inventory.Stone = 10; c.Inventory.Wood = c.Inventory.Clay = 1;
+        c.CraftingPriorities = new CraftingPriorities { HandTools = 1, Pots = 0, Cloth = 0, FarmTools = 1, Housing = 2, Tools = 0 };
+        c.Workforce.Assign(WorkforceRoles.Builder, 1, c.Population); c.Workforce.Assign(WorkforceRoles.Craftsperson, 1, c.Population); c.Workforce.Assign(WorkforceRoles.Farmer, 1, c.Population); c.EconomicLabor = new EconomicLaborPlan { ExpansionFarmers = 0 };
+        foreach (int id in CultivationEconomy.Footprint(w, c))
+        {
+            var tile = w.Tiles[id]; tile.CultivationCapital = .1; tile.Cultivation = (float)CultivationEconomy.Intensity(w.Config, .1); tile.CultivationOperator = c.Id; tile.Cultivated = true;
+        }
+        Near(NeolithicProduction.Demand(w, c, CraftGood.HandTools, 20), 2, "replacement forecast reserves later Farm Tool Wood before flexible Housing");
+    }
+    private static void ReplacementPriorityPreservesLaborOrder()
+    {
+        var w = NeolithicChecks.Fixture(); var c = w.Camps[0]; c.Inventory.Wood = 100; c.Inventory.Clay = 100; c.Inventory.HandTools = 0; c.PlantFood = 100000;
+        c.CraftingPriorities = new CraftingPriorities { HandTools = 1, Pots = 0, Cloth = 1, FarmTools = 0, Housing = 2, Tools = 0 };
+        c.Workforce.Assign(WorkforceRoles.Craftsperson, 1, c.Population);
+        Near(NeolithicProduction.Demand(w, c, CraftGood.HandTools, 20), .625, "material reservation does not reprioritize Craftsperson labor");
+    }
+    private static void ReplacementHorizonBlocksZeroResidualHousing()
+    {
+        var w = NeolithicChecks.Fixture(); var c = w.Camps[0]; c.Population = 4; c.Inventory.Wood = 0; c.Inventory.Clay = 1; c.Inventory.Stone = 10; c.Inventory.HandTools = 0; c.Inventory.Pots = 1;
+        w.Config.Neolithic.PotDecayPerReferenceTurn = 0;
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Construction); c.People.NeolithicTechnologies.Add(NeolithicTech.Pottery); c.People.NeolithicTechnologies.Add(NeolithicTech.Toolmaking);
+        c.CraftingPriorities = new CraftingPriorities { HandTools = 1, Pots = 1, Cloth = 0, FarmTools = 0, Housing = 2, Tools = 1 };
+        c.Workforce.Assign(WorkforceRoles.Potter, 1, c.Population); c.Workforce.Assign(WorkforceRoles.Builder, 1, c.Population);
+        Near(NeolithicProduction.Demand(w, c, CraftGood.Pots, 20), 1, "zero residual fixture has one useful Pot direct demand");
+        Near(NeolithicProduction.Demand(w, c, CraftGood.HandTools, 20), 1, "zero residual Housing share leaves replacement Hand Tool demand");
+        Near(NeolithicProduction.Demand(w, c, CraftGood.Tools, 20), 0, "zero residual Housing share does not create phantom Regular Tool demand");
+    }
+    private static void PlannerHonorsZeroResidualHousing()
+    {
+        var w = NeolithicChecks.Fixture(); var c = w.Camps[0]; c.Population = 4; c.Inventory.Wood = 0; c.Inventory.Clay = 2; c.Inventory.Pots = 1; c.PlantFood = 100000;
+        w.Config.Neolithic.PotDecayPerReferenceTurn = 0;
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Construction); c.People.NeolithicTechnologies.Add(NeolithicTech.Pottery);
+        c.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 1, Cloth = 0, FarmTools = 0, Housing = 2, Tools = 0 };
+        var plan = EconomicPlanner.Plan(w, c, EconomicIntent.From(c));
+        Near(plan.Assignments.Where(a => a.Role == WorkforceRoles.Builder).Sum(a => a.Population), 0, "planner does not staff Housing with zero residual material");
     }
 }

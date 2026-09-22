@@ -109,11 +109,22 @@ namespace Anthropocene.Simulation
                 directWood += output * recipe.Wood;
                 directClay += output * recipe.Clay;
             }
-            double horizon = w.Config.Neolithic.MaterialReserveMultiplier(years);
-            double wood = Math.Max(0, Inventory(c, MaterialId.Wood) + sources.Where(s => s.Material == MaterialId.Wood).Sum(s => s.Available) - directWood * horizon);
-            double clay = Math.Max(0, Inventory(c, MaterialId.Clay) + sources.Where(s => s.Material == MaterialId.Clay).Sum(s => s.Available) - directClay * horizon);
+            double availableWood = Inventory(c, MaterialId.Wood) + sources.Where(s => s.Material == MaterialId.Wood).Sum(s => s.Available);
+            double availableClay = Inventory(c, MaterialId.Clay) + sources.Where(s => s.Material == MaterialId.Clay).Sum(s => s.Available);
+            HousingShares(availableWood, availableClay, directWood, directClay, out double woodShare, out double clayShare);
+            return new HousingMaterialPlan(woodShare, clayShare, directWood, directClay);
+        }
+        // Keep every forecast and resolver path on the same residual policy.
+        // Direct recipe inputs are the committed current-turn demand; the
+        // physical reserve horizon remains a gathering target, not a second
+        // Housing reservation.
+        internal static void HousingShares(double availableWood, double availableClay, double directWood, double directClay, out double woodShare, out double clayShare)
+        {
+            double wood = Math.Max(0, availableWood - Math.Max(0, directWood));
+            double clay = Math.Max(0, availableClay - Math.Max(0, directClay));
             double total = wood + clay;
-            return new HousingMaterialPlan(total > 0 ? wood / total : 0, total > 0 ? clay / total : 0, directWood, directClay);
+            woodShare = total > 0 ? wood / total : 0;
+            clayShare = total > 0 ? clay / total : 0;
         }
         // Packed geological rasters remain provenance. Sparse fractional continuation is
         // authoritative after first extraction; all economic queries pass through here.

@@ -55,6 +55,8 @@ namespace Anthropocene.Simulation
                 var candidate = Preview(c, intent, nextPopulation);
                 NeolithicProduction.DepreciateHousing(w, candidate, years);
                 var room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]);
+                double initialWood = room[MaterialId.Wood], initialClay = room[MaterialId.Clay];
+                double directWood = 0, directClay = 0;
                 double plant = plantEnvelope;
                 var requested = recipes.ToDictionary(r => r.Good, r => 0d);
                 var futureRoles = new Dictionary<string, double>();
@@ -70,14 +72,24 @@ namespace Anthropocene.Simulation
                     if (r.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / r.Stone);
                     if (r.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / r.Clay);
                     if (r.Wood > 0) amount = Math.Min(amount, room[MaterialId.Wood] / r.Wood);
-                    if (r.ConstructionMaterial > 0) amount = Math.Min(amount, (room[MaterialId.Wood] + room[MaterialId.Clay]) / r.ConstructionMaterial);
+                    if (r.ConstructionMaterial > 0)
+                    {
+                        MaterialEconomy.HousingShares(initialWood, initialClay, directWood, directClay, out double woodShare, out double clayShare);
+                        if (woodShare + clayShare <= 0) amount = 0;
+                        else amount = Math.Min(amount, (room[MaterialId.Wood] + room[MaterialId.Clay]) / r.ConstructionMaterial);
+                    }
                     if (r.PlantFood > 0) amount = Math.Min(amount, plant / r.PlantFood);
                     if (debit)
                     {
                         room[MaterialId.Stone] -= amount * r.Stone; room[MaterialId.Clay] -= amount * r.Clay; room[MaterialId.Wood] -= amount * r.Wood;
+                        if (r.ConstructionMaterial <= 0)
+                        {
+                            directWood += amount * r.Wood;
+                            directClay += amount * r.Clay;
+                        }
                         double construction = amount * r.ConstructionMaterial;
-                        double total = room[MaterialId.Wood] + room[MaterialId.Clay];
-                        double wood = total > 0 ? Math.Min(room[MaterialId.Wood], construction * room[MaterialId.Wood] / total) : 0;
+                        MaterialEconomy.HousingShares(initialWood, initialClay, directWood, directClay, out double housingWoodShare, out double housingClayShare);
+                        double wood = Math.Min(room[MaterialId.Wood], construction * housingWoodShare);
                         double clay = Math.Min(room[MaterialId.Clay], construction - wood);
                         wood += Math.Min(room[MaterialId.Wood] - wood, construction - wood - clay);
                         room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= clay; plant -= amount * r.PlantFood;
