@@ -81,7 +81,7 @@ public static class FarmToolChecks
         var budget = new FarmToolWorkBudget(w, c);
         var plan = CultivationEconomy.Prepare(w, c, 0, budget, 20);
         Near(plan.MaintenanceCoveredWorkerYears, (required / efficiency) * 20, "covered field work is allocated to maintenance before expansion", 1e-7);
-        Check(plan.MaintenanceEffectiveWorkerYears + 1e-8 >= required, "maintenance receives enough effective worker-time before expansion");
+        Check(plan.EffectiveMaintenanceFarmers + 1e-8 >= required, "maintenance receives enough effective worker-time before expansion");
         Check(plan.OperatingFarmers >= required / efficiency - 1e-8, "maintenance farmers remain assigned when expansion is requested");
         Check(plan.OperatingFarmers + plan.ExpansionFarmers <= 10 + 1e-8, "maintenance and expansion do not duplicate farmers");
     }
@@ -207,6 +207,31 @@ public static class FarmToolChecks
         Check(SaveCodec.Fingerprint(scalar) == SaveCodec.Fingerprint(loaded), "fractional Farm Tool inventory saves and reloads exactly");
     }
 
+    private static void NearCapForecastMatchesRealizableExpansion()
+    {
+        // At the physical cultivation ceiling, a nominal expansion reservation
+        // must be bounded by the same remaining E room that Expand can realize.
+        var w = FieldFixture(6.25 - 1e-6, 20, 0);
+        var c = w.Camps[0];
+        w.Config.MaintenanceCoefficient = 0;
+        c.EconomicLabor = new EconomicLaborPlan { ExpansionFarmers = 20 };
+        c.CraftingPriorities.FarmTools = 1;
+        foreach (int id in CultivationEconomy.Footprint(w, c))
+        {
+            var tile = w.Tiles[id];
+            tile.CultivationCapital = 6.25 - 1e-6;
+            tile.Cultivation = (float)CultivationEconomy.Intensity(w.Config, tile.CultivationCapital);
+            tile.Cultivated = true;
+            tile.CultivationOperator = c.Id;
+        }
+        double demand = NeolithicProduction.Demand(w, c, CraftGood.FarmTools, 20);
+        var realized = SaveCodec.Load(SaveCodec.Save(w));
+        var rc = realized.Camps[0];
+        rc.Inventory.FarmTools = 100;
+        double work = CultivationEconomy.Expand(realized, rc, 400, false, new TurnRecord(), new FarmToolWorkBudget(realized, rc));
+        Near(demand, work / 20, "near-cap Farm Tool demand matches realizable expansion work", 1e-7);
+    }
+
     public static int Run()
     {
         checks = 0;
@@ -216,6 +241,7 @@ public static class FarmToolChecks
         EffectiveExpansionAndTimePartition();
         FullTurnFixedQHarvestNeutrality();
         FullTurnConservationDeterminismAndSave();
+        NearCapForecastMatchesRealizableExpansion();
         Console.WriteLine("PASS: " + checks + " Stone Farm Tool contract assertions");
         return checks;
     }
