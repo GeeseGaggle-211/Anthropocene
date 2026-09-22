@@ -1,5 +1,25 @@
 # Validation - September 22, 2026
 
+## Issue #7 physical reserve horizons
+
+Material and finished-goods reserve horizons now use years, with 20-year defaults.
+Material planning and gathering add the physical horizon at the current production
+rate; Fabric adds its horizon to current-duration consumption. Astra's 24 paired
+20-year economy cases exactly matched the pre-conversion outputs. Independent
+gather/produce probes passed 100 assertions across five durations (1, 5, 10, 20,
+40 years) and four reserve horizons (0, 7.5, 20, 40 years), conserving material and
+leaving equal residual reserves at equal annual production rates.
+
+Ten genuine pre-conversion saves passed 24 migration assertions: zero/fractional/
+nondefault values survive, legacy material turns use the saved actual turn length,
+and legacy Fabric turns use the saved reference length. The four initial fixtures
+also passed exact save round trips and deterministic continuation. The independent
+economy suite passed 271 Neolithic, 87 automation, 58 manufacturing-tool, 45 field,
+1,149 planner and 12 phase assertions, plus 59/82 milestone, 25 ecology, 10 agent
+checks and 12-resolution scalar/2/4-worker/reordered replay. The sweep project
+compiled successfully; no balance sweep or Unity UI rerun was needed for this unit
+conversion. Evidence is retained under ignored `TestResults/Issue20/`.
+
 ## Issue #5 Stone Farm Tool field work
 
 Stone Farm Tools apply the `.45/.40` supported-intensity ratio squared
