@@ -63,10 +63,12 @@ public static class FarmFoodPhaseChecks
         var potWorld = Fixture();
         potWorld.Camps[0].Inventory.Pots = 50;
         double potsBefore = NeolithicProduction.Demand(potWorld, potWorld.Camps[0], CraftGood.Pots, years, potWorld.Camps[0].Population, false, false);
+        Near(potsBefore, 5, "pre-depreciation Pot replacement is non-vacuous");
         double potsFieldOnly = NeolithicProduction.Demand(potWorld, potWorld.Camps[0], CraftGood.Pots, years, potWorld.Camps[0].Population, true, false);
         Near(potsFieldOnly, potsBefore, "field resolution does not imply Pot depreciation");
+        NeolithicProduction.DepreciatePots(potWorld, potWorld.Camps[0], years);
         double potsAfter = NeolithicProduction.Demand(potWorld, potWorld.Camps[0], CraftGood.Pots, years, potWorld.Camps[0].Population, true, true);
-        Check(potsAfter <= potsBefore + 1e-8, "post-pot phase uses current Pot stock without double depreciation");
+        Near(potsAfter, potsBefore, "post-pot phase uses actual depreciated stock without charging depreciation twice");
     }
 
     private static void MixedTurnConservation()
@@ -80,6 +82,7 @@ public static class FarmFoodPhaseChecks
         Check(record.Production.Any(p => p.Good == CraftGood.Cloth && p.Output > 1e-8),
             "released Craftsperson time produces Cloth");
         Check(report.Additions == 3, "mixed field/fabric phase retains the intended birth outcome");
+        Near(report.FinalReserves, 8000, "Cloth feedstock is budgeted before growth without spending the protected reserve");
         Near(report.InitialReserves + report.FoodReceived - report.FoodConsumed - report.ManufacturingFood - report.DiscardedInventory - report.FinalReserves, 0,
             "mixed field/fabric phase conserves food");
         var loaded = SaveCodec.Load(SaveCodec.Save(w));
