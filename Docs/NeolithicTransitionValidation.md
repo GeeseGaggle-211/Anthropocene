@@ -22,6 +22,12 @@ placed-camp control. The selection table reports all shortlisted candidates and
 their non-Cultivation outcomes. The final selected open site is seed 15/tile
 3819, a Grassland center, rather than the earlier Desert-overlap pilot site.
 
+The preflight conditioning remains visible rather than being filtered away:
+53 of 87 eligible original placed camps reached Cultivation, 28 Husbandry and
+6 Watercraft. The 57 shortlisted generated-site candidates comprise river
+12 (8 Cultivation/2 Husbandry/2 Watercraft), open 9 (5/2/2), medium 12 (5/5/2),
+high 12 (2/4/6), and dry 12 (7/0/5).
+
 | requested contrast | seed/tile | center environment | radius-one Low/Medium/High | operational Paleo support |
 |---|---:|---|---:|---:|
 | productive river | 2 / 3682 | Tropical | 0 / 0 / 7 | 461 |
@@ -66,7 +72,8 @@ and the per-good output, assignment and observed-technology timing table is
 [NeolithicTransitionValidationEmergence.csv](NeolithicTransitionValidationEmergence.csv).
 They record actual/first-resolved/discovery/final population and q/E, reserves,
 resident-denominator Farmer/Food-Gatherer/material-labor shares, specialists,
-QoL and footprint for every row.
+QoL and footprint for every row. The raw trace, rather than the compact phase
+table, separately records linked hunters.
 
 | case | transition habitat | P | food | q/E | QoL | moves | deaths |
 |---|---|---:|---:|---:|---:|---:|---:|
@@ -151,8 +158,9 @@ These are measurements of the present allocation policy, not technology quotas.
 
 ## Verification
 
-The harness build completed with zero warnings. The full 20-case scalar,
-reversed-two-worker and save-continuation replay fingerprints are identical:
+The harness build completed with zero warnings. The full-duration productive-river
+baseline's scalar, reversed-two-worker and save-continuation fingerprints are
+identical:
 `512461690A2C82585650D10899CEEC4FEB7CBB856C0E01C7F488198409812BB0`.
 The matrix contains 621 resolved turns, including 500 post-Cultivation turns.
 Astra's full raw-ledger audit covered 20 cases, 621 turn rows, three explicit
