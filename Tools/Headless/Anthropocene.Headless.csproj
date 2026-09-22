@@ -27,5 +27,6 @@
     <Compile Include="GeologyGenerationChecks.cs" />
     <Compile Include="NeolithicChecks.cs" />
     <Compile Include="EconomicAutomationChecks.cs" />
+    <Compile Include="ToolConsumptionChecks.cs" />
   </ItemGroup>
 </Project>

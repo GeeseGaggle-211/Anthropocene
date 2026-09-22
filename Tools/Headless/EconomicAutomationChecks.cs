@@ -45,11 +45,14 @@ internal static class EconomicAutomationChecks
             string extraction = specialist ? WorkforceRoles.ClayMiner : WorkforceRoles.Gatherer;
             string manufacture = specialist ? WorkforceRoles.Potter : WorkforceRoles.Craftsperson;
             if (specialist) c.People.NeolithicTechnologies.Add(NeolithicTech.Pottery);
-            c.Inventory.HandTools = 1;
             var source = MaterialEconomy.KnownSources(w, c, 0).First(s => s.Material == MaterialId.Clay);
             Near(MaterialEconomy.Extract(w, c, source, extraction, 80, 1000, 0, r), 80, "one extractor's actual time");
             double material = c.Inventory.Clay, equipment = 80;
             Near(material, specialist ? 80 : 20, "matching specialist/generalist extraction throughput");
+            // Tool wear is output-capacity based; provide one Hand Tool per
+            // expected pot so this fixture continues to isolate extraction and
+            // manufacturer rates.
+            c.Inventory.HandTools = material;
             NeolithicProduction.Produce(w, c, NeolithicProduction.Recipes(w.Config).First(p => p.Good == CraftGood.Pots), manufacture, 80, 80, 1000, ref equipment, r);
             Near(c.Inventory.Pots, material, "one extractor supplies one matching manufacturer's single-input throughput");
             Near(c.Inventory.Clay, 0, "every produced pot pays clay input");
@@ -86,7 +89,7 @@ internal static class EconomicAutomationChecks
     private static void Planning()
     {
         var w = Fixture(); var c = w.Camps[0]; Field(w);
-        c.Inventory.HandTools = 100;
+        c.Inventory.HandTools = 1000;
         foreach (string tech in NeolithicTech.FirstTier) c.People.NeolithicTechnologies.Add(tech);
         c.PotsTarget = 80; c.FarmToolsTarget = 80;
         string before = SaveCodec.Fingerprint(w);
@@ -142,7 +145,7 @@ internal static class EconomicAutomationChecks
     private static void FabricDoesNotFundBirths()
     {
         var w = Fixture(); var c = w.Camps[0]; Field(w); w.Config.AnnualHumanGrowthRate = .01145;
-        c.PlantFood = 8000; c.Inventory.HandTools = 2; c.Inventory.Cloth = 100; c.Inventory.HousingUnits = 100;
+        c.PlantFood = 8000; c.Inventory.HandTools = 100; c.Inventory.Cloth = 100; c.Inventory.HousingUnits = 100;
         c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
         c.Workforce.Assign(WorkforceRoles.Farmer, 40, 100); c.Workforce.Assign(WorkforceRoles.Weaver, 2, 100);
         c.EconomicLabor = new EconomicLaborPlan { ExpansionFarmers = 2.5, MaterialGatherers = 58 };
@@ -157,7 +160,7 @@ internal static class EconomicAutomationChecks
         WorldState GrowingFixture(bool hunter)
         {
             var w = Fixture(); var c = w.Camps[0]; Field(w); w.Config.MaintenanceCoefficient = 0; w.Config.AnnualHumanGrowthRate = .01145;
-            c.Population = 10; c.PlantFood = c.AnimalFood = c.AquaticFood = 0; c.Inventory.HandTools = 1; c.Inventory.HousingUnits = 10;
+            c.Population = 10; c.PlantFood = c.AnimalFood = c.AquaticFood = 0; c.Inventory.HandTools = 100; c.Inventory.HousingUnits = 10;
             c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
             c.Workforce.Assign(WorkforceRoles.Farmer, 9, c.Population); c.Workforce.Assign(WorkforceRoles.Weaver, 1, c.Population);
             c.EconomicLabor = new EconomicLaborPlan();

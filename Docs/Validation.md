@@ -1,5 +1,9 @@
 # Validation - September 22, 2026
 
+## Issue #3 realized-output tool consumption
+
+The issue #3 implementation keeps `EconomicLaborPlan.EquipmentTarget` as a worker staffing reservation while replacing permanent worker-time coverage with physical output capacity. Hand Tools support one finished unit each, Regular/Improved Tools support four, and the shared planner/resolver budget debits only realized useful production. Production receipts record fractional Hand Tool and Regular Tool consumption; Copper remains a legacy coverage hook without an invented durability multiplier. Focused capacity, material, labor, blocked/idle, shared-grade, replacement-demand, lifecycle, determinism, and save-continuation probes passed. The final focused run passed 231 Neolithic and 87 automation assertions plus 47 named tool-consumption regressions; the broader economy run passed 59 milestone-two, 82 milestone-three, 25 ecology, 10 agent-contract, 12-resolution scalar/2/4-worker replay, and the same focused checks. Independent `ToolReview` passed 1,944 recipe/capacity/material/labor/demand/duration cases with 11,725 assertions, plus lifecycle conservation and exact save continuation for sourced and unsourced runs. Logs are retained under ignored `TestResults/Issue20/`.
+
 ## Saved Neolithic demand automation — September 22, 2026
 
 Current behavior and reproducible measurements are in [EconomicAutomation.md](EconomicAutomation.md) and [NeolithicAutomationResults.md](NeolithicAutomationResults.md). The earlier automation measurements used revision `abe3e685ea17dda4ee3cf19b8e6c8fa837fe53b8`; the current focused validation uses Issue #2 revision `346281508a2777862b87bee657bf462f879041f5` after foundation commit `ab54ecf090ad89e56897cba2b4dbfc94b017f8e3`.

@@ -83,6 +83,12 @@ namespace Anthropocene.Simulation
                 }
                 intent.Labor.EquipmentTarget = Math.Min(c.Population, futureRoles.Values.Sum(v => Math.Ceiling(v - Epsilon)));
                 candidate.EconomicLabor = intent.Labor;
+                // The equipment target is a staffing reservation, not a second
+                // authority.  Seed the pure preview with the already source- and
+                // demand-limited future roles so replacement demand can bootstrap
+                // the first tool cycle without changing persisted assignments.
+                candidate.Workforce.Assignments = futureRoles.OrderBy(p => p.Key, StringComparer.Ordinal)
+                    .Select(p => new PopulationAssignment { Role = p.Key, Population = (int)Math.Ceiling(p.Value - Epsilon) }).ToList();
                 var rolesNow = new Dictionary<string, double>();
                 var coverage = new ToolCoverageBudget(w, c, intervals);
                 room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]); plant = plantEnvelope;

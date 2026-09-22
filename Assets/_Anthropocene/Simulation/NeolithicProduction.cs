@@ -27,17 +27,25 @@ namespace Anthropocene.Simulation
         public CraftGood Good;
         public string Role;
         public double Output, WorkerIntervals, Stone, Clay, Wood, PlantFood, EquipmentWorkerIntervals;
+        [System.Runtime.Serialization.OptionalField] public double HandToolsConsumed, ToolsConsumed, CopperToolsConsumed;
     }
     public sealed class ToolCoverageBudget
     {
-        private readonly double[] remaining, housingMultipliers;
-        public double Remaining => remaining.Sum();
+        // Hand and regular tools are consumable output capacity.  Copper retains
+        // the old worker-coverage hook until its own durability contract exists.
+        private readonly double[] remaining, housingMultipliers, consumed;
+        public double Remaining => remaining[0] + remaining[1] + remaining[2];
+        public double HandToolsConsumed => consumed[0];
+        public double ToolsConsumed => consumed[1];
+        public double CopperToolsConsumed => consumed[2];
         public ToolCoverageBudget(WorldState w, Camp c, double intervals, double limit = double.PositiveInfinity)
         {
             var n = w.Config.Neolithic;
-            remaining = new[] { c.Inventory.HandTools, c.Inventory.Tools, c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools : 0 }.Select(v => v * intervals / n.ToolCoveragePerWorker).ToArray();
-            double scale = Remaining > 0 ? Math.Min(1, limit / Remaining) : 0;
-            for (int i = 0; i < remaining.Length; i++) remaining[i] *= scale;
+            remaining = new[] { c.Inventory.HandTools, c.Inventory.Tools * 4, c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools * intervals / n.ToolCoveragePerWorker : 0 }.ToArray();
+            consumed = new double[3];
+            // The old argument was a worker-time ceiling.  Physical inventory is
+            // now the authoritative budget; callers keep the argument only for
+            // source compatibility and it must not reintroduce worker-count wear.
             housingMultipliers = new[] { n.HandToolsHousingMultiplier, n.ImprovedToolsHousingMultiplier, n.CopperToolsHousingMultiplier };
         }
         public double Capacity(CraftGood good, double rate, double labor)
@@ -47,7 +55,19 @@ namespace Anthropocene.Simulation
             {
                 double multiplier = good == CraftGood.Housing ? housingMultipliers[grade] : 1;
                 if (multiplier <= 0) continue;
-                double time = Math.Min(remaining[grade], labor); output += time * rate * multiplier; labor -= time;
+                double time;
+                if (grade == 2)
+                {
+                    time = Math.Min(remaining[grade], labor);
+                    output += time * rate * multiplier;
+                }
+                else
+                {
+                    double amount = Math.Min(remaining[grade], labor * rate * multiplier);
+                    output += amount;
+                    time = amount <= 0 ? 0 : amount / (rate * multiplier);
+                }
+                labor -= time;
             }
             return output;
         }
@@ -58,8 +78,18 @@ namespace Anthropocene.Simulation
             {
                 double multiplier = good == CraftGood.Housing ? housingMultipliers[grade] : 1;
                 if (multiplier <= 0) continue;
-                double time = Math.Min(remaining[grade], Math.Max(0, output) / (rate * multiplier));
-                remaining[grade] -= time; output -= time * rate * multiplier; used += time;
+                if (grade == 2)
+                {
+                    double time = Math.Min(remaining[grade], Math.Max(0, output) / (rate * multiplier));
+                    remaining[grade] -= time; output -= time * rate * multiplier; used += time;
+                }
+                else
+                {
+                    double units = Math.Min(remaining[grade], Math.Max(0, output));
+                    remaining[grade] -= units; output -= units;
+                    consumed[grade] += units / (grade == 0 ? 1 : 4);
+                    used += units / (rate * multiplier);
+                }
             }
             return used;
         }
@@ -84,15 +114,91 @@ namespace Anthropocene.Simulation
         {
             var n = w.Config.Neolithic;
             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
-            double craftWorkers = c.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Craftsperson || a.Role == WorkforceRoles.Potter || a.Role == WorkforceRoles.Weaver || a.Role == WorkforceRoles.Carpenter || a.Role == WorkforceRoles.Builder).Sum(a => a.Population);
-            // Automation may bootstrap equipment for the next feasible production plan;
-            // manufacturing still cannot use newly made tools retroactively.
-            craftWorkers = Math.Max(craftWorkers, Math.Min(c.Population, c.EconomicLabor?.EquipmentTarget ?? 0));
-            double usableCopper = c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools : 0;
+            if (good == CraftGood.HandTools || good == CraftGood.Tools)
+                return ToolReplacementDemand(w, c, good, years, residents);
             double target = good == CraftGood.Cloth ? residents * n.FabricConsumptionPerPersonTurn * (years / n.ReferenceTurnYears + n.UsefulFinishedGoodsReserveTurns) :
                 good == CraftGood.Housing ? residents / n.HousingPeoplePerUnit :
-                good == CraftGood.HandTools ? Math.Max(0, craftWorkers * n.ToolCoveragePerWorker - c.Inventory.Tools - usableCopper) :
-                good == CraftGood.Tools ? Math.Max(0, craftWorkers * n.ToolCoveragePerWorker - usableCopper) :
+                good == CraftGood.Pots ? c.PotsTarget : c.FarmToolsTarget;
+            return Math.Max(0, target - Stock(c, good));
+        }
+        private static double ToolReplacementDemand(WorldState w, Camp c, CraftGood good, double years, double residents)
+        {
+            var n = w.Config.Neolithic;
+            var recipes = Recipes(w.Config).Where(r => r.Equipment).OrderByDescending(r => Priority(c, r.Good)).ThenBy(r => r.Good).ToArray();
+            double MaterialPriority(MaterialId material) => material == MaterialId.Stone ? c.StonePriority : material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
+            var room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) +
+                (MaterialPriority(m) > 0 && n.SpecialistMaterialExtractionRate > 0 ? MaterialEconomy.KnownSources(w, c, w.Days).Where(s => s.Material == m).Sum(s => s.Available) : 0));
+            double plant = c.PlantFood, useful = 0, copperOutput = 0;
+            double copperLabor = c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools * w.Config.GenerationIntervals / n.ToolCoveragePerWorker : 0;
+            var labor = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToDictionary(role => role, role => c.Workforce.Assignments.Where(a => a.Role == role).Sum(a => a.Population) * w.Config.GenerationIntervals);
+            // Automation persists EquipmentTarget as the number of workers
+            // reserved for the next feasible equipment plan.  A depleted camp
+            // may temporarily have only Toolmakers assigned, so retain that
+            // reservation as prospective Craftsperson labor while sizing the
+            // replacement budget.  It is a worker count, never tool capacity.
+            if (c.EconomicLabor != null && c.EconomicLabor.EquipmentTarget > 0)
+            {
+                var equipmentRoles = new HashSet<string>(recipes.Select(r => r.Specialist).Where(role => c.People.HasTech(EconomicIntents.RequiredTechnology(role))));
+                equipmentRoles.Add(WorkforceRoles.Craftsperson);
+                double assignedEquipmentWorkers = c.Workforce.Assignments.Where(a => equipmentRoles.Contains(a.Role)).Sum(a => a.Population);
+                double missingEquipmentWorkers = Math.Max(0, Math.Min(c.Population, c.EconomicLabor.EquipmentTarget) - assignedEquipmentWorkers);
+                labor[WorkforceRoles.Craftsperson] += missingEquipmentWorkers * w.Config.GenerationIntervals;
+            }
+            var planned = recipes.ToDictionary(r => r.Good, r => 0d);
+            foreach (var role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
+            {
+                if (!labor.TryGetValue(role, out double availableLabor)) continue;
+                foreach (var recipe in recipes)
+                {
+                    if (Priority(c, recipe.Good) <= 0) continue;
+                    bool specialist = c.People.HasTech(recipe.Track);
+                    if (role != WorkforceRoles.Craftsperson && (!specialist || role != recipe.Specialist)) continue;
+                    if (role == WorkforceRoles.Craftsperson && recipe.SpecialistOnly) continue;
+                    double rate = recipe.Rate * (role == recipe.Specialist && specialist ? 1 : n.GeneralistTaskEfficiency);
+                    double wanted = Math.Max(0, DemandWithoutToolReplacement(w, c, recipe.Good, years, residents) - planned[recipe.Good]);
+                    double amount = Math.Min(wanted, availableLabor * rate);
+                    if (recipe.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / recipe.Stone);
+                    if (recipe.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / recipe.Clay);
+                    if (recipe.Wood > 0) amount = Math.Min(amount, room[MaterialId.Wood] / recipe.Wood);
+                    if (recipe.ConstructionMaterial > 0) amount = Math.Min(amount, (room[MaterialId.Wood] + room[MaterialId.Clay]) / recipe.ConstructionMaterial);
+                    if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
+                    if (amount <= 1e-12) continue;
+                    availableLabor -= amount / rate;
+                    planned[recipe.Good] += amount;
+                    useful += amount;
+                    double copperRate = rate * (recipe.Good == CraftGood.Housing ? n.CopperToolsHousingMultiplier : 1);
+                    double copperAmount = Math.Min(amount, copperLabor * copperRate);
+                    copperOutput += copperAmount;
+                    copperLabor -= copperRate > 0 ? copperAmount / copperRate : 0;
+                    room[MaterialId.Stone] -= amount * recipe.Stone; room[MaterialId.Clay] -= amount * recipe.Clay; room[MaterialId.Wood] -= amount * recipe.Wood;
+                    if (recipe.ConstructionMaterial > 0)
+                    {
+                        double construction = amount * recipe.ConstructionMaterial;
+                        double wood = Math.Min(room[MaterialId.Wood], construction);
+                        room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= construction - wood;
+                    }
+                    plant -= amount * recipe.PlantFood;
+                }
+            }
+            double capacity = c.Inventory.HandTools + c.Inventory.Tools * 4;
+            // Copper remains the legacy worker-time hook. Its contribution above
+            // follows each useful recipe's actual rate and Housing multiplier;
+            // there is no Copper output-capacity multiplier or wear.
+            capacity += copperOutput;
+            double deficit = Math.Max(0, useful - capacity);
+            var regularRecipe = Recipes(w.Config).Single(r => r.Good == CraftGood.Tools);
+            bool regularFeasible = c.People.HasTech(NeolithicTech.Toolmaking) && c.CraftingPriorities.Tools > 0 &&
+                (regularRecipe.Stone <= 0 || room[MaterialId.Stone] > 1e-12) &&
+                (regularRecipe.Wood <= 0 || room[MaterialId.Wood] > 1e-12);
+            if (good == CraftGood.Tools && regularFeasible) return deficit / 4;
+            if (good == CraftGood.HandTools && !regularFeasible) return deficit;
+            return 0;
+        }
+        private static double DemandWithoutToolReplacement(WorldState w, Camp c, CraftGood good, double years, double residents)
+        {
+            var n = w.Config.Neolithic;
+            double target = good == CraftGood.Cloth ? residents * n.FabricConsumptionPerPersonTurn * (years / n.ReferenceTurnYears + n.UsefulFinishedGoodsReserveTurns) :
+                good == CraftGood.Housing ? residents / n.HousingPeoplePerUnit :
                 good == CraftGood.Pots ? c.PotsTarget : c.FarmToolsTarget;
             return Math.Max(0, target - Stock(c, good));
         }
@@ -132,7 +238,10 @@ namespace Anthropocene.Simulation
             double rate = recipe.Rate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
             if (rate <= 0) return 0;
             coverage = coverage ?? new ToolCoverageBudget(w, c, intervals, equipmentIntervals);
-            double labor = recipe.Equipment ? Math.Min(workerIntervals, equipmentIntervals) : workerIntervals;
+            // The shared budget limits finished output.  The legacy equipment
+            // interval argument is retained for callers but is no longer a
+            // second, worker-count capacity gate.
+            double labor = workerIntervals;
             double amount = Math.Min(usefulDemand, recipe.Equipment ? coverage.Capacity(recipe.Good, rate, labor) : labor * rate);
             var inv = c.Inventory;
             if (recipe.Stone > 0) amount = Math.Min(amount, inv.Stone / recipe.Stone);
@@ -143,13 +252,19 @@ namespace Anthropocene.Simulation
             if (amount <= 1e-12) return 0;
             double wood = amount * recipe.Wood, clay = amount * recipe.Clay;
             if (recipe.ConstructionMaterial > 0) { double materials = amount * recipe.ConstructionMaterial; wood += Math.Min(inv.Wood, materials); clay += materials - Math.Min(inv.Wood, materials); }
+            double handBeforeBudget = recipe.Equipment ? coverage.HandToolsConsumed : 0;
+            double toolsBeforeBudget = recipe.Equipment ? coverage.ToolsConsumed : 0;
             double used = recipe.Equipment ? coverage.Spend(recipe.Good, rate, amount) : amount / rate;
+            // Spend reports cumulative budget use. Debit only this receipt's
+            // delta while keeping the budget shared across all production calls.
+            double consumedHand = recipe.Equipment ? coverage.HandToolsConsumed - handBeforeBudget : 0;
+            double consumedTools = recipe.Equipment ? coverage.ToolsConsumed - toolsBeforeBudget : 0;
+            inv.HandTools -= consumedHand; inv.Tools -= consumedTools;
             inv.Stone -= amount * recipe.Stone; inv.Wood -= wood; inv.Clay -= clay; c.PlantFood -= amount * recipe.PlantFood;
             switch (recipe.Good) { case CraftGood.HandTools: inv.HandTools += amount; break; case CraftGood.Pots: inv.Pots += amount; break; case CraftGood.Cloth: inv.Cloth += amount; break; case CraftGood.FarmTools: inv.FarmTools += amount; break; case CraftGood.Housing: inv.HousingUnits += amount; break; case CraftGood.Tools: inv.Tools += amount; break; }
-            if (recipe.Equipment) equipmentIntervals -= used;
             // Finished equipment becomes available at the next production interval;
             // it cannot supply worker-time retroactively to the interval that made it.
-            record.Production.Add(new ProductionReceipt { Camp = c.Id, Good = recipe.Good, Role = role, Output = amount, WorkerIntervals = used, Stone = amount * recipe.Stone, Clay = clay, Wood = wood, PlantFood = amount * recipe.PlantFood, EquipmentWorkerIntervals = recipe.Equipment ? used : 0 });
+            record.Production.Add(new ProductionReceipt { Camp = c.Id, Good = recipe.Good, Role = role, Output = amount, WorkerIntervals = used, Stone = amount * recipe.Stone, Clay = clay, Wood = wood, PlantFood = amount * recipe.PlantFood, EquipmentWorkerIntervals = recipe.Equipment ? used : 0, HandToolsConsumed = consumedHand, ToolsConsumed = consumedTools });
             var demographic = record.Demographics.FirstOrDefault(d => d.Camp == c.Id);
             if (demographic != null) demographic.ManufacturingFood += amount * recipe.PlantFood;
             double work = amount / recipe.Rate;
