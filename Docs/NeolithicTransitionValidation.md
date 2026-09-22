@@ -62,7 +62,8 @@ emergence tables from it.
 ## Final matrix
 
 All 20 rows reached Cultivation and 25 post-discovery resolutions. `P` is final
-resident population; food is the minimum realized satisfaction; `q/E` are final
+linked population (resident camp population plus any linked hunters); food is the
+minimum realized satisfaction; `q/E` are final
 mean footprint intensity/capital. Every row recorded zero discarded inventory
 and zero runner invariant failures.
 
@@ -138,13 +139,16 @@ it does not retune it.
 ## Workforce and emergence
 
 The live economy keeps remaining residents as food gatherers after Farmer and
-material assignments. At the final river row this is 338 Farmers (34.9%), 620
-food Gatherers (64.0%) and no material labor; the late deficit therefore occurs
-despite high food-gatherer coverage. The final high-forest row instead has 347
-Farmers (35.2%), 605.7 food Gatherers (61.4%) and 16.3 material labor (1.7%).
+material assignments. These workforce percentages use resident camp population,
+while the matrix `P` column is linked population. At the final river row this is
+338 Farmers (34.9%), 620 food Gatherers (64.0%) and no material labor; the late
+deficit therefore occurs despite high food-gatherer coverage. The final high-
+forest row is 986 residents / 999 linked people, with 347 Farmers (35.2%), 605.7
+food Gatherers (61.4%) and 16.3 material labor (1.7%). The medium-woodland row
+is 624 residents / 645 linked people.
 Fixed open and fixed dry finish Farmer-heavy (95.4% and 95.0%), with about 2.6
-and 2.0 material workers respectively. The CSV preserves the full rows and
-separates linked hunters from residents.
+and 2.0 material workers respectively. The compact CSV preserves resident-based
+workforce fields; the raw trace records linked hunters separately.
 
 Where Craftsperson activity emerges, first useful output is Hand Tools from the
 Craftsperson: turns 4–9 for the mobile/fixed/open variants, turn 7 for the river
