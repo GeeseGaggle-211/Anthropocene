@@ -23,7 +23,7 @@ public static class FarmFoodPhaseChecks
         w.Config.TurnDays = 20 * w.Config.DaysPerYear;
         w.Config.AnnualHumanGrowthRate = .01145;
         w.Config.FarmerProductivity = .01f;
-        w.Config.Neolithic.UsefulFinishedGoodsReserveTurns = 0;
+        w.Config.Neolithic.UsefulFinishedGoodsReserveYears = 0;
         var c = w.Camps[0];
         c.PlantFood = 16000;
         c.AnimalFood = c.AquaticFood = 0;

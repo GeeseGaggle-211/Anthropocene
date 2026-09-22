@@ -122,7 +122,7 @@ namespace Anthropocene.Simulation
             }
             double Shortfall(MaterialId material)
             {
-                double horizon = 1 + w.Config.Neolithic.MaterialReserveHorizonTurns;
+                double horizon = w.Config.Neolithic.MaterialReserveMultiplier(years);
                 double direct = Math.Max(0, forecast[material] * horizon - Inventory(c, material));
                 double spareWood = Math.Max(0, c.Inventory.Wood - forecast[MaterialId.Wood] * horizon);
                 double spareClay = Math.Max(0, c.Inventory.Clay - forecast[MaterialId.Clay] * horizon);

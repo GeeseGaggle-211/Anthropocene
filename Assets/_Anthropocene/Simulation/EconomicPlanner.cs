@@ -225,7 +225,7 @@ namespace Anthropocene.Simulation
                     raw[MaterialId.Wood] += outputs[r.Good] * r.Wood;
                     constructionDemand += outputs[r.Good] * r.ConstructionMaterial;
                 }
-                double horizon = 1 + n.MaterialReserveHorizonTurns;
+                double horizon = n.MaterialReserveMultiplier(years);
                 foreach (var m in MaterialEconomy.Materials) raw[m] = Math.Max(0, raw[m] * horizon - MaterialEconomy.Inventory(c, m));
                 // Existing wood/clay reserves substitute once, never once per source.
                 double spareWood = Math.Max(0, c.Inventory.Wood - outputs.Sum(p => recipes.First(r => r.Good == p.Key).Wood * p.Value) * horizon);

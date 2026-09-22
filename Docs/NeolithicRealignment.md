@@ -131,7 +131,7 @@ Serialized production defaults are in `Resources/OpeningConfig.json`.
 | Open / Woodland / Forest build factors | 1 / 1.3 / 1.5 | Canonical environment-plus-vegetation predicate |
 | Open / Woodland / Forest maintenance | 1 / 1.1 / 1.2 | Same canonical predicate |
 | GeneralistTaskEfficiency / SpecialistMaterialExtractionRate | .25 / 1 | Material units per worker/BaseDays |
-| MaterialReserveHorizonTurns / UsefulFinishedGoodsReserveTurns | 1 / 1 | Demand-responsive reserve targets, not free stock |
+| MaterialReserveHorizonYears / UsefulFinishedGoodsReserveYears | 20 / 20 | Physical reserve durations; current-turn demand is added separately |
 | PlantFoodPerFabricUnit | 1.0 | Exactly one plant Food per Fabric |
 | HousingMaterialUnitsPerHousing | 1.0 | One total Wood/Clay unit, not one of each |
 | FabricConsumptionPerPersonTurn | 1.0 | {0.25, 0.5, 1, 2, 4}; turn means 20 reference years |

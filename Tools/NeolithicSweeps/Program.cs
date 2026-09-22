@@ -187,7 +187,7 @@ internal static class Program
             int workers = Math.Min(slots, (int)Math.Ceiling(Math.Max(0, need) / rate));
             if (workers > 0) { e.Assignments.Add(new PopulationAssignment { Role = role, Population = workers }); slots -= workers; }
         }
-        Assign(WorkforceRoles.Weaver, NeolithicTech.Weaving, c.Population * n.FabricConsumptionPerPersonTurn * (1 + n.UsefulFinishedGoodsReserveTurns) - c.Inventory.Cloth, w.Config.GenerationIntervals * n.WeaverFabricOutputPerBaseDays);
+        Assign(WorkforceRoles.Weaver, NeolithicTech.Weaving, c.Population * n.FabricConsumptionPerPersonTurn * (1 + n.UsefulFinishedGoodsReserveReferenceTurns) - c.Inventory.Cloth, w.Config.GenerationIntervals * n.WeaverFabricOutputPerBaseDays);
         Assign(WorkforceRoles.Builder, NeolithicTech.Construction, c.Population / n.HousingPeoplePerUnit - c.Inventory.HousingUnits * (1 - n.HousingDecayPerTurn), w.Config.GenerationIntervals * n.BuilderHousingOutputPerBaseDays);
         if (slots > 0) e.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = slots });
         return e;
