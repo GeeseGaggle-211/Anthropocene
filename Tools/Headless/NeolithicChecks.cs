@@ -331,6 +331,11 @@ internal static class NeolithicChecks
         Near(migrated.Camps[0].Inventory.HousingUnits, 7, "legacy houses plus partial construction migrate once");
         Near(migrated.Camps[0].StonePriority + migrated.Camps[0].ClayPriority + migrated.Camps[0].WoodPriority, 3, "absent legacy sourcing fields receive real defaults");
         Check(migrated.Camps[0].CultivationFocusTile == -1, "absent legacy focus is not tile zero");
+        var partialConfig = Fixture(); partialConfig.Config.Neolithic.ReferencePopulation = 333;
+        var partial = SaveCodec.Load(MissingPotFields(partialConfig));
+        Near(partial.Config.Neolithic.PotStorageFoodPerUnit, 80, "missing Pot capacity field in existing Neolithic config receives default");
+        Near(partial.Config.Neolithic.PotDecayPerReferenceTurn, .1, "missing Pot decay field in existing Neolithic config receives default");
+        Near(partial.Config.Neolithic.ReferencePopulation, 333, "existing Neolithic config fields survive missing Pot migration");
         var preAgriculture = Fixture(false); preAgriculture.Camps[0].Workforce.Assign(WorkforceRoles.Farmer, 10, 100);
         Check(SaveCodec.Load(Legacy10(preAgriculture)).Camps[0].Workforce.Assigned == 0, "impossible legacy pre-Agriculture jobs are released to real gatherers");
         Near(migrated.Tiles[legacy.Camps[0].Tile].CultivationCapital, .25, "legacy q migrates to physical E", 1e-7);
@@ -458,6 +463,31 @@ internal static class NeolithicChecks
                 }
                 int tiles = reader.ReadInt32(); writer.Write(tiles);
                 for (int i = 0; i < tiles; i++) { writer.Write(reader.ReadBytes(97)); reader.ReadDouble(); reader.ReadInt32(); writer.Write(reader.ReadBytes(256)); }
+                unzip.CopyTo(zip);
+            }
+            return output.ToArray();
+        }
+    }
+    private static byte[] MissingPotFields(WorldState world)
+    {
+        using (var input = new MemoryStream(SaveCodec.Save(world)))
+        using (var unzip = new GZipStream(input, CompressionMode.Decompress))
+        using (var reader = new BinaryReader(unzip))
+        using (var output = new MemoryStream())
+        {
+            using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
+            using (var writer = new BinaryWriter(zip))
+            {
+                writer.Write(reader.ReadString()); int header = reader.ReadInt32();
+                using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(header), XmlDictionaryReaderQuotas.Max))
+                using (var metadata = new MemoryStream())
+                {
+                    var document = XDocument.Load(xml);
+                    string[] absent = { "PotStorageFoodPerUnit", "PotDecayPerReferenceTurn" };
+                    document.Descendants().Where(element => absent.Contains(element.Name.LocalName)).Remove();
+                    using (var binary = XmlDictionaryWriter.CreateBinaryWriter(metadata, null, null, false)) document.WriteTo(binary);
+                    writer.Write((int)metadata.Length); writer.Write(metadata.ToArray());
+                }
                 unzip.CopyTo(zip);
             }
             return output.ToArray();
