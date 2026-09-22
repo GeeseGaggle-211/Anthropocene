@@ -74,12 +74,13 @@ namespace Anthropocene.Presentation
             cy += 12;
             double potYears = world.Config.TurnDays / world.Config.DaysPerYear;
             GUI.Label(new Rect(x, cy, col - 8, 22), "Pots target: " + NeolithicProduction.TargetPots(world, camp, potYears).ToString("F2"), small); cy += 28;
-            DrawEconomicValue("Farm tools target", ref draft.FarmToolsTarget, x, ref cy, col, 1);
+            double farmToolForecast = CultivationEconomy.ForecastFarmToolWorkerYears(world, camp, potYears) / world.Config.Neolithic.FarmToolFarmerYearsPerUnit;
+            GUI.Label(new Rect(x, cy, col - 8, 22), "Farm tools forecast: " + farmToolForecast.ToString("F2"), small); cy += 28;
             double storageIntervals = world.Config.TurnDays / world.Config.BaseDays;
             double potStorage = camp.Inventory.Pots * world.Config.Neolithic.PotStorageFoodPerUnit;
             double storageCapacity = NeolithicProduction.StorageCapacity(world, camp, storageIntervals);
-            GUI.Label(new Rect(x, cy, col - 8, 110), $"Stone {camp.Inventory.Stone:F2}\nClay {camp.Inventory.Clay:F2}\nWood {camp.Inventory.Wood:F2}\nPots {camp.Inventory.Pots:F2} (+{potStorage:F2} storage)\nStorage capacity {storageCapacity:F2}\nHand tools {camp.Inventory.HandTools:F2}\nImproved tools {camp.Inventory.Tools:F2}", small); cy += 122;
-            GUI.Label(new Rect(x, cy, col - 8, 90), $"Crafting consumes tools with useful output. Pots add {world.Config.Neolithic.PotStorageFoodPerUnit:F0} food storage each and retain {100 * (1 - world.Config.Neolithic.PotDecayPerReferenceTurn):F0}% per {world.Config.Neolithic.ReferenceTurnYears:F0}-year reference turn. Farm Tool effects remain deferred.", small);
+            GUI.Label(new Rect(x, cy, col - 8, 132), $"Stone {camp.Inventory.Stone:F2}\nClay {camp.Inventory.Clay:F2}\nWood {camp.Inventory.Wood:F2}\nPots {camp.Inventory.Pots:F2} (+{potStorage:F2} storage)\nFarm tools {camp.Inventory.FarmTools:F2}\nStorage capacity {storageCapacity:F2}\nHand tools {camp.Inventory.HandTools:F2}\nImproved tools {camp.Inventory.Tools:F2}", small); cy += 144;
+            GUI.Label(new Rect(x, cy, col - 8, 100), $"Crafting consumes tools with useful output. Pots add {world.Config.Neolithic.PotStorageFoodPerUnit:F0} food storage each and retain {100 * (1 - world.Config.Neolithic.PotDecayPerReferenceTurn):F0}% per {world.Config.Neolithic.ReferenceTurnYears:F0}-year reference turn. Stone Farm Tools reduce maintenance and expansion labor for covered field work; they do not multiply harvest or ecology.", small);
             x += col + 10; float fy = y;
             GUI.Label(new Rect(x, fy, col, 24), "FIELDS & SOURCING", section); fy += 28;
             foreach (var t in observation.Tiles.Values.Where(t => t.Cultivable && world.Map.Distance(camp.Tile, t.Id) <= 1).OrderBy(t => t.Id))

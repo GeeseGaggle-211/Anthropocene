@@ -21,9 +21,12 @@ Wood/Clay, with free substitution, are mandatory configurable recipe inputs.
 | Tests | Existing Neolithic tests assert superseded behavior | Contract acceptance, deterministic simulation and Paleo regression coverage |
 
 Deferred: automatic fission, expedition formulas, irrigation construction/yield/
-withdrawal, SoilCondition, Copper tool durability, broad tool bonuses, Plough/Farm Tool effects,
-and full trade/logistics. Pots now provide additive food-storage capacity with configured
-duration-aware depreciation; Farm Tool field effects remain deferred.
+withdrawal, SoilCondition, Copper tool durability, broad tool bonuses, Plough and later
+agricultural tiers, and full trade/logistics. Pots now provide additive food-storage capacity
+with configured duration-aware depreciation. Stone Farm Tools provide the first labor-side
+field-work tier only: covered maintenance and expansion use the derived `.45/.40` efficiency,
+consume realized covered worker-years, and never directly modify physical q/E, Farmer harvest,
+or ecology.
 
 ## Source hierarchy and traceability
 

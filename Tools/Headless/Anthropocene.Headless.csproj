@@ -28,5 +28,6 @@
     <Compile Include="NeolithicChecks.cs" />
     <Compile Include="EconomicAutomationChecks.cs" />
     <Compile Include="ToolConsumptionChecks.cs" />
+    <Compile Include="FarmToolChecks.cs" />
   </ItemGroup>
 </Project>

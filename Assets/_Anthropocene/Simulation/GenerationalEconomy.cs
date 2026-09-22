@@ -185,6 +185,7 @@ namespace Anthropocene.Simulation
             // Materialization is a sequential write barrier before any worker reads the active state.
             foreach (var group in groups) { LazyEcology.MaterializeEcology(w, group.Tile, record.StartDays); touch(group.Tile); }
             var agriculturalCamps = w.Camps.Where(CultivationEconomy.Enabled).OrderBy(c => c.Id).ToArray();
+            var farmToolBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => new FarmToolWorkBudget(w, c));
             double years = record.Duration / w.Config.DaysPerYear;
             var biologicalBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => BiologicalFoodDemand(w, c, intervals, years));
             var inputBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => FabricFeedstockShortfall(w, c, intervals, years, feedstockForecasts[c.Id]));
@@ -206,7 +207,8 @@ namespace Anthropocene.Simulation
                     if (!availability.TryGetValue(id, out double amount)) availability[id] = amount = LazyEcology.AccessibleAvailability(w, id, start, segment.Days);
                     return amount;
                 }
-                foreach (var camp in agriculturalCamps) agriculturalLabor[camp.Id] = CultivationEconomy.Prepare(w, camp, start);
+                foreach (var camp in agriculturalCamps)
+                    agriculturalLabor[camp.Id] = CultivationEconomy.Prepare(w, camp, start, farmToolBudgets[camp.Id], segment.Days / w.Config.DaysPerYear);
                 foreach (var camp in agriculturalCamps)
                 {
                     double acceptedInput = Math.Min(inputBudgets[camp.Id], acceptedPlant[camp.Id]);
@@ -233,6 +235,12 @@ namespace Anthropocene.Simulation
                         if (transfer.Kind != "Fishing" && !tile.Aquatic && tile.WaterBody != WaterKind.Saltwater) acceptedPlant[camp] += transfer.Food;
                     }
                 }
+                // Maintenance is represented by the operating fraction committed
+                // for this barrier.  Consume only the covered worker-years that
+                // were actually assigned to that segment; planning Prepare calls
+                // never debit the turn-local budget.
+                foreach (var camp in agriculturalCamps)
+                    farmToolBudgets[camp.Id].Consume(agriculturalLabor[camp.Id].MaintenanceCoveredWorkerYears, w.Config.Neolithic.FarmToolFarmerYearsPerUnit);
                 start += segment.Days;
                 foreach (var camp in agriculturalCamps)
                 {
@@ -240,7 +248,7 @@ namespace Anthropocene.Simulation
                     foreach (int id in labor.Footprint) LazyEcology.MaterializeEcology(w, id, start);
                     double terrestrialGathered = results.Sum(result => result.Transfers.Where(t => t.Entity == camp.Id && t.Kind == "Gathering").Sum(t => t.Food));
                     CultivationEconomy.Expand(w, camp, terrestrialGathered / w.Config.GatherPerPerson * w.Config.BaseDays / w.Config.DaysPerYear, true, record);
-                    CultivationEconomy.Expand(w, camp, labor.ExpansionFarmers * segment.Days / w.Config.DaysPerYear, false, record);
+                    CultivationEconomy.Expand(w, camp, labor.ExpansionFarmers * segment.Days / w.Config.DaysPerYear, false, record, farmToolBudgets[camp.Id]);
                 }
             }
             LastMetrics.ActiveTiles = groups.Length; LastMetrics.EcologyMilliseconds = timer.Elapsed.TotalMilliseconds;
