@@ -57,6 +57,8 @@ namespace Anthropocene.Simulation
                 var room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]);
                 double initialWood = room[MaterialId.Wood], initialClay = room[MaterialId.Clay];
                 double directWood = 0, directClay = 0;
+                double housingWoodShare = 0, housingClayShare = 0;
+                bool finalRolePass = false;
                 double plant = plantEnvelope;
                 var requested = recipes.ToDictionary(r => r.Good, r => 0d);
                 var futureRoles = new Dictionary<string, double>();
@@ -74,9 +76,16 @@ namespace Anthropocene.Simulation
                     if (r.Wood > 0) amount = Math.Min(amount, room[MaterialId.Wood] / r.Wood);
                     if (r.ConstructionMaterial > 0)
                     {
-                        MaterialEconomy.HousingShares(initialWood, initialClay, directWood, directClay, out double woodShare, out double clayShare);
+                        double woodShare, clayShare;
+                        if (finalRolePass) { woodShare = housingWoodShare; clayShare = housingClayShare; }
+                        else MaterialEconomy.HousingShares(initialWood, initialClay, directWood, directClay, out woodShare, out clayShare);
                         if (woodShare + clayShare <= 0) amount = 0;
-                        else amount = Math.Min(amount, (room[MaterialId.Wood] + room[MaterialId.Clay]) / r.ConstructionMaterial);
+                        else
+                        {
+                            double freeWood = Math.Max(0, room[MaterialId.Wood] - (finalRolePass ? directWood : 0));
+                            double freeClay = Math.Max(0, room[MaterialId.Clay] - (finalRolePass ? directClay : 0));
+                            amount = Math.Min(amount, (freeWood + freeClay) / r.ConstructionMaterial);
+                        }
                     }
                     if (r.PlantFood > 0) amount = Math.Min(amount, plant / r.PlantFood);
                     if (debit)
@@ -84,14 +93,27 @@ namespace Anthropocene.Simulation
                         room[MaterialId.Stone] -= amount * r.Stone; room[MaterialId.Clay] -= amount * r.Clay; room[MaterialId.Wood] -= amount * r.Wood;
                         if (r.ConstructionMaterial <= 0)
                         {
-                            directWood += amount * r.Wood;
-                            directClay += amount * r.Clay;
+                            if (finalRolePass)
+                            {
+                                directWood = Math.Max(0, directWood - amount * r.Wood);
+                                directClay = Math.Max(0, directClay - amount * r.Clay);
+                            }
+                            else
+                            {
+                                directWood += amount * r.Wood;
+                                directClay += amount * r.Clay;
+                            }
                         }
                         double construction = amount * r.ConstructionMaterial;
-                        MaterialEconomy.HousingShares(initialWood, initialClay, directWood, directClay, out double housingWoodShare, out double housingClayShare);
-                        double wood = Math.Min(room[MaterialId.Wood], construction * housingWoodShare);
-                        double clay = Math.Min(room[MaterialId.Clay], construction - wood);
-                        wood += Math.Min(room[MaterialId.Wood] - wood, construction - wood - clay);
+                        double currentWoodShare;
+                        if (finalRolePass) currentWoodShare = housingWoodShare;
+                        else MaterialEconomy.HousingShares(initialWood, initialClay, directWood, directClay, out currentWoodShare, out _);
+                        double freeWood = Math.Max(0, room[MaterialId.Wood] - (finalRolePass ? directWood : 0));
+                        double freeClay = Math.Max(0, room[MaterialId.Clay] - (finalRolePass ? directClay : 0));
+                        double wood = Math.Min(freeWood, construction * currentWoodShare);
+                        double clay = Math.Min(freeClay, construction - wood);
+                        wood += Math.Min(freeWood - wood, construction - wood - clay);
+                        clay += Math.Min(freeClay - clay, construction - wood - clay);
                         room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= clay; plant -= amount * r.PlantFood;
                     }
                     return Math.Max(0, amount);
@@ -193,10 +215,12 @@ namespace Anthropocene.Simulation
                 var rolesNow = new Dictionary<string, double>();
                 var coverage = new ToolCoverageBudget(w, c, intervals);
                 room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]);
-                // The provisional output pass above only sizes field and
-                // construction intent. Rebuild the final role pass from fresh
-                // stock so direct inputs are reserved exactly once.
-                directWood = directClay = 0;
+                // Rebuild the final role pass from fresh stock while carrying
+                // the provisional direct reservation forward. It protects a
+                // later specialist job without counting those inputs twice;
+                // each realized direct receipt releases its reservation below.
+                MaterialEconomy.HousingShares(initialWood, initialClay, directWood, directClay, out housingWoodShare, out housingClayShare);
+                finalRolePass = true;
                 plant = plantEnvelope;
                 // Match production's role/recipe ordering and share one tool-time budget.
                 foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))

@@ -34,7 +34,7 @@ internal static class HousingMaterialChecks
     public static int Run()
     {
         checks = 0;
-        RatioAndFallback(); SourceRatio(); MandatoryReservations(); BlockedDirectDoesNotReserve(); ResolverChronology(); ReplacementForecast(); ReplacementPriorityPreservesLaborOrder(); ReplacementHorizonBlocksZeroResidualHousing(); PlannerHonorsZeroResidualHousing();
+        RatioAndFallback(); SourceRatio(); MandatoryReservations(); BlockedDirectDoesNotReserve(); ResolverChronology(); ReplacementForecast(); ReplacementPriorityPreservesLaborOrder(); ReplacementHorizonBlocksZeroResidualHousing(); PlannerHonorsZeroResidualHousing(); PlannerRetainsLaterDirectReservation();
         Console.WriteLine("PASS: " + checks + " residual Housing material assertions"); return checks;
     }
     private static void RatioAndFallback()
@@ -139,5 +139,16 @@ internal static class HousingMaterialChecks
         c.Inventory.Clay = 1;
         plan = EconomicPlanner.Plan(w, c, EconomicIntent.From(c));
         Near(plan.Assignments.Where(a => a.Role == WorkforceRoles.Builder).Sum(a => a.Population), 0, "planner does not staff Housing with zero residual material");
+    }
+    private static void PlannerRetainsLaterDirectReservation()
+    {
+        var w = NeolithicChecks.Fixture(); var c = w.Camps[0]; c.Population = 44; c.Inventory.Wood = 100; c.Inventory.Clay = 21.5; c.Inventory.HandTools = 1000; c.Inventory.Pots = 1; c.PlantFood = 100000;
+        w.Config.AnnualHumanGrowthRate = 0; w.Config.Neolithic.PotDecayPerReferenceTurn = 0;
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Construction);
+        c.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 1, Cloth = 0, FarmTools = 0, Housing = 2, Tools = 0 };
+        var plan = EconomicPlanner.Plan(w, c, EconomicIntent.From(c));
+        Near(plan.Assignments.Where(a => a.Role == WorkforceRoles.Craftsperson).Sum(a => a.Population), 2, "planner retains later direct Pot labor behind Housing");
+        EconomicIntents.Apply(c, plan); var record = new TurnRecord(); NeolithicProduction.ResolveCampNeolithic(w, c, 80, 20, record);
+        Near(record.Production.Where(p => p.Good == CraftGood.Pots).Sum(p => p.Output), 21, "resolver fulfills later direct Pot demand after Housing");
     }
 }
