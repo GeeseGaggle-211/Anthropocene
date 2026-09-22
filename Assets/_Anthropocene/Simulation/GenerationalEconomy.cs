@@ -143,8 +143,8 @@ namespace Anthropocene.Simulation
         private static void AddAgriculturalClaims(WorldState w, Camp camp, AgriculturalLabor labor, double intervals, double biological, double feedstock, Func<int, double> availability, List<Demand> claims)
         {
             var eligible = w.Map.Radius(camp.Tile, w.Config.GatherRadius).Where(id => PassiveGathering.Eligible(w, camp, id)).OrderBy(id => id).ToArray();
-            // Operators harvest the same accessible supply as gatherers, not a crop-only pool.
-            var fields = eligible;
+            // Operators harvest the same accessible terrestrial supply as gatherers, not a crop-only pool.
+            var fields = eligible.Where(id => w.Tiles[id].Land).ToArray();
             var remaining = eligible.ToDictionary(id => id, availability);
             double Allocate(IEnumerable<int> candidates, double requested, bool farmer, bool manufacturing)
             {

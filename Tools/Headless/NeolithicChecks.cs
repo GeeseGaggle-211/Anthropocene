@@ -35,8 +35,78 @@ internal static class NeolithicChecks
     }
     public static int Run()
     {
-        checks = 0; Cultivation(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); Smoke(); EconomicAutomationChecks.Run();
+        checks = 0; Cultivation(); TerrestrialFarmerClaims(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); Smoke(); EconomicAutomationChecks.Run();
         Console.WriteLine("PASS: " + checks + " Neolithic realignment assertions"); return checks;
+    }
+
+    private static void TerrestrialFarmerClaims()
+    {
+        var w = Fixture();
+        w.Config.TurnDays = 365;
+        w.Config.Mortality = 0;
+        w.Config.AnnualHumanGrowthRate = 0;
+        var c = w.Camps[0];
+        c.Population = 100;
+        c.PlantFood = 0;
+        c.AnimalFood = 0;
+        c.AquaticFood = 0;
+        c.Workforce.Assign(WorkforceRoles.Farmer, 20, c.Population);
+        c.EconomicLabor = new EconomicLaborPlan { ExpansionFarmers = 0 };
+
+        var neighbors = w.Map.Neighbors(c.Tile).Take(3).ToArray();
+        Check(neighbors.Length == 3, "fixture has three radius-one neighbors");
+        foreach (var tile in w.Tiles)
+        {
+            tile.Food = tile.PotentialFood = 1000;
+            for (int season = 0; season < 4; season++) tile.Seasons[season].MaxFood = tile.Seasons[season].MaxPotentialFood = 1000;
+        }
+        w.Tiles[neighbors[0]].Terrain = Terrain.Lake;
+        w.Tiles[neighbors[1]].Terrain = Terrain.Shallows;
+        w.Tiles[neighbors[1]].WaterBody = WaterKind.Saltwater;
+        w.Tiles[neighbors[1]].FreshwaterSource = FreshwaterSource.None;
+        w.Tiles[neighbors[1]].Freshwater = 0;
+        w.Tiles[neighbors[2]].Terrain = Terrain.Ocean;
+        w.Tiles[neighbors[2]].WaterBody = WaterKind.Saltwater;
+        w.Tiles[neighbors[2]].FreshwaterSource = FreshwaterSource.None;
+        w.Tiles[neighbors[2]].Freshwater = 0;
+        for (int season = 0; season < 4; season++)
+        {
+            w.Tiles[neighbors[1]].Seasons[season].MaxFreshwater = 0;
+            w.Tiles[neighbors[2]].Seasons[season].MaxFreshwater = 0;
+        }
+
+        var field = c.Tile;
+        w.Tiles[field].CultivationCapital = 1;
+        w.Tiles[field].Cultivation = .4f;
+        w.Tiles[field].CultivationOperator = c.Id;
+        var terrestrialControl = Fixture();
+        terrestrialControl.Config.TurnDays = 365;
+        terrestrialControl.Config.Mortality = 0;
+        terrestrialControl.Config.AnnualHumanGrowthRate = 0;
+        var controlCamp = terrestrialControl.Camps[0];
+        controlCamp.Population = 100;
+        controlCamp.PlantFood = controlCamp.AnimalFood = controlCamp.AquaticFood = 0;
+        controlCamp.Workforce.Assign(WorkforceRoles.Farmer, 20, controlCamp.Population);
+        controlCamp.EconomicLabor = new EconomicLaborPlan { ExpansionFarmers = 0 };
+        foreach (var tile in terrestrialControl.Tiles)
+        {
+            tile.Food = tile.PotentialFood = 1000;
+            for (int season = 0; season < 4; season++) tile.Seasons[season].MaxFood = tile.Seasons[season].MaxPotentialFood = 1000;
+        }
+        terrestrialControl.Tiles[controlCamp.Tile].CultivationCapital = 1;
+        terrestrialControl.Tiles[controlCamp.Tile].Cultivation = .4f;
+        terrestrialControl.Tiles[controlCamp.Tile].CultivationOperator = controlCamp.Id;
+        var record = new TurnResolver().Resolve(w, new Dictionary<int, List<Order>>());
+        var controlRecord = new TurnResolver().Resolve(terrestrialControl, new Dictionary<int, List<Order>>());
+        var cultivationFood = record.Transfers.Where(t => t.Kind == "Cultivation").Sum(t => t.Food);
+        var controlCultivationFood = controlRecord.Transfers.Where(t => t.Kind == "Cultivation").Sum(t => t.Food);
+        Check(cultivationFood > 0, "farmers retain positive terrestrial productivity");
+        Near(cultivationFood, controlCultivationFood, "farmer productivity remains unchanged", 1e-7);
+        Check(record.Transfers.Where(t => t.Kind == "Cultivation").All(t => w.Tiles[t.Tile].Land), "farmer claims remain terrestrial");
+        Check(!record.Transfers.Any(t => t.Kind == "Cultivation" && neighbors.Contains(t.Tile)), "farmers never claim Lake, Shallows, or Ocean tiles");
+        Check(record.Transfers.Any(t => t.Kind == "Aquatic gathering" && t.Tile == neighbors[0] && t.Food > 0), "Lake gathering remains available");
+        Check(record.Transfers.Any(t => t.Kind == "Marine gathering" && t.Tile == neighbors[1] && t.Food > 0), "Shallows gathering remains available");
+        Near(record.Demographics.Single().DiscardedInventory, 0, "aquatic filtering preserves no-waste accounting", 1e-7);
     }
     private static void Cultivation()
     {
