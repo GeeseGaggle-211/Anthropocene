@@ -12,6 +12,14 @@ Discrepancies found before editing:
 - Clay had no specialist. The inspector's allocation button was a one-time assignment, not a saved policy.
 - Fabric feedstock could be counted again as growth surplus. This was exposed during integrated automation review and is now reserved before growth allocation.
 
+### Post-growth Fabric budgeting
+
+The generation resolver now projects Fabric against the same resident population that will exist after the turn. The projection starts with the camp's residents plus connected hunters as the reproductive population, computes a candidate growth rate, converts that rate to the resulting integer births (including the carried fractional remainder), and asks `FabricFeedstockNeed` for that camp-resident count. A deterministic monotone bisection selects the greatest feasible rate while charging both growth food and the actual integer-population Fabric input to the available surplus. The fractional remainder is progress only; it is never treated as a person or a Fabric customer.
+
+The resolver keeps pre-turn stock separate from current-turn income. In particular, connected hunting can add `StepFoodIncome` after the planning barrier; it is passed as income to the forecast while the prior stock is passed separately, so the same hunt is not counted twice. Plant feedstock is accepted using the projected resident demand, then actual ecological receipts and inventory determine what production can consume. Existing food stockpiles can bridge a shortfall. Fabric input remains protected from the consumption/reserve/growth ordering and cannot fund births.
+
+This is a deterministic coupled feasibility search, not a promise that a pre-allocation forecast equals realized yield. Shared tiles, seasonal ecological limits, prior claims, and changing food stocks can reduce actual receipts; the resolver reconciles those receipts and the next turn replans from authoritative state. The one-unit Fabric Plant Food input and all growth, reserve, and production constants are unchanged.
+
 ## Operation
 
 The settlement inspector offers **Allocate once**, **Off**, **Next N turns**, and **Until disabled**. A positive duration includes the resolution on which the toggle is submitted. Replanning occurs after movement/dispatch and deposit of returning provisions, before the economy, through the same economic-intent validator used by player and AI orders. One countdown tick occurs per resolved turn. No new order is needed on subsequent turns. Manual workforce edits disable automation and clear its labor reservations. Turning automation off otherwise retains the last staffing/working-time plan. Priorities and stock targets remain editable while automation is on.
