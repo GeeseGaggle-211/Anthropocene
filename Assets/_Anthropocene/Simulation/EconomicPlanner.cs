@@ -61,33 +61,24 @@ namespace Anthropocene.Simulation
                 int proposedFarmers = 0;
                 double proposedExpansion = 0;
                 var farmRecipe = goods.FirstOrDefault(r => r.Good == CraftGood.FarmTools);
-                double protectedFarmWood = 0;
                 double farmPriority = farmRecipe == null ? 0 : NeolithicProduction.Priority(candidate, CraftGood.FarmTools);
+                bool FarmPrecedes(CraftRecipe r)
+                {
+                    if (farmRecipe == null || farmPriority <= 0) return false;
+                    double otherPriority = NeolithicProduction.Priority(candidate, r.Good);
+                    return farmPriority > otherPriority + Epsilon ||
+                        Math.Abs(farmPriority - otherPriority) <= Epsilon && CraftGood.FarmTools.CompareTo(r.Good) < 0;
+                }
                 string Role(CraftRecipe r) => c.People.HasTech(r.Track) ? r.Specialist : WorkforceRoles.Craftsperson;
                 double Rate(CraftRecipe r) => r.Rate * (c.People.HasTech(r.Track) ? 1 : n.GeneralistTaskEfficiency);
                 void Add(Dictionary<string, double> roles, string role, double workers) { if (workers > Epsilon) roles[role] = (roles.TryGetValue(role, out double old) ? old : 0) + workers; }
-                // FarmTools are evaluated after the ordinary goods, but a
-                // higher-priority field-tool need must still retain its feasible
-                // Wood share while lower-priority construction is considered.
-                // Estimate only the source- and tool-feasible prospective output;
-                // stocked or blocked FarmTools therefore reserve nothing.
-                if (farmRecipe != null && farmPriority > 0 && Rate(farmRecipe) > 0)
-                {
-                    var farmCandidate = Preview(c, intent, nextPopulation);
-                    farmCandidate.Workforce.Assignments = new List<PopulationAssignment> { new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = c.Population } };
-                    farmCandidate.EconomicLabor = new EconomicLaborPlan { ExpansionFarmers = c.Population };
-                    double farmDemand = NeolithicProduction.Demand(w, farmCandidate, CraftGood.FarmTools, years) * fulfillment;
-                    double farmCapacity = new ToolCoverageBudget(w, c, intervals).Capacity(CraftGood.FarmTools, Rate(farmRecipe), c.Population * intervals);
-                    protectedFarmWood = Math.Max(0, Math.Min(farmDemand, farmCapacity) * farmRecipe.Wood);
-                }
-                double reservedFarmWood = 0;
                 double Capped(CraftRecipe r, double amount, bool debit)
                 {
                     if (r.SpecialistOnly && !c.People.HasTech(r.Track) || Rate(r) <= 0) return 0;
                     if (r.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / r.Stone);
                     if (r.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / r.Clay);
-                    if (r.Wood > 0) amount = Math.Min(amount, Math.Max(0, room[MaterialId.Wood] - reservedFarmWood) / r.Wood);
-                    if (r.ConstructionMaterial > 0) amount = Math.Min(amount, (Math.Max(0, room[MaterialId.Wood] - reservedFarmWood) + room[MaterialId.Clay]) / r.ConstructionMaterial);
+                    if (r.Wood > 0) amount = Math.Min(amount, room[MaterialId.Wood] / r.Wood);
+                    if (r.ConstructionMaterial > 0) amount = Math.Min(amount, (room[MaterialId.Wood] + room[MaterialId.Clay]) / r.ConstructionMaterial);
                     if (r.PlantFood > 0) amount = Math.Min(amount, plant / r.PlantFood);
                     if (debit)
                     {
@@ -97,21 +88,16 @@ namespace Anthropocene.Simulation
                     }
                     return Math.Max(0, amount);
                 }
-                // Size non-field equipment against useful, source-feasible jobs, not
-                // against the population or a fixed craft quota. FarmTools are
-                // added after the candidate has a proposed field workforce.
-                foreach (var r in goods.Where(r => r.Good != CraftGood.FarmTools).OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
+                // Size ordinary goods in priority order. A higher-priority FarmTool
+                // recipe is deferred until its bounded field intent is known, so it
+                // can consume its own material share in the same ordered pass.
+                foreach (var r in goods.Where(r => r.Good != CraftGood.FarmTools && !FarmPrecedes(r)).OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
                 {
-                    double otherPriority = NeolithicProduction.Priority(candidate, r.Good);
-                    bool farmPrecedes = farmPriority > otherPriority + Epsilon ||
-                        Math.Abs(farmPriority - otherPriority) <= Epsilon && CraftGood.FarmTools.CompareTo(r.Good) < 0;
-                    reservedFarmWood = farmPrecedes ? protectedFarmWood : 0;
                     double amount = Capped(r, goals[r.Good] * fulfillment, true);
                     requested[r.Good] = amount;
                     double multiplier = r.Good == CraftGood.Housing ? NeolithicProduction.HousingMultiplier(w, c, c.Population) : 1;
                     if (multiplier > 0) Add(futureRoles, Role(r), amount / (Rate(r) * multiplier * intervals));
                 }
-                reservedFarmWood = 0;
                 // Build one resolver-shaped candidate: material-feasible jobs first,
                 // then the residual field workforce. The shared FarmTools demand
                 // helper can now see both maintenance and intended expansion.
@@ -151,9 +137,10 @@ namespace Anthropocene.Simulation
                     // Reserve the source-feasible prospective job before applying
                     // the current tool budget. This lets the shared replacement
                     // helper bootstrap Hand Tools for a first FarmTools cycle.
-                    double prospective = Capped(farmRecipe, desired, true);
+                    double prospective = Capped(farmRecipe, desired, false);
                     double manufacturingCapacity = new ToolCoverageBudget(w, c, intervals).Capacity(CraftGood.FarmTools, Rate(farmRecipe), c.Population * intervals);
                     double additional = Math.Min(prospective, manufacturingCapacity);
+                    additional = Capped(farmRecipe, additional, true);
                     requested[CraftGood.FarmTools] = additional;
                     // Keep a prospective, material-feasible producer visible to
                     // shared Hand/Regular replacement demand before coverage is
@@ -169,6 +156,17 @@ namespace Anthropocene.Simulation
                             proposedExpansion = Math.Max(0, Math.Min(proposedExpansion, proposedFarmers));
                         }
                     }
+                }
+                // Complete the same priority-ordered pass after FarmTools have
+                // taken their actual current-turn material. Prospective field-tool
+                // roles above remain visible to replacement-demand forecasting,
+                // while blocked output does not consume material needed elsewhere.
+                foreach (var r in goods.Where(r => r.Good != CraftGood.FarmTools && FarmPrecedes(r)).OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
+                {
+                    double amount = Capped(r, goals[r.Good] * fulfillment, true);
+                    requested[r.Good] = amount;
+                    double multiplier = r.Good == CraftGood.Housing ? NeolithicProduction.HousingMultiplier(w, c, c.Population) : 1;
+                    if (multiplier > 0) Add(futureRoles, Role(r), amount / (Rate(r) * multiplier * intervals));
                 }
                 // Keep the prospective producer reservation visible while the
                 // shared Hand/Regular replacement demand is forecast.  It is
