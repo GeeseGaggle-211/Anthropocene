@@ -303,7 +303,7 @@ internal static class ToolConsumptionChecks
         hc.Inventory.HandTools = 0;
         var toolsRecord = new TurnRecord();
         double equipment = 0;
-        NeolithicProduction.Produce(held, hc, Recipe(held, CraftGood.Tools), WorkforceRoles.Craftsperson, 80, 80, 1, ref equipment, toolsRecord);
+        NeolithicProduction.Produce(held, hc, Recipe(held, CraftGood.Tools), WorkforceRoles.Toolmaker, 80, 80, 1, ref equipment, toolsRecord);
         Near(toolsRecord.Production.Single().Output, .1, "fractional Stone and Wood permit fractional regular Tool production");
 
         fc.StonePriority = fc.WoodPriority = 0;
