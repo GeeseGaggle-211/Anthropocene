@@ -1,5 +1,13 @@
 # Validation - September 22, 2026
 
+## Issue #18 live husbandry matrix
+
+[NeolithicHusbandryValidation.md](NeolithicHusbandryValidation.md) records the
+25-generation live b=.40–.80 husbandry matrix, finite generated-range support
+probes, fixed-forage and chronology controls, full conservation evidence, and
+scalar/reversed/save replay. It measures live map and ecology limitations without
+retuning the first-pass husbandry calibration.
+
 ## Issue #14 Paleo→Agriculture transition matrix
 
 [NeolithicTransitionValidation.md](NeolithicTransitionValidation.md) records the
