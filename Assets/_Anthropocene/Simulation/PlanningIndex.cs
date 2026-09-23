@@ -58,12 +58,13 @@ namespace Anthropocene.Simulation
     public sealed class SettlementObservation
     {
         public readonly int Id, Tile, Population, Gatherers, LinkedPopulation;
+        public readonly bool RecentlyMoved;
         public readonly bool IsVillage;
         public readonly bool Agriculture, Husbandry;
         public readonly string[] Technologies;
         public readonly EconomicIntent Economy;
         public readonly EconomicIntent RecommendedEconomy;
         public readonly MaterialSourceObservation[] MaterialSources;
-        public SettlementObservation(Camp c, PlanningIndex index) { Id = c.Id; Tile = c.Tile; Population = c.Population; Gatherers = c.GathererPopulation; LinkedPopulation = index.Population(c); IsVillage = c.IsVillage; Agriculture = CultivationEconomy.Enabled(c); Husbandry = CultivationEconomy.HusbandryEnabled(c); Technologies = c.People.NeolithicTechnologies.ToArray(); Economy = EconomicIntent.From(c); RecommendedEconomy = Agriculture || Husbandry ? EconomicIntents.Automatic(index.World, c, true) : Economy.Copy(); MaterialSources = Agriculture ? MaterialEconomy.Observe(index.World, c, index.World.Days) : Array.Empty<MaterialSourceObservation>(); }
+        public SettlementObservation(Camp c, PlanningIndex index) { Id = c.Id; Tile = c.Tile; Population = c.Population; Gatherers = c.GathererPopulation; LinkedPopulation = index.Population(c); RecentlyMoved = c.Moves > 0 && c.StationaryTurns == 0; IsVillage = c.IsVillage; Agriculture = CultivationEconomy.Enabled(c); Husbandry = CultivationEconomy.HusbandryEnabled(c); Technologies = c.People.NeolithicTechnologies.ToArray(); Economy = EconomicIntent.From(c); RecommendedEconomy = Agriculture || Husbandry ? EconomicIntents.Automatic(index.World, c, true) : Economy.Copy(); MaterialSources = Agriculture ? MaterialEconomy.Observe(index.World, c, index.World.Days) : Array.Empty<MaterialSourceObservation>(); }
     }
 }

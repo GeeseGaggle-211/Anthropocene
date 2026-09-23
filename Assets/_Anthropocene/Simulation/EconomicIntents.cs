@@ -20,11 +20,12 @@ namespace Anthropocene.Simulation
         public int Focus = -1;
         [System.Runtime.Serialization.OptionalField] public int AutomationTurns;
         [System.Runtime.Serialization.OptionalField] public EconomicLaborPlan Labor;
+        [System.Runtime.Serialization.OptionalField] public double ManagedBreedingIntensity = .55;
         public double StonePriority = 1, ClayPriority = 1, WoodPriority = 1, PotsTarget, FarmToolsTarget;
-        public EconomicIntent Copy() => new EconomicIntent { Assignments = Assignments?.Select(a => a == null ? null : new PopulationAssignment { Role = a.Role, Population = a.Population }).ToList(), Priorities = Priorities == null ? null : new CraftingPriorities { HandTools = Priorities.HandTools, Pots = Priorities.Pots, Cloth = Priorities.Cloth, FarmTools = Priorities.FarmTools, Housing = Priorities.Housing, Tools = Priorities.Tools }, Focus = Focus, AutomationTurns = AutomationTurns, Labor = Labor?.Copy(), StonePriority = StonePriority, ClayPriority = ClayPriority, WoodPriority = WoodPriority, PotsTarget = PotsTarget, FarmToolsTarget = FarmToolsTarget };
-        public static EconomicIntent From(Camp c) => new EconomicIntent { Assignments = c.Workforce.Assignments, Priorities = c.CraftingPriorities, Focus = c.CultivationFocusTile, AutomationTurns = c.EconomyAutomationTurns, Labor = c.EconomicLabor, StonePriority = c.StonePriority, ClayPriority = c.ClayPriority, WoodPriority = c.WoodPriority, PotsTarget = c.PotsTarget, FarmToolsTarget = c.FarmToolsTarget }.Copy();
+        public EconomicIntent Copy() => new EconomicIntent { Assignments = Assignments?.Select(a => a == null ? null : new PopulationAssignment { Role = a.Role, Population = a.Population }).ToList(), Priorities = Priorities == null ? null : new CraftingPriorities { HandTools = Priorities.HandTools, Pots = Priorities.Pots, Cloth = Priorities.Cloth, FarmTools = Priorities.FarmTools, Housing = Priorities.Housing, Tools = Priorities.Tools }, Focus = Focus, AutomationTurns = AutomationTurns, Labor = Labor?.Copy(), StonePriority = StonePriority, ClayPriority = ClayPriority, WoodPriority = WoodPriority, PotsTarget = PotsTarget, FarmToolsTarget = FarmToolsTarget, ManagedBreedingIntensity = ManagedBreedingIntensity };
+        public static EconomicIntent From(Camp c) => new EconomicIntent { Assignments = c.Workforce.Assignments, Priorities = c.CraftingPriorities, Focus = c.CultivationFocusTile, AutomationTurns = c.EconomyAutomationTurns, Labor = c.EconomicLabor, StonePriority = c.StonePriority, ClayPriority = c.ClayPriority, WoodPriority = c.WoodPriority, PotsTarget = c.PotsTarget, FarmToolsTarget = c.FarmToolsTarget, ManagedBreedingIntensity = c.ManagedBreedingIntensity }.Copy();
         public string Stamp => string.Join(",", (Assignments ?? new List<PopulationAssignment>()).OrderBy(a => a?.Role, StringComparer.Ordinal).Select(a => a == null ? "invalid" : a.Role + "=" + a.Population)) + ":" + Focus + ":" + AutomationTurns + ":" + (Labor == null ? "manual" : string.Join(",", Labor.Values().Select(v => v.ToString("R", CultureInfo.InvariantCulture)))) + ":" + string.Join(",", Values().Select(v => v.ToString("R", CultureInfo.InvariantCulture)));
-        public IEnumerable<double> Values() => Priorities == null ? Array.Empty<double>() : new[] { Priorities.HandTools, Priorities.Pots, Priorities.Cloth, Priorities.FarmTools, Priorities.Housing, Priorities.Tools, StonePriority, ClayPriority, WoodPriority, PotsTarget, FarmToolsTarget };
+        public IEnumerable<double> Values() => Priorities == null ? Array.Empty<double>() : new[] { Priorities.HandTools, Priorities.Pots, Priorities.Cloth, Priorities.FarmTools, Priorities.Housing, Priorities.Tools, StonePriority, ClayPriority, WoodPriority, PotsTarget, FarmToolsTarget, ManagedBreedingIntensity };
     }
     public static class EconomicIntents
     {
@@ -45,6 +46,7 @@ namespace Anthropocene.Simulation
             if (e.Focus < -1 || e.Focus >= 0 && !c.FocusTiles.Contains(e.Focus)) return "Cultivation focus must be visible eligible radius-1 land.";
             if (!c.Agriculture && e.Assignments.Any(a => a.Role == WorkforceRoles.Farmer)) return "Farmer assignments require Cultivation.";
             if (!c.Husbandry && e.Assignments.Any(a => a.Role == WorkforceRoles.Herder)) return "Herder assignments require Animal Husbandry.";
+            if (e.ManagedBreedingIntensity > 1) return "Managed breeding intensity must be at most one.";
             return null;
         }
         public static void Apply(Camp c, EconomicIntent intent)
@@ -52,6 +54,7 @@ namespace Anthropocene.Simulation
             var e = intent.Copy(); c.Workforce.Assignments = e.Assignments; c.CraftingPriorities = e.Priorities;
             c.EconomyAutomationTurns = e.AutomationTurns; c.EconomicLabor = e.Labor;
             c.CultivationFocusTile = e.Focus; c.StonePriority = e.StonePriority; c.ClayPriority = e.ClayPriority; c.WoodPriority = e.WoodPriority; c.PotsTarget = e.PotsTarget; c.FarmToolsTarget = e.FarmToolsTarget;
+            c.ManagedBreedingIntensity = e.ManagedBreedingIntensity; c.ManagedBreedingPolicyInitialized = true;
         }
         // A policy proposal, copied into an ordinary validated order before use.
         public static EconomicIntent Automatic(WorldState w, Camp c, bool reset = false)

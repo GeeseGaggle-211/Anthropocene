@@ -471,3 +471,43 @@ The existing Agriculture player route also passed all five captures: queued plan
 normal field growth, recurring Fabric accounting, exact save/load, and saved
 two-turn automation completion. Restored and final panels were visually inspected;
 both player logs contained no gameplay exceptions.
+
+## Managed breeding policy validation — September 23, 2026
+
+Issue #17 stores one managed-breeding intensity per camp in the shared Economy
+intent. New camps start at .55, the healthy default, and the checked range is 0–1. It scales only
+the managed reproduction exponent; current realized nutrition remains the live
+constraint. Historic saves without the field migrate to .55, a genuine saved zero
+remains zero, and a present invalid value is rejected. The compatible
+`ANTHROPOCENE-11` save envelope is unchanged; the observation DTO advances to
+schema 10 for the policy and the owned recent-movement signal.
+
+Focused checks cover b=0 with retained fractional remainder, monotonic 0.5/1.0
+growth, current nutrition, 5/10/20/40-year exposure, split 10+10 versus 20-year
+partitioning, old-save migration, zero round trip, rejection, replay, and
+filtered-policy privacy. The heuristic uses the same validated Economy order:
+.55 normally; .45 below .95 nutrition, .80 management, adequate occupied
+pasture (band 2), three traversable adjacent adequate tiles, or above .60 Herder
+share; and .65 only for at least 25% owned loss or a real recent move with .80
+management, at most .60 Herder share, ample occupied pasture (band 3), and three
+visible traversable adjacent adequate tiles.
+These bands are first-pass policy choices; they do not add culling, herd caps,
+new forage or demographic rules. The player smoke queues b=0 without live
+mutation, verifies positive-nutrition zero births and its save/load, then verifies
+b=.4 survives a two-turn automation sequence and its save/load. The live
+husbandry ecology and breeding sweep remains Issue #18 validation.
+
+Astra independently passed the complete fixed headless suite (including 8,948
+geological assertions and twelve-resolution scalar/parallel/reversed replay),
+then reran the final 183 Husbandry assertions. Another 221 independent checks
+covered all requested breeding values and time partitions, partial nutrition,
+actual validated AI orders, invalid saved values, and a genuine pre-policy save.
+Unity passed 28/28 EditMode tests. The Windows build and five-frame Husbandry
+player route passed zero-breeding births, exact save/load and preservation of
+b=.4 through automation. Visual review caught a clipped breeding plus button;
+the corrected build passed the full player route again, and restored/final
+panels showed both controls inside the scroll area. Only that layout changed
+after the Unity tests; simulation source hashes remained identical. Evidence is
+ignored under `TestResults/Issue20/Issue17-Unity-20260923-032036` and the adjacent
+headless/independent review logs. No native mouse usability or natural-balance
+claim is made by this synthetic integration check.

@@ -375,7 +375,8 @@ namespace Anthropocene.Simulation
                     int newborns = 0;
                     if (herd.Animals > 0)
                     {
-                        double reproductionTarget = (herd.Animals + herd.GrowthRemainder) * Math.Exp(species.GrowthRate * years * herd.LastNutrition);
+                        double breeding = camp.ManagedBreedingIntensity;
+                        double reproductionTarget = (herd.Animals + herd.GrowthRemainder) * Math.Exp(species.GrowthRate * breeding * years * herd.LastNutrition);
                         newborns = Math.Max(0, (int)Math.Floor(reproductionTarget) - herd.Animals);
                         herd.GrowthRemainder = reproductionTarget - Math.Floor(reproductionTarget); herd.Animals += newborns;
                     }
