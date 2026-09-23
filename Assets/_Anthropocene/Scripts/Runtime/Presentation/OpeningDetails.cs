@@ -61,10 +61,18 @@ namespace Anthropocene.Presentation
             if (camp != null && CultivationEconomy.EconomyEnabled(camp))
             {
                 var inv = camp.Inventory;
+                double housingSupply = NeolithicProduction.HousingSupply(world, camp, world.Days);
                 value += "\nSettlement QoL: " + (camp.QoL * 100).ToString("F0") + "% (Food " + (camp.FoodNeedsMetRatio * 100).ToString("F0") + "%, Cloth " + (camp.ClothPerCapita * 100).ToString("F0") + "%, Shelter " + (camp.HousingPerCapita * 100).ToString("F0") + "%) · Automatic fission deferred" +
-                         "\nStores: Housing " + inv.HousingUnits.ToString("F2") + " · Cloth " + inv.Cloth.ToString("F0") + " · Pots " + inv.Pots.ToString("F0") + " · Tools " + inv.HandTools.ToString("F0") +
+                         "\nCurrent shelter: " + housingSupply.ToString("F2") + " units / " + (housingSupply * world.Config.Neolithic.HousingPeoplePerUnit).ToString("F1") + " people supported" +
+                         "\nStores: Cloth " + inv.Cloth.ToString("F0") + " · Pots " + inv.Pots.ToString("F0") + " · Tools " + inv.HandTools.ToString("F0") +
                          "\nRaw Stockpile: Stone " + inv.Stone.ToString("F0") + " · Clay " + inv.Clay.ToString("F0") + " · Wood " + inv.Wood.ToString("F0") +
                          "\nEconomy automation: " + (camp.EconomyAutomationTurns == 0 ? "Off" : camp.EconomyAutomationTurns < 0 ? "Until disabled" : camp.EconomyAutomationTurns + " turns remaining") + "\n[Double-click village tile to manage]";
+                if (CultivationEconomy.HusbandryEnabled(camp))
+                {
+                    double fixedHousing = NeolithicProduction.FixedHousingAt(world, camp.Id, camp.Tile, world.Days);
+                    value += "\nPastoral stores: Animal Fabric " + inv.AnimalFabric.ToString("F2") + " (shared clothing need) · Light Housing " + inv.LightHousingUnits.ToString("F2") + " portable · Herding Tools " + inv.HerdingTools.ToString("F2") +
+                             "\nShelter at camp: " + fixedHousing.ToString("F2") + " fixed + " + inv.LightHousingUnits.ToString("F2") + " portable · " + (housingSupply * world.Config.Neolithic.HousingPeoplePerUnit).ToString("F1") + " people capacity";
+                }
             }
             float height = text.CalcHeight(new GUIContent(value), width) + 12;
             GUI.Label(new Rect(14, y, width, height), value, text); y += height;
