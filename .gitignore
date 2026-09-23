@@ -46,3 +46,4 @@ TestResults/
 !Tools/ResourceAccess/Anthropocene.ResourceAccess.csproj
 !Tools/NeolithicSweeps/Anthropocene.NeolithicSweeps.csproj
 !Tools/NeolithicTransitionValidation/Anthropocene.NeolithicTransitionValidation.csproj
+!Tools/NeolithicHusbandryValidation/Anthropocene.NeolithicHusbandryValidation.csproj
