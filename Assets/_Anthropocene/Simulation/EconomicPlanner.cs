@@ -183,7 +183,7 @@ namespace Anthropocene.Simulation
                 {
                     double amount = Capped(r, RemainingGoodDemand(r) * fulfillment, true);
                     requested[r.Good] = amount;
-                    double multiplier = r.Good == CraftGood.Housing ? NeolithicProduction.HousingMultiplier(w, c, c.Population) : 1;
+                    double multiplier = (r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing) ? NeolithicProduction.HousingMultiplier(w, c, c.Population) : 1;
                     if (multiplier > 0) Add(futureRoles, Role(r), amount / (Rate(r) * multiplier * intervals));
                 }
                 // Demand probes carry virtual recipe output only for ordering.
@@ -259,7 +259,7 @@ namespace Anthropocene.Simulation
                 {
                     double amount = Capped(r, goals[r.Good] * fulfillment, true);
                     requested[r.Good] = amount;
-                    double multiplier = r.Good == CraftGood.Housing ? NeolithicProduction.HousingMultiplier(w, c, c.Population) : 1;
+                    double multiplier = (r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing) ? NeolithicProduction.HousingMultiplier(w, c, c.Population) : 1;
                     if (multiplier > 0) Add(futureRoles, Role(r), amount / (Rate(r) * multiplier * intervals));
                 }
                 // Keep the prospective producer reservation visible while the
@@ -305,6 +305,24 @@ namespace Anthropocene.Simulation
                     }
                 foreach (var job in rolesNow.OrderBy(p => p.Key, StringComparer.Ordinal))
                     intent.Assignments.Add(new PopulationAssignment { Role = job.Key, Population = (int)Math.Ceiling(job.Value - Epsilon) });
+                if (husbandryEnabled)
+                {
+                    // Preserve task-derived craft roles when current shared
+                    // equipment coverage blocks their output this turn. The
+                    // resolver uses these ordinary assignments to expose
+                    // downstream useful demand (for example, shelter demand
+                    // from an assigned Builder); it still produces nothing
+                    // without starting tool capacity. Count the reservation in
+                    // the same resident budget as every other planned job.
+                    foreach (var job in futureRoles.OrderBy(p => p.Key, StringComparer.Ordinal))
+                    {
+                        int plannedWorkers = (int)Math.Ceiling(job.Value - Epsilon);
+                        var assigned = intent.Assignments.FirstOrDefault(a => a.Role == job.Key);
+                        if (plannedWorkers <= 0 || assigned != null && assigned.Population >= plannedWorkers) continue;
+                        if (assigned == null) intent.Assignments.Add(new PopulationAssignment { Role = job.Key, Population = plannedWorkers });
+                        else assigned.Population = plannedWorkers;
+                    }
+                }
                 // Keep EquipmentTarget prospective through the shared replacement
                 // forecast. A zero current Hand/Regular-tool budget can suppress
                 // this turn's manufacture, while the material-feasible role still
