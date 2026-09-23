@@ -42,7 +42,7 @@ water `6.5228e-12`.
 realized final food gathering divided by live gathering productivity, while
 residual Gatherers remain assigned Gatherers and are not called idle labour.
 
-| Site / b | Final P | Final animals | A:P | Final Herders | Gather eq. | Min n / water | Animal births / deaths | Human births / deaths | Accepted Animal Product |
+| Site / b | Final P | Final animals | A:P | Turn-25 Herder assignment | Year-500 gather eq. | Run-min n / hydration | Animal births / deaths | Human births / deaths | Accepted Animal Product |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Pasture .40 | 279 | 62 | .22 | 32 | 124.98 | .340 / 1.000 | 143 / 91 | 279 / 24 | 48,683 |
 | Pasture .50 | 270 | 65 | .24 | 34 | 124.97 | .298 / .939 | 181 / 126 | 269 / 23 | 43,915 |
@@ -56,7 +56,11 @@ residual Gatherers remain assigned Gatherers and are not called idle labour.
 | Human-anchor stress .80 | 53 | 51 | .96 | 25 | 19.69 | .365 / .468 | 145 / 104 | 35 / 6 | 30,016 |
 
 All management fulfillment minima were one: `PlanHusbandry` reserved the needed
-Herders and all remaining residents stayed assigned Gatherers. On the stress
+Herders and all remaining phase-start residents stayed assigned Gatherers. The
+first table's `Run-min` values are the minimum realized herd nutrition and
+hydration across all 25 decisions; they are not the sampled nutrition in the
+separate year-100/300/500 table. Turn-25 Herder assignments and gathering
+equivalents use the final decision's phase-start workforce. On the stress
 range, Herder phase share rose from 33.33% at .40 to 47.17% at .80; realized
 gathering-equivalent share rose only 36.46% to 37.16%, while the residual
 gathering-equivalent fell from 30.21% to 15.67%. On the pasture range the
@@ -64,13 +68,25 @@ corresponding Herder shares were 11.19% to 15.61%, with residual equivalents
 45.11% to 37.93%. A residual equivalent is unused gathering capacity in that
 generation, not a validated idle worker, free craft capacity, or sustainable
 surplus: every final range has herd nutrition below one and several have human
-decline. In these runs, higher `b` increased observed cumulative births and
-final animal count in both ranges; the separate Issue #17 checks cover
-equal-condition reproductive intent. It did not create a hard herd threshold,
-movement, or fission: moves remained zero. The .70–.80 cases intensified animal death and
-pasture/water pressure. These generated ranges do not reproduce the analytical
-fresh-daughter-range upper bound, so their smaller populations and animal counts
-are an ecology/labour/map result, not evidence for retuning.
+decline. On the pasture range, herd forage demand over 500 years rose from
+45,088 at `b=.40` to 77,536 at `.80`, while realized forage intake was
+27,633–30,017.
+At the sampled year 300, herd nutrition was .641 / .256 / .212 for `b=.40` /
+`.60` / `.80`; at year 500 it was .433 / .390 / .333. Hydration was one at
+these sampled pasture endpoints, while the run-wide minimum hydration was
+.620–1.000. These receipts show the late pasture food constraint directly.
+Management remained fully covered, and turn-25 Herder assignments used 11.19%
+to 15.61% of phase-start residents, so the late nutrition loss is not a
+management-coverage failure. Higher `b` increased cumulative births in both
+ranges, but starvation deaths also rose; the separate Issue #17 checks cover
+equal-condition reproductive intent. The selected site had finite probe support
+of 87 animals and 279 people, yet the one-camp live runs ended with 62–81
+animals and 263–279 people. That probe is not a hard cap or promise: live forage
+claims, condition and resident food demand evolve together. These results
+identify ecology as the main late constraint, with breeding intensity driving
+more births and starvation deaths; there is no herd movement or fission policy
+to expand map access, and no abrupt labor saturation. They do not support
+retuning.
 
 ## Comparison with Part II analytical envelope
 
@@ -82,28 +98,39 @@ water, no implemented fission/migration policy, and the live simultaneous
 ecology/labour resolver. Its camp counts are therefore an upper-bound comparison,
 not a target for this map.
 
-| b | Part II P / A / camps at 500y | Live pasture P / A at 500y |
-| --- | ---: | ---: |
-| .40 | 664 / 552 / 4 | 279 / 62 |
-| .50 | 1,663 / 1,477 / 8 | 270 / 65 |
-| .60 | 3,182 / 3,669 / 16 | 265 / 70 |
-| .70 | 5,179 / 9,490 / 64 | 263 / 74 |
-| .80 | 6,765 / 22,154 / 128 | 265 / 81 |
+| b | Part II P / A / camps at 500y | Part II Herder / free share | Live pasture P / A at 500y |
+| --- | ---: | ---: | ---: |
+| .40 | 664 / 552 / 4 | 44.5% / 42.5% | 279 / 62 |
+| .50 | 1,663 / 1,477 / 8 | 45.7% / 42.6% | 270 / 65 |
+| .60 | 3,182 / 3,669 / 16 | 57.0% / 43.0% | 265 / 70 |
+| .70 | 5,179 / 9,490 / 64 | 90.5% / 9.5% | 263 / 74 |
+| .80 | 6,765 / 22,154 / 128 | 100% / 0% | 265 / 81 |
+
+The Part II labor shares are from its healthy analytical daughter-range model;
+they are not measured live assignments. The live pasture cases retained much
+larger non-Herder assignments because their single occupied range constrained
+herd growth through food availability before Herder capacity approached the
+analytical labor envelope.
 
 The three directly comparable analytical trajectories show the same early
 ordering but diverge once the selected live range is depleted:
 
-| b / year | Part II P / A | Live pasture P / A | Live herd n |
+| b / year | Part II P / A | Live pasture P / A | Live herd n at that year |
 | --- | ---: | ---: | ---: |
 | .40 / 100 | 75 / 22 | 74 / 22 | 1.000 |
-| .40 / 300 | 157 / 112 | 303 / 104 | .640 |
-| .40 / 500 | 664 / 552 | 279 / 62 | .430 |
+| .40 / 300 | 157 / 112 | 303 / 104 | .641 |
+| .40 / 500 | 664 / 552 | 279 / 62 | .433 |
 | .60 / 100 | 75 / 33 | 74 / 33 | 1.000 |
-| .60 / 300 | 322 / 361 | 290 / 117 | .257 |
-| .60 / 500 | 3,182 / 3,669 | 265 / 70 | .256 |
+| .60 / 300 | 322 / 361 | 290 / 117 | .256 |
+| .60 / 500 | 3,182 / 3,669 | 265 / 70 | .390 |
 | .80 / 100 | 75 / 50 | 74 / 49 | 1.000 |
-| .80 / 300 | 685 / 1,122 | 278 / 127 | .205 |
-| .80 / 500 | 6,765 / 22,154 | 265 / 81 | .205 |
+| .80 / 300 | 685 / 1,122 | 278 / 127 | .212 |
+| .80 / 500 | 6,765 / 22,154 | 265 / 81 | .333 |
+
+For this trajectory table, `n` is `min(FoodNutrition, WaterNutrition)` on the
+specific sampled turn, rounded to three decimals. It differs from the run-wide
+minimum in the first table; for example, the `.60` pasture herd reached .256
+food nutrition at year 300, then .390 at year 500.
 
 The live outcome keeps substantial assigned non-Herder labour in the .40–.60
 rows, but it does not reproduce the analytical healthy operating envelope after
@@ -112,11 +139,13 @@ nutrition, condition and source receipts needed for later calibration; this
 validation proposes no retuning.
 
 The near-human-anchor stress site's low direct herd support caused substantial
-animal starvation at every tested value. The pasture site also exhausted its
-occupied-tile forage at late turns: food and water claims are fully serialized,
-and the report does not attribute that to wild competition without an overlapping
-claim. Initial and recovery overflow are retained in the balances rather than
-being labelled waste.
+animal starvation at every tested value. On the pasture site, the occupied
+forage tile (4583) had `B=0`, `G=0`, and `LandCondition=.14` at year 500 in all
+five breeding cases; in the final decision its realized herd biomass intake was
+885–887 against a request of 2,048–2,656. Food and water claims are fully
+serialized, and the report does not attribute this depletion to wild competition
+without an overlapping claim. Initial and recovery overflow are retained in the
+balances rather than being labelled waste.
 
 ## Fixed controls and chronology
 
