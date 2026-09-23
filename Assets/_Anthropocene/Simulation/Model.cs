@@ -176,7 +176,11 @@ namespace Anthropocene.Simulation
         public double Cloth;
         public double FarmTools;
         public double ImprovedCeramics;
+        // HousingUnits is retained only for old-save migration. Fixed housing is
+        // authoritative in WorldState.FixedHousing; portable shelter and pastoral
+        // goods remain camp-carried inventory.
         public double HousingUnits;
+        [System.Runtime.Serialization.OptionalField] public double AnimalFabric, LightHousingUnits, HerdingTools;
         public double Houses;
         public double Stone;
         public double Clay;
@@ -186,13 +190,18 @@ namespace Anthropocene.Simulation
     public sealed class CraftingPriorities
     {
         [System.Runtime.Serialization.OnDeserializing]
-        private void InitializeNewRecipeDefaults(System.Runtime.Serialization.StreamingContext context) { Tools = new CraftingPriorities().Tools; }
+        private void InitializeNewRecipeDefaults(System.Runtime.Serialization.StreamingContext context)
+        {
+            var defaults = new CraftingPriorities();
+            Tools = defaults.Tools; AnimalFabric = defaults.AnimalFabric; LightHousing = defaults.LightHousing; HerdingTools = defaults.HerdingTools;
+        }
         public double HandTools = 0.15;
         public double Pots = 0.10;
         public double Cloth = 0.45;
         public double FarmTools = 0.10;
         public double Housing = 0.20;
         [System.Runtime.Serialization.OptionalField] public double Tools = .15;
+        [System.Runtime.Serialization.OptionalField] public double AnimalFabric = .45, LightHousing = .20, HerdingTools = .10;
     }
     [Serializable]
     public sealed class PopulationAssignment
@@ -308,6 +317,7 @@ namespace Anthropocene.Simulation
         public int Herd, Camp, StartingAnimals, SurvivingAnimals, NewbornAnimals, StarvationDeaths;
         public string Species;
         public double FoodNutrition, WaterNutrition, Nutrition, ManagementFulfillment, PotentialFood, AcceptedFood;
+        [System.Runtime.Serialization.OptionalField] public double CoveredHerderYears, HerdingToolsConsumed;
     }
     [Serializable]
     public sealed class Mandate
@@ -361,6 +371,12 @@ namespace Anthropocene.Simulation
         public void Log(string message) => Events.Add(message);
     }
     [Serializable]
+    public sealed class FixedHousingStock
+    {
+        public int CampId, Tile;
+        public double Units, LastUpdatedDays;
+    }
+    [Serializable]
     public sealed class WorldState
     {
         public const int GeneratorVersion = 11;
@@ -380,6 +396,9 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public WorldResourceState Resources;
         [System.Runtime.Serialization.OptionalField] public List<MaterialSourceState> MaterialSources = new List<MaterialSourceState>();
         [System.Runtime.Serialization.OptionalField] public List<MaterialKnowledge> MaterialKnowledge = new List<MaterialKnowledge>();
+        [System.Runtime.Serialization.OptionalField] public List<FixedHousingStock> FixedHousing = new List<FixedHousingStock>();
+        [System.Runtime.Serialization.OnDeserializing]
+        private void MarkLegacyFixedHousing(System.Runtime.Serialization.StreamingContext context) { FixedHousing = null; }
         public int Season => (int)(Days / Config.BaseDays) % 4;
         public HexMap Map => new HexMap(Config.Width, Config.Height);
         public SeasonData Ecology(int tile) => Tiles[tile].Seasons[Season];

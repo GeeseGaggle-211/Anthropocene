@@ -4,6 +4,11 @@ using System.Linq;
 
 namespace Anthropocene.Simulation
 {
+    public sealed class ManagedFoodForecast
+    {
+        public double AnimalFood, HumanFoodDisplaced;
+    }
+
     internal sealed class GenerationResource
     {
         public int Tile;
@@ -12,11 +17,65 @@ namespace Anthropocene.Simulation
 
     internal sealed class GrowthPlan
     {
-        public double Required, ConsumptionRequired, GrowthFood, ReproductivePopulation, FinalPopulation, ManufacturingInput;
+        public double Required, ConsumptionRequired, GrowthFood, ReproductivePopulation, FinalPopulation, ManufacturingInput, PlantManufacturingInput, AnimalManufacturingInput;
     }
 
     public sealed partial class TurnResolver
     {
+        // Planning envelope only: use visible ecology and the camp's own managed
+        // animals, with no newborns and no mutation. The resolver remains the
+        // authority for actual source competition, survival, and accepted output.
+        public static ManagedFoodForecast ForecastManagedAnimalFood(WorldState w, Camp c, int herders, double intervals, double years)
+        {
+            var forecast = new ManagedFoodForecast();
+            if (w == null || c == null || intervals <= 0 || years <= 0 || !CultivationEconomy.HusbandryEnabled(c)) return forecast;
+            var visible = Knowledge.Visible(w, c.Player);
+            var herds = w.Herds.Where(h => h.DomesticCamp == c.Id && h.Animals > 0 && visible.Contains(h.Tile)).OrderBy(h => h.Id).ToArray();
+            if (herds.Length == 0) return forecast;
+            var claims = new List<Demand>();
+            var requestedFood = new Dictionary<int, double>();
+            var requestedWater = new Dictionary<int, double>();
+            foreach (var herd in herds)
+            {
+                var species = w.Config.GetSpecies(herd.Species);
+                double food = herd.Animals * species.FoodConsumption * intervals;
+                double water = herd.Animals * species.FreshwaterConsumption * intervals;
+                requestedFood[herd.Id] = food; requestedWater[herd.Id] = water;
+                claims.Add(new Demand { Entity = herd.Id, Tile = herd.Tile, Kind = "Herd", PotentialFood = food });
+                var waterSource = w.Map.Radius(herd.Tile, 1).Where(visible.Contains)
+                    .OrderByDescending(tile => LazyEcology.ProjectEcology(w, tile, w.Days).Freshwater)
+                    .ThenBy(tile => tile == herd.Tile ? 0 : 1).ThenBy(tile => tile).DefaultIfEmpty(-1).First();
+                if (waterSource >= 0 && water > 0)
+                    claims.Add(new Demand { Entity = herd.Id, Tile = waterSource, Kind = "Herd", Freshwater = water });
+            }
+            var transfers = new Dictionary<int, (double food, double water)>();
+            foreach (var group in claims.GroupBy(d => d.Tile).OrderBy(g => g.Key))
+            {
+                var result = EcologicalPressure.Integrate(w, group.Key, group, w.Days, intervals * w.Config.BaseDays);
+                foreach (var transfer in result.Transfers)
+                {
+                    transfers.TryGetValue(transfer.Entity, out var prior);
+                    transfers[transfer.Entity] = (prior.food + transfer.PotentialFood, prior.water + transfer.Freshwater);
+                }
+                forecast.HumanFoodDisplaced += result.Pressure.Where(p => p.Pool == "Biomass" && p.Kind == "Herd").Sum(p => p.GatherableSpill);
+            }
+            double management = HerdingTooling.Plan(w, c, years, herders).Fulfillment;
+            foreach (var herd in herds)
+            {
+                var species = w.Config.GetSpecies(herd.Species);
+                transfers.TryGetValue(herd.Id, out var realized);
+                double foodNutrition = requestedFood[herd.Id] <= 1e-12 ? 1 : Numbers.Clamp(realized.food / requestedFood[herd.Id], 0, 1);
+                double waterNutrition = requestedWater[herd.Id] <= 1e-12 ? 1 : Numbers.Clamp(realized.water / requestedWater[herd.Id], 0, 1);
+                double nutrition = Math.Min(foodNutrition, waterNutrition);
+                forecast.AnimalFood += ManagedAnimalFoodYield(w, herd.Animals, nutrition, management, intervals);
+            }
+            return forecast;
+        }
+        private static double ManagedAnimalFoodYield(WorldState w, double animals, double nutrition, double management, double intervals)
+            => Math.Max(0, animals * w.Config.AnimalFoodPerManagedAnimal * w.Config.Consumption * intervals
+                * Math.Pow(Numbers.Clamp(nutrition, 0, 1), w.Config.AnimalFoodNutritionExponent)
+                * Math.Pow(Numbers.Clamp(management, 0, 1), w.Config.AnimalManagementExponent));
+
         private void ResolveEcology(WorldState w, List<Order> orders, HashSet<int> establishedHunters, TurnRecord record, Action<int> touch)
         {
             double intervals = record.Duration / w.Config.BaseDays;
@@ -100,7 +159,7 @@ namespace Anthropocene.Simulation
             {
                 var claims = campClaims[camp.Id];
                 double scale = Math.Min(1, BiologicalFoodDemand(w, camp, intervals, years) / Math.Max(1e-12, claims.Where(d => !d.Manufacturing).Sum(d => d.Food)));
-                double inputScale = Math.Min(1, FabricFeedstockShortfall(w, camp, intervals, years, feedstockForecasts[camp.Id]) / Math.Max(1e-12, claims.Where(d => d.Manufacturing).Sum(d => d.Food)));
+                double inputScale = Math.Min(1, PlantFabricFeedstockShortfall(w, camp, intervals, years, feedstockForecasts[camp.Id]) / Math.Max(1e-12, claims.Where(d => d.Manufacturing).Sum(d => d.Food)));
                 foreach (var claim in claims)
                 {
                     claim.Food *= claim.Manufacturing ? inputScale : scale;
@@ -189,7 +248,7 @@ namespace Anthropocene.Simulation
             var farmToolBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => new FarmToolWorkBudget(w, c));
             double years = record.Duration / w.Config.DaysPerYear;
             var biologicalBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => BiologicalFoodDemand(w, c, intervals, years));
-            var inputBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => FabricFeedstockShortfall(w, c, intervals, years, feedstockForecasts[c.Id]));
+            var inputBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => PlantFabricFeedstockShortfall(w, c, intervals, years, feedstockForecasts[c.Id]));
             var acceptedFood = w.Camps.ToDictionary(c => c.Id, c => 0d);
             var acceptedPlant = w.Camps.ToDictionary(c => c.Id, c => 0d);
             int FoodCamp(string kind, int entity) => kind == "Fishing" ? (Supply.Connected(w, hunters[entity]) ? hunters[entity].SourceCamp : -1) : kind == "Herd" || kind == "Foraging" ? -1 : entity;
@@ -287,18 +346,13 @@ namespace Anthropocene.Simulation
         private static void ResolveManagedHerds(WorldState w, TurnRecord record, double intervals, double years, double generationScale)
         {
             var managementByHerd = new Dictionary<int, double>();
+            var managementPlans = new Dictionary<int, HerdingManagementPlan>();
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
-                int herders = camp.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population);
-                var species = w.Herds.Where(h => h.DomesticCamp == camp.Id && h.Animals > 0).GroupBy(h => h.Species, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal).ToArray();
-                double totalRequirement = species.Sum(g => g.Sum(h => h.Animals) / Math.Max(1e-12, w.Config.AnimalsPerHerder));
-                foreach (var group in species)
-                {
-                    double speciesRequirement = group.Sum(h => h.Animals) / Math.Max(1e-12, w.Config.AnimalsPerHerder);
-                    double speciesHerders = totalRequirement <= 1e-12 ? 0 : Math.Min(herders, totalRequirement) * speciesRequirement / totalRequirement;
-                    double speciesCoverage = speciesRequirement <= 1e-12 ? 1 : Numbers.Clamp(speciesHerders / speciesRequirement, 0, 1);
-                    foreach (var herd in group.OrderBy(h => h.Id)) managementByHerd[herd.Id] = speciesCoverage;
-                }
+                var plan = HerdingTooling.Plan(w, camp, years);
+                managementPlans[camp.Id] = plan;
+                foreach (var herd in w.Herds.Where(h => h.DomesticCamp == camp.Id && h.Animals > 0).OrderBy(h => h.Id))
+                    managementByHerd[herd.Id] = plan.Fulfillment;
             }
             var potentialByCamp = new Dictionary<int, double>();
             var reportByHerd = new Dictionary<int, ManagedHerdReport>();
@@ -334,11 +388,21 @@ namespace Anthropocene.Simulation
                     herd.Animals -= deaths;
                 }
                 herd.SurvivingAnimals = herd.Animals; herd.StarvationDeaths = deaths;
-                double potential = herd.Animals * w.Config.AnimalFoodPerManagedAnimal * w.Config.Consumption * intervals
-                    * Math.Pow(nutrition, w.Config.AnimalFoodNutritionExponent) * Math.Pow(management, w.Config.AnimalManagementExponent);
-                herd.AnimalFoodPotential = Math.Max(0, potential);
+                double potential = ManagedAnimalFoodYield(w, herd.Animals, nutrition, management, intervals);
+                herd.AnimalFoodPotential = potential;
                 potentialByCamp[herd.DomesticCamp] = (potentialByCamp.TryGetValue(herd.DomesticCamp, out double total) ? total : 0) + herd.AnimalFoodPotential;
-                reportByHerd[herd.Id] = new ManagedHerdReport { Herd = herd.Id, Camp = herd.DomesticCamp, Species = herd.Species, StartingAnimals = herd.StartingAnimals, SurvivingAnimals = herd.SurvivingAnimals, StarvationDeaths = deaths, FoodNutrition = foodNutrition, WaterNutrition = waterNutrition, Nutrition = nutrition, ManagementFulfillment = management, PotentialFood = herd.AnimalFoodPotential };
+                var managementPlan = managementPlans.TryGetValue(herd.DomesticCamp, out var realizedManagement) ? realizedManagement : null;
+                double coveredShare = managementPlan == null || managementPlan.Animals <= 0 ? 0 : managementPlan.CoveredHerderYears * herd.StartingAnimals / managementPlan.Animals;
+                double toolsShare = managementPlan == null || managementPlan.Animals <= 0 ? 0 : managementPlan.ToolsConsumed * herd.StartingAnimals / managementPlan.Animals;
+                reportByHerd[herd.Id] = new ManagedHerdReport { Herd = herd.Id, Camp = herd.DomesticCamp, Species = herd.Species, StartingAnimals = herd.StartingAnimals, SurvivingAnimals = herd.SurvivingAnimals, StarvationDeaths = deaths, FoodNutrition = foodNutrition, WaterNutrition = waterNutrition, Nutrition = nutrition, ManagementFulfillment = management, PotentialFood = herd.AnimalFoodPotential, CoveredHerderYears = coveredShare, HerdingToolsConsumed = toolsShare };
+            }
+            // Herding capacity is snapshotted from stock present at the start of
+            // management. Debit its realized covered work before food/growth
+            // projections so replacement planning sees post-wear inventory.
+            foreach (var camp in w.Camps.OrderBy(c => c.Id))
+            {
+                if (!managementPlans.TryGetValue(camp.Id, out var plan)) continue;
+                if (plan.ToolsConsumed > 0) camp.Inventory.HerdingTools = Math.Max(0, camp.Inventory.HerdingTools - plan.ToolsConsumed);
             }
             // Project the entire potential receipt through the same growth/input
             // solver used by SustainGeneration.  Then cap the receipt and make
@@ -432,8 +496,8 @@ namespace Anthropocene.Simulation
                 // provenance left; charge only the plant input that can actually be
                 // paid by this candidate.  Keeping this clamp inside the rate search
                 // prevents unavailable plant feedstock from suppressing births.
-                double input = ActualFabricFeedstockNeed(w, camp, intervals, years, residents, true, false);
-                return new GrowthPlan { Required = populationBase + growthFood, ConsumptionRequired = populationBase, GrowthFood = growthFood, ReproductivePopulation = reproductivePopulation, FinalPopulation = finalPopulation, ManufacturingInput = input };
+                var input = ActualFabricFeedstockNeed(w, camp, intervals, years, residents, incomingAnimalFood, true, false);
+                return new GrowthPlan { Required = populationBase + growthFood, ConsumptionRequired = populationBase, GrowthFood = growthFood, ReproductivePopulation = reproductivePopulation, FinalPopulation = finalPopulation, PlantManufacturingInput = input.PlantFood, AnimalManufacturingInput = input.AnimalFood, ManufacturingInput = input.Total };
             }
             // The integer birth outcome is the Fabric customer. Search the monotone
             // combined cost instead of iterating residents, which can ping-pong at a
@@ -449,7 +513,11 @@ namespace Anthropocene.Simulation
                 }
             }
             var result = ForRate(low);
-            result.ManufacturingInput = Math.Min(result.ManufacturingInput, Math.Max(0, available - result.GrowthFood));
+            double manufacturingBudget = Math.Max(0, available - result.GrowthFood);
+            result.PlantManufacturingInput = Math.Min(result.PlantManufacturingInput, manufacturingBudget);
+            manufacturingBudget -= result.PlantManufacturingInput;
+            result.AnimalManufacturingInput = Math.Min(result.AnimalManufacturingInput, manufacturingBudget);
+            result.ManufacturingInput = result.PlantManufacturingInput + result.AnimalManufacturingInput;
             return result;
         }
 
@@ -555,7 +623,19 @@ namespace Anthropocene.Simulation
 
         private static double FabricFeedstockShortfall(WorldState w, Camp camp, double intervals, double years, double residentPopulation)
         {
-            double input = NeolithicProduction.FabricFeedstockNeed(w, camp, intervals, years, residentPopulation);
+            var input = NeolithicProduction.FabricFeedstockInputs(w, camp, intervals, years, residentPopulation);
+            if (input.Total <= 0) return 0;
+            int population = camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
+            double consumption = population * w.Config.Consumption * intervals;
+            double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, population, intervals), NeolithicProduction.StorageCapacityAfterPotDepreciation(w, camp, intervals, years));
+            double spareFood = Math.Max(0, camp.Food - consumption - reserve);
+            double sparePlant = Math.Min(camp.PlantFood, spareFood);
+            double spareAnimal = Math.Min(camp.AnimalFood, Math.Max(0, spareFood - sparePlant));
+            return Math.Max(0, input.Total - Math.Min(input.PlantFood, sparePlant) - Math.Min(input.AnimalFood, spareAnimal));
+        }
+        private static double PlantFabricFeedstockShortfall(WorldState w, Camp camp, double intervals, double years, double residentPopulation)
+        {
+            double input = NeolithicProduction.FabricFeedstockInputs(w, camp, intervals, years, residentPopulation).PlantFood;
             if (input <= 0) return 0;
             int population = camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
             double consumption = population * w.Config.Consumption * intervals;
@@ -571,10 +651,12 @@ namespace Anthropocene.Simulation
         // pure and is used from every growth-rate search and the pre-growth
         // headroom projection, so the integer birth boundary cannot see a
         // phantom fabric debit.
-        private static double ActualFabricFeedstockNeed(WorldState w, Camp camp, double intervals, double years, double residentPopulation, bool fieldWorkAlreadyResolved = true, bool potsAlreadyDecayed = false)
+        private static ManufacturingFoodPlan ActualFabricFeedstockNeed(WorldState w, Camp camp, double intervals, double years, double residentPopulation, double incomingAnimalFood = 0, bool fieldWorkAlreadyResolved = true, bool potsAlreadyDecayed = false)
         {
-            double forecast = NeolithicProduction.FabricFeedstockNeed(w, camp, intervals, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed);
-            return Math.Min(Math.Max(0, camp.PlantFood), Math.Max(0, forecast));
+            var forecast = NeolithicProduction.FabricFeedstockInputs(w, camp, intervals, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, Math.Max(0, camp.PlantFood), Math.Max(0, camp.AnimalFood + incomingAnimalFood));
+            forecast.PlantFood = Math.Min(Math.Max(0, camp.PlantFood), Math.Max(0, forecast.PlantFood));
+            forecast.AnimalFood = Math.Min(Math.Max(0, camp.AnimalFood + incomingAnimalFood), Math.Max(0, forecast.AnimalFood));
+            return forecast;
         }
 
         private static double UsefulFoodTarget(WorldState w, Camp camp, double intervals, double years)
@@ -586,16 +668,19 @@ namespace Anthropocene.Simulation
             return consumptionIncome + reserveFill + maximumGrowthFood;
         }
 
-        private static void ConsumeCampFood(Camp camp, double amount, double manufacturingInput)
+        private static void ConsumeCampFood(Camp camp, double amount, double plantManufacturingInput, double animalManufacturingInput)
         {
-            // Basic needs always get paid. Preserve plant feedstock only to the extent
-            // other food can cover this debit; there is still one conserved inventory.
-            double protectedPlant = Math.Min(camp.PlantFood, Math.Min(Math.Max(0, camp.Food - amount), manufacturingInput));
-            if (protectedPlant <= 0) { camp.Food -= amount; return; }
-            double available = camp.Food - protectedPlant;
+            // Basic needs always get paid. Retain only typed food inputs that fit
+            // beyond the current consumption debit; no Animal Product can become
+            // a PlantFood craft input or vice versa.
+            double afterNeeds = Math.Max(0, camp.Food - amount);
+            double protectedPlant = Math.Min(camp.PlantFood, Math.Min(afterNeeds, plantManufacturingInput));
+            double protectedAnimal = Math.Min(camp.AnimalFood, Math.Min(Math.Max(0, afterNeeds - protectedPlant), animalManufacturingInput));
+            if (protectedPlant + protectedAnimal <= 0) { camp.Food -= amount; return; }
+            double available = camp.Food - protectedPlant - protectedAnimal;
             double retained = available > 0 ? Math.Max(0, available - amount) / available : 0;
             camp.PlantFood = protectedPlant + (camp.PlantFood - protectedPlant) * retained;
-            camp.AnimalFood *= retained; camp.AquaticFood *= retained;
+            camp.AnimalFood = protectedAnimal + (camp.AnimalFood - protectedAnimal) * retained; camp.AquaticFood *= retained;
         }
 
         private static void SustainGeneration(WorldState w, TurnRecord record, double intervals, double generationScale, Dictionary<int, GrowthPlan> plans, Dictionary<int, double> foraged, HashSet<int> recovering)
@@ -604,7 +689,7 @@ namespace Anthropocene.Simulation
             {
                 var linked = w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).OrderBy(h => h.Id).ToArray();
                 int total = camp.Population + linked.Sum(h => h.Population); double required = plans[camp.Id].ConsumptionRequired;
-                camp.LastConsumed = Math.Min(required, camp.Food); ConsumeCampFood(camp, camp.LastConsumed, plans[camp.Id].ManufacturingInput); camp.FoodDeficit = required - camp.LastConsumed;
+                camp.LastConsumed = Math.Min(required, camp.Food); ConsumeCampFood(camp, camp.LastConsumed, plans[camp.Id].PlantManufacturingInput, plans[camp.Id].AnimalManufacturingInput); camp.FoodDeficit = required - camp.LastConsumed;
                 camp.FoodNeedsMetRatio = required > 0 ? camp.LastConsumed / required : 1;
                 if (camp.FoodDeficit > 1e-8) { camp.DeficitTurns++; camp.DeficitSeverity += camp.FoodDeficit / Math.Max(1, required) * generationScale; }
                 else { camp.DeficitTurns = 0; camp.DeficitSeverity = 0; }
@@ -620,7 +705,7 @@ namespace Anthropocene.Simulation
                 else
                 {
                     double growthFood = Math.Min(plans[camp.Id].GrowthFood, camp.Food);
-                    ConsumeCampFood(camp, growthFood, plans[camp.Id].ManufacturingInput); camp.LastConsumed += growthFood;
+                    ConsumeCampFood(camp, growthFood, plans[camp.Id].PlantManufacturingInput, plans[camp.Id].AnimalManufacturingInput); camp.LastConsumed += growthFood;
                     AddGrowth(w, camp, plans[camp.Id], record, summary);
                 }
                 summary.FoodConsumed += camp.LastConsumed;

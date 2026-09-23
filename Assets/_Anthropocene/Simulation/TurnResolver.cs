@@ -161,6 +161,10 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 int target = destinations[camp.Id];
+                // Fixed settlement Housing remains owned at the site where it
+                // was built; migrate any legacy carried stock before changing
+                // the camp's location.
+                NeolithicProduction.MigrateLegacyFixedHousing(w, camp);
                 if (target != camp.Tile) { camp.Moves++; camp.StationaryTurns = 0; camp.StationaryYears = 0; record.Log("Camp " + camp.Id + " moved from " + camp.Tile + " to " + target + "."); }
                 else camp.StationaryTurns++;
                 camp.Tile = target;

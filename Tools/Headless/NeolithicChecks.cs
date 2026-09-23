@@ -282,14 +282,14 @@ internal static class NeolithicChecks
     }
     private static void Needs()
     {
-        var w = Fixture(); var c = w.Camps[0]; c.Inventory.HousingUnits = 25; c.Population = 110;
-        NeolithicProduction.DepreciateHousing(w, c, 20); Near(c.Inventory.HousingUnits, 22.5, "housing depreciates once"); Near(c.HousingDemand, 5, "single replacement plus growth deficit"); Near(c.HousingReplacementDemand, 2.5, "replacement decomposition"); Near(c.HousingGrowthDemand, 2.5, "growth decomposition");
-        c.Population = 100; c.Inventory.Cloth = 150; c.Inventory.HousingUnits = 25; c.StationaryYears = 100;
+        var w = Fixture(); var c = w.Camps[0]; c.Population = 110; NeolithicProduction.AddFixedHousing(w, c, 25, w.Days);
+        NeolithicProduction.DepreciateHousing(w, c, 20); Near(c.Inventory.HousingUnits, 0, "fixed housing is not duplicated in carried inventory"); Near(NeolithicProduction.FixedHousingAt(w, c.Id, c.Tile, w.Days), 22.5, "occupied fixed housing depreciates once"); Near(c.HousingDemand, 5, "single replacement plus growth deficit"); Near(c.HousingReplacementDemand, 2.5, "replacement decomposition"); Near(c.HousingGrowthDemand, 2.5, "growth decomposition");
+        c.Population = 100; c.Inventory.Cloth = 150; w.FixedHousing.Single().Units = 25; w.FixedHousing.Single().LastUpdatedDays = w.Days; c.StationaryYears = 100;
         NeolithicProduction.ResolveNeeds(w, c, 20); Near(c.FabricConsumed, 100, "recurring Fabric need"); Near(c.Inventory.Cloth, 50, "stock bridges and is debited"); Near(c.ClothPerCapita, 1, "full physical clothing saturation");
         NeolithicProduction.ResolveNeeds(w, c, 20); Near(c.ClothPerCapita, .5, "stockpile cannot be reused"); Near(c.QoL, .75, "compensable rudimentary utility"); Near(c.Population, 100, "QoL deficit not fatal"); Check(w.Camps.Count == 1, "QoL does not fission");
         c.Inventory.Cloth = 80; NeolithicProduction.ResolveNeeds(w, c, 20); Near(c.QoL, .9, "80 percent clothing is graded");
         c.FoodNeedsMetRatio = .5; c.WaterNeedsMetRatio = .5; c.Inventory.Cloth = 100; NeolithicProduction.ResolveNeeds(w, c, 20); Near(c.QoL, .25, "basic food and water gate QoL");
-        c.StationaryYears = 0; c.Inventory.Cloth = 0; c.Inventory.HousingUnits = 0; c.FoodNeedsMetRatio = c.WaterNeedsMetRatio = 1; NeolithicProduction.ResolveNeeds(w, c, 0);
+        c.StationaryYears = 0; c.Inventory.Cloth = 0; w.FixedHousing.Single().Units = 0; c.Inventory.HousingUnits = 0; c.FoodNeedsMetRatio = c.WaterNeedsMetRatio = 1; NeolithicProduction.ResolveNeeds(w, c, 0);
         Near(c.RudimentaryExpectation, .25, "mobile expectation floor"); Near(c.HousingPerCapita, 0, "expectation cannot fake physical housing");
         Near(.1 / (4 * 2.5), .01, "Builder steady maintenance one percent"); Near(.1 / (4 * 2.5 * .25), .04, "generalist steady maintenance four percent");
     }
@@ -370,7 +370,7 @@ internal static class NeolithicChecks
         var migrated = SaveCodec.Load(Legacy10(legacy));
         Near(migrated.Config.Neolithic.PotStorageFoodPerUnit, 80, "absent legacy Pot capacity receives current default");
         Near(migrated.Config.Neolithic.PotDecayPerReferenceTurn, .1, "absent legacy Pot decay receives current default");
-        Near(migrated.Camps[0].Inventory.HousingUnits, 7, "legacy houses plus partial construction migrate once");
+        Near(migrated.Camps[0].Inventory.HousingUnits, 0, "legacy carried housing clears after migration"); Near(NeolithicProduction.FixedHousingAt(migrated, migrated.Camps[0].Id, migrated.Camps[0].Tile, migrated.Days), 7, "legacy houses plus partial construction migrate once to their saved tile");
         Near(migrated.Camps[0].StonePriority + migrated.Camps[0].ClayPriority + migrated.Camps[0].WoodPriority, 3, "absent legacy sourcing fields receive real defaults");
         Check(migrated.Camps[0].CultivationFocusTile == -1, "absent legacy focus is not tile zero");
         var partialConfig = Fixture(); partialConfig.Config.Neolithic.ReferencePopulation = 333;
@@ -381,14 +381,14 @@ internal static class NeolithicChecks
         var preAgriculture = Fixture(false); preAgriculture.Camps[0].Workforce.Assign(WorkforceRoles.Farmer, 10, 100);
         Check(SaveCodec.Load(Legacy10(preAgriculture)).Camps[0].Workforce.Assigned == 0, "impossible legacy pre-Agriculture jobs are released to real gatherers");
         Near(migrated.Tiles[legacy.Camps[0].Tile].CultivationCapital, .25, "legacy q migrates to physical E", 1e-7);
-        Near(SaveCodec.Load(SaveCodec.Save(migrated)).Camps[0].Inventory.HousingUnits, 7, "new-format reload never repeats legacy conversion");
+        var migratedReload = SaveCodec.Load(SaveCodec.Save(migrated)); Near(migratedReload.Camps[0].Inventory.HousingUnits, 0, "new-format reload never repeats legacy conversion"); Near(NeolithicProduction.FixedHousingAt(migratedReload, migratedReload.Camps[0].Id, migratedReload.Camps[0].Tile, migratedReload.Days), 7, "new-format reload preserves fixed housing");
 
         var covered = Fixture(); var cc = covered.Camps[0]; cc.Inventory.HandTools = cc.Inventory.Tools = 1; cc.Inventory.Wood = 100; cc.People.NeolithicTechnologies.Add(NeolithicTech.Construction);
         var coverage = new ToolCoverageBudget(covered, cc, 80); double toolTime = coverage.Remaining;
         var housingRecipe = NeolithicProduction.Recipes(covered.Config).Single(x => x.Good == CraftGood.Housing); var production = new TurnRecord();
         NeolithicProduction.Produce(covered, cc, housingRecipe, WorkforceRoles.Builder, 80, 80, 100, ref toolTime, production, coverage);
         NeolithicProduction.Produce(covered, cc, housingRecipe, WorkforceRoles.Craftsperson, 80, 80, 100, ref toolTime, production, coverage);
-        Near(cc.Inventory.HousingUnits, 4.458333333333333, "improved tool output is capped by realized labor and shared output capacity"); Near(cc.Inventory.Tools, 0, "regular tools are consumed by realized housing output"); Near(cc.Inventory.HandTools, .541666666666667, "hand tools finish the remaining realized output"); Near(coverage.Remaining, .541666666666667, "shared output capacity is exhausted only by realized work");
+        Near(NeolithicProduction.FixedHousingAt(covered, cc.Id, cc.Tile, covered.Days + 80 * covered.Config.BaseDays), 4.458333333333333, "improved tool output is capped by realized labor and shared output capacity"); Near(cc.Inventory.HousingUnits, 0, "fixed output is not duplicated in carried inventory"); Near(cc.Inventory.Tools, 0, "regular tools are consumed by realized housing output"); Near(cc.Inventory.HandTools, .541666666666667, "hand tools finish the remaining realized output"); Near(coverage.Remaining, .541666666666667, "shared output capacity is exhausted only by realized work");
         var bootstrap = Fixture(); bootstrap.Camps[0].Inventory.Stone = 10; var noCoverage = new ToolCoverageBudget(bootstrap, bootstrap.Camps[0], 80); toolTime = 0;
         NeolithicProduction.Produce(bootstrap, bootstrap.Camps[0], NeolithicProduction.Recipes(bootstrap.Config)[0], WorkforceRoles.Craftsperson, 80, 80, 1, ref toolTime, new TurnRecord(), noCoverage);
         Near(noCoverage.Remaining + toolTime, 0, "newly produced tools cannot backdate coverage");

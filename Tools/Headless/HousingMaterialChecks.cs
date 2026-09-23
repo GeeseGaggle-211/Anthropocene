@@ -71,7 +71,7 @@ internal static class HousingMaterialChecks
         double equipment = 1000; var record = new TurnRecord();
         NeolithicProduction.Produce(w, c, Recipe(w, CraftGood.FarmTools), WorkforceRoles.Carpenter, 1000, w.Config.GenerationIntervals, 6, ref equipment, record, new ToolCoverageBudget(w, c, w.Config.GenerationIntervals), plan);
         Near(c.Inventory.Wood, 3, "later direct recipe receives its reserved Wood once");
-        Near(c.Inventory.Wood + c.Inventory.Clay + c.Inventory.FarmTools + c.Inventory.HousingUnits, 18, "Housing and Farm Tool receipts conserve all material units");
+        Near(c.Inventory.Wood + c.Inventory.Clay + c.Inventory.FarmTools + NeolithicProduction.FixedHousingAt(w, c.Id, c.Tile, w.Days + w.Config.TurnDays), 18, "Housing and Farm Tool receipts conserve all material units");
     }
     private static void BlockedDirectDoesNotReserve()
     {

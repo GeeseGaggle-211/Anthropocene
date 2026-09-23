@@ -350,26 +350,57 @@ namespace Anthropocene.Simulation
         public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand = false, double residentPopulation = -1, bool postAgriculturalResolution = false)
             => Forecast(w, c, recipes, intervals, years, equipment, includePlantDemand, residentPopulation, postAgriculturalResolution, postAgriculturalResolution);
 
-        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed)
+        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1)
         {
             var planned = recipes.ToDictionary(r => r.Good, r => 0.0);
             var tools = new ToolCoverageBudget(w, c, intervals, equipment);
-            double plant = includePlantDemand ? double.PositiveInfinity : c.PlantFood;
+            double plant = plantFoodBudget >= 0 ? plantFoodBudget : includePlantDemand ? double.PositiveInfinity : c.PlantFood;
+            double animalFood = animalFoodBudget >= 0 ? animalFoodBudget : includePlantDemand ? double.PositiveInfinity : c.AnimalFood;
+            double animalFabric = Math.Max(0, c.Inventory.AnimalFabric);
             foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
             {
                 double labor = CultivationEconomy.Workers(c, role) * intervals;
+                bool lightHousingUseful = NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 &&
+                    (CultivationEconomy.Workers(c, WorkforceRoles.Builder) > 0 || CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0);
                 foreach (var recipe in recipes.OrderByDescending(r => NeolithicProduction.Priority(c, r.Good)).ThenBy(r => r.Good))
                 {
                     if (NeolithicProduction.Priority(c, recipe.Good) <= 0) continue;
+                    if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c) || recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) continue;
                     bool specialist = role == recipe.Specialist && c.People.HasTech(recipe.Track);
                     if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) continue;
                     double rate = recipe.Rate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
                     if (rate <= 0) continue;
-                    double amount = Math.Min(Math.Max(0, NeolithicProduction.Demand(w, c, recipe.Good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed) - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
+                    double useful = NeolithicProduction.Demand(w, c, recipe.Good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed);
+                    if (recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric)
+                    {
+                        double residents = residentPopulation < 0 ? c.Population : residentPopulation;
+                        var n = w.Config.Neolithic;
+                        double clothing = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
+                        double shelter = lightHousingUseful ? Math.Max(0, residents / n.HousingPeoplePerUnit - NeolithicProduction.HousingSupply(w, c, w.Days + years * w.Config.DaysPerYear)) : 0;
+                        double virtualCloth = Math.Max(0, c.Inventory.Cloth) + planned[CraftGood.Cloth];
+                        double virtualAnimalFabric = animalFabric;
+                        double remainingClothing = Math.Max(0, clothing - virtualCloth - virtualAnimalFabric);
+                        double clothingBeforeAnimalFabric = Math.Max(0, clothing - virtualCloth);
+                        double animalFabricForShelter = Math.Max(0, virtualAnimalFabric - clothingBeforeAnimalFabric);
+                        double remainingShelter = Math.Max(0, shelter - animalFabricForShelter - planned[CraftGood.LightHousing]);
+                        // Cloth and Animal Fabric satisfy one shared clothing
+                        // target. Their priority order determines which recipe
+                        // serves the remaining demand; the forecast must debit
+                        // both outputs from the same virtual ledger.
+                        useful = recipe.Good == CraftGood.Cloth
+                            ? remainingClothing
+                            : remainingClothing + remainingShelter;
+                    }
+                    bool sharedFabricNeed = recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric;
+                    double amount = Math.Min(sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
                     if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
+                    if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
+                    if (recipe.AnimalFabric > 0) amount = Math.Min(amount, animalFabric / recipe.AnimalFabric);
                     if (amount <= 0) continue;
                     labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : amount / rate;
-                    planned[recipe.Good] += amount; plant -= amount * recipe.PlantFood;
+                    planned[recipe.Good] += amount; plant -= amount * recipe.PlantFood; animalFood -= amount * recipe.AnimalFood;
+                    if (recipe.Good == CraftGood.AnimalFabric) animalFabric += amount;
+                    animalFabric -= amount * recipe.AnimalFabric;
                 }
             }
             return planned;

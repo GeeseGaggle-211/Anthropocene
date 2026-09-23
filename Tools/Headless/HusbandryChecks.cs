@@ -27,7 +27,7 @@ internal static class HusbandryChecks
 
     public static int Run()
     {
-        checks = 0; FullManagedOutput(); UnderManagementAndNoCap(); CurrentNutritionAndNewbornBoundary(); ProportionalSpeciesManagement(); SharedControlAndSave(); ObservationAndOrderContracts(); PartitionedExposure(); MixedFoodInputBoundary(); MixedAnimalOnlyDoesNotChargePlant(); StorageReceivingCapacity(); SharedStarvationAndSourceLedgers(); SpeciesReplayAndContinuation(); StaleNutritionAndNewbornBoundary(); BreedingIntensityPolicy();
+        checks = 0; FullManagedOutput(); UnderManagementAndNoCap(); CurrentNutritionAndNewbornBoundary(); ProportionalSpeciesManagement(); SharedControlAndSave(); ObservationAndOrderContracts(); PartitionedExposure(); MixedFoodInputBoundary(); MixedAnimalOnlyDoesNotChargePlant(); TypedFabricPriorityBudget(); StorageReceivingCapacity(); SharedStarvationAndSourceLedgers(); SpeciesReplayAndContinuation(); StaleNutritionAndNewbornBoundary(); BreedingIntensityPolicy(); HerdingToolCoverage();
         Console.WriteLine("PASS: " + checks + " managed husbandry assertions"); return checks;
     }
     private static void FullManagedOutput()
@@ -85,7 +85,7 @@ internal static class HusbandryChecks
         var noHerd = NeolithicChecks.Fixture(true); var noHerdObservation = new AgentObservationBuilder().Build(noHerd, noHerd.Camps[0].Player); var herder = EconomicIntent.From(noHerd.Camps[0]); herder.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = 1 });
         Check(OrderRules.Validate(noHerdObservation, new Order(OrderKind.Economy, noHerd.Camps[0].Id) { Economy = herder }) != null, "Herder remains illegal without Husbandry");
         c.Moves = 1; c.StationaryTurns = 0; var movedDto = ObservationContract.Deserialize(ObservationContract.Serialize(new AgentObservationBuilder().Build(w, c.Player), new Mandate()));
-        Check(movedDto.Schema == AgentObservation.SchemaVersion && movedDto.Settlements.Single(s => s.Id == c.Id).RecentlyMoved && Math.Abs(movedDto.Settlements.Single(s => s.Id == c.Id).Economy.ManagedBreedingIntensity - c.ManagedBreedingIntensity) < 1e-8, "schema-ten DTO carries own movement and shared breeding policy"); c.Moves = 0;
+        Check(movedDto.Schema == AgentObservation.SchemaVersion && movedDto.Settlements.Single(s => s.Id == c.Id).RecentlyMoved && Math.Abs(movedDto.Settlements.Single(s => s.Id == c.Id).Economy.ManagedBreedingIntensity - c.ManagedBreedingIntensity) < 1e-8, "schema-eleven DTO carries own movement and shared breeding policy"); c.Moves = 0;
 
         int foreignTile = w.Map.Neighbors(c.Tile).First(); var foreignCamp = new Camp { Id = w.NextId++, Player = 1, Tile = foreignTile, Population = 20 }; w.Camps.Add(foreignCamp); Ownership.Bind(w);
         var foreign = new Herd { Id = w.NextId++, Tile = foreignTile, Species = "goat", Animals = 17, DomesticCamp = foreignCamp.Id, OwnerSociety = foreignCamp.SocietyId, LastNutrition = .2, ManagementFulfillment = .1, AnimalFoodProduced = 999 };
@@ -122,7 +122,7 @@ internal static class HusbandryChecks
             var w = Fixture(animals, herders); var c = w.Camps[0];
             c.Technology = Technology.Cultivation; c.Technologies[(int)Technology.Cultivation] = true; c.People.Progression.Era = Era.Neolithic;
             w.Config.AnnualHumanGrowthRate = .01145;
-            c.CraftingPriorities = new CraftingPriorities { Cloth = cloth ? 1 : 0 };
+            c.CraftingPriorities = new CraftingPriorities { Cloth = cloth ? 1 : 0, AnimalFabric = 0, LightHousing = 0, HerdingTools = 0 };
             double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, c.Population, w.Config.GenerationIntervals), NeolithicProduction.StorageCapacity(w, c, w.Config.GenerationIntervals));
             c.PlantFood = plant; c.AnimalFood = Math.Max(0, reserve - plant);
             c.DeficitTurns = deficitTurns; c.Inventory.HandTools = 10000; c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving); c.Workforce.Assign(WorkforceRoles.Weaver, weavers, c.Population);
@@ -149,6 +149,28 @@ internal static class HusbandryChecks
         Check(fourCloth.Growth == 25 && fourPlain.Growth == 25, "post-growth Fabric projection preserves births with four Weavers");
         Near(fourCloth.Demographics.Single().ManufacturingFood, 250, "post-growth Fabric charges the full 125-resident customer demand");
         Near(fourCloth.Demographics.Single().AnimalFood - fourPlain.Demographics.Single().AnimalFood, 250, "four-Weaver AnimalFood acceptance replaces exactly actual Fabric input");
+    }
+
+    private static void TypedFabricPriorityBudget()
+    {
+        TurnRecord ResolveCase(bool includeCloth, bool animalFirst, double plant)
+        {
+            var w = Fixture(100, 75); var c = w.Camps[0];
+            c.Population = 200; c.Technology = Technology.Cultivation; c.Technologies[(int)Technology.Cultivation] = true; c.People.Progression.Era = Era.Neolithic;
+            w.Config.AnnualHumanGrowthRate = .01145; w.Config.GrowthReserveTurns = .1;
+            c.CraftingPriorities = new CraftingPriorities { Cloth = includeCloth ? (animalFirst ? 1 : 2) : 0, AnimalFabric = animalFirst ? 2 : 1, LightHousing = 0, HerdingTools = 0 };
+            c.PlantFood = plant; c.AnimalFood = 0; c.Inventory.HandTools = 10000;
+            c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving); c.Workforce.Assign(WorkforceRoles.Weaver, animalFirst ? 8 : 4, c.Population);
+            return Resolve(w);
+        }
+
+        var clothFirstControl = ResolveCase(false, false, 0); var clothFirstMixed = ResolveCase(true, false, 0);
+        Near(clothFirstMixed.Demographics.Single().FinalReserves, clothFirstControl.Demographics.Single().FinalReserves, "unavailable PlantFood cannot make priority Cloth hide useful AnimalFabric input");
+        Near(clothFirstMixed.Demographics.Single().AnimalFood, clothFirstControl.Demographics.Single().AnimalFood, "Cloth-first shared clothing forecast accepts only AnimalFood needed by actual typed production");
+
+        var animalFirstControl = ResolveCase(false, true, 1000); var animalFirstMixed = ResolveCase(true, true, 1000);
+        Near(animalFirstMixed.Demographics.Single().FinalReserves, animalFirstControl.Demographics.Single().FinalReserves, "priority AnimalFabric and lower-priority Cloth share one virtual clothing target");
+        Near(animalFirstMixed.Demographics.Single().AnimalFood, animalFirstControl.Demographics.Single().AnimalFood, "AnimalFabric-first forecast cannot accept product for duplicate Cloth demand");
     }
 
     private static void StorageReceivingCapacity()
@@ -269,5 +291,46 @@ internal static class HusbandryChecks
         var foreignCamp = new Camp { Id = policy.NextId++, Player = 1, Tile = policy.Map.Neighbors(c.Tile).First(), Population = 100 }; policy.Camps.Add(foreignCamp); Ownership.Bind(policy);
         var foreignHerd = new Herd { Id = policy.NextId++, Tile = foreignCamp.Tile, Species = herd.Species, Animals = 100, DomesticCamp = foreignCamp.Id, OwnerSociety = foreignCamp.SocietyId, StartingAnimals = 100, SurvivingAnimals = 1, LastNutrition = 1, ManagementFulfillment = 1 }; policy.Herds.Add(foreignHerd);
         var privateObservation = new AgentObservationBuilder().Build(policy, c.Player); Near(ManagedBreedingPolicy.Recommend(privateObservation, privateObservation.Settlements.Single()), .65, "foreign herd loss stays filtered from the owner AI breeding policy");
+    }
+
+    private static void HerdingToolCoverage()
+    {
+        foreach (double years in new[] { 5d, 10d, 20d, 40d })
+        {
+            var w = Fixture(100, 50); var c = w.Camps[0]; w.Config.TurnDays = years * w.Config.DaysPerYear;
+            var plan = HerdingTooling.Plan(w, c, years);
+            Near(plan.Fulfillment, 1, "primitive Herder capacity remains two animals per person across turn durations " + years);
+            Near(plan.Capacity, 100, "primitive labor is duration invariant " + years);
+            Near(HerdingTooling.RequiredHerders(w, c, years), 50, "primitive staffing requirement is duration invariant " + years);
+        }
+        var partial = Fixture(100, 20); var pc = partial.Camps[0]; pc.Inventory.HerdingTools = 5;
+        var partialPlan = HerdingTooling.Plan(partial, pc, 20);
+        Near(partialPlan.CoveredHerderYears, 100, "only five start-stock tools cover five Herder-years per year");
+        Near(partialPlan.Fulfillment, .4345, "partial stone-tool coverage changes only management capacity");
+        Near(partialPlan.ToolsConsumed, 5, "wear is covered Herder-years per twenty-year reference interval");
+        var excess = Fixture(100, 100); var ec = excess.Camps[0]; ec.Inventory.HerdingTools = 100;
+        var excessPlan = HerdingTooling.Plan(excess, ec, 20);
+        Near(excessPlan.Fulfillment, 1, "tool capacity is bounded by herd requirement");
+        Near(excessPlan.ToolsConsumed, 100 / 2.69, "excess assigned Herder labor does not waste tool wear");
+
+        var replacement = Fixture(100, 50); var replacementCamp = replacement.Camps[0]; replacementCamp.Inventory.HerdingTools = 20;
+        replacementCamp.ManagedBreedingIntensity = 0; replacementCamp.ManagedBreedingPolicyInitialized = true;
+        double plannedReplacement = NeolithicProduction.Demand(replacement, replacementCamp, CraftGood.HerdingTools, 20, replacementCamp.Population, false, false);
+        Near(plannedReplacement, 100 / 2.69, "pre-management replacement demand includes useful next-period covered work");
+        Resolve(replacement);
+        Check(replacementCamp.Inventory.HerdingTools < 1e-9, "realized management work debits start-stock tools once");
+        Near(NeolithicProduction.Demand(replacement, replacementCamp, CraftGood.HerdingTools, 20, replacementCamp.Population, true, true), plannedReplacement,
+            "post-management replacement demand matches the useful next-period target without double charging");
+
+        var delayed = Fixture(100, 20); var dc = delayed.Camps[0];
+        dc.ManagedBreedingIntensity = 0; dc.ManagedBreedingPolicyInitialized = true;
+        dc.People.NeolithicTechnologies.Add(NeolithicTech.Carpentry); dc.Workforce.Assign(WorkforceRoles.Carpenter, 1, dc.Population);
+        dc.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 0, Cloth = 0, FarmTools = 0, Housing = 0, Tools = 0, AnimalFabric = 0, LightHousing = 0, HerdingTools = 1 };
+        dc.Inventory.HandTools = 100; dc.Inventory.Wood = dc.Inventory.Stone = 100;
+        var first = Resolve(delayed);
+        Near(first.ManagedHerds.Single().ManagementFulfillment, .4, "newly produced Herding Tools do not backdate management capacity");
+        Near(dc.Inventory.HerdingTools, 20, "useful Carpenter work creates the next generation's Herding Tools");
+        var second = Resolve(delayed);
+        Near(second.ManagedHerds.Single().ManagementFulfillment, .538, "start-stock Herding Tools improve the next generation's management");
     }
 }

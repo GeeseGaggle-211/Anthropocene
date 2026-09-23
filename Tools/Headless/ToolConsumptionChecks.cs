@@ -141,7 +141,7 @@ internal static class ToolConsumptionChecks
         double equipment = budget.Remaining;
         NeolithicProduction.Produce(w, c, recipe, WorkforceRoles.Builder, 80, 80, 100, ref equipment, record, budget);
         NeolithicProduction.Produce(w, c, recipe, WorkforceRoles.Craftsperson, 80, 80, 100, ref equipment, record, budget);
-        Near(c.Inventory.HousingUnits, 4.458333333333333, "housing grade order shares one output budget across workers");
+        Near(NeolithicProduction.FixedHousingAt(w, c.Id, c.Tile, w.Days + 80 * w.Config.BaseDays), 4.458333333333333, "housing grade order shares one output budget across workers"); Near(c.Inventory.HousingUnits, 0, "fixed Housing does not remain in portable inventory");
         Near(c.Inventory.Tools, 0, "regular housing tool capacity is spent once");
         Near(c.Inventory.HandTools, .541666666666667, "slower Hand Tool housing grade receives only remaining capacity");
         Near(record.Production.Sum(receipt => receipt.ToolsConsumed), 1, "housing receipts conserve shared regular Tool consumption");
