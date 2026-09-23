@@ -365,7 +365,7 @@ namespace Anthropocene.Simulation
                     availableLabor -= amount / rate;
                     planned[recipe.Good] += amount;
                     useful += amount;
-                    double copperRate = rate * (recipe.Good == CraftGood.Housing ? n.CopperToolsHousingMultiplier : 1);
+                    double copperRate = rate * (recipe.Good == CraftGood.Housing || recipe.Good == CraftGood.LightHousing ? n.CopperToolsHousingMultiplier : 1);
                     double copperAmount = Math.Min(amount, copperLabor * copperRate);
                     copperOutput += copperAmount;
                     copperLabor -= copperRate > 0 ? copperAmount / copperRate : 0;
