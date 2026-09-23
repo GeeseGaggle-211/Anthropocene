@@ -496,3 +496,18 @@ new forage or demographic rules. The player smoke queues b=0 without live
 mutation, verifies positive-nutrition zero births and its save/load, then verifies
 b=.4 survives a two-turn automation sequence and its save/load. The live
 husbandry ecology and breeding sweep remains Issue #18 validation.
+
+Astra independently passed the complete fixed headless suite (including 8,948
+geological assertions and twelve-resolution scalar/parallel/reversed replay),
+then reran the final 183 Husbandry assertions. Another 221 independent checks
+covered all requested breeding values and time partitions, partial nutrition,
+actual validated AI orders, invalid saved values, and a genuine pre-policy save.
+Unity passed 28/28 EditMode tests. The Windows build and five-frame Husbandry
+player route passed zero-breeding births, exact save/load and preservation of
+b=.4 through automation. Visual review caught a clipped breeding plus button;
+the corrected build passed the full player route again, and restored/final
+panels showed both controls inside the scroll area. Only that layout changed
+after the Unity tests; simulation source hashes remained identical. Evidence is
+ignored under `TestResults/Issue20/Issue17-Unity-20260923-032036` and the adjacent
+headless/independent review logs. No native mouse usability or natural-balance
+claim is made by this synthetic integration check.
