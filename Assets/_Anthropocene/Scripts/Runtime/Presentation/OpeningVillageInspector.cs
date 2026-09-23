@@ -25,8 +25,16 @@ namespace Anthropocene.Presentation
             GUI.Label(new Rect(18, 12, width - 170, 28), "SETTLEMENT ECONOMY · changes apply on turn commit", title);
             if (Button(new Rect(width - 120, 10, 100, 30), "CLOSE")) villageInspectorOpen = false;
             var ownedLivestock = observation.Herds.Where(h => h.OwnedDomestic && h.DomesticCamp == camp.Id).OrderBy(h => h.Id).ToArray();
-            float contentHeight = 1210 + (husbandry ? ownedLivestock.Length * 54 : 0);
             float scrollContentWidth = width - 44;
+            float col = (width - 70) / 3;
+            double potYears = world.Config.TurnDays / world.Config.DaysPerYear;
+            var management = HerdingTooling.Plan(world, camp, potYears, draft.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population));
+            string pastoralDescription = $"Animal Fabric {camp.Inventory.AnimalFabric:F2}: 1 Animal Product makes 1 unit before tool use; it shares Cloth's clothing need and Light Housing spends 1 per unit.\n" +
+                $"Light Housing {Math.Max(0, camp.Inventory.LightHousingUnits):F2}: portable with the camp; {world.Config.Neolithic.HousingPeoplePerUnit:F0} people supported per unit. Fixed shelter stays at its original site.\n" +
+                $"Herding Tools {camp.Inventory.HerdingTools:F2}: 1 Wood + 1 Stone each; {world.Config.Neolithic.HerdingToolCoverageYearsPerUnit:F0} Herder-years per tool. Plan capacity {management.Capacity:F1} / {management.Animals:F0} animals ({management.Fulfillment:P0}); primitive {world.Config.AnimalsPerHerder:F2}, equipped {world.Config.Neolithic.StoneHerdingToolAnimalsPerHerder:F2} animals per Herder.";
+            float pastoralDescriptionHeight = husbandry ? small.CalcHeight(new GUIContent(pastoralDescription), col - 8) + 8 : 0;
+            float livestockRows = husbandry ? ownedLivestock.Length * 54 : 0;
+            float contentHeight = Mathf.Max(1210 + livestockRows, 880 + livestockRows + pastoralDescriptionHeight);
             villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, scrollContentWidth, contentHeight));
             float y = 4;
             var inventory = camp.Inventory;
@@ -61,7 +69,7 @@ namespace Anthropocene.Presentation
                 if (Button(new Rect(contentWidth - 72, y, 52, 22), "+")) draft.ManagedBreedingIntensity = Math.Min(1, draft.ManagedBreedingIntensity + .05);
                 y += 30;
             }
-            float col = (width - 70) / 3, x = 4, wy = y;
+            float x = 4, wy = y;
             GUI.Label(new Rect(x, wy, col, 24), "WORKFORCE", section); wy += 28;
             foreach (string role in WorkforceRoles.All.Where(r => r != WorkforceRoles.Gatherer))
             {
@@ -97,12 +105,12 @@ namespace Anthropocene.Presentation
             GUI.Label(new Rect(x, cy, col, 24), "PRODUCTION PRIORITIES", section); cy += 28;
             DrawEconomicValue("Hand tools", ref draft.Priorities.HandTools, x, ref cy, col, .05);
             DrawEconomicValue("Pots", ref draft.Priorities.Pots, x, ref cy, col, .05);
+            DrawEconomicValue("Improved tools", ref draft.Priorities.Tools, x, ref cy, col, .05);
             if (CultivationEconomy.Enabled(camp))
             {
                 DrawEconomicValue("Plant cloth", ref draft.Priorities.Cloth, x, ref cy, col, .05);
                 DrawEconomicValue("Farm tools", ref draft.Priorities.FarmTools, x, ref cy, col, .05);
                 DrawEconomicValue("Fixed housing", ref draft.Priorities.Housing, x, ref cy, col, .05);
-                DrawEconomicValue("Improved tools", ref draft.Priorities.Tools, x, ref cy, col, .05);
             }
             if (husbandry)
             {
@@ -111,7 +119,6 @@ namespace Anthropocene.Presentation
                 DrawEconomicValue("Herding tools", ref draft.Priorities.HerdingTools, x, ref cy, col, .05);
             }
             cy += 12;
-            double potYears = world.Config.TurnDays / world.Config.DaysPerYear;
             GUI.Label(new Rect(x, cy, col - 8, 22), "Pots target: " + NeolithicProduction.TargetPots(world, camp, potYears).ToString("F2"), small); cy += 28;
             double farmToolForecast = CultivationEconomy.ForecastFarmToolWorkerYears(world, camp, potYears) / world.Config.Neolithic.FarmToolFarmerYearsPerUnit;
             GUI.Label(new Rect(x, cy, col - 8, 22), "Farm tools forecast: " + farmToolForecast.ToString("F2"), small); cy += 28;
@@ -123,11 +130,8 @@ namespace Anthropocene.Presentation
             cy += 108;
             if (husbandry)
             {
-                var management = HerdingTooling.Plan(world, camp, potYears, draft.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population));
-                GUI.Label(new Rect(x, cy, col - 8, 120),
-                    $"Animal Fabric {inventory.AnimalFabric:F2}: 1 Animal Product makes 1 unit before tool use; it shares Cloth's clothing need and Light Housing spends 1 per unit.\n" +
-                    $"Light Housing {portableHousing:F2}: portable with the camp; {world.Config.Neolithic.HousingPeoplePerUnit:F0} people supported per unit. Fixed shelter stays at its original site.\n" +
-                    $"Herding Tools {inventory.HerdingTools:F2}: 1 Wood + 1 Stone each; {world.Config.Neolithic.HerdingToolCoverageYearsPerUnit:F0} Herder-years per tool. Plan capacity {management.Capacity:F1} / {management.Animals:F0} animals ({management.Fulfillment:P0}); primitive {world.Config.AnimalsPerHerder:F2}, equipped {world.Config.Neolithic.StoneHerdingToolAnimalsPerHerder:F2} animals per Herder.", small);
+                GUI.Label(new Rect(x, cy, col - 8, pastoralDescriptionHeight), pastoralDescription, small);
+                cy += pastoralDescriptionHeight;
             }
             x += col + 10; float fy = y;
             GUI.Label(new Rect(x, fy, col, 24), "FIELDS & SOURCING", section); fy += 28;
