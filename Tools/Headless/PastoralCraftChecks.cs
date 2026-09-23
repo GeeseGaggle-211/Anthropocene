@@ -13,6 +13,8 @@ internal static class PastoralCraftChecks
     }
     private static void Near(double actual, double expected, string message, double tolerance = 1e-8)
         => Check(Math.Abs(actual - expected) <= tolerance, message + " actual=" + actual + " expected=" + expected);
+    private static CraftingPriorities NoCraftPriorities() => new CraftingPriorities
+    { HandTools = 0, Pots = 0, Cloth = 0, FarmTools = 0, Housing = 0, Tools = 0, AnimalFabric = 0, LightHousing = 0, HerdingTools = 0 };
 
     private static WorldState HusbandryWorld()
     {
@@ -77,6 +79,8 @@ internal static class PastoralCraftChecks
         PastoralObservationContractIsFilteredAndPure();
         PastoralIntentCopiesStampsAndRejectsInvalidValues();
         PastoralLegitimateZerosSurviveSaveLoad();
+        SharedPlannerBootstrapsPastoralManufacture();
+        AutomaticPastoralCraftLifecycleContinues();
         Console.WriteLine("PASS: " + checks + " pastoral craft assertions");
         return checks;
     }
@@ -407,5 +411,115 @@ internal static class PastoralCraftChecks
         Near(restored.CraftingPriorities.HerdingTools, 0, "zero Herding Tool priority is preserved by save/load");
         Near(restored.ManagedBreedingIntensity, 0, "zero managed breeding policy is preserved by save/load");
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), "pastoral zero state round trips with the same authoritative fingerprint");
+    }
+
+    private static WorldState PlannerWorld()
+    {
+        var w = HusbandryWorld(); var c = w.Camps[0];
+        w.Config.AnnualHumanGrowthRate = 0;
+        w.Config.ExperienceThreshold = 1000000;
+        foreach (var species in w.Config.Species) species.GrowthRate = 0;
+        foreach (var tile in w.Tiles)
+        {
+            tile.Food = 0; tile.PotentialFood = 1000000000; tile.Freshwater = 1000000;
+            for (int season = 0; season < 4; season++)
+            {
+                tile.Seasons[season].MaxFood = 0;
+                tile.Seasons[season].MaxPotentialFood = 1000000000;
+                tile.Seasons[season].MaxFreshwater = 1000000;
+                tile.Seasons[season].FoodRecoveryPerDay = 0;
+                tile.Seasons[season].BiomassRecoveryPerDay = 0;
+                tile.Seasons[season].WaterRecoveryPerDay = 0;
+            }
+        }
+        c.Population = 100; c.PlantFood = 100000; c.AnimalFood = 0;
+        w.Herds.Add(new Herd { Id = w.NextId++, Tile = c.Tile, Species = "goat", Animals = 100, Capacity = 1, DomesticCamp = c.Id, OwnerSociety = c.SocietyId });
+        foreach (var technology in new[] { NeolithicTech.Toolmaking, NeolithicTech.Carpentry, NeolithicTech.Weaving, NeolithicTech.Construction })
+        {
+            c.People.NeolithicTechnologies.Add(technology);
+            foreach (string role in WorkforceRoles.All.Where(role => EconomicIntents.RequiredTechnology(role) == technology))
+                if (!c.People.UnlockedSpecialists.Contains(role)) c.People.UnlockedSpecialists.Add(role);
+        }
+        return w;
+    }
+
+    private static void SharedPlannerBootstrapsPastoralManufacture()
+    {
+        foreach (CraftGood target in new[] { CraftGood.HerdingTools, CraftGood.AnimalFabric })
+        {
+            var w = PlannerWorld(); var c = w.Camps.Single();
+            c.Inventory.Stone = c.Inventory.Wood = 1000;
+            c.Inventory.HandTools = 0;
+            c.CraftingPriorities = NoCraftPriorities(); c.CraftingPriorities.HandTools = 1;
+            if (target == CraftGood.HerdingTools) c.CraftingPriorities.HerdingTools = 1;
+            else c.CraftingPriorities.AnimalFabric = 1;
+            Check(c.AnimalFood == 0, target + " bootstrap starts without stored Animal Product");
+            string before = SaveCodec.Fingerprint(w);
+            var plan = EconomicPlanner.Plan(w, c, EconomicIntent.From(c));
+            Check(SaveCodec.Fingerprint(w) == before, target + " bootstrap planning is pure");
+            Check(plan.Assignments.Any(a => a.Role == WorkforceRoles.Toolmaker && a.Population > 0),
+                target + " useful priority lets the shared planner staff Hand Tool bootstrap");
+            Check(plan.Assignments.Sum(a => a.Population) <= c.Population,
+                target + " bootstrap staffing remains within residents");
+            Check(!plan.Assignments.Any(a => a.Role == WorkforceRoles.Farmer),
+                target + " Husbandry-only camp uses the same workforce without Agriculture");
+            if (target == CraftGood.AnimalFabric)
+            {
+                Check(plan.Assignments.Any(a => a.Role == WorkforceRoles.Herder && a.Population > 0),
+                    "Animal Fabric bootstrap staffs the herd that supplies incoming managed food");
+                int herders = plan.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population);
+                Check(TurnResolver.ForecastManagedAnimalFood(w, c, herders, w.Config.GenerationIntervals,
+                    w.Config.TurnDays / w.Config.DaysPerYear).AnimalFood > 0,
+                    "Animal Fabric bootstrap has positive current-generation managed food despite zero starting Animal Product");
+                Check(c.AnimalFood == 0, "Animal Fabric forecast does not create current stored food");
+            }
+        }
+    }
+
+    private static void AutomaticPastoralCraftLifecycleContinues()
+    {
+        var w = PlannerWorld(); var c = w.Camps.Single();
+        w.Herds.Single().Animals = 140;
+        c.PlantFood = 12000;
+        c.Inventory.Stone = c.Inventory.Wood = 10000;
+        // The camp begins with real finished-tool stock; subsequent work and
+        // replacement use only inventory actually carried into each turn.
+        c.Inventory.HandTools = 300;
+        c.CraftingPriorities = NoCraftPriorities();
+        c.CraftingPriorities.HandTools = 1; c.CraftingPriorities.AnimalFabric = 1;
+        c.CraftingPriorities.HerdingTools = .5; c.CraftingPriorities.LightHousing = .2;
+        var totals = new Dictionary<CraftGood, double>();
+        bool toolStockUsedNextGeneration = false;
+        for (int turn = 0; turn < 8; turn++)
+        {
+            string beforePlan = SaveCodec.Fingerprint(w);
+            var plan = EconomicPlanner.Plan(w, c, EconomicIntent.From(c));
+            Check(SaveCodec.Fingerprint(w) == beforePlan, "automatic pastoral plan is read-only at turn " + (turn + 1));
+            Check(plan.Assignments.Sum(a => a.Population) <= c.Population && !plan.Assignments.Any(a => a.Role == WorkforceRoles.Farmer),
+                "automatic Husbandry staffing remains resident-bounded without Agriculture at turn " + (turn + 1));
+            var order = new Order(OrderKind.Economy, c.Id) { Economy = plan };
+            var observation = new AgentObservationBuilder().Build(w, c.Player);
+            Check(OrderRules.Validate(observation, order) == null, "ordinary Economy intent validates at turn " + (turn + 1));
+            var fork = SaveCodec.Load(SaveCodec.Save(w));
+            var orders = new Dictionary<int, List<Order>> { [c.Player] = new List<Order> { order } };
+            var record = new TurnResolver().Resolve(w, orders);
+            var forkRecord = new TurnResolver().Resolve(fork, new Dictionary<int, List<Order>> { [c.Player] = new List<Order> { order.Copy() } });
+            Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(fork), "pastoral economy turn resumes identically after save/load at turn " + (turn + 1));
+            Check(record.Demographics.Count == 1 && forkRecord.Demographics.Count == 1, "saved continuation includes the same demographic report");
+            var demographic = record.Demographics.Single();
+            Near(demographic.InitialReserves + demographic.FoodReceived,
+                demographic.FoodConsumed + demographic.ManufacturingFood + demographic.FinalReserves + demographic.DiscardedInventory,
+                "pastoral lifecycle conserves useful food at turn " + (turn + 1), 1e-6);
+            foreach (var receipt in record.Production)
+            {
+                totals.TryGetValue(receipt.Good, out double prior);
+                totals[receipt.Good] = prior + receipt.Output;
+                if (turn > 0 && receipt.Good != CraftGood.HandTools && receipt.Output > 0 && receipt.HandToolsConsumed > 0)
+                    toolStockUsedNextGeneration = true;
+            }
+        }
+        foreach (var good in new[] { CraftGood.HandTools, CraftGood.AnimalFabric, CraftGood.LightHousing, CraftGood.HerdingTools })
+            Check(totals.TryGetValue(good, out double output) && output > 0, "ordinary replanned Economy chain produces " + good);
+        Check(toolStockUsedNextGeneration, "carried Hand Tools support useful pastoral production in a later generation");
     }
 }
