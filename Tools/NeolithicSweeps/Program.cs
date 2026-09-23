@@ -54,6 +54,12 @@ internal static class Program
         string root = Path.GetFullPath(Value("--repo", ".")), output = Path.GetFullPath(Value("--out", "TestResults/NeolithicSweeps"));
         Directory.CreateDirectory(output);
         var cfg = JsonSerializer.Deserialize<SimulationConfig>(File.ReadAllText(Path.Combine(root, "Assets/_Anthropocene/Resources/OpeningConfig.json")), Json);
+        if (args.Contains("--tools-only"))
+        {
+            cfg.Validate(); ToolEffects(output, seed, cfg);
+            Console.WriteLine("DONE tool-probes seed=" + seed);
+            return;
+        }
         var resources = JsonSerializer.Deserialize<ResourceGenerationOptions>(File.ReadAllText(Path.Combine(root, "Assets/_Anthropocene/Resources/ResourceGenerationConfig.json")), Json);
         cfg.Width = 256; cfg.Height = 128; cfg.Players = 16;
         File.WriteAllText(Path.Combine(output, "config-" + seed + ".json"), JsonSerializer.Serialize(cfg, Json));
@@ -158,7 +164,7 @@ internal static class Program
                     farmerFoodShare = food > 0 ? farmFood / food : 0, foodHarvest = food, farmFood, gatheredFood = gathered,
                     foodReserves = c.Food, foodReserveTurns = c.Population > 0 ? c.Food / (c.Population * w.Config.Consumption * w.Config.GenerationIntervals) : 0,
                     foodSatisfaction = c.FoodNeedsMetRatio, clothing = c.ClothPerCapita, housing = c.HousingPerCapita, qol = c.QoL, expectation = c.RudimentaryExpectation,
-                    fabricConsumed = c.FabricConsumed, housingStock = c.Inventory.HousingUnits, housingDemand = c.HousingDemand, housingReplacementDemand = c.HousingReplacementDemand, housingGrowthDemand = c.HousingGrowthDemand,
+                    fabricConsumed = c.FabricConsumed, housingStock = NeolithicProduction.HousingSupply(w, c, w.Days), lightHousingStock = c.Inventory.LightHousingUnits, fixedHousingStock = NeolithicProduction.FixedHousingAt(w, c.Id, c.Tile, w.Days), housingDemand = c.HousingDemand, housingReplacementDemand = c.HousingReplacementDemand, housingGrowthDemand = c.HousingGrowthDemand,
                     clothStock = c.Inventory.Cloth, handTools = c.Inventory.HandTools, improvedTools = c.Inventory.Tools, stoneStock = c.Inventory.Stone, clayStock = c.Inventory.Clay, woodStock = c.Inventory.Wood,
                     production, progress = c.People.CraftExperience.ToDictionary(x => x.Key, x => x.Value), unlocked = c.People.NeolithicTechnologies.ToArray(),
                     discardedFood = d.DiscardedInventory, conserved, labor, materialReceipts = r.MaterialTransfers.Count, limitingFactor = d.LimitingFactor };
@@ -188,7 +194,8 @@ internal static class Program
             if (workers > 0) { e.Assignments.Add(new PopulationAssignment { Role = role, Population = workers }); slots -= workers; }
         }
         Assign(WorkforceRoles.Weaver, NeolithicTech.Weaving, c.Population * n.FabricConsumptionPerPersonTurn * (1 + n.UsefulFinishedGoodsReserveReferenceTurns) - c.Inventory.Cloth, w.Config.GenerationIntervals * n.WeaverFabricOutputPerBaseDays);
-        Assign(WorkforceRoles.Builder, NeolithicTech.Construction, c.Population / n.HousingPeoplePerUnit - c.Inventory.HousingUnits * (1 - n.HousingDecayPerTurn), w.Config.GenerationIntervals * n.BuilderHousingOutputPerBaseDays);
+        double endDays = w.Days + w.Config.GenerationIntervals * w.Config.BaseDays;
+        Assign(WorkforceRoles.Builder, NeolithicTech.Construction, c.Population / n.HousingPeoplePerUnit - NeolithicProduction.HousingSupply(w, c, endDays), w.Config.GenerationIntervals * n.BuilderHousingOutputPerBaseDays);
         if (slots > 0) e.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = slots });
         return e;
     }
@@ -210,8 +217,9 @@ internal static class Program
             c.Inventory.Wood = 1000; var r = new TurnRecord(); double coverage = 1000 * cfg.GenerationIntervals;
             var recipe = NeolithicProduction.Recipes(cfg).Single(x => x.Good == CraftGood.Housing);
             double used = NeolithicProduction.Produce(w, c, recipe, WorkforceRoles.Builder, cfg.GenerationIntervals, cfg.GenerationIntervals, 1000, ref coverage, r);
-            file.WriteLine(JsonSerializer.Serialize(new { grade, multiplier, outputPerBuilderTurn = c.Inventory.HousingUnits, workerIntervals = used, materialDebit = 1000 - c.Inventory.Wood,
-                steadyMaintenanceLaborPct = 100 * cfg.Neolithic.HousingDecayPerTurn / (cfg.Neolithic.HousingPeoplePerUnit * c.Inventory.HousingUnits), conditionalFixture = true }, Json));
+            double housing = NeolithicProduction.HousingSupply(w, c, w.Days + cfg.GenerationIntervals * cfg.BaseDays);
+            file.WriteLine(JsonSerializer.Serialize(new { grade, multiplier, outputPerBuilderTurn = housing, workerIntervals = used, materialDebit = 1000 - c.Inventory.Wood,
+                steadyMaintenanceLaborPct = 100 * cfg.Neolithic.HousingDecayPerTurn / (cfg.Neolithic.HousingPeoplePerUnit * housing), conditionalFixture = true }, Json));
         }
     }
 }

@@ -29,6 +29,7 @@ internal static class ToolConsumptionChecks
         SharedBudgetAndHousingGrades();
         BlockedProductionDoesNotWear();
         CopperRemainsUnspecified();
+        CopperHousingReplacementForecastParity();
         NewlyMadeToolsAreNotRetroactive();
         ReceiptAndFractionalSaveRoundTrip();
         ReplacementDemandIsUsefulAndSourceBound();
@@ -141,7 +142,7 @@ internal static class ToolConsumptionChecks
         double equipment = budget.Remaining;
         NeolithicProduction.Produce(w, c, recipe, WorkforceRoles.Builder, 80, 80, 100, ref equipment, record, budget);
         NeolithicProduction.Produce(w, c, recipe, WorkforceRoles.Craftsperson, 80, 80, 100, ref equipment, record, budget);
-        Near(c.Inventory.HousingUnits, 4.458333333333333, "housing grade order shares one output budget across workers");
+        Near(NeolithicProduction.FixedHousingAt(w, c.Id, c.Tile, w.Days + 80 * w.Config.BaseDays), 4.458333333333333, "housing grade order shares one output budget across workers"); Near(c.Inventory.HousingUnits, 0, "fixed Housing does not remain in portable inventory");
         Near(c.Inventory.Tools, 0, "regular housing tool capacity is spent once");
         Near(c.Inventory.HandTools, .541666666666667, "slower Hand Tool housing grade receives only remaining capacity");
         Near(record.Production.Sum(receipt => receipt.ToolsConsumed), 1, "housing receipts conserve shared regular Tool consumption");
@@ -183,6 +184,32 @@ internal static class ToolConsumptionChecks
         Check(record.Production.Single().Output > 0, "existing Copper coverage hook remains usable");
         Near(c.Inventory.CopperTools, 3, "Copper tools retain the existing hook without invented wear");
         Near(record.Production.Single().CopperToolsConsumed, 0, "Copper receipt consumption remains unspecified");
+    }
+
+    private static void CopperHousingReplacementForecastParity()
+    {
+        double Forecast(bool lightHousing)
+        {
+            var w = Fixture();
+            var c = w.Camps[0];
+            c.Technologies[(int)Technology.Cultivation] = true;
+            c.Technologies[(int)Technology.AnimalHusbandry] = true;
+            c.CraftingPriorities.HandTools = c.CraftingPriorities.Tools = 0;
+            c.CraftingPriorities.Pots = c.CraftingPriorities.Cloth = c.CraftingPriorities.FarmTools = 0;
+            c.CraftingPriorities.Housing = lightHousing ? 0 : 1;
+            c.CraftingPriorities.LightHousing = lightHousing ? 1 : 0;
+            c.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Builder, Population = 1 });
+            c.People.NeolithicTechnologies.Add(NeolithicTech.Construction);
+            c.People.NeolithicTechnologies.Add(NeolithicTech.CopperWorking);
+            c.Inventory.CopperTools = w.Config.Neolithic.ToolCoveragePerWorker / w.Config.Neolithic.CopperToolsHousingMultiplier;
+            c.Inventory.Wood = c.Inventory.Clay = c.Inventory.AnimalFabric = 100;
+            return NeolithicProduction.Demand(w, c, CraftGood.HandTools, 20);
+        }
+
+        double fixedHousingDemand = Forecast(false);
+        double portableHousingDemand = Forecast(true);
+        Near(fixedHousingDemand, 0, "legacy Copper housing coverage prevents phantom Hand Tool replacement for fixed Housing");
+        Near(portableHousingDemand, fixedHousingDemand, "Light Housing uses the same legacy Copper replacement coverage as fixed Housing");
     }
 
     private static void NewlyMadeToolsAreNotRetroactive()

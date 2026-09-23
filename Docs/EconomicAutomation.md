@@ -18,6 +18,10 @@ The generation resolver now projects Fabric against the same resident population
 
 The resolver keeps pre-turn stock separate from current-turn income. In particular, connected hunting can add `StepFoodIncome` after the planning barrier; it is passed as income to the forecast while the prior stock is passed separately, so the same hunt is not counted twice. Plant feedstock is accepted using the projected resident demand, then actual ecological receipts and inventory determine what production can consume. Existing food stockpiles can bridge a shortfall. Fabric input remains protected from the consumption/reserve/growth ordering and cannot fund births.
 
+With Husbandry, animal-sourced manufacturing inputs stay separate from PlantFood in
+the same useful-food budget. Animal Product spent on Animal Fabric cannot also become
+a meal, reserve refill, or demographic growth food.
+
 Managed Husbandry uses this same projection. Starting animals resolve current forage and
 water before starvation, output and survivor reproduction; newborns begin in the next
 generation. AnimalFood is accepted only into the common consumption/reserve/growth
@@ -26,6 +30,43 @@ search, disables growth during starvation recovery, and accounts for the one sch
 depreciation of existing Pots before sizing the shared reserve. This preserves food,
 biomass and freshwater ledgers without creating a second demographic or animal-only
 storage budget.
+
+Pastoral Fabric and shelter use the same Economy controls and Weaving/Construction
+tracks as their agricultural counterparts. Cloth and Animal Fabric share one clothing
+target, with Cloth consumed first; Animal Fabric retains its separate stock because it
+also feeds portable Light Housing. Light Housing moves with the camp, while fixed
+Housing remains owned by its construction site and is counted only while the camp is
+there. Herding Tools only increase covered Herder management capacity: current-generation
+work uses turn-start stock, tool wear follows covered Herder-years, and newly made tools
+cannot improve work already resolved. The pure animal-food forecast reuses the
+authoritative ecological source integrator for the camp's visible owned-herd claims.
+
+### First-tier pastoral recipes and state
+
+The Issue #19 first tier uses the existing specialist tracks and production rates.
+Animal Fabric costs one Animal Product per unit before manufacturing-tool wear; a
+Weaver uses the existing Fabric output rate and a Craftsperson works at 0.25x rate.
+Animal Fabric has a 1:1 clothing need equivalence with Cloth. Light Housing costs one
+Animal Fabric per unit, uses the existing Builder rate (`0.03125` per base-day),
+provides shelter for four people, and depreciates by 10% per 20-year reference turn.
+It is carried with the camp; agricultural Housing remains fixed site stock.
+
+Herding Tools cost one Wood and one Stone per unit, use the existing Carpenter Farm
+Tools output rate, and give Craftspersons 0.25x Carpenter output. Primitive
+management remains two animals per Herder; the Stone tool tier raises covered work to
+2.69 animals per Herder. Coverage is partial when only some Herder work has tools.
+One tool covers one Herder-equivalent for a 20-year reference generation, with wear
+only for realized covered work. The tools affect management capacity only; they do not
+change animal food yield, reproduction, pasture productivity, or animal counts. Later
+equipment tiers remain design anchors, not implemented effects. These first-pass
+calibrations are locked; this feature does not add a separate Fiber resource,
+Dairying technology, or specialist tree.
+
+Owned observations expose only the camp's pastoral stocks and fixed Housing at its
+current site. Schema 11 adds those fields; foreign stores and herds remain private.
+Fixed Housing is kept once in the owning camp/site record, preserves its latent
+depreciation timestamp in saves, and migrates positive legacy carried Housing to the
+camp's saved tile. Read-only projections do not materialize its elapsed decay.
 
 This is a deterministic coupled feasibility search, not a promise that a pre-allocation forecast equals realized yield. Shared tiles, seasonal ecological limits, prior claims, and changing food stocks can reduce actual receipts; the resolver reconciles those receipts and the next turn replans from authoritative state. The one-unit Fabric Plant Food input and all growth, reserve, and production constants are unchanged.
 

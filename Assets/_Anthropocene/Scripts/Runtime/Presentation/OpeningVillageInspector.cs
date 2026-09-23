@@ -16,6 +16,7 @@ namespace Anthropocene.Presentation
             if (camp == null || !CultivationEconomy.EconomyEnabled(camp)) { villageInspectorOpen = false; return; }
             var draft = planned.TryGetValue(camp.Id, out var pending) && pending.Kind == OrderKind.Economy ? pending.Economy.Copy() : EconomicIntent.From(camp);
             string before = draft.Stamp;
+            bool husbandry = CultivationEconomy.HusbandryEnabled(camp);
             float width = Mathf.Min(1040, Screen.width - 32), height = Mathf.Min(820, Screen.height - 32);
             Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(.02f, .03f, .03f, .88f));
             var panel = new Rect((Screen.width - width) / 2, (Screen.height - height) / 2, width, height);
@@ -24,16 +25,34 @@ namespace Anthropocene.Presentation
             GUI.Label(new Rect(18, 12, width - 170, 28), "SETTLEMENT ECONOMY · changes apply on turn commit", title);
             if (Button(new Rect(width - 120, 10, 100, 30), "CLOSE")) villageInspectorOpen = false;
             var ownedLivestock = observation.Herds.Where(h => h.OwnedDomestic && h.DomesticCamp == camp.Id).OrderBy(h => h.Id).ToArray();
-            float contentHeight = 1012 + (CultivationEconomy.HusbandryEnabled(camp) ? ownedLivestock.Length * 54 : 0);
-            villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, width - 44, contentHeight));
+            float scrollContentWidth = width - 44;
+            float col = (width - 70) / 3;
+            double potYears = world.Config.TurnDays / world.Config.DaysPerYear;
+            var management = HerdingTooling.Plan(world, camp, potYears, draft.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population));
+            string pastoralDescription = $"Animal Fabric {camp.Inventory.AnimalFabric:F2}: 1 Animal Product makes 1 unit before tool use; it shares Cloth's clothing need and Light Housing spends 1 per unit.\n" +
+                $"Light Housing {Math.Max(0, camp.Inventory.LightHousingUnits):F2}: portable with the camp; {world.Config.Neolithic.HousingPeoplePerUnit:F0} people supported per unit. Fixed shelter stays at its original site.\n" +
+                $"Herding Tools {camp.Inventory.HerdingTools:F2}: 1 Wood + 1 Stone each; {world.Config.Neolithic.HerdingToolCoverageYearsPerUnit:F0} Herder-years per tool. Plan capacity {management.Capacity:F1} / {management.Animals:F0} animals ({management.Fulfillment:P0}); primitive {world.Config.AnimalsPerHerder:F2}, equipped {world.Config.Neolithic.StoneHerdingToolAnimalsPerHerder:F2} animals per Herder.";
+            float pastoralDescriptionHeight = husbandry ? small.CalcHeight(new GUIContent(pastoralDescription), col - 8) + 8 : 0;
+            float livestockRows = husbandry ? ownedLivestock.Length * 54 : 0;
+            float contentHeight = Mathf.Max(1210 + livestockRows, 880 + livestockRows + pastoralDescriptionHeight);
+            villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, scrollContentWidth, contentHeight));
             float y = 4;
-            GUI.Label(new Rect(4, y, width - 60, 76),
+            var inventory = camp.Inventory;
+            double fixedHousing = NeolithicProduction.FixedHousingAt(world, camp.Id, camp.Tile, world.Days);
+            double portableHousing = Math.Max(0, inventory.LightHousingUnits);
+            double currentHousing = NeolithicProduction.HousingSupply(world, camp, world.Days);
+            string clothingStock = husbandry
+                ? $"Clothing {camp.ClothPerCapita:P0} · consumed {camp.FabricConsumed:F2} · stock {inventory.Cloth + inventory.AnimalFabric:F2} (plant {inventory.Cloth:F2}, animal {inventory.AnimalFabric:F2})"
+                : $"Clothing {camp.ClothPerCapita:P0} · consumed {camp.FabricConsumed:F2} · stock {inventory.Cloth:F2}";
+            string housingStock = husbandry
+                ? $"Shelter {camp.HousingPerCapita:P0} · current site {currentHousing:F2} units / {currentHousing * world.Config.Neolithic.HousingPeoplePerUnit:F1} capacity (fixed {fixedHousing:F2}, portable {portableHousing:F2})"
+                : $"Housing {camp.HousingPerCapita:P0} · current site {currentHousing:F2} units · capacity {currentHousing * world.Config.Neolithic.HousingPeoplePerUnit:F1}";
+            GUI.Label(new Rect(4, y, scrollContentWidth - 16, husbandry ? 102 : 76),
                 $"Population {camp.Population} · QoL {camp.QoL:P0} · food {camp.FoodNeedsMetRatio:P0} · water {camp.WaterNeedsMetRatio:P0}\n" +
-                $"Clothing {camp.ClothPerCapita:P0} · consumed {camp.FabricConsumed:F2} · stock {camp.Inventory.Cloth:F2}\n" +
-                $"Housing {camp.HousingPerCapita:P0} · {camp.Inventory.HousingUnits:F2} units · capacity {camp.Inventory.HousingUnits * world.Config.Neolithic.HousingPeoplePerUnit:F1}\n" +
+                clothingStock + "\n" + housingStock + "\n" +
                 $"Expectations {camp.RudimentaryExpectation:P0} · stationary {camp.StationaryYears:F1} years · shortfalls are graded; automatic fission is deferred.", text);
-            y += 90;
-            if (CultivationEconomy.HusbandryEnabled(camp))
+            y += husbandry ? 116 : 90;
+            if (husbandry)
             {
                 int animals = ownedLivestock.Sum(h => h.Count.Representative);
                 int herders = draft.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population);
@@ -44,13 +63,13 @@ namespace Anthropocene.Presentation
                     GUI.Label(new Rect(4, y, width - 60, 46), $"{herd.Species} herd {herd.Count.Representative} · food {herd.FoodNutrition:P0} · water {herd.WaterNutrition:P0} · management {herd.ManagementFulfillment:P0} · deficit {herd.DeficitTurns} · output {herd.AcceptedFood:F1}/{herd.PotentialFood:F1} · births {herd.NewbornAnimals} · deaths {herd.StarvationDeaths}", small);
                     y += 54;
                 }
-                float contentWidth = width - 44;
+                float contentWidth = scrollContentWidth;
                 GUI.Label(new Rect(4, y, contentWidth - 150, 24), "Breeding intensity: " + draft.ManagedBreedingIntensity.ToString("F2") + " (0 stops intentional reproduction; 1 uses biological rate)", small);
                 if (Button(new Rect(contentWidth - 130, y, 52, 22), "−")) draft.ManagedBreedingIntensity = Math.Max(0, draft.ManagedBreedingIntensity - .05);
                 if (Button(new Rect(contentWidth - 72, y, 52, 22), "+")) draft.ManagedBreedingIntensity = Math.Min(1, draft.ManagedBreedingIntensity + .05);
                 y += 30;
             }
-            float col = (width - 70) / 3, x = 4, wy = y;
+            float x = 4, wy = y;
             GUI.Label(new Rect(x, wy, col, 24), "WORKFORCE", section); wy += 28;
             foreach (string role in WorkforceRoles.All.Where(r => r != WorkforceRoles.Gatherer))
             {
@@ -86,20 +105,34 @@ namespace Anthropocene.Presentation
             GUI.Label(new Rect(x, cy, col, 24), "PRODUCTION PRIORITIES", section); cy += 28;
             DrawEconomicValue("Hand tools", ref draft.Priorities.HandTools, x, ref cy, col, .05);
             DrawEconomicValue("Pots", ref draft.Priorities.Pots, x, ref cy, col, .05);
-            DrawEconomicValue("Fabric", ref draft.Priorities.Cloth, x, ref cy, col, .05);
-            DrawEconomicValue("Farm tools", ref draft.Priorities.FarmTools, x, ref cy, col, .05);
-            DrawEconomicValue("Housing", ref draft.Priorities.Housing, x, ref cy, col, .05);
             DrawEconomicValue("Improved tools", ref draft.Priorities.Tools, x, ref cy, col, .05);
+            if (CultivationEconomy.Enabled(camp))
+            {
+                DrawEconomicValue("Plant cloth", ref draft.Priorities.Cloth, x, ref cy, col, .05);
+                DrawEconomicValue("Farm tools", ref draft.Priorities.FarmTools, x, ref cy, col, .05);
+                DrawEconomicValue("Fixed housing", ref draft.Priorities.Housing, x, ref cy, col, .05);
+            }
+            if (husbandry)
+            {
+                DrawEconomicValue("Animal fabric", ref draft.Priorities.AnimalFabric, x, ref cy, col, .05);
+                DrawEconomicValue("Light housing", ref draft.Priorities.LightHousing, x, ref cy, col, .05);
+                DrawEconomicValue("Herding tools", ref draft.Priorities.HerdingTools, x, ref cy, col, .05);
+            }
             cy += 12;
-            double potYears = world.Config.TurnDays / world.Config.DaysPerYear;
             GUI.Label(new Rect(x, cy, col - 8, 22), "Pots target: " + NeolithicProduction.TargetPots(world, camp, potYears).ToString("F2"), small); cy += 28;
             double farmToolForecast = CultivationEconomy.ForecastFarmToolWorkerYears(world, camp, potYears) / world.Config.Neolithic.FarmToolFarmerYearsPerUnit;
             GUI.Label(new Rect(x, cy, col - 8, 22), "Farm tools forecast: " + farmToolForecast.ToString("F2"), small); cy += 28;
             double storageIntervals = world.Config.TurnDays / world.Config.BaseDays;
             double potStorage = camp.Inventory.Pots * world.Config.Neolithic.PotStorageFoodPerUnit;
             double storageCapacity = NeolithicProduction.StorageCapacity(world, camp, storageIntervals);
-            GUI.Label(new Rect(x, cy, col - 8, 132), $"Stone {camp.Inventory.Stone:F2}\nClay {camp.Inventory.Clay:F2}\nWood {camp.Inventory.Wood:F2}\nPots {camp.Inventory.Pots:F2} (+{potStorage:F2} storage)\nFarm tools {camp.Inventory.FarmTools:F2}\nStorage capacity {storageCapacity:F2}\nHand tools {camp.Inventory.HandTools:F2}\nImproved tools {camp.Inventory.Tools:F2}", small); cy += 144;
+            GUI.Label(new Rect(x, cy, col - 8, 132), $"Stone {inventory.Stone:F2}\nClay {inventory.Clay:F2}\nWood {inventory.Wood:F2}\nPots {inventory.Pots:F2} (+{potStorage:F2} storage)\nFarm tools {inventory.FarmTools:F2}\nStorage capacity {storageCapacity:F2}\nHand tools {inventory.HandTools:F2}\nImproved tools {inventory.Tools:F2}", small); cy += 144;
             GUI.Label(new Rect(x, cy, col - 8, 100), $"Crafting consumes tools with useful output. Pots add {world.Config.Neolithic.PotStorageFoodPerUnit:F0} food storage each and retain {100 * (1 - world.Config.Neolithic.PotDecayPerReferenceTurn):F0}% per {world.Config.Neolithic.ReferenceTurnYears:F0}-year reference turn. Stone Farm Tools reduce maintenance and expansion labor for covered field work; they do not multiply harvest or ecology.", small);
+            cy += 108;
+            if (husbandry)
+            {
+                GUI.Label(new Rect(x, cy, col - 8, pastoralDescriptionHeight), pastoralDescription, small);
+                cy += pastoralDescriptionHeight;
+            }
             x += col + 10; float fy = y;
             GUI.Label(new Rect(x, fy, col, 24), "FIELDS & SOURCING", section); fy += 28;
             foreach (var t in observation.Tiles.Values.Where(t => t.Cultivable && world.Map.Distance(camp.Tile, t.Id) <= 1).OrderBy(t => t.Id))

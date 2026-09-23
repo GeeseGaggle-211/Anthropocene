@@ -519,3 +519,29 @@ after the Unity tests; simulation source hashes remained identical. Evidence is
 ignored under `TestResults/Issue20/Issue17-Unity-20260923-032036` and the adjacent
 headless/independent review logs. No native mouse usability or natural-balance
 claim is made by this synthetic integration check.
+
+## First-tier pastoral crafts and completed Neolithic queue — September 23, 2026
+
+Issue #19 adds Animal Fabric, portable Light Housing and Stone Herding Tools to
+the shared Economy, workforce, progression and useful-food ledger. Fixed Housing
+is held by camp/site and migrated once from older saves. The first-pass recipe
+rates, 2.69 animals per equipped Herder, and 20 Herder-years per tool are locked;
+no balance constants were retuned. Owned inventory observations use schema 11.
+
+Astra independently passed the full fixed headless suite (11,838 counted
+assertions plus twelve-resolution scalar/parallel/reordered replay), 13,427
+additional conservation/chronology/recipe/forecast assertions, 72 genuine legacy
+save checks and 11 relocation checks. All 576 agricultural Fabric cases and
+96 agricultural planner cases exactly match the pre-#19 baseline. The 536 tracked
+pastoral checks include specialist/generalist zero-tool bootstrap for each
+recipe and a stocked eight-generation shared-chain continuation.
+
+Unity EditMode passed 28/28; the Windows build and both five-frame Husbandry and
+Agriculture player routes passed normal resolution, isolated exact save/load and
+two-turn automation after restoration. Rendered queued, resolved/restored and
+completed panels were inspected. These synthetic fixtures do not claim natural
+balance or native mouse usability. Full evidence and the measured mixed-priority
+allocation limitation are in [NeolithicQueueIntegration.md](NeolithicQueueIntegration.md).
+Ignored machine evidence is under `TestResults/Issue20/Issue19-Unity-Final` and the
+adjacent final headless and independent review logs. The isolated headless output
+avoided a pre-existing locked default apphost; source was unchanged.

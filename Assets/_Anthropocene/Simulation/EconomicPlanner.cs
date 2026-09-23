@@ -19,27 +19,40 @@ namespace Anthropocene.Simulation
         {
             var e = settings.Copy(); e.Assignments.Clear(); e.Labor = null;
             if (c.Population <= 0 || !CultivationEconomy.EconomyEnabled(c)) { e.AutomationTurns = 0; return e; }
-            if (!CultivationEconomy.Enabled(c)) return PlanHusbandry(w, c, e);
+            bool cultivationEnabled = CultivationEconomy.Enabled(c);
+            bool husbandryEnabled = CultivationEconomy.HusbandryEnabled(c);
             var cfg = w.Config; var n = cfg.Neolithic;
             double intervals = cfg.GenerationIntervals, years = cfg.TurnDays / cfg.DaysPerYear;
             var visible = Knowledge.Visible(w, c.Player);
-            var footprint = CultivationEconomy.Footprint(w, c).Where(visible.Contains).ToArray();
+            var footprint = cultivationEnabled ? CultivationEconomy.Footprint(w, c).Where(visible.Contains).ToArray() : Array.Empty<int>();
             if (!footprint.Contains(e.Focus)) e.Focus = -1;
             var operated = footprint.Where(id => w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == c.Id).ToArray();
-            double upkeep = CultivationEconomy.MaintenanceFarmersForPlanning(w, c, years);
-            bool established = operated.Any(id => LazyEcology.ProjectEcology(w, id, w.Days).CultivationCapital > 0);
+            double upkeep = cultivationEnabled ? CultivationEconomy.MaintenanceFarmersForPlanning(w, c, years) : 0;
+            bool established = cultivationEnabled && operated.Any(id => LazyEcology.ProjectEcology(w, id, w.Days).CultivationCapital > 0);
             var eligible = w.Map.Radius(c.Tile, cfg.GatherRadius).Where(id => visible.Contains(id) && PassiveGathering.Eligible(w, c, id)).OrderBy(id => id).ToArray();
             double FoodAvailability(int id) => LazyEcology.AccessibleAvailability(w, id, w.Days, cfg.TurnDays, operated.Contains(id) ? 1 : 0);
-            double supply = eligible.Sum(FoodAvailability), plantSupply = eligible.Where(id => w.Tiles[id].Land).Sum(FoodAvailability);
+            double forageSupply = eligible.Sum(FoodAvailability), plantSupply = eligible.Where(id => w.Tiles[id].Land).Sum(FoodAvailability);
+            int reservedHerdersForForecast = husbandryEnabled ? ManagedHerderReservation(w, c, years) : 0;
+            var managedFood = husbandryEnabled ? TurnResolver.ForecastManagedAnimalFood(w, c, reservedHerdersForForecast, intervals, years) : new ManagedFoodForecast();
+            double forageAfterHerds = Math.Max(0, forageSupply - managedFood.HumanFoodDisplaced);
+            double supply = forageAfterHerds + managedFood.AnimalFood;
             double biological = TurnResolver.PlanningFoodDemand(w, c);
             double nextPopulation = TurnResolver.PlanningResidentPopulation(w, c, Math.Min(biological, supply));
             var sources = MaterialEconomy.KnownSources(w, c, w.Days);
             double Priority(MaterialId m) => m == MaterialId.Stone ? e.StonePriority : m == MaterialId.Clay ? e.ClayPriority : e.WoodPriority;
             var accessible = MaterialEconomy.Materials.ToDictionary(m => m, m => Priority(m) <= 0 || n.SpecialistMaterialExtractionRate <= 0 ? 0 : sources.Where(s => s.Material == m).GroupBy(s => s.Id).Sum(g => g.Sum(s => s.Available)));
             var recipes = NeolithicProduction.Recipes(cfg);
-            var preview = Preview(c, e, nextPopulation);
+            var previewIntent = e.Copy();
+            if (reservedHerdersForForecast > 0) previewIntent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = reservedHerdersForForecast });
+            // A single prospective builder/crafter makes downstream shelter
+            // demand visible to the ordered Animal Fabric recipe. This is only
+            // a demand probe; actual staffing still comes from the shared
+            // material, tool, food and resident budgets in Evaluate.
+            if (husbandryEnabled && NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 && c.Population > reservedHerdersForForecast)
+                previewIntent.Assignments.Add(new PopulationAssignment { Role = c.People.HasTech(NeolithicTech.Construction) ? WorkforceRoles.Builder : WorkforceRoles.Craftsperson, Population = 1 });
+            var preview = Preview(c, previewIntent, nextPopulation);
             NeolithicProduction.DepreciateHousing(w, preview, years);
-            var goods = recipes.Where(r => r.Good != CraftGood.HandTools && r.Good != CraftGood.Tools).ToArray();
+            var goods = recipes.Where(r => r.Good != CraftGood.HandTools && r.Good != CraftGood.Tools && (!r.HusbandryOnly || husbandryEnabled)).ToArray();
             var goals = goods.ToDictionary(r => r.Good, r => NeolithicProduction.Priority(preview, r.Good) > 0 ? NeolithicProduction.Demand(w, preview, r.Good, years) : 0);
             // FarmTools are sized only after this proposal has a bounded field
             // workforce.  The empty preview cannot answer that question without
@@ -49,6 +62,14 @@ namespace Anthropocene.Simulation
             double sparePlant = Math.Min(c.PlantFood, Math.Max(0, c.Food - c.Population * cfg.Consumption * intervals * (1 + cfg.GrowthReserveTurns)));
             int consumers = c.Population + w.Hunters.Where(h => h.SourceCamp == c.Id && Supply.Connected(w, h)).Sum(h => h.Population);
             double plantEnvelope = Math.Min(plantSupply + sparePlant, Math.Max(0, c.Food + supply - consumers * cfg.Consumption * intervals));
+            double animalSurplus = Math.Max(0, c.Food + supply - consumers * cfg.Consumption * intervals * (1 + cfg.GrowthReserveTurns));
+            double animalEnvelope = husbandryEnabled ? Math.Min(Math.Max(0, c.AnimalFood) + managedFood.AnimalFood, Math.Max(0, animalSurplus - sparePlant)) : 0;
+            double foodRoomEnvelope = 0;
+            if (husbandryEnabled)
+            {
+                double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, consumers, intervals), NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, intervals, years));
+                foodRoomEnvelope = Math.Max(0, c.Food + supply - consumers * cfg.Consumption * intervals - reserve);
+            }
 
             Proposal Evaluate(double fulfillment)
             {
@@ -58,17 +79,24 @@ namespace Anthropocene.Simulation
                 // resolver-shaped candidate before craft, food, material, and
                 // field feasibility are evaluated so every later worker budget
                 // sees the same bounded resident pool.
-                int reservedHerders = ManagedHerderReservation(w, c);
+                int reservedHerders = ManagedHerderReservation(w, c, years);
                 if (reservedHerders > 0)
                     intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = reservedHerders });
                 var candidate = Preview(c, intent, nextPopulation);
                 NeolithicProduction.DepreciateHousing(w, candidate, years);
+                double candidateLightHousing = candidate.Inventory.LightHousingUnits;
+                if (husbandryEnabled) { candidate.PlantFood = plantEnvelope; candidate.AnimalFood = animalEnvelope; }
+                if (husbandryEnabled && NeolithicProduction.Priority(preview, CraftGood.LightHousing) > 0 && c.Population > reservedHerders)
+                    candidate.Workforce.Assignments.Add(new PopulationAssignment { Role = c.People.HasTech(NeolithicTech.Construction) ? WorkforceRoles.Builder : WorkforceRoles.Craftsperson, Population = 1 });
                 var room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]);
                 double initialWood = room[MaterialId.Wood], initialClay = room[MaterialId.Clay];
                 double directWood = 0, directClay = 0;
                 double housingWoodShare = 0, housingClayShare = 0;
                 bool finalRolePass = false;
                 double plant = plantEnvelope;
+                double animal = animalEnvelope;
+                double animalFabric = Math.Max(0, c.Inventory.AnimalFabric);
+                double foodRoom = foodRoomEnvelope;
                 var requested = recipes.ToDictionary(r => r.Good, r => 0d);
                 var futureRoles = new Dictionary<string, double>();
                 int proposedFarmers = 0;
@@ -76,10 +104,23 @@ namespace Anthropocene.Simulation
                 var farmRecipe = goods.FirstOrDefault(r => r.Good == CraftGood.FarmTools);
                 string Role(CraftRecipe r) => c.People.HasTech(r.Track) ? r.Specialist : WorkforceRoles.Craftsperson;
                 double Rate(CraftRecipe r) => r.Rate * (c.People.HasTech(r.Track) ? 1 : n.GeneralistTaskEfficiency);
+                double RemainingGoodDemand(CraftRecipe r)
+                {
+                    if (NeolithicProduction.Priority(candidate, r.Good) <= 0) return 0;
+                    if (r.Good == CraftGood.Cloth || r.Good == CraftGood.AnimalFabric)
+                    {
+                        candidate.Inventory.Cloth = Math.Max(0, c.Inventory.Cloth) + requested[CraftGood.Cloth];
+                        candidate.Inventory.AnimalFabric = Math.Max(0, c.Inventory.AnimalFabric) + requested[CraftGood.AnimalFabric] - requested[CraftGood.LightHousing];
+                        candidate.Inventory.LightHousingUnits = candidateLightHousing + requested[CraftGood.LightHousing];
+                        return NeolithicProduction.Demand(w, candidate, r.Good, years);
+                    }
+                    return goals[r.Good];
+                }
                 void Add(Dictionary<string, double> roles, string role, double workers) { if (workers > Epsilon) roles[role] = (roles.TryGetValue(role, out double old) ? old : 0) + workers; }
                 double Capped(CraftRecipe r, double amount, bool debit)
                 {
                     if (r.SpecialistOnly && !c.People.HasTech(r.Track) || Rate(r) <= 0) return 0;
+                    if (r.AgricultureOnly && !CultivationEconomy.Enabled(c) || r.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) return 0;
                     if (r.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / r.Stone);
                     if (r.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / r.Clay);
                     if (r.Wood > 0) amount = Math.Min(amount, room[MaterialId.Wood] / r.Wood);
@@ -97,6 +138,9 @@ namespace Anthropocene.Simulation
                         }
                     }
                     if (r.PlantFood > 0) amount = Math.Min(amount, plant / r.PlantFood);
+                    if (r.AnimalFood > 0) amount = Math.Min(amount, animal / r.AnimalFood);
+                    if (husbandryEnabled && r.PlantFood + r.AnimalFood > 0) amount = Math.Min(amount, foodRoom / (r.PlantFood + r.AnimalFood));
+                    if (r.AnimalFabric > 0) amount = Math.Min(amount, animalFabric / r.AnimalFabric);
                     if (debit)
                     {
                         room[MaterialId.Stone] -= amount * r.Stone; room[MaterialId.Clay] -= amount * r.Clay; room[MaterialId.Wood] -= amount * r.Wood;
@@ -124,6 +168,10 @@ namespace Anthropocene.Simulation
                         wood += Math.Min(freeWood - wood, construction - wood - clay);
                         clay += Math.Min(freeClay - clay, construction - wood - clay);
                         room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= clay; plant -= amount * r.PlantFood;
+                        animal -= amount * r.AnimalFood;
+                        foodRoom -= amount * (r.PlantFood + r.AnimalFood);
+                        animalFabric += r.Good == CraftGood.AnimalFabric ? amount : 0;
+                        animalFabric -= amount * r.AnimalFabric;
                     }
                     return Math.Max(0, amount);
                 }
@@ -133,15 +181,22 @@ namespace Anthropocene.Simulation
                 // that another feasible recipe cannot substitute.
                 foreach (var r in goods.Where(r => r.Good != CraftGood.FarmTools && r.ConstructionMaterial <= 0).OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
                 {
-                    double amount = Capped(r, goals[r.Good] * fulfillment, true);
+                    double amount = Capped(r, RemainingGoodDemand(r) * fulfillment, true);
                     requested[r.Good] = amount;
-                    double multiplier = r.Good == CraftGood.Housing ? NeolithicProduction.HousingMultiplier(w, c, c.Population) : 1;
+                    double multiplier = (r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing) ? NeolithicProduction.HousingMultiplier(w, c, c.Population) : 1;
                     if (multiplier > 0) Add(futureRoles, Role(r), amount / (Rate(r) * multiplier * intervals));
                 }
+                // Demand probes carry virtual recipe output only for ordering.
+                // Restore the actual candidate stock before equipment and raw
+                // material replacement forecasts so they cannot mistake planned
+                // output for inventory already on hand.
+                candidate.Inventory.Cloth = c.Inventory.Cloth;
+                candidate.Inventory.AnimalFabric = c.Inventory.AnimalFabric;
+                candidate.Inventory.LightHousingUnits = candidateLightHousing;
                 // Build one resolver-shaped candidate: material-feasible jobs first,
                 // then the residual field workforce. The shared FarmTools demand
                 // helper can now see both maintenance and intended expansion.
-                if (farmRecipe != null && NeolithicProduction.Priority(candidate, CraftGood.FarmTools) > 0)
+                if (cultivationEnabled && farmRecipe != null && NeolithicProduction.Priority(candidate, CraftGood.FarmTools) > 0)
                 {
                     double projectedDemand = biological * nextPopulation / Math.Max(1, c.Population) + goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit;
                     bool intendedExpansion = projectedDemand > supply && operated.Any(id => ExpansionGain(w, id) > Epsilon);
@@ -204,7 +259,7 @@ namespace Anthropocene.Simulation
                 {
                     double amount = Capped(r, goals[r.Good] * fulfillment, true);
                     requested[r.Good] = amount;
-                    double multiplier = r.Good == CraftGood.Housing ? NeolithicProduction.HousingMultiplier(w, c, c.Population) : 1;
+                    double multiplier = (r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing) ? NeolithicProduction.HousingMultiplier(w, c, c.Population) : 1;
                     if (multiplier > 0) Add(futureRoles, Role(r), amount / (Rate(r) * multiplier * intervals));
                 }
                 // Keep the prospective producer reservation visible while the
@@ -217,8 +272,10 @@ namespace Anthropocene.Simulation
                 // authority.  Seed the pure preview with the already source- and
                 // demand-limited future roles so replacement demand can bootstrap
                 // the first tool cycle without changing persisted assignments.
-                candidate.Workforce.Assignments = futureRoles.OrderBy(p => p.Key, StringComparer.Ordinal)
-                    .Select(p => new PopulationAssignment { Role = p.Key, Population = (int)Math.Ceiling(p.Value - Epsilon) }).ToList();
+                candidate.Workforce.Assignments = intent.Assignments.Where(a => a.Role == WorkforceRoles.Herder)
+                    .Select(a => new PopulationAssignment { Role = a.Role, Population = a.Population })
+                    .Concat(futureRoles.OrderBy(p => p.Key, StringComparer.Ordinal)
+                        .Select(p => new PopulationAssignment { Role = p.Key, Population = (int)Math.Ceiling(p.Value - Epsilon) })).ToList();
                 if (proposedFarmers > 0)
                     candidate.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = proposedFarmers });
                 var rolesNow = new Dictionary<string, double>();
@@ -231,6 +288,9 @@ namespace Anthropocene.Simulation
                 MaterialEconomy.HousingShares(initialWood, initialClay, directWood, directClay, out housingWoodShare, out housingClayShare);
                 finalRolePass = true;
                 plant = plantEnvelope;
+                animal = animalEnvelope;
+                animalFabric = Math.Max(0, c.Inventory.AnimalFabric);
+                foodRoom = foodRoomEnvelope;
                 // Match production's role/recipe ordering and share one tool-time budget.
                 foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
                     foreach (var r in recipes.OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
@@ -245,6 +305,24 @@ namespace Anthropocene.Simulation
                     }
                 foreach (var job in rolesNow.OrderBy(p => p.Key, StringComparer.Ordinal))
                     intent.Assignments.Add(new PopulationAssignment { Role = job.Key, Population = (int)Math.Ceiling(job.Value - Epsilon) });
+                if (husbandryEnabled)
+                {
+                    // Preserve task-derived craft roles when current shared
+                    // equipment coverage blocks their output this turn. The
+                    // resolver uses these ordinary assignments to expose
+                    // downstream useful demand (for example, shelter demand
+                    // from an assigned Builder); it still produces nothing
+                    // without starting tool capacity. Count the reservation in
+                    // the same resident budget as every other planned job.
+                    foreach (var job in futureRoles.OrderBy(p => p.Key, StringComparer.Ordinal))
+                    {
+                        int plannedWorkers = (int)Math.Ceiling(job.Value - Epsilon);
+                        var assigned = intent.Assignments.FirstOrDefault(a => a.Role == job.Key);
+                        if (plannedWorkers <= 0 || assigned != null && assigned.Population >= plannedWorkers) continue;
+                        if (assigned == null) intent.Assignments.Add(new PopulationAssignment { Role = job.Key, Population = plannedWorkers });
+                        else assigned.Population = plannedWorkers;
+                    }
+                }
                 // Keep EquipmentTarget prospective through the shared replacement
                 // forecast. A zero current Hand/Regular-tool budget can suppress
                 // this turn's manufacture, while the material-feasible role still
@@ -261,7 +339,7 @@ namespace Anthropocene.Simulation
                     candidate.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = candidateFieldWorkers });
                 // Reforecast rounded staffing through the actual recipe planner. This
                 // catches shared generalist time, mixed inputs and reserve replenishment.
-                var outputs = MaterialEconomy.Forecast(w, candidate, recipes, intervals, years, new ToolCoverageBudget(w, c, intervals).Remaining, true);
+                var outputs = MaterialEconomy.Forecast(w, candidate, recipes, intervals, years, new ToolCoverageBudget(w, c, intervals).Remaining, !husbandryEnabled);
                 var housing = MaterialEconomy.PlanHousingMaterials(w, c, recipes, outputs, years, w.Days);
                 var raw = MaterialEconomy.Materials.ToDictionary(m => m, m => 0d);
                 foreach (var r in recipes)
@@ -285,8 +363,23 @@ namespace Anthropocene.Simulation
                     double workers = amount / (intervals * n.SpecialistMaterialExtractionRate * (specialist ? 1 : n.GeneralistTaskEfficiency));
                     if (specialist) intent.Assignments.Add(new PopulationAssignment { Role = role, Population = (int)Math.Ceiling(workers - Epsilon) }); else generalistMaterials += workers;
                 }
-                double feedstock = Math.Max(0, outputs[CraftGood.Cloth] * n.PlantFoodPerFabricUnit - sparePlant);
-                double foodTarget = Math.Min(supply, biological + feedstock);
+                double forecastPlantFeedstock = outputs[CraftGood.Cloth] * n.PlantFoodPerFabricUnit;
+                double forecastAnimalFeedstock = outputs[CraftGood.AnimalFabric];
+                if (husbandryEnabled)
+                {
+                    var typedFeedstock = NeolithicProduction.FabricFeedstockInputs(w, candidate, intervals, years, nextPopulation, false, false);
+                    forecastPlantFeedstock = Math.Min(forecastPlantFeedstock, typedFeedstock.PlantFood);
+                    forecastAnimalFeedstock = Math.Min(forecastAnimalFeedstock, typedFeedstock.AnimalFood);
+                }
+                double feedstock = Math.Max(0, forecastPlantFeedstock - sparePlant);
+                if (husbandryEnabled)
+                {
+                    double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, consumers, intervals), NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, intervals, years));
+                    double spareFood = Math.Max(0, c.Food - consumers * cfg.Consumption * intervals - reserve);
+                    double spareAnimal = Math.Min(c.AnimalFood, Math.Max(0, spareFood - sparePlant));
+                    feedstock += Math.Max(0, forecastAnimalFeedstock - spareAnimal);
+                }
+                double foodTarget = Math.Min(forageAfterHerds, Math.Max(0, biological + feedstock - managedFood.AnimalFood));
                 double farmRate = cfg.FarmerProductivity * cfg.GatherPerPerson * intervals;
                 int nonFarmWorkers = intent.Assignments.Where(a => a.Role != WorkforceRoles.Farmer).Sum(a => a.Population);
                 int availableFarmers = Math.Max(0, c.Population - nonFarmWorkers);
@@ -345,8 +438,8 @@ namespace Anthropocene.Simulation
             int spare = Math.Max(0, c.Population - best.Workers);
             // The capital scoring horizon is not a mandate to feed a hypothetical
             // century of exponential growth. Expand for the next demand forecast.
-            double futureDemand = biological * nextPopulation / c.Population + goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit;
-            bool expand = futureDemand > supply && operated.Any(id => ExpansionGain(w, id) > Epsilon);
+            double futureDemand = biological * nextPopulation / c.Population + (cultivationEnabled ? goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit : 0);
+            bool expand = cultivationEnabled && futureDemand > supply && operated.Any(id => ExpansionGain(w, id) > Epsilon);
             if (spare > 0 && expand)
             {
                 var farmer = best.Intent.Assignments.FirstOrDefault(a => a.Role == WorkforceRoles.Farmer);
@@ -356,27 +449,10 @@ namespace Anthropocene.Simulation
             best.Intent.Assignments = best.Intent.Assignments.OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
             return best.Intent;
         }
-        private static EconomicIntent PlanHusbandry(WorldState w, Camp c, EconomicIntent intent)
-        {
-            AddManagedHerders(w, c, intent);
-            intent.Assignments = intent.Assignments.OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
-            return intent;
-        }
-        private static void AddManagedHerders(WorldState w, Camp c, EconomicIntent intent)
-        {
-            if (!CultivationEconomy.HusbandryEnabled(c)) return;
-            int desired = ManagedHerderReservation(w, c);
-            var existing = intent.Assignments.FirstOrDefault(a => a.Role == WorkforceRoles.Herder);
-            int other = intent.Assignments.Where(a => a.Role != WorkforceRoles.Herder).Sum(a => a.Population);
-            int herders = Math.Min(desired, Math.Max(0, c.Population - other));
-            if (herders <= 0) { if (existing != null) intent.Assignments.Remove(existing); return; }
-            if (existing == null) intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = herders }); else existing.Population = herders;
-        }
-        private static int ManagedHerderReservation(WorldState w, Camp c)
+        private static int ManagedHerderReservation(WorldState w, Camp c, double years)
         {
             if (!CultivationEconomy.HusbandryEnabled(c)) return 0;
-            double animals = w.Herds.Where(h => h.DomesticCamp == c.Id && h.Animals > 0).OrderBy(h => h.Id).Sum(h => h.Animals);
-            return Math.Min(c.Population, Math.Max(0, (int)Math.Ceiling(animals / Math.Max(1e-12, w.Config.AnimalsPerHerder))));
+            return HerdingTooling.RequiredHerders(w, c, years);
         }
         private static double ExpansionGain(WorldState w, int id)
         {
@@ -410,7 +486,7 @@ namespace Anthropocene.Simulation
         private static Camp Preview(Camp c, EconomicIntent intent, double population)
         {
             var result = new Camp { Id = c.Id, Tile = c.Tile, Population = (int)Math.Ceiling(population), PlantFood = c.PlantFood, AnimalFood = c.AnimalFood, AquaticFood = c.AquaticFood,
-                Inventory = new CampInventory { HandTools = c.Inventory.HandTools, Tools = c.Inventory.Tools, CopperTools = c.Inventory.CopperTools, Cloth = c.Inventory.Cloth, HousingUnits = c.Inventory.HousingUnits, Pots = c.Inventory.Pots, FarmTools = c.Inventory.FarmTools, Stone = c.Inventory.Stone, Clay = c.Inventory.Clay, Wood = c.Inventory.Wood } };
+                Inventory = new CampInventory { HandTools = c.Inventory.HandTools, Tools = c.Inventory.Tools, CopperTools = c.Inventory.CopperTools, Cloth = c.Inventory.Cloth, AnimalFabric = c.Inventory.AnimalFabric, LightHousingUnits = c.Inventory.LightHousingUnits, HerdingTools = c.Inventory.HerdingTools, HousingUnits = c.Inventory.HousingUnits, Pots = c.Inventory.Pots, FarmTools = c.Inventory.FarmTools, Stone = c.Inventory.Stone, Clay = c.Inventory.Clay, Wood = c.Inventory.Wood } };
             result.Bind(c.People); EconomicIntents.Apply(result, intent); return result;
         }
         public static void ResolveEnabled(WorldState w, TurnRecord record)
