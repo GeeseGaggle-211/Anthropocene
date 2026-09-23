@@ -73,7 +73,7 @@ decline. On the pasture range, herd forage demand over 500 years rose from
 27,633–30,017.
 At the sampled year 300, herd nutrition was .641 / .256 / .212 for `b=.40` /
 `.60` / `.80`; at year 500 it was .433 / .390 / .333. Hydration was one at
-these sampled pasture endpoints, while the run-wide minimum hydration was
+the year-500 pasture endpoints, while the run-wide minimum hydration was
 .620–1.000. These receipts show the late pasture food constraint directly.
 Management remained fully covered, and turn-25 Herder assignments used 11.19%
 to 15.61% of phase-start residents, so the late nutrition loss is not a
