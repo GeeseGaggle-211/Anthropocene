@@ -74,6 +74,9 @@ internal static class PastoralCraftChecks
         PortableHousingMovesAndPersists();
         MixedHousingDecayFundsOnlyTheActualShortfall();
         HusbandryEconomyUnlocksSharedWeaving();
+        PastoralObservationContractIsFilteredAndPure();
+        PastoralIntentCopiesStampsAndRejectsInvalidValues();
+        PastoralLegitimateZerosSurviveSaveLoad();
         Console.WriteLine("PASS: " + checks + " pastoral craft assertions");
         return checks;
     }
@@ -302,5 +305,107 @@ internal static class PastoralCraftChecks
         Check(c.People.NeolithicTechnologies.Contains(NeolithicTech.Weaving), "useful Animal Fabric work advances the shared Weaving track");
         Check(c.People.UnlockedSpecialists.Contains(WorkforceRoles.Weaver), "shared Weaving mastery unlocks the ordinary Weaver role");
         Check(!c.People.NeolithicTechnologies.Contains("Dairying"), "pastoral production does not create a Dairying technology");
+    }
+
+    private static void PastoralObservationContractIsFilteredAndPure()
+    {
+        var w = HusbandryWorld(); var own = w.Camps[0];
+        own.Inventory.AnimalFabric = 2.25; own.Inventory.LightHousingUnits = 3.5; own.Inventory.HerdingTools = 4.75;
+        own.ManagedBreedingIntensity = .42; own.ManagedBreedingPolicyInitialized = true;
+        own.CraftingPriorities = new CraftingPriorities { AnimalFabric = .2, LightHousing = .4, HerdingTools = .6 };
+        var ownedHerd = new Herd { Id = w.NextId++, Tile = own.Tile, Animals = 6, DomesticCamp = own.Id, Species = w.Config.Species.First(s => s.Domesticable).Id, LastNutrition = .8, LastFoodNutrition = .7, LastWaterNutrition = .9, ManagementFulfillment = .5, AnimalFoodPotential = 9, AnimalFoodProduced = 4 };
+        w.Herds.Add(ownedHerd);
+
+        int rivalTile = w.Map.Neighbors(own.Tile).OrderBy(id => id).First();
+        var rival = new Camp { Id = w.NextId++, Player = 1, Tile = rivalTile, Population = 12, PlantFood = 12345 };
+        rival.Inventory.AnimalFabric = 9876; rival.Inventory.LightHousingUnits = 8765; rival.Inventory.HerdingTools = 7654;
+        rival.Technology = Technology.AnimalHusbandry; rival.Technologies[(int)Technology.AnimalHusbandry] = true;
+        w.Camps.Add(rival);
+        w.Herds.Add(new Herd { Id = w.NextId++, Tile = rivalTile, Animals = 23, DomesticCamp = rival.Id, Species = ownedHerd.Species, LastNutrition = .25, LastFoodNutrition = .2, LastWaterNutrition = .3, ManagementFulfillment = .1, AnimalFoodPotential = 77, AnimalFoodProduced = 66 });
+        Ownership.Bind(w);
+
+        string before = SaveCodec.Fingerprint(w);
+        var observed = new AgentObservationBuilder().Build(w, own.Player);
+        string json = ObservationContract.Serialize(observed, own.People.Mandate);
+        var dto = ObservationContract.Deserialize(json);
+        Check(dto.Schema == 11 && AgentObservation.SchemaVersion == 11, "pastoral observation uses DTO schema 11");
+        var ownDto = dto.Settlements.Single(settlement => settlement.Id == own.Id);
+        Near(ownDto.AnimalFabric, 2.25, "schema 11 exposes owned Animal Fabric stock");
+        Near(ownDto.LightHousing, 3.5, "schema 11 exposes owned portable Housing stock");
+        Near(ownDto.HerdingTools, 4.75, "schema 11 exposes owned Herding Tool stock");
+        Check(ownDto.Husbandry, "schema 11 identifies the owned Husbandry control surface");
+        Near(ownDto.Economy.Priorities.AnimalFabric, .2, "schema 11 carries the pastoral Animal Fabric priority");
+        Near(ownDto.Economy.Priorities.LightHousing, .4, "schema 11 carries the pastoral Light Housing priority");
+        Near(ownDto.Economy.Priorities.HerdingTools, .6, "schema 11 carries the Herding Tool priority");
+        var ownedDtoHerd = dto.Herds.Single(herd => herd.Id == ownedHerd.Id);
+        Check(ownedDtoHerd.OwnedDomestic && ownedDtoHerd.ExactCount && ownedDtoHerd.DomesticCamp == own.Id,
+            "owned herd observation retains exact management identity");
+        Near(ownedDtoHerd.FoodNutrition, .7, "owned herd observation exposes food nutrition");
+        Near(ownedDtoHerd.AcceptedFood, 4, "owned herd observation exposes accepted Animal Product");
+        var rivalDtoHerd = dto.Herds.Single(herd => herd.Domestic && herd.Id != ownedHerd.Id);
+        Check(!rivalDtoHerd.OwnedDomestic && !rivalDtoHerd.ExactCount && rivalDtoHerd.DomesticCamp == -1,
+            "foreign domestic herd count and management identity remain filtered");
+        Near(rivalDtoHerd.FoodNutrition + rivalDtoHerd.WaterNutrition + rivalDtoHerd.Nutrition + rivalDtoHerd.ManagementFulfillment + rivalDtoHerd.PotentialFood + rivalDtoHerd.AcceptedFood, 0,
+            "foreign domestic herd nutrition and production diagnostics remain hidden");
+        Check(dto.Settlements.All(settlement => settlement.Id != rival.Id), "foreign camp inventory DTO is omitted");
+        Check(!json.Contains("9876") && !json.Contains("8765") && !json.Contains("7654") && !json.Contains("12345"),
+            "serialized observation contains no foreign pastoral inventories or food stock");
+        Check(SaveCodec.Fingerprint(w) == before, "building and serializing schema 11 observation leaves authoritative state unchanged");
+    }
+
+    private static void PastoralIntentCopiesStampsAndRejectsInvalidValues()
+    {
+        var w = HusbandryWorld(); var c = w.Camps[0];
+        c.CraftingPriorities = new CraftingPriorities { AnimalFabric = .15, LightHousing = .35, HerdingTools = .55 };
+        c.ManagedBreedingIntensity = .45; c.ManagedBreedingPolicyInitialized = true;
+        var source = EconomicIntent.From(c);
+        var copy = source.Copy();
+        Near(copy.Priorities.AnimalFabric, .15, "EconomicIntent copy preserves Animal Fabric priority");
+        Near(copy.Priorities.LightHousing, .35, "EconomicIntent copy preserves Light Housing priority");
+        Near(copy.Priorities.HerdingTools, .55, "EconomicIntent copy preserves Herding Tool priority");
+        Near(copy.ManagedBreedingIntensity, .45, "EconomicIntent copy preserves pastoral breeding policy");
+        Check(!ReferenceEquals(copy.Priorities, source.Priorities), "EconomicIntent copy owns an independent priorities object");
+        string stamp = copy.Stamp;
+        copy.Priorities.AnimalFabric = .16;
+        Check(copy.Stamp != stamp, "EconomicIntent stamp includes Animal Fabric priority");
+        stamp = copy.Stamp; copy.Priorities.LightHousing = .36;
+        Check(copy.Stamp != stamp, "EconomicIntent stamp includes Light Housing priority");
+        stamp = copy.Stamp; copy.Priorities.HerdingTools = .56;
+        Check(copy.Stamp != stamp, "EconomicIntent stamp includes Herding Tool priority");
+
+        var observation = new AgentObservationBuilder().Build(w, c.Player);
+        var proposed = EconomicIntent.From(c);
+        proposed.Priorities.AnimalFabric = double.NaN;
+        Check(EconomicIntents.Validate(observation, observation.Settlements.Single(s => s.Id == c.Id), proposed) != null,
+            "validated Economy intent rejects NaN Animal Fabric priority");
+        proposed = EconomicIntent.From(c); proposed.Priorities.LightHousing = -0.01;
+        Check(EconomicIntents.Validate(observation, observation.Settlements.Single(s => s.Id == c.Id), proposed) != null,
+            "validated Economy intent rejects negative Light Housing priority");
+        proposed = EconomicIntent.From(c); proposed.Priorities.HerdingTools = double.NaN;
+        Check(EconomicIntents.Validate(observation, observation.Settlements.Single(s => s.Id == c.Id), proposed) != null,
+            "validated Economy intent rejects NaN Herding Tool priority");
+        proposed = EconomicIntent.From(c); proposed.ManagedBreedingIntensity = double.NaN;
+        Check(EconomicIntents.Validate(observation, observation.Settlements.Single(s => s.Id == c.Id), proposed) != null,
+            "validated Economy intent rejects NaN breeding intensity");
+        proposed = EconomicIntent.From(c); proposed.ManagedBreedingIntensity = -0.01;
+        Check(EconomicIntents.Validate(observation, observation.Settlements.Single(s => s.Id == c.Id), proposed) != null,
+            "validated Economy intent rejects negative breeding intensity");
+    }
+
+    private static void PastoralLegitimateZerosSurviveSaveLoad()
+    {
+        var w = HusbandryWorld(); var c = w.Camps[0];
+        c.Inventory.AnimalFabric = 0; c.Inventory.LightHousingUnits = 0; c.Inventory.HerdingTools = 0;
+        c.CraftingPriorities = new CraftingPriorities { AnimalFabric = 0, LightHousing = 0, HerdingTools = 0 };
+        c.ManagedBreedingIntensity = 0; c.ManagedBreedingPolicyInitialized = true;
+        var loaded = SaveCodec.Load(SaveCodec.Save(w)); var restored = loaded.Camps.Single();
+        Near(restored.Inventory.AnimalFabric, 0, "zero Animal Fabric stock is preserved by save/load");
+        Near(restored.Inventory.LightHousingUnits, 0, "zero portable Housing stock is preserved by save/load");
+        Near(restored.Inventory.HerdingTools, 0, "zero Herding Tool stock is preserved by save/load");
+        Near(restored.CraftingPriorities.AnimalFabric, 0, "zero Animal Fabric priority is preserved by save/load");
+        Near(restored.CraftingPriorities.LightHousing, 0, "zero Light Housing priority is preserved by save/load");
+        Near(restored.CraftingPriorities.HerdingTools, 0, "zero Herding Tool priority is preserved by save/load");
+        Near(restored.ManagedBreedingIntensity, 0, "zero managed breeding policy is preserved by save/load");
+        Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), "pastoral zero state round trips with the same authoritative fingerprint");
     }
 }
