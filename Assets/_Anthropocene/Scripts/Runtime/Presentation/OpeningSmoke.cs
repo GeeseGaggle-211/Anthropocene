@@ -88,7 +88,8 @@ namespace Anthropocene.Presentation
             var camp = world.Camps.Single(c => c.Player == 0);
             camp.Population = 100; camp.PlantFood = 12000; camp.Technology = Technology.Cultivation;
             camp.Technologies[(int)Technology.Cultivation] = true; camp.People.Progression.Era = Era.Neolithic;
-            camp.Inventory.HandTools = 20; camp.Inventory.Cloth = 100; camp.Inventory.HousingUnits = 25;
+            camp.Inventory.HandTools = 20; camp.Inventory.Cloth = 100;
+            NeolithicProduction.AddFixedHousing(world, camp, 25, world.Days);
             world.Config.AnnualHumanGrowthRate = 0; transitionDismissed = true;
             Refresh(); villageInspectorOpen = true; villageInspectorCampId = camp.Id;
             string before = SaveCodec.Fingerprint(world);
@@ -181,7 +182,7 @@ namespace Anthropocene.Presentation
             camp = world.Camps.Single(c => c.Player == 0); if (camp.EconomyAutomationTurns != 0 || camp.ManagedBreedingIntensity != .4 || camp.CraftingPriorities.AnimalFabric != .31 || camp.CraftingPriorities.LightHousing != .22 || camp.CraftingPriorities.HerdingTools != .13 || camp.Inventory.AnimalFabric <= 0 || camp.Inventory.LightHousingUnits <= 0 || camp.Inventory.HerdingTools <= 0 || NeolithicProduction.FixedHousingAt(world, camp.Id, camp.Tile, world.Days) <= 0) throw new InvalidOperationException("Husbandry automation did not retain pastoral priorities, inventories and shelter.");
             yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "05-automation-complete.png")); yield return new WaitForSeconds(1);
             if (Directory.GetFiles(output, "*.png").Length != 5) throw new InvalidOperationException("Missing Husbandry player captures; use a visible player window.");
-            File.WriteAllText(Path.Combine(output, "result.txt"), $"PASS: synthetic Husbandry-only fixture on generated geography. The shared Economy panel exposes Animal Fabric, portable Light Housing, Herding Tools and their priorities alongside breeding controls. Animal Fabric stock reconciled to {animalFabricOutput:F2} production / {animalFabricDebited:F2} debit from a 500-unit seed; the ManagedHerds receipt accounts for {managed.HerdingToolsConsumed:F2} Herding Tools used from a 500-unit seed. Typed inventories and separate current-site fixed / portable shelter survived isolated save/load and two normal automated commits, with priorities retained. The order resolved a live positively nourished herd with zero intentional births and no Agriculture/Farmer assignment. Owned managed-herd diagnostics and five actual Windows player captures. Not a natural-progression balance study or a human usability test.\n");
+            File.WriteAllText(Path.Combine(output, "result.txt"), $"PASS: synthetic Husbandry-only fixture on generated geography. The shared Economy panel exposes Animal Fabric, portable Light Housing, Herding Tools and their priorities alongside breeding controls. Animal Fabric inventory showed {animalFabricOutput:F2} production and {animalFabricDebited:F2} debit from a 500-unit seed; the ManagedHerds receipt accounts for {managed.HerdingToolsConsumed:F2} Herding Tools used from a 500-unit seed. Typed inventories and separate current-site fixed / portable shelter survived isolated save/load and two normal automated commits, with priorities retained. The order resolved a live positively nourished herd with zero intentional births and no Agriculture/Farmer assignment. Owned managed-herd diagnostics and five actual Windows player captures. Not a natural-progression balance study or a human usability test.\n");
             Application.Quit();
         }
         private IEnumerator AtlasSmoke(string directory)
