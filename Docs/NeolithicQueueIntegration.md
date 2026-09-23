@@ -4,7 +4,7 @@ Orchestration contract: GitHub #20. Integration branch: `features/neolithic-agri
 
 ## Integrated issues
 
-| Issue | Worker | Retired issue branch | Integration commit |
+| Issue | Worker | Issue branch | Integration commit |
 | --- | --- | --- | --- |
 | #1 | gpt-5.6-luna Medium | `issue-1-terrestrial-farmers` | [`4419916238a7`](https://github.com/GeeseGaggle-211/Anthropocene/commit/4419916238a78f6fd4729b79157509c4db88f839) |
 | #2 | gpt-5.6-terra High -> gpt-5.6-luna High | `issue-2-post-growth-fabric` | [`5bda6d949dbc`](https://github.com/GeeseGaggle-211/Anthropocene/commit/5bda6d949dbccc4b9456648f596205481cf3502e) |
@@ -18,6 +18,7 @@ Orchestration contract: GitHub #20. Integration branch: `features/neolithic-agri
 | #16 | gpt-5.6-luna High | `issue-16-managed-herd-economy` | [`21ac45be41e1`](https://github.com/GeeseGaggle-211/Anthropocene/commit/21ac45be41e1de1652fa5ca4ac1aa7cf9b7f64dc) |
 | #17 | gpt-5.6-terra High | `issue-17-managed-breeding-policy` | [`da276f9e701a`](https://github.com/GeeseGaggle-211/Anthropocene/commit/da276f9e701a8740ba5eefa53a5719679732037f) |
 | #18 | gpt-5.6-terra High -> gpt-6-luna High | `issue-18-live-husbandry-validation` | [`f2fce3e8efed`](https://github.com/GeeseGaggle-211/Anthropocene/commit/f2fce3e8efed3ca96fa2b23889c4cb28fcc63ba6) |
+| #19 | gpt-5.6-terra High assessment -> gpt-6-luna High | `issue-19-pastoral-craft-chain` | [`ab9263d85759`](https://github.com/GeeseGaggle-211/Anthropocene/commit/ab9263d85759cbb120dee92b4b1bcdbdcd53cd24) |
 
 ## Implementation and review commits
 
@@ -169,4 +170,6 @@ A diagnostic eight-generation fixture with 100 people, 150 animals, zero startin
 
 ## Final integration gate
 
-Astra passed the complete #19 diff review and all implementation/integration gates at `1294ae379ed69ee2f95a4f79be5873ffb054a671`. Only navigation and this validation report changed afterward. The integration SHA and issue closures are recorded below after the gated merge. No ready-queue issue is blocked. Deferred #9–#13 and #15 remain outside this queue.
+Astra passed the complete #19 diff review and all implementation/integration gates at `1294ae379ed69ee2f95a4f79be5873ffb054a671`. Only navigation and this validation report changed afterward. Gated integration commit: `ab9263d85759cbb120dee92b4b1bcdbdcd53cd24`. The merge tree exactly equals the reviewed issue branch; source SHA-256 checks matched the final tested snapshot, and post-merge Neolithic, tooling, planner, Husbandry and all 536 pastoral checks passed again. All thirteen ready issues are integrated. Final issue closure and the documentation-only final HEAD are recorded in the GitHub #20 completion comment. No ready-queue issue is blocked. Deferred #9–#13 and #15 remain outside this queue.
+
+Astra validation/navigation commit before merge: `6a89e109a13873db0cf9e62a58a7bfdf386013bb`. There were no merge conflicts and no rebase was necessary: upstream remained at the reviewed #18 base until this integration. All implementation work used the assigned Luna/Terra tiers; no new blockers were opened. Evidence paths are local ignored artifacts, while this audit, mechanics notes and the #14/#18 measurement reports are committed.
