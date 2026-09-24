@@ -24,10 +24,11 @@ namespace Anthropocene.Simulation
             var s = t.Seasons[season]; double multiplier = OpeningTransitions.FoodMultiplier(w, t);
             double condition = t.Aquatic || t.WaterBody == WaterKind.Saltwater ? view.AquaticCondition : view.LandCondition;
             Biomass = s.MaxPotentialFood * multiplier * condition;
-            WildFood = Math.Min(Biomass, s.MaxFood * multiplier * condition * FoodEcology.GatherableFraction(t, w.Config, view.CurrentVegetation) / FoodEcology.GatherableFraction(t, w.Config, t.NaturalVegetationPotential));
+            double ecologicalWildFood = Math.Min(Biomass, s.MaxFood * multiplier * condition * FoodEcology.GatherableFraction(t, w.Config, view.CurrentVegetation) / FoodEcology.GatherableFraction(t, w.Config, t.NaturalVegetationPotential));
             double q = CultivationEconomy.Intensity(w.Config, view.CultivationCapital);
-            Food = WildFood + (Biomass - WildFood) * q * q;
-            ManagedFlow = w.Config.CultivationRegenFlux * q * Biomass * s.BiomassRecoveryPerDay * (operatingFraction ?? t.CultivationOperatingFraction);
+            WildFood = EcologyMath.RetainedWildFoodCapacity(ecologicalWildFood, q, w.Config);
+            Food = EcologyMath.EffectiveWildFoodCapacity(ecologicalWildFood, Biomass, q, w.Config);
+            ManagedFlow = EcologyMath.ManagedRegenerationFlow(w.Config, q, Biomass, s.BiomassRecoveryPerDay, operatingFraction ?? t.CultivationOperatingFraction);
             Water = t.WaterBody == WaterKind.Saltwater || t.FreshwaterSource == FreshwaterSource.None ? 0 : s.MaxFreshwater;
             FoodRate = s.FoodRecoveryPerDay; BiomassRate = s.BiomassRecoveryPerDay; WaterRate = s.WaterRecoveryPerDay;
         }

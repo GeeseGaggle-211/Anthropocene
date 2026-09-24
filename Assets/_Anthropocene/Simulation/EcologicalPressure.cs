@@ -81,15 +81,15 @@ namespace Anthropocene.Simulation
                 foodCapacityDays += k.Food * dt; biomassCapacityDays += k.Biomass * dt; waterCapacityDays += k.Water * dt;
                 // Utilization compares realized extraction with a conservative renewable flow.
                 // Requests that failed, and ordinary drinking, contribute no damage.
-                double sustainable = k.Biomass * k.BiomassRate * dt * w.Config.SustainableProductionFraction;
+                double sustainable = EcologyMath.SustainableHarvestRate(k.Biomass, k.BiomassRate, w.Config.SustainableProductionFraction, k.ManagedFlow) * dt;
                 double utilization = (humanHarvest + herdHarvest) / Math.Max(1, sustainable);
                 double coefficient = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater ? w.Config.AquaticUseDamagePerYear : w.Config.LandUseDamagePerYear;
                 double impact = humanHarvest + herdHarvest <= 0 ? 1 : (humanHarvest * humanImpact + herdHarvest) / (humanHarvest + herdHarvest);
                 double damagePerDay = coefficient * impact * Math.Pow(Math.Max(0, utilization - w.Config.SafeUseRatio), w.Config.PressureExponent) / w.Config.DaysPerYear;
                 damage += damagePerDay * dt;
                 LazyEcology.RecoverCondition(w, tile, ref v, dt, damagePerDay); v.Days += dt;
-                wood?.Recover(previous, v, dt, damagePerDay);
                 v.CultivationCapital = CultivationEconomy.Decay(w.Config, v.CultivationCapital, tile.CultivationOperatingFraction, dt / w.Config.DaysPerYear);
+                wood?.Recover(previous, v, dt, damagePerDay);
             }
             foreach (var d in requests)
             {

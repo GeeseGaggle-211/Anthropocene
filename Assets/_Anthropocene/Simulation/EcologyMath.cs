@@ -10,6 +10,32 @@ namespace Anthropocene.Simulation
     }
     public static class EcologyMath
     {
+        // Cultivation overlays the natural vegetation services while leaving
+        // ecological vegetation state and total biomass capacity independent.
+        public static double CultivationVegetationRetention(SimulationConfig config, double cultivationIntensity)
+        {
+            double q = Numbers.Clamp(cultivationIntensity, 0, 1);
+            double displacementStart = config.CultivationVegetationDisplacementStart;
+            return q <= displacementStart ? 1 : Numbers.Clamp((1 - q) / (1 - displacementStart), 0, 1);
+        }
+        public static double RetainedWildFoodCapacity(double ecologicalWildFood, double cultivationIntensity, SimulationConfig config)
+            => Math.Max(0, ecologicalWildFood) * CultivationVegetationRetention(config, cultivationIntensity);
+
+        // Ecological wild food is retained first, then the remaining biomass is
+        // made accessible by cultivation according to q squared.
+        public static double EffectiveWildFoodCapacity(double ecologicalWildFood, double biomass, double cultivationIntensity, SimulationConfig config)
+        {
+            double q = Numbers.Clamp(cultivationIntensity, 0, 1), capacity = Math.Max(0, biomass);
+            double wildNatural = Numbers.Clamp(RetainedWildFoodCapacity(ecologicalWildFood, q, config), 0, capacity);
+            return wildNatural + (capacity - wildNatural) * q * q;
+        }
+        public static double ManagedRegenerationFlow(SimulationConfig config, double cultivationIntensity, double biomass, double biomassRecoveryPerDay, double operatingFraction)
+            => Math.Max(0, config.CultivationRegenFlux) * Numbers.Clamp(cultivationIntensity, 0, 1) * Math.Max(0, biomass) * Math.Max(0, biomassRecoveryPerDay) * Numbers.Clamp(operatingFraction, 0, 1);
+        public static double SustainableHarvestRate(double biomass, double biomassRecoveryPerDay, double sustainableProductionFraction, double managedFlow)
+            => Math.Max(0, biomass) * Math.Max(0, biomassRecoveryPerDay) * Math.Max(0, sustainableProductionFraction) + Math.Max(0, managedFlow);
+        public static double EffectiveWoodCapacity(double ecologicalCapacity, double cultivationIntensity, SimulationConfig config)
+            => Math.Max(0, ecologicalCapacity) * CultivationVegetationRetention(config, cultivationIntensity);
+
         // Bounded stock with additive managed renewal, integrated before any transfer.
         public static StockFlow ManagedStock(double initial, double capacity, double rate, double inflow, double request, double days)
         {

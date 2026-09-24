@@ -10,6 +10,15 @@ namespace Anthropocene.Simulation
     {
         public static bool IsWooded(Tile t) => t.Land && t.CurrentVegetation >= VegetationTier.Medium &&
             (t.Environment == EnvironmentKind.Temperate || t.Environment == EnvironmentKind.Tropical || t.Environment == EnvironmentKind.Cold);
+        // Rendering and habitat consumers need a categorical view of standing
+        // natural cover, while CurrentVegetation remains the raw ecological tier
+        // used for succession and agricultural clearing pressure. Convert the
+        // continuous retained service only at those categorical boundaries.
+        public static VegetationTier RetainedCover(VegetationTier ecological, double retention)
+        {
+            double service = (int)ecological * Numbers.Clamp(retention, 0, 1);
+            return service < .5 ? VegetationTier.Low : service < 1.5 ? VegetationTier.Medium : VegetationTier.High;
+        }
         public static EnvironmentKind Classify(double temperature, double regionalMoisture, SimulationConfig c) =>
             temperature < c.IceTemperature ? EnvironmentKind.Ice : temperature < c.ColdTemperature ? EnvironmentKind.Cold :
             regionalMoisture < c.DesertMoisture ? EnvironmentKind.Desert : regionalMoisture < c.SteppeMoisture ? EnvironmentKind.Grassland :

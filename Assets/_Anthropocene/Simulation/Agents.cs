@@ -27,9 +27,9 @@ namespace Anthropocene.Simulation
         public readonly int Id, Food, PotentialFood, Freshwater, Productivity, Moisture, Condition, ElevationLevel, RidgeMask, FoodMaximum, PotentialMaximum, GatherablePercent;
         public readonly Terrain Terrain;
         public readonly EnvironmentKind Environment;
-        public readonly VegetationTier NaturalVegetationPotential, CurrentVegetation;
+        public readonly VegetationTier NaturalVegetationPotential, CurrentVegetation, EffectiveVegetation;
         public readonly bool River, Cultivated, Fishery, Oasis, Irrigated, Cultivable;
-        public readonly double Cultivation;
+        public readonly double Cultivation, NaturalVegetationRetention, EffectiveNaturalVegetationService;
         public readonly Relief Relief;
         public readonly float Elevation;
         public readonly WaterKind WaterBody;
@@ -38,20 +38,56 @@ namespace Anthropocene.Simulation
         public bool Land => Terrain != Terrain.Ocean && Terrain != Terrain.Shallows && Terrain != Terrain.Lake;
         public bool Aquatic => Terrain == Terrain.Shallows || Terrain == Terrain.Lake;
         public TileObservation(Tile tile, SeasonData ecology, SimulationConfig config, IReadOnlyList<RiverEdge> rivers, EcologyView? projected = null)
+            : this(tile, ecology, config, rivers, projected, null)
+        {
+        }
+        internal TileObservation(WorldState world, Tile tile, IReadOnlyList<RiverEdge> rivers, EcologyView projected)
+            : this(tile, tile.Seasons[world.Season], world.Config, rivers, projected, new EcologyCapacity(world, tile, projected, world.Season))
+        {
+        }
+        private TileObservation(Tile tile, SeasonData ecology, SimulationConfig config, IReadOnlyList<RiverEdge> rivers, EcologyView? projected, EcologyCapacity? projectedCapacity)
         {
             var view = projected ?? new EcologyView(tile);
             Cultivable = tile.TraversableLand && tile.Environment != EnvironmentKind.Ice && tile.Seasons.Any(s => s.MaxPotentialFood > 0);
             Environment = tile.Environment; NaturalVegetationPotential = tile.NaturalVegetationPotential; CurrentVegetation = view.CurrentVegetation;
-            double accessibility = FoodEcology.GatherableFraction(tile, config, view.CurrentVegetation) / FoodEcology.GatherableFraction(tile, config, tile.NaturalVegetationPotential);
-            Id = tile.Id; Terrain = Vegetation.LegacyTerrain(tile.Environment, view.CurrentVegetation); River = tile.River; Cultivated = tile.Cultivated; Fishery = tile.Fishery; ElevationLevel = tile.ElevationLevel; RidgeMask = tile.RidgeMask; FoodMaximum = Knowledge.Band(ecology.MaxFood * accessibility, 70, config);
-            Cultivation = CultivationEconomy.Intensity(config, view.CultivationCapital); Irrigated = tile.Irrigated;
-            PotentialFood = Knowledge.Band(view.PotentialFood, Math.Max(1, ecology.MaxPotentialFood), config); PotentialMaximum = Knowledge.Band(ecology.MaxPotentialFood, 700, config); GatherablePercent = (int)Math.Round(100 * ecology.MaxFood * accessibility / Math.Max(1e-9, ecology.MaxPotentialFood));
+            Cultivation = CultivationEconomy.Intensity(config, view.CultivationCapital);
+            NaturalVegetationRetention = EcologyMath.CultivationVegetationRetention(config, Cultivation);
+            // Low vegetation has brush/grass service too; enum zero is a label,
+            // not an ecological zero. Keep the tier's full service positive
+            // before applying the common q-dependent retention factor.
+            EffectiveNaturalVegetationService = ((int)view.CurrentVegetation + 1) * NaturalVegetationRetention;
+            EffectiveVegetation = tile.Land ? Vegetation.RetainedCover(view.CurrentVegetation, NaturalVegetationRetention) : view.CurrentVegetation;
+            Id = tile.Id; Terrain = Vegetation.LegacyTerrain(tile.Environment, view.CurrentVegetation); River = tile.River; Cultivated = tile.Cultivated; Fishery = tile.Fishery; ElevationLevel = tile.ElevationLevel; Irrigated = tile.Irrigated;
+            double condition = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater ? view.AquaticCondition : view.LandCondition;
+            double biomassCapacity, foodCapacity, foodRate, managedFlow;
+            if (projectedCapacity.HasValue)
+            {
+                // The live observation path consumes the same authoritative
+                // ecology capacity used by resolution and planning.
+                var capacity = projectedCapacity.Value;
+                biomassCapacity = capacity.Biomass; foodCapacity = capacity.Food; foodRate = capacity.FoodRate; managedFlow = capacity.ManagedFlow;
+            }
+            else
+            {
+                // Lightweight compatibility path for isolated presentation
+                // fixtures that do not have a WorldState composition root.
+                double openingMultiplier = config.OpeningCompatibilityEffects && tile.Fishery ? config.OpeningFoodMultiplier : 1;
+                biomassCapacity = ecology.MaxPotentialFood * openingMultiplier * condition;
+                double wildFoodEcological = Math.Min(biomassCapacity, ecology.MaxFood * openingMultiplier * condition *
+                    FoodEcology.GatherableFraction(tile, config, view.CurrentVegetation) / FoodEcology.GatherableFraction(tile, config, tile.NaturalVegetationPotential));
+                foodCapacity = EcologyMath.EffectiveWildFoodCapacity(wildFoodEcological, biomassCapacity, Cultivation, config);
+                foodRate = ecology.FoodRecoveryPerDay;
+                managedFlow = EcologyMath.ManagedRegenerationFlow(config, Cultivation, biomassCapacity, ecology.BiomassRecoveryPerDay, tile.CultivationOperatingFraction);
+            }
+            double accessibility = biomassCapacity > 1e-9 ? foodCapacity / biomassCapacity : 0;
+            FoodMaximum = Knowledge.Band(foodCapacity, 70, config);
+            PotentialFood = Knowledge.Band(view.PotentialFood, Math.Max(1, ecology.MaxPotentialFood), config); PotentialMaximum = Knowledge.Band(ecology.MaxPotentialFood, 700, config); GatherablePercent = (int)Math.Round(100 * accessibility);
             Oasis = tile.Oasis; Relief = tile.Relief; Elevation = tile.Elevation; WaterBody = tile.WaterBody; FreshwaterSource = tile.FreshwaterSource;
             Rivers = Array.AsReadOnly(tile.RiverEdges == null ? new RiverObservation[0] : tile.RiverEdges.Select((id, side) => new { id, side }).Where(x => x.id >= 0).Select(x => new RiverObservation(x.side, rivers[x.id], tile.Id, new HexCorners(config.Width, config.Height))).ToArray());
             // Food bands describe absolute usable yield; a nearly full barren tile must not appear abundant.
             Food = Knowledge.Band(view.Food, 70, config); Freshwater = Knowledge.Band(view.Freshwater, 70, config);
-            double condition = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater ? view.AquaticCondition : view.LandCondition;
-            Condition = Knowledge.Band(condition, 1, config); Productivity = Knowledge.Band(ecology.MaxFood * accessibility * ecology.FoodRecoveryPerDay * config.BaseDays * condition, 30, config); Moisture = Knowledge.Band(ecology.Moisture, 1, config);
+            Condition = Knowledge.Band(condition, 1, config);
+            Productivity = Knowledge.Band((foodCapacity * foodRate + managedFlow) * config.BaseDays, 30, config); Moisture = Knowledge.Band(ecology.Moisture, 1, config);
         }
     }
     public sealed class RiverObservation
@@ -89,7 +125,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 11;
+        public const int SchemaVersion = 12;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
@@ -114,7 +150,7 @@ namespace Anthropocene.Simulation
             Watercraft = camp.Technologies[(int)Technology.Watercraft]; Map = w.Map;
             WaterMovementCost = Math.Max(1, w.Config.HunterMovement / w.Config.WaterMovement); MinimumCamp = w.Config.MinimumCamp; HunterMovement = w.Config.HunterMovement; CampMovement = w.Config.CampMovement; Inertia = w.Config.RelocationInertia;
             SupplyRange = w.Config.SupplyRange; SustainableHuntPopulation = w.Config.SustainableHuntPopulation;
-            Tiles = new ReadOnlyDictionary<int, TileObservation>(visible.OrderBy(n => n).ToDictionary(n => n, n => new TileObservation(w.Tiles[n], w.Ecology(n), w.Config, w.Rivers, index.Ecology(n))));
+            Tiles = new ReadOnlyDictionary<int, TileObservation>(visible.OrderBy(n => n).ToDictionary(n => n, n => new TileObservation(w, w.Tiles[n], w.Rivers, index.Ecology(n))));
             Hunters = Array.AsReadOnly(index.OwnHunters(Player).Select(h => new UnitObservation(h.Id, h.Tile, h.Population, h.Player, Supply.Connected(w, h), Knowledge.Band(h.CarriedFood, Supply.Capacity(w, h), w.Config), h.DeficitTurns, h.SourceCamp)).ToArray());
             Rivals = Array.AsReadOnly(index.VisibleCamps(visible).Where(c => c.Player != Player).Select(c => new UnitObservation(c.Id, c.Tile, 0, c.Player)).ToArray());
             ForeignHunters = Array.AsReadOnly(index.VisibleHunters(visible).Where(h => h.Player != Player).Select(h => new UnitObservation(h.Id, h.Tile, 0, h.Player)).ToArray());

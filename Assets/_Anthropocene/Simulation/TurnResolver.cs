@@ -138,7 +138,8 @@ namespace Anthropocene.Simulation
                     .ThenByDescending(n => Knowledge.Band(index.Ecology(n).PotentialFood, Math.Max(1, w.Ecology(n).MaxPotentialFood), w.Config))
                     .ThenBy(n => n).First();
             if (!thirsty && !hungry && Numbers.Random(w.Seed, 71, herd.Id, w.Turn) >= w.Config.WanderChance) return herd.Tile;
-            return candidates.OrderByDescending(n => (thirsty ? FreshwaterAccess.Available(w, n, index) / Math.Max(1, waterDemand) : hungry ? index.Ecology(n).PotentialFood / Math.Max(1, foodDemand) : Numbers.Random(w.Seed, 72, herd.Id ^ n, w.Turn)) + species.Suitability(w.Tiles[n], index.Ecology(n).CurrentVegetation) * species.MovementHabitatWeight)
+            return candidates.OrderByDescending(n => (thirsty ? FreshwaterAccess.Available(w, n, index) / Math.Max(1, waterDemand) : hungry ? index.Ecology(n).PotentialFood / Math.Max(1, foodDemand) : Numbers.Random(w.Seed, 72, herd.Id ^ n, w.Turn)) + species.Suitability(w.Tiles[n], index.Ecology(n).CurrentVegetation,
+                    EcologyMath.CultivationVegetationRetention(w.Config, CultivationEconomy.Intensity(w.Config, index.Ecology(n).CultivationCapital))) * species.MovementHabitatWeight)
                 .ThenBy(n => n == herd.Tile ? 0 : 1).ThenBy(n => n).First();
         }
         private static void Move(WorldState w, List<Order> orders, Dictionary<int, int> herds, TurnRecord record)
@@ -196,7 +197,10 @@ namespace Anthropocene.Simulation
                 var practice = camp.SpeciesExperience.FirstOrDefault(p => p.Species == herd.Species);
                 if (practice == null) { practice = new SpeciesPractice { Species = herd.Species }; camp.SpeciesExperience.Add(practice); }
                 practice.Experience += hunter.Population * practiceTime;
-                double efficiency = w.Config.HuntEfficiency * (Vegetation.LegacyTerrain(w.Tiles[hunter.Tile].Environment, huntingIndex.Ecology(hunter.Tile).CurrentVegetation) == Terrain.Woodland ? .85 : 1);
+                var hunterEcology = huntingIndex.Ecology(hunter.Tile);
+                double coverRetention = EcologyMath.CultivationVegetationRetention(w.Config, CultivationEconomy.Intensity(w.Config, hunterEcology.CultivationCapital));
+                var standingCover = Vegetation.RetainedCover(hunterEcology.CurrentVegetation, coverRetention);
+                double efficiency = w.Config.HuntEfficiency * (Vegetation.LegacyTerrain(w.Tiles[hunter.Tile].Environment, standingCover) == Terrain.Woodland ? .85 : 1);
                 double expectation = hunter.Population * efficiency * time * (1 - w.Config.HuntVariance + Numbers.Random(w.Seed, 80, hunter.Id, w.Turn) * w.Config.HuntVariance * 2);
                 int requested = (int)expectation + (Numbers.Random(w.Seed, 81, hunter.Id, w.Turn) < expectation % 1 ? 1 : 0);
                 requests.Add(Tuple.Create(hunter, herd, requested));

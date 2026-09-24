@@ -126,10 +126,10 @@ namespace Anthropocene.Presentation
         public bool HasSprite(string key) => sprites.TryGetValue(key, out var sprite) && sprite != null;
         public static string BaseKey(TileObservation tile) => tile == null ? "hidden" : "terrain." +
             (tile.Land && (tile.Relief == Relief.Highland || tile.Relief == Relief.Mountain) ? "highland" : tile.Environment == EnvironmentKind.Ice ? "cold" : tile.Environment.ToString().ToLowerInvariant());
-        public static int VegetationCount(TileObservation tile, float height) => !tile.Land || tile.Environment == EnvironmentKind.Ice || height < 42 ? 0 :
-            tile.CurrentVegetation == VegetationTier.Medium ? 1 : 3;
+        public static int VegetationCount(TileObservation tile, float height) => !tile.Land || tile.Environment == EnvironmentKind.Ice || height < 42 || tile.NaturalVegetationRetention <= 0 ? 0 :
+            tile.EffectiveVegetation == VegetationTier.Medium ? 1 : 3;
         public static string VegetationKey(TileObservation tile) => "vegetation." +
-            (tile.CurrentVegetation == VegetationTier.Low ? tile.Environment == EnvironmentKind.Desert ? "shrub" : "grass" :
+            (tile.EffectiveVegetation == VegetationTier.Low ? tile.Environment == EnvironmentKind.Desert ? "shrub" : "grass" :
                 tile.Environment == EnvironmentKind.Cold ? "conifer" : tile.Environment == EnvironmentKind.Tropical || tile.Environment == EnvironmentKind.Desert ? "tropical_tree" : "temperate_tree");
         private static readonly Vector2[] VegetationSlots = { new Vector2(.28f, .29f), new Vector2(.72f, .37f), new Vector2(.37f, .65f) };
         private static readonly Vector2[] OccupiedVegetationSlots = { new Vector2(.5f, .16f), new Vector2(.105f, .54f), new Vector2(.895f, .54f) };

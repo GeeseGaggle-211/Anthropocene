@@ -330,19 +330,29 @@ internal static class PastoralCraftChecks
         w.Herds.Add(new Herd { Id = w.NextId++, Tile = rivalTile, Animals = 23, DomesticCamp = rival.Id, Species = ownedHerd.Species, LastNutrition = .25, LastFoodNutrition = .2, LastWaterNutrition = .3, ManagementFulfillment = .1, AnimalFoodPotential = 77, AnimalFoodProduced = 66 });
         Ownership.Bind(w);
 
+        var coverTile = w.Tiles[own.Tile]; coverTile.Environment = EnvironmentKind.Temperate;
+        coverTile.NaturalVegetationPotential = coverTile.CurrentVegetation = VegetationTier.High;
+        coverTile.CultivationCapital = 1 / (w.Config.ReferenceIntensity * w.Config.ReferenceIntensity);
+        coverTile.Cultivation = 1; coverTile.Cultivated = true;
+
         string before = SaveCodec.Fingerprint(w);
         var observed = new AgentObservationBuilder().Build(w, own.Player);
         string json = ObservationContract.Serialize(observed, own.People.Mandate);
         var dto = ObservationContract.Deserialize(json);
-        Check(dto.Schema == 11 && AgentObservation.SchemaVersion == 11, "pastoral observation uses DTO schema 11");
+        Check(dto.Schema == 12 && AgentObservation.SchemaVersion == 12, "observation schema 12 exposes retained natural cover without persisting it");
+        var observedCover = dto.Tiles.Single(tile => tile.Id == own.Tile);
+        Near(observedCover.NaturalVegetationRetention, 0, "schema 12 reports zero retained vegetation service at q=1");
+        Near(observedCover.EffectiveNaturalVegetationService, 0, "schema 12 reports no standing natural vegetation service at q=1");
+        Check(observedCover.CurrentVegetation == VegetationTier.High && observedCover.EffectiveVegetation == VegetationTier.Low,
+            "schema 12 keeps ecological vegetation separate from field standing cover");
         var ownDto = dto.Settlements.Single(settlement => settlement.Id == own.Id);
-        Near(ownDto.AnimalFabric, 2.25, "schema 11 exposes owned Animal Fabric stock");
-        Near(ownDto.LightHousing, 3.5, "schema 11 exposes owned portable Housing stock");
-        Near(ownDto.HerdingTools, 4.75, "schema 11 exposes owned Herding Tool stock");
-        Check(ownDto.Husbandry, "schema 11 identifies the owned Husbandry control surface");
-        Near(ownDto.Economy.Priorities.AnimalFabric, .2, "schema 11 carries the pastoral Animal Fabric priority");
-        Near(ownDto.Economy.Priorities.LightHousing, .4, "schema 11 carries the pastoral Light Housing priority");
-        Near(ownDto.Economy.Priorities.HerdingTools, .6, "schema 11 carries the Herding Tool priority");
+        Near(ownDto.AnimalFabric, 2.25, "schema 12 exposes owned Animal Fabric stock");
+        Near(ownDto.LightHousing, 3.5, "schema 12 exposes owned portable Housing stock");
+        Near(ownDto.HerdingTools, 4.75, "schema 12 exposes owned Herding Tool stock");
+        Check(ownDto.Husbandry, "schema 12 identifies the owned Husbandry control surface");
+        Near(ownDto.Economy.Priorities.AnimalFabric, .2, "schema 12 carries the pastoral Animal Fabric priority");
+        Near(ownDto.Economy.Priorities.LightHousing, .4, "schema 12 carries the pastoral Light Housing priority");
+        Near(ownDto.Economy.Priorities.HerdingTools, .6, "schema 12 carries the Herding Tool priority");
         var ownedDtoHerd = dto.Herds.Single(herd => herd.Id == ownedHerd.Id);
         Check(ownedDtoHerd.OwnedDomestic && ownedDtoHerd.ExactCount && ownedDtoHerd.DomesticCamp == own.Id,
             "owned herd observation retains exact management identity");
@@ -356,7 +366,7 @@ internal static class PastoralCraftChecks
         Check(dto.Settlements.All(settlement => settlement.Id != rival.Id), "foreign camp inventory DTO is omitted");
         Check(!json.Contains("9876") && !json.Contains("8765") && !json.Contains("7654") && !json.Contains("12345"),
             "serialized observation contains no foreign pastoral inventories or food stock");
-        Check(SaveCodec.Fingerprint(w) == before, "building and serializing schema 11 observation leaves authoritative state unchanged");
+        Check(SaveCodec.Fingerprint(w) == before, "building and serializing schema 12 observation leaves authoritative state unchanged");
     }
 
     private static void PastoralIntentCopiesStampsAndRejectsInvalidValues()

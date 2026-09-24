@@ -48,28 +48,44 @@ namespace Anthropocene.Simulation
     {
         private readonly WorldState world;
         private readonly int tile;
-        private readonly MaterialSourceState state;
+        private MaterialSourceState state;
+        private readonly double initial;
         private double remaining;
         internal WoodSourceProjection(WorldState world, int tile, MaterialSourceState state)
+            : this(world, tile, state, state?.Initial ?? 0)
         {
-            this.world = world; this.tile = tile; this.state = state;
-            remaining = Math.Max(0, state.Remaining);
+        }
+        internal WoodSourceProjection(WorldState world, int tile, MaterialSourceState state, double initial)
+        {
+            this.world = world; this.tile = tile; this.state = state; this.initial = Math.Max(0, initial);
+            remaining = state == null ? this.initial : Math.Max(0, state.Remaining);
             var stored = new EcologyView(world.Tiles[tile]);
-            if (state.LastDays > stored.Days + 1e-8) throw new InvalidOperationException("Wood source cannot be ahead of authoritative ecology.");
+            if (state != null && state.LastDays > stored.Days + 1e-8) throw new InvalidOperationException("Wood source cannot be ahead of authoritative ecology.");
             // Older saves can have a source clock behind a later ecology commit.
             // Do not reconstruct unrecorded ecological history: establish the
             // current authoritative ceiling and continue from this boundary.
-            remaining = Math.Min(remaining, MaterialEconomy.WoodCapacity(state.Initial, world.Tiles[tile], stored));
+            remaining = Math.Min(remaining, MaterialEconomy.WoodCapacity(this.initial, world.Tiles[tile], stored, world.Config));
         }
         internal double Remaining => remaining;
         internal void Recover(EcologyView before, EcologyView after, double days) => Recover(before, after, days, 0);
         internal void Recover(EcologyView before, EcologyView after, double days, double conditionDamagePerDay)
         {
-            if (days <= 0) { remaining = Math.Min(remaining, MaterialEconomy.WoodCapacity(state.Initial, world.Tiles[tile], after)); return; }
-            remaining = MaterialEconomy.RecoverWood(world, world.Tiles[tile], state.Initial, remaining, before, after, days, conditionDamagePerDay);
+            if (days <= 0) { remaining = Math.Min(remaining, MaterialEconomy.WoodCapacity(initial, world.Tiles[tile], after, world.Config)); return; }
+            remaining = MaterialEconomy.RecoverWood(world, world.Tiles[tile], initial, remaining, before, after, days, conditionDamagePerDay);
         }
         internal void Commit()
         {
+            if (state == null)
+            {
+                if (initial <= 0 || world.MaterialSources == null) return;
+                string id = "surface:" + tile + ":" + (int)MaterialId.Wood;
+                state = world.MaterialSources.FirstOrDefault(s => s.Id == id && s.Material == MaterialId.Wood);
+                if (state == null)
+                {
+                    state = new MaterialSourceState { Id = id, Material = MaterialId.Wood, Initial = initial };
+                    world.MaterialSources.Add(state);
+                }
+            }
             state.Remaining = remaining;
             state.LastDays = world.Tiles[tile].LastEcologyUpdateDays;
         }
@@ -163,62 +179,154 @@ namespace Anthropocene.Simulation
         internal static WoodSourceProjection ProjectWoodSource(WorldState w, int tile)
         {
             var state = w.MaterialSources.FirstOrDefault(s => s.Id == SurfaceId(tile, MaterialId.Wood) && s.Material == MaterialId.Wood);
-            return state == null ? null : new WoodSourceProjection(w, tile, state);
+            if (state != null) return new WoodSourceProjection(w, tile, state);
+            // Cultivation can displace a surface stock before its first harvest.
+            // Keep that stock virtual during pure forecasts, then persist the
+            // same capped projection at the next ecology/material write barrier.
+            if (w.Resources == null || CultivationEconomy.Intensity(w.Config, w.Tiles[tile].CultivationCapital) <= 0) return null;
+            double initial = w.Resources.SurfaceAccessible(tile, MaterialId.Wood);
+            return initial > 0 ? new WoodSourceProjection(w, tile, null, initial) : null;
         }
         // The ordinal fraction is a biological support ratio, not a replacement
         // for the generated Wood raster. A naturally Low tile therefore keeps
         // its generated brush capacity, while High -> Medium -> Low follows the
         // same current-vegetation hysteresis as the rest of ecology.
-        internal static double WoodCapacity(double initial, Tile tile, EcologyView ecology)
+        internal static double WoodCapacity(double initial, Tile tile, EcologyView ecology, SimulationConfig config)
         {
             if (!tile.Land || initial <= 0) return 0;
             double natural = (int)tile.NaturalVegetationPotential + 1;
             double current = Math.Min((int)tile.NaturalVegetationPotential, (int)ecology.CurrentVegetation) + 1;
-            return Math.Max(0, initial) * Numbers.Clamp(ecology.LandCondition, 0, 1) * current / natural;
+            double ecological = Math.Max(0, initial) * Numbers.Clamp(ecology.LandCondition, 0, 1) * current / natural;
+            double q = CultivationEconomy.Intensity(config, ecology.CultivationCapital);
+            return EcologyMath.EffectiveWoodCapacity(ecological, q, config);
         }
-        // Integrate Wood toward the ecological support present through this same
-        // condition segment. Condition is an affine exponential, so this remains
-        // duration-aware without adding a second vegetation clock.
+        // Integrate Wood toward ecological support and the q-derived natural-cover
+        // cap through this condition segment. Both condition and q change smoothly
+        // here; splitting at the retention threshold keeps the stock integration
+        // analytic and duration-partition independent.
         internal static double RecoverWood(WorldState w, Tile tile, double initial, double remaining, EcologyView before, EcologyView after, double days, double conditionDamagePerDay)
         {
-            double capacityBefore = WoodCapacity(initial, tile, before);
+            double capacityBefore = WoodCapacity(initial, tile, before, w.Config);
             remaining = Math.Min(Math.Max(0, remaining), capacityBefore);
             double woodRate = w.Resources == null ? 0 : Math.Max(0, w.Resources.WoodRecoveryPerYear) / w.Config.DaysPerYear;
-            if (woodRate <= 1e-18 || days <= 0) return Math.Min(remaining, WoodCapacity(initial, tile, after));
+            if (woodRate <= 1e-18 || days <= 0) return Math.Min(remaining, WoodCapacity(initial, tile, after, w.Config));
             double vegetation = Math.Min((int)tile.NaturalVegetationPotential, (int)before.CurrentVegetation) + 1;
             vegetation /= (double)((int)tile.NaturalVegetationPotential + 1);
             bool aquatic = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater;
             double recovery = aquatic ? 0 : LazyEcology.LandConditionRecoveryPerDay(w, tile);
-            double conditionRate = recovery + Math.Max(0, conditionDamagePerDay);
-            double endpoint;
-            if (conditionRate <= 1e-18)
-                endpoint = EcologyMath.Stock(remaining, initial * vegetation * Numbers.Clamp(before.LandCondition, 0, 1), woodRate, 0, days).Stock;
+            double damage = Math.Max(0, conditionDamagePerDay);
+            double q = CultivationEconomy.Intensity(w.Config, before.CultivationCapital);
+            double lambda = CultivationDecayRatePerDay(w, tile);
+            double retentionStart = w.Config.CultivationVegetationDisplacementStart;
+            double firstDays = days;
+            if (lambda > 1e-18 && q > retentionStart)
+            {
+                double crossing = Math.Log(q / retentionStart) / lambda;
+                firstDays = Math.Min(days, Math.Max(0, crossing));
+            }
+            double condition = Numbers.Clamp(before.LandCondition, 0, 1);
+            if (firstDays > 0)
+            {
+                remaining = RecoverWoodInterval(remaining, initial * vegetation, condition, recovery, damage, woodRate, firstDays,
+                    q, lambda, lambda > 1e-18 && q > retentionStart, w.Config);
+                condition = EcologyMath.Condition(condition, 1, recovery, damage, firstDays);
+            }
+            double secondDays = days - firstDays;
+            if (secondDays > 1e-12)
+            {
+                double qAtBoundary = lambda > 1e-18 ? q * Math.Exp(-lambda * firstDays) : q;
+                remaining = RecoverWoodInterval(remaining, initial * vegetation, condition, recovery, damage, woodRate, secondDays,
+                    qAtBoundary, 0, false, w.Config);
+            }
+            return Math.Min(Math.Max(0, remaining), WoodCapacity(initial, tile, after, w.Config));
+        }
+        private static double CultivationDecayRatePerDay(WorldState w, Tile tile)
+        {
+            double halfLife = Math.Max(1e-12, w.Config.Neolithic.DecayHalfLifeYears);
+            return Math.Log(2) / halfLife * (1 - Numbers.Clamp(tile.CultivationOperatingFraction, 0, 1)) / w.Config.DaysPerYear / 2;
+        }
+        private static double RecoverWoodInterval(double remaining, double ecologicalScale, double condition, double recovery, double damage,
+            double woodRate, double days, double q, double qDecayPerDay, bool qDecliningAboveThreshold, SimulationConfig config)
+        {
+            if (days <= 0 || woodRate <= 1e-18) return Math.Max(0, remaining);
+            double conditionRate = recovery + damage;
+            double equilibrium = conditionRate <= 1e-18 ? condition : recovery / conditionRate;
+            double conditionTransient = condition - equilibrium;
+            double retentionStart = config.CultivationVegetationDisplacementStart;
+            double factor = Math.Max(0, ecologicalScale);
+            var coefficients = new List<double>(4);
+            var rates = new List<double>(4);
+            if (qDecliningAboveThreshold && qDecayPerDay > 1e-18)
+            {
+                double intercept = 1 / (1 - retentionStart);
+                double slope = q / (1 - retentionStart);
+                coefficients.Add(factor * intercept * equilibrium); rates.Add(0);
+                coefficients.Add(factor * intercept * conditionTransient); rates.Add(conditionRate);
+                coefficients.Add(-factor * slope * equilibrium); rates.Add(qDecayPerDay);
+                coefficients.Add(-factor * slope * conditionTransient); rates.Add(conditionRate + qDecayPerDay);
+            }
             else
             {
-                double equilibrium = recovery / conditionRate;
-                double a = initial * vegetation * equilibrium;
-                double b = initial * vegetation * (Numbers.Clamp(before.LandCondition, 0, 1) - equilibrium);
-                double woodDecay = Math.Exp(-woodRate * days), conditionDecay = Math.Exp(-conditionRate * days);
-                double integral = Math.Abs(woodRate - conditionRate) <= 1e-12 ? woodRate * days * woodDecay :
-                    woodRate * (conditionDecay - woodDecay) / (woodRate - conditionRate);
-                endpoint = remaining * woodDecay + a * (1 - woodDecay) + b * integral;
+                double retention = EcologyMath.CultivationVegetationRetention(config, q);
+                coefficients.Add(factor * retention * equilibrium); rates.Add(0);
+                coefficients.Add(factor * retention * conditionTransient); rates.Add(conditionRate);
             }
-            return Math.Min(Math.Max(0, endpoint), WoodCapacity(initial, tile, after));
+            double woodDecay = Math.Exp(-woodRate * days);
+            double endpoint = Math.Max(0, remaining) * woodDecay;
+            for (int i = 0; i < coefficients.Count; i++)
+            {
+                double forcingDecay = Math.Exp(-rates[i] * days);
+                double response = Math.Abs(woodRate - rates[i]) <= 1e-12 * Math.Max(1, woodRate)
+                    ? woodRate * days * woodDecay
+                    : woodRate * (forcingDecay - woodDecay) / (woodRate - rates[i]);
+                endpoint += coefficients[i] * response;
+            }
+            return Math.Max(0, endpoint);
         }
         internal static double ClampWoodSource(WorldState w, int tile, EcologyView ecology)
         {
             var state = w.MaterialSources.FirstOrDefault(s => s.Id == SurfaceId(tile, MaterialId.Wood) && s.Material == MaterialId.Wood);
+            if (state == null && CultivationEconomy.Intensity(w.Config, ecology.CultivationCapital) > 0)
+                state = EnsureWoodSource(w, tile, ecology);
             if (state == null) return 0;
             double before = state.Remaining;
-            state.Remaining = Math.Min(Math.Max(0, state.Remaining), WoodCapacity(state.Initial, w.Tiles[tile], ecology));
+            state.Remaining = Math.Min(Math.Max(0, state.Remaining), WoodCapacity(state.Initial, w.Tiles[tile], ecology, w.Config));
             state.LastDays = ecology.Days;
             return Math.Max(0, before - state.Remaining);
+        }
+        // Called around an instantaneous cultivation-capital change. Establishing
+        // the source at the old q first makes capacity lost to displacement an
+        // actual stock loss instead of allowing it to return when q later decays.
+        internal static double ClampWoodSource(WorldState w, int tile, EcologyView before, EcologyView after)
+        {
+            var state = w.MaterialSources.FirstOrDefault(s => s.Id == SurfaceId(tile, MaterialId.Wood) && s.Material == MaterialId.Wood)
+                ?? EnsureWoodSource(w, tile, before);
+            if (state == null) return 0;
+            double stockBeforeClamp = state.Remaining;
+            state.Remaining = Math.Min(Math.Max(0, state.Remaining), WoodCapacity(state.Initial, w.Tiles[tile], after, w.Config));
+            state.LastDays = after.Days;
+            return Math.Max(0, stockBeforeClamp - state.Remaining);
+        }
+        private static MaterialSourceState EnsureWoodSource(WorldState w, int tile, EcologyView ecology)
+        {
+            if (w.Resources == null || w.MaterialSources == null) return null;
+            string id = SurfaceId(tile, MaterialId.Wood);
+            var existing = w.MaterialSources.FirstOrDefault(s => s.Id == id && s.Material == MaterialId.Wood);
+            if (existing != null) return existing;
+            double initial = w.Resources.SurfaceAccessible(tile, MaterialId.Wood);
+            if (initial <= 0) return null;
+            var state = new MaterialSourceState { Id = id, Material = MaterialId.Wood, Initial = initial,
+                Remaining = WoodCapacity(initial, w.Tiles[tile], ecology, w.Config), LastDays = ecology.Days };
+            w.MaterialSources.Add(state);
+            return state;
         }
         internal static void CommitWoodProjection(WorldState w, int tile, double remaining, double days)
         {
             var state = w.MaterialSources.FirstOrDefault(s => s.Id == SurfaceId(tile, MaterialId.Wood) && s.Material == MaterialId.Wood);
+            if (state == null && CultivationEconomy.Intensity(w.Config, w.Tiles[tile].CultivationCapital) > 0)
+                state = EnsureWoodSource(w, tile, new EcologyView(w.Tiles[tile]));
             if (state == null) return;
-            state.Remaining = Math.Max(0, remaining); state.LastDays = days;
+            state.Remaining = Math.Min(Math.Max(0, remaining), WoodCapacity(state.Initial, w.Tiles[tile], new EcologyView(w.Tiles[tile]), w.Config)); state.LastDays = days;
         }
         // Packed geological rasters remain provenance. Sparse fractional continuation is
         // authoritative after first extraction; all economic queries pass through here.
@@ -253,7 +361,7 @@ namespace Anthropocene.Simulation
                     if (projection == null)
                     {
                         var projected = LazyEcology.ProjectEcology(w, tile, Math.Max(days, w.Tiles[tile].LastEcologyUpdateDays));
-                        remaining = WoodCapacity(initial, w.Tiles[tile], projected);
+                        remaining = WoodCapacity(initial, w.Tiles[tile], projected, w.Config);
                     }
                     else
                     {

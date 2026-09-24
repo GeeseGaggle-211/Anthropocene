@@ -783,7 +783,16 @@ namespace Anthropocene.Simulation
             {
                 int groups = (int)Math.Ceiling(herd.Animals / (double)herd.Capacity), total = herd.Animals, baseSize = total / groups, remainder = total % groups;
                 var species = w.Config.GetSpecies(herd.Species);
-                var destinations = w.Map.Radius(herd.Tile, 1).Where(n => w.Tiles[n].TraversableLand).OrderByDescending(n => species.Suitability(w.Tiles[n])).ThenBy(n => Numbers.Hash(w.Seed, 151, herd.Id ^ n, w.Turn)).ThenBy(n => n).ToArray();
+                var destinations = w.Map.Radius(herd.Tile, 1).Where(n => w.Tiles[n].TraversableLand).OrderByDescending(n =>
+                {
+                    // The Paleo path has no cultivation overlay. Preserve its
+                    // existing raw-vegetation ranking without projecting every
+                    // candidate tile for every herd fission.
+                    if (w.Tiles[n].CultivationCapital <= 0) return species.Suitability(w.Tiles[n]);
+                    var ecology = LazyEcology.ProjectEcology(w, n, record.StartDays + record.Duration);
+                    double retention = EcologyMath.CultivationVegetationRetention(w.Config, CultivationEconomy.Intensity(w.Config, ecology.CultivationCapital));
+                    return species.Suitability(w.Tiles[n], ecology.CurrentVegetation, retention);
+                }).ThenBy(n => Numbers.Hash(w.Seed, 151, herd.Id ^ n, w.Turn)).ThenBy(n => n).ToArray();
                 herd.Animals = baseSize + (remainder > 0 ? 1 : 0);
                 for (int i = 1; i < groups; i++)
                 {

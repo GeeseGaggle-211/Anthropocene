@@ -50,7 +50,9 @@ namespace Anthropocene.Simulation
             if (!o.Tiles.TryGetValue(id, out var t)) return "";
             var b = new StringBuilder();
             b.AppendLine((t.Land ? "LAND" : "WATER TILE") + " · (" + id % o.Map.Width + ", " + id / o.Map.Width + ") / tile " + id + " · " + t.Environment);
-            if (t.Land) b.AppendLine("VEGETATION · " + Vegetation.Label(t.Environment, t.CurrentVegetation, t.River) + " · " + t.CurrentVegetation + " cover / " + t.NaturalVegetationPotential + " natural potential");
+            if (t.Land) b.AppendLine(t.NaturalVegetationRetention <= 0
+                ? "VEGETATION · no standing natural vegetation; 0% of ecological " + t.CurrentVegetation + " service remains"
+                : "VEGETATION · " + Vegetation.Label(t.Environment, t.EffectiveVegetation, t.River) + " · " + t.EffectiveVegetation + " standing cover; " + Math.Round(t.NaturalVegetationRetention * 100) + "% of ecological " + t.CurrentVegetation + " service remains");
             else b.AppendLine("PLANKTON / ALGAE · " + t.CurrentVegetation + " abundance / " + t.NaturalVegetationPotential + " natural potential");
             b.AppendLine("Elevation " + t.ElevationLevel + "/10 · " + ElevationLevelStage.Description(t.ElevationLevel));
             b.AppendLine("FOOD · " + Knowledge.Bands[t.Food] + " stock; maximum " + Knowledge.Bands[t.FoodMaximum]);

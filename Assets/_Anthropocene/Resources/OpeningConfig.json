@@ -381,6 +381,7 @@
   "PressureExponent": 2,
   "SafeUseRatio": 1,
   "SustainableProductionFraction": 0.5,
+  "CultivationVegetationDisplacementStart": 0.5,
   "LowPotentialRecoveryMultiplier": 0.5,
   "HighPotentialRecoveryMultiplier": 1.5,
   "BenchmarkScale": false

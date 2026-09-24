@@ -27,7 +27,8 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | `LandCondition`, `AquaticCondition` | Normalized condition stocks, 0 to 1. Natural target is currently 1. |
 | `ConditionRecoveryPerYear` (0.003093770185904377) | Annual relaxation rate: exactly `-ln(0.94)/20`, before potential modifiers. |
 | `LowPotentialRecoveryMultiplier` (0.5), `HighPotentialRecoveryMultiplier` (1.5) | Dimensionless recovery multipliers; Medium uses 1. |
-| `SafeUseRatio` (1), `SustainableProductionFraction` (0.5), `PressureExponent` (2) | Dimensionless safe-use threshold, conservative fraction of renewable production, and overshoot exponent. |
+| `SafeUseRatio` (1), `SustainableProductionFraction` (0.5), `PressureExponent` (2) | Dimensionless safe-use threshold, conservative fraction of natural renewal, and overshoot exponent. Managed cultivation flow is added once after applying the natural-production fraction. |
+| `CultivationVegetationDisplacementStart` (0.5) | Physical cultivation intensity q at which standing natural vegetation services begin to decline; retention falls linearly to zero at q=1. It does not reduce total biomass capacity or LandCondition. |
 | `LandUseDamagePerYear`, `AquaticUseDamagePerYear` (both 0.03) | Annual condition-damage coefficients, applied to realized overshoot. Drinking and unmet demand contribute zero damage. |
 | `GatherFraction` | Dimensionless fraction over `BaseDays`; duration conversion is `1-(1-f)^(duration/BaseDays)`. |
 | `GatherPerPerson`, `HunterForagePerPerson`, `FishPerPerson` | Abstract food per participating person per `BaseDays`. Land and passive aquatic gathering share one labor ceiling. |

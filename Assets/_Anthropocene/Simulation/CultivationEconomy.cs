@@ -208,21 +208,29 @@ namespace Anthropocene.Simulation
                 int best = -1; double bestScore = -1, step = 0, cost = 0;
                 foreach (int id in candidates)
                 {
-                    var t = w.Tiles[id]; double e = t.CultivationCapital;
+                    var t = w.Tiles[id];
+                    var ecology = LazyEcology.ProjectEcology(w, id, Math.Max(w.Days, t.LastEcologyUpdateDays));
+                    double e = ecology.CultivationCapital;
                     if (e >= ceiling - 1e-12) continue;
-                    Factors(c, t, out double vb, out double vm);
+                    double vb = BuildMultiplier(c, t, ecology.CurrentVegetation);
+                    double vm = MaintenanceMultiplier(c, t, ecology.CurrentVegetation);
                     if (bridge || Intensity(c, e) < c.GathererBridgeCeiling) vb = n.OpenBuild;
                     double de = Math.Min(n.AllocationStepE, Math.Min(ceiling - e, remaining / (n.BuildWorkerYearsPerTileE * vb)));
                     if (!bridge && Intensity(c, e) < c.GathererBridgeCeiling) de = Math.Min(de, Math.Pow(c.GathererBridgeCeiling / c.ReferenceIntensity, 2) - e);
                     if (de <= 1e-12) continue;
-                    double q = Intensity(c, e), nextQ = Intensity(c, e + de);
                     double gain = 0;
-                    var view = new EcologyView(t);
+                    var beforeView = ecology;
+                    var afterView = ecology;
+                    afterView.CultivationCapital = e + de;
                     for (int season = 0; season < 4; season++)
                     {
-                        var k = new EcologyCapacity(w, t, view, season);
-                        double f0 = k.Biomass > 0 ? k.WildFood / k.Biomass : 0;
-                        gain += (k.Biomass * (1 - f0) * (nextQ * nextQ - q * q) * k.FoodRate + c.CultivationRegenFlux * (nextQ - q) * k.Biomass * k.BiomassRate) * c.DaysPerYear / 4;
+                        var beforeCapacity = new EcologyCapacity(w, t, beforeView, season, 1);
+                        var afterCapacity = new EcologyCapacity(w, t, afterView, season, 1);
+                        double beforeFlow = Math.Min(beforeCapacity.Food * beforeCapacity.FoodRate + beforeCapacity.ManagedFlow,
+                            EcologyMath.SustainableHarvestRate(beforeCapacity.Biomass, beforeCapacity.BiomassRate, c.SustainableProductionFraction, beforeCapacity.ManagedFlow) * c.SafeUseRatio);
+                        double afterFlow = Math.Min(afterCapacity.Food * afterCapacity.FoodRate + afterCapacity.ManagedFlow,
+                            EcologyMath.SustainableHarvestRate(afterCapacity.Biomass, afterCapacity.BiomassRate, c.SustainableProductionFraction, afterCapacity.ManagedFlow) * c.SafeUseRatio);
+                        gain += (afterFlow - beforeFlow) * c.DaysPerYear / 4;
                     }
                     double buildCost = de * n.BuildWorkerYearsPerTileE * vb;
                     double score = gain / Math.Max(1e-12, buildCost + n.PlanningHorizonYears * n.MaintenanceWorkersPerTileE(c.MaintenanceCoefficient) * vm * de);
@@ -230,12 +238,25 @@ namespace Anthropocene.Simulation
                     if (score > 0 && (best < 0 || focused || best != camp.CultivationFocusTile && score > bestScore)) { best = id; bestScore = score; step = de; cost = buildCost; }
                 }
                 if (best < 0) break;
-                var target = w.Tiles[best]; double oldQ = Intensity(c, target.CultivationCapital);
-                target.CultivationOperator = camp.Id; target.CultivationCapital += step;
-                target.Cultivation = (float)Intensity(c, target.CultivationCapital); target.Cultivated = target.CultivationCapital > 0;
+                var target = w.Tiles[best];
+                var beforeEcology = LazyEcology.MaterializeEcology(w, best, Math.Max(w.Days, target.LastEcologyUpdateDays));
+                double oldQ = Intensity(c, beforeEcology.CultivationCapital);
+                double oldRetention = EcologyMath.CultivationVegetationRetention(c, oldQ);
+                target.CultivationOperator = camp.Id; target.CultivationCapital = beforeEcology.CultivationCapital + step;
+                double newQ = Intensity(c, target.CultivationCapital);
+                target.Cultivation = (float)newQ; target.Cultivated = target.CultivationCapital > 0;
+                double newRetention = EcologyMath.CultivationVegetationRetention(c, newQ);
+                if (newRetention < oldRetention)
+                {
+                    double woodCapacityLoss = MaterialEconomy.ClampWoodSource(w, best, beforeEcology, new EcologyView(target));
+                    double displacedRetention = oldRetention - newRetention;
+                    record.Pressure.Add(new PressureEntry
+                    {
+                        Tile = best, Entity = camp.Id, Kind = "Cultivation vegetation displacement", Pool = "Vegetation cover",
+                        Requested = displacedRetention, Realized = displacedRetention, WoodCapacityLoss = woodCapacityLoss, ConditionDamage = 0
+                    });
+                }
                 remaining -= cost;
-                if (!bridge && target.Cultivation > c.GathererBridgeCeiling && Vegetation.IsWooded(target))
-                    EcologicalPressure.ApplyConversion(w, best, camp.Id, "Cultivation clearing", "Land conversion", step, step, Math.Max(0, Intensity(c, target.CultivationCapital) - Math.Max(c.GathererBridgeCeiling, oldQ)) * n.ClearingConversionPressure, target.LastEcologyUpdateDays, record);
             }
             double effectiveUsed = (bridge ? workerYears * c.GathererBridgeEfficiency : workerYears - coveredWorkerYears + coveredWorkerYears * efficiency) - remaining;
             if (!bridge && toolBudget != null && effectiveUsed > 0)

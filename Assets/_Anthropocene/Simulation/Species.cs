@@ -21,7 +21,8 @@ namespace Anthropocene.Simulation
         public bool Domesticable = true;
         public double DefaultHabitatWeight = .05, ReliefAffinity, OasisAffinity, MovementHabitatWeight = .3;
         public List<BiomePreference> Biomes = new List<BiomePreference>();
-        public double Suitability(Tile tile, VegetationTier? projectedVegetation = null)
+        public double Suitability(Tile tile, VegetationTier? projectedVegetation = null) => Suitability(tile, projectedVegetation, 1);
+        public double Suitability(Tile tile, VegetationTier? projectedVegetation, double naturalVegetationRetention)
         {
             var vegetation = projectedVegetation ?? tile.CurrentVegetation;
             if (!tile.TraversableLand) return 0;
@@ -30,7 +31,7 @@ namespace Anthropocene.Simulation
                 ?? Biomes.FirstOrDefault(b => woodland ? b.Biome == Terrain.Woodland : b.Biome == Vegetation.LegacyTerrain(tile.Environment, vegetation));
             double biome = preference?.Weight ?? DefaultHabitatWeight;
             double relief = tile.Relief == Relief.Hills || tile.Relief == Relief.Highland || tile.Relief == Relief.Mountain ? ReliefAffinity : 0;
-            return Math.Max(0, biome * (1 + relief) * (1 + OasisAffinity * tile.OasisInfluence));
+            return Math.Max(0, biome * (1 + relief) * (1 + OasisAffinity * tile.OasisInfluence)) * Numbers.Clamp(naturalVegetationRetention, 0, 1);
         }
         public static List<SpeciesDefinition> Defaults() => new List<SpeciesDefinition>
         {

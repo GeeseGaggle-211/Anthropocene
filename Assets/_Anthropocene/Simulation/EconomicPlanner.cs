@@ -458,25 +458,18 @@ namespace Anthropocene.Simulation
         {
             var cfg = w.Config; var n = cfg.Neolithic; var tile = w.Tiles[id];
             var before = LazyEcology.ProjectEcology(w, id, w.Days); var after = before;
-            double q = CultivationEconomy.Intensity(cfg, before.CultivationCapital);
-            if (q >= 1) return 0;
+            if (CultivationEconomy.Intensity(cfg, before.CultivationCapital) >= 1) return 0;
             after.CultivationCapital = Math.Min(1 / (cfg.ReferenceIntensity * cfg.ReferenceIntensity), before.CultivationCapital + n.AllocationStepE);
-            double next = CultivationEconomy.Intensity(cfg, after.CultivationCapital);
-            if (Vegetation.IsWooded(tile) && next > cfg.GathererBridgeCeiling)
-            {
-                double pressure = Math.Max(0, next - Math.Max(q, cfg.GathererBridgeCeiling)) * n.ClearingConversionPressure;
-                after.LandCondition = EcologyMath.Condition(after.LandCondition, 1, 0, pressure, 1);
-                after.CurrentVegetation = Vegetation.Update(tile.NaturalVegetationPotential, after.CurrentVegetation, after.LandCondition, cfg);
-            }
             double gain = 0;
             for (int season = 0; season < 4; season++)
             {
                 double Flow(EcologyView v)
                 {
                     var k = new EcologyCapacity(w, tile, v, season, 1);
-                    // Existing ecological thresholds bound the sustainable benefit of
-                    // further investment; this is not a hard q cap or a new yield bonus.
-                    double sustainable = k.Biomass * k.BiomassRate * cfg.SustainableProductionFraction * cfg.SafeUseRatio;
+                    // The shared renewable-flow definition includes managed
+                    // production once; SafeUseRatio remains the planner's
+                    // existing utilization threshold.
+                    double sustainable = EcologyMath.SustainableHarvestRate(k.Biomass, k.BiomassRate, cfg.SustainableProductionFraction, k.ManagedFlow) * cfg.SafeUseRatio;
                     return Math.Min(k.Food * k.FoodRate + k.ManagedFlow, sustainable);
                 }
                 gain += Flow(after) - Flow(before);

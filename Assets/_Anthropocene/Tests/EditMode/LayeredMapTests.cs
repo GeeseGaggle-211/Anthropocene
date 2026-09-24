@@ -121,5 +121,28 @@ namespace Anthropocene.Tests.EditMode
             t.Environment = EnvironmentKind.Cold; Assert.That(LayeredTileRenderer.VegetationKey(Observe()), Is.EqualTo("vegetation.conifer"));
             t.Environment = EnvironmentKind.Tropical; Assert.That(LayeredTileRenderer.VegetationKey(Observe()), Is.EqualTo("vegetation.tropical_tree"));
         }
+
+        [Test]
+        public void CultivationDisplacementChangesOnlyStandingVegetationService()
+        {
+            var cfg = new SimulationConfig();
+            var tile = new Tile { Id = 7, Terrain = Terrain.Grassland, Environment = EnvironmentKind.Temperate, NaturalVegetationPotential = VegetationTier.High, CurrentVegetation = VegetationTier.High };
+            TileObservation ObserveAt(double q)
+            {
+                var ecology = new EcologyView(tile) { CultivationCapital = System.Math.Pow(q / cfg.ReferenceIntensity, 2) };
+                return new TileObservation(tile, tile.Seasons[0], cfg, new RiverEdge[0], ecology);
+            }
+
+            var retained = ObserveAt(.5);
+            Assert.That(retained.CurrentVegetation, Is.EqualTo(VegetationTier.High), "Cultivation must not overwrite raw ecological vegetation.");
+            Assert.That(retained.NaturalVegetationRetention, Is.EqualTo(1).Within(1e-10));
+            Assert.That(LayeredTileRenderer.VegetationCount(retained, 80), Is.EqualTo(3), "At q=.5, High vegetation keeps its normal three-tree presentation.");
+
+            var displaced = ObserveAt(1);
+            Assert.That(displaced.CurrentVegetation, Is.EqualTo(VegetationTier.High), "Raw ecological vegetation remains available for succession and clearing labor.");
+            Assert.That(displaced.NaturalVegetationRetention, Is.EqualTo(0).Within(1e-10));
+            Assert.That(displaced.EffectiveNaturalVegetationService, Is.EqualTo(0).Within(1e-10));
+            Assert.That(LayeredTileRenderer.VegetationCount(displaced, 80), Is.Zero, "A fully cultivated field has no standing natural vegetation sprites.");
+        }
     }
 }
