@@ -30,6 +30,9 @@ namespace Anthropocene.Simulation
     }
     public static class EcologicalPressure
     {
+        // A numerical guard on a daily rate, never a minimum harvest quantity
+        // per integration segment. Even a very low-flow tile can be overused.
+        private const double SustainableRateEpsilon = 1e-12;
         // Instantaneous realized conversion is an integrated hazard in the same bounded
         // condition equation as extraction. Recovery is materialized before disturbance.
         public static void ApplyConversion(WorldState w, int tile, int entity, string kind, string pool, double requested, double realized, double pressure, double days, TurnRecord record)
@@ -81,8 +84,9 @@ namespace Anthropocene.Simulation
                 foodCapacityDays += k.Food * dt; biomassCapacityDays += k.Biomass * dt; waterCapacityDays += k.Water * dt;
                 // Utilization compares realized extraction with a conservative renewable flow.
                 // Requests that failed, and ordinary drinking, contribute no damage.
-                double sustainable = EcologyMath.SustainableHarvestRate(k.Biomass, k.BiomassRate, w.Config.SustainableProductionFraction, k.ManagedFlow) * dt;
-                double utilization = (humanHarvest + herdHarvest) / Math.Max(1, sustainable);
+                double safeRate = EcologyMath.SustainableHarvestRate(k.Biomass, k.BiomassRate, w.Config.SustainableProductionFraction, k.ManagedFlow);
+                double realizedRate = (humanHarvest + herdHarvest) / dt;
+                double utilization = realizedRate / Math.Max(SustainableRateEpsilon, safeRate);
                 double coefficient = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater ? w.Config.AquaticUseDamagePerYear : w.Config.LandUseDamagePerYear;
                 double impact = humanHarvest + herdHarvest <= 0 ? 1 : (humanHarvest * humanImpact + herdHarvest) / (humanHarvest + herdHarvest);
                 double damagePerDay = coefficient * impact * Math.Pow(Math.Max(0, utilization - w.Config.SafeUseRatio), w.Config.PressureExponent) / w.Config.DaysPerYear;

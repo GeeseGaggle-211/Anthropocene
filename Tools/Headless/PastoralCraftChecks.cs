@@ -449,7 +449,9 @@ internal static class PastoralCraftChecks
                 tile.Seasons[season].MaxFreshwater = 1000000;
                 tile.Seasons[season].Moisture = 1;
                 tile.Seasons[season].FoodRecoveryPerDay = 0;
-                tile.Seasons[season].BiomassRecoveryPerDay = 0;
+                // Keep the pastoral craft fixture's standing biomass renewable.
+                // Herd claims on a zero-rate tile correctly cause severe pressure.
+                tile.Seasons[season].BiomassRecoveryPerDay = 1e-6f;
                 tile.Seasons[season].WaterRecoveryPerDay = 0;
             }
             w.Tiles[i] = tile;

@@ -399,6 +399,301 @@ internal static class Issue25EcologyChecks
             + " continuationFingerprint=" + (continuationFingerprintMatches ? "identical" : "different"));
     }
 
+    private sealed class HumanRun
+    {
+        public double Requested, Realized, Unmet, SafeFlow, ManagedFlow, Damage;
+        public double StartingFood, StartingBiomass, EndingFood, EndingBiomass, EndingCondition;
+        public int YearsRealizedAboveSafe;
+    }
+
+    // A fertile controlled tile keeps the production rates unchanged while making
+    // realized human extraction above the safe rate physically possible at every q.
+    private static WorldState AgricultureFixture(double q, double condition, double operation)
+    {
+        var world = Fixture(VegetationTier.High, q, condition, operation);
+        var tile = world.Tiles[TileId];
+        for (int i = 0; i < tile.Seasons.Length; i++)
+        {
+            var season = tile.Seasons[i];
+            season.MaxFood = 550;
+            tile.Seasons[i] = season;
+        }
+        var capacity = new EcologyCapacity(world, tile, new EcologyView(tile), 0);
+        tile.Food = capacity.Food * .8;
+        tile.PotentialFood = capacity.Biomass * .8;
+        return world;
+    }
+
+    private static void CheckBalance(TileEcologyResult result, string context)
+    {
+        var b = result.Balance;
+        Check(Near(b.StartingBiomass + b.BiomassRecharge,
+            b.EndingBiomass + b.BiomassHarvest + b.BiomassOverflow, 1e-7),
+            context + " conserves biomass");
+        Check(Near(b.StartingFood + b.FoodRecharge,
+            b.EndingFood + b.FoodHarvest + b.FoodOverflow, 1e-7),
+            context + " conserves human-accessible food");
+    }
+
+    private static HumanRun RunHumanYears(WorldState world, int years, double safeMultiplier, string context)
+    {
+        var tile = world.Tiles[TileId];
+        var run = new HumanRun { StartingFood = tile.Food, StartingBiomass = tile.PotentialFood };
+        for (int year = 0; year < years; year++)
+        {
+            int season = (int)Math.Floor(tile.LastEcologyUpdateDays / world.Config.BaseDays) % 4;
+            var capacity = new EcologyCapacity(world, tile, new EcologyView(tile), season);
+            double safeRate = EcologyMath.SustainableHarvestRate(capacity.Biomass, capacity.BiomassRate,
+                world.Config.SustainableProductionFraction, capacity.ManagedFlow);
+            double request = safeMultiplier * safeRate * world.Config.DaysPerYear;
+            var claim = new Demand { Tile = TileId, Entity = 1, Kind = "Cultivation", Food = request };
+            var result = EcologicalPressure.Integrate(world, TileId, new[] { claim },
+                tile.LastEcologyUpdateDays, world.Config.DaysPerYear);
+            double realized = result.Transfers.Sum(transfer => transfer.Food);
+            double unmet = result.Pressure.Where(p => p.Pool == "Accessible food").Sum(p => p.Unmet);
+            CheckBalance(result, context + " year " + year);
+            Check(Near(realized + unmet, request, 1e-7), context + " accounts for human request and unmet demand in year " + year);
+            Check(Near(safeRate, capacity.Biomass * capacity.BiomassRate *
+                world.Config.SustainableProductionFraction + capacity.ManagedFlow, 1e-10),
+                context + " counts managed flow exactly once in year " + year);
+            if (realized > safeRate * world.Config.DaysPerYear * (1 + 1e-6))
+                run.YearsRealizedAboveSafe++;
+            run.Requested += request;
+            run.Realized += realized;
+            run.Unmet += unmet;
+            run.SafeFlow += safeRate * world.Config.DaysPerYear;
+            run.ManagedFlow += capacity.ManagedFlow * world.Config.DaysPerYear;
+            run.Damage += result.Pressure.Sum(p => p.ConditionDamage);
+            Commit(world, result, tile.LastEcologyUpdateDays + world.Config.DaysPerYear);
+        }
+        run.EndingFood = tile.Food;
+        run.EndingBiomass = tile.PotentialFood;
+        run.EndingCondition = tile.LandCondition;
+        return run;
+    }
+
+    private static void LongDurationHumanAgriculture()
+    {
+        foreach (double q in new[] { .4, .6, .8, 1.0 })
+        foreach (double multiplier in new[] { .75, 1.0, 1.25 })
+        {
+            string context = "500-year human cultivation q=" + Number(q) + " multiplier=" + Number(multiplier);
+            var world = AgricultureFixture(q, 1, 1);
+            double initialQ = DerivedQ(world);
+            var run = RunHumanYears(world, 500, multiplier, context);
+            Check(Near(DerivedQ(world), initialQ, 1e-10), context + " holds capital under full operation");
+            Check(Near(run.Requested, run.Realized + run.Unmet, 1e-7), context + " closes cumulative human claims");
+            Check(run.EndingFood >= -1e-8 && run.EndingBiomass >= run.EndingFood - 1e-8,
+                context + " ends with bounded food and biomass stocks");
+            if (multiplier <= 1)
+                Check(Near(run.EndingCondition, 1, 1e-10) && Near(run.Damage, 0, 1e-10),
+                    context + " remains healthy without extraction overuse");
+            else
+                Check(run.YearsRealizedAboveSafe == 500 && run.Damage > 0 && run.EndingCondition < .99,
+                    context + " realizes sustained above-safe extraction and damages land");
+            if (q == 1)
+            {
+                var tile = world.Tiles[TileId];
+                var capacity = new EcologyCapacity(world, tile, new EcologyView(tile), 0);
+                Check(Near(capacity.WildFood, 0),
+                    context + " has zero natural food service");
+                if (multiplier <= 1)
+                    Check(tile.CurrentVegetation == VegetationTier.High,
+                        context + " retains healthy raw forest potential");
+            }
+            Console.WriteLine("ISSUE25_HUMAN q=" + Number(q) + " multiplier=" + Number(multiplier)
+                + " years=500 requested=" + Number(run.Requested) + " realized=" + Number(run.Realized)
+                + " unmet=" + Number(run.Unmet) + " safeFlow=" + Number(run.SafeFlow)
+                + " managedFlow=" + Number(run.ManagedFlow) + " damage=" + Number(run.Damage)
+                + " condition=" + Number(run.EndingCondition) + " food=" + Number(run.EndingFood)
+                + " biomass=" + Number(run.EndingBiomass) + " aboveSafeYears=" + run.YearsRealizedAboveSafe);
+        }
+    }
+
+    private static void DamagedLandRecoveryAndPartialOperation()
+    {
+        foreach (double q in new[] { .6, 1.0 })
+        foreach (double condition in new[] { .5, .75 })
+        {
+            var world = AgricultureFixture(q, condition, 1);
+            world.Config.ConditionRecoveryPerYear = SimulationConfig.Small(1).ConditionRecoveryPerYear;
+            var tile = world.Tiles[TileId];
+            var initial = new EcologyCapacity(world, tile, new EcologyView(tile), 0);
+            var pristine = AgricultureFixture(q, 1, 1);
+            var pristineCapacity = new EcologyCapacity(pristine, pristine.Tiles[TileId],
+                new EcologyView(pristine.Tiles[TileId]), 0);
+            string context = "damaged land q=" + Number(q) + " condition=" + Number(condition);
+            Check(initial.Biomass < pristineCapacity.Biomass && initial.ManagedFlow < pristineCapacity.ManagedFlow,
+                context + " begins with lower biomass and managed production");
+            var run = RunHumanYears(world, 500, 1, context);
+            var recovered = new EcologyCapacity(world, tile, new EcologyView(tile), 0);
+            Console.WriteLine("ISSUE25_RECOVERY q=" + Number(q) + " initialCondition=" + Number(condition)
+                + " endingCondition=" + Number(run.EndingCondition) + " initialManaged=" + Number(initial.ManagedFlow)
+                + " endingManaged=" + Number(recovered.ManagedFlow) + " damage=" + Number(run.Damage));
+            Check(run.Damage <= 1e-10 && run.EndingCondition > condition && run.EndingCondition <= 1,
+                context + " recovers without cultivation damage under sustainable extraction");
+            Check(recovered.Biomass > initial.Biomass && recovered.ManagedFlow > initial.ManagedFlow,
+                context + " gains natural and managed production as condition recovers");
+        }
+
+        var partial = AgricultureFixture(.8, 1, .5);
+        var full = AgricultureFixture(.8, 1, 1);
+        var partialTile = partial.Tiles[TileId];
+        var partialInitial = new EcologyCapacity(partial, partialTile, new EcologyView(partialTile), 0);
+        var fullInitial = new EcologyCapacity(full, full.Tiles[TileId], new EcologyView(full.Tiles[TileId]), 0);
+        double partialSafe = EcologyMath.SustainableHarvestRate(partialInitial.Biomass, partialInitial.BiomassRate,
+            partial.Config.SustainableProductionFraction, partialInitial.ManagedFlow);
+        double fullSafe = EcologyMath.SustainableHarvestRate(fullInitial.Biomass, fullInitial.BiomassRate,
+            full.Config.SustainableProductionFraction, fullInitial.ManagedFlow);
+        double initialCapital = partialTile.CultivationCapital;
+        Check(Near(partialInitial.ManagedFlow, .5 * fullInitial.ManagedFlow, 1e-10)
+            && Near(partialSafe, fullSafe - .5 * fullInitial.ManagedFlow, 1e-10),
+            "half operation halves managed flow and adds that half exactly once to safe flow");
+        var partialRun = RunHumanYears(partial, 500, .75, "500-year half-operation cultivation");
+        double expectedCapital = CultivationEconomy.Decay(partial.Config, initialCapital, .5, 500);
+        Check(Near(partialTile.CultivationCapital, expectedCapital, 1e-9)
+            && partialTile.CultivationCapital < initialCapital,
+            "half operation follows existing cultivation-capital maintenance decay");
+        Check(Near(partialRun.Damage, 0, 1e-10) && Near(partialRun.EndingCondition, 1, 1e-10),
+            "half operation alone does not damage LandCondition");
+        Console.WriteLine("ISSUE25_PARTIAL operation=0.5 years=500 initialManaged=" + Number(partialInitial.ManagedFlow)
+            + " initialSafeRate=" + Number(partialSafe) + " endingQ=" + Number(DerivedQ(partial))
+            + " condition=" + Number(partialRun.EndingCondition) + " damage=" + Number(partialRun.Damage));
+    }
+
+    private static void MixedHumanAndHerdClaims()
+    {
+        foreach (double multiplier in new[] { .9, 1.3 })
+        {
+            var forward = AgricultureFixture(.8, 1, 1);
+            var reverse = AgricultureFixture(.8, 1, 1);
+            var tile = forward.Tiles[TileId];
+            var capacity = new EcologyCapacity(forward, tile, new EcologyView(tile), 0);
+            double safeRate = EcologyMath.SustainableHarvestRate(capacity.Biomass, capacity.BiomassRate,
+                forward.Config.SustainableProductionFraction, capacity.ManagedFlow);
+            double safeFlow = safeRate * 30;
+            var human = new Demand { Tile = TileId, Entity = 2, Kind = "Cultivation", Food = multiplier * safeFlow * .55 };
+            var herd = new Demand { Tile = TileId, Entity = 3, Kind = "Herd", PotentialFood = multiplier * safeFlow * .45 };
+            var a = EcologicalPressure.Integrate(forward, TileId, new[] { human, herd }, 0, 30);
+            var b = EcologicalPressure.Integrate(reverse, TileId, new[] { herd, human }, 0, 30);
+            double humanRealized = a.Transfers.Sum(t => t.Food), herdRealized = a.Transfers.Sum(t => t.PotentialFood);
+            double total = humanRealized + herdRealized;
+            double damage = a.Pressure.Sum(p => p.ConditionDamage);
+            CheckBalance(a, "mixed human/herd " + Number(multiplier));
+            Check(Near(safeRate, capacity.Biomass * capacity.BiomassRate *
+                forward.Config.SustainableProductionFraction + capacity.ManagedFlow),
+                "mixed consumers share a single managed-flow allowance");
+            Check(humanRealized > 0 && herdRealized > 0 && Near(total, multiplier * safeFlow, 1e-7),
+                "mixed consumers realize both claims against shared biomass");
+            Check(Near(a.Balance.BiomassHarvest, total, 1e-7),
+                "human and herd extraction debit one biomass budget");
+            Check(Near(a.View.Food, b.View.Food) && Near(a.View.PotentialFood, b.View.PotentialFood)
+                && Near(a.View.LandCondition, b.View.LandCondition)
+                && Near(a.Balance.BiomassHarvest, b.Balance.BiomassHarvest)
+                && Near(damage, b.Pressure.Sum(p => p.ConditionDamage)),
+                "reordered mixed claim submission has the same ecological result");
+            if (multiplier <= 1)
+                Check(Near(damage, 0, 1e-10) && Near(a.View.LandCondition, 1, 1e-10),
+                    "within-safe mixed extraction causes no overuse damage");
+            else
+                Check(total > safeFlow && damage > 0 && a.View.LandCondition < 1,
+                    "realized mixed overharvest damages condition");
+            Console.WriteLine("ISSUE25_MIXED multiplier=" + Number(multiplier) + " safeFlow=" + Number(safeFlow)
+                + " human=" + Number(humanRealized) + " herd=" + Number(herdRealized)
+                + " damage=" + Number(damage) + " condition=" + Number(a.View.LandCondition));
+        }
+    }
+
+    private static WorldState LowFlowFixture()
+    {
+        var world = AgricultureFixture(.8, 1, 1);
+        var tile = world.Tiles[TileId];
+        for (int i = 0; i < tile.Seasons.Length; i++)
+        {
+            var season = tile.Seasons[i];
+            season.MaxPotentialFood = 6;
+            season.MaxFood = 5.5f;
+            tile.Seasons[i] = season;
+        }
+        var initial = new EcologyCapacity(world, tile, new EcologyView(tile), 0);
+        tile.Food = initial.Food * .8;
+        tile.PotentialFood = initial.Biomass * .8;
+        return world;
+    }
+
+    private static HumanRun RunLowFlowPartition(double partitionDays)
+    {
+        var world = LowFlowFixture();
+        var tile = world.Tiles[TileId];
+        var initial = new EcologyCapacity(world, tile, new EcologyView(tile), 0);
+        double safeRate = EcologyMath.SustainableHarvestRate(initial.Biomass, initial.BiomassRate,
+            world.Config.SustainableProductionFraction, initial.ManagedFlow);
+        double requestRate = safeRate * 1.2;
+        double horizon = 20 * world.Config.DaysPerYear;
+        var run = new HumanRun { StartingFood = tile.Food, StartingBiomass = tile.PotentialFood };
+        while (world.Days < horizon - 1e-8)
+        {
+            double days = Math.Min(partitionDays, horizon - world.Days);
+            double request = requestRate * days;
+            var result = EcologicalPressure.Integrate(world, TileId,
+                new[] { new Demand { Tile = TileId, Entity = 1, Kind = "Cultivation", Food = request } },
+                tile.LastEcologyUpdateDays, days);
+            CheckBalance(result, "low-flow partition " + Number(partitionDays));
+            run.Requested += request;
+            run.Realized += result.Transfers.Sum(t => t.Food);
+            run.Damage += result.Pressure.Sum(p => p.ConditionDamage);
+            Commit(world, result, world.Days + days);
+        }
+        run.EndingFood = tile.Food;
+        run.EndingBiomass = tile.PotentialFood;
+        run.EndingCondition = tile.LandCondition;
+        return run;
+    }
+
+    private static void DamageRatePartitionInvariance()
+    {
+        var fixture = LowFlowFixture();
+        var capacity = new EcologyCapacity(fixture, fixture.Tiles[TileId],
+            new EcologyView(fixture.Tiles[TileId]), 0);
+        double safeRate = EcologyMath.SustainableHarvestRate(capacity.Biomass, capacity.BiomassRate,
+            fixture.Config.SustainableProductionFraction, capacity.ManagedFlow);
+        Check(safeRate * 7 < 1 && safeRate * fixture.Config.BaseDays > 1,
+            "low-flow fixture crosses the old one-unit-per-segment floor between weekly and seasonal partitions");
+        var full = RunLowFlowPartition(20 * 365);
+        foreach (double days in new[] { 365.0, 365.0 / 4, 7.0 })
+        {
+            var split = RunLowFlowPartition(days);
+            Check(Near(full.Realized, split.Realized, 2e-3), "low-flow realized extraction is partition stable at " + Number(days) + " days");
+            Check(Near(full.Damage, split.Damage, 2e-3), "low-flow cumulative damage is partition stable at " + Number(days) + " days");
+            Check(Near(full.EndingCondition, split.EndingCondition, 2e-3), "low-flow condition is partition stable at " + Number(days) + " days");
+            Check(Near(full.EndingFood, split.EndingFood, 2e-3)
+                && Near(full.EndingBiomass, split.EndingBiomass, 2e-3),
+                "low-flow Food/PotentialFood mass balance is partition stable at " + Number(days) + " days");
+            Console.WriteLine("ISSUE25_LOW_FLOW_PARTITION days=" + Number(days)
+                + " extractionDelta=" + Number(split.Realized - full.Realized)
+                + " damageDelta=" + Number(split.Damage - full.Damage)
+                + " conditionDelta=" + Number(split.EndingCondition - full.EndingCondition)
+                + " foodDelta=" + Number(split.EndingFood - full.EndingFood)
+                + " biomassDelta=" + Number(split.EndingBiomass - full.EndingBiomass));
+        }
+
+        var zero = AgricultureFixture(0, 1, 0);
+        var zeroTile = zero.Tiles[TileId];
+        for (int i = 0; i < zeroTile.Seasons.Length; i++)
+        {
+            var season = zeroTile.Seasons[i];
+            season.FoodRecoveryPerDay = 0;
+            season.BiomassRecoveryPerDay = 0;
+            zeroTile.Seasons[i] = season;
+        }
+        var noClaim = EcologicalPressure.Integrate(zero, TileId, Array.Empty<Demand>(), 0, 7);
+        Check(Near(noClaim.View.LandCondition, 1), "zero safe flow with zero extraction causes no damage");
+        var stockClaim = EcologicalPressure.Integrate(zero, TileId,
+            new[] { new Demand { Tile = TileId, Entity = 1, Kind = "Gathering", Food = 10 } }, 0, 7);
+        Check(stockClaim.Transfers.Sum(t => t.Food) > 0 && stockClaim.View.LandCondition < .01,
+            "zero safe rate with realized stock extraction creates very high pressure");
+    }
+
     private static void AddRecoveringWood(WorldState world)
     {
         int count = world.Tiles.Length;
@@ -457,6 +752,10 @@ internal static class Issue25EcologyChecks
         ExpansionClearingIsCoverOnly();
         WoodClampAndAbandonmentRecovery();
         DurationPartitionAndSaveReplay();
+        DamageRatePartitionInvariance();
+        LongDurationHumanAgriculture();
+        DamagedLandRecoveryAndPartialOperation();
+        MixedHumanAndHerdClaims();
         string csv = WriteCsv(rows, args);
         Console.WriteLine("ISSUE25_SWEEP rows=" + rows.Count + " checks=" + checks + " grid=Low/Medium/High x 7 q x 3 condition x 3 operation x 3 harvest");
         Console.WriteLine("ISSUE25_SWEEP_CSV " + csv);

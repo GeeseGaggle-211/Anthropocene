@@ -31,7 +31,7 @@ internal static class WoodEcologyChecks
     }
     public static int Run()
     {
-        checks = 0; CapacityAndRecovery(); MaterializationAndSave(); ActiveBarrier(); ReceiptAndFiniteMaterials();
+        checks = 0; CapacityAndRecovery(); MaterializationAndSave(); ActiveBarrier(); ReceiptAndFiniteMaterials(); VirginWoodCultivation();
         Console.WriteLine("PASS: " + checks + " Wood ecology assertions"); return checks;
     }
     private static void CapacityAndRecovery()
@@ -86,5 +86,66 @@ internal static class WoodEcologyChecks
         Check(loss > 0 && Math.Abs(receipt.After - loss - remaining) < 1e-8 && remaining <= MaterialEconomy.WoodCapacity(250, w.Tiles[tile], LazyEcology.ProjectEcology(w, tile, 0), w.Config) + 1e-8, "post-conversion capacity loss is distinct from receipts and caps the source");
         var stone = MaterialEconomy.KnownSources(w, c, 0).Single(s => s.Material == MaterialId.Stone); var clay = MaterialEconomy.KnownSources(w, c, 0).Single(s => s.Material == MaterialId.Clay);
         Near(stone.Available, 1000, "Stone availability remains finite and unchanged"); Near(clay.Available, 1000, "Clay availability remains finite and unchanged");
+    }
+    private static void VirginWoodCultivation()
+    {
+        foreach (var vegetation in new[] { VegetationTier.Medium, VegetationTier.High })
+        {
+            var w = Fixture(1, vegetation); var camp = w.Camps[0]; int id = camp.Tile; var tile = w.Tiles[id];
+            tile.NaturalVegetationPotential = vegetation;
+            camp.CultivationFocusTile = id;
+            // Keep this a single-site expansion so the worker-year budget
+            // reaches each transition without competing neighboring fields.
+            foreach (int neighbor in CultivationEconomy.Footprint(w, camp).Where(site => site != id))
+                for (int season = 0; season < w.Tiles[neighbor].Seasons.Length; season++)
+                    w.Tiles[neighbor].Seasons[season].MaxPotentialFood = 0;
+            tile.CultivationCapital = Math.Pow(.5 / w.Config.ReferenceIntensity, 2);
+            tile.Cultivation = .5f; tile.Cultivated = true; tile.CultivationOperator = camp.Id;
+            double initial = w.Resources.SurfaceAccessible(id, MaterialId.Wood);
+            Check(initial > 0 && !w.MaterialSources.Any(), vegetation + " starts with generated Wood and no explicit source or extraction");
+            Near(Wood(w, 0), initial, vegetation + " q=.5 retains virgin Wood");
+            Check(!w.MaterialSources.Any(), vegetation + " Wood query is pure before first cultivation displacement");
+            Near(EcologyMath.CultivationVegetationRetention(w.Config, .5), 1, vegetation + " q=.5 retention");
+            Near(MaterialEconomy.WoodCapacity(initial, tile, new EcologyView(tile), w.Config), initial, vegetation + " q=.5 capacity");
+
+            foreach (double targetQ in new[] { .75, 1.0 })
+            {
+                double targetCapital = Math.Pow(targetQ / w.Config.ReferenceIntensity, 2);
+                double delta = targetCapital - tile.CultivationCapital;
+                double factor = vegetation == VegetationTier.High ? w.Config.Neolithic.ForestBuild : w.Config.Neolithic.WoodlandBuild;
+                double workerYears = delta * w.Config.Neolithic.BuildWorkerYearsPerTileE * factor;
+                double before = targetQ == .75 ? initial : initial * .5;
+                var record = new TurnRecord();
+                Check(CultivationEconomy.Expand(w, camp, workerYears, false, record) > 0, vegetation + " expansion reaches q=" + targetQ);
+                Near(CultivationEconomy.Intensity(w.Config, tile.CultivationCapital), targetQ, vegetation + " exact expansion intensity", 1e-7);
+                var source = w.MaterialSources.Single(s => s.Material == MaterialId.Wood && s.Id == "surface:" + id + ":" + (int)MaterialId.Wood);
+                double retention = targetQ == .75 ? .5 : 0;
+                Near(EcologyMath.CultivationVegetationRetention(w.Config, targetQ), retention, vegetation + " retained natural cover");
+                Near(source.Initial, initial, vegetation + " source retains raster baseline");
+                Near(source.Remaining, initial * retention, vegetation + " source stock is permanently displaced at q=" + targetQ, 1e-6);
+                Near(Wood(w, 0), source.Remaining, vegetation + " source query agrees with stored reduced stock");
+                Near(record.Pressure.Where(p => p.Kind == "Cultivation vegetation displacement" && p.Tile == id).Sum(p => p.WoodCapacityLoss), before - source.Remaining,
+                    vegetation + " displacement is recorded from real virgin stock", 1e-6);
+                Near(tile.LandCondition, 1, vegetation + " expansion preserves biological land condition");
+                Check(tile.CurrentVegetation == vegetation, vegetation + " expansion preserves raw ecological vegetation");
+            }
+
+            CultivationEconomy.Factors(w.Config, tile, out double build, out double maintenance);
+            Near(build, vegetation == VegetationTier.High ? w.Config.Neolithic.ForestBuild : w.Config.Neolithic.WoodlandBuild,
+                vegetation + " raw wooded build multiplier remains in force at q=1");
+            Near(maintenance, vegetation == VegetationTier.High ? w.Config.Neolithic.ForestMaintenance : w.Config.Neolithic.WoodlandMaintenance,
+                vegetation + " raw wooded maintenance multiplier remains in force at q=1");
+
+            tile.CultivationCapital = 0; tile.Cultivation = 0; tile.Cultivated = false; tile.CultivationOperator = -1;
+            LazyEcology.MaterializeEcology(w, id, 0);
+            var abandoned = w.MaterialSources.Single(s => s.Material == MaterialId.Wood);
+            Near(abandoned.Remaining, 0, vegetation + " abandonment cannot restore Wood instantly");
+            LazyEcology.MaterializeEcology(w, id, w.Config.DaysPerYear);
+            Check(abandoned.Remaining > 0 && abandoned.Remaining < initial, vegetation + " Wood returns only through elapsed recovery");
+            Near(abandoned.Remaining, initial * (1 - Math.Exp(-w.Resources.WoodRecoveryPerYear)),
+                vegetation + " one-year regrowth follows the configured recovery rate", 1e-6);
+            Near(abandoned.LastDays, w.Config.DaysPerYear, vegetation + " regrowth advances the source clock");
+            Near(tile.LandCondition, 1, vegetation + " regrowth leaves land condition unchanged");
+        }
     }
 }

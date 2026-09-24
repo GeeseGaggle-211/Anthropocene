@@ -57,7 +57,7 @@ namespace Anthropocene.Simulation
             // before applying the common q-dependent retention factor.
             EffectiveNaturalVegetationService = ((int)view.CurrentVegetation + 1) * NaturalVegetationRetention;
             EffectiveVegetation = tile.Land ? Vegetation.RetainedCover(view.CurrentVegetation, NaturalVegetationRetention) : view.CurrentVegetation;
-            Id = tile.Id; Terrain = Vegetation.LegacyTerrain(tile.Environment, view.CurrentVegetation); River = tile.River; Cultivated = tile.Cultivated; Fishery = tile.Fishery; ElevationLevel = tile.ElevationLevel; Irrigated = tile.Irrigated;
+            Id = tile.Id; Terrain = Vegetation.LegacyTerrain(tile.Environment, view.CurrentVegetation); River = tile.River; Cultivated = tile.Cultivated; Fishery = tile.Fishery; ElevationLevel = tile.ElevationLevel; RidgeMask = tile.RidgeMask; Irrigated = tile.Irrigated;
             double condition = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater ? view.AquaticCondition : view.LandCondition;
             double biomassCapacity, foodCapacity, foodRate, managedFlow;
             if (projectedCapacity.HasValue)
