@@ -214,3 +214,12 @@ scalar/two/four-worker, reversed-partition, reordered-collection replay
 passed. The fresh 80/320 normal and activity audit pairs matched their
 population, prior-cohort weighted QoL, and food yield fields exactly at every
 completed turn. The 20-case quick transition activity run completed.
+
+Repository note: this workstation has two pre-existing broken local refs
+under `refs/codex/turn-diffs/checkpoints`; an ordinary `git fetch` failed
+during this handoff. The remote Neolithic branch tip was checked through the
+GitHub API, the push succeeded using file-backed GitHub CLI authentication
+with automatic maintenance disabled, and the local tracking branch matches
+the remote tip. Repair those unrelated checkpoint refs before depending on
+ordinary fetch/maintenance in this checkout; do not mistake their warning
+for a simulation build or benchmark failure.
