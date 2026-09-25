@@ -1,5 +1,12 @@
 # Prepared-turn Neolithic performance handoff
 
+September 25 follow-up: the exact Options 1/5 cache experiment is on
+`codex/neolithic-options-1-5-validation`, based on `9dc18c0`. See
+[its validation report](NeolithicOptions15Validation.md) for the sustained
+25-generation comparison and [the analytical turn plan](NeolithicAnalyticalTurnPlan.md)
+for the retained follow-up. The measurements below remain historical opening
+evidence, not the current Neolithic acceptance denominator.
+
 **Scope:** `features/neolithic-agricultural`, with the accepted prior-cohort
 economy and the default seasonal resource resolver. This report is for work on
 that branch. No event-driven resolver is involved. The behavioral checkpoint

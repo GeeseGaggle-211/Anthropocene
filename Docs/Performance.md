@@ -1,5 +1,13 @@
 # Scale measurements - September 13, 2026
 
+## Neolithic Options 1/5 follow-up — September 25, 2026
+
+The exact-cache offshoot `codex/neolithic-options-1-5-validation` compares simulation candidate `b5d98d7` against `9dc18c0`. Three sequential matched pairs at each size cover 25 post-opening generations (500 years), with all tribes/herds and the audit's original API defaults. Median paired AI + preparation + resolution time falls **3.7% at 80 tribes** and **13.6% at 320**, missing the proposed **20%** aggregate target at both sizes. Allocated bytes fall approximately **15.5%/15.3%**. The 80-tribe runtime results are mixed; the 320-tribe aggregate results improve consistently, but a repeatable >5% final-turn slowdown remains unresolved. Separate exact runs match all 25 per-turn fingerprints at both sizes.
+
+The measured seasonal loop still accounts for roughly 34% of candidate 80-tribe end-to-end time; numerical seasonal integration alone is about 11%. Reducing the repeated preparation and expansion work is relevant to the retained analytical design, but its speed and trajectory accuracy remain untested. See [NeolithicOptions15Validation.md](NeolithicOptions15Validation.md) for every pair, tail/GC evidence, provenance, limits and the experimental-branch disposition, and [NeolithicAnalyticalTurnPlan.md](NeolithicAnalyticalTurnPlan.md) for the follow-up proposal. The following measurements remain historical; no new `main`-relative gate pass is claimed.
+
+## Historical scale baseline
+
 Windows x64; Unity-bundled .NET 8.0.318; seed **1729**, Continents, default twenty-year turns. Each audit runs all twelve turns, a four-worker resolver, a scalar replay world, fingerprints after every turn, and an initial/final save/load. These are local development measurements, not isolated microbenchmarks. All reference and restored fingerprints matched.
 
 | Measurement | 1,024 x 512 / 80 tribes | 2,048 x 1,024 / 320 tribes | Ratio |
