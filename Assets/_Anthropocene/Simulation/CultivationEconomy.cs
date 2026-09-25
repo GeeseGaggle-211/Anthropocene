@@ -71,10 +71,10 @@ namespace Anthropocene.Simulation
             CommitOperatingFraction(w, camp, plan);
             return plan;
         }
-        internal static int[] CommitSeasonBoundary(WorldState w, Camp camp, double start, IReadOnlyDictionary<int, Camp> campsById = null)
+        internal static int[] CommitSeasonBoundary(WorldState w, Camp camp, double start, IReadOnlyDictionary<int, Camp> campsById = null, int[] cachedFootprint = null)
         {
             if (!Enabled(camp) || camp.Population <= 0) return Array.Empty<int>();
-            var footprint = Footprint(w, camp);
+            var footprint = cachedFootprint ?? Footprint(w, camp);
             foreach (int id in footprint)
             {
                 var t = w.Tiles[id]; LazyEcology.MaterializeEcology(w, id, start);
@@ -222,8 +222,20 @@ namespace Anthropocene.Simulation
             double maintenance = PlannedMaintenanceFarmers(w, camp, availableFarmers);
             return Math.Max(0, maintenance) * years;
         }
-        // Each increment is scored again against the current capital and upkeep costs.
-        public static double Expand(WorldState w, Camp camp, double workerYears, bool bridge, TurnRecord record, FarmToolWorkBudget toolBudget = null, Action<int> selectedTile = null)
+        private struct CandidateScoreCache
+        {
+            public EcologyView Ecology;
+            public double Capital, LandCondition, Step, Score;
+            public VegetationTier Vegetation;
+            public bool HasEcology, HasScore;
+        }
+
+        // Each increment is scored against the current capital and upkeep costs.
+        // Scores can be reused only while this call's projected tile state and
+        // exact E step are unchanged. A selected tile is invalidated after its
+        // authoritative write; a callback may inspect or mutate arbitrary world
+        // state, so supplying one disables reuse after each callback.
+        public static double Expand(WorldState w, Camp camp, double workerYears, bool bridge, TurnRecord record, FarmToolWorkBudget toolBudget = null, Action<int> selectedTile = null, int[] cachedFootprint = null)
         {
             if (!Enabled(camp) || camp.Population <= 0 || workerYears <= 0 || bridge && w.Config.GathererBridgeEfficiency <= 0) return 0;
             var c = w.Config; var n = c.Neolithic;
@@ -231,14 +243,21 @@ namespace Anthropocene.Simulation
             double efficiency = !bridge ? FarmToolFieldWorkEfficiency(n) : 1;
             double remaining = bridge ? workerYears * c.GathererBridgeEfficiency : workerYears - coveredWorkerYears + coveredWorkerYears * efficiency;
             double ceiling = Math.Pow((bridge ? c.GathererBridgeCeiling : 1) / c.ReferenceIntensity, 2);
-            var candidates = Footprint(w, camp).Where(id => w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == camp.Id).ToArray();
+            var candidates = (cachedFootprint ?? Footprint(w, camp)).Where(id => w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == camp.Id).ToArray();
+            var scores = new CandidateScoreCache[candidates.Length];
             while (remaining > 1e-10)
             {
-                int best = -1; double bestScore = -1, step = 0, cost = 0;
-                foreach (int id in candidates)
+                int best = -1, bestIndex = -1; double bestScore = -1, step = 0, cost = 0;
+                for (int candidateIndex = 0; candidateIndex < candidates.Length; candidateIndex++)
                 {
+                    int id = candidates[candidateIndex];
                     var t = w.Tiles[id];
-                    var ecology = LazyEcology.ProjectEcology(w, id, Math.Max(w.Days, t.LastEcologyUpdateDays));
+                    ref CandidateScoreCache cache = ref scores[candidateIndex];
+                    var ecology = cache.HasEcology
+                        ? cache.Ecology
+                        : LazyEcology.ProjectEcology(w, id, Math.Max(w.Days, t.LastEcologyUpdateDays));
+                    cache.Ecology = ecology;
+                    cache.HasEcology = true;
                     double e = ecology.CultivationCapital;
                     if (e >= ceiling - 1e-12) continue;
                     double vb = BuildMultiplier(c, t, ecology.CurrentVegetation);
@@ -247,27 +266,46 @@ namespace Anthropocene.Simulation
                     double de = Math.Min(n.AllocationStepE, Math.Min(ceiling - e, remaining / (n.BuildWorkerYearsPerTileE * vb)));
                     if (!bridge && Intensity(c, e) < c.GathererBridgeCeiling) de = Math.Min(de, Math.Pow(c.GathererBridgeCeiling / c.ReferenceIntensity, 2) - e);
                     if (de <= 1e-12) continue;
-                    double gain = 0;
-                    var beforeView = ecology;
-                    var afterView = ecology;
-                    afterView.CultivationCapital = e + de;
-                    for (int season = 0; season < 4; season++)
+                    bool scoreMatches = cache.HasScore && cache.Capital == e && cache.LandCondition == ecology.LandCondition &&
+                        cache.Vegetation == ecology.CurrentVegetation && cache.Step == de;
+                    double score;
+                    if (scoreMatches)
                     {
-                        var beforeCapacity = new EcologyCapacity(w, t, beforeView, season, 1);
-                        var afterCapacity = new EcologyCapacity(w, t, afterView, season, 1);
-                        double beforeFlow = Math.Min(beforeCapacity.Food * beforeCapacity.FoodRate + beforeCapacity.ManagedFlow,
-                            EcologyMath.SustainableHarvestRate(beforeCapacity.Biomass, beforeCapacity.BiomassRate, c.SustainableProductionFraction, beforeCapacity.ManagedFlow) * c.SafeUseRatio);
-                        double afterFlow = Math.Min(afterCapacity.Food * afterCapacity.FoodRate + afterCapacity.ManagedFlow,
-                            EcologyMath.SustainableHarvestRate(afterCapacity.Biomass, afterCapacity.BiomassRate, c.SustainableProductionFraction, afterCapacity.ManagedFlow) * c.SafeUseRatio);
-                        gain += (afterFlow - beforeFlow) * c.DaysPerYear / 4;
+                        score = cache.Score;
                     }
-                    double buildCost = de * n.BuildWorkerYearsPerTileE * vb;
-                    double score = gain / Math.Max(1e-12, buildCost + n.PlanningHorizonYears * n.MaintenanceWorkersPerTileE(c.MaintenanceCoefficient) * vm * de);
+                    else
+                    {
+                        double gain = 0;
+                        var beforeView = ecology;
+                        var afterView = ecology;
+                        afterView.CultivationCapital = e + de;
+                        for (int season = 0; season < 4; season++)
+                        {
+                            var beforeCapacity = new EcologyCapacity(w, t, beforeView, season, 1);
+                            var afterCapacity = new EcologyCapacity(w, t, afterView, season, 1);
+                            double beforeFlow = Math.Min(beforeCapacity.Food * beforeCapacity.FoodRate + beforeCapacity.ManagedFlow,
+                                EcologyMath.SustainableHarvestRate(beforeCapacity.Biomass, beforeCapacity.BiomassRate, c.SustainableProductionFraction, beforeCapacity.ManagedFlow) * c.SafeUseRatio);
+                            double afterFlow = Math.Min(afterCapacity.Food * afterCapacity.FoodRate + afterCapacity.ManagedFlow,
+                                EcologyMath.SustainableHarvestRate(afterCapacity.Biomass, afterCapacity.BiomassRate, c.SustainableProductionFraction, afterCapacity.ManagedFlow) * c.SafeUseRatio);
+                            gain += (afterFlow - beforeFlow) * c.DaysPerYear / 4;
+                        }
+                        double buildCost = de * n.BuildWorkerYearsPerTileE * vb;
+                        score = gain / Math.Max(1e-12, buildCost + n.PlanningHorizonYears * n.MaintenanceWorkersPerTileE(c.MaintenanceCoefficient) * vm * de);
+                        cache.Capital = e;
+                        cache.LandCondition = ecology.LandCondition;
+                        cache.Vegetation = ecology.CurrentVegetation;
+                        cache.Step = de;
+                        cache.Score = score;
+                        cache.HasScore = true;
+                    }
+                    double candidateCost = de * n.BuildWorkerYearsPerTileE * vb;
                     bool focused = id == camp.CultivationFocusTile;
-                    if (score > 0 && (best < 0 || focused || best != camp.CultivationFocusTile && score > bestScore)) { best = id; bestScore = score; step = de; cost = buildCost; }
+                    if (score > 0 && (best < 0 || focused || best != camp.CultivationFocusTile && score > bestScore)) { best = id; bestIndex = candidateIndex; bestScore = score; step = de; cost = candidateCost; }
                 }
                 if (best < 0) break;
                 selectedTile?.Invoke(best);
+                if (selectedTile != null)
+                    for (int i = 0; i < scores.Length; i++) { scores[i].HasEcology = false; scores[i].HasScore = false; }
                 var target = w.Tiles[best];
                 var beforeEcology = LazyEcology.MaterializeEcology(w, best, Math.Max(w.Days, target.LastEcologyUpdateDays));
                 double oldQ = Intensity(c, beforeEcology.CultivationCapital);
@@ -287,6 +325,7 @@ namespace Anthropocene.Simulation
                     });
                 }
                 remaining -= cost;
+                if (bestIndex >= 0) { scores[bestIndex].HasEcology = false; scores[bestIndex].HasScore = false; }
             }
             double effectiveUsed = (bridge ? workerYears * c.GathererBridgeEfficiency : workerYears - coveredWorkerYears + coveredWorkerYears * efficiency) - remaining;
             if (!bridge && toolBudget != null && effectiveUsed > 0)

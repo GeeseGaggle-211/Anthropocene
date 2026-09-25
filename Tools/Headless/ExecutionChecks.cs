@@ -13,9 +13,23 @@ internal static class ExecutionChecks
         var reference = new WorldGenerator().Generate(53, SimulationConfig.Small(4));
         var workers = new[] { new PhaseExecution(2, 7, false, 1), new PhaseExecution(4, 3, true, 1) };
         var worlds = workers.Select(x => SaveCodec.Load(SaveCodec.Save(reference))).ToArray();
-        int turns = 0;
-        while (!reference.Finished && turns < 12)
+        int turns = 0, postOpeningTurns = 0, agriculturalTurns = 0;
+        // Continue into the economy whose seasonal scratch state is being reused.
+        // Offset the continuation clock to exercise partial first/last seasons.
+        while ((!reference.Finished && turns < 12) || postOpeningTurns < 25)
         {
+            if (turns >= 12 && !reference.Finished) throw new Exception("Execution replay opening did not finish within 12 turns.");
+            if (reference.Finished)
+            {
+                if (postOpeningTurns == 0)
+                {
+                    double offset = .37 * reference.Config.BaseDays;
+                    reference.Days += offset;
+                    foreach (var world in worlds) world.Days += offset;
+                }
+                postOpeningTurns++;
+            }
+            if (reference.Camps.Any(CultivationEconomy.Enabled)) agriculturalTurns++;
             var plan = AiPlanning.Decide(reference); new TurnResolver().Resolve(reference, plan.Orders, plan.Traces);
             for (int i = 0; i < worlds.Length; i++)
             {
@@ -27,7 +41,8 @@ internal static class ExecutionChecks
             }
             turns++;
         }
-        Console.WriteLine("PASS: reference vs 2/4 workers, reversed partitions and entity collections across " + turns + " resolutions");
+        if (agriculturalTurns < 25) throw new Exception("Mature execution replay did not exercise 25 agricultural turns.");
+        Console.WriteLine("PASS: reference vs 2/4 workers, reversed partitions and entity collections across " + turns + " resolutions, including " + postOpeningTurns + " post-opening turns with partial seasonal boundaries");
     }
     public static void Scale(int players)
     {

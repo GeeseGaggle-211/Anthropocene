@@ -228,30 +228,89 @@ namespace Anthropocene.Simulation
             FinishDemographicReports(w, record, orders);
         }
 
-        private static void AddAgriculturalClaims(WorldState w, Camp camp, AgriculturalLabor labor, double intervals, double biological, double feedstock, Func<int, double> availability, List<Demand> claims)
+        // Membership is fixed after movement; all quantities below are refreshed at
+        // each seasonal barrier. Scratch claims never escape into saved receipts.
+        private sealed class AgriculturalClaimScratch
         {
-            var eligible = w.Map.Radius(camp.Tile, w.Config.GatherRadius).Where(id => PassiveGathering.Eligible(w, camp, id)).OrderBy(id => id).ToArray();
-            // Operators harvest the same accessible terrestrial supply as gatherers, not a crop-only pool.
-            var fields = eligible.Where(id => w.Tiles[id].Land).ToArray();
-            var remaining = eligible.ToDictionary(id => id, availability);
-            double Allocate(IEnumerable<int> candidates, double requested, bool farmer, bool manufacturing)
+            public readonly int[] Footprint, Eligible, LandIndices;
+            public readonly double[] Remaining;
+            public readonly List<Demand> Claims = new List<Demand>();
+            private readonly List<Demand> pool = new List<Demand>();
+            private int used;
+            public AgriculturalClaimScratch(WorldState w, Camp camp, int[] footprint)
             {
-                var ids = candidates.Where(remaining.ContainsKey).OrderBy(id => id).ToArray();
-                double available = ids.Sum(id => remaining[id]), accepted = Math.Min(Math.Max(0, requested), available);
-                if (accepted <= 0) return 0;
-                foreach (int id in ids)
+                Footprint = footprint;
+                Eligible = w.Map.Radius(camp.Tile, w.Config.GatherRadius).Where(id => PassiveGathering.Eligible(w, camp, id)).OrderBy(id => id).ToArray();
+                LandIndices = Enumerable.Range(0, Eligible.Length).Where(i => w.Tiles[Eligible[i]].Land).ToArray();
+                Remaining = new double[Eligible.Length];
+            }
+            public void Clear() { Claims.Clear(); used = 0; }
+            public Demand NextClaim()
+            {
+                if (used == pool.Count) pool.Add(new Demand());
+                return pool[used++];
+            }
+        }
+
+        private sealed class SeasonalClaimBucket
+        {
+            public readonly int Tile;
+            public readonly List<Demand> Claims = new List<Demand>();
+            public Demand[] Ordered = Array.Empty<Demand>();
+            public SeasonalClaimBucket(int tile) { Tile = tile; }
+            public void Prepare()
+            {
+                // Large contested stacks retain the stable O(n log n) reference
+                // sort. Ordinary local buckets reuse storage and a stable small sort.
+                if (Claims.Count > 16)
                 {
-                    double amount = accepted * remaining[id] / available; remaining[id] = Math.Max(0, remaining[id] - amount);
-                    claims.Add(new Demand { Entity = camp.Id, Tile = id, Kind = farmer ? "Cultivation" : PassiveGathering.Kind(w.Tiles[id]), Food = amount, Manufacturing = manufacturing, ImpactMultiplier = w.Tiles[id].Aquatic ? PracticeEffects.FishingImpact(w.Config, camp) : PracticeEffects.GatheringImpact(w.Config, camp) });
+                    Ordered = Claims.OrderBy(d => d.Entity).ThenBy(d => d.Kind, StringComparer.Ordinal).ToArray();
+                    return;
+                }
+                if (Ordered.Length != Claims.Count) Ordered = new Demand[Claims.Count];
+                Claims.CopyTo(Ordered);
+                for (int i = 1; i < Ordered.Length; i++)
+                {
+                    var value = Ordered[i]; int j = i - 1;
+                    while (j >= 0 && (Ordered[j].Entity > value.Entity ||
+                        Ordered[j].Entity == value.Entity && string.CompareOrdinal(Ordered[j].Kind, value.Kind) > 0))
+                    { Ordered[j + 1] = Ordered[j]; j--; }
+                    Ordered[j + 1] = value;
+                }
+            }
+        }
+
+        private static void AddAgriculturalClaims(WorldState w, Camp camp, AgriculturalLabor labor, double intervals, double biological, double feedstock, Func<int, double> availability, List<Demand> claims, AgriculturalClaimScratch scratch)
+        {
+            var eligible = scratch.Eligible;
+            // Operators harvest the same accessible terrestrial supply as gatherers, not a crop-only pool.
+            var remaining = scratch.Remaining;
+            for (int i = 0; i < eligible.Length; i++) remaining[i] = availability(eligible[i]);
+            double Allocate(int[] indices, double requested, bool farmer, bool manufacturing)
+            {
+                int count = indices == null ? eligible.Length : indices.Length;
+                double available = 0;
+                for (int i = 0; i < count; i++) available += remaining[indices == null ? i : indices[i]];
+                double accepted = Math.Min(Math.Max(0, requested), available);
+                if (accepted <= 0) return 0;
+                for (int i = 0; i < count; i++)
+                {
+                    int index = indices == null ? i : indices[i], id = eligible[index];
+                    double amount = accepted * remaining[index] / available; remaining[index] = Math.Max(0, remaining[index] - amount);
+                    var claim = scratch.NextClaim();
+                    claim.Entity = camp.Id; claim.Tile = id; claim.Kind = farmer ? "Cultivation" : PassiveGathering.Kind(w.Tiles[id]);
+                    claim.Food = amount; claim.Manufacturing = manufacturing; claim.PotentialFood = 0; claim.Freshwater = 0;
+                    claim.ImpactMultiplier = w.Tiles[id].Aquatic ? PracticeEffects.FishingImpact(w.Config, camp) : PracticeEffects.GatheringImpact(w.Config, camp);
+                    claims.Add(claim);
                 }
                 return accepted;
             }
             double farmCapacity = labor.OperatingFarmers * w.Config.FarmerProductivity * w.Config.GatherPerPerson * intervals;
             double gatherCapacity = labor.FoodGatherers * w.Config.GatherPerPerson * intervals;
-            double farmInput = Allocate(fields.Where(id => w.Tiles[id].Land), Math.Min(farmCapacity, feedstock), true, true);
-            double gatheredInput = Allocate(eligible.Where(id => w.Tiles[id].Land), Math.Min(gatherCapacity, feedstock - farmInput), false, true);
-            double farm = Allocate(fields, Math.Min(farmCapacity - farmInput, biological), true, false);
-            Allocate(eligible, Math.Min(gatherCapacity - gatheredInput, biological - farm), false, false);
+            double farmInput = Allocate(scratch.LandIndices, Math.Min(farmCapacity, feedstock), true, true);
+            double gatheredInput = Allocate(scratch.LandIndices, Math.Min(gatherCapacity, feedstock - farmInput), false, true);
+            double farm = Allocate(scratch.LandIndices, Math.Min(farmCapacity - farmInput, biological), true, false);
+            Allocate(null, Math.Min(gatherCapacity - gatheredInput, biological - farm), false, false);
         }
 
         private Dictionary<int, double> CommitGenerationResources(WorldState w, List<Demand> demands, TurnRecord record, Action<int> touch, Dictionary<int, double> foraged, double intervals, Dictionary<int, AgriculturalLabor> agriculturalLabor, Dictionary<int, TurnNeeds> needs)
@@ -273,16 +332,32 @@ namespace Anthropocene.Simulation
             var inputBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => needs[c.Id].PlantFeedstockGap);
             var acceptedFood = w.Camps.ToDictionary(c => c.Id, c => 0d);
             var acceptedPlant = w.Camps.ToDictionary(c => c.Id, c => 0d);
-            int FoodCamp(string kind, int entity) => kind == "Fishing" ? (Supply.Connected(w, hunters[entity]) ? hunters[entity].SourceCamp : -1) : kind == "Herd" || kind == "Foraging" ? -1 : entity;
+            var hunterFoodCamps = new Dictionary<int, int>();
+            int FoodCamp(string kind, int entity)
+            {
+                if (kind == "Herd" || kind == "Foraging") return -1;
+                if (kind != "Fishing") return entity;
+                if (!hunterFoodCamps.TryGetValue(entity, out int owner))
+                    hunterFoodCamps[entity] = owner = Supply.Connected(w, hunters[entity]) ? hunters[entity].SourceCamp : -1;
+                return owner;
+            }
             var agriculturalIds = new HashSet<int>(agriculturalCamps.Select(c => c.Id));
+            var claimScratch = agriculturalCamps.ToDictionary(c => c.Id, c => new AgriculturalClaimScratch(w, c, agriculturalLabor[c.Id].Footprint));
             var lastFieldChoice = ResolutionMetrics.CaptureDetailedCounters ? new Dictionary<int, int>() : null;
             var seasonalTiles = new HashSet<int>(agriculturalCamps.SelectMany(c => agriculturalLabor[c.Id].Footprint));
             foreach (var camp in agriculturalCamps)
-                seasonalTiles.UnionWith(w.Map.Radius(camp.Tile, w.Config.GatherRadius).Where(id => PassiveGathering.Eligible(w, camp, id)));
+                seasonalTiles.UnionWith(claimScratch[camp.Id].Eligible);
             foreach (var group in groups)
                 if (group.Claims.Any(d => agriculturalIds.Contains(FoodCamp(d.Kind, d.Entity)))) seasonalTiles.Add(group.Tile);
             var fullTurnGroups = groups.Where(g => !seasonalTiles.Contains(g.Tile)).ToArray();
             var seasonalDemands = demands.Where(d => seasonalTiles.Contains(d.Tile)).ToArray();
+            var seasonalCopies = seasonalDemands.Select(d => new Demand { Entity = d.Entity, Tile = d.Tile, Kind = d.Kind, ImpactMultiplier = d.ImpactMultiplier, Manufacturing = d.Manufacturing }).ToArray();
+            var buckets = seasonalTiles.OrderBy(id => id).Select(id => new SeasonalClaimBucket(id)).ToArray();
+            var bucketsByTile = buckets.ToDictionary(b => b.Tile);
+            var stepGroups = new List<SeasonalClaimBucket>(buckets.Length);
+            var stepClaims = new List<Demand>(seasonalDemands.Length + agriculturalCamps.Length * 28);
+            var availability = new Dictionary<int, double>(seasonalTiles.Count);
+            var gatheredByCamp = new Dictionary<int, double>();
             LastMetrics.ClaimsAllocated = fullTurnGroups.Sum(g => (long)g.Claims.Length);
             // Independent tiles still use Integrate's internal seasonal physics, but
             // have no reason to pass through every agricultural write barrier.
@@ -302,27 +377,34 @@ namespace Anthropocene.Simulation
             {
                 var seasonalTimer = System.Diagnostics.Stopwatch.StartNew();
                 double fraction = segment.Days / record.Duration;
-                var stepClaims = seasonalDemands.Select(d => new Demand { Entity = d.Entity, Tile = d.Tile, Kind = d.Kind, Food = d.Food * fraction, PotentialFood = d.PotentialFood * fraction, Freshwater = d.Freshwater * fraction, ImpactMultiplier = d.ImpactMultiplier, Manufacturing = d.Manufacturing }).ToList();
-                var claimsByAgriculturalCamp = agriculturalCamps.ToDictionary(c => c.Id, c => new List<Demand>());
+                stepClaims.Clear(); stepGroups.Clear(); availability.Clear(); gatheredByCamp.Clear();
+                foreach (var bucket in buckets) bucket.Claims.Clear();
+                foreach (var camp in agriculturalCamps) claimScratch[camp.Id].Clear();
+                for (int i = 0; i < seasonalDemands.Length; i++)
+                {
+                    var source = seasonalDemands[i]; var copy = seasonalCopies[i];
+                    copy.Food = source.Food * fraction; copy.PotentialFood = source.PotentialFood * fraction; copy.Freshwater = source.Freshwater * fraction;
+                    stepClaims.Add(copy);
+                }
                 foreach (var claim in stepClaims)
                 {
                     int owner = FoodCamp(claim.Kind, claim.Entity);
-                    if (claimsByAgriculturalCamp.TryGetValue(owner, out var owned)) owned.Add(claim);
+                    if (claimScratch.TryGetValue(owner, out var owned)) owned.Claims.Add(claim);
                 }
-                var availability = new Dictionary<int, double>();
                 double Available(int id)
                 {
                     if (!availability.TryGetValue(id, out double amount)) availability[id] = amount = LazyEcology.AccessibleAvailability(w, id, start, segment.Days);
                     return amount;
                 }
-                var footprints = agriculturalCamps.ToDictionary(c => c.Id, c => CultivationEconomy.CommitSeasonBoundary(w, c, start, camps));
+                foreach (var camp in agriculturalCamps)
+                    CultivationEconomy.CommitSeasonBoundary(w, camp, start, camps, claimScratch[camp.Id].Footprint);
                 if (ResolutionMetrics.CaptureDetailedCounters) LastMetrics.SeasonalCampBoundaries += agriculturalCamps.Length;
                 foreach (var camp in agriculturalCamps)
-                    agriculturalLabor[camp.Id] = CultivationEconomy.CalculateLabor(w, camp, footprints[camp.Id], farmToolBudgets[camp.Id], segment.Days / w.Config.DaysPerYear);
+                    agriculturalLabor[camp.Id] = CultivationEconomy.CalculateLabor(w, camp, claimScratch[camp.Id].Footprint, farmToolBudgets[camp.Id], segment.Days / w.Config.DaysPerYear);
                 foreach (var camp in agriculturalCamps)
                 {
                     var owned = ResolutionMetrics.CaptureDetailedCounters
-                        ? footprints[camp.Id].Where(id => w.Tiles[id].CultivationOperator == camp.Id).ToArray() : null;
+                        ? claimScratch[camp.Id].Footprint.Where(id => w.Tiles[id].CultivationOperator == camp.Id).ToArray() : null;
                     var before = owned == null ? null : owned.Select(id => w.Tiles[id].CultivationOperatingFraction).ToArray();
                     CultivationEconomy.CommitOperatingFraction(w, camp, agriculturalLabor[camp.Id]);
                     if (owned != null && Enumerable.Range(0, owned.Length).Any(i => before[i] != w.Tiles[owned[i]].CultivationOperatingFraction))
@@ -334,36 +416,40 @@ namespace Anthropocene.Simulation
                     double input = Math.Max(0, inputBudgets[camp.Id] - acceptedInput);
                     double biological = Math.Max(0, biologicalBudgets[camp.Id] - (acceptedFood[camp.Id] - acceptedInput));
                     int firstNewClaim = stepClaims.Count;
-                    AddAgriculturalClaims(w, camp, agriculturalLabor[camp.Id], segment.Days / w.Config.BaseDays, biological, input, Available, stepClaims);
-                    var claims = claimsByAgriculturalCamp[camp.Id];
+                    AddAgriculturalClaims(w, camp, agriculturalLabor[camp.Id], segment.Days / w.Config.BaseDays, biological, input, Available, stepClaims, claimScratch[camp.Id]);
+                    var claims = claimScratch[camp.Id].Claims;
                     for (int i = firstNewClaim; i < stepClaims.Count; i++)
                     {
                         if (!seasonalTiles.Contains(stepClaims[i].Tile)) throw new InvalidOperationException("Seasonal claim escaped the agricultural dependency set.");
                         claims.Add(stepClaims[i]);
                     }
-                    double scale = Math.Min(1, biological / Math.Max(1e-12, claims.Where(d => !d.Manufacturing).Sum(d => d.Food)));
-                    double inputScale = Math.Min(1, input / Math.Max(1e-12, claims.Where(d => d.Manufacturing).Sum(d => d.Food)));
+                    double foodRequested = 0, inputRequested = 0;
+                    foreach (var claim in claims)
+                        if (claim.Manufacturing) inputRequested += claim.Food; else foodRequested += claim.Food;
+                    double scale = Math.Min(1, biological / Math.Max(1e-12, foodRequested));
+                    double inputScale = Math.Min(1, input / Math.Max(1e-12, inputRequested));
                     foreach (var claim in claims) claim.Food *= claim.Manufacturing ? inputScale : scale;
                 }
-                var stepGroups = stepClaims.GroupBy(d => d.Tile).OrderBy(g => g.Key).Select(g => new { Tile = g.Key, Claims = g.ToArray() }).ToArray();
-                LastMetrics.TileIntegrations += stepGroups.Length;
+                foreach (var claim in stepClaims) bucketsByTile[claim.Tile].Claims.Add(claim);
+                foreach (var bucket in buckets)
+                    if (bucket.Claims.Count > 0) { bucket.Prepare(); stepGroups.Add(bucket); }
+                LastMetrics.TileIntegrations += stepGroups.Count;
                 LastMetrics.ClaimsAllocated += stepClaims.Count;
                 LastMetrics.SeasonalPreparationMilliseconds += seasonalTimer.Elapsed.TotalMilliseconds;
                 seasonalTimer.Restart();
                 // Small seasonal frontiers are cheaper to integrate in canonical
                 // order than to dispatch eighty separate parallel jobs.
-                var results = stepGroups.Length < 128
-                    ? stepGroups.Select(group => EcologicalPressure.Integrate(w, group.Tile, group.Claims, start, segment.Days)).ToArray()
-                    : execution.Map(stepGroups, group => EcologicalPressure.Integrate(w, group.Tile, group.Claims, start, segment.Days));
+                var results = stepGroups.Count < 128
+                    ? stepGroups.Select(group => EcologicalPressure.Integrate(w, group.Tile, group.Ordered, start, segment.Days)).ToArray()
+                    : execution.Map(stepGroups, group => EcologicalPressure.Integrate(w, group.Tile, group.Ordered, start, segment.Days));
                 LastMetrics.SeasonalIntegrationMilliseconds += seasonalTimer.Elapsed.TotalMilliseconds;
                 seasonalTimer.Restart();
-                var gatheredByCamp = new Dictionary<int, double>();
                 var priorTargets = ResolutionMetrics.CaptureDetailedCounters
                     ? agriculturalCamps.ToDictionary(c => c.Id, c => new[] { acceptedFood[c.Id], acceptedPlant[c.Id] }) : null;
                 var priorTools = ResolutionMetrics.CaptureDetailedCounters
                     ? agriculturalCamps.ToDictionary(c => c.Id, c => farmToolBudgets[c.Id].RemainingTools) : null;
                 // No worker mutates entities, allocates IDs, or appends history.
-                for (int i = 0; i < stepGroups.Length; i++)
+                for (int i = 0; i < stepGroups.Count; i++)
                 {
                     var result = results[i]; result.View.Commit(w.Tiles[stepGroups[i].Tile]);
                     if (ResolutionMetrics.CaptureDetailedCounters && result.View.Food <= 1e-9 && stepGroups[i].Claims.Any(d => d.Food > 0))
@@ -409,8 +495,8 @@ namespace Anthropocene.Simulation
                             if (lastFieldChoice.TryGetValue(camp.Id, out int prior) && prior != tile) LastMetrics.FieldChoiceSwitches++;
                             lastFieldChoice[camp.Id] = tile;
                         };
-                    CultivationEconomy.Expand(w, camp, terrestrialGathered / w.Config.GatherPerPerson * w.Config.BaseDays / w.Config.DaysPerYear, true, record, null, selected);
-                    CultivationEconomy.Expand(w, camp, labor.ExpansionFarmers * segment.Days / w.Config.DaysPerYear, false, record, farmToolBudgets[camp.Id], selected);
+                    CultivationEconomy.Expand(w, camp, terrestrialGathered / w.Config.GatherPerPerson * w.Config.BaseDays / w.Config.DaysPerYear, true, record, null, selected, claimScratch[camp.Id].Footprint);
+                    CultivationEconomy.Expand(w, camp, labor.ExpansionFarmers * segment.Days / w.Config.DaysPerYear, false, record, farmToolBudgets[camp.Id], selected, claimScratch[camp.Id].Footprint);
                     if (ResolutionMetrics.CaptureDetailedCounters && priorTools[camp.Id] > 0 && farmToolBudgets[camp.Id].RemainingTools <= 0)
                         LastMetrics.ToolExhaustions++;
                 }
