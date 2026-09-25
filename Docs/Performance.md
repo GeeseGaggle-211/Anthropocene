@@ -46,6 +46,11 @@ Raw JSON is written to ignored `TestResults/EcologyScale-80.json` and `TestResul
 
 ## Prepared-turn pipeline audit — September 25, 2026
 
+For a focused handoff on the accepted `features/neolithic-agricultural`
+branch, including the current cost model, fresh seasonal activity counters,
+and commands to reproduce matched `main` runs, see
+[NeolithicTurnPerformanceHandoff.md](NeolithicTurnPerformanceHandoff.md).
+
 The branch's unmodified `65af0df` revision changed any agricultural world from one full-turn integration per active tile to 80 global seasonal outer passes. In a matched .NET 8 Release, four-worker, Standard/Continents/1729/80 audit, its turn 6 took 7.02 s AI planning and 18.86 s resolution; the prepared-turn implementation took 0.225 s planning and 0.225 s resolution on the same turn and matched population (4,319) and realized human food yield (388,575.506). The older 80-tribe QoL JSON used ending-population weights, so its QoL number must not be compared with the corrected prior-cohort metric. The unmodified branch reached turn 7 at 46.06 s planning and 212.39 s resolution; the full unmodified 80 run was stopped during turn 8 because it was no longer a practical validation loop. These measurements are the same executable and source revision within each run; they are directional across separate process executions.
 
 The new pipeline prepares intents and prior-cohort targets once, indexes local material sources, batches stable extraction choices, and integrates only agricultural dependency tiles seasonally. Independent active tiles retain one analytic full-turn integration. The `TileIntegrations` counter reports actual work: Standard/80 turn 10 integrated 33,713 tiles (394 seasonal dependency tiles, 2,193 independent tiles) while `ActiveTiles` reported 2,587 unique tiles. Standard/320 turn 11 integrated 147,616 tiles (1,733 seasonal dependency tiles). Counts, plan/forecast calls, local source queries, allocation claims, production receipts, and phase timings are transient; hot-path source lookup counting is opt-in with `--metrics=1` in `Tools/PerformanceAudit`.

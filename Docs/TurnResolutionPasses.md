@@ -133,7 +133,8 @@ warmed audit measured combined planning-plus-resolution medians of 249.0 ms
 versus 190.1 ms at Standard/80 and 933.0 ms versus 504.0 ms at
 benchmark-only Standard/320. These are a 1.31x and 1.85x gap respectively;
 see [Performance.md](Performance.md) for seed, worker settings, turn counts,
-and remaining limitations. Moving work between planning and resolution
+remaining limitations, and [NeolithicTurnPerformanceHandoff.md](NeolithicTurnPerformanceHandoff.md)
+for the focused reproduction recipe. Moving work between planning and resolution
 does not close that gap. Report both phases together, actual tile
 integrations, seasonal preparation, allocations, and production when
 changing this pipeline.
