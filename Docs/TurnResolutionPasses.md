@@ -89,25 +89,33 @@ aggregate comparison.
 
 ## Locality, shared resources, and deterministic commits
 
-- Camp and village gathering, cultivation footprints, material discovery,
-  and future private camp-claim buffers cover at most the settlement's
-  immediate radius-one tiles. Configuration validates `GatherRadius == 1`.
-  `MaterialAccessIndex` maps those tiles to deposit sites and current source
-  state without scanning every deposit for each query. Movement changes the
-  radius-one neighborhood for the next query.
-- A connected hunter can fish farther from its source camp; disconnected
-  hunters and herds claim at their own tiles, and herd drinking can use an
-  adjacent freshwater tile. These claims are not placed in a camp's local
-  buffer. They still compete with local claims when grouped on the same
-  tile, and connected fishing still counts against its camp's fixed food
-  target.
+- Camp and village **land** gathering, cultivation footprints, land
+  material discovery, and future private land-claim buffers cover at most
+  the settlement's immediate radius-one tiles. Configuration currently
+  validates `GatherRadius == 1`, and present passive coastal gathering also
+  uses that setting; this is not a permanent range invariant for sea claims.
+  `MaterialAccessIndex` maps radius-one land tiles to deposit sites and
+  current source state without scanning every deposit for each query.
+  Movement changes the radius-one land neighborhood for the next query.
+- Sea claims follow the range rule of their producer. A connected hunter
+  can already fish farther from its source camp; a later fishing pass may
+  introduce other longer-ranged sea claims. Do not reject a sea claim or
+  constrain a future private claim buffer merely because its tile is more
+  than one step from the camp. Disconnected hunters and herds claim at their
+  own tiles, and herd drinking can use an adjacent freshwater tile. All
+  claims still compete when grouped on the same tile; connected fishing
+  still counts against its camp's fixed food target.
 - Shared tile allocation is performed once from all claimants, with stable
-  claimant and tile ordering. Shared deposit extraction, wood conversion,
-  inventory changes, entity IDs, and `TurnRecord` receipts commit in
-  canonical order. Endpoint timber extraction can apply new wood pressure;
-  it cannot rewrite earlier seasonal food receipts. Parallel evaluation may
-  fill private indexed results only. Worker count, partition order, timings,
-  and diagnostics are not authoritative state.
+  claimant and tile ordering, including when several tribes affect one tile.
+  Such a tile is one grouped integration job followed by one canonical
+  commit. A per-tile mutex can guard that job if tile writers become
+  parallel, but the mutex cannot choose claim priority or replace the
+  canonical merge. Shared deposit extraction, wood conversion, inventory
+  changes, entity IDs, and `TurnRecord` receipts commit in canonical order.
+  Endpoint timber extraction can apply new wood pressure; it cannot rewrite
+  earlier seasonal food receipts. Parallel evaluation may fill private
+  indexed results only. Worker count, partition order, timings, and
+  diagnostics are not authoritative state.
 - Maintain conservation of population, food, biomass, freshwater, and finite
   materials. Scalar, two- and four-worker, reversed-partition,
   reordered-collection, and save-continuation runs must retain exact
