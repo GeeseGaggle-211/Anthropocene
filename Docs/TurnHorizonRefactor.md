@@ -1,10 +1,11 @@
 # Turn-horizon refactor
 
-Status: implementation in progress on `codex/turn-horizon-refactor`, based on
-`c33a5b7` (a descendant of `features/neolithic-agricultural`). The archived
-seasonal implementation at `c33a5b7` is the calibration reference, including
-the accepted prior-cohort needs rule. Measurements and acceptance evidence
-will be added after the implementation is exercised.
+Status: implemented on `codex/turn-horizon-refactor`, based on `c33a5b7`
+(a descendant of `features/neolithic-agricultural`). The archived seasonal
+implementation at `c33a5b7` is the calibration reference, including the
+accepted prior-cohort needs rule. The detailed paired evidence and
+reproduction commands are in
+[TurnHorizonPerformanceAudit.md](TurnHorizonPerformanceAudit.md).
 
 ## Authoritative clock
 
@@ -66,7 +67,7 @@ commit order remains unchanged.
 | --- | --- |
 | Quiet tile | Four seasonal capacities/rates are reduced over the horizon; recover food, nonfood biomass, freshwater, condition, vegetation and Wood lazily. |
 | Active tile | One `EcologicalPressure.Integrate` call accounts for renewable flow, human and herd extraction, finite freshwater, damage, overflow, and receipts. |
-| Cultivation | Total farmer and gatherer worker-years, maintenance demand and farm-tool service determine average operating efficacy and field capital; endpoint capital is committed after receipts. |
+| Cultivation | Total farmer and gatherer worker-years, maintenance demand and farm-tool service determine average operating efficacy and field capital. Planned endpoint capital commits with the tile result; one correction uses realized terrestrial receipts before Farm Tool service is debited. |
 | Herds | Food/water nutrition, management coverage, production, loss and exponential growth use the same duration. |
 | Materials and craft | Local source availability, worker-years, input stock and equipment service are balanced across the horizon; final inventories and receipts commit after resource resolution. |
 | People and society | Prior-cohort needs and reserve rules use the horizon; growth, starvation and practice use analytical duration scaling, then births and deaths commit. |
@@ -99,6 +100,17 @@ food that was already awarded from opening stock. It also does not impose
 the old seasonal cap on receipts: within-turn dry-season clipping is an
 intentional approximation limit of the single transition.
 
+For profile `s`, let `w_s` be its exposure share, `B_s` its biomass capacity,
+`r_s` its biomass renewal rate, and `M_s` its managed flow. The damage
+estimator uses `safe_s = B_s*r_s*SustainableProductionFraction + M_s` and
+`x_s = min(realized/dt, B_s/min(BaseDays,dt) + B_s*r_s + M_s)`. Its damage
+rate is the configured annual coefficient divided by `DaysPerYear`, times
+the realized human/herd impact mix, times
+`sum_s w_s * max(0, x_s/max(epsilon,safe_s) - SafeUseRatio)^PressureExponent`.
+The `min` is a limit on estimated pressure in that profile, **not** a
+second harvest decision. On contested tiles, the impact mix uses the
+request-weighted claimant mix, applied to realized aggregate extraction.
+
 Quiet, undisturbed tiles use exact affine composition of the four ordered
 seasonal recovery maps: a whole-cycle map is repeated algebraically, with at
 most bounded partial-cycle work at the edges. For recovering condition,
@@ -120,7 +132,7 @@ than assuming parity.
 
 The resource pass fixes ownership and workforce once after movement.
 Maintenance requires farmer-years over the horizon. Available Farm Tool
-service is the stock present at the preparation boundary times its configured
+service is the resource-pass starting inventory after movement times its configured
 farmer-years per unit. Covered maintenance has priority; remaining service
 covers a fixed expansion allocation. The covered share determines one
 average efficacy, and the tool debit occurs once at endpoint.
@@ -155,19 +167,49 @@ this deliberate model change. The new resolver must be exactly reproducible
 within its own model across scalar and worker modes, collection reorder, and
 save continuation. Conservation and finite-stock bounds remain strict.
 
+`CultivationEconomy.Expand` remains callable only for historical allocation
+and cache differential checks; the production resolver calls
+`PlanHorizonExpansion`/`CommitHorizonExpansion` instead. `SeasonalAffine`
+remains for algebraic composition of quiet-tile recovery. The four saved
+climate profiles and `BaseDays` remain environmental/calibration data.
+Neither the old `CommitGenerationResources` 80-barrier loop nor
+`LazyEcology.Segments` remains in the production source.
+
 ## Validation and measured differences
 
-Pending implementation and paired measurements. Record the 20 transition
-quick cases, dry marginal and placed camp controls, wet and marginal fields,
-mixed gathering, farm-tool coverage, depletion, aquatic food, husbandry and
-20/10/5/1/fractional-year horizons. Include population, food produced and
-stored, capital/intensity, condition, QoL, and tool/material ledgers. Explain
-qualitative differences rather than tuning solely for old seasonal parity.
+The new resolver passes the full headless suite, including exact scalar,
+two-/four-worker, reversed-partition, reordered-collection and save
+continuation fingerprints over 35 resolutions, strict conservation, and
+84 focused horizon ecology / 61 horizon cultivation assertions. Twenty
+quick transition cases and Standard 80/320 outcomes were compared with the
+seasonal prepared-turn reference. Fourteen quick fixtures have identical
+starting/injected states; six changed their controlled starting state and
+are explicitly unpaired. The most divergent aligned finals include medium
+woodland camp residents 43 → 12, high forest 168 → 264, and open fertile field
+capital 0.06428 → 0.00689. This is not outcome equivalence: the one-horizon
+stock solve cannot reproduce the old within-turn seasonal stock clipping.
+The high-forest difference begins before agriculture. In dry marginal,
+earlier technology unlocks explain a later Stone/tool ledger discontinuity;
+both material balances reconcile. The expanded quick trace measures
+eligible-field land condition, adjacent Shallows/Lakes condition and ending
+tool inventories. Dry marginal's final mean land condition changes from
+0.982203 to 0.798141; fixed open fertile's 1.0 → 0.5 QoL shift occurs
+without a comparable condition collapse and follows changed staffing,
+tool mix and Housing. Focused tests cover zero, partial
+and full tool coverage; zero stock, depletion/recovery, aquatic resources,
+husbandry, shared-tile contention, and fractional, 1-, 5-, 10- and 20-year
+durations. The full resolver uses 28 tile kernels on the same fixed small
+world at all five durations.
 
-For performance, compare three sequential warmed Release pairs against the
-archived `c33a5b7` resolver at Standard/Continents/1729 with 80 and
-benchmark-only 320 tribes. Report AI, preparation, resolution, ecology,
-allocations, active tiles, claims, tile-kernel calls, and heap allocation.
-Changing the duration from one to twenty years on a fixed world must leave
-the major work counts approximately constant. Report the historical `main`
-gap separately because `main` lacks the Neolithic economy.
+Three sequential warmed Release pairs from common Standard/Continents/1729
+opening saves show median paired combined AI + preparation + resolution gains
+of **73.2% at 80 tribes** and **76.6% at benchmark-only 320** across 25
+post-opening turns. Every pair improves. A representative first post-opening
+turn drops from 34,764 to 2,615 tile integrations at 80 and from 148,031
+to 10,620 at 320; claims, source lookups and allocation also fall. Separate
+single-run full openings are near pinned `main`, but the older three-pair
+within-10%-of-`main` gate remains unproven. See the linked audit for all
+phase medians, outcomes, managed-heap samples, source hashes, commands and
+limits. Future balance work should derive a constant-work representation of
+seasonal capacity clipping before claiming local parity; adding yearly or
+seasonal authoritative passes would violate this contract.

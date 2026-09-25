@@ -53,6 +53,7 @@ def read_reports(root, mode):
 
 def paired_turns(reports):
     rows = []
+    repeated_outcomes = {}
     for (size, pair_number), pair in sorted(reports.items()):
         baseline, candidate = pair["baseline"], pair["candidate"]
         left = {sample["turn"]: sample for sample in baseline["samples"]}
@@ -63,6 +64,12 @@ def paired_turns(reports):
             a, b = left[turn], right[turn]
             if a["phase"] != b["phase"]:
                 raise ValueError(f"Turn phases differ for {size} pair {pair_number} turn {turn}")
+            for variant, sample in (("baseline", a), ("candidate", b)):
+                key = (size, variant, turn)
+                outcome = (sample["population"], sample["foodYield"], sample["priorWeightedQol"])
+                if key in repeated_outcomes and repeated_outcomes[key] != outcome:
+                    raise ValueError(f"Repeated outcomes differ for {key}")
+                repeated_outcomes[key] = outcome
             row = {
                 "size": size, "pair": pair_number, "turn": turn,
                 "phase": a["phase"],
@@ -135,6 +142,20 @@ def summary(reports, rows, mode):
                      f"pair gains {', '.join(fmt(g * 100, 1) + '%' for g in pair_gains)}; "
                      f"corresponding turns >10% slower in at least two pairs: "
                      f"{', '.join(map(str, sorted(t for t, count in slow.items() if count >= 2))) or 'none'}.")
+    lines += ["", "## Outcome movement from the common starting save", "",
+              "| Tribes | Max per-turn population difference | Max per-turn prior-cohort QoL difference | "
+              "Max per-turn realized food difference | Final population baseline → candidate |",
+              "| ---: | ---: | ---: | ---: | ---: |"]
+    for size in sorted({r["size"] for r in rows}):
+        subset = [r for r in rows if r["size"] == size and r["pair"] == 1]
+        def largest(left, right):
+            return max(abs(r[right] - r[left]) / abs(r[left]) if abs(r[left]) > 1e-9 else 0 for r in subset)
+        final = max(subset, key=lambda r: r["turn"])
+        lines.append("| " + " | ".join((str(size),
+            f"{fmt(largest('baselinePopulation', 'candidatePopulation') * 100, 2)}%",
+            f"{fmt(largest('baselinePriorQol', 'candidatePriorQol') * 100, 2)}%",
+            f"{fmt(largest('baselineFoodYield', 'candidateFoodYield') * 100, 2)}%",
+            f"{final['baselinePopulation']:,} → {final['candidatePopulation']:,}")) + " |")
     lines += [
         "", "## Provenance", "",
         "Each JSON records source revision, runtime, input-save hash, worker count, "

@@ -7,7 +7,8 @@ param(
     [string]$BaselineRevision = 'c33a5b7',
     [string]$CandidateRevision = 'working',
     [ValidateSet('Timing', 'Exact', 'Counters')][string]$Mode = 'Timing',
-    [ValidateRange(1, 10)][int]$Pairs = 3
+    [ValidateRange(1, 10)][int]$Pairs = 3,
+    [ValidateRange(1, 100)][int]$PostOpeningTurns = 25
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,7 +45,7 @@ $manifest = [ordered]@{
     save320Sha256 = (Get-FileHash -LiteralPath $saves[320] -Algorithm SHA256).Hash
     sdk = $sdk
     warmupRuns = 1
-    postOpeningTurns = 25
+    postOpeningTurns = $PostOpeningTurns
     workerCount = 4
     partitionSize = 64
 }
@@ -58,7 +59,7 @@ foreach ($size in @(80, 320)) {
             $revision = if ($variant -eq 'baseline') { $BaselineRevision } else { $CandidateRevision }
             $report = Join-Path $output "$Mode-$size-pair$pair-$variant.json"
             Write-Host "TURN_HORIZON_AUDIT mode=$Mode size=$size pair=$pair variant=$variant"
-            & $sdk $dll "--load=$($saves[$size])" --turns=0 --post-opening-turns=25 `
+            & $sdk $dll "--load=$($saves[$size])" --turns=0 "--post-opening-turns=$PostOpeningTurns" `
                 --warmup=1 "--fingerprints=$fingerprints" "--metrics=$metrics" `
                 "--revision=$revision" "--output=$report"
             if ($LASTEXITCODE -ne 0) { throw "Audit failed: $Mode/$size/pair$pair/$variant" }

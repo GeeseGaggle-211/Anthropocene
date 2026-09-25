@@ -1,5 +1,9 @@
 # Neolithic implementation reconciliation — 20 September 2026
 
+Historical implementation record: its seasonal cultivation barriers describe
+the `c33a5b7` calibration checkpoint. Production now uses the analytical
+turn-horizon resolver described in [TurnHorizonRefactor.md](TurnHorizonRefactor.md).
+
 Authority: the five Anthropocene Drive design documents, their reconciliation and
 supersession addenda, and the implementation request dated 20 September 2026.
 The explicit request supersedes still-deferred recipe wording in the live QoL

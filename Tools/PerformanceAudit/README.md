@@ -29,18 +29,59 @@ $candidateRevision = (git rev-parse HEAD).Trim()
 python Tools/PerformanceAudit/Summarize-TurnHorizonPairs.py "$root/Timing" --mode Timing
 ```
 
-Run `-Mode Exact -Pairs 1` and `-Mode Counters -Pairs 1` into separate
-directories with the same binary/save arguments. Exact mode records
-fingerprints; counter mode enables hot-path instrumentation and is not a
-timing reference. The runner alternates source order between timing pairs.
+Run `-Mode Exact -Pairs 1` and `-Mode Counters -Pairs 1
+-PostOpeningTurns 1` into separate directories with the same binary/save
+arguments. Exact mode records fingerprints over the default 25-turn
+continuation; counter mode can use one representative post-opening turn to
+capture hot-path work without incurring a full instrumented continuation.
+Counter-mode milliseconds are not a timing reference. The runner alternates
+source order between timing pairs.
 Its manifest records binary and save SHA-256 hashes. The summarizer aligns
 per-turn samples, reports combined AI + preparation + resolution medians,
 phase costs, allocations, managed heap, and per-turn ratios. See
 [TurnHorizonRefactor.md](../../Docs/TurnHorizonRefactor.md) for outcome
 calibration, acceptance signals, and measured results. For the 20 quick
-Neolithic cases, run the transition validator `--quick --out <directory>`
-against each source binary and then `Compare-Horizons.py`; the comparator
-marks fixtures with different injected starting states as unpaired.
+Neolithic cases, build the current transition-validator harness against each
+source tree and run the binaries sequentially:
+
+```powershell
+& $sdk build Tools/NeolithicTransitionValidation/Anthropocene.NeolithicTransitionValidation.csproj -c Release -t:Rebuild "-p:SimulationSource=$seasonalSource" --output "$root/SeasonalTransitionBin" --nologo
+if ($LASTEXITCODE -ne 0) { throw 'Seasonal transition build failed' }
+& $sdk build Tools/NeolithicTransitionValidation/Anthropocene.NeolithicTransitionValidation.csproj -c Release -t:Rebuild --output "$root/HorizonTransitionBin" --nologo
+if ($LASTEXITCODE -ne 0) { throw 'Horizon transition build failed' }
+& $sdk "$root/SeasonalTransitionBin/Anthropocene.NeolithicTransitionValidation.dll" --quick --seed-limit 18 --out "$root/SeasonalTransition"
+if ($LASTEXITCODE -ne 0) { throw 'Seasonal transition run failed' }
+& $sdk "$root/HorizonTransitionBin/Anthropocene.NeolithicTransitionValidation.dll" --quick --seed-limit 18 --out "$root/HorizonTransition"
+if ($LASTEXITCODE -ne 0) { throw 'Horizon transition run failed' }
+python Tools/NeolithicTransitionValidation/Compare-Horizons.py --baseline "$root/SeasonalTransition" --candidate "$root/HorizonTransition" --out "$root/TransitionComparison"
+```
+
+The comparator marks fixtures with different injected starting states as
+unpaired. Its per-turn CSV includes field and nearby aquatic condition,
+ending tool inventories, goods, material and food ledgers. The measured
+comparison is in [TurnHorizonPerformanceAudit.md](../../Docs/TurnHorizonPerformanceAudit.md).
+
+For the directional full-opening `main` context, archive pinned
+`e472cf760232eaa614b387a0212146221f505cd9`, build the same audit
+harness against that source, then run each variant from generation through
+natural opening completion with the same seed, size, warmup and flags. Run
+the processes sequentially; this is a single-run context, not a paired
+acceptance measurement:
+
+```powershell
+git archive --format=zip --output="$root/MainSource.zip" e472cf760232eaa614b387a0212146221f505cd9 Assets/_Anthropocene/Simulation
+Expand-Archive -LiteralPath "$root/MainSource.zip" -DestinationPath "$root/MainSource" -Force
+$mainSource = (Resolve-Path "$root/MainSource/Assets/_Anthropocene/Simulation").Path
+& $sdk build Tools/PerformanceAudit/Anthropocene.PerformanceAudit.csproj -c Release -t:Rebuild "-p:SimulationSource=$mainSource" --output "$root/MainBin" --nologo
+if ($LASTEXITCODE -ne 0) { throw 'Main audit build failed' }
+foreach ($size in @(80, 320)) {
+    foreach ($variant in @('Main', 'Seasonal', 'Horizon')) {
+        $bin = "$root/${variant}Bin/Anthropocene.PerformanceAudit.dll"
+        & $sdk $bin "--players=$size" --turns=12 --seed=1729 --shape=Continents --warmup=1 --fingerprints=0 --metrics=0 "--output=$root/opening-$variant-$size.json"
+        if ($LASTEXITCODE -ne 0) { throw "Opening audit failed: $variant/$size" }
+    }
+}
+```
 
 `Anthropocene.PerformanceAudit.csproj` compiles the actual simulation sources with the Unity-bundled .NET 8 SDK. The default audit uses four workers and 64-item partitions. `--turns` is the opening-turn limit. `--post-opening-turns=N` adds exactly N generations after `WorldState.Finished` becomes true; the resolver continues from that opening boundary with the original camps, herds, and policies. Each row records the phase before the turn, the number of agricultural camps before resolution, and the count after resolution. This makes the turn that crosses the opening boundary visible without counting its new agriculture as prior work.
 

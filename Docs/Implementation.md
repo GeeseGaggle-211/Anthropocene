@@ -33,19 +33,19 @@ Nearby opening herds, regional density bonuses, viable-start filtering, coarse c
 ## One simultaneous generation
 
 [TurnResolutionPasses.md](TurnResolutionPasses.md) is the authoritative pass
-contract. It names each preparation, movement, ecology, seasonal, needs and
-close barrier; specifies which state each may write; and locks goods and QoL
-to the prior population cohort. Preserve that one-way order when changing
-economy or ecology code. Hunting carcass food remains distinct from plant
-biomass extraction; only realized flows cause ecological pressure. Seasonal
-segments are numerical work inside one decision, not repeated movement or
-birth turns.
+contract. It names the preparation, movement, resource, needs and close
+boundaries; specifies permitted writes; and locks goods and QoL to the prior
+population cohort. Preserve that one-way order when changing economy or
+ecology code. Hunting carcass food remains distinct from plant biomass
+extraction; only realized flows cause ecological pressure. Four seasonal
+climate profiles parameterize one resource transition and create no
+authoritative intermediate state.
 
 ## Sparse ecology and parallel execution
 
-`EcologyMath` implements bounded exponential stock/condition updates, analytic depletion and recharge, and affine season composition. `EcologicalPressure` resolves the coupled human-accessible and non-gatherable pools plus finite freshwater. Stable claimant ordering and proportional shares preserve collection-order independence. Each affected tile returns a value-state result, transfers, pressure entries and a mass-balance record.
+`EcologyMath` implements bounded exponential stock/condition updates, analytic depletion and recharge, and affine composition of seasonal forcing for quiet tiles. `EcologicalPressure` resolves the coupled human-accessible and non-gatherable pools plus finite freshwater once per active tile and turn horizon. Claimants debit one nonnegative tile supply in stable entity order; an earlier claimant can exhaust it. Each affected tile returns an endpoint state, transfers, pressure entries and a mass-balance record.
 
-Quiet tiles store `LastEcologyUpdateDays` and latent stocks/condition/tier. `LazyEcology.ProjectEcology` is pure. Healthy quiet full cycles compose analytically; damaged quiet tiles recover through local ordered segments and hysteresis. `MaterializeEcology` commits that same projection before an active change. Neither visibility nor diagnostic query order can alter a fingerprint. Transient ledgers exist only for active tiles and the latest resolved turn, not as per-tile heap objects or permanent save history.
+Quiet tiles store `LastEcologyUpdateDays` and latent stocks/condition/tier. `LazyEcology.ProjectEcology` is pure. Quiet full cycles compose algebraically, with bounded partial-cycle work and vegetation hysteresis at the endpoint. `MaterializeEcology` commits that projection before an active change. Neither visibility nor diagnostic query order can alter a fingerprint. Transient ledgers exist only for active tiles and the latest resolved turn, not as per-tile heap objects or permanent save history.
 
 `PlanningIndex` maps occupants by tile/player/source and indexes recent extraction once. Bounded local path/supply queries and cached temporary ecology views serve the planning phase. `PhaseExecution` provides a scalar reference and optional workers for independent AI intentions, herd intentions and active-tile calculations. Workers return stable output slots; canonical barriers own entity changes, IDs, collisions and history. Worker counts, partition order and timing are runtime diagnostics outside saved state. Desktop execution uses at most four workers with a small-work threshold.
 

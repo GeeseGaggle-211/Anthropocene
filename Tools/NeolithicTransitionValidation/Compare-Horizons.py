@@ -32,6 +32,9 @@ IDENTITY = (
 CORE = (
     "resident_population", "qol", "food_produced", "food_end",
     "cultivation_capital", "cultivation_intensity", "food_satisfaction",
+    "footprint_mean_land_condition", "footprint_mean_aquatic_condition",
+    "tool_end_HandTools", "tool_end_Tools", "tool_end_FarmTools",
+    "tool_end_HerdingTools",
 )
 MATRIX_EXTRA = {
     "deaths": "matrix_cumulative_deaths",
@@ -115,8 +118,12 @@ def extract_metrics(row: dict[str, object], goods: set[str], materials: set[str]
         "food_gatherers": ("foodGatherers",),
         "material_assigned": ("materialAssigned",),
         "material_worker_intervals": ("materialWorkerIntervals",),
-        "land_condition": ("landCondition",),
-        "aquatic_condition": ("aquaticCondition",),
+        "footprint_mean_land_condition": ("footprintMeanLandCondition",),
+        "footprint_mean_aquatic_condition": ("footprintMeanAquaticCondition",),
+        "tool_end_HandTools": ("endingTools", "HandTools"),
+        "tool_end_Tools": ("endingTools", "Tools"),
+        "tool_end_FarmTools": ("endingTools", "FarmTools"),
+        "tool_end_HerdingTools": ("endingTools", "HerdingTools"),
     }.items():
         put(metrics, metric, member(row, *path))
 
@@ -125,7 +132,7 @@ def extract_metrics(row: dict[str, object], goods: set[str], materials: set[str]
         values = [number(tile.get("landCondition")) for tile in footprint if isinstance(tile, dict)]
         values = [value for value in values if value is not None]
         if values:
-            metrics["footprint_mean_land_condition"] = sum(values) / len(values)
+            metrics.setdefault("footprint_mean_land_condition", sum(values) / len(values))
 
     ledger = row.get("materials")
     if isinstance(ledger, dict):
@@ -350,9 +357,9 @@ def write_report(path: Path, baseline: Cohort, candidate: Cohort,
     if len(issues) > worst_count:
         lines.append(f"- {len(issues) - worst_count} additional alignment issues are reflected in the CSV status column.")
     lines += [
-        "- The current validator trace has no tile condition or ending tool-inventory fields. "
-        "Cultivation `q`/`e`, material ledgers, and tool *output* are reported; condition "
-        "and tool-stock deltas remain unavailable until both cohorts record them.",
+        "- Land condition is averaged over eligible radius-one agricultural fields; aquatic condition "
+        "is averaged over adjacent Shallows and Lakes and is absent when none exist. Ending tool "
+        "inventories are reported separately from production receipts.",
         "- A blank relative percentage means the baseline is effectively zero; use the absolute delta. "
         "Percentages use the absolute baseline as denominator.",
         "- Quick runs cover their recorded horizon only. Compare longer post-transition behavior "

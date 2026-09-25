@@ -1,5 +1,9 @@
 # Neolithic performance assessment and proposed execution plan
 
+Historical Options 1/5 plan: instructions below to preserve seasonal barriers
+apply to that exact-cache experiment, not the current production resolver.
+See [TurnHorizonRefactor.md](TurnHorizonRefactor.md) for the implemented clock.
+
 Status: **Options 1 and 5 are implemented; checked replays match exactly, but the 20% throughput gate failed at both measured sizes.**
 Status date: September 25, 2026.
 Implementation: offshoot branch `codex/neolithic-options-1-5-validation`, simulation commit `b5d98d72288d78a45a83967c5370a1cec5451d82`.

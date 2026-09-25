@@ -1,5 +1,9 @@
 # Validation - September 25, 2026
 
+The current analytical turn-horizon validation and its known ecological
+calibration gap are in [TurnHorizonPerformanceAudit.md](TurnHorizonPerformanceAudit.md).
+The seasonal comparisons below document earlier checkpoints.
+
 ## Exact Neolithic cache validation
 
 The Options 1/5 offshoot at `b5d98d7` preserves the seasonal model while reusing cultivation scores and seasonal preparation buffers. The full fixed headless suite passed, including 6,175 new differential allocator assertions. Scalar/two/four-worker fingerprints matched through 37 resolutions, with 25 post-opening turns, reversed collections/partitions and partial seasonal boundaries. The final focused economy suite also passed after adding midpoint save restoration for both worker worlds. The baseline and candidate completed all 20 quick transition cases with byte-identical trajectory files. Separate 80/320-tribe runs matched baseline fingerprints through all 25 post-opening turns; final scalar/four-worker opening scale audits passed 10/11 resolutions and initial/final save restoration. Unity 6000.5.10f1 EditMode passed 29/29. The throughput target was missed, and a repeatable final-turn slowdown remains unresolved; the measured evidence, scope and limitations are recorded in [NeolithicOptions15Validation.md](NeolithicOptions15Validation.md).
