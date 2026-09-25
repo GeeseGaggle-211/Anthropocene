@@ -275,6 +275,7 @@ namespace Anthropocene.Simulation
             var acceptedPlant = w.Camps.ToDictionary(c => c.Id, c => 0d);
             int FoodCamp(string kind, int entity) => kind == "Fishing" ? (Supply.Connected(w, hunters[entity]) ? hunters[entity].SourceCamp : -1) : kind == "Herd" || kind == "Foraging" ? -1 : entity;
             var agriculturalIds = new HashSet<int>(agriculturalCamps.Select(c => c.Id));
+            var lastFieldChoice = ResolutionMetrics.CaptureDetailedCounters ? new Dictionary<int, int>() : null;
             var seasonalTiles = new HashSet<int>(agriculturalCamps.SelectMany(c => agriculturalLabor[c.Id].Footprint));
             foreach (var camp in agriculturalCamps)
                 seasonalTiles.UnionWith(w.Map.Radius(camp.Tile, w.Config.GatherRadius).Where(id => PassiveGathering.Eligible(w, camp, id)));
@@ -315,10 +316,18 @@ namespace Anthropocene.Simulation
                     return amount;
                 }
                 var footprints = agriculturalCamps.ToDictionary(c => c.Id, c => CultivationEconomy.CommitSeasonBoundary(w, c, start, camps));
+                if (ResolutionMetrics.CaptureDetailedCounters) LastMetrics.SeasonalCampBoundaries += agriculturalCamps.Length;
                 foreach (var camp in agriculturalCamps)
                     agriculturalLabor[camp.Id] = CultivationEconomy.CalculateLabor(w, camp, footprints[camp.Id], farmToolBudgets[camp.Id], segment.Days / w.Config.DaysPerYear);
                 foreach (var camp in agriculturalCamps)
+                {
+                    var owned = ResolutionMetrics.CaptureDetailedCounters
+                        ? footprints[camp.Id].Where(id => w.Tiles[id].CultivationOperator == camp.Id).ToArray() : null;
+                    var before = owned == null ? null : owned.Select(id => w.Tiles[id].CultivationOperatingFraction).ToArray();
                     CultivationEconomy.CommitOperatingFraction(w, camp, agriculturalLabor[camp.Id]);
+                    if (owned != null && Enumerable.Range(0, owned.Length).Any(i => before[i] != w.Tiles[owned[i]].CultivationOperatingFraction))
+                        LastMetrics.OperatingRegimeChanges++;
+                }
                 foreach (var camp in agriculturalCamps)
                 {
                     double acceptedInput = Math.Min(inputBudgets[camp.Id], acceptedPlant[camp.Id]);
@@ -349,10 +358,16 @@ namespace Anthropocene.Simulation
                 LastMetrics.SeasonalIntegrationMilliseconds += seasonalTimer.Elapsed.TotalMilliseconds;
                 seasonalTimer.Restart();
                 var gatheredByCamp = new Dictionary<int, double>();
+                var priorTargets = ResolutionMetrics.CaptureDetailedCounters
+                    ? agriculturalCamps.ToDictionary(c => c.Id, c => new[] { acceptedFood[c.Id], acceptedPlant[c.Id] }) : null;
+                var priorTools = ResolutionMetrics.CaptureDetailedCounters
+                    ? agriculturalCamps.ToDictionary(c => c.Id, c => farmToolBudgets[c.Id].RemainingTools) : null;
                 // No worker mutates entities, allocates IDs, or appends history.
                 for (int i = 0; i < stepGroups.Length; i++)
                 {
                     var result = results[i]; result.View.Commit(w.Tiles[stepGroups[i].Tile]);
+                    if (ResolutionMetrics.CaptureDetailedCounters && result.View.Food <= 1e-9 && stepGroups[i].Claims.Any(d => d.Food > 0))
+                        LastMetrics.StockDepletions++;
                     if (result.HasWoodSource) MaterialEconomy.CommitWoodProjection(w, stepGroups[i].Tile, result.WoodRemaining, result.WoodDays);
                     record.Pressure.AddRange(result.Pressure); record.EcologyBalances.Add(result.Balance); transfers.AddRange(result.Transfers);
                     foreach (var transfer in result.Transfers)
@@ -371,6 +386,13 @@ namespace Anthropocene.Simulation
                 // never debit the turn-local budget.
                 foreach (var camp in agriculturalCamps)
                     farmToolBudgets[camp.Id].Consume(agriculturalLabor[camp.Id].MaintenanceCoveredWorkerYears, w.Config.Neolithic.FarmToolFarmerYearsPerUnit);
+                if (ResolutionMetrics.CaptureDetailedCounters)
+                    foreach (var camp in agriculturalCamps)
+                    {
+                        int id = camp.Id;
+                        if (priorTargets[id][0] < biologicalBudgets[id] && acceptedFood[id] >= biologicalBudgets[id]) LastMetrics.TargetCompletions++;
+                        if (priorTargets[id][1] < inputBudgets[id] && acceptedPlant[id] >= inputBudgets[id]) LastMetrics.TargetCompletions++;
+                    }
                 LastMetrics.SeasonalCommitMilliseconds += seasonalTimer.Elapsed.TotalMilliseconds;
                 seasonalTimer.Restart();
                 start += segment.Days;
@@ -379,8 +401,18 @@ namespace Anthropocene.Simulation
                     var labor = agriculturalLabor[camp.Id];
                     foreach (int id in labor.Footprint) LazyEcology.MaterializeEcology(w, id, start);
                     double terrestrialGathered = gatheredByCamp.TryGetValue(camp.Id, out double gathered) ? gathered : 0;
-                    CultivationEconomy.Expand(w, camp, terrestrialGathered / w.Config.GatherPerPerson * w.Config.BaseDays / w.Config.DaysPerYear, true, record);
-                    CultivationEconomy.Expand(w, camp, labor.ExpansionFarmers * segment.Days / w.Config.DaysPerYear, false, record, farmToolBudgets[camp.Id]);
+                    Action<int> selected = null;
+                    if (ResolutionMetrics.CaptureDetailedCounters)
+                        selected = tile =>
+                        {
+                            LastMetrics.FieldWorkSteps++;
+                            if (lastFieldChoice.TryGetValue(camp.Id, out int prior) && prior != tile) LastMetrics.FieldChoiceSwitches++;
+                            lastFieldChoice[camp.Id] = tile;
+                        };
+                    CultivationEconomy.Expand(w, camp, terrestrialGathered / w.Config.GatherPerPerson * w.Config.BaseDays / w.Config.DaysPerYear, true, record, null, selected);
+                    CultivationEconomy.Expand(w, camp, labor.ExpansionFarmers * segment.Days / w.Config.DaysPerYear, false, record, farmToolBudgets[camp.Id], selected);
+                    if (ResolutionMetrics.CaptureDetailedCounters && priorTools[camp.Id] > 0 && farmToolBudgets[camp.Id].RemainingTools <= 0)
+                        LastMetrics.ToolExhaustions++;
                 }
                 LastMetrics.SeasonalExpansionMilliseconds += seasonalTimer.Elapsed.TotalMilliseconds;
             }

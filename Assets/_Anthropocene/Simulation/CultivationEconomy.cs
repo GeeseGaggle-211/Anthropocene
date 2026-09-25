@@ -223,7 +223,7 @@ namespace Anthropocene.Simulation
             return Math.Max(0, maintenance) * years;
         }
         // Each increment is scored again against the current capital and upkeep costs.
-        public static double Expand(WorldState w, Camp camp, double workerYears, bool bridge, TurnRecord record, FarmToolWorkBudget toolBudget = null)
+        public static double Expand(WorldState w, Camp camp, double workerYears, bool bridge, TurnRecord record, FarmToolWorkBudget toolBudget = null, Action<int> selectedTile = null)
         {
             if (!Enabled(camp) || camp.Population <= 0 || workerYears <= 0 || bridge && w.Config.GathererBridgeEfficiency <= 0) return 0;
             var c = w.Config; var n = c.Neolithic;
@@ -267,6 +267,7 @@ namespace Anthropocene.Simulation
                     if (score > 0 && (best < 0 || focused || best != camp.CultivationFocusTile && score > bestScore)) { best = id; bestScore = score; step = de; cost = buildCost; }
                 }
                 if (best < 0) break;
+                selectedTile?.Invoke(best);
                 var target = w.Tiles[best];
                 var beforeEcology = LazyEcology.MaterializeEcology(w, best, Math.Max(w.Days, target.LastEcologyUpdateDays));
                 double oldQ = Intensity(c, beforeEcology.CultivationCapital);

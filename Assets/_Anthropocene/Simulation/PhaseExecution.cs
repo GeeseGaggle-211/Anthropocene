@@ -73,5 +73,8 @@ namespace Anthropocene.Simulation
         public double FullTurnIntegrationMilliseconds, SeasonalPreparationMilliseconds, SeasonalIntegrationMilliseconds, SeasonalCommitMilliseconds, SeasonalExpansionMilliseconds;
         public int ActiveTiles, TileIntegrations, SeasonalTiles, FullTurnTiles;
         public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans, ClaimsAllocated, ProductionReceipts;
+        // Opt-in activity diagnostics; these never affect authoritative state.
+        public long SeasonalCampBoundaries, OperatingRegimeChanges, FieldWorkSteps, FieldChoiceSwitches;
+        public long TargetCompletions, ToolExhaustions, StockDepletions;
     }
 }

@@ -94,10 +94,12 @@ internal static class Program
         for (int i = 0; i < turns && !world.Finished; i++)
         {
             var priorResidents = world.Camps.ToDictionary(c => c.Id, c => c.Population);
+            long allocatedBefore = GC.GetTotalAllocatedBytes(false);
             clock.Restart(); var ai = AiPlanning.Decide(world, execution); double aiMs = clock.Elapsed.TotalMilliseconds;
             clock.Restart(); var prepared = TurnPlanner.Prepare(world, ai.Orders, ai.Traces); double turnPrepareMs = clock.Elapsed.TotalMilliseconds;
             clock.Restart(); var record = resolver.Resolve(world, prepared); double turnExecuteMs = clock.Elapsed.TotalMilliseconds;
             double resolveMs = turnPrepareMs + turnExecuteMs;
+            long allocatedBytes = GC.GetTotalAllocatedBytes(false) - allocatedBefore;
             double residentPopulation = world.Camps.Sum(c => (double)c.Population);
             double endingPopulationWeightedQol = residentPopulation <= 0 ? 0 : world.Camps.Sum(c => c.QoL * c.Population) / residentPopulation;
             double priorResidentPopulation = priorResidents.Values.Sum(v => (double)v);
@@ -120,7 +122,7 @@ internal static class Program
                 foodYield = record.Transfers.Where(t => t.Entity == c.Id && t.Kind != "Herd").Sum(t => t.Food)
             }).ToArray() : null;
             var row = new { turn = world.Turn - 1, aiMs, resolveMs, turnPrepareMs, turnExecuteMs, totalMs = aiMs + resolveMs,
-                population, weightedQol, endingPopulationWeightedQol, foodYield, agriculturalCamps = world.Camps.Count(CultivationEconomy.Enabled),
+                population, weightedQol, endingPopulationWeightedQol, foodYield, allocatedBytes, agriculturalCamps = world.Camps.Count(CultivationEconomy.Enabled),
                 activeTiles = resolver.LastMetrics.ActiveTiles, ecologyMs = resolver.LastMetrics.EcologyMilliseconds,
                 tileIntegrations = Metric("TileIntegrations"), seasonalTiles = Metric("SeasonalTiles"), fullTurnTiles = Metric("FullTurnTiles"),
                 setupMs = Metric("SetupEconomyMilliseconds"), productionMs = Metric("ProductionMilliseconds"),
@@ -130,6 +132,10 @@ internal static class Program
                 planCalls = Metric("PlanCalls"), forecastCalls = Metric("ForecastCalls"), sourceQueries = Metric("LocalSourceQueries"),
                 sourceLookups = Metric("SourceLookups"), depositEdges = Metric("DepositEdges"), bodyScans = Metric("BodyScans"),
                 claimsAllocated = Metric("ClaimsAllocated"), productionReceipts = Metric("ProductionReceipts"),
+                campBoundaries = Metric("SeasonalCampBoundaries"), operatingChanges = Metric("OperatingRegimeChanges"),
+                fieldSteps = Metric("FieldWorkSteps"), fieldSwitches = Metric("FieldChoiceSwitches"),
+                targetCompletions = Metric("TargetCompletions"), toolExhaustions = Metric("ToolExhaustions"),
+                stockDepletions = Metric("StockDepletions"),
                 orders = details ? record.Orders.ToArray() : null, camps };
             samples.Add(row);
             Console.WriteLine("AUDIT turn=" + row.turn + " population=" + population + " qol=" + weightedQol.ToString("F6") + " food=" + foodYield.ToString("F3") + " aiMs=" + aiMs.ToString("F1") + " resolveMs=" + resolveMs.ToString("F1"));

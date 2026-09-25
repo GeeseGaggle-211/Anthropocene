@@ -36,6 +36,7 @@ internal static class Program
         public string TransitionHabitat, ScarcityBinding;
         public bool FixedSite, SettlementStress;
         public int PreludeTransitionPopulation, ControlledPopulationBefore, ControlledPopulationAfter;
+        public long CampBoundaries, OperatingChanges, FieldSteps, FieldSwitches, TargetCompletions, ToolExhaustions, StockDepletions, TileIntegrations;
         public double ControlledFoodBefore, ControlledFoodAfter, ControlledPlantBefore, ControlledAnimalBefore, ControlledAquaticBefore;
         public string[] ScarceSourceIds = Array.Empty<string>();
     }
@@ -126,6 +127,7 @@ internal static class Program
             if (!quick && !fixedPilot && !cases.Any(c => c.Id == "productive-river-normal")) cases.Add(allCases.Single(c => c.Id == "productive-river-normal"));
         }
         var results = new List<Result>();
+        ResolutionMetrics.CaptureDetailedCounters = args.Contains("--activity");
         using var trace = new StreamWriter(Path.Combine(output, "trajectory.jsonl"));
         foreach (var item in cases)
         {
@@ -134,6 +136,11 @@ internal static class Program
             // Preserve already-completed measurements if a subsequent case or replay fails.
             trace.Flush();
             File.WriteAllLines(Path.Combine(output, "matrix.csv"), MatrixCsv(results));
+            if (ResolutionMetrics.CaptureDetailedCounters)
+                File.WriteAllLines(Path.Combine(output, "activity.csv"),
+                    new[] { "case,campBoundaries,operatingChanges,fieldSteps,fieldSwitches,targetCompletions,toolExhaustions,stockDepletions,tileIntegrations" }
+                    .Concat(results.Select(r => Csv(r.Id, r.CampBoundaries, r.OperatingChanges, r.FieldSteps, r.FieldSwitches,
+                        r.TargetCompletions, r.ToolExhaustions, r.StockDepletions, r.TileIntegrations))));
             File.WriteAllText(Path.Combine(output, "summary.md"), Summary(results, chosen, supports.ToDictionary(x => x.Key, x => x.Value.Population), null, null, null, false));
         }
         Result scalar = null, parallel = null, saved = null;
@@ -264,7 +271,16 @@ internal static class Program
                 var startingAssignments = c.Workforce.Assignments.ToDictionary(x => x.Role, x => x.Population);
                 var decision = item.FixedSite ? FixedSiteDecision(w, c) : PlannedDecision(w, c, execution);
                 var submittedAssignments = decision.Orders.Where(x => x.Kind == OrderKind.Economy && x.Economy != null).SelectMany(x => x.Economy.Assignments).GroupBy(x => x.Role).ToDictionary(x => x.Key, x => x.Sum(a => a.Population));
-                var record = new TurnResolver(execution).Resolve(w, new Dictionary<int, List<Order>> { [c.Player] = decision.Orders }, new[] { decision.Trace });
+                var resolver = new TurnResolver(execution);
+                var record = resolver.Resolve(w, new Dictionary<int, List<Order>> { [c.Player] = decision.Orders }, new[] { decision.Trace });
+                result.CampBoundaries += resolver.LastMetrics.SeasonalCampBoundaries;
+                result.OperatingChanges += resolver.LastMetrics.OperatingRegimeChanges;
+                result.FieldSteps += resolver.LastMetrics.FieldWorkSteps;
+                result.FieldSwitches += resolver.LastMetrics.FieldChoiceSwitches;
+                result.TargetCompletions += resolver.LastMetrics.TargetCompletions;
+                result.ToolExhaustions += resolver.LastMetrics.ToolExhaustions;
+                result.StockDepletions += resolver.LastMetrics.StockDepletions;
+                result.TileIntegrations += resolver.LastMetrics.TileIntegrations;
                 resolutions++;
                 if (transitionTurn < 0 && c.Technology == Technology.Cultivation)
                 {
