@@ -105,17 +105,20 @@ aggregate comparison.
   own tiles, and herd drinking can use an adjacent freshwater tile. All
   claims still compete when grouped on the same tile; connected fishing
   still counts against its camp's fixed food target.
-- Shared tile allocation is performed once from all claimants, with stable
-  claimant and tile ordering, including when several tribes affect one tile.
-  Such a tile is one grouped integration job followed by one canonical
-  commit. A per-tile mutex can guard that job if tile writers become
-  parallel, but the mutex cannot choose claim priority or replace the
-  canonical merge. Shared deposit extraction, wood conversion, inventory
-  changes, entity IDs, and `TurnRecord` receipts commit in canonical order.
-  Endpoint timber extraction can apply new wood pressure; it cannot rewrite
-  earlier seasonal food receipts. Parallel evaluation may fill private
-  indexed results only. Worker count, partition order, timings, and
-  diagnostics are not authoritative state.
+- In this checkpoint, `EcologicalPressure.Integrate` integrates a shared tile
+  once and divides its realized flows proportionally among claimants; the
+  result commits in tile order. A later sequential-debit allocator may instead
+  let one tribe consume from a tile-local working state, then let the next
+  tribe see and consume only the remainder. If parallel writers are added,
+  guard each read/debit/write transaction with that tile's mutex. Apply
+  ecological renewal only once per segment, never let a stock become negative,
+  and preserve `Food <= Biomass`. Scarcity may leave a later tribe with zero;
+  no global tribe priority is required. Shared deposit extraction, wood
+  conversion, inventory changes, entity IDs, and `TurnRecord` receipts still
+  commit in canonical order. Endpoint timber extraction can apply new wood
+  pressure; it cannot rewrite earlier seasonal food receipts. Parallel
+  evaluation may fill private indexed results only. Worker count, partition
+  order, timings, and diagnostics are not authoritative state.
 - Maintain conservation of population, food, biomass, freshwater, and finite
   materials. Scalar, two- and four-worker, reversed-partition,
   reordered-collection, and save-continuation runs must retain exact
