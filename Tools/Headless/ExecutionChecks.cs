@@ -14,6 +14,7 @@ internal static class ExecutionChecks
         var workers = new[] { new PhaseExecution(2, 7, false, 1), new PhaseExecution(4, 3, true, 1) };
         var worlds = workers.Select(x => SaveCodec.Load(SaveCodec.Save(reference))).ToArray();
         int turns = 0, postOpeningTurns = 0, agriculturalTurns = 0;
+        bool matureSaveRestored = false;
         // Continue into the economy whose seasonal scratch state is being reused.
         // Offset the continuation clock to exercise partial first/last seasons.
         while ((!reference.Finished && turns < 12) || postOpeningTurns < 25)
@@ -39,8 +40,24 @@ internal static class ExecutionChecks
                 new TurnResolver(workers[i]).Resolve(w, parallel.Orders, parallel.Traces);
                 if (SaveCodec.Fingerprint(reference) != SaveCodec.Fingerprint(w)) throw new Exception("Worker/partition replay differs on turn " + turns);
             }
+            if (postOpeningTurns == 12 && !matureSaveRestored)
+            {
+                if (agriculturalTurns == 0 || !reference.Camps.Any(CultivationEconomy.Enabled))
+                    throw new Exception("Mature save continuation checkpoint did not reach active agriculture.");
+                for (int i = 0; i < worlds.Length; i++)
+                {
+                    string before = SaveCodec.Fingerprint(worlds[i]);
+                    var restored = SaveCodec.Load(SaveCodec.Save(worlds[i]));
+                    if (before != SaveCodec.Fingerprint(restored))
+                        throw new Exception("Mature agricultural save/load differs for worker partition " + i + " at post-opening turn " + postOpeningTurns);
+                    worlds[i] = restored;
+                }
+                matureSaveRestored = true;
+                Console.WriteLine("PASS: mature agricultural save restoration matched fingerprints for 2/4-worker worlds at post-opening turn " + postOpeningTurns);
+            }
             turns++;
         }
+        if (!matureSaveRestored) throw new Exception("Mature agricultural save/load checkpoint was not reached.");
         if (agriculturalTurns < 25) throw new Exception("Mature execution replay did not exercise 25 agricultural turns.");
         Console.WriteLine("PASS: reference vs 2/4 workers, reversed partitions and entity collections across " + turns + " resolutions, including " + postOpeningTurns + " post-opening turns with partial seasonal boundaries");
     }
