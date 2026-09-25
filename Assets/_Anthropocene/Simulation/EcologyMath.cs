@@ -10,6 +10,47 @@ namespace Anthropocene.Simulation
     }
     public static class EcologyMath
     {
+        // Mean of exp(-rate*t) over a horizon. This is a closed-form coefficient,
+        // independent of the number of climate seasons in that horizon.
+        public static double MeanExponential(double rate, double days)
+        {
+            double x = Math.Max(0, rate) * Math.Max(0, days);
+            if (x < 1e-5) return 1 - x / 2 + x * x / 6 - x * x * x / 24;
+            return (1 - Math.Exp(-x)) / x;
+        }
+        public static double MeanCondition(double initial, double natural, double recoveryPerDay, double damagePerDay, double days)
+        {
+            double rate = Math.Max(0, recoveryPerDay) + Math.Max(0, damagePerDay);
+            if (rate <= 0) return initial;
+            double equilibrium = Math.Max(0, recoveryPerDay) * natural / rate;
+            return Numbers.Clamp(equilibrium + (initial - equilibrium) * MeanExponential(rate, days), 0, 1);
+        }
+        // An endpoint stock with renewal rate r sees recent carrying capacity
+        // more strongly than early capacity. This is the exact exponential
+        // response weight when condition itself approaches its equilibrium
+        // exponentially and capacity is linear in condition.
+        public static double ResponseCondition(double initial, double natural, double recoveryPerDay,
+            double damagePerDay, double stockRecoveryPerDay, double days)
+        {
+            double lambda = Math.Max(0, recoveryPerDay) + Math.Max(0, damagePerDay);
+            double rate = Math.Max(0, stockRecoveryPerDay);
+            if (lambda <= 0 || days <= 0) return initial;
+            if (rate * days < 1e-5)
+                return MeanCondition(initial, natural, recoveryPerDay, damagePerDay, days);
+            double equilibrium = Math.Max(0, recoveryPerDay) * natural / lambda;
+            double factor;
+            if (Math.Abs(rate - lambda) <= 1e-8 * Math.Max(rate, lambda))
+            {
+                double e = Math.Exp(-rate * days);
+                factor = rate * days * e / Math.Max(1e-300, 1 - e);
+            }
+            else
+            {
+                factor = rate * (Math.Exp(-lambda * days) - Math.Exp(-rate * days))
+                    / ((rate - lambda) * (1 - Math.Exp(-rate * days)));
+            }
+            return Numbers.Clamp(equilibrium + (initial - equilibrium) * Numbers.Clamp(factor, 0, 1), 0, 1);
+        }
         // Cultivation overlays the natural vegetation services while leaving
         // ecological vegetation state and total biomass capacity independent.
         public static double CultivationVegetationRetention(SimulationConfig config, double cultivationIntensity)

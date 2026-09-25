@@ -115,7 +115,11 @@ internal static class HousingMaterialChecks
         var w = NeolithicChecks.Fixture(); var c = w.Camps[0]; c.Inventory.Wood = 100; c.Inventory.Clay = 100; c.Inventory.HandTools = 0; c.PlantFood = 100000;
         c.CraftingPriorities = new CraftingPriorities { HandTools = 1, Pots = 0, Cloth = 1, FarmTools = 0, Housing = 2, Tools = 0 };
         c.Workforce.Assign(WorkforceRoles.Craftsperson, 1, c.Population);
-        Near(NeolithicProduction.Demand(w, c, CraftGood.HandTools, 20), .625, "material reservation does not reprioritize Craftsperson labor");
+        double housingWithoutToolmaking = w.Config.GenerationIntervals * w.Config.Neolithic.BuilderHousingOutputPerBaseDays * w.Config.Neolithic.GeneralistTaskEfficiency;
+        double sharedLaborBalance = housingWithoutToolmaking /
+            (1 + w.Config.Neolithic.BuilderHousingOutputPerBaseDays / w.Config.Neolithic.HandToolsOutput);
+        Near(NeolithicProduction.Demand(w, c, CraftGood.HandTools, 20), sharedLaborBalance,
+            "same-turn Hand Toolmaking and Housing share one finite Craftsperson labor budget");
     }
     private static void ReplacementHorizonBlocksZeroResidualHousing()
     {

@@ -1,6 +1,13 @@
 # Analytical Neolithic turn approximation: revised proposal
 
-Status: **retained follow-up candidate; design-only, with no analytical prototype or solver authorized or executed.**
+Historical design assessment from September 25, 2026. The subsequent user
+request authorized the turn-horizon implementation on
+`codex/turn-horizon-refactor`. See [TurnHorizonRefactor.md](TurnHorizonRefactor.md)
+for the implemented equations and measured outcome/performance evidence.
+The authorization statements below describe the earlier decision point and
+do not limit this later request.
+
+Status at the time of this assessment: **design-only**.
 Assessment date: September 25, 2026. Source inspected: `9dc18c0`.
 
 Current authorization update: Options 1 and 5 were approved and implemented on offshoot branch `codex/neolithic-options-1-5-validation`, simulation commit `b5d98d72288d78a45a83967c5370a1cec5451d82`. The reported exact replays match, but the 20% throughput target failed at both measured sizes and the 320-turn-36 regression remains unresolved; see [NeolithicOptions15Validation.md](NeolithicOptions15Validation.md). This analytical design is the retained follow-up candidate. It remains design-only: separate approval is required before any prototype, solver, test, or benchmark, and approval of Options 1/5 did not authorize those activities.

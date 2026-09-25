@@ -578,7 +578,7 @@ internal static class PastoralCraftChecks
             }
             Near(c.Inventory.HandTools, 0, "zero-start lifecycle begins without manufacturing tools");
             var totals = new Dictionary<CraftGood, double>();
-            bool laterWorkUsesProducedTools = false;
+            bool targetUsesProducedTools = false;
             for (int turn = 0; turn < 8; turn++)
             {
                 string beforePlan = SaveCodec.Fingerprint(w);
@@ -607,16 +607,16 @@ internal static class PastoralCraftChecks
                 {
                     totals.TryGetValue(receipt.Good, out double previous);
                     totals[receipt.Good] = previous + receipt.Output;
-                    if (turn > 0 && receipt.Good != CraftGood.HandTools && receipt.Output > 0 && receipt.HandToolsConsumed > 0)
-                        laterWorkUsesProducedTools = true;
+                    if (receipt.Good == target && receipt.Output > 0 && receipt.HandToolsConsumed > 0)
+                        targetUsesProducedTools = true;
                 }
             }
             Check(totals.TryGetValue(CraftGood.HandTools, out double handOutput) && handOutput > 0,
-                "zero-start planner makes real Hand Tools before useful " + target + " work");
+                "zero-start planner makes real Hand Tools for useful " + target + " work");
             Check(totals.TryGetValue(target, out double targetOutput) && targetOutput > 0,
                 "zero-start ordinary Economy lifecycle eventually produces its enabled pastoral target " + target + " masters=" + specialists);
-            Check(laterWorkUsesProducedTools,
-                "Hand Tools produced from zero stock support useful " + target + " work in a later generation masters=" + specialists);
+            Check(targetUsesProducedTools,
+                "Hand Tools produced from zero stock support useful " + target + " work within the aggregate turn balance masters=" + specialists);
         }
     }
 

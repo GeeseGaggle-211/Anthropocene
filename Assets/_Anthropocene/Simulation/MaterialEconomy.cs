@@ -219,9 +219,8 @@ namespace Anthropocene.Simulation
             return EcologyMath.EffectiveWoodCapacity(ecological, q, config);
         }
         // Integrate Wood toward ecological support and the q-derived natural-cover
-        // cap through this condition segment. Both condition and q change smoothly
-        // here; splitting at the retention threshold keeps the stock integration
-        // analytic and duration-partition independent.
+        // cap over one horizon. The retention-threshold split is closed-form math
+        // inside this pure projection, not an authoritative subturn state.
         internal static double RecoverWood(WorldState w, Tile tile, double initial, double remaining, EcologyView before, EcologyView after, double days, double conditionDamagePerDay)
         {
             double capacityBefore = WoodCapacity(initial, tile, before, w.Config);
@@ -272,34 +271,32 @@ namespace Anthropocene.Simulation
             double conditionTransient = condition - equilibrium;
             double retentionStart = config.CultivationVegetationDisplacementStart;
             double factor = Math.Max(0, ecologicalScale);
-            var coefficients = new List<double>(4);
-            var rates = new List<double>(4);
+            double woodDecay = Math.Exp(-woodRate * days);
+            double endpoint = Math.Max(0, remaining) * woodDecay;
             if (qDecliningAboveThreshold && qDecayPerDay > 1e-18)
             {
                 double intercept = 1 / (1 - retentionStart);
                 double slope = q / (1 - retentionStart);
-                coefficients.Add(factor * intercept * equilibrium); rates.Add(0);
-                coefficients.Add(factor * intercept * conditionTransient); rates.Add(conditionRate);
-                coefficients.Add(-factor * slope * equilibrium); rates.Add(qDecayPerDay);
-                coefficients.Add(-factor * slope * conditionTransient); rates.Add(conditionRate + qDecayPerDay);
+                endpoint += WoodForcingResponse(factor * intercept * equilibrium, 0, woodRate, days, woodDecay);
+                endpoint += WoodForcingResponse(factor * intercept * conditionTransient, conditionRate, woodRate, days, woodDecay);
+                endpoint += WoodForcingResponse(-factor * slope * equilibrium, qDecayPerDay, woodRate, days, woodDecay);
+                endpoint += WoodForcingResponse(-factor * slope * conditionTransient, conditionRate + qDecayPerDay, woodRate, days, woodDecay);
             }
             else
             {
                 double retention = EcologyMath.CultivationVegetationRetention(config, q);
-                coefficients.Add(factor * retention * equilibrium); rates.Add(0);
-                coefficients.Add(factor * retention * conditionTransient); rates.Add(conditionRate);
-            }
-            double woodDecay = Math.Exp(-woodRate * days);
-            double endpoint = Math.Max(0, remaining) * woodDecay;
-            for (int i = 0; i < coefficients.Count; i++)
-            {
-                double forcingDecay = Math.Exp(-rates[i] * days);
-                double response = Math.Abs(woodRate - rates[i]) <= 1e-12 * Math.Max(1, woodRate)
-                    ? woodRate * days * woodDecay
-                    : woodRate * (forcingDecay - woodDecay) / (woodRate - rates[i]);
-                endpoint += coefficients[i] * response;
+                endpoint += WoodForcingResponse(factor * retention * equilibrium, 0, woodRate, days, woodDecay);
+                endpoint += WoodForcingResponse(factor * retention * conditionTransient, conditionRate, woodRate, days, woodDecay);
             }
             return Math.Max(0, endpoint);
+        }
+        private static double WoodForcingResponse(double coefficient, double forcingRate, double woodRate, double days, double woodDecay)
+        {
+            double forcingDecay = Math.Exp(-forcingRate * days);
+            double response = Math.Abs(woodRate - forcingRate) <= 1e-12 * Math.Max(1, woodRate)
+                ? woodRate * days * woodDecay
+                : woodRate * (forcingDecay - woodDecay) / (woodRate - forcingRate);
+            return coefficient * response;
         }
         internal static double ClampWoodSource(WorldState w, int tile, EcologyView ecology)
         {
@@ -423,7 +420,7 @@ namespace Anthropocene.Simulation
             var state = SourceState(w, source.Id);
             if (state == null) { state = new MaterialSourceState { Id = source.Id, Material = source.Material, Initial = source.Initial, Remaining = source.Initial, LastDays = days }; w.MaterialSources.Add(state); RegisterSourceState(w, state); }
             double before = source.Available / source.Share;
-            state.Remaining = before - amount; state.LastDays = days;
+            state.Remaining = Math.Max(0, before - amount); state.LastDays = days;
             if (source.Material == MaterialId.Stone) c.Inventory.Stone += amount; else if (source.Material == MaterialId.Clay) c.Inventory.Clay += amount; else c.Inventory.Wood += amount;
             if (MaterialAccessIndex.For(w).Remember(c.SocietyId, source.Id, source.Tile))
                 w.MaterialKnowledge.Add(new MaterialKnowledge { Society = c.SocietyId, Source = source.Id, Tile = source.Tile });
@@ -473,61 +470,42 @@ namespace Anthropocene.Simulation
                 if (roleSources.Length == 0) continue;
                 double rate = w.Config.Neolithic.SpecialistMaterialExtractionRate *
                     (role == WorkforceRoles.Gatherer ? w.Config.Neolithic.GeneralistTaskEfficiency : 1);
-                while (labor > 1e-10)
+                // A source is considered once per role and footprint site for the
+                // whole turn. This bounds work by nearby sources, not by the
+                // number of reference intervals in the turn. Scores rank the
+                // aggregate unmet need; they do not schedule extraction dates.
+                var visited = new HashSet<(string Id, int Tile)>();
+                for (int sourcePass = 0; sourcePass < roleSources.Length && labor > 1e-10; sourcePass++)
                 {
                     KnownMaterialSource bestSource = null;
-                    double bestScore = 1e-10, bestDemand = 0, bestPriority = 0;
+                    double bestScore = 1e-10, bestDemand = 0;
                     for (int i = 0; i < roleSources.Length; i++)
                     {
                         var s = roleSources[i];
-                        if (s.Available <= 1e-10) continue;
+                        if (s.Available <= 1e-10 || visited.Contains((s.Id, s.Tile))) continue;
                         double demand = Shortfall(s.Material);
                         double priority = s.Material == MaterialId.Stone ? c.StonePriority : s.Material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
                         double score = demand * priority;
                         if (score <= 1e-10) continue;
                         if (bestSource == null || score > bestScore)
                         {
-                            bestSource = s; bestScore = score; bestDemand = demand; bestPriority = priority;
+                            bestSource = s; bestScore = score; bestDemand = demand;
                         }
                         else if (score == bestScore)
                         {
                             if (s.Distance < bestSource.Distance)
                             {
-                                bestSource = s; bestScore = score; bestDemand = demand; bestPriority = priority;
+                                bestSource = s; bestScore = score; bestDemand = demand;
                             }
                             else if (s.Distance == bestSource.Distance && StringComparer.Ordinal.Compare(s.Id, bestSource.Id) < 0)
                             {
-                                bestSource = s; bestScore = score; bestDemand = demand; bestPriority = priority;
+                                bestSource = s; bestScore = score; bestDemand = demand;
                             }
                         }
                     }
                     if (bestSource == null) break;
-                    // Scores fall linearly with inventory received. Batch the
-                    // intervals for which this source remains the winner; the
-                    // next event is a rival material overtaking it, depletion,
-                    // or its own demand being filled. Wood keeps one-interval
-                    // receipts because each extraction applies ecological pressure.
-                    double batch = Math.Min(labor, 1);
-                    if (bestSource.Material != MaterialId.Wood && rate > 0)
-                    {
-                        double rival = 0;
-                        for (int i = 0; i < roleSources.Length; i++)
-                        {
-                            var s = roleSources[i];
-                            if (s.Available > 1e-10 && s.Material != bestSource.Material)
-                            {
-                                double rDemand = Shortfall(s.Material);
-                                double rPriority = s.Material == MaterialId.Stone ? c.StonePriority : s.Material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
-                                double rScore = rDemand * rPriority;
-                                if (rScore > rival) rival = rScore;
-                            }
-                        }
-                        double margin = bestDemand * bestPriority - rival;
-                        double stableIntervals = rival <= 1e-10 ? double.PositiveInfinity :
-                            Math.Max(1, Math.Ceiling(Math.Max(0, margin) / Math.Max(1e-12, bestPriority * rate)));
-                        batch = Math.Min(labor, Math.Min(stableIntervals,
-                            Math.Min(bestSource.Available, bestDemand) / rate));
-                    }
+                    visited.Add((bestSource.Id, bestSource.Tile));
+                    double batch = Math.Min(labor, Math.Min(bestSource.Available, bestDemand) / rate);
                     double spent = ExtractKnown(w, c, bestSource, role, batch, bestDemand, days, record, true, balanceIndex);
                     if (spent <= 1e-12) break;
                     var state = SourceState(w, bestSource.Id);
@@ -540,6 +518,8 @@ namespace Anthropocene.Simulation
             }
             return housing;
         }
+        public static HousingMaterialPlan Gather(WorldState w, Camp c, CraftRecipe[] recipes, TurnHorizon horizon, double generalistIntervals, ref double equipment, TurnRecord record, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, TurnNeeds needs = null)
+            => Gather(w, c, recipes, horizon.ReferenceIntervals, horizon.Years, generalistIntervals, ref equipment, record, fieldWorkAlreadyResolved, potsAlreadyDecayed, needs);
         public static double Inventory(Camp c, MaterialId material) => material == MaterialId.Stone ? c.Inventory.Stone : material == MaterialId.Clay ? c.Inventory.Clay : c.Inventory.Wood;
         public static string Specialist(MaterialId material) => material == MaterialId.Stone ? WorkforceRoles.Stonecutter : material == MaterialId.Clay ? WorkforceRoles.ClayMiner : material == MaterialId.Wood ? WorkforceRoles.Woodcutter : null;
         // Mirror the ordered recipe/role plan without changing stock or gaining progress.
@@ -558,53 +538,64 @@ namespace Anthropocene.Simulation
             double animalFood = animalFoodBudget >= 0 ? animalFoodBudget : includePlantDemand ? double.PositiveInfinity : c.AnimalFood;
             double animalFabric = Math.Max(0, c.Inventory.AnimalFabric);
             var orderedRecipes = recipes.OrderByDescending(r => NeolithicProduction.Priority(c, r.Good)).ThenBy(r => r.Good).ToArray();
-            foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
+            var roles = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToArray();
+            var laborByRole = roles.ToDictionary(role => role, role => CultivationEconomy.Workers(c, role) * intervals);
+            // Toolmaking has no equipment input. Solve that aggregate supply
+            // first, then use start stock plus forecast output to cap all other
+            // work. Both sweeps describe one turn allocation, not two times.
+            for (int balanceLayer = 0; balanceLayer < 2; balanceLayer++)
             {
-                double labor = CultivationEconomy.Workers(c, role) * intervals;
-                bool lightHousingUseful = NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 &&
-                    (CultivationEconomy.Workers(c, WorkforceRoles.Builder) > 0 || CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0);
-                foreach (var recipe in orderedRecipes)
+                foreach (string role in roles)
                 {
-                    if (NeolithicProduction.Priority(c, recipe.Good) <= 0) continue;
-                    if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c) || recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) continue;
-                    bool specialist = role == recipe.Specialist && c.People.HasTech(recipe.Track);
-                    if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) continue;
-                    double rate = recipe.Rate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
-                    if (rate <= 0) continue;
-                    double useful = NeolithicProduction.Demand(w, c, recipe.Good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources);
-                    if (recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric)
+                    double labor = laborByRole[role];
+                    bool lightHousingUseful = NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 &&
+                        (CultivationEconomy.Workers(c, WorkforceRoles.Builder) > 0 || CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0);
+                    foreach (var recipe in orderedRecipes)
                     {
-                        double residents = residentPopulation < 0 ? c.Population : residentPopulation;
-                        var n = w.Config.Neolithic;
-                        double clothing = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
-                        double shelter = lightHousingUseful ? Math.Max(0, residents / n.HousingPeoplePerUnit - NeolithicProduction.HousingSupply(w, c, w.Days + years * w.Config.DaysPerYear)) : 0;
-                        double virtualCloth = Math.Max(0, c.Inventory.Cloth) + planned[CraftGood.Cloth];
-                        double virtualAnimalFabric = animalFabric;
-                        double remainingClothing = Math.Max(0, clothing - virtualCloth - virtualAnimalFabric);
-                        double clothingBeforeAnimalFabric = Math.Max(0, clothing - virtualCloth);
-                        double animalFabricForShelter = Math.Max(0, virtualAnimalFabric - clothingBeforeAnimalFabric);
-                        double remainingShelter = Math.Max(0, shelter - animalFabricForShelter - planned[CraftGood.LightHousing]);
-                        // Cloth and Animal Fabric satisfy one shared clothing
-                        // target. Their priority order determines which recipe
-                        // serves the remaining demand; the forecast must debit
-                        // both outputs from the same virtual ledger.
-                        useful = recipe.Good == CraftGood.Cloth
-                            ? remainingClothing
-                            : remainingClothing + remainingShelter;
+                        bool toolInput = recipe.Good == CraftGood.HandTools || recipe.Good == CraftGood.Tools;
+                        if (toolInput != (balanceLayer == 0)) continue;
+                        if (NeolithicProduction.Priority(c, recipe.Good) <= 0) continue;
+                        if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c) || recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) continue;
+                        bool specialist = role == recipe.Specialist && c.People.HasTech(recipe.Track);
+                        if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) continue;
+                        double rate = recipe.Rate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
+                        if (rate <= 0) continue;
+                        double useful = NeolithicProduction.Demand(w, c, recipe.Good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources);
+                        if (recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric)
+                        {
+                            double residents = residentPopulation < 0 ? c.Population : residentPopulation;
+                            var n = w.Config.Neolithic;
+                            double clothing = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
+                            double shelter = lightHousingUseful ? Math.Max(0, residents / n.HousingPeoplePerUnit - NeolithicProduction.HousingSupply(w, c, w.Days + years * w.Config.DaysPerYear)) : 0;
+                            double virtualCloth = Math.Max(0, c.Inventory.Cloth) + planned[CraftGood.Cloth];
+                            double virtualAnimalFabric = animalFabric;
+                            double remainingClothing = Math.Max(0, clothing - virtualCloth - virtualAnimalFabric);
+                            double clothingBeforeAnimalFabric = Math.Max(0, clothing - virtualCloth);
+                            double animalFabricForShelter = Math.Max(0, virtualAnimalFabric - clothingBeforeAnimalFabric);
+                            double remainingShelter = Math.Max(0, shelter - animalFabricForShelter - planned[CraftGood.LightHousing]);
+                            // Both fabric recipes serve the same cohort demand.
+                            useful = recipe.Good == CraftGood.Cloth
+                                ? remainingClothing
+                                : remainingClothing + remainingShelter;
+                        }
+                        bool sharedFabricNeed = recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric;
+                        double amount = Math.Min(sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
+                        if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
+                        if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
+                        if (recipe.AnimalFabric > 0) amount = Math.Min(amount, animalFabric / recipe.AnimalFabric);
+                        if (amount <= 0) continue;
+                        labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : amount / rate;
+                        planned[recipe.Good] += amount; plant -= amount * recipe.PlantFood; animalFood -= amount * recipe.AnimalFood;
+                        tools.Credit(recipe.Good, amount);
+                        if (recipe.Good == CraftGood.AnimalFabric) animalFabric += amount;
+                        animalFabric -= amount * recipe.AnimalFabric;
                     }
-                    bool sharedFabricNeed = recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric;
-                    double amount = Math.Min(sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
-                    if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
-                    if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
-                    if (recipe.AnimalFabric > 0) amount = Math.Min(amount, animalFabric / recipe.AnimalFabric);
-                    if (amount <= 0) continue;
-                    labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : amount / rate;
-                    planned[recipe.Good] += amount; plant -= amount * recipe.PlantFood; animalFood -= amount * recipe.AnimalFood;
-                    if (recipe.Good == CraftGood.AnimalFabric) animalFabric += amount;
-                    animalFabric -= amount * recipe.AnimalFabric;
+                    laborByRole[role] = labor;
                 }
             }
             return planned;
         }
+        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, TurnHorizon horizon, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1, KnownMaterialSource[] knownSources = null)
+            => Forecast(w, c, recipes, horizon.ReferenceIntervals, horizon.Years, equipment, includePlantDemand, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, plantFoodBudget, animalFoodBudget, knownSources);
     }
 }

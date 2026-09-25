@@ -30,7 +30,11 @@ internal static class ToolConsumptionChecks
         BlockedProductionDoesNotWear();
         CopperRemainsUnspecified();
         CopperHousingReplacementForecastParity();
-        NewlyMadeToolsAreNotRetroactive();
+        SameTurnToolmakingBalancesService();
+        SameTurnForecastBalancesService();
+        SharedCraftLaborBalancesToolsAndGoods();
+        ReplacementDemandScalesWithHorizon();
+        HerdingServiceIsAnAggregateHorizonBudget();
         ReceiptAndFractionalSaveRoundTrip();
         ReplacementDemandIsUsefulAndSourceBound();
         PlannerReplacementRegressionCases();
@@ -212,7 +216,7 @@ internal static class ToolConsumptionChecks
         Near(portableHousingDemand, fixedHousingDemand, "Light Housing uses the same legacy Copper replacement coverage as fixed Housing");
     }
 
-    private static void NewlyMadeToolsAreNotRetroactive()
+    private static void SameTurnToolmakingBalancesService()
     {
         var w = Fixture();
         var c = w.Camps[0];
@@ -226,7 +230,93 @@ internal static class ToolConsumptionChecks
         Near(record.Production.Single(receipt => receipt.Good == CraftGood.HandTools).Output, 1, "toolmaking itself does not require an earlier tool");
         Near(c.Inventory.HandTools, 1, "finished Hand Tool is added to inventory");
         double cloth = NeolithicProduction.Produce(w, c, Recipe(w, CraftGood.Cloth), WorkforceRoles.Weaver, 80, 80, 1, ref equipment, record, budget);
-        Near(cloth, 0, "newly made Hand Tool cannot backdate into already resolved work");
+        Near(cloth, 1, "same-turn Hand Tool output supplies the aggregate equipment balance");
+        Near(c.Inventory.HandTools, 0, "same-turn tool output and wear reconcile in inventory");
+        Near(record.Production.Single(receipt => receipt.Good == CraftGood.Cloth).HandToolsConsumed, 1,
+            "the consuming receipt records exactly the tool service supplied");
+    }
+
+    private static void ReplacementDemandScalesWithHorizon()
+    {
+        var w = NeolithicChecks.Fixture();
+        var c = w.Camps[0];
+        c.Workforce.Assign(WorkforceRoles.Weaver, 1, c.Population);
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
+        c.CraftingPriorities = new CraftingPriorities { HandTools = 1, Tools = 0, Pots = 0, Cloth = 1, FarmTools = 0, Housing = 0 };
+        c.EconomicLabor = new EconomicLaborPlan { EquipmentTarget = 1 };
+        foreach (double years in new[] { 20d, 10d, 5d, 1d, .5d, 0d })
+        {
+            var horizon = new TurnHorizon(w.Config, w.Days, years * w.Config.DaysPerYear);
+            Near(NeolithicProduction.Demand(w, c, CraftGood.HandTools, horizon.Years),
+                horizon.ReferenceIntervals,
+                "replacement service scales with a " + years + "-year horizon");
+        }
+    }
+
+    private static void SameTurnForecastBalancesService()
+    {
+        var w = Fixture();
+        var c = w.Camps[0];
+        AddSources(w);
+        c.Inventory.HandTools = c.Inventory.Tools = 0;
+        c.CraftingPriorities = new CraftingPriorities { HandTools = 1, Tools = 0, Pots = 0, Cloth = 1, FarmTools = 0, Housing = 0 };
+        c.Workforce.Assign(WorkforceRoles.Toolmaker, 1, c.Population);
+        c.Workforce.Assign(WorkforceRoles.Weaver, 1, c.Population);
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Toolmaking);
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
+        var horizon = TurnHorizon.Next(w);
+        var planned = MaterialEconomy.Forecast(w, c, NeolithicProduction.Recipes(w.Config), horizon,
+            new ToolCoverageBudget(w, c, horizon).Remaining, true, c.Population, false, false);
+        Check(planned[CraftGood.HandTools] > 0, "forecast reserves toolmaking from fixed labor");
+        Check(planned[CraftGood.Cloth] > 0, "forecast uses newly made tools in the same turn");
+        Check(planned[CraftGood.Cloth] <= planned[CraftGood.HandTools] + 1e-8,
+            "forecast equipment output does not exceed same-turn tool service supply");
+    }
+
+    private static void SharedCraftLaborBalancesToolsAndGoods()
+    {
+        var w = ReplacementFixture(true);
+        var c = w.Camps[0];
+        var horizon = TurnHorizon.Next(w);
+        var forecast = MaterialEconomy.Forecast(w, c, NeolithicProduction.Recipes(w.Config), horizon,
+            new ToolCoverageBudget(w, c, horizon).Remaining, true, c.Population, false, false);
+        Check(forecast[CraftGood.HandTools] > 0 && forecast[CraftGood.Cloth] > 0,
+            "shared Craftsperson labor reserves both tool input and useful output");
+        Check(forecast[CraftGood.Cloth] <= forecast[CraftGood.HandTools] + 1e-8,
+            "shared labor forecast respects aggregate tool service supply");
+        Check(forecast[CraftGood.HandTools] + forecast[CraftGood.Cloth] <=
+            CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) * horizon.ReferenceIntervals * w.Config.Neolithic.GeneralistTaskEfficiency + 1e-8,
+            "toolmaking and goods share one finite labor budget");
+    }
+
+    private static void HerdingServiceIsAnAggregateHorizonBudget()
+    {
+        var w = Fixture();
+        var c = w.Camps[0];
+        c.Inventory.HerdingTools = 1;
+        w.Herds.Add(new Herd { Id = w.NextId++, Tile = c.Tile, DomesticCamp = c.Id, Animals = 20 });
+        double supply = w.Config.Neolithic.HerdingToolCoverageYearsPerUnit;
+        foreach (double years in new[] { 20d, 10d, 5d, 1d, .5d, 0d })
+        {
+            var horizon = new TurnHorizon(w.Config, w.Days, years * w.Config.DaysPerYear);
+            var plan = HerdingTooling.Plan(w, c, horizon, 2);
+            double demand = Math.Min(2, 20 / w.Config.Neolithic.StoneHerdingToolAnimalsPerHerder) * years;
+            Near(plan.ToolServiceDemandYears, demand, "herding service demand uses the chosen horizon");
+            Near(plan.ToolServiceSupplyYears, supply, "held herding tools provide a fixed service supply");
+            Near(plan.CoveredHerderYears, Math.Min(demand, supply), "coverage is bounded by aggregate supply");
+            Check(plan.ToolCoverage >= 0 && plan.ToolCoverage <= 1 && plan.ToolsConsumed <= c.Inventory.HerdingTools + 1e-8,
+                "partial herding coverage and physical wear remain bounded");
+            if (years > 0)
+            {
+                c.Inventory.HerdingTools = 0;
+                double noTools = HerdingTooling.Plan(w, c, horizon, 2).Fulfillment;
+                c.Inventory.HerdingTools = 100;
+                double fullTools = HerdingTooling.Plan(w, c, horizon, 2).Fulfillment;
+                c.Inventory.HerdingTools = 1;
+                Check(plan.Fulfillment >= noTools - 1e-10 && plan.Fulfillment <= fullTools + 1e-10,
+                    "partial herding tools have efficacy between zero and full service");
+            }
+        }
     }
 
     private static void ReceiptAndFractionalSaveRoundTrip()

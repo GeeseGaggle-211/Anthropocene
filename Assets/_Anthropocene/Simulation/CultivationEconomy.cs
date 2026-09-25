@@ -11,12 +11,49 @@ namespace Anthropocene.Simulation
         public int[] Footprint = Array.Empty<int>();
     }
 
+    // A proposed whole-turn investment. The starting and mean capital are read by
+    // the resource pass; only EndCapital is committed after its receipts. A bridge
+    // estimate may be replaced once with realized terrestrial gathering, without
+    // changing the efficacy already used for this turn's claims.
+    public sealed class HorizonCultivationAllocation
+    {
+        public int CampId;
+        public int[] Tiles = Array.Empty<int>();
+        public double[] StartCapital = Array.Empty<double>();
+        public double[] AverageCapital = Array.Empty<double>();
+        public double[] EndCapital = Array.Empty<double>();
+        public double FarmerWorkerYearsUsed, BridgeWorkerYearsUsed, CoveredFarmerWorkerYears;
+        internal EcologyView[] StartEcology = Array.Empty<EcologyView>();
+        internal int[] StartOperators = Array.Empty<int>();
+        internal double[] StartOperatingFractions = Array.Empty<double>();
+        internal double Years, FarmerWorkerYearsRequested, BridgeWorkerYearsRequested;
+
+        public bool TryGetTile(int tile, out double averageCapital, out double endCapital)
+        {
+            int index = Array.BinarySearch(Tiles, tile);
+            if (index < 0) { averageCapital = 0; endCapital = 0; return false; }
+            averageCapital = AverageCapital[index]; endCapital = EndCapital[index]; return true;
+        }
+
+        public int[] NewFieldTiles()
+        {
+            var selected = new List<int>();
+            for (int i = 0; i < Tiles.Length; i++)
+                if (StartOperators[i] < 0 && EndCapital[i] > StartCapital[i] + 1e-12) selected.Add(Tiles[i]);
+            return selected.ToArray();
+        }
+    }
+
     // A turn-local budget for the Farm Tools that existed when agricultural work
     // began.  Production later in the same turn cannot backdate field coverage.
     public sealed class FarmToolWorkBudget
     {
         public double RemainingTools;
         public double CoveredWorkerYears;
+        // Horizon preparation reserves this work without debiting inventory. The
+        // maintenance and expansion service is debited once at endpoint commit.
+        public double ReservedMaintenanceWorkerYears;
+        public bool HorizonCommitted;
         private readonly Camp camp;
         public FarmToolWorkBudget(WorldState w, Camp camp)
         {
@@ -69,6 +106,32 @@ namespace Anthropocene.Simulation
             var footprint = CommitSeasonBoundary(w, camp, start);
             var plan = CalculateLabor(w, camp, footprint, toolBudget, segmentYears);
             CommitOperatingFraction(w, camp, plan);
+            return plan;
+        }
+
+        // The horizon resolver calls this once after movement. Ownership and the
+        // operating regime are fixed before claims; the tool debit waits until
+        // the endpoint so newly produced tools cannot cover this turn's work.
+        public static AgriculturalLabor PrepareHorizon(WorldState w, Camp camp, double startDays, double years,
+            FarmToolWorkBudget toolBudget = null, int[] cachedFootprint = null)
+        {
+            if (double.IsNaN(years) || double.IsInfinity(years) || years < 0)
+                throw new ArgumentOutOfRangeException(nameof(years));
+            if (years == 0)
+            {
+                var idle = new AgriculturalLabor
+                {
+                    Gatherers = camp.GathererPopulation + Workers(camp, WorkforceRoles.Gatherer),
+                    Footprint = cachedFootprint ?? Footprint(w, camp)
+                };
+                idle.FoodGatherers = Math.Max(0, idle.Gatherers - (camp.EconomicLabor?.MaterialGatherers ?? 0));
+                if (toolBudget != null) toolBudget.ReservedMaintenanceWorkerYears = 0;
+                return idle;
+            }
+            var footprint = CommitSeasonBoundary(w, camp, startDays, null, cachedFootprint);
+            var plan = CalculateLabor(w, camp, footprint, toolBudget, years);
+            CommitOperatingFraction(w, camp, plan);
+            if (toolBudget != null) toolBudget.ReservedMaintenanceWorkerYears = plan.MaintenanceCoveredWorkerYears;
             return plan;
         }
         internal static int[] CommitSeasonBoundary(WorldState w, Camp camp, double start, IReadOnlyDictionary<int, Camp> campsById = null, int[] cachedFootprint = null)
@@ -221,6 +284,279 @@ namespace Anthropocene.Simulation
             if (!Enabled(camp) || camp.Population <= 0 || years <= 0) return 0;
             double maintenance = PlannedMaintenanceFarmers(w, camp, availableFarmers);
             return Math.Max(0, maintenance) * years;
+        }
+
+        private sealed class HorizonCandidate
+        {
+            public int Tile;
+            public EcologyView Ecology;
+            public double Start, Decayed, Capital, OperatingFraction;
+            public int StartOperator;
+            public bool Eligible = true;
+        }
+
+        // One proposal over the whole turn. The fixed 32 intensity bands are
+        // capital-allocation resolution, not time steps: their count does not
+        // depend on turn length, BaseDays, or the amount of available work.
+        public static HorizonCultivationAllocation PlanHorizonExpansion(WorldState w, Camp camp, double years,
+            double farmerWorkerYears, double bridgeWorkerYears, FarmToolWorkBudget toolBudget,
+            int[] cachedFootprint = null)
+        {
+            int[] ids = !Enabled(camp) || camp.Population <= 0
+                ? Array.Empty<int>()
+                : (cachedFootprint ?? Footprint(w, camp))
+                    .Where(id => w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == camp.Id)
+                    .OrderBy(id => id).ToArray();
+            var candidates = new HorizonCandidate[ids.Length];
+            for (int i = 0; i < ids.Length; i++)
+            {
+                int id = ids[i]; var tile = w.Tiles[id];
+                var view = LazyEcology.ProjectEcology(w, id, Math.Max(w.Days, tile.LastEcologyUpdateDays));
+                candidates[i] = new HorizonCandidate
+                {
+                    Tile = id, Ecology = view, Start = Math.Max(0, view.CultivationCapital),
+                    OperatingFraction = tile.CultivationOperatingFraction, StartOperator = tile.CultivationOperator
+                };
+            }
+            return BuildHorizonAllocation(w, camp, years, farmerWorkerYears, bridgeWorkerYears, toolBudget, candidates);
+        }
+
+        // The preclaim bridge estimate can be corrected from realized terrestrial
+        // receipts once. Reuse the saved starting views, so endpoint integration
+        // cannot change the field scores or move a decision backward in time.
+        public static HorizonCultivationAllocation ReconcileHorizonBridge(WorldState w, Camp camp,
+            HorizonCultivationAllocation preclaim, double realizedBridgeWorkerYears, FarmToolWorkBudget toolBudget)
+        {
+            if (preclaim == null || preclaim.CampId != camp.Id) throw new ArgumentException("Invalid horizon cultivation proposal.");
+            var candidates = new HorizonCandidate[preclaim.Tiles.Length];
+            for (int i = 0; i < candidates.Length; i++)
+                candidates[i] = new HorizonCandidate
+                {
+                    Tile = preclaim.Tiles[i], Ecology = preclaim.StartEcology[i],
+                    Start = preclaim.StartCapital[i], OperatingFraction = preclaim.StartOperatingFractions[i],
+                    StartOperator = preclaim.StartOperators[i],
+                    // A final receipt cannot reserve a new field that another
+                    // camp was allowed to plan against in this same horizon.
+                    Eligible = preclaim.StartOperators[i] >= 0 ||
+                        preclaim.EndCapital[i] > preclaim.StartCapital[i] + 1e-12
+                };
+            return BuildHorizonAllocation(w, camp, preclaim.Years, preclaim.FarmerWorkerYearsRequested,
+                realizedBridgeWorkerYears, toolBudget, candidates);
+        }
+
+        private static HorizonCultivationAllocation BuildHorizonAllocation(WorldState w, Camp camp, double years,
+            double farmerWorkerYears, double bridgeWorkerYears, FarmToolWorkBudget toolBudget, HorizonCandidate[] candidates)
+        {
+            if (double.IsNaN(years) || double.IsInfinity(years) || years < 0)
+                throw new ArgumentOutOfRangeException(nameof(years));
+            if (double.IsNaN(farmerWorkerYears) || double.IsInfinity(farmerWorkerYears) || farmerWorkerYears < 0)
+                throw new ArgumentOutOfRangeException(nameof(farmerWorkerYears));
+            if (double.IsNaN(bridgeWorkerYears) || double.IsInfinity(bridgeWorkerYears) || bridgeWorkerYears < 0)
+                throw new ArgumentOutOfRangeException(nameof(bridgeWorkerYears));
+            var c = w.Config; var n = c.Neolithic;
+            var result = new HorizonCultivationAllocation
+            {
+                CampId = camp.Id, Years = years,
+                FarmerWorkerYearsRequested = years > 0 ? Math.Max(0, farmerWorkerYears) : 0,
+                BridgeWorkerYearsRequested = years > 0 ? Math.Max(0, bridgeWorkerYears) : 0,
+                Tiles = new int[candidates.Length], StartCapital = new double[candidates.Length],
+                AverageCapital = new double[candidates.Length], EndCapital = new double[candidates.Length],
+                StartEcology = new EcologyView[candidates.Length], StartOperators = new int[candidates.Length],
+                StartOperatingFractions = new double[candidates.Length]
+            };
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                var field = candidates[i];
+                field.Decayed = Decay(c, field.Start, field.OperatingFraction, result.Years);
+                field.Capital = field.Decayed;
+                result.Tiles[i] = field.Tile; result.StartCapital[i] = field.Start;
+                result.StartEcology[i] = field.Ecology; result.StartOperators[i] = field.StartOperator;
+                result.StartOperatingFractions[i] = field.OperatingFraction;
+            }
+            double bridgeEffective = result.BridgeWorkerYearsRequested * c.GathererBridgeEfficiency;
+            double bridgeRemaining = AllocateHorizonEffort(w, camp, candidates, bridgeEffective, true);
+            result.BridgeWorkerYearsUsed = c.GathererBridgeEfficiency > 0
+                ? (bridgeEffective - bridgeRemaining) / c.GathererBridgeEfficiency : 0;
+            double toolWorkerYears = toolBudget == null ? 0 : Math.Max(0,
+                toolBudget.AvailableWorkerYears(n.FarmToolFarmerYearsPerUnit) - toolBudget.ReservedMaintenanceWorkerYears);
+            double covered = Math.Min(result.FarmerWorkerYearsRequested, toolWorkerYears);
+            double efficiency = FarmToolFieldWorkEfficiency(n);
+            double farmerEffective = result.FarmerWorkerYearsRequested - covered + covered * efficiency;
+            double farmerRemaining = AllocateHorizonEffort(w, camp, candidates, farmerEffective, false);
+            double farmerEffectiveUsed = Math.Max(0, farmerEffective - farmerRemaining);
+            result.CoveredFarmerWorkerYears = Math.Min(covered, farmerEffectiveUsed / Math.Max(1e-12, efficiency));
+            result.FarmerWorkerYearsUsed = result.CoveredFarmerWorkerYears +
+                Math.Max(0, farmerEffectiveUsed - result.CoveredFarmerWorkerYears * efficiency);
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                var field = candidates[i];
+                result.EndCapital[i] = field.Capital;
+                double rate = Math.Log(2) / n.DecayHalfLifeYears * (1 - Numbers.Clamp(field.OperatingFraction, 0, 1));
+                double meanDecay = rate * result.Years > 1e-10
+                    ? field.Start * (1 - Math.Exp(-rate * result.Years)) / (rate * result.Years)
+                    : field.Start;
+                // Investment is spread over the turn for mean efficacy, but only
+                // its endpoint is an authoritative state write.
+                result.AverageCapital[i] = Math.Max(0, meanDecay + .5 * (field.Capital - field.Decayed));
+            }
+            return result;
+        }
+
+        private static double AllocateHorizonEffort(WorldState w, Camp camp, HorizonCandidate[] candidates,
+            double effectiveWorkerYears, bool bridge)
+        {
+            if (effectiveWorkerYears <= 1e-10 || candidates.Length == 0) return Math.Max(0, effectiveWorkerYears);
+            var c = w.Config; var n = c.Neolithic;
+            double ceiling = Math.Pow((bridge ? c.GathererBridgeCeiling : 1) / c.ReferenceIntensity, 2);
+            double bridgeCeiling = Math.Pow(c.GathererBridgeCeiling / c.ReferenceIntensity, 2);
+            double remaining = effectiveWorkerYears;
+            var cached = new bool[candidates.Length];
+            var scores = new double[candidates.Length];
+            var steps = new double[candidates.Length];
+            var costsPerE = new double[candidates.Length];
+            // Thirty-two intensity bands and at most one bridge-ceiling split per
+            // field. The guard also makes unusual saved field values harmless.
+            for (int pass = 0; pass < candidates.Length * 35 && remaining > 1e-10; pass++)
+            {
+                int best = -1; double bestScore = 0, bestStep = 0, bestCostPerE = 0;
+                for (int i = 0; i < candidates.Length; i++)
+                {
+                    var field = candidates[i];
+                    if (!cached[i])
+                    {
+                        cached[i] = true; scores[i] = 0; steps[i] = 0; costsPerE[i] = 0;
+                        double e = field.Capital;
+                        if (field.Eligible && e < ceiling - 1e-12)
+                        {
+                            double q = Intensity(c, e);
+                            double nextBandQ = Math.Min(bridge ? c.GathererBridgeCeiling : 1,
+                                (Math.Floor(q * 32 + 1e-10) + 1) / 32);
+                            double nextE = Math.Pow(nextBandQ / c.ReferenceIntensity, 2);
+                            double de = Math.Min(ceiling - e, Math.Max(0, nextE - e));
+                            if (!bridge && e < bridgeCeiling - 1e-12) de = Math.Min(de, bridgeCeiling - e);
+                            if (de > 1e-12)
+                            {
+                                var tile = w.Tiles[field.Tile];
+                                double build = bridge || q < c.GathererBridgeCeiling
+                                    ? n.OpenBuild : BuildMultiplier(c, tile, field.Ecology.CurrentVegetation);
+                                double costPerE = n.BuildWorkerYearsPerTileE * build;
+                                if (costPerE > 0)
+                                {
+                                    double maintenance = MaintenanceMultiplier(c, tile, field.Ecology.CurrentVegetation);
+                                    scores[i] = HorizonMarginalScore(w, tile, field.Ecology, e, de, costPerE, maintenance);
+                                    steps[i] = de; costsPerE[i] = costPerE;
+                                }
+                            }
+                        }
+                    }
+                    double score = scores[i];
+                    bool focused = field.Tile == camp.CultivationFocusTile;
+                    if (score > 0 && (best < 0 || focused && candidates[best].Tile != camp.CultivationFocusTile ||
+                        !focused && candidates[best].Tile != camp.CultivationFocusTile && score > bestScore + 1e-12))
+                    { best = i; bestScore = score; bestStep = steps[i]; bestCostPerE = costsPerE[i]; }
+                }
+                if (best < 0) break;
+                double usedE = Math.Min(bestStep, remaining / bestCostPerE);
+                if (usedE <= 1e-12) break;
+                candidates[best].Capital = Math.Min(ceiling, candidates[best].Capital + usedE);
+                remaining = Math.Max(0, remaining - usedE * bestCostPerE);
+                cached[best] = false;
+            }
+            return remaining;
+        }
+
+        private static double HorizonMarginalScore(WorldState w, Tile tile, EcologyView ecology,
+            double capital, double step, double costPerE, double maintenance)
+        {
+            var c = w.Config; var n = c.Neolithic;
+            var before = ecology; before.CultivationCapital = capital;
+            var after = ecology; after.CultivationCapital = capital + step;
+            double gain = 0;
+            for (int season = 0; season < 4; season++)
+            {
+                var beforeCapacity = new EcologyCapacity(w, tile, before, season, 1);
+                var afterCapacity = new EcologyCapacity(w, tile, after, season, 1);
+                double beforeFlow = Math.Min(beforeCapacity.Food * beforeCapacity.FoodRate + beforeCapacity.ManagedFlow,
+                    EcologyMath.SustainableHarvestRate(beforeCapacity.Biomass, beforeCapacity.BiomassRate,
+                        c.SustainableProductionFraction, beforeCapacity.ManagedFlow) * c.SafeUseRatio);
+                double afterFlow = Math.Min(afterCapacity.Food * afterCapacity.FoodRate + afterCapacity.ManagedFlow,
+                    EcologyMath.SustainableHarvestRate(afterCapacity.Biomass, afterCapacity.BiomassRate,
+                        c.SustainableProductionFraction, afterCapacity.ManagedFlow) * c.SafeUseRatio);
+                gain += (afterFlow - beforeFlow) * c.DaysPerYear / 4;
+            }
+            return gain / Math.Max(1e-12, step * (costPerE + n.PlanningHorizonYears *
+                n.MaintenanceWorkersPerTileE(c.MaintenanceCoefficient) * maintenance));
+        }
+
+        // Ecology integration has already committed the preclaim endpoint. Only
+        // the once-reconciled bridge difference and tool service are written here.
+        // The mean efficacy that served claims remains the preclaim estimate.
+        public static void CommitHorizonExpansion(WorldState w, Camp camp, HorizonCultivationAllocation plan,
+            TurnRecord record, FarmToolWorkBudget toolBudget, HorizonCultivationAllocation preclaim = null)
+        {
+            if (plan == null || plan.CampId != camp.Id) throw new ArgumentException("Invalid horizon cultivation proposal.");
+            if (preclaim != null && (preclaim.CampId != camp.Id || !plan.Tiles.SequenceEqual(preclaim.Tiles)))
+                throw new ArgumentException("Bridge reconciliation changed the field set.");
+            if (toolBudget != null)
+            {
+                if (toolBudget.HorizonCommitted) throw new InvalidOperationException("Horizon farm tool service was already committed.");
+                double covered = toolBudget.ReservedMaintenanceWorkerYears + plan.CoveredFarmerWorkerYears;
+                double actual = toolBudget.Consume(covered, w.Config.Neolithic.FarmToolFarmerYearsPerUnit);
+                if (actual + 1e-8 < covered) throw new InvalidOperationException("Farm tool horizon budget changed after planning.");
+                toolBudget.HorizonCommitted = true;
+            }
+            Dictionary<int, EcologyBalance> balances = null;
+            for (int i = 0; i < plan.Tiles.Length; i++)
+            {
+                int id = plan.Tiles[i]; var tile = w.Tiles[id];
+                double endpoint = Math.Max(0, plan.EndCapital[i]);
+                if (tile.CultivationOperator >= 0 && tile.CultivationOperator != camp.Id &&
+                    endpoint > plan.StartCapital[i] + 1e-12)
+                    throw new InvalidOperationException("Horizon field ownership changed after claim preparation.");
+                double beforeCapital = Math.Max(0, tile.CultivationCapital);
+                if (preclaim != null && Math.Abs(beforeCapital - preclaim.EndCapital[i]) > 1e-7)
+                    throw new InvalidOperationException("Horizon ecology did not integrate the planned field endpoint.");
+                if (endpoint <= 0 && beforeCapital <= 0)
+                {
+                    if (plan.StartOperators[i] < 0 && tile.CultivationOperator == camp.Id) tile.CultivationOperator = -1;
+                    tile.Cultivation = 0; tile.Cultivated = false;
+                    continue;
+                }
+                if (Math.Abs(endpoint - beforeCapital) <= 1e-10)
+                {
+                    if (endpoint > 0 && tile.CultivationOperator < 0) tile.CultivationOperator = camp.Id;
+                    tile.Cultivation = (float)Intensity(w.Config, endpoint); tile.Cultivated = endpoint > 0;
+                    continue;
+                }
+                var before = new EcologyView(tile);
+                if (endpoint > beforeCapital + 1e-12) tile.CultivationOperator = camp.Id;
+                var after = before; after.CultivationCapital = endpoint;
+                LazyEcology.ClampCapacity(w, tile, ref after);
+                after.Commit(tile);
+                double q = Intensity(w.Config, endpoint);
+                tile.Cultivation = (float)q; tile.Cultivated = endpoint > 0;
+                if (endpoint <= 0 && plan.StartOperators[i] < 0 && tile.CultivationOperator == camp.Id)
+                    tile.CultivationOperator = -1;
+                if (balances == null) balances = MaterialEconomy.GetOrCreateBalanceIndex(record);
+                if (balances.TryGetValue(id, out var balance))
+                {
+                    balance.BiomassOverflow += before.PotentialFood - after.PotentialFood;
+                    balance.FoodOverflow += before.Food - after.Food;
+                    balance.EndingBiomass = after.PotentialFood;
+                    balance.EndingFood = after.Food;
+                }
+                double displaced = EcologyMath.CultivationVegetationRetention(w.Config, Intensity(w.Config, beforeCapital)) -
+                    EcologyMath.CultivationVegetationRetention(w.Config, q);
+                if (displaced > 1e-12)
+                {
+                    double woodLoss = MaterialEconomy.ClampWoodSource(w, id, before, after);
+                    record.Pressure.Add(new PressureEntry
+                    {
+                        Tile = id, Entity = camp.Id, Kind = "Cultivation vegetation displacement", Pool = "Vegetation cover",
+                        Requested = displaced, Realized = displaced, WoodCapacityLoss = woodLoss, ConditionDamage = 0
+                    });
+                }
+            }
         }
         private struct CandidateScoreCache
         {

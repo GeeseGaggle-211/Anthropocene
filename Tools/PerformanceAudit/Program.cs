@@ -309,6 +309,8 @@ internal static class Program
             setupMs = Metric("SetupEconomyMilliseconds"),
             productionMs = Metric("ProductionMilliseconds"),
             fullTurnIntegrationMs = Metric("FullTurnIntegrationMilliseconds"),
+            horizonPreparationMs = Metric("HorizonPreparationMilliseconds"),
+            horizonCommitMs = Metric("HorizonCommitMilliseconds"),
             seasonalPreparationMs = Metric("SeasonalPreparationMilliseconds"),
             seasonalIntegrationMs = Metric("SeasonalIntegrationMilliseconds"),
             seasonalCommitMs = Metric("SeasonalCommitMilliseconds"),

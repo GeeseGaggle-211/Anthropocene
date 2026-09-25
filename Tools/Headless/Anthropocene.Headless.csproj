@@ -32,6 +32,9 @@
   <Compile Include="FarmPlannerChecks.cs" />
   <Compile Include="FarmFoodPhaseChecks.cs" />
   <Compile Include="CultivationCacheChecks.cs" />
+  <Compile Include="HorizonCultivationChecks.cs" />
+  <Compile Include="HorizonEcologyChecks.cs" />
+  <Compile Include="HorizonExecutionChecks.cs" />
   <Compile Include="HusbandryChecks.cs" />
   <Compile Include="HousingMaterialChecks.cs" />
     <Compile Include="WoodEcologyChecks.cs" />

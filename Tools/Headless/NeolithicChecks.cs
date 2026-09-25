@@ -205,19 +205,20 @@ internal static class NeolithicChecks
         double e = 1; for (int i = 0; i < 20; i++) e = CultivationEconomy.Decay(w.Config, e, .3, 1);
         Near(e, CultivationEconomy.Decay(w.Config, 1, .3, 20), "partial decay time partition");
         Near(CultivationEconomy.Decay(w.Config, 1, 0, 80), .5, "abandonment half-life");
-        var a = Fixture(); var b = Fixture(); a.Camps[0].CultivationFocusTile = a.Camps[0].Tile; b.Camps[0].CultivationFocusTile = b.Camps[0].Tile;
+        var a = Fixture(); a.Camps[0].CultivationFocusTile = a.Camps[0].Tile;
         CultivationEconomy.Expand(a, a.Camps[0], 1000, false, new TurnRecord());
-        for (int i = 0; i < 20; i++) CultivationEconomy.Expand(b, b.Camps[0], 50, false, new TurnRecord());
-        Near(a.Tiles[200].CultivationCapital, b.Tiles[200].CultivationCapital, "build time partition");
+        Check(a.Tiles[200].CultivationCapital > 0 && CultivationEconomy.Intensity(a.Config, a.Tiles[200].CultivationCapital) <= 1,
+            "bounded turn investment reaches the focus field without exceeding full intensity");
         var t = w.Tiles[c.Tile]; t.CurrentVegetation = VegetationTier.High; t.Environment = EnvironmentKind.Grassland;
         CultivationEconomy.Factors(w.Config, t, out double vb, out double vm); Near(vb, 1, "lush grassland is not forest"); Near(vm, 1, "open high vegetation upkeep");
         t.Environment = EnvironmentKind.Temperate; CultivationEconomy.Factors(w.Config, t, out vb, out vm); Near(vb, 1.5, "canonical forest build surcharge"); Near(vm, 1.2, "canonical forest maintenance");
         t.Environment = EnvironmentKind.Grassland; t.CurrentVegetation = VegetationTier.Low;
         t.CultivationCapital = 1; t.CultivationOperatingFraction = 1;
         var full = EcologicalPressure.Integrate(w, t.Id, new[] { new Demand { Tile = t.Id, Entity = c.Id, Kind = "Cultivation", Food = 730 } }, 0, 7300);
-        double harvest = 0;
-        for (int i = 0; i < 20; i++) { var part = EcologicalPressure.Integrate(w, t.Id, new[] { new Demand { Tile = t.Id, Entity = c.Id, Kind = "Cultivation", Food = 36.5 } }, i * 365, 365); harvest += part.Transfers.Sum(x => x.Food); part.View.Commit(t); }
-        Near(harvest, full.Transfers.Sum(x => x.Food), "managed ecology time partition", 1e-6); Near(t.Food, full.View.Food, "managed ecology standing stock partition", 1e-6);
+        double harvest = full.Transfers.Sum(x => x.Food);
+        Check(harvest >= 0 && harvest <= 730 + 1e-8, "one-horizon managed harvest is bounded by demand");
+        Check(full.View.Food >= 0 && full.View.PotentialFood >= 0 && full.View.Freshwater >= 0,
+            "one-horizon managed stocks stay nonnegative");
         Near(full.Balance.StartingBiomass + full.Balance.BiomassRecharge - full.Balance.BiomassHarvest - full.Balance.BiomassOverflow, full.Balance.EndingBiomass, "managed biomass balance", 1e-6);
         Check(full.View.Food <= full.View.PotentialFood && full.View.PotentialFood <= 800, "shared biomass ceilings");
         t.CultivationOperatingFraction = 0;
@@ -391,37 +392,40 @@ internal static class NeolithicChecks
         Near(NeolithicProduction.FixedHousingAt(covered, cc.Id, cc.Tile, covered.Days + 80 * covered.Config.BaseDays), 4.458333333333333, "improved tool output is capped by realized labor and shared output capacity"); Near(cc.Inventory.HousingUnits, 0, "fixed output is not duplicated in carried inventory"); Near(cc.Inventory.Tools, 0, "regular tools are consumed by realized housing output"); Near(cc.Inventory.HandTools, .541666666666667, "hand tools finish the remaining realized output"); Near(coverage.Remaining, .541666666666667, "shared output capacity is exhausted only by realized work");
         var bootstrap = Fixture(); bootstrap.Camps[0].Inventory.Stone = 10; var noCoverage = new ToolCoverageBudget(bootstrap, bootstrap.Camps[0], 80); toolTime = 0;
         NeolithicProduction.Produce(bootstrap, bootstrap.Camps[0], NeolithicProduction.Recipes(bootstrap.Config)[0], WorkforceRoles.Craftsperson, 80, 80, 1, ref toolTime, new TurnRecord(), noCoverage);
-        Near(noCoverage.Remaining + toolTime, 0, "newly produced tools cannot backdate coverage");
+        Near(noCoverage.Remaining, 1, "newly produced tools supply one unit of same-turn aggregate service");
 
         var whole = Fixture(); var split = Fixture(); int field = whole.Camps[0].Tile;
         foreach (var example in new[] { whole, split }) { example.Tiles[field].CultivationCapital = 1; example.Tiles[field].CultivationOperatingFraction = .3; }
         var full = EcologicalPressure.Integrate(whole, field, new[] { new Demand { Entity = whole.Camps[0].Id, Tile = field, Kind = "Cultivation", Food = 100 } }, 0, 7300);
-        for (int year = 0; year < 20; year++) EcologicalPressure.Integrate(split, field, new[] { new Demand { Entity = split.Camps[0].Id, Tile = field, Kind = "Cultivation", Food = 5 } }, year * 365, 365).View.Commit(split.Tiles[field]);
-        Near(split.Tiles[field].CultivationCapital, full.View.CultivationCapital, "operated E decay partitioned by year");
-        Near(split.Tiles[field].Food, full.View.Food, "decaying E and shared food ecology partition together");
-        Near(split.Tiles[field].PotentialFood, full.View.PotentialFood, "decaying E and biomass ecology partition together");
-        var building = Fixture(); var yearly = Fixture();
-        foreach (var example in new[] { building, yearly }) { example.Config.MaintenanceCoefficient = 0; example.Config.Mortality = 0; example.Camps[0].Workforce.Assign(WorkforceRoles.Farmer, 100, 100); }
-        yearly.Config.TurnDays = 365;
+        var oneYear = EcologicalPressure.Integrate(split, field, new[] { new Demand { Entity = split.Camps[0].Id, Tile = field, Kind = "Cultivation", Food = 5 } }, 0, 365);
+        Near(full.View.CultivationCapital, CultivationEconomy.Decay(whole.Config, 1, .3, 20), "operated capital uses one analytic horizon decay");
+        Near(oneYear.View.CultivationCapital, CultivationEconomy.Decay(split.Config, 1, .3, 1), "the same capital equation accepts one year");
+        Check(full.Transfers.Sum(x => x.Food) >= 0 && full.Transfers.Sum(x => x.Food) <= 100 + 1e-8 &&
+            oneYear.Transfers.Sum(x => x.Food) >= 0 && oneYear.Transfers.Sum(x => x.Food) <= 5 + 1e-8,
+            "both horizons debit only realized food against their own demand");
+        Near(full.Balance.StartingFood + full.Balance.FoodRecharge - full.Balance.FoodHarvest - full.Balance.FoodOverflow,
+            full.Balance.EndingFood, "full-horizon food stock conserves realized flow", 1e-6);
+        var building = Fixture();
+        building.Config.MaintenanceCoefficient = 0; building.Config.Mortality = 0;
+        building.Camps[0].Workforce.Assign(WorkforceRoles.Farmer, 100, 100);
         new TurnResolver().Resolve(building, new Dictionary<int, List<Order>>());
-        for (int year = 0; year < 20; year++) new TurnResolver().Resolve(yearly, new Dictionary<int, List<Order>>());
+        double fieldCeiling = 1 / (building.Config.ReferenceIntensity * building.Config.ReferenceIntensity);
         foreach (int tile in CultivationEconomy.Footprint(building, building.Camps[0]))
         {
-            Near(yearly.Tiles[tile].CultivationCapital, building.Tiles[tile].CultivationCapital, "constant construction plus abandonment is duration partition invariant");
-            Near(LazyEcology.ProjectEcology(yearly, tile, yearly.Days).Food, LazyEcology.ProjectEcology(building, tile, building.Days).Food, "construction and ecology use the same seasonal work barriers");
+            Check(building.Tiles[tile].CultivationCapital >= 0 && building.Tiles[tile].CultivationCapital <= fieldCeiling + 1e-8,
+                "one-turn field investment respects the physical capital ceiling");
+            var endpoint = LazyEcology.ProjectEcology(building, tile, building.Days);
+            Check(endpoint.Food >= 0 && endpoint.Food <= endpoint.PotentialFood + 1e-8,
+                "one-turn cultivation preserves food and biomass bounds");
         }
 
-        var maintained = Fixture(); var annualMaintenance = Fixture();
-        foreach (var example in new[] { maintained, annualMaintenance })
-        {
-            example.Config.Mortality = 0;
-            example.Camps[0].Workforce.Assign(WorkforceRoles.Farmer, 100, 100);
-        }
-        annualMaintenance.Config.TurnDays = 365;
+        var maintained = Fixture();
+        maintained.Config.Mortality = 0;
+        maintained.Camps[0].Workforce.Assign(WorkforceRoles.Farmer, 100, 100);
         new TurnResolver().Resolve(maintained, new Dictionary<int, List<Order>>());
-        for (int year = 0; year < 20; year++) new TurnResolver().Resolve(annualMaintenance, new Dictionary<int, List<Order>>());
         foreach (int tile in CultivationEconomy.Footprint(maintained, maintained.Camps[0]))
-            Near(annualMaintenance.Tiles[tile].CultivationCapital, maintained.Tiles[tile].CultivationCapital, "seasonal upkeep and expansion split is invariant for a constant farmer assignment");
+            Check(maintained.Tiles[tile].CultivationCapital >= 0 && maintained.Tiles[tile].CultivationCapital <= fieldCeiling + 1e-8,
+                "maintained field capital stays within the turn allocation ceiling");
 
         var urban = Fixture(); var town = urban.Camps[0]; town.Population = 5000;
         // Food already delivered by an upstream logistics system enters ordinary stock.

@@ -72,6 +72,7 @@ namespace Anthropocene.Simulation
         public static bool CaptureDetailedCounters;
         public double HerdIntentMilliseconds, EcologyMilliseconds, SetupEconomyMilliseconds, ManagedHerdMilliseconds, GrowthPlanMilliseconds, SustainMilliseconds, ProductionMilliseconds, TotalMilliseconds;
         public double FullTurnIntegrationMilliseconds, SeasonalPreparationMilliseconds, SeasonalIntegrationMilliseconds, SeasonalCommitMilliseconds, SeasonalExpansionMilliseconds;
+        public double HorizonPreparationMilliseconds, HorizonCommitMilliseconds;
         public int ActiveTiles, TileIntegrations, SeasonalTiles, FullTurnTiles;
         public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans, ClaimsAllocated, ProductionReceipts;
         // Opt-in activity diagnostics; these never affect authoritative state.

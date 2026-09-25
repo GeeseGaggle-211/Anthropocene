@@ -10,6 +10,7 @@ namespace Anthropocene.Simulation
         internal readonly WorldState World;
         internal readonly int Turn;
         internal readonly double StartDays;
+        internal readonly TurnHorizon Horizon;
         internal readonly List<Order> Orders = new List<Order>();
         internal readonly List<string> OrderReceipts = new List<string>();
         internal readonly List<string> Rejections = new List<string>();
@@ -17,7 +18,11 @@ namespace Anthropocene.Simulation
         internal readonly HashSet<int> AutomatedCamps = new HashSet<int>();
         internal readonly Dictionary<int, TurnNeeds> Needs = new Dictionary<int, TurnNeeds>();
 
-        internal PreparedTurn(WorldState world) { World = world; Turn = world.Turn; StartDays = world.Days; }
+        internal PreparedTurn(WorldState world)
+        {
+            World = world; Turn = world.Turn; StartDays = world.Days;
+            Horizon = TurnHorizon.Next(world);
+        }
     }
 
     public sealed class TurnNeeds
@@ -95,14 +100,14 @@ namespace Anthropocene.Simulation
             {
                 var economy = prepared.Orders.FirstOrDefault(o => o.Kind == OrderKind.Economy && o.Entity == camp.Id)?.Economy ?? EconomicIntent.From(camp);
                 var snapshot = EconomicPlanner.Preview(camp, economy, residents);
-                double intervals = world.Config.GenerationIntervals, years = world.Config.TurnDays / world.Config.DaysPerYear;
+                double intervals = prepared.Horizon.ReferenceIntervals, years = prepared.Horizon.Years;
                 var recipes = NeolithicProduction.Recipes(world.Config);
                 var sources = MaterialEconomy.KnownSources(world, snapshot, world.Days);
                 foreach (var recipe in recipes)
                     needs.Goods[recipe.Good] = NeolithicProduction.Priority(snapshot, recipe.Good) > 0
                         ? NeolithicProduction.Demand(world, snapshot, recipe.Good, years, residents, false, false, sources) : 0;
-                double equipment = new ToolCoverageBudget(world, snapshot, intervals).Remaining;
-                needs.Production = MaterialEconomy.Forecast(world, snapshot, recipes, intervals, years, equipment, true, residents, false, false, -1, -1, sources);
+                double equipment = new ToolCoverageBudget(world, snapshot, prepared.Horizon).Remaining;
+                needs.Production = MaterialEconomy.Forecast(world, snapshot, recipes, prepared.Horizon, equipment, true, residents, false, false, -1, -1, sources);
                 needs.Housing = MaterialEconomy.PlanHousingMaterials(world, snapshot, recipes, needs.Production, years, world.Days, sources);
                 needs.PlantFeedstock = needs.Production[CraftGood.Cloth] * world.Config.Neolithic.PlantFoodPerFabricUnit;
                 needs.AnimalFeedstock = needs.Production[CraftGood.AnimalFabric];

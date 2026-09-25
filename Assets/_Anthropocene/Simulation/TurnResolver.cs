@@ -57,7 +57,7 @@ namespace Anthropocene.Simulation
 
         public TurnRecord Resolve(WorldState w, PreparedTurn prepared)
         {
-            if (prepared == null || !ReferenceEquals(w, prepared.World) || w.Turn != prepared.Turn || Math.Abs(w.Days - prepared.StartDays) > 1e-8)
+            if (prepared == null || !ReferenceEquals(w, prepared.World) || w.Turn != prepared.Turn || Math.Abs(w.Days - prepared.StartDays) > 1e-8 || Math.Abs(w.Config.TurnDays - prepared.Horizon.Days) > 1e-8)
                 throw new InvalidOperationException("Prepared turn does not match the current world boundary.");
             var resolutionTimer = System.Diagnostics.Stopwatch.StartNew(); LastMetrics = new ResolutionMetrics();
             Ownership.Bind(w);
@@ -65,8 +65,9 @@ namespace Anthropocene.Simulation
             w.Config.Validate();
             var planning = new PlanningIndex(w);
             int peopleBefore = w.Camps.Sum(w.LinkedPopulation);
-            var record = new TurnRecord { Turn = w.Turn, Seed = w.Seed, StartDays = w.Days, Duration = w.Config.TurnDays };
-            double time = record.Duration / w.Config.BaseDays;
+            var horizon = prepared.Horizon;
+            var record = new TurnRecord { Turn = w.Turn, Seed = w.Seed, StartDays = horizon.StartDays, Duration = horizon.Days };
+            double time = horizon.ReferenceIntervals;
             record.Decisions.AddRange(prepared.Traces);
             // Groups formed during this resolution cannot act until the next planning phase.
             var establishedHunters = new HashSet<int>(w.Hunters.Where(h => h.Population > 0).Select(h => h.Id));
