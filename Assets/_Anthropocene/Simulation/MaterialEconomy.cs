@@ -79,11 +79,11 @@ namespace Anthropocene.Simulation
             {
                 if (initial <= 0 || world.MaterialSources == null) return;
                 string id = "surface:" + tile + ":" + (int)MaterialId.Wood;
-                state = world.MaterialSources.FirstOrDefault(s => s.Id == id && s.Material == MaterialId.Wood);
+                state = MaterialEconomy.SourceState(world, id);
                 if (state == null)
                 {
                     state = new MaterialSourceState { Id = id, Material = MaterialId.Wood, Initial = initial };
-                    world.MaterialSources.Add(state);
+                    world.MaterialSources.Add(state); MaterialEconomy.RegisterSourceState(world, state);
                 }
             }
             state.Remaining = remaining;
@@ -128,6 +128,8 @@ namespace Anthropocene.Simulation
     }
     public static class MaterialEconomy
     {
+        internal static MaterialSourceState SourceState(WorldState w, string id) => MaterialAccessIndex.For(w).State(id);
+        internal static void RegisterSourceState(WorldState w, MaterialSourceState state) => w.MaterialIndex?.AddState(state);
         public static MaterialSourceObservation[] Observe(WorldState w, Camp c, double days) => KnownSources(w, c, days).Select(s => new MaterialSourceObservation { Id = s.Id, Tile = s.Tile, Distance = s.Distance, Material = s.Material, Available = s.Available }).ToArray();
         public static readonly MaterialId[] Materials = { MaterialId.Stone, MaterialId.Clay, MaterialId.Wood };
         // Construction is the flexible consumer.  Use all visible, reachable
@@ -135,9 +137,9 @@ namespace Anthropocene.Simulation
         // labor-feasible direct recipe plan. The ratio sees current residual
         // material after that committed work, while the mutable reservation
         // below protects only this turn's remaining direct work.
-        public static HousingMaterialPlan PlanHousingMaterials(WorldState w, Camp c, CraftRecipe[] recipes, IDictionary<CraftGood, double> planned, double years, double days)
+        public static HousingMaterialPlan PlanHousingMaterials(WorldState w, Camp c, CraftRecipe[] recipes, IDictionary<CraftGood, double> planned, double years, double days, KnownMaterialSource[] knownSources = null)
         {
-            var sources = KnownSources(w, c, days);
+            var sources = knownSources ?? KnownSources(w, c, days);
             var room = Materials.ToDictionary(material => material, material => Inventory(c, material) + sources.Where(s => s.Material == material).Sum(s => s.Available));
             double directWood = 0, directClay = 0;
             // Forecast is already role-, tool-, plant- and demand-capped.  Give
@@ -178,7 +180,7 @@ namespace Anthropocene.Simulation
         private static string SurfaceId(int tile, MaterialId material) => "surface:" + tile + ":" + (int)material;
         internal static WoodSourceProjection ProjectWoodSource(WorldState w, int tile)
         {
-            var state = w.MaterialSources.FirstOrDefault(s => s.Id == SurfaceId(tile, MaterialId.Wood) && s.Material == MaterialId.Wood);
+            var state = SourceState(w, SurfaceId(tile, MaterialId.Wood));
             if (state != null) return new WoodSourceProjection(w, tile, state);
             // Cultivation can displace a surface stock before its first harvest.
             // Keep that stock virtual during pure forecasts, then persist the
@@ -285,7 +287,7 @@ namespace Anthropocene.Simulation
         }
         internal static double ClampWoodSource(WorldState w, int tile, EcologyView ecology)
         {
-            var state = w.MaterialSources.FirstOrDefault(s => s.Id == SurfaceId(tile, MaterialId.Wood) && s.Material == MaterialId.Wood);
+            var state = SourceState(w, SurfaceId(tile, MaterialId.Wood));
             if (state == null && CultivationEconomy.Intensity(w.Config, ecology.CultivationCapital) > 0)
                 state = EnsureWoodSource(w, tile, ecology);
             if (state == null) return 0;
@@ -299,7 +301,7 @@ namespace Anthropocene.Simulation
         // actual stock loss instead of allowing it to return when q later decays.
         internal static double ClampWoodSource(WorldState w, int tile, EcologyView before, EcologyView after)
         {
-            var state = w.MaterialSources.FirstOrDefault(s => s.Id == SurfaceId(tile, MaterialId.Wood) && s.Material == MaterialId.Wood)
+            var state = SourceState(w, SurfaceId(tile, MaterialId.Wood))
                 ?? EnsureWoodSource(w, tile, before);
             if (state == null) return 0;
             double stockBeforeClamp = state.Remaining;
@@ -311,18 +313,18 @@ namespace Anthropocene.Simulation
         {
             if (w.Resources == null || w.MaterialSources == null) return null;
             string id = SurfaceId(tile, MaterialId.Wood);
-            var existing = w.MaterialSources.FirstOrDefault(s => s.Id == id && s.Material == MaterialId.Wood);
+            var existing = SourceState(w, id);
             if (existing != null) return existing;
             double initial = w.Resources.SurfaceAccessible(tile, MaterialId.Wood);
             if (initial <= 0) return null;
             var state = new MaterialSourceState { Id = id, Material = MaterialId.Wood, Initial = initial,
                 Remaining = WoodCapacity(initial, w.Tiles[tile], ecology, w.Config), LastDays = ecology.Days };
-            w.MaterialSources.Add(state);
+            w.MaterialSources.Add(state); RegisterSourceState(w, state);
             return state;
         }
         internal static void CommitWoodProjection(WorldState w, int tile, double remaining, double days)
         {
-            var state = w.MaterialSources.FirstOrDefault(s => s.Id == SurfaceId(tile, MaterialId.Wood) && s.Material == MaterialId.Wood);
+            var state = SourceState(w, SurfaceId(tile, MaterialId.Wood));
             if (state == null && CultivationEconomy.Intensity(w.Config, w.Tiles[tile].CultivationCapital) > 0)
                 state = EnsureWoodSource(w, tile, new EcologyView(w.Tiles[tile]));
             if (state == null) return;
@@ -333,27 +335,30 @@ namespace Anthropocene.Simulation
         public static KnownMaterialSource[] KnownSources(WorldState w, Camp c, double days)
         {
             if (w.Resources == null) return Array.Empty<KnownMaterialSource>();
-            var r = w.Resources; var result = new List<KnownMaterialSource>();
-            var visible = Knowledge.Visible(w, c.Player);
-            var sites = w.Map.Radius(c.Tile, 1).Where(id => w.Tiles[id].TraversableLand && visible.Contains(id)).OrderBy(id => id).ToArray();
+            System.Threading.Interlocked.Increment(ref TurnDiagnostics.For(w).LocalSourceQueries);
+            var r = w.Resources; var index = MaterialAccessIndex.For(w); var result = new List<KnownMaterialSource>();
+            // VisionRadius is fixed at two, so the owner's radius-one neighborhood
+            // is visible without scanning every camp and hunter for each query.
+            var sites = w.Map.Radius(c.Tile, 1).Where(id => w.Tiles[id].TraversableLand).OrderBy(id => id).ToArray();
             foreach (int tile in sites)
                 foreach (var material in Materials)
                 {
                     if (!string.IsNullOrEmpty(r.DiscoveryTechnologies[(int)material]) && !c.People.HasTech(r.DiscoveryTechnologies[(int)material])) continue;
                     double initial = r.SurfaceAccessible(tile, material);
                     if (initial > 0) Add("surface:" + tile + ":" + (int)material, tile, material, initial, 1, material == MaterialId.Wood ? r.WoodRecoveryPerYear : 0);
-                    foreach (var body in r.Bodies.Where(b => b.Sites.Any(s => s.Tile == tile && s.Exposure > 0 && s.Burial != BurialDepth.Deep)).OrderBy(b => b.Id))
+                    foreach (var entry in index.Sites(tile))
                     {
-                        var site = body.Sites.First(s => s.Tile == tile);
+                        System.Threading.Interlocked.Increment(ref TurnDiagnostics.For(w).DepositEdges);
+                        var body = entry.Body; var site = entry.Site;
                         double local = r.AccessibleAt(body, site, material);
-                        double total = body.Sites.Sum(s => r.AccessibleAt(body, s, material));
+                        double total = index.Total(body, material);
                         if (local > 0 && total > 0) Add("body:" + body.Id + ":" + (int)material, tile, material, total, local / total, 0);
                     }
                 }
             return result.ToArray();
             void Add(string id, int tile, MaterialId material, double initial, double share, double recovery)
             {
-                var state = w.MaterialSources.FirstOrDefault(s => s.Id == id);
+                var state = index.State(id);
                 double remaining;
                 if (material == MaterialId.Wood)
                 {
@@ -374,29 +379,38 @@ namespace Anthropocene.Simulation
             }
         }
         public static double Extract(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record)
+            => ExtractKnown(w, c, requested, role, workerIntervals, useful, days, record, false);
+
+        private static double ExtractKnown(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record, bool trustedLocalCatalog)
         {
             if (!CultivationEconomy.Enabled(c) || workerIntervals <= 0 || useful <= 0) return 0;
-            var source = KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
+            var source = trustedLocalCatalog ? requested : KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
             if (source == null) return 0;
             if (source.Material == MaterialId.Wood)
             {
                 // Establish the source at the same ecology boundary before its
                 // first persisted debit; queries above remain pure.
                 LazyEcology.MaterializeEcology(w, source.Tile, days);
-                source = KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
-                if (source == null) return 0;
+                if (trustedLocalCatalog)
+                {
+                    var wood = ProjectWoodSource(w, source.Tile);
+                    source.Available = wood == null ? 0 : wood.Remaining * source.Share;
+                }
+                else source = KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
+                if (source == null || source.Available <= 0) return 0;
             }
             bool specialist = role == Specialist(source.Material) && c.People.HasTech(EconomicIntents.RequiredTechnology(role));
             if (!specialist && role != WorkforceRoles.Gatherer) return 0;
             double rate = w.Config.Neolithic.SpecialistMaterialExtractionRate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
             double amount = Math.Min(source.Available, Math.Min(useful, workerIntervals * rate));
             if (amount <= 1e-12) return 0;
-            var state = w.MaterialSources.FirstOrDefault(s => s.Id == source.Id);
-            if (state == null) { state = new MaterialSourceState { Id = source.Id, Material = source.Material, Initial = source.Initial, Remaining = source.Initial, LastDays = days }; w.MaterialSources.Add(state); }
+            var state = SourceState(w, source.Id);
+            if (state == null) { state = new MaterialSourceState { Id = source.Id, Material = source.Material, Initial = source.Initial, Remaining = source.Initial, LastDays = days }; w.MaterialSources.Add(state); RegisterSourceState(w, state); }
             double before = source.Available / source.Share;
             state.Remaining = before - amount; state.LastDays = days;
             if (source.Material == MaterialId.Stone) c.Inventory.Stone += amount; else if (source.Material == MaterialId.Clay) c.Inventory.Clay += amount; else c.Inventory.Wood += amount;
-            if (!w.MaterialKnowledge.Any(k => k.Society == c.SocietyId && k.Source == source.Id && k.Tile == source.Tile)) w.MaterialKnowledge.Add(new MaterialKnowledge { Society = c.SocietyId, Source = source.Id, Tile = source.Tile });
+            if (MaterialAccessIndex.For(w).Remember(c.SocietyId, source.Id, source.Tile))
+                w.MaterialKnowledge.Add(new MaterialKnowledge { Society = c.SocietyId, Source = source.Id, Tile = source.Tile });
             record.MaterialTransfers.Add(new MaterialReceipt { Camp = c.Id, Society = c.SocietyId, Tile = source.Tile, Source = source.Id, Material = source.Material, Role = role, Amount = amount, Before = before, After = state.Remaining, WorkerIntervals = amount / rate, Days = days });
             if (source.Material == MaterialId.Wood)
             {
@@ -409,13 +423,13 @@ namespace Anthropocene.Simulation
         public static HousingMaterialPlan Gather(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double generalistIntervals, ref double equipment, TurnRecord record, bool postAgriculturalResolution = false)
             => Gather(w, c, recipes, intervals, years, generalistIntervals, ref equipment, record, postAgriculturalResolution, postAgriculturalResolution);
 
-        public static HousingMaterialPlan Gather(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double generalistIntervals, ref double equipment, TurnRecord record, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed)
+        public static HousingMaterialPlan Gather(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double generalistIntervals, ref double equipment, TurnRecord record, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, TurnNeeds needs = null)
         {
             double days = record.StartDays + record.Duration;
             double housingForecast = 0;
             var forecast = new Dictionary<MaterialId, double> { [MaterialId.Stone] = 0, [MaterialId.Clay] = 0, [MaterialId.Wood] = 0 };
-            var planned = Forecast(w, c, recipes, intervals, years, equipment, false, -1, fieldWorkAlreadyResolved, potsAlreadyDecayed);
-            var housing = PlanHousingMaterials(w, c, recipes, planned, years, days);
+            var planned = needs?.Production ?? Forecast(w, c, recipes, intervals, years, equipment, false, -1, fieldWorkAlreadyResolved, potsAlreadyDecayed);
+            var housing = needs?.Housing ?? PlanHousingMaterials(w, c, recipes, planned, years, days);
             foreach (var recipe in recipes)
             {
                 double amount = planned[recipe.Good];
@@ -433,17 +447,40 @@ namespace Anthropocene.Simulation
                 double total = forecast[material] * horizon + housingForecast * horizon * share;
                 return Math.Max(0, total - Inventory(c, material));
             }
+            var localSources = KnownSources(w, c, days);
             foreach (string role in WorkforceRoles.Extractors.Concat(new[] { WorkforceRoles.Gatherer }))
             {
                 double labor = role == WorkforceRoles.Gatherer ? generalistIntervals : CultivationEconomy.Workers(c, role) * intervals;
                 while (labor > 1e-10)
                 {
-                    var candidates = KnownSources(w, c, days).Where(s => s.Available > 1e-10 && (role == WorkforceRoles.Gatherer || role == Specialist(s.Material)));
+                    var candidates = localSources.Where(s => s.Available > 1e-10 && (role == WorkforceRoles.Gatherer || role == Specialist(s.Material)));
                     var selected = candidates.Select(s => new { Source = s, Demand = Shortfall(s.Material), Priority = s.Material == MaterialId.Stone ? c.StonePriority : s.Material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority }).Where(x => x.Demand * x.Priority > 1e-10).OrderByDescending(x => x.Demand * x.Priority).ThenBy(x => x.Source.Distance).ThenBy(x => x.Source.Id, StringComparer.Ordinal).FirstOrDefault();
                     if (selected == null) break;
-                    // One BaseDays worker interval, reassessing after each source receipt.
-                    double spent = Extract(w, c, selected.Source, role, Math.Min(labor, 1), selected.Demand, days, record);
+                    // Scores fall linearly with inventory received. Batch the
+                    // intervals for which this source remains the winner; the
+                    // next event is a rival material overtaking it, depletion,
+                    // or its own demand being filled. Wood keeps one-interval
+                    // receipts because each extraction applies ecological pressure.
+                    double rate = w.Config.Neolithic.SpecialistMaterialExtractionRate *
+                        (role == WorkforceRoles.Gatherer ? w.Config.Neolithic.GeneralistTaskEfficiency : 1);
+                    double batch = Math.Min(labor, 1);
+                    if (selected.Source.Material != MaterialId.Wood && rate > 0)
+                    {
+                        double rival = candidates.Where(s => s.Material != selected.Source.Material)
+                            .Select(s => Shortfall(s.Material) * (s.Material == MaterialId.Stone ? c.StonePriority : s.Material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority))
+                            .DefaultIfEmpty(0).Max();
+                        double margin = selected.Demand * selected.Priority - rival;
+                        double stableIntervals = rival <= 1e-10 ? double.PositiveInfinity :
+                            Math.Max(1, Math.Ceiling(Math.Max(0, margin) / Math.Max(1e-12, selected.Priority * rate)));
+                        batch = Math.Min(labor, Math.Min(stableIntervals,
+                            Math.Min(selected.Source.Available, selected.Demand) / rate));
+                    }
+                    double spent = ExtractKnown(w, c, selected.Source, role, batch, selected.Demand, days, record, true);
                     if (spent <= 1e-12) break;
+                    var state = SourceState(w, selected.Source.Id);
+                    if (state != null)
+                        foreach (var source in localSources.Where(s => s.Id == selected.Source.Id))
+                            source.Available = Math.Max(0, state.Remaining * source.Share);
                     labor -= spent;
                 }
             }
@@ -458,19 +495,21 @@ namespace Anthropocene.Simulation
         public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand = false, double residentPopulation = -1, bool postAgriculturalResolution = false)
             => Forecast(w, c, recipes, intervals, years, equipment, includePlantDemand, residentPopulation, postAgriculturalResolution, postAgriculturalResolution);
 
-        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1)
+        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1, KnownMaterialSource[] knownSources = null)
         {
+            System.Threading.Interlocked.Increment(ref TurnDiagnostics.For(w).ForecastCalls);
             var planned = recipes.ToDictionary(r => r.Good, r => 0.0);
             var tools = new ToolCoverageBudget(w, c, intervals, equipment);
             double plant = plantFoodBudget >= 0 ? plantFoodBudget : includePlantDemand ? double.PositiveInfinity : c.PlantFood;
             double animalFood = animalFoodBudget >= 0 ? animalFoodBudget : includePlantDemand ? double.PositiveInfinity : c.AnimalFood;
             double animalFabric = Math.Max(0, c.Inventory.AnimalFabric);
+            var orderedRecipes = recipes.OrderByDescending(r => NeolithicProduction.Priority(c, r.Good)).ThenBy(r => r.Good).ToArray();
             foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
             {
                 double labor = CultivationEconomy.Workers(c, role) * intervals;
                 bool lightHousingUseful = NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 &&
                     (CultivationEconomy.Workers(c, WorkforceRoles.Builder) > 0 || CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0);
-                foreach (var recipe in recipes.OrderByDescending(r => NeolithicProduction.Priority(c, r.Good)).ThenBy(r => r.Good))
+                foreach (var recipe in orderedRecipes)
                 {
                     if (NeolithicProduction.Priority(c, recipe.Good) <= 0) continue;
                     if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c) || recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) continue;
@@ -478,7 +517,7 @@ namespace Anthropocene.Simulation
                     if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) continue;
                     double rate = recipe.Rate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
                     if (rate <= 0) continue;
-                    double useful = NeolithicProduction.Demand(w, c, recipe.Good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed);
+                    double useful = NeolithicProduction.Demand(w, c, recipe.Good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources);
                     if (recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric)
                     {
                         double residents = residentPopulation < 0 ? c.Population : residentPopulation;

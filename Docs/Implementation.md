@@ -10,6 +10,10 @@ supersedes historical cultivation, manufacturing and QoL descriptions below.
 
 `Anthropocene.Simulation` is Unity-independent C# 9, compiled unchanged by Unity and the .NET 8 headless runner. `WorldState` owns generated geography, latent ecology, entities, societies, configuration and deterministic history. `Society` owns player identity, mandates, policy preferences, tradition/practice, technology and `EraProgression`. `Camp` is a local population center with people, food, demographic progress and `PopulationLedger`. Hunters identify their source settlement and society; managed herds and improvements have separate society/settlement ownership. One society can share tradition across multiple camps in data/tests; playable daughter-settlement creation is deferred.
 
+The active turn path is `AiPlanning.Decide` -> `TurnPlanner.Prepare` -> `TurnResolver.Resolve(PreparedTurn)`. Preparation validates and copies orders, gives explicit camp orders precedence over automation, and fixes needs for the existing cohort. Resolution applies those intents, moves entities, resolves ecology and production, pays needs and storage, then commits births. Ordinary observations do not run the economic planner. The compatibility `Resolve(world, orders, traces)` overload prepares before entering the mutating resolver. Prepared turns and the local deposit/source index are transient; load reconstructs them without a save-format change. Independent active tiles enter one full-turn integration call with internal seasonal stock equations; only agricultural dependency tiles cross the 80 outer write barriers. Each barrier commits operating field state, constructs claims, integrates local ecology, records receipts, then applies expansion.
+
+Food and goods are paid for the prior cohort before demographic losses or births are committed. Per-season food transfers have no timestamp in `TurnRecord`, so canonical history combines repeated tile/entity/kind transfers after all turn effects and demographic reports are calculated. This preserves realized totals while preventing a benchmark-sized agricultural opening from saving eighty indistinguishable receipts per claim. Large local 320-tribe saves may exceed the former 128 MiB binary XML metadata guard; the loader keeps a finite 512 MiB bound without changing the envelope or resource blocks.
+
 `Ownership.Bind` is an explicit construction/load/resolution boundary. It installs shared society references; observation, projection and saving must not create owners or IDs. Compatibility accessors on Camp delegate to Society and are not separately serialized histories. `PracticeEffects` derives task efficiency from society-owned practice; future specialist proficiency can replace that policy without moving ownership again.
 
 `OpeningTransitions` records owned transition seeds and optional immediate opening rewards. Only the fishery flag retains the compatibility food multiplier; Cultivated grants no flat food bonus. Five starting domestic animals retain their existing opening behavior. Physical cultivation now uses E/q and the shared ecology/labor model in `CultivationEconomy`. Era completion belongs to society state; the opening ends when each society has completed it or has no surviving people.
@@ -28,15 +32,14 @@ Nearby opening herds, regional density bonuses, viable-start filtering, coarse c
 
 ## One simultaneous generation
 
-1. Capture the duration; bind owners; build a scoped `PlanningIndex`. Validate submitted orders against filtered observations and reject conflicting duplicates in stable order.
-2. Compute herd intentions from the planning snapshot. Dispatch creates stable IDs, but the new groups cannot hunt or accept another command until the next planning phase.
-3. Provision connected departures, resolve camp collisions and strategic movement once, then deposit returning stores. Movement is 1/2/1 for camps/hunters/herds; it is not elapsed physical velocity.
-4. Reproduce herds using their previous food/water shortfalls and annual rates, then resolve hunting against post-movement co-location. This preserves the validated opening chronology. Herd pressure later applies to its final operating tile, with the existing adjacent freshwater source rule.
-5. Build land/passive-water gathering, fishing, disconnected forage and herd claims with the preserved population/labor formulas. Materialize only their source tiles to the start of the interval. Walk ordered seasonal segments locally, integrate renewable stock and condition, allocate realized flows proportionally, and return sparse pressure/balance results.
-6. Commit results by tile/entity; apply stores, provisions and unmet food/water. Compute integrated human food demand and food-limited growth, sustain residents/groups, apportion deaths, finish supply/storage and optional herd fission. Advance the clock once and finish the demographic report.
-7. Reintegrate surviving groups when their source camp remains co-located; apply society progression; validate affected state and conservation; append canonical history and advance the displayed turn.
-
-Hunting carcass food is distinct from plant biomass extraction. Pressure is derived from realized plant/fish/herd/water transfers; failed claims do not damage land. Stock/condition integration happens together inside the active-tile phase, rather than in a later full-map pass. The seasonal segments are numerical work inside one player decision, not autonomous sub-turn movement or repeated births.
+[TurnResolutionPasses.md](TurnResolutionPasses.md) is the authoritative pass
+contract. It names each preparation, movement, ecology, seasonal, needs and
+close barrier; specifies which state each may write; and locks goods and QoL
+to the prior population cohort. Preserve that one-way order when changing
+economy or ecology code. Hunting carcass food remains distinct from plant
+biomass extraction; only realized flows cause ecological pressure. Seasonal
+segments are numerical work inside one decision, not repeated movement or
+birth turns.
 
 ## Sparse ecology and parallel execution
 

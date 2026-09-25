@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Anthropocene.Simulation
@@ -35,20 +36,42 @@ namespace Anthropocene.Simulation
         public List<DecisionTrace> Traces = new List<DecisionTrace>();
         public double Milliseconds;
     }
+    // Transient counters are never an input to simulation, observation, or save data.
+    internal sealed class TurnDiagnostics
+    {
+        public readonly int Turn;
+        public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans;
+        public TurnDiagnostics(int turn) { Turn = turn; }
+        public static TurnDiagnostics For(WorldState world)
+        {
+            var current = world.Diagnostics;
+            if (current != null && current.Turn == world.Turn) return current;
+            var created = new TurnDiagnostics(world.Turn);
+            Interlocked.Exchange(ref world.Diagnostics, created);
+            return created;
+        }
+    }
     public static class AiPlanning
     {
         public static PlanningResult Decide(WorldState world, PhaseExecution execution = null, int excludedPlayer = -1)
         {
             var timer = Stopwatch.StartNew(); var result = new PlanningResult();
+            TurnDiagnostics.For(world);
+            if (world.Resources != null) MaterialAccessIndex.For(world);
             var index = new PlanningIndex(world); var camps = world.Camps.Where(c => c.Player != excludedPlayer).GroupBy(c => c.Player).OrderBy(g => g.Key).Select(g => g.OrderBy(c => c.Id).First()).ToArray();
-            var decisions = (execution ?? new PhaseExecution()).Map(camps, c => new HeuristicTribePolicy().Decide(new AgentObservationBuilder().Build(world, c.Player, index), c.Mandate));
+            var decisions = (execution ?? new PhaseExecution()).Map(camps, c => new HeuristicTribePolicy().Decide(new AgentObservationBuilder().Build(world, c.Player, index, true), c.Mandate));
             for (int i = 0; i < camps.Length; i++) { result.Orders[camps[i].Player] = decisions[i].Orders; result.Traces.Add(decisions[i].Trace); }
             result.Milliseconds = timer.Elapsed.TotalMilliseconds; return result;
         }
     }
     public sealed class ResolutionMetrics
     {
-        public double HerdIntentMilliseconds, EcologyMilliseconds, TotalMilliseconds;
-        public int ActiveTiles;
+        // Detailed atomic counters are opt-in so profiling does not add
+        // contention to the hot source lookup path in ordinary play.
+        public static bool CaptureDetailedCounters;
+        public double HerdIntentMilliseconds, EcologyMilliseconds, SetupEconomyMilliseconds, ManagedHerdMilliseconds, GrowthPlanMilliseconds, SustainMilliseconds, ProductionMilliseconds, TotalMilliseconds;
+        public double FullTurnIntegrationMilliseconds, SeasonalPreparationMilliseconds, SeasonalIntegrationMilliseconds, SeasonalCommitMilliseconds, SeasonalExpansionMilliseconds;
+        public int ActiveTiles, TileIntegrations, SeasonalTiles, FullTurnTiles;
+        public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans, ClaimsAllocated, ProductionReceipts;
     }
 }

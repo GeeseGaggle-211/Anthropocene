@@ -76,8 +76,9 @@ namespace Anthropocene.Simulation
                 * Math.Pow(Numbers.Clamp(nutrition, 0, 1), w.Config.AnimalFoodNutritionExponent)
                 * Math.Pow(Numbers.Clamp(management, 0, 1), w.Config.AnimalManagementExponent));
 
-        private void ResolveEcology(WorldState w, List<Order> orders, HashSet<int> establishedHunters, TurnRecord record, Action<int> touch)
+        private void ResolveEcology(WorldState w, List<Order> orders, HashSet<int> establishedHunters, TurnRecord record, Action<int> touch, Dictionary<int, TurnNeeds> needs)
         {
+            var phaseClock = System.Diagnostics.Stopwatch.StartNew();
             double intervals = record.Duration / w.Config.BaseDays;
             double years = record.Duration / w.Config.DaysPerYear;
             double generationScale = record.Duration / w.Config.PracticeDays;
@@ -145,21 +146,11 @@ namespace Anthropocene.Simulation
                 double scale = Math.Min(1, gatherers * w.Config.GatherPerPerson * intervals / Math.Max(1e-12, total));
                 foreach (var request in requests) { request.Food *= scale; campClaims[camp.Id].Add(request); }
             }
-            var feedstockForecasts = w.Camps.OrderBy(c => c.Id).ToDictionary(c => c.Id, c =>
-            {
-                if (!CultivationEconomy.Enabled(c)) return c.Population;
-                var labor = agriculturalLabor[c.Id];
-                double available = w.Map.Radius(c.Tile, w.Config.GatherRadius)
-                    .Where(id => PassiveGathering.Eligible(w, c, id))
-                    .Sum(id => LazyEcology.AccessibleAvailability(w, id, record.StartDays, record.Duration));
-                double laborCapacity = (labor.OperatingFarmers * w.Config.FarmerProductivity + labor.FoodGatherers) * w.Config.GatherPerPerson * intervals;
-                return PlanningResidentPopulation(w, c, intervals, years, c.StepFoodIncome + Math.Min(available, laborCapacity), Math.Max(0, c.Food - c.StepFoodIncome));
-            });
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 var claims = campClaims[camp.Id];
                 double scale = Math.Min(1, BiologicalFoodDemand(w, camp, intervals, years) / Math.Max(1e-12, claims.Where(d => !d.Manufacturing).Sum(d => d.Food)));
-                double inputScale = Math.Min(1, PlantFabricFeedstockShortfall(w, camp, intervals, years, feedstockForecasts[camp.Id]) / Math.Max(1e-12, claims.Where(d => d.Manufacturing).Sum(d => d.Food)));
+                double inputScale = Math.Min(1, needs[camp.Id].PlantFeedstockGap / Math.Max(1e-12, claims.Where(d => d.Manufacturing).Sum(d => d.Food)));
                 foreach (var claim in claims)
                 {
                     claim.Food *= claim.Manufacturing ? inputScale : scale;
@@ -180,31 +171,58 @@ namespace Anthropocene.Simulation
                 if (source != herd.Tile) demands.Add(new Demand { Tile = source, Entity = herd.Id, Kind = "Herd", Freshwater = herd.UnmetFreshwater });
             }
 
-            CommitGenerationResources(w, demands, record, touch, foraged, intervals, agriculturalLabor, feedstockForecasts);
-            ResolveManagedHerds(w, record, intervals, years, generationScale: record.Duration / w.Config.PracticeDays);
+            LastMetrics.SetupEconomyMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
+            phaseClock.Restart();
+            var gatheredFoodForMaterials = CommitGenerationResources(w, demands, record, touch, foraged, intervals, agriculturalLabor, needs);
+            phaseClock.Restart();
+            ResolveManagedHerds(w, record, intervals, years, generationScale: record.Duration / w.Config.PracticeDays, needs: needs);
+            LastMetrics.ManagedHerdMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
+            phaseClock.Restart();
 
-            var plans = w.Camps.OrderBy(c => c.Id).ToDictionary(c => c.Id, c => PlanGrowth(w, c, intervals, years));
+            var plans = w.Camps.OrderBy(c => c.Id).ToDictionary(c => c.Id, c => PlanGrowth(w, c, intervals, years, needs[c.Id]));
+            LastMetrics.GrowthPlanMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
+            phaseClock.Restart();
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) record.Demographics.First(d => d.Camp == camp.Id).FoodRequired += plans[camp.Id].Required;
             foreach (var hunter in w.Hunters.Where(h => !Supply.Connected(w, h))) record.Demographics.First(d => d.Camp == hunter.SourceCamp).FoodRequired += hunter.Population * w.Config.Consumption * intervals;
-            SustainGeneration(w, record, intervals, generationScale, plans, foraged, recovering);
+            var pendingBirths = new Dictionary<int, GrowthPlan>();
+            var pendingCampDeaths = new List<(Camp Camp, Hunter[] Linked, int Losses)>();
+            var pendingHunterDeaths = new List<(Hunter Hunter, int Losses)>();
+            SustainGeneration(w, record, intervals, generationScale, plans, foraged, recovering, pendingBirths, pendingCampDeaths, pendingHunterDeaths);
             Supply.Finish(w, record);
+            LastMetrics.SustainMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
+            phaseClock.Restart();
             // Manufacturing and needs use the same assigned population. Unused gathering
             // worker-time can source materials; realized food gathering earns bridge effort.
             foreach (var camp in w.Camps.OrderBy(c => c.Id).ToArray())
             {
                 var labor = agriculturalLabor[camp.Id];
-                double gathered = record.Transfers.Where(t => t.Entity == camp.Id && (t.Kind == "Gathering" || t.Kind == "Marine gathering" || t.Kind == "Aquatic gathering")).Sum(t => t.Food);
+                double gathered = gatheredFoodForMaterials.TryGetValue(camp.Id, out double amount) ? amount : 0;
                 labor.GatheringWorkerIntervals = Math.Min(labor.Gatherers * intervals, gathered / w.Config.GatherPerPerson);
-                NeolithicProduction.ResolveCampNeolithic(w, camp, intervals, years, record, Math.Max(0, labor.Gatherers * intervals - labor.GatheringWorkerIntervals));
+                NeolithicProduction.ResolveCampNeolithic(w, camp, intervals, years, record, Math.Max(0, labor.Gatherers * intervals - labor.GatheringWorkerIntervals), needs[camp.Id]);
                 if (CultivationEconomy.Enabled(camp))
                 {
                     foreach (int id in labor.Footprint) { LazyEcology.MaterializeEcology(w, id, record.StartDays + record.Duration); w.Tiles[id].Cultivation = (float)CultivationEconomy.Intensity(w.Config, w.Tiles[id].CultivationCapital); }
                     foreach (int id in labor.Footprint) w.Tiles[id].CultivationOperatingFraction = 0;
                 }
             }
+            LastMetrics.ProductionMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
+            LastMetrics.ProductionReceipts = record.Production.Count;
             ApplyStorage(w, record, intervals);
 
             if (w.Config.WildHerdFissionEnabled) SplitHerds(w, record);
+            // Demographic losses are applied after this cohort has completed
+            // production, needs and storage. They cannot reduce the workforce
+            // retroactively, and no newborn is included in the loss base.
+            foreach (var loss in pendingCampDeaths)
+                ApplySharedDeaths(loss.Camp, loss.Linked, loss.Losses, record);
+            foreach (var loss in pendingHunterDeaths)
+            {
+                loss.Hunter.Population -= loss.Losses; record.Deaths += loss.Losses;
+                record.PopulationChanges.Add(new PopulationChange { Camp = loss.Hunter.SourceCamp, Entity = loss.Hunter.Id, Kind = "Starvation", Count = -loss.Losses });
+            }
+            foreach (var camp in w.Camps.OrderBy(c => c.Id))
+                if (pendingBirths.TryGetValue(camp.Id, out var growth))
+                    AddGrowth(w, camp, growth, record, record.Demographics.First(d => d.Camp == camp.Id));
 
             w.Days += record.Duration;
             FinishDemographicReports(w, record, orders);
@@ -236,9 +254,10 @@ namespace Anthropocene.Simulation
             Allocate(eligible, Math.Min(gatherCapacity - gatheredInput, biological - farm), false, false);
         }
 
-        private void CommitGenerationResources(WorldState w, List<Demand> demands, TurnRecord record, Action<int> touch, Dictionary<int, double> foraged, double intervals, Dictionary<int, AgriculturalLabor> agriculturalLabor, Dictionary<int, double> feedstockForecasts)
+        private Dictionary<int, double> CommitGenerationResources(WorldState w, List<Demand> demands, TurnRecord record, Action<int> touch, Dictionary<int, double> foraged, double intervals, Dictionary<int, AgriculturalLabor> agriculturalLabor, Dictionary<int, TurnNeeds> needs)
         {
             var herds = w.Herds.ToDictionary(h => h.Id); var camps = w.Camps.ToDictionary(c => c.Id); var hunters = w.Hunters.ToDictionary(h => h.Id);
+            var gatheredFoodForMaterials = new Dictionary<int, double>();
             var transfers = new List<Transfer>();
             var timer = System.Diagnostics.Stopwatch.StartNew();
             var groups = demands.GroupBy(d => d.Tile).OrderBy(g => g.Key).Select(g => new { Tile = g.Key, Claims = g.ToArray() }).ToArray();
@@ -247,41 +266,89 @@ namespace Anthropocene.Simulation
             var agriculturalCamps = w.Camps.Where(CultivationEconomy.Enabled).OrderBy(c => c.Id).ToArray();
             var farmToolBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => new FarmToolWorkBudget(w, c));
             double years = record.Duration / w.Config.DaysPerYear;
-            var biologicalBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => BiologicalFoodDemand(w, c, intervals, years));
-            var inputBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => PlantFabricFeedstockShortfall(w, c, intervals, years, feedstockForecasts[c.Id]));
+            // The need was fixed before any order moved people or resources.
+            // Realized hunting and other receipts reduce the remaining target.
+            var biologicalBudgets = agriculturalCamps.ToDictionary(c => c.Id,
+                c => Math.Max(0, needs[c.Id].FoodTarget - c.StepFoodIncome));
+            var inputBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => needs[c.Id].PlantFeedstockGap);
             var acceptedFood = w.Camps.ToDictionary(c => c.Id, c => 0d);
             var acceptedPlant = w.Camps.ToDictionary(c => c.Id, c => 0d);
             int FoodCamp(string kind, int entity) => kind == "Fishing" ? (Supply.Connected(w, hunters[entity]) ? hunters[entity].SourceCamp : -1) : kind == "Herd" || kind == "Foraging" ? -1 : entity;
+            var agriculturalIds = new HashSet<int>(agriculturalCamps.Select(c => c.Id));
+            var seasonalTiles = new HashSet<int>(agriculturalCamps.SelectMany(c => agriculturalLabor[c.Id].Footprint));
+            foreach (var camp in agriculturalCamps)
+                seasonalTiles.UnionWith(w.Map.Radius(camp.Tile, w.Config.GatherRadius).Where(id => PassiveGathering.Eligible(w, camp, id)));
+            foreach (var group in groups)
+                if (group.Claims.Any(d => agriculturalIds.Contains(FoodCamp(d.Kind, d.Entity)))) seasonalTiles.Add(group.Tile);
+            var fullTurnGroups = groups.Where(g => !seasonalTiles.Contains(g.Tile)).ToArray();
+            var seasonalDemands = demands.Where(d => seasonalTiles.Contains(d.Tile)).ToArray();
+            LastMetrics.ClaimsAllocated = fullTurnGroups.Sum(g => (long)g.Claims.Length);
+            // Independent tiles still use Integrate's internal seasonal physics, but
+            // have no reason to pass through every agricultural write barrier.
+            var integrationTimer = System.Diagnostics.Stopwatch.StartNew();
+            var fullTurnResults = execution.Map(fullTurnGroups, group => EcologicalPressure.Integrate(w, group.Tile, group.Claims, record.StartDays, record.Duration));
+            LastMetrics.FullTurnIntegrationMilliseconds = integrationTimer.Elapsed.TotalMilliseconds;
+            LastMetrics.FullTurnTiles = fullTurnGroups.Length;
+            LastMetrics.SeasonalTiles = seasonalTiles.Count;
+            LastMetrics.TileIntegrations = fullTurnGroups.Length;
             foreach (int tile in agriculturalCamps.SelectMany(c => agriculturalLabor[c.Id].Footprint).Distinct().OrderBy(id => id)) touch(tile);
             // Canonical seasonal barriers couple construction/abandonment to ecology.
             // Work cannot be deposited at the end of a generation without having aged.
-            var segments = agriculturalCamps.Length == 0 ? new[] { new EcologySegment(w.Season, record.Duration) } : LazyEcology.Segments(record.StartDays, record.Duration, w.Config.BaseDays).ToArray();
+            var segments = agriculturalCamps.Length == 0 ? new[] { new EcologySegment(w.Season, record.Duration) } :
+                LazyEcology.Segments(record.StartDays, record.Duration, w.Config.BaseDays).ToArray();
             double start = record.StartDays;
             foreach (var segment in segments)
             {
+                var seasonalTimer = System.Diagnostics.Stopwatch.StartNew();
                 double fraction = segment.Days / record.Duration;
-                var stepClaims = demands.Select(d => new Demand { Entity = d.Entity, Tile = d.Tile, Kind = d.Kind, Food = d.Food * fraction, PotentialFood = d.PotentialFood * fraction, Freshwater = d.Freshwater * fraction, ImpactMultiplier = d.ImpactMultiplier, Manufacturing = d.Manufacturing }).ToList();
+                var stepClaims = seasonalDemands.Select(d => new Demand { Entity = d.Entity, Tile = d.Tile, Kind = d.Kind, Food = d.Food * fraction, PotentialFood = d.PotentialFood * fraction, Freshwater = d.Freshwater * fraction, ImpactMultiplier = d.ImpactMultiplier, Manufacturing = d.Manufacturing }).ToList();
+                var claimsByAgriculturalCamp = agriculturalCamps.ToDictionary(c => c.Id, c => new List<Demand>());
+                foreach (var claim in stepClaims)
+                {
+                    int owner = FoodCamp(claim.Kind, claim.Entity);
+                    if (claimsByAgriculturalCamp.TryGetValue(owner, out var owned)) owned.Add(claim);
+                }
                 var availability = new Dictionary<int, double>();
                 double Available(int id)
                 {
                     if (!availability.TryGetValue(id, out double amount)) availability[id] = amount = LazyEcology.AccessibleAvailability(w, id, start, segment.Days);
                     return amount;
                 }
+                var footprints = agriculturalCamps.ToDictionary(c => c.Id, c => CultivationEconomy.CommitSeasonBoundary(w, c, start, camps));
                 foreach (var camp in agriculturalCamps)
-                    agriculturalLabor[camp.Id] = CultivationEconomy.Prepare(w, camp, start, farmToolBudgets[camp.Id], segment.Days / w.Config.DaysPerYear);
+                    agriculturalLabor[camp.Id] = CultivationEconomy.CalculateLabor(w, camp, footprints[camp.Id], farmToolBudgets[camp.Id], segment.Days / w.Config.DaysPerYear);
+                foreach (var camp in agriculturalCamps)
+                    CultivationEconomy.CommitOperatingFraction(w, camp, agriculturalLabor[camp.Id]);
                 foreach (var camp in agriculturalCamps)
                 {
                     double acceptedInput = Math.Min(inputBudgets[camp.Id], acceptedPlant[camp.Id]);
                     double input = Math.Max(0, inputBudgets[camp.Id] - acceptedInput);
                     double biological = Math.Max(0, biologicalBudgets[camp.Id] - (acceptedFood[camp.Id] - acceptedInput));
+                    int firstNewClaim = stepClaims.Count;
                     AddAgriculturalClaims(w, camp, agriculturalLabor[camp.Id], segment.Days / w.Config.BaseDays, biological, input, Available, stepClaims);
-                    var claims = stepClaims.Where(d => FoodCamp(d.Kind, d.Entity) == camp.Id).ToArray();
+                    var claims = claimsByAgriculturalCamp[camp.Id];
+                    for (int i = firstNewClaim; i < stepClaims.Count; i++)
+                    {
+                        if (!seasonalTiles.Contains(stepClaims[i].Tile)) throw new InvalidOperationException("Seasonal claim escaped the agricultural dependency set.");
+                        claims.Add(stepClaims[i]);
+                    }
                     double scale = Math.Min(1, biological / Math.Max(1e-12, claims.Where(d => !d.Manufacturing).Sum(d => d.Food)));
                     double inputScale = Math.Min(1, input / Math.Max(1e-12, claims.Where(d => d.Manufacturing).Sum(d => d.Food)));
                     foreach (var claim in claims) claim.Food *= claim.Manufacturing ? inputScale : scale;
                 }
                 var stepGroups = stepClaims.GroupBy(d => d.Tile).OrderBy(g => g.Key).Select(g => new { Tile = g.Key, Claims = g.ToArray() }).ToArray();
-                var results = execution.Map(stepGroups, group => EcologicalPressure.Integrate(w, group.Tile, group.Claims, start, segment.Days));
+                LastMetrics.TileIntegrations += stepGroups.Length;
+                LastMetrics.ClaimsAllocated += stepClaims.Count;
+                LastMetrics.SeasonalPreparationMilliseconds += seasonalTimer.Elapsed.TotalMilliseconds;
+                seasonalTimer.Restart();
+                // Small seasonal frontiers are cheaper to integrate in canonical
+                // order than to dispatch eighty separate parallel jobs.
+                var results = stepGroups.Length < 512
+                    ? stepGroups.Select(group => EcologicalPressure.Integrate(w, group.Tile, group.Claims, start, segment.Days)).ToArray()
+                    : execution.Map(stepGroups, group => EcologicalPressure.Integrate(w, group.Tile, group.Claims, start, segment.Days));
+                LastMetrics.SeasonalIntegrationMilliseconds += seasonalTimer.Elapsed.TotalMilliseconds;
+                seasonalTimer.Restart();
+                var gatheredByCamp = new Dictionary<int, double>();
                 // No worker mutates entities, allocates IDs, or appends history.
                 for (int i = 0; i < stepGroups.Length; i++)
                 {
@@ -293,6 +360,7 @@ namespace Anthropocene.Simulation
                         int camp = FoodCamp(transfer.Kind, transfer.Entity);
                         if (!acceptedFood.ContainsKey(camp)) continue;
                         acceptedFood[camp] += transfer.Food;
+                        if (transfer.Kind == "Gathering") gatheredByCamp[camp] = (gatheredByCamp.TryGetValue(camp, out double prior) ? prior : 0) + transfer.Food;
                         var tile = w.Tiles[transfer.Tile];
                         if (transfer.Kind != "Fishing" && !tile.Aquatic && tile.WaterBody != WaterKind.Saltwater) acceptedPlant[camp] += transfer.Food;
                     }
@@ -303,15 +371,24 @@ namespace Anthropocene.Simulation
                 // never debit the turn-local budget.
                 foreach (var camp in agriculturalCamps)
                     farmToolBudgets[camp.Id].Consume(agriculturalLabor[camp.Id].MaintenanceCoveredWorkerYears, w.Config.Neolithic.FarmToolFarmerYearsPerUnit);
+                LastMetrics.SeasonalCommitMilliseconds += seasonalTimer.Elapsed.TotalMilliseconds;
+                seasonalTimer.Restart();
                 start += segment.Days;
                 foreach (var camp in agriculturalCamps)
                 {
                     var labor = agriculturalLabor[camp.Id];
                     foreach (int id in labor.Footprint) LazyEcology.MaterializeEcology(w, id, start);
-                    double terrestrialGathered = results.Sum(result => result.Transfers.Where(t => t.Entity == camp.Id && t.Kind == "Gathering").Sum(t => t.Food));
+                    double terrestrialGathered = gatheredByCamp.TryGetValue(camp.Id, out double gathered) ? gathered : 0;
                     CultivationEconomy.Expand(w, camp, terrestrialGathered / w.Config.GatherPerPerson * w.Config.BaseDays / w.Config.DaysPerYear, true, record);
                     CultivationEconomy.Expand(w, camp, labor.ExpansionFarmers * segment.Days / w.Config.DaysPerYear, false, record, farmToolBudgets[camp.Id]);
                 }
+                LastMetrics.SeasonalExpansionMilliseconds += seasonalTimer.Elapsed.TotalMilliseconds;
+            }
+            for (int i = 0; i < fullTurnGroups.Length; i++)
+            {
+                var result = fullTurnResults[i]; result.View.Commit(w.Tiles[fullTurnGroups[i].Tile]);
+                if (result.HasWoodSource) MaterialEconomy.CommitWoodProjection(w, fullTurnGroups[i].Tile, result.WoodRemaining, result.WoodDays);
+                record.Pressure.AddRange(result.Pressure); record.EcologyBalances.Add(result.Balance); transfers.AddRange(result.Transfers);
             }
             LastMetrics.ActiveTiles = groups.Length; LastMetrics.EcologyMilliseconds = timer.Elapsed.TotalMilliseconds;
             foreach (var transfer in transfers)
@@ -327,6 +404,8 @@ namespace Anthropocene.Simulation
                 else
                 {
                     var camp = transfer.Kind == "Fishing" ? camps[hunters[transfer.Entity].SourceCamp] : camps[transfer.Entity];
+                    if (transfer.Kind == "Gathering" || transfer.Kind == "Marine gathering" || transfer.Kind == "Aquatic gathering")
+                        gatheredFoodForMaterials[camp.Id] = (gatheredFoodForMaterials.TryGetValue(camp.Id, out double gathered) ? gathered : 0) + transfer.Food;
                     if (transfer.Kind == "Fishing")
                     {
                         Supply.Award(w, hunters[transfer.Entity], transfer.Food, record, "Fishing");
@@ -341,9 +420,10 @@ namespace Anthropocene.Simulation
                 }
                 record.Transfers.Add(transfer);
             }
+            return gatheredFoodForMaterials;
         }
 
-        private static void ResolveManagedHerds(WorldState w, TurnRecord record, double intervals, double years, double generationScale)
+        private static void ResolveManagedHerds(WorldState w, TurnRecord record, double intervals, double years, double generationScale, Dictionary<int, TurnNeeds> needs)
         {
             var managementByHerd = new Dictionary<int, double>();
             var managementPlans = new Dictionary<int, HerdingManagementPlan>();
@@ -418,10 +498,10 @@ namespace Anthropocene.Simulation
                 if (potential > 0)
                 {
                     double target = UsefulFoodTarget(w, camp, intervals, years);
-                    double tentativeInput = PlanGrowth(w, camp, intervals, years, potential).ManufacturingInput;
+                    double tentativeInput = PlanGrowth(w, camp, intervals, years, needs[camp.Id], potential).ManufacturingInput;
                     double headroom = Math.Max(0, target - camp.StepFoodIncome + tentativeInput);
                     double acceptedBudget = Math.Min(potential, headroom);
-                    double finalInput = PlanGrowth(w, camp, intervals, years, acceptedBudget).ManufacturingInput;
+                    double finalInput = PlanGrowth(w, camp, intervals, years, needs[camp.Id], acceptedBudget).ManufacturingInput;
                     double finalHeadroom = Math.Max(0, target - camp.StepFoodIncome + finalInput);
                     acceptedTotal = Math.Min(acceptedBudget, finalHeadroom);
                 }
@@ -471,7 +551,7 @@ namespace Anthropocene.Simulation
             return weights;
         }
 
-        private static GrowthPlan PlanGrowth(WorldState w, Camp camp, double intervals, double years, double incomingAnimalFood = 0)
+        private static GrowthPlan PlanGrowth(WorldState w, Camp camp, double intervals, double years, TurnNeeds needs, double incomingAnimalFood = 0)
         {
             int reproductivePopulation = camp.Population + w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).Sum(h => h.Population);
             double populationBase = reproductivePopulation * w.Config.Consumption * intervals;
@@ -496,8 +576,9 @@ namespace Anthropocene.Simulation
                 // provenance left; charge only the plant input that can actually be
                 // paid by this candidate.  Keeping this clamp inside the rate search
                 // prevents unavailable plant feedstock from suppressing births.
-                var input = ActualFabricFeedstockNeed(w, camp, intervals, years, residents, incomingAnimalFood, true, false);
-                return new GrowthPlan { Required = populationBase + growthFood, ConsumptionRequired = populationBase, GrowthFood = growthFood, ReproductivePopulation = reproductivePopulation, FinalPopulation = finalPopulation, PlantManufacturingInput = input.PlantFood, AnimalManufacturingInput = input.AnimalFood, ManufacturingInput = input.Total };
+                double plantInput = Math.Min(needs.PlantFeedstock, Math.Max(0, camp.PlantFood));
+                double animalInput = Math.Min(needs.AnimalFeedstock, Math.Max(0, camp.AnimalFood + incomingAnimalFood));
+                return new GrowthPlan { Required = populationBase + growthFood, ConsumptionRequired = populationBase, GrowthFood = growthFood, ReproductivePopulation = reproductivePopulation, FinalPopulation = finalPopulation, PlantManufacturingInput = plantInput, AnimalManufacturingInput = animalInput, ManufacturingInput = plantInput + animalInput };
             }
             // The integer birth outcome is the Fabric customer. Search the monotone
             // combined cost instead of iterating residents, which can ping-pong at a
@@ -683,7 +764,8 @@ namespace Anthropocene.Simulation
             camp.AnimalFood = protectedAnimal + (camp.AnimalFood - protectedAnimal) * retained; camp.AquaticFood *= retained;
         }
 
-        private static void SustainGeneration(WorldState w, TurnRecord record, double intervals, double generationScale, Dictionary<int, GrowthPlan> plans, Dictionary<int, double> foraged, HashSet<int> recovering)
+        private static void SustainGeneration(WorldState w, TurnRecord record, double intervals, double generationScale, Dictionary<int, GrowthPlan> plans, Dictionary<int, double> foraged, HashSet<int> recovering, Dictionary<int, GrowthPlan> pendingBirths,
+            List<(Camp Camp, Hunter[] Linked, int Losses)> pendingCampDeaths, List<(Hunter Hunter, int Losses)> pendingHunterDeaths)
         {
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
@@ -696,7 +778,7 @@ namespace Anthropocene.Simulation
                 if (camp.DeficitTurns > w.Config.StarvationGraceTurns)
                 {
                     int losses = StarvationLosses(total, camp.FoodDeficit / Math.Max(1e-9, required), w.Config.Mortality, generationScale, ref camp.DeathRemainder);
-                    ApplySharedDeaths(camp, linked, losses, record); record.Log("Tribe " + camp.Player + " lost " + losses + " people to sustained hunger.");
+                    pendingCampDeaths.Add((camp, linked, losses)); record.Log("Tribe " + camp.Player + " lost " + losses + " people to sustained hunger.");
                 }
                 foreach (var h in linked) { h.DeficitTurns = camp.DeficitTurns; h.FoodDeficit = camp.FoodDeficit * h.Population / Math.Max(1, total); h.LastConsumed = Math.Max(0, h.Population * w.Config.Consumption * intervals - h.FoodDeficit); }
                 var summary = record.Demographics.First(d => d.Camp == camp.Id);
@@ -706,7 +788,7 @@ namespace Anthropocene.Simulation
                 {
                     double growthFood = Math.Min(plans[camp.Id].GrowthFood, camp.Food);
                     ConsumeCampFood(camp, growthFood, plans[camp.Id].PlantManufacturingInput, plans[camp.Id].AnimalManufacturingInput); camp.LastConsumed += growthFood;
-                    AddGrowth(w, camp, plans[camp.Id], record, summary);
+                    pendingBirths[camp.Id] = plans[camp.Id];
                 }
                 summary.FoodConsumed += camp.LastConsumed;
             }
@@ -721,7 +803,7 @@ namespace Anthropocene.Simulation
                 if (hunter.DeficitTurns > w.Config.StarvationGraceTurns)
                 {
                     int deaths = StarvationLosses(hunter.Population, hunter.FoodDeficit / Math.Max(1e-9, required), w.Config.Mortality, generationScale, ref hunter.DeathRemainder);
-                    hunter.Population -= deaths; record.Deaths += deaths; record.PopulationChanges.Add(new PopulationChange { Camp = hunter.SourceCamp, Entity = hunter.Id, Kind = "Starvation", Count = -deaths });
+                    pendingHunterDeaths.Add((hunter, deaths));
                     record.Log("Expedition " + hunter.Id + " lost " + deaths + " people to hunger beyond supply range.");
                 }
                 var summary = record.Demographics.First(d => d.Camp == hunter.SourceCamp); summary.FoodConsumed += hunter.LastConsumed; if (hunter.FoodDeficit > 1e-8) summary.DeficitSteps++;

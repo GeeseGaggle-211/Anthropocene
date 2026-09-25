@@ -397,6 +397,8 @@ namespace Anthropocene.Simulation
         // Null means legacy/disabled resource layer, never a surveyed barren world.
         [System.Runtime.Serialization.OptionalField] public WorldResourceState Resources;
         [System.Runtime.Serialization.OptionalField] public List<MaterialSourceState> MaterialSources = new List<MaterialSourceState>();
+        [NonSerialized] internal MaterialAccessIndex MaterialIndex;
+        [NonSerialized] internal TurnDiagnostics Diagnostics;
         [System.Runtime.Serialization.OptionalField] public List<MaterialKnowledge> MaterialKnowledge = new List<MaterialKnowledge>();
         [System.Runtime.Serialization.OptionalField] public List<FixedHousingStock> FixedHousing = new List<FixedHousingStock>();
         [System.Runtime.Serialization.OnDeserializing]

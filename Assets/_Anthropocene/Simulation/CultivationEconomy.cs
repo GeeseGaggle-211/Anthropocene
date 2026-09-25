@@ -7,7 +7,7 @@ namespace Anthropocene.Simulation
     public sealed class AgriculturalLabor
     {
         public double OperatingFarmers, ExpansionFarmers, Gatherers, FoodGatherers, GatheringWorkerIntervals;
-        public double MaintenanceCoveredWorkerYears, EffectiveMaintenanceFarmers;
+        public double MaintenanceCoveredWorkerYears, EffectiveMaintenanceFarmers, RequiredMaintenance;
         public int[] Footprint = Array.Empty<int>();
     }
 
@@ -66,20 +66,44 @@ namespace Anthropocene.Simulation
         public static int[] Footprint(WorldState w, Camp camp) => w.Map.Radius(camp.Tile, 1).Where(id => w.Tiles[id].TraversableLand && w.Tiles[id].Environment != EnvironmentKind.Ice && w.Tiles[id].Seasons.Any(s => s.MaxPotentialFood > 0)).OrderBy(id => id).ToArray();
         public static AgriculturalLabor Prepare(WorldState w, Camp camp, double start, FarmToolWorkBudget toolBudget = null, double segmentYears = 0)
         {
+            var footprint = CommitSeasonBoundary(w, camp, start);
+            var plan = CalculateLabor(w, camp, footprint, toolBudget, segmentYears);
+            CommitOperatingFraction(w, camp, plan);
+            return plan;
+        }
+        internal static int[] CommitSeasonBoundary(WorldState w, Camp camp, double start, IReadOnlyDictionary<int, Camp> campsById = null)
+        {
+            if (!Enabled(camp) || camp.Population <= 0) return Array.Empty<int>();
+            var footprint = Footprint(w, camp);
+            foreach (int id in footprint)
+            {
+                var t = w.Tiles[id]; LazyEcology.MaterializeEcology(w, id, start);
+                if (t.CultivationOperator >= 0)
+                {
+                    Camp owner;
+                    if (campsById == null) owner = w.Camps.FirstOrDefault(c => c.Id == t.CultivationOperator);
+                    else campsById.TryGetValue(t.CultivationOperator, out owner);
+                    if (owner == null || owner.Population <= 0 || !Enabled(owner) || w.Map.Distance(owner.Tile, id) > 1) t.CultivationOperator = -1;
+                }
+                if (t.CultivationCapital > 0 && t.CultivationOperator < 0) t.CultivationOperator = camp.Id;
+            }
+            return footprint;
+        }
+        internal static AgriculturalLabor CalculateLabor(WorldState w, Camp camp, int[] footprint, FarmToolWorkBudget toolBudget = null, double segmentYears = 0)
+        {
             var plan = new AgriculturalLabor { Gatherers = camp.GathererPopulation + Workers(camp, WorkforceRoles.Gatherer) };
             plan.FoodGatherers = Math.Max(0, plan.Gatherers - (camp.EconomicLabor?.MaterialGatherers ?? 0));
             if (!Enabled(camp) || camp.Population <= 0) return plan;
-            plan.Footprint = Footprint(w, camp);
+            plan.Footprint = footprint;
             double required = 0;
             foreach (int id in plan.Footprint)
             {
-                var t = w.Tiles[id]; LazyEcology.MaterializeEcology(w, id, start);
-                if (t.CultivationOperator >= 0 && !w.Camps.Any(c => c.Id == t.CultivationOperator && c.Population > 0 && Enabled(c) && w.Map.Distance(c.Tile, id) <= 1)) t.CultivationOperator = -1;
-                if (t.CultivationCapital > 0 && t.CultivationOperator < 0) t.CultivationOperator = camp.Id;
+                var t = w.Tiles[id];
                 if (t.CultivationOperator != camp.Id) continue;
                 Factors(w.Config, t, out _, out double maint);
                 required += w.Config.Neolithic.MaintenanceWorkersPerTileE(w.Config.MaintenanceCoefficient) * maint * t.CultivationCapital;
             }
+            plan.RequiredMaintenance = required;
             double farmers = Workers(camp, WorkforceRoles.Farmer);
             double years = segmentYears > 0 ? segmentYears : w.Config.TurnDays / w.Config.DaysPerYear;
             double efficiency = FarmToolFieldWorkEfficiency(w.Config.Neolithic);
@@ -99,9 +123,14 @@ namespace Anthropocene.Simulation
                 plan.ExpansionFarmers = Math.Min(plan.ExpansionFarmers, camp.EconomicLabor.ExpansionFarmers);
                 plan.OperatingFarmers = established ? farmers - plan.ExpansionFarmers : 0;
             }
-            foreach (int id in plan.Footprint.Where(id => w.Tiles[id].CultivationOperator == camp.Id))
-                w.Tiles[id].CultivationOperatingFraction = required > 0 ? Math.Min(1, plan.EffectiveMaintenanceFarmers / Math.Max(1e-12, required)) : plan.EffectiveMaintenanceFarmers > 0 ? 1 : 0;
             return plan;
+        }
+        internal static void CommitOperatingFraction(WorldState w, Camp camp, AgriculturalLabor plan)
+        {
+            foreach (int id in plan.Footprint.Where(id => w.Tiles[id].CultivationOperator == camp.Id))
+                w.Tiles[id].CultivationOperatingFraction = plan.RequiredMaintenance > 0
+                    ? Math.Min(1, plan.EffectiveMaintenanceFarmers / Math.Max(1e-12, plan.RequiredMaintenance))
+                    : plan.EffectiveMaintenanceFarmers > 0 ? 1 : 0;
         }
 
         public static double FarmToolFieldWorkEfficiency(NeolithicConfig n)

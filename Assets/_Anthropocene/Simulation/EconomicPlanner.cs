@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace Anthropocene.Simulation
 {
@@ -9,7 +10,7 @@ namespace Anthropocene.Simulation
     public static class EconomicPlanner
     {
         private const double Epsilon = 1e-8;
-        private const int SearchIterations = 24; // Numerical convergence, not a balance coefficient.
+        private const int SearchIterations = 6;
         private sealed class Proposal
         {
             public EconomicIntent Intent;
@@ -17,19 +18,21 @@ namespace Anthropocene.Simulation
         }
         public static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings)
         {
+            Interlocked.Increment(ref TurnDiagnostics.For(w).PlanCalls);
             var e = settings.Copy(); e.Assignments.Clear(); e.Labor = null;
             if (c.Population <= 0 || !CultivationEconomy.EconomyEnabled(c)) { e.AutomationTurns = 0; return e; }
             bool cultivationEnabled = CultivationEconomy.Enabled(c);
             bool husbandryEnabled = CultivationEconomy.HusbandryEnabled(c);
             var cfg = w.Config; var n = cfg.Neolithic;
             double intervals = cfg.GenerationIntervals, years = cfg.TurnDays / cfg.DaysPerYear;
-            var visible = Knowledge.Visible(w, c.Player);
-            var footprint = cultivationEnabled ? CultivationEconomy.Footprint(w, c).Where(visible.Contains).ToArray() : Array.Empty<int>();
+            // The configured one-tile work radius lies wholly inside the owner's
+            // two-tile vision. No global own-group visibility scan is needed here.
+            var footprint = cultivationEnabled ? CultivationEconomy.Footprint(w, c).ToArray() : Array.Empty<int>();
             if (!footprint.Contains(e.Focus)) e.Focus = -1;
             var operated = footprint.Where(id => w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == c.Id).ToArray();
             double upkeep = cultivationEnabled ? CultivationEconomy.MaintenanceFarmersForPlanning(w, c, years) : 0;
             bool established = cultivationEnabled && operated.Any(id => LazyEcology.ProjectEcology(w, id, w.Days).CultivationCapital > 0);
-            var eligible = w.Map.Radius(c.Tile, cfg.GatherRadius).Where(id => visible.Contains(id) && PassiveGathering.Eligible(w, c, id)).OrderBy(id => id).ToArray();
+            var eligible = w.Map.Radius(c.Tile, cfg.GatherRadius).Where(id => PassiveGathering.Eligible(w, c, id)).OrderBy(id => id).ToArray();
             double FoodAvailability(int id) => LazyEcology.AccessibleAvailability(w, id, w.Days, cfg.TurnDays, operated.Contains(id) ? 1 : 0);
             double forageSupply = eligible.Sum(FoodAvailability), plantSupply = eligible.Where(id => w.Tiles[id].Land).Sum(FoodAvailability);
             int reservedHerdersForForecast = husbandryEnabled ? ManagedHerderReservation(w, c, years) : 0;
@@ -37,7 +40,9 @@ namespace Anthropocene.Simulation
             double forageAfterHerds = Math.Max(0, forageSupply - managedFood.HumanFoodDisplaced);
             double supply = forageAfterHerds + managedFood.AnimalFood;
             double biological = TurnResolver.PlanningFoodDemand(w, c);
-            double nextPopulation = TurnResolver.PlanningResidentPopulation(w, c, Math.Min(biological, supply));
+            // This plan belongs to the population present at the interturn boundary.
+            // Births are added after its goods and QoL have been resolved.
+            double nextPopulation = c.Population;
             var sources = MaterialEconomy.KnownSources(w, c, w.Days);
             double Priority(MaterialId m) => m == MaterialId.Stone ? e.StonePriority : m == MaterialId.Clay ? e.ClayPriority : e.WoodPriority;
             var accessible = MaterialEconomy.Materials.ToDictionary(m => m, m => Priority(m) <= 0 || n.SpecialistMaterialExtractionRate <= 0 ? 0 : sources.Where(s => s.Material == m).GroupBy(s => s.Id).Sum(g => g.Sum(s => s.Available)));
@@ -53,7 +58,7 @@ namespace Anthropocene.Simulation
             var preview = Preview(c, previewIntent, nextPopulation);
             NeolithicProduction.DepreciateHousing(w, preview, years);
             var goods = recipes.Where(r => r.Good != CraftGood.HandTools && r.Good != CraftGood.Tools && (!r.HusbandryOnly || husbandryEnabled)).ToArray();
-            var goals = goods.ToDictionary(r => r.Good, r => NeolithicProduction.Priority(preview, r.Good) > 0 ? NeolithicProduction.Demand(w, preview, r.Good, years) : 0);
+            var goals = goods.ToDictionary(r => r.Good, r => NeolithicProduction.Priority(preview, r.Good) > 0 ? NeolithicProduction.Demand(w, preview, r.Good, years, -1, false, false, sources) : 0);
             // FarmTools are sized only after this proposal has a bounded field
             // workforce.  The empty preview cannot answer that question without
             // inventing labor, so the normal FarmTools demand helper is called
@@ -112,7 +117,7 @@ namespace Anthropocene.Simulation
                         candidate.Inventory.Cloth = Math.Max(0, c.Inventory.Cloth) + requested[CraftGood.Cloth];
                         candidate.Inventory.AnimalFabric = Math.Max(0, c.Inventory.AnimalFabric) + requested[CraftGood.AnimalFabric] - requested[CraftGood.LightHousing];
                         candidate.Inventory.LightHousingUnits = candidateLightHousing + requested[CraftGood.LightHousing];
-                        return NeolithicProduction.Demand(w, candidate, r.Good, years);
+                        return NeolithicProduction.Demand(w, candidate, r.Good, years, -1, false, false, sources);
                     }
                     return goals[r.Good];
                 }
@@ -228,7 +233,7 @@ namespace Anthropocene.Simulation
                     candidate.EconomicLabor = intent.Labor;
                     // This is the sole field-tool need calculation. It includes
                     // current stock's expected wear and never uses FarmToolsTarget.
-                    double desired = NeolithicProduction.Demand(w, candidate, CraftGood.FarmTools, years) * fulfillment;
+                    double desired = NeolithicProduction.Demand(w, candidate, CraftGood.FarmTools, years, -1, false, false, sources) * fulfillment;
                     // Reserve the source-feasible prospective job before applying
                     // the current tool budget. This lets the shared replacement
                     // helper bootstrap Hand Tools for a first FarmTools cycle.
@@ -292,11 +297,12 @@ namespace Anthropocene.Simulation
                 animalFabric = Math.Max(0, c.Inventory.AnimalFabric);
                 foodRoom = foodRoomEnvelope;
                 // Match production's role/recipe ordering and share one tool-time budget.
+                var orderedRecipes = recipes.OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good).ToArray();
                 foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
-                    foreach (var r in recipes.OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
+                    foreach (var r in orderedRecipes)
                     {
                         if (Role(r) != role || NeolithicProduction.Priority(candidate, r.Good) <= 0) continue;
-                        double wanted = r.Good == CraftGood.HandTools || r.Good == CraftGood.Tools ? NeolithicProduction.Demand(w, candidate, r.Good, years) : requested[r.Good];
+                        double wanted = r.Good == CraftGood.HandTools || r.Good == CraftGood.Tools ? NeolithicProduction.Demand(w, candidate, r.Good, years, -1, false, false, sources) : requested[r.Good];
                         double amount = Capped(r, wanted, false);
                         if (r.Equipment) amount = Math.Min(amount, coverage.Capacity(r.Good, Rate(r), c.Population * intervals));
                         amount = Capped(r, amount, true);
@@ -339,8 +345,8 @@ namespace Anthropocene.Simulation
                     candidate.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = candidateFieldWorkers });
                 // Reforecast rounded staffing through the actual recipe planner. This
                 // catches shared generalist time, mixed inputs and reserve replenishment.
-                var outputs = MaterialEconomy.Forecast(w, candidate, recipes, intervals, years, new ToolCoverageBudget(w, c, intervals).Remaining, !husbandryEnabled);
-                var housing = MaterialEconomy.PlanHousingMaterials(w, c, recipes, outputs, years, w.Days);
+                var outputs = MaterialEconomy.Forecast(w, candidate, recipes, intervals, years, new ToolCoverageBudget(w, c, intervals).Remaining, !husbandryEnabled, -1, false, false, -1, -1, sources);
+                var housing = MaterialEconomy.PlanHousingMaterials(w, c, recipes, outputs, years, w.Days, sources);
                 var raw = MaterialEconomy.Materials.ToDictionary(m => m, m => 0d);
                 foreach (var r in recipes)
                 {
@@ -476,24 +482,11 @@ namespace Anthropocene.Simulation
             }
             return gain;
         }
-        private static Camp Preview(Camp c, EconomicIntent intent, double population)
+        internal static Camp Preview(Camp c, EconomicIntent intent, double population)
         {
             var result = new Camp { Id = c.Id, Tile = c.Tile, Population = (int)Math.Ceiling(population), PlantFood = c.PlantFood, AnimalFood = c.AnimalFood, AquaticFood = c.AquaticFood,
                 Inventory = new CampInventory { HandTools = c.Inventory.HandTools, Tools = c.Inventory.Tools, CopperTools = c.Inventory.CopperTools, Cloth = c.Inventory.Cloth, AnimalFabric = c.Inventory.AnimalFabric, LightHousingUnits = c.Inventory.LightHousingUnits, HerdingTools = c.Inventory.HerdingTools, HousingUnits = c.Inventory.HousingUnits, Pots = c.Inventory.Pots, FarmTools = c.Inventory.FarmTools, Stone = c.Inventory.Stone, Clay = c.Inventory.Clay, Wood = c.Inventory.Wood } };
             result.Bind(c.People); EconomicIntents.Apply(result, intent); return result;
-        }
-        public static void ResolveEnabled(WorldState w, TurnRecord record)
-        {
-            foreach (var c in w.Camps.Where(c => c.Population > 0 && c.EconomyAutomationTurns != 0 && CultivationEconomy.EconomyEnabled(c)).OrderBy(c => c.Id))
-            {
-                var intent = Plan(w, c, EconomicIntent.From(c));
-                var observation = new AgentObservationBuilder().Build(w, c.Player);
-                var order = new Order(OrderKind.Economy, c.Id) { Economy = intent };
-                string error = OrderRules.Validate(observation, order);
-                if (error != null) throw new InvalidOperationException("Invalid automatic economic plan: " + error);
-                EconomicIntents.Apply(c, intent); record.Orders.Add(c.Player + ":automation:" + order + ":accepted");
-                if (c.EconomyAutomationTurns > 0) c.EconomyAutomationTurns--;
-            }
         }
     }
 }

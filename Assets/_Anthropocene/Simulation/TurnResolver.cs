@@ -53,7 +53,12 @@ namespace Anthropocene.Simulation
         public string Validate(WorldState w, int player, Order order, HashSet<int> visible = null) => OrderRules.Validate(new AgentObservationBuilder().Build(w, player), order);
 
         public TurnRecord Resolve(WorldState w, IReadOnlyDictionary<int, List<Order>> submitted, IEnumerable<DecisionTrace> traces = null)
+            => Resolve(w, TurnPlanner.Prepare(w, submitted, traces));
+
+        public TurnRecord Resolve(WorldState w, PreparedTurn prepared)
         {
+            if (prepared == null || !ReferenceEquals(w, prepared.World) || w.Turn != prepared.Turn || Math.Abs(w.Days - prepared.StartDays) > 1e-8)
+                throw new InvalidOperationException("Prepared turn does not match the current world boundary.");
             var resolutionTimer = System.Diagnostics.Stopwatch.StartNew(); LastMetrics = new ResolutionMetrics();
             Ownership.Bind(w);
             if (w.Camps.All(c => w.LinkedPopulation(c) <= 0)) throw new InvalidOperationException("All tribes have perished.");
@@ -62,25 +67,19 @@ namespace Anthropocene.Simulation
             int peopleBefore = w.Camps.Sum(w.LinkedPopulation);
             var record = new TurnRecord { Turn = w.Turn, Seed = w.Seed, StartDays = w.Days, Duration = w.Config.TurnDays };
             double time = record.Duration / w.Config.BaseDays;
-            if (traces != null) record.Decisions.AddRange(traces.OrderBy(t => t.Player));
+            record.Decisions.AddRange(prepared.Traces);
             // Groups formed during this resolution cannot act until the next planning phase.
             var establishedHunters = new HashSet<int>(w.Hunters.Where(h => h.Population > 0).Select(h => h.Id));
-            var locked = new List<Order>();
-            foreach (var camp in w.Camps.GroupBy(c => c.Player).OrderBy(g => g.Key).Select(g => g.OrderBy(c => c.Id).First()))
-            {
-                var observation = new AgentObservationBuilder().Build(w, camp.Player, planning);
-                if (!submitted.TryGetValue(camp.Player, out var orders)) continue;
-                foreach (var group in orders.Where(o => o != null).GroupBy(o => o.Entity).OrderBy(g => g.Key))
-                {
-                    // Conflicting duplicates are all rejected, independent of submission order.
-                    if (group.Count() != 1) { record.Log("Rejected conflicting orders for " + group.Key); continue; }
-                    var order = group.First(); string error = OrderRules.Validate(observation, order);
-                    record.Orders.Add(camp.Player + ":" + order + ":" + (error ?? "accepted"));
-                    if (error != null) record.Log("Rejected " + order.Entity + ": " + error); else locked.Add(order.Copy());
-                }
-            }
+            var locked = prepared.Orders;
+            record.Orders.AddRange(prepared.OrderReceipts);
+            foreach (string rejection in prepared.Rejections) record.Log(rejection);
             // Herd intentions are computed before dispatch or movement reveals new hunter positions.
-            foreach (var order in locked.Where(o => o.Kind == OrderKind.Economy).OrderBy(o => o.Entity)) EconomicIntents.Apply(w.Camps.First(c => c.Id == order.Entity), order.Economy);
+            foreach (var order in locked.Where(o => o.Kind == OrderKind.Economy).OrderBy(o => o.Entity))
+            {
+                var camp = w.Camps.First(c => c.Id == order.Entity);
+                EconomicIntents.Apply(camp, order.Economy);
+                if (camp.EconomyAutomationTurns > 0) camp.EconomyAutomationTurns--;
+            }
             var phaseTimer = System.Diagnostics.Stopwatch.StartNew();
             var herdInputs = w.Herds.OrderBy(h => h.Id).ToArray();
             var destinations = execution.Map(herdInputs, h => HerdDestination(w, h, planning));
@@ -95,10 +94,9 @@ namespace Anthropocene.Simulation
             Supply.ProvisionDepartures(w, locked, record);
             Move(w, locked, herdMoves, record);
             Supply.DepositReturns(w, record);
-            EconomicPlanner.ResolveEnabled(w, record);
             var touched = new Dictionary<int, TileChange>();
             Action<int> touch = id => { if (!touched.ContainsKey(id)) touched[id] = new TileChange { Tile = id, BeforeFood = w.Tiles[id].Food, BeforePotentialFood = w.Tiles[id].PotentialFood, BeforeFreshwater = w.Tiles[id].Freshwater, BeforeLandCondition = w.Tiles[id].LandCondition, BeforeAquaticCondition = w.Tiles[id].AquaticCondition }; };
-            ResolveEcology(w, locked, establishedHunters, record, touch);
+            ResolveEcology(w, locked, establishedHunters, record, touch, prepared.Needs);
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Reintegrate).OrderBy(o => o.Entity))
             {
                 var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity); if (hunter == null) continue;
@@ -114,9 +112,26 @@ namespace Anthropocene.Simulation
             // Untouched tiles follow the recorded configuration/clock regeneration rule; replay does not need world-sized snapshots each turn.
             Invariants(w, peopleBefore + record.Growth - record.Deaths, touched.Keys.Select(id => w.Tiles[id]));
             // Per-claim pressure and numerical balances are transient phase diagnostics.
-            // Persisted transfer receipts, condition changes and demographic history remain intact.
+            // Persisted transfer totals, condition changes and demographics remain intact.
             if (w.History.Count > 0) { w.History[w.History.Count - 1].Pressure?.Clear(); w.History[w.History.Count - 1].EcologyBalances?.Clear(); }
+            // Transfers have no seasonal timestamp. Collapse repeated receipts
+            // for the same claimant/tile/kind before persisting the turn; the
+            // realized totals and every authoritative stock were already paid.
+            record.Transfers = record.Transfers.GroupBy(t => new { t.Tile, t.Entity, t.Kind })
+                .OrderBy(g => g.Key.Tile).ThenBy(g => g.Key.Entity).ThenBy(g => g.Key.Kind, StringComparer.Ordinal)
+                .Select(g => new Transfer { Tile = g.Key.Tile, Entity = g.Key.Entity, Kind = g.Key.Kind,
+                    Food = g.Sum(t => t.Food), PotentialFood = g.Sum(t => t.PotentialFood), Freshwater = g.Sum(t => t.Freshwater) }).ToList();
             w.History.Add(record); w.Turn++;
+            var diagnostics = w.Diagnostics;
+            if (diagnostics != null && diagnostics.Turn == prepared.Turn)
+            {
+                LastMetrics.PlanCalls = diagnostics.PlanCalls;
+                LastMetrics.ForecastCalls = diagnostics.ForecastCalls;
+                LastMetrics.LocalSourceQueries = diagnostics.LocalSourceQueries;
+                LastMetrics.SourceLookups = diagnostics.SourceLookups;
+                LastMetrics.DepositEdges = diagnostics.DepositEdges;
+                LastMetrics.BodyScans = diagnostics.BodyScans;
+            }
             LastMetrics.TotalMilliseconds = resolutionTimer.Elapsed.TotalMilliseconds; return record;
         }
 

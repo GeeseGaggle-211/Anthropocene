@@ -41,14 +41,19 @@ internal static class ExecutionChecks
         var samples = new List<object>(); int turns = 0; double totalAi = 0, totalResolve = 0, totalEcology = 0, totalHerds = 0, totalReference = 0;
         while (!world.Finished && turns < 12)
         {
-            var plan = AiPlanning.Decide(world, execution); resolver.Resolve(world, plan.Orders, plan.Traces);
+            var plan = AiPlanning.Decide(world, execution);
+            var preparationTimer = Stopwatch.StartNew();
+            var prepared = TurnPlanner.Prepare(world, plan.Orders, plan.Traces);
+            double preparationMs = preparationTimer.Elapsed.TotalMilliseconds;
+            resolver.Resolve(world, prepared);
             var metrics = resolver.LastMetrics;
-            oracle.Resolve(replay, plan.Orders.ToDictionary(p => p.Key, p => p.Value.AsEnumerable().Reverse().ToList()), plan.Traces);
+            var referenceOrders = plan.Orders.ToDictionary(p => p.Key, p => p.Value.AsEnumerable().Reverse().ToList());
+            oracle.Resolve(replay, TurnPlanner.Prepare(replay, referenceOrders, plan.Traces));
             if (SaveCodec.Fingerprint(world) != SaveCodec.Fingerprint(replay)) throw new Exception("Scale replay diverged at turn " + world.Turn);
             peakManaged = Math.Max(peakManaged, GC.GetTotalMemory(false));
-            totalAi += plan.Milliseconds; totalResolve += metrics.TotalMilliseconds; totalEcology += metrics.EcologyMilliseconds; totalHerds += metrics.HerdIntentMilliseconds; totalReference += oracle.LastMetrics.TotalMilliseconds;
-            samples.Add(new { turn = world.Turn - 1, aiMs = plan.Milliseconds, resolveMs = metrics.TotalMilliseconds, ecologyMs = metrics.EcologyMilliseconds, herdIntentMs = metrics.HerdIntentMilliseconds, activeTiles = metrics.ActiveTiles, referenceResolveMs = oracle.LastMetrics.TotalMilliseconds }); turns++;
-            Console.WriteLine("SCALE_PROGRESS tribes=" + players + " turn=" + turns + " aiMs=" + plan.Milliseconds.ToString("F1") + " resolveMs=" + metrics.TotalMilliseconds.ToString("F1") + " active=" + metrics.ActiveTiles);
+            totalAi += plan.Milliseconds + preparationMs; totalResolve += metrics.TotalMilliseconds; totalEcology += metrics.EcologyMilliseconds; totalHerds += metrics.HerdIntentMilliseconds; totalReference += oracle.LastMetrics.TotalMilliseconds;
+            samples.Add(new { turn = world.Turn - 1, aiMs = plan.Milliseconds + preparationMs, prepareMs = preparationMs, resolveMs = metrics.TotalMilliseconds, ecologyMs = metrics.EcologyMilliseconds, setupEconomyMs = metrics.SetupEconomyMilliseconds, managedHerdMs = metrics.ManagedHerdMilliseconds, growthPlanMs = metrics.GrowthPlanMilliseconds, sustainMs = metrics.SustainMilliseconds, productionMs = metrics.ProductionMilliseconds, herdIntentMs = metrics.HerdIntentMilliseconds, activeTiles = metrics.ActiveTiles, tileIntegrations = metrics.TileIntegrations, seasonalTiles = metrics.SeasonalTiles, fullTurnTiles = metrics.FullTurnTiles, referenceResolveMs = oracle.LastMetrics.TotalMilliseconds }); turns++;
+            Console.WriteLine("SCALE_PROGRESS tribes=" + players + " turn=" + turns + " aiMs=" + (plan.Milliseconds + preparationMs).ToString("F1") + " resolveMs=" + metrics.TotalMilliseconds.ToString("F1") + " active=" + metrics.ActiveTiles + " integrations=" + metrics.TileIntegrations);
         }
         timer.Restart(); bytes = SaveCodec.Save(world); double finalSaveMs = timer.Elapsed.TotalMilliseconds;
         replay = null; GC.Collect(); timer.Restart(); var restored = SaveCodec.Load(bytes); double finalLoadMs = timer.Elapsed.TotalMilliseconds;

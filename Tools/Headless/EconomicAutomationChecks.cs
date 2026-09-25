@@ -32,7 +32,7 @@ internal static class EconomicAutomationChecks
     }
     public static int Run()
     {
-        checks = 0; RolesAndRates(); Labor(); Planning(); Persistence(); FabricDoesNotFundBirths(); FabricUsesPostGrowthResidents(); PlanningResidentPopulationIgnoresStaleIncome();
+        checks = 0; RolesAndRates(); Labor(); Planning(); Persistence(); PreparedBoundary(); LocalSourceIndex(); FabricDoesNotFundBirths(); FabricUsesPriorResidents(); StarvationUsesPriorCohort(); PlanningResidentPopulationIgnoresStaleIncome();
         Console.WriteLine("PASS: " + checks + " demand automation assertions"); return checks;
     }
     private static void RolesAndRates()
@@ -142,6 +142,47 @@ internal static class EconomicAutomationChecks
         c.EconomicLabor = new EconomicLaborPlan(); c.EconomyAutomationTurns = 0;
         var zero = SaveCodec.Load(SaveCodec.Save(w)).Camps[0]; Check(zero.EconomicLabor != null && zero.EconomicLabor.Values().All(v => v == 0) && zero.EconomyAutomationTurns == 0, "explicit zero plan and off survive saving");
     }
+    private static void PreparedBoundary()
+    {
+        var w = Fixture(); var c = w.Camps[0]; c.EconomyAutomationTurns = -1;
+        string before = SaveCodec.Fingerprint(w);
+        var prepared = TurnPlanner.Prepare(w, new Dictionary<int, List<Order>>());
+        Check(SaveCodec.Fingerprint(w) == before, "preparing automation, needs and orders leaves authoritative state untouched");
+        var resolver = new TurnResolver(); var record = resolver.Resolve(w, prepared);
+        Check(record.Orders.Count(s => s.Contains(":automation:")) == 1, "prepared automatic intent is applied once");
+        bool staleRejected = false;
+        try { resolver.Resolve(w, prepared); } catch (InvalidOperationException) { staleRejected = true; }
+        Check(staleRejected, "a prepared turn cannot be reused after its boundary advances");
+        Check(resolver.LastMetrics.PlanCalls >= 1 && resolver.LastMetrics.ForecastCalls >= 1,
+            "transient counters include interturn planning and needs forecasts");
+        var stocked = Fixture(); var sc = stocked.Camps[0];
+        sc.Inventory.HandTools = 1000; sc.Workforce.Assign(WorkforceRoles.Craftsperson, 10, sc.Population);
+        sc.Food = sc.Population * stocked.Config.Consumption * stocked.Config.GenerationIntervals;
+        sc.PlantFood = sc.Food;
+        var locked = TurnPlanner.Prepare(stocked, new Dictionary<int, List<Order>>()).Needs[sc.Id];
+        Check(locked.PlantFeedstock > 0, "the prepared craft job requests plant feedstock");
+        Near(locked.PlantFeedstockGap, locked.PlantFeedstock,
+            "food reserved for the prior cohort cannot substitute for craft feedstock");
+    }
+    private static void LocalSourceIndex()
+    {
+        var w = Fixture(); var c = w.Camps[0]; int origin = c.Tile;
+        int neighbor = w.Map.Neighbors(origin).Where(id => w.Tiles[id].TraversableLand).OrderBy(id => id).First();
+        int distant = w.Map.Neighbors(neighbor).Where(id => w.Tiles[id].TraversableLand && w.Map.Distance(origin, id) == 2).OrderBy(id => id).First();
+        w.Resources.Stone[origin] = 0; w.Resources.Stone[distant] = 1000;
+        Check(!MaterialEconomy.KnownSources(w, c, w.Days).Any(s => s.Material == MaterialId.Stone),
+            "a camp cannot scan a source beyond its one-turn radius");
+        c.Tile = neighbor;
+        var visible = MaterialEconomy.KnownSources(w, c, w.Days).Single(s => s.Material == MaterialId.Stone);
+        Check(visible.Tile == distant && visible.Available > 0, "moving rebuilds local adjacency at the new site");
+        var second = new Camp { Id = w.NextId++, Player = c.Player, SocietyId = c.SocietyId, Tile = distant, Population = 10 };
+        second.Bind(c.People);
+        var receipt = new TurnRecord();
+        MaterialEconomy.Extract(w, c, visible, WorkforceRoles.Gatherer, 40, 20, w.Days, receipt);
+        double used = receipt.MaterialTransfers.Sum(t => t.Amount);
+        var remaining = MaterialEconomy.KnownSources(w, second, w.Days).Single(s => s.Material == MaterialId.Stone && s.Tile == distant);
+        Near(remaining.Available, visible.Available - used, "shared indexed source reports only the debited remainder");
+    }
     private static void FabricDoesNotFundBirths()
     {
         var w = Fixture(); var c = w.Camps[0]; Field(w); w.Config.AnnualHumanGrowthRate = .01145;
@@ -155,7 +196,7 @@ internal static class EconomicAutomationChecks
         Near(r.Demographics.Single().ManufacturingFood, 100, "planned plant input actually consumed");
         Near(c.Food, 8000, "full operating reserve retained after manufacturing", 1e-5);
     }
-    private static void FabricUsesPostGrowthResidents()
+    private static void FabricUsesPriorResidents()
     {
         WorldState GrowingFixture(bool hunter)
         {
@@ -175,15 +216,47 @@ internal static class EconomicAutomationChecks
         }
 
         var w = GrowingFixture(false); var c = w.Camps[0]; var record = Resolve(w);
-        Check(record.Growth > 0 && c.Population > 10, "zero-reserve fixture reaches positive post-growth resident population");
-        Near(record.Demographics.Single().ManufacturingFood, 2 * c.Population, "zero reserve accepts exactly useful Fabric feedstock for post-growth residents");
-        Near(c.FabricConsumed + c.Inventory.Cloth, 2 * c.Population, "post-growth Fabric production splits into current use and retained reserve");
+        Check(record.Growth > 0 && c.Population > 10, "zero-reserve fixture grows after needs resolve");
+        Near(record.Demographics.Single().ManufacturingFood, 20, "Fabric feedstock belongs to ten prior-turn residents");
+        Near(c.FabricConsumed + c.Inventory.Cloth, 20, "prior-cohort Fabric production splits into current use and retained reserve");
         Check(c.PlantFood >= 0 && c.Food >= c.PlantFood, "plant stock remains part of the conserved food reserve after Fabric consumption");
 
         var withHunter = GrowingFixture(true); var camp = withHunter.Camps[0]; var hunterRecord = Resolve(withHunter);
         Check(hunterRecord.Growth > 0 && camp.Population > 10, "connected-hunter fixture grows at the camp");
-        Near(hunterRecord.Demographics.Single().ManufacturingFood, 2 * camp.Population, "connected hunters affect biological growth but do not add Clothing demand");
+        Near(hunterRecord.Demographics.Single().ManufacturingFood, 20, "connected hunters affect biological growth but do not add prior resident Clothing demand");
         Check(withHunter.Hunters.Single().Population == 4, "connected hunters remain residents only for biological demand and birth placement");
+    }
+    private static void StarvationUsesPriorCohort()
+    {
+        WorldState Make(double mortality)
+        {
+            var w = Fixture(); var c = w.Camps[0];
+            w.Config.Mortality = mortality;
+            c.Population = 100; c.Food = 6000; c.PlantFood = c.AnimalFood = c.AquaticFood = 0;
+            c.DeficitTurns = w.Config.StarvationGraceTurns;
+            c.Inventory.Cloth = 100; c.Inventory.HousingUnits = 25;
+            c.CraftingPriorities = new CraftingPriorities();
+            foreach (var tile in w.Tiles)
+            {
+                tile.Food = tile.PotentialFood = 0;
+                for (int i = 0; i < tile.Seasons.Length; i++)
+                {
+                    var season = tile.Seasons[i];
+                    season.MaxFood = season.MaxPotentialFood = 0;
+                    season.FoodRecoveryPerDay = season.BiomassRecoveryPerDay = 0;
+                    tile.Seasons[i] = season;
+                }
+            }
+            return w;
+        }
+        var dying = Make(.5); var control = Make(0);
+        var result = Resolve(dying); Resolve(control);
+        var prior = control.Camps[0]; var survivors = dying.Camps[0];
+        Check(result.Deaths > 0 && survivors.Population < prior.Population, "starvation applies to the existing cohort after grace");
+        Near(survivors.FoodNeedsMetRatio, prior.FoodNeedsMetRatio, "starvation does not revise prior-cohort food fulfillment");
+        Near(survivors.FabricConsumed, prior.FabricConsumed, "deaths cannot reduce same-turn Fabric consumption");
+        Near(survivors.HousingPerCapita, prior.HousingPerCapita, "deaths cannot improve same-turn Housing coverage");
+        Near(survivors.QoL, prior.QoL, "QoL is resolved before losses are committed");
     }
     private static void PlanningResidentPopulationIgnoresStaleIncome()
     {

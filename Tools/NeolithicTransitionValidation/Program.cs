@@ -239,8 +239,8 @@ internal static class Program
     }
     static void ResolvePolicy(WorldState world, Camp camp, HeuristicTribePolicy policy, PhaseExecution execution)
     {
-        var decision = policy.Decide(new AgentObservationBuilder().Build(world, camp.Player), camp.Mandate);
-        new TurnResolver(execution).Resolve(world, new Dictionary<int, List<Order>> { [camp.Player] = decision.Orders }, new[] { decision.Trace });
+        var planned = AiPlanning.Decide(world, execution);
+        new TurnResolver(execution).Resolve(world, planned.Orders, planned.Traces);
     }
     static Result Run(byte[] worldBytes, Case item, TextWriter trace, int maxTurns, bool saveMidway, PhaseExecution execution)
     {
@@ -262,7 +262,7 @@ internal static class Program
                 if (!scarcityApplied && c.Technology == Technology.Cultivation && item.Scarcity != null) { result.ScarceSourceIds = ApplyScarcity(w, c, item.Scarcity); scarcityApplied = true; }
                 var before = new CampInventory { Stone = c.Inventory.Stone, Clay = c.Inventory.Clay, Wood = c.Inventory.Wood };
                 var startingAssignments = c.Workforce.Assignments.ToDictionary(x => x.Role, x => x.Population);
-                var decision = item.FixedSite ? FixedSiteDecision(w, c) : policy.Decide(new AgentObservationBuilder().Build(w, c.Player), c.Mandate);
+                var decision = item.FixedSite ? FixedSiteDecision(w, c) : PlannedDecision(w, c, execution);
                 var submittedAssignments = decision.Orders.Where(x => x.Kind == OrderKind.Economy && x.Economy != null).SelectMany(x => x.Economy.Assignments).GroupBy(x => x.Role).ToDictionary(x => x.Key, x => x.Sum(a => a.Population));
                 var record = new TurnResolver(execution).Resolve(w, new Dictionary<int, List<Order>> { [c.Player] = decision.Orders }, new[] { decision.Trace });
                 resolutions++;
@@ -295,6 +295,11 @@ internal static class Program
         }
         else decision.Orders.Add(new Order(OrderKind.NoOp, camp.Id));
         return decision;
+    }
+    static PolicyDecision PlannedDecision(WorldState world, Camp camp, PhaseExecution execution)
+    {
+        var planned = AiPlanning.Decide(world, execution);
+        return new PolicyDecision { Orders = planned.Orders[camp.Player], Trace = planned.Traces.Single(t => t.Player == camp.Player) };
     }
     static void ApplySettlementStress(WorldState world, Camp camp, Result result, double multiplier)
     {

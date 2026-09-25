@@ -202,6 +202,8 @@ internal static class Program
         if (args.Contains("--farm-food-phase")) { FarmFoodPhaseChecks.Run(); return 0; }
         try
         {
+            var scaleOnly = args.FirstOrDefault(a => a.StartsWith("--scale-only=", StringComparison.Ordinal));
+            if (scaleOnly != null) { ExecutionChecks.Scale(int.Parse(scaleOnly.Substring(13))); return 0; }
             if (args.Contains("--write-config"))
             {
                 System.IO.File.WriteAllText("Assets/_Anthropocene/Resources/OpeningConfig.json", System.Text.Json.JsonSerializer.Serialize(new SimulationConfig(), new System.Text.Json.JsonSerializerOptions { IncludeFields = true, WriteIndented = true }));

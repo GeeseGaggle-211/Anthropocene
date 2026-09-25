@@ -139,10 +139,10 @@ namespace Anthropocene.Simulation
         public readonly HexMap Map;
         public readonly int MinimumCamp, HunterMovement, CampMovement, WaterMovementCost, SupplyRange, SustainableHuntPopulation;
         public readonly double Inertia;
-        internal AgentObservation(WorldState w, Camp camp, PlanningIndex index)
+        internal AgentObservation(WorldState w, Camp camp, PlanningIndex index, bool recommendEconomy)
         {
             var visible = index.Visible(camp.Player);
-            Days = w.Days; Settlements = Array.AsReadOnly(index.OwnCamps(camp.Player).Select(c => new SettlementObservation(c, index)).ToArray());
+            Days = w.Days; Settlements = Array.AsReadOnly(index.OwnCamps(camp.Player).Select(c => new SettlementObservation(c, index, recommendEconomy)).ToArray());
             var preferences = camp.People.Policy; HuntingInclination = preferences.HuntingInclination; GatheringInclination = preferences.GatheringInclination; FishingInclination = preferences.FishingInclination;
             Player = camp.Player; CampId = camp.Id; CampTile = camp.Tile; CampPopulation = camp.Population; GathererPopulation = camp.GathererPopulation; LinkedPopulation = index.Population(camp);
             FoodCondition = Knowledge.Band(camp.Food, Math.Max(1, LinkedPopulation * w.Config.Consumption * w.Config.GenerationIntervals), w.Config);
@@ -178,8 +178,8 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservationBuilder
     {
-        public AgentObservation Build(WorldState world, int player, PlanningIndex index = null)
-        { index = index ?? new PlanningIndex(world); return new AgentObservation(world, index.OwnCamps(player).First(), index); }
+        public AgentObservation Build(WorldState world, int player, PlanningIndex index = null, bool recommendEconomy = false)
+        { index = index ?? new PlanningIndex(world); return new AgentObservation(world, index.OwnCamps(player).First(), index, recommendEconomy); }
     }
     [Serializable]
     public sealed class CandidateTrace

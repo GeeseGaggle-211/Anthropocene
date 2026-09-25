@@ -12,6 +12,9 @@ namespace Anthropocene.Simulation
     public static class SaveCodec
     {
         private const string Magic = "ANTHROPOCENE-11", LegacyMagic10 = "ANTHROPOCENE-10", LegacyMagic9 = "ANTHROPOCENE-9", LegacyMagic8 = "ANTHROPOCENE-8";
+        // Benchmark-only 320-tribe openings can retain more than 128 MiB of
+        // legitimate turn receipts in the binary XML header. Keep a finite cap.
+        private const int MaximumMetadataBytes = 512 * 1024 * 1024;
         private static DataContractSerializer Serializer(Type type) => new DataContractSerializer(type, new DataContractSerializerSettings { MaxItemsInObjectGraph = int.MaxValue });
         public static byte[] Save(WorldState world)
         {
@@ -62,7 +65,7 @@ namespace Anthropocene.Simulation
             {
                 string magic = reader.ReadString();
                 if (magic != Magic && magic != LegacyMagic10 && magic != LegacyMagic9 && magic != LegacyMagic8) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
-                int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > 128 * 1024 * 1024) throw new InvalidDataException("Invalid save metadata size.");
+                int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > MaximumMetadataBytes) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
                 // Generators 8-11 change profiles already stored in this format. Preserve old
@@ -126,7 +129,9 @@ namespace Anthropocene.Simulation
                     world.Tiles[edge.TileB].RiverEdges[edge.SideB] = edge.Id;
                 }
                 foreach (var turn in world.History) { turn.Pressure = new System.Collections.Generic.List<PressureEntry>(); turn.EcologyBalances = new System.Collections.Generic.List<EcologyBalance>(); turn.Production = turn.Production ?? new System.Collections.Generic.List<ProductionReceipt>(); turn.MaterialTransfers = turn.MaterialTransfers ?? new System.Collections.Generic.List<MaterialReceipt>(); }
-                TurnResolver.Invariants(world); ElevationLevelStage.Validate(world); BoundaryRiverStage.Validate(world); ResourceValidation.Validate(world); return world;
+                TurnResolver.Invariants(world); ElevationLevelStage.Validate(world); BoundaryRiverStage.Validate(world); ResourceValidation.Validate(world);
+                if (world.Resources != null) MaterialAccessIndex.For(world);
+                return world;
             }
         }
         private static void MigrateGenerationalDefaults(WorldState world)

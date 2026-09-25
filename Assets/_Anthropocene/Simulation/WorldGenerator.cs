@@ -68,10 +68,11 @@ namespace Anthropocene.Simulation
                 var timer = Stopwatch.StartNew(); stage.Generate(context);
                 world.Generation.Stages.Add(stage.Name); world.Generation.Milliseconds.Add(timer.Elapsed.TotalMilliseconds);
             }
-            if (total.Elapsed.TotalSeconds > config.GenerationBudgetSeconds) world.Generation.Warnings.Add("Generation exceeded configured time budget.");
-            if (GC.GetTotalMemory(false) / 1048576 > config.GenerationBudgetMegabytes) world.Generation.Warnings.Add("Managed memory exceeds configured generation budget.");
             Ownership.Bind(world);
             Validate(world);
+            if (world.Resources != null) MaterialAccessIndex.For(world);
+            if (total.Elapsed.TotalSeconds > config.GenerationBudgetSeconds) world.Generation.Warnings.Add("Generation exceeded configured time budget.");
+            if (GC.GetTotalMemory(false) / 1048576 > config.GenerationBudgetMegabytes) world.Generation.Warnings.Add("Managed memory exceeds configured generation budget.");
             return world;
         }
         public static IWorldGenerationStage[] CreateStages(bool placement = true)

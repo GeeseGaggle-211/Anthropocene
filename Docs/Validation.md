@@ -1,4 +1,10 @@
-# Validation - September 22, 2026
+# Validation - September 25, 2026
+
+## Prepared turn and prior-cohort resolution
+
+Turn preparation now fixes economic intents and food, material and goods needs from the population present at the boundary. Production, consumption, reserves and QoL use that cohort; starvation losses and births commit after production and storage. This is the accepted behavioral baseline and the normative phase order is in [TurnResolutionPasses.md](TurnResolutionPasses.md). The saved automation and recipe rules remain the same. This supersedes the historical post-growth Fabric description later in this document. Focused economy checks passed 101 demand automation, 275 Neolithic realignment, 210 husbandry and 539 pastoral craft assertions, alongside conservation checks and scalar/two-worker/four-worker/reordered replay. Standard/80 and benchmark-only 320 scale runs completed their natural openings with exact worker and save-continuation fingerprints; 320 final load required a bounded 512 MiB metadata allowance because its agricultural history exceeded the former 128 MiB guard. The save format is unchanged.
+
+The paired 96×48/4-player Continents seeds 1, 2, 3, 11 and 42 pass the former relative ±2% population, prior-cohort-weighted QoL and realized-food comparison at each compared turn. Quick 20-case Neolithic transition traces match exactly when the planner search is reduced from twelve to six probes while retaining seasonal barriers. Isolated unmodified-branch comparisons exceeded ±2% where the former planner sized goods for predicted newborns and QoL used ending population. Those historical mismatches remain diagnostic evidence, not an acceptance gate for the chosen prior-cohort baseline. Annual and half-year agricultural outer barriers also failed the isolated comparison. Future parallel-only work must match this accepted baseline exactly. The exact mismatches and the still-open matched Standard performance failure are recorded in [Performance.md](Performance.md). No Unity player or EditMode run was part of this mechanics change.
 
 ## Issue #18 live husbandry matrix
 

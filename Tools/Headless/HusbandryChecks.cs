@@ -146,9 +146,9 @@ internal static class HusbandryChecks
 
         var fourCloth = ResolveCase(true, 500, 192, 96, 4).Record;
         var fourPlain = ResolveCase(false, 500, 192, 96, 4).Record;
-        Check(fourCloth.Growth == 25 && fourPlain.Growth == 25, "post-growth Fabric projection preserves births with four Weavers");
-        Near(fourCloth.Demographics.Single().ManufacturingFood, 250, "post-growth Fabric charges the full 125-resident customer demand");
-        Near(fourCloth.Demographics.Single().AnimalFood - fourPlain.Demographics.Single().AnimalFood, 250, "four-Weaver AnimalFood acceptance replaces exactly actual Fabric input");
+        Check(fourCloth.Growth == 25 && fourPlain.Growth == 25, "prior-cohort Fabric planning preserves births with four Weavers");
+        Near(fourCloth.Demographics.Single().ManufacturingFood, 200, "Fabric charges only the 100 prior-turn residents");
+        Near(fourCloth.Demographics.Single().AnimalFood - fourPlain.Demographics.Single().AnimalFood, 200, "four-Weaver AnimalFood acceptance replaces prior-cohort Fabric input");
     }
 
     private static void TypedFabricPriorityBudget()

@@ -215,12 +215,12 @@ namespace Anthropocene.Simulation
 
         // Field work is resolved before growth planning, while Pots depreciate
         // later in ResolveCampNeolithic. Keep those chronology boundaries separate.
-        public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed)
+        public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources = null)
         {
             var n = w.Config.Neolithic;
             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
             if (good == CraftGood.HandTools || good == CraftGood.Tools)
-                return ToolReplacementDemand(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed);
+                return ToolReplacementDemand(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources);
             if (good == CraftGood.Pots)
                 return potsAlreadyDecayed ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
             double clothingTarget = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
@@ -257,14 +257,15 @@ namespace Anthropocene.Simulation
             double expectedUse = Math.Min(stock, forecast);
             return Math.Max(0, forecast - Math.Max(0, stock - expectedUse));
         }
-        private static double ToolReplacementDemand(WorldState w, Camp c, CraftGood good, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed)
+        private static double ToolReplacementDemand(WorldState w, Camp c, CraftGood good, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources)
         {
             var n = w.Config.Neolithic;
             var recipes = Recipes(w.Config).Where(r => r.Equipment && (!r.AgricultureOnly || CultivationEconomy.Enabled(c)) && (!r.HusbandryOnly || CultivationEconomy.HusbandryEnabled(c)))
                 .OrderByDescending(r => Priority(c, r.Good)).ThenBy(r => r.Good).ToArray();
             double MaterialPriority(MaterialId material) => material == MaterialId.Stone ? c.StonePriority : material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
+            var sources = knownSources ?? MaterialEconomy.KnownSources(w, c, w.Days);
             var room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) +
-                (MaterialPriority(m) > 0 && n.SpecialistMaterialExtractionRate > 0 ? MaterialEconomy.KnownSources(w, c, w.Days).Where(s => s.Material == m).Sum(s => s.Available) : 0));
+                (MaterialPriority(m) > 0 && n.SpecialistMaterialExtractionRate > 0 ? sources.Where(s => s.Material == m).Sum(s => s.Available) : 0));
             double plant = c.PlantFood, animalFood = c.AnimalFood, animalFabric = c.Inventory.AnimalFabric, useful = 0, copperOutput = 0;
             double copperLabor = c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools * w.Config.GenerationIntervals / n.ToolCoveragePerWorker : 0;
             var labor = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToDictionary(role => role, role => c.Workforce.Assignments.Where(a => a.Role == role).Sum(a => a.Population) * w.Config.GenerationIntervals);
@@ -484,7 +485,7 @@ namespace Anthropocene.Simulation
             double improved = Math.Min(covered - copper, c.Inventory.Tools / n.ToolCoveragePerWorker);
             return (copper * n.CopperToolsHousingMultiplier + improved * n.ImprovedToolsHousingMultiplier + (covered - copper - improved) * n.HandToolsHousingMultiplier) / covered;
         }
-        public static void DepreciateHousing(WorldState w, Camp c, double years)
+        public static void DepreciateHousing(WorldState w, Camp c, double years, int residents = -1)
         {
             var n = w.Config.Neolithic;
             double endDays = w.Days + Math.Max(0, years) * w.Config.DaysPerYear;
@@ -500,7 +501,7 @@ namespace Anthropocene.Simulation
             }
             c.Inventory.LightHousingUnits = Math.Max(0, c.Inventory.LightHousingUnits) * Math.Pow(1 - n.HousingDecayPerTurn, Math.Max(0, years) / n.ReferenceTurnYears);
             double after = HousingSupply(w, c, endDays);
-            c.HousingDemand = Math.Max(0, c.Population / n.HousingPeoplePerUnit - after);
+            c.HousingDemand = Math.Max(0, (residents < 0 ? c.Population : residents) / n.HousingPeoplePerUnit - after);
             c.HousingReplacementDemand = Math.Min(Math.Max(0, before - after), c.HousingDemand);
             c.HousingGrowthDemand = Math.Max(0, c.HousingDemand - c.HousingReplacementDemand);
         }
@@ -577,17 +578,19 @@ namespace Anthropocene.Simulation
             }
             return used;
         }
-        public static void ResolveCampNeolithic(WorldState w, Camp c, double intervals, double years, TurnRecord record, double gatheringWorkerIntervals = 0)
+        public static void ResolveCampNeolithic(WorldState w, Camp c, double intervals, double years, TurnRecord record, double gatheringWorkerIntervals = 0, TurnNeeds needs = null)
         {
             if (c.Population <= 0) return;
-            DepreciateHousing(w, c, years);
+            int residents = needs?.Residents ?? c.Population;
+            DepreciateHousing(w, c, years, residents);
             DepreciatePots(w, c, years);
             if (CultivationEconomy.EconomyEnabled(c))
             {
                 var recipes = Recipes(w.Config);
                 double equipment = (c.Inventory.HandTools + c.Inventory.Tools + (c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools : 0)) * intervals / w.Config.Neolithic.ToolCoveragePerWorker;
                 var coverage = new ToolCoverageBudget(w, c, intervals);
-                var housing = MaterialEconomy.Gather(w, c, recipes, intervals, years, gatheringWorkerIntervals, ref equipment, record, true, true);
+                var housing = MaterialEconomy.Gather(w, c, recipes, intervals, years, gatheringWorkerIntervals, ref equipment, record, true, true, needs);
+                var produced = new Dictionary<CraftGood, double>();
                 foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
                 {
                     double labor = CultivationEconomy.Workers(c, role) * intervals;
@@ -595,23 +598,30 @@ namespace Anthropocene.Simulation
                     {
                         if (recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c) || recipe.AgricultureOnly && !CultivationEconomy.Enabled(c)) continue;
                         if (Priority(c, recipe.Good) <= 0) continue;
-                        labor -= Produce(w, c, recipe, role, labor, intervals, Demand(w, c, recipe.Good, years, -1, true, true), ref equipment, record, coverage, housing);
+                        double target = needs?.Production != null
+                            ? Math.Max(0, needs.Production[recipe.Good] - (produced.TryGetValue(recipe.Good, out double made) ? made : 0))
+                            : Demand(w, c, recipe.Good, years, -1, true, true);
+                        int before = record.Production.Count;
+                        labor -= Produce(w, c, recipe, role, labor, intervals, target, ref equipment, record, coverage, housing);
+                        if (record.Production.Count > before)
+                            produced[recipe.Good] = (produced.TryGetValue(recipe.Good, out double prior) ? prior : 0) + record.Production[record.Production.Count - 1].Output;
                     }
                 }
             }
-            ResolveNeeds(w, c, years);
+            ResolveNeeds(w, c, years, residents);
         }
-        public static void ResolveNeeds(WorldState w, Camp c, double years)
+        public static void ResolveNeeds(WorldState w, Camp c, double years, int residents = -1)
         {
             var n = w.Config.Neolithic;
-            double required = c.Population * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
+            int cohort = residents < 0 ? c.Population : residents;
+            double required = cohort * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
             double cloth = Math.Min(required, c.Inventory.Cloth); c.Inventory.Cloth -= cloth;
             double animal = Math.Min(Math.Max(0, required - cloth), c.Inventory.AnimalFabric); c.Inventory.AnimalFabric -= animal;
             c.FabricConsumed = cloth + animal;
             c.ClothPerCapita = required > 0 ? c.FabricConsumed / required : 1;
             // The resolver calls this after DepreciateHousing has already aged
             // existing fixed and portable shelter through the generation.
-            c.HousingPerCapita = c.Population > 0 ? Math.Min(1, HousingSupply(w, c, w.Days) * n.HousingPeoplePerUnit / c.Population) : 1;
+            c.HousingPerCapita = cohort > 0 ? Math.Min(1, HousingSupply(w, c, w.Days) * n.HousingPeoplePerUnit / cohort) : 1;
             c.StationaryYears += years;
             c.RudimentaryExpectation = n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
             double clothing = 1 - c.RudimentaryExpectation * (1 - c.ClothPerCapita), housing = 1 - c.RudimentaryExpectation * (1 - c.HousingPerCapita);
