@@ -20,12 +20,13 @@ namespace Anthropocene.Simulation
             var output = new TResult[inputs.Count];
             if (Workers == 1 || inputs.Count < ParallelThreshold)
             { for (int i = 0; i < inputs.Count; i++) output[i] = evaluate(inputs[i]); return output; }
-            var partitions = Enumerable.Range(0, (inputs.Count + PartitionSize - 1) / PartitionSize).ToArray();
+            int effectiveSize = Math.Min(PartitionSize, Math.Max(1, inputs.Count / (Workers * 2)));
+            var partitions = Enumerable.Range(0, (inputs.Count + effectiveSize - 1) / effectiveSize).ToArray();
             if (ReversePartitions) Array.Reverse(partitions);
             Parallel.ForEach(partitions, new ParallelOptions { MaxDegreeOfParallelism = Workers }, partition =>
             {
-                int end = Math.Min(inputs.Count, (partition + 1) * PartitionSize);
-                for (int i = partition * PartitionSize; i < end; i++) output[i] = evaluate(inputs[i]);
+                int end = Math.Min(inputs.Count, (partition + 1) * effectiveSize);
+                for (int i = partition * effectiveSize; i < end; i++) output[i] = evaluate(inputs[i]);
             });
             return output;
         }

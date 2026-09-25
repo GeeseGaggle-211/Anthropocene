@@ -33,7 +33,7 @@ namespace Anthropocene.Simulation
     public static class TurnPlanner
     {
         public static PreparedTurn Prepare(WorldState world, IReadOnlyDictionary<int, List<Order>> submitted,
-            IEnumerable<DecisionTrace> traces = null)
+            IEnumerable<DecisionTrace> traces = null, PhaseExecution execution = null)
         {
             if (world == null || submitted == null) throw new ArgumentNullException(world == null ? nameof(world) : nameof(submitted));
             TurnDiagnostics.For(world);
@@ -71,46 +71,51 @@ namespace Anthropocene.Simulation
                 prepared.Orders.Add(order); prepared.AutomatedCamps.Add(camp.Id);
                 prepared.OrderReceipts.Add(camp.Player + ":automation:" + order + ":accepted");
             }
-            foreach (var camp in world.Camps.OrderBy(c => c.Id))
-            {
-                // Dispatch changes who remains a camp resident, but creates no
-                // new person. Goods and QoL follow those staying at the camp;
-                // the departing cohort follows the hunter provision rules.
-                int departing = prepared.Orders.Where(o => o.Kind == OrderKind.Dispatch && o.Entity == camp.Id)
-                    .Sum(o => o.Population);
-                int residents = Math.Max(0, camp.Population - departing);
-                var needs = new TurnNeeds
-                {
-                    Camp = camp.Id, Residents = residents, LinkedPopulation = world.LinkedPopulation(camp),
-                    FoodTarget = TurnResolver.PlanningFoodDemand(world, camp)
-                };
-                if (residents > 0 && CultivationEconomy.EconomyEnabled(camp))
-                {
-                    var economy = prepared.Orders.FirstOrDefault(o => o.Kind == OrderKind.Economy && o.Entity == camp.Id)?.Economy ?? EconomicIntent.From(camp);
-                    var snapshot = EconomicPlanner.Preview(camp, economy, residents);
-                    double intervals = world.Config.GenerationIntervals, years = world.Config.TurnDays / world.Config.DaysPerYear;
-                    var recipes = NeolithicProduction.Recipes(world.Config);
-                    var sources = MaterialEconomy.KnownSources(world, snapshot, world.Days);
-                    foreach (var recipe in recipes)
-                        needs.Goods[recipe.Good] = NeolithicProduction.Priority(snapshot, recipe.Good) > 0
-                            ? NeolithicProduction.Demand(world, snapshot, recipe.Good, years, residents, false, false, sources) : 0;
-                    double equipment = new ToolCoverageBudget(world, snapshot, intervals).Remaining;
-                    needs.Production = MaterialEconomy.Forecast(world, snapshot, recipes, intervals, years, equipment, true, residents, false, false, -1, -1, sources);
-                    needs.Housing = MaterialEconomy.PlanHousingMaterials(world, snapshot, recipes, needs.Production, years, world.Days, sources);
-                    needs.PlantFeedstock = needs.Production[CraftGood.Cloth] * world.Config.Neolithic.PlantFoodPerFabricUnit;
-                    needs.AnimalFeedstock = needs.Production[CraftGood.AnimalFabric];
-                    // Only inventory above this cohort's consumption and reserve
-                    // can substitute for a separately harvested craft input.
-                    int foodConsumers = camp.Population + world.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(world, h)).Sum(h => h.Population);
-                    double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(world, foodConsumers, intervals),
-                        NeolithicProduction.StorageCapacityAfterPotDepreciation(world, snapshot, intervals, years));
-                    double sparePlant = Math.Min(camp.PlantFood,
-                        Math.Max(0, camp.Food - foodConsumers * world.Config.Consumption * intervals - reserve));
-                    needs.PlantFeedstockGap = Math.Max(0, needs.PlantFeedstock - sparePlant);
-                }
-                prepared.Needs[camp.Id] = needs;
-            }
+            var camps = world.Camps.OrderBy(c => c.Id).ToArray();
+            var needsResults = (execution ?? new PhaseExecution()).Map(camps, c => ComputeNeeds(world, c, prepared));
+            for (int i = 0; i < camps.Length; i++)
+                prepared.Needs[camps[i].Id] = needsResults[i];
             return prepared;
+        }
+
+        private static TurnNeeds ComputeNeeds(WorldState world, Camp camp, PreparedTurn prepared)
+        {
+            // Dispatch changes who remains a camp resident, but creates no
+            // new person. Goods and QoL follow those staying at the camp;
+            // the departing cohort follows the hunter provision rules.
+            int departing = prepared.Orders.Where(o => o.Kind == OrderKind.Dispatch && o.Entity == camp.Id)
+                .Sum(o => o.Population);
+            int residents = Math.Max(0, camp.Population - departing);
+            var needs = new TurnNeeds
+            {
+                Camp = camp.Id, Residents = residents, LinkedPopulation = world.LinkedPopulation(camp),
+                FoodTarget = TurnResolver.PlanningFoodDemand(world, camp)
+            };
+            if (residents > 0 && CultivationEconomy.EconomyEnabled(camp))
+            {
+                var economy = prepared.Orders.FirstOrDefault(o => o.Kind == OrderKind.Economy && o.Entity == camp.Id)?.Economy ?? EconomicIntent.From(camp);
+                var snapshot = EconomicPlanner.Preview(camp, economy, residents);
+                double intervals = world.Config.GenerationIntervals, years = world.Config.TurnDays / world.Config.DaysPerYear;
+                var recipes = NeolithicProduction.Recipes(world.Config);
+                var sources = MaterialEconomy.KnownSources(world, snapshot, world.Days);
+                foreach (var recipe in recipes)
+                    needs.Goods[recipe.Good] = NeolithicProduction.Priority(snapshot, recipe.Good) > 0
+                        ? NeolithicProduction.Demand(world, snapshot, recipe.Good, years, residents, false, false, sources) : 0;
+                double equipment = new ToolCoverageBudget(world, snapshot, intervals).Remaining;
+                needs.Production = MaterialEconomy.Forecast(world, snapshot, recipes, intervals, years, equipment, true, residents, false, false, -1, -1, sources);
+                needs.Housing = MaterialEconomy.PlanHousingMaterials(world, snapshot, recipes, needs.Production, years, world.Days, sources);
+                needs.PlantFeedstock = needs.Production[CraftGood.Cloth] * world.Config.Neolithic.PlantFoodPerFabricUnit;
+                needs.AnimalFeedstock = needs.Production[CraftGood.AnimalFabric];
+                // Only inventory above this cohort's consumption and reserve
+                // can substitute for a separately harvested craft input.
+                int foodConsumers = camp.Population + world.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(world, h)).Sum(h => h.Population);
+                double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(world, foodConsumers, intervals),
+                    NeolithicProduction.StorageCapacityAfterPotDepreciation(world, snapshot, intervals, years));
+                double sparePlant = Math.Min(camp.PlantFood,
+                    Math.Max(0, camp.Food - foodConsumers * world.Config.Consumption * intervals - reserve));
+                needs.PlantFeedstockGap = Math.Max(0, needs.PlantFeedstock - sparePlant);
+            }
+            return needs;
         }
     }
 }

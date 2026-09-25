@@ -53,7 +53,7 @@ namespace Anthropocene.Simulation
         public string Validate(WorldState w, int player, Order order, HashSet<int> visible = null) => OrderRules.Validate(new AgentObservationBuilder().Build(w, player), order);
 
         public TurnRecord Resolve(WorldState w, IReadOnlyDictionary<int, List<Order>> submitted, IEnumerable<DecisionTrace> traces = null)
-            => Resolve(w, TurnPlanner.Prepare(w, submitted, traces));
+            => Resolve(w, TurnPlanner.Prepare(w, submitted, traces, execution));
 
         public TurnRecord Resolve(WorldState w, PreparedTurn prepared)
         {

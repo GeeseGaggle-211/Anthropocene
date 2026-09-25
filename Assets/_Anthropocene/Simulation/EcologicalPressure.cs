@@ -35,7 +35,7 @@ namespace Anthropocene.Simulation
         private const double SustainableRateEpsilon = 1e-12;
         // Instantaneous realized conversion is an integrated hazard in the same bounded
         // condition equation as extraction. Recovery is materialized before disturbance.
-        public static void ApplyConversion(WorldState w, int tile, int entity, string kind, string pool, double requested, double realized, double pressure, double days, TurnRecord record)
+        public static void ApplyConversion(WorldState w, int tile, int entity, string kind, string pool, double requested, double realized, double pressure, double days, TurnRecord record, Dictionary<int, EcologyBalance> balanceIndex = null)
         {
             var t = w.Tiles[tile]; var view = LazyEcology.MaterializeEcology(w, tile, days);
             LazyEcology.RecoverCondition(w, t, ref view, 0, 0);
@@ -43,7 +43,10 @@ namespace Anthropocene.Simulation
             view.CurrentVegetation = Vegetation.Update(t.NaturalVegetationPotential, view.CurrentVegetation, view.LandCondition, w.Config);
             var before = view; LazyEcology.ClampCapacity(w, t, ref view); view.Commit(t);
             double woodCapacityLoss = MaterialEconomy.ClampWoodSource(w, tile, view);
-            var balance = record.EcologyBalances.LastOrDefault(b => b.Tile == tile);
+            if (balanceIndex == null && record != null) balanceIndex = MaterialEconomy.GetOrCreateBalanceIndex(record);
+            EcologyBalance balance = null;
+            if (balanceIndex != null) balanceIndex.TryGetValue(tile, out balance);
+            else balance = record?.EcologyBalances?.LastOrDefault(b => b.Tile == tile);
             if (balance != null) { balance.BiomassOverflow += before.PotentialFood - view.PotentialFood; balance.FoodOverflow += before.Food - view.Food; balance.EndingBiomass = view.PotentialFood; balance.EndingFood = view.Food; }
             record.Pressure.Add(new PressureEntry { Tile = tile, Entity = entity, Kind = kind, Pool = pool, Requested = requested, Realized = realized, Unmet = Math.Max(0, requested - realized), ConditionDamage = pressure, WoodCapacityLoss = woodCapacityLoss });
         }
@@ -53,9 +56,28 @@ namespace Anthropocene.Simulation
             var tile = w.Tiles[tileId]; var wood = MaterialEconomy.ProjectWoodSource(w, tileId);
             var v = LazyEcology.ProjectEcology(w, tileId, start, true, wood == null ? null : wood.Recover);
             var result = new TileEcologyResult { Balance = new EcologyBalance { Tile = tileId, StartingBiomass = v.PotentialFood, StartingFood = v.Food, StartingWater = v.Freshwater } };
-            var requests = claims.OrderBy(d => d.Entity).ThenBy(d => d.Kind, StringComparer.Ordinal).ToArray();
-            double foodRequest = requests.Sum(d => d.Food), herdRequest = requests.Sum(d => d.PotentialFood), waterRequest = requests.Sum(d => d.Freshwater);
-            double humanImpact = foodRequest <= 0 ? 1 : requests.Sum(d => d.Food * d.ImpactMultiplier) / foodRequest;
+            var requests = CanonicalRequests(claims);
+            double foodRequest = 0, herdRequest = 0, waterRequest = 0, humanImpactWeighted = 0;
+            double farmClaim = 0, gatherClaim = 0;
+            bool singleEntity = true;
+            int humanEntity = -1;
+            for (int i = 0; i < requests.Length; i++)
+            {
+                var r = requests[i];
+                foodRequest += r.Food;
+                herdRequest += r.PotentialFood;
+                waterRequest += r.Freshwater;
+                humanImpactWeighted += r.Food * r.ImpactMultiplier;
+                bool isHuman = r.Kind == "Cultivation" || r.Kind == "Gathering" || r.Kind == "Marine gathering" || r.Kind == "Aquatic gathering";
+                if (isHuman)
+                {
+                    if (humanEntity == -1) humanEntity = r.Entity;
+                    else if (humanEntity != r.Entity) singleEntity = false;
+                    if (r.Kind == "Cultivation") farmClaim += r.Food;
+                    else gatherClaim += r.Food;
+                }
+            }
+            double humanImpact = foodRequest <= 0 ? 1 : humanImpactWeighted / foodRequest;
             double humanRate = foodRequest / duration, herdRate = herdRequest / duration, waterRate = waterRequest / duration;
             double humans = 0, herds = 0, water = 0, spilled = 0, foodCapacityDays = 0, biomassCapacityDays = 0, waterCapacityDays = 0, damage = 0;
             foreach (var segment in LazyEcology.Segments(start, duration, w.Config.BaseDays))
@@ -95,18 +117,31 @@ namespace Anthropocene.Simulation
                 v.CultivationCapital = CultivationEconomy.Decay(w.Config, v.CultivationCapital, tile.CultivationOperatingFraction, dt / w.Config.DaysPerYear);
                 wood?.Recover(previous, v, dt, damagePerDay);
             }
-            foreach (var d in requests)
+            for (int i = 0; i < requests.Length; i++)
             {
+                var d = requests[i];
                 double f = Share(humans, d.Food, foodRequest), p = Share(herds, d.PotentialFood, herdRequest), q = Share(water, d.Freshwater, waterRequest);
                 // Allocate this settlement's capped share to operating farmers first;
                 // gatherers fill the remaining actual gap, never the pre-cap forecast.
                 if (d.Kind == "Cultivation" || d.Kind == "Gathering" || d.Kind == "Marine gathering" || d.Kind == "Aquatic gathering")
                 {
-                    double farmClaim = requests.Where(x => x.Entity == d.Entity && x.Kind == "Cultivation").Sum(x => x.Food);
-                    double gatherClaim = requests.Where(x => x.Entity == d.Entity && (x.Kind == "Gathering" || x.Kind == "Marine gathering" || x.Kind == "Aquatic gathering")).Sum(x => x.Food);
-                    double accepted = Share(humans, farmClaim + gatherClaim, foodRequest);
-                    double farmAccepted = Math.Min(farmClaim, accepted);
-                    f = d.Kind == "Cultivation" ? Share(farmAccepted, d.Food, farmClaim) : Share(Math.Max(0, accepted - farmAccepted), d.Food, gatherClaim);
+                    double curFarmClaim = farmClaim, curGatherClaim = gatherClaim;
+                    if (!singleEntity)
+                    {
+                        curFarmClaim = 0; curGatherClaim = 0;
+                        for (int j = 0; j < requests.Length; j++)
+                        {
+                            var x = requests[j];
+                            if (x.Entity == d.Entity)
+                            {
+                                if (x.Kind == "Cultivation") curFarmClaim += x.Food;
+                                else if (x.Kind == "Gathering" || x.Kind == "Marine gathering" || x.Kind == "Aquatic gathering") curGatherClaim += x.Food;
+                            }
+                        }
+                    }
+                    double accepted = Share(humans, curFarmClaim + curGatherClaim, foodRequest);
+                    double farmAccepted = Math.Min(curFarmClaim, accepted);
+                    f = d.Kind == "Cultivation" ? Share(farmAccepted, d.Food, curFarmClaim) : Share(Math.Max(0, accepted - farmAccepted), d.Food, curGatherClaim);
                 }
                 result.Transfers.Add(new Transfer { Tile = tileId, Entity = d.Entity, Kind = d.Kind, Food = f, PotentialFood = p, Freshwater = q });
                 if (d.Food > 0) AddPressure(result, d, "Accessible food", d.Food, f, foodCapacityDays, result.Balance.FoodRecharge, Share(damage, f, humans + herds), 0);
@@ -120,6 +155,31 @@ namespace Anthropocene.Simulation
             result.View = v;
             if (wood != null) { result.HasWoodSource = true; result.WoodRemaining = wood.Remaining; result.WoodDays = v.Days; }
             return result;
+        }
+        private static Demand[] CanonicalRequests(IEnumerable<Demand> claims)
+        {
+            if (claims is Demand[] array)
+            {
+                if (array.Length <= 1) return array;
+                if (array.Length == 2)
+                {
+                    int cmp = array[0].Entity.CompareTo(array[1].Entity);
+                    if (cmp == 0) cmp = string.CompareOrdinal(array[0].Kind, array[1].Kind);
+                    if (cmp <= 0) return array;
+                    return new Demand[] { array[1], array[0] };
+                }
+                bool sorted = true;
+                for (int i = 1; i < array.Length; i++)
+                {
+                    int c = array[i - 1].Entity.CompareTo(array[i].Entity);
+                    if (c == 0) c = string.CompareOrdinal(array[i - 1].Kind, array[i].Kind);
+                    if (c > 0) { sorted = false; break; }
+                }
+                if (sorted) return array;
+                return array.OrderBy(d => d.Entity).ThenBy(d => d.Kind, StringComparer.Ordinal).ToArray();
+            }
+            if (claims is ICollection<Demand> coll && coll.Count == 0) return Array.Empty<Demand>();
+            return claims.OrderBy(d => d.Entity).ThenBy(d => d.Kind, StringComparer.Ordinal).ToArray();
         }
         private static double Share(double total, double claim, double claims) => claims <= 0 ? 0 : total * claim / claims;
         private static void AddPressure(TileEcologyResult result, Demand d, string pool, double request, double realized, double capacity, double recharge, double damage, double spill) =>

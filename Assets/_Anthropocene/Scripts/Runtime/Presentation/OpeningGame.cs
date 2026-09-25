@@ -435,7 +435,7 @@ namespace Anthropocene.Presentation
             resolving = Task.Run(() =>
             {
                 var ai = AiPlanning.Decide(world, PhaseExecution.Desktop, 0); ai.Orders[0] = playerOrders;
-                var prepared = TurnPlanner.Prepare(world, ai.Orders, ai.Traces);
+                var prepared = TurnPlanner.Prepare(world, ai.Orders, ai.Traces, PhaseExecution.Desktop);
                 return resolver.Resolve(world, prepared);
             });
         }

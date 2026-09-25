@@ -352,7 +352,7 @@ namespace Anthropocene.Simulation
                 seasonalTimer.Restart();
                 // Small seasonal frontiers are cheaper to integrate in canonical
                 // order than to dispatch eighty separate parallel jobs.
-                var results = stepGroups.Length < 512
+                var results = stepGroups.Length < 128
                     ? stepGroups.Select(group => EcologicalPressure.Integrate(w, group.Tile, group.Claims, start, segment.Days)).ToArray()
                     : execution.Map(stepGroups, group => EcologicalPressure.Integrate(w, group.Tile, group.Claims, start, segment.Days));
                 LastMetrics.SeasonalIntegrationMilliseconds += seasonalTimer.Elapsed.TotalMilliseconds;

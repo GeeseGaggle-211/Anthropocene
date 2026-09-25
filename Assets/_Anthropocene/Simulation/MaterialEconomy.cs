@@ -132,6 +132,22 @@ namespace Anthropocene.Simulation
         internal static void RegisterSourceState(WorldState w, MaterialSourceState state) => w.MaterialIndex?.AddState(state);
         public static MaterialSourceObservation[] Observe(WorldState w, Camp c, double days) => KnownSources(w, c, days).Select(s => new MaterialSourceObservation { Id = s.Id, Tile = s.Tile, Distance = s.Distance, Material = s.Material, Available = s.Available }).ToArray();
         public static readonly MaterialId[] Materials = { MaterialId.Stone, MaterialId.Clay, MaterialId.Wood };
+        private static readonly string[] ExtractionRoles = { WorkforceRoles.Stonecutter, WorkforceRoles.Woodcutter, WorkforceRoles.ClayMiner, WorkforceRoles.Gatherer };
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<TurnRecord, Tuple<int, Dictionary<int, EcologyBalance>>> BalanceIndices
+            = new System.Runtime.CompilerServices.ConditionalWeakTable<TurnRecord, Tuple<int, Dictionary<int, EcologyBalance>>>();
+
+        internal static Dictionary<int, EcologyBalance> GetOrCreateBalanceIndex(TurnRecord record)
+        {
+            if (record?.EcologyBalances == null) return null;
+            int count = record.EcologyBalances.Count;
+            if (BalanceIndices.TryGetValue(record, out var entry) && entry.Item1 == count)
+                return entry.Item2;
+            var index = new Dictionary<int, EcologyBalance>(count);
+            foreach (var b in record.EcologyBalances) index[b.Tile] = b;
+            BalanceIndices.Remove(record);
+            BalanceIndices.Add(record, Tuple.Create(count, index));
+            return index;
+        }
         // Construction is the flexible consumer.  Use all visible, reachable
         // source stock to choose its mix, after retaining the source- and
         // labor-feasible direct recipe plan. The ratio sees current residual
@@ -378,10 +394,10 @@ namespace Anthropocene.Simulation
                 result.Add(new KnownMaterialSource { Id = id, Tile = tile, Material = material, Initial = initial, Share = share, Available = remaining * share, RecoveryPerYear = recovery, Distance = w.Map.Distance(c.Tile, tile) });
             }
         }
-        public static double Extract(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record)
-            => ExtractKnown(w, c, requested, role, workerIntervals, useful, days, record, false);
+        public static double Extract(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record, Dictionary<int, EcologyBalance> balanceIndex = null)
+            => ExtractKnown(w, c, requested, role, workerIntervals, useful, days, record, false, balanceIndex ?? (record != null ? GetOrCreateBalanceIndex(record) : null));
 
-        private static double ExtractKnown(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record, bool trustedLocalCatalog)
+        private static double ExtractKnown(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record, bool trustedLocalCatalog, Dictionary<int, EcologyBalance> balanceIndex = null)
         {
             if (!CultivationEconomy.Enabled(c) || workerIntervals <= 0 || useful <= 0) return 0;
             var source = trustedLocalCatalog ? requested : KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
@@ -415,7 +431,7 @@ namespace Anthropocene.Simulation
             if (source.Material == MaterialId.Wood)
             {
                 double fraction = amount / Math.Max(1e-12, source.Initial);
-                EcologicalPressure.ApplyConversion(w, source.Tile, c.Id, "Timber extraction", "Wood", useful, amount, fraction * w.Config.Neolithic.TimberConversionPressure, days, record);
+                EcologicalPressure.ApplyConversion(w, source.Tile, c.Id, "Timber extraction", "Wood", useful, amount, fraction * w.Config.Neolithic.TimberConversionPressure, days, record, balanceIndex);
             }
             return amount / rate;
         }
@@ -448,39 +464,77 @@ namespace Anthropocene.Simulation
                 return Math.Max(0, total - Inventory(c, material));
             }
             var localSources = KnownSources(w, c, days);
-            foreach (string role in WorkforceRoles.Extractors.Concat(new[] { WorkforceRoles.Gatherer }))
+            var balanceIndex = GetOrCreateBalanceIndex(record);
+            foreach (string role in ExtractionRoles)
             {
                 double labor = role == WorkforceRoles.Gatherer ? generalistIntervals : CultivationEconomy.Workers(c, role) * intervals;
+                if (labor <= 1e-10) continue;
+                var roleSources = localSources.Where(s => role == WorkforceRoles.Gatherer || role == Specialist(s.Material)).ToArray();
+                if (roleSources.Length == 0) continue;
+                double rate = w.Config.Neolithic.SpecialistMaterialExtractionRate *
+                    (role == WorkforceRoles.Gatherer ? w.Config.Neolithic.GeneralistTaskEfficiency : 1);
                 while (labor > 1e-10)
                 {
-                    var candidates = localSources.Where(s => s.Available > 1e-10 && (role == WorkforceRoles.Gatherer || role == Specialist(s.Material)));
-                    var selected = candidates.Select(s => new { Source = s, Demand = Shortfall(s.Material), Priority = s.Material == MaterialId.Stone ? c.StonePriority : s.Material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority }).Where(x => x.Demand * x.Priority > 1e-10).OrderByDescending(x => x.Demand * x.Priority).ThenBy(x => x.Source.Distance).ThenBy(x => x.Source.Id, StringComparer.Ordinal).FirstOrDefault();
-                    if (selected == null) break;
+                    KnownMaterialSource bestSource = null;
+                    double bestScore = 1e-10, bestDemand = 0, bestPriority = 0;
+                    for (int i = 0; i < roleSources.Length; i++)
+                    {
+                        var s = roleSources[i];
+                        if (s.Available <= 1e-10) continue;
+                        double demand = Shortfall(s.Material);
+                        double priority = s.Material == MaterialId.Stone ? c.StonePriority : s.Material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
+                        double score = demand * priority;
+                        if (score <= 1e-10) continue;
+                        if (bestSource == null || score > bestScore)
+                        {
+                            bestSource = s; bestScore = score; bestDemand = demand; bestPriority = priority;
+                        }
+                        else if (score == bestScore)
+                        {
+                            if (s.Distance < bestSource.Distance)
+                            {
+                                bestSource = s; bestScore = score; bestDemand = demand; bestPriority = priority;
+                            }
+                            else if (s.Distance == bestSource.Distance && StringComparer.Ordinal.Compare(s.Id, bestSource.Id) < 0)
+                            {
+                                bestSource = s; bestScore = score; bestDemand = demand; bestPriority = priority;
+                            }
+                        }
+                    }
+                    if (bestSource == null) break;
                     // Scores fall linearly with inventory received. Batch the
                     // intervals for which this source remains the winner; the
                     // next event is a rival material overtaking it, depletion,
                     // or its own demand being filled. Wood keeps one-interval
                     // receipts because each extraction applies ecological pressure.
-                    double rate = w.Config.Neolithic.SpecialistMaterialExtractionRate *
-                        (role == WorkforceRoles.Gatherer ? w.Config.Neolithic.GeneralistTaskEfficiency : 1);
                     double batch = Math.Min(labor, 1);
-                    if (selected.Source.Material != MaterialId.Wood && rate > 0)
+                    if (bestSource.Material != MaterialId.Wood && rate > 0)
                     {
-                        double rival = candidates.Where(s => s.Material != selected.Source.Material)
-                            .Select(s => Shortfall(s.Material) * (s.Material == MaterialId.Stone ? c.StonePriority : s.Material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority))
-                            .DefaultIfEmpty(0).Max();
-                        double margin = selected.Demand * selected.Priority - rival;
+                        double rival = 0;
+                        for (int i = 0; i < roleSources.Length; i++)
+                        {
+                            var s = roleSources[i];
+                            if (s.Available > 1e-10 && s.Material != bestSource.Material)
+                            {
+                                double rDemand = Shortfall(s.Material);
+                                double rPriority = s.Material == MaterialId.Stone ? c.StonePriority : s.Material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
+                                double rScore = rDemand * rPriority;
+                                if (rScore > rival) rival = rScore;
+                            }
+                        }
+                        double margin = bestDemand * bestPriority - rival;
                         double stableIntervals = rival <= 1e-10 ? double.PositiveInfinity :
-                            Math.Max(1, Math.Ceiling(Math.Max(0, margin) / Math.Max(1e-12, selected.Priority * rate)));
+                            Math.Max(1, Math.Ceiling(Math.Max(0, margin) / Math.Max(1e-12, bestPriority * rate)));
                         batch = Math.Min(labor, Math.Min(stableIntervals,
-                            Math.Min(selected.Source.Available, selected.Demand) / rate));
+                            Math.Min(bestSource.Available, bestDemand) / rate));
                     }
-                    double spent = ExtractKnown(w, c, selected.Source, role, batch, selected.Demand, days, record, true);
+                    double spent = ExtractKnown(w, c, bestSource, role, batch, bestDemand, days, record, true, balanceIndex);
                     if (spent <= 1e-12) break;
-                    var state = SourceState(w, selected.Source.Id);
+                    var state = SourceState(w, bestSource.Id);
                     if (state != null)
-                        foreach (var source in localSources.Where(s => s.Id == selected.Source.Id))
-                            source.Available = Math.Max(0, state.Remaining * source.Share);
+                        for (int i = 0; i < localSources.Length; i++)
+                            if (localSources[i].Id == bestSource.Id)
+                                localSources[i].Available = Math.Max(0, state.Remaining * localSources[i].Share);
                     labor -= spent;
                 }
             }

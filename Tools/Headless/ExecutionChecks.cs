@@ -43,7 +43,7 @@ internal static class ExecutionChecks
         {
             var plan = AiPlanning.Decide(world, execution);
             var preparationTimer = Stopwatch.StartNew();
-            var prepared = TurnPlanner.Prepare(world, plan.Orders, plan.Traces);
+            var prepared = TurnPlanner.Prepare(world, plan.Orders, plan.Traces, execution);
             double preparationMs = preparationTimer.Elapsed.TotalMilliseconds;
             resolver.Resolve(world, prepared);
             var metrics = resolver.LastMetrics;
