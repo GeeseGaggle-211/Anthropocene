@@ -1,5 +1,10 @@
 # Prepared-turn Neolithic performance handoff
 
+This report is the archived seasonal prepared-turn reference at `c33a5b7`.
+The production turn-horizon refactor and its newer measurements are recorded
+in [TurnHorizonRefactor.md](TurnHorizonRefactor.md); statements below that
+retain seasonal barriers describe that historical checkpoint.
+
 September 25 follow-up: the exact Options 1/5 cache experiment is on
 `codex/neolithic-options-1-5-validation`, based on `9dc18c0`. See
 [its validation report](NeolithicOptions15Validation.md) for the sustained

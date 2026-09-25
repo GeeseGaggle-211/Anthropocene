@@ -89,13 +89,15 @@ and freshwater stocks once for the whole duration. Human and herd claims
 share a tile's single food/biomass supply. Unmet requests, recharge and
 overflow close each conservation ledger.
 
-Condition uses its exponential recovery/damage equation. A fixed two-pass
-calculation first estimates realized extraction under recovery-only mean
-condition, then evaluates the same horizon once under its implied mean
-damage. Zero renewable-safe-rate opening-stock extraction retains its first
-solve so ending condition can be damaged without erasing the stock that was
-actually present. This is a bounded coefficient correction, not a new world
-state or a second claim decision.
+Condition uses its exponential recovery/damage equation. The active-tile
+stock solve uses the recovery-only mean condition and produces integrated
+receipts once. An O(4) reducer then applies each climate profile's safe
+harvest rate and finite stock window to the **realized** extraction rate,
+weights the resulting nonlinear overuse penalty by profile exposure, and
+updates endpoint condition. This calculation does not retroactively remove
+food that was already awarded from opening stock. It also does not impose
+the old seasonal cap on receipts: within-turn dry-season clipping is an
+intentional approximation limit of the single transition.
 
 Quiet, undisturbed tiles use exact affine composition of the four ordered
 seasonal recovery maps: a whole-cycle map is repeated algebraically, with at
@@ -108,10 +110,11 @@ fields, its within-horizon cultivation trajectory is approximated from start
 and endpoint capital; this is a calibration limit.
 
 The averaged generator deliberately differs from an exact composition of
-eighty active seasonal transitions when season order, threshold crossing,
-vegetation hysteresis, or changing field capital affects realized extraction.
-The four climate profiles still distinguish seasonal distributions; the
-recorded comparison quantifies these effects rather than assuming parity.
+eighty active seasonal transitions when a poor season clips stock or
+harvest, season order matters, vegetation crosses a threshold, or field
+capital changes. The four climate profiles still distinguish seasonal
+distributions; the recorded comparison quantifies these effects rather
+than assuming parity.
 
 ### Cultivation and equipment balance
 

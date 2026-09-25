@@ -25,12 +25,15 @@ internal static class HorizonExecutionChecks
                 throw new Exception("Horizon execution must evaluate each active tile exactly once.");
             return (metrics.ActiveTiles, metrics.TileIntegrations, metrics.ClaimsAllocated);
         }
-        var oneYear = RunAt(365);
-        var twentyYears = RunAt(7300);
-        if (oneYear.TileIntegrations != twentyYears.TileIntegrations ||
-            oneYear.ActiveTiles != twentyYears.ActiveTiles)
-            throw new Exception("Horizon duration changed the number of tile kernels on a fixed world.");
-        Console.WriteLine("PASS: horizon execution uses " + twentyYears.TileIntegrations +
-            " tile kernels for both one-year and twenty-year turns");
+        var reference = RunAt(365);
+        foreach (double years in new[] { .5, 5.0, 10.0, 20.0 })
+        {
+            var measured = RunAt(years * 365);
+            if (reference.TileIntegrations != measured.TileIntegrations ||
+                reference.ActiveTiles != measured.ActiveTiles)
+                throw new Exception("Horizon duration changed the number of tile kernels on a fixed world at " + years + " years.");
+        }
+        Console.WriteLine("PASS: horizon execution uses " + reference.TileIntegrations +
+            " tile kernels for fractional, one-, five-, ten-, and twenty-year turns");
     }
 }

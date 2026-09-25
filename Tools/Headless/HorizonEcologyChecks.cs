@@ -53,6 +53,72 @@ internal static class HorizonEcologyChecks
             context + " bounded receipts");
     }
 
+    private static void ContestedFoodDebitsOneTileSequentially()
+    {
+        void Verify(double firstRequest, double secondRequest, string context)
+        {
+            var first = new Demand { Tile = 0, Entity = 11, Kind = "Gathering", Food = firstRequest };
+            var second = new Demand { Tile = 0, Entity = 22, Kind = "Gathering", Food = secondRequest };
+            var forward = EcologicalPressure.Integrate(Fixture(), 0, new[] { first, second }, 0, 365);
+            var reversed = EcologicalPressure.Integrate(Fixture(), 0, new[] { second, first }, 0, 365);
+            Conserves(forward, context);
+            double available = forward.Transfers.Sum(transfer => transfer.Food);
+            double expectedFirst = Math.Min(firstRequest, available);
+            double expectedSecond = Math.Min(secondRequest, Math.Max(0, available - expectedFirst));
+            Check(available <= firstRequest + secondRequest + 1e-8,
+                context + " receipts cannot exceed requested food");
+            Check(Near(forward.Transfers.Single(transfer => transfer.Entity == first.Entity).Food, expectedFirst)
+                && Near(forward.Transfers.Single(transfer => transfer.Entity == second.Entity).Food, expectedSecond),
+                context + " first claimant debits finite food before the second");
+            Check(forward.Transfers.Select(transfer => transfer.Entity)
+                    .SequenceEqual(reversed.Transfers.Select(transfer => transfer.Entity))
+                && forward.Transfers.Zip(reversed.Transfers,
+                    (a, b) => Near(a.Food, b.Food)).All(equal => equal)
+                && Near(forward.View.Food, reversed.View.Food)
+                && Near(forward.View.PotentialFood, reversed.View.PotentialFood),
+                context + " receipt and endpoint are independent of input enumeration order");
+        }
+
+        Verify(10, 10000, "partial first claimant");
+        Verify(10000, 10, "exhausting first claimant");
+    }
+
+    private static void ContestedBiomassAndWaterDebitOneTileSequentially()
+    {
+        void Verify(double firstRequest, double secondRequest, string context)
+        {
+            var first = new Demand { Tile = 0, Entity = 11, Kind = "Herd",
+                PotentialFood = firstRequest, Freshwater = firstRequest };
+            var second = new Demand { Tile = 0, Entity = 22, Kind = "Herd",
+                PotentialFood = secondRequest, Freshwater = secondRequest };
+            var forward = EcologicalPressure.Integrate(Fixture(), 0, new[] { first, second }, 0, 365);
+            var reversed = EcologicalPressure.Integrate(Fixture(), 0, new[] { second, first }, 0, 365);
+            Conserves(forward, context);
+            double biomass = forward.Transfers.Sum(transfer => transfer.PotentialFood);
+            double water = forward.Transfers.Sum(transfer => transfer.Freshwater);
+            var firstReceipt = forward.Transfers.Single(transfer => transfer.Entity == first.Entity);
+            var secondReceipt = forward.Transfers.Single(transfer => transfer.Entity == second.Entity);
+            Check(Near(firstReceipt.PotentialFood, Math.Min(firstRequest, biomass))
+                && Near(secondReceipt.PotentialFood,
+                    Math.Min(secondRequest, Math.Max(0, biomass - firstReceipt.PotentialFood))),
+                context + " finite biomass is debited before the second claimant");
+            Check(Near(firstReceipt.Freshwater, Math.Min(firstRequest, water))
+                && Near(secondReceipt.Freshwater,
+                    Math.Min(secondRequest, Math.Max(0, water - firstReceipt.Freshwater))),
+                context + " finite freshwater is debited before the second claimant");
+            Check(forward.Transfers.Select(transfer => transfer.Entity)
+                    .SequenceEqual(reversed.Transfers.Select(transfer => transfer.Entity))
+                && forward.Transfers.Zip(reversed.Transfers, (a, b) =>
+                    Near(a.PotentialFood, b.PotentialFood) && Near(a.Freshwater, b.Freshwater)).All(equal => equal)
+                && Near(forward.View.PotentialFood, reversed.View.PotentialFood)
+                && Near(forward.View.Freshwater, reversed.View.Freshwater),
+                context + " biomass and water receipts are independent of input enumeration order");
+        }
+
+        Verify(10, 10000, "partial first herd claimant");
+        Verify(10000, 10, "exhausting first herd claimant");
+    }
+
     public static int Run()
     {
         count = 0;
@@ -106,6 +172,9 @@ internal static class HorizonEcologyChecks
             && recovered.Food > 99, "passive stock responds to late-horizon plankton recovery");
         Check(fishery.Tiles[0].Food == 0 && fishery.Tiles[0].AquaticCondition == .25,
             "passive response remains a pure projection");
+
+        ContestedFoodDebitsOneTileSequentially();
+        ContestedBiomassAndWaterDebitOneTileSequentially();
 
         Console.WriteLine("PASS: " + count + " horizon ecology assertions");
         return count;

@@ -1,5 +1,47 @@
 # Paired turn audit
 
+## Reproduce the analytical turn-horizon comparison
+
+The analytical resolver uses the seasonal prepared-turn checkpoint `c33a5b7`
+as its behavioral and performance reference. Build the **same current audit
+harness** against each source tree; this keeps measurement fields and the
+managed-heap probe identical. Run all builds and audits sequentially in this
+Windows checkout. The commands create only ignored files under
+`TestResults/TurnHorizonRepro`.
+
+```powershell
+$sdk = (Resolve-Path ./.tools/dotnet/dotnet.exe).Path
+$root = 'TestResults/TurnHorizonRepro'
+New-Item -ItemType Directory -Path $root -Force | Out-Null
+git archive --format=zip --output="$root/SeasonalSource.zip" c33a5b7 Assets/_Anthropocene/Simulation
+Expand-Archive -LiteralPath "$root/SeasonalSource.zip" -DestinationPath "$root/SeasonalSource" -Force
+$seasonalSource = (Resolve-Path "$root/SeasonalSource/Assets/_Anthropocene/Simulation").Path
+& $sdk build Tools/PerformanceAudit/Anthropocene.PerformanceAudit.csproj -c Release -t:Rebuild "-p:SimulationSource=$seasonalSource" --output "$root/SeasonalBin" --nologo
+if ($LASTEXITCODE -ne 0) { throw 'Seasonal build failed' }
+& $sdk build Tools/PerformanceAudit/Anthropocene.PerformanceAudit.csproj -c Release -t:Rebuild --output "$root/HorizonBin" --nologo
+if ($LASTEXITCODE -ne 0) { throw 'Horizon build failed' }
+foreach ($size in @(80, 320)) {
+    & $sdk "$root/SeasonalBin/Anthropocene.PerformanceAudit.dll" "--players=$size" --turns=12 --seed=1729 --shape=Continents --warmup=1 "--save-finished=$root/start-$size.anthro" "--output=$root/opening-$size.json"
+    if ($LASTEXITCODE -ne 0) { throw "Opening save failed for $size" }
+}
+$candidateRevision = (git rev-parse HEAD).Trim()
+& ./Tools/PerformanceAudit/Run-TurnHorizonPairs.ps1 -BaselineDll "$root/SeasonalBin/Anthropocene.PerformanceAudit.dll" -CandidateDll "$root/HorizonBin/Anthropocene.PerformanceAudit.dll" -Save80 "$root/start-80.anthro" -Save320 "$root/start-320.anthro" -OutputRoot "$root/Timing" -Mode Timing -Pairs 3 -CandidateRevision $candidateRevision
+python Tools/PerformanceAudit/Summarize-TurnHorizonPairs.py "$root/Timing" --mode Timing
+```
+
+Run `-Mode Exact -Pairs 1` and `-Mode Counters -Pairs 1` into separate
+directories with the same binary/save arguments. Exact mode records
+fingerprints; counter mode enables hot-path instrumentation and is not a
+timing reference. The runner alternates source order between timing pairs.
+Its manifest records binary and save SHA-256 hashes. The summarizer aligns
+per-turn samples, reports combined AI + preparation + resolution medians,
+phase costs, allocations, managed heap, and per-turn ratios. See
+[TurnHorizonRefactor.md](../../Docs/TurnHorizonRefactor.md) for outcome
+calibration, acceptance signals, and measured results. For the 20 quick
+Neolithic cases, run the transition validator `--quick --out <directory>`
+against each source binary and then `Compare-Horizons.py`; the comparator
+marks fixtures with different injected starting states as unpaired.
+
 `Anthropocene.PerformanceAudit.csproj` compiles the actual simulation sources with the Unity-bundled .NET 8 SDK. The default audit uses four workers and 64-item partitions. `--turns` is the opening-turn limit. `--post-opening-turns=N` adds exactly N generations after `WorldState.Finished` becomes true; the resolver continues from that opening boundary with the original camps, herds, and policies. Each row records the phase before the turn, the number of agricultural camps before resolution, and the count after resolution. This makes the turn that crosses the opening boundary visible without counting its new agriculture as prior work.
 
 The report is schema 2. Pass `--revision=<source SHA>` for the exact source being benchmarked. It records runtime and OS, configuration hash, worker settings, warmup count, counter mode, save-file SHA256, generation time, per-turn phase timings, allocations, GC collections, and fingerprints. `weightedQol` retains its earlier prior-cohort meaning; `endingPopulationWeightedQol` is also recorded. The older `resolveMs`, `turnPrepareMs`, and `turnExecuteMs` fields remain available.

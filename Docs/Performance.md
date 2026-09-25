@@ -2,6 +2,11 @@
 
 ## Neolithic Options 1/5 follow-up — September 25, 2026
 
+The production resolver on `codex/turn-horizon-refactor` now evaluates one
+analytical transition per turn. Its measured calibration and paired speed
+evidence are in [TurnHorizonRefactor.md](TurnHorizonRefactor.md). The Options
+1/5 and seasonal results below describe earlier checkpoints.
+
 The exact-cache offshoot `codex/neolithic-options-1-5-validation` compares simulation candidate `b5d98d7` against `9dc18c0`. Three sequential matched pairs at each size cover 25 post-opening generations (500 years), with all tribes/herds and the audit's original API defaults. Median paired AI + preparation + resolution time falls **3.7% at 80 tribes** and **13.6% at 320**, missing the proposed **20%** aggregate target at both sizes. Allocated bytes fall approximately **15.5%/15.3%**. The 80-tribe runtime results are mixed; the 320-tribe aggregate results improve consistently, but a repeatable >5% final-turn slowdown remains unresolved. Separate exact runs match all 25 per-turn fingerprints at both sizes.
 
 The measured seasonal loop still accounts for roughly 34% of candidate 80-tribe end-to-end time; numerical seasonal integration alone is about 11%. Reducing the repeated preparation and expansion work is relevant to the retained analytical design, but its speed and trajectory accuracy remain untested. See [NeolithicOptions15Validation.md](NeolithicOptions15Validation.md) for every pair, tail/GC evidence, provenance, limits and the experimental-branch disposition, and [NeolithicAnalyticalTurnPlan.md](NeolithicAnalyticalTurnPlan.md) for the follow-up proposal. The following measurements remain historical; no new `main`-relative gate pass is claimed.
@@ -69,7 +74,19 @@ Paired unmodified-branch versus prepared-turn outcomes passed the former per-tur
 
 The **historical paired isolated Neolithic transition comparison is retired as an acceptance gate for this checkpoint**: the user chose the prior-cohort pass structure as the new behavioral baseline. The transition runner was updated to use `AiPlanning.Decide`, the real interturn AI path, because a direct ordinary observation deliberately no longer computes economic recommendations. Three matched quick cases from unmodified `65af0df` and the prepared-turn branch exceeded 2% after correcting the prepared plant-feedstock shortfall: in the placed-camp control, turn-8 production of 100 cloth covers 109 starting residents here (QoL 0.459) versus 139 ending residents in the old code (QoL 0.360). The denominator difference is required by the prior-cohort rule. In the fixed dry-marginal case, turn-13 population is 55 versus 46, a 16.4% gap. These differences remain disclosed causal evidence; subsequent parallel-only changes must match this checkpoint exactly. The matched-`main` performance gate remains open.
 
-The 80 outer barriers remain necessary for the current cultivation model. Paleo builds one fixed turn-wide claim per active tile and calls `EcologicalPressure.Integrate` once; that function still steps through seasonal profiles internally, using analytic stock equations within each segment. Quiet untouched tiles can compose repeated annual recovery through `SeasonalAffine.Repeat`. Agricultural field construction, abandonment, tool-supported operation and food claims change between seasonal receipts, so the same fixed-claim composition does not apply. Collapsing those outer barriers to 20 annual barriers kept the Standard aggregate within 2%, but exceeded the former 2% comparison in the fixed dry-marginal Neolithic case: population differed by up to 19.6% and one turn's food production by 80.9%. Forty half-year barriers still differed by up to 10.9% population and 5.9% food in that case. These comparisons were repeated after the final feedstock correction with the transition runner's actual AI planning path. A single full-turn barrier also failed the existing comparison of twenty one-year turns with one twenty-year turn for cultivation. The seasonal dependency frontier is therefore retained; reducing its barrier count needs a new analytic field-growth model validated against those local cases, not only Standard aggregates. Reducing the planner's fulfillment search from twelve to six probes preserved exact population, QoL and food trajectories in all 20 quick transition cases using the actual AI planning path.
+At the **seasonal checkpoint**, the 80 outer barriers were retained to satisfy
+its then-current equivalence gate. Paleo built one fixed turn-wide claim per
+active tile; the Neolithic path changed field operation and food claims after
+each seasonal receipt. Collapsing those barriers to 20 annual barriers kept
+the Standard aggregate within 2%, but exceeded that gate in the fixed
+dry-marginal case: population differed by up to 19.6% and one turn's food
+production by 80.9%. Forty half-year barriers still differed by up to 10.9%
+population and 5.9% food. The later turn-horizon refactor deliberately
+replaced these intermediate decisions with a fixed turn allocation and an
+analytical resource transition; the older partition-equivalence test is now
+calibration evidence, not the production contract. Reducing the planner's
+fulfillment search from twelve to six probes preserved exact trajectories in
+all 20 quick transition cases under the former seasonal model.
 
 ## Transition causality, AI scheduling and Burst assessment — September 25, 2026
 

@@ -132,6 +132,7 @@ internal static class Program
             shapeName = world.Config.Shape.ToString();
         }
 
+        long managedHeapAfterLoadBytes = GC.GetTotalMemory(false);
         var detailedCounterSwitch = typeof(ResolutionMetrics).GetField("CaptureDetailedCounters");
         if (detailedCounterSwitch != null) detailedCounterSwitch.SetValue(null, metrics);
 
@@ -213,6 +214,8 @@ internal static class Program
             postOpeningTurnsMeasured,
             finalFingerprint = fingerprintsEnabled ? SaveCodec.Fingerprint(world) : null,
             generationMs,
+            managedHeapAfterLoadBytes,
+            managedHeapAfterRunBytes = GC.GetTotalMemory(false),
             samples
         };
 
@@ -238,6 +241,7 @@ internal static class Program
         long allocatedBefore = GC.GetTotalAllocatedBytes(false);
         var record = ResolveTurn(world, execution, resolver, out double aiMs, out double prepareMs, out double executeMs);
         long allocatedBytes = GC.GetTotalAllocatedBytes(false) - allocatedBefore;
+        long managedHeapBytes = GC.GetTotalMemory(false);
         double totalMs = aiMs + prepareMs + executeMs;
         int gc0Collections = GC.CollectionCount(0) - gc0Before;
         int gc1Collections = GC.CollectionCount(1) - gc1Before;
@@ -290,6 +294,7 @@ internal static class Program
             resolveMs = prepareMs + executeMs,
             totalMs,
             allocatedBytes,
+            managedHeapBytes,
             gcGen0Collections = gc0Collections,
             gcGen1Collections = gc1Collections,
             gcGen2Collections = gc2Collections,

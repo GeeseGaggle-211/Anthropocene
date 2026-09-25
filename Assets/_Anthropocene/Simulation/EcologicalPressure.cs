@@ -77,8 +77,8 @@ namespace Anthropocene.Simulation
             }
             double foodRequest = 0, herdRequest = 0, waterRequest = 0, humanImpactWeighted = 0;
             double farmClaim = 0, gatherClaim = 0;
-            bool singleEntity = true;
-            int humanEntity = -1;
+            int foodEntity = -1, biomassEntity = -1, waterEntity = -1;
+            bool contestedFood = false, contestedBiomass = false, contestedWater = false;
             for (int i = 0; i < requests.Length; i++)
             {
                 var r = requests[i];
@@ -86,11 +86,24 @@ namespace Anthropocene.Simulation
                 herdRequest += r.PotentialFood;
                 waterRequest += r.Freshwater;
                 humanImpactWeighted += r.Food * r.ImpactMultiplier;
+                if (r.Food > 0)
+                {
+                    if (foodEntity == -1) foodEntity = r.Entity;
+                    else if (foodEntity != r.Entity) contestedFood = true;
+                }
+                if (r.PotentialFood > 0)
+                {
+                    if (biomassEntity == -1) biomassEntity = r.Entity;
+                    else if (biomassEntity != r.Entity) contestedBiomass = true;
+                }
+                if (r.Freshwater > 0)
+                {
+                    if (waterEntity == -1) waterEntity = r.Entity;
+                    else if (waterEntity != r.Entity) contestedWater = true;
+                }
                 bool isHuman = r.Kind == "Cultivation" || r.Kind == "Gathering" || r.Kind == "Marine gathering" || r.Kind == "Aquatic gathering";
                 if (isHuman)
                 {
-                    if (humanEntity == -1) humanEntity = r.Entity;
-                    else if (humanEntity != r.Entity) singleEntity = false;
                     if (r.Kind == "Cultivation") farmClaim += r.Food;
                     else gatherClaim += r.Food;
                 }
@@ -99,28 +112,32 @@ namespace Anthropocene.Simulation
             double humanRate = duration > 0 ? foodRequest / duration : 0;
             double herdRate = duration > 0 ? herdRequest / duration : 0;
             double waterRate = duration > 0 ? waterRequest / duration : 0;
-            // A bounded predictor/corrector accounts for pressure's effect on
-            // average habitat support without creating subturn decisions.
+            // Resource flows use one horizon solve. Damage is evaluated after
+            // those realized receipts, so habitat loss cannot retroactively
+            // erase the stock that caused it.
             var representative = LazyEcology.MeanView(w, tile, v, duration, 0,
                 averageCultivationCapital, operatingFraction);
             var capacity = new HorizonEcologyCapacity(w, tile, representative, start, duration, operatingFraction);
-            var flow = ResolveHorizonFlow(w, tile, v, capacity, duration, humanRate, herdRate, waterRate, humanImpact);
-            // With no renewable safe flow, all realized withdrawal is a debit
-            // against opening stock. Let that debit cause pressure at the end;
-            // feeding the resulting near-zero condition back into this same
-            // horizon would erase the stock before it could be withdrawn.
-            if (flow.DamagePerDay > 0 && capacity.SafeRate > SustainableRateEpsilon)
-            {
-                representative = LazyEcology.MeanView(w, tile, v, duration, flow.DamagePerDay,
-                    averageCultivationCapital, operatingFraction);
-                capacity = new HorizonEcologyCapacity(w, tile, representative, start, duration, operatingFraction);
-                flow = ResolveHorizonFlow(w, tile, v, capacity, duration, humanRate, herdRate, waterRate, humanImpact);
-            }
+            var flow = ResolveHorizonFlow(v, capacity, duration, humanRate, herdRate, waterRate);
             double humans = flow.Humans, herds = flow.Herds, water = flow.Water, spilled = flow.Spilled;
+            // Each finite tile pool has one integrated harvest ledger. On a
+            // contested tile, claimant IDs debit that ledger in stable order.
+            double[] contestedFoodReceipts = contestedFood ? AllocateContestedPool(requests, humans, ClaimPool.Food) : null;
+            double[] contestedBiomassReceipts = contestedBiomass ? AllocateContestedPool(requests, herds, ClaimPool.Biomass) : null;
+            double[] contestedWaterReceipts = contestedWater ? AllocateContestedPool(requests, water, ClaimPool.Water) : null;
+            if (contestedFood && humans > 0)
+            {
+                double awardedImpact = 0;
+                for (int i = 0; i < requests.Length; i++)
+                    awardedImpact += contestedFoodReceipts[i] * requests[i].ImpactMultiplier;
+                humanImpact = awardedImpact / humans;
+            }
             double foodCapacityDays = capacity.FoodCapacityDays;
             double biomassCapacityDays = capacity.BiomassCapacityDays;
             double waterCapacityDays = capacity.WaterCapacityDays;
-            double damage = flow.DamagePerDay * duration;
+            double damagePerDay = SeasonalDamageRate(w, tile, representative, start, duration,
+                humans, herds, humanImpact, operatingFraction);
+            double damage = damagePerDay * duration;
             result.Balance.BiomassRecharge = flow.Nonfood.Recharge + flow.FirstFood.Recharge + flow.SecondFood.Recharge;
             result.Balance.BiomassHarvest = humans + herds;
             result.Balance.BiomassOverflow = flow.Nonfood.Overflow + flow.FirstFood.Overflow + flow.SecondFood.Overflow;
@@ -134,37 +151,25 @@ namespace Anthropocene.Simulation
             v.Food = flow.SecondFood.Stock;
             v.PotentialFood = v.Food + flow.Nonfood.Stock;
             v.Freshwater = flow.Hydration.Stock;
-            LazyEcology.RecoverCondition(w, tile, ref v, duration, flow.DamagePerDay);
+            LazyEcology.RecoverCondition(w, tile, ref v, duration, damagePerDay);
             v.CultivationCapital = endingCultivationCapital ?? CultivationEconomy.Decay(w.Config,
                 beforeHorizon.CultivationCapital, operatingFraction ?? tile.CultivationOperatingFraction,
                 duration / w.Config.DaysPerYear);
             v.Days = start + duration;
-            wood?.Recover(beforeHorizon, v, duration, flow.DamagePerDay);
+            wood?.Recover(beforeHorizon, v, duration, damagePerDay);
             for (int i = 0; i < requests.Length; i++)
             {
                 var d = requests[i];
-                double f = Share(humans, d.Food, foodRequest), p = Share(herds, d.PotentialFood, herdRequest), q = Share(water, d.Freshwater, waterRequest);
+                double f = contestedFood ? contestedFoodReceipts[i] : Share(humans, d.Food, foodRequest);
+                double p = contestedBiomass ? contestedBiomassReceipts[i] : Share(herds, d.PotentialFood, herdRequest);
+                double q = contestedWater ? contestedWaterReceipts[i] : Share(water, d.Freshwater, waterRequest);
                 // Allocate this settlement's capped share to operating farmers first;
                 // gatherers fill the remaining actual gap, never the pre-cap forecast.
-                if (d.Kind == "Cultivation" || d.Kind == "Gathering" || d.Kind == "Marine gathering" || d.Kind == "Aquatic gathering")
+                if (!contestedFood && (d.Kind == "Cultivation" || d.Kind == "Gathering" || d.Kind == "Marine gathering" || d.Kind == "Aquatic gathering"))
                 {
-                    double curFarmClaim = farmClaim, curGatherClaim = gatherClaim;
-                    if (!singleEntity)
-                    {
-                        curFarmClaim = 0; curGatherClaim = 0;
-                        for (int j = 0; j < requests.Length; j++)
-                        {
-                            var x = requests[j];
-                            if (x.Entity == d.Entity)
-                            {
-                                if (x.Kind == "Cultivation") curFarmClaim += x.Food;
-                                else if (x.Kind == "Gathering" || x.Kind == "Marine gathering" || x.Kind == "Aquatic gathering") curGatherClaim += x.Food;
-                            }
-                        }
-                    }
-                    double accepted = Share(humans, curFarmClaim + curGatherClaim, foodRequest);
-                    double farmAccepted = Math.Min(curFarmClaim, accepted);
-                    f = d.Kind == "Cultivation" ? Share(farmAccepted, d.Food, curFarmClaim) : Share(Math.Max(0, accepted - farmAccepted), d.Food, curGatherClaim);
+                    double accepted = Share(humans, farmClaim + gatherClaim, foodRequest);
+                    double farmAccepted = Math.Min(farmClaim, accepted);
+                    f = d.Kind == "Cultivation" ? Share(farmAccepted, d.Food, farmClaim) : Share(Math.Max(0, accepted - farmAccepted), d.Food, gatherClaim);
                 }
                 result.Transfers.Add(new Transfer { Tile = tileId, Entity = d.Entity, Kind = d.Kind, Food = f, PotentialFood = p, Freshwater = q });
                 if (d.Food > 0) AddPressure(result, d, "Accessible food", d.Food, f, foodCapacityDays, result.Balance.FoodRecharge, Share(damage, f, humans + herds), 0);
@@ -208,17 +213,16 @@ namespace Anthropocene.Simulation
         private readonly struct HorizonFlow
         {
             public readonly StockFlow Nonfood, FirstFood, SecondFood, Hydration;
-            public readonly double Humans, Herds, Water, Spilled, DamagePerDay;
+            public readonly double Humans, Herds, Water, Spilled;
             public HorizonFlow(StockFlow nonfood, StockFlow firstFood, StockFlow secondFood, StockFlow hydration,
-                double humans, double herds, double spilled, double damagePerDay)
+                double humans, double herds, double spilled)
             {
                 Nonfood = nonfood; FirstFood = firstFood; SecondFood = secondFood; Hydration = hydration;
-                Humans = humans; Herds = herds; Water = hydration.Realized; Spilled = spilled; DamagePerDay = damagePerDay;
+                Humans = humans; Herds = herds; Water = hydration.Realized; Spilled = spilled;
             }
         }
-        private static HorizonFlow ResolveHorizonFlow(WorldState world, Tile tile, EcologyView start,
-            HorizonEcologyCapacity capacity, double days, double humanRate, double herdRate,
-            double waterRate, double humanImpact)
+        private static HorizonFlow ResolveHorizonFlow(EcologyView start, HorizonEcologyCapacity capacity,
+            double days, double humanRate, double herdRate, double waterRate)
         {
             var nonfood = EcologyMath.Stock(Math.Max(0, start.PotentialFood - start.Food),
                 capacity.Nonfood, capacity.BiomassRate, herdRate, days);
@@ -238,18 +242,73 @@ namespace Anthropocene.Simulation
             double spilled = Math.Max(0, secondFood.Realized - humanInSecond);
             double herds = nonfood.Realized + spilled;
             var hydration = EcologyMath.Stock(start.Freshwater, capacity.Water, capacity.WaterRate, waterRate, days);
-            double damage = 0;
-            if (days > 0 && humans + herds > 0)
+            return new HorizonFlow(nonfood, firstFood, secondFood, hydration, humans, herds, spilled);
+        }
+        // A four-profile forcing reducer preserves the nonlinear overuse
+        // penalty of a poor season without scheduling seasonal state writes.
+        // The finite per-profile stock window bounds only this damage
+        // estimator; actual horizon harvest is resolved by the stock solver.
+        private static double SeasonalDamageRate(WorldState world, Tile tile, EcologyView representative,
+            double start, double days, double humans, double herds, double humanImpact,
+            double? operatingFraction)
+        {
+            double realized = humans + herds;
+            if (days <= 0 || realized <= 0) return 0;
+            double realizedRate = realized / days;
+            double impact = (humans * humanImpact + herds) / realized;
+            double coefficient = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater
+                ? world.Config.AquaticUseDamagePerYear : world.Config.LandUseDamagePerYear;
+            var exposure = new SeasonExposure(start, days, world.Config.BaseDays);
+            double weightedDamage = 0;
+            for (int season = 0; season < 4; season++)
             {
-                double utilization = (humans + herds) / days / Math.Max(SustainableRateEpsilon, capacity.SafeRate);
-                double coefficient = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater
-                    ? world.Config.AquaticUseDamagePerYear : world.Config.LandUseDamagePerYear;
-                double impact = (humans * humanImpact + herds) / (humans + herds);
-                damage = coefficient * impact
-                    * Math.Pow(Math.Max(0, utilization - world.Config.SafeUseRatio), world.Config.PressureExponent)
-                    / world.Config.DaysPerYear;
+                double weight = exposure.At(season) / days;
+                if (weight <= 0) continue;
+                var profile = new EcologyCapacity(world, tile, representative, season, operatingFraction);
+                double safe = EcologyMath.SustainableHarvestRate(profile.Biomass,
+                    profile.BiomassRate, world.Config.SustainableProductionFraction, profile.ManagedFlow);
+                double finiteRate = profile.Biomass / Math.Min(world.Config.BaseDays, days)
+                    + profile.Biomass * profile.BiomassRate + profile.ManagedFlow;
+                double seasonalRealized = Math.Min(realizedRate, finiteRate);
+                if (seasonalRealized <= 0) continue;
+                double utilization = seasonalRealized / Math.Max(SustainableRateEpsilon, safe);
+                weightedDamage += weight * Math.Pow(Math.Max(0, utilization - world.Config.SafeUseRatio),
+                    world.Config.PressureExponent);
             }
-            return new HorizonFlow(nonfood, firstFood, secondFood, hydration, humans, herds, spilled, damage);
+            return coefficient * impact * weightedDamage / world.Config.DaysPerYear;
+        }
+        private enum ClaimPool { Food, Biomass, Water }
+        private static double Requested(Demand demand, ClaimPool pool) => pool == ClaimPool.Food
+            ? demand.Food : pool == ClaimPool.Biomass ? demand.PotentialFood : demand.Freshwater;
+        private static double[] AllocateContestedPool(Demand[] requests, double realized, ClaimPool pool)
+        {
+            var receipts = new double[requests.Length];
+            double remaining = Math.Max(0, realized);
+            for (int first = 0; first < requests.Length;)
+            {
+                int last = first + 1;
+                while (last < requests.Length && requests[last].Entity == requests[first].Entity) last++;
+                double farm = 0, other = 0;
+                for (int i = first; i < last; i++)
+                {
+                    double requested = Requested(requests[i], pool);
+                    if (pool == ClaimPool.Food && requests[i].Kind == "Cultivation") farm += requested;
+                    else other += requested;
+                }
+                double accepted = Math.Min(remaining, farm + other);
+                remaining = Math.Max(0, remaining - accepted);
+                double farmAccepted = Math.Min(farm, accepted);
+                double otherAccepted = Math.Max(0, accepted - farmAccepted);
+                for (int i = first; i < last; i++)
+                {
+                    double requested = Requested(requests[i], pool);
+                    receipts[i] = pool == ClaimPool.Food && requests[i].Kind == "Cultivation"
+                        ? Share(farmAccepted, requested, farm)
+                        : Share(otherAccepted, requested, other);
+                }
+                first = last;
+            }
+            return receipts;
         }
         private static Demand[] CanonicalRequests(IEnumerable<Demand> claims)
         {

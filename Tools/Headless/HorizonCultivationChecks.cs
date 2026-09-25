@@ -84,6 +84,46 @@ internal static class HorizonCultivationChecks
                 "equal worker-years build equal new fields regardless of seasonal count", 1e-8);
     }
 
+    private static void FarmToolCoverageAndWorkConservation()
+    {
+        double[] startingTools = { 0, 2, 8 };
+        double[] builtCapital = new double[startingTools.Length];
+        for (int scenario = 0; scenario < startingTools.Length; scenario++)
+        {
+            var world = Fixture(0, startingTools[scenario]);
+            var camp = world.Camps[0];
+            var budget = new FarmToolWorkBudget(world, camp);
+            var labor = CultivationEconomy.PrepareHorizon(world, camp, 0, 20, budget);
+            double requested = labor.ExpansionFarmers * 20;
+            var plan = CultivationEconomy.PlanHorizonExpansion(world, camp, 20,
+                requested, 0, budget, labor.Footprint);
+            double covered = Math.Min(requested,
+                startingTools[scenario] * world.Config.Neolithic.FarmToolFarmerYearsPerUnit);
+            Near(plan.CoveredFarmerWorkerYears, covered,
+                "zero, partial, and full starting Farm Tool stocks cover only available farmer-years");
+            Near(plan.FarmerWorkerYearsUsed, requested,
+                "all requested farmer-years reach initially empty fields");
+            Near(camp.Inventory.FarmTools, startingTools[scenario],
+                "the field plan does not debit Farm Tools before endpoint commit");
+            double effectiveWork = plan.FarmerWorkerYearsUsed +
+                (CultivationEconomy.FarmToolFieldWorkEfficiency(world.Config.Neolithic) - 1) * covered;
+            builtCapital[scenario] = plan.EndCapital.Sum();
+            Near(builtCapital[scenario] * world.Config.Neolithic.BuildWorkerYearsPerTileE,
+                effectiveWork, "field investment conserves uncovered and covered work", 1e-7);
+
+            CultivationEconomy.CommitHorizonExpansion(world, camp, plan, new TurnRecord(), budget);
+            double spent = covered / world.Config.Neolithic.FarmToolFarmerYearsPerUnit;
+            Near(startingTools[scenario] - camp.Inventory.FarmTools, spent,
+                "endpoint tool debit equals realized covered farmer-years");
+            Check(camp.Inventory.FarmTools >= -1e-10 && budget.RemainingTools >= -1e-10,
+                "field service cannot make held Farm Tools negative");
+            Near(plan.Tiles.Sum(id => world.Tiles[id].CultivationCapital), builtCapital[scenario],
+                "committed field capital equals the planned endpoint", 1e-7);
+        }
+        Check(builtCapital[0] < builtCapital[1] && builtCapital[1] < builtCapital[2],
+            "partial Farm Tool service produces capital between zero and full coverage");
+    }
+
     private static void ZeroDurationDoesNoFieldWork()
     {
         var world = Fixture(.1, 1);
@@ -139,6 +179,7 @@ internal static class HorizonCultivationChecks
         checks = 0;
         PurePlanAndLocalBounds();
         SameWorkIsIndependentOfSeasonCount();
+        FarmToolCoverageAndWorkConservation();
         ZeroDurationDoesNoFieldWork();
         BridgeReconciliationAndOneToolDebit();
         Console.WriteLine("PASS: " + checks + " horizon cultivation assertions");

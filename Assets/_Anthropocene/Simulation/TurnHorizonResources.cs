@@ -98,7 +98,16 @@ namespace Anthropocene.Simulation
                     averageCapital.TryGetValue(tile, out double capital) ? capital : (double?)null);
                 AddAgriculturalClaims(w, camp, agriculturalLabor[camp.Id],
                     horizon.ReferenceIntervals, biological, feedstock, Available, claims, campScratch);
-                var owned = claims.Where(d => FoodCamp(d) == camp.Id).ToArray();
+            }
+            // Group once after every camp has proposed its fixed claims. Scanning
+            // the growing global claim list for each camp becomes quadratic as
+            // settlement counts rise, even though food budgets are camp-local.
+            var claimsByCamp = claims.GroupBy(FoodCamp).ToDictionary(g => g.Key, g => g.ToArray());
+            foreach (var camp in agriculturalCamps)
+            {
+                if (!claimsByCamp.TryGetValue(camp.Id, out var owned)) continue;
+                double biological = Math.Max(0, needs[camp.Id].FoodTarget - camp.StepFoodIncome);
+                double feedstock = needs[camp.Id].PlantFeedstockGap;
                 double biologicalRequested = owned.Where(d => !d.Manufacturing).Sum(d => d.Food);
                 double feedstockRequested = owned.Where(d => d.Manufacturing).Sum(d => d.Food);
                 double biologicalScale = Math.Min(1, biological / Math.Max(1e-12, biologicalRequested));
