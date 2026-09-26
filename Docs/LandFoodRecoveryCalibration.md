@@ -108,6 +108,8 @@ invested more field capital and have different ending populations. Fixed
 `q=0` controls above isolate population pressure. The live lanes show that
 field access and operated renewal gradually raise `G` while `B` stays
 bounded. They do not prove every site can support arbitrary population.
+Longer population trajectories, including reserve debt and the observed
+growth taper near capacity, are in [LandFoodPopulationGrowth.md](LandFoodPopulationGrowth.md).
 
 The naturally selected fertile river pilot starts with 24 residents and
 reaches Cultivation at turn 6. Over its next 25 turns, `q` rises from 0.04 to

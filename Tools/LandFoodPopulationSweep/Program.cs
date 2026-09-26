@@ -76,7 +76,7 @@ internal static class Program
             worlds.Add(seed, SaveCodec.Save(world));
         }
         using var writer = new StreamWriter(Path.Combine(output, "turns.csv"));
-        writer.WriteLine("mode,site,seed,tile,initialPopulation,turn,year,startPopulation,endPopulation,openingG,openingB,openingMaxG,openingMaxB,endingG,endingB,endingMaxG,endingMaxB,foodProduced,foodConsumed,basicFoodNeed,reserveEnd,foodSatisfaction,waterSatisfaction,births,deaths,condition,q,largestCapacityExcess,technology,openingQ,openingE,endingE,fieldTiles,openingQ0MaxG,endingQ0MaxG,landHumanHarvest,landBiomassHarvest,landFoodRechargeAndReclassification,landBiomassRecharge,landFoodOverflow,landBiomassOverflow,landManagedRenewalInput,operatingFieldTiles,meanOperatingFraction");
+        writer.WriteLine("mode,site,seed,tile,initialPopulation,turn,year,startPopulation,endPopulation,openingG,openingB,openingMaxG,openingMaxB,endingG,endingB,endingMaxG,endingMaxB,foodProduced,foodConsumed,basicFoodNeed,reserveEnd,foodSatisfaction,waterSatisfaction,births,deaths,condition,q,largestCapacityExcess,technology,openingQ,openingE,endingE,fieldTiles,openingQ0MaxG,endingQ0MaxG,landHumanHarvest,landBiomassHarvest,landFoodRechargeAndReclassification,landBiomassRecharge,landFoodOverflow,landBiomassOverflow,landManagedRenewalInput,operatingFieldTiles,meanOperatingFraction,openingReserves,reserveGoal,foodReceived,manufacturingFood,discardedFood,growthFoodSpent");
         foreach (var site in Sites)
             foreach (int population in populations)
                 foreach (string mode in new[] { "controlled-q0", "live" })
@@ -148,6 +148,12 @@ internal static class Program
         {
             int startingPopulation = camp.Population;
             var opening = Snapshot(world, radius);
+            double openingReserves = camp.Food;
+            double intervals = world.Config.GenerationIntervals;
+            double years = world.Config.TurnDays / world.Config.DaysPerYear;
+            double reserveGoal = Math.Min(
+                NeolithicProduction.DesiredReserveFood(world, startingPopulation, intervals),
+                NeolithicProduction.StorageCapacityAfterPotDepreciation(world, camp, intervals, years));
             List<Order> orders;
             if (mode == "live" && camp.Technology == Technology.Cultivation)
             {
@@ -184,7 +190,11 @@ internal static class Program
                 landBalances.Sum(b => b.FoodOverflow), landBalances.Sum(b => b.BiomassOverflow),
                 resolver.LastMetrics.ManagedRenewalInput, resolver.LastMetrics.OperatingFieldTiles,
                 resolver.LastMetrics.OperatingFieldTiles == 0 ? 0 :
-                    resolver.LastMetrics.OperatingFractionSum / resolver.LastMetrics.OperatingFieldTiles
+                    resolver.LastMetrics.OperatingFractionSum / resolver.LastMetrics.OperatingFieldTiles,
+                openingReserves, reserveGoal, demographic.FoodReceived,
+                demographic.ManufacturingFood, demographic.DiscardedInventory,
+                Math.Max(0, demographic.FoodConsumed -
+                    startingPopulation * world.Config.Consumption * world.Config.GenerationIntervals)
             }.Select(x => Convert.ToString(x, CultureInfo.InvariantCulture))));
         }
         // Quiet tiles are latent. Project the whole map at the final boundary

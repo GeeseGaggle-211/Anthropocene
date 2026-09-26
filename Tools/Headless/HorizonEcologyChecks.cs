@@ -306,6 +306,35 @@ internal static class HorizonEcologyChecks
             "repeatable land start screen credits food that is available next turn");
     }
 
+    private static void GrowthTapersAcrossFoodBuckets()
+    {
+        var world = Fixture();
+        var camp = new Camp { Id = 1, Tile = 0, Population = 100, Food = 0 };
+        world.Camps.Add(camp);
+        double intervals = world.Config.GenerationIntervals;
+        double years = world.Config.TurnDays / world.Config.DaysPerYear;
+        double consumption = camp.Population * world.Config.Consumption * intervals;
+        double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(world, camp.Population, intervals),
+            NeolithicProduction.StorageCapacityAfterPotDepreciation(world, camp, intervals, years));
+        double x = world.Config.AnnualHumanGrowthRate * years;
+        double maximumGrowthFood = consumption * ((Math.Exp(x) - 1) / x - 1);
+        double threshold = consumption + reserve;
+        int Project(double income) => (int)TurnResolver.PlanningResidentPopulation(world, camp, income);
+        int underReserve = Project(threshold - 1);
+        int atReserve = Project(threshold);
+        int smallSurplus = Project(threshold + .1 * maximumGrowthFood);
+        int halfSurplus = Project(threshold + .5 * maximumGrowthFood);
+        int fullSurplus = Project(threshold + maximumGrowthFood);
+        Check(underReserve == camp.Population && atReserve == camp.Population,
+            "current-cohort consumption and reserve fill precede growth");
+        Check(smallSurplus > camp.Population && smallSurplus < halfSurplus
+            && halfSurplus < fullSurplus,
+            "additional food funds partial growth before the maximum rate");
+        Check(fullSurplus == (int)Math.Floor(camp.Population * Math.Exp(x) + 1e-8)
+            && Project(threshold + 2 * maximumGrowthFood) == fullSurplus,
+            "growth reaches but never exceeds the configured maximum");
+    }
+
     public static int Run()
     {
         count = 0;
@@ -364,6 +393,7 @@ internal static class HorizonEcologyChecks
         ContestedFoodDebitsOneTileSequentially();
         ContestedBiomassAndWaterDebitOneTileSequentially();
         LandOpeningPools();
+        GrowthTapersAcrossFoodBuckets();
 
         Console.WriteLine("PASS: " + count + " horizon ecology assertions");
         return count;
