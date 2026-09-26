@@ -75,8 +75,25 @@ internal static class Program
             var world = new WorldGenerator().Generate(seed, generationConfig, resources);
             worlds.Add(seed, SaveCodec.Save(world));
         }
+        using (var footprints = new StreamWriter(Path.Combine(output, "footprints.csv")))
+        {
+            footprints.WriteLine("site,seed,campTile,footprintTile,environment,vegetation,openingBuildFactor,openingMaintenanceFactor");
+            foreach (var site in Sites)
+            {
+                var world = SaveCodec.Load(worlds[site.Seed]);
+                foreach (int id in world.Map.Radius(site.Tile, 1).Where(id => world.Tiles[id].Land).OrderBy(id => id))
+                {
+                    var tile = world.Tiles[id];
+                    CultivationEconomy.Factors(world.Config, tile, out double build, out double maintenance);
+                    footprints.WriteLine(string.Join(",", new object[]
+                    {
+                        site.Name, site.Seed, site.Tile, id, tile.Environment, tile.CurrentVegetation, build, maintenance
+                    }.Select(x => Convert.ToString(x, CultureInfo.InvariantCulture))));
+                }
+            }
+        }
         using var writer = new StreamWriter(Path.Combine(output, "turns.csv"));
-        writer.WriteLine("mode,site,seed,tile,initialPopulation,turn,year,startPopulation,endPopulation,openingG,openingB,openingMaxG,openingMaxB,endingG,endingB,endingMaxG,endingMaxB,foodProduced,foodConsumed,basicFoodNeed,reserveEnd,foodSatisfaction,waterSatisfaction,births,deaths,condition,q,largestCapacityExcess,technology,openingQ,openingE,endingE,fieldTiles,openingQ0MaxG,endingQ0MaxG,landHumanHarvest,landBiomassHarvest,landFoodRechargeAndReclassification,landBiomassRecharge,landFoodOverflow,landBiomassOverflow,landManagedRenewalInput,operatingFieldTiles,meanOperatingFraction,openingReserves,reserveGoal,foodReceived,manufacturingFood,discardedFood,growthFoodSpent");
+        writer.WriteLine("mode,site,seed,tile,initialPopulation,turn,year,startPopulation,endPopulation,openingG,openingB,openingMaxG,openingMaxB,endingG,endingB,endingMaxG,endingMaxB,foodProduced,foodConsumed,basicFoodNeed,reserveEnd,foodSatisfaction,waterSatisfaction,births,deaths,condition,q,largestCapacityExcess,technology,openingQ,openingE,endingE,fieldTiles,openingQ0MaxG,endingQ0MaxG,landHumanHarvest,landBiomassHarvest,landFoodRechargeAndReclassification,landBiomassRecharge,landFoodOverflow,landBiomassOverflow,landManagedRenewalInput,operatingFieldTiles,meanOperatingFraction,openingReserves,reserveGoal,foodReceived,manufacturingFood,discardedFood,growthFoodSpent,assignedFarmerYears,assignedExpansionYears,requestedBridgeYears");
         foreach (var site in Sites)
             foreach (int population in populations)
                 foreach (string mode in new[] { "controlled-q0", "live" })
@@ -165,6 +182,14 @@ internal static class Program
             var resolver = new TurnResolver();
             var record = resolver.Resolve(world,
                 new Dictionary<int, List<Order>> { [camp.Player] = orders });
+            bool economicOrder = mode == "live" && orders[0].Kind == OrderKind.Economy;
+            double assignedFarmerYears = economicOrder
+                ? orders[0].Economy.Assignments.Where(a => a.Role == WorkforceRoles.Farmer).Sum(a => a.Population) * years : 0;
+            double assignedExpansionYears = economicOrder
+                ? (orders[0].Economy.Labor?.ExpansionFarmers ?? 0) * years : 0;
+            double requestedBridgeYears = economicOrder
+                ? record.Transfers.Where(t => t.Kind == "Gathering" && t.Entity == camp.Id && world.Tiles[t.Tile].Land)
+                    .Sum(t => t.Food) / world.Config.GatherPerPerson * world.Config.BaseDays / world.Config.DaysPerYear : 0;
             var demographic = record.Demographics.Single(d => d.Camp == camp.Id);
             var ending = Snapshot(world, radius);
             if (mode == "controlled-q0" && (camp.Population != population || camp.Technology == Technology.Cultivation))
@@ -194,7 +219,8 @@ internal static class Program
                 openingReserves, reserveGoal, demographic.FoodReceived,
                 demographic.ManufacturingFood, demographic.DiscardedInventory,
                 Math.Max(0, demographic.FoodConsumed -
-                    startingPopulation * world.Config.Consumption * world.Config.GenerationIntervals)
+                    startingPopulation * world.Config.Consumption * world.Config.GenerationIntervals),
+                assignedFarmerYears, assignedExpansionYears, requestedBridgeYears
             }.Select(x => Convert.ToString(x, CultureInfo.InvariantCulture))));
         }
         // Quiet tiles are latent. Project the whole map at the final boundary

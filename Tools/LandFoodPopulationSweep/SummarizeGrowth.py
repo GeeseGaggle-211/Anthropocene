@@ -88,6 +88,32 @@ def bucket_rows(by_site):
     return result
 
 
+def effort_rows(by_site, footprints):
+    result = []
+    for site in SITES:
+        tiles = [row for row in footprints if row["site"] == site]
+        if len(tiles) != 7:
+            raise ValueError(f"Expected seven opening field tiles at {site}")
+        factors = [number(row, "openingBuildFactor") for row in tiles]
+        if any(not any(abs(factor - expected) < 1e-9 for expected in (1, 1.3, 1.5))
+               for factor in factors):
+            raise ValueError(f"Unexpected opening build factor at {site}")
+        for turn in (40, 160):
+            span = by_site[site][:turn]
+            result.append({
+                "site": site, "turn": turn,
+                "endingPeople": span[-1]["endPopulation"],
+                "meanQ": span[-1]["q"], "meanCapitalE": span[-1]["endingE"],
+                "assignedFarmerYears": sum(number(row, "assignedFarmerYears") for row in span),
+                "assignedExpansionYears": sum(number(row, "assignedExpansionYears") for row in span),
+                "requestedBridgeYears": sum(number(row, "requestedBridgeYears") for row in span),
+                "openingOpenCostTiles": sum(abs(x - 1) < 1e-9 for x in factors),
+                "openingWoodlandCostTiles": sum(abs(x - 1.3) < 1e-9 for x in factors),
+                "openingForestCostTiles": sum(abs(x - 1.5) < 1e-9 for x in factors),
+            })
+    return result
+
+
 def flux_rows(raw_root, by_site):
     paths = (("0", "M30-LandR003-Growth160-Flux0"),
              ("0.65", None),
@@ -143,6 +169,10 @@ def main():
                 raise ValueError(f"Food or capacity imbalance at {site} turn {row['turn']}")
             if number(row, "growthFoodSpent") > 1e-6 and number(row, "foodSatisfaction") < 1 - 1e-8:
                 raise ValueError(f"Growth preceded cohort consumption at {site} turn {row['turn']}")
+            if (number(row, "assignedExpansionYears") < -1e-8
+                    or number(row, "assignedFarmerYears") + 1e-8 < number(row, "assignedExpansionYears")
+                    or number(row, "requestedBridgeYears") < -1e-8):
+                raise ValueError(f"Invalid field-work assignment at {site} turn {row['turn']}")
             # Goods production may spend reserve food after the demographic
             # decision. Restore that debit to test the reserve at the barrier
             # where growth was funded.
@@ -161,8 +191,10 @@ def main():
             raise ValueError(f"Late food satisfaction collapsed at {site}")
     write(args.out_dir / "LandFoodGrowthWindows.csv", window_rows(by_site))
     write(args.out_dir / "LandFoodGrowthBuckets.csv", bucket_rows(by_site))
+    write(args.out_dir / "LandFoodGrowthEffort.csv",
+          effort_rows(by_site, read(args.raw_root / "M30-LandR003-Growth600-Buckets" / "footprints.csv")))
     write(args.out_dir / "LandFoodGrowthFlux.csv", flux_rows(args.raw_root, by_site))
-    print("PASS: 3 complete 600-turn curves, food balances, ordered buckets, late taper, and flux controls")
+    print("PASS: 3 complete 600-turn curves, food balances, ordered buckets, field effort, late taper, and flux controls")
 
 
 if __name__ == "__main__":

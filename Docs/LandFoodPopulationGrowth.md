@@ -66,7 +66,9 @@ This 12,000-year synthetic extension exposes reserve debt; it does not model
 human fission, trade, later technology or migration. Complete data are in
 [40-turn windows](LandFoodGrowthWindows.csv),
 [food-bucket rows](LandFoodGrowthBuckets.csv), and
-[managed-recovery controls](LandFoodGrowthFlux.csv).
+[managed-recovery controls](LandFoodGrowthFlux.csv). The
+[field-effort table](LandFoodGrowthEffort.csv) records the labor behind each
+site's achieved intensity.
 
 | Site | Turn 40 people / q | Turn 80 | Turn 160 | Peak people | Turn 600 people / q | Net people, turns 561–600 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -102,6 +104,42 @@ Doubling the coefficient is not uniformly beneficial: the dry policy reaches
 a lower q and population. The equal-claim q=.25 recovery test proves the
 local food mechanism; the live sweeps measure the combined feedback. The
 previous 25-turn fertile-river reversal is still valid.
+
+## Why the woodland site has higher q
+
+The configured build/maintenance multipliers are open 1.0/1.0, woodland
+1.3/1.1, and forest 1.5/1.2. The site comparison
+does **not** hold available labor fixed. Woodland food supported 93 people
+by turn 6 versus 44 in fertile open; its first field appeared in turn 7
+versus turn 8. The planner consequently assigned much more field work:
+
+| Site / turn | People | Mean q | Mean capital E | Farmer-years assigned | Expansion farmer-years assigned | Bridge worker-years requested |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Fertile open / 40 | 101 | .278 | .486 | 44,640 | 24,420 | 526 |
+| Woodland / 40 | 185 | .365 | .883 | 92,240 | 51,520 | 1,150 |
+| Fertile open / 160 | 153 | .461 | 1.371 | 358,520 | 73,420 | 526 |
+| Woodland / 160 | 225 | .556 | 1.994 | 601,620 | 118,960 | 1,150 |
+
+These are assigned or requested budgets, not a measurement of physical
+worker-years actually spent after tile ceilings and tool coverage. At turn
+40, woodland has 2.11 times the assigned expansion labor and 1.82 times
+the mean capital despite its cost premium. `q` is the simple mean of seven
+tile intensities, `min(1, 0.4 * sqrt(E))`, not a cost-adjusted statistic.
+
+The opening footprint also matters. The named woodland site has four
+Grassland/Medium tiles charged at the open rate and three Tropical/High
+forest tiles charged at 1.5; fertile open has six open-rate tiles and one
+forest tile. None of the woodland site's opening plots uses the 1.3
+woodland build factor. The pinned generator's tile-by-tile mix is emitted
+as `footprints.csv` with the raw sweep.
+
+There is a separate rule to review against the intended cost model:
+`BuildHorizonAllocation` charges `OpenBuild` on *every* tile until that
+tile reaches q=.25, including work by farmers. The wooded build premium
+starts above q=.25, while wooded maintenance still applies. Thus these
+cross-site curves cannot validate the intended effort cost to reach a
+given q. An equal-worker-year, equal-starting-population comparison and a
+decision about the q<.25 cost rule are needed before retuning build rates.
 
 ## A plateau with reserve debt
 
