@@ -306,12 +306,24 @@ internal static class Program
 #if MAIN
         double priorWeightedQol = 0;
         double endingPopulationWeightedQol = 0;
+        int managedAnimals = 0, wildAnimals = 0, managedHerds = 0;
+        int husbandryCamps = 0, husbandryResidents = 0, husbandryLinked = 0, husbandryAnimals = 0;
         object camps = null;
 #else
         double endingPopulationWeightedQol = residentPopulation <= 0 ? 0 : world.Camps.Sum(c => c.QoL * c.Population) / residentPopulation;
         double priorResidentPopulation = priorResidents.Values.Sum(v => (double)v);
         double priorWeightedQol = priorResidentPopulation <= 0 ? 0 :
             world.Camps.Sum(c => c.QoL * priorResidents[c.Id]) / priorResidentPopulation;
+        var domesticAnimalsByCamp = world.Herds.Where(h => h.DomesticCamp >= 0)
+            .GroupBy(h => h.DomesticCamp).ToDictionary(g => g.Key, g => g.Sum(h => h.Animals));
+        int managedAnimals = domesticAnimalsByCamp.Values.Sum();
+        int managedHerds = world.Herds.Count(h => h.DomesticCamp >= 0);
+        int wildAnimals = world.Herds.Where(h => h.DomesticCamp < 0).Sum(h => h.Animals);
+        var husbandry = world.Camps.Where(CultivationEconomy.HusbandryEnabled).ToArray();
+        int husbandryCamps = husbandry.Length;
+        int husbandryResidents = husbandry.Sum(c => c.Population);
+        int husbandryLinked = husbandry.Sum(world.LinkedPopulation);
+        int husbandryAnimals = husbandry.Sum(c => domesticAnimalsByCamp.TryGetValue(c.Id, out int animals) ? animals : 0);
         var camps = details ? world.Camps.OrderBy(c => c.Id).Select(c =>
         {
             var fieldIntensity = CultivationEconomy.Footprint(world, c)
@@ -331,6 +343,7 @@ internal static class Program
                 equipmentTarget = c.EconomicLabor?.EquipmentTarget ?? 0,
                 production = record.Production.Where(p => p.Camp == c.Id).GroupBy(p => p.Good).ToDictionary(g => g.Key.ToString(), g => g.Sum(p => p.Output)),
                 foodYield = record.Transfers.Where(t => t.Entity == c.Id && t.Kind != "Herd").Sum(t => t.Food),
+                managedAnimals = domesticAnimalsByCamp.TryGetValue(c.Id, out int animals) ? animals : 0,
                 meanFieldQ = fieldIntensity.Length == 0 ? 0 : fieldIntensity.Average(),
                 maxFieldQ = fieldIntensity.Length == 0 ? 0 : fieldIntensity.Max()
             };
@@ -363,6 +376,13 @@ internal static class Program
             preAgriculturalCamps,
             agriculturalCampsAfterTurn = CountAgriculturalCamps(world),
             population,
+            managedAnimals,
+            wildAnimals,
+            managedHerds,
+            husbandryCamps,
+            husbandryResidents,
+            husbandryLinked,
+            husbandryAnimals,
             priorWeightedQol,
             weightedQol,
             endingPopulationWeightedQol,
