@@ -53,6 +53,16 @@ internal static class HorizonEcologyChecks
             context + " bounded receipts");
     }
 
+    private static void WithinCapacity(WorldState world, TileEcologyResult result, string context)
+    {
+        var view = result.View;
+        int season = (int)Math.Floor(view.Days / world.Config.BaseDays) % 4;
+        var capacity = new EcologyCapacity(world, world.Tiles[0], view, season);
+        Check(view.PotentialFood >= 0 && view.PotentialFood <= capacity.Biomass + 1e-7
+            && view.Food >= 0 && view.Food <= Math.Min(view.PotentialFood, capacity.Food) + 1e-7,
+            context + " G and B fit their endpoint capacities");
+    }
+
     private static void ContestedFoodDebitsOneTileSequentially()
     {
         void Verify(double firstRequest, double secondRequest, string context)
@@ -139,6 +149,7 @@ internal static class HorizonEcologyChecks
             var herd = new Demand { Tile = 0, Entity = 2, Kind = "Herd", PotentialFood = 200 * multiplier };
             var contested = EcologicalPressure.Integrate(world, 0, new[] { human, herd }, 0, 365);
             Conserves(contested, "opening nested land pools");
+            WithinCapacity(world, contested, "opening nested land pools");
             Check(Near(contested.Transfers[0].Food, 20 * multiplier)
                 && Near(contested.Transfers[1].PotentialFood, 80 * multiplier)
                 && Near(contested.Transfers.Sum(t => t.Food + t.PotentialFood), 100 * multiplier),
@@ -159,6 +170,7 @@ internal static class HorizonEcologyChecks
             Check(Near(q1.Food, q1.Biomass), "full cultivation exposes all B to humans");
             var cultivated = EcologicalPressure.Integrate(world, 0, new[] { human, herd }, 0, 365);
             Conserves(cultivated, "fully cultivated land");
+            WithinCapacity(world, cultivated, "fully cultivated land");
             Check(Near(cultivated.Transfers[0].Food, 100 * multiplier)
                 && Near(cultivated.Transfers[1].PotentialFood, 0),
                 "full-cultivation human debit leaves no biomass for a later grazer");
@@ -171,6 +183,21 @@ internal static class HorizonEcologyChecks
         Check(Near(step.Transfers.Single().Food, 20) && Near(step.View.Food, expected, 1e-6),
             "partial-year recovery happens only after the opening receipt");
         Conserves(step, "partial-year opening harvest");
+        WithinCapacity(partial, step, "partial-year opening harvest");
+        var saturated = Fixture();
+        saturated.Config.CultivationRegenFlux = 1000;
+        saturated.Tiles[0].CultivationCapital = 1 /
+            (saturated.Config.ReferenceIntensity * saturated.Config.ReferenceIntensity);
+        var longRecovery = EcologicalPressure.Integrate(saturated, 0,
+            new[] { new Demand { Tile = 0, Entity = 1, Kind = "Gathering", Food = 20 } },
+            0, 7300);
+        Conserves(longRecovery, "high managed recovery");
+        WithinCapacity(saturated, longRecovery, "high managed recovery");
+        var negative = new EcologyView(saturated.Tiles[0])
+        { Food = -1, PotentialFood = -2, Freshwater = -3 };
+        LazyEcology.ClampCapacity(saturated, saturated.Tiles[0], ref negative);
+        Check(negative.Food == 0 && negative.PotentialFood == 0 && negative.Freshwater == 0,
+            "capacity clamp enforces nonnegative stocks");
     }
 
     public static int Run()

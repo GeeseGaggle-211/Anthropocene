@@ -311,7 +311,9 @@ namespace Anthropocene.Simulation
         internal static void ClampCapacity(WorldState w, Tile t, ref EcologyView v)
         {
             var k = new EcologyCapacity(w, t, v, (int)Math.Floor(v.Days / w.Config.BaseDays) % 4);
-            v.PotentialFood = Math.Min(v.PotentialFood, k.Biomass); v.Food = Math.Min(v.Food, Math.Min(v.PotentialFood, k.Food)); v.Freshwater = Math.Min(v.Freshwater, k.Water);
+            v.PotentialFood = Numbers.Clamp(v.PotentialFood, 0, k.Biomass);
+            v.Food = Numbers.Clamp(v.Food, 0, Math.Min(v.PotentialFood, k.Food));
+            v.Freshwater = Numbers.Clamp(v.Freshwater, 0, k.Water);
         }
         internal static void RecoverCondition(WorldState w, Tile t, ref EcologyView v, double days, double damagePerDay)
         {

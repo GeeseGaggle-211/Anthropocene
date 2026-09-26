@@ -98,11 +98,13 @@ namespace Anthropocene.Simulation
                 if (tile.Land) report.LandTiles++;
                 if (tile.River) report.Rivers++;
                 foreach (var season in tile.Seasons)
-                    if (float.IsNaN(season.MaxFood) || season.MaxFood < 0 || float.IsNaN(season.MaxPotentialFood) || season.MaxPotentialFood < season.MaxFood || season.MaxFreshwater < 0 ||
+                    if (float.IsNaN(season.MaxFood) || float.IsInfinity(season.MaxFood) || season.MaxFood < 0 ||
+                        float.IsNaN(season.MaxPotentialFood) || float.IsInfinity(season.MaxPotentialFood) || season.MaxPotentialFood < season.MaxFood || season.MaxFreshwater < 0 ||
                         float.IsNaN(season.RegionalMoisture) || season.RegionalMoisture < 0 || season.RegionalMoisture > 1 ||
                         float.IsNaN(season.Moisture) || season.Moisture < season.RegionalMoisture || season.Moisture > 1)
                         throw new InvalidOperationException("Invalid generated ecology at " + tile.Id);
-                if (tile.PotentialFood + 1e-6 < tile.Food) throw new InvalidOperationException("Gatherable food exceeds total potential food at " + tile.Id);
+                if (double.IsNaN(tile.Food) || double.IsInfinity(tile.Food) || double.IsNaN(tile.PotentialFood) || double.IsInfinity(tile.PotentialFood) || tile.Food < 0 || tile.PotentialFood < 0 || tile.PotentialFood + 1e-6 < tile.Food)
+                    throw new InvalidOperationException("Invalid generated food stock at " + tile.Id);
                 if (tile.Downstream >= 0 && world.Tiles[tile.Downstream].Elevation > tile.Elevation + .00001)
                     throw new InvalidOperationException("River flows uphill at " + tile.Id);
             }
