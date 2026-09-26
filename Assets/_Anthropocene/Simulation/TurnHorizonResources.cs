@@ -141,6 +141,12 @@ namespace Anthropocene.Simulation
             {
                 int tile = groups[i].Tile;
                 var result = results[i];
+                LastMetrics.ManagedRenewalInput += result.ManagedRenewalInput;
+                if (result.OperatingFraction > 0 && w.Tiles[tile].CultivationCapital > 0)
+                {
+                    LastMetrics.OperatingFractionSum += result.OperatingFraction;
+                    LastMetrics.OperatingFieldTiles++;
+                }
                 result.View.Commit(w.Tiles[tile]);
                 if (result.HasWoodSource)
                     MaterialEconomy.CommitWoodProjection(w, tile, result.WoodRemaining, result.WoodDays);

@@ -28,6 +28,7 @@ namespace Anthropocene.Simulation
             // original scale and their pressure threshold remains one.
             LandBiomassMultiplier = 1;
             LandSafeUseRatio = 1;
+            LandFoodRegenerationInitialized = false;
         }
         public int Version = 7;
         public double MajorityEligibilityYears = 200, ForcedTransitionYears = 240;
@@ -57,7 +58,7 @@ namespace Anthropocene.Simulation
         public double PracticeBonusStart = .25, PracticeBonusFull = .5;
         public double GatheringImpactReduction = .5, FishingImpactReduction = .5, HuntingFoodYieldScale = 2.5, HuntingYieldBonus = .5, HuntingPracticeMultiplier = 3.25, ActiveFishingPracticeMultiplier = 4.25, PassiveAquaticFishingPracticeShare = .5;
         public double ConditionRecoveryPerYear = .003093770185904377, SafeUseRatio = 1, SustainableProductionFraction = .5, LandUseDamagePerYear = .03, AquaticUseDamagePerYear = .03, PressureExponent = 2;
-        [System.Runtime.Serialization.OptionalField] public double LandBiomassMultiplier = 10, LandSafeUseRatio = .5;
+        [System.Runtime.Serialization.OptionalField] public double LandBiomassMultiplier = 30, LandSafeUseRatio = .5;
         [System.Runtime.Serialization.OptionalField] public double CultivationVegetationDisplacementStart = .50;
         public double LowPotentialRecoveryMultiplier = .5, HighPotentialRecoveryMultiplier = 1.5;
         public double OpeningFoodMultiplier = 1.4, CultivationMoisture = .25, RelocationInertia = .18;
@@ -71,6 +72,11 @@ namespace Anthropocene.Simulation
         public double SeasonalAmplitude = 13, LatitudeGradient = 48, LapseRate = 28, OceanModeration = .45;
         public double Evaporation = .2, MoistureDecay = .97, OrographicRain = 2.5, Monsoon = .12;
         public double RiverThreshold = 28, WaterRecovery = .35, FoodRegeneration = .4;
+        // Older saves have neither field. Their stored seasonal rates remain
+        // authoritative, and a generated world from that config uses the
+        // legacy shared rate. The flag also permits an explicit zero land rate.
+        [System.Runtime.Serialization.OptionalField] public double LandFoodRegeneration = .03;
+        [System.Runtime.Serialization.OptionalField] public bool LandFoodRegenerationInitialized = true;
         public int Hotspots = 8, HotspotChainLength = 4;
         public double StartViability = 85; // Percent of starting food need supported by conservative recurring gathering.
         public int GenerationBudgetSeconds = 90, GenerationBudgetMegabytes = 1000;
@@ -92,6 +98,9 @@ namespace Anthropocene.Simulation
         public void Validate()
         {
             Neolithic.Validate();
+            if (double.IsNaN(LandFoodRegeneration) || double.IsInfinity(LandFoodRegeneration)
+                || LandFoodRegeneration < 0 || LandFoodRegeneration >= 1)
+                throw new ArgumentException("Invalid land food regeneration fraction.");
             if (new[] { FarmerProductivity, ReferenceIntensity, CultivationRegenFlux, MaintenanceCoefficient, GathererBridgeCeiling, GathererBridgeEfficiency }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || ReferenceIntensity <= 0 || ReferenceIntensity > 1 || GathererBridgeCeiling > 1 || GathererBridgeEfficiency > 1) throw new ArgumentException("Invalid cultivation calibration.");
             if (Width < 12 || Height < 8 || Width > 2048 || Height > 1024 || Players < 1 || Players > (BenchmarkScale ? 320 : MaximumPlayersFor(Width, Height)))
                 throw new ArgumentException("Unsupported map dimensions or player count.");
@@ -386,7 +395,7 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldState
     {
-        public const int GeneratorVersion = 12;
+        public const int GeneratorVersion = 13;
         public int Version = 7, Seed, Turn = 1, NextId = 1;
         public double Days;
         public SimulationConfig Config;

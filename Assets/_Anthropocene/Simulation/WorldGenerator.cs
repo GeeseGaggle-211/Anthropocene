@@ -194,7 +194,9 @@ namespace Anthropocene.Simulation
                     if (tile.Land) data.MaxFood *= (float)c.Config.LandBiomassMultiplier;
                     data.MaxFreshwater = Math.Max(data.MaxFreshwater, (float)fresh); data.AccessibleFreshwater = (float)fresh;
                     data.MaxSaltwater = tile.WaterBody == WaterKind.Saltwater ? 100 : 0;
-                    double recovery = water ? AquaticEcology.RenewalPerDay(c.Config, tile, productivity, upwelling) : EcologyMath.DailyRate(c.Config.FoodRegeneration * (.2 + data.Moisture) * warmth, c.Config.BaseDays);
+                    double landFraction = c.Config.LandFoodRegenerationInitialized
+                        ? c.Config.LandFoodRegeneration : c.Config.FoodRegeneration;
+                    double recovery = water ? AquaticEcology.RenewalPerDay(c.Config, tile, productivity, upwelling) : EcologyMath.DailyRate(landFraction * (.2 + data.Moisture) * warmth, c.Config.BaseDays);
                     data.FoodRecoveryPerDay = water ? (float)recovery : Math.Max(data.FoodRecoveryPerDay, (float)recovery);
                     if (tile.FreshwaterSource != FreshwaterSource.Oasis) data.WaterRecoveryPerDay = (float)EcologyMath.DailyRate(c.Config.WaterRecovery, c.Config.BaseDays); data.Habitat = tile.Land ? (float)productivity : 0;
                     tile.Seasons[s] = data;
@@ -209,12 +211,30 @@ namespace Anthropocene.Simulation
     internal sealed class PlacementStage : IWorldGenerationStage
     {
         public string Name => "Viable asymmetric starts and herds"; public string Requires => "Ecology"; public string Produces => "Camps, herds, mandates";
-        public static double Viability(WorldState world, int tile)
+        // A one-time stock bonanza is not a viable twenty-year camp. The
+        // conservative repeatable stock assumes opening G was fully taken,
+        // then applies the same four-profile recovery used by resolution.
+        private static double RepeatableLandFood(WorldState world, int tile, double[] cache)
+        {
+            if (cache != null && !double.IsNaN(cache[tile])) return cache[tile];
+            var t = world.Tiles[tile];
+            var view = new EcologyView(t);
+            view.PotentialFood = Math.Max(0, view.PotentialFood - view.Food);
+            view.Food = 0;
+            LazyEcology.RecoverLandAfterHarvest(world, t, ref view, world.Days,
+                world.Config.TurnDays, null, null, null);
+            LazyEcology.ClampCapacity(world, t, ref view);
+            double repeatable = Math.Min(t.Food, view.Food);
+            if (cache != null) cache[tile] = repeatable;
+            return repeatable;
+        }
+        public static double Viability(WorldState world, int tile) => Viability(world, tile, null);
+        private static double Viability(WorldState world, int tile, double[] repeatableLand)
         {
             if (!world.Tiles[tile].TraversableLand) return 0;
             var cfg = world.Config;
             double annualWater = 0;
-            double openingLandFood = 0, aquaticRenewal = 0;
+            double repeatableLandFood = 0, aquaticRenewal = 0;
             Span<double> seasonalWater = stackalloc double[4]; seasonalWater.Clear();
             foreach (int n in world.Map.Radius(tile, 1))
             {
@@ -230,14 +250,14 @@ namespace Anthropocene.Simulation
                     seasonalWater[s] += profile.MaxFreshwater;
                     annualWater += profile.MaxFreshwater * profile.WaterRecoveryPerDay * cfg.BaseDays;
                 }
-                if (t.Land) openingLandFood += t.Food;
+                if (t.Land) repeatableLandFood += RepeatableLandFood(world, n, repeatableLand);
             }
             if (annualWater / 4 < cfg.StartFreshwaterMinimum) return 0;
             for (int s = 0; s < 4; s++) if (seasonalWater[s] < cfg.StartFreshwaterMinimum) return 0;
             // Same starting workforce share and land/coastal labor ceiling as
-            // passive gathering, applied to the one-turn opening stock.
+            // passive gathering, applied to a conservative repeatable stock.
             double share = Math.Min(1, Numbers.Fraction(cfg.GatherFraction, cfg.GenerationIntervals) * cfg.StartingPopulation / cfg.PopulationScale);
-            double harvest = Math.Min((openingLandFood + aquaticRenewal) * share,
+            double harvest = Math.Min((repeatableLandFood + aquaticRenewal) * share,
                 cfg.StartingPopulation * cfg.GatherPerPerson * cfg.GenerationIntervals);
             return 100 * harvest / (cfg.StartingPopulation * cfg.Consumption * cfg.GenerationIntervals);
         }
@@ -245,12 +265,14 @@ namespace Anthropocene.Simulation
         {
             var w = c.World;
             WildHerdPlacement.Populate(w);
+            var repeatableLand = new double[w.Tiles.Length];
+            for (int i = 0; i < repeatableLand.Length; i++) repeatableLand[i] = double.NaN;
             // Exponential weighted sampling chooses viable starts without flattening geographic asymmetry.
             var candidates = new List<KeyValuePair<int, double>>();
             foreach (var tile in w.Tiles)
             {
                 if (!tile.TraversableLand || !c.Map.Neighbors(tile.Id).Any(n => w.Tiles[n].TraversableLand && w.Config.Species.Any(s => WildHerdPlacement.Weight(w, w.Tiles[n], s) > 0))) continue;
-                double score = Viability(w, tile.Id); if (score < c.Config.StartViability) continue;
+                double score = Viability(w, tile.Id, repeatableLand); if (score < c.Config.StartViability) continue;
                 double key = -Math.Log(Math.Max(1e-12, Numbers.Random(w.Seed, 50, tile.Id))) / Math.Sqrt(score);
                 candidates.Add(new KeyValuePair<int, double>(tile.Id, key));
             }
@@ -260,7 +282,7 @@ namespace Anthropocene.Simulation
                 int player = w.Camps.Count;
                 var camp = new Camp { Id = w.NextId++, Player = player, Tile = entry.Key, Population = c.Config.StartingPopulation, Food = Math.Max(c.Config.StartingFood, c.Config.StartingReserveFood) };
                 camp.Mandate = new Mandate { Risk = Numbers.Random(w.Seed, 51, entry.Key), Mobility = Numbers.Random(w.Seed, 52, entry.Key), Exploration = Numbers.Random(w.Seed, 53, entry.Key), Reserve = Numbers.Random(w.Seed, 54, entry.Key), Hunting = .85 + Numbers.Random(w.Seed, 55, entry.Key) * .3, Gathering = .85 + Numbers.Random(w.Seed, 56, entry.Key) * .3, Fishing = .85 + Numbers.Random(w.Seed, 57, entry.Key) * .3 };
-                w.Camps.Add(camp); w.Generation.MeanStartViability += Viability(w, entry.Key);
+                w.Camps.Add(camp); w.Generation.MeanStartViability += Viability(w, entry.Key, repeatableLand);
                 if (w.Camps.Count == c.Config.Players) break;
             }
             if (w.Camps.Count < c.Config.Players) throw new InvalidOperationException("Not enough separated viable starts. Try another seed or lower player count/separation.");

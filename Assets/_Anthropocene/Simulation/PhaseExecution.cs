@@ -78,5 +78,7 @@ namespace Anthropocene.Simulation
         // Opt-in activity diagnostics; these never affect authoritative state.
         public long SeasonalCampBoundaries, OperatingRegimeChanges, FieldWorkSteps, FieldChoiceSwitches;
         public long TargetCompletions, ToolExhaustions, StockDepletions;
+        public double ManagedRenewalInput, OperatingFractionSum;
+        public int OperatingFieldTiles;
     }
 }

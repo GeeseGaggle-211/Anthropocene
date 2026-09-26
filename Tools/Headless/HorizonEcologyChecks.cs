@@ -200,6 +200,112 @@ internal static class HorizonEcologyChecks
             "capacity clamp enforces nonnegative stocks");
     }
 
+    private static void CultivationRecoveryAndGenerationIsolation()
+    {
+        var natural = Fixture();
+        natural.Tiles[0].CultivationCapital = Math.Pow(.25 / natural.Config.ReferenceIntensity, 2);
+        natural.Tiles[0].CultivationOperatingFraction = 1;
+        natural.Config.LandUseDamagePerYear = 0;
+        for (int s = 0; s < 4; s++)
+        {
+            natural.Tiles[0].Seasons[s].FoodRecoveryPerDay = .00004f;
+            natural.Tiles[0].Seasons[s].BiomassRecoveryPerDay = .00004f;
+        }
+        var withoutManaged = Fixture();
+        withoutManaged.Tiles[0].CultivationCapital = natural.Tiles[0].CultivationCapital;
+        withoutManaged.Tiles[0].CultivationOperatingFraction = 1;
+        withoutManaged.Config.LandUseDamagePerYear = 0;
+        withoutManaged.Config.CultivationRegenFlux = 0;
+        for (int s = 0; s < 4; s++)
+        {
+            withoutManaged.Tiles[0].Seasons[s].FoodRecoveryPerDay = .00004f;
+            withoutManaged.Tiles[0].Seasons[s].BiomassRecoveryPerDay = .00004f;
+        }
+        var demand = new[] { new Demand { Tile = 0, Entity = 1, Kind = "Gathering", Food = 20 } };
+        var managed = EcologicalPressure.Integrate(natural, 0, demand, 0, 7300);
+        var unmanaged = EcologicalPressure.Integrate(withoutManaged, 0, demand, 0, 7300);
+        var uncultivated = Fixture();
+        uncultivated.Config.LandUseDamagePerYear = 0;
+        for (int s = 0; s < 4; s++)
+        {
+            uncultivated.Tiles[0].Seasons[s].FoodRecoveryPerDay = .00004f;
+            uncultivated.Tiles[0].Seasons[s].BiomassRecoveryPerDay = .00004f;
+        }
+        var naturalControl = EcologicalPressure.Integrate(uncultivated, 0, demand, 0, 7300);
+        Check(managed.ManagedRenewalInput > 0 && unmanaged.ManagedRenewalInput == 0
+            && managed.View.Food > unmanaged.View.Food,
+            "operated q=.25 fields raise next-turn G through managed recovery");
+        Check(managed.View.Food > naturalControl.View.Food,
+            "q=.25 has a recovery advantage over identical opening claims at q=0");
+        Conserves(managed, "q=.25 operated recovery");
+        WithinCapacity(natural, managed, "q=.25 operated recovery");
+
+        var baseConfig = SimulationConfig.Small(2);
+        var changedConfig = SimulationConfig.Small(2);
+        changedConfig.LandFoodRegeneration = .08;
+        var baseWorld = new WorldGenerator().Generate(83, baseConfig);
+        var changedWorld = new WorldGenerator().Generate(83, changedConfig);
+        Check(baseWorld.Tiles.Where(t => t.Aquatic).All(t =>
+                t.Seasons.Select(s => s.FoodRecoveryPerDay).SequenceEqual(
+                    changedWorld.Tiles[t.Id].Seasons.Select(s => s.FoodRecoveryPerDay)))
+            && baseWorld.Tiles.Where(t => t.Land).Any(t =>
+                t.Seasons[0].FoodRecoveryPerDay != changedWorld.Tiles[t.Id].Seasons[0].FoodRecoveryPerDay),
+            "land recovery tuning leaves generated aquatic renewal unchanged");
+        var legacyRate = SimulationConfig.Small(2);
+        legacyRate.LandFoodRegenerationInitialized = false;
+        legacyRate.LandFoodRegeneration = 0;
+        legacyRate.FoodRegeneration = .08;
+        var legacyWorld = new WorldGenerator().Generate(83, legacyRate);
+        Check(legacyWorld.Tiles.Where(t => t.Land).All(t =>
+                t.Seasons.Select(s => s.FoodRecoveryPerDay).SequenceEqual(
+                    changedWorld.Tiles[t.Id].Seasons.Select(s => s.FoodRecoveryPerDay))),
+            "older configurations without a land rate retain their shared land rate");
+        baseWorld.Generation.GeneratorVersion = 12;
+        var storedLand = baseWorld.Tiles.First(t => t.Land);
+        storedLand.Seasons[0].FoodRecoveryPerDay = .000123f;
+        var restored = SaveCodec.Load(SaveCodec.Save(baseWorld));
+        Check(restored.Generation.GeneratorVersion == 12 &&
+            restored.Tiles[storedLand.Id].Seasons[0].FoodRecoveryPerDay == .000123f,
+            "older generated land profiles load from their saved rates without recalibration");
+
+        var viabilityConfig = SimulationConfig.Small(1);
+        viabilityConfig.Width = 24; viabilityConfig.Height = 17;
+        var viabilityWorld = new WorldState
+        {
+            Config = viabilityConfig,
+            Tiles = new Tile[viabilityConfig.Width * viabilityConfig.Height]
+        };
+        int center = 8 * viabilityConfig.Width + 6, source = center + 1;
+        for (int i = 0; i < viabilityWorld.Tiles.Length; i++)
+        {
+            bool land = i == center || i == source;
+            var tile = new Tile
+            {
+                Id = i, Environment = land ? EnvironmentKind.Desert : EnvironmentKind.Ocean,
+                WaterBody = land ? WaterKind.None : WaterKind.Saltwater,
+                ElevationLevel = land ? 1 : 0,
+                FreshwaterSource = i == center ? FreshwaterSource.RainPool : FreshwaterSource.None,
+                Food = i == source ? 10000 : 0,
+                PotentialFood = i == source ? 40000 : 0,
+                Freshwater = i == center ? 30 : 0
+            };
+            for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData
+            {
+                MaxFood = i == source ? 10000 : 0,
+                MaxPotentialFood = i == source ? 40000 : 0,
+                MaxFreshwater = i == center ? 30 : 0,
+                WaterRecoveryPerDay = i == center ? .01f : 0
+            };
+            viabilityWorld.Tiles[i] = tile;
+        }
+        Check(PlacementStage.Viability(viabilityWorld, center) == 0,
+            "one-time opening G cannot pass the repeatable land start screen");
+        for (int s = 0; s < 4; s++)
+            viabilityWorld.Tiles[source].Seasons[s].FoodRecoveryPerDay = .0001f;
+        Check(PlacementStage.Viability(viabilityWorld, center) > 0,
+            "repeatable land start screen credits food that is available next turn");
+    }
+
     public static int Run()
     {
         count = 0;
@@ -209,6 +315,7 @@ internal static class HorizonEcologyChecks
         var twenty = LazyEcology.SeasonWeights(0, 7300, 91.25);
         Check(twenty.SequenceEqual(new[] { 20.0, 20.0, 20.0, 20.0 }),
             "four profiles cover twenty years in constant work");
+        CultivationRecoveryAndGenerationIsolation();
 
         foreach (double years in new[] { 0.0, .5 / 365, 1.0, 5.0, 10.0, 20.0 })
         {

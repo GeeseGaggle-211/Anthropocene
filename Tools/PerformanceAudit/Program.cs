@@ -117,9 +117,17 @@ internal static class Program
                 ? JsonSerializer.Deserialize<SimulationConfig>(File.ReadAllText("Assets/_Anthropocene/Resources/OpeningConfig.json"), json)
                 : new SimulationConfig();
             string landM = Option(args, "--land-m", ""), landSafe = Option(args, "--land-safe", ""), landDamage = Option(args, "--land-damage", "");
+            string landRegeneration = Option(args, "--land-regeneration", ""), cultivationRegeneration = Option(args, "--cultivation-regeneration", "");
             if (landM.Length > 0) config.LandBiomassMultiplier = double.Parse(landM, CultureInfo.InvariantCulture);
             if (landSafe.Length > 0) config.LandSafeUseRatio = double.Parse(landSafe, CultureInfo.InvariantCulture);
             if (landDamage.Length > 0) config.LandUseDamagePerYear = double.Parse(landDamage, CultureInfo.InvariantCulture);
+            if (landRegeneration.Length > 0)
+            {
+                config.LandFoodRegeneration = double.Parse(landRegeneration, CultureInfo.InvariantCulture);
+                config.LandFoodRegenerationInitialized = true;
+            }
+            if (cultivationRegeneration.Length > 0)
+                config.CultivationRegenFlux = double.Parse(cultivationRegeneration, CultureInfo.InvariantCulture);
             var resources = productionConfig
                 ? JsonSerializer.Deserialize<ResourceGenerationOptions>(File.ReadAllText("Assets/_Anthropocene/Resources/ResourceGenerationConfig.json"), json)
                 : null;

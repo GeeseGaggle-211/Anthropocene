@@ -23,7 +23,9 @@ namespace Anthropocene.Simulation
     {
         public EcologyView View;
         public bool HasWoodSource;
-        public double WoodRemaining, WoodDays;
+        // Transient diagnostics: the managed source term may overflow the
+        // bounded food pool, so it is not itself realized food recovery.
+        public double WoodRemaining, WoodDays, ManagedRenewalInput, OperatingFraction;
         public List<Transfer> Transfers = new List<Transfer>();
         public List<PressureEntry> Pressure = new List<PressureEntry>();
         public EcologyBalance Balance;
@@ -121,6 +123,11 @@ namespace Anthropocene.Simulation
             var representative = LazyEcology.MeanView(w, tile, v, duration, 0,
                 averageCultivationCapital, operatingFraction);
             var capacity = new HorizonEcologyCapacity(w, tile, representative, start, duration, operatingFraction);
+            if (tile.Land)
+            {
+                result.ManagedRenewalInput = capacity.ManagedFlow * duration;
+                result.OperatingFraction = operatingFraction ?? tile.CultivationOperatingFraction;
+            }
             var flow = tile.Land
                 ? ResolveLandOpeningFlow(v, capacity, duration, foodRequest, herdRequest, waterRate)
                 : ResolveHorizonFlow(v, capacity, duration, humanRate, herdRate, waterRate);

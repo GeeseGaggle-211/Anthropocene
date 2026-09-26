@@ -20,9 +20,17 @@ internal static class Program
 
     private readonly struct Stocks
     {
-        public readonly double G, B, MaxG, MaxB, Condition, LargestExcess;
-        public Stocks(double g, double b, double maxG, double maxB, double condition, double largestExcess)
-        { G = g; B = b; MaxG = maxG; MaxB = maxB; Condition = condition; LargestExcess = largestExcess; }
+        public readonly double G, B, MaxG, MaxB, Q0MaxG;
+        public readonly double Condition, Q, E, LargestExcess;
+        public readonly int FieldTiles;
+        public Stocks(double g, double b, double maxG, double maxB, double q0MaxG,
+            double condition, double q, double e, int fieldTiles,
+            double largestExcess)
+        {
+            G = g; B = b; MaxG = maxG; MaxB = maxB; Q0MaxG = q0MaxG;
+            Condition = condition; Q = q;
+            E = e; FieldTiles = fieldTiles; LargestExcess = largestExcess;
+        }
     }
 
     private static int Main(string[] args)
@@ -42,7 +50,9 @@ internal static class Program
             .Split(',').Select(int.Parse).Distinct().OrderBy(x => x).ToArray();
         int controlledTurns = int.Parse(Value("--controlled-turns", "8"));
         int liveTurns = int.Parse(Value("--live-turns", "12"));
-        double multiplier = double.Parse(Value("--land-m", "15"));
+        double multiplier = double.Parse(Value("--land-m", "30"));
+        double regeneration = double.Parse(Value("--land-regeneration", "0.03"));
+        double managedRegeneration = double.Parse(Value("--cultivation-regeneration", "0.65"));
         if (populations.Length == 0 || populations.Any(p => p < 1) || controlledTurns < 1 || liveTurns < 1)
             throw new ArgumentException("Invalid population sweep dimensions.");
         Directory.CreateDirectory(output);
@@ -52,6 +62,9 @@ internal static class Program
             File.ReadAllText(Path.Combine(root, "Assets/_Anthropocene/Resources/ResourceGenerationConfig.json")), Json);
         config.Width = 128; config.Height = 64; config.Players = 8; config.StartSeparation = 10;
         config.LandBiomassMultiplier = multiplier; config.LandSafeUseRatio = .5;
+        config.LandFoodRegeneration = regeneration;
+        config.LandFoodRegenerationInitialized = true;
+        config.CultivationRegenFlux = managedRegeneration;
         config.LandUseDamagePerYear = .03; config.Validate();
         File.WriteAllText(Path.Combine(output, "configuration.json"), JsonSerializer.Serialize(config, Json));
         var worlds = new Dictionary<int, byte[]>();
@@ -63,7 +76,7 @@ internal static class Program
             worlds.Add(seed, SaveCodec.Save(world));
         }
         using var writer = new StreamWriter(Path.Combine(output, "turns.csv"));
-        writer.WriteLine("mode,site,seed,tile,initialPopulation,turn,year,startPopulation,endPopulation,openingG,openingB,openingMaxG,openingMaxB,endingG,endingB,endingMaxG,endingMaxB,foodProduced,foodConsumed,basicFoodNeed,reserveEnd,foodSatisfaction,waterSatisfaction,births,deaths,condition,q,largestCapacityExcess");
+        writer.WriteLine("mode,site,seed,tile,initialPopulation,turn,year,startPopulation,endPopulation,openingG,openingB,openingMaxG,openingMaxB,endingG,endingB,endingMaxG,endingMaxB,foodProduced,foodConsumed,basicFoodNeed,reserveEnd,foodSatisfaction,waterSatisfaction,births,deaths,condition,q,largestCapacityExcess,technology,openingQ,openingE,endingE,fieldTiles,openingQ0MaxG,endingQ0MaxG,landHumanHarvest,landBiomassHarvest,landFoodRechargeAndReclassification,landBiomassRecharge,landFoodOverflow,landBiomassOverflow,landManagedRenewalInput,operatingFieldTiles,meanOperatingFraction");
         foreach (var site in Sites)
             foreach (int population in populations)
                 foreach (string mode in new[] { "controlled-q0", "live" })
@@ -128,6 +141,7 @@ internal static class Program
         }
         Ownership.Bind(world);
         var radius = world.Map.Radius(camp.Tile, 1).Where(id => world.Tiles[id].Land).OrderBy(id => id).ToArray();
+        var radiusSet = new HashSet<int>(radius);
         if (radius.Length != 7 || camp.Technology == Technology.Cultivation)
             throw new InvalidOperationException("Pinned site no longer has seven land tiles and a Paleo opening: " + site.Name);
         for (int turn = 1; turn <= turns && camp.Population > 0; turn++)
@@ -142,12 +156,16 @@ internal static class Program
                 orders = new List<Order> { new Order(OrderKind.Economy, camp.Id) { Economy = intent } };
             }
             else orders = new List<Order> { new Order(OrderKind.NoOp, camp.Id) };
-            var record = new TurnResolver().Resolve(world,
+            var resolver = new TurnResolver();
+            var record = resolver.Resolve(world,
                 new Dictionary<int, List<Order>> { [camp.Player] = orders });
             var demographic = record.Demographics.Single(d => d.Camp == camp.Id);
             var ending = Snapshot(world, radius);
             if (mode == "controlled-q0" && (camp.Population != population || camp.Technology == Technology.Cultivation))
                 throw new InvalidOperationException("Controlled cohort changed population or reached Cultivation.");
+            var landBalances = record.EcologyBalances.Where(b => radiusSet.Contains(b.Tile)).ToArray();
+            double humanHarvest = record.Transfers.Where(t => radiusSet.Contains(t.Tile)
+                && (t.Kind == "Gathering" || t.Kind == "Cultivation")).Sum(t => t.Food);
             writer.WriteLine(string.Join(",", new object[]
             {
                 mode, site.Name, site.Seed, site.Tile, population, turn,
@@ -157,9 +175,16 @@ internal static class Program
                 demographic.FoodProduced, demographic.FoodConsumed,
                 startingPopulation * world.Config.Consumption * world.Config.GenerationIntervals,
                 demographic.FinalReserves, camp.FoodNeedsMetRatio, camp.WaterNeedsMetRatio,
-                demographic.Additions, demographic.Deaths, ending.Condition,
-                radius.Average(id => CultivationEconomy.Intensity(world.Config, world.Tiles[id].CultivationCapital)),
-                Math.Max(opening.LargestExcess, ending.LargestExcess)
+                demographic.Additions, demographic.Deaths, ending.Condition, ending.Q,
+                Math.Max(opening.LargestExcess, ending.LargestExcess), camp.Technology,
+                opening.Q, opening.E, ending.E, ending.FieldTiles,
+                opening.Q0MaxG, ending.Q0MaxG,
+                humanHarvest, landBalances.Sum(b => b.BiomassHarvest),
+                landBalances.Sum(b => b.FoodRecharge), landBalances.Sum(b => b.BiomassRecharge),
+                landBalances.Sum(b => b.FoodOverflow), landBalances.Sum(b => b.BiomassOverflow),
+                resolver.LastMetrics.ManagedRenewalInput, resolver.LastMetrics.OperatingFieldTiles,
+                resolver.LastMetrics.OperatingFieldTiles == 0 ? 0 :
+                    resolver.LastMetrics.OperatingFractionSum / resolver.LastMetrics.OperatingFieldTiles
             }.Select(x => Convert.ToString(x, CultureInfo.InvariantCulture))));
         }
         // Quiet tiles are latent. Project the whole map at the final boundary
@@ -169,8 +194,9 @@ internal static class Program
 
     private static Stocks Snapshot(WorldState world, IEnumerable<int> tiles)
     {
-        double g = 0, b = 0, maxG = 0, maxB = 0, condition = 0, excess = 0;
-        int count = 0;
+        double g = 0, b = 0, maxG = 0, maxB = 0, q0MaxG = 0;
+        double condition = 0, q = 0, e = 0, excess = 0;
+        int count = 0, fieldTiles = 0;
         foreach (int id in tiles)
         {
             var tile = world.Tiles[id];
@@ -187,10 +213,17 @@ internal static class Program
                     " maxG=" + capacity.Food + " maxB=" + capacity.Biomass);
             g += view.Food; b += view.PotentialFood;
             maxG += capacity.Food; maxB += capacity.Biomass;
+            var noField = view; noField.CultivationCapital = 0;
+            q0MaxG += new EcologyCapacity(world, tile, noField, season, 0).Food;
             condition += view.LandCondition;
+            q += CultivationEconomy.Intensity(world.Config, view.CultivationCapital);
+            e += view.CultivationCapital;
+            if (view.CultivationCapital > 0) fieldTiles++;
             excess = Math.Max(excess, largest);
             count++;
         }
-        return new Stocks(g, b, maxG, maxB, count == 0 ? 0 : condition / count, excess);
+        return new Stocks(g, b, maxG, maxB, q0MaxG,
+            count == 0 ? 0 : condition / count, count == 0 ? 0 : q / count,
+            count == 0 ? 0 : e / count, fieldTiles, excess);
     }
 }
