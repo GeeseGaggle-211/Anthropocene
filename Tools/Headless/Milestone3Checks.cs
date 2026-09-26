@@ -127,7 +127,11 @@ internal static class Milestone3Checks
         var ecologyConfig = new SimulationConfig(); var forestFood = new Tile { Terrain = Terrain.Woodland, Food = 20 }; var grassFood = new Tile { Terrain = Terrain.Grassland, Food = 20 }; var desertFood = new Tile { Terrain = Terrain.Desert, Food = 20 };
         foreach (var tile in new[] { forestFood, grassFood, desertFood }) for (int season = 0; season < 4; season++) tile.Seasons[season] = new SeasonData { MaxFood = 100, FoodRecoveryPerDay = (float)EcologyMath.DailyRate(.2, 91.25) };
         FoodEcology.ConfigurePotential(forestFood, ecologyConfig, true); FoodEcology.ConfigurePotential(grassFood, ecologyConfig, true); FoodEcology.ConfigurePotential(desertFood, ecologyConfig, true);
-        Check(forestFood.Seasons[0].MaxPotentialFood == 400 && grassFood.Seasons[0].MaxPotentialFood == 1000 && desertFood.Seasons[0].MaxPotentialFood == 2000 && forestFood.Food == 20 && grassFood.Food == 20 && desertFood.Food == 20, "potential biomass preserves depleted gatherable food at rich 25%, grassland 10% and desert 5% accessibility");
+        Check(Math.Abs(forestFood.Seasons[0].MaxPotentialFood - 100 / ecologyConfig.RichGatherableFraction) < .01 &&
+            Math.Abs(grassFood.Seasons[0].MaxPotentialFood - 100 / ecologyConfig.GrasslandGatherableFraction) < .01 &&
+            Math.Abs(desertFood.Seasons[0].MaxPotentialFood - 100 / ecologyConfig.AridGatherableFraction) < .01 &&
+            forestFood.Food == 20 && grassFood.Food == 20 && desertFood.Food == 20,
+            "potential biomass preserves depleted gatherable food at each habitat's configured accessibility");
         w = Flat(); var growingHerd = new Herd { Id = w.NextId++, Tile = 160, Animals = 149, Capacity = 150, Species = "antelope" }; w.Herds.Add(growingHerd);
         int herdPopulation = w.Herds.Sum(h => h.Animals); var herdTurn = resolver.Resolve(w, Idle());
         Check(w.Herds.Count == 1 && growingHerd.Animals == 150 && !herdTurn.Events.Any(e => e.Contains("divided")), "well-fed wild herds stop at their carrying ceiling without filling the map with daughter entities");

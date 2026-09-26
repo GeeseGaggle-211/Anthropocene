@@ -6,6 +6,11 @@ land regeneration 0.03, and managed cultivation coefficient 0.65. It extends
 [LandFoodRecoveryCalibration.md](LandFoodRecoveryCalibration.md); the paired
 seasonal outcome and matched performance gates remain open.
 
+The subsequent generator-14 calibration with a uniform natural-accessibility
+factor and primitive `q=.4` investment limit is recorded in
+[LandPopulationCalibration.md](LandPopulationCalibration.md). The figures below
+remain a historical generator-13 measurement, not current defaults.
+
 ## Food response and turn contract
 
 The authoritative state is integer resident population, fractional birth

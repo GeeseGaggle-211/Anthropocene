@@ -27,6 +27,12 @@ internal static class FoundationChecks
             Check(invalidRejected, "invalid environmental rates or era thresholds are rejected before generation");
         }
         var cfg = SimulationConfig.Small(1);
+        double landAccessScale = cfg.RichGatherableFraction / .25;
+        Check(Math.Abs(landAccessScale - .39) < 1e-12 &&
+            Math.Abs(cfg.GrasslandGatherableFraction / .10 - landAccessScale) < 1e-12 &&
+            Math.Abs(cfg.AridGatherableFraction / .05 - landAccessScale) < 1e-12 &&
+            Math.Abs(cfg.TundraGatherableFraction / .08 - landAccessScale) < 1e-12,
+            "all natural land gatherable shares use one uniform calibration factor");
         Check(Vegetation.Classify(-11, .8, cfg) == EnvironmentKind.Ice && Vegetation.Classify(0, .8, cfg) == EnvironmentKind.Cold && Vegetation.Classify(30, .1, cfg) == EnvironmentKind.Desert, "environment precedence preserves climate breakpoints");
         Check(Vegetation.Classify(25, .5, cfg) == EnvironmentKind.Tropical && Vegetation.Classify(15, .2, cfg) == EnvironmentKind.Grassland && Vegetation.Classify(15, .6, cfg) == EnvironmentKind.Temperate, "environment is independent of relief");
         var cover = new Tile { Terrain = Terrain.Woodland, Relief = Relief.Mountain };
@@ -34,7 +40,7 @@ internal static class FoundationChecks
         Check(Vegetation.Potential(cover, cfg) == VegetationTier.High, "wet highland retains high vegetation potential");
         cover.CurrentVegetation = VegetationTier.High; FoodEcology.ConfigurePotential(cover, cfg, true); double biomassCapacity = cover.Seasons[0].MaxPotentialFood;
         cover.CurrentVegetation = VegetationTier.Low;
-        Check(cover.Seasons[0].MaxPotentialFood == biomassCapacity && Math.Abs(FoodEcology.GatherableFraction(cover, cfg) - .1) < 1e-10, "cover loss reduces accessibility without creating biomass");
+        Check(cover.Seasons[0].MaxPotentialFood == biomassCapacity && Math.Abs(FoodEcology.GatherableFraction(cover, cfg) - cfg.GrasslandGatherableFraction) < 1e-10, "cover loss reduces accessibility without creating biomass");
         Check(Vegetation.Update(VegetationTier.High, VegetationTier.High, .2, cfg) == VegetationTier.Low && Vegetation.Update(VegetationTier.High, VegetationTier.Low, .9, cfg) == VegetationTier.High, "long intervals cross multiple vegetation thresholds");
         Check(Vegetation.Update(VegetationTier.Medium, VegetationTier.Low, .5, cfg) == VegetationTier.Low && Vegetation.Update(VegetationTier.Medium, VegetationTier.Medium, .5, cfg) == VegetationTier.Medium, "hysteresis retains the previous tier inside its band");
         var w = Fixture(); var first = w.Camps[0];

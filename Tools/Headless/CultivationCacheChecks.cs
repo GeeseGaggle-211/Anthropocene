@@ -99,7 +99,8 @@ internal static class CultivationCacheChecks
         double coveredWorkerYears = !bridge && toolBudget != null ? Math.Min(workerYears, toolBudget.RemainingTools * n.FarmToolFarmerYearsPerUnit) : 0;
         double efficiency = !bridge ? CultivationEconomy.FarmToolFieldWorkEfficiency(n) : 1;
         double remaining = bridge ? workerYears * c.GathererBridgeEfficiency : workerYears - coveredWorkerYears + coveredWorkerYears * efficiency;
-        double ceiling = Math.Pow((bridge ? c.GathererBridgeCeiling : 1) / c.ReferenceIntensity, 2);
+        double ceiling = bridge ? Math.Min(CultivationEconomy.InvestmentCapitalCeiling(c),
+            Math.Pow(c.GathererBridgeCeiling / c.ReferenceIntensity, 2)) : CultivationEconomy.InvestmentCapitalCeiling(c);
         var candidates = CultivationEconomy.Footprint(w, camp).Where(id => w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == camp.Id).ToArray();
         while (remaining > 1e-10)
         {
@@ -217,6 +218,15 @@ internal static class CultivationCacheChecks
         double expectedUsed = ExpandReference(expectedWorld, expectedCamp, workerYears, bridge, expectedRecord, expectedBudget, expectedCallback);
         double actualUsed = CultivationEconomy.Expand(actualWorld, actualCamp, workerYears, bridge, actualRecord, actualBudget, actualCallback, footprint);
 
+        if (scenario == "uniform" && workerYears >= 100_000)
+        {
+            double maxQ = footprint.Max(id => CultivationEconomy.Intensity(actualWorld.Config, actualWorld.Tiles[id].CultivationCapital));
+            Check(maxQ <= actualWorld.Config.Neolithic.PrimitiveAgricultureSupportedIntensity + 1e-10,
+                "primitive fields must not expand beyond supported q");
+            Check(maxQ >= actualWorld.Config.Neolithic.PrimitiveAgricultureSupportedIntensity - 1e-10,
+                "ample work must reach supported primitive q");
+        }
+
         Check(expectedUsed == actualUsed, scenario + " realized worker-years");
         Check(expectedSelected.SequenceEqual(actualSelected), scenario + " selected tile order");
         Check(expectedRecord.Pressure.Count == actualRecord.Pressure.Count, scenario + " pressure count");
@@ -246,6 +256,7 @@ internal static class CultivationCacheChecks
         RunCase("partial-budget", 4.321, false, 0);
         RunCase("custom-step", 420.5, false, 0);
         RunCase("uniform", 520.75, false, 0);
+        RunCase("uniform", 100_000, false, 0);
         RunCase("focus", 438.4, false, 0);
         RunCase("displacement", 40, false, 0);
         RunCase("bridge", 444.25, true, 0);

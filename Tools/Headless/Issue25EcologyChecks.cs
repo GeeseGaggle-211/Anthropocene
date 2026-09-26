@@ -280,6 +280,9 @@ internal static class Issue25EcologyChecks
     {
         var world = NeolithicChecks.Fixture();
         var camp = world.Camps[0];
+        // This fixture tests future high-intensity cover displacement; primitive
+        // production investment remains limited to the supported q=.4 tier.
+        world.Config.Neolithic.PrimitiveAgricultureSupportedIntensity = 1;
         world.Config.ConditionRecoveryPerYear = 0;
         camp.CultivationFocusTile = camp.Tile;
         var field = world.Tiles[camp.Tile];

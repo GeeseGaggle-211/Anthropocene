@@ -92,6 +92,9 @@ internal static class WoodEcologyChecks
         foreach (var vegetation in new[] { VegetationTier.Medium, VegetationTier.High })
         {
             var w = Fixture(1, vegetation); var camp = w.Camps[0]; int id = camp.Tile; var tile = w.Tiles[id];
+            // Exercise legacy/future high-q ecology with a tier that supports it;
+            // the current primitive tier stops new investment at q=.4.
+            w.Config.Neolithic.PrimitiveAgricultureSupportedIntensity = 1;
             tile.NaturalVegetationPotential = vegetation;
             camp.CultivationFocusTile = id;
             // Keep this a single-site expansion so the worker-year budget

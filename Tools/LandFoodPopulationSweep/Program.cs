@@ -21,14 +21,14 @@ internal static class Program
     private readonly struct Stocks
     {
         public readonly double G, B, MaxG, MaxB, Q0MaxG;
-        public readonly double Condition, Q, E, LargestExcess;
+        public readonly double Condition, Q, MaxQ, E, LargestExcess;
         public readonly int FieldTiles;
         public Stocks(double g, double b, double maxG, double maxB, double q0MaxG,
-            double condition, double q, double e, int fieldTiles,
+            double condition, double q, double maxQ, double e, int fieldTiles,
             double largestExcess)
         {
             G = g; B = b; MaxG = maxG; MaxB = maxB; Q0MaxG = q0MaxG;
-            Condition = condition; Q = q;
+            Condition = condition; Q = q; MaxQ = maxQ;
             E = e; FieldTiles = fieldTiles; LargestExcess = largestExcess;
         }
     }
@@ -50,7 +50,7 @@ internal static class Program
             .Split(',').Select(int.Parse).Distinct().OrderBy(x => x).ToArray();
         int controlledTurns = int.Parse(Value("--controlled-turns", "8"));
         int liveTurns = int.Parse(Value("--live-turns", "12"));
-        double multiplier = double.Parse(Value("--land-m", "30"));
+        string multiplier = Value("--land-m", "");
         double regeneration = double.Parse(Value("--land-regeneration", "0.03"));
         double managedRegeneration = double.Parse(Value("--cultivation-regeneration", "0.65"));
         if (populations.Length == 0 || populations.Any(p => p < 1) || controlledTurns < 1 || liveTurns < 1)
@@ -61,7 +61,8 @@ internal static class Program
         var resources = JsonSerializer.Deserialize<ResourceGenerationOptions>(
             File.ReadAllText(Path.Combine(root, "Assets/_Anthropocene/Resources/ResourceGenerationConfig.json")), Json);
         config.Width = 128; config.Height = 64; config.Players = 8; config.StartSeparation = 10;
-        config.LandBiomassMultiplier = multiplier; config.LandSafeUseRatio = .5;
+        if (multiplier.Length > 0) config.LandBiomassMultiplier = double.Parse(multiplier);
+        config.LandSafeUseRatio = .5;
         config.LandFoodRegeneration = regeneration;
         config.LandFoodRegenerationInitialized = true;
         config.CultivationRegenFlux = managedRegeneration;
@@ -93,7 +94,7 @@ internal static class Program
             }
         }
         using var writer = new StreamWriter(Path.Combine(output, "turns.csv"));
-        writer.WriteLine("mode,site,seed,tile,initialPopulation,turn,year,startPopulation,endPopulation,openingG,openingB,openingMaxG,openingMaxB,endingG,endingB,endingMaxG,endingMaxB,foodProduced,foodConsumed,basicFoodNeed,reserveEnd,foodSatisfaction,waterSatisfaction,births,deaths,condition,q,largestCapacityExcess,technology,openingQ,openingE,endingE,fieldTiles,openingQ0MaxG,endingQ0MaxG,landHumanHarvest,landBiomassHarvest,landFoodRechargeAndReclassification,landBiomassRecharge,landFoodOverflow,landBiomassOverflow,landManagedRenewalInput,operatingFieldTiles,meanOperatingFraction,openingReserves,reserveGoal,foodReceived,manufacturingFood,discardedFood,growthFoodSpent,assignedFarmerYears,assignedExpansionYears,requestedBridgeYears");
+        writer.WriteLine("mode,site,seed,tile,initialPopulation,turn,year,startPopulation,endPopulation,openingG,openingB,openingMaxG,openingMaxB,endingG,endingB,endingMaxG,endingMaxB,foodProduced,foodConsumed,basicFoodNeed,reserveEnd,foodSatisfaction,waterSatisfaction,births,deaths,condition,q,maxQ,largestCapacityExcess,technology,openingQ,openingE,endingE,fieldTiles,openingQ0MaxG,endingQ0MaxG,landHumanHarvest,landBiomassHarvest,landFoodRechargeAndReclassification,landBiomassRecharge,landFoodOverflow,landBiomassOverflow,landManagedRenewalInput,operatingFieldTiles,meanOperatingFraction,openingReserves,reserveGoal,foodReceived,manufacturingFood,discardedFood,growthFoodSpent,assignedFarmerYears,assignedExpansionYears,requestedBridgeYears");
         foreach (var site in Sites)
             foreach (int population in populations)
                 foreach (string mode in new[] { "controlled-q0", "live" })
@@ -206,7 +207,7 @@ internal static class Program
                 demographic.FoodProduced, demographic.FoodConsumed,
                 startingPopulation * world.Config.Consumption * world.Config.GenerationIntervals,
                 demographic.FinalReserves, camp.FoodNeedsMetRatio, camp.WaterNeedsMetRatio,
-                demographic.Additions, demographic.Deaths, ending.Condition, ending.Q,
+                demographic.Additions, demographic.Deaths, ending.Condition, ending.Q, ending.MaxQ,
                 Math.Max(opening.LargestExcess, ending.LargestExcess), camp.Technology,
                 opening.Q, opening.E, ending.E, ending.FieldTiles,
                 opening.Q0MaxG, ending.Q0MaxG,
@@ -231,7 +232,7 @@ internal static class Program
     private static Stocks Snapshot(WorldState world, IEnumerable<int> tiles)
     {
         double g = 0, b = 0, maxG = 0, maxB = 0, q0MaxG = 0;
-        double condition = 0, q = 0, e = 0, excess = 0;
+        double condition = 0, q = 0, maxQ = 0, e = 0, excess = 0;
         int count = 0, fieldTiles = 0;
         foreach (int id in tiles)
         {
@@ -252,14 +253,15 @@ internal static class Program
             var noField = view; noField.CultivationCapital = 0;
             q0MaxG += new EcologyCapacity(world, tile, noField, season, 0).Food;
             condition += view.LandCondition;
-            q += CultivationEconomy.Intensity(world.Config, view.CultivationCapital);
+            double tileQ = CultivationEconomy.Intensity(world.Config, view.CultivationCapital);
+            q += tileQ; maxQ = Math.Max(maxQ, tileQ);
             e += view.CultivationCapital;
             if (view.CultivationCapital > 0) fieldTiles++;
             excess = Math.Max(excess, largest);
             count++;
         }
         return new Stocks(g, b, maxG, maxB, q0MaxG,
-            count == 0 ? 0 : condition / count, count == 0 ? 0 : q / count,
+            count == 0 ? 0 : condition / count, count == 0 ? 0 : q / count, maxQ,
             count == 0 ? 0 : e / count, fieldTiles, excess);
     }
 }

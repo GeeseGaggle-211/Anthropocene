@@ -464,8 +464,9 @@ namespace Anthropocene.Simulation
         {
             var cfg = w.Config; var n = cfg.Neolithic; var tile = w.Tiles[id];
             var before = LazyEcology.ProjectEcology(w, id, w.Days); var after = before;
-            if (CultivationEconomy.Intensity(cfg, before.CultivationCapital) >= 1) return 0;
-            after.CultivationCapital = Math.Min(1 / (cfg.ReferenceIntensity * cfg.ReferenceIntensity), before.CultivationCapital + n.AllocationStepE);
+            double ceiling = CultivationEconomy.InvestmentCapitalCeiling(cfg);
+            if (before.CultivationCapital >= ceiling - Epsilon) return 0;
+            after.CultivationCapital = Math.Min(ceiling, before.CultivationCapital + n.AllocationStepE);
             double gain = 0;
             for (int season = 0; season < 4; season++)
             {
