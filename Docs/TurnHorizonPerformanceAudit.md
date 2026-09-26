@@ -108,6 +108,13 @@ differences are **2.36% / 4.11% / 2.12%** at 80 and **1.28% / 2.27% /
 197,431 → 197,577 at 320. These are calibration differences, not a
 fingerprint match or an outcome-equivalence gate.
 
+A subsequent production-config gameplay audit across three 80-tribe worlds
+and isolated agriculture/husbandry pilots found larger specialization and
+local-food effects. Its population, QoL, food and fishing tables are in
+[TurnHorizonGameplaySweep.md](TurnHorizonGameplaySweep.md). Those outcomes
+are additional calibration evidence and do not alter the timed Release
+pairs above.
+
 The 20 quick Neolithic transition cases all completed without invariant or
 conservation failure. The [calibration comparator](../Tools/NeolithicTransitionValidation/Compare-Horizons.py)
 aligns 14 cases with identical initial/injected states across 182 case-turns

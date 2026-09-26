@@ -98,6 +98,7 @@ internal static class Program
         bool details = Option(args, "--details", 0) != 0;
         bool metrics = Option(args, "--metrics", 0) != 0;
         bool fingerprintsEnabled = Option(args, "--fingerprints", 1) != 0;
+        bool productionConfig = Option(args, "--production-config", 0) != 0;
 
         if (openingTurnLimit < 0 || postOpeningTurns < 0 || warmup < 0)
             throw new ArgumentOutOfRangeException("Turn counts and warmup must be non-negative.");
@@ -110,15 +111,19 @@ internal static class Program
         string finishedSaveSha256 = null;
         if (string.IsNullOrWhiteSpace(inputSave))
         {
-            var config = new SimulationConfig
-            {
-                Width = players == 320 ? 2048 : players == 80 ? 1024 : 96,
-                Height = players == 320 ? 1024 : players == 80 ? 512 : 48,
-                Players = players,
-                BenchmarkScale = players == 320,
-                Shape = (WorldShape)Enum.Parse(typeof(WorldShape), shapeName, true)
-            };
-            world = new WorldGenerator().Generate(seed, config);
+            var json = new JsonSerializerOptions { IncludeFields = true };
+            var config = productionConfig
+                ? JsonSerializer.Deserialize<SimulationConfig>(File.ReadAllText("Assets/_Anthropocene/Resources/OpeningConfig.json"), json)
+                : new SimulationConfig();
+            var resources = productionConfig
+                ? JsonSerializer.Deserialize<ResourceGenerationOptions>(File.ReadAllText("Assets/_Anthropocene/Resources/ResourceGenerationConfig.json"), json)
+                : null;
+            config.Width = players == 320 ? 2048 : players == 80 ? 1024 : 96;
+            config.Height = players == 320 ? 1024 : players == 80 ? 512 : 48;
+            config.Players = players;
+            config.BenchmarkScale = players == 320;
+            config.Shape = (WorldShape)Enum.Parse(typeof(WorldShape), shapeName, true);
+            world = new WorldGenerator().Generate(seed, config, resources);
             generationMs = generationClock.Elapsed.TotalMilliseconds;
         }
         else
@@ -198,6 +203,7 @@ internal static class Program
             warmupRuns = warmup,
             metricsEnabled = metrics,
             detailsEnabled = details,
+            productionConfig,
             fingerprintsEnabled,
             replayMode = fingerprintsEnabled ? "exact" : "outcomes-only",
             exactCheckMode = fingerprintsEnabled ? "per-turn-fingerprint" : "disabled; compare outcomes against replay-check run",
@@ -262,7 +268,8 @@ internal static class Program
             world.Camps.Sum(c => c.QoL * priorResidents[c.Id]) / priorResidentPopulation;
         var camps = details ? world.Camps.OrderBy(c => c.Id).Select(c => new
         {
-            c.Id, c.Player, c.Population, linked = world.LinkedPopulation(c), c.QoL,
+            c.Id, c.Player, c.Population, priorResidents = priorResidents[c.Id],
+            linked = world.LinkedPopulation(c), technology = c.Technology.ToString(), c.QoL,
             c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita,
             c.Food, c.PlantFood, c.AnimalFood, c.FabricConsumed, c.HousingDemand,
             c.GrowthRemainder, c.LastConsumed, c.FoodDeficit, c.DeficitTurns,
@@ -305,6 +312,9 @@ internal static class Program
             weightedQol,
             endingPopulationWeightedQol,
             foodYield,
+            foodByKind = details ? record.Transfers.GroupBy(t => t.Kind)
+                .OrderBy(g => g.Key, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.Sum(t => t.Food)) : null,
             fingerprint,
             activeTiles = resolver.LastMetrics.ActiveTiles,
             ecologyMs = resolver.LastMetrics.EcologyMilliseconds,

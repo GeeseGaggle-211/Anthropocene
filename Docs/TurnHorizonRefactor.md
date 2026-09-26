@@ -6,6 +6,10 @@ implementation at `c33a5b7` is the calibration reference, including the
 accepted prior-cohort needs rule. The detailed paired evidence and
 reproduction commands are in
 [TurnHorizonPerformanceAudit.md](TurnHorizonPerformanceAudit.md).
+The later [representative gameplay sweep](TurnHorizonGameplaySweep.md)
+reports three 80-tribe production-config worlds plus isolated agriculture,
+husbandry and Archipelagos fishing outcomes; its large husbandry divergence
+keeps balance acceptance open.
 
 ## Authoritative clock
 
