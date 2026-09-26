@@ -1,5 +1,18 @@
 # Working on Anthropocene
 
+## Anthropocene Engineering Doctrine
+
+All substantial simulation work must follow this doctrine. Before implementing a foundational mechanic, explicitly identify its authoritative state, temporal abstraction, computational scaling, mature-game scale, RL implications, and validation strategy. If the existing architecture violates these constraints, raise the issue before optimizing around it.
+
+1. **Design the abstraction first.** Do not let numerical methods or timesteps accidentally become game semantics. Turn boundaries are authoritative; sub-turn calculations may be analytical, and intermediate states are authoritative only when explicitly designed as such.
+2. **Treat performance as correctness.** A mechanic must plausibly scale to later eras and RL training. State its scaling law and cost drivers before coding, including active tiles, settlements, agents, claims, map size, population, and `dt`.
+3. **Make cost follow active state.** Work should scale with active state rather than simulated historical duration; authoritative `O(dt / timestep)` work is a red flag. Stress-test foundational systems at current, mature-empire, and RL-training scales.
+4. **Prefer sparse, local computation.** Use locality, sparsity, analytical reduction, and indexed access. Avoid repeated global scans and dense state without a clear justification. Slow reference models are useful for calibration and validation, but do not assume they belong in production.
+5. **Measure before optimizing.** Profile phase time, allocations, memory, and meaningful work counts before threading, Burst, or SIMD. Fix the abstraction before micro-optimization; repeated optimization of different symptoms in one pass calls for an architecture review.
+6. **Keep time and outcomes consistent.** Turn-duration compression reuses the same equations: smaller `dt` may change outcomes, but must not require a new simulation clock. Preserve determinism and conservation; parallel work should be pure and independent, followed by canonical commits.
+7. **Recheck assumptions when scope grows.** A new era, order-of-magnitude scale increase, global network, or RL dependency triggers an abstraction audit. State rejected architectures explicitly in implementation prompts when relevant.
+8. **Include scale in done.** Understand semantics, persistence, determinism, scaling, memory, validation, and stress benchmarks before calling a mechanic complete.
+
 ## Intent and current scope
 
 Anthropocene is a deterministic, simultaneous-turn strategy simulation. The playable opening follows mobile camps and hunter groups through the Paleolithic to their first technological breakthrough, normally within twelve turns. Prioritize information a player can act on: readable Dwarf Fortress-style symbolic tiles with glyph fallbacks, clear terrain and resource distinctions, understandable orders, and explained outcomes. Decorative art is secondary.
