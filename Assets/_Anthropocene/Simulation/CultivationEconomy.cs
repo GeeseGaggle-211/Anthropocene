@@ -78,10 +78,6 @@ namespace Anthropocene.Simulation
         public static bool HusbandryEnabled(Camp camp) => camp.Technology == Technology.AnimalHusbandry || camp.Technologies != null && camp.Technologies[(int)Technology.AnimalHusbandry];
         public static bool EconomyEnabled(Camp camp) => Enabled(camp) || HusbandryEnabled(camp);
         public static double Intensity(SimulationConfig c, double capital) => Math.Min(1, c.ReferenceIntensity * Math.Sqrt(Math.Max(0, capital)));
-        // New primitive-era investment stops at its supported intensity.
-        // Existing saved fields above the limit remain valid and can decay.
-        public static double InvestmentCapitalCeiling(SimulationConfig c)
-            => Math.Pow(c.Neolithic.PrimitiveAgricultureSupportedIntensity / c.ReferenceIntensity, 2);
         public static double Decay(SimulationConfig c, double capital, double operatingFraction, double years) => capital * Math.Exp(-Math.Log(2) / c.Neolithic.DecayHalfLifeYears * (1 - Numbers.Clamp(operatingFraction, 0, 1)) * years);
         public static void Factors(SimulationConfig c, Tile t, out double build, out double maintenance)
         {
@@ -223,7 +219,7 @@ namespace Anthropocene.Simulation
         public static double ExpandableWorkerYears(WorldState w, Camp camp)
         {
             if (!Enabled(camp) || camp.Population <= 0) return 0;
-            double ceiling = InvestmentCapitalCeiling(w.Config);
+            double ceiling = 1 / (w.Config.ReferenceIntensity * w.Config.ReferenceIntensity);
             double total = 0;
             foreach (int id in Footprint(w, camp))
             {
@@ -265,7 +261,7 @@ namespace Anthropocene.Simulation
                 if (t.CultivationOperator >= 0 && t.CultivationOperator != camp.Id) continue;
                 var projected = LazyEcology.ProjectEcology(w, id, Math.Max(w.Days, t.LastEcologyUpdateDays));
                 double capital = Math.Max(0, projected.CultivationCapital);
-                if (capital < InvestmentCapitalCeiling(w.Config) - 1e-12) expansionEligible = true;
+                if (capital < 1 / (w.Config.ReferenceIntensity * w.Config.ReferenceIntensity) - 1e-12) expansionEligible = true;
             }
             double farmers = Workers(camp, WorkforceRoles.Farmer);
             double maintenanceFarmers = Math.Min(farmers, required / FarmToolFieldWorkEfficiency(w.Config.Neolithic));
@@ -411,8 +407,7 @@ namespace Anthropocene.Simulation
         {
             if (effectiveWorkerYears <= 1e-10 || candidates.Length == 0) return Math.Max(0, effectiveWorkerYears);
             var c = w.Config; var n = c.Neolithic;
-            double ceiling = bridge ? Math.Min(InvestmentCapitalCeiling(c),
-                Math.Pow(c.GathererBridgeCeiling / c.ReferenceIntensity, 2)) : InvestmentCapitalCeiling(c);
+            double ceiling = Math.Pow((bridge ? c.GathererBridgeCeiling : 1) / c.ReferenceIntensity, 2);
             double bridgeCeiling = Math.Pow(c.GathererBridgeCeiling / c.ReferenceIntensity, 2);
             double remaining = effectiveWorkerYears;
             var cached = new bool[candidates.Length];
@@ -434,7 +429,7 @@ namespace Anthropocene.Simulation
                         if (field.Eligible && e < ceiling - 1e-12)
                         {
                             double q = Intensity(c, e);
-                            double nextBandQ = Math.Min(bridge ? c.GathererBridgeCeiling : n.PrimitiveAgricultureSupportedIntensity,
+                            double nextBandQ = Math.Min(bridge ? c.GathererBridgeCeiling : 1,
                                 (Math.Floor(q * 32 + 1e-10) + 1) / 32);
                             double nextE = Math.Pow(nextBandQ / c.ReferenceIntensity, 2);
                             double de = Math.Min(ceiling - e, Math.Max(0, nextE - e));
@@ -583,8 +578,7 @@ namespace Anthropocene.Simulation
             double coveredWorkerYears = !bridge && toolBudget != null ? Math.Min(workerYears, toolBudget.RemainingTools * n.FarmToolFarmerYearsPerUnit) : 0;
             double efficiency = !bridge ? FarmToolFieldWorkEfficiency(n) : 1;
             double remaining = bridge ? workerYears * c.GathererBridgeEfficiency : workerYears - coveredWorkerYears + coveredWorkerYears * efficiency;
-            double ceiling = bridge ? Math.Min(InvestmentCapitalCeiling(c),
-                Math.Pow(c.GathererBridgeCeiling / c.ReferenceIntensity, 2)) : InvestmentCapitalCeiling(c);
+            double ceiling = Math.Pow((bridge ? c.GathererBridgeCeiling : 1) / c.ReferenceIntensity, 2);
             var candidates = (cachedFootprint ?? Footprint(w, camp)).Where(id => w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == camp.Id).ToArray();
             var scores = new CandidateScoreCache[candidates.Length];
             while (remaining > 1e-10)

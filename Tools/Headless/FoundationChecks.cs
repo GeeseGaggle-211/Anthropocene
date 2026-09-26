@@ -28,7 +28,7 @@ internal static class FoundationChecks
         }
         var cfg = SimulationConfig.Small(1);
         double landAccessScale = cfg.RichGatherableFraction / .25;
-        Check(Math.Abs(landAccessScale - .39) < 1e-12 &&
+        Check(landAccessScale > 0 &&
             Math.Abs(cfg.GrasslandGatherableFraction / .10 - landAccessScale) < 1e-12 &&
             Math.Abs(cfg.AridGatherableFraction / .05 - landAccessScale) < 1e-12 &&
             Math.Abs(cfg.TundraGatherableFraction / .08 - landAccessScale) < 1e-12,

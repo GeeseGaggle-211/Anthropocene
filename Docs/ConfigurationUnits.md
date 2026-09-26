@@ -20,7 +20,7 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | Season `MaxFood`, `MaxPotentialFood`, `MaxFreshwater` | Generated seasonal capacity targets before current condition/accessibility and the optional opening adapter. |
 | Season `FoodRecoveryPerDay`, `BiomassRecoveryPerDay`, `WaterRecoveryPerDay` | Daily exponential relaxation rates. These are authoritative generated/saved rates; the resolver never treats them as per-turn fractions. |
 | `FoodRegeneration`, `LandFoodRegeneration`, `WaterRecovery`, `OasisFoodRegeneration`, `OasisWaterRecovery` | Generated recovery inputs: dimensionless fractions over `BaseDays`, converted once using `-ln(1-f)/BaseDays`. `LandFoodRegeneration=0.03` controls ordinary generated land; the legacy `FoodRegeneration=0.4` still controls lakes. Oasis and other aquatic rates remain separate. Land climate modifies the land input before conversion. Stored seasonal daily rates, not these generator inputs, govern loaded worlds. |
-| `LandBiomassMultiplier` (63), `LandSafeUseRatio` (0.5) | One generated-land stock multiplier applied before deriving total biomass and initial `G`/`B`, and a land-specific pressure threshold. The multiplier does not alter each habitat's natural human-accessible fraction. |
+| `LandBiomassMultiplier` (30), `LandSafeUseRatio` (0.5) | One generated-land stock multiplier applied before deriving total biomass and initial `G`/`B`, and a land-specific pressure threshold. The multiplier does not alter each habitat's natural human-accessible fraction. |
 | `CultivationRegenFlux` (0.65) | Dimensionless multiplier for operated managed food recovery, proportional to field intensity `q`, total biomass, the stored biomass daily rate and operating fraction. Potential input can overflow the bounded tile; it is not guaranteed realized food. |
 
 
@@ -35,7 +35,7 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | `GatherFraction` | Dimensionless fraction over `BaseDays`; duration conversion is `1-(1-f)^(duration/BaseDays)`. |
 | `GatherPerPerson`, `HunterForagePerPerson`, `FishPerPerson` | Abstract food per participating person per `BaseDays`. Land and passive aquatic gathering share one labor ceiling. |
 | `PopulationScale` | Person-count normalization in the preserved gathering claim formula. |
-| `RichGatherableFraction` (0.0975), `GrasslandGatherableFraction` (0.039), `AridGatherableFraction` (0.0195), `TundraGatherableFraction` (0.0312) | Dimensionless natural human-accessible shares of total land biomass, all multiplied by the same 0.39 calibration factor from the previous 0.25/0.10/0.05/0.08 profile. Rivers/oasis influence can raise the share. |
+| `RichGatherableFraction`, `GrasslandGatherableFraction`, `AridGatherableFraction`, `TundraGatherableFraction` | Dimensionless human-accessible shares of total biomass, selected by environment and current vegetation. Rivers/oasis influence can raise the share. |
 | `Consumption` | Abstract food per person per `BaseDays`; named roles do not change consumption. |
 | `AnnualHumanGrowthRate` | Maximum annual exponential growth rate. After current-population consumption and reserve refill, available growth food is inverted through the integrated exponential food equation to obtain the realized rate. |
 | `DemographicGrowthMultiplier` | Dimensionless local modifier on the maximum annual growth rate. |

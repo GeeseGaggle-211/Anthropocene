@@ -148,9 +148,7 @@ for production is the exact mean of starting-capital decay plus half the
 planned investment. The at-most-seven nearby land candidates compete for
 finite worker-years through a fixed 32-band marginal-capital solve. Every
 score uses the four profiles and the established focus/tile-ID preference;
-the band count does not depend on the horizon duration. New primitive-tier
-investment is bounded by its configured supported `q=.4`; existing saved
-high-q fields retain their state and can decay. Bridge work is
+the band count does not depend on the horizon duration. Bridge work is
 estimated before claims, then its endpoint capital is corrected once from
 realized terrestrial gathering. Claims and already integrated food do not
 change during that correction; any endpoint capacity loss is booked as
