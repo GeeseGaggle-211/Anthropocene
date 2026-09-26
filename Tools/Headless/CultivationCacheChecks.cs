@@ -125,9 +125,9 @@ internal static class CultivationCacheChecks
                     var beforeCapacity = new EcologyCapacity(w, t, beforeView, season, 1);
                     var afterCapacity = new EcologyCapacity(w, t, afterView, season, 1);
                     double beforeFlow = Math.Min(beforeCapacity.Food * beforeCapacity.FoodRate + beforeCapacity.ManagedFlow,
-                        EcologyMath.SustainableHarvestRate(beforeCapacity.Biomass, beforeCapacity.BiomassRate, c.SustainableProductionFraction, beforeCapacity.ManagedFlow) * c.SafeUseRatio);
+                        EcologyMath.SustainableHarvestRate(beforeCapacity.Biomass, beforeCapacity.BiomassRate, c.SustainableProductionFraction, beforeCapacity.ManagedFlow) * c.LandSafeUseRatio);
                     double afterFlow = Math.Min(afterCapacity.Food * afterCapacity.FoodRate + afterCapacity.ManagedFlow,
-                        EcologyMath.SustainableHarvestRate(afterCapacity.Biomass, afterCapacity.BiomassRate, c.SustainableProductionFraction, afterCapacity.ManagedFlow) * c.SafeUseRatio);
+                        EcologyMath.SustainableHarvestRate(afterCapacity.Biomass, afterCapacity.BiomassRate, c.SustainableProductionFraction, afterCapacity.ManagedFlow) * c.LandSafeUseRatio);
                     gain += (afterFlow - beforeFlow) * c.DaysPerYear / 4;
                 }
                 double buildCost = de * n.BuildWorkerYearsPerTileE * vb;

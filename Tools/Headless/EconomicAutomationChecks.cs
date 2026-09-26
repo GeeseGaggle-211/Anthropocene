@@ -24,6 +24,16 @@ internal static class EconomicAutomationChecks
     {
         var c = w.Camps[0]; var t = w.Tiles[c.Tile]; t.CultivationCapital = e; t.Cultivation = (float)CultivationEconomy.Intensity(w.Config, e); t.CultivationOperator = c.Id;
     }
+    private static void OpeningFood(WorldState w, Camp camp, float food)
+    {
+        // The bucket fixtures need enough opening G because land renewal is
+        // available to the next turn, not the turn making these claims.
+        foreach (int id in w.Map.Radius(camp.Tile, 1))
+        {
+            var tile = w.Tiles[id]; tile.Food = food; tile.PotentialFood = food * 10;
+            for (int s = 0; s < 4; s++) { tile.Seasons[s].MaxFood = food; tile.Seasons[s].MaxPotentialFood = food * 10; }
+        }
+    }
     private static void Budget(WorldState w, EconomicIntent e)
     {
         var c = w.Camps[0]; var observation = new AgentObservationBuilder().Build(w, c.Player);
@@ -189,6 +199,7 @@ internal static class EconomicAutomationChecks
     private static void FabricDoesNotFundBirths()
     {
         var w = Fixture(); var c = w.Camps[0]; Field(w); w.Config.AnnualHumanGrowthRate = .01145;
+        OpeningFood(w, c, 2000);
         c.PlantFood = 8000; c.Inventory.HandTools = 100; c.Inventory.Cloth = 100; c.Inventory.HousingUnits = 100;
         c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
         c.Workforce.Assign(WorkforceRoles.Farmer, 40, 100); c.Workforce.Assign(WorkforceRoles.Weaver, 2, 100);
@@ -204,6 +215,7 @@ internal static class EconomicAutomationChecks
         WorldState GrowingFixture(bool hunter)
         {
             var w = Fixture(); var c = w.Camps[0]; Field(w); w.Config.MaintenanceCoefficient = 0; w.Config.AnnualHumanGrowthRate = .01145;
+            OpeningFood(w, c, 2000);
             c.Population = 10; c.PlantFood = c.AnimalFood = c.AquaticFood = 0; c.Inventory.HandTools = 100; c.Inventory.HousingUnits = 10;
             c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
             c.Workforce.Assign(WorkforceRoles.Farmer, 9, c.Population); c.Workforce.Assign(WorkforceRoles.Weaver, 1, c.Population);

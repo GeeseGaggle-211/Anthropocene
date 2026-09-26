@@ -54,6 +54,7 @@ internal static class Issue25EcologyChecks
         config.TurnDays = 20 * config.DaysPerYear;
         config.ConditionRecoveryPerYear = 0;
         config.SafeUseRatio = 1;
+        config.LandSafeUseRatio = 1;
         config.Validate();
 
         var world = new WorldState
@@ -459,8 +460,10 @@ internal static class Issue25EcologyChecks
         {
             int season = (int)Math.Floor(tile.LastEcologyUpdateDays / world.Config.BaseDays) % 4;
             var capacity = new EcologyCapacity(world, tile, new EcologyView(tile), season);
-            double safeRate = EcologyMath.SustainableHarvestRate(capacity.Biomass, capacity.BiomassRate,
+            double renewalRate = EcologyMath.SustainableHarvestRate(capacity.Biomass, capacity.BiomassRate,
                 world.Config.SustainableProductionFraction, capacity.ManagedFlow);
+            double safeRate = Math.Min(renewalRate, capacity.Biomass
+                * world.Config.SustainableProductionFraction / world.Config.DaysPerYear);
             double request = safeMultiplier * safeRate * world.Config.DaysPerYear;
             var claim = new Demand { Tile = TileId, Entity = 1, Kind = "Cultivation", Food = request };
             var result = EcologicalPressure.Integrate(world, TileId, new[] { claim },
@@ -469,7 +472,7 @@ internal static class Issue25EcologyChecks
             double unmet = result.Pressure.Where(p => p.Pool == "Accessible food").Sum(p => p.Unmet);
             CheckBalance(result, context + " year " + year);
             Check(Near(realized + unmet, request, 1e-7), context + " accounts for human request and unmet demand in year " + year);
-            Check(Near(safeRate, capacity.Biomass * capacity.BiomassRate *
+            Check(Near(renewalRate, capacity.Biomass * capacity.BiomassRate *
                 world.Config.SustainableProductionFraction + capacity.ManagedFlow, 1e-10),
                 context + " counts managed flow exactly once in year " + year);
             if (realized > safeRate * world.Config.DaysPerYear * (1 + 1e-6))

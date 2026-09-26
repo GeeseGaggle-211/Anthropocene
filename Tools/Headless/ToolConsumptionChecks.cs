@@ -345,6 +345,13 @@ internal static class ToolConsumptionChecks
     {
         var w = Fixture();
         var c = w.Camps[0];
+        // Keep the long replacement lifecycle supplied from opening food;
+        // renewed stock cannot feed its producing turn.
+        foreach (int id in w.Map.Radius(c.Tile, 1))
+        {
+            var tile = w.Tiles[id]; tile.Food = 2000; tile.PotentialFood = 20000;
+            for (int s = 0; s < 4; s++) { tile.Seasons[s].MaxFood = 2000; tile.Seasons[s].MaxPotentialFood = 20000; }
+        }
         c.Workforce.Assign(WorkforceRoles.Craftsperson, 5, c.Population);
         c.CraftingPriorities.HandTools = 1;
         c.CraftingPriorities.Tools = 0;

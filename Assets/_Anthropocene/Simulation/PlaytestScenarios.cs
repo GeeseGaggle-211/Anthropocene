@@ -7,14 +7,14 @@ namespace Anthropocene.Simulation
     public static class PlaytestScenarios
     {
         public const int Seed = 11;
-        public static readonly string[] Names = { "Custom world", "Desert river valley", "Steppe hunters", "Cold coastal fishers" };
+        public static readonly string[] Names = { "Custom world", "Desert river valley", "Steppe hunters", "Coastal fishers" };
         public static readonly string[] Descriptions = {
             "Choose your own seed, world size and tribe count.",
             "Nile / Mesopotamia analogue: a warm desert river with riparian food and dry surroundings. Test gathering and cultivation.",
-            "Steppe analogue: open grassland, a nearby freshwater river and reachable mobile herds. Test mobile hunters and animal husbandry.",
-            "Scandinavian analogue: a cold wooded shore, two adjacent shallows and land freshwater. Test fishing and seasonal reserves."
+            "Steppe analogue: open grassland, nearby freshwater and reachable mobile herds. Test mobile hunters and animal husbandry.",
+            "Temperate coastal shore with three adjacent shallows and land freshwater. Test fishing and seasonal reserves."
         };
-        public static int Tile(int scenario) => scenario == 1 ? 225046 : scenario == 2 ? 173240 : scenario == 3 ? 431802 : -1;
+        public static int Tile(int scenario) => scenario == 1 ? 225046 : scenario == 2 ? 413877 : scenario == 3 ? 117495 : -1;
         public static void Configure(SimulationConfig config)
         { config.Width = 1024; config.Height = 512; config.Players = 80; config.Shape = WorldShape.Continents; config.StartSeparation = 12; }
 
@@ -29,7 +29,7 @@ namespace Anthropocene.Simulation
             if (scenario == 2) return tile.Environment == EnvironmentKind.Grassland && tile.Seasons.Average(s => s.Temperature) < 21
                 && near.Count(t => t.Environment == EnvironmentKind.Grassland) >= 5 && near.All(t => t.TraversableLand && t.CurrentVegetation != VegetationTier.High)
                 && near.Any(t => t.FreshwaterSource != FreshwaterSource.None) && world.Herds.Any(h => (h.Species == "bison" || h.Species == "horse") && world.Map.Reachable(id, h.Tile, 2, n => world.Tiles[n].TraversableLand));
-            return tile.Environment == EnvironmentKind.Cold && near.Count(t => t.Environment == EnvironmentKind.Shallows) >= 2 && tile.FreshwaterSource != FreshwaterSource.None
+            return tile.Environment == EnvironmentKind.Temperate && near.Count(t => t.Environment == EnvironmentKind.Shallows) >= 2 && tile.FreshwaterSource != FreshwaterSource.None
                 && near.Where(t => t.Environment == EnvironmentKind.Shallows).Sum(t => Food(world, t, -1)) > near.Where(t => t.Land).Sum(t => Food(world, t, -1));
         }
 

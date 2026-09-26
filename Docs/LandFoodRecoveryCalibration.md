@@ -177,7 +177,7 @@ against the reference branch remains required before adoption.
 
 The full population sweep projected every land tile at case end and found
 zero excess over current `G`/`B` capacity in all 54 lanes and three
-zero-claim controls. `--land-food-only` passed 37 aquatic and 165 horizon
+zero-claim controls. `--land-food-only` passed 37 aquatic and 168 horizon
 ecology assertions, including land/aquatic rate isolation, saved generator-12
 profile continuation, `q=0.25` managed recovery, conservation, zero stock,
 and nonnegative bounds. `--horizon-only` also passed 61 cultivation checks
@@ -191,9 +191,11 @@ Open before desktop adoption:
 1. Compare every turn's aggregate population, prior-cohort QoL and realized
    food against the accepted prior-cohort reference using paired worlds.
    Re-selection and changed starting stocks must be disclosed; the current
-   three Standard reports are candidate-only. The earlier experimental full
-   fixed headless run also stopped on an old geology fingerprint tied to
-   generated food changes. Do not call this a complete legacy-suite pass.
+   three Standard reports are candidate-only. The full fixed headless suite
+   now passes with the geology fingerprint oracle normalized only for its
+   core-generator provenance header, updated harvest-boundary fixtures and
+   naturally generated replacement playtest preset camps. The underlying
+   resource payload still matches its original deterministic fingerprint.
 2. Run sequential, warmed, matched Release performance pairs at 80 and
    benchmark-only 320 tribes. The single runs above do not satisfy the
    no-more-than-10%-slower median gate.

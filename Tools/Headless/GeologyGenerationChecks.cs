@@ -11,6 +11,16 @@ internal static class GeologyGenerationChecks
     private static GenerationContext Context(WorldState w, ResourceGenerationOptions options = null) => new GenerationContext { World = w, Map = w.Map, ResourceOptions = options ?? new ResourceGenerationOptions() };
     private static string BodyHash(DepositBody[] bodies, WorldResourceState source)
     { var saved = source.Bodies; try { source.Bodies = bodies; return ResourceCodec.Fingerprint(source); } finally { source.Bodies = saved; } }
+    private static string OriginalCorePayloadHash(WorldResourceState source)
+    {
+        // ResourceCodec includes the core generator version in its header.
+        // Normalize only that provenance field to the generator-11 reference;
+        // all geological arrays, quantities, options and schema bytes still
+        // have to match the original deterministic resource payload.
+        int current = source.CoreGeneratorVersion;
+        try { source.CoreGeneratorVersion = 11; return ResourceCodec.Fingerprint(source); }
+        finally { source.CoreGeneratorVersion = current; }
+    }
     public static void Run()
     {
         checks = 0;
@@ -42,7 +52,10 @@ internal static class GeologyGenerationChecks
                     return host == HostRock.Metamorphic || host == HostRock.Granite || host == HostRock.Alkaline;
                 }), shape + " ancient orogen metamorphic cores survive normal province overwrites");
             }
-            Check(ResourceCodec.Fingerprint(r) == originalResourceFingerprints[shape], shape + " original resource generation fingerprint");
+            Check(r.CoreGeneratorVersion == world.Generation.GeneratorVersion,
+                shape + " resource block records current core generator provenance");
+            Check(OriginalCorePayloadHash(r) == originalResourceFingerprints[shape],
+                shape + " original resource generation payload");
             Check(SaveCodec.LegacyFingerprint(before) == SaveCodec.LegacyFingerprint(world), shape + " preserves all legacy state and IDs");
             Check(ObservationContract.Serialize(new AgentObservationBuilder().Build(before, 0), before.Camps[0].Mandate) == ObservationContract.Serialize(new AgentObservationBuilder().Build(world, 0), world.Camps[0].Mandate), shape + " latent minerals do not leak into observations");
             Check(ResourceCodec.Fingerprint(r) == ResourceCodec.Fingerprint(generator.Generate(42, config).Resources), shape + " repeated generation");

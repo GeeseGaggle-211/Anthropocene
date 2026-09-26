@@ -29,7 +29,7 @@ internal static class StartViabilityChecks
         checks = 0;
         var cool = Coast(4); var warm = Coast(28); var frozen = Coast(-15);
         double score = PlacementStage.Viability(cool, Center);
-        Check(score >= cool.Config.StartViability && score >= PlacementStage.Viability(warm, Center) && PlaytestScenarios.Food(cool, cool.Tiles[Center + 1], -1) > PlaytestScenarios.Food(warm, warm.Tiles[Center + 1], -1) && PlacementStage.Viability(frozen, Center) < cool.Config.StartViability, "coastal fertility improves recurring support up to the shared labor cap without rewarding extreme-cold water");
+        Check(score > PlacementStage.Viability(warm, Center) && PlacementStage.Viability(warm, Center) > PlacementStage.Viability(frozen, Center) && score < cool.Config.StartViability && PlaytestScenarios.Food(cool, cool.Tiles[Center + 1], -1) > PlaytestScenarios.Food(warm, warm.Tiles[Center + 1], -1), "a lone coastal source ranks by fertility but cannot sustain a twenty-year start");
         var food = cool.Tiles[Center + 1]; var bank = cool.Tiles[Center];
         food.Food = food.PotentialFood = 1e6;
         Check(PlacementStage.Viability(cool, Center) == score, "an initial stock or large herd-biomass store cannot inflate recurring support");
@@ -39,7 +39,7 @@ internal static class StartViabilityChecks
         for (int s = 1; s < 4; s++) food.Seasons[s].FoodRecoveryPerDay = 0;
         Check(PlacementStage.Viability(cool, Center) < cool.Config.StartViability, "first-season abundance alone cannot pass a four-season check");
         food.Seasons[0].MaxFood = 1e8f;
-        Check(PlacementStage.Viability(cool, Center) <= 100 * cool.Config.GatherPerPerson / (4 * cool.Config.Consumption) + 1e-6, "one huge bloom is capped by that season's shared labor");
+        Check(PlacementStage.Viability(cool, Center) <= 100 * cool.Config.GatherPerPerson / cool.Config.Consumption + 1e-6, "one huge bloom is capped by the turn's shared labor");
         cool = Coast(4); bank = cool.Tiles[Center];
         bank.Seasons[2].MaxFreshwater = 0;
         Check(PlacementStage.Viability(cool, Center) == 0, "seasonal loss of all freshwater capacity rejects a start");
@@ -55,7 +55,9 @@ internal static class StartViabilityChecks
         cool = Coast(4); cool.Tiles[Center].ElevationLevel = 10;
         Check(PlacementStage.Viability(cool, Center) == 0, "the starting camp tile itself must be traversable land");
         cool = Coast(4); food = cool.Tiles[Center + 1]; food.Environment = EnvironmentKind.Desert; food.WaterBody = WaterKind.None; food.ElevationLevel = 1;
-        Check(Math.Abs(PlacementStage.Viability(cool, Center) - score) < 1e-6, "a productive dry river valley receives credit from its local food profiles, not its Desert label");
+        food.Food = food.PotentialFood = 10000;
+        for (int s = 0; s < 4; s++) { food.Seasons[s].MaxFood = 10000; food.Seasons[s].MaxPotentialFood = 10000 / (float)cool.Config.AridGatherableFraction; food.Seasons[s].FoodRecoveryPerDay = .03f; food.Seasons[s].BiomassRecoveryPerDay = .03f; }
+        Check(PlacementStage.Viability(cool, Center) >= cool.Config.StartViability, "productive dry land receives credit from its local food profiles, not its Desert label");
         for (int s = 0; s < 4; s++) { food.Seasons[s].MaxFood = 1; food.Seasons[s].MaxPotentialFood = 10000; }
         Check(PlacementStage.Viability(cool, Center) < cool.Config.StartViability, "inaccessible forage biomass cannot stand in for human food");
         cool = Coast(4); food = cool.Tiles[Center + 1];

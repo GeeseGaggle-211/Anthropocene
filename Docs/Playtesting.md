@@ -2,28 +2,28 @@
 
 The opening menu offers three environmental presets alongside Custom world. Each uses Standard / Continents / seed **11** / **80 tribes** and normal tuning. They select an existing generated camp as the human tribe by exchanging player labels; geography, society policies, IDs, spacing, food, reserves and wild herds are unchanged. No technology is granted. Historical names are environmental analogues, not reconstructed civilizations.
 
-These sites remain valid under generator 11; food figures below were remeasured after the aquatic food-web update. They were originally reselected for generator 10 after new offshore geography changed the generated camp cohort. The former seed-5 world no longer has qualifying steppe and cold-fishing camps among its 80 starts. Seed 11 supplies all three requested openings under the same habitat checks; it was selected for environmental contrast, without running simulations to pick technological outcomes.
+These sites were reselected among naturally generated camps under generator 13 and the land harvest-before-recovery profile. The river site remains; the previous steppe tile is no longer occupied, and no generated Cold camp has two adjacent Shallows. The coastal preset is therefore a Temperate shore with three Shallows and aquatic-dominant local food. Seed 11 supplies all three openings without changing landscape, stocks, herds or camp placement to fit the presets.
 
 | Preset | Camp tile | Local setting | Land food | Aquatic food | Start viability |
 | --- | ---: | --- | ---: | ---: | ---: |
-| Desert river valley | 225046 | 20.1°C mean; seven desert river tiles | 112.31 | 0 | 180.00% |
-| Steppe hunters | 173240 | 15.7°C mean; seven open grassland tiles, river tiles; reachable horses | 100.05 | 0 | 180.00% |
-| Cold coastal fishers | 431802 | 2.2°C mean; four wooded Cold tiles, three adjacent shallows; land rain pools | 7.47 | 171.53 | 156.35% |
+| Desert river valley | 225046 | Desert river tiles | 194.04 | 0 | 180.00% |
+| Steppe hunters | 413877 | Open grassland, freshwater nearby, reachable horse or bison | 41.37 | 0 | 111.49% |
+| Coastal fishers | 117495 | Temperate shore, three adjacent Shallows, land freshwater | 20.16 | 112.98 | 135.04% |
 
-Food columns are **annual-mean renewal potential per 91.25-day base season**, summed within radius 1. They are neither current stocks nor realized harvests. They use the same seasonal capacities, rates and sustainable production fraction as the viable-start check. Actual gathering shares one labor ceiling across land and passive coastal food; depletion, competing animals, workforce choices, freshwater and seasonal reserves also matter. The 180% ceiling here is the starting gathering labor ceiling, not a promise of population growth. All three meet the normal 85% viability threshold. The unequal densities are deliberately preserved for comparison.
+Food columns are **annual-mean renewal potential per 91.25-day base season**, summed within radius 1. They are neither current stocks nor realized harvests. Start viability now credits conservatively repeatable **opening land stock** after a depleted tile recovers through the preceding turn, plus aquatic renewal, under one shared labor ceiling. It does not simply divide the food columns by current demand. Depletion, competing animals, workforce choices, freshwater and reserves also matter. The 180% ceiling is the starting gathering labor ceiling, not a promise of population growth. All three meet the normal 85% viability threshold.
 
-The four stored seasonal profiles show why the fisher's annual mean is insufficient by itself:
+The four stored seasonal profiles show the local variation behind those annual means:
 
 | Preset / food source | Season 1 | Season 2 | Season 3 | Season 4 | Minimum local freshwater capacity across seasons |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Desert river / land | 113.11 | 92.86 | 112.86 | 130.43 | 370.56 |
-| Steppe / land | 97.25 | 69.29 | 98.28 | 135.37 | 405.01 |
-| Cold shore / land | 4.12 | 19.46 | 5.98 | 0.33 | 25.00 |
-| Cold shore / shallows | 158.05 | 349.84 | 158.05 | 20.17 | 0: saltwater cannot be drunk |
+| Desert river / land | 195.53 | 164.75 | 195.01 | 220.86 | 370.56 |
+| Steppe / land | 37.94 | 84.23 | 37.47 | 5.85 | 227.53 |
+| Temperate shore / land | 18.84 | 11.89 | 20.58 | 29.32 | 67.89 |
+| Temperate shore / shallows | 103.93 | 35.29 | 103.93 | 208.78 | 0: saltwater cannot be drunk |
 
-Food is renewal potential in the same units as the first table; freshwater is **capacity**, not a food yield or a promise of realized recharge. This cold fisher is in the Southern Hemisphere: Season 2 is productive summer and Season 4 is lean winter. The viable-start rule checks every season's freshwater and annual renewable food with the normal shared labor limit. The seasonal reserve test is therefore more informative than comparing full initial food stocks.
+Food is renewal potential in the same units as the first table; freshwater is **capacity**, not a food yield or a promise of realized recharge. The coastal site's fourth season has the strongest shallow potential while the steppe site's fourth season is lean. The viable-start rule checks every season's freshwater and the repeatable land stock plus aquatic renewal under the shared labor limit. Turn-horizon harvest can consume only opening land food; recovered land food enters the next turn.
 
-For playtesting, compare generations with similar dispatched populations and note food produced/eaten, reserves, deaths, growth and first breakthrough in the existing outcome panels. Try river gathering, steppe expeditions onto the adjacent bison (tile 192745), and coastal hunter fishing orders. The steppe camp stands on a river in open country. The fisher's three shallows provide most renewable local food; its wooded shore supports less human food and must still supply drinking water. Choosing the preset does not force its expected technological path.
+For playtesting, compare generations with similar dispatched populations and note food produced/eaten, reserves, deaths, growth and first breakthrough in the existing outcome panels. Try river gathering, steppe expeditions toward reachable horse or bison herds, and coastal hunter fishing orders. The fisher's three shallows provide most local renewal potential, while land freshwater supplies drinking water. Choosing the preset does not force its expected technological path.
 
 **Build world preview (dev)** generates the selected setup and opens a full-world atlas before play. **Menu → Preview current world (dev)** inspects the existing committed world. Environment, elevation, volcanic activity, renewable food and freshwater renewal layers share the same coordinates. Cycle annual mean and four seasonal profiles; the heatmaps use a fixed logarithmic scale from zero to 100+ units per tile per base season. These show stored profile potential; the tile inspector separately projects current food and freshwater stock without materializing ecology.
 
