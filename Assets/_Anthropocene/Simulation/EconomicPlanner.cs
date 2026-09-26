@@ -473,9 +473,8 @@ namespace Anthropocene.Simulation
                 {
                     var k = new EcologyCapacity(w, tile, v, season, 1);
                     // The shared renewable-flow definition includes managed
-                    // production once; SafeUseRatio remains the planner's
-                    // existing utilization threshold.
-                    double sustainable = EcologyMath.SustainableHarvestRate(k.Biomass, k.BiomassRate, cfg.SustainableProductionFraction, k.ManagedFlow) * cfg.SafeUseRatio;
+                    // production once; land pressure has its own threshold.
+                    double sustainable = EcologyMath.SustainableHarvestRate(k.Biomass, k.BiomassRate, cfg.SustainableProductionFraction, k.ManagedFlow) * cfg.LandSafeUseRatio;
                     return Math.Min(k.Food * k.FoodRate + k.ManagedFlow, sustainable);
                 }
                 gain += Flow(after) - Flow(before);

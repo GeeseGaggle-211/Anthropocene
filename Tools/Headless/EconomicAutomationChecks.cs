@@ -109,7 +109,7 @@ internal static class EconomicAutomationChecks
         var noSource = Fixture(false); var nc = noSource.Camps[0]; nc.Inventory.HandTools = 100; nc.CraftingPriorities.Cloth = 0;
         var ne = EconomicIntents.Automatic(noSource, nc, true); Budget(noSource, ne);
         Check(!ne.Assignments.Any(a => a.Role == WorkforceRoles.Craftsperson || WorkforceRoles.Specialists.Contains(a.Role) || WorkforceRoles.Extractors.Contains(a.Role)), "missing materials do not recruit idle manufacturers or extractors");
-        var stocked = Fixture(); var sc = stocked.Camps[0]; sc.Inventory.HandTools = 100; sc.Inventory.Cloth = 10000; sc.Inventory.HousingUnits = 1000; sc.Inventory.Pots = 1000;
+        var stocked = Fixture(); var sc = stocked.Camps[0]; sc.Inventory.HandTools = 10000; sc.Inventory.FarmTools = 10000; sc.Inventory.Cloth = 10000; sc.Inventory.HousingUnits = 1000; sc.Inventory.Pots = 1000;
         var se = EconomicIntents.Automatic(stocked, sc, true); Budget(stocked, se);
         Check(!se.Assignments.Any(a => a.Role == WorkforceRoles.Craftsperson || WorkforceRoles.Specialists.Contains(a.Role)), "finished stock bridging removes redundant manufacture");
         sc.AnimalFood = 1000000; Near(TurnResolver.PlanningFoodDemand(stocked, sc), 0, "imported/stored food shares the useful demand budget");
@@ -125,6 +125,9 @@ internal static class EconomicAutomationChecks
         var w = Fixture(); var c = w.Camps[0]; c.EconomyAutomationTurns = 2;
         var first = Resolve(w); Check(c.EconomyAutomationTurns == 1 && first.Orders.Any(s => s.Contains(":automation:")), "countdown runs on empty submission");
         Check(first.Production.Any(p => p.Good == CraftGood.HandTools && p.Output > 0), "zero-tool economy bootstraps through sourced useful production");
+        // This fixture isolates the automation countdown. Its old 80-unit
+        // land stock cannot feed 100 residents under opening-stock harvest.
+        c.PlantFood = 100000;
         var copy = SaveCodec.Load(SaveCodec.Save(w)); Check(SaveCodec.Fingerprint(copy) == SaveCodec.Fingerprint(w), "active automation and labor reservations save exactly");
         Resolve(w); Resolve(copy); Check(c.EconomyAutomationTurns == 0 && SaveCodec.Fingerprint(copy) == SaveCodec.Fingerprint(w), "countdown/save continuation deterministic");
         string assignments = string.Join(",", c.Workforce.Assignments.Select(a => a.Role + a.Population));

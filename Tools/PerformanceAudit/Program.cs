@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -115,6 +116,10 @@ internal static class Program
             var config = productionConfig
                 ? JsonSerializer.Deserialize<SimulationConfig>(File.ReadAllText("Assets/_Anthropocene/Resources/OpeningConfig.json"), json)
                 : new SimulationConfig();
+            string landM = Option(args, "--land-m", ""), landSafe = Option(args, "--land-safe", ""), landDamage = Option(args, "--land-damage", "");
+            if (landM.Length > 0) config.LandBiomassMultiplier = double.Parse(landM, CultureInfo.InvariantCulture);
+            if (landSafe.Length > 0) config.LandSafeUseRatio = double.Parse(landSafe, CultureInfo.InvariantCulture);
+            if (landDamage.Length > 0) config.LandUseDamagePerYear = double.Parse(landDamage, CultureInfo.InvariantCulture);
             var resources = productionConfig
                 ? JsonSerializer.Deserialize<ResourceGenerationOptions>(File.ReadAllText("Assets/_Anthropocene/Resources/ResourceGenerationConfig.json"), json)
                 : null;

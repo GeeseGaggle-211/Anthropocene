@@ -57,6 +57,10 @@ internal static class Program
         Directory.CreateDirectory(output);
         var config = JsonSerializer.Deserialize<SimulationConfig>(File.ReadAllText(Path.Combine(root, "Assets/_Anthropocene/Resources/OpeningConfig.json")), Json);
         var resources = JsonSerializer.Deserialize<ResourceGenerationOptions>(File.ReadAllText(Path.Combine(root, "Assets/_Anthropocene/Resources/ResourceGenerationConfig.json")), Json);
+        string landM = Value("--land-m", ""), landSafe = Value("--land-safe", ""), landDamage = Value("--land-damage", "");
+        if (landM.Length > 0) config.LandBiomassMultiplier = double.Parse(landM, CultureInfo.InvariantCulture);
+        if (landSafe.Length > 0) config.LandSafeUseRatio = double.Parse(landSafe, CultureInfo.InvariantCulture);
+        if (landDamage.Length > 0) config.LandUseDamagePerYear = double.Parse(landDamage, CultureInfo.InvariantCulture);
         config.Width = 128; config.Height = 64; config.Players = 8; config.StartSeparation = 10; config.Validate();
         File.WriteAllText(Path.Combine(output, "configuration.json"), JsonSerializer.Serialize(config, Json));
 
@@ -71,16 +75,29 @@ internal static class Program
             placedCandidates.AddRange(DescribePlacedCandidates(world, seed));
         }
         var selectionRows = new List<string> { "habitat,seed,camp,tile,rank,viability,renewableFoodPerYear,renewableWaterPerYear,centerEnvironment,centerMoisture,low,medium,high,preflightTechnology,preflightRule,selected" };
+        string siteSelection = Value("--site-selection", "");
+        var forcedSites = string.IsNullOrEmpty(siteSelection)
+            ? new Dictionary<string, (int Seed, int Tile)>()
+            : File.ReadAllLines(siteSelection).Skip(1).Select(line => line.Split(','))
+                .Where(parts => parts.Length >= 16 && parts[15].Trim('"').Equals("True", StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(parts => parts[0].Trim('"'), parts =>
+                    (Seed: int.Parse(parts[1].Trim('"'), CultureInfo.InvariantCulture),
+                        Tile: int.Parse(parts[3].Trim('"'), CultureInfo.InvariantCulture)));
         var chosen = new Dictionary<string, Candidate>();
         foreach (string habitat in Habitats)
         {
             int rank = 0;
-            foreach (var candidate in candidates.Where(c => c.Habitat == habitat).OrderBy(c => habitat == "open-fertile" && c.CenterEnvironment != EnvironmentKind.Desert.ToString() ? 0 : 1).ThenByDescending(c => Score(c)).ThenBy(c => c.Seed).ThenBy(c => c.Tile).Take(12))
+            foreach (var candidate in candidates.Where(c => c.Habitat == habitat)
+                .OrderBy(c => forcedSites.TryGetValue(habitat, out var site) && site.Seed == c.Seed && site.Tile == c.Tile ? 0 : 1)
+                .ThenBy(c => habitat == "open-fertile" && c.CenterEnvironment != EnvironmentKind.Desert.ToString() ? 0 : 1)
+                .ThenByDescending(c => Score(c)).ThenBy(c => c.Seed).ThenBy(c => c.Tile).Take(12))
             {
                 candidate.Rank = ++rank;
                 var preflight = RunPreflight(worlds[candidate.Seed], candidate);
                 candidate.PreflightTechnology = preflight.Technology.ToString(); candidate.PreflightRule = preflight.People.Progression.CompletionRule ?? "none";
-                if (!chosen.ContainsKey(habitat) && preflight.Technology == Technology.Cultivation) chosen.Add(habitat, candidate);
+                if (!chosen.ContainsKey(habitat) && preflight.Technology == Technology.Cultivation
+                    && (!forcedSites.TryGetValue(habitat, out var site) || site.Seed == candidate.Seed && site.Tile == candidate.Tile))
+                    chosen.Add(habitat, candidate);
                 selectionRows.Add(Csv(candidate.Habitat, candidate.Seed, candidate.CampId, candidate.Tile, candidate.Rank, candidate.Viability, candidate.RenewableFoodPerYear, candidate.RenewableWaterPerYear, candidate.CenterEnvironment, candidate.CenterMoisture, candidate.Low, candidate.Medium, candidate.High, candidate.PreflightTechnology, candidate.PreflightRule, chosen.TryGetValue(habitat, out var s) && ReferenceEquals(s, candidate)));
                 File.WriteAllLines(Path.Combine(output, "selection.csv"), selectionRows);
                 // Selection is reported, including every rejected natural outcome;
@@ -268,6 +285,9 @@ internal static class Program
                 }
                 if (!scarcityApplied && c.Technology == Technology.Cultivation && item.Scarcity != null) { result.ScarceSourceIds = ApplyScarcity(w, c, item.Scarcity); scarcityApplied = true; }
                 var before = new CampInventory { Stone = c.Inventory.Stone, Clay = c.Inventory.Clay, Wood = c.Inventory.Wood };
+                var openingRadius = w.Map.Radius(c.Tile, 1).Where(id => w.Tiles[id].Land).ToArray();
+                double openingRadiusFood = openingRadius.Sum(id => LazyEcology.ProjectEcology(w, id, w.Days).Food);
+                double openingRadiusBiomass = openingRadius.Sum(id => LazyEcology.ProjectEcology(w, id, w.Days).PotentialFood);
                 var startingAssignments = c.Workforce.Assignments.ToDictionary(x => x.Role, x => x.Population);
                 var decision = item.FixedSite ? FixedSiteDecision(w, c) : PlannedDecision(w, c, execution);
                 var submittedAssignments = decision.Orders.Where(x => x.Kind == OrderKind.Economy && x.Economy != null).SelectMany(x => x.Economy.Assignments).GroupBy(x => x.Role).ToDictionary(x => x.Key, x => x.Sum(a => a.Population));
@@ -288,7 +308,9 @@ internal static class Program
                     var local = new Candidate { CampId = c.Id, Tile = c.Tile }; result.TransitionSupport = PaleoSupport(SaveCodec.Save(w), local).Population;
                     result.TransitionSupportRatio = result.TransitionPopulation / Math.Max(1.0, result.TransitionSupport);
                 }
-                Capture(trace, item, w, c, record, before, startingAssignments, submittedAssignments, turn + 1, transitionTurn, scarcityApplied, result);
+                Capture(trace, item, w, c, record, before, startingAssignments, submittedAssignments,
+                    openingRadius, openingRadiusFood, openingRadiusBiomass,
+                    turn + 1, transitionTurn, scarcityApplied, result);
                 if (saveMidway && turn == maxTurns / 2) { w = SaveCodec.Load(SaveCodec.Save(w)); c = w.Camps.Single(); }
                 // Agriculture cases get a comparable full 25 generations after the
                 // actual live Cultivation transition. Other Neolithic outcomes are
@@ -352,7 +374,7 @@ internal static class Program
         var labels = Habitats.Where(h => Matches(h, tiles, world.Tiles[tile], low, medium, high)).ToArray();
         return labels.Length == 0 ? "mixed" : string.Join("|", labels);
     }
-    static void Capture(TextWriter trace, Case item, WorldState w, Camp c, TurnRecord r, CampInventory before, Dictionary<string, int> startingAssignments, Dictionary<string, int> submittedAssignments, int turn, int transitionTurn, bool scarcityApplied, Result result)
+    static void Capture(TextWriter trace, Case item, WorldState w, Camp c, TurnRecord r, CampInventory before, Dictionary<string, int> startingAssignments, Dictionary<string, int> submittedAssignments, int[] openingRadius, double openingRadiusFood, double openingRadiusBiomass, int turn, int transitionTurn, bool scarcityApplied, Result result)
     {
         var d = r.Demographics.Single(x => x.Camp == c.Id); double foodBalance = d.InitialReserves + d.FoodReceived - d.FoodConsumed - d.ManufacturingFood - d.DiscardedInventory - d.FinalReserves;
         double FoodBalance(EcologyBalance b) => b.StartingFood + b.FoodRecharge - b.FoodHarvest - b.FoodOverflow - b.EndingFood;
@@ -382,7 +404,7 @@ internal static class Program
         double? footprintMeanAquaticCondition = nearbyAquatic.Length == 0 ? (double?)null : nearbyAquatic.Average(id => w.Tiles[id].AquaticCondition);
         var endingTools = new { c.Inventory.HandTools, c.Inventory.Tools, c.Inventory.FarmTools, c.Inventory.HerdingTools };
         var footprint = fields.Select(id => new { id, environment = w.Tiles[id].Environment.ToString(), vegetation = w.Tiles[id].CurrentVegetation.ToString(), moisture = w.Tiles[id].Seasons.Average(s => s.Moisture), river = w.Tiles[id].River, q = CultivationEconomy.Intensity(w.Config, w.Tiles[id].CultivationCapital), e = w.Tiles[id].CultivationCapital, landCondition = w.Tiles[id].LandCondition });
-        trace.WriteLine(JsonSerializer.Serialize(new { id = item.Id, turn, year = w.Days / w.Config.DaysPerYear, fixedSite = item.FixedSite, settlementStress = item.SettlementStress, postTransitionTurns = transitionTurn < 0 ? 0 : turn - transitionTurn, technology = c.Technology.ToString(), transitionRule = c.People.Progression.CompletionRule, experience = c.Experience, population = w.LinkedPopulation(c), residentPopulation = c.Population, linkedHunters = w.Hunters.Where(h => h.SourceCamp == c.Id).Sum(h => h.Population), q, e, footprint, footprintMeanLandCondition, footprintMeanAquaticCondition, endingTools, foodSatisfaction = c.FoodNeedsMetRatio, waterSatisfaction = c.WaterNeedsMetRatio, campReserves = c.Food, linkedReserves = d.FinalReserves, reserveTurns = d.FinalReserves / Math.Max(1e-9, w.LinkedPopulation(c) * w.Config.Consumption * w.Config.GenerationIntervals), demographic = new { d.StartingPopulation, d.InitialReserves, d.FoodProduced, d.FoodReceived, d.FoodConsumed, d.ManufacturingFood, d.DiscardedInventory, d.FinalReserves, d.Additions, d.Deaths, d.EndingPopulation }, farmers, foodGatherers, materialGeneralists, materialSpecialists, materialAssigned = materialGeneralists + materialSpecialists, specialists, startingAssignments, submittedAssignments, endingAssignments = c.Workforce.Assignments.ToDictionary(x => x.Role, x => x.Population), orders = r.Orders, decisions = r.Decisions.Select(x => new { x.Player, x.Turn, candidates = x.Candidates.Select(y => new { y.Plan, y.Components, y.Score, y.Selected }) }), materialWorkerIntervals = r.MaterialTransfers.Sum(x => x.WorkerIntervals), materials = new { before = new { before.Stone, before.Clay, before.Wood }, after = new { c.Inventory.Stone, c.Inventory.Clay, c.Inventory.Wood }, receipts = r.MaterialTransfers.Select(x => new { material = x.Material.ToString(), x.Role, x.Amount, x.Before, x.After, x.WorkerIntervals }) }, production = r.Production.Select(x => new { good = x.Good.ToString(), x.Role, x.Output, x.WorkerIntervals, x.Stone, x.Clay, x.Wood, x.PlantFood }), qols = new { qol = c.QoL, cloth = c.ClothPerCapita, housing = c.HousingPerCapita }, moves = c.Moves, deaths = d.Deaths, discarded = d.DiscardedInventory, foodBalance, ecologyFoodBalanceMax = ecology, ecologyBiomassBalanceMax = biomass, ecologyWaterBalanceMax = water, ecology = r.EcologyBalances.Select(x => new { x.Tile, x.StartingBiomass, x.BiomassRecharge, x.BiomassHarvest, x.BiomassOverflow, x.EndingBiomass, x.StartingFood, x.FoodRecharge, x.FoodHarvest, x.FoodOverflow, x.EndingFood, x.StartingWater, x.WaterRecharge, x.WaterHarvest, x.WaterOverflow, x.EndingWater }), materialBalanceMax = material, manufacturingFoodBalance = manufacturedFood, limiting = d.LimitingFactor, scarcity = item.Scarcity ?? "none", scarcitySources = result.ScarceSourceIds, scarcityAvailable, scarceDebit, unlocked = c.People.NeolithicTechnologies }, Json));
+        trace.WriteLine(JsonSerializer.Serialize(new { id = item.Id, turn, openingRadiusTiles = openingRadius, openingRadiusFood, openingRadiusBiomass, endingRadiusFood = openingRadius.Sum(id => w.Tiles[id].Food), endingRadiusBiomass = openingRadius.Sum(id => w.Tiles[id].PotentialFood), year = w.Days / w.Config.DaysPerYear, fixedSite = item.FixedSite, settlementStress = item.SettlementStress, postTransitionTurns = transitionTurn < 0 ? 0 : turn - transitionTurn, technology = c.Technology.ToString(), transitionRule = c.People.Progression.CompletionRule, experience = c.Experience, population = w.LinkedPopulation(c), residentPopulation = c.Population, linkedHunters = w.Hunters.Where(h => h.SourceCamp == c.Id).Sum(h => h.Population), q, e, footprint, footprintMeanLandCondition, footprintMeanAquaticCondition, endingTools, foodSatisfaction = c.FoodNeedsMetRatio, waterSatisfaction = c.WaterNeedsMetRatio, campReserves = c.Food, linkedReserves = d.FinalReserves, reserveTurns = d.FinalReserves / Math.Max(1e-9, w.LinkedPopulation(c) * w.Config.Consumption * w.Config.GenerationIntervals), demographic = new { d.StartingPopulation, d.InitialReserves, d.FoodProduced, d.FoodReceived, d.FoodConsumed, d.ManufacturingFood, d.DiscardedInventory, d.FinalReserves, d.Additions, d.Deaths, d.EndingPopulation }, farmers, foodGatherers, materialGeneralists, materialSpecialists, materialAssigned = materialGeneralists + materialSpecialists, specialists, startingAssignments, submittedAssignments, endingAssignments = c.Workforce.Assignments.ToDictionary(x => x.Role, x => x.Population), orders = r.Orders, decisions = r.Decisions.Select(x => new { x.Player, x.Turn, candidates = x.Candidates.Select(y => new { y.Plan, y.Components, y.Score, y.Selected }) }), materialWorkerIntervals = r.MaterialTransfers.Sum(x => x.WorkerIntervals), materials = new { before = new { before.Stone, before.Clay, before.Wood }, after = new { c.Inventory.Stone, c.Inventory.Clay, c.Inventory.Wood }, receipts = r.MaterialTransfers.Select(x => new { material = x.Material.ToString(), x.Role, x.Amount, x.Before, x.After, x.WorkerIntervals }) }, production = r.Production.Select(x => new { good = x.Good.ToString(), x.Role, x.Output, x.WorkerIntervals, x.Stone, x.Clay, x.Wood, x.PlantFood }), qols = new { qol = c.QoL, cloth = c.ClothPerCapita, housing = c.HousingPerCapita }, moves = c.Moves, deaths = d.Deaths, discarded = d.DiscardedInventory, foodBalance, ecologyFoodBalanceMax = ecology, ecologyBiomassBalanceMax = biomass, ecologyWaterBalanceMax = water, ecology = r.EcologyBalances.Select(x => new { x.Tile, x.StartingBiomass, x.BiomassRecharge, x.BiomassHarvest, x.BiomassOverflow, x.EndingBiomass, x.StartingFood, x.FoodRecharge, x.FoodHarvest, x.FoodOverflow, x.EndingFood, x.StartingWater, x.WaterRecharge, x.WaterHarvest, x.WaterOverflow, x.EndingWater }), materialBalanceMax = material, manufacturingFoodBalance = manufacturedFood, limiting = d.LimitingFactor, scarcity = item.Scarcity ?? "none", scarcitySources = result.ScarceSourceIds, scarcityAvailable, scarceDebit, unlocked = c.People.NeolithicTechnologies }, Json));
     }
     static IEnumerable<string> MatrixCsv(IEnumerable<Result> values)
     {

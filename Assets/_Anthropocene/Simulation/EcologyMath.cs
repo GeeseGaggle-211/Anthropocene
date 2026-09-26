@@ -130,6 +130,15 @@ namespace Anthropocene.Simulation
         public static SeasonalAffine Identity => new SeasonalAffine(1, 0, double.PositiveInfinity);
         public static SeasonalAffine Recovery(double capacity, double rate, double days)
         { double a = Math.Exp(-rate * days); return new SeasonalAffine(a, capacity * (1 - a), capacity); }
+        public static SeasonalAffine ManagedRecovery(double capacity, double rate, double inflow, double days)
+        {
+            capacity = Math.Max(0, capacity);
+            rate = Math.Max(0, rate);
+            inflow = Math.Max(0, inflow);
+            double a = Math.Exp(-rate * days);
+            double added = rate <= 1e-18 ? inflow * days : inflow * (1 - a) / rate;
+            return new SeasonalAffine(a, capacity * (1 - a) + added, capacity);
+        }
         public SeasonalAffine Then(SeasonalAffine next) => new SeasonalAffine(next.A * A, next.A * B + next.B, Math.Min(next.Ceiling, next.A * Ceiling + next.B));
         public double Apply(double value) => Math.Min(Ceiling, A * value + B);
         public double Repeat(double value, long count)

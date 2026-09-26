@@ -380,6 +380,8 @@
   "AquaticUseDamagePerYear": 0.03,
   "PressureExponent": 2,
   "SafeUseRatio": 1,
+  "LandBiomassMultiplier": 10,
+  "LandSafeUseRatio": 0.5,
   "SustainableProductionFraction": 0.5,
   "CultivationVegetationDisplacementStart": 0.5,
   "LowPotentialRecoveryMultiplier": 0.5,

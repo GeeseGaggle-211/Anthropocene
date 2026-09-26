@@ -50,7 +50,7 @@ internal static class EcologyChecks
         fast = LazyEcology.ProjectEcology(w, 0, 36500);
         for (int i = 1; i <= 100; i++) LazyEcology.MaterializeEcology(w, 0, i * 365);
         Check(Near(fast.LandCondition, t.LandCondition) && Near(fast.Food, t.Food) && fast.CurrentVegetation == t.CurrentVegetation, "one hundred years of dormant recovery agrees with annual materialization and hysteresis");
-        w = Fixture(); w.Config.SafeUseRatio = 0;
+        w = Fixture(); w.Config.LandSafeUseRatio = 0;
         var claims = new[] { new Demand { Tile = 0, Entity = 3, Kind = "Gathering", Food = 5000 }, new Demand { Tile = 0, Entity = 2, Kind = "Gathering", Food = 2000 }, new Demand { Tile = 0, Entity = 4, Kind = "Herd", PotentialFood = 20000, Freshwater = 10000 } };
         var whole = EcologicalPressure.Integrate(w, 0, claims, 0, 7300);
         var reversed = EcologicalPressure.Integrate(w, 0, claims.Reverse(), 0, 7300);
@@ -82,7 +82,7 @@ internal static class EcologyChecks
         for (int i = 0; i < 4; i++) { w.Tiles[0].Seasons[i].FoodRecoveryPerDay = 0; w.Tiles[0].Seasons[i].BiomassRecoveryPerDay = 0; }
         var failed = EcologicalPressure.Integrate(w, 0, claims, 0, 7300);
         Check(failed.View.LandCondition == 1 && failed.Pressure.Where(p => p.Pool != "Freshwater").All(p => p.Realized == 0 && p.ConditionDamage == 0), "unmet extraction cannot damage an exhausted tile");
-        var weekly = Fixture(); weekly.Config.SafeUseRatio = 1000;
+        var weekly = Fixture(); weekly.Config.LandSafeUseRatio = 1000;
         for (int i = 1; i < 4; i++) weekly.Tiles[0].Seasons[i] = weekly.Tiles[0].Seasons[0];
         var annualClaims = new[] { new Demand { Tile = 0, Entity = 1, Kind = "Gathering", Food = 100 }, new Demand { Tile = 0, Entity = 2, Kind = "Herd", PotentialFood = 2000, Freshwater = 1000 } };
         var annual = EcologicalPressure.Integrate(weekly, 0, annualClaims, 0, 365); double weeklyHarvest = 0;
@@ -91,13 +91,17 @@ internal static class EcologyChecks
             var step = EcologicalPressure.Integrate(weekly, 0, annualClaims.Select(d => new Demand { Tile = 0, Entity = d.Entity, Kind = d.Kind, Food = d.Food / 52, PotentialFood = d.PotentialFood / 52, Freshwater = d.Freshwater / 52 }), i * 365.0 / 52, 365.0 / 52);
             step.View.Commit(weekly.Tiles[0]); weeklyHarvest += step.Transfers.Sum(ti => ti.Food + ti.PotentialFood);
         }
-        Check(Near(annual.View.Food, weekly.Tiles[0].Food) && Near(annual.View.PotentialFood, weekly.Tiles[0].PotentialFood) && Near(annual.View.Freshwater, weekly.Tiles[0].Freshwater) && Near(annual.Transfers.Sum(ti => ti.Food + ti.PotentialFood), weeklyHarvest), "fixed-capacity coupled human/herd/water flow agrees across annual and weekly action intervals");
+        Check(annual.Transfers.Sum(ti => ti.Food + ti.PotentialFood) <= 400 + 1e-8
+            && weeklyHarvest >= annual.Transfers.Sum(ti => ti.Food + ti.PotentialFood)
+            && Near(annual.View.Freshwater, weekly.Tiles[0].Freshwater),
+            "shorter land turns may claim intervening recovery while freshwater keeps its horizon flow");
         var light = Fixture(); var extreme = Fixture();
         for (int i = 0; i < 15; i++)
         {
             EcologicalPressure.Integrate(light, 0, new[] { new Demand { Tile = 0, Entity = 1, Kind = "Gathering", Food = 100 } }, i * 7300, 7300).View.Commit(light.Tiles[0]);
             EcologicalPressure.Integrate(extreme, 0, new[] { new Demand { Tile = 0, Entity = 1, Kind = "Herd", PotentialFood = 1000000 } }, i * 7300, 7300).View.Commit(extreme.Tiles[0]);
         }
+        Console.WriteLine("LAND_PRESSURE_PROBE light=" + light.Tiles[0].LandCondition.ToString("R") + " extreme=" + extreme.Tiles[0].LandCondition.ToString("R") + " biomass=" + extreme.Tiles[0].PotentialFood.ToString("R"));
         Check(light.Tiles[0].LandCondition > .95 && extreme.Tiles[0].LandCondition < .15 && extreme.Tiles[0].PotentialFood < 100, "three centuries of low pressure stays near natural while sustained extreme grazing can collapse condition and stocks");
         var recovering = LazyEcology.ProjectEcology(extreme, 0, 500 * 365);
         Check(recovering.LandCondition > extreme.Tiles[0].LandCondition && recovering.PotentialFood > extreme.Tiles[0].PotentialFood, "abandoned depleted ground recovers without scanning or active workers");

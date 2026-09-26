@@ -119,6 +119,60 @@ internal static class HorizonEcologyChecks
         Verify(10000, 10, "exhausting first herd claimant");
     }
 
+    private static void LandOpeningPools()
+    {
+        foreach (double multiplier in new[] { 1.0, 5.0, 15.0 })
+        {
+            var world = Fixture(); var tile = world.Tiles[0];
+            world.Config.LandUseDamagePerYear = 0;
+            tile.Food = 20 * multiplier; tile.PotentialFood = 100 * multiplier;
+            for (int season = 0; season < 4; season++)
+            {
+                var profile = tile.Seasons[season];
+                profile.MaxFood *= (float)multiplier;
+                profile.MaxPotentialFood *= (float)multiplier;
+                tile.Seasons[season] = profile;
+            }
+            var q0 = new EcologyCapacity(world, tile, new EcologyView(tile), 0);
+            Check(Near(q0.Food / q0.Biomass, .2), "natural q=0 access fraction is not multiplied");
+            var human = new Demand { Tile = 0, Entity = 1, Kind = "Gathering", Food = 200 * multiplier };
+            var herd = new Demand { Tile = 0, Entity = 2, Kind = "Herd", PotentialFood = 200 * multiplier };
+            var contested = EcologicalPressure.Integrate(world, 0, new[] { human, herd }, 0, 365);
+            Conserves(contested, "opening nested land pools");
+            Check(Near(contested.Transfers[0].Food, 20 * multiplier)
+                && Near(contested.Transfers[1].PotentialFood, 80 * multiplier)
+                && Near(contested.Transfers.Sum(t => t.Food + t.PotentialFood), 100 * multiplier),
+                "human G and grazer B-G share one opening B ledger");
+            var grazerOnly = EcologicalPressure.Integrate(world, 0, new[] { herd }, 0, 365);
+            Check(Near(grazerOnly.Transfers.Single().PotentialFood, 100 * multiplier),
+                "unopposed grazer reaches all biomass");
+            var nonfoodFirst = EcologicalPressure.Integrate(world, 0,
+                new[] { new Demand { Tile = 0, Entity = 1, Kind = "Gathering", Food = 10 * multiplier },
+                    new Demand { Tile = 0, Entity = 2, Kind = "Herd", PotentialFood = 80 * multiplier } },
+                0, 365);
+            Check(Near(nonfoodFirst.Transfers[0].Food, 10 * multiplier)
+                && Near(nonfoodFirst.Transfers[1].PotentialFood, 80 * multiplier)
+                && Near(nonfoodFirst.Pressure.Single(p => p.Pool == "Biomass").GatherableSpill, 0),
+                "grazers debit inaccessible biomass before residual G");
+            tile.CultivationCapital = 1 / (world.Config.ReferenceIntensity * world.Config.ReferenceIntensity);
+            var q1 = new EcologyCapacity(world, tile, new EcologyView(tile), 0);
+            Check(Near(q1.Food, q1.Biomass), "full cultivation exposes all B to humans");
+            var cultivated = EcologicalPressure.Integrate(world, 0, new[] { human, herd }, 0, 365);
+            Conserves(cultivated, "fully cultivated land");
+            Check(Near(cultivated.Transfers[0].Food, 100 * multiplier)
+                && Near(cultivated.Transfers[1].PotentialFood, 0),
+                "full-cultivation human debit leaves no biomass for a later grazer");
+        }
+        var partial = Fixture(); partial.Config.LandUseDamagePerYear = 0;
+        double days = partial.Config.BaseDays / 2;
+        var step = EcologicalPressure.Integrate(partial, 0,
+            new[] { new Demand { Tile = 0, Entity = 1, Kind = "Gathering", Food = 20 } }, 0, days);
+        double expected = 70 * (1 - Math.Exp(-partial.Tiles[0].Seasons[0].FoodRecoveryPerDay * days));
+        Check(Near(step.Transfers.Single().Food, 20) && Near(step.View.Food, expected, 1e-6),
+            "partial-year recovery happens only after the opening receipt");
+        Conserves(step, "partial-year opening harvest");
+    }
+
     public static int Run()
     {
         count = 0;
@@ -175,6 +229,7 @@ internal static class HorizonEcologyChecks
 
         ContestedFoodDebitsOneTileSequentially();
         ContestedBiomassAndWaterDebitOneTileSequentially();
+        LandOpeningPools();
 
         Console.WriteLine("PASS: " + count + " horizon ecology assertions");
         return count;

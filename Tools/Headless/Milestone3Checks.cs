@@ -164,7 +164,7 @@ internal static class Milestone3Checks
         practiceCamp.Experience[(int)Domain.Fishing] = practiceConfig.ExperienceThreshold * practiceConfig.PracticeBonusFull;
         Check(PracticeEffects.GatheringImpact(practiceConfig, practiceCamp) == .5 && PracticeEffects.FishingImpact(practiceConfig, practiceCamp) == .5, "half proficiency halves gathering and fishing environmental impact");
         var densityWorld = Flat(); Check(WildHerdPlacement.Density(densityWorld, new Tile { Terrain = Terrain.Grassland }) > WildHerdPlacement.Density(densityWorld, new Tile { Terrain = Terrain.Desert }) && WildHerdPlacement.Density(densityWorld, new Tile { Terrain = Terrain.Tundra }) > 1, "grassland and cold-steppe expanses increase regional wild-herd density");
-        var noviceEcology = Flat(); noviceEcology.Config.SafeUseRatio = 0; var skilledEcology = SaveCodec.Load(SaveCodec.Save(noviceEcology));
+        var noviceEcology = Flat(); noviceEcology.Config.LandSafeUseRatio = 0; var skilledEcology = SaveCodec.Load(SaveCodec.Save(noviceEcology));
         skilledEcology.Camps[0].Experience[(int)Domain.Gathering] = skilledEcology.Config.ExperienceThreshold * skilledEcology.Config.PracticeBonusFull;
         var noviceHarvest = resolver.Resolve(noviceEcology, Idle()); var skilledHarvest = resolver.Resolve(skilledEcology, Idle());
         int worked = noviceEcology.Camps[0].Tile;
@@ -208,7 +208,7 @@ internal static class Milestone3Checks
         w.Herds.Add(new Herd { Id = w.NextId++, Tile = w.Map.Neighbors(w.Camps[0].Tile).First(), Animals = 40, Capacity = 150, Species = "antelope" });
         var growthResponse = new HeuristicTribePolicy().Decide(new AgentObservationBuilder().Build(w, 0), w.Camps[0].Mandate);
         Check(growthResponse.Orders.Any(o => o.Kind == OrderKind.Dispatch && o.Population >= 4) && growthResponse.Orders.All(o => o.Kind != OrderKind.Hunt), "a larger tribe with visible prey can dispatch another group while pursuit uses movement rather than an explicit hunt order");
-        w = Flat(30, .3f); w.Camps[0].Food = 48;
+        w = Flat(400, .3f); w.Camps[0].Food = 48;
         for (int i = 0; i < 10; i++) resolver.Resolve(w, Idle());
         double fullySuppliedPopulation = 24 * Math.Exp(w.Config.AnnualHumanGrowthRate * 200);
         Check(w.Camps[0].Population > 24 && w.Camps[0].Population < fullySuppliedPopulation * .8, "limited recurring food constrains otherwise exponential growth without an arbitrary population cap");
