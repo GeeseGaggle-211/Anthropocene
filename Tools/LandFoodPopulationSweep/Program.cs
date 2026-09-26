@@ -51,6 +51,9 @@ internal static class Program
         int controlledTurns = int.Parse(Value("--controlled-turns", "8"));
         int liveTurns = int.Parse(Value("--live-turns", "12"));
         string multiplier = Value("--land-m", "");
+        string landAccessScale = Value("--land-access-scale", "");
+        string cultivationEffort = Value("--cultivation-effort", "");
+        bool noBreakthrough = Value("--no-breakthrough", "0") == "1";
         double regeneration = double.Parse(Value("--land-regeneration", "0.03"));
         double managedRegeneration = double.Parse(Value("--cultivation-regeneration", "0.65"));
         if (populations.Length == 0 || populations.Any(p => p < 1) || controlledTurns < 1 || liveTurns < 1)
@@ -62,6 +65,22 @@ internal static class Program
             File.ReadAllText(Path.Combine(root, "Assets/_Anthropocene/Resources/ResourceGenerationConfig.json")), Json);
         config.Width = 128; config.Height = 64; config.Players = 8; config.StartSeparation = 10;
         if (multiplier.Length > 0) config.LandBiomassMultiplier = double.Parse(multiplier);
+        if (landAccessScale.Length > 0)
+        {
+            double scale = double.Parse(landAccessScale);
+            config.RichGatherableFraction *= scale;
+            config.GrasslandGatherableFraction *= scale;
+            config.AridGatherableFraction *= scale;
+            config.TundraGatherableFraction *= scale;
+        }
+        if (cultivationEffort.Length > 0)
+            config.Neolithic.CultivationMarginalEffortMultiplierPerTenth = double.Parse(cultivationEffort);
+        if (noBreakthrough)
+        {
+            config.ExperienceThreshold = 1000000000;
+            config.MajorityEligibilityYears = 1000000;
+            config.ForcedTransitionYears = 1000001;
+        }
         config.LandSafeUseRatio = .5;
         config.LandFoodRegeneration = regeneration;
         config.LandFoodRegenerationInitialized = true;

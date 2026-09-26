@@ -108,6 +108,10 @@ worlds were measured with the unintended cap and are invalid for choosing
 an uncapped food profile. The same applies to that candidate's timing pair.
 No replacement profile is accepted, and there is no save-version change.
 
+The follow-up opt-in exponential effort curve and its full-world sweeps are
+recorded in [CultivationSoftEffortSweep.md](CultivationSoftEffortSweep.md).
+The production defaults remain unchanged pending review.
+
 After restoring the soft rule and generator-13 defaults, the focused
 `./Tools/Test-Headless.ps1 -Seeds 0` suite passed, including scalar/worker
 replay, cultivation allocation, ecology conservation, and save continuation.

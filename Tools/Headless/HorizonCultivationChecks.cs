@@ -174,6 +174,45 @@ internal static class HorizonCultivationChecks
         Check(rejected, "a second endpoint commit cannot consume farm tools twice");
     }
 
+    private static void SoftEffortChargesBuildAndMaintenance()
+    {
+        var world = Fixture(Math.Pow(.6 / .4, 2));
+        var config = world.Config;
+        config.Neolithic.CultivationMarginalEffortMultiplierPerTenth = 16;
+        double capital = world.Tiles[world.Camps[0].Tile].CultivationCapital;
+        Near(CultivationEconomy.EffortForCapital(config, 1), 1,
+            "the soft effort curve joins the historical work at qt");
+        Check(CultivationEconomy.EffortForCapital(config, capital) / capital >= 20,
+            "q=.6 requires more than twenty times the quadratic effort");
+        foreach (double q in new[] { .1, .4, .5, .6, .8, 1.0 })
+        {
+            double e = Math.Pow(q / config.ReferenceIntensity, 2);
+            Near(CultivationEconomy.CapitalForEffort(config,
+                CultivationEconomy.EffortForCapital(config, e)), e,
+                "effort and physical capital convert in both directions", 1e-7);
+        }
+        var camp = world.Camps[0];
+        CultivationEconomy.Factors(config, world.Tiles[camp.Tile], out _, out double vegetationMaintenance);
+        double baseMaintenance = config.Neolithic.MaintenanceWorkersPerTileE(config.MaintenanceCoefficient) * vegetationMaintenance;
+        Near(CultivationEconomy.MaintenanceWorkerRequirement(world, camp),
+            baseMaintenance * CultivationEconomy.EffortForCapital(config, capital),
+            "field upkeep follows the same soft effort curve as construction", 1e-6);
+
+        var building = Fixture();
+        building.Config.Neolithic.CultivationMarginalEffortMultiplierPerTenth = 16;
+        building.Config.Neolithic.OpenBuild = 1;
+        building.Config.Neolithic.WoodlandBuild = 1;
+        building.Config.Neolithic.ForestBuild = 1;
+        var builder = building.Camps[0];
+        var plan = CultivationEconomy.PlanHorizonExpansion(building, builder, 20,
+            100000, 0, null);
+        double chargedEffort = plan.EndCapital.Sum(e =>
+            CultivationEconomy.EffortForCapital(building.Config, e));
+        Near(plan.FarmerWorkerYearsUsed,
+            chargedEffort * building.Config.Neolithic.BuildWorkerYearsPerTileE,
+            "bounded horizon allocation debits nonlinear build effort exactly", 1e-5);
+    }
+
     public static int Run()
     {
         checks = 0;
@@ -182,6 +221,7 @@ internal static class HorizonCultivationChecks
         FarmToolCoverageAndWorkConservation();
         ZeroDurationDoesNoFieldWork();
         BridgeReconciliationAndOneToolDebit();
+        SoftEffortChargesBuildAndMaintenance();
         Console.WriteLine("PASS: " + checks + " horizon cultivation assertions");
         return checks;
     }

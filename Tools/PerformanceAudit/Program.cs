@@ -11,8 +11,9 @@ using Anthropocene.Simulation;
 
 internal static class Program
 {
-    private const int WorkerCount = 4;
-    private const int PartitionSize = 64;
+    private static int WorkerCount = 4;
+    private static int PartitionSize = 64;
+    private static bool ReversePartitions;
     private const int ReportSchema = 2;
 
     private static int Option(string[] args, string key, int fallback)
@@ -78,7 +79,7 @@ internal static class Program
     private static void Warmup()
     {
         var world = new WorldGenerator().Generate(1, new SimulationConfig { Width = 96, Height = 48, Players = 4 });
-        var execution = new PhaseExecution(WorkerCount, PartitionSize);
+        var execution = new PhaseExecution(WorkerCount, PartitionSize, ReversePartitions);
         var resolver = new TurnResolver(execution);
         for (int i = 0; i < 8 && !world.Finished; i++)
             ResolveTurn(world, execution, resolver, out _, out _, out _);
@@ -86,6 +87,11 @@ internal static class Program
 
     private static void Main(string[] args)
     {
+        WorkerCount = Option(args, "--workers", 4);
+        PartitionSize = Option(args, "--partition-size", 64);
+        ReversePartitions = Option(args, "--reverse-partitions", 0) != 0;
+        if (WorkerCount < 1 || PartitionSize < 1)
+            throw new ArgumentOutOfRangeException("Worker and partition counts must be positive.");
         int warmup = Option(args, "--warmup", 0);
         int players = Option(args, "--players", 80);
         int openingTurnLimit = Option(args, "--turns", 12);
@@ -98,7 +104,11 @@ internal static class Program
         string revision = Option(args, "--revision", "unspecified");
         bool details = Option(args, "--details", 0) != 0;
         bool metrics = Option(args, "--metrics", 0) != 0;
-        bool fingerprintsEnabled = Option(args, "--fingerprints", 1) != 0;
+        int fingerprintMode = Option(args, "--fingerprints", 1);
+        if (fingerprintMode < 0 || fingerprintMode > 2)
+            throw new ArgumentOutOfRangeException("Fingerprint mode must be 0, 1, or 2.");
+        bool fingerprintsEnabled = fingerprintMode != 0;
+        bool perTurnFingerprints = fingerprintMode == 1;
         bool productionConfig = Option(args, "--production-config", 0) != 0;
 
         if (openingTurnLimit < 0 || postOpeningTurns < 0 || warmup < 0)
@@ -117,8 +127,30 @@ internal static class Program
                 ? JsonSerializer.Deserialize<SimulationConfig>(File.ReadAllText("Assets/_Anthropocene/Resources/OpeningConfig.json"), json)
                 : new SimulationConfig();
             string landM = Option(args, "--land-m", ""), landSafe = Option(args, "--land-safe", ""), landDamage = Option(args, "--land-damage", "");
+            string landAccessScale = Option(args, "--land-access-scale", "");
+            string cultivationEffort = Option(args, "--cultivation-effort", "");
             string landRegeneration = Option(args, "--land-regeneration", ""), cultivationRegeneration = Option(args, "--cultivation-regeneration", "");
             if (landM.Length > 0) config.LandBiomassMultiplier = double.Parse(landM, CultureInfo.InvariantCulture);
+            if (landAccessScale.Length > 0)
+            {
+                double scale = double.Parse(landAccessScale, CultureInfo.InvariantCulture);
+                foreach (string name in new[] { "RichGatherableFraction", "GrasslandGatherableFraction",
+                    "AridGatherableFraction", "TundraGatherableFraction" })
+                {
+                    var fractionField = typeof(SimulationConfig).GetField(name);
+                    if (fractionField == null) throw new ArgumentException("This simulation source has no " + name + " override.");
+                    fractionField.SetValue(config, (double)fractionField.GetValue(config) * scale);
+                }
+            }
+            if (cultivationEffort.Length > 0)
+            {
+                // The audit harness also compiles against historical simulation
+                // sources, which do not declare this experimental tuning field.
+                object neolithic = typeof(SimulationConfig).GetField("Neolithic")?.GetValue(config);
+                var effortField = neolithic?.GetType().GetField("CultivationMarginalEffortMultiplierPerTenth");
+                if (effortField == null) throw new ArgumentException("This simulation source has no cultivation effort override.");
+                effortField.SetValue(neolithic, double.Parse(cultivationEffort, CultureInfo.InvariantCulture));
+            }
             if (landSafe.Length > 0) config.LandSafeUseRatio = double.Parse(landSafe, CultureInfo.InvariantCulture);
             if (landDamage.Length > 0) config.LandUseDamagePerYear = double.Parse(landDamage, CultureInfo.InvariantCulture);
             if (landRegeneration.Length > 0)
@@ -154,7 +186,7 @@ internal static class Program
         var detailedCounterSwitch = typeof(ResolutionMetrics).GetField("CaptureDetailedCounters");
         if (detailedCounterSwitch != null) detailedCounterSwitch.SetValue(null, metrics);
 
-        var execution = new PhaseExecution(WorkerCount, PartitionSize);
+        var execution = new PhaseExecution(WorkerCount, PartitionSize, ReversePartitions);
         var resolver = new TurnResolver(execution);
         var samples = new List<object>();
         string initialFingerprint = fingerprintsEnabled ? SaveCodec.Fingerprint(world) : null;
@@ -169,11 +201,11 @@ internal static class Program
         // post-opening horizon still runs.
         for (int i = 0; i < openingTurnLimit && !world.Finished; i++)
         {
-            RunOneTurn(world, execution, resolver, samples, details, fingerprintsEnabled, out string turnFingerprint);
+            RunOneTurn(world, execution, resolver, samples, details, perTurnFingerprints, out string turnFingerprint);
             openingTurnsMeasured++;
             if (world.Finished)
             {
-                finishedFingerprint = turnFingerprint;
+                finishedFingerprint = turnFingerprint ?? (fingerprintsEnabled ? SaveCodec.Fingerprint(world) : null);
                 if (!string.IsNullOrWhiteSpace(saveFinished))
                     finishedSaveSha256 = WriteBytes(saveFinished, SaveCodec.Save(world));
             }
@@ -190,7 +222,7 @@ internal static class Program
         {
             if (!world.Finished && i == 0)
                 throw new InvalidOperationException("Post-opening turns require a completed opening checkpoint.");
-            RunOneTurn(world, execution, resolver, samples, details, fingerprintsEnabled, out _);
+            RunOneTurn(world, execution, resolver, samples, details, perTurnFingerprints, out _);
             postOpeningTurnsMeasured++;
         }
 
@@ -213,13 +245,14 @@ internal static class Program
             turnDays = world.Config.TurnDays,
             workerCount = WorkerCount,
             partitionSize = PartitionSize,
+            reversePartitions = ReversePartitions,
             warmupRuns = warmup,
             metricsEnabled = metrics,
             detailsEnabled = details,
             productionConfig,
             fingerprintsEnabled,
-            replayMode = fingerprintsEnabled ? "exact" : "outcomes-only",
-            exactCheckMode = fingerprintsEnabled ? "per-turn-fingerprint" : "disabled; compare outcomes against replay-check run",
+            replayMode = fingerprintMode == 1 ? "exact-per-turn" : fingerprintMode == 2 ? "exact-final" : "outcomes-only",
+            exactCheckMode = fingerprintMode == 1 ? "per-turn-fingerprint" : fingerprintMode == 2 ? "final-fingerprint" : "disabled; compare outcomes against replay-check run",
             loadedFromSave = !string.IsNullOrWhiteSpace(inputSave),
             inputSave = string.IsNullOrWhiteSpace(inputSave) ? null : Path.GetFullPath(inputSave),
             inputSaveSha256,
@@ -279,19 +312,28 @@ internal static class Program
         double priorResidentPopulation = priorResidents.Values.Sum(v => (double)v);
         double priorWeightedQol = priorResidentPopulation <= 0 ? 0 :
             world.Camps.Sum(c => c.QoL * priorResidents[c.Id]) / priorResidentPopulation;
-        var camps = details ? world.Camps.OrderBy(c => c.Id).Select(c => new
+        var camps = details ? world.Camps.OrderBy(c => c.Id).Select(c =>
         {
-            c.Id, c.Player, c.Population, priorResidents = priorResidents[c.Id],
-            linked = world.LinkedPopulation(c), technology = c.Technology.ToString(), c.QoL,
-            c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita,
-            c.Food, c.PlantFood, c.AnimalFood, c.FabricConsumed, c.HousingDemand,
-            c.GrowthRemainder, c.LastConsumed, c.FoodDeficit, c.DeficitTurns,
-            c.Inventory.Cloth, c.Inventory.AnimalFabric, c.Inventory.Wood, c.Inventory.Clay,
-            c.Inventory.HandTools, c.Inventory.Pots, c.Inventory.Stone, c.Inventory.FarmTools,
-            assignments = c.Workforce.Assignments.OrderBy(a => a.Role).Select(a => new { a.Role, a.Population }).ToArray(),
-            equipmentTarget = c.EconomicLabor?.EquipmentTarget ?? 0,
-            production = record.Production.Where(p => p.Camp == c.Id).GroupBy(p => p.Good).ToDictionary(g => g.Key.ToString(), g => g.Sum(p => p.Output)),
-            foodYield = record.Transfers.Where(t => t.Entity == c.Id && t.Kind != "Herd").Sum(t => t.Food)
+            var fieldIntensity = CultivationEconomy.Footprint(world, c)
+                .Where(id => world.Tiles[id].Land)
+                .Select(id => CultivationEconomy.Intensity(world.Config, world.Tiles[id].CultivationCapital))
+                .ToArray();
+            return new
+            {
+                c.Id, c.Player, c.Population, priorResidents = priorResidents[c.Id],
+                linked = world.LinkedPopulation(c), technology = c.Technology.ToString(), c.QoL,
+                c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita,
+                c.Food, c.PlantFood, c.AnimalFood, c.FabricConsumed, c.HousingDemand,
+                c.GrowthRemainder, c.LastConsumed, c.FoodDeficit, c.DeficitTurns,
+                c.Inventory.Cloth, c.Inventory.AnimalFabric, c.Inventory.Wood, c.Inventory.Clay,
+                c.Inventory.HandTools, c.Inventory.Pots, c.Inventory.Stone, c.Inventory.FarmTools,
+                assignments = c.Workforce.Assignments.OrderBy(a => a.Role).Select(a => new { a.Role, a.Population }).ToArray(),
+                equipmentTarget = c.EconomicLabor?.EquipmentTarget ?? 0,
+                production = record.Production.Where(p => p.Camp == c.Id).GroupBy(p => p.Good).ToDictionary(g => g.Key.ToString(), g => g.Sum(p => p.Output)),
+                foodYield = record.Transfers.Where(t => t.Entity == c.Id && t.Kind != "Herd").Sum(t => t.Food),
+                meanFieldQ = fieldIntensity.Length == 0 ? 0 : fieldIntensity.Average(),
+                maxFieldQ = fieldIntensity.Length == 0 ? 0 : fieldIntensity.Max()
+            };
         }).ToArray() : null;
 #endif
         // Preserve schema-1 semantics: weightedQol has always meant the prior cohort.
