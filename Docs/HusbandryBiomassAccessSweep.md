@@ -15,9 +15,12 @@ separate the proposed inputs:
 | Profile | Land biomass `m` | Uniform natural human-access factor `s` | Cultivation effort `R` |
 | --- | ---: | ---: | ---: |
 | Production control | 30 | 1 | 1 |
-| Biomass only | 63 | 1 | 16 |
+| Access ablation | 63 | 1 | 16 |
 | Proposed candidate | 63 | .5 | 16 |
 | Effort control | 63 | .5 | 1 |
+
+The access ablation changes only `s` relative to the candidate; it is not a
+single-lever comparison with the production control.
 
 At a fixed `m`, `s=.5` halves each land habitat's natural human-accessible
 fraction; it is not 50% accessibility on every tile. Generated human
@@ -37,7 +40,7 @@ six domestic animals; those six are excluded from the active-camp count.
 The audit also records linked human population and global wild animals.
 
 The compact counts are derived outside the timed AI, preparation, and
-resolution phases. All 720 per-turn rows in the control, biomass-only, and
+resolution phases. All 720 per-turn rows in the control, access-ablation, and
 candidate reports reconcile the per-camp resident and domestic-animal sums
 to their reported world totals.
 
@@ -48,9 +51,9 @@ to their reported world totals.
 | Production control | 11 | 24 | 2,928 | 1,009 | 109 | 34 |
 | Production control | 23 | 20 | 2,170 | 874 | 83 | 32 |
 | Production control | 1729 | 30 | 4,935 | 1,628 | 139 | 51 |
-| Biomass only | 11 | 21 | 5,864 | 1,760 | 228 | 48 |
-| Biomass only | 23 | 20 | 6,105 | 2,347 | 231 | 93 |
-| Biomass only | 1729 | 20 | 5,541 | 1,660 | 269 | 72 |
+| Access ablation | 11 | 21 | 5,864 | 1,760 | 228 | 48 |
+| Access ablation | 23 | 20 | 6,105 | 2,347 | 231 | 93 |
+| Access ablation | 1729 | 20 | 5,541 | 1,660 | 269 | 72 |
 | Proposed candidate | 11 | 22 | 6,717 | 2,596 | 219 | 54 |
 | Proposed candidate | 23 | 20 | 7,205 | 3,757 | 293 | 154 |
 | Proposed candidate | 1729 | 21 | 6,434 | 3,030 | 285 | 74 |
