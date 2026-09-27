@@ -26,7 +26,7 @@ def percentile(values, fraction):
 
 
 def fmt(value):
-    return "—" if value is None else f"{value:,.1f}"
+    return "n/a" if value is None else f"{value:,.1f}"
 
 
 def quartiles(values):
@@ -77,9 +77,11 @@ def population_tables(reports):
                 assert herd["DomesticCamp"] in parents
                 entries.append((parents[herd["DomesticCamp"]], herd))
         keys = sorted({(parent[0], parent[1], herd["Species"]) for parent, herd in entries})
+        keys = sorted({(route, kind, "All species") for route, kind, _ in keys}) + keys
         for route, kind, species in keys:
             matching = [h["Animals"] for parent, h in entries
-                        if parent == (route, kind) and h["Species"] == species]
+                        if parent == (route, kind) and
+                        (species == "All species" or h["Species"] == species)]
             live = [count for count in matching if count > 0]
             print(f"| {seed} | {route} | {kind} | {species} | {len(live)} | "
                   f"{len(matching) - len(live)} | {quartiles(live)} |")

@@ -8,6 +8,12 @@ is changed here. The new agricultural AI may move a camp while preserving its
 automated economy intent, so its long-term field payoff must be examined with
 the husbandry results.
 
+The later feature-branch commit `8622750` ships the previously opt-in
+`--land-m=63 --land-access-scale=0.5 --cultivation-effort=16` tuning as
+new-world production defaults. Its natural three-world camp, herd, and
+specialty outcomes are in
+[AgricultureHusbandryPlaytests.md](AgricultureHusbandryPlaytests.md).
+
 ## State and scaling contract
 
 At each turn boundary, camp positions, populations, saved field capital,

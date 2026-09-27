@@ -6,6 +6,9 @@ The seasonal comparisons below document earlier checkpoints.
 The destination-aware mobile-husbandry implementation, animal-growth water
 diagnosis, agricultural-continuity sweep, and matched timing results are in
 [MobileHusbandryValidation.md](MobileHusbandryValidation.md).
+The shipped biomass/access/field-effort defaults and three Standard/80 route
+population, herd, and specialty distributions are in
+[AgricultureHusbandryPlaytests.md](AgricultureHusbandryPlaytests.md).
 
 ## Exact Neolithic cache validation
 
