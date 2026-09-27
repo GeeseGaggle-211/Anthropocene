@@ -113,15 +113,21 @@ namespace Anthropocene.Presentation
             camp = world.Camps.Single(c => c.Player == 0);
             var automated = EconomicIntent.From(camp); automated.AutomationTurns = 2;
             Queue(new Order(OrderKind.Economy, camp.Id) { Economy = automated });
+            // This accepted Economy order owns the current turn's manual
+            // schedule. The saved automation countdown is applied now, and
+            // its planner-generated labor plan begins on the next unsupplied turn.
             EndTurn(); while (resolving != null) yield return null;
-            if (camp.EconomyAutomationTurns != 1 || camp.EconomicLabor == null) throw new InvalidOperationException("Player automation did not run/count down.");
+            if (camp.EconomyAutomationTurns != 1) throw new InvalidOperationException("Explicit Economy order did not set the automation countdown to one; actual=" + camp.EconomyAutomationTurns + ", lastOrders=" + string.Join("|", world.History.Last().Orders) + ", status=" + status);
             yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "04-automation-active.png")); yield return new WaitForSeconds(.4f);
             saved = SaveCodec.Fingerprint(world); snapshot = world;
             generating = Task.Run(() => SaveCodec.Load(SaveCodec.Save(snapshot))); while (generating != null) yield return null;
             camp = world.Camps.Single(c => c.Player == 0);
-            if (saved != SaveCodec.Fingerprint(world) || camp.EconomyAutomationTurns != 1) throw new InvalidOperationException("Active player automation did not survive load.");
+            bool automationStateRestored = saved == SaveCodec.Fingerprint(world);
+            if (!automationStateRestored || camp.EconomyAutomationTurns != 1) throw new InvalidOperationException("Active player automation did not survive load; fingerprintMatch=" + automationStateRestored + ", countdown=" + camp.EconomyAutomationTurns + ", status=" + status);
             EndTurn(); while (resolving != null) yield return null;
-            if (camp.EconomyAutomationTurns != 0 || !world.History.Last().Orders.Any(s => s.Contains(":automation:"))) throw new InvalidOperationException("Saved automation did not finish without resubmission.");
+            bool automaticPlanApplied = world.History.Last().Orders.Any(s => s.Contains(":automation:"));
+            if (camp.EconomyAutomationTurns != 0 || camp.EconomicLabor == null || !automaticPlanApplied)
+                throw new InvalidOperationException("Saved automation did not finish without resubmission; countdown=" + camp.EconomyAutomationTurns + ", laborPlan=" + (camp.EconomicLabor == null ? "null" : "present") + ", automaticOrder=" + automaticPlanApplied + ", lastOrders=" + string.Join("|", world.History.Last().Orders) + ", status=" + status);
             yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, "05-automation-complete.png")); yield return new WaitForSeconds(1);
             if (Directory.GetFiles(output, "*.png").Length != 5) throw new InvalidOperationException("Missing Neolithic player captures; use a visible player window.");
             File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: synthetic Agriculture fixture on Standard/Continents/1729 generated geography. Economic plan queued without live mutation, normal turn resolution, real E growth, recurring Fabric debit, no Irrigation grant, isolated exact save/load, and a two-turn automation toggle continuing through save/load without resubmission. Five actual Windows player captures. Not a natural-progression balance study or a human usability test.\n");

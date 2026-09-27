@@ -135,8 +135,12 @@ The contract checker passes 24 JSON/API values, six test-entry claims and local
 document links: `python Tools/Docs/Check-CurrentContract.py`.
 Unity 6000.5.10f1 EditMode verification passed **29/29 tests** with no failures
 or skips. The editor resolved its entitlement through the currently observed
-Hub licensing pipe and exited successfully. The separate player build/smoke
-and final craft-chain/cohort evidence are pending at this report checkpoint.
+Hub licensing pipe and exited successfully. The separate Windows player build
+also succeeded with freshly compiled Simulation/Runtime assemblies. Its first
+Neolithic smoke attempt passed queued-order purity, economy resolution and an
+exact save/load, then failed the automation-countdown assertion. This failure
+is under investigation; player verification and final craft-chain/cohort
+evidence remain pending at this report checkpoint.
 
 ## Reproduction and limits
 
