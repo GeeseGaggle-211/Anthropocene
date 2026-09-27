@@ -1,0 +1,17 @@
+variant,players,seed,route,tribes,extinct,p25,median,p75
+Baseline,80,11,Cultivation,63,0,224.0,563.0,865.0
+Baseline,80,11,AnimalHusbandry,15,0,325.5,775.0,1253.0
+Candidate,80,11,Cultivation,63,0,232.0,595.0,886.0
+Candidate,80,11,AnimalHusbandry,15,0,325.5,775.0,1253.0
+Baseline,80,23,Cultivation,56,0,285.5,540.0,817.75
+Baseline,80,23,AnimalHusbandry,20,0,997.75,1255.5,1443.25
+Candidate,80,23,Cultivation,56,0,306.25,537.5,864.25
+Candidate,80,23,AnimalHusbandry,20,0,997.75,1255.5,1443.25
+Baseline,80,1729,Cultivation,55,0,349.0,501.0,925.0
+Baseline,80,1729,AnimalHusbandry,23,0,674.5,936.0,1333.0
+Candidate,80,1729,Cultivation,55,0,367.5,496.0,974.0
+Candidate,80,1729,AnimalHusbandry,23,0,674.5,936.0,1333.0
+Baseline,320,1729,Cultivation,243,0,369.5,601.0,909.5
+Baseline,320,1729,AnimalHusbandry,68,0,884.5,1159.5,1463.75
+Candidate,320,1729,Cultivation,243,0,355.0,602.0,923.0
+Candidate,320,1729,AnimalHusbandry,68,0,884.5,1159.5,1463.75

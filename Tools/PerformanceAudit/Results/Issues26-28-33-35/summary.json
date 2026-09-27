@@ -1,0 +1,7 @@
+{
+  "mean_time_change": 0.0036650803609536895,
+  "audit_required": false,
+  "aggregation": "equal weight per world, arithmetic mean of paired candidate/baseline time ratios minus one",
+  "population": "linked people per tribe at 25 post-global-opening turns; includes extinct tribes",
+  "pairs": 3
+}

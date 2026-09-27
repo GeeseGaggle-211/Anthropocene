@@ -43,11 +43,19 @@ def write_csv(path, rows):
 def main(timing_root, detail_root, output_root):
     output_root.mkdir(parents=True, exist_ok=True)
     manifest = read(timing_root / "manifest.json")
+    detail_manifest = read(detail_root / "manifest.json")
     assert manifest["mode"] == "Timing" and manifest["pairs"] >= 1
+    assert detail_manifest["mode"] == "Details"
+    for key in ("baselineRevision", "candidateRevision", "baselineBinarySha256", "candidateBinarySha256"):
+        assert manifest[key] == detail_manifest[key], ("Timing/details provenance differs", key)
     assert len(manifest["runs"]) == len(CASES) * 2 * manifest["pairs"]
     performance = []
     populations = []
     run_means = []
+    provenance = {key: manifest[key] for key in ("baselineRevision", "candidateRevision",
+        "baselineBinarySha256", "candidateBinarySha256")}
+    provenance.update(timing_pairs=manifest["pairs"], timing_created_utc=manifest["createdUtc"],
+        details_created_utc=detail_manifest["createdUtc"], cases=[])
     for players, seed in CASES:
         pairs = []
         totals = {"Baseline": [], "Candidate": []}
@@ -95,6 +103,12 @@ def main(timing_root, detail_root, output_root):
             assert all(outcome == detail_outcome for outcome in outcomes[variant]), (
                 "Detailed and timing runs diverged", variant, players, seed)
             assert report["finalFingerprint"], "Detailed run must retain a continuation fingerprint"
+            provenance["cases"].append(dict(variant=variant, players=players, seed=seed,
+                input_save_sha256=report["inputSaveSha256"], config_hash=report["configHash"],
+                final_fingerprint=report["finalFingerprint"], runtime=report["runtime"],
+                operating_system=report["operatingSystem"], width=report["worldWidth"],
+                height=report["worldHeight"], turn_days=report["turnDays"],
+                final_population=rows[-1]["population"], post_opening_turns=25))
             camps = rows[-1]["camps"]
             assert len(camps) == players, "Retain extinct camps or supply an explicit cohort ledger"
             assert len({c["Player"] for c in camps}) == len(camps), "Aggregate multiple camps per tribe before computing quartiles"
@@ -112,6 +126,7 @@ def main(timing_root, detail_root, output_root):
     print(f"Equal-world mean paired time change: {aggregate:+.2%}; audit required: {aggregate > .10}")
     write_csv(output_root / "performance.csv", performance)
     write_csv(output_root / "populations.csv", populations)
+    (output_root / "provenance.json").write_text(json.dumps(provenance, indent=2), encoding="utf-8")
     (output_root / "summary.json").write_text(json.dumps(dict(
         mean_time_change=aggregate, audit_required=aggregate > .10,
         aggregation="equal weight per world, arithmetic mean of paired candidate/baseline time ratios minus one",
