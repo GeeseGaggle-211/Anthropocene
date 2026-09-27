@@ -83,6 +83,12 @@ internal static class PastoralCraftChecks
         AutomaticPastoralCraftLifecycleContinues();
         ZeroStartHandToolBootstrapsEachPastoralTarget();
         ZeroStartMixedPriorityIsMeasuredWithoutDemandingAllGoods();
+        HusbandryOnlyExtractsRawMaterialsAndBootstrapsHandTools();
+        HusbandryOnlyOrganicMultiTurnBootstrapFromZero();
+        HusbandryGeneralistExtractionEfficiencyMatchesAgriculture();
+        ReservingGathererTimeReducesDirectFoodClaimsAndTotalWorkBounded();
+        ZeroConditionsYieldZeroExtraction();
+        SourceCompetitionReportsUnmetWork();
         Console.WriteLine("PASS: " + checks + " pastoral craft assertions");
         return checks;
     }
@@ -654,4 +660,359 @@ internal static class PastoralCraftChecks
         Check(totals.TryGetValue(CraftGood.HandTools, out double handTools) && handTools > 0,
             "mixed-priority zero-tool measurement observes actual Hand Tool bootstrap");
     }
+
+    private static void AddSurfaceResources(WorldState w, int tile, int stone = 100, int wood = 100, int clay = 100)
+    {
+        int count = w.Tiles.Length;
+        if (w.Resources == null)
+        {
+            w.Resources = new WorldResourceState
+            {
+                MaximumQuantity = 100000,
+                CatalogHash = ResourceCatalog.Hash,
+                ProfileHash = ResourceCatalog.Hash,
+                ConfigurationHash = ResourceCatalog.Hash,
+                Provinces = Array.Empty<GeologicalProvince>(),
+                Province = new ushort[count],
+                History = new ushort[count],
+                Host = new byte[count],
+                Marine = new byte[count],
+                Stone = new ushort[count],
+                Clay = new ushort[count],
+                Wood = new ushort[count],
+                WoodRecoveryPerYear = .05
+            };
+            w.Resources.AccessibleParts[(int)MaterialId.Stone] = 10000;
+            w.Resources.AccessibleParts[(int)MaterialId.Wood] = 10000;
+            w.Resources.AccessibleParts[(int)MaterialId.Clay] = 10000;
+        }
+        w.Resources.Stone[tile] = (ushort)stone;
+        w.Resources.Wood[tile] = (ushort)wood;
+        w.Resources.Clay[tile] = (ushort)clay;
+    }
+
+    private static void HusbandryOnlyExtractsRawMaterialsAndBootstrapsHandTools()
+    {
+        var w = HusbandryWorld(); var c = w.Camps[0];
+        AddSurfaceResources(w, c.Tile, 100, 100, 100);
+        c.Inventory.Stone = c.Inventory.Wood = c.Inventory.Clay = 0;
+        c.Inventory.HandTools = c.Inventory.Tools = 0;
+        c.AnimalFood = 50;
+        c.CraftingPriorities = NoCraftPriorities();
+        c.CraftingPriorities.HandTools = 1;
+        c.CraftingPriorities.AnimalFabric = 1;
+        c.PlantFood = 100000;
+        var record = ResolveEconomy(w, c,
+            new PopulationAssignment { Role = WorkforceRoles.Gatherer, Population = 50 },
+            new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = 50 });
+        Check(record.MaterialTransfers.Any(t => t.Material == MaterialId.Stone && t.Amount > 0),
+            "Husbandry camp extracts raw stone from local sources");
+        Check(record.Production.Any(p => p.Good == CraftGood.HandTools && p.Output > 0),
+            "Husbandry camp crafts Hand Tools from extracted stone");
+        Check(c.Inventory.HandTools > 0 || record.Production.Any(p => p.Good == CraftGood.AnimalFabric && p.Output > 0),
+            "Hand Tools were produced and used for useful work");
+        Check(c.Technology == Technology.AnimalHusbandry && !c.Technologies[(int)Technology.Cultivation],
+            "camp remains Husbandry-only without Cultivation tech");
+    }
+
+    private static void HusbandryOnlyOrganicMultiTurnBootstrapFromZero()
+    {
+        foreach (var allocation in new[] { "FabricOnly", "HerdingToolsAndHousing" })
+        {
+            var w = PlannerWorld(); var c = w.Camps.Single();
+            AddSurfaceResources(w, c.Tile, 1000, 1000, 1000);
+            foreach (int n in w.Map.Neighbors(c.Tile)) AddSurfaceResources(w, n, 1000, 1000, 1000);
+            w.Herds.Single().Animals = 150;
+            c.PlantFood = 100000; c.AnimalFood = 0;
+            c.Inventory.Stone = c.Inventory.Wood = c.Inventory.Clay = 0;
+            c.Inventory.HandTools = c.Inventory.Tools = c.Inventory.HerdingTools = 0;
+            c.Inventory.AnimalFabric = c.Inventory.LightHousingUnits = c.Inventory.HousingUnits = 0;
+            c.People.NeolithicTechnologies.Clear();
+            c.People.UnlockedSpecialists.Clear();
+            c.People.CraftExperience.Clear();
+
+            c.CraftingPriorities = NoCraftPriorities();
+            c.CraftingPriorities.HandTools = 1;
+            if (allocation == "FabricOnly")
+            {
+                c.CraftingPriorities.AnimalFabric = 1;
+            }
+            else
+            {
+                c.CraftingPriorities.AnimalFabric = 1;
+                c.CraftingPriorities.HerdingTools = 1;
+                c.CraftingPriorities.LightHousing = 1;
+            }
+
+            var totals = new Dictionary<CraftGood, double>();
+            for (int turn = 0; turn < 8; turn++)
+            {
+                string beforePlan = SaveCodec.Fingerprint(w);
+                var plan = EconomicPlanner.Plan(w, c, EconomicIntent.From(c));
+                Check(SaveCodec.Fingerprint(w) == beforePlan,
+                    "organic bootstrap planner is pure at turn " + (turn + 1));
+                Check(plan.Assignments.Sum(a => a.Population) <= c.Population && !plan.Assignments.Any(a => a.Role == WorkforceRoles.Farmer),
+                    "organic bootstrap workforce is resident-bounded without Farmer at turn " + (turn + 1));
+                var order = new Order(OrderKind.Economy, c.Id) { Economy = plan };
+                var observation = new AgentObservationBuilder().Build(w, c.Player);
+                Check(OrderRules.Validate(observation, order) == null,
+                    "organic bootstrap order validates at turn " + (turn + 1));
+                EconomicIntents.Apply(c, plan);
+                var fork = SaveCodec.Load(SaveCodec.Save(w));
+                var record = new TurnResolver().Resolve(w, new Dictionary<int, List<Order>>());
+                var continued = new TurnResolver().Resolve(fork, new Dictionary<int, List<Order>>());
+                Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(fork),
+                    "organic bootstrap save continuation matches at turn " + (turn + 1));
+                var d = record.Demographics.Single();
+                Near(d.InitialReserves + d.FoodReceived,
+                    d.FoodConsumed + d.ManufacturingFood + d.FinalReserves + d.DiscardedInventory,
+                    "organic bootstrap conserves food at turn " + (turn + 1), 1e-6);
+                foreach (var receipt in record.Production)
+                {
+                    totals.TryGetValue(receipt.Good, out double prev);
+                    totals[receipt.Good] = prev + receipt.Output;
+                }
+            }
+
+            Check(totals.TryGetValue(CraftGood.HandTools, out double handTools) && handTools > 0,
+                "organic bootstrap produces Hand Tools from raw extracted stone for " + allocation);
+            Check(totals.TryGetValue(CraftGood.AnimalFabric, out double fabric) && fabric > 0,
+                "organic bootstrap produces Animal Fabric for " + allocation);
+            if (allocation == "HerdingToolsAndHousing")
+            {
+                Check(totals.TryGetValue(CraftGood.HerdingTools, out double herdingTools) && herdingTools > 0,
+                    "organic bootstrap produces Herding Tools from raw stone and wood");
+                Check(totals.TryGetValue(CraftGood.LightHousing, out double shelter) && shelter > 0,
+                    "organic bootstrap produces Light Housing from produced fabric and extracted wood");
+            }
+            Check(c.Technology == Technology.AnimalHusbandry && !c.Technologies[(int)Technology.Cultivation],
+                "camp remains Husbandry-only without Agriculture throughout organic bootstrap");
+        }
+    }
+
+    private static void HusbandryGeneralistExtractionEfficiencyMatchesAgriculture()
+    {
+        var wa = NeolithicChecks.Fixture(true); var ca = wa.Camps[0];
+        var wh = HusbandryWorld(); var ch = wh.Camps[0];
+        int tile = ca.Tile;
+        ch.Tile = tile;
+        AddSurfaceResources(wa, tile, 200, 200, 200);
+        AddSurfaceResources(wh, tile, 200, 200, 200);
+
+        ca.Inventory.Stone = ca.Inventory.Wood = ca.Inventory.Clay = 0;
+        ca.Inventory.HandTools = ca.Inventory.Tools = 0;
+        ch.Inventory.Stone = ch.Inventory.Wood = ch.Inventory.Clay = 0;
+        ch.Inventory.HandTools = ch.Inventory.Tools = 0;
+
+        ca.PlantFood = ch.PlantFood = 100000;
+        ca.AnimalFood = ch.AnimalFood = 100000;
+
+        ca.People.NeolithicTechnologies.Clear();
+        ca.People.UnlockedSpecialists.Clear();
+        ch.People.NeolithicTechnologies.Clear();
+        ch.People.UnlockedSpecialists.Clear();
+
+        ca.CraftingPriorities = NoCraftPriorities();
+        ca.CraftingPriorities.HandTools = 1;
+        ca.CraftingPriorities.Cloth = 1;
+        ca.StonePriority = 1; ca.WoodPriority = 1;
+
+        ch.CraftingPriorities = NoCraftPriorities();
+        ch.CraftingPriorities.HandTools = 1;
+        ch.CraftingPriorities.AnimalFabric = 1;
+        ch.StonePriority = 1; ch.WoodPriority = 1;
+
+        var assignments = new[]
+        {
+            new PopulationAssignment { Role = WorkforceRoles.Gatherer, Population = 40 },
+            new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = 20 }
+        };
+
+        var recordA = ResolveEconomy(wa, ca, assignments);
+        var recordH = ResolveEconomy(wh, ch, assignments);
+
+        var stoneA = recordA.MaterialTransfers.Where(t => t.Material == MaterialId.Stone).Sum(t => t.Amount);
+        var stoneH = recordH.MaterialTransfers.Where(t => t.Material == MaterialId.Stone).Sum(t => t.Amount);
+        Near(stoneH, stoneA, "generalist Stone extraction matches between Agriculture and Husbandry");
+
+        var workA = recordA.MaterialTransfers.Where(t => t.Material == MaterialId.Stone).Sum(t => t.WorkerIntervals);
+        var workH = recordH.MaterialTransfers.Where(t => t.Material == MaterialId.Stone).Sum(t => t.WorkerIntervals);
+        Near(workH, workA, "generalist extraction worker intervals match exactly");
+
+        Near(ch.Inventory.Stone, ca.Inventory.Stone, "remaining extracted stone inventory matches");
+
+        var stateA = MaterialEconomy.SourceState(wa, "surface:" + tile + ":" + (int)MaterialId.Stone);
+        var stateH = MaterialEconomy.SourceState(wh, "surface:" + tile + ":" + (int)MaterialId.Stone);
+        Check(stateA != null && stateH != null, "material source state registered in both worlds");
+        Near(stateH.Remaining, stateA.Remaining, "source conservation matches between Agriculture and Husbandry");
+    }
+
+    private static void ReservingGathererTimeReducesDirectFoodClaimsAndTotalWorkBounded()
+    {
+        var w = HusbandryWorld(); var c = w.Camps[0];
+        AddSurfaceResources(w, c.Tile, 500, 500, 500);
+        c.Population = 100;
+        c.Workforce.Assign(WorkforceRoles.Gatherer, 60, 100);
+        c.Workforce.Assign(WorkforceRoles.Craftsperson, 40, 100);
+        c.EconomicLabor = new EconomicLaborPlan { MaterialGatherers = 20 };
+        c.CraftingPriorities = NoCraftPriorities();
+        c.CraftingPriorities.HandTools = 1;
+        c.CraftingPriorities.AnimalFabric = 1;
+        c.AnimalFood = 50;
+
+        var labor = CultivationEconomy.CalculateLabor(w, c, Array.Empty<int>());
+        Near(labor.Gatherers, 60, "total gatherers assigned");
+        Near(labor.FoodGatherers, 40, "material gatherer reservation reduces food gatherers by 20");
+
+        var record = ResolveEconomy(w, c,
+            new PopulationAssignment { Role = WorkforceRoles.Gatherer, Population = 60 },
+            new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = 40 });
+
+        double gatherFood = record.Transfers.Where(t => t.Kind.EndsWith("gathering") || t.Kind == "Gathering").Sum(t => t.Food);
+        double gatherCapacity = labor.FoodGatherers * w.Config.GatherPerPerson * w.Config.GenerationIntervals;
+        Check(gatherFood <= gatherCapacity + 1e-6,
+            "direct food gathering is strictly bounded by reserved food gatherer capacity actual=" + gatherFood + " cap=" + gatherCapacity);
+
+        double foodGatheringWork = gatherFood / w.Config.GatherPerPerson;
+        double materialGatheringWork = record.MaterialTransfers.Where(t => t.Role == WorkforceRoles.Gatherer).Sum(t => t.WorkerIntervals);
+        double craftWork = record.Production.Sum(p => p.WorkerIntervals);
+        double totalProductiveWork = foodGatheringWork + materialGatheringWork + craftWork;
+        double maxAvailableCohortWork = c.Population * w.Config.GenerationIntervals;
+        Check(totalProductiveWork <= maxAvailableCohortWork + 1e-6,
+            "total productive work never exceeds prepared prior cohort actual=" + totalProductiveWork + " max=" + maxAvailableCohortWork);
+    }
+
+    private static void ZeroConditionsYieldZeroExtraction()
+    {
+        // Subcase 1: No source
+        {
+            var w = HusbandryWorld(); var c = w.Camps[0];
+            int count = w.Tiles.Length;
+            w.Resources = new WorldResourceState
+            {
+                MaximumQuantity = 100000,
+                CatalogHash = ResourceCatalog.Hash, ProfileHash = ResourceCatalog.Hash, ConfigurationHash = ResourceCatalog.Hash,
+                Provinces = Array.Empty<GeologicalProvince>(), Province = new ushort[count], History = new ushort[count],
+                Host = new byte[count], Marine = new byte[count], Stone = new ushort[count], Clay = new ushort[count], Wood = new ushort[count],
+                WoodRecoveryPerYear = .05
+            };
+            c.Inventory.Stone = c.Inventory.Wood = c.Inventory.Clay = 0;
+            c.CraftingPriorities = NoCraftPriorities(); c.CraftingPriorities.HandTools = 1; c.CraftingPriorities.AnimalFabric = 1; c.AnimalFood = 50;
+            var record = ResolveEconomy(w, c, new PopulationAssignment { Role = WorkforceRoles.Gatherer, Population = 50 }, new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = 50 });
+            Check(record.MaterialTransfers.Count == 0, "no source yields zero material transfers");
+            Near(c.Inventory.Stone, 0, "no source yields zero stone inventory");
+        }
+        // Subcase 2: Disabled priority
+        {
+            var w = HusbandryWorld(); var c = w.Camps[0];
+            AddSurfaceResources(w, c.Tile, 100, 100, 100);
+            c.Inventory.Stone = c.Inventory.Wood = c.Inventory.Clay = 0;
+            c.CraftingPriorities = NoCraftPriorities(); c.CraftingPriorities.HandTools = 1; c.CraftingPriorities.AnimalFabric = 1; c.AnimalFood = 50;
+            c.StonePriority = 0; c.WoodPriority = 0; c.ClayPriority = 0;
+            var record = ResolveEconomy(w, c, new PopulationAssignment { Role = WorkforceRoles.Gatherer, Population = 50 }, new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = 50 });
+            Check(record.MaterialTransfers.Count == 0, "disabled priority yields zero material transfers");
+            Near(c.Inventory.Stone, 0, "disabled priority yields zero stone inventory");
+        }
+        // Subcase 3: Exhausted source
+        {
+            var w = HusbandryWorld(); var c = w.Camps[0];
+            AddSurfaceResources(w, c.Tile, 100, 100, 100);
+            var state = new MaterialSourceState { Id = "surface:" + c.Tile + ":" + (int)MaterialId.Stone, Material = MaterialId.Stone, Initial = 100, Remaining = 0, LastDays = 0 };
+            w.MaterialSources.Add(state);
+            MaterialEconomy.RegisterSourceState(w, state);
+            c.Inventory.Stone = c.Inventory.Wood = c.Inventory.Clay = 0;
+            c.CraftingPriorities = NoCraftPriorities(); c.CraftingPriorities.HandTools = 1; c.CraftingPriorities.AnimalFabric = 1; c.AnimalFood = 50;
+            var record = ResolveEconomy(w, c, new PopulationAssignment { Role = WorkforceRoles.Gatherer, Population = 50 }, new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = 50 });
+            Check(record.MaterialTransfers.Count == 0, "exhausted source yields zero material transfers");
+            Near(c.Inventory.Stone, 0, "exhausted source yields zero stone inventory");
+            Near(state.Remaining, 0, "exhausted source remains zero without phantom progress");
+        }
+        // Subcase 4: Zero labor
+        {
+            var w = HusbandryWorld(); var c = w.Camps[0];
+            AddSurfaceResources(w, c.Tile, 100, 100, 100);
+            c.Inventory.Stone = c.Inventory.Wood = c.Inventory.Clay = 0;
+            c.CraftingPriorities = NoCraftPriorities(); c.CraftingPriorities.HandTools = 1; c.CraftingPriorities.AnimalFabric = 1; c.AnimalFood = 50;
+            var record = ResolveEconomy(w, c, new PopulationAssignment { Role = WorkforceRoles.Herder, Population = 50 });
+            Check(record.MaterialTransfers.Count == 0, "zero extraction labor yields zero material transfers");
+            Near(c.Inventory.Stone, 0, "zero extraction labor yields zero stone inventory");
+        }
+        // Subcase 5: Zero useful demand
+        {
+            var w = HusbandryWorld(); var c = w.Camps[0];
+            AddSurfaceResources(w, c.Tile, 100, 100, 100);
+            c.Inventory.Stone = c.Inventory.Wood = c.Inventory.Clay = 0;
+            c.CraftingPriorities = NoCraftPriorities();
+            var record = ResolveEconomy(w, c, new PopulationAssignment { Role = WorkforceRoles.Gatherer, Population = 50 }, new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = 50 });
+            Check(record.MaterialTransfers.Count == 0, "zero useful demand yields zero material transfers");
+            Near(c.Inventory.Stone, 0, "zero useful demand yields zero stone inventory");
+        }
+    }
+
+    private static void SourceCompetitionReportsUnmetWork()
+    {
+        var w = HusbandryWorld();
+        var c1 = w.Camps[0];
+        int neighborTile = w.Map.Neighbors(c1.Tile).First(n => w.Tiles[n].TraversableLand);
+        var c2 = new Camp { Id = w.NextId++, Player = 1, Tile = neighborTile, Population = 100, PlantFood = 100000 };
+        w.Camps.Add(c2);
+        w.Societies.Add(new Society { Id = w.NextId++, Player = 1, Progression = new EraProgression { Era = Era.Neolithic } });
+        Ownership.Bind(w);
+        c2.Technology = Technology.AnimalHusbandry;
+        c2.Technologies[(int)Technology.AnimalHusbandry] = true;
+        c2.People.Progression.Era = Era.Neolithic;
+
+        AddSurfaceResources(w, c1.Tile, stone: 0, wood: 5, clay: 0);
+
+        foreach (var camp in new[] { c1, c2 })
+        {
+            camp.Inventory.Stone = 100;
+            camp.Inventory.Wood = 0;
+            camp.Inventory.HandTools = 100;
+            camp.CraftingPriorities = NoCraftPriorities();
+            camp.CraftingPriorities.HerdingTools = 1;
+            camp.WoodPriority = 1;
+            w.Herds.Add(new Herd { Id = w.NextId++, Tile = camp.Tile, Species = "goat", Animals = 100, DomesticCamp = camp.Id, OwnerSociety = camp.SocietyId });
+        }
+
+        var intent1 = EconomicIntent.From(c1);
+        intent1.Assignments = new List<PopulationAssignment>
+        {
+            new PopulationAssignment { Role = WorkforceRoles.Gatherer, Population = 30 },
+            new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = 20 },
+            new PopulationAssignment { Role = WorkforceRoles.Herder, Population = 50 }
+        };
+        intent1.Priorities = c1.CraftingPriorities;
+
+        var intent2 = EconomicIntent.From(c2);
+        intent2.Assignments = new List<PopulationAssignment>
+        {
+            new PopulationAssignment { Role = WorkforceRoles.Gatherer, Population = 30 },
+            new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = 20 },
+            new PopulationAssignment { Role = WorkforceRoles.Herder, Population = 50 }
+        };
+        intent2.Priorities = c2.CraftingPriorities;
+
+        var order1 = new Order(OrderKind.Economy, c1.Id) { Economy = intent1 };
+        var order2 = new Order(OrderKind.Economy, c2.Id) { Economy = intent2 };
+
+        var record = new TurnResolver().Resolve(w, new Dictionary<int, List<Order>>
+        {
+            [c1.Player] = new List<Order> { order1 },
+            [c2.Player] = new List<Order> { order2 }
+        });
+
+        var totalWoodExtracted = record.MaterialTransfers.Where(t => t.Material == MaterialId.Wood).Sum(t => t.Amount);
+        Check(totalWoodExtracted <= 50.0 + 1e-6, "wood extracted does not exceed limited source actual=" + totalWoodExtracted);
+
+        var woodPressure = record.Pressure.Where(p => p.Kind == "Timber extraction");
+        Check(woodPressure.Any(p => p.Unmet > 0), "timber extraction reports unmet demand under source competition");
+
+        Near(c2.WoodPriority, intent2.WoodPriority, "c2 WoodPriority is not changed");
+        Near(c2.CraftingPriorities.HerdingTools, intent2.Priorities.HerdingTools, "c2 HerdingTools priority is not changed");
+        Check(c2.Workforce.Assignments.Count == intent2.Assignments.Count, "c2 assignments count is not changed");
+        foreach (var a in intent2.Assignments)
+            Check(c2.Workforce.Assignments.Any(ca => ca.Role == a.Role && ca.Population == a.Population), "c2 assignment preserved: " + a.Role);
+    }
 }
+

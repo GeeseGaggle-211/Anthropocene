@@ -388,7 +388,7 @@ namespace Anthropocene.Simulation
 
         private static double ExtractKnown(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record, bool trustedLocalCatalog)
         {
-            if (!CultivationEconomy.Enabled(c) || workerIntervals <= 0 || useful <= 0) return 0;
+            if (!CultivationEconomy.EconomyEnabled(c) || workerIntervals <= 0 || useful <= 0) return 0;
             var source = trustedLocalCatalog ? requested : KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
             if (source == null) return 0;
             if (source.Material == MaterialId.Wood)
@@ -399,7 +399,7 @@ namespace Anthropocene.Simulation
                 if (trustedLocalCatalog)
                 {
                     var wood = ProjectWoodSource(w, source.Tile);
-                    source.Available = wood == null ? 0 : wood.Remaining * source.Share;
+                    if (wood != null) source.Available = wood.Remaining * source.Share;
                 }
                 else source = KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
                 if (source == null || source.Available <= 0) return 0;

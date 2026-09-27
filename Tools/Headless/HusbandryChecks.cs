@@ -27,7 +27,7 @@ internal static class HusbandryChecks
 
     public static int Run()
     {
-        checks = 0; FullManagedOutput(); UnderManagementAndNoCap(); CurrentNutritionAndNewbornBoundary(); LocalFootprintAndSharedSource(); MovedHunterFoodCohort(); PreparedFoodRemainderLedger(); ProportionalSpeciesManagement(); SharedControlAndSave(); ObservationAndOrderContracts(); PartitionedExposure(); MixedFoodInputBoundary(); MixedAnimalOnlyDoesNotChargePlant(); TypedFabricPriorityBudget(); StorageReceivingCapacity(); SharedStarvationAndSourceLedgers(); SpeciesReplayAndContinuation(); StaleNutritionAndNewbornBoundary(); BreedingIntensityPolicy(); SupportLimitedBreeding(); HerdingToolCoverage();
+        checks = 0; FullManagedOutput(); UnderManagementAndNoCap(); CurrentNutritionAndNewbornBoundary(); LocalFootprintAndSharedSource(); MovedHunterFoodCohort(); PreparedFoodRemainderLedger(); ProportionalSpeciesManagement(); SharedControlAndSave(); ObservationAndOrderContracts(); PartitionedExposure(); MixedFoodInputBoundary(); MixedAnimalOnlyDoesNotChargePlant(); TypedFabricPriorityBudget(); StorageReceivingCapacity(); SharedStarvationAndSourceLedgers(); SpeciesReplayAndContinuation(); StaleNutritionAndNewbornBoundary(); BreedingIntensityPolicy(); SupportLimitedBreeding(); HerdingToolCoverage(); AcceptedMovementControlsAccessibleSources();
         Console.WriteLine("PASS: " + checks + " managed husbandry assertions"); return checks;
     }
     private static void FullManagedOutput()
@@ -585,5 +585,94 @@ internal static class HusbandryChecks
         Near(dc.Inventory.HerdingTools, 20, "useful Carpenter work creates the next generation's Herding Tools");
         var second = Resolve(delayed);
         Near(second.ManagedHerds.Single().ManagementFulfillment, .538, "start-stock Herding Tools improve the next generation's management");
+    }
+
+    private static void AcceptedMovementControlsAccessibleSources()
+    {
+        void SetupResources(WorldState w, int sourceTile)
+        {
+            int count = w.Tiles.Length;
+            w.Resources = new WorldResourceState
+            {
+                MaximumQuantity = 100000,
+                CatalogHash = ResourceCatalog.Hash, ProfileHash = ResourceCatalog.Hash, ConfigurationHash = ResourceCatalog.Hash,
+                Provinces = Array.Empty<GeologicalProvince>(), Province = new ushort[count], History = new ushort[count],
+                Host = new byte[count], Marine = new byte[count], Stone = new ushort[count], Clay = new ushort[count], Wood = new ushort[count],
+                WoodRecoveryPerYear = .05
+            };
+            w.Resources.AccessibleParts[(int)MaterialId.Stone] = 10000;
+            w.Resources.Stone[sourceTile] = 200;
+        }
+
+        // Case 1: Accepted Movement
+        {
+            var w = Fixture(100, 20); var c = w.Camps[0];
+            int origin = c.Tile;
+            int dest = w.Map.Neighbors(origin).First(n => w.Tiles[n].TraversableLand);
+            int farTile = w.Map.Neighbors(dest).First(n => w.Tiles[n].TraversableLand && w.Map.Distance(origin, n) == 2);
+            int originFarTile = w.Map.Neighbors(origin).First(n => w.Tiles[n].TraversableLand && w.Map.Distance(dest, n) == 2);
+            SetupResources(w, farTile);
+            w.Resources.Stone[originFarTile] = 200;
+
+            c.Inventory.Stone = 0;
+            c.Inventory.HandTools = 0;
+            c.AnimalFood = 50;
+            c.CraftingPriorities = new CraftingPriorities { HandTools = 1, AnimalFabric = 1 };
+            c.StonePriority = 1;
+            c.EconomyAutomationTurns = 0;
+            c.Workforce = new PopulationLedger();
+            c.Workforce.Assign(WorkforceRoles.Gatherer, 50, 100);
+            c.Workforce.Assign(WorkforceRoles.Craftsperson, 30, 100);
+            c.Workforce.Assign(WorkforceRoles.Herder, 20, 100);
+
+            var moveOrder = new Order(OrderKind.Move, c.Id, destination: dest);
+
+            var record = new TurnResolver().Resolve(w, new Dictionary<int, List<Order>>
+            {
+                [c.Player] = new List<Order> { moveOrder }
+            });
+
+            Check(c.Tile == dest, "camp accepted movement moved to destination tile");
+            Check(record.MaterialTransfers.Any(t => t.Tile == farTile && t.Material == MaterialId.Stone && t.Amount > 0),
+                "camp accesses materials reachable from the accepted destination");
+            Check(!record.MaterialTransfers.Any(t => t.Tile == originFarTile),
+                "old-location materials do not teleport to accepted destination");
+        }
+
+        // Case 2: Rejected Movement (fallback to origin)
+        {
+            var w = Fixture(100, 20); var c = w.Camps[0];
+            int origin = c.Tile;
+            int dest = w.Map.Neighbors(origin).First(n => w.Tiles[n].TraversableLand);
+            int farTile = w.Map.Neighbors(dest).First(n => w.Tiles[n].TraversableLand && w.Map.Distance(origin, n) == 2);
+            int originFarTile = w.Map.Neighbors(origin).First(n => w.Tiles[n].TraversableLand && w.Map.Distance(dest, n) == 2);
+            SetupResources(w, farTile);
+            w.Resources.Stone[originFarTile] = 200;
+
+            c.Inventory.Stone = 0;
+            c.Inventory.HandTools = 0;
+            c.AnimalFood = 50;
+            c.CraftingPriorities = new CraftingPriorities { HandTools = 1, AnimalFabric = 1 };
+            c.StonePriority = 1;
+            c.EconomyAutomationTurns = 0;
+            c.Workforce = new PopulationLedger();
+            c.Workforce.Assign(WorkforceRoles.Gatherer, 50, 100);
+            c.Workforce.Assign(WorkforceRoles.Craftsperson, 30, 100);
+            c.Workforce.Assign(WorkforceRoles.Herder, 20, 100);
+
+            var moveOrder = new Order(OrderKind.Move, c.Id, destination: -5);
+
+            var record = new TurnResolver().Resolve(w, new Dictionary<int, List<Order>>
+            {
+                [c.Player] = new List<Order> { moveOrder }
+            });
+
+            Check(c.Tile == origin, "camp rejected movement uses fallback origin tile");
+            Check(record.MaterialTransfers.Any(t => t.Tile == originFarTile && t.Material == MaterialId.Stone && t.Amount > 0),
+                "camp accesses materials reachable from validated fallback origin");
+            Check(!record.MaterialTransfers.Any(t => t.Tile == farTile),
+                "unreachable destination materials do not teleport to rejected fallback location");
+            Check(c.Inventory.Stone > 0, "stone extracted from fallback origin neighbor source");
+        }
     }
 }
