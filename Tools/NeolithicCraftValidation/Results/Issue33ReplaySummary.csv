@@ -1,0 +1,4 @@
+source,check_type,status,count
+candidate,scarcity-intervention-load-only,PASS,3
+candidate,three-turn-four-worker-exact-continuation,PASS,25
+baseline,checkpoint-load-roundtrip-only,PASS,28

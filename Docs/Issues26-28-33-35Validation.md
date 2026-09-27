@@ -1,8 +1,9 @@
 # Issues 26, 28, 33 and 35: integration evidence
 
 The simulation candidate is `5e34e7f30de1f80b5ca8a5f4a1a9967227cfa396`, based on
-`c519cd4f1d35520bb0788171f8fb3e9c851a6dcf`. Changes remain unmerged on
-`codex/issues-26-28-33-35`. Sol High implemented #26; Luna implemented #28,
+`c519cd4f1d35520bb0788171f8fb3e9c851a6dcf`. The implementation branch is
+`codex/issues-26-28-33-35`, targeting `features/neolithic-agricultural`.
+Sol High implemented #26; Luna implemented #28,
 #33 validation and #35 documentation, with parent review and independent
 measurement. Documentation and validation-tool commits after the simulation
 candidate do not change the measured simulation source.
@@ -23,8 +24,9 @@ candidate do not change the measured simulation source.
   specification and external historical documents were preserved.
 - [NeolithicCraftValidation.md](NeolithicCraftValidation.md): separate controlled
   craft-chain witnesses and naturally discovered, per-society 25-turn cohorts.
-  The craft validation is still being completed; this report does not yet claim
-  its acceptance checks passed.
+  The final candidate and baseline each passed 84 matched windows and produced
+  2,100 trajectory rows. Physical feasibility and observed policy adoption are
+  reported separately, with unresolved progression failures retained.
 
 No production rates, mastery thresholds, land multiplier, accessibility, or
 shipped `R=16` calibration were retuned. The prior-cohort and one-horizon pass
@@ -153,7 +155,18 @@ turn. No gameplay logic changed for this correction. Evidence is in
 `TestResults/Issues26-28-33-35/Unity/Build-SmokeFix.log` and
 `Unity/PlayerNeolithic-Final/` beneath that evidence root; the built player is
 `Builds/Issues26-28-33-35/Anthropocene.exe`.
-Final craft-chain/cohort evidence is still pending at this report checkpoint.
+The craft audit passed 18 recipe-witness rows (17 productive cases and the
+expected SpecialistOnly generalist rejection), 25 three-turn scalar/four-worker,
+reordered and saved continuation checks, and three scarcity-checkpoint load
+checks. Its 21 natural discoveries comprise 15 Cultivation and six Husbandry
+unlocks; three camps were censored. Four separately conditioned generated-site
+discoveries and three one-time source shocks complete the 28-boundary cohort.
+All 84 candidate/baseline windows use identical checkpoint bytes and config
+files; all candidate actions were accepted and labor stayed within the prepared
+prior-cohort budget. Baseline field-work counters are explicitly unavailable.
+The normal policy still has housing and craft-progression limitations; the
+measured report records failures and coverage gaps without changing policy or
+mastery thresholds.
 
 ## Reproduction and limits
 
