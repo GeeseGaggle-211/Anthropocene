@@ -327,7 +327,7 @@ internal static class HusbandryChecks
         {
             var w = Fixture(100, 75); var c = w.Camps[0];
             c.Population = 200; c.Technology = Technology.Cultivation; c.Technologies[(int)Technology.Cultivation] = true; c.People.Progression.Era = Era.Neolithic;
-            w.Config.AnnualHumanGrowthRate = .01145; w.Config.GrowthReserveTurns = .1;
+            w.Config.AnnualHumanGrowthRate = .01145; w.Config.GrowthReserveYears = .1 * w.Config.Neolithic.ReferenceTurnYears;
             c.CraftingPriorities = new CraftingPriorities { Cloth = includeCloth ? (animalFirst ? 1 : 2) : 0, AnimalFabric = animalFirst ? 2 : 1, LightHousing = 0, HerdingTools = 0 };
             c.PlantFood = plant; c.AnimalFood = 0; c.Inventory.HandTools = 10000;
             c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving); c.Workforce.Assign(WorkforceRoles.Weaver, animalFirst ? 8 : 4, c.Population);
@@ -347,7 +347,8 @@ internal static class HusbandryChecks
     {
         var w = Fixture(200, 100); var c = w.Camps[0];
         w.Config.MinimumStorageGenerations = w.Config.MaximumStorageGenerations = 1;
-        w.Config.GrowthReserveTurns = 2; c.Inventory.Pots = 100; c.AnimalFood = 8000;
+        w.Config.MinimumStorageYears = w.Config.MaximumStorageYears = w.Config.Neolithic.ReferenceTurnYears;
+        w.Config.GrowthReserveYears = 2 * w.Config.Neolithic.ReferenceTurnYears; c.Inventory.Pots = 100; c.AnimalFood = 8000;
         var r = Resolve(w); var d = r.Demographics.Single();
         Near(c.Inventory.Pots, 90, "existing Pots depreciate once after managed receipt");
         Near(d.AnimalFood, 15200, "AnimalFood acceptance uses post-depreciation shared storage capacity");

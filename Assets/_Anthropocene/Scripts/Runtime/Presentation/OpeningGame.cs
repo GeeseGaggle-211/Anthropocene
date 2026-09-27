@@ -102,7 +102,14 @@ namespace Anthropocene.Presentation
             if (scenarioIndex == 0 && !int.TryParse(seedText, out seed)) { status = "Enter a whole-number seed."; return; }
             var config = new SimulationConfig();
             var tuning = Resources.Load<TextAsset>("OpeningConfig");
-            if (tuning != null) JsonUtility.FromJsonOverwrite(tuning.text, config);
+            if (tuning != null)
+            {
+                // Treat omitted physical horizons in older JSON tuning files as
+                // legacy configuration and convert their original multipliers.
+                config.GrowthReserveYears = config.MinimumStorageYears = config.MaximumStorageYears = double.NaN;
+                JsonUtility.FromJsonOverwrite(tuning.text, config);
+                config.MigrateMissingPhysicalFoodHorizons();
+            }
             var resourceOptions = new ResourceGenerationOptions();
             try
             {
@@ -215,10 +222,10 @@ namespace Anthropocene.Presentation
             float width = area.width - 38, y = 12;
             var camp = world.Camps.First(c => c.Player == 0);
             GUI.Label(new Rect(14, y, width, 24), "YOUR TRIBE", section); y += 26;
-            double generationNeed = Math.Max(1, world.LinkedPopulation(camp) * world.Config.Consumption * world.Config.GenerationIntervals);
-            double reserveGenerations = camp.Food / generationNeed, storageGenerations = TurnResolver.StorageGenerations(world, camp.Tile);
-            string hunger = camp.DeficitTurns > 0 ? "\nHunger warning: " + camp.DeficitTurns + " generation" + (camp.DeficitTurns == 1 ? "" : "s") + " in deficit" : world.Turn == 1 ? "\nOne full starting generation is protected" : "\nNo unresolved generational deficit";
-            GUI.Label(new Rect(14, y, width, 78), world.LinkedPopulation(camp) + " people  |  " + camp.Population + " at camp (" + camp.GathererPopulation + " gathering)\nReserve: " + reserveGenerations.ToString("0.0") + " generations (" + Knowledge.Bands[observation.FoodCondition] + ")\nLocal storage ceiling: " + storageGenerations.ToString("0.0") + " generations" + hunger, text); y += 90;
+            double annualFoodNeed = Math.Max(1, PhysicalFoodTimebase.StockForYears(world, world.LinkedPopulation(camp), 1));
+            double reserveYears = camp.Food / annualFoodNeed, storageYears = PhysicalFoodTimebase.NaturalStorageYears(world, camp.Tile);
+            string hunger = camp.DeficitTurns > 0 ? "\nHunger warning: " + camp.DeficitTurns + " player turn" + (camp.DeficitTurns == 1 ? "" : "s") + " in deficit" : world.Turn == 1 ? "\nInitial food reserve is protected" : "\nNo unresolved food deficit";
+            GUI.Label(new Rect(14, y, width, 78), world.LinkedPopulation(camp) + " people  |  " + camp.Population + " at camp (" + camp.GathererPopulation + " gathering)\nReserve: " + reserveYears.ToString("0.0") + " years (" + Knowledge.Bands[observation.FoodCondition] + ")\nLocal storage ceiling: " + storageYears.ToString("0.0") + " years" + hunger, text); y += 90;
 
             Fill(new Rect(10, y, width + 8, 62), new Color(.14f, .16f, .14f));
             GUI.Label(new Rect(20, y + 7, width - 12, 24), "SELECTED  ·  " + (selected == camp.Id && camp.IsVillage ? "VILLAGE" : SelectedName), section);

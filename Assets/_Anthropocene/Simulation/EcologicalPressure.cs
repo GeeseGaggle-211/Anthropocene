@@ -26,6 +26,10 @@ namespace Anthropocene.Simulation
         // Transient diagnostics: the managed source term may overflow the
         // bounded food pool, so it is not itself realized food recovery.
         public double WoodRemaining, WoodDays, ManagedRenewalInput, OperatingFraction;
+        // Gross r*K forcing over the requested horizon, before finite-capacity
+        // relaxation/clipping. Balance.*Recharge is the net retained stock
+        // change after the land recovery kernel; it is not a gross source term.
+        public double GrossNaturalFoodInput, GrossNaturalNonfoodInput;
         public List<Transfer> Transfers = new List<Transfer>();
         public List<PressureEntry> Pressure = new List<PressureEntry>();
         public EcologyBalance Balance;
@@ -46,11 +50,22 @@ namespace Anthropocene.Simulation
         }
         // Inputs are read-only. Results can be merged by tile/entity ID after a worker barrier.
         public static TileEcologyResult Integrate(WorldState w, int tileId, IEnumerable<Demand> claims, double start, double duration,
-            double? averageCultivationCapital = null, double? endingCultivationCapital = null, double? operatingFraction = null)
+            double? averageCultivationCapital = null, double? endingCultivationCapital = null,
+            double? operatingFraction = null, bool projectWood = true,
+            Action profileEvaluated = null, EcologyView? openingEcology = null,
+            bool captureGrossForcing = false)
         {
             if (duration < 0) throw new ArgumentOutOfRangeException(nameof(duration));
-            var tile = w.Tiles[tileId]; var wood = MaterialEconomy.ProjectWoodSource(w, tileId);
-            var v = LazyEcology.ProjectEcology(w, tileId, start, true, wood == null ? null : wood.Recover);
+            var tile = w.Tiles[tileId];
+            // Food-only previews use the same stock kernel without initializing
+            // the map-wide material-source index for an unrelated Wood sidecar.
+            var wood = projectWood ? MaterialEconomy.ProjectWoodSource(w, tileId) : null;
+            // A read-only caller may provide the already projected opening
+            // boundary when the live tile has since committed its endpoint.
+            // This is essential for endpoint reconciliation against the locked
+            // prior snapshot, without cloning or rewinding the world.
+            var v = openingEcology ?? LazyEcology.ProjectEcology(w, tileId, start,
+                true, wood == null ? null : wood.Recover);
             var result = new TileEcologyResult { Balance = new EcologyBalance { Tile = tileId, StartingBiomass = v.PotentialFood, StartingFood = v.Food, StartingWater = v.Freshwater } };
             var requests = CanonicalRequests(claims);
             if (duration == 0)
@@ -113,6 +128,14 @@ namespace Anthropocene.Simulation
             var representative = LazyEcology.MeanView(w, tile, v, duration, 0,
                 averageCultivationCapital, operatingFraction);
             var capacity = new HorizonEcologyCapacity(w, tile, representative, start, duration, operatingFraction);
+            // Aquatic ecology uses this representative horizon capacity.
+            // Land recovery instead composes ordered seasonal profiles below;
+            // the optional diagnostic callback records their exact forcing.
+            if (!tile.Land || !captureGrossForcing)
+            {
+                result.GrossNaturalFoodInput = capacity.Food * capacity.FoodRate * duration;
+                result.GrossNaturalNonfoodInput = capacity.Nonfood * capacity.BiomassRate * duration;
+            }
             if (tile.Land)
             {
                 result.ManagedRenewalInput = capacity.ManagedFlow * duration;
@@ -161,9 +184,21 @@ namespace Anthropocene.Simulation
                 // water transition as a latent land tile.
                 bool recoverWater = waterRequest <= 0;
                 if (recoverWater) v.Freshwater = beforeHorizon.Freshwater;
+                Action<EcologyCapacity, double> forcingProfile = null;
+                if (captureGrossForcing)
+                {
+                    result.ManagedRenewalInput = 0;
+                    forcingProfile = (profile, spanDays) =>
+                    {
+                        result.GrossNaturalFoodInput += profile.Food * profile.FoodRate * spanDays;
+                        result.GrossNaturalNonfoodInput += Math.Max(0,
+                            profile.Biomass - profile.Food) * profile.BiomassRate * spanDays;
+                        result.ManagedRenewalInput += profile.ManagedFlow * spanDays;
+                    };
+                }
                 LazyEcology.RecoverLandAfterHarvest(w, tile, ref v, start, duration,
                     averageCultivationCapital, endingCultivationCapital, operatingFraction,
-                    recoverWater);
+                    recoverWater, profileEvaluated, forcingProfile);
                 // These two ledgers include accessibility reclassification when
                 // field capital changes. No recovered unit enters a receipt.
                 double foodChange = v.Food - depletedFood;

@@ -30,14 +30,35 @@ namespace Anthropocene.Simulation
             var footprint = cultivationEnabled ? CultivationEconomy.Footprint(w, c).ToArray() : Array.Empty<int>();
             if (!footprint.Contains(e.Focus)) e.Focus = -1;
             var operated = footprint.Where(id => w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == c.Id).ToArray();
+            bool? retainedExpansionPossible = null;
+            bool HasRetainedExpansionGain()
+            {
+                if (!retainedExpansionPossible.HasValue)
+                    retainedExpansionPossible = operated.Any(id => ExpansionGain(w, id) > Epsilon);
+                return retainedExpansionPossible.Value;
+            }
             double upkeep = cultivationEnabled ? CultivationEconomy.MaintenanceFarmersForPlanning(w, c, years) : 0;
             bool established = cultivationEnabled && operated.Any(id => LazyEcology.ProjectEcology(w, id, w.Days).CultivationCapital > 0);
             var eligible = w.Map.Radius(c.Tile, cfg.GatherRadius).Where(id => PassiveGathering.Eligible(w, c, id)).OrderBy(id => id).ToArray();
-            double FoodAvailability(int id) => LazyEcology.AccessibleAvailability(w, id, w.Days, cfg.TurnDays, operated.Contains(id) ? 1 : 0);
+            // Ask the same finite-stock kernel that resolves actual claims for
+            // the no-contention supply envelope. Aquatic food keeps its own
+            // horizon flow; land can only yield its opening accessible stock.
+            double FoodAvailability(int id)
+            {
+                double request = LazyEcology.AccessibleAvailability(w, id, w.Days,
+                    cfg.TurnDays, operated.Contains(id) ? 1 : 0);
+                if (request <= 0) return 0;
+                var claim = new Demand { Tile = id, Entity = c.Id,
+                    Kind = PassiveGathering.Kind(w.Tiles[id]), Food = request };
+                return FoodHorizonForecast.Tile(w, id, w.Days, cfg.TurnDays,
+                    new[] { claim }, null, null, operated.Contains(id) ? 1 : (double?)null)
+                    .HumanFoodReceipts;
+            }
             double forageSupply = eligible.Sum(FoodAvailability), plantSupply = eligible.Where(id => w.Tiles[id].Land).Sum(FoodAvailability);
             int reservedHerdersForForecast = husbandryEnabled ? ManagedHerderReservation(w, c, years) : 0;
             var managedFood = husbandryEnabled ? TurnResolver.ForecastManagedAnimalFood(w, c, reservedHerdersForForecast, intervals, years, c.Tile) : new ManagedFoodForecast();
             double forageAfterHerds = Math.Max(0, forageSupply - managedFood.HumanFoodDisplaced);
+            double terrestrialAfterHerds = Math.Max(0, plantSupply - managedFood.HumanFoodDisplaced);
             double supply = forageAfterHerds + managedFood.AnimalFood;
             double biological = TurnResolver.PlanningFoodDemand(w, c);
             // This plan belongs to the population present at the interturn boundary.
@@ -64,10 +85,12 @@ namespace Anthropocene.Simulation
             // inventing labor, so the normal FarmTools demand helper is called
             // below on the resolver-shaped candidate.
             if (goals.ContainsKey(CraftGood.FarmTools)) goals[CraftGood.FarmTools] = 0;
-            double sparePlant = Math.Min(c.PlantFood, Math.Max(0, c.Food - c.Population * cfg.Consumption * intervals * (1 + cfg.GrowthReserveTurns)));
             int consumers = c.Population + w.Hunters.Where(h => h.SourceCamp == c.Id && Supply.InRange(w, c, h.Tile)).Sum(h => h.Population);
-            double plantEnvelope = Math.Min(plantSupply + sparePlant, Math.Max(0, c.Food + supply - consumers * cfg.Consumption * intervals));
-            double animalSurplus = Math.Max(0, c.Food + supply - consumers * cfg.Consumption * intervals * (1 + cfg.GrowthReserveTurns));
+            double meals = consumers * cfg.Consumption * intervals;
+            double operatingReserve = NeolithicProduction.DesiredReserveFood(w, consumers);
+            double sparePlant = Math.Min(c.PlantFood, Math.Max(0, c.Food - meals - operatingReserve));
+            double plantEnvelope = Math.Min(terrestrialAfterHerds + sparePlant, Math.Max(0, c.Food + supply - consumers * cfg.Consumption * intervals));
+            double animalSurplus = Math.Max(0, c.Food + supply - meals - operatingReserve);
             double animalEnvelope = husbandryEnabled ? Math.Min(Math.Max(0, c.AnimalFood) + managedFood.AnimalFood, Math.Max(0, animalSurplus - sparePlant)) : 0;
             double foodRoomEnvelope = 0;
             if (husbandryEnabled)
@@ -204,7 +227,7 @@ namespace Anthropocene.Simulation
                 if (cultivationEnabled && farmRecipe != null && NeolithicProduction.Priority(candidate, CraftGood.FarmTools) > 0)
                 {
                     double projectedDemand = biological * nextPopulation / Math.Max(1, c.Population) + goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit;
-                    bool intendedExpansion = projectedDemand > supply && operated.Any(id => ExpansionGain(w, id) > Epsilon);
+                    bool intendedExpansion = projectedDemand > supply && HasRetainedExpansionGain();
                     double roleWorkers = futureRoles.Values.Sum(v => Math.Ceiling(v - Epsilon));
                     // Reserve the food-gathering share before proposing field
                     // expansion. Otherwise a full resident ledger can appear
@@ -219,7 +242,7 @@ namespace Anthropocene.Simulation
                     double fieldWorkers = Math.Max(0, c.Population - reservedHerders - roleWorkers - foodReserve);
                     double maintenance = CultivationEconomy.PlannedMaintenanceFarmers(w, c, fieldWorkers);
                     double plannedFarmRate = cfg.FarmerProductivity * cfg.GatherPerPerson * intervals;
-                    double plannedFoodTarget = Math.Min(supply, biological + goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit);
+                    double plannedFoodTarget = Math.Min(terrestrialAfterHerds, biological + goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit);
                     double harvest = established && plannedFarmRate > 0 ? Math.Ceiling(Math.Max(maintenance, plannedFoodTarget / plannedFarmRate) - Epsilon) : 0;
                     double plannedOperating = established ? Math.Min(fieldWorkers, harvest) : 0;
                     double expansion = intendedExpansion ? Math.Max(0, fieldWorkers - plannedOperating) : 0;
@@ -389,11 +412,12 @@ namespace Anthropocene.Simulation
                 double farmRate = cfg.FarmerProductivity * cfg.GatherPerPerson * intervals;
                 int nonFarmWorkers = intent.Assignments.Where(a => a.Role != WorkforceRoles.Farmer).Sum(a => a.Population);
                 int availableFarmers = Math.Max(0, c.Population - nonFarmWorkers);
+                double terrestrialFoodTarget = Math.Min(terrestrialAfterHerds, foodTarget);
                 int requiredOperating = established && farmRate > 0
-                    ? (int)Math.Ceiling(Math.Max(upkeep, cfg.FarmerProductivity >= 1 ? foodTarget / farmRate : 0) - Epsilon)
+                    ? (int)Math.Ceiling(Math.Max(upkeep, cfg.FarmerProductivity >= 1 ? terrestrialFoodTarget / farmRate : 0) - Epsilon)
                     : 0;
                 int operating = Math.Min(availableFarmers, Math.Max(0, requiredOperating));
-                double farmerHarvest = Math.Min(foodTarget, operating * farmRate);
+                double farmerHarvest = Math.Min(terrestrialFoodTarget, operating * farmRate);
                 int availableGatherers = Math.Max(0, c.Population - nonFarmWorkers - operating);
                 int requiredFoodGatherers = cfg.GatherPerPerson * intervals > 0
                     ? (int)Math.Ceiling(Math.Max(0, foodTarget - farmerHarvest) / (cfg.GatherPerPerson * intervals) - Epsilon)
@@ -445,7 +469,7 @@ namespace Anthropocene.Simulation
             // The capital scoring horizon is not a mandate to feed a hypothetical
             // century of exponential growth. Expand for the next demand forecast.
             double futureDemand = biological * nextPopulation / c.Population + (cultivationEnabled ? goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit : 0);
-            bool expand = cultivationEnabled && futureDemand > supply && operated.Any(id => ExpansionGain(w, id) > Epsilon);
+            bool expand = cultivationEnabled && futureDemand > supply && HasRetainedExpansionGain();
             if (spare > 0 && expand)
             {
                 var farmer = best.Intent.Assignments.FirstOrDefault(a => a.Role == WorkforceRoles.Farmer);
@@ -462,24 +486,14 @@ namespace Anthropocene.Simulation
         }
         private static double ExpansionGain(WorldState w, int id)
         {
-            var cfg = w.Config; var n = cfg.Neolithic; var tile = w.Tiles[id];
-            var before = LazyEcology.ProjectEcology(w, id, w.Days); var after = before;
-            if (CultivationEconomy.Intensity(cfg, before.CultivationCapital) >= 1) return 0;
-            after.CultivationCapital = Math.Min(1 / (cfg.ReferenceIntensity * cfg.ReferenceIntensity), before.CultivationCapital + n.AllocationStepE);
-            double gain = 0;
-            for (int season = 0; season < 4; season++)
-            {
-                double Flow(EcologyView v)
-                {
-                    var k = new EcologyCapacity(w, tile, v, season, 1);
-                    // The shared renewable-flow definition includes managed
-                    // production once; land pressure has its own threshold.
-                    double sustainable = EcologyMath.SustainableHarvestRate(k.Biomass, k.BiomassRate, cfg.SustainableProductionFraction, k.ManagedFlow) * cfg.LandSafeUseRatio;
-                    return Math.Min(k.Food * k.FoodRate + k.ManagedFlow, sustainable);
-                }
-                gain += Flow(after) - Flow(before);
-            }
-            return gain;
+            var cfg = w.Config; var opening = LazyEcology.ProjectEcology(w, id, w.Days);
+            double before = opening.CultivationCapital;
+            if (CultivationEconomy.Intensity(cfg, before) >= 1) return 0;
+            double after = Math.Min(1 / (cfg.ReferenceIntensity * cfg.ReferenceIntensity),
+                before + cfg.Neolithic.AllocationStepE);
+            var investment = FoodHorizonForecast.Investment(w, id, w.Days,
+                cfg.TurnDays, before, before + .5 * (after - before), after, 1);
+            return Math.Max(0, investment.RetainedFoodGain);
         }
         internal static Camp Preview(Camp c, EconomicIntent intent, double population)
         {

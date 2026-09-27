@@ -132,6 +132,8 @@ namespace Anthropocene.Simulation
                 LastMetrics.SourceLookups = diagnostics.SourceLookups;
                 LastMetrics.DepositEdges = diagnostics.DepositEdges;
                 LastMetrics.BodyScans = diagnostics.BodyScans;
+                LastMetrics.FoodForecastQueries = diagnostics.FoodForecastQueries;
+                LastMetrics.FoodInvestmentComparisons = diagnostics.FoodInvestmentComparisons;
             }
             LastMetrics.TotalMilliseconds = resolutionTimer.Elapsed.TotalMilliseconds; return record;
         }

@@ -41,9 +41,12 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | `AnnualHumanGrowthRate` | Maximum annual exponential growth rate. After current-population consumption and reserve refill, available growth food is inverted through the integrated exponential food equation to obtain the realized rate. |
 | `DemographicGrowthMultiplier` | Dimensionless local modifier on the maximum annual growth rate. |
 | `GrowthSurplusRatio` | Legacy serialized surplus-support setting retained for save/config compatibility; ordered food allocation no longer uses it. |
-| `GrowthReserveTurns` | Full operating-reserve target as a multiple of the current supplied population's interval consumption, bounded by local physical storage. It is refilled before growth food. |
+| `GrowthReserveYears` (30) | Physical duration of the full operating-food reserve. Its stock target is `population × Consumption / BaseDays × DaysPerYear × GrowthReserveYears`; it is refilled before growth food and bounded by natural plus Pot storage. |
 | `Mortality` | Dimensionless attrition fraction per reference practice interval, converted with elapsed duration after the two-turn grace. Fractional deaths are carried forward. |
-| `StartingReserveGenerations`, `MinimumStorageGenerations`, `MaximumStorageGenerations` | Gameplay multiples of one decision interval's consumption. Current storage interpolates from one to four intervals with climate; this is not a physical spoilage model. |
+| `MinimumStorageYears` (20), `MaximumStorageYears` (80) | Physical natural-food retention capacity, interpolated by the existing climate profile. Capacity is `population × Consumption / BaseDays × DaysPerYear × storage years`; it does not shrink when player turns shorten. It is a capacity rule, not a spoilage model. |
+| `GrowthReserveTurns`, `MinimumStorageGenerations`, `MaximumStorageGenerations` | Legacy save/configuration inputs retained for compatibility. When physical-year fields are absent, they convert against `Neolithic.ReferenceTurnYears` (20 years), independent of the saved `TurnDays`; loaded physical inventories are unchanged. New runtime targets use the physical-year fields. An explicit zero legacy GrowthReserveTurns maps to a zero-year target. |
+| `StartingReserveGenerations`, `HunterCarryGenerations`, `ExpeditionProvisionTurns`, `CampProvisionReserveTurns` | Existing starting-stock and logistics policies remain measured in their current player-turn/reference intervals; Issue #28 does not migrate these values. |
+| `PotStorageFoodPerUnit` (80) | Absolute food capacity per Pot. It is never multiplied by turn duration. Pot depreciation continues to integrate over actual elapsed years. |
 | `StartingFood` | Legacy nominal stock; generated camps receive the calculated complete starting reserve. |
 | `CarryingCapacityPerHunter` | Minimum abstract food capacity per hunter. |
 | `HunterCarryGenerations`, `ExpeditionProvisionTurns`, `CampProvisionReserveTurns` | Planning-horizon multiples of current interval consumption in departure/carry/reserve formulas. They deliberately remain gameplay abstractions. |
@@ -75,6 +78,10 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | Herd/oasis density, regional variation, spacing, initial-herd guarantees | Generator density/region/hex/count controls. Guaranteed nearby prey and disabled wild fission are explicit opening scaffolds. |
 | `OpeningFoodMultiplier`, `InitialDomesticAnimals`, `CultivationMoisture` | Optional opening-adapter reward multiplier, animal count and placement threshold. They are not the future cultivation/domestication model. |
 | `GenerationBudgetSeconds`, `GenerationBudgetMegabytes`, hover times | Diagnostics/UI budgets; they cannot influence authoritative simulation outcomes. |
+
+The authoritative food stocks remain the camp's PlantFood, AnimalFood and AquaticFood plus saved Pot inventory. `GrowthReserveYears`, `MinimumStorageYears` and `MaximumStorageYears` are physical target durations; a turn's actual meals still use its captured `TurnHorizon.ReferenceIntervals`, and Pot decay uses its actual elapsed years. This preserves one decision boundary and does not introduce daily economic passes.
+
+The shared physical-food conversion is constant work per population request. It adds no map scan or planner pass; existing food budgeting still scales with active camps and their connected hunters, while site capacity reads the already selected tile's climate. At mature-empire and RL-training scales the extra state is three scalar config values, and saved physical inventories remain authoritative. Validation compares the exact 20-year receipts, reserve/storage/Pots targets under 20-year, 5-year, 1-year and 7-day turns, actual resolved meals and Pot decay, plus absent/custom/zero/repeated-save migrations and connected/remote hunter cohorts.
 
 The time-invariance tests hold forcing and integrated claims constant. They do not require two separate player decisions to reproduce one combined decision: relocation, starvation grace, dispatch and policy reconsideration are deliberately decision-level events.
 

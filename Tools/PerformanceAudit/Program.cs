@@ -497,6 +497,8 @@ internal static class Program
             seasonalExpansionMs = Metric("SeasonalExpansionMilliseconds"),
             planCalls = Metric("PlanCalls"),
             forecastCalls = Metric("ForecastCalls"),
+            foodForecastQueries = Metric("FoodForecastQueries"),
+            foodInvestmentComparisons = Metric("FoodInvestmentComparisons"),
             sourceQueries = Metric("LocalSourceQueries"),
             sourceLookups = Metric("SourceLookups"),
             depositEdges = Metric("DepositEdges"),

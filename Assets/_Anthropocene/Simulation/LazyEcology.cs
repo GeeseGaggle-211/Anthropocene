@@ -239,7 +239,8 @@ namespace Anthropocene.Simulation
         // four ordered affine maps, repeated in constant work for any horizon.
         internal static void RecoverLandAfterHarvest(WorldState w, Tile tile, ref EcologyView view,
             double start, double days, double? averageCapital, double? endingCapital,
-            double? operatingFraction, bool recoverWater = false, Action profileEvaluated = null)
+            double? operatingFraction, bool recoverWater = false, Action profileEvaluated = null,
+            Action<EcologyCapacity, double> forcingProfile = null)
         {
             double previousCapital = view.CultivationCapital;
             double operation = operatingFraction ?? tile.CultivationOperatingFraction;
@@ -265,7 +266,8 @@ namespace Anthropocene.Simulation
             double phase = start - Math.Floor(start / cycleDays) * cycleDays;
             double first = phase <= 1e-9 ? 0 : Math.Min(days, cycleDays - phase);
             if (first > 0) AdvanceLandRecoveryEdge(w, tile, ref view, first,
-                operatingFraction, recoverWater, profiles, ref profileMask, profileEvaluated);
+                operatingFraction, recoverWater, profiles, ref profileMask,
+                profileEvaluated, forcingProfile);
             double remaining = days - first;
             long cycles = (long)Math.Floor(remaining / cycleDays + 1e-10);
             if (cycles > 0)
@@ -284,6 +286,7 @@ namespace Anthropocene.Simulation
                     }
                     else capacity = LandCapacityAt(w, tile, view, season, operatingFraction,
                         profiles, ref profileMask, profileEvaluated);
+                    forcingProfile?.Invoke(capacity, baseDays * cycles);
                     food = food.Then(SeasonalAffine.ManagedRecovery(capacity.Food,
                         capacity.FoodRate, capacity.ManagedFlow, baseDays));
                     nonfood = nonfood.Then(SeasonalAffine.Recovery(
@@ -301,7 +304,8 @@ namespace Anthropocene.Simulation
                 view.Days += covered; remaining -= covered;
             }
             if (remaining > 1e-9) AdvanceLandRecoveryEdge(w, tile, ref view, remaining,
-                operatingFraction, recoverWater, profiles, ref profileMask, profileEvaluated);
+                operatingFraction, recoverWater, profiles, ref profileMask,
+                profileEvaluated, forcingProfile);
             double finalCapital = endingCapital ?? (previousCapital <= 0 || operation >= 1
                 ? previousCapital : CultivationEconomy.Decay(w.Config,
                     previousCapital, operation, days / w.Config.DaysPerYear));
@@ -312,7 +316,8 @@ namespace Anthropocene.Simulation
         }
         private static void AdvanceLandRecoveryEdge(WorldState w, Tile tile, ref EcologyView view,
             double days, double? operatingFraction, bool recoverWater,
-            Span<EcologyCapacity> profiles, ref int profileMask, Action profileEvaluated)
+            Span<EcologyCapacity> profiles, ref int profileMask, Action profileEvaluated,
+            Action<EcologyCapacity, double> forcingProfile)
         {
             double remaining = days, baseDays = w.Config.BaseDays;
             for (int i = 0; i < 5 && remaining > 1e-9; i++)
@@ -322,6 +327,7 @@ namespace Anthropocene.Simulation
                 if (part <= 1e-9) break;
                 var capacity = LandCapacityAt(w, tile, view, (int)(interval % 4),
                     operatingFraction, profiles, ref profileMask, profileEvaluated);
+                forcingProfile?.Invoke(capacity, part);
                 double n = SeasonalAffine.Recovery(Math.Max(0, capacity.Biomass - capacity.Food),
                     capacity.BiomassRate, part).Apply(Math.Max(0, view.PotentialFood - view.Food));
                 view.Food = SeasonalAffine.ManagedRecovery(capacity.Food, capacity.FoodRate,

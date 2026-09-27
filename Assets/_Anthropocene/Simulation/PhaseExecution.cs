@@ -42,6 +42,7 @@ namespace Anthropocene.Simulation
     {
         public readonly int Turn;
         public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans;
+        public long FoodForecastQueries, FoodInvestmentComparisons;
         public TurnDiagnostics(int turn) { Turn = turn; }
         public static TurnDiagnostics For(WorldState world)
         {
@@ -73,15 +74,58 @@ namespace Anthropocene.Simulation
         // Detailed atomic counters are opt-in so profiling does not add
         // contention to the hot source lookup path in ordinary play.
         public static bool CaptureDetailedCounters;
+        // Issue #33 measurement hook. The resolver fills this only when the
+        // validation harness opts in; it is transient and never enters a save,
+        // observation, or authoritative turn record.
+        public static bool CaptureCraftWorkDiagnostics;
+        public Dictionary<int, CampFieldWorkDiagnostic> CraftFieldWork { get; private set; }
+        public Dictionary<int, CampFoodFlowDiagnostic> CraftFoodFlow { get; private set; }
+        internal CampFieldWorkDiagnostic CraftFieldWorkFor(int camp)
+        {
+            if (!CaptureCraftWorkDiagnostics) return null;
+            if (CraftFieldWork == null) CraftFieldWork = new Dictionary<int, CampFieldWorkDiagnostic>();
+            if (!CraftFieldWork.TryGetValue(camp, out var value))
+                CraftFieldWork[camp] = value = new CampFieldWorkDiagnostic { Camp = camp };
+            return value;
+        }
+        internal CampFoodFlowDiagnostic CraftFoodFlowFor(int camp)
+        {
+            if (!CaptureCraftWorkDiagnostics) return null;
+            if (CraftFoodFlow == null) CraftFoodFlow = new Dictionary<int, CampFoodFlowDiagnostic>();
+            if (!CraftFoodFlow.TryGetValue(camp, out var value))
+                CraftFoodFlow[camp] = value = new CampFoodFlowDiagnostic { Camp = camp };
+            return value;
+        }
         public double HerdIntentMilliseconds, EcologyMilliseconds, SetupEconomyMilliseconds, ManagedHerdMilliseconds, GrowthPlanMilliseconds, SustainMilliseconds, ProductionMilliseconds, TotalMilliseconds;
         public double FullTurnIntegrationMilliseconds, SeasonalPreparationMilliseconds, SeasonalIntegrationMilliseconds, SeasonalCommitMilliseconds, SeasonalExpansionMilliseconds;
         public double HorizonPreparationMilliseconds, HorizonCommitMilliseconds;
         public int ActiveTiles, TileIntegrations, SeasonalTiles, FullTurnTiles;
         public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans, ClaimsAllocated, ProductionReceipts;
+        public long FoodForecastQueries, FoodInvestmentComparisons;
         // Opt-in activity diagnostics; these never affect authoritative state.
         public long SeasonalCampBoundaries, OperatingRegimeChanges, FieldWorkSteps, FieldChoiceSwitches;
         public long TargetCompletions, ToolExhaustions, StockDepletions;
         public double ManagedRenewalInput, OperatingFractionSum;
         public int OperatingFieldTiles;
+    }
+
+    public sealed class CampFieldWorkDiagnostic
+    {
+        public int Camp;
+        public double ResidentWorkerYears, AssignedFarmerWorkerYears;
+        public double OperatingFarmerReservationWorkerYears, ExpansionFarmerWorkerYears;
+        public double MaintenanceWorkerYears, HarvestEquivalentWorkerYears;
+        public double ReconciledFarmerWorkerYears;
+        public double ExpansionWorkUsedWorkerYears, FarmToolCoveredWorkerYears;
+        // The bridge is derived from realized gathering receipts. It is
+        // reported as a side effect and must not be added to labor totals.
+        public double GatheringBridgeCreditWorkerYears;
+    }
+
+    public sealed class CampFoodFlowDiagnostic
+    {
+        public int Camp;
+        public double ConsumptionTarget, ReserveTarget, ReserveFillTarget, GrowthFoodTarget;
+        public double GrowthFoodUsed;
     }
 }

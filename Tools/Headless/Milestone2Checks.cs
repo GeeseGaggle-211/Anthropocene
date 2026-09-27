@@ -62,7 +62,9 @@ internal static class Milestone2Checks
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(expeditionCopy), "nonzero expedition inventory, oasis fields, stable species practice and fractional growth persist");
         resolver.Resolve(w, Orders()); resolver.Resolve(expeditionCopy, Orders());
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(expeditionCopy), "resuming an isolated expedition preserves consumption and deficit outcomes");
-        w = Flat(); w.Config.AnnualHumanGrowthRate = .5; w.Config.GatherPerPerson = 100; w.Camps[0].Food = 0;
+        // This pair measures duration scaling of growth itself, so disable the
+        // independently fixed physical reserve target in both worlds.
+        w = Flat(); w.Config.AnnualHumanGrowthRate = .5; w.Config.GatherPerPerson = 100; w.Config.GrowthReserveYears = 0; w.Camps[0].Food = 0;
         var half = SaveCodec.Load(SaveCodec.Save(w)); half.Config.TurnDays = 45;
         int before = w.Camps[0].Population; var grown = resolver.Resolve(w, Orders()); var partial = resolver.Resolve(half, Orders());
         Check(grown.Growth > partial.Growth && w.Camps[0].GrowthRemainder > 0, "net growth scales by duration and preserves its fraction");

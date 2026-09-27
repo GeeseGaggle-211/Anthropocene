@@ -4,6 +4,35 @@ using System.Linq;
 
 namespace Anthropocene.Simulation
 {
+    /// <summary>
+    /// Shared conversions for food stocks whose target is a physical duration.
+    /// Actual turn consumption still uses the captured TurnHorizon intervals.
+    /// </summary>
+    public static class PhysicalFoodTimebase
+    {
+        public static double DailyPerPerson(WorldState world)
+            => world.Config.Consumption / world.Config.BaseDays;
+
+        public static double StockForYears(WorldState world, double population, double years)
+        {
+            var config = world.Config;
+            double referenceTurns = Math.Max(0, years) / config.Neolithic.ReferenceTurnYears;
+            // Keep the established multiplication order at the shipped 20-year
+            // settings so receipts remain numerically identical to the old rule.
+            return StockForReferenceHorizon(world, population, referenceTurns);
+        }
+
+        public static double StockForReferenceHorizon(WorldState world, double population, double referenceTurns)
+        {
+            var config = world.Config;
+            double referenceIntervals = config.Neolithic.ReferenceTurnYears * config.DaysPerYear / config.BaseDays;
+            return Math.Max(0, population) * config.Consumption * referenceIntervals * Math.Max(0, referenceTurns);
+        }
+
+        public static double NaturalStorageYears(WorldState world, int tile)
+            => TurnResolver.StorageGenerations(world, tile) * world.Config.Neolithic.ReferenceTurnYears;
+    }
+
     public static class NeolithicTech
     {
         public const string Toolmaking = "Toolmaking", Pottery = "Pottery", Weaving = "Weaving", Carpentry = "Carpentry", Construction = "Construction";
@@ -463,10 +492,12 @@ namespace Anthropocene.Simulation
             return Demand(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed);
         }
         private static double IntervalsForYears(WorldState w, double years) => Math.Max(0, years) * w.Config.DaysPerYear / w.Config.BaseDays;
+        // `intervals` remains in the signature for existing callers; the stored
+        // capacity is fixed by site and physical storage years, never this turn.
         public static double NaturalStorageCapacity(WorldState w, Camp c, double intervals, double residents = -1)
         {
             double population = NaturalStoragePopulation(w, c, residents);
-            return Math.Max(0, population * w.Config.Consumption * intervals * TurnResolver.StorageGenerations(w, c.Tile));
+            return PhysicalFoodTimebase.StockForReferenceHorizon(w, population, TurnResolver.StorageGenerations(w, c.Tile));
         }
         public static double NaturalStoragePopulation(WorldState w, Camp c, double residents = -1)
         {
@@ -475,14 +506,16 @@ namespace Anthropocene.Simulation
         }
         public static double ReservePopulation(WorldState w, Camp c, double residents = -1)
             => Math.Max(0, (residents < 0 ? c.Population : residents) + w.Hunters.Where(h => h.SourceCamp == c.Id && Supply.Connected(w, h)).Sum(h => h.Population));
+        // Compatibility overload; reserve stock is a physical-year target.
         public static double DesiredReserveFood(WorldState w, double population, double intervals)
-            => Math.Max(0, population * w.Config.Consumption * intervals * w.Config.GrowthReserveTurns);
+            => PhysicalFoodTimebase.StockForYears(w, population, w.Config.GrowthReserveYears);
+        public static double DesiredReserveFood(WorldState w, double population)
+            => PhysicalFoodTimebase.StockForYears(w, population, w.Config.GrowthReserveYears);
         public static double TargetPots(WorldState w, Camp c, double years, double residents = -1)
         {
             double reservePopulation = ReservePopulation(w, c, residents);
-            double intervals = IntervalsForYears(w, years);
-            double natural = NaturalStorageCapacity(w, c, intervals, residents);
-            double desired = DesiredReserveFood(w, reservePopulation, intervals);
+            double natural = NaturalStorageCapacity(w, c, 0, residents);
+            double desired = DesiredReserveFood(w, reservePopulation);
             return Math.Max(0, desired - natural) / w.Config.Neolithic.PotStorageFoodPerUnit;
         }
         public static double PotDemand(WorldState w, Camp c, double years, double residents = -1)
@@ -508,7 +541,7 @@ namespace Anthropocene.Simulation
         {
             var n = w.Config.Neolithic;
             double retainedPots = Math.Max(0, c.Inventory.Pots) * Math.Pow(1 - n.PotDecayPerReferenceTurn, Math.Max(0, years) / n.ReferenceTurnYears);
-            return NaturalStorageCapacity(w, c, intervals) + retainedPots * n.PotStorageFoodPerUnit;
+            return NaturalStorageCapacity(w, c, 0) + retainedPots * n.PotStorageFoodPerUnit;
         }
         public static double FabricFeedstockNeed(WorldState w, Camp c, double intervals, double years, double residentPopulation = -1, bool fieldWorkAlreadyResolved = false, bool potsAlreadyDecayed = false)
         {

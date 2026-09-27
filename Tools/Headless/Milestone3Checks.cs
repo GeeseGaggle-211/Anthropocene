@@ -222,7 +222,9 @@ internal static class Milestone3Checks
         Check(declining.Deaths > 0 && declining.EndingPopulation < 24 && declining.Additions == 0 && declining.LimitingFactor.Contains("deficit"), "food deficits cause recorded decline with a visible limiting factor");
         w = Flat(0, 0); w.Camps[0].Food = 10000; var noSurplus = resolver.Resolve(w, Idle()).Demographics[0];
         Check(noSurplus.Additions == 0 && noSurplus.EndingPopulation == 24 && noSurplus.LimitingFactor.Contains("surplus"), "stored reserves alone do not claim sustainable growth");
-        w = Flat(); w.Config.TurnDays = 1; w.Config.GatherPerPerson = 100; w.Camps[0].Food = 0; var rounding = resolver.Resolve(w, Idle()).Demographics[0];
+        // Isolate fractional-growth retention from the full physical reserve
+        // threshold, which intentionally does not shrink with this one-day turn.
+        w = Flat(); w.Config.TurnDays = 1; w.Config.GrowthReserveYears = 0; w.Config.GatherPerPerson = 100; w.Camps[0].Food = 0; var rounding = resolver.Resolve(w, Idle()).Demographics[0];
         Check(rounding.Additions == 0 && rounding.FractionalProgress > 0 && rounding.LimitingFactor.Contains("rounding"), "sub-person growth is retained and explained");
         w = Flat(0, 0); w.Config.TurnDays = w.Config.BaseDays; w.Config.AnnualHumanGrowthRate = 0; var camp = w.Camps[0]; camp.Food = 0;
         int coast = w.Map.Neighbors(camp.Tile).First(); Sea(w.Tiles[coast]); double stock = w.Tiles[coast].Food;

@@ -18,10 +18,21 @@ namespace Anthropocene.Simulation
     public sealed class SimulationConfig
     {
         [System.Runtime.Serialization.OptionalField] public NeolithicConfig Neolithic = new NeolithicConfig();
+        public SimulationConfig()
+        {
+            double referenceYears = Neolithic.ReferenceTurnYears;
+            GrowthReserveYears = GrowthReserveTurns * referenceYears;
+            MinimumStorageYears = MinimumStorageGenerations * referenceYears;
+            MaximumStorageYears = MaximumStorageGenerations * referenceYears;
+        }
         [System.Runtime.Serialization.OnDeserializing]
         private void InitializeNeolithic(System.Runtime.Serialization.StreamingContext context)
         {
             var defaults = new SimulationConfig(); Neolithic = defaults.Neolithic;
+            // Preserve established tuning defaults when reading older saves that
+            // predate these legacy food-horizon fields. Explicit serialized zero
+            // values still overwrite these defaults during deserialization.
+            GrowthReserveTurns = defaults.GrowthReserveTurns;
             FarmerProductivity = defaults.FarmerProductivity; ReferenceIntensity = defaults.ReferenceIntensity; CultivationRegenFlux = defaults.CultivationRegenFlux; MaintenanceCoefficient = defaults.MaintenanceCoefficient; GathererBridgeCeiling = defaults.GathererBridgeCeiling; GathererBridgeEfficiency = defaults.GathererBridgeEfficiency;
             CultivationVegetationDisplacementStart = defaults.CultivationVegetationDisplacementStart;
             // Absent in older saves: their generated land stocks keep their
@@ -29,6 +40,28 @@ namespace Anthropocene.Simulation
             LandBiomassMultiplier = 1;
             LandSafeUseRatio = 1;
             LandFoodRegenerationInitialized = false;
+            GrowthReserveYears = double.NaN;
+            MinimumStorageYears = double.NaN;
+            MaximumStorageYears = double.NaN;
+        }
+        [System.Runtime.Serialization.OnDeserialized]
+        private void MigrateFoodHorizons(System.Runtime.Serialization.StreamingContext context)
+            => MigrateMissingPhysicalFoodHorizons();
+
+        public void MigrateMissingPhysicalFoodHorizons()
+        {
+            // Convert legacy policy multipliers against the fixed Neolithic
+            // reference generation, never the loaded world's TurnDays.
+            var defaults = new SimulationConfig();
+            double referenceYears = Neolithic != null && Neolithic.ReferenceTurnYears > 0
+                ? Neolithic.ReferenceTurnYears : defaults.Neolithic.ReferenceTurnYears;
+            if (double.IsNaN(GrowthReserveYears)) GrowthReserveYears = GrowthReserveTurns * referenceYears;
+            double minimumGenerations = MinimumStorageGenerations > 0
+                ? MinimumStorageGenerations : defaults.MinimumStorageGenerations;
+            double maximumGenerations = MaximumStorageGenerations >= minimumGenerations
+                ? MaximumStorageGenerations : defaults.MaximumStorageGenerations;
+            if (double.IsNaN(MinimumStorageYears)) MinimumStorageYears = minimumGenerations * referenceYears;
+            if (double.IsNaN(MaximumStorageYears)) MaximumStorageYears = maximumGenerations * referenceYears;
         }
         public int Version = 7;
         public double MajorityEligibilityYears = 200, ForcedTransitionYears = 240;
@@ -85,8 +118,13 @@ namespace Anthropocene.Simulation
         public double[] BandThresholds = { .03, .25, .5, .8 };
         public int SupplyRange = 3;
         public double CarryingCapacityPerHunter = 5, HunterCarryGenerations = 2.5, ExpeditionProvisionTurns = 3, CampProvisionReserveTurns = .5;
-        public double MinimumStorageGenerations = 1, MaximumStorageGenerations = 4, HunterForagePerPerson = 1;
-        public double GrowthReserveTurns = 1.5;
+        [System.Runtime.Serialization.OptionalField] public double MinimumStorageGenerations = 1, MaximumStorageGenerations = 4;
+        public double HunterForagePerPerson = 1;
+        [System.Runtime.Serialization.OptionalField] public double GrowthReserveTurns = 1.5;
+        // Physical food horizons. Optional fields use NaN during load so
+        // SaveCodec can distinguish old saves from explicit zero values.
+        [System.Runtime.Serialization.OptionalField] public double GrowthReserveYears;
+        [System.Runtime.Serialization.OptionalField] public double MinimumStorageYears, MaximumStorageYears;
         public double HillsProductivity = .95, HighlandProductivity = .8, MountainProductivity = .5;
         public int HerdRegionSize = 32, MinimumOpeningHerds = 1;
         public double HerdsPerLandTile = .008, HerdRegionVariation = .35, GrasslandHerdDensityMultiplier = 1.35, SteppeHerdDensityMultiplier = 1.15;
@@ -112,8 +150,10 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
             if (StartingPopulation <= MinimumCamp || MinimumCamp < 1 || Consumption <= 0 || PopulationScale <= 0)
                 throw new ArgumentException("Invalid population configuration.");
-            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || HuntBreedingReserveFraction <= 0 || HuntBreedingReserveFraction >= 1 || SustainableHuntPopulation < 1 || SustainableHerdGrowthRetention <= 0 || SustainableHerdGrowthRetention > 1 || UnproductivePracticeFraction < 0 || UnproductivePracticeFraction > 1 || PracticeBonusStart < 0 || PracticeBonusFull <= PracticeBonusStart || PracticeBonusFull > 1 || GatheringImpactReduction < 0 || GatheringImpactReduction > 1 || FishingImpactReduction < 0 || FishingImpactReduction > 1 || HuntingFoodYieldScale <= 0 || HuntingYieldBonus < 0 || HuntingPracticeMultiplier < 1 || ActiveFishingPracticeMultiplier < 1 || PassiveAquaticFishingPracticeShare < 0 || PassiveAquaticFishingPracticeShare > 1 || ConditionRecoveryPerYear < 0 || SafeUseRatio < 0 || LandBiomassMultiplier <= 0 || LandSafeUseRatio < 0 || SustainableProductionFraction <= 0 || SustainableProductionFraction > 1 || LowPotentialRecoveryMultiplier <= 0 || HighPotentialRecoveryMultiplier <= 0 || LandUseDamagePerYear < 0 || AquaticUseDamagePerYear < 0 || PressureExponent < 1 || RichGatherableFraction <= 0 || RichGatherableFraction > 1 || GrasslandGatherableFraction <= 0 || GrasslandGatherableFraction > RichGatherableFraction || AridGatherableFraction <= 0 || AridGatherableFraction > GrasslandGatherableFraction || TundraGatherableFraction <= 0 || TundraGatherableFraction > RichGatherableFraction || AnnualHumanGrowthRate < 0 || GrowthReserveTurns <= 0 || HerdRegionSize < 4 || MinimumOpeningHerds < 1 || HerdsPerLandTile < 0 || GrasslandHerdDensityMultiplier <= 0 || SteppeHerdDensityMultiplier <= 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
+            if (SupplyRange < 0 || CarryingCapacityPerHunter <= 0 || HunterCarryGenerations <= 0 || StartingReserveGenerations <= 0 || MinimumStorageGenerations <= 0 || MaximumStorageGenerations < MinimumStorageGenerations || HunterForagePerPerson < 0 || HuntBreedingReserveFraction <= 0 || HuntBreedingReserveFraction >= 1 || SustainableHuntPopulation < 1 || SustainableHerdGrowthRetention <= 0 || SustainableHerdGrowthRetention > 1 || UnproductivePracticeFraction < 0 || UnproductivePracticeFraction > 1 || PracticeBonusStart < 0 || PracticeBonusFull <= PracticeBonusStart || PracticeBonusFull > 1 || GatheringImpactReduction < 0 || GatheringImpactReduction > 1 || FishingImpactReduction < 0 || FishingImpactReduction > 1 || HuntingFoodYieldScale <= 0 || HuntingYieldBonus < 0 || HuntingPracticeMultiplier < 1 || ActiveFishingPracticeMultiplier < 1 || PassiveAquaticFishingPracticeShare < 0 || PassiveAquaticFishingPracticeShare > 1 || ConditionRecoveryPerYear < 0 || SafeUseRatio < 0 || LandBiomassMultiplier <= 0 || LandSafeUseRatio < 0 || SustainableProductionFraction <= 0 || SustainableProductionFraction > 1 || LowPotentialRecoveryMultiplier <= 0 || HighPotentialRecoveryMultiplier <= 0 || LandUseDamagePerYear < 0 || AquaticUseDamagePerYear < 0 || PressureExponent < 1 || RichGatherableFraction <= 0 || RichGatherableFraction > 1 || GrasslandGatherableFraction <= 0 || GrasslandGatherableFraction > RichGatherableFraction || AridGatherableFraction <= 0 || AridGatherableFraction > GrasslandGatherableFraction || TundraGatherableFraction <= 0 || TundraGatherableFraction > RichGatherableFraction || AnnualHumanGrowthRate < 0 || GrowthReserveYears < 0 || HerdRegionSize < 4 || MinimumOpeningHerds < 1 || HerdsPerLandTile < 0 || GrasslandHerdDensityMultiplier <= 0 || SteppeHerdDensityMultiplier <= 0 || OasisSpacing < 1 || OasisRegionSize < 4 || DaysPerYear <= 0 || PracticeDays <= 0 || GrowthSurplusRatio <= 0 || HoverDelay < 0 || HoverFadeIn <= 0 || HoverFadeOut <= 0)
                 throw new ArgumentException("Invalid logistics, demographic or ecological configuration.");
+            if (new[] { GrowthReserveYears, MinimumStorageYears, MaximumStorageYears }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || MaximumStorageYears < MinimumStorageYears)
+                throw new ArgumentException("Invalid physical food reserve or storage horizons.");
             if (new[] { BaseDays, TurnDays, DaysPerYear, MajorityEligibilityYears, ForcedTransitionYears, ConditionRecoveryPerYear, SafeUseRatio, LandBiomassMultiplier, LandSafeUseRatio, SustainableProductionFraction, LandUseDamagePerYear, AquaticUseDamagePerYear, PressureExponent, CultivationVegetationDisplacementStart, LowPotentialRecoveryMultiplier, HighPotentialRecoveryMultiplier, IceTemperature, ColdTemperature, TropicalTemperature, DesertMoisture, SteppeMoisture, OasisVegetationMoisture, VegetationWarmthRange, VegetationDryFloor, VegetationMoistureRange, VegetationMediumPotential, VegetationHighPotential, MediumVegetationDown, MediumVegetationUp, HighVegetationDown, HighVegetationUp, HighPotentialLowDown, HighPotentialLowUp, FoodRegeneration, WaterRecovery, OasisFoodRegeneration, OasisWaterRecovery }.Any(x => double.IsNaN(x) || double.IsInfinity(x)) || CultivationVegetationDisplacementStart < 0 || CultivationVegetationDisplacementStart >= 1 ||
                 IceTemperature >= ColdTemperature || ColdTemperature >= TropicalTemperature || DesertMoisture < 0 || DesertMoisture >= SteppeMoisture || SteppeMoisture > 1 || VegetationWarmthRange <= 0 || VegetationMoistureRange <= 0 || VegetationMediumPotential < 0 || VegetationMediumPotential >= VegetationHighPotential || VegetationHighPotential > 1 || MediumVegetationDown >= MediumVegetationUp || HighPotentialLowDown >= HighPotentialLowUp || HighPotentialLowUp >= HighVegetationDown || HighVegetationDown >= HighVegetationUp || HighVegetationUp > 1)
                 throw new ArgumentException("Invalid environmental rates, climate thresholds or vegetation hysteresis.");
@@ -130,6 +170,9 @@ namespace Anthropocene.Simulation
             return tiles <= 48L * 24 ? 8 : tiles <= 96L * 48 ? 16 : 80;
         }
         public double GenerationIntervals => TurnDays / BaseDays;
+        // Daily food intake is the reference interval's consumption spread
+        // evenly across its configured physical duration.
+        public double DailyConsumption => Consumption / BaseDays;
         public double StartingReserveFood => StartingPopulation * Consumption * GenerationIntervals * StartingReserveGenerations;
         public static SimulationConfig Small(int players = 4) => new SimulationConfig { Width = 96, Height = 48, Players = players, StartSeparation = 9 };
     }

@@ -74,6 +74,7 @@ namespace Anthropocene.Simulation
                 if (world.Version != 7 || world.Config.Version != 7 || world.Generation.GeneratorVersion < 7 || world.Generation.GeneratorVersion > WorldState.GeneratorVersion) throw new InvalidDataException("Unsupported save version; regeneration is never implicit.");
                 Ownership.Bind(world);
                 MigrateGenerationalDefaults(world);
+                world.Config.MigrateMissingPhysicalFoodHorizons();
                 world.Config.Neolithic.MigrateLegacyMaterialReserveDuration(world.Config.TurnDays / world.Config.DaysPerYear);
                 if (magic != Magic)
                 {

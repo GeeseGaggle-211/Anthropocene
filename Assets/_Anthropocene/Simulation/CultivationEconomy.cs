@@ -8,6 +8,10 @@ namespace Anthropocene.Simulation
     {
         public double OperatingFarmers, ExpansionFarmers, Gatherers, FoodGatherers, GatheringWorkerIntervals;
         public double MaintenanceCoveredWorkerYears, EffectiveMaintenanceFarmers, RequiredMaintenance;
+        // Exact workforce time reserved for the existing maintenance task.
+        // Operating farmers also supply harvest capacity, so callers must treat
+        // these as overlapping measurements rather than additive work.
+        public double MaintenanceFarmerWorkerYears;
         public int[] Footprint = Array.Empty<int>();
     }
 
@@ -225,6 +229,7 @@ namespace Anthropocene.Simulation
             double coveredMaintenance = Math.Min(availableCovered, required / efficiency);
             double uncoveredMaintenance = Math.Min(Math.Max(0, farmers - coveredMaintenance), Math.Max(0, required - coveredMaintenance * efficiency));
             double maintenanceFarmers = coveredMaintenance + uncoveredMaintenance;
+            plan.MaintenanceFarmerWorkerYears = maintenanceFarmers * years;
             plan.MaintenanceCoveredWorkerYears = coveredMaintenance * years;
             plan.EffectiveMaintenanceFarmers = coveredMaintenance * efficiency + uncoveredMaintenance;
             plan.OperatingFarmers = Math.Min(farmers, maintenanceFarmers);
@@ -425,7 +430,7 @@ namespace Anthropocene.Simulation
                 result.StartOperatingFractions[i] = field.OperatingFraction;
             }
             double bridgeEffective = result.BridgeWorkerYearsRequested * c.GathererBridgeEfficiency;
-            double bridgeRemaining = AllocateHorizonEffort(w, camp, candidates, bridgeEffective, true);
+            double bridgeRemaining = AllocateHorizonEffort(w, camp, candidates, bridgeEffective, true, years);
             result.BridgeWorkerYearsUsed = c.GathererBridgeEfficiency > 0
                 ? (bridgeEffective - bridgeRemaining) / c.GathererBridgeEfficiency : 0;
             double toolWorkerYears = toolBudget == null ? 0 : Math.Max(0,
@@ -433,7 +438,7 @@ namespace Anthropocene.Simulation
             double covered = Math.Min(result.FarmerWorkerYearsRequested, toolWorkerYears);
             double efficiency = FarmToolFieldWorkEfficiency(n);
             double farmerEffective = result.FarmerWorkerYearsRequested - covered + covered * efficiency;
-            double farmerRemaining = AllocateHorizonEffort(w, camp, candidates, farmerEffective, false);
+            double farmerRemaining = AllocateHorizonEffort(w, camp, candidates, farmerEffective, false, years);
             double farmerEffectiveUsed = Math.Max(0, farmerEffective - farmerRemaining);
             result.CoveredFarmerWorkerYears = Math.Min(covered, farmerEffectiveUsed / Math.Max(1e-12, efficiency));
             result.FarmerWorkerYearsUsed = result.CoveredFarmerWorkerYears +
@@ -454,7 +459,7 @@ namespace Anthropocene.Simulation
         }
 
         private static double AllocateHorizonEffort(WorldState w, Camp camp, HorizonCandidate[] candidates,
-            double effectiveWorkerYears, bool bridge)
+            double effectiveWorkerYears, bool bridge, double years)
         {
             if (effectiveWorkerYears <= 1e-10 || candidates.Length == 0) return Math.Max(0, effectiveWorkerYears);
             var c = w.Config; var n = c.Neolithic;
@@ -494,7 +499,8 @@ namespace Anthropocene.Simulation
                                 if (costPerEffort > 0)
                                 {
                                     double maintenance = MaintenanceMultiplier(c, tile, field.Ecology.CurrentVegetation);
-                                    scores[i] = HorizonMarginalScore(w, tile, field.Ecology, e, de, costPerEffort, maintenance);
+                                    scores[i] = HorizonMarginalScore(w, tile, field.Ecology,
+                                        e, de, years, costPerEffort, maintenance);
                                     steps[i] = de; costsPerEffort[i] = costPerEffort;
                                 }
                             }
@@ -522,29 +528,23 @@ namespace Anthropocene.Simulation
             return remaining;
         }
 
-        private static double HorizonMarginalScore(WorldState w, Tile tile, EcologyView ecology,
-            double capital, double step, double costPerEffort, double maintenance)
+        private static double HorizonMarginalScore(WorldState w, Tile tile, EcologyView opening,
+            double capital, double step, double years, double costPerEffort, double maintenance)
         {
             var c = w.Config; var n = c.Neolithic;
-            var before = ecology; before.CultivationCapital = capital;
-            var after = ecology; after.CultivationCapital = capital + step;
-            double gain = 0;
-            for (int season = 0; season < 4; season++)
-            {
-                var beforeCapacity = new EcologyCapacity(w, tile, before, season, 1);
-                var afterCapacity = new EcologyCapacity(w, tile, after, season, 1);
-                double beforeFlow = Math.Min(beforeCapacity.Food * beforeCapacity.FoodRate + beforeCapacity.ManagedFlow,
-                    EcologyMath.SustainableHarvestRate(beforeCapacity.Biomass, beforeCapacity.BiomassRate,
-                        c.SustainableProductionFraction, beforeCapacity.ManagedFlow) * c.LandSafeUseRatio);
-                double afterFlow = Math.Min(afterCapacity.Food * afterCapacity.FoodRate + afterCapacity.ManagedFlow,
-                    EcologyMath.SustainableHarvestRate(afterCapacity.Biomass, afterCapacity.BiomassRate,
-                        c.SustainableProductionFraction, afterCapacity.ManagedFlow) * c.LandSafeUseRatio);
-                gain += (afterFlow - beforeFlow) * c.DaysPerYear / 4;
-            }
+            // Field investment is spread across the horizon for efficacy, while
+            // its endpoint becomes authoritative only after current harvest.
+            // Compare actual retained next-boundary food from the shared kernel;
+            // gross managed flow that overfills the same pool has zero value.
             double chargedEffort = n.CultivationMarginalEffortMultiplierPerTenth <= 1
                 ? step : AdditionalEffort(c, capital, capital + step);
-            return gain / Math.Max(1e-12, chargedEffort * (costPerEffort + n.PlanningHorizonYears *
-                n.MaintenanceWorkersPerTileE(c.MaintenanceCoefficient) * maintenance));
+            var investment = FoodHorizonForecast.Investment(w, tile.Id, opening.Days,
+                years * c.DaysPerYear, capital, capital + .5 * step,
+                capital + step, 1, chargedEffort * costPerEffort,
+                chargedEffort * n.PlanningHorizonYears *
+                    n.MaintenanceWorkersPerTileE(c.MaintenanceCoefficient) * maintenance,
+                opening);
+            return Math.Max(0, investment.AnnualizedFoodPerWorkerYear);
         }
 
         // Ecology integration has already committed the preclaim endpoint. Only

@@ -239,31 +239,9 @@ namespace Anthropocene.Simulation
                     continue;
                 }
                 if (gatherers <= 0) continue;
-                var requests = new List<Demand>(); double total = 0;
-                foreach (int id in w.Map.Radius(camp.Tile, w.Config.GatherRadius).OrderBy(n => n))
-                {
-                    if (!PassiveGathering.Eligible(w, camp, id)) continue;
-                    var available = Resource(id); var tile = w.Tiles[id];
-                    double openingFood = available.AvailableFood;
-                    if (abandoningVillages.Contains(camp.Id) && tile.TraversableLand)
-                    {
-                        // Abandonment leaves the physical field intact, but
-                        // the mobile camp can access at most the bridge-level
-                        // q this turn, including on overlapping old tiles.
-                        var view = LazyEcology.ProjectEcology(w, id, record.StartDays);
-                        double bridgeCapital = Math.Pow(w.Config.GathererBridgeCeiling / w.Config.ReferenceIntensity, 2);
-                        if (view.CultivationCapital > bridgeCapital)
-                        {
-                            view.CultivationCapital = bridgeCapital;
-                            openingFood = Math.Min(openingFood,
-                                new HorizonEcologyCapacity(w, tile, view, record.StartDays, record.Duration, 0).Food);
-                        }
-                    }
-                    double food = openingFood * Math.Min(1, Numbers.Fraction(w.Config.GatherFraction, intervals) * gatherers / w.Config.PopulationScale);
-                    requests.Add(new Demand { Entity = camp.Id, Tile = id, Kind = PassiveGathering.Kind(tile), ImpactMultiplier = tile.Aquatic ? PracticeEffects.FishingImpact(w.Config, camp) : PracticeEffects.GatheringImpact(w.Config, camp), Food = food }); total += food;
-                }
-                double scale = Math.Min(1, gatherers * w.Config.GatherPerPerson * intervals / Math.Max(1e-12, total));
-                foreach (var request in requests) { request.Food *= scale; campClaims[camp.Id].Add(request); }
+                AddPassiveCampClaims(w, camp, gatherers, record.StartDays,
+                    record.Duration, intervals, abandoningVillages.Contains(camp.Id),
+                    id => Resource(id).AvailableFood, campClaims[camp.Id]);
             }
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
@@ -311,12 +289,24 @@ namespace Anthropocene.Simulation
             var plans = w.Camps.OrderBy(c => c.Id).ToDictionary(c => c.Id, c => PlanGrowth(w, c, intervals, years, needs[c.Id]));
             LastMetrics.GrowthPlanMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
             phaseClock.Restart();
-            foreach (var camp in w.Camps.OrderBy(c => c.Id)) record.Demographics.First(d => d.Camp == camp.Id).FoodRequired += plans[camp.Id].Required;
+            foreach (var camp in w.Camps.OrderBy(c => c.Id))
+            {
+                record.Demographics.First(d => d.Camp == camp.Id).FoodRequired += plans[camp.Id].Required;
+                if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+                {
+                    var flow = LastMetrics.CraftFoodFlowFor(camp.Id);
+                    var need = needs[camp.Id];
+                    flow.ConsumptionTarget = need.ConsumptionTarget;
+                    flow.ReserveTarget = need.ReserveTarget;
+                    flow.ReserveFillTarget = need.ReserveFillTarget;
+                    flow.GrowthFoodTarget = plans[camp.Id].GrowthFood;
+                }
+            }
             foreach (var hunter in w.Hunters.Where(h => !Supply.Connected(w, h))) record.Demographics.First(d => d.Camp == hunter.SourceCamp).FoodRequired += hunter.Population * w.Config.Consumption * intervals;
             var pendingBirths = new Dictionary<int, GrowthPlan>();
             var pendingCampDeaths = new List<(Camp Camp, Hunter[] Linked, int Losses)>();
             var pendingHunterDeaths = new List<(Hunter Hunter, int Losses)>();
-            SustainGeneration(w, record, intervals, generationScale, needs, plans, foraged, recovering, pendingBirths, pendingCampDeaths, pendingHunterDeaths);
+            SustainGeneration(w, record, intervals, generationScale, needs, plans, foraged, recovering, pendingBirths, pendingCampDeaths, pendingHunterDeaths, LastMetrics);
             Supply.Finish(w, record);
             LastMetrics.SustainMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
             phaseClock.Restart();
@@ -359,7 +349,7 @@ namespace Anthropocene.Simulation
 
         // Membership is fixed after movement; all quantities below are refreshed at
         // each seasonal barrier. Scratch claims never escape into saved receipts.
-        private sealed class AgriculturalClaimScratch
+        internal sealed class AgriculturalClaimScratch
         {
             public readonly int[] Footprint, Eligible, LandIndices;
             public readonly double[] Remaining;
@@ -381,7 +371,53 @@ namespace Anthropocene.Simulation
             }
         }
 
-        private static void AddAgriculturalClaims(WorldState w, Camp camp, AgriculturalLabor labor, double intervals, double biological, double feedstock, Func<int, double> availability, List<Demand> claims, AgriculturalClaimScratch scratch)
+        // The ordinary mobile-camp claim path is shared with read-only food
+        // forecasts. In particular an accepted village departure uses this
+        // path, with bridge-level access on its former fields and no farm work.
+        internal static void AddPassiveCampClaims(WorldState w, Camp camp, double gatherers,
+            double startDays, double durationDays, double intervals, bool abandoning,
+            Func<int, double> availability, List<Demand> claims)
+        {
+            if (gatherers <= 0) return;
+            var requests = new List<Demand>(); double total = 0;
+            foreach (int id in w.Map.Radius(camp.Tile, w.Config.GatherRadius).OrderBy(n => n))
+            {
+                if (!PassiveGathering.Eligible(w, camp, id)) continue;
+                var tile = w.Tiles[id];
+                double openingFood = availability(id);
+                if (abandoning && tile.TraversableLand)
+                {
+                    // Abandonment leaves the physical field intact, but the
+                    // mobile camp can access at most bridge-level q this turn,
+                    // including on overlapping old tiles.
+                    var view = LazyEcology.ProjectEcology(w, id, startDays);
+                    double bridgeCapital = Math.Pow(w.Config.GathererBridgeCeiling /
+                        w.Config.ReferenceIntensity, 2);
+                    if (view.CultivationCapital > bridgeCapital)
+                    {
+                        view.CultivationCapital = bridgeCapital;
+                        openingFood = Math.Min(openingFood,
+                            new HorizonEcologyCapacity(w, tile, view, startDays,
+                                durationDays, 0).Food);
+                    }
+                }
+                double food = openingFood * Math.Min(1,
+                    Numbers.Fraction(w.Config.GatherFraction, intervals) *
+                    gatherers / w.Config.PopulationScale);
+                requests.Add(new Demand { Entity = camp.Id, Tile = id,
+                    Kind = PassiveGathering.Kind(tile),
+                    ImpactMultiplier = tile.Aquatic
+                        ? PracticeEffects.FishingImpact(w.Config, camp)
+                        : PracticeEffects.GatheringImpact(w.Config, camp),
+                    Food = food });
+                total += food;
+            }
+            double scale = Math.Min(1, gatherers * w.Config.GatherPerPerson * intervals /
+                Math.Max(1e-12, total));
+            foreach (var request in requests) { request.Food *= scale; claims.Add(request); }
+        }
+
+        internal static void AddAgriculturalClaims(WorldState w, Camp camp, AgriculturalLabor labor, double intervals, double biological, double feedstock, Func<int, double> availability, List<Demand> claims, AgriculturalClaimScratch scratch)
         {
             var eligible = scratch.Eligible;
             // Operators harvest the same accessible terrestrial supply as gatherers, not a crop-only pool.
@@ -773,7 +809,7 @@ namespace Anthropocene.Simulation
         }
 
         private static void SustainGeneration(WorldState w, TurnRecord record, double intervals, double generationScale, Dictionary<int, TurnNeeds> needs, Dictionary<int, GrowthPlan> plans, Dictionary<int, double> foraged, HashSet<int> recovering, Dictionary<int, GrowthPlan> pendingBirths,
-            List<(Camp Camp, Hunter[] Linked, int Losses)> pendingCampDeaths, List<(Hunter Hunter, int Losses)> pendingHunterDeaths)
+            List<(Camp Camp, Hunter[] Linked, int Losses)> pendingCampDeaths, List<(Hunter Hunter, int Losses)> pendingHunterDeaths, ResolutionMetrics metrics)
         {
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
@@ -799,6 +835,8 @@ namespace Anthropocene.Simulation
                 {
                     double growthFood = Math.Min(plans[camp.Id].GrowthFood, camp.Food);
                     ConsumeCampFood(camp, growthFood, plans[camp.Id].PlantManufacturingInput, plans[camp.Id].AnimalManufacturingInput); camp.LastConsumed += growthFood;
+                    if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+                        metrics.CraftFoodFlowFor(camp.Id).GrowthFoodUsed = growthFood;
                     pendingBirths[camp.Id] = plans[camp.Id];
                 }
                 summary.FoodConsumed += camp.LastConsumed;
@@ -845,7 +883,10 @@ namespace Anthropocene.Simulation
         {
             double temperature = w.Tiles[tile].Seasons.Average(s => s.Temperature), moisture = w.Tiles[tile].Seasons.Average(s => s.Moisture);
             double cold = Numbers.Clamp((12 - temperature) / 30, 0, 1), dry = Numbers.Clamp((.45 - moisture) / .45, 0, 1);
-            return w.Config.MinimumStorageGenerations + (w.Config.MaximumStorageGenerations - w.Config.MinimumStorageGenerations) * Math.Max(cold, dry);
+            double fraction = Math.Max(cold, dry), referenceYears = w.Config.Neolithic.ReferenceTurnYears;
+            double minimumTurns = w.Config.MinimumStorageYears / referenceYears;
+            double maximumTurns = w.Config.MaximumStorageYears / referenceYears;
+            return minimumTurns + (maximumTurns - minimumTurns) * fraction;
         }
 
         private static void ApplyStorage(WorldState w, TurnRecord record, double intervals)

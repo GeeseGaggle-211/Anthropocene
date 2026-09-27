@@ -48,6 +48,17 @@ namespace Anthropocene.Simulation
                 var labor = CultivationEconomy.PrepareHorizon(w, camp, horizon.StartDays,
                     horizon.Years, budget, campScratch.Footprint);
                 agriculturalLabor[camp.Id] = labor;
+                CampFieldWorkDiagnostic fieldWork = null;
+                if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+                {
+                    fieldWork = LastMetrics.CraftFieldWorkFor(camp.Id);
+                    fieldWork.ResidentWorkerYears = Math.Max(0, camp.Population) * horizon.Years;
+                    fieldWork.AssignedFarmerWorkerYears = CultivationEconomy.Workers(camp, WorkforceRoles.Farmer) * horizon.Years;
+                    fieldWork.OperatingFarmerReservationWorkerYears = labor.OperatingFarmers * horizon.Years;
+                    fieldWork.ExpansionFarmerWorkerYears = labor.ExpansionFarmers * horizon.Years;
+                    fieldWork.MaintenanceWorkerYears = labor.MaintenanceFarmerWorkerYears;
+                    fieldWork.FarmToolCoveredWorkerYears = labor.MaintenanceCoveredWorkerYears;
+                }
 
                 // The first bridge estimate is limited by available terrestrial
                 // food, assigned gathering capacity and the locked camp target.
@@ -171,6 +182,29 @@ namespace Anthropocene.Simulation
                     * w.Config.BaseDays / w.Config.DaysPerYear;
                 var corrected = CultivationEconomy.ReconcileHorizonBridge(w, camp,
                     allocations[camp.Id], bridge, farmToolBudgets[camp.Id]);
+                if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+                {
+                    var fieldWork = LastMetrics.CraftFieldWorkFor(camp.Id);
+                    if (fieldWork != null)
+                    {
+                        fieldWork.ExpansionWorkUsedWorkerYears = corrected.FarmerWorkerYearsUsed;
+                        double cultivatedHarvest = transfers.Where(t => t.Entity == camp.Id && t.Kind == "Cultivation")
+                            .Sum(t => t.Food);
+                        fieldWork.HarvestEquivalentWorkerYears = cultivatedHarvest /
+                            Math.Max(1e-12, w.Config.FarmerProductivity * w.Config.GatherPerPerson * horizon.ReferenceIntervals)
+                            * horizon.Years;
+                        // Maintenance and cultivation receipts share the same
+                        // operating-farmer reservation in this model. Reconcile
+                        // them with max() and then add distinct expansion work.
+                        fieldWork.ReconciledFarmerWorkerYears =
+                            Math.Max(fieldWork.MaintenanceWorkerYears, fieldWork.HarvestEquivalentWorkerYears)
+                            + fieldWork.ExpansionWorkUsedWorkerYears;
+                        // This credit is caused by gathered food and is shown
+                        // separately from farmer/gatherer work to prevent double
+                        // counting the same residents' time.
+                        fieldWork.GatheringBridgeCreditWorkerYears = bridge;
+                    }
+                }
                 CultivationEconomy.CommitHorizonExpansion(w, camp, corrected, record,
                     farmToolBudgets[camp.Id], allocations[camp.Id]);
             }

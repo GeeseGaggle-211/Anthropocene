@@ -119,7 +119,7 @@ namespace Anthropocene.Presentation
                 DrawEconomicValue("Herding tools", ref draft.Priorities.HerdingTools, x, ref cy, col, .05);
             }
             cy += 12;
-            GUI.Label(new Rect(x, cy, col - 8, 22), "Pots target: " + NeolithicProduction.TargetPots(world, camp, potYears).ToString("F2"), small); cy += 28;
+            GUI.Label(new Rect(x, cy, col - 8, 22), "Pots target (reserve: " + world.Config.GrowthReserveYears.ToString("F0") + " years): " + NeolithicProduction.TargetPots(world, camp, potYears).ToString("F2"), small); cy += 28;
             double farmToolForecast = CultivationEconomy.ForecastFarmToolWorkerYears(world, camp, potYears) / world.Config.Neolithic.FarmToolFarmerYearsPerUnit;
             GUI.Label(new Rect(x, cy, col - 8, 22), "Farm tools forecast: " + farmToolForecast.ToString("F2"), small); cy += 28;
             double storageIntervals = world.Config.TurnDays / world.Config.BaseDays;
