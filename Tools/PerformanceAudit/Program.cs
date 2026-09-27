@@ -14,6 +14,7 @@ internal static class Program
     private static int WorkerCount = 4;
     private static int PartitionSize = 64;
     private static bool ReversePartitions;
+    private static bool StationaryHusbandry;
     private const int ReportSchema = 2;
 
     private static int Option(string[] args, string key, int fallback)
@@ -52,11 +53,53 @@ internal static class Program
 #endif
     }
 
+#if !MAIN
+    private sealed class LocalStockSnapshot
+    {
+        public double Biomass { get; set; }
+        public double Gatherable { get; set; }
+        public double Freshwater { get; set; }
+    }
+
+    private static LocalStockSnapshot LocalStocks(WorldState world, int campTile)
+    {
+        double biomass = 0, gatherable = 0, freshwater = 0;
+        foreach (int id in world.Map.Radius(campTile, 1).OrderBy(id => id))
+        {
+            var stock = LazyEcology.ProjectEcology(world, id, world.Days);
+            if (world.Tiles[id].Land)
+            {
+                biomass += stock.PotentialFood;
+                gatherable += stock.Food;
+            }
+            freshwater += stock.Freshwater;
+        }
+        return new LocalStockSnapshot { Biomass = biomass, Gatherable = gatherable, Freshwater = freshwater };
+    }
+#endif
+
     private static TurnRecord ResolveTurn(WorldState world, PhaseExecution execution, TurnResolver resolver,
         out double aiMs, out double prepareMs, out double executeMs)
     {
         var clock = Stopwatch.StartNew();
         var ai = AiPlanning.Decide(world, execution);
+#if !MAIN
+        if (StationaryHusbandry)
+        {
+            var husbandry = new HashSet<int>(world.Camps.Where(CultivationEconomy.HusbandryEnabled).Select(c => c.Id));
+            foreach (var orders in ai.Orders.Values)
+                for (int i = 0; i < orders.Count; i++)
+                    if (orders[i].Kind == OrderKind.Move && husbandry.Contains(orders[i].Entity))
+                    {
+                        // Keep any transient AI economy request attached to
+                        // the action. This control changes placement alone.
+                        var stay = orders[i].Copy();
+                        stay.Kind = OrderKind.NoOp;
+                        stay.Destination = -1;
+                        orders[i] = stay;
+                    }
+        }
+#endif
         aiMs = clock.Elapsed.TotalMilliseconds;
 
 #if MAIN
@@ -90,6 +133,7 @@ internal static class Program
         WorkerCount = Option(args, "--workers", 4);
         PartitionSize = Option(args, "--partition-size", 64);
         ReversePartitions = Option(args, "--reverse-partitions", 0) != 0;
+        StationaryHusbandry = Option(args, "--stationary-husbandry", 0) != 0;
         if (WorkerCount < 1 || PartitionSize < 1)
             throw new ArgumentOutOfRangeException("Worker and partition counts must be positive.");
         int warmup = Option(args, "--warmup", 0);
@@ -246,6 +290,7 @@ internal static class Program
             workerCount = WorkerCount,
             partitionSize = PartitionSize,
             reversePartitions = ReversePartitions,
+            stationaryHusbandry = StationaryHusbandry,
             warmupRuns = warmup,
             metricsEnabled = metrics,
             detailsEnabled = details,
@@ -289,6 +334,11 @@ internal static class Program
         bool postOpening = world.Finished;
         int preAgriculturalCamps = CountAgriculturalCamps(world);
         var priorResidents = world.Camps.ToDictionary(c => c.Id, c => c.Population);
+#if !MAIN
+        var priorSites = details ? world.Camps.ToDictionary(c => c.Id, c => c.Tile) : null;
+        var priorMoves = details ? world.Camps.ToDictionary(c => c.Id, c => c.Moves) : null;
+        var priorLocalStocks = details ? world.Camps.ToDictionary(c => c.Id, c => LocalStocks(world, c.Tile)) : null;
+#endif
         int gc0Before = GC.CollectionCount(0), gc1Before = GC.CollectionCount(1), gc2Before = GC.CollectionCount(2);
         long allocatedBefore = GC.GetTotalAllocatedBytes(false);
         var record = ResolveTurn(world, execution, resolver, out double aiMs, out double prepareMs, out double executeMs);
@@ -308,6 +358,10 @@ internal static class Program
         double endingPopulationWeightedQol = 0;
         int managedAnimals = 0, wildAnimals = 0, managedHerds = 0;
         int husbandryCamps = 0, husbandryResidents = 0, husbandryLinked = 0, husbandryAnimals = 0;
+        int husbandryMoves = 0, animalBirths = 0, animalDeaths = 0;
+        double herdForageRequested = 0, herdForageRealized = 0, herdWaterRequested = 0, herdWaterRealized = 0;
+        int landConditionChangedTiles = 0;
+        double maximumLandConditionDelta = 0;
         object camps = null;
 #else
         double endingPopulationWeightedQol = residentPopulation <= 0 ? 0 : world.Camps.Sum(c => c.QoL * c.Population) / residentPopulation;
@@ -324,6 +378,18 @@ internal static class Program
         int husbandryResidents = husbandry.Sum(c => c.Population);
         int husbandryLinked = husbandry.Sum(world.LinkedPopulation);
         int husbandryAnimals = husbandry.Sum(c => domesticAnimalsByCamp.TryGetValue(c.Id, out int animals) ? animals : 0);
+        int husbandryMoves = details ? husbandry.Sum(c => c.Moves - priorMoves[c.Id]) : 0;
+        int animalBirths = record.ManagedHerds.Sum(h => h.NewbornAnimals);
+        int animalDeaths = record.ManagedHerds.Sum(h => h.StarvationDeaths);
+        var domesticHerdIds = new HashSet<int>(record.ManagedHerds.Select(h => h.Herd));
+        double herdForageRequested = record.Pressure.Where(p => domesticHerdIds.Contains(p.Entity) && p.Kind == "Herd" && p.Pool == "Biomass").Sum(p => p.Requested);
+        double herdForageRealized = record.Pressure.Where(p => domesticHerdIds.Contains(p.Entity) && p.Kind == "Herd" && p.Pool == "Biomass").Sum(p => p.Realized);
+        double herdWaterRequested = record.Pressure.Where(p => domesticHerdIds.Contains(p.Entity) && p.Kind == "Herd" && p.Pool == "Freshwater").Sum(p => p.Requested);
+        double herdWaterRealized = record.Pressure.Where(p => domesticHerdIds.Contains(p.Entity) && p.Kind == "Herd" && p.Pool == "Freshwater").Sum(p => p.Realized);
+        var landConditionDeltas = record.Changes.Where(change => world.Tiles[change.Tile].Land)
+            .Select(change => Math.Abs(change.AfterLandCondition - change.BeforeLandCondition)).ToArray();
+        int landConditionChangedTiles = landConditionDeltas.Count(delta => delta > 1e-12);
+        double maximumLandConditionDelta = landConditionDeltas.Length == 0 ? 0 : landConditionDeltas.Max();
         var camps = details ? world.Camps.OrderBy(c => c.Id).Select(c =>
         {
             var fieldIntensity = CultivationEconomy.Footprint(world, c)
@@ -333,6 +399,10 @@ internal static class Program
             return new
             {
                 c.Id, c.Player, c.Population, priorResidents = priorResidents[c.Id],
+                startingSite = priorSites[c.Id], endingSite = c.Tile,
+                moved = c.Moves != priorMoves[c.Id],
+                openingLocalStocks = priorLocalStocks[c.Id],
+                endingLocalStocks = LocalStocks(world, c.Tile),
                 linked = world.LinkedPopulation(c), technology = c.Technology.ToString(), c.QoL,
                 c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita,
                 c.Food, c.PlantFood, c.AnimalFood, c.FabricConsumed, c.HousingDemand,
@@ -383,6 +453,17 @@ internal static class Program
             husbandryResidents,
             husbandryLinked,
             husbandryAnimals,
+            husbandryMoves,
+            animalBirths,
+            animalDeaths,
+            humanBirths = record.Growth,
+            humanDeaths = record.Deaths,
+            herdForageRequested,
+            herdForageRealized,
+            herdWaterRequested,
+            herdWaterRealized,
+            landConditionChangedTiles,
+            maximumLandConditionDelta,
             priorWeightedQol,
             weightedQol,
             endingPopulationWeightedQol,

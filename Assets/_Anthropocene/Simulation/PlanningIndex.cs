@@ -13,9 +13,10 @@ namespace Anthropocene.Simulation
         internal WorldState World => world;
         private readonly Dictionary<int, Camp[]> campsByPlayer, campsByTile;
         private readonly Dictionary<int, Hunter[]> huntersByPlayer, huntersByTile, huntersByCamp;
-        private readonly Dictionary<int, Herd[]> herdsByTile;
+        private readonly Dictionary<int, Herd[]> herdsByTile, herdsByCamp;
         private readonly Dictionary<int, Transfer[]> extractionByEntity;
         private readonly ConcurrentDictionary<int, EcologyView> ecology = new ConcurrentDictionary<int, EcologyView>();
+        private readonly ConcurrentDictionary<int, HashSet<int>> visibility = new ConcurrentDictionary<int, HashSet<int>>();
         internal readonly Dictionary<int, Camp> Camps;
         public PlanningIndex(WorldState w)
         {
@@ -26,6 +27,8 @@ namespace Anthropocene.Simulation
             huntersByTile = w.Hunters.GroupBy(h => h.Tile).ToDictionary(g => g.Key, g => g.OrderBy(h => h.Id).ToArray());
             huntersByCamp = w.Hunters.GroupBy(h => h.SourceCamp).ToDictionary(g => g.Key, g => g.OrderBy(h => h.Id).ToArray());
             herdsByTile = w.Herds.GroupBy(h => h.Tile).ToDictionary(g => g.Key, g => g.OrderBy(h => h.Id).ToArray());
+            herdsByCamp = w.Herds.Where(h => h.DomesticCamp >= 0).GroupBy(h => h.DomesticCamp)
+                .ToDictionary(g => g.Key, g => g.OrderBy(h => h.Id).ToArray());
             extractionByEntity = (w.History.LastOrDefault()?.Transfers ?? new List<Transfer>()).GroupBy(t => t.Entity).ToDictionary(g => g.Key, g => g.ToArray());
         }
         private static T[] At<T>(Dictionary<int, T[]> map, int id) => map.TryGetValue(id, out var result) ? result : Array.Empty<T>();
@@ -35,10 +38,13 @@ namespace Anthropocene.Simulation
         internal IEnumerable<Camp> VisibleCamps(IEnumerable<int> tiles) => tiles.SelectMany(n => At(campsByTile, n)).OrderBy(c => c.Id);
         internal IEnumerable<Hunter> VisibleHunters(IEnumerable<int> tiles) => tiles.SelectMany(n => At(huntersByTile, n)).OrderBy(h => h.Id);
         internal IEnumerable<Herd> VisibleHerds(IEnumerable<int> tiles) => tiles.SelectMany(n => At(herdsByTile, n)).OrderBy(h => h.Id);
+        internal Herd[] CampHerds(int camp) => At(herdsByCamp, camp);
         internal IEnumerable<Transfer> Extraction(IEnumerable<int> entities) => entities.OrderBy(n => n).SelectMany(n => At(extractionByEntity, n));
         internal int Population(Camp c) => c.Population + CampHunters(c.Id).Sum(h => h.Population);
         public EcologyView Ecology(int tile) => ecology.GetOrAdd(tile, n => LazyEcology.ProjectEcology(world, n, world.Days));
-        public HashSet<int> Visible(int player)
+        public HashSet<int> Visible(int player) => new HashSet<int>(VisibleCached(player));
+        internal HashSet<int> VisibleCached(int player) => visibility.GetOrAdd(player, p => BuildVisible(p));
+        private HashSet<int> BuildVisible(int player)
         {
             var tiles = new HashSet<int>();
             foreach (var c in OwnCamps(player).Where(c => Population(c) > 0)) tiles.UnionWith(world.Map.Radius(c.Tile, world.Config.VisionRadius));

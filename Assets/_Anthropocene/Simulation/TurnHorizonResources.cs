@@ -56,7 +56,7 @@ namespace Anthropocene.Simulation
                         horizon.StartDays, horizon.Days));
                 double provisionalFood = Math.Min(availableLand,
                     Math.Min(labor.FoodGatherers * w.Config.GatherPerPerson * horizon.ReferenceIntervals,
-                        Math.Max(0, needs[camp.Id].FoodTarget - camp.StepFoodIncome) +
+                        RemainingFoodTarget(camp, needs[camp.Id]) +
                         needs[camp.Id].PlantFeedstockGap));
                 double provisionalBridge = provisionalFood / Math.Max(1e-12, w.Config.GatherPerPerson)
                     * w.Config.BaseDays / w.Config.DaysPerYear;
@@ -91,7 +91,7 @@ namespace Anthropocene.Simulation
             {
                 var campScratch = scratch[camp.Id];
                 campScratch.Clear();
-                double biological = Math.Max(0, needs[camp.Id].FoodTarget - camp.StepFoodIncome);
+                double biological = RemainingFoodTarget(camp, needs[camp.Id]);
                 double feedstock = needs[camp.Id].PlantFeedstockGap;
                 double Available(int tile) => LazyEcology.AccessibleAvailability(w, tile,
                     horizon.StartDays, horizon.Days, null,
@@ -106,7 +106,7 @@ namespace Anthropocene.Simulation
             foreach (var camp in agriculturalCamps)
             {
                 if (!claimsByCamp.TryGetValue(camp.Id, out var owned)) continue;
-                double biological = Math.Max(0, needs[camp.Id].FoodTarget - camp.StepFoodIncome);
+                double biological = RemainingFoodTarget(camp, needs[camp.Id]);
                 double feedstock = needs[camp.Id].PlantFeedstockGap;
                 double biologicalRequested = owned.Where(d => !d.Manufacturing).Sum(d => d.Food);
                 double feedstockRequested = owned.Where(d => d.Manufacturing).Sum(d => d.Food);

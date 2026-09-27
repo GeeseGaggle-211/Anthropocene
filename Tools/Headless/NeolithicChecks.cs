@@ -305,7 +305,7 @@ internal static class NeolithicChecks
         MaterialEconomy.Extract(w, c, source, WorkforceRoles.Woodcutter, 4, 100, 0, r); Near(c.Inventory.Stone, 5, "unrelated extractor cannot gain specialist output"); Near(c.People.CraftExperience.Count, 0, "stockpile-only sourcing no research");
         var remote = new KnownMaterialSource { Id = "surface:0:1", Tile = 0, Material = MaterialId.Stone }; Near(MaterialEconomy.Extract(w, c, remote, WorkforceRoles.Gatherer, 4, 100, 0, r), 0, "caller cannot invent a source");
         var timber = MaterialEconomy.KnownSources(w, c, 0).First(s => s.Material == MaterialId.Wood);
-        MaterialEconomy.Extract(w, c, timber, WorkforceRoles.Gatherer, 4, 100, 0, r); Check(r.Pressure.Any(p => p.Kind == "Timber extraction" && p.Realized == 1), "wood has ecological receipt"); Check(w.Tiles[c.Tile].LandCondition < 1, "wood extraction changes ecological condition");
+        MaterialEconomy.Extract(w, c, timber, WorkforceRoles.Gatherer, 4, 100, 0, r); Check(r.Pressure.Any(p => p.Kind == "Timber extraction" && p.Realized == 1 && p.ConditionDamage == 0), "wood has a finite extraction receipt without condition damage"); Check(w.Tiles[c.Tile].LandCondition == 1, "wood extraction leaves stored land condition unchanged");
         Near(r.MaterialTransfers.Sum(x => x.Amount), c.Inventory.Stone + c.Inventory.Wood, "every incoming material unit has a receipt");
         var copy = SaveCodec.Load(SaveCodec.Save(w)); Near(copy.MaterialSources.Sum(s => s.Remaining), w.MaterialSources.Sum(s => s.Remaining), "fractional depletion survives save");
     }

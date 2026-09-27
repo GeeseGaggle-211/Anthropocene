@@ -16,11 +16,15 @@ namespace Anthropocene.Simulation
             return entry;
         }
         public static void ProvisionDepartures(WorldState w, List<Order> orders, TurnRecord record)
+            => ProvisionDepartures(w, orders, record, null);
+        internal static void ProvisionDepartures(WorldState w, List<Order> orders, TurnRecord record, CampPlacement placement)
         {
             foreach (var hunter in w.Hunters.OrderBy(h => h.Id))
             {
                 var camp = w.Camps.First(c => c.Id == hunter.SourceCamp);
-                bool moving = orders.Any(o => (o.Entity == hunter.Id || o.Entity == camp.Id) && o.Destination >= 0);
+                bool moving = orders.Any(o => o.Entity == hunter.Id && o.Destination >= 0) ||
+                    (placement == null ? orders.Any(o => o.Entity == camp.Id && o.Destination >= 0) :
+                        placement.Destinations[camp.Id] != camp.Tile);
                 if (!moving || !Connected(w, hunter)) continue;
                 // Withdraw while the old planning-position supply path still exists, before movement commits.
                 double desired = Math.Min(Capacity(w, hunter), hunter.Population * w.Config.Consumption * w.Config.GenerationIntervals * w.Config.ExpeditionProvisionTurns);

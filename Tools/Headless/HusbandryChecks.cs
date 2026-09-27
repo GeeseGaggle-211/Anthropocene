@@ -27,7 +27,7 @@ internal static class HusbandryChecks
 
     public static int Run()
     {
-        checks = 0; FullManagedOutput(); UnderManagementAndNoCap(); CurrentNutritionAndNewbornBoundary(); ProportionalSpeciesManagement(); SharedControlAndSave(); ObservationAndOrderContracts(); PartitionedExposure(); MixedFoodInputBoundary(); MixedAnimalOnlyDoesNotChargePlant(); TypedFabricPriorityBudget(); StorageReceivingCapacity(); SharedStarvationAndSourceLedgers(); SpeciesReplayAndContinuation(); StaleNutritionAndNewbornBoundary(); BreedingIntensityPolicy(); HerdingToolCoverage();
+        checks = 0; FullManagedOutput(); UnderManagementAndNoCap(); CurrentNutritionAndNewbornBoundary(); LocalFootprintAndSharedSource(); MovedHunterFoodCohort(); PreparedFoodRemainderLedger(); ProportionalSpeciesManagement(); SharedControlAndSave(); ObservationAndOrderContracts(); PartitionedExposure(); MixedFoodInputBoundary(); MixedAnimalOnlyDoesNotChargePlant(); TypedFabricPriorityBudget(); StorageReceivingCapacity(); SharedStarvationAndSourceLedgers(); SpeciesReplayAndContinuation(); StaleNutritionAndNewbornBoundary(); BreedingIntensityPolicy(); SupportLimitedBreeding(); HerdingToolCoverage();
         Console.WriteLine("PASS: " + checks + " managed husbandry assertions"); return checks;
     }
     private static void FullManagedOutput()
@@ -48,12 +48,182 @@ internal static class HusbandryChecks
     private static void CurrentNutritionAndNewbornBoundary()
     {
         var w = Fixture(100, 50); var tile = w.Tiles[w.Camps[0].Tile]; var herd = w.Herds[0];
+        foreach (int id in w.Map.Radius(w.Camps[0].Tile, 1).Where(id => id != w.Camps[0].Tile))
+        {
+            var neighbor = w.Tiles[id]; neighbor.Food = neighbor.PotentialFood = neighbor.Freshwater = 0;
+            for (int s = 0; s < 4; s++) { neighbor.Seasons[s].MaxFood = neighbor.Seasons[s].MaxPotentialFood = neighbor.Seasons[s].MaxFreshwater = 0; }
+        }
         tile.PotentialFood = 2560; tile.Freshwater = 2880; for (int s = 0; s < 4; s++) { tile.Seasons[s].MaxPotentialFood = 2560; tile.Seasons[s].MaxFood = 0; tile.Seasons[s].MaxFreshwater = 2880; tile.Seasons[s].FoodRecoveryPerDay = tile.Seasons[s].BiomassRecoveryPerDay = tile.Seasons[s].WaterRecoveryPerDay = 0; }
         w.Config.StarvationGraceTurns = 0; w.Config.Mortality = 0; w.Config.AnnualHumanGrowthRate = 0;
         var r = Resolve(w); var report = r.ManagedHerds.Single();
         Check(report.Nutrition < .81 && report.Nutrition > .79, "managed nutrition uses current forage and water exposure actual=" + report.Nutrition + " forage=" + r.Transfers.Where(t => t.Entity == herd.Id && t.Kind == "Herd").Sum(t => t.PotentialFood) + " unmet=" + herd.UnmetFood + " water=" + herd.UnmetFreshwater);
         Near(report.PotentialFood, report.SurvivingAnimals * 80 * report.Nutrition, "renewable output uses surviving current exposure");
         herd.GrowthRemainder = .9; herd.Animals = 0; var zero = Resolve(w); Check(herd.Animals == 0 && herd.NewbornAnimals == 0 && herd.GrowthRemainder == 0, "zero animals do not reproduce from a stale fraction actual=" + herd.Animals + "/" + herd.NewbornAnimals + "/" + herd.GrowthRemainder);
+    }
+    private static void LocalFootprintAndSharedSource()
+    {
+        WorldState Empty()
+        {
+            var w = Fixture(100, 50); w.Config.AnnualHumanGrowthRate = 0;
+            foreach (var tile in w.Tiles)
+            {
+                tile.Food = tile.PotentialFood = tile.Freshwater = 0;
+                for (int s = 0; s < 4; s++)
+                {
+                    tile.Seasons[s].MaxFood = tile.Seasons[s].MaxPotentialFood = tile.Seasons[s].MaxFreshwater = 0;
+                    tile.Seasons[s].FoodRecoveryPerDay = tile.Seasons[s].BiomassRecoveryPerDay = tile.Seasons[s].WaterRecoveryPerDay = 0;
+                }
+            }
+            return w;
+        }
+        void SetForage(WorldState w, int id, double amount)
+        {
+            w.Tiles[id].PotentialFood = amount;
+            for (int s = 0; s < 4; s++) w.Tiles[id].Seasons[s].MaxPotentialFood = (float)amount;
+        }
+        void SetWater(WorldState w, int id, double amount)
+        {
+            w.Tiles[id].FreshwaterSource = FreshwaterSource.RainPool;
+            w.Tiles[id].Freshwater = amount;
+            for (int s = 0; s < 4; s++) w.Tiles[id].Seasons[s].MaxFreshwater = (float)amount;
+        }
+
+        var local = Empty(); var camp = local.Camps.Single(); var herd = local.Herds.Single();
+        var neighbors = local.Map.Neighbors(camp.Tile).Where(id => local.Tiles[id].TraversableLand).OrderBy(id => id).ToArray();
+        Check(neighbors.Length >= 2, "fixture has separate adjacent pasture and freshwater sources");
+        int pasture = neighbors[0], spring = neighbors[1];
+        int distant = local.Map.Radius(camp.Tile, 2).Where(id => local.Map.Distance(camp.Tile, id) == 2 && local.Tiles[id].TraversableLand).OrderBy(id => id).First();
+        SetForage(local, pasture, 100000); SetWater(local, spring, 100000);
+        SetForage(local, distant, 100000); SetWater(local, distant, 100000);
+        var localRecord = Resolve(local); var localReport = localRecord.ManagedHerds.Single();
+        Near(localReport.Nutrition, 1, "managed herd reaches adjacent pasture and water source");
+        Check(localRecord.Transfers.Any(t => t.Entity == herd.Id && t.Tile == pasture && t.PotentialFood > 0), "adjacent land forage is debited at its own tile");
+        Check(localRecord.Transfers.Any(t => t.Entity == herd.Id && t.Tile == spring && t.Freshwater > 0), "adjacent freshwater is debited at its own source");
+        Check(localRecord.Transfers.All(t => t.Entity != herd.Id || t.Tile != distant), "managed herd never claims land or water at radius two");
+
+        var forecastWorld = Empty(); var forecastCamp = forecastWorld.Camps.Single();
+        int destination = forecastWorld.Map.Neighbors(forecastCamp.Tile).Where(id => forecastWorld.Tiles[id].TraversableLand).OrderBy(id => id).First();
+        int destinationOnly = forecastWorld.Map.Radius(destination, 1).Where(id =>
+            forecastWorld.Map.Distance(forecastCamp.Tile, id) == 2 && forecastWorld.Tiles[id].TraversableLand).OrderBy(id => id).First();
+        SetForage(forecastWorld, destinationOnly, 100000); SetWater(forecastWorld, destinationOnly, 100000);
+        double forecastYears = forecastWorld.Config.TurnDays / forecastWorld.Config.DaysPerYear;
+        double atOrigin = TurnResolver.ForecastManagedAnimalFood(forecastWorld, forecastCamp, 50,
+            forecastWorld.Config.GenerationIntervals, forecastYears).AnimalFood;
+        double atDestination = TurnResolver.ForecastManagedAnimalFood(forecastWorld, forecastCamp, 50,
+            forecastWorld.Config.GenerationIntervals, forecastYears, destination).AnimalFood;
+        Check(atOrigin == 0 && atDestination > 0, "destination-aware managed forecast uses only its effective radius-one resources");
+
+        var fractional = Empty(); var fractionalCamp = fractional.Camps.Single();
+        fractional.Config.TurnDays = fractional.Config.BaseDays / 2;
+        var seasonalSources = fractional.Map.Neighbors(fractionalCamp.Tile)
+            .Where(id => fractional.Tiles[id].TraversableLand).OrderBy(id => id).Take(2).ToArray();
+        fractional.Tiles[seasonalSources[0]].FreshwaterSource = FreshwaterSource.RainPool;
+        fractional.Tiles[seasonalSources[1]].FreshwaterSource = FreshwaterSource.RainPool;
+        fractional.Tiles[seasonalSources[0]].Seasons[0].MaxFreshwater = 1000;
+        fractional.Tiles[seasonalSources[0]].Seasons[0].WaterRecoveryPerDay = .01f;
+        fractional.Tiles[seasonalSources[1]].Seasons[1].MaxFreshwater = 1000;
+        fractional.Tiles[seasonalSources[1]].Seasons[1].WaterRecoveryPerDay = .01f;
+        var partialClaims = new List<Demand>();
+        ManagedHerdLocalClaims.Append(fractional, fractionalCamp.Tile, fractional.Herds.Single().Id,
+            0, 100, fractional.Config.TurnDays, partialClaims);
+        Near(partialClaims.Where(d => d.Tile == seasonalSources[0]).Sum(d => d.Freshwater), 100,
+            "fractional first-season drinking request follows the exposed recharge profile");
+        Near(partialClaims.Where(d => d.Tile == seasonalSources[1]).Sum(d => d.Freshwater), 0,
+            "unexposed later-season recharge does not attract a fractional-turn water request");
+        double firstRecovery = LazyEcology.ProjectEcology(fractional, seasonalSources[0],
+            fractional.Config.TurnDays / 2).Freshwater;
+        double secondRecovery = LazyEcology.ProjectEcology(fractional, seasonalSources[0],
+            fractional.Config.TurnDays).Freshwater;
+        Check(firstRecovery > 0 && secondRecovery > firstRecovery && secondRecovery < 1000,
+            "unclaimed fractional-turn freshwater recovers gradually within capacity");
+        var partialResult = EcologicalPressure.Integrate(fractional, seasonalSources[0],
+            new[] { new Demand { Tile = seasonalSources[0], Entity = fractional.Herds.Single().Id,
+                Kind = "Herd", Freshwater = 10000 } }, 0, fractional.Config.TurnDays);
+        Check(partialResult.Transfers.Single().Freshwater >= 0 && partialResult.Transfers.Single().Freshwater <= 10000 &&
+            partialResult.View.Freshwater >= 0 && partialResult.View.Freshwater <= 1000,
+            "fractional-turn drinking cannot overdraw the finite source or exceed capacity");
+        Near(partialResult.Balance.StartingWater + partialResult.Balance.WaterRecharge,
+            partialResult.Balance.EndingWater + partialResult.Balance.WaterHarvest + partialResult.Balance.WaterOverflow,
+            "fractional-turn freshwater extraction and regeneration conserve the source");
+
+        var shared = Empty(); var sharedCamp = shared.Camps.Single(); var firstHerd = shared.Herds.Single();
+        var secondHerd = new Herd { Id = shared.NextId++, Tile = sharedCamp.Tile, Species = firstHerd.Species,
+            Animals = firstHerd.Animals, Capacity = firstHerd.Capacity, DomesticCamp = sharedCamp.Id, OwnerSociety = sharedCamp.SocietyId };
+        shared.Herds.Add(secondHerd);
+        int sharedTile = shared.Map.Neighbors(sharedCamp.Tile).Where(id => shared.Tiles[id].TraversableLand).OrderBy(id => id).First();
+        var species = shared.Config.GetSpecies(firstHerd.Species);
+        double foodNeed = firstHerd.Animals * species.FoodConsumption * shared.Config.GenerationIntervals;
+        double waterNeed = firstHerd.Animals * species.FreshwaterConsumption * shared.Config.GenerationIntervals;
+        SetForage(shared, sharedTile, foodNeed * 1.25); SetWater(shared, sharedTile, waterNeed * 1.25);
+        var sharedRecord = Resolve(shared);
+        double FirstFood() => sharedRecord.Transfers.Where(t => t.Entity == firstHerd.Id && t.Kind == "Herd").Sum(t => t.PotentialFood);
+        double SecondFood() => sharedRecord.Transfers.Where(t => t.Entity == secondHerd.Id && t.Kind == "Herd").Sum(t => t.PotentialFood);
+        double FirstWater() => sharedRecord.Transfers.Where(t => t.Entity == firstHerd.Id && t.Kind == "Herd").Sum(t => t.Freshwater);
+        double SecondWater() => sharedRecord.Transfers.Where(t => t.Entity == secondHerd.Id && t.Kind == "Herd").Sum(t => t.Freshwater);
+        Near(FirstFood(), foodNeed, "first claimant receives bounded shared forage");
+        Near(SecondFood(), foodNeed * .25, "later claimant receives only residual shared forage");
+        Near(FirstWater(), waterNeed, "first claimant receives bounded shared freshwater");
+        Near(SecondWater(), waterNeed * .25, "later claimant receives only residual shared freshwater");
+        var balance = sharedRecord.EcologyBalances.Single(b => b.Tile == sharedTile);
+        Check(balance.EndingBiomass >= -1e-8 && balance.EndingWater >= -1e-8, "contended tile stocks never go negative");
+        Near(balance.BiomassHarvest, FirstFood() + SecondFood(), "shared forage ledger conserves accepted herd receipts");
+        Near(balance.WaterHarvest, FirstWater() + SecondWater(), "shared water ledger conserves accepted herd receipts");
+    }
+
+    private static void MovedHunterFoodCohort()
+    {
+        foreach (bool returnToSupply in new[] { false, true })
+        {
+            var world = Fixture(0, 0); var camp = world.Camps.Single(); world.Herds.Clear();
+            int inside = world.Map.Radius(camp.Tile, 2).Where(id => world.Map.Distance(camp.Tile, id) == 2 && world.Tiles[id].TraversableLand).OrderBy(id => id).First();
+            int outside = world.Map.Radius(inside, world.Config.HunterMovement).Where(id =>
+                world.Map.Distance(camp.Tile, id) > world.Config.SupplyRange && world.Tiles[id].TraversableLand).OrderBy(id => id).First();
+            var hunter = new Hunter { Id = world.NextId++, SourceCamp = camp.Id, SocietyId = camp.SocietyId,
+                Player = camp.Player, Population = 20, Tile = returnToSupply ? outside : inside };
+            world.Hunters.Add(hunter);
+            int destination = returnToSupply ? inside : outside;
+            var orders = new Dictionary<int, List<Order>> { { camp.Player,
+                new List<Order> { new Order(OrderKind.Move, hunter.Id, destination: destination) } } };
+            var prepared = TurnPlanner.Prepare(world, orders);
+            Check(prepared.Orders.Any(o => o.Entity == hunter.Id && o.Kind == OrderKind.Move),
+                "moved-hunter cohort fixture accepts the hunter destination");
+            int expectedConsumers = camp.Population + (returnToSupply ? hunter.Population : 0);
+            Check(prepared.Needs[camp.Id].FoodConsumers == expectedConsumers,
+                "prepared food cohort uses the accepted post-movement hunter connection");
+            Near(prepared.Needs[camp.Id].ConsumptionRequired,
+                expectedConsumers * world.Config.Consumption * world.Config.GenerationIntervals,
+                "prepared food consumption belongs to the connected starting population");
+            new TurnResolver().Resolve(world, prepared);
+            Check(Supply.Connected(world, hunter) == returnToSupply,
+                "resolved hunter supply membership matches the prepared food cohort");
+        }
+    }
+    private static void PreparedFoodRemainderLedger()
+    {
+        var world = Fixture(0, 0); var camp = world.Camps.Single(); world.Herds.Clear();
+        double cohortNeed = camp.Population * world.Config.Consumption * world.Config.GenerationIntervals;
+        camp.PlantFood = cohortNeed * .7;
+        var hunter = new Hunter { Id = world.NextId++, SourceCamp = camp.Id, SocietyId = camp.SocietyId,
+            Player = camp.Player, Population = 20, Tile = camp.Tile };
+        world.Hunters.Add(hunter);
+        int destination = world.Map.Neighbors(camp.Tile).Where(id => world.Tiles[id].TraversableLand)
+            .OrderBy(id => id).First();
+        var prepared = TurnPlanner.Prepare(world, new Dictionary<int, List<Order>> { { camp.Player,
+            new List<Order> { new Order(OrderKind.Move, hunter.Id, destination: destination) } } });
+        var needs = prepared.Needs[camp.Id];
+        double initialRemainder = TurnResolver.RemainingFoodTarget(camp, needs);
+        var record = new TurnRecord();
+        Supply.ProvisionDepartures(world, prepared.Orders, record, prepared.Placement);
+        double loaded = hunter.CarriedFood;
+        Check(loaded > 0, "moving hunter receives finite provisions from the prepared camp stock");
+        Near(TurnResolver.RemainingFoodTarget(camp, needs), initialRemainder + loaded,
+            "provision outflow raises the remaining fixed food target");
+        hunter.Tile = destination;
+        Supply.DepositReturns(world, record);
+        Near(TurnResolver.RemainingFoodTarget(camp, needs), initialRemainder,
+            "returned provisions lower only the remaining food target");
+        Near(needs.FoodConsumers * world.Config.Consumption * world.Config.GenerationIntervals,
+            needs.ConsumptionRequired, "provision and return preserve frozen cohort consumption");
     }
     private static void ProportionalSpeciesManagement()
     {
@@ -263,7 +433,7 @@ internal static class HusbandryChecks
         }
         var whole = Case(.55, 20); Resolve(whole); double wholeTotal = whole.Herds.Single().Animals + whole.Herds.Single().GrowthRemainder;
         var split = Case(.55, 10); Resolve(split); Resolve(split); Near(split.Herds.Single().Animals + split.Herds.Single().GrowthRemainder, wholeTotal, "managed b reproduction is duration partition invariant in animals plus remainder");
-        var underfed = Case(1); var underfedTile = underfed.Tiles[underfed.Camps[0].Tile]; underfedTile.PotentialFood = underfedTile.Freshwater = 0; for (int s = 0; s < underfedTile.Seasons.Length; s++) { underfedTile.Seasons[s].MaxPotentialFood = underfedTile.Seasons[s].MaxFreshwater = 0; underfedTile.Seasons[s].FoodRecoveryPerDay = underfedTile.Seasons[s].BiomassRecoveryPerDay = underfedTile.Seasons[s].WaterRecoveryPerDay = 0; }
+        var underfed = Case(1); foreach (int id in underfed.Map.Radius(underfed.Camps[0].Tile, 1)) { var underfedTile = underfed.Tiles[id]; underfedTile.PotentialFood = underfedTile.Freshwater = 0; for (int s = 0; s < underfedTile.Seasons.Length; s++) { underfedTile.Seasons[s].MaxPotentialFood = underfedTile.Seasons[s].MaxFreshwater = 0; underfedTile.Seasons[s].FoodRecoveryPerDay = underfedTile.Seasons[s].BiomassRecoveryPerDay = underfedTile.Seasons[s].WaterRecoveryPerDay = 0; } }
         underfed.Config.StarvationGraceTurns = 99; Resolve(underfed); Check(underfed.Herds.Single().Animals == 100 && underfed.Herds.Single().NewbornAnimals == 0, "current zero nutrition blocks managed reproduction even at b one");
         var legacy = Case(0); legacy.Camps[0].ManagedBreedingPolicyInitialized = false; var legacyLoaded = SaveCodec.Load(SaveCodec.Save(legacy)); Near(legacyLoaded.Camps[0].ManagedBreedingIntensity, .55, "prepolicy absence migrates to healthy breeding default");
         string prepolicyFixture = System.IO.Path.Combine("TestResults", "Issue20", "issue17-prepolicy.anthro");
@@ -281,16 +451,99 @@ internal static class HusbandryChecks
         herd.StartingAnimals = herd.SurvivingAnimals = 0; herd.LastNutrition = 1; c.Moves = 1; c.StationaryTurns = 0; Near(Recommend(), .65, "recent move into visible ample pasture enables expansion");
         c.Moves = 0; Near(Recommend(), .55, "unmoved new camp is not treated as expansion");
         herd.StartingAnimals = 50; herd.SurvivingAnimals = 25; var clone = new Herd { Id = policy.NextId++, Tile = herd.Tile, Species = herd.Species, Animals = 10, DomesticCamp = c.Id, OwnerSociety = c.SocietyId, StartingAnimals = 50, SurvivingAnimals = 25, LastNutrition = 1, ManagementFulfillment = 1 }; policy.Herds.Add(clone); Near(Recommend(), .65, "split domestic herds retain summed-loss policy result"); policy.Herds.Remove(clone);
-        policy.Tiles[c.Tile].PotentialFood = 0; policy.Tiles[c.Tile].Freshwater = 0; herd.StartingAnimals = 100; herd.SurvivingAnimals = 50; Near(Recommend(), .45, "rich adjacent land cannot recover a herd on depleted occupied pasture"); policy.Tiles[c.Tile].PotentialFood = policy.Tiles[c.Tile].Freshwater = 100000;
+        foreach (int id in policy.Map.Radius(c.Tile, 1)) { policy.Tiles[id].PotentialFood = 0; policy.Tiles[id].Freshwater = 0; }
+        herd.StartingAnimals = 100; herd.SurvivingAnimals = 50; Near(Recommend(), .45, "depleted radius-one forage and water limit managed breeding");
+        foreach (int id in policy.Map.Radius(c.Tile, 1)) { policy.Tiles[id].PotentialFood = 100000; policy.Tiles[id].Freshwater = 100000; }
         foreach (int n in policy.Map.Neighbors(c.Tile)) policy.Tiles[n].ElevationLevel = 10;
         Near(Recommend(), .45, "impassable peak neighbors do not provide AI destination room");
         foreach (int n in policy.Map.Neighbors(c.Tile)) policy.Tiles[n].ElevationLevel = 1;
         c.Workforce.Assignments = new List<PopulationAssignment> { new PopulationAssignment { Role = WorkforceRoles.Herder, Population = 70 } }; Near(Recommend(), .45, "high observed Herder burden lowers AI breeding"); c.Workforce.Assignments = new List<PopulationAssignment> { new PopulationAssignment { Role = WorkforceRoles.Herder, Population = 10 } };
-        var observation = new AgentObservationBuilder().Build(policy, c.Player); var decision = new HeuristicTribePolicy().Decide(observation, c.Mandate); var economic = decision.Orders.Single(o => o.Kind == OrderKind.Economy);
-        Check(OrderRules.Validate(observation, economic) == null && economic.Economy.ManagedBreedingIntensity == .65, "Heuristic submits its visible breeding recommendation through the ordinary validated Economy intent");
+        c.EconomyAutomationTurns = -1;
+        var observation = new AgentObservationBuilder().Build(policy, c.Player); var decision = new HeuristicTribePolicy().Decide(observation, c.Mandate);
+        Check(decision.Orders.Any(o => o.Entity == c.Id && (o.Kind == OrderKind.Move || o.Kind == OrderKind.NoOp)) &&
+            decision.Orders.All(o => o.Kind != OrderKind.Economy), "Heuristic keeps camp movement in its action slot rather than replacing it with Economy");
+        var prepared = TurnPlanner.Prepare(policy, new Dictionary<int, List<Order>> { { c.Player, decision.Orders } });
+        var economic = prepared.Orders.Single(o => o.Kind == OrderKind.Economy && o.Entity == c.Id);
+        Check(prepared.AutomatedCamps.Contains(c.Id) && economic.Economy.ManagedBreedingIntensity == .65,
+            "interturn automation uses the visible breeding recommendation alongside movement");
         var foreignCamp = new Camp { Id = policy.NextId++, Player = 1, Tile = policy.Map.Neighbors(c.Tile).First(), Population = 100 }; policy.Camps.Add(foreignCamp); Ownership.Bind(policy);
         var foreignHerd = new Herd { Id = policy.NextId++, Tile = foreignCamp.Tile, Species = herd.Species, Animals = 100, DomesticCamp = foreignCamp.Id, OwnerSociety = foreignCamp.SocietyId, StartingAnimals = 100, SurvivingAnimals = 1, LastNutrition = 1, ManagementFulfillment = 1 }; policy.Herds.Add(foreignHerd);
         var privateObservation = new AgentObservationBuilder().Build(policy, c.Player); Near(ManagedBreedingPolicy.Recommend(privateObservation, privateObservation.Settlements.Single()), .65, "foreign herd loss stays filtered from the owner AI breeding policy");
+    }
+
+    private static void SupportLimitedBreeding()
+    {
+        WorldState Case(double years, bool waterShort, double mortality = 0)
+        {
+            var w = Fixture(100, 50); var camp = w.Camps.Single(); var herd = w.Herds.Single();
+            w.Config.TurnDays = years * w.Config.DaysPerYear;
+            w.Config.StarvationGraceTurns = 0; w.Config.Mortality = mortality;
+            herd.GrowthRemainder = .37;
+            double intervals = w.Config.TurnDays / w.Config.BaseDays;
+            var species = w.Config.GetSpecies(herd.Species);
+            double food = herd.Animals * species.FoodConsumption * intervals;
+            double water = herd.Animals * species.FreshwaterConsumption * intervals;
+            foreach (int id in w.Map.Radius(camp.Tile, 1))
+            {
+                var tile = w.Tiles[id];
+                tile.Freshwater = 0; tile.FreshwaterSource = FreshwaterSource.None;
+                if (!waterShort) tile.Food = tile.PotentialFood = 0;
+                for (int season = 0; season < 4; season++)
+                {
+                    tile.Seasons[season].MaxFreshwater = 0;
+                    tile.Seasons[season].WaterRecoveryPerDay = 0;
+                    if (!waterShort)
+                    {
+                        tile.Seasons[season].MaxFood = tile.Seasons[season].MaxPotentialFood = 0;
+                        tile.Seasons[season].FoodRecoveryPerDay = tile.Seasons[season].BiomassRecoveryPerDay = 0;
+                    }
+                }
+            }
+            var center = w.Tiles[camp.Tile];
+            center.FreshwaterSource = FreshwaterSource.RainPool;
+            center.Freshwater = water * (waterShort ? .51 : 2);
+            if (!waterShort) center.PotentialFood = food * .51;
+            for (int season = 0; season < 4; season++)
+            {
+                center.Seasons[season].MaxFreshwater = (float)center.Freshwater;
+                if (!waterShort) center.Seasons[season].MaxPotentialFood = (float)center.PotentialFood;
+            }
+            return w;
+        }
+
+        foreach (double years in new[] { .5d, 20d })
+            foreach (bool waterShort in new[] { false, true })
+            {
+                var w = Case(years, waterShort); var herd = w.Herds.Single();
+                var report = Resolve(w).ManagedHerds.Single();
+                Near(waterShort ? report.WaterNutrition : report.FoodNutrition, .51,
+                    "partial " + (waterShort ? "water" : "forage") + " support is measured over " + years + " years", 1e-5);
+                Check(report.NewbornAnimals == 0 && herd.Animals == 100,
+                    "prior-cohort resource shortage blocks births without a mortality penalty over " + years + " years");
+                Near(herd.GrowthRemainder, .37, "resource shortage pauses fractional breeding progress over " + years + " years");
+            }
+
+        var mortalityCase = Case(20, true, .18); var hungryHerd = mortalityCase.Herds.Single();
+        var hungry = Resolve(mortalityCase).ManagedHerds.Single();
+        Check(hungry.StarvationDeaths > 0 && hungry.NewbornAnimals == 0 &&
+            hungryHerd.Animals == hungry.SurvivingAnimals,
+            "water-short herd declines without replacing starvation deaths in the same turn");
+        var continuation = SaveCodec.Load(SaveCodec.Save(mortalityCase));
+        Near(continuation.Herds.Single().GrowthRemainder, .37,
+            "save continuation preserves paused fractional breeding progress");
+        Resolve(mortalityCase); Resolve(continuation);
+        Check(SaveCodec.Fingerprint(mortalityCase) == SaveCodec.Fingerprint(continuation),
+            "water-short breeding remains exact after save continuation");
+
+        var healthy = Fixture(100, 50); var fullHerd = healthy.Herds.Single();
+        healthy.Config.TurnDays = healthy.Config.DaysPerYear / 2;
+        fullHerd.GrowthRemainder = .37;
+        double fullTarget = (100 + .37) * Math.Exp(healthy.Config.GetSpecies(fullHerd.Species).GrowthRate *
+            healthy.Camps.Single().ManagedBreedingIntensity * .5);
+        var fullReport = Resolve(healthy).ManagedHerds.Single();
+        Near(fullReport.Nutrition, 1, "fully nourished fractional-year herd remains fully supported");
+        Near(fullHerd.Animals + fullHerd.GrowthRemainder, fullTarget,
+            "fully nourished fractional-year exponential reproduction is unchanged");
     }
 
     private static void HerdingToolCoverage()

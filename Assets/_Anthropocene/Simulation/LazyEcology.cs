@@ -100,7 +100,7 @@ namespace Anthropocene.Simulation
             return new[] { exposure.At(0) / baseDays, exposure.At(1) / baseDays,
                 exposure.At(2) / baseDays, exposure.At(3) / baseDays };
         }
-        // Representative state is the exact time mean for exponential condition
+        // Representative state is the exact time mean for aquatic condition
         // recovery and capital decay, with a single vegetation classification.
         // It is transient forcing data, never an authoritative mid-turn write.
         internal static EcologyView MeanView(WorldState w, Tile tile, EcologyView start, double days,
@@ -110,7 +110,7 @@ namespace Anthropocene.Simulation
             bool aquatic = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater;
             bool plankton = aquatic && (w.Generation?.GeneratorVersion ?? WorldState.GeneratorVersion) >= 11;
             double recovery = LandConditionRecoveryPerDay(w, tile);
-            mean.LandCondition = EcologyMath.MeanCondition(start.LandCondition, 1, recovery, aquatic ? 0 : damagePerDay, days);
+            mean.LandCondition = start.LandCondition;
             mean.AquaticCondition = EcologyMath.MeanCondition(start.AquaticCondition, 1,
                 plankton ? AquaticEcology.ConditionRecoveryPerDay(tile) : recovery,
                 aquatic ? damagePerDay : 0, days);
@@ -135,8 +135,7 @@ namespace Anthropocene.Simulation
             bool aquatic = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater;
             bool plankton = aquatic && (w.Generation?.GeneratorVersion ?? WorldState.GeneratorVersion) >= 11;
             double landRecovery = LandConditionRecoveryPerDay(w, tile);
-            response.LandCondition = EcologyMath.ResponseCondition(start.LandCondition, 1,
-                landRecovery, 0, stockRate, days);
+            response.LandCondition = start.LandCondition;
             response.AquaticCondition = EcologyMath.ResponseCondition(start.AquaticCondition, 1,
                 plankton ? AquaticEcology.ConditionRecoveryPerDay(tile) : landRecovery,
                 0, stockRate, days);
@@ -321,7 +320,9 @@ namespace Anthropocene.Simulation
             bool aquatic = t.Aquatic || t.WaterBody == WaterKind.Saltwater;
             double recovery = LandConditionRecoveryPerDay(w, t);
             bool plankton = aquatic && (w.Generation?.GeneratorVersion ?? WorldState.GeneratorVersion) >= 11;
-            v.LandCondition = EcologyMath.Condition(v.LandCondition, 1, recovery, aquatic ? 0 : damagePerDay, days);
+            // LandCondition is a stored future-disturbance input. Current
+            // gathering, grazing, cultivation, timber and quiet projection do
+            // not write it; only finite land stocks recover over elapsed time.
             v.AquaticCondition = EcologyMath.Condition(v.AquaticCondition, 1, plankton ? AquaticEcology.ConditionRecoveryPerDay(t) : recovery, aquatic ? damagePerDay : 0, days);
             v.CurrentVegetation = Vegetation.Update(t.NaturalVegetationPotential, v.CurrentVegetation, plankton ? v.AquaticCondition : v.LandCondition, c);
         }

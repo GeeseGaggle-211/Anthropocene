@@ -33,24 +33,16 @@ namespace Anthropocene.Simulation
     public static class EcologicalPressure
     {
         // A numerical guard on a daily rate, never a minimum harvest quantity
-        // per integration segment. Even a very low-flow tile can be overused.
+        // per integration segment. Aquatic condition still responds to overuse.
         private const double SustainableRateEpsilon = 1e-12;
-        // Instantaneous realized conversion is an integrated hazard in the same bounded
-        // condition equation as extraction. Recovery is materialized before disturbance.
-        public static void ApplyConversion(WorldState w, int tile, int entity, string kind, string pool, double requested, double realized, double pressure, double days, TurnRecord record, Dictionary<int, EcologyBalance> balanceIndex = null)
+        // Wood extraction is a finite source debit. It does not disturb land
+        // condition or reduce the source's biological carrying capacity.
+        public static void RecordMaterialExtraction(int tile, int entity, string kind, string pool,
+            double requested, double realized, TurnRecord record)
         {
-            var t = w.Tiles[tile]; var view = LazyEcology.MaterializeEcology(w, tile, days);
-            LazyEcology.RecoverCondition(w, t, ref view, 0, 0);
-            view.LandCondition = EcologyMath.Condition(view.LandCondition, 1, 0, Math.Max(0, pressure), 1);
-            view.CurrentVegetation = Vegetation.Update(t.NaturalVegetationPotential, view.CurrentVegetation, view.LandCondition, w.Config);
-            var before = view; LazyEcology.ClampCapacity(w, t, ref view); view.Commit(t);
-            double woodCapacityLoss = MaterialEconomy.ClampWoodSource(w, tile, view);
-            if (balanceIndex == null && record != null) balanceIndex = MaterialEconomy.GetOrCreateBalanceIndex(record);
-            EcologyBalance balance = null;
-            if (balanceIndex != null) balanceIndex.TryGetValue(tile, out balance);
-            else balance = record?.EcologyBalances?.LastOrDefault(b => b.Tile == tile);
-            if (balance != null) { balance.BiomassOverflow += before.PotentialFood - view.PotentialFood; balance.FoodOverflow += before.Food - view.Food; balance.EndingBiomass = view.PotentialFood; balance.EndingFood = view.Food; }
-            record.Pressure.Add(new PressureEntry { Tile = tile, Entity = entity, Kind = kind, Pool = pool, Requested = requested, Realized = realized, Unmet = Math.Max(0, requested - realized), ConditionDamage = pressure, WoodCapacityLoss = woodCapacityLoss });
+            record.Pressure.Add(new PressureEntry { Tile = tile, Entity = entity, Kind = kind, Pool = pool,
+                Requested = requested, Realized = realized, Unmet = Math.Max(0, requested - realized),
+                ConditionDamage = 0, WoodCapacityLoss = 0 });
         }
         // Inputs are read-only. Results can be merged by tile/entity ID after a worker barrier.
         public static TileEcologyResult Integrate(WorldState w, int tileId, IEnumerable<Demand> claims, double start, double duration,
@@ -118,8 +110,8 @@ namespace Anthropocene.Simulation
             double waterRate = duration > 0 ? waterRequest / duration : 0;
             // Land claims debit only the stock present at the resource boundary.
             // Aquatic food and freshwater retain their coupled horizon flows.
-            // Damage is evaluated after realized receipts, so habitat loss
-            // cannot retroactively erase the stock that caused it.
+            // Aquatic pressure is evaluated after realized receipts. Land
+            // condition is fixed; land-use effects remain finite stock debits.
             var representative = LazyEcology.MeanView(w, tile, v, duration, 0,
                 averageCultivationCapital, operatingFraction);
             var capacity = new HorizonEcologyCapacity(w, tile, representative, start, duration, operatingFraction);
@@ -183,7 +175,7 @@ namespace Anthropocene.Simulation
                     beforeHorizon.CultivationCapital, operatingFraction ?? tile.CultivationOperatingFraction,
                     duration / w.Config.DaysPerYear);
             v.Days = start + duration;
-            wood?.Recover(beforeHorizon, v, duration, damagePerDay);
+            wood?.Recover(beforeHorizon, v, duration);
             for (int i = 0; i < requests.Length; i++)
             {
                 var d = requests[i];
@@ -291,8 +283,9 @@ namespace Anthropocene.Simulation
             return new HorizonFlow(n, first, second, hydration, humans,
                 herdNonfood + spilled, spilled);
         }
-        // A four-profile forcing reducer preserves the nonlinear overuse
-        // penalty of a poor season without scheduling seasonal state writes.
+        // A four-profile forcing reducer preserves aquatic overuse pressure
+        // without scheduling seasonal state writes. Land use changes only
+        // biomass stocks, never biological land condition.
         // The finite per-profile stock window bounds only this damage
         // estimator; actual horizon harvest is resolved by the stock solver.
         private static double SeasonalDamageRate(WorldState world, Tile tile, EcologyView representative,
@@ -300,11 +293,10 @@ namespace Anthropocene.Simulation
             double? operatingFraction)
         {
             double realized = humans + herds;
-            if (days <= 0 || realized <= 0) return 0;
+            if (tile.Land || days <= 0 || realized <= 0) return 0;
             double realizedRate = realized / days;
             double impact = (humans * humanImpact + herds) / realized;
-            double coefficient = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater
-                ? world.Config.AquaticUseDamagePerYear : world.Config.LandUseDamagePerYear;
+            double coefficient = world.Config.AquaticUseDamagePerYear;
             var exposure = new SeasonExposure(start, days, world.Config.BaseDays);
             double weightedDamage = 0;
             for (int season = 0; season < 4; season++)
@@ -314,20 +306,12 @@ namespace Anthropocene.Simulation
                 var profile = new EcologyCapacity(world, tile, representative, season, operatingFraction);
                 double safe = EcologyMath.SustainableHarvestRate(profile.Biomass,
                     profile.BiomassRate, world.Config.SustainableProductionFraction, profile.ManagedFlow);
-                // With a single opening debit, land cannot use twenty years of
-                // renewal to justify stripping the entire opening biomass.
-                // The finite-stock bound matters on long turns; the renewal
-                // bound still governs short turns and aquatic food is unchanged.
-                if (tile.Land)
-                    safe = Math.Min(safe, profile.Biomass
-                        * world.Config.SustainableProductionFraction / days);
                 double finiteRate = profile.Biomass / Math.Min(world.Config.BaseDays, days)
                     + profile.Biomass * profile.BiomassRate + profile.ManagedFlow;
                 double seasonalRealized = Math.Min(realizedRate, finiteRate);
                 if (seasonalRealized <= 0) continue;
                 double utilization = seasonalRealized / Math.Max(SustainableRateEpsilon, safe);
-                double safeUse = tile.Land ? world.Config.LandSafeUseRatio : world.Config.SafeUseRatio;
-                weightedDamage += weight * Math.Pow(Math.Max(0, utilization - safeUse),
+                weightedDamage += weight * Math.Pow(Math.Max(0, utilization - world.Config.SafeUseRatio),
                     world.Config.PressureExponent);
             }
             return coefficient * impact * weightedDamage / world.Config.DaysPerYear;

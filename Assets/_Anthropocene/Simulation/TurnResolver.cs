@@ -92,8 +92,8 @@ namespace Anthropocene.Simulation
                 var hunter = new Hunter { Id = w.NextId++, SourceCamp = camp.Id, SocietyId = camp.SocietyId, Player = camp.Player, Population = order.Population, Tile = camp.Tile };
                 w.Hunters.Add(hunter); record.Log("Tribe " + camp.Player + " dispatched " + hunter.Population + " hunters [" + hunter.Id + "].");
             }
-            Supply.ProvisionDepartures(w, locked, record);
-            Move(w, locked, herdMoves, record);
+            Supply.ProvisionDepartures(w, locked, record, prepared.Placement);
+            Move(w, locked, herdMoves, prepared.Placement, record);
             Supply.DepositReturns(w, record);
             var touched = new Dictionary<int, TileChange>();
             Action<int> touch = id => { if (!touched.ContainsKey(id)) touched[id] = new TileChange { Tile = id, BeforeFood = w.Tiles[id].Food, BeforePotentialFood = w.Tiles[id].PotentialFood, BeforeFreshwater = w.Tiles[id].Freshwater, BeforeLandCondition = w.Tiles[id].LandCondition, BeforeAquaticCondition = w.Tiles[id].AquaticCondition }; };
@@ -158,26 +158,13 @@ namespace Anthropocene.Simulation
                     EcologyMath.CultivationVegetationRetention(w.Config, CultivationEconomy.Intensity(w.Config, index.Ecology(n).CultivationCapital))) * species.MovementHabitatWeight)
                 .ThenBy(n => n == herd.Tile ? 0 : 1).ThenBy(n => n).First();
         }
-        private static void Move(WorldState w, List<Order> orders, Dictionary<int, int> herds, TurnRecord record)
+        private static void Move(WorldState w, List<Order> orders, Dictionary<int, int> herds, CampPlacement placement, TurnRecord record)
         {
-            var destinations = w.Camps.ToDictionary(c => c.Id, c => c.Tile);
-            foreach (var order in orders.Where(o => o.Destination >= 0))
-                if (destinations.ContainsKey(order.Entity)) destinations[order.Entity] = order.Destination;
-            // Stationary camp has priority, then lowest ID. Roll back losers and repeat for cascading blocked moves.
-            bool changed;
-            do
-            {
-                changed = false;
-                foreach (var group in w.Camps.GroupBy(c => destinations[c.Id]).Where(g => g.Count() > 1).ToArray())
-                {
-                    var winner = group.OrderBy(c => c.Tile == group.Key ? 0 : 1).ThenBy(c => c.Id).First();
-                    foreach (var loser in group.Where(c => c != winner))
-                        if (destinations[loser.Id] != loser.Tile) { destinations[loser.Id] = loser.Tile; changed = true; record.Log("Camp " + loser.Id + " movement blocked by another camp."); }
-                }
-            } while (changed);
+            foreach (int id in placement.Blocked.OrderBy(id => id))
+                record.Log("Camp " + id + " movement blocked by another camp.");
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
-                int target = destinations[camp.Id];
+                int target = placement.Destinations[camp.Id];
                 // Fixed settlement Housing remains owned at the site where it
                 // was built; migrate any legacy carried stock before changing
                 // the camp's location.
@@ -197,7 +184,8 @@ namespace Anthropocene.Simulation
                 if (herd.Tile != target) record.Log("Herd " + herd.Id + " moved to " + target + "."); herd.Tile = target;
             }
         }
-        private static void Hunt(WorldState w, List<Order> orders, HashSet<int> establishedHunters, IReadOnlyDictionary<int, int> startingHerdPopulation, TurnRecord record, double time, double years)
+        private static void Hunt(WorldState w, List<Order> orders, HashSet<int> establishedHunters, IReadOnlyDictionary<int, int> startingHerdPopulation, TurnRecord record, double time, double years,
+            IReadOnlyDictionary<int, TurnNeeds> needs)
         {
             double practiceTime = time * w.Config.BaseDays / w.Config.PracticeDays;
             var requests = new List<Tuple<Hunter, Herd, int>>();
@@ -243,7 +231,9 @@ namespace Anthropocene.Simulation
                 {
                     var hunter = sorted[i].Item1; var camp = w.Camps.First(c => c.Id == hunter.SourceCamp);
                     double yieldPerAnimal = species.FoodYield * PracticeEffects.HuntingYield(w.Config, camp);
-                    double usefulFood = Supply.Connected(w, hunter) ? UsefulCampFoodDemand(w, camp, time, years) : Math.Max(0, Supply.Capacity(w, hunter) - hunter.CarriedFood);
+                    double usefulFood = Supply.Connected(w, hunter)
+                        ? RemainingFoodTarget(camp, needs[camp.Id], true)
+                        : Math.Max(0, Supply.Capacity(w, hunter) - hunter.CarriedFood);
                     int allocatedKills = kills[i];
                     kills[i] = Math.Min(kills[i], (int)Math.Floor((usefulFood + 1e-9) / Math.Max(1e-9, yieldPerAnimal)));
                     double yield = kills[i] * yieldPerAnimal;

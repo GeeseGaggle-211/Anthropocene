@@ -14,33 +14,48 @@ coefficients. They do not create seasonal or annual world states.
 
 | Pass | Stable input | Permitted writes and output | Next barrier |
 | --- | --- | --- | --- |
-| Interturn decision and preparation | Fully committed world at `(Turn, Days)`; filtered observations per policy | `AiPlanning.Decide` returns orders and traces. `TurnPlanner.Prepare` validates and copies orders, applies explicit-order precedence over automation, and freezes `TurnNeeds` for the prior cohort. It changes no authoritative world state. | `PreparedTurn` is bound to that world, turn, start day and duration. |
-| Orders and movement | Locked orders and the prepared world | Apply economy intents in entity-ID order; compute herd intentions from the pre-movement view; dispatch established people, provision, move and deposit returns once. | Positions, connected supply, residents and assignments are fixed for resource resolution. |
+| Interturn decision and preparation | Fully committed world at `(Turn, Days)`; filtered observations per policy | `AiPlanning.Decide` returns orders and traces. `TurnPlanner.Prepare` validates and copies orders, resolves camp placement conflicts in a pure snapshot, applies explicit economy intent precedence, prepares automated economy intents for the effective destination, and freezes `TurnNeeds` for the prior cohort. It changes no authoritative world state. | `PreparedTurn` binds placements, intents, needs, world, turn, start day and duration. |
+| Orders and movement | Locked orders, placements and the prepared world | Apply locked economy intents in entity-ID order; compute wild-herd intentions from the pre-movement view; dispatch established people, provision, move and deposit returns once. Domestic herds follow their camp. | Positions, connected supply, residents and assignments are fixed for resource resolution. |
 | Turn setup | Post-movement entities, fixed needs and starting ecology | Establish field ownership and a fixed operating/workforce plan, reproduce herds, hunt, and construct all camp, hunter and herd claims for the whole horizon. These are computational pass writes, not subturn timestamps. | Every claim and average field efficacy is fixed before tile integration. |
-| Resource resolution | Start ecological stocks, fixed claims, four-profile forcing, aggregate field efficacy and duration | Integrate each active tile once for the horizon. Land claims debit opening `G` and `B`; only after receipts are fixed does the tile recover for the next turn. Operated field intensity raises the human-accessible ceiling and managed recovery without adding food to current receipts. Commit endpoint food, biomass, water, condition and Wood, then receipts and balances, in tile order. Reconcile field endpoint capital once from realized terrestrial gathering, without changing claims already evaluated. | Only realized receipts reduce the fixed food/feedstock ledger. No claim or workforce is revised. |
+| Resource resolution | Start ecological stocks, fixed claims, four-profile forcing, aggregate field efficacy and duration | Integrate each active tile once for the horizon. Land claims debit opening `G` and `B`; only after receipts are fixed does the tile recover for the next turn. Domestic herds claim eligible radius-one land forage and radius-one freshwater through the same finite tile ledgers as other claimants. Operated field intensity raises the human-accessible ceiling and managed recovery without adding food to current receipts. Commit endpoint food, biomass, freshwater and Wood, then receipts and balances, in tile order. Reconcile field endpoint capital once from realized terrestrial gathering, without changing claims already evaluated. | Only realized receipts reduce the fixed food/feedstock ledger. No claim or workforce is revised. |
 | Needs and demographics | Realized resource and herd flows, fixed `TurnNeeds`, assigned prior cohort | Resolve managed herds, consumption, reserves, growth eligibility, shortages, production, goods, QoL and storage. Record pending deaths and births, then commit them after cohort needs. | Newborn needs and labor begin at the next preparation boundary. |
 | Close | Completed endpoint | Reintegrate eligible hunters, bind ownership, progress societies, check conservation and invariants, append canonical history, increment turn. | The committed endpoint becomes the next decision boundary. |
 
 ## Rules protecting the pass order
 
-- `EconomicPlanner.Plan` is an interturn read-only policy. AI may use it for a
-  filtered observation, and `TurnPlanner.Prepare` may use it for a fallback
-  automatic intent. `TurnResolver.Resolve(PreparedTurn)` never calls it or
-  recomputes goods, materials or food targets.
+- `EconomicPlanner.Plan` is an interturn read-only policy. AI chooses movement
+  from filtered observations; `TurnPlanner.Prepare` uses the planner once for
+  each eligible automated camp. `TurnResolver.Resolve(PreparedTurn)` never calls it or
+  recomputes goods, materials or food targets. A camp Move does not suppress
+  enabled automation; the destination-aware intent is prepared before movement
+  and committed exactly once. An AI camp action may carry a transient request
+  for that one plan even when its saved automation mode is Off, preserving the
+  AI's previous per-turn staffing behavior. A player Move with automation Off
+  retains its assignments.
 - The prior cohort includes people present before births. Dispatch changes who
-  is a camp resident without creating new people. Connected hunters share
-  biological food demand; disconnected hunters use carried provisions and
-  local forage. Consumption, full attainable operating reserve, growth,
+  is a camp resident without creating new people. Preparation evaluates
+  accepted hunter destinations against the effective camp destination to
+  freeze connected food consumers. Connected hunters share biological food
+  demand; disconnected hunters use carried provisions and local forage.
+  Provision withdrawals and deposited returns change only the remaining
+  food target, not its prepared size. Consumption, full attainable operating
+  reserve, growth,
   starvation grace, Fabric, Housing and QoL all apply to that cohort. Births
   and pending deaths commit only after production, needs and storage.
+- Domestic herd forage and water needs are likewise measured for the animals
+  present before reproduction. Their realized minimum nutrition governs
+  starvation and product yield; an adult shortage pauses births and fractional
+  breeding progress. Fully supplied herds retain the configured growth curve,
+  and newborn herd needs begin at the next preparation boundary.
 - No receipt retroactively changes orders, workforce, field efficacy, claims,
   target sizes or an earlier tile result. An endpoint field-capital correction
   may adjust its endpoint capacity and overflow ledger; it does not recompute
   food already awarded during the turn.
 - Camp and village **land** gathering, cultivation footprints, material
-  discovery and private land claim buffers are confined to radius one. Sea
+  discovery, domestic herd grazing and private land claim buffers are confined
+  to radius one. Domestic herd drinking uses radius-one freshwater sources. Sea
   claims use the range rule of their producer; connected hunters may fish
-  farther away. Distant hunter and herd claims remain independent and
+  farther away. Distant hunter and wild-herd claims remain independent and
   compete on shared tiles.
 - Every shared tile has one ecological supply and one nonnegative harvest
   ledger. If future parallel writers debit it, guard each read/debit/write
@@ -48,6 +63,14 @@ coefficients. They do not create seasonal or annual world states.
   supply; no global tribe priority is required. The present tile integrator
   computes all claims together and merges private worker results in tile
   order. Shared deposit extraction and inventory changes remain canonical.
+- Land biomass `B`, human-gatherable food `G`, and freshwater are finite stocks.
+  Realized harvest and drinking debit them; bounded recovery over elapsed `dt`
+  prepares future stock and never revises current receipts. Every committed
+  boundary satisfies `0 <= G <= B <= biomass capacity` and
+  `0 <= freshwater <= water capacity`. Current Neolithic gathering, grazing,
+  cultivation, timber and quiet projection do not change stored
+  `LandCondition`; its saved value remains available to later disturbance
+  mechanics. Aquatic condition retains its own rules.
 - Claims, transient source indexes, coefficient caches, horizon calculations,
   planner forecasts, diagnostics and worker buffers are not save fields.
   Worker count, partition order and timing never enter authoritative state.

@@ -60,7 +60,10 @@ namespace Anthropocene.Simulation
             TurnDiagnostics.For(world);
             if (world.Resources != null) MaterialAccessIndex.For(world);
             var index = new PlanningIndex(world); var camps = world.Camps.Where(c => c.Player != excludedPlayer).GroupBy(c => c.Player).OrderBy(g => g.Key).Select(g => g.OrderBy(c => c.Id).First()).ToArray();
-            var decisions = (execution ?? new PhaseExecution()).Map(camps, c => new HeuristicTribePolicy().Decide(new AgentObservationBuilder().Build(world, c.Player, index, true), c.Mandate));
+            // AI chooses movement from the filtered view. Economic automation
+            // runs once in TurnPlanner after effective camp destinations are
+            // fixed, so observation construction never triggers an early plan.
+            var decisions = (execution ?? new PhaseExecution()).Map(camps, c => new HeuristicTribePolicy().Decide(new AgentObservationBuilder().Build(world, c.Player, index), c.Mandate));
             for (int i = 0; i < camps.Length; i++) { result.Orders[camps[i].Player] = decisions[i].Orders; result.Traces.Add(decisions[i].Trace); }
             result.Milliseconds = timer.Elapsed.TotalMilliseconds; return result;
         }

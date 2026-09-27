@@ -42,7 +42,7 @@ internal static class EconomicAutomationChecks
     }
     public static int Run()
     {
-        checks = 0; RolesAndRates(); Labor(); Planning(); Persistence(); PreparedBoundary(); LocalSourceIndex(); FabricDoesNotFundBirths(); FabricUsesPriorResidents(); StarvationUsesPriorCohort(); PlanningResidentPopulationIgnoresStaleIncome();
+        checks = 0; RolesAndRates(); Labor(); Planning(); Persistence(); PreparedBoundary(); DestinationPreparation(); LocalSourceIndex(); FabricDoesNotFundBirths(); FabricUsesPriorResidents(); StarvationUsesPriorCohort(); PlanningResidentPopulationIgnoresStaleIncome();
         Console.WriteLine("PASS: " + checks + " demand automation assertions"); return checks;
     }
     private static void RolesAndRates()
@@ -176,6 +176,90 @@ internal static class EconomicAutomationChecks
         Check(locked.PlantFeedstock > 0, "the prepared craft job requests plant feedstock");
         Near(locked.PlantFeedstockGap, locked.PlantFeedstock,
             "food reserved for the prior cohort cannot substitute for craft feedstock");
+    }
+    private static void DestinationPreparation()
+    {
+        var world = Fixture(); var camp = world.Camps[0]; camp.EconomyAutomationTurns = -1;
+        int origin = camp.Tile;
+        int destination = world.Map.Neighbors(origin).Where(id => world.Tiles[id].TraversableLand).OrderBy(id => id).First();
+        int newSource = world.Map.Neighbors(destination).Where(id => world.Map.Distance(origin, id) == 2 && world.Tiles[id].TraversableLand).OrderBy(id => id).First();
+        world.Resources.Stone[origin] = 0; world.Resources.Stone[newSource] = 1000;
+        var move = new Order(OrderKind.Move, camp.Id, destination: destination);
+        var submitted = new Dictionary<int, List<Order>> { [camp.Player] = new List<Order> { move } };
+        string before = SaveCodec.Fingerprint(world);
+        var prepared = TurnPlanner.Prepare(world, submitted);
+        Check(SaveCodec.Fingerprint(world) == before && camp.Tile == origin, "destination preparation is read-only");
+        Check(prepared.Placement.Destinations[camp.Id] == destination && prepared.Orders.Any(o => o.Kind == OrderKind.Move && o.Entity == camp.Id),
+            "an accepted movement order survives the automatic economic pass");
+        var automatic = prepared.Orders.Single(o => o.Kind == OrderKind.Economy && o.Entity == camp.Id);
+        Check(prepared.AutomatedCamps.Contains(camp.Id) && prepared.OrderReceipts.Count(s => s.Contains(":automation:")) == 1,
+            "a moving camp receives one automatic economic plan");
+        var projected = EconomicPlanner.Preview(camp, EconomicIntent.From(camp), camp.Population); projected.Tile = destination;
+        Check(MaterialEconomy.KnownSources(world, projected, world.Days).Any(s => s.Tile == newSource && s.Material == MaterialId.Stone),
+            "destination planning can see a newly adjacent material source");
+        var expected = EconomicPlanner.Plan(world, projected, EconomicIntent.From(camp));
+        Check(automatic.Economy.Stamp == expected.Stamp, "the automatic intent is planned for the effective destination");
+        var record = new TurnResolver().Resolve(world, prepared);
+        Check(camp.Tile == destination && record.Orders.Count(s => s.Contains(":automation:")) == 1,
+            "movement and the single prepared intent commit in one turn");
+
+        var rejected = Fixture(); var rejectedCamp = rejected.Camps[0]; rejectedCamp.EconomyAutomationTurns = -1;
+        var invalid = EconomicIntent.From(rejectedCamp); invalid.AutomationTurns = -2;
+        var rejectedTurn = TurnPlanner.Prepare(rejected, new Dictionary<int, List<Order>>
+            { [rejectedCamp.Player] = new List<Order> { new Order(OrderKind.Economy, rejectedCamp.Id) { Economy = invalid } } });
+        Check(rejectedTurn.Rejections.Count == 1 && rejectedTurn.Orders.Count(o => o.Kind == OrderKind.Economy && o.Entity == rejectedCamp.Id) == 1 &&
+            rejectedTurn.AutomatedCamps.Contains(rejectedCamp.Id),
+            "an invalid explicit economic order cannot suppress enabled automation");
+
+        var blocked = Fixture(); var mover = blocked.Camps[0]; mover.EconomyAutomationTurns = -1;
+        int occupied = blocked.Map.Neighbors(mover.Tile).Where(id => blocked.Tiles[id].TraversableLand).OrderBy(id => id).First();
+        var stationary = new Camp { Id = blocked.NextId++, Player = mover.Player, SocietyId = mover.SocietyId,
+            Tile = occupied, Population = 10 }; stationary.Bind(mover.People);
+        blocked.Camps.Add(stationary);
+        var associatedHunter = new Hunter { Id = blocked.NextId++, Player = mover.Player, SocietyId = mover.SocietyId,
+            SourceCamp = mover.Id, Tile = mover.Tile, Population = 8 };
+        blocked.Hunters.Add(associatedHunter);
+        var attempted = new Dictionary<int, List<Order>> { [mover.Player] = new List<Order> { new Order(OrderKind.Move, mover.Id, destination: occupied) } };
+        var blockedTurn = TurnPlanner.Prepare(blocked, attempted);
+        Check(blockedTurn.Placement.Destinations[mover.Id] == mover.Tile && blockedTurn.Placement.Blocked.Contains(mover.Id),
+            "stationary camp wins the pure placement snapshot");
+        var blockedIntent = blockedTurn.Orders.Single(o => o.Kind == OrderKind.Economy && o.Entity == mover.Id);
+        var originIntent = EconomicPlanner.Plan(blocked, mover, EconomicIntent.From(mover));
+        Check(blockedIntent.Economy.Stamp == originIntent.Stamp, "blocked movement prepares the original camp site");
+        var logistics = new TurnRecord();
+        Supply.ProvisionDepartures(blocked, blockedTurn.Orders, logistics, blockedTurn.Placement);
+        Check(associatedHunter.CarriedFood == 0 && logistics.Logistics.All(l => l.ProvisionsLoaded == 0),
+            "a blocked camp move does not provision hunters for a departure that never happens");
+
+        var manual = Fixture(); var manualCamp = manual.Camps[0]; manualCamp.EconomyAutomationTurns = 0;
+        manualCamp.Workforce.Assign(WorkforceRoles.Gatherer, 10, manualCamp.Population);
+        int manualTarget = manual.Map.Neighbors(manualCamp.Tile).Where(id => manual.Tiles[id].TraversableLand).OrderBy(id => id).First();
+        var manualPrepared = TurnPlanner.Prepare(manual, new Dictionary<int, List<Order>>
+            { [manualCamp.Player] = new List<Order> { new Order(OrderKind.Move, manualCamp.Id, destination: manualTarget) } });
+        Check(!manualPrepared.Orders.Any(o => o.Kind == OrderKind.Economy && o.Entity == manualCamp.Id) &&
+            manualCamp.Workforce.Assignments.Single().Population == 10, "automation-off movement retains manual staffing");
+        var aiWorld = Fixture(); var aiCamp = aiWorld.Camps[0]; aiCamp.EconomyAutomationTurns = 0;
+        var aiChoice = AiPlanning.Decide(aiWorld);
+        var aiPrepared = TurnPlanner.Prepare(aiWorld, aiChoice.Orders, aiChoice.Traces);
+        Check(aiChoice.Orders[aiCamp.Player].Single(o => o.Entity == aiCamp.Id).RequestAutomaticEconomy &&
+            aiPrepared.Orders.Count(o => o.Kind == OrderKind.Economy && o.Entity == aiCamp.Id) == 1,
+            "AI keeps an interturn economic proposal when its movement action occupies the camp order slot");
+
+        var many = NeolithicChecks.Fixture(false); var first = many.Camps[0];
+        first.Technology = Technology.AnimalHusbandry;
+        first.Technologies[(int)Technology.AnimalHusbandry] = true;
+        var secondTile = many.Map.Neighbors(first.Tile).Where(id => many.Tiles[id].TraversableLand).OrderBy(id => id).First();
+        var second = new Camp { Id = many.NextId++, Player = first.Player, SocietyId = first.SocietyId,
+            Tile = secondTile, Population = 20, EconomyAutomationTurns = -1 };
+        second.Bind(first.People); many.Camps.Add(second);
+        many.Herds.Add(new Herd { Id = many.NextId++, Tile = secondTile, DomesticCamp = second.Id,
+            OwnerSociety = second.SocietyId, Animals = 20, StartingAnimals = 20,
+            SurvivingAnimals = 10, LastNutrition = .6, ManagementFulfillment = 1 });
+        var index = new PlanningIndex(many);
+        var secondView = new AgentObservation(many, second, index, false);
+        double filtered = ManagedBreedingPolicy.Recommend(secondView, secondView.Settlements.Single(s => s.Id == second.Id));
+        double local = ManagedBreedingPolicy.Recommend(many, second, secondTile, index);
+        Near(local, filtered, "local breeding recommendation matches the filtered view for a second same-player camp");
     }
     private static void LocalSourceIndex()
     {

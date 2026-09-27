@@ -344,12 +344,17 @@ namespace Anthropocene.Simulation
     public sealed class Order
     {
         [System.Runtime.Serialization.OptionalField] public EconomicIntent Economy;
+        // Interturn AI proposal only. It is not an action payload or save field;
+        // the prepared turn turns this request into one validated economic
+        // intent after movement conflicts have been resolved.
+        [NonSerialized] internal bool RequestAutomaticEconomy;
         public OrderKind Kind;
         public int Entity, Target = -1, Destination = -1, Population;
         public Order() { }
         public Order(OrderKind kind, int entity, int target = -1, int destination = -1, int population = 0)
         { Kind = kind; Entity = entity; Target = target; Destination = destination; Population = population; }
-        public Order Copy() => new Order(Kind, Entity, Target, Destination, Population) { Economy = Economy?.Copy() };
+        public Order Copy() => new Order(Kind, Entity, Target, Destination, Population)
+            { Economy = Economy?.Copy(), RequestAutomaticEconomy = RequestAutomaticEconomy };
         public override string ToString() => Kind + ":" + Entity + ":" + Target + ":" + Destination + ":" + Population + (Economy == null ? "" : ":" + Economy.Stamp);
     }
     [Serializable]

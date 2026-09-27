@@ -339,7 +339,7 @@ internal static class PastoralCraftChecks
         var observed = new AgentObservationBuilder().Build(w, own.Player);
         string json = ObservationContract.Serialize(observed, own.People.Mandate);
         var dto = ObservationContract.Deserialize(json);
-        Check(dto.Schema == 12 && AgentObservation.SchemaVersion == 12, "observation schema 12 exposes retained natural cover without persisting it");
+        Check(dto.Schema == AgentObservation.SchemaVersion && dto.Schema == 14, "observation schema exposes retained natural cover without persisting it");
         var observedCover = dto.Tiles.Single(tile => tile.Id == own.Tile);
         Near(observedCover.NaturalVegetationRetention, 0, "schema 12 reports zero retained vegetation service at q=1");
         Near(observedCover.EffectiveNaturalVegetationService, 0, "schema 12 reports no standing natural vegetation service at q=1");

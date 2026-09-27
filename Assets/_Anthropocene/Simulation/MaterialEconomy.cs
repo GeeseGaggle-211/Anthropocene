@@ -67,11 +67,10 @@ namespace Anthropocene.Simulation
             remaining = Math.Min(remaining, MaterialEconomy.WoodCapacity(this.initial, world.Tiles[tile], stored, world.Config));
         }
         internal double Remaining => remaining;
-        internal void Recover(EcologyView before, EcologyView after, double days) => Recover(before, after, days, 0);
-        internal void Recover(EcologyView before, EcologyView after, double days, double conditionDamagePerDay)
+        internal void Recover(EcologyView before, EcologyView after, double days)
         {
             if (days <= 0) { remaining = Math.Min(remaining, MaterialEconomy.WoodCapacity(initial, world.Tiles[tile], after, world.Config)); return; }
-            remaining = MaterialEconomy.RecoverWood(world, world.Tiles[tile], initial, remaining, before, after, days, conditionDamagePerDay);
+            remaining = MaterialEconomy.RecoverWood(world, world.Tiles[tile], initial, remaining, before, after, days);
         }
         internal void Commit()
         {
@@ -221,7 +220,7 @@ namespace Anthropocene.Simulation
         // Integrate Wood toward ecological support and the q-derived natural-cover
         // cap over one horizon. The retention-threshold split is closed-form math
         // inside this pure projection, not an authoritative subturn state.
-        internal static double RecoverWood(WorldState w, Tile tile, double initial, double remaining, EcologyView before, EcologyView after, double days, double conditionDamagePerDay)
+        internal static double RecoverWood(WorldState w, Tile tile, double initial, double remaining, EcologyView before, EcologyView after, double days)
         {
             double capacityBefore = WoodCapacity(initial, tile, before, w.Config);
             remaining = Math.Min(Math.Max(0, remaining), capacityBefore);
@@ -229,9 +228,10 @@ namespace Anthropocene.Simulation
             if (woodRate <= 1e-18 || days <= 0) return Math.Min(remaining, WoodCapacity(initial, tile, after, w.Config));
             double vegetation = Math.Min((int)tile.NaturalVegetationPotential, (int)before.CurrentVegetation) + 1;
             vegetation /= (double)((int)tile.NaturalVegetationPotential + 1);
-            bool aquatic = tile.Aquatic || tile.WaterBody == WaterKind.Saltwater;
-            double recovery = aquatic ? 0 : LazyEcology.LandConditionRecoveryPerDay(w, tile);
-            double damage = Math.Max(0, conditionDamagePerDay);
+            // Land condition is fixed during this ecology horizon. Wood grows
+            // toward the support of that stored condition, current vegetation,
+            // and the changing cultivation cover.
+            double ecologicalSupport = initial * vegetation * Numbers.Clamp(before.LandCondition, 0, 1);
             double q = CultivationEconomy.Intensity(w.Config, before.CultivationCapital);
             double lambda = CultivationDecayRatePerDay(w, tile);
             double retentionStart = w.Config.CultivationVegetationDisplacementStart;
@@ -241,18 +241,16 @@ namespace Anthropocene.Simulation
                 double crossing = Math.Log(q / retentionStart) / lambda;
                 firstDays = Math.Min(days, Math.Max(0, crossing));
             }
-            double condition = Numbers.Clamp(before.LandCondition, 0, 1);
             if (firstDays > 0)
             {
-                remaining = RecoverWoodInterval(remaining, initial * vegetation, condition, recovery, damage, woodRate, firstDays,
+                remaining = RecoverWoodInterval(remaining, ecologicalSupport, woodRate, firstDays,
                     q, lambda, lambda > 1e-18 && q > retentionStart, w.Config);
-                condition = EcologyMath.Condition(condition, 1, recovery, damage, firstDays);
             }
             double secondDays = days - firstDays;
             if (secondDays > 1e-12)
             {
                 double qAtBoundary = lambda > 1e-18 ? q * Math.Exp(-lambda * firstDays) : q;
-                remaining = RecoverWoodInterval(remaining, initial * vegetation, condition, recovery, damage, woodRate, secondDays,
+                remaining = RecoverWoodInterval(remaining, ecologicalSupport, woodRate, secondDays,
                     qAtBoundary, 0, false, w.Config);
             }
             return Math.Min(Math.Max(0, remaining), WoodCapacity(initial, tile, after, w.Config));
@@ -262,13 +260,10 @@ namespace Anthropocene.Simulation
             double halfLife = Math.Max(1e-12, w.Config.Neolithic.DecayHalfLifeYears);
             return Math.Log(2) / halfLife * (1 - Numbers.Clamp(tile.CultivationOperatingFraction, 0, 1)) / w.Config.DaysPerYear / 2;
         }
-        private static double RecoverWoodInterval(double remaining, double ecologicalScale, double condition, double recovery, double damage,
+        private static double RecoverWoodInterval(double remaining, double ecologicalScale,
             double woodRate, double days, double q, double qDecayPerDay, bool qDecliningAboveThreshold, SimulationConfig config)
         {
             if (days <= 0 || woodRate <= 1e-18) return Math.Max(0, remaining);
-            double conditionRate = recovery + damage;
-            double equilibrium = conditionRate <= 1e-18 ? condition : recovery / conditionRate;
-            double conditionTransient = condition - equilibrium;
             double retentionStart = config.CultivationVegetationDisplacementStart;
             double factor = Math.Max(0, ecologicalScale);
             double woodDecay = Math.Exp(-woodRate * days);
@@ -277,16 +272,13 @@ namespace Anthropocene.Simulation
             {
                 double intercept = 1 / (1 - retentionStart);
                 double slope = q / (1 - retentionStart);
-                endpoint += WoodForcingResponse(factor * intercept * equilibrium, 0, woodRate, days, woodDecay);
-                endpoint += WoodForcingResponse(factor * intercept * conditionTransient, conditionRate, woodRate, days, woodDecay);
-                endpoint += WoodForcingResponse(-factor * slope * equilibrium, qDecayPerDay, woodRate, days, woodDecay);
-                endpoint += WoodForcingResponse(-factor * slope * conditionTransient, conditionRate + qDecayPerDay, woodRate, days, woodDecay);
+                endpoint += WoodForcingResponse(factor * intercept, 0, woodRate, days, woodDecay);
+                endpoint += WoodForcingResponse(-factor * slope, qDecayPerDay, woodRate, days, woodDecay);
             }
             else
             {
                 double retention = EcologyMath.CultivationVegetationRetention(config, q);
-                endpoint += WoodForcingResponse(factor * retention * equilibrium, 0, woodRate, days, woodDecay);
-                endpoint += WoodForcingResponse(factor * retention * conditionTransient, conditionRate, woodRate, days, woodDecay);
+                endpoint += WoodForcingResponse(factor * retention, 0, woodRate, days, woodDecay);
             }
             return Math.Max(0, endpoint);
         }
@@ -391,10 +383,10 @@ namespace Anthropocene.Simulation
                 result.Add(new KnownMaterialSource { Id = id, Tile = tile, Material = material, Initial = initial, Share = share, Available = remaining * share, RecoveryPerYear = recovery, Distance = w.Map.Distance(c.Tile, tile) });
             }
         }
-        public static double Extract(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record, Dictionary<int, EcologyBalance> balanceIndex = null)
-            => ExtractKnown(w, c, requested, role, workerIntervals, useful, days, record, false, balanceIndex ?? (record != null ? GetOrCreateBalanceIndex(record) : null));
+        public static double Extract(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record)
+            => ExtractKnown(w, c, requested, role, workerIntervals, useful, days, record, false);
 
-        private static double ExtractKnown(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record, bool trustedLocalCatalog, Dictionary<int, EcologyBalance> balanceIndex = null)
+        private static double ExtractKnown(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record, bool trustedLocalCatalog)
         {
             if (!CultivationEconomy.Enabled(c) || workerIntervals <= 0 || useful <= 0) return 0;
             var source = trustedLocalCatalog ? requested : KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
@@ -427,8 +419,8 @@ namespace Anthropocene.Simulation
             record.MaterialTransfers.Add(new MaterialReceipt { Camp = c.Id, Society = c.SocietyId, Tile = source.Tile, Source = source.Id, Material = source.Material, Role = role, Amount = amount, Before = before, After = state.Remaining, WorkerIntervals = amount / rate, Days = days });
             if (source.Material == MaterialId.Wood)
             {
-                double fraction = amount / Math.Max(1e-12, source.Initial);
-                EcologicalPressure.ApplyConversion(w, source.Tile, c.Id, "Timber extraction", "Wood", useful, amount, fraction * w.Config.Neolithic.TimberConversionPressure, days, record, balanceIndex);
+                EcologicalPressure.RecordMaterialExtraction(source.Tile, c.Id,
+                    "Timber extraction", "Wood", useful, amount, record);
             }
             return amount / rate;
         }
@@ -461,7 +453,6 @@ namespace Anthropocene.Simulation
                 return Math.Max(0, total - Inventory(c, material));
             }
             var localSources = KnownSources(w, c, days);
-            var balanceIndex = GetOrCreateBalanceIndex(record);
             foreach (string role in ExtractionRoles)
             {
                 double labor = role == WorkforceRoles.Gatherer ? generalistIntervals : CultivationEconomy.Workers(c, role) * intervals;
@@ -506,7 +497,7 @@ namespace Anthropocene.Simulation
                     if (bestSource == null) break;
                     visited.Add((bestSource.Id, bestSource.Tile));
                     double batch = Math.Min(labor, Math.Min(bestSource.Available, bestDemand) / rate);
-                    double spent = ExtractKnown(w, c, bestSource, role, batch, bestDemand, days, record, true, balanceIndex);
+                    double spent = ExtractKnown(w, c, bestSource, role, batch, bestDemand, days, record, true);
                     if (spent <= 1e-12) break;
                     var state = SourceState(w, bestSource.Id);
                     if (state != null)

@@ -36,7 +36,7 @@ namespace Anthropocene.Simulation
             double FoodAvailability(int id) => LazyEcology.AccessibleAvailability(w, id, w.Days, cfg.TurnDays, operated.Contains(id) ? 1 : 0);
             double forageSupply = eligible.Sum(FoodAvailability), plantSupply = eligible.Where(id => w.Tiles[id].Land).Sum(FoodAvailability);
             int reservedHerdersForForecast = husbandryEnabled ? ManagedHerderReservation(w, c, years) : 0;
-            var managedFood = husbandryEnabled ? TurnResolver.ForecastManagedAnimalFood(w, c, reservedHerdersForForecast, intervals, years) : new ManagedFoodForecast();
+            var managedFood = husbandryEnabled ? TurnResolver.ForecastManagedAnimalFood(w, c, reservedHerdersForForecast, intervals, years, c.Tile) : new ManagedFoodForecast();
             double forageAfterHerds = Math.Max(0, forageSupply - managedFood.HumanFoodDisplaced);
             double supply = forageAfterHerds + managedFood.AnimalFood;
             double biological = TurnResolver.PlanningFoodDemand(w, c);
@@ -65,7 +65,7 @@ namespace Anthropocene.Simulation
             // below on the resolver-shaped candidate.
             if (goals.ContainsKey(CraftGood.FarmTools)) goals[CraftGood.FarmTools] = 0;
             double sparePlant = Math.Min(c.PlantFood, Math.Max(0, c.Food - c.Population * cfg.Consumption * intervals * (1 + cfg.GrowthReserveTurns)));
-            int consumers = c.Population + w.Hunters.Where(h => h.SourceCamp == c.Id && Supply.Connected(w, h)).Sum(h => h.Population);
+            int consumers = c.Population + w.Hunters.Where(h => h.SourceCamp == c.Id && Supply.InRange(w, c, h.Tile)).Sum(h => h.Population);
             double plantEnvelope = Math.Min(plantSupply + sparePlant, Math.Max(0, c.Food + supply - consumers * cfg.Consumption * intervals));
             double animalSurplus = Math.Max(0, c.Food + supply - consumers * cfg.Consumption * intervals * (1 + cfg.GrowthReserveTurns));
             double animalEnvelope = husbandryEnabled ? Math.Min(Math.Max(0, c.AnimalFood) + managedFood.AnimalFood, Math.Max(0, animalSurplus - sparePlant)) : 0;

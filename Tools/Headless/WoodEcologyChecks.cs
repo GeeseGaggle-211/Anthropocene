@@ -46,7 +46,9 @@ internal static class WoodEcologyChecks
         Near(Wood(overcapacity, 0), 250.0 / 30.0, "equal-clock existing Wood state cannot exceed current support"); Near(overcapacityState.Remaining, 250, "equal-clock capacity projection remains pure");
         var recovering = Fixture(.1, VegetationTier.Low); recovering.Config.ConditionRecoveryPerYear = Math.Log(2); recovering.Config.Validate(); WoodState(recovering, 0);
         double early = Wood(recovering, 365), late = Wood(recovering, 3650);
-        Check(late > early && late <= MaterialEconomy.WoodCapacity(250, recovering.Tiles[recovering.Camps[0].Tile], LazyEcology.ProjectEcology(recovering, recovering.Camps[0].Tile, 3650), recovering.Config), "authoritative ecological recovery permits Wood recovery without exceeding support");
+        Check(late > early && late <= MaterialEconomy.WoodCapacity(250, recovering.Tiles[recovering.Camps[0].Tile], LazyEcology.ProjectEcology(recovering, recovering.Camps[0].Tile, 3650), recovering.Config)
+            && LazyEcology.ProjectEcology(recovering, recovering.Camps[0].Tile, 3650).LandCondition == .1,
+            "Wood stock recovers toward fixed stored-condition support without exceeding it");
         Near(healthyYear, 250 * (1 - Math.Exp(-.05)), "healthy aligned source preserves former recovery trajectory");
     }
     private static void MaterializationAndSave()
@@ -54,7 +56,7 @@ internal static class WoodEcologyChecks
         var agreement = Fixture(.1, VegetationTier.Low); WoodState(agreement, 0);
         var projected = LazyEcology.ProjectEcology(agreement, agreement.Camps[0].Tile, 20 * 365); double projectedWood = Wood(agreement, 20 * 365);
         var materialized = LazyEcology.MaterializeEcology(agreement, agreement.Camps[0].Tile, 20 * 365);
-        Near(materialized.LandCondition, projected.LandCondition, "Wood companion projection preserves ProjectEcology land condition"); Near(materialized.Food, projected.Food, "Wood companion projection preserves ProjectEcology food"); Near(agreement.MaterialSources.Single().Remaining, projectedWood, "Wood source projection agrees with materialization", 1e-7);
+        Near(materialized.LandCondition, .1, "Wood companion projection preserves stored land condition"); Near(materialized.LandCondition, projected.LandCondition, "Wood companion projection preserves ProjectEcology land condition"); Near(materialized.Food, projected.Food, "Wood companion projection preserves ProjectEcology food"); Near(agreement.MaterialSources.Single().Remaining, projectedWood, "Wood source projection agrees with materialization", 1e-7);
         var once = Fixture(.1, VegetationTier.Low); WoodState(once, 0); LazyEcology.MaterializeEcology(once, once.Camps[0].Tile, 20 * 365);
         var split = Fixture(.1, VegetationTier.Low); WoodState(split, 0);
         for (double day = split.Config.BaseDays; day <= 20 * 365; day += split.Config.BaseDays) LazyEcology.MaterializeEcology(split, split.Camps[0].Tile, day);
@@ -62,6 +64,7 @@ internal static class WoodEcologyChecks
         var saved = Fixture(.1, VegetationTier.Low); WoodState(saved, 0); LazyEcology.MaterializeEcology(saved, saved.Camps[0].Tile, 10 * 365); saved.Days = 10 * 365;
         var loaded = SaveCodec.Load(SaveCodec.Save(saved)); saved.Days = loaded.Days = 20 * 365; LazyEcology.MaterializeEcology(saved, saved.Camps[0].Tile, 20 * 365); LazyEcology.MaterializeEcology(loaded, loaded.Camps[0].Tile, 20 * 365);
         Near(loaded.MaterialSources.Single().Remaining, saved.MaterialSources.Single().Remaining, "Wood ecology/source continuation survives save/load", 1e-7);
+        Near(loaded.Tiles[loaded.Camps[0].Tile].LandCondition, .1, "save continuation preserves nonpristine stored land condition");
         var stale = Fixture(.1, VegetationTier.Low); var staleState = WoodState(stale, 100, 0); stale.Tiles[stale.Camps[0].Tile].LastEcologyUpdateDays = stale.Days = 365;
         string fingerprint = SaveCodec.Fingerprint(stale); double available = Wood(stale, 365);
         Check(available <= 250.0 / 30.0 + 1e-8 && staleState.Remaining == 100 && staleState.LastDays == 0 && SaveCodec.Fingerprint(stale) == fingerprint, "stale saved source clamps only in pure projection without inventing history or rewriting save state");
@@ -72,18 +75,21 @@ internal static class WoodEcologyChecks
         w.Config.LandUseDamagePerYear = 1; w.Config.SafeUseRatio = 0; w.Config.Validate();
         var result = EcologicalPressure.Integrate(w, tile, new[] { new Demand { Tile = tile, Entity = w.Camps[0].Id, Kind = "Gathering", Food = 100000 } }, 0, w.Config.BaseDays);
         Check(result.HasWoodSource && state.Remaining == 0, "parallel ecology result carries Wood projection without mutating source state");
-        Commit(w, result); Check(state.LastDays == w.Config.BaseDays && state.Remaining <= MaterialEconomy.WoodCapacity(state.Initial, w.Tiles[tile], result.View, w.Config) + 1e-8, "sequential ecology barrier commits supported Wood state");
+        Commit(w, result); Check(state.LastDays == w.Config.BaseDays && state.Remaining <= MaterialEconomy.WoodCapacity(state.Initial, w.Tiles[tile], result.View, w.Config) + 1e-8 && w.Tiles[tile].LandCondition == .5, "sequential ecology barrier commits supported Wood state without condition damage");
     }
     private static void ReceiptAndFiniteMaterials()
     {
-        var w = Fixture(); var c = w.Camps[0]; int tile = c.Tile; var record = new TurnRecord();
+        var w = Fixture(.6); var c = w.Camps[0]; int tile = c.Tile; var record = new TurnRecord();
         w.Config.Neolithic.TimberConversionPressure = 100; w.Config.Validate();
         var wood = MaterialEconomy.KnownSources(w, c, 0).Single(s => s.Material == MaterialId.Wood);
         double spent = MaterialEconomy.Extract(w, c, wood, WorkforceRoles.Gatherer, 100, 100, 0, record);
         Check(spent > 0 && record.MaterialTransfers.Count == 1, "Wood extraction remains receipted");
         var receipt = record.MaterialTransfers.Single(); Near(receipt.Before - receipt.After, receipt.Amount, "Wood receipt records only the actual source debit");
         double loss = record.Pressure.Single().WoodCapacityLoss; double remaining = Wood(w, 0);
-        Check(loss > 0 && Math.Abs(receipt.After - loss - remaining) < 1e-8 && remaining <= MaterialEconomy.WoodCapacity(250, w.Tiles[tile], LazyEcology.ProjectEcology(w, tile, 0), w.Config) + 1e-8, "post-conversion capacity loss is distinct from receipts and caps the source");
+        Check(loss == 0 && record.Pressure.Single().ConditionDamage == 0
+            && w.Tiles[tile].LandCondition == .6 && Math.Abs(receipt.After - remaining) < 1e-8
+            && remaining <= MaterialEconomy.WoodCapacity(250, w.Tiles[tile], LazyEcology.ProjectEcology(w, tile, 0), w.Config) + 1e-8,
+            "timber debits finite Wood stock without changing condition or ecological capacity");
         var stone = MaterialEconomy.KnownSources(w, c, 0).Single(s => s.Material == MaterialId.Stone); var clay = MaterialEconomy.KnownSources(w, c, 0).Single(s => s.Material == MaterialId.Clay);
         Near(stone.Available, 1000, "Stone availability remains finite and unchanged"); Near(clay.Available, 1000, "Clay availability remains finite and unchanged");
     }

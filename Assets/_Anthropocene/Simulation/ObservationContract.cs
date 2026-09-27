@@ -35,6 +35,8 @@ namespace Anthropocene.Simulation
     }
     [Serializable] public sealed class ObservedExtractionDto { public int Tile; public double Food; }
     [Serializable] public sealed class ObservedPredictionDto { public int Herd, Tile; }
+    [Serializable] public sealed class ObservedSiteCoverageDto { public int Tile; public double HumanFood, HerdForage, HerdWater; }
+    [Serializable] public sealed class ObservedAgriculturalSiteDto { public int Tile, RetainedFields; public double ManagedRecoveryCoverage, LostRebuildBurden; }
     [Serializable]
     public sealed class ObservationDto
     {
@@ -50,6 +52,8 @@ namespace Anthropocene.Simulation
         public ObservedHerdDto[] Herds;
         public ObservedExtractionDto[] RecentOwnExtraction;
         public ObservedPredictionDto[] LikelyHerdDestinations;
+        public ObservedSiteCoverageDto[] SiteCoverage;
+        public ObservedAgriculturalSiteDto[] AgriculturalSites;
         public EntityActionMask[] LegalActions;
         public static ObservationDto From(AgentObservation o, Mandate mandate) => new ObservationDto
         {
@@ -60,6 +64,9 @@ namespace Anthropocene.Simulation
             Tiles = o.Tiles.OrderBy(p => p.Key).Select(p => ObservedTileDto.From(p.Value)).ToArray(), Hunters = o.Hunters.Select(ObservedUnitDto.From).ToArray(), Rivals = o.Rivals.Select(ObservedUnitDto.From).ToArray(), ForeignHunters = o.ForeignHunters.Select(ObservedUnitDto.From).ToArray(),
             Herds = o.Herds.Select(h => new ObservedHerdDto { Id = h.Id, Tile = h.Tile, Size = h.Size, Owner = h.Owner, DomesticCamp = h.DomesticCamp, DeficitTurns = h.DeficitTurns, StartingAnimals = h.StartingAnimals, SurvivingAnimals = h.SurvivingAnimals, NewbornAnimals = h.NewbornAnimals, StarvationDeaths = h.StarvationDeaths, RepresentativeCount = h.Count.Representative, Species = h.Species, Name = h.Name, CountLabel = h.Count.Label, Domestic = h.Domestic, OwnedDomestic = h.OwnedDomestic, ExactCount = h.Count.Exact, DeficitSeverity = h.DeficitSeverity, DeathRemainder = h.DeathRemainder, FoodNutrition = h.FoodNutrition, WaterNutrition = h.WaterNutrition, Nutrition = h.Nutrition, ManagementFulfillment = h.ManagementFulfillment, PotentialFood = h.PotentialFood, AcceptedFood = h.AcceptedFood }).ToArray(),
             RecentOwnExtraction = o.RecentOwnExtraction.OrderBy(p => p.Key).Select(p => new ObservedExtractionDto { Tile = p.Key, Food = p.Value }).ToArray(), LikelyHerdDestinations = o.LikelyHerdDestinations.OrderBy(p => p.Key).Select(p => new ObservedPredictionDto { Herd = p.Key, Tile = p.Value }).ToArray(),
+            SiteCoverage = o.SiteCoverage.OrderBy(s => s.Tile).Select(s => new ObservedSiteCoverageDto { Tile = s.Tile, HumanFood = s.HumanFood, HerdForage = s.HerdForage, HerdWater = s.HerdWater }).ToArray(),
+            AgriculturalSites = o.AgriculturalSites.OrderBy(s => s.Tile).Select(s => new ObservedAgriculturalSiteDto
+                { Tile = s.Tile, RetainedFields = s.RetainedFields, ManagedRecoveryCoverage = s.ManagedRecoveryCoverage, LostRebuildBurden = s.LostRebuildBurden }).ToArray(),
             LegalActions = Simulation.LegalActions.Build(o)
         };
     }

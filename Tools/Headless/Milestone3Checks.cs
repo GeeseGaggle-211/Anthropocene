@@ -172,7 +172,9 @@ internal static class Milestone3Checks
         skilledEcology.Camps[0].Experience[(int)Domain.Gathering] = skilledEcology.Config.ExperienceThreshold * skilledEcology.Config.PracticeBonusFull;
         var noviceHarvest = resolver.Resolve(noviceEcology, Idle()); var skilledHarvest = resolver.Resolve(skilledEcology, Idle());
         int worked = noviceEcology.Camps[0].Tile;
-        Check(Math.Abs(noviceHarvest.Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food) - skilledHarvest.Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food)) < 1e-8 && skilledEcology.Tiles[worked].LandCondition > noviceEcology.Tiles[worked].LandCondition, "gathering proficiency preserves more land condition for the same food");
+        Check(Math.Abs(noviceHarvest.Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food) - skilledHarvest.Transfers.Where(t => t.Kind == "Gathering").Sum(t => t.Food)) < 1e-8
+            && skilledEcology.Tiles[worked].LandCondition == 1 && noviceEcology.Tiles[worked].LandCondition == 1,
+            "gathering proficiency retains the same food receipt without changing land condition");
         var passiveFishing = Flat(); passiveFishing.Config.SafeUseRatio = 0; foreach (int tile in passiveFishing.Map.Radius(passiveFishing.Camps[0].Tile, 1)) { passiveFishing.Tiles[tile].Food = 0; passiveFishing.Tiles[tile].PotentialFood = 0; for (int season = 0; season < 4; season++) { var ecology = passiveFishing.Tiles[tile].Seasons[season]; ecology.FoodRecoveryPerDay = 0; ecology.BiomassRecoveryPerDay = 0; passiveFishing.Tiles[tile].Seasons[season] = ecology; } }
         int passiveCoast = passiveFishing.Map.Neighbors(passiveFishing.Camps[0].Tile).First(); Sea(passiveFishing.Tiles[passiveCoast]);
         var skilledFishingImpact = SaveCodec.Load(SaveCodec.Save(passiveFishing)); skilledFishingImpact.Camps[0].Experience[(int)Domain.Fishing] = skilledFishingImpact.Config.ExperienceThreshold * skilledFishingImpact.Config.PracticeBonusFull;

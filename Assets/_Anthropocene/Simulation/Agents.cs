@@ -104,6 +104,26 @@ namespace Anthropocene.Simulation
         public readonly int Provisions, DeficitTurns;
         public UnitObservation(int id, int tile, int population, int player, bool inSupply = false, int provisions = 0, int deficitTurns = 0, int sourceCamp = -1) { SourceCamp = sourceCamp; Id = id; Tile = tile; Population = population; Player = player; InSupply = inSupply; Provisions = provisions; DeficitTurns = deficitTurns; }
     }
+    // A deliberately coarse, local estimate for a prospective camp site.
+    // Ratios are rounded to twentieths and capped; policies never receive
+    // exact per-tile food, biomass, or freshwater stocks.
+    public sealed class SiteCoverageObservation
+    {
+        public readonly int Tile;
+        public readonly double HumanFood, HerdForage, HerdWater;
+        public SiteCoverageObservation(int tile, double humanFood, double herdForage, double herdWater)
+        { Tile = tile; HumanFood = humanFood; HerdForage = herdForage; HerdWater = herdWater; }
+    }
+    // Expected three-turn benefit from retained own visible fields, and the
+    // effort needed to restore them after a candidate leaves the footprint.
+    // Both are normalized and rounded; rival field ownership is not read.
+    public sealed class AgriculturalSiteObservation
+    {
+        public readonly int Tile, RetainedFields;
+        public readonly double ManagedRecoveryCoverage, LostRebuildBurden;
+        public AgriculturalSiteObservation(int tile, int retainedFields, double managedRecoveryCoverage, double lostRebuildBurden)
+        { Tile = tile; RetainedFields = retainedFields; ManagedRecoveryCoverage = managedRecoveryCoverage; LostRebuildBurden = lostRebuildBurden; }
+    }
     public sealed class HerdObservation
     {
         public readonly int Id, Tile, Size, Owner, DomesticCamp, DeficitTurns, StartingAnimals, SurvivingAnimals, NewbornAnimals, StarvationDeaths;
@@ -125,7 +145,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 12;
+        public const int SchemaVersion = 14;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
@@ -134,12 +154,15 @@ namespace Anthropocene.Simulation
         public readonly IReadOnlyDictionary<int, double> RecentOwnExtraction;
         public readonly IReadOnlyList<UnitObservation> Hunters, Rivals, ForeignHunters;
         public readonly IReadOnlyList<HerdObservation> Herds;
+        public readonly IReadOnlyList<SiteCoverageObservation> SiteCoverage;
+        public readonly IReadOnlyList<AgriculturalSiteObservation> AgriculturalSites;
         public readonly IReadOnlyDictionary<int, int> LikelyHerdDestinations;
         public readonly IReadOnlyList<double> Experience;
         public readonly HexMap Map;
         public readonly int MinimumCamp, HunterMovement, CampMovement, WaterMovementCost, SupplyRange, SustainableHuntPopulation;
         public readonly double Inertia;
-        internal AgentObservation(WorldState w, Camp camp, PlanningIndex index, bool recommendEconomy)
+        internal AgentObservation(WorldState w, Camp camp, PlanningIndex index, bool recommendEconomy,
+            bool includeCandidateForecasts = true)
         {
             var visible = index.Visible(camp.Player);
             Days = w.Days; Settlements = Array.AsReadOnly(index.OwnCamps(camp.Player).Select(c => new SettlementObservation(c, index, recommendEconomy)).ToArray());
@@ -155,6 +178,13 @@ namespace Anthropocene.Simulation
             Rivals = Array.AsReadOnly(index.VisibleCamps(visible).Where(c => c.Player != Player).Select(c => new UnitObservation(c.Id, c.Tile, 0, c.Player)).ToArray());
             ForeignHunters = Array.AsReadOnly(index.VisibleHunters(visible).Where(h => h.Player != Player).Select(h => new UnitObservation(h.Id, h.Tile, 0, h.Player)).ToArray());
             Herds = Array.AsReadOnly(index.VisibleHerds(visible).Select(h => new HerdObservation(h, w.Config, h.DomesticCamp < 0 ? -1 : index.Camps[h.DomesticCamp].Player, Player)).ToArray());
+            SiteCoverage = Array.AsReadOnly(includeCandidateForecasts && CultivationEconomy.HusbandryEnabled(camp)
+                ? w.Map.Radius(camp.Tile, CampMovement).Where(visible.Contains).OrderBy(id => id)
+                    .Select(id => Coverage(w, camp, index, visible, id, Hunters, Herds)).ToArray()
+                : Array.Empty<SiteCoverageObservation>());
+            AgriculturalSites = Array.AsReadOnly(includeCandidateForecasts && !camp.IsVillage && CultivationEconomy.Enabled(camp) && !CultivationEconomy.HusbandryEnabled(camp)
+                ? AgriculturalCandidates(w, camp, index, visible)
+                : Array.Empty<AgriculturalSiteObservation>());
             HuntingFieldcraft = PracticeEffects.Ramp(w.Config, camp, Domain.Hunting);
             var observedHunters = Hunters.Concat(ForeignHunters).ToArray();
             LikelyHerdDestinations = new ReadOnlyDictionary<int, int>(HuntingFieldcraft <= 0 ? new Dictionary<int, int>() : Herds.Where(h => !h.Domestic).ToDictionary(h => h.Id, h => PredictHerdDestination(h, Tiles, observedHunters, Map)));
@@ -163,6 +193,129 @@ namespace Anthropocene.Simulation
             if (recent != null) ownIds.UnionWith(recent.Logistics.Where(l => l.Camp == CampId).Select(l => l.Hunter));
             RecentOwnExtraction = new ReadOnlyDictionary<int, double>(index.Extraction(ownIds).Where(t => visible.Contains(t.Tile)).GroupBy(t => t.Tile).ToDictionary(g => g.Key, g => g.Sum(t => t.Food)));
             Experience = Array.AsReadOnly((double[])camp.Experience.Clone());
+        }
+        private static SiteCoverageObservation Coverage(WorldState world, Camp camp, PlanningIndex index, HashSet<int> visible, int site,
+            IReadOnlyList<UnitObservation> ownHunters, IReadOnlyList<HerdObservation> observedHerds)
+        {
+            int people = camp.Population + ownHunters.Where(h => h.SourceCamp == camp.Id &&
+                world.Map.Distance(site, h.Tile) <= world.Config.SupplyRange).Sum(h => h.Population);
+            double forageNeed = 0, waterNeed = 0;
+            foreach (var herd in observedHerds.Where(h => h.OwnedDomestic && h.DomesticCamp == camp.Id && h.Count.Representative > 0))
+            {
+                var species = world.Config.GetSpecies(herd.Species);
+                forageNeed += herd.Count.Representative * species.FoodConsumption * world.Config.GenerationIntervals;
+                waterNeed += herd.Count.Representative * species.FreshwaterConsumption * world.Config.GenerationIntervals;
+            }
+            return LocalCoverage(world, camp, index, visible, site, people, forageNeed, waterNeed);
+        }
+        internal static SiteCoverageObservation LocalCoverage(WorldState world, Camp camp, PlanningIndex index,
+            HashSet<int> visible, int site, int people, double forageNeed, double waterNeed)
+        {
+            double food = Math.Max(0, camp.Food), forage = 0, water = 0;
+            var exposure = new SeasonExposure(world.Days, world.Config.TurnDays, world.Config.BaseDays);
+            foreach (int id in world.Map.Radius(site, 1).Where(visible.Contains).OrderBy(id => id))
+            {
+                var tile = world.Tiles[id]; var stock = index.Ecology(id);
+                if (tile.TraversableLand)
+                {
+                    food += Math.Max(0, stock.Food);
+                    forage += Math.Max(0, stock.PotentialFood);
+                }
+                else if (tile.Terrain == Terrain.Shallows) food += Math.Max(0, stock.Food);
+                if (tile.ElevationLevel >= 10 || tile.WaterBody == WaterKind.Saltwater || tile.FreshwaterSource == FreshwaterSource.None) continue;
+                double recharge = 0;
+                for (int season = 0; season < 4; season++)
+                    recharge += Math.Max(0, tile.Seasons[season].MaxFreshwater * tile.Seasons[season].WaterRecoveryPerDay)
+                        * exposure.At(season);
+                water += Math.Max(0, stock.Freshwater) + recharge;
+            }
+            double humanNeed = Math.Max(1, people * world.Config.Consumption * world.Config.GenerationIntervals);
+            double Quantize(double ratio) => Math.Round(Numbers.Clamp(ratio, 0, 3) * 20, MidpointRounding.AwayFromZero) / 20;
+            return new SiteCoverageObservation(site, Quantize(food / humanNeed),
+                forageNeed <= 0 ? 3 : Quantize(forage / forageNeed),
+                waterNeed <= 0 ? 3 : Quantize(water / waterNeed));
+        }
+        private static AgriculturalSiteObservation[] AgriculturalCandidates(WorldState world, Camp camp,
+            PlanningIndex index, HashSet<int> visible)
+        {
+            var config = world.Config;
+            var owned = world.Map.Radius(camp.Tile, 1).Where(visible.Contains)
+                .Where(id => world.Tiles[id].CultivationOperator == camp.Id && world.Tiles[id].TraversableLand)
+                .OrderBy(id => id).ToArray();
+            // This is the same pure staffing/tool calculation used by field
+            // preparation. A saved operating fraction is only last turn's
+            // outcome and can be stale after workforce or tool changes.
+            var labor = CultivationEconomy.CalculateLabor(world, camp, owned,
+                new FarmToolWorkBudget(world, camp), config.TurnDays / config.DaysPerYear);
+            double operating = labor.RequiredMaintenance > 0
+                ? Numbers.Clamp(labor.EffectiveMaintenanceFarmers / labor.RequiredMaintenance, 0, 1)
+                : labor.EffectiveMaintenanceFarmers > 0 ? 1 : 0;
+            var values = new Dictionary<int, (double recovery, double rebuild)>();
+            double foodNeed = Math.Max(1, camp.Population * config.Consumption * config.GenerationIntervals * 3);
+            double expectedClaim = Math.Max(0, foodNeed - camp.Food) / 3 / Math.Max(1, owned.Length);
+            double horizonYears = 3 * config.TurnDays / config.DaysPerYear;
+            foreach (int id in owned)
+            {
+                var tile = world.Tiles[id];
+                var view = index.Ecology(id);
+                double capital = Math.Max(0, view.CultivationCapital);
+                if (capital <= 1e-12) continue;
+                double recovery = 0, fieldStock = view.Food, naturalStock = view.Food;
+                var natural = view; natural.CultivationCapital = 0;
+                double projectedCapital = capital;
+                for (int turn = 0; turn < 3; turn++)
+                {
+                    double start = world.Days + turn * config.TurnDays;
+                    var field = view; field.CultivationCapital = projectedCapital;
+                    var cultivated = new HorizonEcologyCapacity(world, tile, field, start, config.TurnDays, operating);
+                    var uncultivated = new HorizonEcologyCapacity(world, tile, natural, start, config.TurnDays, 0);
+                    fieldStock = Math.Min(Math.Max(0, fieldStock), Math.Max(0, cultivated.Food));
+                    naturalStock = Math.Min(Math.Max(0, naturalStock), Math.Max(0, uncultivated.Food));
+                    // Claims settle against opening stock. Recovery can only
+                    // improve a later turn, so a full and unworked field does
+                    // not receive credit for impossible gross recharge.
+                    double fieldHarvest = Math.Min(expectedClaim, fieldStock);
+                    double naturalHarvest = Math.Min(expectedClaim, naturalStock);
+                    recovery += Math.Max(0, fieldHarvest - naturalHarvest);
+                    fieldStock = EcologyMath.ManagedStock(fieldStock - fieldHarvest,
+                        cultivated.Food, cultivated.FoodRate, cultivated.ManagedFlow, 0, config.TurnDays).Stock;
+                    naturalStock = EcologyMath.Stock(naturalStock - naturalHarvest,
+                        uncultivated.Food, uncultivated.FoodRate, 0, config.TurnDays).Stock;
+                    projectedCapital = CultivationEconomy.Decay(config, projectedCapital, operating,
+                        config.TurnDays / config.DaysPerYear);
+                }
+                // Only the difference between maintained and abandoned
+                // capital is a relocation loss. A field can be reclaimed, and
+                // without current labor it would decay even if camp stayed.
+                double maintained = CultivationEconomy.Decay(config, capital, operating, horizonYears);
+                double abandoned = CultivationEconomy.Decay(config, capital, 0, horizonYears);
+                double bridgeCapital = Math.Pow(config.GathererBridgeCeiling / config.ReferenceIntensity, 2);
+                double openEffort = CultivationEconomy.AdditionalEffort(config,
+                    Math.Min(abandoned, bridgeCapital), Math.Min(maintained, bridgeCapital));
+                double woodedEffort = CultivationEconomy.AdditionalEffort(config,
+                    Math.Max(abandoned, bridgeCapital), Math.Max(maintained, bridgeCapital));
+                bool wooded = view.CurrentVegetation >= VegetationTier.Medium &&
+                    (tile.Environment == EnvironmentKind.Temperate || tile.Environment == EnvironmentKind.Tropical || tile.Environment == EnvironmentKind.Cold);
+                double buildFactor = !wooded ? config.Neolithic.OpenBuild :
+                    view.CurrentVegetation == VegetationTier.High ? config.Neolithic.ForestBuild : config.Neolithic.WoodlandBuild;
+                double rebuild = config.Neolithic.BuildWorkerYearsPerTileE *
+                    (openEffort * config.Neolithic.OpenBuild + woodedEffort * buildFactor);
+                values[id] = (operating <= 1e-12 ? 0 : recovery, rebuild);
+            }
+            // Express lost effort in turns of this camp's entire labor force.
+            // Dividing by three would underprice a rebuild whose farmers must
+            // compete with immediate food work after a move.
+            double laborYears = Math.Max(1, camp.Population * config.TurnDays / config.DaysPerYear);
+            double Quantize(double value, double cap) => Math.Round(Numbers.Clamp(value, 0, cap) * 20, MidpointRounding.AwayFromZero) / 20;
+            return world.Map.Radius(camp.Tile, config.CampMovement).Where(visible.Contains).OrderBy(id => id)
+                .Select(site =>
+                {
+                    var retained = values.Where(p => world.Map.Distance(site, p.Key) <= 1).ToArray();
+                    double lost = values.Where(p => world.Map.Distance(site, p.Key) > 1).Sum(p => p.Value.rebuild);
+                    return new AgriculturalSiteObservation(site, retained.Length,
+                        Quantize(retained.Sum(p => p.Value.recovery) / foodNeed, 10),
+                        Quantize(lost / laborYears, 10));
+                }).ToArray();
         }
         private static int PredictHerdDestination(HerdObservation herd, IReadOnlyDictionary<int, TileObservation> tiles, IReadOnlyList<UnitObservation> hunters, HexMap map)
         {
@@ -178,8 +331,9 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservationBuilder
     {
-        public AgentObservation Build(WorldState world, int player, PlanningIndex index = null, bool recommendEconomy = false)
-        { index = index ?? new PlanningIndex(world); return new AgentObservation(world, index.OwnCamps(player).First(), index, recommendEconomy); }
+        public AgentObservation Build(WorldState world, int player, PlanningIndex index = null,
+            bool recommendEconomy = false, bool includeCandidateForecasts = true)
+        { index = index ?? new PlanningIndex(world); return new AgentObservation(world, index.OwnCamps(player).First(), index, recommendEconomy, includeCandidateForecasts); }
     }
     [Serializable]
     public sealed class CandidateTrace
@@ -202,7 +356,7 @@ namespace Anthropocene.Simulation
     public interface IAgentPolicy { PolicyDecision Decide(AgentObservation observation, Mandate mandate); }
     public static class ManagedBreedingPolicy
     {
-        public static double Recommend(AgentObservation o, SettlementObservation settlement)
+        public static double Recommend(AgentObservation o, SettlementObservation settlement, int? campTile = null)
         {
             var herds = o.Herds.Where(h => h.OwnedDomestic && h.DomesticCamp == settlement.Id && (h.Count.Representative > 0 || h.StartingAnimals > 0)).ToArray();
             if (herds.Length == 0) return .55;
@@ -210,14 +364,58 @@ namespace Anthropocene.Simulation
             double loss = starting <= 0 ? 0 : herds.Sum(h => Math.Max(0, h.StartingAnimals - h.SurvivingAnimals)) / starting;
             double nutrition = herds.Min(h => h.Nutrition), management = herds.Min(h => h.ManagementFulfillment);
             double burden = settlement.Population <= 0 ? 1 : settlement.Economy.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population) / (double)settlement.Population;
-            // These policy levels are first-pass AI heuristics, not biological constants.
-            // They use only the observer's own herd diagnostics and visible traversable land.
-            var local = o.Map.Radius(settlement.Tile, 1).Where(id => id != settlement.Tile && o.Tiles.TryGetValue(id, out var t) && t.Land && t.ElevationLevel < 10).Select(id => o.Tiles[id]).ToArray();
-            bool room = local.Count(t => t.PotentialFood >= 2 && t.Freshwater >= 2) >= 3;
-            bool occupiedAdequate = herds.All(h => o.Tiles.TryGetValue(h.Tile, out var t) && t.PotentialFood >= 2 && t.Freshwater >= 2);
-            bool occupiedAmple = herds.All(h => o.Tiles.TryGetValue(h.Tile, out var t) && t.PotentialFood >= 3 && t.Freshwater >= 3);
-            if (management >= .8 && burden <= .6 && occupiedAmple && room && (loss >= .25 || settlement.RecentlyMoved)) return .65;
-            if (nutrition < .95 || management < .8 || burden > .6 || !occupiedAdequate || !room) return .45;
+            // Use the same radius-one support represented in the movement
+            // observation; a depleted occupied tile alone is not a shortage
+            // when neighboring pastures and springs can feed the herd.
+            var coverage = o.SiteCoverage.FirstOrDefault(s => s.Tile == (campTile ?? settlement.Tile));
+            var neighbors = o.Map.Radius(campTile ?? settlement.Tile, 1).Where(id => id != (campTile ?? settlement.Tile) &&
+                o.Tiles.TryGetValue(id, out var t) && t.Land && t.ElevationLevel < 10).Select(id => o.Tiles[id]).ToArray();
+            bool room = neighbors.Count(t => t.PotentialFood >= 2 && t.Freshwater >= 2) >= 3;
+            bool adequate = coverage != null && coverage.HerdForage >= 1 && coverage.HerdWater >= 1 && room;
+            bool ample = coverage != null && coverage.HerdForage >= 1.25 && coverage.HerdWater >= 1.25 && room;
+            return Choose(loss, nutrition, management, burden, adequate, ample, settlement.RecentlyMoved);
+        }
+        internal static double Recommend(WorldState world, Camp camp, int campTile, PlanningIndex index)
+        {
+            // Interturn automation needs only this camp's own herd diagnostics
+            // and visible radius-one support. Rebuilding a full observation
+            // per camp would repeat an empire's entire visibility footprint.
+            var herds = index.CampHerds(camp.Id).Where(h => h.Animals > 0 || h.StartingAnimals > 0).ToArray();
+            if (herds.Length == 0) return .55;
+            double starting = herds.Sum(h => Math.Max(0, h.StartingAnimals));
+            double loss = starting <= 0 ? 0 : herds.Sum(h => Math.Max(0, h.StartingAnimals - h.SurvivingAnimals)) / starting;
+            double nutrition = herds.Min(h => h.LastNutrition), management = herds.Min(h => h.ManagementFulfillment);
+            double burden = camp.Population <= 0 ? 1 : camp.Workforce.Assignments
+                .Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population) / (double)camp.Population;
+            var visible = index.VisibleCached(camp.Player);
+            double forageNeed = 0, waterNeed = 0;
+            foreach (var herd in herds.Where(h => h.Animals > 0))
+            {
+                var species = world.Config.GetSpecies(herd.Species);
+                forageNeed += herd.Animals * species.FoodConsumption * world.Config.GenerationIntervals;
+                waterNeed += herd.Animals * species.FreshwaterConsumption * world.Config.GenerationIntervals;
+            }
+            int people = camp.Population + index.CampHunters(camp.Id)
+                .Where(h => world.Map.Distance(campTile, h.Tile) <= world.Config.SupplyRange).Sum(h => h.Population);
+            var coverage = AgentObservation.LocalCoverage(world, camp, index, visible, campTile, people, forageNeed, waterNeed);
+            int room = 0;
+            foreach (int id in world.Map.Radius(campTile, 1).Where(id => id != campTile && visible.Contains(id)))
+            {
+                var tile = world.Tiles[id];
+                if (!tile.TraversableLand) continue;
+                var stock = index.Ecology(id);
+                if (Knowledge.Band(stock.PotentialFood, Math.Max(1, tile.Seasons[world.Season].MaxPotentialFood), world.Config) >= 2 &&
+                    Knowledge.Band(stock.Freshwater, 70, world.Config) >= 2) room++;
+            }
+            bool adequate = coverage.HerdForage >= 1 && coverage.HerdWater >= 1 && room >= 3;
+            bool ample = coverage.HerdForage >= 1.25 && coverage.HerdWater >= 1.25 && room >= 3;
+            return Choose(loss, nutrition, management, burden, adequate, ample, camp.Moves > 0 && camp.StationaryTurns == 0);
+        }
+        private static double Choose(double loss, double nutrition, double management, double burden,
+            bool adequate, bool ample, bool recentlyMoved)
+        {
+            if (management >= .8 && burden <= .6 && ample && (loss >= .25 || recentlyMoved)) return .65;
+            if (nutrition < .95 || management < .8 || burden > .6 || !adequate) return .45;
             return .55;
         }
     }
@@ -258,11 +456,60 @@ namespace Anthropocene.Simulation
             bool huntingFocus = huntPreference > Math.Max(gatherPreference, fishPreference);
             bool fishingFocus = fishPreference > Math.Max(huntPreference, gatherPreference);
             double need = 1 + o.DeficitTurns * .5 + (o.FoodCondition <= 1 ? .5 : 0);
+            var economicCamp = o.Settlements.FirstOrDefault(c => c.Id == o.CampId && (c.Agriculture || c.Husbandry));
             var campCandidates = new List<Candidate>();
             double current = Gathering(o, o.CampTile);
             if (o.Settlements.Any(s => s.Id == o.CampId && s.IsVillage))
             {
                 campCandidates.Add(new Candidate { Order = new Order(OrderKind.NoOp, o.CampId), Score = 100, Components = "VillageContinuity" });
+            }
+            else if (economicCamp != null && economicCamp.Agriculture && !economicCamp.Husbandry)
+            {
+                foreach (var site in o.AgriculturalSites.OrderBy(s => s.Tile))
+                {
+                    int n = site.Tile;
+                    if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n)) continue;
+                    double food = Gathering(o, n) * need * m.Gathering;
+                    double continuity = n == o.CampTile ? Math.Max(.25, current * o.Inertia) : -(1 - m.Mobility) * .1;
+                    double herdSupport = HerdSupport(o, n) * m.Hunting * (huntingFocus ? 4 : .35 + .85 * o.HuntingFieldcraft);
+                    double fishingSupport = FishingSupport(o, n) * m.Fishing * (fishingFocus ? 3 : .2);
+                    // Three forthcoming turns of managed recovery are a
+                    // forward benefit of retained own fields. Rebuilding
+                    // abandoned capital is charged using the same soft-effort
+                    // curve as field construction, normalized to local labor.
+                    double fieldPayoff = 4 * site.ManagedRecoveryCoverage - 3 * site.LostRebuildBurden;
+                    campCandidates.Add(new Candidate { Order = n == o.CampTile ? new Order(OrderKind.NoOp, o.CampId) : new Order(OrderKind.Move, o.CampId, destination: n),
+                        Score = food + continuity + herdSupport + fishingSupport + fieldPayoff,
+                        Components = "GatheringOpportunity + ManagedFieldRecovery - LostFieldRebuildEffort + SurvivalNeed + RelocationInertia" });
+                }
+            }
+            else if (economicCamp != null && economicCamp.Husbandry)
+            {
+                // The observation contains only rounded support ratios for
+                // visible local sites. The weakest need leads the decision;
+                // once all needs are covered, require a meaningful gain before
+                // relocating so a camp can let its pasture rest.
+                var currentCoverage = o.SiteCoverage.First(s => s.Tile == o.CampTile);
+                double Support(SiteCoverageObservation s) => Math.Min(s.HumanFood, Math.Min(s.HerdForage, s.HerdWater));
+                double currentSupport = Support(currentCoverage);
+                double currentTotal = currentCoverage.HumanFood + currentCoverage.HerdForage + currentCoverage.HerdWater;
+                double margin = currentCoverage.HumanFood < 1 || currentCoverage.HerdForage < 1 || currentCoverage.HerdWater < 1 ? 0 : .05;
+                foreach (var site in o.SiteCoverage.OrderBy(s => s.Tile))
+                {
+                    int n = site.Tile;
+                    if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n)) continue;
+                    double support = Support(site);
+                    double total = site.HumanFood + site.HerdForage + site.HerdWater;
+                    if (n != o.CampTile && (margin == 0
+                        ? support + 1e-9 < currentSupport || support <= currentSupport + 1e-9 && total <= currentTotal + 1e-9
+                        : support + 1e-9 < currentSupport + margin)) continue;
+                    // Small secondary weights distinguish equal weakest-need
+                    // sites without permitting a worse bottleneck to win.
+                    double score = support + .001 * total;
+                    if (n == o.CampTile) score += margin;
+                    campCandidates.Add(new Candidate { Order = n == o.CampTile ? new Order(OrderKind.NoOp, o.CampId) : new Order(OrderKind.Move, o.CampId, destination: n), Score = score,
+                        Components = "FilteredHumanFoodCoverage + FilteredHerdForageCoverage + FilteredHerdWaterCoverage + RelocationInertia" });
+                }
             }
             else
             {
@@ -286,10 +533,12 @@ namespace Anthropocene.Simulation
             int desiredHunters = opportunity ? Math.Max(8, (int)Math.Round(o.LinkedPopulation * hunterShare)) : 0;
             int dispatchable = Math.Min(o.GathererPopulation, o.CampPopulation - o.MinimumCamp - (huntingFocus ? 0 : 4));
             int allocation = Math.Min(8, Math.Min(Math.Max(0, desiredHunters - assignedHunters), dispatchable));
-            if ((campChoice.Kind == OrderKind.NoOp || huntingFocus || fishingFocus && fishingOpportunity) && allocation >= 4 && opportunity && o.DeficitTurns == 0 && o.FoodCondition >= 1)
+            if (economicCamp == null && (campChoice.Kind == OrderKind.NoOp || huntingFocus || fishingFocus && fishingOpportunity) && allocation >= 4 && opportunity && o.DeficitTurns == 0 && o.FoodCondition >= 1)
             { campChoice = new Order(OrderKind.Dispatch, o.CampId, population: allocation); result.Trace.Candidates.Add(new CandidateTrace { Plan = campChoice.ToString(), Components = "Growing population and visible subsistence opportunity; hunter share expands while preserving the camp reserve", Score = 1, Selected = true }); }
-            var agriculturalCamp = o.Settlements.FirstOrDefault(c => c.Id == o.CampId && (c.Agriculture || c.Husbandry));
-            if (agriculturalCamp != null) { var economy = agriculturalCamp.RecommendedEconomy.Copy(); if (agriculturalCamp.Husbandry) economy.ManagedBreedingIntensity = ManagedBreedingPolicy.Recommend(o, agriculturalCamp); campChoice = new Order(OrderKind.Economy, o.CampId) { Economy = economy }; plannedCamp = o.CampTile; }
+            // AI economic preparation is a distinct pass, even when its camp
+            // movement is the submitted action. The persisted automation-Off
+            // setting remains authoritative for player-issued movement.
+            if (economicCamp != null) campChoice.RequestAutomaticEconomy = true;
             result.Orders.Add(campChoice);
             var observedHunters = o.Hunters.Concat(o.ForeignHunters).ToArray();
             var wildHerds = o.Herds.Where(h => !h.Domestic).OrderByDescending(h => h.Size).ThenBy(h => o.Map.Distance(o.CampTile, h.Tile)).ThenBy(h => h.Id).ToArray();

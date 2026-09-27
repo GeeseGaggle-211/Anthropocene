@@ -3,6 +3,9 @@
 The current analytical turn-horizon validation and its known ecological
 calibration gap are in [TurnHorizonPerformanceAudit.md](TurnHorizonPerformanceAudit.md).
 The seasonal comparisons below document earlier checkpoints.
+The destination-aware mobile-husbandry implementation, animal-growth water
+diagnosis, agricultural-continuity sweep, and matched timing results are in
+[MobileHusbandryValidation.md](MobileHusbandryValidation.md).
 
 ## Exact Neolithic cache validation
 

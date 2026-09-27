@@ -214,12 +214,8 @@ internal static class Issue25EcologyChecks
                 $"food stocks remain within biomass capacity for {tier} q={q:R}");
             Check(Math.Abs(row.RealizedHarvest - row.RequestedHarvest) <= 1e-7 * Math.Max(1, row.RequestedHarvest),
                 $"the representative 30-day fixture realizes the requested {multiplier:R}x flow for {tier} q={q:R}; realized={row.RealizedHarvest:R} requested={row.RequestedHarvest:R}");
-            if (multiplier <= 1)
-                Check(Math.Abs(row.LandConditionChange) <= 1e-12, $"zero and corrected-safe harvest do not damage condition for {tier} q={q:R} operation={operating:R}");
-            else
-                Check(row.LandConditionChange < -1e-10, $"1.25x corrected-safe harvest damages condition for {tier} q={q:R} operation={operating:R}");
-            if (multiplier == 0)
-                Check(Near(row.LandConditionChange, 0, 1e-12), $"cultivation q itself does not damage LandCondition for {tier} q={q:R} operation={operating:R}");
+            Check(Near(row.LandConditionChange, 0, 1e-12),
+                $"all realized land extraction and cultivation leave stored condition unchanged for {tier} q={q:R} operation={operating:R}");
         }
         return rows;
     }
@@ -504,12 +500,8 @@ internal static class Issue25EcologyChecks
             Check(Near(run.Requested, run.Realized + run.Unmet, 1e-7), context + " closes cumulative human claims");
             Check(run.EndingFood >= -1e-8 && run.EndingBiomass >= run.EndingFood - 1e-8,
                 context + " ends with bounded food and biomass stocks");
-            if (multiplier <= 1)
-                Check(Near(run.EndingCondition, 1, 1e-10) && Near(run.Damage, 0, 1e-10),
-                    context + " remains healthy without extraction overuse");
-            else
-                Check(run.YearsRealizedAboveSafe == 500 && run.Damage > 0 && run.EndingCondition < .99,
-                    context + " realizes sustained above-safe extraction and damages land");
+            Check(Near(run.EndingCondition, 1, 1e-10) && Near(run.Damage, 0, 1e-10),
+                context + " keeps stored land condition under every extraction rate");
             if (q == 1)
             {
                 var tile = world.Tiles[TileId];
@@ -549,10 +541,11 @@ internal static class Issue25EcologyChecks
             Console.WriteLine("ISSUE25_RECOVERY q=" + Number(q) + " initialCondition=" + Number(condition)
                 + " endingCondition=" + Number(run.EndingCondition) + " initialManaged=" + Number(initial.ManagedFlow)
                 + " endingManaged=" + Number(recovered.ManagedFlow) + " damage=" + Number(run.Damage));
-            Check(run.Damage <= 1e-10 && run.EndingCondition > condition && run.EndingCondition <= 1,
-                context + " recovers without cultivation damage under sustainable extraction");
-            Check(recovered.Biomass > initial.Biomass && recovered.ManagedFlow > initial.ManagedFlow,
-                context + " gains natural and managed production as condition recovers");
+            Check(run.Damage <= 1e-10 && Near(run.EndingCondition, condition, 1e-12),
+                context + " retains saved condition while finite stocks recover");
+            Check(Near(recovered.Biomass, initial.Biomass, 1e-10)
+                && Near(recovered.ManagedFlow, initial.ManagedFlow, 1e-10),
+                context + " keeps condition-dependent capacity fixed");
         }
 
         var partial = AgricultureFixture(.8, 1, .5);
@@ -611,12 +604,10 @@ internal static class Issue25EcologyChecks
                 && Near(a.Balance.BiomassHarvest, b.Balance.BiomassHarvest)
                 && Near(damage, b.Pressure.Sum(p => p.ConditionDamage)),
                 "reordered mixed claim submission has the same ecological result");
-            if (multiplier <= 1)
-                Check(Near(damage, 0, 1e-10) && Near(a.View.LandCondition, 1, 1e-10),
-                    "within-safe mixed extraction causes no overuse damage");
-            else
-                Check(total > safeFlow && damage > 0 && a.View.LandCondition < 1,
-                    "realized mixed overharvest damages condition");
+            Check(Near(damage, 0, 1e-10) && Near(a.View.LandCondition, 1, 1e-10),
+                "mixed extraction debits finite stocks without land-condition damage");
+            if (multiplier > 1)
+                Check(total > safeFlow, "above-safe mixed claims can still consume finite opening stock");
             Console.WriteLine("ISSUE25_MIXED multiplier=" + Number(multiplier) + " safeFlow=" + Number(safeFlow)
                 + " human=" + Number(humanRealized) + " herd=" + Number(herdRealized)
                 + " damage=" + Number(damage) + " condition=" + Number(a.View.LandCondition));
@@ -684,7 +675,7 @@ internal static class Issue25EcologyChecks
             var split = RunLowFlowPartition(days);
             Check(Near(split.Requested, full.Requested, 1e-10)
                 && split.Realized >= 0 && split.Realized <= split.Requested + 1e-8
-                && split.Damage >= 0 && split.EndingCondition >= 0 && split.EndingCondition <= 1
+                && Near(split.Damage, 0, 1e-12) && Near(split.EndingCondition, 1, 1e-12)
                 && split.EndingFood >= 0 && split.EndingBiomass >= split.EndingFood,
                 "low-flow calibration remains bounded at " + Number(days) + " days");
             Console.WriteLine("ISSUE25_LOW_FLOW_PARTITION days=" + Number(days)
@@ -708,8 +699,10 @@ internal static class Issue25EcologyChecks
         Check(Near(noClaim.View.LandCondition, 1), "zero safe flow with zero extraction causes no damage");
         var stockClaim = EcologicalPressure.Integrate(zero, TileId,
             new[] { new Demand { Tile = TileId, Entity = 1, Kind = "Gathering", Food = 10 } }, 0, 7);
-        Check(stockClaim.Transfers.Sum(t => t.Food) > 0 && stockClaim.View.LandCondition < .01,
-            "zero safe rate with realized stock extraction creates very high pressure");
+        Check(stockClaim.Transfers.Sum(t => t.Food) > 0
+            && stockClaim.Transfers.Sum(t => t.Food) <= stockClaim.Balance.StartingFood + 1e-8
+            && stockClaim.View.LandCondition == 1 && stockClaim.Pressure.All(p => p.ConditionDamage == 0),
+            "zero renewal still allows only opening-stock extraction without condition damage");
     }
 
     private static void AddRecoveringWood(WorldState world)
