@@ -50,7 +50,9 @@ namespace Anthropocene.Simulation
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
         public double GatherFraction = .22, GatherPerPerson = 1.8, PopulationScale = 24;
-        public double RichGatherableFraction = .25, GrasslandGatherableFraction = .10, AridGatherableFraction = .05, TundraGatherableFraction = .08;
+        // Uniform half-access calibration keeps each habitat's relative
+        // human-gatherable share while leaving all biomass available to grazers.
+        public double RichGatherableFraction = .125, GrasslandGatherableFraction = .05, AridGatherableFraction = .025, TundraGatherableFraction = .04;
         public double HuntEfficiency = .22, HuntVariance = .35, HuntBreedingReserveFraction = .2, SustainableHerdGrowthRetention = .25, FishPerPerson = 2.6;
         public int SustainableHuntPopulation = 16;
         public double WanderChance = .05;
@@ -58,7 +60,7 @@ namespace Anthropocene.Simulation
         public double PracticeBonusStart = .25, PracticeBonusFull = .5;
         public double GatheringImpactReduction = .5, FishingImpactReduction = .5, HuntingFoodYieldScale = 2.5, HuntingYieldBonus = .5, HuntingPracticeMultiplier = 3.25, ActiveFishingPracticeMultiplier = 4.25, PassiveAquaticFishingPracticeShare = .5;
         public double ConditionRecoveryPerYear = .003093770185904377, SafeUseRatio = 1, SustainableProductionFraction = .5, LandUseDamagePerYear = .03, AquaticUseDamagePerYear = .03, PressureExponent = 2;
-        [System.Runtime.Serialization.OptionalField] public double LandBiomassMultiplier = 30, LandSafeUseRatio = .5;
+        [System.Runtime.Serialization.OptionalField] public double LandBiomassMultiplier = 63, LandSafeUseRatio = .5;
         [System.Runtime.Serialization.OptionalField] public double CultivationVegetationDisplacementStart = .50;
         public double LowPotentialRecoveryMultiplier = .5, HighPotentialRecoveryMultiplier = 1.5;
         public double OpeningFoodMultiplier = 1.4, CultivationMoisture = .25, RelocationInertia = .18;

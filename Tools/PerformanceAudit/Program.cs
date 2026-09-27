@@ -363,6 +363,7 @@ internal static class Program
         int landConditionChangedTiles = 0;
         double maximumLandConditionDelta = 0;
         object camps = null;
+        object domesticHerds = null;
 #else
         double endingPopulationWeightedQol = residentPopulation <= 0 ? 0 : world.Camps.Sum(c => c.QoL * c.Population) / residentPopulation;
         double priorResidentPopulation = priorResidents.Values.Sum(v => (double)v);
@@ -398,7 +399,7 @@ internal static class Program
                 .ToArray();
             return new
             {
-                c.Id, c.Player, c.Population, priorResidents = priorResidents[c.Id],
+                c.Id, c.Player, c.Population, c.IsVillage, priorResidents = priorResidents[c.Id],
                 startingSite = priorSites[c.Id], endingSite = c.Tile,
                 moved = c.Moves != priorMoves[c.Id],
                 openingLocalStocks = priorLocalStocks[c.Id],
@@ -418,6 +419,14 @@ internal static class Program
                 maxFieldQ = fieldIntensity.Length == 0 ? 0 : fieldIntensity.Max()
             };
         }).ToArray() : null;
+        var domesticHerds = details ? world.Herds.Where(h => h.DomesticCamp >= 0)
+            .OrderBy(h => h.DomesticCamp).ThenBy(h => h.Id)
+            .Select(h => new
+            {
+                h.Id, h.DomesticCamp, h.Species, h.Animals,
+                h.LastFoodNutrition, h.LastWaterNutrition, h.NewbornAnimals,
+                h.StarvationDeaths
+            }).ToArray() : null;
 #endif
         // Preserve schema-1 semantics: weightedQol has always meant the prior cohort.
         double weightedQol = priorWeightedQol;
@@ -502,7 +511,8 @@ internal static class Program
             toolExhaustions = Metric("ToolExhaustions"),
             stockDepletions = Metric("StockDepletions"),
             orders = details ? record.Orders.ToArray() : null,
-            camps
+            camps,
+            domesticHerds
         };
         samples.Add(row);
         Console.WriteLine("AUDIT turn=" + (world.Turn - 1) + " phase=" + row.phase + " preAg=" + preAgriculturalCamps +

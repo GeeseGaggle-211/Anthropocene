@@ -98,6 +98,10 @@ internal static class WoodEcologyChecks
         foreach (var vegetation in new[] { VegetationTier.Medium, VegetationTier.High })
         {
             var w = Fixture(1, vegetation); var camp = w.Camps[0]; int id = camp.Tile; var tile = w.Tiles[id];
+            // This fixture budgets the historical quadratic worker-years
+            // exactly; the shipped soft-barrier multiplier is tested by the
+            // cultivation-effort checks separately.
+            w.Config.Neolithic.CultivationMarginalEffortMultiplierPerTenth = 1;
             tile.NaturalVegetationPotential = vegetation;
             camp.CultivationFocusTile = id;
             // Keep this a single-site expansion so the worker-year budget

@@ -20,7 +20,7 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double PrimitiveAgricultureSupportedIntensity = .40, StoneFarmToolsSupportedIntensity = .45;
         // One preserves the historical quadratic worker cost. Values above one
         // multiply marginal build and maintenance effort per additional .1 q.
-        [System.Runtime.Serialization.OptionalField] public double CultivationMarginalEffortMultiplierPerTenth = 1;
+        [System.Runtime.Serialization.OptionalField] public double CultivationMarginalEffortMultiplierPerTenth = 16;
         [System.Runtime.Serialization.OptionalField] public double PloughSupportedIntensity = .52, CopperFarmToolsSupportedIntensity = .62, IronFarmToolsSupportedIntensity = .78, PoweredFarmToolsSupportedIntensity = 1.0;
         [System.Runtime.Serialization.OptionalField] public double FarmToolFarmerYearsPerUnit = 20;
         [System.Runtime.Serialization.OptionalField] public double StoneHerdingToolAnimalsPerHerder = 2.69;

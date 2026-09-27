@@ -113,7 +113,11 @@ internal static class CultivationCacheChecks
                 double vb = BuildMultiplier(c, t, ecology.CurrentVegetation);
                 double vm = MaintenanceMultiplier(c, t, ecology.CurrentVegetation);
                 if (bridge || CultivationEconomy.Intensity(c, e) < c.GathererBridgeCeiling) vb = n.OpenBuild;
-                double de = Math.Min(n.AllocationStepE, Math.Min(ceiling - e, remaining / (n.BuildWorkerYearsPerTileE * vb)));
+                double affordableE = n.CultivationMarginalEffortMultiplierPerTenth <= 1
+                    ? remaining / (n.BuildWorkerYearsPerTileE * vb)
+                    : Math.Max(0, CultivationEconomy.CapitalForEffort(c,
+                        CultivationEconomy.EffortForCapital(c, e) + remaining / (n.BuildWorkerYearsPerTileE * vb)) - e);
+                double de = Math.Min(n.AllocationStepE, Math.Min(ceiling - e, affordableE));
                 if (!bridge && CultivationEconomy.Intensity(c, e) < c.GathererBridgeCeiling) de = Math.Min(de, Math.Pow(c.GathererBridgeCeiling / c.ReferenceIntensity, 2) - e);
                 if (de <= 1e-12) continue;
                 double gain = 0;
@@ -130,8 +134,10 @@ internal static class CultivationCacheChecks
                         EcologyMath.SustainableHarvestRate(afterCapacity.Biomass, afterCapacity.BiomassRate, c.SustainableProductionFraction, afterCapacity.ManagedFlow) * c.LandSafeUseRatio);
                     gain += (afterFlow - beforeFlow) * c.DaysPerYear / 4;
                 }
-                double buildCost = de * n.BuildWorkerYearsPerTileE * vb;
-                double score = gain / Math.Max(1e-12, buildCost + n.PlanningHorizonYears * n.MaintenanceWorkersPerTileE(c.MaintenanceCoefficient) * vm * de);
+                double addedEffort = n.CultivationMarginalEffortMultiplierPerTenth <= 1
+                    ? de : CultivationEconomy.AdditionalEffort(c, e, e + de);
+                double buildCost = addedEffort * n.BuildWorkerYearsPerTileE * vb;
+                double score = gain / Math.Max(1e-12, buildCost + n.PlanningHorizonYears * n.MaintenanceWorkersPerTileE(c.MaintenanceCoefficient) * vm * addedEffort);
                 bool focused = id == camp.CultivationFocusTile;
                 if (score > 0 && (best < 0 || focused || best != camp.CultivationFocusTile && score > bestScore)) { best = id; bestScore = score; step = de; cost = buildCost; }
             }
