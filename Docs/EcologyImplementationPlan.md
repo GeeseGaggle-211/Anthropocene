@@ -1,5 +1,7 @@
 # Paleolithic completion implementation checklist
 
+> Current-contract annotation (27 September 2026): Historical checklist from the September 13 working plan. Its seasonal damage/recovery and no-Neolithic scope do not describe the current implementation. The four profiles are now analytical forcing, LandCondition is frozen for current land mechanics, and prior-cohort needs/same-horizon manufacturing follow the current contract. The external Drive document linked below was not edited or synchronized. See [CurrentSimulationContract.md](CurrentSimulationContract.md).
+
 Source: reconciled working plan, https://docs.google.com/document/d/1bghyyEUw55bhM0NQRyzHP6RlfU5JM6LV/edit (read September 13, 2026). Section 14 resolves earlier ambiguities.
 
 User decisions: starvation has **two player turns of grace**, deliberately independent of elapsed time. Subsistence outcome percentages are **balance targets**, not strict per-world quotas; preserve meaningful diversity.

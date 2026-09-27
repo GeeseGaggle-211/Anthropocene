@@ -1,5 +1,7 @@
 # Shipped agriculture and husbandry route playtests
 
+> Current-contract annotation (27 September 2026): Historical 90-turn (1,800-year) route cohort, using the source/config/binary identifiers recorded below. Its population and labor shares are not proof of useful specialist work within 25 turns after each society's discovery. Later #21/#26/#27/#28 fixes require a fresh matched cohort; the original measurements remain unchanged. See [CurrentSimulationContract.md](CurrentSimulationContract.md).
+
 The `features/neolithic-agricultural` route sweep used the shipped new-world
 configuration from `8622750` after merging the destination-aware mobile
 husbandry work at `2b17cb8` and restoring the village checkpoint. It is a

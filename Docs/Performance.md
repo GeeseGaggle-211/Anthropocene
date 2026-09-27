@@ -1,5 +1,7 @@
 # Scale measurements - September 13, 2026
 
+> Current-contract annotation (27 September 2026): Provenance note: this file collects measurements from multiple historical revisions. Preserve each section's named source/config/horizon; timing gates and unmerged-branch statements describe that measurement's disposition, not today's integration status. Issue #27 code is present at 19cd328/c519cd4 while the GitHub issue remains open. Current results must use a newly pinned paired run. See [CurrentSimulationContract.md](CurrentSimulationContract.md).
+
 The issue #27 land-recovery reconciliation retains constant work in simulated
 duration: four saved profiles define a cycle, and a transition evaluates four
 distinct land capacities without cultivation decay or five with the tested

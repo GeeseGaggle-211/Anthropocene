@@ -1,5 +1,7 @@
 # Cultivation effort above the Neolithic threshold
 
+> Current-contract annotation (27 September 2026): Historical opt-in report. The status and constants below describe its tested branch, not current defaults. The exact tested source SHA/config hash were not recorded here and remain a provenance gap; do not infer them from the current branch. Shipped calibration later changed at 8622750 to m=63, half natural access, R=16. The controlled/stress cohorts below are separate from issue #33's 25 post-discovery turns. See [CurrentSimulationContract.md](CurrentSimulationContract.md).
+
 Status: measured opt-in calibration on `codex/food-population-calibration`. The
 production `OpeningConfig.json` remains at land biomass multiplier `30`, its
 original natural-access fractions, and cultivation effort multiplier `1`.

@@ -1,5 +1,7 @@
 # Land food calibration through Cultivation
 
+> Current-contract annotation (27 September 2026): Historical candidate report after 42cdc56/f3238eb. Preserve each local config/cohort and gate result below; the report does not establish matched current-branch outcomes. References to an accepted seasonal checkpoint describe the historical comparison: current authoritative resolution is one analytical horizon. Shipped m=63/R=16 and recovery-parity corrections postdate this experiment. A complete per-run config hash is not supplied here; that remains a provenance gap. See [CurrentSimulationContract.md](CurrentSimulationContract.md).
+
 September 26, 2026. Experimental branch `codex/land-food-population-sweep`,
 following the harvest-first checkpoint `42cdc56` and bounded-stock audit
 `f3238eb`. This is a candidate profile, not approval to replace the accepted

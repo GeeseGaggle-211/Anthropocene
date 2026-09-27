@@ -1,5 +1,7 @@
 # Validation - September 25, 2026
 
+> Current-contract annotation (27 September 2026): Scope note: historical assertion counts, gameplay populations and test dispositions below apply to their named revision/configuration/cohort. They do not establish the new #33 25-post-discovery craft-chain requirement. Current accepted ordering locks all prior-cohort needs and uses one analytical horizon; historical post-growth Fabric, seasonal-economic and land-damage rules are superseded. See [CurrentSimulationContract.md](CurrentSimulationContract.md).
+
 The current analytical turn-horizon validation and its known ecological
 calibration gap are in [TurnHorizonPerformanceAudit.md](TurnHorizonPerformanceAudit.md).
 The seasonal comparisons below document earlier checkpoints.

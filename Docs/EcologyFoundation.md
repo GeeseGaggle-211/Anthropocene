@@ -1,5 +1,7 @@
 # Paleolithic completion and ecology foundation
 
+> Current-contract annotation (27 September 2026): Authority/navigation: use the current contract index to distinguish approved one-horizon/prior-cohort rules, shipped m=63/R=16 calibration, inherited save behavior and open cadence/Elder questions. Stored LandCondition is frozen under current land uses; retained coefficients do not establish an ecological equilibrium or authorize forest-maintenance discounts. See [CurrentSimulationContract.md](CurrentSimulationContract.md).
+
 This replaces Milestone 3 ecology and ownership rules. The reconciled [Drive plan](https://docs.google.com/document/d/1bghyyEUw55bhM0NQRyzHP6RlfU5JM6LV/edit), particularly section 14, and the user decisions in [EcologyImplementationPlan.md](EcologyImplementationPlan.md) are authoritative. Starvation has two player turns of grace; subsistence shares are balance targets, not quotas. The historical DesignSpec.txt is unchanged.
 
 Environment, vegetation and relief are separate. Seasonal resources are generated after soil, environment and oasis placement. Natural vegetation is a generated target; current vegetation follows configurable condition hysteresis.
