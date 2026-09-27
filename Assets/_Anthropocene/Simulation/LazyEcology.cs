@@ -150,31 +150,39 @@ namespace Anthropocene.Simulation
             var t = w.Tiles[tile]; var v = new EcologyView(t);
             if (queryDays < v.Days - 1e-8) throw new ArgumentOutOfRangeException(nameof(queryDays), "Cannot project before stored ecology.");
             double days = Math.Max(0, queryDays - v.Days);
+            var before = v;
             if (days > 0)
             {
-                var before = v;
-                bool quiet = before.CultivationCapital == 0 && before.LandCondition == 1
-                    && before.AquaticCondition == 1 && before.CurrentVegetation == t.NaturalVegetationPotential;
-                if (quiet) ProjectQuiet(w, t, ref v, days);
+                if (t.Land)
+                {
+                    RecoverCondition(w, t, ref v, days, 0);
+                    RecoverLandAfterHarvest(w, t, ref v, before.Days, days,
+                        null, null, null, true);
+                }
                 else
                 {
-                    var response = PassiveResponseView(w, t, before, days);
-                    var capacity = new HorizonEcologyCapacity(w, t, response, before.Days, days);
-                    double nonfood = EcologyMath.Stock(Math.Max(0, before.PotentialFood - before.Food),
-                        capacity.Nonfood, capacity.BiomassRate, 0, days).Stock;
-                    v.Food = EcologyMath.Stock(before.Food, capacity.Food, capacity.FoodRate, 0, days).Stock;
-                    v.PotentialFood = v.Food + nonfood;
-                    v.Freshwater = EcologyMath.Stock(before.Freshwater, capacity.Water, capacity.WaterRate, 0, days).Stock;
-                    RecoverCondition(w, t, ref v, days, 0);
-                    v.CultivationCapital = CultivationEconomy.Decay(w.Config, before.CultivationCapital,
-                        t.CultivationOperatingFraction, days / w.Config.DaysPerYear);
+                    bool quiet = before.CultivationCapital == 0 && before.LandCondition == 1
+                        && before.AquaticCondition == 1 && before.CurrentVegetation == t.NaturalVegetationPotential;
+                    if (quiet) ProjectQuiet(w, t, ref v, days);
+                    else
+                    {
+                        var response = PassiveResponseView(w, t, before, days);
+                        var capacity = new HorizonEcologyCapacity(w, t, response, before.Days, days);
+                        double nonfood = EcologyMath.Stock(Math.Max(0, before.PotentialFood - before.Food),
+                            capacity.Nonfood, capacity.BiomassRate, 0, days).Stock;
+                        v.Food = EcologyMath.Stock(before.Food, capacity.Food, capacity.FoodRate, 0, days).Stock;
+                        v.PotentialFood = v.Food + nonfood;
+                        v.Freshwater = EcologyMath.Stock(before.Freshwater, capacity.Water, capacity.WaterRate, 0, days).Stock;
+                        RecoverCondition(w, t, ref v, days, 0);
+                        v.CultivationCapital = CultivationEconomy.Decay(w.Config, before.CultivationCapital,
+                            t.CultivationOperatingFraction, days / w.Config.DaysPerYear);
+                    }
                 }
-                v.Days = queryDays;
-                ClampCapacity(w, t, ref v);
-                recovered?.Invoke(before, v, days);
             }
             v.Days = queryDays; v.Saltwater = t.Seasons[(int)Math.Floor(queryDays / w.Config.BaseDays) % 4].MaxSaltwater;
-            ClampCapacity(w, t, ref v); return v;
+            ClampCapacity(w, t, ref v);
+            if (days > 0) recovered?.Invoke(before, v, days);
+            return v;
         }
         public static EcologyView ProjectEcology(WorldState w, int tile, double queryDays, bool composeCycles = true) => ProjectEcology(w, tile, queryDays, composeCycles, null);
         // Undisturbed seasonal recovery is exactly composable: at most one
@@ -231,48 +239,80 @@ namespace Anthropocene.Simulation
         // four ordered affine maps, repeated in constant work for any horizon.
         internal static void RecoverLandAfterHarvest(WorldState w, Tile tile, ref EcologyView view,
             double start, double days, double? averageCapital, double? endingCapital,
-            double? operatingFraction)
+            double? operatingFraction, bool recoverWater = false, Action profileEvaluated = null)
         {
             double previousCapital = view.CultivationCapital;
-            double workingCapital = averageCapital ?? previousCapital;
-            ReclassifyLandFood(w, tile, ref view, previousCapital, workingCapital);
+            double operation = operatingFraction ?? tile.CultivationOperatingFraction;
+            double workingCapital = previousCapital;
+            if (averageCapital.HasValue) workingCapital = averageCapital.Value;
+            else if (previousCapital > 0 && operation < 1)
+            {
+                double decay = Math.Log(2) / w.Config.Neolithic.DecayHalfLifeYears
+                    * (1 - Numbers.Clamp(operation, 0, 1)) / w.Config.DaysPerYear;
+                workingCapital *= EcologyMath.MeanExponential(decay, days);
+            }
+            EcologyCapacity naturalCapacity = default;
+            int naturalSeason = -1;
+            ReclassifyLandFood(w, tile, ref view, previousCapital, workingCapital,
+                ref naturalCapacity, ref naturalSeason, profileEvaluated);
             view.CultivationCapital = workingCapital;
             view.Days = start;
+            // Capacity depends on the fixed representative land state and the
+            // profile ID, never on how often that profile occurs in the horizon.
+            Span<EcologyCapacity> profiles = stackalloc EcologyCapacity[4];
+            int profileMask = 0;
             double baseDays = w.Config.BaseDays, cycleDays = 4 * baseDays;
             double phase = start - Math.Floor(start / cycleDays) * cycleDays;
             double first = phase <= 1e-9 ? 0 : Math.Min(days, cycleDays - phase);
-            if (first > 0) AdvanceLandRecoveryEdge(w, tile, ref view, first, operatingFraction);
+            if (first > 0) AdvanceLandRecoveryEdge(w, tile, ref view, first,
+                operatingFraction, recoverWater, profiles, ref profileMask, profileEvaluated);
             double remaining = days - first;
             long cycles = (long)Math.Floor(remaining / cycleDays + 1e-10);
             if (cycles > 0)
             {
+                bool alignedWholeCycles = first == 0 && Math.Abs(remaining - cycles * cycleDays) <= 1e-9;
                 var food = SeasonalAffine.Identity;
                 var nonfood = SeasonalAffine.Identity;
+                var water = SeasonalAffine.Identity;
                 for (int season = 0; season < 4; season++)
                 {
-                    var capacity = new EcologyCapacity(w, tile, view, season, operatingFraction);
+                    EcologyCapacity capacity;
+                    if (alignedWholeCycles)
+                    {
+                        profileEvaluated?.Invoke();
+                        capacity = new EcologyCapacity(w, tile, view, season, operatingFraction);
+                    }
+                    else capacity = LandCapacityAt(w, tile, view, season, operatingFraction,
+                        profiles, ref profileMask, profileEvaluated);
                     food = food.Then(SeasonalAffine.ManagedRecovery(capacity.Food,
                         capacity.FoodRate, capacity.ManagedFlow, baseDays));
                     nonfood = nonfood.Then(SeasonalAffine.Recovery(
                         Math.Max(0, capacity.Biomass - capacity.Food),
                         capacity.BiomassRate, baseDays));
+                    if (recoverWater)
+                        water = water.Then(SeasonalAffine.Recovery(capacity.Water,
+                            capacity.WaterRate, baseDays));
                 }
                 double n = nonfood.Repeat(Math.Max(0, view.PotentialFood - view.Food), cycles);
                 view.Food = food.Repeat(view.Food, cycles);
                 view.PotentialFood = view.Food + n;
+                if (recoverWater) view.Freshwater = water.Repeat(view.Freshwater, cycles);
                 double covered = cycles * cycleDays;
                 view.Days += covered; remaining -= covered;
             }
-            if (remaining > 1e-9) AdvanceLandRecoveryEdge(w, tile, ref view, remaining, operatingFraction);
-            double finalCapital = endingCapital ?? CultivationEconomy.Decay(w.Config,
-                previousCapital, operatingFraction ?? tile.CultivationOperatingFraction,
-                days / w.Config.DaysPerYear);
-            ReclassifyLandFood(w, tile, ref view, workingCapital, finalCapital);
+            if (remaining > 1e-9) AdvanceLandRecoveryEdge(w, tile, ref view, remaining,
+                operatingFraction, recoverWater, profiles, ref profileMask, profileEvaluated);
+            double finalCapital = endingCapital ?? (previousCapital <= 0 || operation >= 1
+                ? previousCapital : CultivationEconomy.Decay(w.Config,
+                    previousCapital, operation, days / w.Config.DaysPerYear));
+            ReclassifyLandFood(w, tile, ref view, workingCapital, finalCapital,
+                ref naturalCapacity, ref naturalSeason, profileEvaluated);
             view.CultivationCapital = finalCapital;
             view.Days = start + days;
         }
         private static void AdvanceLandRecoveryEdge(WorldState w, Tile tile, ref EcologyView view,
-            double days, double? operatingFraction)
+            double days, double? operatingFraction, bool recoverWater,
+            Span<EcologyCapacity> profiles, ref int profileMask, Action profileEvaluated)
         {
             double remaining = days, baseDays = w.Config.BaseDays;
             for (int i = 0; i < 5 && remaining > 1e-9; i++)
@@ -280,26 +320,55 @@ namespace Anthropocene.Simulation
                 long interval = (long)Math.Floor(view.Days / baseDays + 1e-10);
                 double part = Math.Min(remaining, (interval + 1) * baseDays - view.Days);
                 if (part <= 1e-9) break;
-                var capacity = new EcologyCapacity(w, tile, view, (int)(interval % 4), operatingFraction);
+                var capacity = LandCapacityAt(w, tile, view, (int)(interval % 4),
+                    operatingFraction, profiles, ref profileMask, profileEvaluated);
                 double n = SeasonalAffine.Recovery(Math.Max(0, capacity.Biomass - capacity.Food),
                     capacity.BiomassRate, part).Apply(Math.Max(0, view.PotentialFood - view.Food));
                 view.Food = SeasonalAffine.ManagedRecovery(capacity.Food, capacity.FoodRate,
                     capacity.ManagedFlow, part).Apply(view.Food);
                 view.PotentialFood = view.Food + n;
+                if (recoverWater)
+                    view.Freshwater = SeasonalAffine.Recovery(capacity.Water,
+                        capacity.WaterRate, part).Apply(view.Freshwater);
                 view.Days += part; remaining -= part;
             }
         }
+        private static EcologyCapacity LandCapacityAt(WorldState w, Tile tile, EcologyView view,
+            int season, double? operatingFraction, Span<EcologyCapacity> profiles,
+            ref int profileMask, Action profileEvaluated)
+        {
+            int bit = 1 << season;
+            if ((profileMask & bit) == 0)
+            {
+                profileEvaluated?.Invoke();
+                profiles[season] = new EcologyCapacity(w, tile, view, season, operatingFraction);
+                profileMask |= bit;
+            }
+            return profiles[season];
+        }
         private static void ReclassifyLandFood(WorldState w, Tile tile, ref EcologyView view,
-            double previousCapital, double nextCapital)
+            double previousCapital, double nextCapital, ref EcologyCapacity naturalCapacity,
+            ref int naturalSeason, Action profileEvaluated)
         {
             if (Math.Abs(previousCapital - nextCapital) <= 1e-12 || view.PotentialFood <= 0) return;
             int season = (int)Math.Floor(view.Days / w.Config.BaseDays) % 4;
-            var previous = view; previous.CultivationCapital = previousCapital;
-            var next = view; next.CultivationCapital = nextCapital;
-            var before = new EcologyCapacity(w, tile, previous, season);
-            var after = new EcologyCapacity(w, tile, next, season);
-            double oldShare = before.Biomass <= 0 ? 0 : Numbers.Clamp(before.Food / before.Biomass, 0, 1);
-            double newShare = after.Biomass <= 0 ? 0 : Numbers.Clamp(after.Food / after.Biomass, 0, 1);
+            // The ecological biomass and wild-food base are independent of q.
+            // Evaluate that base once, then derive both access shares from it.
+            if (naturalSeason != season)
+            {
+                var natural = view; natural.CultivationCapital = 0;
+                profileEvaluated?.Invoke();
+                naturalCapacity = new EcologyCapacity(w, tile, natural, season);
+                naturalSeason = season;
+            }
+            double previousQ = CultivationEconomy.Intensity(w.Config, previousCapital);
+            double nextQ = CultivationEconomy.Intensity(w.Config, nextCapital);
+            double oldFood = EcologyMath.EffectiveWildFoodCapacity(naturalCapacity.WildFood,
+                naturalCapacity.Biomass, previousQ, w.Config);
+            double newFood = EcologyMath.EffectiveWildFoodCapacity(naturalCapacity.WildFood,
+                naturalCapacity.Biomass, nextQ, w.Config);
+            double oldShare = naturalCapacity.Biomass <= 0 ? 0 : Numbers.Clamp(oldFood / naturalCapacity.Biomass, 0, 1);
+            double newShare = naturalCapacity.Biomass <= 0 ? 0 : Numbers.Clamp(newFood / naturalCapacity.Biomass, 0, 1);
             double nonfood = Math.Max(0, view.PotentialFood - view.Food);
             if (newShare > oldShare && oldShare < 1)
                 view.Food += nonfood * (newShare - oldShare) / (1 - oldShare);

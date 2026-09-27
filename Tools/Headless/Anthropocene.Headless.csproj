@@ -39,6 +39,7 @@
   <Compile Include="HousingMaterialChecks.cs" />
     <Compile Include="WoodEcologyChecks.cs" />
     <Compile Include="Issue25EcologyChecks.cs" />
+    <Compile Include="Issue27EcologyChecks.cs" />
   <Compile Include="PastoralCraftChecks.cs" />
   </ItemGroup>
 </Project>

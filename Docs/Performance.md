@@ -1,5 +1,13 @@
 # Scale measurements - September 13, 2026
 
+The issue #27 land-recovery reconciliation retains constant work in simulated
+duration: four saved profiles define a cycle, and a transition evaluates four
+distinct land capacities without cultivation decay or five with the tested
+decaying-capital reclassification. Pure projection adds no allocation. Paired
+80/320-tribe timing and isolated-query measurements are recorded in
+[Issue27EcologyRecovery.md](Issue27EcologyRecovery.md). Its 5% full-turn timing
+screen was not cleared; the issue branch remains unmerged for review.
+
 ## Neolithic Options 1/5 follow-up — September 25, 2026
 
 The production resolver on `codex/turn-horizon-refactor` now evaluates one

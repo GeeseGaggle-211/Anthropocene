@@ -91,11 +91,14 @@ coefficients. They do not create seasonal or annual world states.
 `BaseDays` still defines a legacy unit and the four generated climate
 profiles. `ReferenceIntervals = Duration / BaseDays` scales quantities such as
 consumption or worker effort. It never sets a loop count. One-year, five-year,
-ten-year and twenty-year turns use the same transition functions. The quiet
-ecology path composes the four fixed seasonal affine maps algebraically;
-active ecology reduces the four profiles to fixed coefficients and evaluates
-one bounded stock-flow solve. The cultivation allocator has a fixed number of
-capital-resolution bands per local candidate field, independent of duration.
+ten-year and twenty-year turns use the same transition functions. Land recovery
+after opening claims and pure passive land projection share the same ordered
+four-profile affine map, algebraically repeated across whole cycles with bounded
+partial-cycle edges. A per-transition cache evaluates each distinct seasonal
+capacity once for the fixed representative land state. Aquatic ecology and
+claimed freshwater retain their bounded horizon stock-flow solve. The
+cultivation allocator has a fixed number of capital-resolution bands per local
+candidate field, independent of duration.
 No production path may reintroduce `LazyEcology.Segments` or a loop whose
 iterations grow with `Duration / BaseDays`.
 

@@ -159,8 +159,13 @@ namespace Anthropocene.Simulation
             if (tile.Land)
             {
                 double depletedFood = v.Food, depletedBiomass = v.PotentialFood;
+                // With no drinking claim, use the same ordered zero-withdrawal
+                // water transition as a latent land tile.
+                bool recoverWater = waterRequest <= 0;
+                if (recoverWater) v.Freshwater = beforeHorizon.Freshwater;
                 LazyEcology.RecoverLandAfterHarvest(w, tile, ref v, start, duration,
-                    averageCultivationCapital, endingCultivationCapital, operatingFraction);
+                    averageCultivationCapital, endingCultivationCapital, operatingFraction,
+                    recoverWater);
                 // These two ledgers include accessibility reclassification when
                 // field capital changes. No recovered unit enters a receipt.
                 double foodChange = v.Food - depletedFood;
@@ -169,6 +174,12 @@ namespace Anthropocene.Simulation
                 result.Balance.FoodOverflow = Math.Max(0, -foodChange);
                 result.Balance.BiomassRecharge = Math.Max(0, biomassChange);
                 result.Balance.BiomassOverflow = Math.Max(0, -biomassChange);
+                if (recoverWater)
+                {
+                    double waterChange = v.Freshwater - beforeHorizon.Freshwater;
+                    result.Balance.WaterRecharge = Math.Max(0, waterChange);
+                    result.Balance.WaterOverflow = Math.Max(0, -waterChange);
+                }
             }
             else
                 v.CultivationCapital = endingCultivationCapital ?? CultivationEconomy.Decay(w.Config,
