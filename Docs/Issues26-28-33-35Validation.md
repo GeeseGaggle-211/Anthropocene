@@ -136,11 +136,24 @@ document links: `python Tools/Docs/Check-CurrentContract.py`.
 Unity 6000.5.10f1 EditMode verification passed **29/29 tests** with no failures
 or skips. The editor resolved its entitlement through the currently observed
 Hub licensing pipe and exited successfully. The separate Windows player build
-also succeeded with freshly compiled Simulation/Runtime assemblies. Its first
-Neolithic smoke attempt passed queued-order purity, economy resolution and an
-exact save/load, then failed the automation-countdown assertion. This failure
-is under investigation; player verification and final craft-chain/cohort
-evidence remain pending at this report checkpoint.
+at `fefa6b7` succeeded with freshly compiled Simulation/Runtime assemblies.
+The corrected Neolithic smoke passed queued-order purity, normal resolution,
+real field growth, recurring Fabric debit, exact isolated save/load, and saved
+automation finishing without resubmission. All five captures were present;
+the resolved economy and final automation frames were visually inspected.
+The reserve label correctly displays 30 physical years. The player exited
+normally with no script exception. This is a synthetic capability/UI fixture,
+not a natural-progression study or a human usability playtest.
+
+The first smoke attempt exposed an outdated assertion: the explicit Economy
+order owns its current manual slot, so its saved automation starts replanning
+on the next unsupplied turn. The test now checks countdown=1 after the explicit
+order and countdown=0 plus a real labor plan/automatic order on the subsequent
+turn. No gameplay logic changed for this correction. Evidence is in
+`TestResults/Issues26-28-33-35/Unity/Build-SmokeFix.log` and
+`Unity/PlayerNeolithic-Final/` beneath that evidence root; the built player is
+`Builds/Issues26-28-33-35/Anthropocene.exe`.
+Final craft-chain/cohort evidence is still pending at this report checkpoint.
 
 ## Reproduction and limits
 
