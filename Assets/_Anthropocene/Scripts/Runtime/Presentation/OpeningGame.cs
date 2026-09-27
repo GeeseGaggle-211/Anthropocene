@@ -224,7 +224,7 @@ namespace Anthropocene.Presentation
             GUI.Label(new Rect(20, y + 7, width - 12, 24), "SELECTED  ·  " + (selected == camp.Id && camp.IsVillage ? "VILLAGE" : SelectedName), section);
             var selectedHunter = observation.Hunters.FirstOrDefault(h => h.Id == selected);
             string selectedDetail = selected == camp.Id
-                ? (camp.IsVillage ? camp.Population + " people · permanent village · QoL " + (camp.QoL * 100).ToString("F0") + "%" : camp.Population + " people · movement " + observation.CampMovement + " · gathers automatically")
+                ? (camp.IsVillage ? camp.Population + " people · village · QoL " + (camp.QoL * 100).ToString("F0") + "% · moving abandons fields" : camp.Population + " people · movement " + observation.CampMovement + " · gathers automatically")
                 : selectedHunter != null
                     ? selectedHunter.Population + " hunters · move " + observation.HunterMovement + " · auto-hunts on contact · " + (selectedHunter.InSupply ? "supplied" : "carrying provisions")
                     : "Unit " + selected;
@@ -247,10 +247,7 @@ namespace Anthropocene.Presentation
                 }
                 y += 42;
             }
-            if (selected != camp.Id || !camp.IsVillage)
-            {
-                if (Button(new Rect(14, y, width, 36), mode == "Move" ? "◆ MOVE [M]  ·  choose a green tile" : "◇ MOVE [M]  ·  preview range", mode == "Move")) BeginMode("Move"); y += 42;
-            }
+            if (Button(new Rect(14, y, width, 36), mode == "Move" ? "◆ MOVE [M]  ·  choose a green tile" : "◇ MOVE [M]  ·  preview range", mode == "Move")) BeginMode("Move"); y += 42;
             if (selected == camp.Id)
             {
                 int maximum = Math.Max(0, Math.Min(camp.GathererPopulation, camp.Population - world.Config.MinimumCamp));
@@ -484,7 +481,7 @@ namespace Anthropocene.Presentation
             {
                 if (player.VillageTurns == 1)
                 {
-                    journal.Add("Turn " + turn + ": With mature cultivated fields established, your camp has settled permanently into an agricultural Village!");
+                    journal.Add("Turn " + turn + ": With mature cultivated fields established, your camp has become an agricultural Village.");
                     status = "Village established! Click MANAGE VILLAGE in the sidebar or double-click the village to allocate workforce and manage workshops.";
                 }
                 else
@@ -494,7 +491,12 @@ namespace Anthropocene.Presentation
             }
             else
             {
-                status = player.Technology == Technology.None ? "A new generation. Inspect the land and plan your next orders." : "Your people discovered " + TechName(player.Technology) + ". Tending fields brings cultivation to 0.25 to settle permanently as a Village.";
+                status = player.Technology == Technology.None ? "A new generation. Inspect the land and plan your next orders." : "Your people discovered " + TechName(player.Technology) + ". A radius-one field average of 0.25 establishes a Village; moving away abandons it.";
+            }
+            if (record.Events.Any(e => e.StartsWith("Village " + player.Id + " abandoned its fields", StringComparison.Ordinal)))
+            {
+                journal.Add("Turn " + turn + ": Your village moved. Its former fields and fixed housing did not move with it; food and QoL now reflect the new camp site.");
+                status = "Village abandoned. Former fields and fixed housing no longer support this camp.";
             }
             if (!world.Hunters.Any(h => h.Id == selected)) selected = player.Id;
         }

@@ -182,7 +182,9 @@ namespace Anthropocene.Simulation
                 ? w.Map.Radius(camp.Tile, CampMovement).Where(visible.Contains).OrderBy(id => id)
                     .Select(id => Coverage(w, camp, index, visible, id, Hunters, Herds)).ToArray()
                 : Array.Empty<SiteCoverageObservation>());
-            AgriculturalSites = Array.AsReadOnly(includeCandidateForecasts && !camp.IsVillage && CultivationEconomy.Enabled(camp) && !CultivationEconomy.HusbandryEnabled(camp)
+            AgriculturalSites = Array.AsReadOnly(includeCandidateForecasts &&
+                (!camp.IsVillage || FoodCondition <= 1 || DeficitTurns > 0) &&
+                CultivationEconomy.Enabled(camp) && !CultivationEconomy.HusbandryEnabled(camp)
                 ? AgriculturalCandidates(w, camp, index, visible)
                 : Array.Empty<AgriculturalSiteObservation>());
             HuntingFieldcraft = PracticeEffects.Ramp(w.Config, camp, Domain.Hunting);
@@ -459,16 +461,19 @@ namespace Anthropocene.Simulation
             var economicCamp = o.Settlements.FirstOrDefault(c => c.Id == o.CampId && (c.Agriculture || c.Husbandry));
             var campCandidates = new List<Candidate>();
             double current = Gathering(o, o.CampTile);
-            if (o.Settlements.Any(s => s.Id == o.CampId && s.IsVillage))
-            {
-                campCandidates.Add(new Candidate { Order = new Order(OrderKind.NoOp, o.CampId), Score = 100, Components = "VillageContinuity" });
-            }
-            else if (economicCamp != null && economicCamp.Agriculture && !economicCamp.Husbandry)
+            if (economicCamp != null && economicCamp.Agriculture && !economicCamp.Husbandry)
             {
                 foreach (var site in o.AgriculturalSites.OrderBy(s => s.Tile))
                 {
                     int n = site.Tile;
                     if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n)) continue;
+                    // Departure from an established village abandons its
+                    // current field work and fixed housing. AI considers it
+                    // only in a food emergency with a materially better site;
+                    // a player can still choose the move at any time.
+                    if (economicCamp.IsVillage && n != o.CampTile &&
+                        (o.FoodCondition > 1 && o.DeficitTurns == 0 ||
+                         Gathering(o, n) < current * 1.25)) continue;
                     double food = Gathering(o, n) * need * m.Gathering;
                     double continuity = n == o.CampTile ? Math.Max(.25, current * o.Inertia) : -(1 - m.Mobility) * .1;
                     double herdSupport = HerdSupport(o, n) * m.Hunting * (huntingFocus ? 4 : .35 + .85 * o.HuntingFieldcraft);

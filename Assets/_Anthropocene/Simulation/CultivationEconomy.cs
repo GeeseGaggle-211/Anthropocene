@@ -129,6 +129,29 @@ namespace Anthropocene.Simulation
         }
         public static int Workers(Camp camp, string role) => camp.Workforce.Assignments.Where(a => a.Role == role).Sum(a => a.Population);
         public static int[] Footprint(WorldState w, Camp camp) => w.Map.Radius(camp.Tile, 1).Where(id => w.Tiles[id].TraversableLand && w.Tiles[id].Environment != EnvironmentKind.Ice && w.Tiles[id].Seasons.Any(s => s.MaxPotentialFood > 0)).OrderBy(id => id).ToArray();
+        // Village status is an endpoint decision, never an input to this turn's
+        // claim or field plan. Count every nearby land tile in the original
+        // footprint average, with only this camp's fields contributing q.
+        internal static void UpdateVillageAtBoundary(WorldState w, Camp camp, TurnRecord record)
+        {
+            if (!Enabled(camp) || camp.Population <= 0) return;
+            var land = w.Map.Radius(camp.Tile, 1).Where(id => w.Tiles[id].TraversableLand).OrderBy(id => id).ToArray();
+            if (land.Length == 0) return;
+            double average = land.Sum(id => w.Tiles[id].CultivationOperator == camp.Id
+                ? Intensity(w.Config, w.Tiles[id].CultivationCapital) : 0) / land.Length;
+            if (average + 1e-10 < .25)
+            {
+                if (camp.IsVillage) camp.VillageTurns++;
+                return;
+            }
+            if (!camp.IsVillage)
+            {
+                camp.IsVillage = true;
+                camp.VillageTurns = 0;
+                record.Log($"Camp {camp.Id} (Player {camp.Player}) has transitioned into a Village (Avg Cultivation {average:F2}).");
+            }
+            camp.VillageTurns++;
+        }
         public static AgriculturalLabor Prepare(WorldState w, Camp camp, double start, FarmToolWorkBudget toolBudget = null, double segmentYears = 0)
         {
             var footprint = CommitSeasonBoundary(w, camp, start);

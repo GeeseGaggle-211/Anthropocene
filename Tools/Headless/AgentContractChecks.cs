@@ -169,6 +169,12 @@ internal static class AgentContractChecks
         var stay = new HeuristicTribePolicy().Decide(view, camp.Mandate).Orders.Single(o => o.Entity == camp.Id);
         Check(stay.Kind == OrderKind.NoOp,
             "developed own fields and their coming managed recovery retain an agricultural camp at a productive site");
+        camp.IsVillage = true;
+        camp.PlantFood = 100000;
+        var secureVillage = new AgentObservationBuilder().Build(developed, camp.Player);
+        Check(secureVillage.AgriculturalSites.Count == 0 &&
+            new HeuristicTribePolicy().Decide(secureVillage, camp.Mandate).Orders.Single(o => o.Entity == camp.Id).Kind == OrderKind.NoOp,
+            "secure villages skip relocation forecasts and do not abandon fields");
         var virgin = Fixture(false); var freshCamp = virgin.Camps[0];
         var move = new HeuristicTribePolicy().Decide(new AgentObservationBuilder().Build(virgin, freshCamp.Player), freshCamp.Mandate)
             .Orders.Single(o => o.Entity == freshCamp.Id);
@@ -191,6 +197,13 @@ internal static class AgentContractChecks
             .Orders.Single(o => o.Entity == depletedCamp.Id);
         Check(escape.Kind == OrderKind.Move && depleted.Map.Distance(depletedCamp.Tile, escape.Destination) == 1,
             "a depleted agricultural camp can relocate rather than receiving a fixed wait order");
+        depletedCamp.IsVillage = true;
+        depletedCamp.PlantFood = 0;
+        var emergencyVillage = new AgentObservationBuilder().Build(depleted, depletedCamp.Player);
+        var emergencyChoice = new HeuristicTribePolicy().Decide(emergencyVillage, depletedCamp.Mandate)
+            .Orders.Single(o => o.Entity == depletedCamp.Id);
+        Check(emergencyVillage.AgriculturalSites.Count > 0 && emergencyChoice.Kind == OrderKind.Move,
+            "the same AI can abandon a village in a severe food emergency");
     }
 
     private static void ValidationOnlyObservationMatchesActions(WorldState world, Camp camp, AgentObservation full)

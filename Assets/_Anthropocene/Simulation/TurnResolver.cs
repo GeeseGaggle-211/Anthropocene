@@ -93,11 +93,11 @@ namespace Anthropocene.Simulation
                 w.Hunters.Add(hunter); record.Log("Tribe " + camp.Player + " dispatched " + hunter.Population + " hunters [" + hunter.Id + "].");
             }
             Supply.ProvisionDepartures(w, locked, record, prepared.Placement);
-            Move(w, locked, herdMoves, prepared.Placement, record);
+            Move(w, locked, herdMoves, prepared.Placement, prepared.AbandoningVillages, record);
             Supply.DepositReturns(w, record);
             var touched = new Dictionary<int, TileChange>();
             Action<int> touch = id => { if (!touched.ContainsKey(id)) touched[id] = new TileChange { Tile = id, BeforeFood = w.Tiles[id].Food, BeforePotentialFood = w.Tiles[id].PotentialFood, BeforeFreshwater = w.Tiles[id].Freshwater, BeforeLandCondition = w.Tiles[id].LandCondition, BeforeAquaticCondition = w.Tiles[id].AquaticCondition }; };
-            ResolveEcology(w, locked, establishedHunters, record, touch, prepared.Needs);
+            ResolveEcology(w, locked, establishedHunters, record, touch, prepared.Needs, prepared.AbandoningVillages);
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Reintegrate).OrderBy(o => o.Entity))
             {
                 var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity); if (hunter == null) continue;
@@ -158,7 +158,8 @@ namespace Anthropocene.Simulation
                     EcologyMath.CultivationVegetationRetention(w.Config, CultivationEconomy.Intensity(w.Config, index.Ecology(n).CultivationCapital))) * species.MovementHabitatWeight)
                 .ThenBy(n => n == herd.Tile ? 0 : 1).ThenBy(n => n).First();
         }
-        private static void Move(WorldState w, List<Order> orders, Dictionary<int, int> herds, CampPlacement placement, TurnRecord record)
+        private static void Move(WorldState w, List<Order> orders, Dictionary<int, int> herds, CampPlacement placement,
+            IReadOnlyCollection<int> abandoningVillages, TurnRecord record)
         {
             foreach (int id in placement.Blocked.OrderBy(id => id))
                 record.Log("Camp " + id + " movement blocked by another camp.");
@@ -169,7 +170,30 @@ namespace Anthropocene.Simulation
                 // was built; migrate any legacy carried stock before changing
                 // the camp's location.
                 NeolithicProduction.MigrateLegacyFixedHousing(w, camp);
-                if (target != camp.Tile) { camp.Moves++; camp.StationaryTurns = 0; camp.StationaryYears = 0; record.Log("Camp " + camp.Id + " moved from " + camp.Tile + " to " + target + "."); }
+                if (target != camp.Tile)
+                {
+                    bool abandoning = abandoningVillages.Contains(camp.Id);
+                    if (abandoning)
+                    {
+                        // Release only this camp's old local fields. Their
+                        // physical capital remains on the map and decays
+                        // normally; the moving camp cannot operate it now.
+                        foreach (int id in w.Map.Radius(camp.Tile, 1))
+                            if (w.Tiles[id].CultivationOperator == camp.Id)
+                            {
+                                w.Tiles[id].CultivationOperator = -1;
+                                w.Tiles[id].CultivationOperatingFraction = 0;
+                            }
+                        camp.IsVillage = false;
+                        camp.VillageTurns = 0;
+                        record.Log("Village " + camp.Id + " abandoned its fields and became a camp.");
+                    }
+                    camp.Moves++; camp.StationaryTurns = 0;
+                    // Settled expectations survive abandonment, so fixed
+                    // housing left behind hurts QoL under the same formula.
+                    if (!abandoning) camp.StationaryYears = 0;
+                    record.Log("Camp " + camp.Id + " moved from " + camp.Tile + " to " + target + ".");
+                }
                 else camp.StationaryTurns++;
                 camp.Tile = target;
             }

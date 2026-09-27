@@ -14,13 +14,14 @@ namespace Anthropocene.Simulation
             WorldState w, List<Demand> demands, TurnRecord record, Action<int> touch,
             Dictionary<int, double> foraged, TurnHorizon horizon,
             Dictionary<int, AgriculturalLabor> agriculturalLabor,
-            Dictionary<int, TurnNeeds> needs)
+            Dictionary<int, TurnNeeds> needs, IReadOnlyCollection<int> abandoningVillages)
         {
             var timer = System.Diagnostics.Stopwatch.StartNew();
             var herds = w.Herds.ToDictionary(h => h.Id);
             var camps = w.Camps.ToDictionary(c => c.Id);
             var hunters = w.Hunters.ToDictionary(h => h.Id);
-            var agriculturalCamps = w.Camps.Where(CultivationEconomy.Enabled).OrderBy(c => c.Id).ToArray();
+            var agriculturalCamps = w.Camps.Where(c => CultivationEconomy.Enabled(c) &&
+                !abandoningVillages.Contains(c.Id)).OrderBy(c => c.Id).ToArray();
             var farmToolBudgets = agriculturalCamps.ToDictionary(c => c.Id, c => new FarmToolWorkBudget(w, c));
             var scratch = agriculturalCamps.ToDictionary(c => c.Id,
                 c => new AgriculturalClaimScratch(w, c, agriculturalLabor[c.Id].Footprint));
@@ -173,6 +174,10 @@ namespace Anthropocene.Simulation
                 CultivationEconomy.CommitHorizonExpansion(w, camp, corrected, record,
                     farmToolBudgets[camp.Id], allocations[camp.Id]);
             }
+            // All competing field endpoints are committed before settlement
+            // status reads the completed radius-one footprint.
+            foreach (var camp in agriculturalCamps)
+                CultivationEconomy.UpdateVillageAtBoundary(w, camp, record);
             LastMetrics.HorizonCommitMilliseconds = commitTimer.Elapsed.TotalMilliseconds;
             foreach (var transfer in transfers)
             {

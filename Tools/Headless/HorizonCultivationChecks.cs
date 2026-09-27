@@ -213,6 +213,148 @@ internal static class HorizonCultivationChecks
             "bounded horizon allocation debits nonlinear build effort exactly", 1e-5);
     }
 
+    private static void VillageCheckpointUsesOwnedFootprint()
+    {
+        var world = Fixture();
+        var camp = world.Camps[0];
+        var land = world.Map.Radius(camp.Tile, 1).Where(id => world.Tiles[id].TraversableLand).ToArray();
+        Check(land.Length == 7, "village checkpoint includes the entire radius-one land footprint");
+        double Capital(double q) => Math.Pow(q / world.Config.ReferenceIntensity, 2);
+        foreach (int id in land)
+        {
+            world.Tiles[id].CultivationCapital = Capital(.24);
+            world.Tiles[id].CultivationOperator = camp.Id;
+        }
+        var record = new TurnRecord();
+        CultivationEconomy.UpdateVillageAtBoundary(world, camp, record);
+        Check(!camp.IsVillage && camp.VillageTurns == 0, "average q below .25 remains a camp");
+        foreach (int id in land) world.Tiles[id].CultivationCapital = Capital(.25);
+        world.Tiles[land[0]].CultivationOperator = camp.Id + 100;
+        CultivationEconomy.UpdateVillageAtBoundary(world, camp, record);
+        Check(!camp.IsVillage, "a neighboring camp's field cannot promote this camp");
+        world.Tiles[land[0]].CultivationOperator = camp.Id;
+        CultivationEconomy.UpdateVillageAtBoundary(world, camp, record);
+        Check(camp.IsVillage && camp.VillageTurns == 1, "average q at .25 promotes exactly once");
+        Check(record.Events.Any(e => e.Contains("transitioned into a Village")), "village transition is logged");
+        var loaded = SaveCodec.Load(SaveCodec.Save(world));
+        Check(loaded.Camps[0].IsVillage && loaded.Camps[0].VillageTurns == 1,
+            "village status and turn count survive save continuation");
+        foreach (int id in land) world.Tiles[id].CultivationCapital = 0;
+        CultivationEconomy.UpdateVillageAtBoundary(world, camp, record);
+        Check(camp.IsVillage && camp.VillageTurns == 2,
+            "field decay alone does not decide to abandon village status");
+
+        var singleField = Fixture();
+        var singleCamp = singleField.Camps[0];
+        singleField.Tiles[singleCamp.Tile].CultivationCapital = Capital(1);
+        singleField.Tiles[singleCamp.Tile].CultivationOperator = singleCamp.Id;
+        CultivationEconomy.UpdateVillageAtBoundary(singleField, singleCamp, new TurnRecord());
+        Check(!singleCamp.IsVillage, "one intense field does not replace the footprint-average gate");
+
+        var resolved = Fixture();
+        var resident = resolved.Camps[0];
+        resolved.Config.Neolithic.DecayHalfLifeYears = 1000000000;
+        foreach (int id in resolved.Map.Radius(resident.Tile, 1))
+        {
+            resolved.Tiles[id].CultivationCapital = Capital(.35);
+            resolved.Tiles[id].CultivationOperator = resident.Id;
+        }
+        var turn = new TurnResolver().Resolve(resolved, new Dictionary<int, List<Order>>());
+        Check(resident.IsVillage && resident.VillageTurns == 1,
+            "resource endpoint promotes an established agricultural camp");
+        Check(turn.Events.Count(e => e.Contains("transitioned into a Village")) == 1,
+            "resource endpoint records one promotion event");
+        var move = new Order(OrderKind.Move, resident.Id,
+            destination: resolved.Map.Neighbors(resident.Tile).First());
+        Check(OrderRules.Validate(new AgentObservationBuilder().Build(resolved, resident.Player), move) == null,
+            "the player may order a village to abandon its site");
+    }
+
+    private static void VillageDepartureLosesFieldsAndHousing()
+    {
+        var staying = Fixture();
+        var home = staying.Camps[0];
+        int destination = staying.Map.Neighbors(home.Tile).First();
+        var oldLand = staying.Map.Radius(home.Tile, 1).ToArray();
+        var newLand = new HashSet<int>(staying.Map.Radius(destination, 1));
+        double capital = Math.Pow(.35 / staying.Config.ReferenceIntensity, 2);
+        foreach (int id in oldLand)
+        {
+            var tile = staying.Tiles[id];
+            tile.CultivationCapital = capital;
+            tile.CultivationOperator = home.Id;
+            tile.Cultivation = .35f;
+            if (newLand.Contains(id)) continue;
+            tile.Food = tile.PotentialFood = 10000;
+            for (int season = 0; season < tile.Seasons.Length; season++)
+            {
+                var profile = tile.Seasons[season];
+                profile.MaxFood = 10000;
+                profile.MaxPotentialFood = 10000;
+                tile.Seasons[season] = profile;
+            }
+        }
+        home.IsVillage = true;
+        home.VillageTurns = 3;
+        home.StationaryYears = 100;
+        home.RudimentaryExpectation = 1;
+        home.PlantFood = 0;
+        home.Inventory.Cloth = 100;
+        NeolithicProduction.AddFixedHousing(staying, home, 25, staying.Days);
+        byte[] initial = SaveCodec.Save(staying);
+        var leaving = SaveCodec.Load(initial);
+        var parallelLeaving = SaveCodec.Load(initial);
+        var migrant = leaving.Camps[0];
+        var stayTurn = new TurnResolver().Resolve(staying, new Dictionary<int, List<Order>>());
+        var leaveTurn = new TurnResolver().Resolve(leaving,
+            new Dictionary<int, List<Order>> { [migrant.Player] = new List<Order>
+                { new Order(OrderKind.Move, migrant.Id, destination: destination) } });
+        Check(migrant.Tile == destination && !migrant.IsVillage && migrant.VillageTurns == 0,
+            "accepted village movement immediately regresses to a camp");
+        Check(leaveTurn.Events.Any(e => e.Contains("abandoned its fields")),
+            "the abandonment decision is recorded");
+        Check(oldLand.All(id => leaving.Tiles[id].CultivationOperator != migrant.Id),
+            "abandoned fields are unavailable to the moving camp this turn");
+        Check(!leaveTurn.Transfers.Any(t => t.Entity == migrant.Id && t.Kind == "Cultivation"),
+            "no cultivated harvest is awarded after abandonment");
+        Check(migrant.StationaryYears >= 100,
+            "settled domestic expectations persist despite relocation");
+        Check(NeolithicProduction.FixedHousingAt(leaving, migrant.Id, destination, leaving.Days) == 0,
+            "fixed village housing stays at the former site");
+        Check(migrant.FoodNeedsMetRatio < home.FoodNeedsMetRatio,
+            "abandonment loses local food security under the same cohort demand");
+        Check(migrant.QoL < home.QoL,
+            "the unchanged QoL formula registers the lost housing and food");
+        Check(migrant.QoL < home.QoL * .25,
+            "losing the village's food and fixed housing causes a sharp immediate QoL collapse");
+        double expectation = migrant.RudimentaryExpectation;
+        double clothing = 1 - expectation * (1 - migrant.ClothPerCapita);
+        double housing = 1 - expectation * (1 - migrant.HousingPerCapita);
+        double expectedQoL = migrant.FoodNeedsMetRatio * migrant.WaterNeedsMetRatio *
+            (leaving.Config.Neolithic.RudimentaryWeightClothing * clothing +
+             leaving.Config.Neolithic.RudimentaryWeightHousing * housing);
+        Near(migrant.QoL, expectedQoL, "village departure uses the ordinary QoL formula");
+        Console.WriteLine("VILLAGE_ABANDONMENT stayFood=" + home.FoodNeedsMetRatio +
+            " moveFood=" + migrant.FoodNeedsMetRatio + " stayQoL=" + home.QoL +
+            " moveQoL=" + migrant.QoL + " moveHousing=" + migrant.HousingPerCapita);
+        var parallelCamp = parallelLeaving.Camps[0];
+        new TurnResolver(new PhaseExecution(4, 3, true, 1)).Resolve(parallelLeaving,
+            new Dictionary<int, List<Order>> { [parallelCamp.Player] = new List<Order>
+                { new Order(OrderKind.Move, parallelCamp.Id, destination: destination) } });
+        Check(SaveCodec.Fingerprint(leaving) == SaveCodec.Fingerprint(parallelLeaving),
+            "village abandonment is exact across scalar and four-worker resolution");
+        var continuation = SaveCodec.Load(SaveCodec.Save(leaving));
+        Check(SaveCodec.Fingerprint(leaving) == SaveCodec.Fingerprint(continuation),
+            "abandoned village state survives save continuation exactly");
+        new TurnResolver().Resolve(leaving, new Dictionary<int, List<Order>>());
+        new TurnResolver(new PhaseExecution(4, 3, true, 1)).Resolve(continuation,
+            new Dictionary<int, List<Order>>());
+        Check(SaveCodec.Fingerprint(leaving) == SaveCodec.Fingerprint(continuation),
+            "abandoned village continuation is exact across worker counts");
+        Check(stayTurn.Events.All(e => !e.Contains("abandoned its fields")),
+            "staying villagers retain their settlement status");
+    }
+
     public static int Run()
     {
         checks = 0;
@@ -222,6 +364,8 @@ internal static class HorizonCultivationChecks
         ZeroDurationDoesNoFieldWork();
         BridgeReconciliationAndOneToolDebit();
         SoftEffortChargesBuildAndMaintenance();
+        VillageCheckpointUsesOwnedFootprint();
+        VillageDepartureLosesFieldsAndHousing();
         Console.WriteLine("PASS: " + checks + " horizon cultivation assertions");
         return checks;
     }

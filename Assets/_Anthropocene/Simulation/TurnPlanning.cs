@@ -16,6 +16,7 @@ namespace Anthropocene.Simulation
         internal readonly List<string> Rejections = new List<string>();
         internal readonly List<DecisionTrace> Traces = new List<DecisionTrace>();
         internal readonly HashSet<int> AutomatedCamps = new HashSet<int>();
+        internal readonly HashSet<int> AbandoningVillages = new HashSet<int>();
         internal readonly Dictionary<int, TurnNeeds> Needs = new Dictionary<int, TurnNeeds>();
         internal CampPlacement Placement;
 
@@ -102,6 +103,9 @@ namespace Anthropocene.Simulation
                 }
             }
             prepared.Placement = CampPlacement.Resolve(world, prepared.Orders);
+            foreach (var camp in world.Camps.Where(c => c.IsVillage))
+                if (prepared.Placement.Destinations[camp.Id] != camp.Tile)
+                    prepared.AbandoningVillages.Add(camp.Id);
             var aiEconomicRequests = new HashSet<int>(prepared.Orders.Where(o => o.RequestAutomaticEconomy).Select(o => o.Entity));
             var acceptedActions = prepared.Orders.Where(o => o.Kind != OrderKind.Economy).ToDictionary(o => o.Entity);
             var acceptedEconomy = prepared.Orders.Where(o => o.Kind == OrderKind.Economy).ToDictionary(o => o.Entity);
@@ -122,7 +126,17 @@ namespace Anthropocene.Simulation
                 var settings = EconomicIntent.From(camp);
                 if (CultivationEconomy.HusbandryEnabled(camp))
                     settings.ManagedBreedingIntensity = ManagedBreedingPolicy.Recommend(world, camp, effectiveTile, index);
-                var intent = EconomicPlanner.Plan(world, planningCamp, settings);
+                // Relocating a village abandons field work for this turn. The
+                // automated intent can use the prior cohort as gatherers;
+                // manual assignments remain the player's responsibility.
+                var intent = prepared.AbandoningVillages.Contains(camp.Id)
+                    ? settings.Copy() : EconomicPlanner.Plan(world, planningCamp, settings);
+                if (prepared.AbandoningVillages.Contains(camp.Id))
+                {
+                    intent.Assignments.Clear();
+                    intent.Labor = null;
+                    intent.Focus = -1;
+                }
                 var constraints = new EconomicConstraints
                 {
                     Agriculture = CultivationEconomy.Enabled(camp), Husbandry = CultivationEconomy.HusbandryEnabled(camp),
@@ -227,6 +241,7 @@ namespace Anthropocene.Simulation
             copy.GrowthRemainder = camp.GrowthRemainder; copy.Moves = camp.Moves;
             copy.StationaryTurns = camp.StationaryTurns; copy.StationaryYears = camp.StationaryYears;
             copy.IsVillage = camp.IsVillage;
+            if (tile != camp.Tile && camp.IsVillage) copy.IsVillage = false;
             return copy;
         }
     }

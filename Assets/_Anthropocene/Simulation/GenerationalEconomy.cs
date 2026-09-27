@@ -172,7 +172,8 @@ namespace Anthropocene.Simulation
                 * Math.Pow(Numbers.Clamp(nutrition, 0, 1), w.Config.AnimalFoodNutritionExponent)
                 * Math.Pow(Numbers.Clamp(management, 0, 1), w.Config.AnimalManagementExponent));
 
-        private void ResolveEcology(WorldState w, List<Order> orders, HashSet<int> establishedHunters, TurnRecord record, Action<int> touch, Dictionary<int, TurnNeeds> needs)
+        private void ResolveEcology(WorldState w, List<Order> orders, HashSet<int> establishedHunters, TurnRecord record, Action<int> touch,
+            Dictionary<int, TurnNeeds> needs, IReadOnlyCollection<int> abandoningVillages)
         {
             var phaseClock = System.Diagnostics.Stopwatch.StartNew();
             var horizon = TurnHorizon.For(w, record);
@@ -186,7 +187,8 @@ namespace Anthropocene.Simulation
                 new AgriculturalLabor
                 {
                     Gatherers = c.GathererPopulation + CultivationEconomy.Workers(c, WorkforceRoles.Gatherer),
-                    Footprint = CultivationEconomy.Enabled(c) ? CultivationEconomy.Footprint(w, c) : Array.Empty<int>()
+                    Footprint = CultivationEconomy.Enabled(c) && !abandoningVillages.Contains(c.Id)
+                        ? CultivationEconomy.Footprint(w, c) : Array.Empty<int>()
                 });
 
             GenerationResource Resource(int tile)
@@ -228,7 +230,7 @@ namespace Anthropocene.Simulation
             {
                 var labor = agriculturalLabor[camp.Id];
                 double gatherers = labor.Gatherers;
-                if (CultivationEconomy.Enabled(camp))
+                if (CultivationEconomy.Enabled(camp) && !abandoningVillages.Contains(camp.Id))
                 {
                     // Field and nearby gathering tiles receive one turn-horizon
                     // integration even if the camp ultimately makes no claim.
@@ -242,7 +244,22 @@ namespace Anthropocene.Simulation
                 {
                     if (!PassiveGathering.Eligible(w, camp, id)) continue;
                     var available = Resource(id); var tile = w.Tiles[id];
-                    double food = available.AvailableFood * Math.Min(1, Numbers.Fraction(w.Config.GatherFraction, intervals) * gatherers / w.Config.PopulationScale);
+                    double openingFood = available.AvailableFood;
+                    if (abandoningVillages.Contains(camp.Id) && tile.TraversableLand)
+                    {
+                        // Abandonment leaves the physical field intact, but
+                        // the mobile camp can access at most the bridge-level
+                        // q this turn, including on overlapping old tiles.
+                        var view = LazyEcology.ProjectEcology(w, id, record.StartDays);
+                        double bridgeCapital = Math.Pow(w.Config.GathererBridgeCeiling / w.Config.ReferenceIntensity, 2);
+                        if (view.CultivationCapital > bridgeCapital)
+                        {
+                            view.CultivationCapital = bridgeCapital;
+                            openingFood = Math.Min(openingFood,
+                                new HorizonEcologyCapacity(w, tile, view, record.StartDays, record.Duration, 0).Food);
+                        }
+                    }
+                    double food = openingFood * Math.Min(1, Numbers.Fraction(w.Config.GatherFraction, intervals) * gatherers / w.Config.PopulationScale);
                     requests.Add(new Demand { Entity = camp.Id, Tile = id, Kind = PassiveGathering.Kind(tile), ImpactMultiplier = tile.Aquatic ? PracticeEffects.FishingImpact(w.Config, camp) : PracticeEffects.GatheringImpact(w.Config, camp), Food = food }); total += food;
                 }
                 double scale = Math.Min(1, gatherers * w.Config.GatherPerPerson * intervals / Math.Max(1e-12, total));
@@ -285,7 +302,7 @@ namespace Anthropocene.Simulation
 
             LastMetrics.SetupEconomyMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
             phaseClock.Restart();
-            var gatheredFoodForMaterials = CommitHorizonResources(w, demands, record, touch, foraged, horizon, agriculturalLabor, needs);
+            var gatheredFoodForMaterials = CommitHorizonResources(w, demands, record, touch, foraged, horizon, agriculturalLabor, needs, abandoningVillages);
             phaseClock.Restart();
             ResolveManagedHerds(w, record, horizon, needs);
             LastMetrics.ManagedHerdMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
