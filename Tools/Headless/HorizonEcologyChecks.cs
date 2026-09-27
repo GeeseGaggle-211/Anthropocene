@@ -166,6 +166,9 @@ internal static class HorizonEcologyChecks
                 && Near(nonfoodFirst.Pressure.Single(p => p.Pool == "Biomass").GatherableSpill, 0),
                 "grazers debit inaccessible biomass before residual G");
             tile.CultivationCapital = 1 / (world.Config.ReferenceIntensity * world.Config.ReferenceIntensity);
+            // This fixture changes field allocation directly, so supply the
+            // corresponding reclassified opening stock explicitly.
+            tile.Food = tile.PotentialFood;
             var q1 = new EcologyCapacity(world, tile, new EcologyView(tile), 0);
             Check(Near(q1.Food, q1.Biomass), "full cultivation exposes all B to humans");
             var cultivated = EcologicalPressure.Integrate(world, 0, new[] { human, herd }, 0, 365);

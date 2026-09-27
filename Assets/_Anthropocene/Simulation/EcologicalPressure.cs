@@ -51,8 +51,6 @@ namespace Anthropocene.Simulation
             if (duration < 0) throw new ArgumentOutOfRangeException(nameof(duration));
             var tile = w.Tiles[tileId]; var wood = MaterialEconomy.ProjectWoodSource(w, tileId);
             var v = LazyEcology.ProjectEcology(w, tileId, start, true, wood == null ? null : wood.Recover);
-            if (tile.Land && CultivationEconomy.Intensity(w.Config, v.CultivationCapital) >= 1)
-                v.Food = v.PotentialFood;
             var result = new TileEcologyResult { Balance = new EcologyBalance { Tile = tileId, StartingBiomass = v.PotentialFood, StartingFood = v.Food, StartingWater = v.Freshwater } };
             var requests = CanonicalRequests(claims);
             if (duration == 0)

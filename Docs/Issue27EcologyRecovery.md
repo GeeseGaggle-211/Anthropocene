@@ -18,7 +18,7 @@ Stored `LandCondition` remains fixed. For unplanned decaying cultivation, recove
 | PotentialFood | 139.1178085773345 | 150 | 139.1178085773345 |
 | Freshwater | 0 | 0 | 0 |
 
-The regression matrix covers 4 cultivation intensities × 3 conditions × 3 operating fractions × constant/strongly seasonal profiles × empty/partial/full stock × zero/nonzero recovery × aligned/partial-season starts. It checks Food, biomass, water, capital, vegetation, fixed condition, stock-flow balance, pure query, materialization, saved/dormant/touched continuation and Wood. Numeric equality uses relative tolerance `1e-8`; no bitwise equality is promised between different aggregate partitions.
+The regression matrix covers 4 cultivation intensities × 3 conditions × 3 operating fractions × constant/strongly seasonal profiles × empty/partial/full stock × zero/nonzero recovery × aligned/partial-season starts. It checks Food, biomass, water, capital, vegetation, fixed condition, stock-flow balance, pure query, materialization, saved/dormant/touched continuation and Wood. A follow-up fixture also starts a `q=1` tile with Food 5 and biomass 10, below capacity and with zero recovery: active integration, pure projection and materialization agree at zero and twenty years, and a Food claim cannot receive more than the opening Food stock. A save-loaded full-field tile retains the same finite Food and active/passive endpoint. Full-field capacity does not mint Food on read. Numeric equality uses relative tolerance `1e-8`; no bitwise equality is promised between different aggregate partitions.
 
 | 20-year projection | Whole horizon Food | Annual partitions | Seasonal partitions | Largest absolute difference |
 | --- | ---: | ---: | ---: | ---: |
@@ -68,7 +68,7 @@ An isolated fixed-input Release benchmark clarifies the local cost. Median-of-th
 
 ## Validation and reproduction
 
-The final branch passed `--issue27-ecology-only` (4,346 assertions), `--neolithic-only`, `./Tools/Test-Headless.ps1 -Seeds 0`, and `./Tools/Test-Headless.ps1 -Seeds 30 -Standard -Geography` (30/30 seeded worlds, Standard generation/opening/save/load and three geography shapes). The fixed suite includes scalar/two/four-worker, reordered-collection and save-continuation replay. The full broad run after the final simulation changes contains the current issue check.
+The initial reconciliation passed `--issue27-ecology-only` (4,346 assertions) and the full headless suites. The full-field follow-up passes `--issue27-ecology-only` (4,366 assertions) and the final `./Tools/Test-Headless.ps1 -Seeds 0`. The same production code passed `./Tools/Test-Headless.ps1 -Seeds 30 -Standard -Geography` (30/30 seeded worlds, Standard generation/opening/save/load and three geography shapes); two save-loaded assertions were added after that broad run and passed focused and full `-Seeds 0` checks. The fixed suite includes scalar/two/four-worker, reordered-collection and save-continuation replay.
 
 From the repository root, the focused witness is:
 

@@ -113,6 +113,71 @@ internal static class Issue27EcologyChecks
         }
     }
 
+    private static void FullCultivationWithNonfoodStock()
+    {
+        foreach (double start in new[] { 0.0, 2.5 * 91.25 })
+        foreach (double duration in new[] { 0.0, 20 * 365.0 })
+        {
+            var world = Case(1, .75, 1, false, .5, 0, start);
+            world.Config.CultivationRegenFlux = 0;
+            var tile = world.Tiles[0];
+            tile.PotentialFood = 10;
+            tile.Food = 5;
+            double openingFood = tile.Food, openingBiomass = tile.PotentialFood;
+            string before = SaveCodec.Fingerprint(world);
+            var active = EcologicalPressure.Integrate(world, 0, Array.Empty<Demand>(), start, duration);
+            var passive = LazyEcology.ProjectEcology(world, 0, start + duration);
+            Check(before == SaveCodec.Fingerprint(world), "full-field queries remain pure");
+            Check(Near(active.Balance.StartingFood, openingFood)
+                && Near(active.View.Food, openingFood)
+                && Near(active.View.Food, passive.Food) && Near(active.View.PotentialFood, passive.PotentialFood),
+                "full cultivation does not create accessible Food before claims or recovery"
+                + " start=" + start + " duration=" + duration
+                + " opening=" + openingFood + "/" + openingBiomass
+                + " active=" + active.View.Food + "/" + active.View.PotentialFood
+                + " passive=" + passive.Food + "/" + passive.PotentialFood);
+            Check(Near(active.Balance.StartingFood + active.Balance.FoodRecharge,
+                    active.Balance.EndingFood + active.Balance.FoodHarvest + active.Balance.FoodOverflow)
+                && Near(active.Balance.StartingBiomass + active.Balance.BiomassRecharge,
+                    active.Balance.EndingBiomass + active.Balance.BiomassHarvest + active.Balance.BiomassOverflow),
+                "full-field zero-claim stocks conserve");
+            if (duration > 0)
+            {
+                var claimed = EcologicalPressure.Integrate(world, 0,
+                    new[] { new Demand { Tile = 0, Entity = 1, Kind = "Gathering", Food = 10 } },
+                    start, duration);
+                Check(Near(claimed.Transfers.Single().Food, openingFood)
+                    && Near(claimed.Balance.StartingFood, openingFood),
+                    "full-field receipt cannot spend inaccessible biomass");
+            }
+            var materialized = LazyEcology.MaterializeEcology(world, 0, start + duration);
+            Check(Near(materialized.Food, openingFood)
+                && Near(materialized.Food, passive.Food)
+                && Near(materialized.PotentialFood, passive.PotentialFood)
+                && materialized.PotentialFood <= openingBiomass,
+                "full-field materialization commits the pure endpoint");
+        }
+
+        var saved = NeolithicChecks.Fixture();
+        int tileId = saved.Camps[0].Tile;
+        var field = saved.Tiles[tileId];
+        field.CultivationCapital = Math.Pow(1 / saved.Config.ReferenceIntensity, 2);
+        field.Cultivation = 1;
+        field.CultivationOperatingFraction = 1;
+        field.Food = 5;
+        field.PotentialFood = 10;
+        var loaded = SaveCodec.Load(SaveCodec.Save(saved));
+        Check(Near(loaded.Tiles[tileId].Food, 5) && Near(loaded.Tiles[tileId].PotentialFood, 10),
+            "save load retains finite Food below full-field biomass");
+        var loadedActive = EcologicalPressure.Integrate(loaded, tileId,
+            Array.Empty<Demand>(), loaded.Days, 20 * 365.0);
+        var loadedPassive = LazyEcology.ProjectEcology(loaded, tileId, loaded.Days + 20 * 365.0);
+        Check(Near(loadedActive.Balance.StartingFood, 5)
+            && Near(loadedActive.View.Food, loadedPassive.Food)
+            && Near(loadedActive.View.PotentialFood, loadedPassive.PotentialFood),
+            "save-loaded full-field recovery shares the passive endpoint");
+    }
+
     private static void TouchAndSave()
     {
         var dormant = Case(0, .75, 0, true, .5, .01f, 0);
@@ -261,6 +326,7 @@ internal static class Issue27EcologyChecks
         Check(Near(passive.Food, materialized.Food) && Near(world.Tiles[0].Food, passive.Food)
             && before != SaveCodec.Fingerprint(world), "materialization commits the pure projection");
         Matrix();
+        FullCultivationWithNonfoodStock();
         TouchAndSave();
         WoodContinuation();
         WorkAndPartition();
