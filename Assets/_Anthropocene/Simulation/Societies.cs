@@ -31,6 +31,11 @@ namespace Anthropocene.Simulation
         public PolicyState Policy = new PolicyState();
         public EraProgression Progression = new EraProgression();
         public List<TransitionSeed> TransitionSeeds = new List<TransitionSeed>();
+        // The initialized bit distinguishes older saves from an intentional false.
+#pragma warning disable SYSLIB0050
+        [System.Runtime.Serialization.OptionalField] public bool OpeningTransitionProcessed;
+        [System.Runtime.Serialization.OptionalField] public bool OpeningTransitionProcessedInitialized = true;
+#pragma warning restore SYSLIB0050
 
         // Neolithic Craft Tracks & Convergence Techs
 #pragma warning disable SYSLIB0050 // OptionalField permits older DataContractSerializer metadata.
@@ -91,6 +96,9 @@ namespace Anthropocene.Simulation
         public static void Apply(WorldState w, Camp camp, Technology technology)
         {
             var society = camp.People;
+            if (society.OpeningTransitionProcessed) return;
+            society.OpeningTransitionProcessed = true;
+            society.OpeningTransitionProcessedInitialized = true;
             society.Technologies[(int)technology] = true;
             string species = technology == Technology.AnimalHusbandry ? w.Config.Species.Where(s => s.Domesticable)
                 .OrderByDescending(s => society.SpeciesExperience.FirstOrDefault(p => p.Species == s.Id)?.Experience ?? 0)
@@ -110,5 +118,69 @@ namespace Anthropocene.Simulation
             }
         }
         public static double FoodMultiplier(WorldState w, Tile tile) => w.Config.OpeningCompatibilityEffects && tile.Fishery ? w.Config.OpeningFoodMultiplier : 1;
+    }
+
+    // A pure, owned-society view shared by player presentation and AI observations.
+    // No map query or turn-count deadline participates in subsequent learning.
+    public struct TechnologyStatus
+    {
+        public Domain Domain;
+        public Technology Technology;
+        public double Experience, Progress, Threshold;
+        public bool Acquired, Eligible;
+        public string BlockedReason;
+    }
+
+    public static class TechnologyDiscovery
+    {
+        public static double EffectiveProgress(Society society, Domain domain, SimulationConfig config)
+        {
+            double experience = society.Experience[(int)domain];
+            return society.ForcedTransition && society.SecondaryDomain == (int)domain
+                ? Math.Max(config.CarryoverFloor, experience * config.CarryoverMultiplier) : experience;
+        }
+
+        public static TechnologyStatus[] Statuses(SimulationConfig config, Society society)
+        {
+            var status = new TechnologyStatus[3];
+            for (int i = 0; i < status.Length; i++)
+            {
+                var domain = (Domain)i;
+                var technology = (Technology)(i + 1);
+                double progress = EffectiveProgress(society, domain, config);
+                bool inEra = society.Progression.Era == Era.Neolithic;
+                bool acquired = society.Technologies[(int)technology] || inEra && society.Technology == technology;
+                status[i] = new TechnologyStatus
+                {
+                    Domain = domain, Technology = technology, Experience = society.Experience[i],
+                    Progress = progress, Threshold = config.ExperienceThreshold,
+                    Acquired = acquired, Eligible = !acquired && inEra && progress >= config.ExperienceThreshold,
+                    BlockedReason = acquired ? null : !inEra ? "First breakthrough required" : progress < config.ExperienceThreshold
+                        ? domain == Domain.Hunting ? "More Hunting practice required" : domain == Domain.Gathering ? "More Gathering practice required" : "More Fishing practice required" : null
+                };
+            }
+            return status;
+        }
+
+        public static TechnologyStatus[] Statuses(WorldState world, Society society) => Statuses(world.Config, society);
+
+        // Called only at Close, after all realized food/practice receipts have been credited.
+        public static void Resolve(WorldState world, TurnRecord record)
+        {
+            var hunterSources = new HashSet<int>(world.Hunters.Where(h => h.Population > 0).Select(h => h.SourceCamp));
+            var active = new HashSet<int>(world.Camps.Where(c => c.Population > 0 || hunterSources.Contains(c.Id)).Select(c => c.SocietyId));
+            // Ownership.Bind sorted societies at the resolution boundary.
+            foreach (var society in world.Societies)
+            {
+                if (!active.Contains(society.Id) || society.Progression.Era != Era.Neolithic) continue;
+                for (int i = 0; i < 3; i++)
+                {
+                    var technology = (Technology)(i + 1);
+                    if (society.Technologies[(int)technology] || society.Technology == technology || EffectiveProgress(society, (Domain)i, world.Config) < world.Config.ExperienceThreshold) continue;
+                    society.Technologies[(int)technology] = true;
+                    record.Log("Society " + society.Id + " discovered " + technology + " through " + (Domain)i + " practice.");
+                }
+            }
+        }
     }
 }

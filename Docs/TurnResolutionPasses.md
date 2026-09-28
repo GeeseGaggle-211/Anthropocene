@@ -19,7 +19,7 @@ coefficients. They do not create seasonal or annual world states.
 | Turn setup | Post-movement entities, fixed needs and starting ecology | Establish field ownership and a fixed operating/workforce plan, reproduce herds, hunt, and construct all camp, hunter and herd claims for the whole horizon. These are computational pass writes, not subturn timestamps. | Every claim and average field efficacy is fixed before tile integration. |
 | Resource resolution | Start ecological stocks, fixed claims, four-profile forcing, aggregate field efficacy and duration | Integrate each active tile once for the horizon. Land claims debit opening `G` and `B`; only after receipts are fixed does the tile recover for the next turn. Domestic herds claim eligible radius-one land forage and radius-one freshwater through the same finite tile ledgers as other claimants. Operated field intensity raises the human-accessible ceiling and managed recovery without adding food to current receipts. A departing village does no field work this turn and its gatherers can access at most bridge-level `q=0.25` food on former fields. Commit endpoint food, biomass, freshwater and Wood, then receipts and balances, in tile order. Reconcile field endpoint capital once from realized terrestrial gathering, without changing claims already evaluated. After all fields are committed, a cultivation camp whose own radius-one land footprint averages at least `q=0.25` becomes a village. | Only realized receipts reduce the fixed food/feedstock ledger. No claim or workforce is revised. |
 | Needs and demographics | Realized resource and herd flows, fixed `TurnNeeds`, assigned prior cohort | Resolve managed herds, consumption, reserves, growth eligibility, shortages, production, goods, QoL and storage. Record pending deaths and births, then commit them after cohort needs. | Newborn needs and labor begin at the next preparation boundary. |
-| Close | Completed endpoint | Reintegrate eligible hunters, bind ownership, progress societies, check conservation and invariants, append canonical history, increment turn. | The committed endpoint becomes the next decision boundary. |
+| Close | Completed endpoint and realized practice receipts | Reintegrate eligible hunters, bind ownership, resolve the once-only first breakthrough, then acquire any independently qualified subsistence domains for each society. Check conservation and invariants, append canonical history, increment turn. Newly acquired capabilities are available only at the next preparation boundary. | The committed endpoint becomes the next decision boundary. |
 
 ## Rules protecting the pass order
 
@@ -60,6 +60,11 @@ coefficients. They do not create seasonal or annual world states.
   target sizes or an earlier tile result. An endpoint field-capital correction
   may adjust its endpoint capacity and overflow ledger; it does not recompute
   food already awarded during the turn.
+- Secondary subsistence discovery uses the society's ongoing domain practice,
+  the configured practice-point threshold and the existing forced-transition
+  carryover for its selected secondary domain. The 200/240-year majority and
+  forced rules decide only the first Paleolithic breakthrough. Later acquisition
+  records knowledge without repeating the opening animal or improvement grant.
 - Camp and village **land** gathering, cultivation footprints, material
   discovery, domestic herd grazing and private land claim buffers are confined
   to radius one. Domestic herd drinking uses radius-one freshwater sources. Sea

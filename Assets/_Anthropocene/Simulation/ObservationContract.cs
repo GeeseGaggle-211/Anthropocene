@@ -37,6 +37,13 @@ namespace Anthropocene.Simulation
     [Serializable] public sealed class ObservedPredictionDto { public int Herd, Tile; }
     [Serializable] public sealed class ObservedSiteCoverageDto { public int Tile; public double HumanFood, HerdForage, HerdWater; }
     [Serializable] public sealed class ObservedAgriculturalSiteDto { public int Tile, RetainedFields; public double ManagedRecoveryCoverage, LostRebuildBurden; }
+    [Serializable] public sealed class ObservedTechnologyStatusDto
+    {
+        public Domain Domain; public Technology Technology;
+        public double Experience, Progress, Threshold;
+        public bool Acquired, Eligible;
+        public string BlockedReason;
+    }
     [Serializable]
     public sealed class ObservationDto
     {
@@ -45,6 +52,7 @@ namespace Anthropocene.Simulation
         public double Days, Inertia, HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination;
         public bool Watercraft;
         public double[] Experience;
+        public ObservedTechnologyStatusDto[] TechnologyStatuses;
         public Mandate Mandate;
         public ObservedSettlementDto[] Settlements;
         public ObservedTileDto[] Tiles;
@@ -59,6 +67,7 @@ namespace Anthropocene.Simulation
         {
             Player = o.Player, Turn = o.Turn, PolicySeed = o.PolicySeed, CampId = o.CampId, CampTile = o.CampTile, CampPopulation = o.CampPopulation, GathererPopulation = o.GathererPopulation, LinkedPopulation = o.LinkedPopulation, FoodCondition = o.FoodCondition, DeficitTurns = o.DeficitTurns, Width = o.Map.Width, Height = o.Map.Height, MinimumCamp = o.MinimumCamp, HunterMovement = o.HunterMovement, CampMovement = o.CampMovement, WaterMovementCost = o.WaterMovementCost, SupplyRange = o.SupplyRange, SustainableHuntPopulation = o.SustainableHuntPopulation,
             Days = o.Days, Inertia = o.Inertia, HuntingFieldcraft = o.HuntingFieldcraft, HuntingInclination = o.HuntingInclination, GatheringInclination = o.GatheringInclination, FishingInclination = o.FishingInclination, Watercraft = o.Watercraft, Experience = o.Experience.ToArray(),
+            TechnologyStatuses = o.TechnologyStatuses.Select(s => new ObservedTechnologyStatusDto { Domain = s.Domain, Technology = s.Technology, Experience = s.Experience, Progress = s.Progress, Threshold = s.Threshold, Acquired = s.Acquired, Eligible = s.Eligible, BlockedReason = s.BlockedReason }).ToArray(),
             Mandate = new Mandate { Risk = mandate.Risk, Mobility = mandate.Mobility, Exploration = mandate.Exploration, Reserve = mandate.Reserve, Hunting = mandate.Hunting, Gathering = mandate.Gathering, Fishing = mandate.Fishing, Persistence = mandate.Persistence },
             Settlements = o.Settlements.Select(c => new ObservedSettlementDto { Id = c.Id, Tile = c.Tile, Population = c.Population, Gatherers = c.Gatherers, LinkedPopulation = c.LinkedPopulation, AnimalFabric = c.AnimalFabric, LightHousing = c.LightHousing, HerdingTools = c.HerdingTools, FixedHousing = c.FixedHousing, Agriculture = c.Agriculture, Husbandry = c.Husbandry, IsVillage = c.IsVillage, RecentlyMoved = c.RecentlyMoved, Economy = c.Economy.Copy(), MaterialSources = c.MaterialSources }).ToArray(),
             Tiles = o.Tiles.OrderBy(p => p.Key).Select(p => ObservedTileDto.From(p.Value)).ToArray(), Hunters = o.Hunters.Select(ObservedUnitDto.From).ToArray(), Rivals = o.Rivals.Select(ObservedUnitDto.From).ToArray(), ForeignHunters = o.ForeignHunters.Select(ObservedUnitDto.From).ToArray(),

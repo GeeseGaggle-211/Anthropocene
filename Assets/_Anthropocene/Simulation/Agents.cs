@@ -145,7 +145,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 14;
+        public const int SchemaVersion = 15;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
@@ -158,6 +158,7 @@ namespace Anthropocene.Simulation
         public readonly IReadOnlyList<AgriculturalSiteObservation> AgriculturalSites;
         public readonly IReadOnlyDictionary<int, int> LikelyHerdDestinations;
         public readonly IReadOnlyList<double> Experience;
+        public readonly IReadOnlyList<TechnologyStatus> TechnologyStatuses;
         public readonly HexMap Map;
         public readonly int MinimumCamp, HunterMovement, CampMovement, WaterMovementCost, SupplyRange, SustainableHuntPopulation;
         public readonly double Inertia;
@@ -195,6 +196,7 @@ namespace Anthropocene.Simulation
             if (recent != null) ownIds.UnionWith(recent.Logistics.Where(l => l.Camp == CampId).Select(l => l.Hunter));
             RecentOwnExtraction = new ReadOnlyDictionary<int, double>(index.Extraction(ownIds).Where(t => visible.Contains(t.Tile)).GroupBy(t => t.Tile).ToDictionary(g => g.Key, g => g.Sum(t => t.Food)));
             Experience = Array.AsReadOnly((double[])camp.Experience.Clone());
+            TechnologyStatuses = Array.AsReadOnly(TechnologyDiscovery.Statuses(w, camp.People));
         }
         private static SiteCoverageObservation Coverage(WorldState world, Camp camp, PlanningIndex index, HashSet<int> visible, int site,
             IReadOnlyList<UnitObservation> ownHunters, IReadOnlyList<HerdObservation> observedHerds)

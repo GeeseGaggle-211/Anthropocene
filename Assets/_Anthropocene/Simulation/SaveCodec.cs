@@ -148,6 +148,15 @@ namespace Anthropocene.Simulation
             }
             foreach (var soc in world.Societies)
             {
+                if (!soc.OpeningTransitionProcessedInitialized)
+                {
+                    // Completed legacy openings cannot replay rewards even if an
+                    // older save has no transition seed or compatibility grant.
+                    soc.OpeningTransitionProcessed = soc.Progression.Era != Era.Paleolithic || soc.Technology != Technology.None || soc.TransitionSeeds != null && soc.TransitionSeeds.Count > 0;
+                    soc.OpeningTransitionProcessedInitialized = true;
+                }
+                if (soc.Progression.Era == Era.Neolithic && soc.Technology != Technology.None)
+                    soc.Technologies[(int)soc.Technology] = true;
                 if (soc.CraftExperience == null) soc.CraftExperience = new System.Collections.Generic.Dictionary<string, double>();
                 if (soc.UnlockedSpecialists == null) soc.UnlockedSpecialists = new System.Collections.Generic.List<string>();
                 if (soc.NeolithicTechnologies == null) soc.NeolithicTechnologies = new System.Collections.Generic.List<string>();
