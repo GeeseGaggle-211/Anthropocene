@@ -108,6 +108,7 @@ namespace Anthropocene.Simulation
             w.Hunters.RemoveAll(h => h.Population <= 0);
             Ownership.Bind(w);
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) BreakthroughBound(w, camp, record);
+            TechnologyDiscovery.Resolve(w, record);
             foreach (var change in touched.Values.OrderBy(t => t.Tile))
             { change.AfterFood = w.Tiles[change.Tile].Food; change.AfterPotentialFood = w.Tiles[change.Tile].PotentialFood; change.AfterFreshwater = w.Tiles[change.Tile].Freshwater; change.AfterLandCondition = w.Tiles[change.Tile].LandCondition; change.AfterAquaticCondition = w.Tiles[change.Tile].AquaticCondition; record.Changes.Add(change); }
             // Untouched tiles follow the recorded configuration/clock regeneration rule; replay does not need world-sized snapshots each turn.
@@ -309,8 +310,7 @@ namespace Anthropocene.Simulation
         }
         public static double NeolithicProgress(WorldState w, Camp camp, Domain domain)
         {
-            double experience = camp.Experience[(int)domain];
-            return camp.ForcedTransition && camp.SecondaryDomain == (int)domain ? Math.Max(w.Config.CarryoverFloor, experience * w.Config.CarryoverMultiplier) : experience;
+            return TechnologyDiscovery.EffectiveProgress(camp.People, domain, w.Config);
         }
         public static void Invariants(WorldState w, int expectedPeople = -1, IEnumerable<Tile> ecologyScope = null)
         {

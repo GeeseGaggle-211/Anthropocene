@@ -192,8 +192,51 @@ internal static class Program
         resolver.Resolve(w, Orders()); Check(w.Tiles.All(t => LazyEcology.ProjectEcology(w, t.Id, w.Days).Food <= 4), "Projected resources respect the next season's carrying capacity without materializing quiet tiles");
         Console.WriteLine("PASS: " + assertions + " focused assertions");
     }
+    private static void Issue31Microbench()
+    {
+        foreach (int societies in new[] { 80, 320 })
+        {
+            var world = new WorldState { Config = SimulationConfig.Small(1) };
+            for (int i = 0; i < societies; i++)
+            {
+                var owner = new Society { Id = i + 1, Player = i, Technology = Technology.AnimalHusbandry,
+                    Progression = new EraProgression { Era = Era.Neolithic }, Experience = new[] { 225.0, 224.0, 0.0 } };
+                owner.Technologies[(int)Technology.AnimalHusbandry] = true;
+                world.Societies.Add(owner);
+                world.Camps.Add(new Camp { Id = 1000 + i, SocietyId = owner.Id, Player = i, Population = 24 });
+            }
+            var record = new TurnRecord();
+            double checksum = 0;
+            void Run(int repetitions)
+            {
+                for (int iteration = 0; iteration < repetitions; iteration++)
+                {
+                    TechnologyDiscovery.Resolve(world, record);
+                    foreach (var owner in world.Societies)
+                        checksum += TechnologyDiscovery.Statuses(world.Config, owner)[(int)Domain.Gathering].Progress;
+                }
+            }
+            Run(100);
+            const int measuredRepetitions = 2000;
+            var milliseconds = new double[5]; var bytes = new long[5];
+            for (int sample = 0; sample < 5; sample++)
+            {
+                GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+                long beforeBytes = GC.GetAllocatedBytesForCurrentThread();
+                var timer = System.Diagnostics.Stopwatch.StartNew();
+                Run(measuredRepetitions);
+                milliseconds[sample] = timer.Elapsed.TotalMilliseconds / measuredRepetitions;
+                bytes[sample] = (GC.GetAllocatedBytesForCurrentThread() - beforeBytes) / measuredRepetitions;
+            }
+            Array.Sort(milliseconds); Array.Sort(bytes);
+            Console.WriteLine("ISSUE31_MICROBENCH societies=" + societies + " close+ownStatuses_ms=" + milliseconds[2].ToString("F6", System.Globalization.CultureInfo.InvariantCulture) +
+                " allocatedBytes=" + bytes[2] + " repetitions=" + measuredRepetitions + " samples=5 checksum=" + checksum.ToString("F0", System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
     private static int Main(string[] args)
     {
+        if (args.Contains("--issue31-microbench")) { Issue31Microbench(); return 0; }
+        if (args.Contains("--foundation-only")) { Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); return 0; }
         if (args.Contains("--issue25-ecology-only")) { Issue25EcologyChecks.Run(args); return 0; }
         if (args.Contains("--issue27-ecology-only")) { Issue27EcologyChecks.Run(); return 0; }
         if (args.Contains("--issue26-forecast-only")) { Issue26ForecastChecks.Run(); return 0; }

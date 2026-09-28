@@ -152,7 +152,8 @@ namespace Anthropocene.Presentation
             var camp = world.Camps.First(c => c.Player == 0);
             string season = (world.Config.TurnDays / world.Config.DaysPerYear).ToString("0.#") + " years per turn | " + (world.Days / world.Config.DaysPerYear).ToString("0.#") + " years elapsed";
             string timeState = world.LinkedPopulation(camp) <= 0 ? "Tribe extinct" : season;
-            GUI.Label(new Rect(270, 12, Mathf.Max(140, Screen.width - side - 280), 46), "Turn " + world.Turn + "  |  " + timeState + "\n" + (camp.Technology == Technology.None ? "Paleolithic" : "Neolithic: " + TechName(camp.Technology)), text);
+            string acquired = observation == null ? "" : string.Join(", ", observation.TechnologyStatuses.Where(s => s.Acquired).Select(s => TechName(s.Technology)));
+            GUI.Label(new Rect(270, 12, Mathf.Max(140, Screen.width - side - 280), 46), "Turn " + world.Turn + "  |  " + timeState + "\n" + (camp.Technology == Technology.None ? "Paleolithic" : "Neolithic: " + acquired), text);
             float x = Screen.width - side + 10;
             if (Button(new Rect(x, 16, 66, 30), "Save")) Save();
             if (Button(new Rect(x + 72, 16, 66, 30), "Load")) Load();
@@ -315,11 +316,15 @@ namespace Anthropocene.Presentation
             GUI.Label(new Rect(14, y, width, 26), "WAYS OF LIVING", section); y += 28;
             foreach (Domain domain in Enum.GetValues(typeof(Domain)))
             {
-                double progress = TurnResolver.NeolithicProgress(world, camp, domain) / world.Config.ExperienceThreshold;
+                var discovery = observation.TechnologyStatuses[(int)domain];
+                double progress = discovery.Progress / discovery.Threshold;
                 string label = progress < .25 ? "Unpracticed" : progress < .5 ? "Taking root" : progress < .8 ? "Practiced" : "Well established";
                 double ramp = PracticeEffects.Ramp(world.Config, camp, domain);
                 string effect = domain == Domain.Hunting ? " · meat +" + Math.Round(100 * world.Config.HuntingYieldBonus * ramp) + "%" : " · impact -" + Math.Round(100 * (domain == Domain.Gathering ? world.Config.GatheringImpactReduction : world.Config.FishingImpactReduction) * ramp) + "%";
                 GUI.Label(new Rect(14, y, width, 26), domain + ": " + label + effect, text); y += 27;
+                string discoveryText = discovery.Acquired ? TechName(discovery.Technology) + " acquired" : discovery.Progress.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "/" + discovery.Threshold.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + " toward " + TechName(discovery.Technology) + " · " + discovery.BlockedReason;
+                float discoveryHeight = small.CalcHeight(new GUIContent(discoveryText), width - 10) + 3;
+                GUI.Label(new Rect(24, y, width - 10, discoveryHeight), discoveryText, small); y += discoveryHeight;
             }
             y += 12; DrawDemographics(ref y, width);
             int target = inspected >= 0 ? inspected : hovered;
@@ -461,6 +466,7 @@ namespace Anthropocene.Presentation
                 if (ownOrder.Kind == OrderKind.Dispatch) { journal.Add("Turn " + turn + ": " + ownOrder.Population + " people formed a hunter group."); outcomes.Add(ownOrder.Population + " people formed a new hunter group at camp"); }
                 if (ownOrder.Kind == OrderKind.Reintegrate) outcomes.Add(world.Hunters.Any(h => h.Id == ownOrder.Entity) ? "Hunters " + ownOrder.Entity + " could not reintegrate" : "Hunters " + ownOrder.Entity + " rejoined the camp");
             }
+            var previousTechnologies = observation.TechnologyStatuses.Where(s => s.Acquired).Select(s => s.Technology).ToArray();
             planned.Clear(); Refresh();
             // Never show the authoritative global event log to the player: it contains hidden rival activity.
             var ownTransfers = record.Transfers.Where(t => ownIds.Contains(t.Entity)).ToArray();
@@ -469,6 +475,8 @@ namespace Anthropocene.Presentation
             bool gathered = ownTransfers.Any(t => t.Kind.Contains("gathering") || t.Kind == "Gathering");
             bool hunted = ownTransfers.Any(t => t.Kind == "Hunting" && t.Food > 0), fished = ownTransfers.Any(t => t.Kind == "Fishing" && t.Food > 0);
             var player = world.Camps.First(c => c.Player == 0);
+            var discoveries = observation.TechnologyStatuses.Where(s => s.Acquired && !previousTechnologies.Contains(s.Technology)).Select(s => TechName(s.Technology)).ToArray();
+            if (discoveries.Length > 0) journal.Add("Turn " + turn + ": Your people discovered " + string.Join(", ", discoveries) + ". These capabilities are available next generation.");
             int grown = record.PopulationChanges.Where(c => c.Camp == player.Id && c.Count > 0).Sum(c => c.Count);
             int died = -record.PopulationChanges.Where(c => c.Camp == player.Id && c.Count < 0).Sum(c => c.Count);
             var demography = record.Demographics.First(d => d.Camp == player.Id); journal.Add("Turn " + turn + ": " + demography.Explanation); journal.Add("Food: land " + demography.TerrestrialFood.ToString("F0") + ", passive marine " + demography.MarineFood.ToString("F0") + ", total received " + demography.FoodReceived.ToString("F0") + " / required " + demography.FoodRequired.ToString("F0"));
@@ -498,8 +506,9 @@ namespace Anthropocene.Presentation
             }
             else
             {
-                status = player.Technology == Technology.None ? "A new generation. Inspect the land and plan your next orders." : "Your people discovered " + TechName(player.Technology) + ". A radius-one field average of 0.25 establishes a Village; moving away abandons it.";
+                status = player.Technology == Technology.None ? "A new generation. Inspect the land and plan your next orders." : "A new generation. Inspect your capabilities and plan your next orders.";
             }
+            if (discoveries.Length > 0) status = "Discovered " + string.Join(", ", discoveries) + ". New capabilities are ready for the next plan.";
             if (record.Events.Any(e => e.StartsWith("Village " + player.Id + " abandoned its fields", StringComparison.Ordinal)))
             {
                 journal.Add("Turn " + turn + ": Your village moved. Its former fields and fixed housing did not move with it; food and QoL now reflect the new camp site.");

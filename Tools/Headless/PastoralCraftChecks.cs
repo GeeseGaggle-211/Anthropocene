@@ -345,7 +345,7 @@ internal static class PastoralCraftChecks
         var observed = new AgentObservationBuilder().Build(w, own.Player);
         string json = ObservationContract.Serialize(observed, own.People.Mandate);
         var dto = ObservationContract.Deserialize(json);
-        Check(dto.Schema == AgentObservation.SchemaVersion && dto.Schema == 14, "observation schema exposes retained natural cover without persisting it");
+        Check(dto.Schema == AgentObservation.SchemaVersion && dto.Schema == 15, "observation schema exposes retained natural cover without persisting it");
         var observedCover = dto.Tiles.Single(tile => tile.Id == own.Tile);
         Near(observedCover.NaturalVegetationRetention, 0, "schema 12 reports zero retained vegetation service at q=1");
         Near(observedCover.EffectiveNaturalVegetationService, 0, "schema 12 reports no standing natural vegetation service at q=1");
@@ -1015,4 +1015,3 @@ internal static class PastoralCraftChecks
             Check(c2.Workforce.Assignments.Any(ca => ca.Role == a.Role && ca.Population == a.Population), "c2 assignment preserved: " + a.Role);
     }
 }
-

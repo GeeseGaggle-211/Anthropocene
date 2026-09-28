@@ -28,6 +28,9 @@ internal static class AgentContractChecks
         var replayDto = ObservationContract.Deserialize(ObservationContract.Serialize(replayObservation, c.Mandate));
         Check(replay.Tiles[c.Tile].RidgeMask == ridgeMask && replayObservation.Tiles[c.Tile].RidgeMask == ridgeMask && replayDto.Tiles.Single(t => t.Id == c.Tile).RidgeMask == ridgeMask && SaveCodec.Fingerprint(replay) == fingerprint, "ridge mask survives save/load replay through source, observation and DTO");
         Check(dto.Schema == AgentObservation.SchemaVersion && dto.Tiles.Length == o.Tiles.Count && dto.Hunters.Single().SourceCamp == c.Id && dto.Experience.SequenceEqual(c.Experience), "serializable observation retains the filtered policy inputs and source settlement");
+        Check(dto.TechnologyStatuses.Length == 3 && dto.TechnologyStatuses.All(s => s.Threshold == w.Config.ExperienceThreshold && !s.Acquired) &&
+            dto.TechnologyStatuses.Select(s => s.Progress).SequenceEqual(o.TechnologyStatuses.Select(s => s.Progress)),
+            "owned technology progress, threshold and acquisition state survive filtered serialization");
         Check(dto.SiteCoverage.Length == o.SiteCoverage.Count && dto.SiteCoverage.All(s =>
             s.HumanFood >= 0 && s.HumanFood <= 3 && s.HerdForage >= 0 && s.HerdForage <= 3 &&
             s.HerdWater >= 0 && s.HerdWater <= 3 &&
@@ -41,6 +44,8 @@ internal static class AgentContractChecks
         Check(OrderRules.Validate(o, new Order(OrderKind.NoOp, hunter.Id, destination: 0)) != null && OrderRules.Validate(o, new Order(OrderKind.Dispatch, c.Id, destination: 0, population: 1)) != null, "non-movement orders cannot smuggle an unvalidated destination");
         Check(SaveCodec.Fingerprint(w) == fingerprint, "observation and mask generation are read-only");
         rival.Population += 300; rival.Food += 100000; wild.Animals = 14;
+        rival.Experience[(int)Domain.Hunting] += 1000;
+        rival.Technologies[(int)Technology.AnimalHusbandry] = true;
         int hidden = Enumerable.Range(0, w.Tiles.Length).First(n => !o.Tiles.ContainsKey(n)); w.Tiles[hidden].Food += 123456;
         w.History.Add(new TurnRecord { Events = { "secret rival event" }, Orders = { "secret rival order" } });
         Check(ObservationContract.Serialize(builder.Build(w, c.Player), c.Mandate) == json, "hidden stores, populations, tiles, rival orders and within-band wild counts do not change the DTO");
