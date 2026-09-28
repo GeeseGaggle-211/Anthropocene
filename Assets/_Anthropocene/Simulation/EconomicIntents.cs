@@ -35,7 +35,9 @@ namespace Anthropocene.Simulation
         public static EconomicConstraints Constraints(AgentObservation o, SettlementObservation c) => c == null ? null : new EconomicConstraints { Agriculture = c.Agriculture, Husbandry = c.Husbandry, Population = c.Population, Technologies = c.Technologies.ToArray(), FocusTiles = o.Tiles.Values.Where(t => t.Cultivable && o.Map.Distance(c.Tile, t.Id) <= 1).Select(t => t.Id).OrderBy(id => id).ToArray() };
         public static string Validate(EconomicConstraints c, EconomicIntent e)
         {
-            if (c == null || !(c.Agriculture || c.Husbandry) || e == null || e.Assignments == null || e.Priorities == null) return "Agriculture or Animal Husbandry and a complete economic plan are required.";
+            if (c == null) return "Economic capability information is unavailable.";
+            if (!(c.Agriculture || c.Husbandry)) return "Economy requires Agriculture or Animal Husbandry.";
+            if (e == null || e.Assignments == null || e.Priorities == null) return "Economic plan is incomplete; assignments and priorities are required.";
             if (e.Assignments.Any(a => a == null || !WorkforceRoles.All.Contains(a.Role) || a.Population <= 0) || e.Assignments.GroupBy(a => a.Role).Any(g => g.Count() > 1) || e.Assignments.Sum(a => (long)a.Population) > c.Population) return "Invalid workforce allocation.";
             if (e.Assignments.Any(a => RequiredTechnology(a.Role) != null && !c.Technologies.Contains(RequiredTechnology(a.Role)))) return "Specialist technology is not mastered.";
             if (e.Values().Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0)) return "Economic values must be finite and nonnegative.";

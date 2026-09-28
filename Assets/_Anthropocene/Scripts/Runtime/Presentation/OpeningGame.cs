@@ -585,7 +585,7 @@ namespace Anthropocene.Presentation
             if (order.Kind == OrderKind.Reintegrate) return "Reintegrate at source camp";
             return "Hold position";
         }
-        private static string TechName(Technology tech) => tech == Technology.AnimalHusbandry ? "Animal Husbandry" : tech == Technology.Cultivation ? "Agriculture / Cultivation" : "Watercraft and Fisheries";
+        private static string TechName(Technology tech) => tech == Technology.AnimalHusbandry ? "Animal Husbandry" : tech == Technology.Cultivation ? "Agriculture / Cultivation" : "Watercraft";
         private bool Button(Rect rect, string label, bool accent = false) { var previous = GUI.backgroundColor; GUI.backgroundColor = accent ? new Color(.55f, .49f, .26f) : new Color(.32f, .37f, .32f); bool clicked = GUI.Button(rect, label, button); GUI.backgroundColor = previous; return clicked; }
         private static void Fill(Rect rect, Color color) { var before = GUI.color; GUI.color = color; GUI.DrawTexture(rect, Texture2D.whiteTexture); GUI.color = before; }
         private static void Tint(Rect rect, Texture texture, Color color) { var before = GUI.color; GUI.color = color; GUI.DrawTexture(rect, texture); GUI.color = before; }
