@@ -101,6 +101,35 @@ internal static class FoundationChecks
         Check(freshCopy.Camps[0].People.OpeningTransitionProcessedInitialized && !freshCopy.Camps[0].People.OpeningTransitionProcessed, "new Paleo save retains legitimate false opening marker");
         Check(freshCopy.Camps[0].Experience.All(x => x == 0), "legitimate zero domain progress survives save/load");
 
+        var simultaneous = Fixture(); var firstOwner = simultaneous.Camps[0].People;
+        firstOwner.Progression.Era = Era.Neolithic;
+        firstOwner.Technology = Technology.AnimalHusbandry;
+        firstOwner.Technologies[(int)Technology.AnimalHusbandry] = true;
+        firstOwner.OpeningTransitionProcessed = true;
+        firstOwner.Experience = new[] { 225.0, 225.0, 225.0 };
+        var otherOwner = new Society { Id = simultaneous.NextId++, Player = 1, Technology = Technology.Watercraft,
+            Progression = new EraProgression { Era = Era.Neolithic }, Experience = new[] { 225.0, 0.0, 225.0 }, OpeningTransitionProcessed = true };
+        otherOwner.Technologies[(int)Technology.Watercraft] = true;
+        simultaneous.Societies.Add(otherOwner);
+        simultaneous.Camps.Add(new Camp { Id = simultaneous.NextId++, SocietyId = otherOwner.Id, Player = 1, Population = 10, Tile = 180, Food = 200 });
+        Ownership.Bind(simultaneous);
+        var reversed = SaveCodec.Load(SaveCodec.Save(simultaneous));
+        reversed.Camps.Reverse(); reversed.Societies.Reverse(); Ownership.Bind(reversed);
+        var discoveries = new TurnRecord(); var reorderedDiscoveries = new TurnRecord();
+        TechnologyDiscovery.Resolve(simultaneous, discoveries);
+        TechnologyDiscovery.Resolve(reversed, reorderedDiscoveries);
+        Check(firstOwner.Technologies[(int)Technology.Cultivation] && firstOwner.Technologies[(int)Technology.Watercraft] &&
+            discoveries.Events.Count(e => e.Contains("Society " + firstOwner.Id + " discovered")) == 2 &&
+            discoveries.Events.Any(e => e.Contains("discovered Cultivation through Gathering")) &&
+            discoveries.Events.Any(e => e.Contains("discovered Watercraft through Fishing")) &&
+            simultaneous.Herds.Count == 0 && simultaneous.Improvements.Count == 0 && simultaneous.Societies.All(s => s.TransitionSeeds.Count == 0),
+            "two already eligible secondary domains acquire independently in one Close without opening grants");
+        Check(discoveries.Events.SequenceEqual(reorderedDiscoveries.Events) &&
+            SaveCodec.Fingerprint(simultaneous) == SaveCodec.Fingerprint(reversed),
+            "reordered Society and Camp collections commit the same secondary discoveries and state");
+        var repeatedDiscoveries = new TurnRecord(); TechnologyDiscovery.Resolve(simultaneous, repeatedDiscoveries);
+        Check(repeatedDiscoveries.Events.Count == 0, "simultaneously acquired secondary domains do not emit duplicate events");
+
         var forced = Fixture(); var forcedCamp = forced.Camps[0];
         forcedCamp.Experience = new[] { 200.0, 180.0, 0.0 }; forced.Days = 240 * 365;
         TurnResolver.Breakthrough(forced, forcedCamp, new TurnRecord());
