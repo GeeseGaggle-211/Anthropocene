@@ -8,6 +8,8 @@ document is a starting point, not a contract. The design record is
 [PlannerDirectFulfilmentPlan.md](PlannerDirectFulfilmentPlan.md); read its
 "Decisions" section before proposing anything.
 
+The value model draft is [ValueModelDesign.md](ValueModelDesign.md).
+
 ## Read first
 
 1. `AGENTS.md` — engineering doctrine and repository contracts.
