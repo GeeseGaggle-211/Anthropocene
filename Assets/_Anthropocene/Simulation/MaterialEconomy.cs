@@ -531,6 +531,22 @@ namespace Anthropocene.Simulation
             var orderedRecipes = recipes.OrderByDescending(r => NeolithicProduction.Priority(c, r.Good)).ThenBy(r => r.Good).ToArray();
             var roles = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToArray();
             var laborByRole = roles.ToDictionary(role => role, role => CultivationEconomy.Workers(c, role) * intervals);
+            bool lightHousingUseful = NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 &&
+                (CultivationEconomy.Workers(c, WorkforceRoles.Builder) > 0 || CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0);
+            // The forecast never mutates the camp, so each good's pure useful
+            // demand is evaluated once; both tool goods share one schedule run.
+            var usefulDemand = new Dictionary<CraftGood, double>();
+            double UsefulDemand(CraftGood good)
+            {
+                if (usefulDemand.TryGetValue(good, out double value)) return value;
+                if (good == CraftGood.HandTools || good == CraftGood.Tools)
+                {
+                    var tools = NeolithicProduction.ToolReplacementDemands(w, c, years, residentPopulation < 0 ? c.Population : residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources);
+                    usefulDemand[CraftGood.HandTools] = tools.HandTools; usefulDemand[CraftGood.Tools] = tools.Tools;
+                    return good == CraftGood.HandTools ? tools.HandTools : tools.Tools;
+                }
+                return usefulDemand[good] = NeolithicProduction.Demand(w, c, good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources);
+            }
             // Toolmaking has no equipment input. Solve that aggregate supply
             // first, then use start stock plus forecast output to cap all other
             // work. Both sweeps describe one turn allocation, not two times.
@@ -539,8 +555,6 @@ namespace Anthropocene.Simulation
                 foreach (string role in roles)
                 {
                     double labor = laborByRole[role];
-                    bool lightHousingUseful = NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 &&
-                        (CultivationEconomy.Workers(c, WorkforceRoles.Builder) > 0 || CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0);
                     foreach (var recipe in orderedRecipes)
                     {
                         bool toolInput = recipe.Good == CraftGood.HandTools || recipe.Good == CraftGood.Tools;
@@ -551,8 +565,9 @@ namespace Anthropocene.Simulation
                         if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) continue;
                         double rate = recipe.Rate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
                         if (rate <= 0) continue;
-                        double useful = NeolithicProduction.Demand(w, c, recipe.Good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources);
-                        if (recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric)
+                        double useful;
+                        if (recipe.Good != CraftGood.Cloth && recipe.Good != CraftGood.AnimalFabric) useful = UsefulDemand(recipe.Good);
+                        else
                         {
                             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
                             var n = w.Config.Neolithic;

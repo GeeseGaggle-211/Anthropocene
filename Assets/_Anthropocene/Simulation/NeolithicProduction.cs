@@ -282,7 +282,10 @@ namespace Anthropocene.Simulation
             var n = w.Config.Neolithic;
             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
             if (good == CraftGood.HandTools || good == CraftGood.Tools)
-                return ToolReplacementDemand(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources);
+            {
+                var tools = ToolReplacementDemands(w, c, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources);
+                return good == CraftGood.HandTools ? tools.HandTools : tools.Tools;
+            }
             if (good == CraftGood.Pots)
                 return potsAlreadyDecayed ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
             double clothingTarget = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
@@ -319,9 +322,20 @@ namespace Anthropocene.Simulation
             double expectedUse = Math.Min(stock, forecast);
             return Math.Max(0, forecast - Math.Max(0, stock - expectedUse));
         }
-        private static double ToolReplacementDemand(WorldState w, Camp c, CraftGood good, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources)
+        // Hand and Regular Tool replacement share one equipment schedule; one run
+        // answers both goods for the same camp state.
+        internal static (double HandTools, double Tools) ToolReplacementDemands(WorldState w, Camp c, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources)
         {
             var n = w.Config.Neolithic;
+            // Both schedule passes read the same unmodified camp, so each recipe's
+            // pure useful demand is evaluated at most once per call.
+            var baseDemand = new Dictionary<CraftGood, double>();
+            double BaseDemand(CraftGood good)
+            {
+                if (!baseDemand.TryGetValue(good, out double value))
+                    baseDemand[good] = value = DemandWithoutToolReplacement(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed);
+                return value;
+            }
             var recipes = Recipes(w.Config).Where(r => r.Equipment && (!r.AgricultureOnly || CultivationEconomy.Enabled(c)) && (!r.HusbandryOnly || CultivationEconomy.HusbandryEnabled(c)))
                 .OrderByDescending(r => Priority(c, r.Good)).ThenBy(r => r.Good).ToArray();
             double MaterialPriority(MaterialId material) => material == MaterialId.Stone ? c.StonePriority : material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
@@ -370,7 +384,7 @@ namespace Anthropocene.Simulation
                     if (role != WorkforceRoles.Craftsperson && (!specialist || role != recipe.Specialist)) continue;
                     if (role == WorkforceRoles.Craftsperson && recipe.SpecialistOnly) continue;
                     double rate = recipe.Rate * (role == recipe.Specialist && specialist ? 1 : n.GeneralistTaskEfficiency);
-                    double wanted = Math.Max(0, DemandWithoutToolReplacement(w, c, recipe.Good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed) - probePlanned[recipe.Good]);
+                    double wanted = Math.Max(0, BaseDemand(recipe.Good) - probePlanned[recipe.Good]);
                     double amount = Math.Min(wanted, availableLabor * rate);
                     if (recipe.Stone > 0) amount = Math.Min(amount, probeRoom[MaterialId.Stone] / recipe.Stone);
                     if (recipe.Clay > 0) amount = Math.Min(amount, probeRoom[MaterialId.Clay] / recipe.Clay);
@@ -408,7 +422,7 @@ namespace Anthropocene.Simulation
                     if (role != WorkforceRoles.Craftsperson && (!specialist || role != recipe.Specialist)) continue;
                     if (role == WorkforceRoles.Craftsperson && recipe.SpecialistOnly) continue;
                     double rate = recipe.Rate * (role == recipe.Specialist && specialist ? 1 : n.GeneralistTaskEfficiency);
-                    double wanted = Math.Max(0, DemandWithoutToolReplacement(w, c, recipe.Good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed) - planned[recipe.Good]);
+                    double wanted = Math.Max(0, BaseDemand(recipe.Good) - planned[recipe.Good]);
                     double amount = Math.Min(wanted, availableLabor * rate);
                     if (recipe.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / recipe.Stone);
                     if (recipe.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / recipe.Clay);
@@ -471,26 +485,23 @@ namespace Anthropocene.Simulation
             bool regularFeasible = c.People.HasTech(NeolithicTech.Toolmaking) && c.CraftingPriorities.Tools > 0 &&
                 (regularRecipe.Stone <= 0 || room[MaterialId.Stone] > 1e-12) &&
                 (regularRecipe.Wood <= 0 || room[MaterialId.Wood] > 1e-12);
-            if (good == CraftGood.Tools && regularFeasible) return deficit / 4;
-            if (good == CraftGood.HandTools && !regularFeasible)
-            {
-                double specialistSupply = c.People.HasTech(NeolithicTech.Toolmaking)
-                    ? CultivationEconomy.Workers(c, WorkforceRoles.Toolmaker) * referenceIntervals * n.HandToolsOutput : 0;
-                double specialistOutput = Math.Min(deficit, specialistSupply);
-                double generalistRate = n.HandToolsOutput * n.GeneralistTaskEfficiency;
-                double competingRate = generalistEffort <= 0 ? 0 : generalistUseful / generalistEffort;
-                double spareGeneralistLabor = labor.TryGetValue(WorkforceRoles.Craftsperson, out double remainingLabor)
-                    ? Math.Max(0, remainingLabor) : 0;
-                // When one Craftsperson allocation makes both tools and goods,
-                // use spare labor first. Only further tool output displaces
-                // equipment output. Solve that one linear service balance.
-                double residual = Math.Max(0, deficit - specialistOutput);
-                double freeOutput = Math.Min(residual, spareGeneralistLabor * generalistRate);
-                double generalistOutput = freeOutput + (residual - freeOutput) /
-                    (1 + competingRate / Math.Max(1e-12, generalistRate));
-                return specialistOutput + generalistOutput;
-            }
-            return 0;
+            // Feasible Regular Tools carry the whole deficit; otherwise Hand Tools do.
+            if (regularFeasible) return (0, deficit / 4);
+            double specialistSupply = c.People.HasTech(NeolithicTech.Toolmaking)
+                ? CultivationEconomy.Workers(c, WorkforceRoles.Toolmaker) * referenceIntervals * n.HandToolsOutput : 0;
+            double specialistOutput = Math.Min(deficit, specialistSupply);
+            double generalistRate = n.HandToolsOutput * n.GeneralistTaskEfficiency;
+            double competingRate = generalistEffort <= 0 ? 0 : generalistUseful / generalistEffort;
+            double spareGeneralistLabor = labor.TryGetValue(WorkforceRoles.Craftsperson, out double remainingLabor)
+                ? Math.Max(0, remainingLabor) : 0;
+            // When one Craftsperson allocation makes both tools and goods,
+            // use spare labor first. Only further tool output displaces
+            // equipment output. Solve that one linear service balance.
+            double residual = Math.Max(0, deficit - specialistOutput);
+            double freeOutput = Math.Min(residual, spareGeneralistLabor * generalistRate);
+            double generalistOutput = freeOutput + (residual - freeOutput) /
+                (1 + competingRate / Math.Max(1e-12, generalistRate));
+            return (specialistOutput + generalistOutput, 0);
         }
         private static double DemandWithoutToolReplacement(WorldState w, Camp c, CraftGood good, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed)
         {

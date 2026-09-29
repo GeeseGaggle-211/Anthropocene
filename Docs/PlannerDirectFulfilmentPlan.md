@@ -1,6 +1,6 @@
 # Planner direct fulfilment plan (B3)
 
-Status: approved plan, 29 September 2026. Phase 1 is in progress. Phases 2–4
+Status: approved plan, 29 September 2026. Phase 1 is implemented. Phases 2–4
 are not implemented. This is a design and sequencing record, not a normative
 contract; `EconomicAutomation.md` and `TurnResolutionPasses.md` remain the rule
 sources until Phase 4 updates them.
@@ -95,6 +95,15 @@ value-weighted rules when trade and the Elder agent define prices and actions.
 Trade then contributes supply and demand rows to the same snapshot rather than
 a second planner. This choice is deferred to the user.
 
+**User constraint (29 September 2026).** If value-weighted fill is chosen,
+values must be semi-dynamic: a scarcer good is more valuable. Values therefore
+become a function of the camp's stock relative to its useful demand (and, once
+trade exists, of external supply), recomputed at the demand pass from the
+prepared prior boundary — never mid-fulfilment — so one turn still computes
+demand once and fulfils it directly. The scarcity curve, its bounds and any
+smoothing across turns are calibration choices to settle before that rule is
+implemented.
+
 ### 2. Farm Tools for expansion — accepted
 
 Farm Tools for expansion farmers become the next turn's demand. The demand
@@ -114,15 +123,30 @@ that the new method is better, because it may require recalibration.
 - **Phase 0 — reference corpus.** Record automated-camp planner inputs and
   outputs on `start-80-11`, `start-80-23`, `start-80-1729` and
   `start-320-1729` across 25 turns as the differential fixture.
-- **Phase 1 — exact refactor.** Extract the shared schedule kernel, compute
-  both tool goods from one schedule run, hoist fulfilment-invariant values out
-  of `Evaluate`, and evaluate full fulfilment before zero. Gate: exact
-  fingerprint parity with the prior commit (scalar, 2/4 workers, reversed
-  collections, save continuation) and both headless suites unchanged.
+- **Phase 1 — exact refactor (implemented).** Compute both tool goods from one
+  schedule run (`NeolithicProduction.ToolReplacementDemands`), evaluate each
+  recipe's base demand once per tool schedule, reuse per-good demand within one
+  `MaterialEconomy.Forecast`, reuse tool demand within the planner's final role
+  pass, hoist the housing multiplier and herder reservation out of `Evaluate`,
+  and evaluate full fulfilment before zero. Results: per-turn fingerprints
+  match the prior commit on `start-80-11` (eight turns; scalar, four workers,
+  reversed collections/partitions), `start-80-1729` (six turns) and
+  `start-320-1729` (three turns); fixed and broad headless suites produce
+  identical output. On `start-80-11`, planner CPU fell about 45% (≈1,460 →
+  805 ms over eight turns), total turn CPU 20%, allocation 22% (1,157 → 905
+  MiB) and wall time about 5% (2,315 → 2,197 ms, three alternating pairs; the
+  work already ran on four workers).
+
+  *Scope correction:* the planner's capped pass, `ToolReplacementDemands` and
+  `MaterialEconomy.Forecast` are three different schedules (labor-only probe
+  with a housing reserve, a two-layer tool-coverage balance, and the planner's
+  capped material/food pass), not one algorithm called three times. Unifying
+  them changes results, so the shared kernel moves to Phase 3.
 - **Phase 2 — demand snapshot.** Introduce `CampProductionDemand`; the
   existing search consumes it. Gate: exact parity.
 - **Phase 3 — direct fulfilment solver.** Replace bisection with the
-  breakpoint solve and apply decision 2. Gate: invariants (labor ≤ residents,
+  breakpoint solve, unify the three production schedules into one kernel
+  shared with the resolver, and apply decision 2. Gate: invariants (labor ≤ residents,
   no material/food over-commitment, tool coverage respected, planner forecast
   equals resolver production on uncontended single-camp fixtures); Phase 0
   differential report; matched 25-turn distributions on the four checkpoints

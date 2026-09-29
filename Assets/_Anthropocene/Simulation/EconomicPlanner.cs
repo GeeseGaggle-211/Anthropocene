@@ -98,6 +98,8 @@ namespace Anthropocene.Simulation
                 double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, consumers, intervals), NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, intervals, years));
                 foodRoomEnvelope = Math.Max(0, c.Food + supply - consumers * cfg.Consumption * intervals - reserve);
             }
+            // Fulfilment-invariant reads of the authoritative camp, shared by every Evaluate.
+            double housingMultiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
 
             Proposal Evaluate(double fulfillment)
             {
@@ -107,7 +109,7 @@ namespace Anthropocene.Simulation
                 // resolver-shaped candidate before craft, food, material, and
                 // field feasibility are evaluated so every later worker budget
                 // sees the same bounded resident pool.
-                int reservedHerders = ManagedHerderReservation(w, c, years);
+                int reservedHerders = reservedHerdersForForecast;
                 if (reservedHerders > 0)
                     intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = reservedHerders });
                 var candidate = Preview(c, intent, nextPopulation);
@@ -211,7 +213,7 @@ namespace Anthropocene.Simulation
                 {
                     double amount = Capped(r, RemainingGoodDemand(r) * fulfillment, true);
                     requested[r.Good] = amount;
-                    double multiplier = (r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing) ? NeolithicProduction.HousingMultiplier(w, c, c.Population) : 1;
+                    double multiplier = (r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing) ? housingMultiplier : 1;
                     if (multiplier > 0) Add(futureRoles, Role(r), amount / (Rate(r) * multiplier * intervals));
                 }
                 // Demand probes carry virtual recipe output only for ordering.
@@ -287,7 +289,7 @@ namespace Anthropocene.Simulation
                 {
                     double amount = Capped(r, goals[r.Good] * fulfillment, true);
                     requested[r.Good] = amount;
-                    double multiplier = (r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing) ? NeolithicProduction.HousingMultiplier(w, c, c.Population) : 1;
+                    double multiplier = (r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing) ? housingMultiplier : 1;
                     if (multiplier > 0) Add(futureRoles, Role(r), amount / (Rate(r) * multiplier * intervals));
                 }
                 // Keep the prospective producer reservation visible while the
@@ -321,11 +323,20 @@ namespace Anthropocene.Simulation
                 foodRoom = foodRoomEnvelope;
                 // Match production's role/recipe ordering and share one tool-time budget.
                 var orderedRecipes = recipes.OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good).ToArray();
+                // The candidate is fixed through this pass: one schedule run
+                // answers both Hand and Regular Tool replacement demand.
+                (double HandTools, double Tools)? toolDemand = null;
                 foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
                     foreach (var r in orderedRecipes)
                     {
                         if (Role(r) != role || NeolithicProduction.Priority(candidate, r.Good) <= 0) continue;
-                        double wanted = r.Good == CraftGood.HandTools || r.Good == CraftGood.Tools ? NeolithicProduction.Demand(w, candidate, r.Good, years, -1, false, false, sources) : requested[r.Good];
+                        double wanted;
+                        if (r.Good == CraftGood.HandTools || r.Good == CraftGood.Tools)
+                        {
+                            toolDemand ??= NeolithicProduction.ToolReplacementDemands(w, candidate, years, candidate.Population, false, false, sources);
+                            wanted = r.Good == CraftGood.HandTools ? toolDemand.Value.HandTools : toolDemand.Value.Tools;
+                        }
+                        else wanted = requested[r.Good];
                         double amount = Capped(r, wanted, false);
                         if (r.Equipment) amount = Math.Min(amount, coverage.Capacity(r.Good, Rate(r), c.Population * intervals));
                         amount = Capped(r, amount, true);
@@ -458,10 +469,12 @@ namespace Anthropocene.Simulation
             }
             // Allocate as much useful manufacturing as fits alongside food and its
             // complete source chain. No separate craft-population percentage is imposed.
-            var best = Evaluate(0); var full = Evaluate(1);
-            if (full.Workers <= c.Population) best = full;
-            else
+            // Evaluate is pure over its own previews, so the zero-fulfilment
+            // fallback is only needed when full fulfilment does not fit.
+            var best = Evaluate(1);
+            if (best.Workers > c.Population)
             {
+                best = Evaluate(0);
                 double low = 0, high = 1;
                 for (int i = 0; i < SearchIterations; i++) { double mid = (low + high) / 2; var p = Evaluate(mid); if (p.Workers <= c.Population) { low = mid; best = p; } else high = mid; }
             }
