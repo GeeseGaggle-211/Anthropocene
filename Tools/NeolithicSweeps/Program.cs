@@ -215,8 +215,11 @@ internal static class Program
             if (grade == "improved") c.Inventory.Tools = 1000;
             if (grade == "copper") { c.Inventory.CopperTools = 1000; c.People.NeolithicTechnologies.Add(NeolithicTech.CopperWorking); }
             c.Inventory.Wood = 1000; var r = new TurnRecord(); double coverage = 1000 * cfg.GenerationIntervals;
+            // Housing is Housing Material (Wood/Clay) then assembly; the pair spends the old single-step labour and debit.
+            var materialRecipe = NeolithicProduction.Recipes(cfg).Single(x => x.Good == CraftGood.HousingMaterial);
             var recipe = NeolithicProduction.Recipes(cfg).Single(x => x.Good == CraftGood.Housing);
-            double used = NeolithicProduction.Produce(w, c, recipe, WorkforceRoles.Builder, cfg.GenerationIntervals, cfg.GenerationIntervals, 1000, ref coverage, r);
+            double used = NeolithicProduction.Produce(w, c, materialRecipe, WorkforceRoles.Builder, cfg.GenerationIntervals, cfg.GenerationIntervals, 1000, ref coverage, r);
+            used += NeolithicProduction.Produce(w, c, recipe, WorkforceRoles.Builder, cfg.GenerationIntervals - used, cfg.GenerationIntervals, 1000, ref coverage, r);
             double housing = NeolithicProduction.HousingSupply(w, c, w.Days + cfg.GenerationIntervals * cfg.BaseDays);
             file.WriteLine(JsonSerializer.Serialize(new { grade, multiplier, outputPerBuilderTurn = housing, workerIntervals = used, materialDebit = 1000 - c.Inventory.Wood,
                 steadyMaintenanceLaborPct = 100 * cfg.Neolithic.HousingDecayPerTurn / (cfg.Neolithic.HousingPeoplePerUnit * housing), conditionalFixture = true }, Json));

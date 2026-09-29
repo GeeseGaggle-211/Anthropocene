@@ -291,6 +291,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "HorizonExecutionChecks", Run = () => HorizonExecutionChecks.Run() },
                 new ParallelChecks.Entry { Name = "HusbandryChecks", Run = () => HusbandryChecks.Run() },
                 new ParallelChecks.Entry { Name = "PastoralCraftChecks", Run = () => PastoralCraftChecks.Run() },
+                new ParallelChecks.Entry { Name = "HousingMaterialRecipeChecks", Run = () => HousingMaterialRecipeChecks.Run() },
                 new ParallelChecks.Entry { Name = "Issue25EcologyChecks", Run = () => Issue25EcologyChecks.Run(args) },
                 new ParallelChecks.Entry { Name = "Issue27EcologyChecks", Run = () => Issue27EcologyChecks.Run() },
                 new ParallelChecks.Entry { Name = "Issue26ForecastChecks", Run = () => Issue26ForecastChecks.Run() },

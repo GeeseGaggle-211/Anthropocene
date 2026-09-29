@@ -140,12 +140,12 @@ internal static class ToolConsumptionChecks
         c.Inventory.Tools = 1;
         c.Inventory.Wood = 100;
         c.People.NeolithicTechnologies.Add(NeolithicTech.Construction);
-        var recipe = Recipe(w, CraftGood.Housing);
         var budget = new ToolCoverageBudget(w, c, 80);
         var record = new TurnRecord();
         double equipment = budget.Remaining;
-        NeolithicProduction.Produce(w, c, recipe, WorkforceRoles.Builder, 80, 80, 100, ref equipment, record, budget);
-        NeolithicProduction.Produce(w, c, recipe, WorkforceRoles.Craftsperson, 80, 80, 100, ref equipment, record, budget);
+        // Housing is now Housing Material then assembly; the pair spends the same shared budget once per unit.
+        HousingMaterialRecipeChecks.ProduceHousing(w, c, WorkforceRoles.Builder, 80, 80, 100, ref equipment, record, budget);
+        HousingMaterialRecipeChecks.ProduceHousing(w, c, WorkforceRoles.Craftsperson, 80, 80, 100, ref equipment, record, budget);
         Near(NeolithicProduction.FixedHousingAt(w, c.Id, c.Tile, w.Days + 80 * w.Config.BaseDays), 4.458333333333333, "housing grade order shares one output budget across workers"); Near(c.Inventory.HousingUnits, 0, "fixed Housing does not remain in portable inventory");
         Near(c.Inventory.Tools, 0, "regular housing tool capacity is spent once");
         Near(c.Inventory.HandTools, .541666666666667, "slower Hand Tool housing grade receives only remaining capacity");

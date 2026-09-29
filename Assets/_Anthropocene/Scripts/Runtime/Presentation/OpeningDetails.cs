@@ -66,6 +66,7 @@ namespace Anthropocene.Presentation
                          "\nCurrent shelter: " + housingSupply.ToString("F2") + " units / " + (housingSupply * world.Config.Neolithic.HousingPeoplePerUnit).ToString("F1") + " people supported" +
                          "\nStores: Cloth " + inv.Cloth.ToString("F0") + " · Pots " + inv.Pots.ToString("F0") + " · Tools " + inv.HandTools.ToString("F0") +
                          "\nRaw Stockpile: Stone " + inv.Stone.ToString("F0") + " · Clay " + inv.Clay.ToString("F0") + " · Wood " + inv.Wood.ToString("F0") +
+                         "\nHousing Material: " + inv.HousingMaterial.ToString("F2") + " portable (assembled into fixed Housing on site)" +
                          "\nEconomy automation: " + (camp.EconomyAutomationTurns == 0 ? "Off" : camp.EconomyAutomationTurns < 0 ? "Until disabled" : camp.EconomyAutomationTurns + " turns remaining") + "\n[Double-click village tile to manage]";
                 if (CultivationEconomy.HusbandryEnabled(camp))
                 {

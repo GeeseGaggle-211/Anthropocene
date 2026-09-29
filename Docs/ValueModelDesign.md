@@ -294,7 +294,7 @@ local useful stock integrate the area lost.
 
 Fixed Housing belongs to its construction site and cannot move. The tradeable
 good is therefore the material, not the house. Agreed with the user on
-29 September 2026; not yet implemented:
+29 September 2026. Recipe split implemented as WP5a (labour, tool wear and material per Housing unchanged, same scheduling position); the access-order change is WP5b:
 
 ```
 Wood / Clay  ->  Housing Material  ->  Housing (fixed, built on site)

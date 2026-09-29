@@ -150,7 +150,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 15;
+        public const int SchemaVersion = 16;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;

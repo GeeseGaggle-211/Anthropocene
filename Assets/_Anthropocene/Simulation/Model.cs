@@ -242,6 +242,8 @@ namespace Anthropocene.Simulation
         // goods remain camp-carried inventory.
         public double HousingUnits;
         [System.Runtime.Serialization.OptionalField] public double AnimalFabric, LightHousingUnits, HerdingTools;
+        // Portable Housing Material (Wood/Clay made into a stored intermediate); absent in older saves means zero.
+        [System.Runtime.Serialization.OptionalField] public double HousingMaterial;
         public double Houses;
         public double Stone;
         public double Clay;

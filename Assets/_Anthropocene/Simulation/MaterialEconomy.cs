@@ -147,7 +147,8 @@ namespace Anthropocene.Simulation
             BalanceIndices.Add(record, Tuple.Create(count, index));
             return index;
         }
-        // Construction is the flexible consumer.  Use all visible, reachable
+        // Housing Material (the construction step's Wood/Clay recipe) is the flexible
+        // consumer; the Housing assembly takes none directly.  Use all visible, reachable
         // source stock to choose its mix, after retaining the source- and
         // labor-feasible direct recipe plan. The ratio sees current residual
         // material after that committed work, while the mutable reservation
@@ -162,7 +163,7 @@ namespace Anthropocene.Simulation
             // pass before they can reserve anything from Housing.  In particular,
             // a Tool job lacking Stone cannot reserve its Wood merely because a
             // visible Wood source exists.
-            foreach (var recipe in recipes.Where(r => r.ConstructionMaterial <= 0).OrderByDescending(r => NeolithicProduction.Priority(c, r.Good)).ThenBy(r => r.Good))
+            foreach (var recipe in recipes.Where(r => r.ConstructionMaterial <= 0).OrderByDescending(r => NeolithicProduction.Priority(c, r.Good)).ThenBy(r => NeolithicProduction.ScheduleKey(r.Good)))
             {
                 if (!planned.TryGetValue(recipe.Good, out double output) || output <= 0) continue;
                 if (recipe.Stone > 0) output = Math.Min(output, room[MaterialId.Stone] / recipe.Stone);
@@ -528,7 +529,8 @@ namespace Anthropocene.Simulation
             double plant = plantFoodBudget >= 0 ? plantFoodBudget : includePlantDemand ? double.PositiveInfinity : c.PlantFood;
             double animalFood = animalFoodBudget >= 0 ? animalFoodBudget : includePlantDemand ? double.PositiveInfinity : c.AnimalFood;
             double animalFabric = Math.Max(0, c.Inventory.AnimalFabric);
-            var orderedRecipes = recipes.OrderByDescending(r => NeolithicProduction.Priority(c, r.Good)).ThenBy(r => r.Good).ToArray();
+            double housingMaterial = Math.Max(0, c.Inventory.HousingMaterial);
+            var orderedRecipes = recipes.OrderByDescending(r => NeolithicProduction.Priority(c, r.Good)).ThenBy(r => NeolithicProduction.ScheduleKey(r.Good)).ToArray();
             var roles = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToArray();
             var laborByRole = roles.ToDictionary(role => role, role => CultivationEconomy.Workers(c, role) * intervals);
             bool lightHousingUseful = NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 &&
@@ -586,15 +588,21 @@ namespace Anthropocene.Simulation
                         }
                         bool sharedFabricNeed = recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric;
                         double amount = Math.Min(sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
+                        // Housing Material and its assembly draw on one Builder pool.
+                        if (recipe.Good == CraftGood.HousingMaterial)
+                            amount = NeolithicProduction.HousingMaterialLimit(tools, rate, labor, Math.Max(0, useful - planned[recipe.Good]), housingMaterial);
+                        if (recipe.HousingMaterial > 0) amount = Math.Min(amount, housingMaterial / recipe.HousingMaterial);
                         if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                         if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
                         if (recipe.AnimalFabric > 0) amount = Math.Min(amount, animalFabric / recipe.AnimalFabric);
                         if (amount <= 0) continue;
-                        labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : amount / rate;
+                        labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : recipe.Good == CraftGood.HousingMaterial ? tools.Time(recipe.Good, rate, amount) : amount / rate;
                         planned[recipe.Good] += amount; plant -= amount * recipe.PlantFood; animalFood -= amount * recipe.AnimalFood;
                         tools.Credit(recipe.Good, amount);
                         if (recipe.Good == CraftGood.AnimalFabric) animalFabric += amount;
                         animalFabric -= amount * recipe.AnimalFabric;
+                        housingMaterial += recipe.Good == CraftGood.HousingMaterial ? amount : 0;
+                        housingMaterial -= amount * recipe.HousingMaterial;
                     }
                     laborByRole[role] = labor;
                 }

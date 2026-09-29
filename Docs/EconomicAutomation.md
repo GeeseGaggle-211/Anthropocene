@@ -64,6 +64,7 @@ Dairying technology, or specialist tree.
 
 Owned observations expose only the camp's pastoral stocks and fixed Housing at its
 current site. Schema 11 adds those fields; foreign stores and herds remain private.
+Schema 16 adds the owned camp's portable Housing Material stock the same way.
 Fixed Housing is kept once in the owning camp/site record, preserves its latent
 depreciation timestamp in saves, and migrates positive legacy carried Housing to the
 camp's saved tile. Read-only projections do not materialize its elapsed decay.
@@ -94,7 +95,35 @@ Equipment may be bootstrapped for the next source-feasible useful manufacturing 
 
 The internal `Stonecutter` identifier is retained for save compatibility; `Stone Quarrier` is the display label. `ClayMiner` is new. Specialist extraction remains `SpecialistMaterialExtractionRate=1` unit/worker/BaseDays; regular gatherers use `GeneralistTaskEfficiency=.25`. These match one-unit, single-material manufacturing throughput. Staffing is demand-based, not a mandatory one-for-one headcount: Housing's 2.5/20-year Builder rate needs much less extraction, and improved tools retain their separate Stone and Wood inputs. Reserve replenishment can temporarily require more extraction than current production alone.
 
-All existing recipe/QoL/tool multipliers remain unchanged, including Fabric's one Plant Food input, Housing's one total Wood/Clay input, and specialist/generalist matching. Housing fixes its Wood:Clay debit from the residual reachable inventory-plus-source ratio after feasible direct Wood/Clay recipes are retained. That fixed turn plan is shared by material gathering and production; direct work releases its reservation only when realized, and either material can fill an exhausted share without exceeding one total unit per Housing. Numerical search iterations and rounding tolerances are algorithmic controls, not new balance rates.
+All existing recipe/QoL/tool multipliers remain unchanged, including Fabric's one Plant Food input, Housing's one total Wood/Clay input, and specialist/generalist matching. Housing is two Builder steps (WP5a): Housing Material, then the Housing assembly (below). Housing Material fixes its Wood:Clay debit from the residual reachable inventory-plus-source ratio after feasible direct Wood/Clay recipes are retained. That fixed turn plan is shared by material gathering and production; direct work releases its reservation only when realized, and either material can fill an exhausted share without exceeding one total unit per Housing. Numerical search iterations and rounding tolerances are algorithmic controls, not new balance rates.
+
+### Housing Material (WP5a)
+
+Housing is split into two recipes that together cost exactly what the single recipe did.
+**Housing Material** (`CraftGood.HousingMaterial`, appended to the enum so saved ordinals are
+unchanged) is a Builder/Construction recipe at twice the old Housing rate with the flexible
+Wood/Clay input (`HousingMaterialUnitsPerHousing`), no tool wear and `AgricultureOnly`. **Housing** is
+the assembly: also twice the old rate, one Housing Material input, tool wear of one equipment
+output per unit, and the only step that adds fixed Housing at the site. Builder labour, Wood plus Clay and
+tool wear per Housing unit, and Construction progress, are unchanged. The Builder tool multiplier applies to both steps; the
+material step's time is the time the assembly would take on the same tool budget, and one Builder pool
+makes the material and assembles it (`NeolithicProduction.HousingMaterialLimit`), so material never takes labour the
+assembly needs. Craftspersons run both steps at `GeneralistTaskEfficiency`.
+
+Housing Material is `CampInventory.HousingMaterial`, portable camp stock with no decay. Its useful demand is
+the Housing gap minus its stock, so it is never stockpiled beyond that gap; Housing demand is unchanged and priority is
+Housing's (no new saved priority). Schedules place the material step immediately before the
+assembly at Housing's priority (`NeolithicProduction.ScheduleKey`), so material made in a turn is assembled in the same turn,
+and carried stock is assembled together with new material. The planner sizes the pair as one claim (Housing Material is not a separate
+fulfilment claim), the forecast, material gathering and the resolver use the same rule, and the Housing claim's value
+labour per unit still includes both steps. The Wood:Clay debit stays fixed after feasible direct recipes have reserved
+their inputs; access order is unchanged from before (a later package may change it). Copper (a legacy worker-time hook)
+covers the assembly step only, so it covers twice the housing units per copper worker-time.
+
+Save: the field is an optional member of the `ANTHROPOCENE-11` inventory payload (absent loads as zero; no version bump).
+Observation schema 16 exposes the owned stock in `ObservedSettlementDto.HousingMaterial`; foreign stores stay private.
+Production receipts list both goods (`HousingMaterial` receipts carry Wood/Clay; Housing receipts carry the consumed material in
+`ProductionReceipt.HousingMaterial`). Checks: `HousingMaterialRecipeChecks` (`--only=HousingMaterialRecipeChecks`).
 
 ## Persistence and limits
 

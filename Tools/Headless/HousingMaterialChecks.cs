@@ -29,7 +29,8 @@ internal static class HousingMaterialChecks
     private static double ProduceHousing(WorldState w, Camp c, double amount, HousingMaterialPlan plan = null)
     {
         double equipment = 1000; var record = new TurnRecord();
-        return NeolithicProduction.Produce(w, c, Recipe(w, CraftGood.Housing), WorkforceRoles.Builder, 10000, w.Config.GenerationIntervals, amount, ref equipment, record, new ToolCoverageBudget(w, c, w.Config.GenerationIntervals), plan);
+        // Housing Material makes the mixed Wood/Clay debit; assembly consumes it in the same call pair.
+        return HousingMaterialRecipeChecks.ProduceHousing(w, c, WorkforceRoles.Builder, 10000, w.Config.GenerationIntervals, amount, ref equipment, record, new ToolCoverageBudget(w, c, w.Config.GenerationIntervals), plan);
     }
     public static int Run()
     {
@@ -91,8 +92,10 @@ internal static class HousingMaterialChecks
         var housing = record.Production.Where(p => p.Good == CraftGood.Housing).ToArray();
         Near(record.Production.Where(p => p.Good == CraftGood.Pots).Sum(p => p.Output), 80, "earlier specialist direct work realizes");
         Near(housing.Sum(p => p.Output), 2.5, "Housing labor is unchanged after direct reservation");
-        Near(housing.Sum(p => p.Wood), 2.5 * 100 / 220, "resolver keeps fixed residual Wood ratio");
-        Near(housing.Sum(p => p.Clay), 2.5 * 120 / 220, "resolver keeps fixed residual Clay ratio");
+        // The fixed Wood:Clay mix is now set by the Housing Material step; assembly debits neither.
+        var material = record.Production.Where(p => p.Good == CraftGood.HousingMaterial).ToArray();
+        Near(material.Sum(p => p.Wood), 2.5 * 100 / 220, "resolver keeps fixed residual Wood ratio");
+        Near(material.Sum(p => p.Clay), 2.5 * 120 / 220, "resolver keeps fixed residual Clay ratio");
         var later = NeolithicChecks.Fixture(); var lc = later.Camps[0]; Enable(lc); lc.Population = 11; lc.Inventory.Wood = .1; lc.Inventory.Clay = 5.5;
         lc.Workforce.Assign(WorkforceRoles.Builder, 1, lc.Population); lc.Workforce.Assign(WorkforceRoles.Craftsperson, 1, lc.Population); lc.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 1, Cloth = 0, FarmTools = 0, Housing = 2, Tools = 0 };
         var laterRecord = new TurnRecord(); NeolithicProduction.ResolveCampNeolithic(later, lc, 80, 20, laterRecord);

@@ -153,8 +153,11 @@ internal static class ValueFulfilmentChecks
         Check(ref checks, Math.Abs(housing.FirstUnitValue - 4 * .5 * e * sCoh * life) < 1e-12, "Housing V = 4 * 1/2 * E B S * discounted life");
         double perYear = vw.Config.DaysPerYear / vw.Config.BaseDays, gather = vw.Config.GatherPerPerson * perYear;
         Check(ref checks, Math.Abs(cloth.LabourPerUnit - (1 / (cloth.Rate * perYear) + nn.PlantFoodPerFabricUnit / gather)) < 1e-12, "Cloth l = weaving time + plant feedstock gathering");
-        double housingLabour = 1 / (housing.Rate * perYear * demand.HousingMultiplier) + nn.HousingMaterialUnitsPerHousing / (nn.SpecialistMaterialExtractionRate * perYear);
-        Check(ref checks, Math.Abs(housing.LabourPerUnit - housingLabour) < 1e-12, "Housing l = building time + construction material extraction");
+        // Housing runs as two Builder steps (Housing Material, then assembly) at twice the old rate each,
+        // so building time per unit is unchanged: 1 / (BuilderHousingOutputPerBaseDays * perYear * multiplier).
+        double housingLabour = 2 / (housing.Rate * perYear * demand.HousingMultiplier) + nn.HousingMaterialUnitsPerHousing / (nn.SpecialistMaterialExtractionRate * perYear);
+        Check(ref checks, Math.Abs(housing.Rate - 2 * nn.BuilderHousingOutputPerBaseDays) < 1e-15 && Math.Abs(2 / (housing.Rate * perYear * demand.HousingMultiplier) - 1 / (nn.BuilderHousingOutputPerBaseDays * perYear * demand.HousingMultiplier)) < 1e-12, "Housing claim rate is the split-step rate and building time per unit is unchanged");
+        Check(ref checks, Math.Abs(housing.LabourPerUnit - housingLabour) < 1e-12, "Housing l = two-step building time + construction material extraction");
         Check(ref checks, Math.Abs(cloth.Need - demand.Preview.Population * vw.Config.Neolithic.FabricConsumptionPerPersonTurn * (vw.Config.TurnDays / vw.Config.DaysPerYear) / vw.Config.Neolithic.ReferenceTurnYears) < 1e-9 && cloth.Stock == Math.Max(0, vw.Camps.First(x => x.Id == demand.Preview.Id).Inventory.Cloth) + Math.Max(0, vw.Camps.First(x => x.Id == demand.Preview.Id).Inventory.AnimalFabric) && housing.Need == housing.Stock + housing.Quantity && housing.Stock == NeolithicProduction.HousingSupply(vw, demand.Preview, vw.Days + 20 * vw.Config.DaysPerYear), "clothing need is this turn's requirement over the shared clothing stock; shelter need is stock plus useful quantity");
         if (Info)
             foreach (var claim in new[] { cloth, housing })

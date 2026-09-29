@@ -208,7 +208,7 @@ namespace Anthropocene.Simulation
                 previewIntent.Assignments.Add(new PopulationAssignment { Role = c.People.HasTech(NeolithicTech.Construction) ? WorkforceRoles.Builder : WorkforceRoles.Craftsperson, Population = 1 });
             var preview = d.Preview = EconomicPlanner.Preview(c, previewIntent, d.NextPopulation);
             NeolithicProduction.DepreciateHousing(w, preview, years);
-            d.Goods = d.Recipes.Where(r => r.Good != CraftGood.HandTools && r.Good != CraftGood.Tools && (!r.HusbandryOnly || d.HusbandryEnabled)).ToArray();
+            d.Goods = d.Recipes.Where(r => r.Good != CraftGood.HandTools && r.Good != CraftGood.Tools && r.Good != CraftGood.HousingMaterial && (!r.HusbandryOnly || d.HusbandryEnabled)).ToArray();
             var goals = d.Goals = d.Goods.ToDictionary(r => r.Good, r => NeolithicProduction.Priority(preview, r.Good) > 0 ? NeolithicProduction.Demand(w, preview, r.Good, years, -1, false, false, sources) : 0);
             // FarmTools are sized only after a proposal has a bounded field
             // workforce. The empty preview cannot answer that question without
@@ -278,7 +278,7 @@ namespace Anthropocene.Simulation
             {
                 double rate = Rate(r);
                 if (rate <= 0) return 0;
-                double m = r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing ? d.HousingMultiplier : 1;
+                double m = ToolCoverageBudget.IsHousingWork(r.Good) ? d.HousingMultiplier : 1;
                 if (m <= 0) return 0;
                 double l = 1 / (rate * perYear * m);
                 l += Extraction(MaterialId.Stone, r.Stone) + Extraction(MaterialId.Clay, r.Clay) + Extraction(MaterialId.Wood, r.Wood + r.ConstructionMaterial);
@@ -289,6 +289,14 @@ namespace Anthropocene.Simulation
                     double inputLabour = input == null ? 0 : Labour(input);
                     if (inputLabour <= 0) return 0;
                     l += r.AnimalFabric * inputLabour;
+                }
+                if (r.HousingMaterial > 0)
+                {
+                    // Housing Material is planned with its Housing claim, not as a claim of its own.
+                    var input = d.Recipes.FirstOrDefault(x => x.Good == CraftGood.HousingMaterial);
+                    double inputLabour = input == null ? 0 : Labour(input);
+                    if (inputLabour <= 0) return 0;
+                    l += r.HousingMaterial * inputLabour;
                 }
                 return l;
             }

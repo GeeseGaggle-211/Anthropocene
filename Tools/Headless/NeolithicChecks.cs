@@ -240,6 +240,8 @@ internal static class NeolithicChecks
     {
         var c = w.Camps[0]; record = new TurnRecord(); double equipment = (c.Inventory.HandTools + c.Inventory.Tools + c.Inventory.CopperTools) * 80;
         var recipe = NeolithicProduction.Recipes(w.Config).Single(x => x.Good == good);
+        // Housing is Housing Material then assembly with one shared Builder labour pool.
+        if (good == CraftGood.Housing) { HousingMaterialRecipeChecks.ProduceHousing(w, c, role, workers * 80, 80, demand, ref equipment, record); return record.Production.Where(x => x.Good == CraftGood.Housing).Sum(x => x.Output); }
         NeolithicProduction.Produce(w, c, recipe, role, workers * 80, 80, demand, ref equipment, record);
         return record.Production.Sum(x => x.Output);
     }
@@ -386,9 +388,9 @@ internal static class NeolithicChecks
 
         var covered = Fixture(); var cc = covered.Camps[0]; cc.Inventory.HandTools = cc.Inventory.Tools = 1; cc.Inventory.Wood = 100; cc.People.NeolithicTechnologies.Add(NeolithicTech.Construction);
         var coverage = new ToolCoverageBudget(covered, cc, 80); double toolTime = coverage.Remaining;
-        var housingRecipe = NeolithicProduction.Recipes(covered.Config).Single(x => x.Good == CraftGood.Housing); var production = new TurnRecord();
-        NeolithicProduction.Produce(covered, cc, housingRecipe, WorkforceRoles.Builder, 80, 80, 100, ref toolTime, production, coverage);
-        NeolithicProduction.Produce(covered, cc, housingRecipe, WorkforceRoles.Craftsperson, 80, 80, 100, ref toolTime, production, coverage);
+        var production = new TurnRecord();
+        HousingMaterialRecipeChecks.ProduceHousing(covered, cc, WorkforceRoles.Builder, 80, 80, 100, ref toolTime, production, coverage);
+        HousingMaterialRecipeChecks.ProduceHousing(covered, cc, WorkforceRoles.Craftsperson, 80, 80, 100, ref toolTime, production, coverage);
         Near(NeolithicProduction.FixedHousingAt(covered, cc.Id, cc.Tile, covered.Days + 80 * covered.Config.BaseDays), 4.458333333333333, "improved tool output is capped by realized labor and shared output capacity"); Near(cc.Inventory.HousingUnits, 0, "fixed output is not duplicated in carried inventory"); Near(cc.Inventory.Tools, 0, "regular tools are consumed by realized housing output"); Near(cc.Inventory.HandTools, .541666666666667, "hand tools finish the remaining realized output"); Near(coverage.Remaining, .541666666666667, "shared output capacity is exhausted only by realized work");
         var bootstrap = Fixture(); bootstrap.Camps[0].Inventory.Stone = 10; var noCoverage = new ToolCoverageBudget(bootstrap, bootstrap.Camps[0], 80); toolTime = 0;
         NeolithicProduction.Produce(bootstrap, bootstrap.Camps[0], NeolithicProduction.Recipes(bootstrap.Config)[0], WorkforceRoles.Craftsperson, 80, 80, 1, ref toolTime, new TurnRecord(), noCoverage);

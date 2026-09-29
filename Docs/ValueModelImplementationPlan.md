@@ -216,6 +216,9 @@ counts reported.
 
 ### WP5 — Housing Material
 
+Status: WP5a (recipe split, inventory, schema 16, same scheduling position and access order) is implemented and
+reproduces the shipped outcomes; WP5b (material access order) is not started.
+
 - Recipes (`NeolithicProduction.Recipes`): a Housing Material recipe with the
   Wood/Clay inputs and half of today's Builder labour per Housing unit; Housing
   consumes one Housing Material with the other half. Builders and generalist
