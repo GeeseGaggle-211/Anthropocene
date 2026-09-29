@@ -99,8 +99,11 @@ internal static class HousingMaterialChecks
         var later = NeolithicChecks.Fixture(); var lc = later.Camps[0]; Enable(lc); lc.Population = 11; lc.Inventory.Wood = .1; lc.Inventory.Clay = 5.5;
         lc.Workforce.Assign(WorkforceRoles.Builder, 1, lc.Population); lc.Workforce.Assign(WorkforceRoles.Craftsperson, 1, lc.Population); lc.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 1, Cloth = 0, FarmTools = 0, Housing = 2, Tools = 0 };
         var laterRecord = new TurnRecord(); NeolithicProduction.ResolveCampNeolithic(later, lc, 80, 20, laterRecord);
-        Near(laterRecord.Production.Where(p => p.Good == CraftGood.Pots).Sum(p => p.Output), 5.5, "later generalist direct work remains reserved");
-        Near(laterRecord.Production.Where(p => p.Good == CraftGood.Housing).Sum(p => p.Output), .1, "earlier Builder cannot spend later generalist Clay");
+        // WP5b: Housing (priority 2) outranks Pots (priority 1), so its Housing Material
+        // draws the Wood no Pot needs, then dips into the Clay reserved for the later
+        // generalist Pots, up to its full demand (11 / 4 = 2.75); Pots keep the rest.
+        Near(laterRecord.Production.Where(p => p.Good == CraftGood.Pots).Sum(p => p.Output), 5.5 - 2.65, "later generalist Pots keep only the Clay left after higher-priority Housing");
+        Near(laterRecord.Production.Where(p => p.Good == CraftGood.Housing).Sum(p => p.Output), 2.75, "higher-priority Housing dips into Clay reserved for later generalist work");
     }
     private static void ReplacementForecast()
     {
@@ -145,7 +148,12 @@ internal static class HousingMaterialChecks
         Near(plan.Assignments.Where(a => a.Role == WorkforceRoles.Builder).Sum(a => a.Population), 1, "planner staffs current Housing from residual Clay");
         c.Inventory.Clay = 1;
         plan = EconomicPlanner.Plan(w, c, EconomicIntent.From(c));
-        Near(plan.Assignments.Where(a => a.Role == WorkforceRoles.Builder).Sum(a => a.Population), 0, "planner does not staff Housing with zero residual material");
+        // WP5b: the single Clay unit is also the Pot's reserved input, but Housing (priority 2)
+        // outranks Pots (priority 1) and takes it; with no Clay at all Housing is still unstaffed.
+        Near(plan.Assignments.Where(a => a.Role == WorkforceRoles.Builder).Sum(a => a.Population), 1, "higher-priority Housing takes the Clay a lower-priority Pot would have kept");
+        c.Inventory.Clay = 0;
+        plan = EconomicPlanner.Plan(w, c, EconomicIntent.From(c));
+        Near(plan.Assignments.Where(a => a.Role == WorkforceRoles.Builder).Sum(a => a.Population), 0, "planner does not staff Housing with no material");
     }
     private static void PlannerRetainsLaterDirectReservation()
     {

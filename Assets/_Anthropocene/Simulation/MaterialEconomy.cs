@@ -90,38 +90,114 @@ namespace Anthropocene.Simulation
         }
     }
     // A turn-local production aid.  It never owns material: inventory and source
-    // state remain authoritative.  Its fixed ratio prevents Housing from changing
-    // Wood/Clay policy as gathering and earlier specialist work exchange stock.
+    // state remain authoritative.  It fixes Housing Material's place in the
+    // material-access order for one turn (WP5b).  Direct-input recipes ranked
+    // above Housing Material keep a hard reservation until realized: Housing
+    // Material cannot take it.  Recipes ranked below keep a soft reservation:
+    // Housing Material first draws Wood/Clay they do not need, in the fixed
+    // Wood:Clay proportion, and only then dips into the reserved amounts.  While
+    // Housing Material is unfinished, its outstanding claim is in turn a hard
+    // limit on lower-ranked direct recipes, whatever role runs first.
     public sealed class HousingMaterialPlan
     {
+        internal sealed class Reservation
+        {
+            public CraftGood Good; public double Wood, Clay, Output; public bool Hard;
+        }
         public readonly double WoodShare, ClayShare;
-        private double reservedWood, reservedClay;
-        internal HousingMaterialPlan(double woodShare, double clayShare, double directWood, double directClay)
+        private readonly List<Reservation> reservations;
+        private readonly HashSet<CraftGood> lowerRanked;
+        private double claim;
+        internal HousingMaterialPlan(double woodShare, double clayShare, List<Reservation> reservations, HashSet<CraftGood> lowerRanked, double claim)
         {
             WoodShare = woodShare; ClayShare = clayShare;
-            reservedWood = Math.Max(0, directWood); reservedClay = Math.Max(0, directClay);
+            this.reservations = reservations ?? new List<Reservation>();
+            this.lowerRanked = lowerRanked ?? new HashSet<CraftGood>();
+            this.claim = Math.Max(0, claim);
         }
+        private double Reserved(bool hard, bool wood)
+        {
+            double total = 0;
+            for (int i = 0; i < reservations.Count; i++)
+            {
+                var r = reservations[i];
+                if (r.Hard == hard) total += r.Output * (wood ? r.Wood : r.Clay);
+            }
+            return total;
+        }
+        // Outstanding Housing Material claim, in construction-material units.
+        internal double Claim => claim;
+        internal double HardWood => Reserved(true, true);
+        internal double HardClay => Reserved(true, false);
+        internal double SoftWood => Reserved(false, true);
+        internal double SoftClay => Reserved(false, false);
         public void CompleteDirect(CraftRecipe recipe, double output)
         {
-            if (recipe == null || recipe.ConstructionMaterial > 0 || output <= 0) return;
-            reservedWood = Math.Max(0, reservedWood - output * recipe.Wood);
-            reservedClay = Math.Max(0, reservedClay - output * recipe.Clay);
+            if (recipe == null || output <= 0) return;
+            if (recipe.ConstructionMaterial > 0) { claim = Math.Max(0, claim - output * recipe.ConstructionMaterial); return; }
+            for (int i = 0; i < reservations.Count; i++)
+                if (reservations[i].Good == recipe.Good) reservations[i].Output = Math.Max(0, reservations[i].Output - output);
+        }
+        // Once every role that can make a recipe has been considered, an unrealized
+        // reservation (or Housing Material claim) is released instead of lingering.
+        internal void Settle(CraftRecipe recipe, string role)
+        {
+            if (recipe == null || role != WorkforceRoles.Craftsperson && !(recipe.SpecialistOnly && role == recipe.Specialist)) return;
+            Release(recipe);
+        }
+        internal void Release(CraftRecipe recipe)
+        {
+            if (recipe == null) return;
+            if (recipe.ConstructionMaterial > 0) { claim = 0; return; }
+            for (int i = 0; i < reservations.Count; i++)
+                if (reservations[i].Good == recipe.Good) reservations[i].Output = 0;
+        }
+        // A direct recipe ranked below Housing Material may not take Wood or Clay
+        // that Housing Material's unfinished claim still needs.  The claim can be
+        // met from either material, so only what Clay cannot cover falls on Wood.
+        public double LimitDirect(double inventoryWood, double inventoryClay, CraftRecipe recipe, double amount)
+        {
+            if (recipe == null || recipe.ConstructionMaterial > 0 || claim <= 1e-12 || !lowerRanked.Contains(recipe.Good)) return amount;
+            double usableWood = Math.Max(0, inventoryWood - HardWood), usableClay = Math.Max(0, inventoryClay - HardClay);
+            if (recipe.Wood > 0) amount = Math.Min(amount, Math.Max(0, usableWood - Math.Max(0, claim - usableClay)) / recipe.Wood);
+            if (recipe.Clay > 0) amount = Math.Min(amount, Math.Max(0, usableClay - Math.Max(0, claim - usableWood)) / recipe.Clay);
+            return Math.Max(0, amount);
         }
         public double LimitHousing(Camp c, double desired, double materialPerHousing, out double wood, out double clay)
+            => LimitHousing(c.Inventory.Wood, c.Inventory.Clay, desired, materialPerHousing, out wood, out clay);
+        public double LimitHousing(double inventoryWood, double inventoryClay, double desired, double materialPerHousing, out double wood, out double clay)
         {
             wood = clay = 0;
-            if (desired <= 0 || materialPerHousing <= 0 || WoodShare + ClayShare <= 0) return 0;
-            double freeWood = Math.Max(0, c.Inventory.Wood - reservedWood);
-            double freeClay = Math.Max(0, c.Inventory.Clay - reservedClay);
-            double amount = Math.Min(desired, (freeWood + freeClay) / materialPerHousing);
+            if (!(desired > 0) || !(materialPerHousing > 0)) return 0;
+            double softWood = SoftWood, softClay = SoftClay;
+            double usableWood = Math.Max(0, inventoryWood - HardWood), usableClay = Math.Max(0, inventoryClay - HardClay);
+            double amount = Math.Min(desired, (usableWood + usableClay) / materialPerHousing);
             if (amount <= 1e-12) return 0;
             double total = amount * materialPerHousing;
+            // First the Wood and Clay no later recipe needs, in the fixed plan proportion.
+            double freeWood = Math.Max(0, usableWood - softWood), freeClay = Math.Max(0, usableClay - softClay);
             wood = Math.Min(freeWood, total * WoodShare);
             clay = Math.Min(freeClay, total * ClayShare);
             double remaining = total - wood - clay;
             double addWood = Math.Min(remaining, freeWood - wood);
             wood += addWood; remaining -= addWood;
-            clay += Math.Min(remaining, freeClay - clay);
+            double addClay = Math.Min(remaining, freeClay - clay);
+            clay += addClay; remaining -= addClay;
+            if (remaining > 1e-12)
+            {
+                // Then, because Housing Material outranks them, the reserved amounts,
+                // split in proportion to what remains of each.
+                double reservedWood = Math.Max(0, Math.Min(softWood, usableWood - wood));
+                double reservedClay = Math.Max(0, Math.Min(softClay, usableClay - clay));
+                double reservedTotal = reservedWood + reservedClay;
+                if (reservedTotal > 0)
+                {
+                    double dipWood = Math.Min(reservedWood, remaining * reservedWood / reservedTotal);
+                    double dipClay = Math.Min(reservedClay, remaining - dipWood);
+                    dipWood += Math.Min(reservedWood - dipWood, remaining - dipWood - dipClay);
+                    wood += dipWood; clay += dipClay;
+                }
+            }
             return amount;
         }
     }
@@ -148,38 +224,97 @@ namespace Anthropocene.Simulation
             return index;
         }
         // Housing Material (the construction step's Wood/Clay recipe) is the flexible
-        // consumer; the Housing assembly takes none directly.  Use all visible, reachable
-        // source stock to choose its mix, after retaining the source- and
-        // labor-feasible direct recipe plan. The ratio sees current residual
-        // material after that committed work, while the mutable reservation
-        // below protects only this turn's remaining direct work.
+        // consumer; the Housing assembly takes none directly.  Since WP5b it holds
+        // its ordinary place in the material-access order (crafting priority, ties
+        // by good, exactly like every other recipe): direct recipes ranked above it
+        // have already taken their inputs, and the remaining planned demand of
+        // recipes ranked below it is only a soft reservation.  Use all visible,
+        // reachable source stock to choose the mix, after retaining the source- and
+        // labor-feasible direct recipe plan.
         public static HousingMaterialPlan PlanHousingMaterials(WorldState w, Camp c, CraftRecipe[] recipes, IDictionary<CraftGood, double> planned, double years, double days, KnownMaterialSource[] knownSources = null)
         {
             var sources = knownSources ?? KnownSources(w, c, days);
-            var room = Materials.ToDictionary(material => material, material => Inventory(c, material) + sources.Where(s => s.Material == material).Sum(s => s.Available));
-            double directWood = 0, directClay = 0;
-            // Forecast is already role-, tool-, plant- and demand-capped.  Give
-            // its direct recipes one deterministic source/material feasibility
-            // pass before they can reserve anything from Housing.  In particular,
-            // a Tool job lacking Stone cannot reserve its Wood merely because a
-            // visible Wood source exists.
-            foreach (var recipe in recipes.Where(r => r.ConstructionMaterial <= 0).OrderByDescending(r => NeolithicProduction.Priority(c, r.Good)).ThenBy(r => NeolithicProduction.ScheduleKey(r.Good)))
+            double Room(MaterialId material) => Inventory(c, material) + sources.Where(s => s.Material == material).Sum(s => s.Available);
+            return BuildHousingPlan(recipes, good => NeolithicProduction.Priority(c, good), planned, Room(MaterialId.Stone), Room(MaterialId.Clay), Room(MaterialId.Wood));
+        }
+        // The one place a turn's Housing Material position, reservations and fixed
+        // Wood:Clay mix are decided; every schedule (planner, forecast, gathering,
+        // resolver) builds or consumes this plan.  `planned` is the role-, tool-,
+        // plant- and demand-capped forecast.  Its direct recipes get one
+        // deterministic source/material feasibility pass in access order: a Tool job
+        // lacking Stone cannot reserve its Wood merely because Wood exists.
+        internal static HousingMaterialPlan BuildHousingPlan(CraftRecipe[] recipes, Func<CraftGood, double> priority, IDictionary<CraftGood, double> planned, double stone, double clay, double wood)
+            => BuildHousingPlan(recipes.OrderByDescending(r => priority(r.Good)).ThenBy(r => NeolithicProduction.ScheduleKey(r.Good)).ToArray(), planned, stone, clay, wood);
+        // `order` is the caller's material-access order (recipes not listed take no part).
+        internal static HousingMaterialPlan BuildHousingPlan(CraftRecipe[] order, IDictionary<CraftGood, double> planned, double stone, double clay, double wood)
+        {
+            var material = order.FirstOrDefault(r => r.ConstructionMaterial > 0);
+            double Feasible(CraftRecipe r, double output, double s, double cl, double wd)
             {
-                if (!planned.TryGetValue(recipe.Good, out double output) || output <= 0) continue;
-                if (recipe.Stone > 0) output = Math.Min(output, room[MaterialId.Stone] / recipe.Stone);
-                if (recipe.Clay > 0) output = Math.Min(output, room[MaterialId.Clay] / recipe.Clay);
-                if (recipe.Wood > 0) output = Math.Min(output, room[MaterialId.Wood] / recipe.Wood);
-                if (output <= 1e-12) continue;
-                room[MaterialId.Stone] -= output * recipe.Stone;
-                room[MaterialId.Clay] -= output * recipe.Clay;
-                room[MaterialId.Wood] -= output * recipe.Wood;
-                directWood += output * recipe.Wood;
-                directClay += output * recipe.Clay;
+                if (r.Stone > 0) output = Math.Min(output, s / r.Stone);
+                if (r.Clay > 0) output = Math.Min(output, cl / r.Clay);
+                if (r.Wood > 0) output = Math.Min(output, wd / r.Wood);
+                return output;
             }
-            double availableWood = Inventory(c, MaterialId.Wood) + sources.Where(s => s.Material == MaterialId.Wood).Sum(s => s.Available);
-            double availableClay = Inventory(c, MaterialId.Clay) + sources.Where(s => s.Material == MaterialId.Clay).Sum(s => s.Available);
-            HousingShares(availableWood, availableClay, directWood, directClay, out double woodShare, out double clayShare);
-            return new HousingMaterialPlan(woodShare, clayShare, directWood, directClay);
+            var reservations = new List<HousingMaterialPlan.Reservation>();
+            var lowerRanked = new HashSet<CraftGood>();
+            var later = new List<CraftRecipe>();
+            bool afterMaterial = false;
+            foreach (var recipe in order)
+            {
+                if (recipe.ConstructionMaterial > 0) { afterMaterial = true; continue; }
+                if (afterMaterial) lowerRanked.Add(recipe.Good);
+                if (!planned.TryGetValue(recipe.Good, out double output) || output <= 0) continue;
+                if (afterMaterial) { later.Add(recipe); continue; }
+                output = Feasible(recipe, output, stone, clay, wood);
+                if (output <= 1e-12) continue;
+                stone -= output * recipe.Stone; clay -= output * recipe.Clay; wood -= output * recipe.Wood;
+                reservations.Add(new HousingMaterialPlan.Reservation { Good = recipe.Good, Wood = recipe.Wood, Clay = recipe.Clay, Output = output, Hard = true });
+            }
+            // What the lower-ranked recipes would take if Housing Material were absent.
+            double softWood = 0, softClay = 0, probeStone = stone, probeClay = clay, probeWood = wood;
+            foreach (var recipe in later)
+            {
+                double output = Feasible(recipe, planned[recipe.Good], probeStone, probeClay, probeWood);
+                if (output <= 1e-12) continue;
+                probeStone -= output * recipe.Stone; probeClay -= output * recipe.Clay; probeWood -= output * recipe.Wood;
+                softWood += output * recipe.Wood; softClay += output * recipe.Clay;
+            }
+            double units = material != null && planned.TryGetValue(material.Good, out double materialOutput) ? Math.Max(0, materialOutput) * material.ConstructionMaterial : 0;
+            double total = Math.Min(units, Math.Max(0, wood) + Math.Max(0, clay));
+            HousingShares(wood, clay, softWood, softClay, out double woodShare, out double clayShare);
+            if (woodShare + clayShare <= 0) HousingShares(wood, clay, 0, 0, out woodShare, out clayShare);
+            if (total > 1e-12)
+            {
+                double freeWood = Math.Max(0, wood - softWood), freeClay = Math.Max(0, clay - softClay);
+                double first = Math.Min(total, freeWood + freeClay);
+                double drawWood = first * woodShare, drawClay = first * clayShare;
+                double remaining = total - first;
+                if (remaining > 1e-12)
+                {
+                    double reservedWood = Math.Max(0, Math.Min(softWood, wood)), reservedClay = Math.Max(0, Math.Min(softClay, clay));
+                    double reservedTotal = reservedWood + reservedClay;
+                    if (reservedTotal > 0)
+                    {
+                        double dipWood = Math.Min(reservedWood, remaining * reservedWood / reservedTotal);
+                        double dipClay = Math.Min(reservedClay, remaining - dipWood);
+                        drawWood += dipWood; drawClay += dipClay;
+                    }
+                }
+                // The fixed mix is the whole expected draw, so gathering and
+                // production plan for the same Wood:Clay.
+                if (drawWood + drawClay > 0) { woodShare = drawWood / (drawWood + drawClay); clayShare = drawClay / (drawWood + drawClay); }
+                wood -= drawWood; clay -= drawClay;
+            }
+            else total = 0;
+            foreach (var recipe in later)
+            {
+                double output = Feasible(recipe, planned[recipe.Good], stone, clay, wood);
+                if (output <= 1e-12) continue;
+                stone -= output * recipe.Stone; clay -= output * recipe.Clay; wood -= output * recipe.Wood;
+                reservations.Add(new HousingMaterialPlan.Reservation { Good = recipe.Good, Wood = recipe.Wood, Clay = recipe.Clay, Output = output, Hard = false });
+            }
+            return new HousingMaterialPlan(woodShare, clayShare, reservations, lowerRanked, total);
         }
         // Keep every forecast and resolver path on the same residual policy.
         // Direct recipe inputs are the committed current-turn demand; the

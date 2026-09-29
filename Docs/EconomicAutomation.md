@@ -95,7 +95,7 @@ Equipment may be bootstrapped for the next source-feasible useful manufacturing 
 
 The internal `Stonecutter` identifier is retained for save compatibility; `Stone Quarrier` is the display label. `ClayMiner` is new. Specialist extraction remains `SpecialistMaterialExtractionRate=1` unit/worker/BaseDays; regular gatherers use `GeneralistTaskEfficiency=.25`. These match one-unit, single-material manufacturing throughput. Staffing is demand-based, not a mandatory one-for-one headcount: Housing's 2.5/20-year Builder rate needs much less extraction, and improved tools retain their separate Stone and Wood inputs. Reserve replenishment can temporarily require more extraction than current production alone.
 
-All existing recipe/QoL/tool multipliers remain unchanged, including Fabric's one Plant Food input, Housing's one total Wood/Clay input, and specialist/generalist matching. Housing is two Builder steps (WP5a): Housing Material, then the Housing assembly (below). Housing Material fixes its Wood:Clay debit from the residual reachable inventory-plus-source ratio after feasible direct Wood/Clay recipes are retained. That fixed turn plan is shared by material gathering and production; direct work releases its reservation only when realized, and either material can fill an exhausted share without exceeding one total unit per Housing. Numerical search iterations and rounding tolerances are algorithmic controls, not new balance rates.
+All existing recipe/QoL/tool multipliers remain unchanged, including Fabric's one Plant Food input, Housing's one total Wood/Clay input, and specialist/generalist matching. Housing is two Builder steps (WP5a): Housing Material, then the Housing assembly (below). Housing Material fixes its Wood:Clay debit (WP5b, below) from the reachable inventory-plus-source residual after the work ranked above it. That fixed turn plan is shared by material gathering and production; reservations are released only when realized, and either material can fill an exhausted share without exceeding one total unit per Housing. Numerical search iterations and rounding tolerances are algorithmic controls, not new balance rates.
 
 ### Housing Material (WP5a)
 
@@ -116,9 +116,25 @@ Housing's (no new saved priority). Schedules place the material step immediately
 assembly at Housing's priority (`NeolithicProduction.ScheduleKey`), so material made in a turn is assembled in the same turn,
 and carried stock is assembled together with new material. The planner sizes the pair as one claim (Housing Material is not a separate
 fulfilment claim), the forecast, material gathering and the resolver use the same rule, and the Housing claim's value
-labour per unit still includes both steps. The Wood:Clay debit stays fixed after feasible direct recipes have reserved
-their inputs; access order is unchanged from before (a later package may change it). Copper (a legacy worker-time hook)
+labour per unit still includes both steps. Copper (a legacy worker-time hook)
 covers the assembly step only, so it covers twice the housing units per copper worker-time.
+
+### Housing Material access order (WP5b)
+
+Housing Material is no longer the final flexible Wood/Clay consumer. It takes its ordinary place in the
+material-access order in every schedule: crafting-priority order (it uses Housing's priority; ties by good, so it
+precedes Regular Tools and follows Farm Tools at equal priority), and under the Value rule the Housing claim's marginal
+value in the planner's `AccessOrder` (the assembly still follows its material). `MaterialEconomy.BuildHousingPlan` fixes
+the turn plan once: direct work ranked above Housing Material has already taken its inputs (a hard reservation until
+realized, which Housing Material cannot take); the remaining planned direct Wood/Clay of work ranked below it is a soft
+reservation. Housing Material first draws Wood and Clay no later recipe needs, in proportion to that unreserved residual,
+and only if still short dips into the reserved amounts, split in proportion to what remains. Its unfinished claim is in
+turn a hard limit on lower-ranked direct recipes (`HousingMaterialPlan.LimitDirect`), so a Toolmaker or Potter scheduled
+earlier by role cannot take Wood or Clay a higher-priority Housing still needs. The plan (fixed WoodShare/ClayShare = the
+whole expected draw) is shared by `PlanHousingMaterials`, `Gather`, `Forecast`-driven needs, `ToolReplacementDemands`
+(Regular Tools see Housing's Wood draw only if Housing outranks them), the planner's capped loop and final role pass, and
+`Produce`. Known limitation: when Farm Tools outrank Housing (non-default), the planner allocates Housing Material after
+all direct work because Farm Tool intent is bounded last; the resolver still uses rank. No rates, recipes or demands change.
 
 Save: the field is an optional member of the `ANTHROPOCENE-11` inventory payload (absent loads as zero; no version bump).
 Observation schema 16 exposes the owned stock in `ObservedSettlementDto.HousingMaterial`; foreign stores stay private.

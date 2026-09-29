@@ -294,7 +294,7 @@ local useful stock integrate the area lost.
 
 Fixed Housing belongs to its construction site and cannot move. The tradeable
 good is therefore the material, not the house. Agreed with the user on
-29 September 2026. Recipe split implemented as WP5a (labour, tool wear and material per Housing unchanged, same scheduling position); the access-order change is WP5b:
+29 September 2026. Recipe split implemented as WP5a (labour, tool wear and material per Housing unchanged); the access-order change is WP5b (implemented; see EconomicAutomation.md):
 
 ```
 Wood / Clay  ->  Housing Material  ->  Housing (fixed, built on site)
@@ -326,7 +326,7 @@ Agreed defaults:
 - **The Wood:Clay mix is fixed when material is made.** Housing Material
   becomes an ordinary recipe with direct inputs, and Housing consumes it as
   Light Housing consumes Animal Fabric. This removes construction's special
-  position as the final flexible consumer of leftover Wood and Clay, which may
+  position as the final flexible consumer of leftover Wood and Clay (removed by WP5b), which may
   be behind Construction's 4-of-21 result in #33.
 - **Persistence.** A new optional `CampInventory.HousingMaterial` field in the
   current `ANTHROPOCENE-11` envelope (absent means zero), and an owned-inventory

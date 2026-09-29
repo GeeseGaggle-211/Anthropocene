@@ -46,6 +46,7 @@ internal static class HousingMaterialRecipeChecks
         checks = 0;
         RecipeShape(); LabourMaterialAndWearEquivalence(); SameTurnChain(); NoStockBeyondGap(); ForecastAndPlannerSchedule();
         StockCarriedAndConsumed(); InventoryPreservedAcrossMove(); SaveRoundTripAndLegacy(); ObservationExposesOwnStockOnly(); ScalarVersusParallel();
+        MaterialAccessOrder(); MixPrefersUnreserved(); PlannerResolverAgreement(); ContendedConservation(); ContendedScalarVersusParallel();
         Console.WriteLine("PASS: " + checks + " Housing Material recipe assertions"); return checks;
     }
 
@@ -276,5 +277,117 @@ internal static class HousingMaterialRecipeChecks
         string scalar = RunChain(new PhaseExecution(), false);
         string parallel = RunChain(new PhaseExecution(4, 1, true, 1), true);
         Check(scalar == parallel, "scalar and reversed 4-worker resolutions have equal fingerprints across four turns");
+    }
+
+    // WP5b: Housing Material takes its ordinary place in the material-access order.
+    // A camp with a Builder and a Toolmaker, scarce Wood, no Clay and a small Hand
+    // Tool stock (so Regular Tools have real demand): the Housing priority decides
+    // who gets the Wood, however the roles happen to be scheduled.
+    private static World Contended(double housing, double tools, double wood, double clay)
+    {
+        var x = new World(0, 0); var c = x.C;
+        c.Inventory.Wood = wood; c.Inventory.Clay = clay; c.Inventory.Stone = 1000; c.Inventory.HandTools = .5;
+        c.CraftingPriorities = new CraftingPriorities { HandTools = 0, Pots = 0, Cloth = 0, FarmTools = 0, Housing = housing, Tools = tools };
+        c.Workforce.Assign(WorkforceRoles.Toolmaker, 1, c.Population);
+        return x;
+    }
+    private static TurnRecord Resolve(World x)
+    {
+        var record = new TurnRecord(); NeolithicProduction.ResolveCampNeolithic(x.W, x.C, 80, 20, record); return record;
+    }
+    private static void MaterialAccessOrder()
+    {
+        // Housing 0.20 outranks Tools 0.15: Housing Material takes the scarce Wood first.
+        var a = Contended(.20, .15, 1, 0); var ra = Resolve(a);
+        double housingA = Sum(ra, CraftGood.Housing, p => p.Output), toolsA = Sum(ra, CraftGood.Tools, p => p.Output);
+        Near(Sum(ra, CraftGood.HousingMaterial, p => p.Wood), .5, "Housing outranking Tools takes the Wood its tool-limited output needs");
+        Near(housingA, .5, "Housing is built from that Wood (one material unit per Housing)");
+        Near(toolsA, 0, "Tools receive no Wood once the higher-priority Housing has it");
+        // Swap the priorities: Tools rank first and Housing gets only what they leave.
+        var b = Contended(.15, .20, 1, 0); var rb = Resolve(b);
+        double housingB = Sum(rb, CraftGood.Housing, p => p.Output), toolsB = Sum(rb, CraftGood.Tools, p => p.Output);
+        Check(toolsB > 0 && toolsB > toolsA, "with the priorities swapped Tools take the Wood first");
+        Near(Sum(rb, CraftGood.HousingMaterial, p => p.Wood) + Sum(rb, CraftGood.Tools, p => p.Wood), 1, "and Housing Material gets exactly the Wood Tools leave (their tools also raise Housing coverage)");
+        Near(Sum(rb, CraftGood.Tools, p => p.Wood), Sum(rb, CraftGood.Tools, p => p.Output), "Tools consume one Wood each");
+        // A strictly better rule than 'last': equal priority ties by good, so Housing Material precedes Tools.
+        var t = Contended(.15, .15, 1, 0); Check(Sum(Resolve(t), CraftGood.Housing, p => p.Output) > 0, "a priority tie resolves by good and Housing Material precedes Tools");
+        // The pure plan agrees with the resolver about who gets the Wood.
+        var planned = NeolithicProduction.Recipes(a.W.Config).ToDictionary(r => r.Good, r => 0d); planned[CraftGood.Tools] = 5; planned[CraftGood.HousingMaterial] = 5; planned[CraftGood.Housing] = 5;
+        a = Contended(.20, .15, 1, 0); b = Contended(.15, .20, 1, 0);
+        var planA = MaterialEconomy.PlanHousingMaterials(a.W, a.C, NeolithicProduction.Recipes(a.W.Config), planned, 20, a.W.Days);
+        Near(planA.WoodShare, 1, "the fixed plan is all Wood when Clay is absent");
+        Near(planA.LimitDirect(1, 0, Recipe(a.W, CraftGood.Tools), 5), 0, "a lower-priority direct recipe cannot take the Wood Housing Material still claims");
+        var planB = MaterialEconomy.PlanHousingMaterials(b.W, b.C, NeolithicProduction.Recipes(b.W.Config), planned, 20, b.W.Days);
+        Near(planB.LimitHousing(1, 0, 5, 1, out _, out _), 0, "a higher-priority direct recipe keeps a hard reservation Housing Material cannot take");
+    }
+    private static void MixPrefersUnreserved()
+    {
+        // Tools (lower priority) need every unit of Wood, and Clay is plentiful:
+        // Housing Material draws Clay and leaves the Wood to Tools.
+        var x = Contended(.20, .15, .125, 50); var r = Resolve(x);
+        double material = Sum(r, CraftGood.HousingMaterial, p => p.Output);
+        Check(material > 0, "Housing Material is made");
+        Near(Sum(r, CraftGood.HousingMaterial, p => p.Wood), 0, "Housing Material leaves the Wood a later recipe needs");
+        Near(Sum(r, CraftGood.HousingMaterial, p => p.Clay), material, "and draws Clay for the whole unit");
+        Near(Sum(r, CraftGood.Tools, p => p.Wood), .125, "the later recipe keeps its Wood", 1e-6);
+        // When the unreserved rest is short, it dips into the reserved amount in proportion to what remains.
+        var y = Contended(.20, .15, .125, .1); var ry = Resolve(y);
+        Near(Sum(ry, CraftGood.HousingMaterial, p => p.Clay), .1, "all unreserved Clay is used first");
+        Near(Sum(ry, CraftGood.HousingMaterial, p => p.Wood) + Sum(ry, CraftGood.HousingMaterial, p => p.Clay), Sum(ry, CraftGood.HousingMaterial, p => p.Output), "one material unit per Housing Material");
+        Check(Sum(ry, CraftGood.HousingMaterial, p => p.Wood) > 0, "the shortfall dips into the Wood reserved for the lower-priority recipe");
+        // Pure helper: unreserved 10 Wood / 10 Clay, 20 Wood reserved by a later recipe, claim 30.
+        var planned = NeolithicProduction.Recipes(x.W.Config).ToDictionary(q => q.Good, q => 0d); planned[CraftGood.Tools] = 1000; planned[CraftGood.HousingMaterial] = 30;
+        var plan = MaterialEconomy.BuildHousingPlan(NeolithicProduction.Recipes(x.W.Config).OrderBy(q => NeolithicProduction.ScheduleKey(q.Good)).ToArray(), planned, 1000, 10, 30);
+        Near(plan.WoodShare + plan.ClayShare, 1, "plan shares sum to one");
+    }
+    private static void PlannerResolverAgreement()
+    {
+        // Uncontended single camp: the plan's forecast is exactly what the resolver realizes.
+        var x = ChainWorld(500, 500); var w = x.W; var c = x.C;
+        var recipes = NeolithicProduction.Recipes(w.Config);
+        double equipment = (c.Inventory.HandTools + c.Inventory.Tools) * 80 / w.Config.Neolithic.ToolCoveragePerWorker;
+        var forecast = MaterialEconomy.Forecast(w, c, recipes, 80, 20, equipment, false, -1, true, true);
+        var record = new TurnRecord(); NeolithicProduction.ResolveCampNeolithic(w, c, 80, 20, record);
+        Near(Sum(record, CraftGood.HousingMaterial, p => p.Output), forecast[CraftGood.HousingMaterial], "resolver realizes the forecast Housing Material", 1e-6);
+        Near(Sum(record, CraftGood.Housing, p => p.Output), forecast[CraftGood.Housing], "resolver realizes the forecast Housing", 1e-6);
+        Check(forecast[CraftGood.Housing] > 0, "the fixture produces Housing");
+        // The automated plan sizes staffing for the same schedule and the resolver realizes it.
+        var pw = NeolithicChecks.Fixture(); var pc = pw.Camps[0]; Enable(pc); pc.Population = 44; pc.Inventory.Wood = 100; pc.Inventory.Clay = 100; pc.PlantFood = 100000; pw.Config.AnnualHumanGrowthRate = 0;
+        var intent = EconomicPlanner.Plan(pw, pc, EconomicIntent.From(pc)); EconomicIntents.Apply(pc, intent);
+        double pe = (pc.Inventory.HandTools + pc.Inventory.Tools) * 80 / pw.Config.Neolithic.ToolCoveragePerWorker;
+        var pf = MaterialEconomy.Forecast(pw, pc, NeolithicProduction.Recipes(pw.Config), 80, 20, pe, false, -1, true, true);
+        var pr = new TurnRecord(); NeolithicProduction.ResolveCampNeolithic(pw, pc, 80, 20, pr);
+        Near(Sum(pr, CraftGood.HousingMaterial, p => p.Output), pf[CraftGood.HousingMaterial], "planned staffing realizes the forecast Housing Material", 1e-6);
+        Near(Sum(pr, CraftGood.Housing, p => p.Output), pf[CraftGood.Housing], "planned staffing realizes the forecast Housing", 1e-6);
+    }
+    private static void ContendedConservation()
+    {
+        foreach (var (h, t, wood, clay) in new[] { (.20, .15, 1, 0d), (.15, .20, 1, 0d), (.20, .15, .125, 50d), (.20, .15, .125, .1), (.20, .15, 500d, 500d) })
+        {
+            var x = Contended(h, t, wood, clay); var r = Resolve(x); var c = x.C;
+            double woodUsed = r.Production.Sum(p => p.Wood), clayUsed = r.Production.Sum(p => p.Clay);
+            Near(wood - c.Inventory.Wood, woodUsed, "Wood debit equals the receipts");
+            Near(clay - c.Inventory.Clay, clayUsed, "Clay debit equals the receipts");
+            Check(c.Inventory.Wood >= -1e-9 && c.Inventory.Clay >= -1e-9 && c.Inventory.HousingMaterial >= -1e-9, "nothing is over-committed");
+            Near(Sum(r, CraftGood.HousingMaterial, p => p.Wood + p.Clay), Sum(r, CraftGood.HousingMaterial, p => p.Output), "one Wood or Clay unit per Housing Material");
+            Near(Sum(r, CraftGood.HousingMaterial, p => p.Output) - Sum(r, CraftGood.Housing, p => p.HousingMaterial), c.Inventory.HousingMaterial, "Housing Material balance is conserved");
+        }
+    }
+    private static string RunContended(PhaseExecution execution, bool reverse)
+    {
+        var x = Contended(.20, .15, 6, 2); var w = x.W; var c = x.C;
+        var second = new Camp { Id = w.NextId++, Player = 1, Tile = 100, Population = 300, PlantFood = 20000 }; second.Technology = Technology.Cultivation; second.Technologies[(int)Technology.Cultivation] = true;
+        second.People.Progression.Era = Era.Neolithic; w.Camps.Add(second); Ownership.Bind(w);
+        Enable(second); second.CraftingPriorities.Tools = .15; second.Inventory.Wood = 5; second.Inventory.Clay = 0; second.Inventory.Stone = 500; second.Inventory.HandTools = 1;
+        second.Workforce.Assign(WorkforceRoles.Builder, 1, second.Population); second.Workforce.Assign(WorkforceRoles.Toolmaker, 1, second.Population);
+        if (reverse) w.Camps.Reverse();
+        var resolver = new TurnResolver(execution);
+        for (int turn = 0; turn < 4; turn++) resolver.Resolve(w, new Dictionary<int, List<Order>>());
+        Check(w.History.Sum(h => h.Production.Where(p => p.Good == CraftGood.HousingMaterial).Sum(p => p.Output)) > 0, "the contended replay produces Housing Material");
+        return SaveCodec.Fingerprint(w);
+    }
+    private static void ContendedScalarVersusParallel()
+    {
+        Check(RunContended(new PhaseExecution(), false) == RunContended(new PhaseExecution(4, 1, true, 1), true), "contended scalar and reversed 4-worker fingerprints are equal across four turns");
     }
 }

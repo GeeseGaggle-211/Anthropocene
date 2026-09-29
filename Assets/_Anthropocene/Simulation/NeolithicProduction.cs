@@ -409,14 +409,13 @@ namespace Anthropocene.Simulation
                 double missingEquipmentWorkers = Math.Max(0, Math.Min(c.Population, c.EconomicLabor.EquipmentTarget) - assignedEquipmentWorkers);
                 labor[WorkforceRoles.Craftsperson] += missingEquipmentWorkers * referenceIntervals;
             }
-            // First retain the direct material inputs that the normal
-            // priority-ordered workforce schedule can actually use.  This is a
-            // material reservation pass only: it does not reorder workers, and
-            // it still lets Housing consume its place in each role's priority
-            // schedule.  The reservation is then applied to the same schedule
-            // so a Builder cannot consume Wood needed by a later Farm Tool job
-            // without moving that job ahead of Housing.
-            var directReserve = MaterialEconomy.Materials.ToDictionary(m => m, _ => 0d);
+            // First find the direct work the normal priority-ordered workforce
+            // schedule can actually use.  This is a planning pass only: it does not
+            // reorder workers.  The plan built from it gives Housing Material its
+            // ordinary place in the material-access order (direct work ranked above
+            // it keeps its inputs; work ranked below is only softly reserved and
+            // must leave Housing Material's claim), then the same schedule runs
+            // with that plan, as the resolver does.
             var probeRoom = new Dictionary<MaterialId, double>(room);
             var probePlant = plant;
             var probeAnimalFood = animalFood;
@@ -450,9 +449,6 @@ namespace Anthropocene.Simulation
                     probeRoom[MaterialId.Stone] -= amount * recipe.Stone;
                     probeRoom[MaterialId.Clay] -= amount * recipe.Clay;
                     probeRoom[MaterialId.Wood] -= amount * recipe.Wood;
-                    directReserve[MaterialId.Stone] += amount * recipe.Stone;
-                    directReserve[MaterialId.Clay] += amount * recipe.Clay;
-                    directReserve[MaterialId.Wood] += amount * recipe.Wood;
                     probePlant -= amount * recipe.PlantFood;
                     probeAnimalFood -= amount * recipe.AnimalFood;
                     probeAnimalFabric += recipe.Good == CraftGood.AnimalFabric ? amount : 0;
@@ -464,8 +460,8 @@ namespace Anthropocene.Simulation
             }
 
             var planned = recipes.ToDictionary(r => r.Good, r => 0d);
-            double availableWood = room[MaterialId.Wood], availableClay = room[MaterialId.Clay];
-            MaterialEconomy.HousingShares(availableWood, availableClay, directReserve[MaterialId.Wood], directReserve[MaterialId.Clay], out double housingWoodShare, out double housingClayShare);
+            double housingWoodDrawn = 0;
+            var housingPlan = MaterialEconomy.BuildHousingPlan(recipes, good => Priority(c, good), probePlanned, room[MaterialId.Stone], room[MaterialId.Clay], room[MaterialId.Wood]);
             foreach (var role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
             {
                 if (!labor.TryGetValue(role, out double availableLabor)) continue;
@@ -481,22 +477,16 @@ namespace Anthropocene.Simulation
                     if (recipe.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / recipe.Stone);
                     if (recipe.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / recipe.Clay);
                     if (recipe.Wood > 0) amount = Math.Min(amount, room[MaterialId.Wood] / recipe.Wood);
+                    if (recipe.ConstructionMaterial <= 0 && (recipe.Wood > 0 || recipe.Clay > 0))
+                        amount = housingPlan.LimitDirect(room[MaterialId.Wood], room[MaterialId.Clay], recipe, amount);
                     if (recipe.ConstructionMaterial > 0)
-                    {
-                        if (housingWoodShare + housingClayShare <= 0) amount = 0;
-                        else
-                        {
-                            double freeWood = Math.Max(0, room[MaterialId.Wood] - directReserve[MaterialId.Wood]);
-                            double freeClay = Math.Max(0, room[MaterialId.Clay] - directReserve[MaterialId.Clay]);
-                            amount = Math.Min(amount, (freeWood + freeClay) / recipe.ConstructionMaterial);
-                        }
-                    }
+                        amount = housingPlan.LimitHousing(room[MaterialId.Wood], room[MaterialId.Clay], amount, recipe.ConstructionMaterial, out _, out _);
                     if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                     if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
                     if (recipe.AnimalFabric > 0) amount = Math.Min(amount, animalFabric / recipe.AnimalFabric);
                     if (recipe.HousingMaterial > 0) amount = Math.Min(amount, housingMaterial / recipe.HousingMaterial);
                     if (recipe.Good == CraftGood.HousingMaterial) amount = Math.Min(amount, FlatHousingMaterialLimit(rate, availableLabor, wanted, housingMaterial));
-                    if (amount <= 1e-12) continue;
+                    if (amount <= 1e-12) { housingPlan.Settle(recipe, role); continue; }
                     availableLabor -= amount / rate;
                     planned[recipe.Good] += amount;
                     // Material making is labour, not equipment output: it adds no
@@ -515,26 +505,19 @@ namespace Anthropocene.Simulation
                         copperLabor -= copperRate > 0 ? copperAmount / copperRate : 0;
                     }
                     room[MaterialId.Stone] -= amount * recipe.Stone; room[MaterialId.Clay] -= amount * recipe.Clay; room[MaterialId.Wood] -= amount * recipe.Wood;
-                    directReserve[MaterialId.Stone] = Math.Max(0, directReserve[MaterialId.Stone] - amount * recipe.Stone);
-                    directReserve[MaterialId.Clay] = Math.Max(0, directReserve[MaterialId.Clay] - amount * recipe.Clay);
-                    directReserve[MaterialId.Wood] = Math.Max(0, directReserve[MaterialId.Wood] - amount * recipe.Wood);
                     if (recipe.ConstructionMaterial > 0)
                     {
-                        double used = amount * recipe.ConstructionMaterial;
-                        double freeWood = Math.Max(0, room[MaterialId.Wood] - directReserve[MaterialId.Wood]);
-                        double freeClay = Math.Max(0, room[MaterialId.Clay] - directReserve[MaterialId.Clay]);
-                        double wood = Math.Min(freeWood, used * housingWoodShare);
-                        double clay = Math.Min(freeClay, used - wood);
-                        wood += Math.Min(freeWood - wood, used - wood - clay);
-                        clay += Math.Min(freeClay - clay, used - wood - clay);
-                        room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= clay;
+                        housingPlan.LimitHousing(room[MaterialId.Wood], room[MaterialId.Clay], amount, recipe.ConstructionMaterial, out double wood, out double clay);
+                        room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= clay; housingWoodDrawn += wood;
                     }
+                    housingPlan.CompleteDirect(recipe, amount);
                     plant -= amount * recipe.PlantFood;
                     animalFood -= amount * recipe.AnimalFood;
                     animalFabric += recipe.Good == CraftGood.AnimalFabric ? amount : 0;
                     animalFabric -= amount * recipe.AnimalFabric;
                     housingMaterial += recipe.Good == CraftGood.HousingMaterial ? amount : 0;
                     housingMaterial -= amount * recipe.HousingMaterial;
+                    housingPlan.Settle(recipe, role);
                 }
                 labor[role] = availableLabor;
             }
@@ -545,9 +528,14 @@ namespace Anthropocene.Simulation
             capacity += copperOutput;
             double deficit = Math.Max(0, useful - capacity);
             var regularRecipe = Recipes(w.Config).Single(r => r.Good == CraftGood.Tools);
+            // Regular Tools hold their place in the same access order: Wood that
+            // Housing Material drew is unavailable to them only if it outranks them.
+            bool toolsOutrankHousing = Priority(c, CraftGood.Tools) > Priority(c, CraftGood.HousingMaterial) ||
+                Priority(c, CraftGood.Tools) == Priority(c, CraftGood.HousingMaterial) && ScheduleKey(CraftGood.Tools) < ScheduleKey(CraftGood.HousingMaterial);
+            double toolWoodRoom = room[MaterialId.Wood] + (toolsOutrankHousing ? housingWoodDrawn : 0);
             bool regularFeasible = c.People.HasTech(NeolithicTech.Toolmaking) && c.CraftingPriorities.Tools > 0 &&
                 (regularRecipe.Stone <= 0 || room[MaterialId.Stone] > 1e-12) &&
-                (regularRecipe.Wood <= 0 || room[MaterialId.Wood] > 1e-12);
+                (regularRecipe.Wood <= 0 || toolWoodRoom > 1e-12);
             // Feasible Regular Tools carry the whole deficit; otherwise Hand Tools do.
             if (regularFeasible) return (0, deficit / 4);
             double specialistSupply = c.People.HasTech(NeolithicTech.Toolmaking)
@@ -705,6 +693,10 @@ namespace Anthropocene.Simulation
             if (recipe.AnimalFood > 0) amount = Math.Min(amount, c.AnimalFood / recipe.AnimalFood);
             if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, inv.AnimalFabric) / recipe.AnimalFabric);
             if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, inv.HousingMaterial) / recipe.HousingMaterial);
+            // A recipe ranked below Housing Material leaves the Wood/Clay its
+            // unfinished claim needs, whichever role happens to run first.
+            if (housing != null && recipe.ConstructionMaterial <= 0 && (recipe.Wood > 0 || recipe.Clay > 0))
+                amount = housing.LimitDirect(inv.Wood, inv.Clay, recipe, amount);
             if (recipe.ConstructionMaterial > 0)
             {
                 if (housing == null) amount = Math.Min(amount, (inv.Wood + inv.Clay) / recipe.ConstructionMaterial);
@@ -783,6 +775,7 @@ namespace Anthropocene.Simulation
                                 : Demand(w, c, recipe.Good, years, -1, true, true);
                             int before = record.Production.Count;
                             labor -= Produce(w, c, recipe, role, labor, intervals, target, ref equipment, record, coverage, housing);
+                            housing?.Settle(recipe, role);
                             if (record.Production.Count > before)
                                 produced[recipe.Good] = (produced.TryGetValue(recipe.Good, out double prior) ? prior : 0) + record.Production[record.Production.Count - 1].Output;
                         }
