@@ -82,6 +82,9 @@ namespace Anthropocene.Presentation
             string output = Path.GetFullPath(directory); Directory.CreateDirectory(output);
             NewGame(); while (generating != null) yield return null;
             if (world == null) throw new InvalidOperationException("Neolithic smoke generation failed.");
+            // The fixture below edits the committed world; let the adoption-time AI draft finish
+            // reading it first, and plan a fresh draft once the fixture is in place.
+            while (drafting != null && !drafting.IsCompleted) yield return null;
             // Explicit synthetic capability/inventory fixture on real generated geography.
             // This opt-in route neither grants a technology through player controls nor
             // uses a user's save slot; it tests the production UI after capability unlock.
@@ -91,7 +94,7 @@ namespace Anthropocene.Presentation
             camp.Inventory.HandTools = 20; camp.Inventory.Cloth = 100;
             NeolithicProduction.AddFixedHousing(world, camp, 25, world.Days);
             world.Config.AnnualHumanGrowthRate = 0; transitionDismissed = true;
-            Refresh(); villageInspectorOpen = true; villageInspectorCampId = camp.Id;
+            Refresh(); StartDraft(); villageInspectorOpen = true; villageInspectorCampId = camp.Id;
             string before = SaveCodec.Fingerprint(world);
             var intent = EconomicIntent.From(camp); intent.Assignments.Clear();
             intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = 20 });
@@ -141,6 +144,9 @@ namespace Anthropocene.Presentation
             string output = Path.GetFullPath(directory); Directory.CreateDirectory(output);
             NewGame(); while (generating != null) yield return null;
             if (world == null) throw new InvalidOperationException("Husbandry smoke generation failed.");
+            // The fixture below edits the committed world; let the adoption-time AI draft finish
+            // reading it first, and plan a fresh draft once the fixture is in place.
+            while (drafting != null && !drafting.IsCompleted) yield return null;
             var camp = world.Camps.Single(c => c.Player == 0);
             camp.Population = 100; camp.PlantFood = camp.AnimalFood = camp.AquaticFood = 0;
             camp.Technology = Technology.AnimalHusbandry; camp.Technologies[(int)Technology.AnimalHusbandry] = true;
@@ -152,7 +158,7 @@ namespace Anthropocene.Presentation
             camp.Inventory.AnimalFabric = animalFabricStock; camp.Inventory.LightHousingUnits = 8; camp.Inventory.HerdingTools = herdingToolStock;
             world.FixedHousing ??= new System.Collections.Generic.List<FixedHousingStock>();
             world.FixedHousing.Add(new FixedHousingStock { CampId = camp.Id, Tile = camp.Tile, Units = 12, LastUpdatedDays = world.Days });
-            world.Config.AnnualHumanGrowthRate = 0; transitionDismissed = true; Refresh(); villageInspectorOpen = true; villageInspectorCampId = camp.Id;
+            world.Config.AnnualHumanGrowthRate = 0; transitionDismissed = true; Refresh(); StartDraft(); villageInspectorOpen = true; villageInspectorCampId = camp.Id;
             string before = SaveCodec.Fingerprint(world);
             var intent = EconomicIntent.From(camp); intent.Assignments.Clear(); intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = 50 }); intent.ManagedBreedingIntensity = 0; intent.AutomationTurns = 0;
             intent.Priorities.AnimalFabric = .31; intent.Priorities.LightHousing = .22; intent.Priorities.HerdingTools = .13;

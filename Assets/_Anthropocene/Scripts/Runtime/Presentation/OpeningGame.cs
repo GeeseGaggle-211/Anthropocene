@@ -20,6 +20,9 @@ namespace Anthropocene.Presentation
         private Task<WorldState> generating;
         private Task saving;
         private Task<TurnRecord> resolving;
+        // WP1: AI planning for the committed world while the player thinks. Advisory only; the stamp
+        // check in TurnPlanner.Prepare and below discards it for any other world or turn.
+        private Task<PlanningDraft> drafting;
         private string operation = "Building the world";
         private Texture2D hex;
         private GUIStyle text, title, glyph, small, button, badge, section, centered;
@@ -58,7 +61,7 @@ namespace Anthropocene.Presentation
             if (resolving != null && resolving.IsCompleted) { if (resolving.IsFaulted) status = "Turn failed: " + resolving.Exception.GetBaseException().Message; else FinishTurn(resolving.Result); resolving = null; }
             if (generating == null || !generating.IsCompleted) return;
             if (generating.IsFaulted) status = "World generation failed: " + generating.Exception.GetBaseException().Message;
-            else { world = generating.Result; InvalidateWorldPreview(); previewOpen = previewAfterGeneration; previewAfterGeneration = false; menu = false; planned.Clear(); journal.Clear(); lastResolutionSummary = ""; FocusCamp(); Refresh(); status = operation == "Loading the saved opening" ? "Saved opening restored." : "Your people gather automatically. Choose orders, then commit the generation."; transitionDismissed = operation == "Loading the saved opening" && (world.Camps.FirstOrDefault(c => c.Player == 0)?.Technology ?? Technology.None) != Technology.None; }
+            else { world = generating.Result; drafting = null; InvalidateWorldPreview(); previewOpen = previewAfterGeneration; previewAfterGeneration = false; menu = false; planned.Clear(); journal.Clear(); lastResolutionSummary = ""; FocusCamp(); Refresh(); status = operation == "Loading the saved opening" ? "Saved opening restored." : "Your people gather automatically. Choose orders, then commit the generation."; transitionDismissed = operation == "Loading the saved opening" && (world.Camps.FirstOrDefault(c => c.Player == 0)?.Technology ?? Technology.None) != Technology.None; StartDraft(); }
             generating = null;
         }
         private void OnDestroy() { if (hex != null) Destroy(hex); InvalidateWorldPreview(); }
@@ -98,6 +101,7 @@ namespace Anthropocene.Presentation
         }
         private void NewGame()
         {
+            drafting = null;
             int seed = PlaytestScenarios.Seed;
             if (scenarioIndex == 0 && !int.TryParse(seedText, out seed)) { status = "Enter a whole-number seed."; return; }
             var config = new SimulationConfig();
@@ -152,6 +156,7 @@ namespace Anthropocene.Presentation
             var camp = world.Camps.First(c => c.Player == 0);
             string season = (world.Config.TurnDays / world.Config.DaysPerYear).ToString("0.#") + " years per turn | " + (world.Days / world.Config.DaysPerYear).ToString("0.#") + " years elapsed";
             string timeState = world.LinkedPopulation(camp) <= 0 ? "Tribe extinct" : season;
+            if (drafting != null && !drafting.IsCompleted) timeState += "  |  Rivals planning...";
             string acquired = observation == null ? "" : string.Join(", ", observation.TechnologyStatuses.Where(s => s.Acquired).Select(s => TechName(s.Technology)));
             GUI.Label(new Rect(270, 12, Mathf.Max(140, Screen.width - side - 280), 46), "Turn " + world.Turn + "  |  " + timeState + "\n" + (camp.Technology == Technology.None ? "Paleolithic" : "Neolithic: " + acquired), text);
             float x = Screen.width - side + 10;
@@ -441,11 +446,27 @@ namespace Anthropocene.Presentation
             if (saving != null || world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) <= 0) return;
             resolvingSummary = CommitPreview();
             var playerOrders = planned.Values.OrderBy(o => o.Entity).Select(o => o.Copy()).ToList();
+            var committed = world; var pendingDraft = drafting; drafting = null;
             resolving = Task.Run(() =>
             {
-                var ai = AiPlanning.Decide(world, PhaseExecution.Desktop, 0); ai.Orders[0] = playerOrders;
-                var prepared = TurnPlanner.Prepare(world, ai.Orders, ai.Traces, PhaseExecution.Desktop);
-                return resolver.Resolve(world, prepared);
+                PlanningDraft draft = null;
+                if (pendingDraft != null)
+                {
+                    // Wait for the same-world draft; a faulted or mismatched draft is ignored and the turn plans as before.
+                    try { draft = pendingDraft.Result; } catch (AggregateException) { draft = null; }
+                    if (draft != null && !draft.Matches(committed)) draft = null;
+                }
+                PlanningResult ai;
+                if (draft != null)
+                {
+                    // Copy the draft's dictionary so the shared draft is never mutated by the player's orders.
+                    ai = new PlanningResult { Traces = new List<DecisionTrace>(draft.Ai.Traces) };
+                    foreach (var pair in draft.Ai.Orders) ai.Orders[pair.Key] = pair.Value;
+                }
+                else ai = AiPlanning.Decide(committed, PhaseExecution.Desktop, 0);
+                ai.Orders[0] = playerOrders;
+                var prepared = TurnPlanner.Prepare(committed, ai.Orders, ai.Traces, PhaseExecution.Desktop, draft);
+                return resolver.Resolve(committed, prepared);
             });
         }
         private void FinishTurn(TurnRecord record)
@@ -515,6 +536,17 @@ namespace Anthropocene.Presentation
                 status = "Village abandoned. Former fields and fixed housing no longer support this camp.";
             }
             if (!world.Hunters.Any(h => h.Id == selected)) selected = player.Id;
+            StartDraft();
+        }
+        // Plan the AI players on a worker for the newly committed world. Caches attached to the world
+        // are created here on the main thread first so the worker only reads shared state.
+        private void StartDraft()
+        {
+            drafting = null;
+            if (world == null) return;
+            var committed = world;
+            TurnPlanner.Prewarm(committed);
+            drafting = Task.Run(() => TurnPlanner.Draft(committed, 0, PhaseExecution.Desktop));
         }
         private void Refresh() { observation = builder.Build(world, 0); if (!observation.Tiles.ContainsKey(inspected)) inspected = -1; }
         private void FocusCamp() { var camp = world.Camps.First(c => c.Player == 0); center = camp.Tile; selected = camp.Id; pan = Vector2.zero; mode = "Inspect"; }
@@ -534,6 +566,7 @@ namespace Anthropocene.Presentation
         private void Load()
         {
             if (saving != null || generating != null) return;
+            drafting = null;
             previewAfterGeneration = false; string path = SavePath; operation = "Loading the saved opening";
             generating = Task.Run(() => SaveCodec.Load(File.ReadAllBytes(path)));
         }

@@ -43,6 +43,7 @@ namespace Anthropocene.Simulation
         public readonly int Turn;
         public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans;
         public long FoodForecastQueries, FoodInvestmentComparisons;
+        public long DraftIntentsReused, DraftIntentsRecomputed;
         public TurnDiagnostics(int turn) { Turn = turn; }
         public static TurnDiagnostics For(WorldState world)
         {

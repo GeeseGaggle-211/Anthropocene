@@ -14,6 +14,7 @@
     <Compile Include="Milestone2Checks.cs" />
     <Compile Include="Milestone3Checks.cs" />
     <Compile Include="ExecutionChecks.cs" />
+    <Compile Include="PlanningDraftChecks.cs" />
     <Compile Include="AgentContractChecks.cs" />
     <Compile Include="EcologyChecks.cs" />
     <Compile Include="FoundationChecks.cs" />
