@@ -56,9 +56,11 @@ namespace Anthropocene.Simulation
 
     // Value-based fulfilment (ValueModelDesign.md, "Fulfilment rule: search on w").
     // Each need claim buys coverage c*(w) = ln(V / (w * l)) / lambda at labour
-    // price w, so its output is clamp(c* * D - Stock, 0, Quantity). The path
-    // position s maps to w on a log scale from w_hi (nothing worth making) to
-    // w_lo (every claim at full coverage), so shares are nondecreasing in s.
+    // price w, so its output is clamp(c* * D - Stock, 0, Quantity). Coverage is
+    // measured against the need level D (this turn's requirement), which useful
+    // demand may exceed. The path position s maps to w on a log scale from w_hi
+    // (nothing worth making) to w_lo (every claim at its full useful demand), so
+    // shares are nondecreasing in s.
     // Goods the value model does not price (Pots, Farm and Herding Tools) take
     // the uniform share s, as does a priced good with no usable labour estimate;
     // a priced good whose value is zero (priority 0, or B = 0) gets share 0.
@@ -88,7 +90,10 @@ namespace Anthropocene.Simulation
                 any = true;
                 double first = c.FirstUnitValue / c.LabourPerUnit;
                 if (first > hi) hi = first;
-                double full = first * Math.Exp(-Steepness);
+                // Full useful demand may exceed the need level (clothing carries a
+                // finished-goods reserve beyond this turn's requirement), so the
+                // path's end is the price at which every claim reaches Stock + Quantity.
+                double full = first * Math.Exp(-Steepness * (c.Stock + c.Quantity) / c.Need);
                 if (full < lo) lo = full;
             }
             return any;
@@ -288,16 +293,23 @@ namespace Anthropocene.Simulation
                 return l;
             }
             bool value = n.ValueFulfilmentSelected;
+            // Clothing coverage is measured against this turn's requirement for the
+            // prior cohort, with Cloth and Animal Fabric counted as one clothing
+            // stock. Useful demand also carries the finished-goods reserve; reserve
+            // units lie beyond coverage 1, where the curve values them little.
+            // Shelter's useful demand is this turn's requirement already.
+            double clothingNeed = d.Preview.Population * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
+            double clothingStock = Math.Max(0, c.Inventory.Cloth) + Math.Max(0, c.Inventory.AnimalFabric);
             foreach (var claim in d.Claims)
             {
                 if (!IsNeedGood(claim.Good)) continue;
-                double stock = claim.Good == CraftGood.Cloth ? Math.Max(0, c.Inventory.Cloth)
-                    : claim.Good == CraftGood.AnimalFabric ? Math.Max(0, c.Inventory.AnimalFabric) : housingSupply;
+                bool clothing = claim.Good == CraftGood.Cloth || claim.Good == CraftGood.AnimalFabric;
+                double stock = clothing ? clothingStock : housingSupply;
                 double defaultPriority = NeolithicProduction.Priority(DefaultPriorities, claim.Good);
                 double multiplier = defaultPriority > 0 ? claim.Priority / defaultPriority : (claim.Priority > 0 ? 1 : 0);
                 claim.Valued = true;
                 claim.Stock = stock;
-                claim.Need = stock + claim.Quantity;
+                claim.Need = clothing ? clothingNeed : stock + claim.Quantity;
                 claim.LabourPerUnit = Labour(claim.Recipe);
                 claim.FirstUnitValue = (claim.Good == CraftGood.Cloth || claim.Good == CraftGood.AnimalFabric ? clothingV : housingV) * multiplier;
                 if (value) claim.Value = claim.FirstUnitValue;

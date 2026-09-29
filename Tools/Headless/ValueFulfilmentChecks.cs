@@ -37,7 +37,10 @@ internal static class ValueFulfilmentChecks
         {
             double need = 1 + rng.NextDouble() * 200, cover = rng.NextDouble() * .9;
             bool valued = rng.NextDouble() < .8;
-            claims.Add(Claim((CraftGood)(i % 9), need * (1 - cover), need * cover, .05 + rng.NextDouble() * 10, .5 + rng.NextDouble() * 300, valued));
+            var claim = Claim((CraftGood)(i % 9), need * (1 - cover), need * cover, .05 + rng.NextDouble() * 10, .5 + rng.NextDouble() * 300, valued);
+            // Half the claims carry a reserve: useful demand beyond the need level, as clothing does.
+            if (rng.NextDouble() < .5) claim.Need = (claim.Stock + claim.Quantity) / (1 + rng.NextDouble());
+            claims.Add(claim);
         }
         return claims;
     }
@@ -116,7 +119,7 @@ internal static class ValueFulfilmentChecks
             for (int i = 0; i < claims.Count; i++)
             {
                 if (!ValueFulfilment.IsNeed(claims[i])) continue;
-                var doubled = claims.Select(x => Claim(x.Good, x.Quantity, x.Stock, x.LabourPerUnit, x.FirstUnitValue, x.Valued)).ToList();
+                var doubled = claims.Select(x => { var y = Claim(x.Good, x.Quantity, x.Stock, x.LabourPerUnit, x.FirstUnitValue, x.Valued); y.Need = x.Need; return y; }).ToList();
                 doubled[i].FirstUnitValue *= 2;
                 var after = new double[claims.Count];
                 for (int step = 0; step <= 40; step++)
@@ -152,7 +155,7 @@ internal static class ValueFulfilmentChecks
         Check(ref checks, Math.Abs(cloth.LabourPerUnit - (1 / (cloth.Rate * perYear) + nn.PlantFoodPerFabricUnit / gather)) < 1e-12, "Cloth l = weaving time + plant feedstock gathering");
         double housingLabour = 1 / (housing.Rate * perYear * demand.HousingMultiplier) + nn.HousingMaterialUnitsPerHousing / (nn.SpecialistMaterialExtractionRate * perYear);
         Check(ref checks, Math.Abs(housing.LabourPerUnit - housingLabour) < 1e-12, "Housing l = building time + construction material extraction");
-        Check(ref checks, cloth.Need == cloth.Stock + cloth.Quantity && housing.Need == housing.Stock + housing.Quantity && housing.Stock == NeolithicProduction.HousingSupply(vw, demand.Preview, vw.Days + 20 * vw.Config.DaysPerYear), "need level is stock plus useful quantity against the planner's own stock");
+        Check(ref checks, Math.Abs(cloth.Need - demand.Preview.Population * vw.Config.Neolithic.FabricConsumptionPerPersonTurn * (vw.Config.TurnDays / vw.Config.DaysPerYear) / vw.Config.Neolithic.ReferenceTurnYears) < 1e-9 && cloth.Stock == Math.Max(0, vw.Camps.First(x => x.Id == demand.Preview.Id).Inventory.Cloth) + Math.Max(0, vw.Camps.First(x => x.Id == demand.Preview.Id).Inventory.AnimalFabric) && housing.Need == housing.Stock + housing.Quantity && housing.Stock == NeolithicProduction.HousingSupply(vw, demand.Preview, vw.Days + 20 * vw.Config.DaysPerYear), "clothing need is this turn's requirement over the shared clothing stock; shelter need is stock plus useful quantity");
         if (Info)
             foreach (var claim in new[] { cloth, housing })
                 Console.WriteLine("WP3_INFO " + claim.Good + " V=" + claim.FirstUnitValue.ToString("F4") + " l=" + claim.LabourPerUnit.ToString("F4") + " V/l=" + (claim.FirstUnitValue / claim.LabourPerUnit).ToString("F3") + " D=" + claim.Need.ToString("F2") + " stock=" + claim.Stock.ToString("F2") + " Q=" + claim.Quantity.ToString("F2") + " E=" + e + " S=" + sCoh.ToString("F4") + " L=" + life.ToString("F2"));
