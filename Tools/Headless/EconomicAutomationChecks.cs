@@ -42,7 +42,7 @@ internal static class EconomicAutomationChecks
     }
     public static int Run()
     {
-        checks = 0; RolesAndRates(); Labor(); Planning(); Persistence(); PreparedBoundary(); DestinationPreparation(); LocalSourceIndex(); FabricDoesNotFundBirths(); FabricUsesPriorResidents(); StarvationUsesPriorCohort(); PlanningResidentPopulationIgnoresStaleIncome();
+        checks = 0; RolesAndRates(); Labor(); Planning(); DemandSnapshot(); Persistence(); PreparedBoundary(); DestinationPreparation(); LocalSourceIndex(); FabricDoesNotFundBirths(); FabricUsesPriorResidents(); StarvationUsesPriorCohort(); PlanningResidentPopulationIgnoresStaleIncome();
         Console.WriteLine("PASS: " + checks + " demand automation assertions"); return checks;
     }
     private static void RolesAndRates()
@@ -129,6 +129,23 @@ internal static class EconomicAutomationChecks
         Check(!shortage.Assignments.Any(a => a.Role == WorkforceRoles.Weaver), "food needed for meals cannot also justify idle Weavers");
         foreach (int population in new[] { 1, 2, 7, 24, 250, 1000 })
         { var tiny = Fixture(); tiny.Camps[0].Population = population; Budget(tiny, EconomicIntents.Automatic(tiny, tiny.Camps[0], true)); }
+    }
+    // The planner's demand pass is pure and yields one claim per plannable good.
+    private static void DemandSnapshot()
+    {
+        var w = Fixture(); var c = w.Camps[0]; Field(w);
+        c.Inventory.HandTools = 1000;
+        foreach (string tech in NeolithicTech.FirstTier) c.People.NeolithicTechnologies.Add(tech);
+        string before = SaveCodec.Fingerprint(w);
+        var d = CampProductionDemand.Build(w, c, EconomicIntent.From(c));
+        Check(before == SaveCodec.Fingerprint(w), "demand pass does not mutate world or stocks");
+        Check(d.Claims.Select(x => x.Good).SequenceEqual(d.Goods.Select(r => r.Good)), "one claim per plannable good in recipe order");
+        Check(d.Claims.All(x => x.Quantity == d.Goals[x.Good] && x.Value == x.Priority), "claims carry the demand-pass quantities and default value");
+        Check(d.Claims.Single(x => x.Good == CraftGood.FarmTools).Quantity == 0, "Farm Tools are sized from the bounded field workforce, not the demand pass");
+        var cloth = d.Claims.Single(x => x.Good == CraftGood.Cloth);
+        Check(cloth.Quantity > 0 && cloth.Role == WorkforceRoles.Weaver && cloth.Rate == cloth.Recipe.Rate, "unlocked specialists carry their full recipe rate");
+        var again = CampProductionDemand.Build(w, c, EconomicIntent.From(c));
+        Check(again.Claims.Select(x => (x.Good, x.Quantity, x.Priority, x.Role, x.Rate)).SequenceEqual(d.Claims.Select(x => (x.Good, x.Quantity, x.Priority, x.Role, x.Rate))), "demand pass is deterministic");
     }
     private static void Persistence()
     {

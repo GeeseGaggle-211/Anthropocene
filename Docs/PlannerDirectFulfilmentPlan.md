@@ -1,7 +1,7 @@
 # Planner direct fulfilment plan (B3)
 
-Status: approved plan, 29 September 2026. Phase 1 is implemented. Phases 2–4
-are not implemented. This is a design and sequencing record, not a normative
+Status: approved plan, 29 September 2026. Phases 1 and 2 are implemented.
+Phases 3–4 are not implemented; Phase 3 needs the fulfilment-rule decision. This is a design and sequencing record, not a normative
 contract; `EconomicAutomation.md` and `TurnResolutionPasses.md` remain the rule
 sources until Phase 4 updates them.
 
@@ -142,8 +142,18 @@ that the new method is better, because it may require recalibration.
   with a housing reserve, a two-layer tool-coverage balance, and the planner's
   capped material/food pass), not one algorithm called three times. Unifying
   them changes results, so the shared kernel moves to Phase 3.
-- **Phase 2 — demand snapshot.** Introduce `CampProductionDemand`; the
-  existing search consumes it. Gate: exact parity.
+- **Phase 2 — demand snapshot (implemented).** `ProductionDemand.cs` adds
+  `CampProductionDemand.Build`, the planner's demand pass: footprint and field
+  state, food supply and envelopes, herder reservation, known sources and
+  material room, the prepared preview, per-good goals and the housing
+  multiplier, built once per `Plan`. It also exposes `ProductionClaim`s (good,
+  recipe, quantity, priority, value, role, rate) as the fulfilment-rule input;
+  `Value` defaults to `Priority` and is unused by the current uniform rule.
+  The existing search reads the snapshot unchanged. Results: per-turn
+  fingerprints match Phase 1 on `start-80-11` (scalar, four workers,
+  reversed), `start-80-1729` and `start-320-1729`; both headless suites are
+  unchanged apart from six new demand-snapshot assertions (purity, one claim
+  per good, quantities, deferred Farm Tools, specialist rates, determinism).
 - **Phase 3 — direct fulfilment solver.** Replace bisection with the
   breakpoint solve, unify the three production schedules into one kernel
   shared with the resolver, and apply decision 2. Gate: invariants (labor ≤ residents,

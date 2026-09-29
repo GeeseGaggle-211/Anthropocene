@@ -9,7 +9,7 @@ namespace Anthropocene.Simulation
     // to create food, materials, equipment, people or technology in the resolver.
     public static class EconomicPlanner
     {
-        private const double Epsilon = 1e-8;
+        internal const double Epsilon = 1e-8;
         private const int SearchIterations = 6;
         private sealed class Proposal
         {
@@ -21,85 +21,19 @@ namespace Anthropocene.Simulation
             Interlocked.Increment(ref TurnDiagnostics.For(w).PlanCalls);
             var e = settings.Copy(); e.Assignments.Clear(); e.Labor = null;
             if (c.Population <= 0 || !CultivationEconomy.EconomyEnabled(c)) { e.AutomationTurns = 0; return e; }
-            bool cultivationEnabled = CultivationEconomy.Enabled(c);
-            bool husbandryEnabled = CultivationEconomy.HusbandryEnabled(c);
             var cfg = w.Config; var n = cfg.Neolithic;
             double intervals = cfg.GenerationIntervals, years = cfg.TurnDays / cfg.DaysPerYear;
-            // The configured one-tile work radius lies wholly inside the owner's
-            // two-tile vision. No global own-group visibility scan is needed here.
-            var footprint = cultivationEnabled ? CultivationEconomy.Footprint(w, c).ToArray() : Array.Empty<int>();
-            if (!footprint.Contains(e.Focus)) e.Focus = -1;
-            var operated = footprint.Where(id => w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == c.Id).ToArray();
-            bool? retainedExpansionPossible = null;
-            bool HasRetainedExpansionGain()
-            {
-                if (!retainedExpansionPossible.HasValue)
-                    retainedExpansionPossible = operated.Any(id => ExpansionGain(w, id) > Epsilon);
-                return retainedExpansionPossible.Value;
-            }
-            double upkeep = cultivationEnabled ? CultivationEconomy.MaintenanceFarmersForPlanning(w, c, years) : 0;
-            bool established = cultivationEnabled && operated.Any(id => LazyEcology.ProjectEcology(w, id, w.Days).CultivationCapital > 0);
-            var eligible = w.Map.Radius(c.Tile, cfg.GatherRadius).Where(id => PassiveGathering.Eligible(w, c, id)).OrderBy(id => id).ToArray();
-            // Ask the same finite-stock kernel that resolves actual claims for
-            // the no-contention supply envelope. Aquatic food keeps its own
-            // horizon flow; land can only yield its opening accessible stock.
-            double FoodAvailability(int id)
-            {
-                double request = LazyEcology.AccessibleAvailability(w, id, w.Days,
-                    cfg.TurnDays, operated.Contains(id) ? 1 : 0);
-                if (request <= 0) return 0;
-                var claim = new Demand { Tile = id, Entity = c.Id,
-                    Kind = PassiveGathering.Kind(w.Tiles[id]), Food = request };
-                return FoodHorizonForecast.Tile(w, id, w.Days, cfg.TurnDays,
-                    new[] { claim }, null, null, operated.Contains(id) ? 1 : (double?)null)
-                    .HumanFoodReceipts;
-            }
-            double forageSupply = eligible.Sum(FoodAvailability), plantSupply = eligible.Where(id => w.Tiles[id].Land).Sum(FoodAvailability);
-            int reservedHerdersForForecast = husbandryEnabled ? ManagedHerderReservation(w, c, years) : 0;
-            var managedFood = husbandryEnabled ? TurnResolver.ForecastManagedAnimalFood(w, c, reservedHerdersForForecast, intervals, years, c.Tile) : new ManagedFoodForecast();
-            double forageAfterHerds = Math.Max(0, forageSupply - managedFood.HumanFoodDisplaced);
-            double terrestrialAfterHerds = Math.Max(0, plantSupply - managedFood.HumanFoodDisplaced);
-            double supply = forageAfterHerds + managedFood.AnimalFood;
-            double biological = TurnResolver.PlanningFoodDemand(w, c);
-            // This plan belongs to the population present at the interturn boundary.
-            // Births are added after its goods and QoL have been resolved.
-            double nextPopulation = c.Population;
-            var sources = MaterialEconomy.KnownSources(w, c, w.Days);
-            double Priority(MaterialId m) => m == MaterialId.Stone ? e.StonePriority : m == MaterialId.Clay ? e.ClayPriority : e.WoodPriority;
-            var accessible = MaterialEconomy.Materials.ToDictionary(m => m, m => Priority(m) <= 0 || n.SpecialistMaterialExtractionRate <= 0 ? 0 : sources.Where(s => s.Material == m).GroupBy(s => s.Id).Sum(g => g.Sum(s => s.Available)));
-            var recipes = NeolithicProduction.Recipes(cfg);
-            var previewIntent = e.Copy();
-            if (reservedHerdersForForecast > 0) previewIntent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = reservedHerdersForForecast });
-            // A single prospective builder/crafter makes downstream shelter
-            // demand visible to the ordered Animal Fabric recipe. This is only
-            // a demand probe; actual staffing still comes from the shared
-            // material, tool, food and resident budgets in Evaluate.
-            if (husbandryEnabled && NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 && c.Population > reservedHerdersForForecast)
-                previewIntent.Assignments.Add(new PopulationAssignment { Role = c.People.HasTech(NeolithicTech.Construction) ? WorkforceRoles.Builder : WorkforceRoles.Craftsperson, Population = 1 });
-            var preview = Preview(c, previewIntent, nextPopulation);
-            NeolithicProduction.DepreciateHousing(w, preview, years);
-            var goods = recipes.Where(r => r.Good != CraftGood.HandTools && r.Good != CraftGood.Tools && (!r.HusbandryOnly || husbandryEnabled)).ToArray();
-            var goals = goods.ToDictionary(r => r.Good, r => NeolithicProduction.Priority(preview, r.Good) > 0 ? NeolithicProduction.Demand(w, preview, r.Good, years, -1, false, false, sources) : 0);
-            // FarmTools are sized only after this proposal has a bounded field
-            // workforce.  The empty preview cannot answer that question without
-            // inventing labor, so the normal FarmTools demand helper is called
-            // below on the resolver-shaped candidate.
-            if (goals.ContainsKey(CraftGood.FarmTools)) goals[CraftGood.FarmTools] = 0;
-            int consumers = c.Population + w.Hunters.Where(h => h.SourceCamp == c.Id && Supply.InRange(w, c, h.Tile)).Sum(h => h.Population);
-            double meals = consumers * cfg.Consumption * intervals;
-            double operatingReserve = NeolithicProduction.DesiredReserveFood(w, consumers);
-            double sparePlant = Math.Min(c.PlantFood, Math.Max(0, c.Food - meals - operatingReserve));
-            double plantEnvelope = Math.Min(terrestrialAfterHerds + sparePlant, Math.Max(0, c.Food + supply - consumers * cfg.Consumption * intervals));
-            double animalSurplus = Math.Max(0, c.Food + supply - meals - operatingReserve);
-            double animalEnvelope = husbandryEnabled ? Math.Min(Math.Max(0, c.AnimalFood) + managedFood.AnimalFood, Math.Max(0, animalSurplus - sparePlant)) : 0;
-            double foodRoomEnvelope = 0;
-            if (husbandryEnabled)
-            {
-                double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, consumers, intervals), NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, intervals, years));
-                foodRoomEnvelope = Math.Max(0, c.Food + supply - consumers * cfg.Consumption * intervals - reserve);
-            }
-            // Fulfilment-invariant reads of the authoritative camp, shared by every Evaluate.
-            double housingMultiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
+            // Demand pass: every fulfilment-invariant input, built once.
+            var demand = CampProductionDemand.Build(w, c, e);
+            bool cultivationEnabled = demand.CultivationEnabled, husbandryEnabled = demand.HusbandryEnabled, established = demand.Established;
+            double upkeep = demand.Upkeep, supply = demand.Supply, biological = demand.Biological, nextPopulation = demand.NextPopulation;
+            double forageAfterHerds = demand.ForageAfterHerds, terrestrialAfterHerds = demand.TerrestrialAfterHerds;
+            int reservedHerdersForForecast = demand.ReservedHerders, consumers = demand.Consumers;
+            var managedFood = demand.ManagedFood; var sources = demand.Sources; var accessible = demand.Accessible;
+            var recipes = demand.Recipes; var goods = demand.Goods; var goals = demand.Goals; var preview = demand.Preview;
+            double sparePlant = demand.SparePlant, plantEnvelope = demand.PlantEnvelope, animalEnvelope = demand.AnimalEnvelope;
+            double foodRoomEnvelope = demand.FoodRoomEnvelope, housingMultiplier = demand.HousingMultiplier;
+            bool HasRetainedExpansionGain() => demand.HasRetainedExpansionGain();
 
             Proposal Evaluate(double fulfillment)
             {
@@ -492,12 +426,12 @@ namespace Anthropocene.Simulation
             best.Intent.Assignments = best.Intent.Assignments.OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
             return best.Intent;
         }
-        private static int ManagedHerderReservation(WorldState w, Camp c, double years)
+        internal static int ManagedHerderReservation(WorldState w, Camp c, double years)
         {
             if (!CultivationEconomy.HusbandryEnabled(c)) return 0;
             return HerdingTooling.RequiredHerders(w, c, years);
         }
-        private static double ExpansionGain(WorldState w, int id)
+        internal static double ExpansionGain(WorldState w, int id)
         {
             var cfg = w.Config; var opening = LazyEcology.ProjectEcology(w, id, w.Days);
             double before = opening.CultivationCapital;
