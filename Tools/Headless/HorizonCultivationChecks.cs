@@ -355,6 +355,67 @@ internal static class HorizonCultivationChecks
             "staying villagers retain their settlement status");
     }
 
+    // Regression: adjacent agricultural camps share radius-one footprint tiles.
+    // The higher-id camp expands onto a shared tile; the lower-id camp planned no
+    // change there and must not compare that tile with its own preclaim endpoint.
+    private static WorldState SharedFootprintFixture(out Camp idle, out Camp expander, out int shared)
+    {
+        var world = Fixture();
+        idle = world.Camps[0];
+        int idleTile = idle.Tile; // lambdas cannot capture the out parameter
+        int otherTile = world.Map.Neighbors(idle.Tile).First(id => world.Tiles[id].TraversableLand);
+        expander = new Camp { Id = world.NextId++, Player = idle.Player, Tile = otherTile,
+            Population = idle.Population, PlantFood = idle.PlantFood };
+        world.Camps.Add(expander);
+        Ownership.Bind(world);
+        expander.Technology = Technology.Cultivation;
+        expander.Technologies[(int)Technology.Cultivation] = true;
+        shared = world.Map.Neighbors(idle.Tile).Intersect(world.Map.Neighbors(otherTile))
+            .Where(id => id != idleTile && id != otherTile && world.Tiles[id].TraversableLand).OrderBy(id => id).First();
+        idle.Workforce.Assignments.Clear();
+        idle.Workforce.Assign(WorkforceRoles.Farmer, 10, idle.Population);
+        idle.EconomicLabor = new EconomicLaborPlan { ExpansionFarmers = 0 };
+        idle.CultivationFocusTile = idle.Tile;
+        expander.Workforce.Assignments.Clear();
+        expander.Workforce.Assign(WorkforceRoles.Farmer, 10, expander.Population);
+        expander.EconomicLabor = new EconomicLaborPlan { ExpansionFarmers = 8 };
+        expander.CultivationFocusTile = shared;
+        expander.Inventory.FarmTools = 0;
+        return world;
+    }
+
+    private static void AdjacentCampsShareFieldTile()
+    {
+        var world = SharedFootprintFixture(out var idle, out var expander, out int shared);
+        Check(world.Map.Distance(idle.Tile, expander.Tile) == 1, "fixture camps are adjacent");
+        Check(idle.Id < expander.Id, "the non-expanding camp commits first");
+        Check(world.Map.Radius(idle.Tile, 1).Contains(shared) && world.Map.Radius(expander.Tile, 1).Contains(shared),
+            "the tile belongs to both radius-one footprints");
+        Check(world.Tiles[shared].CultivationOperator < 0 && world.Tiles[shared].CultivationCapital == 0,
+            "shared tile starts unclaimed");
+        byte[] initial = SaveCodec.Save(world);
+        var parallel = SaveCodec.Load(initial);
+        var orders = new Dictionary<int, List<Order>>();
+        new TurnResolver().Resolve(world, orders);
+        var tile = world.Tiles[shared];
+        Check(tile.CultivationOperator == expander.Id, "the expanding camp operates the shared tile");
+        Check(tile.CultivationCapital > 0 && tile.Cultivated, "the expanding camp built capital on the shared tile");
+        Check(world.Tiles.All(t => t.CultivationOperator != idle.Id || t.Id == idle.Tile),
+            "the idle camp operates no tile beyond its own site, in particular not the shared tile");
+        Check(world.Camps.Count(c => c.Id != expander.Id && world.Map.Radius(c.Tile, 1).Contains(shared)) == 1,
+            "the idle camp's footprint includes the shared tile without writing it");
+        Check(world.Tiles.All(t => t.CultivationCapital >= -1e-8 && t.Food >= -1e-8 && t.PotentialFood >= t.Food - 1e-8),
+            "shared-footprint turn keeps tile stocks nonnegative and bounded");
+        var pa = parallel;
+        pa.Camps.Reverse(); pa.Hunters.Reverse(); pa.Herds.Reverse();
+        new TurnResolver(new PhaseExecution(4, 3, true, 1)).Resolve(pa, new Dictionary<int, List<Order>>());
+        Check(SaveCodec.Fingerprint(world) == SaveCodec.Fingerprint(pa),
+            "shared-footprint expansion is exact across scalar and reversed four-worker resolution");
+        Check(pa.Tiles[shared].CultivationOperator == expander.Id, "parallel result keeps the same operator");
+        new TurnResolver().Resolve(world, new Dictionary<int, List<Order>>());
+        Check(world.Tiles[shared].CultivationOperator == expander.Id, "the field continues on a second turn");
+    }
+
     public static int Run()
     {
         checks = 0;
@@ -366,6 +427,7 @@ internal static class HorizonCultivationChecks
         SoftEffortChargesBuildAndMaintenance();
         VillageCheckpointUsesOwnedFootprint();
         VillageDepartureLosesFieldsAndHousing();
+        AdjacentCampsShareFieldTile();
         Console.WriteLine("PASS: " + checks + " horizon cultivation assertions");
         return checks;
     }
