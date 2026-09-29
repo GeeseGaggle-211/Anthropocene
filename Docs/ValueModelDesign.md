@@ -224,16 +224,52 @@ needed:
   substitution) differ. The exchange ratio lies between them; who captures the
   surplus is a design choice (seller's ask, buyer's bid or midpoint).
 
-### Physical catch: fixed Housing cannot move
+### Housing Material: a portable intermediate
 
-Fixed Housing belongs to its construction site. "Build extra housing for a
-neighbour" can only mean:
+Fixed Housing belongs to its construction site and cannot move. The tradeable
+good is therefore the material, not the house. Agreed with the user on
+29 September 2026; not yet implemented:
 
-- portable **Light Housing** (carried with the camp);
-- sending **builders** as a labour service to the neighbour's site; or
-- exporting the **Wood and Clay** inputs.
+```
+Wood / Clay  ->  Housing Material  ->  Housing (fixed, built on site)
+(extraction)     (portable, stored)     (Builder assembly)
+```
 
-The requisition model has to name which. This is a trade-design decision.
+Today the Housing recipe already consumes one construction-material unit per
+Housing unit (`HousingMaterialUnitsPerHousing = 1`), filled from Wood and Clay
+by `MaterialEconomy.HousingShares` and debited at the moment of building. The
+change makes that middle step a stored good, mirroring the pastoral chain
+Animal Product -> Animal Fabric -> Light Housing.
+
+Agreed defaults:
+
+- **Labour is split, not added.** The current Builder rate for Housing is
+  divided between making Housing Material and assembling it, so labour per
+  Housing unit and the shipped balance stay the same. The split fraction is a
+  calibration value, still to be chosen.
+- **Builders and generalists only.** Builders (Construction) make and assemble
+  Housing Material; Craftspersons do both at the usual `GeneralistTaskEfficiency`
+  (0.25). No new role, to keep the supply chain simple.
+- **No stockpiling beyond useful demand.** Housing Material is made only
+  against the Housing gap, as other goods are. Housing demand therefore
+  remains a recurring pressure as population grows, which is intended. The
+  only exception, when trade exists, is an accepted export claim.
+- **The Wood:Clay mix is fixed when material is made.** Housing Material
+  becomes an ordinary recipe with direct inputs, and Housing consumes it as
+  Light Housing consumes Animal Fabric. This removes construction's special
+  position as the final flexible consumer of leftover Wood and Clay, which may
+  be behind Construction's 4-of-21 result in #33.
+- **Persistence.** A new optional `CampInventory.HousingMaterial` field in the
+  current `ANTHROPOCENE-11` envelope (absent means zero), and an owned-inventory
+  field in observations (schema 15 -> 16). Foreign stores stay private.
+- **Transport weight is out of scope here.** Its cost per unit belongs to
+  logistics (#13) and will be designed separately.
+
+Value: Housing Material takes a derived value, the value of the Housing it
+completes minus the assembly labour at `w`. It needs no separate curve or
+tuning. A neighbour's request for housing is a request for Housing Material;
+the buyer spends its own builder labour on site. Sending builders to a
+neighbour's site remains a separate labour-service option for later.
 
 ### Timing: two-stage preparation, not a one-turn lag
 
@@ -290,8 +326,11 @@ which is bounded by neighbours in range.
    default until this phase is calibrated and accepted.
 2. **Tool and Pot claims.** Farm and Herding Tools priced by labour saved;
    Pots by the risk placeholder.
-3. **Same-Society requests.** Transfers without barter, after #15.
-4. **Barter between societies.** Needs #13 (transport and range), #34 (who gets
+3. **Housing Material.** The split recipe, inventory field and observation
+   schema above. Useful locally before any trade because it removes
+   construction's leftover-material scheduling.
+4. **Same-Society requests.** Transfers without barter, after #15.
+5. **Barter between societies.** Needs #13 (transport and range), #34 (who gets
    a shared source) and the #23 authority rules.
 
 ## Validation
@@ -321,8 +360,8 @@ which is bounded by neighbours in range.
    which buys future food and growth, not current QoL. Pricing it in the same
    unit is the growth-versus-QoL trade-off that #23 has to settle.
 5. **Requisitions.** Binding commitments or revocable quotes? Who captures the
-   surplus? Which goods are tradeable, and does "housing" mean Light Housing,
-   builders or materials?
+   surplus? Which goods are tradeable? (Housing is traded as Housing
+   Material; see above.)
 6. **Pots.** Accept the risk placeholder `ρ` for now, or wait for a proper
    expected-shortage estimate?
 
