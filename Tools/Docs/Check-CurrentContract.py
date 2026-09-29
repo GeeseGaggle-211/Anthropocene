@@ -45,6 +45,10 @@ FIELDS = [
     ("CultivationRegenFlux", "managed recovery coefficient", "shipped cultivation calibration"),
     ("StoneHerdingToolAnimalsPerHerder", "animals per Herder", "shipped Husbandry calibration"),
     ("HerdingToolCoverageYearsPerUnit", "coverage years per tool unit", "shipped duration calibration"),
+    ("SocialCohesionExponent", "exponent beta in S(N)", "shipped QoL cohesion calibration"),
+    ("CohesionScalePaleolithic", "people (N_s)", "shipped QoL cohesion calibration"),
+    ("CohesionScaleNomadic", "people (N_s)", "shipped QoL cohesion calibration"),
+    ("CohesionScaleAgricultural", "people (N_s)", "shipped QoL cohesion calibration"),
 ]
 
 TESTS = [

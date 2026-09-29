@@ -45,6 +45,7 @@
     <Compile Include="Issue26ForecastChecks.cs" />
     <Compile Include="Issue28FoodTimebaseChecks.cs" />
     <Compile Include="Issue32CapabilityChecks.cs" />
+    <Compile Include="QoLCohesionChecks.cs" />
   <Compile Include="PastoralCraftChecks.cs" />
   </ItemGroup>
 </Project>

@@ -724,6 +724,14 @@ namespace Anthropocene.Simulation
             }
             ResolveNeeds(w, c, years, residents);
         }
+        // Regime cohesion scale N_s, selected from the camp's current capability.
+        public static double CohesionScale(NeolithicConfig n, Camp c)
+            => c.Technology == Technology.None ? n.CohesionScalePaleolithic
+             : CultivationEconomy.Enabled(c) ? n.CohesionScaleAgricultural
+             : n.CohesionScaleNomadic;
+        // S(N) = exp(-(N / N_s)^beta): the single shared social-cohesion multiplier.
+        public static double SocialCohesion(NeolithicConfig n, Camp c, double population)
+            => Math.Exp(-Math.Pow(Math.Max(0, population) / CohesionScale(n, c), n.SocialCohesionExponent));
         public static void ResolveNeeds(WorldState w, Camp c, double years, int residents = -1)
         {
             var n = w.Config.Neolithic;
@@ -739,7 +747,7 @@ namespace Anthropocene.Simulation
             c.StationaryYears += years;
             c.RudimentaryExpectation = n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
             double clothing = 1 - c.RudimentaryExpectation * (1 - c.ClothPerCapita), housing = 1 - c.RudimentaryExpectation * (1 - c.HousingPerCapita);
-            c.QoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing);
+            c.QoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing) * SocialCohesion(n, c, cohort);
             c.FissionWilling = 0;
         }
     }

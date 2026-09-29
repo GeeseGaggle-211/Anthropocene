@@ -258,7 +258,7 @@ internal static class PastoralCraftChecks
         double savedFixedTimestamp = w.FixedHousing.Single().LastUpdatedDays;
         NeolithicProduction.ResolveNeeds(w, c, 0);
         Near(c.HousingPerCapita, .8, "portable shelter supplies the same four-people-per-unit coverage after moving");
-        Near(c.QoL, .9, "portable shelter contributes the same half-weight first-pass housing QoL");
+        Near(c.QoL, .9 * Math.Exp(-Math.Pow(c.Population / 550.0, 2)), "portable shelter contributes the same half-weight first-pass housing QoL times Nomadic cohesion");
         double awaySupply = NeolithicProduction.HousingSupply(w, c, w.Days);
         var restored = SaveCodec.Load(SaveCodec.Save(w));
         var restoredCamp = restored.Camps.Single();
@@ -277,7 +277,7 @@ internal static class PastoralCraftChecks
         Near(NeolithicProduction.HousingSupply(restored, restoredCamp, restored.Days), 14.58, "returning combines decayed fixed and portable shelter at the same tile");
         NeolithicProduction.ResolveNeeds(restored, restoredCamp, 0);
         Near(restoredCamp.HousingPerCapita, 1, "fixed and portable shelter use the same first-pass coverage scale after return");
-        Near(restoredCamp.QoL, 1, "fixed-plus-portable shelter restores full first-pass housing QoL");
+        Near(restoredCamp.QoL, Math.Exp(-Math.Pow(restoredCamp.Population / 550.0, 2)), "fixed-plus-portable shelter restores full first-pass housing QoL times Nomadic cohesion");
     }
 
     private static void MixedHousingDecayFundsOnlyTheActualShortfall()

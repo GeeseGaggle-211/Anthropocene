@@ -61,7 +61,7 @@ No historical sweep row should be silently relabeled with the current SHA.
 - **Movement/economy:** ordinary accepted village movement abandons village status and releases the old footprint's operation. Earlier “villages cannot leave” prose is obsolete. Daughter-society fission remains deferred under #15; Camp Elder and husbandry decisions remain #23/#24.
 - **Vegetation:** raw `CurrentVegetation` and effective cultivation cover are separate. Cultivation retention must not be presented as rewriting the raw ecological tier. No forest-maintenance discount is authorized.
 - **Resource entitlement:** canonical tile order is an implementation constraint, not an approved claim-priority rule. #34 remains open.
-- **Social economy (approved design, not implemented):** [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) sets the future QoL formula `Q = B · R · S(N)`, fission, immigration, food trade and proto-towns; [ValueModelDesign.md](ValueModelDesign.md) sets value-based fulfilment and trade; [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md) orders the work. Until implemented, current QoL remains `F · W · R` in `NeolithicProduction.ResolveNeeds` and fission remains deferred.
+- **Social economy (cohesion multiplier implemented; fission, trade etc. remain design):** QoL is now `Q = F · W · R · S(N)` in `NeolithicProduction.ResolveNeeds`, with `S(N) = exp(-(N / N_s)^β)` and regime scale `N_s` (Paleolithic before the first breakthrough, Agricultural with Cultivation, otherwise Nomadic) chosen at the turn boundary via `NeolithicProduction.SocialCohesion`; growth stays independent of QoL. The rest is design: [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) sets the future QoL formula `Q = B · R · S(N)`, fission, immigration, food trade and proto-towns; [ValueModelDesign.md](ValueModelDesign.md) sets value-based fulfilment and trade; [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md) orders the work. Fission, immigration, trade and value-based fulfilment remain deferred; `B` in the design formula is the existing `F · W` product.
 - **Unresolved queue:** #21 is closed; #26–#34 are open at this baseline. Existing open work also includes #23/#24/#9–#13/#15. Each implementation must follow its issue contract and the approved architecture above; code presence alone does not settle a disputed rule.
 
 ## Current new-world config values
@@ -100,6 +100,10 @@ in `ConfigurationUnits.md` and the save-format contract.
 | `CultivationRegenFlux` | 0.65 | 0.65 | managed recovery coefficient | shipped cultivation calibration; API default (not serialized in OpeningConfig) |
 | `StoneHerdingToolAnimalsPerHerder` | 2.69 | 2.69 | animals per Herder | shipped Husbandry calibration |
 | `HerdingToolCoverageYearsPerUnit` | 20 | 20 | coverage years per tool unit | shipped duration calibration |
+| `SocialCohesionExponent` | 2 | 2 | exponent beta in S(N) | shipped QoL cohesion calibration |
+| `CohesionScalePaleolithic` | 220 | 220 | people (N_s) | shipped QoL cohesion calibration |
+| `CohesionScaleNomadic` | 550 | 550 | people (N_s) | shipped QoL cohesion calibration |
+| `CohesionScaleAgricultural` | 1780 | 1780 | people (N_s) | shipped QoL cohesion calibration |
 <!-- CURRENT_CONFIG_TABLE:END -->
 
 ## Consistency check

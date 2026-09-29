@@ -48,7 +48,7 @@ coefficients. They do not create seasonal or annual world states.
   player or an AI in a food emergency. It does not destroy physical field
   capital, but the departing camp cannot operate those fields this turn;
   formerly fixed housing remains at its original tile. Accumulated domestic
-  expectations persist, so the ordinary food, clothing and housing QoL
+  expectations persist, so the ordinary food, clothing, housing and cohesion QoL
   formula exposes the immediate loss. A blocked move does not abandon the
   village. This adds bounded local work per moving village, not a map scan.
 - Domestic herd forage and water needs are likewise measured for the animals

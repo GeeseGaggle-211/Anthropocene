@@ -113,7 +113,7 @@ historical repository design notes are not authority over these contracts.
   that deficit, not additional demand. Fabric stock is consumed on each use.
   Expectation adjusts the utility penalty, never the physical requirement.
   Food satisfaction and the water-satisfaction input multiply the compensable
-  clothing/housing utility. QoL does not kill people or split settlements.
+  clothing/housing utility, and the regime cohesion multiplier S(N) then scales the product (see `CurrentSimulationContract.md`). QoL does not kill people or split settlements.
 - `EconomicIntent` is a copied, validated queued plan for assignments, priorities,
   targets and cultivation focus. Player UI, policy proposals, action masks and
   the resolver use the same validation. Controls cannot directly award Irrigation

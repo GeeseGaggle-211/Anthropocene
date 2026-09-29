@@ -26,6 +26,9 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double StoneHerdingToolAnimalsPerHerder = 2.69;
         [System.Runtime.Serialization.OptionalField] public double EarlyAdvancedHerdingAnimalsPerHerder = 3.87, CopperHerdingAnimalsPerHerder = 6.02, IronHerdingAnimalsPerHerder = 10.71, PoweredHerdingAnimalsPerHerder = 20.0;
         [System.Runtime.Serialization.OptionalField] public double HerdingToolCoverageYearsPerUnit = 20;
+        // Social cohesion S(N) = exp(-(N / N_s)^beta); N_s depends on the regime chosen at the turn boundary.
+        [System.Runtime.Serialization.OptionalField] public double SocialCohesionExponent = 2;
+        [System.Runtime.Serialization.OptionalField] public double CohesionScalePaleolithic = 220, CohesionScaleNomadic = 550, CohesionScaleAgricultural = 1780;
         public double HandToolsOutput = 1, PotsOutput = 1, WeaverFabricOutputPerBaseDays = 1, FarmToolsOutput = 1, ToolsOutput = 1;
         public double BuilderHousingOutputPerBaseDays = .03125, HandToolsHousingMultiplier = 1, ImprovedToolsHousingMultiplier = 1.5, CopperToolsHousingMultiplier = 2;
         public double PlantFoodPerFabricUnit = 1, HousingMaterialUnitsPerHousing = 1;
@@ -60,6 +63,8 @@ namespace Anthropocene.Simulation
             StoneHerdingToolAnimalsPerHerder = 2.69;
             EarlyAdvancedHerdingAnimalsPerHerder = 3.87; CopperHerdingAnimalsPerHerder = 6.02; IronHerdingAnimalsPerHerder = 10.71; PoweredHerdingAnimalsPerHerder = 20.0;
             HerdingToolCoverageYearsPerUnit = 20;
+            SocialCohesionExponent = 2;
+            CohesionScalePaleolithic = 220; CohesionScaleNomadic = 550; CohesionScaleAgricultural = 1780;
         }
         [System.Runtime.Serialization.OnDeserialized]
         private void MigratePhysicalReserveHorizons(System.Runtime.Serialization.StreamingContext context)
@@ -93,7 +98,7 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Invalid cultivation effort multiplier.");
             if (new[] { OpenBuild, WoodlandBuild, ForestBuild, WeaverFabricOutputPerBaseDays, BuilderHousingOutputPerBaseDays, GeneralistTaskEfficiency }.Any(v => v <= 0)) throw new ArgumentException("Neolithic construction and allocation rates must be positive.");
             var values = GetType().GetFields().Where(f => f.FieldType == typeof(double)).Select(f => (double)f.GetValue(this));
-            if (values.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || ReferencePopulation <= 0 || ReferenceFootprintTiles != 7 || ReferenceTurnYears <= 0 || IntensificationTurns <= 0 || AllocationStepE <= 0 || DecayHalfLifeYears <= 0 || HousingPeoplePerUnit <= 0 || HousingDecayPerTurn >= 1 || PotStorageFoodPerUnit <= 0 || PotDecayPerReferenceTurn >= 1 || ToolCoveragePerWorker <= 0 || FarmToolFarmerYearsPerUnit <= 0 || StoneHerdingToolAnimalsPerHerder < 2 || EarlyAdvancedHerdingAnimalsPerHerder < StoneHerdingToolAnimalsPerHerder || CopperHerdingAnimalsPerHerder < EarlyAdvancedHerdingAnimalsPerHerder || IronHerdingAnimalsPerHerder < CopperHerdingAnimalsPerHerder || PoweredHerdingAnimalsPerHerder < IronHerdingAnimalsPerHerder || HerdingToolCoverageYearsPerUnit <= 0 || PrimitiveAgricultureSupportedIntensity <= 0 || StoneFarmToolsSupportedIntensity < PrimitiveAgricultureSupportedIntensity || PloughSupportedIntensity < StoneFarmToolsSupportedIntensity || CopperFarmToolsSupportedIntensity < PloughSupportedIntensity || IronFarmToolsSupportedIntensity < CopperFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity < IronFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity > 1 || RudimentaryExpectationRampYears <= 0 || RudimentaryExpectationFloor > 1 || Math.Abs(RudimentaryWeightClothing + RudimentaryWeightHousing - 1) > 1e-10 || GeneralistTaskEfficiency > 1 || CraftMasteryThreshold <= 0)
+            if (values.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || ReferencePopulation <= 0 || ReferenceFootprintTiles != 7 || ReferenceTurnYears <= 0 || IntensificationTurns <= 0 || AllocationStepE <= 0 || DecayHalfLifeYears <= 0 || HousingPeoplePerUnit <= 0 || HousingDecayPerTurn >= 1 || PotStorageFoodPerUnit <= 0 || PotDecayPerReferenceTurn >= 1 || ToolCoveragePerWorker <= 0 || FarmToolFarmerYearsPerUnit <= 0 || StoneHerdingToolAnimalsPerHerder < 2 || EarlyAdvancedHerdingAnimalsPerHerder < StoneHerdingToolAnimalsPerHerder || CopperHerdingAnimalsPerHerder < EarlyAdvancedHerdingAnimalsPerHerder || IronHerdingAnimalsPerHerder < CopperHerdingAnimalsPerHerder || PoweredHerdingAnimalsPerHerder < IronHerdingAnimalsPerHerder || HerdingToolCoverageYearsPerUnit <= 0 || PrimitiveAgricultureSupportedIntensity <= 0 || StoneFarmToolsSupportedIntensity < PrimitiveAgricultureSupportedIntensity || PloughSupportedIntensity < StoneFarmToolsSupportedIntensity || CopperFarmToolsSupportedIntensity < PloughSupportedIntensity || IronFarmToolsSupportedIntensity < CopperFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity < IronFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity > 1 || RudimentaryExpectationRampYears <= 0 || RudimentaryExpectationFloor > 1 || Math.Abs(RudimentaryWeightClothing + RudimentaryWeightHousing - 1) > 1e-10 || GeneralistTaskEfficiency > 1 || CraftMasteryThreshold <= 0 || SocialCohesionExponent <= 0 || CohesionScalePaleolithic <= 0 || CohesionScaleNomadic <= 0 || CohesionScaleAgricultural <= 0)
                 throw new ArgumentException("Invalid Neolithic calibration.");
         }
     }
