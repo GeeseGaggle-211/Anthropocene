@@ -15,14 +15,25 @@ namespace Anthropocene.Simulation
         {
             public EconomicIntent Intent;
             public int Workers, FoodGatherers, OperatingFarmers;
+            // Path position this proposal was evaluated at (for the reported labour price).
+            public double S;
         }
         // The fulfilment rule used by automated plans. Alternatives are
         // evaluated through the rule parameter before they become defaults.
         internal static readonly IFulfilmentRule DefaultRule = UniformFulfilment.Instance;
+        // Rule named by the configuration: Uniform stays the default; Value
+        // builds the value rule from the configured curve steepness.
+        internal static IFulfilmentRule ConfiguredRule(SimulationConfig cfg)
+            => cfg.Neolithic.ValueFulfilmentSelected ? new ValueFulfilment(cfg.Neolithic.ValueCurveSteepness) : DefaultRule;
         public static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings)
-            => Plan(w, c, settings, DefaultRule);
+            => Plan(w, c, settings, ConfiguredRule(w.Config));
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, IFulfilmentRule rule)
+            => Plan(w, c, settings, rule, out _);
+        // laborPrice is the labour price w at the chosen path position (NaN for
+        // rules without one). Transient diagnostic: never saved, observed or hashed.
+        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, IFulfilmentRule rule, out double laborPrice)
         {
+            laborPrice = double.NaN;
             Interlocked.Increment(ref TurnDiagnostics.For(w).PlanCalls);
             var e = settings.Copy(); e.Assignments.Clear(); e.Labor = null;
             if (c.Population <= 0 || !CultivationEconomy.EconomyEnabled(c)) { e.AutomationTurns = 0; return e; }
@@ -39,6 +50,7 @@ namespace Anthropocene.Simulation
             double sparePlant = demand.SparePlant, plantEnvelope = demand.PlantEnvelope, animalEnvelope = demand.AnimalEnvelope;
             double foodRoomEnvelope = demand.FoodRoomEnvelope, housingMultiplier = demand.HousingMultiplier;
             bool HasRetainedExpansionGain() => demand.HasRetainedExpansionGain();
+            var valueRule = rule as ValueFulfilment;
             var claimIndex = new Dictionary<CraftGood, int>();
             for (int i = 0; i < demand.Claims.Count; i++) claimIndex[demand.Claims[i].Good] = i;
 
@@ -151,11 +163,31 @@ namespace Anthropocene.Simulation
                     }
                     return Math.Max(0, amount);
                 }
+                // Material access order: priority under the uniform rule; under the
+                // Value rule, marginal value V * exp(-lambda * c) at the current
+                // share, so a scarce input goes to the good worth most per unit.
+                // Goods without a valued claim follow after, by priority. Animal
+                // Fabric always precedes Light Housing, which consumes it.
+                IEnumerable<CraftRecipe> AccessOrder(IEnumerable<CraftRecipe> list)
+                {
+                    if (valueRule == null) return list.OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good);
+                    double Marginal(CraftRecipe r)
+                    {
+                        var claim = demand.Claims[claimIndex[r.Good]];
+                        return ValueFulfilment.IsNeed(claim) ? valueRule.MarginalValue(claim, shares[claimIndex[r.Good]]) : double.NaN;
+                    }
+                    var ordered = list.OrderBy(r => double.IsNaN(Marginal(r)) ? 1 : 0)
+                        .ThenByDescending(r => double.IsNaN(Marginal(r)) ? NeolithicProduction.Priority(candidate, r.Good) : Marginal(r))
+                        .ThenBy(r => r.Good).ToList();
+                    int fabric = ordered.FindIndex(r => r.Good == CraftGood.AnimalFabric), shelter = ordered.FindIndex(r => r.Good == CraftGood.LightHousing);
+                    if (fabric > shelter && shelter >= 0) { var item = ordered[fabric]; ordered.RemoveAt(fabric); ordered.Insert(shelter, item); }
+                    return ordered;
+                }
                 // All direct-input work reserves its own material before flexible
                 // construction. FarmTools remains deferred until field intent is
                 // bounded, but no Housing priority can spend a Wood/Clay input
                 // that another feasible recipe cannot substitute.
-                foreach (var r in goods.Where(r => r.Good != CraftGood.FarmTools && r.ConstructionMaterial <= 0).OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
+                foreach (var r in AccessOrder(goods.Where(r => r.Good != CraftGood.FarmTools && r.ConstructionMaterial <= 0)))
                 {
                     double amount = Capped(r, RemainingGoodDemand(r) * Share(r.Good), true);
                     requested[r.Good] = amount;
@@ -231,7 +263,7 @@ namespace Anthropocene.Simulation
                 // Construction is the final flexible material consumer.  Its
                 // provisional mix uses this same post-direct room; final
                 // gathering and resolver debits use MaterialEconomy's fixed plan.
-                foreach (var r in goods.Where(r => r.Good != CraftGood.FarmTools && r.ConstructionMaterial > 0).OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
+                foreach (var r in AccessOrder(goods.Where(r => r.Good != CraftGood.FarmTools && r.ConstructionMaterial > 0)))
                 {
                     double amount = Capped(r, goals[r.Good] * Share(r.Good), true);
                     requested[r.Good] = amount;
@@ -411,7 +443,7 @@ namespace Anthropocene.Simulation
                 int laborEnvelope = nonFarmWorkers + Math.Max(0, requiredOperating) + requiredGatherers;
                 int actualWorkers = intent.Assignments.Sum(a => a.Population) + Math.Max(0, gatherers);
                 int totalWorkers = s <= Epsilon ? actualWorkers : Math.Max(actualWorkers, laborEnvelope);
-                return new Proposal { Intent = intent, OperatingFarmers = operating, FoodGatherers = foodGatherers, Workers = totalWorkers };
+                return new Proposal { Intent = intent, OperatingFarmers = operating, FoodGatherers = foodGatherers, Workers = totalWorkers, S = s };
             }
             // Allocate as much useful manufacturing as fits alongside food and its
             // complete source chain. No separate craft-population percentage is imposed.
@@ -436,6 +468,7 @@ namespace Anthropocene.Simulation
                 best.Intent.Labor.ExpansionFarmers = spare;
             }
             best.Intent.Assignments = best.Intent.Assignments.OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
+            if (valueRule != null) laborPrice = valueRule.LaborPrice(demand.Claims, best.S);
             return best.Intent;
         }
         // Largest staffable position on a fulfilment rule's path, to within

@@ -29,6 +29,12 @@ namespace Anthropocene.Simulation
         // Social cohesion S(N) = exp(-(N / N_s)^beta); N_s depends on the regime chosen at the turn boundary.
         [System.Runtime.Serialization.OptionalField] public double SocialCohesionExponent = 2;
         [System.Runtime.Serialization.OptionalField] public double CohesionScalePaleolithic = 220, CohesionScaleNomadic = 550, CohesionScaleAgricultural = 1780;
+        // Local value rule (ValueModelDesign.md). PlannerFulfilment selects the planner's fulfilment rule by name:
+        // "Uniform" (default; every claim shares the path position) or "Value" (shares from a labour price w).
+        // A string keeps sweeps and saved configs readable; absent in older saves/configs it loads as "Uniform".
+        // lambda = ValueCurveSteepness (> 0, dimensionless), r = DiscountRatePerYear (>= 0, per year).
+        [System.Runtime.Serialization.OptionalField] public string PlannerFulfilment = "Uniform";
+        [System.Runtime.Serialization.OptionalField] public double ValueCurveSteepness = 3, DiscountRatePerYear = .01;
         public double HandToolsOutput = 1, PotsOutput = 1, WeaverFabricOutputPerBaseDays = 1, FarmToolsOutput = 1, ToolsOutput = 1;
         public double BuilderHousingOutputPerBaseDays = .03125, HandToolsHousingMultiplier = 1, ImprovedToolsHousingMultiplier = 1.5, CopperToolsHousingMultiplier = 2;
         public double PlantFoodPerFabricUnit = 1, HousingMaterialUnitsPerHousing = 1;
@@ -65,6 +71,7 @@ namespace Anthropocene.Simulation
             HerdingToolCoverageYearsPerUnit = 20;
             SocialCohesionExponent = 2;
             CohesionScalePaleolithic = 220; CohesionScaleNomadic = 550; CohesionScaleAgricultural = 1780;
+            PlannerFulfilment = "Uniform"; ValueCurveSteepness = 3; DiscountRatePerYear = .01;
         }
         [System.Runtime.Serialization.OnDeserialized]
         private void MigratePhysicalReserveHorizons(System.Runtime.Serialization.StreamingContext context)
@@ -92,8 +99,11 @@ namespace Anthropocene.Simulation
             => turnYears <= 0 ? 1 : 1 + MaterialReserveDurationYears(turnYears) / turnYears;
         public double UsefulFinishedGoodsReserveReferenceTurns
             => UsefulFinishedGoodsReserveYears / ReferenceTurnYears;
+        public bool ValueFulfilmentSelected => PlannerFulfilment == "Value";
         public void Validate()
         {
+            if (PlannerFulfilment != "Uniform" && PlannerFulfilment != "Value") throw new ArgumentException("Invalid planner fulfilment rule.");
+            if (!(ValueCurveSteepness > 0)) throw new ArgumentException("Invalid value curve steepness.");
             if (CultivationMarginalEffortMultiplierPerTenth < 1 || CultivationMarginalEffortMultiplierPerTenth > 32)
                 throw new ArgumentException("Invalid cultivation effort multiplier.");
             if (new[] { OpenBuild, WoodlandBuild, ForestBuild, WeaverFabricOutputPerBaseDays, BuilderHousingOutputPerBaseDays, GeneralistTaskEfficiency }.Any(v => v <= 0)) throw new ArgumentException("Neolithic construction and allocation rates must be positive.");

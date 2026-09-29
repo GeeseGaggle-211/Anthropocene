@@ -15,9 +15,18 @@ namespace Anthropocene.Simulation
         public double Quantity;
         // Crafting priority on the prepared preview camp.
         public double Priority;
-        // Fulfilment weight for value-based rules. The current uniform rule
-        // ignores it; it defaults to Priority until a value model is chosen.
+        // Fulfilment weight for value-based rules. The uniform rule ignores it;
+        // it stays Priority unless the Value rule is configured, when it is the
+        // first-unit value V (person-QoL-years).
         public double Value;
+        // Value-model inputs, always computed by the demand pass (pure, O(1) per
+        // claim) but read only by ValueFulfilment. Stock and Need (D = Stock +
+        // Quantity) are in units of the good; LabourPerUnit is the closed-form
+        // worker-years per unit; FirstUnitValue is V. Zero means "not valued":
+        // Pots, Farm Tools and Herding Tools keep the uniform share in WP3.
+        public double Stock, Need, LabourPerUnit, FirstUnitValue;
+        // True for the four need goods the value model prices (clothing, shelter).
+        public bool Valued;
         // Role that performs the work and its output per worker-interval.
         public string Role;
         public double Rate;
@@ -42,6 +51,72 @@ namespace Anthropocene.Simulation
         public void Shares(IReadOnlyList<ProductionClaim> claims, double s, double[] shares)
         {
             for (int i = 0; i < claims.Count; i++) shares[i] = s;
+        }
+    }
+
+    // Value-based fulfilment (ValueModelDesign.md, "Fulfilment rule: search on w").
+    // Each need claim buys coverage c*(w) = ln(V / (w * l)) / lambda at labour
+    // price w, so its output is clamp(c* * D - Stock, 0, Quantity). The path
+    // position s maps to w on a log scale from w_hi (nothing worth making) to
+    // w_lo (every claim at full coverage), so shares are nondecreasing in s.
+    // Goods the value model does not price (Pots, Farm and Herding Tools) take
+    // the uniform share s, as does a priced good with no usable labour estimate;
+    // a priced good whose value is zero (priority 0, or B = 0) gets share 0.
+    // With no need claim at all the rule is uniform. Pure: reads only the claims.
+    public sealed class ValueFulfilment : IFulfilmentRule
+    {
+        public readonly double Steepness;
+        public ValueFulfilment(double steepness)
+        {
+            if (!(steepness > 0)) throw new ArgumentException("Value curve steepness must be positive.");
+            Steepness = steepness;
+        }
+        public string Name => "Value";
+        public static bool IsNeed(ProductionClaim c)
+            => c.Quantity > 0 && c.Need > 0 && c.FirstUnitValue > 0 && c.LabourPerUnit > 0
+               && !double.IsInfinity(c.LabourPerUnit) && !double.IsInfinity(c.FirstUnitValue);
+        // V * exp(-lambda * c) at the coverage reached by `share` of the useful quantity.
+        public double MarginalValue(ProductionClaim c, double share)
+            => c.FirstUnitValue * Math.Exp(-Steepness * (c.Stock + share * c.Quantity) / c.Need);
+        private bool Bounds(IReadOnlyList<ProductionClaim> claims, out double hi, out double lo)
+        {
+            hi = 0; lo = double.PositiveInfinity; bool any = false;
+            for (int i = 0; i < claims.Count; i++)
+            {
+                var c = claims[i];
+                if (!IsNeed(c)) continue;
+                any = true;
+                double first = c.FirstUnitValue / c.LabourPerUnit;
+                if (first > hi) hi = first;
+                double full = first * Math.Exp(-Steepness);
+                if (full < lo) lo = full;
+            }
+            return any;
+        }
+        // The labour price w at path position s; NaN when no claim is valued.
+        public double LaborPrice(IReadOnlyList<ProductionClaim> claims, double s)
+        {
+            if (!Bounds(claims, out double hi, out double lo)) return double.NaN;
+            return hi * Math.Pow(lo / hi, Numbers.Clamp(s, 0, 1));
+        }
+        public void Shares(IReadOnlyList<ProductionClaim> claims, double s, double[] shares)
+        {
+            if (!Bounds(claims, out double hi, out double lo))
+            {
+                for (int i = 0; i < claims.Count; i++) shares[i] = s;
+                return;
+            }
+            double price = hi * Math.Pow(lo / hi, Numbers.Clamp(s, 0, 1));
+            for (int i = 0; i < claims.Count; i++)
+            {
+                var c = claims[i];
+                if (!IsNeed(c)) { shares[i] = c.Valued && c.FirstUnitValue <= 0 ? 0 : s; continue; }
+                // The path ends are exact: floating error must not leave residue at s = 0 or a gap at s = 1.
+                if (s <= 0) { shares[i] = 0; continue; }
+                if (s >= 1) { shares[i] = 1; continue; }
+                double coverage = Math.Log(c.FirstUnitValue / (price * c.LabourPerUnit)) / Steepness;
+                shares[i] = Numbers.Clamp((coverage * c.Need - c.Stock) / c.Quantity, 0, 1);
+            }
         }
     }
 
@@ -155,7 +230,78 @@ namespace Anthropocene.Simulation
                 d.FoodRoomEnvelope = Math.Max(0, c.Food + d.Supply - consumers * cfg.Consumption * intervals - reserve);
             }
             d.HousingMultiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
+            ClaimValuation.Apply(w, c, d);
             return d;
+        }
+    }
+
+    // Closed-form value inputs for the four need goods (clothing and shelter),
+    // from committed camp terms; see ValueModelDesign.md, "Anchoring V in QoL".
+    internal static class ClaimValuation
+    {
+        private static readonly Camp DefaultPriorities = new Camp { CraftingPriorities = new CraftingPriorities() };
+        public static bool IsNeedGood(CraftGood g) => g == CraftGood.Cloth || g == CraftGood.AnimalFabric || g == CraftGood.Housing || g == CraftGood.LightHousing;
+        public static void Apply(WorldState w, Camp c, CampProductionDemand d)
+        {
+            var cfg = w.Config; var n = cfg.Neolithic;
+            double years = cfg.TurnDays / cfg.DaysPerYear, perYear = cfg.DaysPerYear / cfg.BaseDays;
+            // Camp terms come from the committed camp: B = F * W, S at the
+            // present cohort and E from the last resolved needs (or its formula
+            // for a camp that has not yet resolved any).
+            double b = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio;
+            double s = NeolithicProduction.SocialCohesion(n, c, c.Population);
+            double e = c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
+                : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+            double k = -Math.Log(1 - n.HousingDecayPerTurn) / n.ReferenceTurnYears;
+            double life = 1 / (k + n.DiscountRatePerYear);
+            double housingSupply = NeolithicProduction.HousingSupply(w, d.Preview, w.Days + years * cfg.DaysPerYear);
+            double clothingV = n.RudimentaryWeightClothing * e * b * s * (n.ReferenceTurnYears / n.FabricConsumptionPerPersonTurn);
+            double housingV = n.HousingPeoplePerUnit * n.RudimentaryWeightHousing * e * b * s * life;
+            double gather = cfg.GatherPerPerson * perYear;
+            double Rate(CraftRecipe r) => r.Rate * (c.People.HasTech(r.Track) ? 1 : n.GeneralistTaskEfficiency);
+            double Extraction(MaterialId m, double perUnit)
+            {
+                if (perUnit <= 0 || n.SpecialistMaterialExtractionRate <= 0) return 0;
+                bool specialist = c.People.HasTech(EconomicIntents.RequiredTechnology(MaterialEconomy.Specialist(m)));
+                return perUnit / (n.SpecialistMaterialExtractionRate * (specialist ? 1 : n.GeneralistTaskEfficiency) * perYear);
+            }
+            // Worker-years per unit: craft time (divided by the tool multiplier the
+            // staffing pass uses for shelter), input extraction, plant feedstock
+            // gathering and, for Light Housing, its Animal Fabric input. Animal
+            // Food is managed-herd output and costs no gathering labour here.
+            double Labour(CraftRecipe r)
+            {
+                double rate = Rate(r);
+                if (rate <= 0) return 0;
+                double m = r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing ? d.HousingMultiplier : 1;
+                if (m <= 0) return 0;
+                double l = 1 / (rate * perYear * m);
+                l += Extraction(MaterialId.Stone, r.Stone) + Extraction(MaterialId.Clay, r.Clay) + Extraction(MaterialId.Wood, r.Wood + r.ConstructionMaterial);
+                if (gather > 0) l += r.PlantFood / gather;
+                if (r.AnimalFabric > 0)
+                {
+                    var input = d.Recipes.FirstOrDefault(x => x.Good == CraftGood.AnimalFabric);
+                    double inputLabour = input == null ? 0 : Labour(input);
+                    if (inputLabour <= 0) return 0;
+                    l += r.AnimalFabric * inputLabour;
+                }
+                return l;
+            }
+            bool value = n.ValueFulfilmentSelected;
+            foreach (var claim in d.Claims)
+            {
+                if (!IsNeedGood(claim.Good)) continue;
+                double stock = claim.Good == CraftGood.Cloth ? Math.Max(0, c.Inventory.Cloth)
+                    : claim.Good == CraftGood.AnimalFabric ? Math.Max(0, c.Inventory.AnimalFabric) : housingSupply;
+                double defaultPriority = NeolithicProduction.Priority(DefaultPriorities, claim.Good);
+                double multiplier = defaultPriority > 0 ? claim.Priority / defaultPriority : (claim.Priority > 0 ? 1 : 0);
+                claim.Valued = true;
+                claim.Stock = stock;
+                claim.Need = stock + claim.Quantity;
+                claim.LabourPerUnit = Labour(claim.Recipe);
+                claim.FirstUnitValue = (claim.Good == CraftGood.Cloth || claim.Good == CraftGood.AnimalFabric ? clothingV : housingV) * multiplier;
+                if (value) claim.Value = claim.FirstUnitValue;
+            }
         }
     }
 }

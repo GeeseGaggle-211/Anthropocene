@@ -431,7 +431,7 @@ internal static class PastoralCraftChecks
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), "pastoral zero state round trips with the same authoritative fingerprint");
     }
 
-    private static WorldState PlannerWorld()
+    internal static WorldState PlannerWorld()
     {
         var config = SimulationConfig.Small(1);
         config.Width = 24; config.Height = 16; config.TurnDays = 20 * config.DaysPerYear;

@@ -297,6 +297,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "Issue28FoodTimebaseChecks", Run = () => Issue28FoodTimebaseChecks.Run() },
                 new ParallelChecks.Entry { Name = "Issue32CapabilityChecks", Run = () => Issue32CapabilityChecks.Run() },
                 new ParallelChecks.Entry { Name = "QoLCohesionChecks", Run = () => QoLCohesionChecks.Run() },
+                new ParallelChecks.Entry { Name = "ValueFulfilmentChecks", Cost = 4, Run = () => ValueFulfilmentChecks.Run() },
             };
             bool filtered = ParallelChecks.Filter(args, ref fixedChecks);
             ParallelChecks.Run(fixedChecks, jobs, args.Contains("--check-timings"));

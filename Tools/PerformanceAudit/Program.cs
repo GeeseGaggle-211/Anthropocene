@@ -33,6 +33,14 @@ internal static class Program
         return value == null ? fallback : value.Substring(key.Length + 1);
     }
 
+    private static void OverrideNeolithic(WorldState world, string field, string value, Func<string, object> parse)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return;
+        var info = world.Config.Neolithic.GetType().GetField(field)
+            ?? throw new ArgumentException("This simulation source has no Neolithic." + field + " to override.");
+        info.SetValue(world.Config.Neolithic, parse(value));
+    }
+
     private static string HashBytes(byte[] bytes)
     {
         using (var sha = SHA256.Create())
@@ -239,6 +247,12 @@ internal static class Program
             byte[] inputBytes = File.ReadAllBytes(inputSave);
             inputSaveSha256 = HashBytes(inputBytes);
             world = SaveCodec.Load(inputBytes);
+            // Planner-rule overrides on a loaded checkpoint (value-rule sweeps). Set by
+            // reflection so the harness still builds against older simulation sources.
+            OverrideNeolithic(world, "PlannerFulfilment", Option(args, "--fulfilment", ""), v => v);
+            OverrideNeolithic(world, "ValueCurveSteepness", Option(args, "--value-steepness", ""), v => double.Parse(v, CultureInfo.InvariantCulture));
+            OverrideNeolithic(world, "DiscountRatePerYear", Option(args, "--discount-rate", ""), v => double.Parse(v, CultureInfo.InvariantCulture));
+            world.Config.Validate();
             generationMs = 0;
             players = world.Config.Players;
             seed = world.Seed;
