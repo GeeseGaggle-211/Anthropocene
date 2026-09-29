@@ -18,9 +18,11 @@ until WP11 updates them.
 | Social cohesion | `S(N) = exp(−(N / N_s)^β)`, `β = 2` | agreed, calibration target |
 | Cohesion scale `N_s` | Paleolithic 220, Nomadic 550, Agricultural 1780 | agreed, fitted to fission targets |
 | Fission size targets | Paleolithic high above 100; Nomadic median about 250; Agricultural median about 600, upper about 1,000 | agreed |
-| Fission levers | `Q_fiss` 0.75, `ΔQ_fiss` 0.10, `θ_fiss` 0.20, `f_fiss` 0.30, `r_fiss` 3 | candidates, swept |
+| Fission levers | `Q_fiss` 0.75, `ΔQ_fiss` 0.10, `θ_fiss` 0.20, `r_fiss` 3, minimum daughter 12 | candidates, swept |
+| Fission policy (per camp) | Discourage / Neutral / Encourage: `Q_fiss` −0.05 / 0 / +0.05; `f_fiss` 0.15 / 0.30 / 0.40; affinity 0.5 / 0.9 / 1.0 | agreed, calibration target |
+| Minimum camp spacing | 2 hexes, all placement | agreed |
 | Immigration | `θ_imm` 0.075, `r_imm` 4, lifestyle barriers; opportunity term zero | candidates; opportunity term out of scope |
-| Fission daughters | independent kin Societies; affinity inert at 0.9 | agreed; affinity change out of scope |
+| Fission daughters | smaller group splits off as an independent kin Society in a new AI player slot; the player keeps the original camp; knowledge and practice copied at fission | agreed; affinity change out of scope |
 | Requisitions per camp per turn `K` | 3 | agreed |
 | Default bargaining margin `m` | 10%; kin margin `m · (1 − a)` | agreed |
 | Discount rate `r` | 0.01 per year, swept 0–0.02, Elder hook | agreed |
@@ -251,10 +253,11 @@ scheduling change, which is reported against the #33 Construction baseline.
 - Observations: this turn's requisitions addressed to the camp, its own trade
   history, and each partner's past requisitions to this camp. No foreign
   stores, values or other camps' messages.
-- Kin terms: an affinity function (0 for unrelated Societies; 0.9 for kin once
-  WP9 records lineage) sets margin `m · (1 − a)` and surplus pricing.
-- Config: tradeable set (T0), `K = 3`, `m = 10%`, kin affinity 0.9, contact
-  range, provisional distance and bulk costs.
+- Kin terms: an affinity lookup (0 for unrelated Societies; the saved kin
+  affinity once WP9 records lineage) sets margin `m · (1 − a)` and surplus
+  pricing.
+- Config: tradeable set (T0), `K = 3`, `m = 10%`, contact range, provisional
+  distance and bulk costs.
 
 Headless: ledger conservation, save round-trip, order validation and masks,
 observation filtering, scaling of both sides on shortfall, integrated
@@ -318,41 +321,58 @@ runs.
 
 Following QoLFissionTradeDesign.md sections 3, 4, 6.4 and 9.
 
-- **Lineage.** A saved optional parent-Society link on `Society`. Kin affinity
-  is 0.9 for parent–daughter and sibling pairs, inert.
-- **Daughter Societies.** Fission creates a new Society and camp with IDs from
-  `NextId`. The daughter inherits the parent's culture (technologies,
-  traditions, policy preferences). Population, portable stores and herds are
-  split in proportion to the daughter fraction, conserving every ledger; fixed
-  Housing stays with its site.
+- **Fission policy.** A saved per-camp setting, Discourage / Neutral /
+  Encourage, default Neutral (optional field; absent means Neutral). It shifts
+  `Q_fiss` by −0.05 / 0 / +0.05, sets the daughter fraction to 0.15 / 0.30 /
+  0.40 and the daughter's affinity to 0.5 / 0.9 / 1.0. Exposed in the owner's
+  observation, the settlement inspector (`OpeningVillageInspector.cs`) and as a
+  legal action for AI policies (`ActionContract.cs`); the heuristic AI keeps
+  Neutral until the Elder (#23) chooses.
+- **Lineage.** Saved optional parent-Society link and kin affinity on
+  `Society`. Parent–daughter affinity comes from the policy; two daughters of
+  one parent take the lower of their parent affinities. Inert afterwards.
+- **Daughter Societies.** Fission is always a smaller group splitting off. The
+  parent keeps its camp, site, fields and fixed Housing, and its controller
+  (the player keeps the original camp). The daughter is a new Society in a new
+  AI player slot, with Society, camp and player IDs assigned canonically and a
+  policy seed from the keyed random streams. Its knowledge and practice
+  experience are copied from the parent at the moment of fission
+  (technologies, traditions, policy preferences, domain and species practice,
+  progression). Herds and portable stores go with the daughter in its
+  population fraction, conserving every ledger.
 - **Cached destination.** A saved optional per-camp target tile, searched
   lazily within `r_fiss` only when the push exceeds the search threshold and no
   valid target exists; invalidated when occupied, unviable or the regime
   changes. Replaces `Camp.FissionWilling`.
+- **Minimum camp spacing.** `CampPlacement.Resolve` rejects any placement
+  closer than 2 hexes to another camp: fission destinations, relocations and
+  ordinary moves. This changes existing movement legality for players and AI,
+  so the order masks and movement previews (`OpeningPlanning.cs`) follow it,
+  and the change is validated on its own before fission is enabled.
 - **Mobility pass** in the Close phase: freeze the post-demography snapshot;
   one immigration intent per source (opportunity term zero); otherwise one
   fission intent against the cached target; reconcile immigration once, then
   fission on the remaining population, in canonical order with no rerouting;
   commit simultaneously. QoL is recomputed next turn.
-- **Observations and UI:** own lineage and kin relations; journal entries for
-  fission and immigration.
+- **Parallelism.** Scoring, push, destination checks and lazy site searches
+  run per camp on bounded workers (`PhaseExecution.Map`) over the frozen
+  snapshot; reconciliation and commits are canonical and proportional to the
+  number of intents.
+- **Observations and UI:** own lineage, kin relations and fission policy;
+  journal entries for fission and immigration.
 
-Decisions to settle at the start of WP9, before code:
+Headless: conservation across fission and immigration; daughters always
+smaller than parents; policy levers applied exactly; copied knowledge and
+practice equal to the parent's at fission; no fission without a viable site;
+no placement within 2 hexes; no same-turn multi-hop; bounded search counts;
+scalar-versus-parallel and reordered-collection fingerprints; save
+continuation including the new optional fields.
 
-- how a daughter Society is controlled: an AI player slot, and what happens
-  when the human player's camp fissions;
-- whether the player's own camps fission automatically or on the player's
-  confirmation (the #23 mandate question);
-- exactly which knowledge and practice experience a daughter inherits.
-
-Headless: conservation across fission and immigration; no fission without a
-viable site; no same-turn multi-hop; bounded search counts; determinism under
-reordering and parallel runs; save continuation.
-
-Measurement: fission multiplies settlement and Society counts, so every
-per-camp and per-Society cost grows with it. Measure camp and Society counts,
-memory (especially any dense per-Society visibility or knowledge state) and
-turn time over long runs at 80 and 320 starting tribes.
+Measurement: fission multiplies settlement, Society and player counts, so every
+per-camp and per-Society cost grows with it. Measure camp, Society and player
+counts, memory (especially any dense per-player visibility or knowledge state)
+and turn time over long runs at 80 and 320 starting tribes, with worker
+scaling at 1, 2 and 4 workers.
 
 ### WP10 — Calibration sweeps
 
@@ -385,7 +405,8 @@ turn time over long runs at 80 and 320 starting tribes.
   boundary; values use physical years; mobility is one pass per turn.
 - **Scaling:** WP1 hides latency, not CPU. WP3 adds O(claims) per search
   probe. WP7 adds at most `3 × camps` requisitions per turn. WP9 is
-  `O(N · r_imm² + F · r_fiss² + N)`, but raises `N` itself over time.
+  `O(N · r_imm² + F · r_fiss² + N)`, but raises `N` itself over time, so
+  per-camp and per-Society work runs in parallel with canonical commits.
 - **RL:** QoL, values, `w` and received requisitions are observation
   features; `λ`, `r`, `ρ`, `m` and priorities are Elder levers; QoL is the
   reward.

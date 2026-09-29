@@ -3,8 +3,8 @@
 Working architecture for the Neolithic social economy.
 
 Status: design working draft, 29 September 2026. Converted from the user's
-working design document of the same date. Sections 2.3–2.4, 3.5, 4, 6.4,
-7.2, 10, 11.1 and 12 were amended the same day to converge with
+working design document of the same date. Sections 2.3–2.4, 3.1, 3.3–3.6, 4,
+6.4, 7.2, 9, 10, 11.1 and 12 were amended the same day to converge with
 [ValueModelDesign.md](ValueModelDesign.md); the amendments are listed at the
 end. Not implemented. The ordered work is in
 [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md).
@@ -182,6 +182,11 @@ valid target is already cached.
 - Pastoral or nomadic destination: feeding ground scored by human food, herd
   forage and herd water.
 - Search radius is bounded and configurable; baseline `r_fiss = 3`, sweep 2–5.
+- **Minimum camp spacing:** no two camps may be closer than 2 hexes. This
+  applies to every camp placement: fission destinations, relocations and
+  moves. At distance 2 two radius-one land footprints can still share one or
+  two tiles; the shared-tile ledger resolves those, and contention rules stay
+  with #34. Distance 3 would remove land-footprint overlap entirely.
 - The cached destination persists until fission occurs, it becomes occupied or
   invalid, the source changes subsistence regime, or ecological support falls
   below viability.
@@ -206,25 +211,41 @@ F_score  = P_push · D_target
 `SiteSupport` is regime-specific but always evaluates the daughter cohort, not
 the parent's full population. A fission proposal exists only if
 `F_score > θ_fiss`, no higher-priority immigration proposal exists, and the
-daughter group satisfies minimum viable population and provisioning rules.
+daughter group satisfies minimum viable population (candidate baseline 12
+people) and provisioning rules.
 
 ### 3.4 Fission population
 
 ```
-N_daughter = floor(N_home · f_fiss)
+N_daughter = floor(N_home · f_fiss(policy))
 ```
 
 The daughter fraction is deliberately chunky because fission represents a
-coherent household or kin group rather than individual migration. The
-daughter founds a new Society (section 6.4).
+coherent household or kin group rather than individual migration. It is
+always below one half: fission is a smaller group splitting off, and the
+parent keeps its camp or village, site, fields and fixed Housing. The
+daughter founds a new Society (section 6.4) controlled by a new AI player
+slot; the player keeps control of the original camp.
+
+**Split and inheritance:**
+
+- Herds and portable stores (food, Fabric, tools, materials, Light Housing)
+  go with the daughter in the same fraction as its people, conserving every
+  ledger.
+- The daughter Society's knowledge and practice experience are **identical to
+  the parent's at the moment of fission**: technologies, traditions, policy
+  preferences, domain and species practice, and progression state are copied,
+  then diverge.
 
 | Lever | Baseline candidate | Sweep | Status |
 | --- | --- | --- | --- |
 | `Q_fiss` | 0.75 | 0.70–0.80 | Calibration target |
 | `ΔQ_fiss` | 0.10 | 0.05–0.15 | Calibration |
 | `θ_fiss` | 0.20 | 0.10–0.30 | Calibration |
-| `f_fiss` | 0.30 | 0.20–0.40 | Calibration |
+| `f_fiss` | 0.15 / 0.30 / 0.40 by policy (3.6) | 0.10–0.45 | Calibration |
 | `r_fiss` | 3 hexes | 2–5 | Performance-bounded |
+| Minimum camp spacing | 2 hexes | 2–3 | Agreed |
+| Minimum daughter population | 12 | 8–24 | Candidate |
 
 ### 3.5 Fission size by regime (new)
 
@@ -260,6 +281,37 @@ Scarcity compounding, agricultural regime:
 Below `Q*`, the push exists at any size, but fission still requires a viable
 destination and a minimum viable daughter group. The reference medians are
 design anchors; the acceptance targets are measured distributions (11.1).
+
+### 3.6 Fission policy: discourage, neutral, encourage (new)
+
+Each camp carries a saved **fission policy**, set by its player or by the AI
+(later the Elder). It is a real control over how a community splits, applied
+through three levers:
+
+| Policy | Reluctance: shift of `Q_fiss` | Daughter fraction `f_fiss` | Daughter affinity `a` |
+| --- | --- | --- | --- |
+| Discourage | −0.05 (more reluctant) | 0.15 (far fewer people and animals) | 0.5 (lower) |
+| Neutral | 0 | 0.30 | 0.9 |
+| Encourage | +0.05 (less reluctant) | 0.40 (more people and animals) | 1.0 (maximum) |
+
+Reluctance moves the QoL at which the push begins, so it changes both how
+likely fission is and the size at which it starts (reference conditions of
+3.5, fully desirable destination):
+
+| Regime | Discourage | Neutral | Encourage |
+| --- | --- | --- | --- |
+| Paleolithic | 116 | 101 | 83 |
+| Nomadic | 291 | 252 | 208 |
+| Agricultural (median / fully supplied) | 770 / 1105 | 607 / 999 | 398 / 887 |
+
+- The policy never forces fission: a proposal still needs the push, a viable
+  destination and a minimum viable daughter.
+- The daughter's affinity with its parent is fixed by the parent's policy at
+  the moment of fission; two daughters of the same parent take the lower of
+  their two parent affinities. Affinity then stays inert (6.4).
+- Default is Neutral for every camp. The setting is visible in the owner's
+  observation and settable through a legal action, like the economic
+  automation policy.
 
 ## 4. Immigration interface and ordering
 
@@ -405,9 +457,10 @@ unrelated Societies have `a = 0`.
   useful local demand may be given at `(1 − a)` of its value, down to a gift.
 - A Society never trades away units inside its own useful demand below its own
   reservation value, whatever the affinity.
-- In this pass affinity is **inert and high**: `a = 0.9` for every kin pair,
-  so the kin margin is 1%. Decay over tens of turns, and regeneration through
-  contact or trade, are out of scope.
+- Affinity is set at fission by the parent's fission policy (3.6): 0.5 when
+  discouraged, 0.9 when neutral, 1.0 when encouraged, giving kin margins of
+  5%, 1% and 0%. In this pass it is then **inert**: decay over tens of turns,
+  and regeneration through contact or trade, are out of scope.
 
 ## 7. Food trading
 
@@ -583,6 +636,14 @@ With both radii bounded at 5 or less, the pass is O(N) in the number of
 settlements. `F` is only the subset needing a fresh fission-site search,
 normally much smaller than N.
 
+**Parallelism.** Fission multiplies camps and Societies, so per-camp work must
+run in parallel. Steps 2–3 (scoring, push, destination checks and lazy site
+searches) are pure per camp over the frozen snapshot and run on bounded
+workers; steps 4–6 reconcile and commit in canonical order, with work
+proportional to the number of intents. The same holds for every other per-camp
+and per-Society system (AI decisions, planning, handshakes). Parallelism
+reduces wall time, not total CPU or memory, so long runs still measure both.
+
 Forbidden: all-pairs settlement comparisons, iterative rerouting, stable
 matching, min-cost flow, global market clearing, same-turn multi-hop
 migration, or recomputing QoL after each transfer.
@@ -604,11 +665,13 @@ migration, or recomputing QoL after each transfer.
 | `Q_fiss` | 0.75 | 0.70–0.80 | Fission push onset. |
 | `ΔQ_fiss` | 0.10 | 0.05–0.15 | Smoothness. |
 | `θ_fiss` | 0.20 | 0.10–0.30 | Requires destination quality. |
-| `f_fiss` | 0.30 | 0.20–0.40 | Daughter cohort size. |
+| `f_fiss` | 0.15 / 0.30 / 0.40 by policy | 0.10–0.45 | Daughter cohort size; always below one half. |
 | `r_fiss` | 3 | 2–5 | Lazy site search. |
 | `θ_imm` | 0.075 | 0.05–0.10 | Immigration deadband. |
 | `r_imm` | 4 | 3–5 | Bounded neighbour search. |
-| Kin affinity `a` | 0.9, inert | 0.7–1.0 | Decay out of scope. |
+| Fission policy reluctance | −0.05 / 0 / +0.05 on `Q_fiss` | ±0.03–0.08 | Discourage / neutral / encourage. |
+| Kin affinity `a` | 0.5 / 0.9 / 1.0 by policy, inert | — | Decay out of scope. |
+| Minimum camp spacing | 2 hexes | 2–3 | All camp placement. |
 | `λ` | open | calibrate | Planner scarcity curve. |
 | Discount rate `r` | 0.01 / y | 0–0.02 / y | Durable-value sensitivity. |
 | Requisitions `K` | 3 | 1–3 | Bounded handshake. |
@@ -633,6 +696,9 @@ refit `N_s` with the section 3.5 formula when they change.
 - Verify no hard population cliff; hazard changes smoothly with QoL and target
   desirability.
 - Verify no fission when no viable daughter site exists, even under low QoL.
+- Verify the fission policy shifts onset sizes as in 3.6 and that daughters
+  are always smaller than their parent.
+- Verify no placement ever puts two camps closer than 2 hexes.
 
 ### 11.2 Food-export and town sweep
 
@@ -674,6 +740,8 @@ refit `N_s` with the section 3.5 formula when they change.
   per turn.
 - No iterative rerouting after destination scaling or collision.
 - Trade remains bounded by K requisitions per camp; no global clearing pass.
+- Mobility results are identical under scalar and parallel execution and
+  reordered collections.
 
 ## 12. Repository integration map
 
@@ -681,8 +749,9 @@ refit `N_s` with the section 3.5 formula when they change.
 | --- | --- | --- |
 | QoL calculation | `NeolithicProduction.ResolveNeeds` | Multiply by the cohesion `S(N)` of the camp's regime; leave `DemographicGrowthMultiplier` unchanged. |
 | QoL constants | `NeolithicConfig` | Add `β`, regime `N_s`, fission, migration and affinity levers. |
-| Fission state | `Camp.FissionWilling` currently reset | Replace with derived mobility proposal state plus a saved cached target. |
-| Society lineage | `Societies.cs` (`Society`) | Add a saved parent-Society link; daughters inherit culture; kin affinity inert at 0.9. |
+| Fission state | `Camp.FissionWilling` currently reset | Replace with derived mobility proposal state, a saved cached target and a saved fission policy. |
+| Society lineage | `Societies.cs` (`Society`) | Add a saved parent-Society link and affinity; daughters copy knowledge and practice at fission and take a new AI player slot. |
+| Camp placement | `CampPlacement.Resolve` | Enforce the 2-hex minimum spacing for every placement. |
 | Agricultural site scoring | `Agents` agricultural candidate forecasting | Reuse physical support projection for daughter-site desirability. |
 | Pastoral site scoring | `SiteCoverage` and husbandry forecasts | Reuse min(human food, herd forage, herd water). |
 | Economic value | `ValueModelDesign.md`, `ProductionDemand` | Integrated bundle valuation, food bands and growth-food value. |
@@ -724,3 +793,11 @@ Agreed with the user when merging this design with the value model:
 5. Trade wording aligned with the agreed handshake: acceptance limits and
    one-turn lifetime (6.2), bounded range with provisional distance and bulk
    costs (0.2).
+6. **Daughters are AI player slots;** the player keeps the original camp.
+   Fission is always a smaller group splitting off (3.4).
+7. **Fission policy** discourage / neutral / encourage sets reluctance,
+   daughter size and affinity (3.6).
+8. **Daughters inherit knowledge and practice experience identical to the
+   parent's at fission** (3.4).
+9. **Minimum camp spacing of 2 hexes** for all placement, and parallel
+   per-camp mobility work with canonical commits (3.1, 9).

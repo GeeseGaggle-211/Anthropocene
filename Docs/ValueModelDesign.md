@@ -498,8 +498,9 @@ bounded in its own right, as above.
   `a` ([QoLFissionTradeDesign.md](QoLFissionTradeDesign.md), 6.4). Kin terms
   are friendlier, never self-sacrificing: the margin becomes `m · (1 − a)`,
   and only **surplus** beyond useful demand may go at `(1 − a)` of its value,
-  down to a gift. Affinity is inert at 0.9 in this pass; its change over time
-  is out of scope.
+  down to a gift. Affinity is set at fission by the parent's fission policy
+  (0.5 discourage, 0.9 neutral, 1.0 encourage) and is then inert; its change
+  over time is out of scope.
 - **Unrelated Societies** (`a = 0`): barter at the full margin, through explicit
   messages under filtered observations. A camp learns a neighbour's need only
   by receiving its bid, never by reading its stores. This matches #23's rule:
@@ -578,7 +579,8 @@ Agreed with the user on 29 September 2026:
    an expected-shortfall estimate.
 6. **Bids are bundles** so currency can be added later as one more good.
 7. **Kin terms are friendlier, never self-sacrificing**: margin `m · (1 − a)`,
-   only surplus given cheaply; affinity inert at 0.9.
+   only surplus given cheaply; affinity set by the parent's fission policy
+   (0.5 / 0.9 / 1.0), then inert.
 8. **Discount rate `r` is one configured constant**, baseline 0.01 per year and
    swept over 0–0.02, with a hook for the Elder to adjust it later.
 9. **Handshake limits:** `K = 3` requisitions per camp per turn; default
