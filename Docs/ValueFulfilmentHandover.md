@@ -144,9 +144,9 @@ The checkpoints are ignored local files; regenerate them as described in
 
 ## Housekeeping
 
-- GitHub CLI authentication was repaired at handover with file-backed storage
-  (`gh auth status` reports no login); pushes work through Git's file-backed
-  credential store. Issue review and closure need `gh` repaired first.
+- GitHub CLI authentication was repaired at handover (file-backed
+  `hosts.yml`). Issue review found nothing to close: #37 and #38 stay open by
+  their own terms, and the remaining issues are untouched feature work.
 - Unity re-serializes whitespace in 29 MapArt `.meta` files and creates
   `ProjectSettings/PackageManagerSettings.asset` during EditMode runs; these
   were deliberately left uncommitted.
