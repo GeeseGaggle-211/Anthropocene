@@ -24,7 +24,7 @@ foreach ($name in $summaryFiles.Keys) {
 Copy-Item -LiteralPath (Join-Path $candidateDir 'manifest.json') -Destination (Join-Path $resultsDir 'Issue33CandidateManifest.json') -Force
 Copy-Item -LiteralPath (Join-Path $baselineDir 'manifest.json') -Destination (Join-Path $resultsDir 'Issue33BaselineManifest.json') -Force
 
-$witnessColumns = @('good','control','role','source_ids','source_amounts','food_provenance','raw_stock_open','material_receipts','planned_output','actual_output','worker_years','stone_used','clay_used','wood_used','plantfood_used','animalfood_used','animalfabric_used','handtools_consumed','tools_consumed','negative_missing_input','negative_output','replacement_period1','replacement_period2','recurrence_scope','status')
+$witnessColumns = @('good','control','role','source_ids','source_amounts','food_provenance','raw_stock_open','material_receipts','planned_output','actual_output','worker_years','stone_used','clay_used','wood_used','plantfood_used','animalfood_used','animalfabric_used','housingmaterial_used','handtools_consumed','tools_consumed','negative_missing_input','negative_output','replacement_period1','replacement_period2','recurrence_scope','status')
 Import-Csv (Join-Path $candidateDir 'recipe-witnesses.csv') |
     Select-Object $witnessColumns |
     Export-Csv (Join-Path $resultsDir 'Issue33RecipeWitnesses.csv') -NoTypeInformation -Encoding utf8

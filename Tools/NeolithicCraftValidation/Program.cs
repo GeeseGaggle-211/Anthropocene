@@ -593,7 +593,11 @@ CohortsComplete:
         double openingAnimal = (double)food.GetProperty("AnimalFood").GetValue(beforeFood);
         if (recipe.PlantFood > 0 && openingPlant + 1e-9 < recipe.PlantFood || recipe.AnimalFood > 0 && openingAnimal + 1e-9 < recipe.AnimalFood)
             return good + ":opening-food-shortfall-cause-unresolved";
+        if (recipe.ConstructionMaterial > 0 &&
+            openingWood + openingClay + materialTransfers.Where(m => m.Material == MaterialId.Wood || m.Material == MaterialId.Clay).Sum(m => m.Amount) < recipe.ConstructionMaterial - 1e-9)
+            return good + ":material-input-unavailable-or-unresolved";
         if (recipe.AnimalFabric > 0) return good + ":animal-fabric-input-provenance-unresolved";
+        if (recipe.HousingMaterial > 0) return good + ":housing-material-input-provenance-unresolved";
         if (actual <= 1e-9 && scheduled <= 1e-9) return good + ":useful-demand-unscheduled-classification-unresolved";
         return good + ":unresolved-capacity-or-allocation";
     }

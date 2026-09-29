@@ -32,7 +32,7 @@ ROLE_WORKSTREAM = {
     "ClayMiner": "material-extraction", "Woodcutter": "material-extraction",
 }
 GOOD_NAMES = ("HandTools", "Pots", "Cloth", "FarmTools", "Housing", "Tools",
-              "AnimalFabric", "LightHousing", "HerdingTools")
+              "AnimalFabric", "LightHousing", "HerdingTools", "HousingMaterial")
 ID_FIELDS = ("seed", "camp", "route", "unlock_rule", "unlock_turn")
 SCENARIO_FIELDS = ("cohort_class", "scenario", "shock", "initial_habitat", "unlock_save_sha256")
 

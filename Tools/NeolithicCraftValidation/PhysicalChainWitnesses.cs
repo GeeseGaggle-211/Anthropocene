@@ -34,7 +34,7 @@ public static class PhysicalChainWitnesses
         var baseline = SaveCodec.Save(source);
         var lines = new List<string>
         {
-            "good,control,role,source_ids,source_amounts,food_provenance,raw_stock_open,material_receipts,bootstrap_handtools,planned_output,actual_output,worker_intervals,worker_years,stone_used,clay_used,wood_used,plantfood_used,animalfood_used,animalfabric_used,handtools_consumed,tools_consumed,stock_before,stock_after,negative_missing_input,negative_output,replacement_period1,replacement_period2,recurrence_scope,status"
+            "good,control,role,source_ids,source_amounts,food_provenance,raw_stock_open,material_receipts,bootstrap_handtools,planned_output,actual_output,worker_intervals,worker_years,stone_used,clay_used,wood_used,plantfood_used,animalfood_used,animalfabric_used,housingmaterial_used,handtools_consumed,tools_consumed,stock_before,stock_after,negative_missing_input,negative_output,replacement_period1,replacement_period2,recurrence_scope,status"
         };
 
         foreach (var recipe in NeolithicProduction.Recipes(source.Config).OrderBy(r => r.Good))
@@ -63,7 +63,7 @@ public static class PhysicalChainWitnesses
                     lines.Add(Row(recipe.Good, "generalist-before-mastery", "Craftsperson",
                         string.Join("|", excluded.SourceIds), string.Join("|", excluded.SourceAmounts), excluded.FoodProvenance,
                         "0/0/0", MaterialSummary(excluded.Record, excluded.Camp), 0, .25, 0, 0, 0,
-                        0, 0, 0, 0, 0, 0, 0, 0, NeolithicProduction.Stock(excluded.Camp, recipe.Good),
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, NeolithicProduction.Stock(excluded.Camp, recipe.Good),
                         NeolithicProduction.Stock(excluded.Camp, recipe.Good), "SpecialistOnly mastery", 0,
                         excludedDemand, excludedDemand,
                         "not applicable to this intentionally blocked SpecialistOnly generalist negative; matching mastered row establishes replacement",
@@ -97,6 +97,7 @@ public static class PhysicalChainWitnesses
                     Near(receipt.PlantFood, before.PlantFood - state.Camp.PlantFood) &&
                     Near(receipt.AnimalFood, before.AnimalFood - state.Camp.AnimalFood) &&
                     Near(before.AnimalFabric - receipt.AnimalFabric + (recipe.Good == CraftGood.AnimalFabric ? actualOutput : 0), state.Camp.Inventory.AnimalFabric) &&
+                    Near(before.HousingMaterial - receipt.HousingMaterial + (recipe.Good == CraftGood.HousingMaterial ? actualOutput : 0), state.Camp.Inventory.HousingMaterial) &&
                     Near(before.HandTools - receipt.HandToolsConsumed + (recipe.Good == CraftGood.HandTools ? actualOutput : 0), state.Camp.Inventory.HandTools) &&
                     Near(before.Tools - receipt.ToolsConsumed + (recipe.Good == CraftGood.Tools ? actualOutput : 0), state.Camp.Inventory.Tools);
                 // The target receipt is the authoritative labor receipt. Check
@@ -109,6 +110,8 @@ public static class PhysicalChainWitnesses
                 else
                     conserved &= Near(NeolithicProduction.Stock(state.Camp, recipe.Good) - priorStock, actualOutput);
 
+                bool chainOk = HousingChainReceiptsHold(state, recipe, receipt, used, out string chainNote);
+                conserved &= chainOk;
                 var negative = PrepareCase(baseline, recipe, mastered);
                 double missing = RemoveOneRequiredInput(negative.Camp, recipe);
                 string negativeInput = MissingInputName(recipe);
@@ -154,11 +157,11 @@ public static class PhysicalChainWitnesses
                     "0/0/0", rawReceipts, bootstrapOutput, target, actualOutput, used,
                     used * state.World.Config.BaseDays / state.World.Config.DaysPerYear,
                     receipt?.Stone ?? 0, receipt?.Clay ?? 0, receipt?.Wood ?? 0,
-                    receipt?.PlantFood ?? 0, receipt?.AnimalFood ?? 0, receipt?.AnimalFabric ?? 0,
+                    receipt?.PlantFood ?? 0, receipt?.AnimalFood ?? 0, receipt?.AnimalFabric ?? 0, receipt?.HousingMaterial ?? 0,
                     receipt?.HandToolsConsumed ?? 0, receipt?.ToolsConsumed ?? 0,
                     priorStock, stockAfterInitialOutput,
                     negativeInput, blocked, cycles.First, cycles.Second,
-                    cycles.Scope,
+                    cycles.Scope + (chainNote.Length > 0 ? "; " + chainNote : ""),
                     status));
                 if (!pass) throw new InvalidOperationException("Physical chain witness failed: " + recipe.Good + " / " + label + " / " + status + " / " + cycles.Scope);
             }
@@ -199,7 +202,7 @@ public static class PhysicalChainWitnesses
         }
         Ownership.Bind(world);
 
-        var needed = RawNeeds(target, .25);
+        var needed = RawNeeds(world.Config, target, .25);
         // Hand-tool replacement is evidenced through actual useful Pot
         // production. Select and disclose a site that can fund that service
         // from a second finite Clay receipt as well as the target recipe.
@@ -208,7 +211,7 @@ public static class PhysicalChainWitnesses
             var pot = NeolithicProduction.Recipes(world.Config).Single(r => r.Good == CraftGood.Pots);
             needed[MaterialId.Clay] = (needed.TryGetValue(MaterialId.Clay, out double clay) ? clay : 0) + .05 * pot.Clay;
         }
-        if (target.Equipment)
+        if (NeedsTools(target))
         {
             double bootstrapStone = NeolithicProduction.Recipes(world.Config).Single(r => r.Good == CraftGood.HandTools).Stone;
             needed[MaterialId.Stone] = (needed.TryGetValue(MaterialId.Stone, out double stone) ? stone : 0) + bootstrapStone;
@@ -254,7 +257,7 @@ public static class PhysicalChainWitnesses
         foreach (var material in needed.OrderBy(p => p.Key))
             ExtractExact(state, material.Key, material.Value);
 
-        if (target.Equipment)
+        if (NeedsTools(target))
         {
             var handRecipe = NeolithicProduction.Recipes(world.Config).Single(r => r.Good == CraftGood.HandTools);
             string bootstrapRole = mastered && handRecipe.Specialist == target.Specialist ? target.Specialist : WorkforceRoles.Craftsperson;
@@ -299,7 +302,65 @@ public static class PhysicalChainWitnesses
                 throw new InvalidOperationException("LightHousing witness could not make real AnimalFabric from managed AnimalFood.");
         }
 
+        if (target.Good == CraftGood.Housing)
+        {
+            // Housing assembly consumes real Housing Material made from the
+            // extracted Wood/Clay, mirroring the Light Housing / Animal Fabric chain.
+            ProduceHousingMaterial(state, .25);
+            if (camp.Inventory.HousingMaterial + Epsilon < .25)
+                throw new InvalidOperationException("Housing witness could not make real Housing Material from extracted Wood/Clay.");
+        }
+
         return state;
+    }
+
+    // Housing Material has no tool wear of its own, but its witness services the
+    // stock by assembling Housing, which needs tools like any assembly.
+    private static bool NeedsTools(CraftRecipe recipe) => recipe.Equipment || recipe.Good == CraftGood.HousingMaterial;
+
+    private static double ProduceHousingMaterial(CaseState state, double amount)
+    {
+        var material = NeolithicProduction.Recipes(state.World.Config).Single(r => r.Good == CraftGood.HousingMaterial);
+        string role = state.Camp.People.HasTech(material.Track) ? material.Specialist : WorkforceRoles.Craftsperson;
+        double capacity = RoleIntervalCapacity(state, role);
+        return NeolithicProduction.Produce(state.World, state.Camp, material, role, capacity, state.IntervalBudget, amount,
+            ref state.IntervalBudget, state.Record, state.Coverage);
+    }
+
+    // Physical-chain audit of the Housing split. For Housing it checks that the
+    // Wood/Clay debit sits on the Housing Material receipt (no tool wear, no
+    // equipment time), that the assembly receipt debits exactly the Housing
+    // Material it outputs and carries the tool wear, and that the two steps'
+    // labour equals the single-step Housing labour per unit (equal rates).
+    private static bool HousingChainReceiptsHold(CaseState state, CraftRecipe recipe, ProductionReceipt receipt, double used, out string note)
+    {
+        note = "";
+        if (receipt == null) return true;
+        var config = state.World.Config;
+        var materialRecipe = NeolithicProduction.Recipes(config).Single(r => r.Good == CraftGood.HousingMaterial);
+        var housingRecipe = NeolithicProduction.Recipes(config).Single(r => r.Good == CraftGood.Housing);
+        var camp = state.Camp.Id;
+        if (recipe.Good == CraftGood.HousingMaterial)
+        {
+            note = "housing-material step: Wood+Clay=" + (receipt.Wood + receipt.Clay).ToString("R", CultureInfo.InvariantCulture) +
+                "; tool-wear=0";
+            return Near(receipt.Wood + receipt.Clay, receipt.Output * materialRecipe.ConstructionMaterial) &&
+                receipt.HandToolsConsumed <= Epsilon && receipt.ToolsConsumed <= Epsilon && receipt.EquipmentWorkerIntervals <= Epsilon;
+        }
+        if (recipe.Good != CraftGood.Housing) return true;
+        var material = state.Record.Production.FirstOrDefault(r => r.Camp == camp && r.Good == CraftGood.HousingMaterial);
+        if (material == null) { note = "missing Housing Material receipt"; return false; }
+        double tools = receipt.HandToolsConsumed + receipt.ToolsConsumed;
+        bool ok = Near(material.Wood + material.Clay, material.Output * materialRecipe.ConstructionMaterial) &&
+            material.HandToolsConsumed <= Epsilon && material.ToolsConsumed <= Epsilon && material.EquipmentWorkerIntervals <= Epsilon &&
+            receipt.Wood <= Epsilon && receipt.Clay <= Epsilon && Near(receipt.HousingMaterial, receipt.Output * housingRecipe.HousingMaterial) &&
+            receipt.HousingMaterial <= material.Output + Epsilon && tools > Epsilon && receipt.EquipmentWorkerIntervals > Epsilon &&
+            Near(material.WorkerIntervals, used);
+        note = "housing chain: material-labor=" + material.WorkerIntervals.ToString("R", CultureInfo.InvariantCulture) +
+            "; assembly-labor=" + used.ToString("R", CultureInfo.InvariantCulture) +
+            "; labor-per-housing-unit=" + ((material.WorkerIntervals + used) / Math.Max(Epsilon, receipt.Output)).ToString("R", CultureInfo.InvariantCulture) +
+            "; assembly-tool-wear=" + tools.ToString("R", CultureInfo.InvariantCulture) + "; material-tool-wear=0";
+        return ok;
     }
 
     private static string ProduceManagedAnimalFood(WorldState world, Camp camp)
@@ -312,6 +373,7 @@ public static class PhysicalChainWitnesses
         before.Pots = original.Pots; before.Cloth = original.Cloth; before.FarmTools = original.FarmTools;
         before.HousingUnits = original.HousingUnits; before.AnimalFabric = original.AnimalFabric;
         before.LightHousingUnits = original.LightHousingUnits; before.HerdingTools = original.HerdingTools;
+        before.HousingMaterial = original.HousingMaterial;
         var species = world.Config.Species.FirstOrDefault(s => s.Domesticable);
         if (species == null) throw new InvalidOperationException("No domesticable species available for AnimalFood provenance witness.");
         world.Herds.Add(new Herd { Id = world.NextId++, Tile = camp.Tile, Species = species.Id, Animals = Math.Min(100, species.MaximumAnimals),
@@ -329,7 +391,8 @@ public static class PhysicalChainWitnesses
             camp.Inventory.HandTools != before.HandTools || camp.Inventory.Tools != before.Tools || camp.Inventory.CopperTools != before.CopperTools ||
             camp.Inventory.Pots != before.Pots || camp.Inventory.Cloth != before.Cloth || camp.Inventory.FarmTools != before.FarmTools ||
             camp.Inventory.HousingUnits != before.HousingUnits || camp.Inventory.AnimalFabric != before.AnimalFabric ||
-            camp.Inventory.LightHousingUnits != before.LightHousingUnits || camp.Inventory.HerdingTools != before.HerdingTools)
+            camp.Inventory.LightHousingUnits != before.LightHousingUnits || camp.Inventory.HerdingTools != before.HerdingTools ||
+            camp.Inventory.HousingMaterial != before.HousingMaterial)
             throw new InvalidOperationException("Managed-herd provenance turn altered raw/manufactured inventory before the disclosed zero-stock chain start: " + MaterialSummary(record, camp));
         if (accepted <= Epsilon || camp.AnimalFood <= Epsilon)
         {
@@ -368,9 +431,9 @@ public static class PhysicalChainWitnesses
             double useful = Math.Min(amount, demand);
             if (useful <= Epsilon) { result.Scope += "; no useful demand period=" + period + " demand=" + demand.ToString("R", CultureInfo.InvariantCulture); return result; }
 
-            var materials = RawNeeds(recipe, useful);
+            var materials = RawNeeds(state.World.Config, recipe, useful);
             CraftRecipe handRecipe = null;
-            if (recipe.Equipment && state.Camp.Inventory.HandTools + state.Camp.Inventory.Tools <= Epsilon)
+            if (NeedsTools(recipe) && state.Camp.Inventory.HandTools + state.Camp.Inventory.Tools <= Epsilon)
             {
                 handRecipe = NeolithicProduction.Recipes(state.World.Config).Single(r => r.Good == CraftGood.HandTools);
                 materials[MaterialId.Stone] = (materials.TryGetValue(MaterialId.Stone, out double stone) ? stone : 0) + handRecipe.Stone;
@@ -393,6 +456,8 @@ public static class PhysicalChainWitnesses
                     state.IntervalBudget, useful, ref state.IntervalBudget, state.Record, state.Coverage) <= Epsilon)
                     return result;
             }
+            if (recipe.Good == CraftGood.Housing && ProduceHousingMaterial(state, useful) <= Epsilon)
+                return result;
             double capacity = RoleIntervalCapacity(state, role);
             int start = state.Record.Production.Count;
             double equipmentIntervals = state.IntervalBudget;
@@ -422,6 +487,22 @@ public static class PhysicalChainWitnesses
             NeolithicProduction.ResolveNeeds(w, c, years, c.Population);
         else if (recipe.Good == CraftGood.Housing || recipe.Good == CraftGood.LightHousing)
             NeolithicProduction.DepreciateHousing(w, c, years, c.Population);
+        else if (recipe.Good == CraftGood.HousingMaterial)
+        {
+            // Housing Material neither wears nor decays; the stock is serviced by
+            // assembling Housing from it (a real assembly receipt with tool wear).
+            var assembly = NeolithicProduction.Recipes(w.Config).Single(r => r.Good == CraftGood.Housing);
+            string builder = c.People.HasTech(assembly.Track) ? assembly.Specialist : WorkforceRoles.Craftsperson;
+            int start = state.Record.Production.Count;
+            double equipment = state.IntervalBudget;
+            double usedLabor = NeolithicProduction.Produce(w, c, assembly, builder, RoleIntervalCapacity(state, builder),
+                state.IntervalBudget, Math.Min(.1, c.Inventory.HousingMaterial), ref equipment, state.Record, state.Coverage);
+            var made = state.Record.Production.Skip(start).Where(p => p.Good == CraftGood.Housing).ToArray();
+            serviced = made.Sum(p => p.HousingMaterial);
+            if (serviced <= Epsilon || usedLabor <= Epsilon || made.Sum(p => p.HandToolsConsumed + p.ToolsConsumed) <= Epsilon)
+            { state.ServiceReceipts.Add("Housing assembly service missing; consumed=" + serviced.ToString("R", CultureInfo.InvariantCulture)); return false; }
+            state.ServiceReceipts.Add("HousingMaterial consumed by assembly=" + serviced.ToString("R", CultureInfo.InvariantCulture));
+        }
         else if (recipe.Good == CraftGood.FarmTools)
         {
             SetRole(c, WorkforceRoles.Farmer, Math.Max(4, c.Population / 5));
@@ -471,9 +552,18 @@ public static class PhysicalChainWitnesses
             (recipe.Good == CraftGood.Housing && NeolithicProduction.HousingSupply(w, c, w.Days + years * w.Config.DaysPerYear) < beforeHousing - Epsilon);
     }
 
-    private static Dictionary<MaterialId, double> RawNeeds(CraftRecipe recipe, double output)
+    // Raw Stone/Clay/Wood a recipe's chain draws from finite sources. A recipe that
+    // consumes Housing Material owns no raw input of its own; its raw need is the
+    // Housing Material recipe's, per consumed unit.
+    private static Dictionary<MaterialId, double> RawNeeds(SimulationConfig config, CraftRecipe recipe, double output)
     {
         var result = new Dictionary<MaterialId, double>();
+        if (recipe.HousingMaterial > 0)
+        {
+            var material = NeolithicProduction.Recipes(config).Single(r => r.Good == CraftGood.HousingMaterial);
+            foreach (var need in RawNeeds(config, material, output * recipe.HousingMaterial))
+                result[need.Key] = (result.TryGetValue(need.Key, out double have) ? have : 0) + need.Value;
+        }
         Add(MaterialId.Stone, recipe.Stone * output);
         Add(MaterialId.Clay, recipe.Clay * output + recipe.ConstructionMaterial * output);
         // Construction's shared material budget is intentionally sourced from
@@ -532,19 +622,19 @@ public static class PhysicalChainWitnesses
 
     private sealed class InputSnapshot
     {
-        public double Stone, Clay, Wood, PlantFood, AnimalFood, AnimalFabric, HandTools, Tools;
+        public double Stone, Clay, Wood, PlantFood, AnimalFood, AnimalFabric, HousingMaterial, HandTools, Tools;
     }
     private static InputSnapshot SnapshotInputs(Camp camp, CraftRecipe recipe) => new InputSnapshot
     {
         Stone = camp.Inventory.Stone, Clay = camp.Inventory.Clay, Wood = camp.Inventory.Wood,
-        PlantFood = camp.PlantFood, AnimalFood = camp.AnimalFood, AnimalFabric = camp.Inventory.AnimalFabric,
+        PlantFood = camp.PlantFood, AnimalFood = camp.AnimalFood, AnimalFabric = camp.Inventory.AnimalFabric, HousingMaterial = camp.Inventory.HousingMaterial,
         HandTools = camp.Inventory.HandTools, Tools = camp.Inventory.Tools
     };
 
     private static bool SourceReceiptsCover(CaseState state, CraftRecipe recipe, double target, out string summary)
     {
-        var needs = RawNeeds(recipe, target);
-        if (recipe.Equipment)
+        var needs = RawNeeds(state.World.Config, recipe, target);
+        if (NeedsTools(recipe))
         {
             double bootstrapStone = NeolithicProduction.Recipes(state.World.Config).Single(r => r.Good == CraftGood.HandTools).Stone;
             needs[MaterialId.Stone] = (needs.TryGetValue(MaterialId.Stone, out double stone) ? stone : 0) + bootstrapStone;
@@ -612,6 +702,7 @@ public static class PhysicalChainWitnesses
         if (recipe.PlantFood > 0) { double n = camp.PlantFood; camp.PlantFood = 0; return n; }
         if (recipe.AnimalFood > 0) { double n = camp.AnimalFood; camp.AnimalFood = 0; return n; }
         if (recipe.AnimalFabric > 0) { double n = camp.Inventory.AnimalFabric; camp.Inventory.AnimalFabric = 0; return n; }
+        if (recipe.HousingMaterial > 0) { double n = camp.Inventory.HousingMaterial; camp.Inventory.HousingMaterial = 0; return n; }
         if (recipe.Equipment) { double n = camp.Inventory.HandTools; camp.Inventory.HandTools = 0; return n; }
         return 0;
     }
@@ -624,6 +715,7 @@ public static class PhysicalChainWitnesses
         if (recipe.PlantFood > 0) return "PlantFood";
         if (recipe.AnimalFood > 0) return "AnimalFood";
         if (recipe.AnimalFabric > 0) return "AnimalFabric";
+        if (recipe.HousingMaterial > 0) return "HousingMaterial";
         return "HandTools";
     }
 
