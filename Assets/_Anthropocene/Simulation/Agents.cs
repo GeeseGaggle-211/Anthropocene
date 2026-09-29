@@ -48,7 +48,7 @@ namespace Anthropocene.Simulation
         private TileObservation(Tile tile, SeasonData ecology, SimulationConfig config, IReadOnlyList<RiverEdge> rivers, EcologyView? projected, EcologyCapacity? projectedCapacity)
         {
             var view = projected ?? new EcologyView(tile);
-            Cultivable = tile.TraversableLand && tile.Environment != EnvironmentKind.Ice && tile.Seasons.Any(s => s.MaxPotentialFood > 0);
+            Cultivable = tile.TraversableLand && tile.Environment != EnvironmentKind.Ice && AnyPotentialFood(tile);
             Environment = tile.Environment; NaturalVegetationPotential = tile.NaturalVegetationPotential; CurrentVegetation = view.CurrentVegetation;
             Cultivation = CultivationEconomy.Intensity(config, view.CultivationCapital);
             NaturalVegetationRetention = EcologyMath.CultivationVegetationRetention(config, Cultivation);
@@ -88,6 +88,11 @@ namespace Anthropocene.Simulation
             Food = Knowledge.Band(view.Food, 70, config); Freshwater = Knowledge.Band(view.Freshwater, 70, config);
             Condition = Knowledge.Band(condition, 1, config);
             Productivity = Knowledge.Band((foodCapacity * foodRate + managedFlow) * config.BaseDays, 30, config); Moisture = Knowledge.Band(ecology.Moisture, 1, config);
+        }
+        private static bool AnyPotentialFood(Tile tile)
+        {
+            foreach (var season in tile.Seasons) if (season.MaxPotentialFood > 0) return true;
+            return false;
         }
     }
     public sealed class RiverObservation

@@ -468,7 +468,18 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OnDeserializing]
         private void MarkLegacyFixedHousing(System.Runtime.Serialization.StreamingContext context) { FixedHousing = null; }
         public int Season => (int)(Days / Config.BaseDays) % 4;
-        public HexMap Map => new HexMap(Config.Width, Config.Height);
+        // HexMap is immutable; rebuild only if the configured dimensions change.
+        [NonSerialized] private HexMap map;
+        public HexMap Map
+        {
+            get
+            {
+                var current = map;
+                if (current == null || current.Width != Config.Width || current.Height != Config.Height)
+                    map = current = new HexMap(Config.Width, Config.Height);
+                return current;
+            }
+        }
         public SeasonData Ecology(int tile) => Tiles[tile].Seasons[Season];
         public bool Finished => Camps.All(c => c.People.Progression.Era != Era.Paleolithic || LinkedPopulation(c) == 0);
         public int LinkedPopulation(Camp camp) => camp.Population + Hunters.Where(h => h.SourceCamp == camp.Id).Sum(h => h.Population);

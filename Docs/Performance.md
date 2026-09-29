@@ -58,6 +58,23 @@ directions. Fingerprint equality still means payload equality, but hex values
 differ from earlier revisions: compare exact fingerprints only between builds
 that share this definition.
 
+A follow-up allocation pass on the same host targets profiled turn hot
+paths without changing results: `HerdingTooling.DomesticAnimals` sums integer
+counts without sorting every herd, `FreshwaterAccess.Source` selects the source
+in one pass with the former ordering, `WorldState.Map` caches its immutable
+`HexMap`, `PlanningIndex.Ecology` reuses one projection delegate, and
+`HexMap.Radius` allocates its duplicate filter only on maps narrower than
+`2r+1`. Eight mature turns from `start-80-11` reproduced every per-turn
+fingerprint of the prior commit (scalar, four workers, and four workers with
+reversed collections and partitions); `start-80-1729` matched for six turns.
+Three alternating pairs allocated 1,430 → 1,156 MiB and took 2,547 → 2,415 ms
+on average (one pair was slower). `NeolithicProduction.Recipes` caching was not
+adopted because recipes are mutable and tests change Neolithic configuration
+between calls. The remaining turn hot spots are `EconomicPlanner.Plan` (about
+40% of turn CPU; see [PlannerDirectFulfilmentPlan.md](PlannerDirectFulfilmentPlan.md)),
+herd-destination reachability searches and contention on the shared
+`PlanningIndex` ecology cache.
+
 Measured but not adopted: server GC made ten mature 80-tribe turns 2–3×
 slower. Disabling concurrent GC or raising the gen-0 budget looked 10–20%
 faster in two noisy repetitions and needs paired runs before any change.

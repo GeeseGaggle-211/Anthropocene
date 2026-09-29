@@ -152,7 +152,13 @@ namespace Anthropocene.Simulation
     public static class HerdingTooling
     {
         public static double DomesticAnimals(WorldState w, Camp c)
-            => w.Herds.Where(h => h.DomesticCamp == c.Id && h.Animals > 0).OrderBy(h => h.Id).Sum(h => h.Animals);
+        {
+            // Integer counts sum exactly in any order; this runs inside planner loops.
+            int animals = 0;
+            foreach (var h in w.Herds)
+                if (h.DomesticCamp == c.Id && h.Animals > 0) animals = checked(animals + h.Animals);
+            return animals;
+        }
         public static int RequiredHerders(WorldState w, Camp c, double years)
         {
             double animals = DomesticAnimals(w, c);

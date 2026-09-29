@@ -21,6 +21,7 @@ namespace Anthropocene.Simulation
         public PlanningIndex(WorldState w)
         {
             world = w; Camps = w.Camps.ToDictionary(c => c.Id);
+            project = n => LazyEcology.ProjectEcology(world, n, world.Days);
             campsByPlayer = w.Camps.GroupBy(c => c.Player).ToDictionary(g => g.Key, g => g.OrderBy(c => c.Id).ToArray());
             campsByTile = w.Camps.GroupBy(c => c.Tile).ToDictionary(g => g.Key, g => g.OrderBy(c => c.Id).ToArray());
             huntersByPlayer = w.Hunters.GroupBy(h => h.Player).ToDictionary(g => g.Key, g => g.OrderBy(h => h.Id).ToArray());
@@ -41,7 +42,10 @@ namespace Anthropocene.Simulation
         internal Herd[] CampHerds(int camp) => At(herdsByCamp, camp);
         internal IEnumerable<Transfer> Extraction(IEnumerable<int> entities) => entities.OrderBy(n => n).SelectMany(n => At(extractionByEntity, n));
         internal int Population(Camp c) => c.Population + CampHunters(c.Id).Sum(h => h.Population);
-        public EcologyView Ecology(int tile) => ecology.GetOrAdd(tile, n => LazyEcology.ProjectEcology(world, n, world.Days));
+        private readonly Func<int, EcologyView> project;
+        // Projection is pure, so a racing duplicate computes the same view.
+        public EcologyView Ecology(int tile)
+            => ecology.TryGetValue(tile, out var view) ? view : ecology.GetOrAdd(tile, project);
         public HashSet<int> Visible(int player) => new HashSet<int>(VisibleCached(player));
         internal HashSet<int> VisibleCached(int player) => visibility.GetOrAdd(player, p => BuildVisible(p));
         private HashSet<int> BuildVisible(int player)

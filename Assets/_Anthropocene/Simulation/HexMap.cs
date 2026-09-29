@@ -23,10 +23,12 @@ namespace Anthropocene.Simulation
         }
         public IEnumerable<int> Radius(int tile, int radius)
         {
-            var found = new HashSet<int>();
+            // Rows never overlap and one row spans at most 2r+1 longitudes, so
+            // wrapped duplicates are possible only on maps narrower than that.
+            var found = Width < 2 * radius + 1 ? new HashSet<int>() : null;
             for (int dr = -radius; dr <= radius; dr++)
                 for (int dq = Math.Max(-radius, -dr - radius); dq <= Math.Min(radius, -dr + radius); dq++)
-                { int n = At(tile % Width + dq, tile / Width + dr); if (n >= 0 && found.Add(n)) yield return n; }
+                { int n = At(tile % Width + dq, tile / Width + dr); if (n >= 0 && (found == null || found.Add(n))) yield return n; }
         }
         public bool Reachable(int start, int destination, int budget, Func<int, bool> enter, Func<int, int> cost = null)
         {
