@@ -137,9 +137,24 @@ output's other costs. They can remain sized by `ToolReplacementDemands` from
 the chosen outputs, as today.
 
 **Pots** protect future food. A proper value needs an expected-shortage
-estimate, which does not exist. Placeholder: treat the reserve gap as a need
-with coverage `storage / desired reserve` and `V_Pots = ρ · F-sensitivity`,
-where `ρ` is a risk weight (another Elder lever). Flagged as unresolved.
+estimate, which does not exist yet. Agreed placeholder: treat the reserve gap
+as a need with coverage `storage / desired reserve`, valued through food
+security (below) and scaled by a configured risk weight `ρ`. Natural disasters
+and immigration are planned; both create real shortfalls (lost harvests,
+sudden extra mouths) that Pots buffer. When they exist, `ρ` is replaced by
+their expected shortfall. Only the probability term changes, not the method.
+
+**Food security** is the common basis for Pots and field expansion. Food met
+`F` multiplies every other QoL term, so one unit of food shortfall avoided is
+worth the QoL it protects:
+
+```
+value of avoided shortfall per food unit ≈ (QoL / F) · residents / food demand
+```
+
+in person-QoL-years. An expansion farmer prevents a *forecast* shortfall as the
+cohort grows; a Pot prevents a *risk-weighted* one. Both use the same
+formula, so neither needs its own tuning.
 
 ## Fulfilment rule: search on `w`
 
@@ -215,11 +230,34 @@ An export claim therefore enters the demand pass as an ordinary claim with a
 flat value (the bid) and quantity R. The rule above handles it unchanged: its
 share is 1 whenever `w` is below the bid value divided by its labour.
 
-### What a bid is worth without money
+### Bids: barter now, currency later
 
-There is no currency. A bid is barter: "R units of X for P units of Y". Each
-camp judges it on its own curves, so no common value scale across camps is
-needed:
+There is no currency yet, but Anthropocene is meant to reach the modern era, so
+bids must not hard-code barter. Represent every bid as two bundles:
+
+```
+Bid { Give: [(good, quantity)], Receive: [(good, quantity)] }
+```
+
+Barter is a bid whose bundles contain ordinary goods. Currency, when it
+arrives, is one more good in the same bundles: it has no consumption use, and
+its value to a camp is its **exchange value**, the best use of what it buys.
+That is the "best use" rule already in this model. A posted currency price is
+then just a bid with currency on one side, and a camp's local marginal value
+divided by its marginal value of currency is its reservation price in
+currency. Nothing in the valuation, the claims or the fulfilment rule changes
+when money is added; only the set of goods and a later market mechanism do.
+
+To keep that path open:
+
+- keep values in each camp's own unit (person-QoL-years); never compare two
+  camps' values directly, only goods exchanged;
+- keep bids as bundles, never as fixed bilateral pairs;
+- record accepted exchange ratios in the trade ledger, so later markets have a
+  price history to start from.
+
+Each camp judges a bid on its own curves, so no common value scale across
+camps is needed:
 
 - **Buyer B** offers while its marginal value of X exceeds its marginal value
   of the Y it gives up.
@@ -280,30 +318,46 @@ tuning. A neighbour's request for housing is a request for Housing Material;
 the buyer spends its own builder labour on site. Sending builders to a
 neighbour's site remains a separate labour-service option for later.
 
-### Timing: two-stage preparation, not a one-turn lag
+### Handshake: propose, confirm, trade
 
-A requisition posted at turn t and filled at t+1 would take 20–40 simulated
-years at the current turn length. Recommended instead: resolve requests inside
-one `TurnPlanner.Prepare`, all from the committed boundary:
+Agreed: a requisition is a handshake. One camp proposes, the other confirms
+(fully, partly or not at all), and the confirmed trade is made. A confirmed
+trade is binding.
 
-1. **Quote** (per camp, pure, parallel): each camp computes its curves and a
+A proposal posted at turn t and confirmed at t+1 would take 20–40 simulated
+years at the current turn length. Between AI-managed camps the handshake
+therefore completes inside one `TurnPlanner.Prepare`, all from the committed
+boundary:
+
+1. **Propose** (per camp, pure, parallel): each camp computes its curves and a
    preliminary `w` from the closed-form shares, without the exact staffing
-   pass, and posts bids and asks for neighbours in range.
-2. **Match** (canonical, serial, O(bids)): pair bids and asks in canonical
-   order (by price, then camp ID and good) into commitments for this turn.
-3. **Plan** (per camp, pure, parallel): each camp plans with its accepted
+   pass, and sends proposals to neighbours in range.
+2. **Confirm** (per recipient, canonical order): each recipient judges the
+   proposals it received on its own curves and confirms or declines. Where
+   proposals compete for the same capacity, it takes them in order of value to
+   itself, ties broken by camp ID and good.
+3. **Plan** (per camp, pure, parallel): each camp plans with its confirmed
    export and import claims included, as above.
 
-Delivery and payment are exchanged in one canonical step during resolution,
-after production, conserving both goods. Partial fills scale both sides.
+When a human player is either party, confirmation is their decision: the
+proposal waits for their next orders and completes at that preparation.
 
-This keeps demand-once and determinism. It adds work linear in the bids,
-which is bounded by neighbours in range.
+Goods are exchanged in one canonical step during resolution, after production,
+conserving both sides. If production falls short, both sides of the trade
+scale down in proportion.
+
+This keeps demand-once and determinism. It adds work linear in the number of
+proposals, which is bounded by neighbours in range.
 
 ### Within versus between societies
 
-- **Same Society** (daughter villages, later #15): a request can be a transfer
-  valued on the shared welfare, without barter.
+- **Same Society** (daughter villages, later #15): friendlier terms, never
+  self-sacrifice. A village values its own needs exactly as it would with a
+  stranger; its reservation price for any unit within its own useful demand
+  is unchanged. Only its **surplus** (units beyond useful demand) may go to a
+  same-Society village cheaply or for nothing. A kinship term `κ ∈ [0, 1]`
+  sets how much of the surplus's trade value the giver still asks for; `κ = 0`
+  is a gift. The trade remains a handshake.
 - **Different Societies**: barter only, through explicit messages under
   filtered observations. A camp learns a neighbour's need only by receiving its
   bid, never by reading its stores. This matches #23's rule: no overmind;
@@ -339,7 +393,7 @@ which is bounded by neighbours in range.
 3. **Housing Material.** The split recipe, inventory field and observation
    schema above. Useful locally before any trade because it removes
    construction's leftover-material scheduling.
-4. **Same-Society requests.** Transfers without barter, after #15.
+4. **Same-Society requests.** Surplus-only friendly terms, after #15.
 5. **Barter between societies.** Needs #13 (transport and range), #34 (who gets
    a shared source) and the #23 authority rules.
 
@@ -357,31 +411,50 @@ which is bounded by neighbours in range.
   Pottery and Carpentry windows, or a stated reason why not, is the acceptance
   signal, as #38 directs.
 
-## Open decisions for the user
+## Decisions
 
-1. **Curve and QoL.** Keep QoL linear and use the exponential only in the
-   planner, or make QoL itself concave to match (which requires recalibrating
-   population, growth and fission)? And what `λ`?
-2. **Discount rate `r` per year** for durables: a fixed constant, or an Elder
-   personality trait?
-3. **Priorities as value multipliers** (recommended), or keep them as a hard
-   order?
-4. **What is expansion labour worth?** Spare workers go to field expansion,
-   which buys future food and growth, not current QoL. Pricing it in the same
-   unit is the growth-versus-QoL trade-off that #23 has to settle.
-5. **Requisitions.** Binding commitments or revocable quotes? Who captures the
-   surplus? Which goods are tradeable? (Housing is traded as Housing
+Agreed with the user on 29 September 2026:
+
+1. **QoL stays linear.** The exponential curve is only the planner's price
+   allocation; the outcome formula and its calibration are unchanged. `λ` is a
+   planner calibration value.
+2. **Priorities are value multipliers** (`priority / default priority`; zero
+   disables).
+3. **Expansion labour sits on the same spectrum as crafts.** A worker in the
+   fields is not making cloth or housing, so expansion competes for labour at
+   the same price `w`. Its value is the food shortfall it prevents, priced by
+   food security (see Pots). Workers left over after all claims still go to
+   expansion, as today.
+4. **Requisitions are handshakes**: propose, confirm, trade. Confirmed trades
+   are binding.
+5. **Pots use the risk placeholder `ρ`** until disasters and immigration supply
+   an expected-shortfall estimate.
+6. **Bids are bundles** so currency can be added later as one more good.
+7. **Same-Society terms are friendlier, never self-sacrificing**: only surplus
+   may be given cheaply.
+
+## Open decisions
+
+1. **Discount rate `r` per year** for durables: one configured constant, or a
+   Society/Elder trait? It decides how much a Housing unit's future years
+   count against Cloth used now.
+2. **Who captures a trade's gain** between Societies: the proposer's offer as
+   stated, or a split?
+3. **Which goods are tradeable** first. (Housing is traded as Housing
    Material; see above.)
-6. **Pots.** Accept the risk placeholder `ρ` for now, or wait for a proper
-   expected-shortage estimate?
 
 ## Rejected approaches
 
 - **Global market clearing across all camps.** A civilization-wide
   optimizer, rejected by #23, and at least O(camps²).
-- **Money now.** Barter on each camp's own curves is enough, and a currency
-  needs institutions that don't yet exist.
-- **Pure linear marginal QoL.** Fills the cheaper need completely before
-  touching the other, and makes surplus worth exactly zero.
+- **Money now.** Barter on each camp's own curves is enough for now, and a
+  currency needs institutions that don't yet exist. Bids are bundles so it can
+  be added later without redesign.
+- **Linear marginal value as the planner's allocation curve.** Fills the
+  cheaper need completely before touching the other, and makes surplus worth
+  exactly zero. (QoL itself stays linear.)
+- **Shared welfare between same-Society villages.** Would let a village
+  sacrifice its own needs for a sibling; replaced by surplus-only friendly
+  terms.
 - **A one-turn requisition lag.** 20–40 simulated years per trade at current
   turn length.
