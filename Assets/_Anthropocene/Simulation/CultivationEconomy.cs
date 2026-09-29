@@ -572,6 +572,13 @@ namespace Anthropocene.Simulation
                 if (tile.CultivationOperator >= 0 && tile.CultivationOperator != camp.Id &&
                     endpoint > plan.StartCapital[i] + 1e-12)
                     throw new InvalidOperationException("Horizon field ownership changed after claim preparation.");
+                // Adjacent camps can share a footprint tile. When another camp
+                // operates it and this camp neither operated it at the start nor
+                // planned expansion on it, the operator's endpoint was integrated
+                // and committed for that tile; this camp has nothing to write.
+                if (tile.CultivationOperator >= 0 && tile.CultivationOperator != camp.Id &&
+                    plan.StartOperators[i] != camp.Id && endpoint <= plan.StartCapital[i] + 1e-12)
+                    continue;
                 double beforeCapital = Math.Max(0, tile.CultivationCapital);
                 if (preclaim != null && Math.Abs(beforeCapital - preclaim.EndCapital[i]) > 1e-7)
                     throw new InvalidOperationException("Horizon ecology did not integrate the planned field endpoint.");
