@@ -85,6 +85,25 @@ reservation prices. Trade demand enters the demand pass as export claims.
 7. Rule shape: value-ordered fill over claims, how it maps to the monotone
    path `s`, and tie-breaking that stays deterministic.
 
+## Related GitHub issues
+
+- **#23 (Elder planning contract)** asks for a unified Elder utility
+  contract. Value-based fulfilment is effectively its economic half; design
+  the two together rather than as competing value systems. **#24** (pastoral
+  candidates) consumes the same contract.
+- **#33 findings, carried in #38**: under the normal policy, productive
+  specialist work appeared in Toolmaking 21/21 natural windows, Weaving 17/21,
+  Construction 4/21, Pottery 0/21 and Carpentry 0/21; Housing remains a major
+  normal-policy failure despite high food satisfaction. Recipes are physically
+  feasible (controlled witnesses), so this is an allocation/valuation
+  question. A value rule should be judged against these numbers by rerunning
+  the closed #33 harness, as #38 already directs for the Elder.
+- **#37** (performance baselines) stays open until after the first Elder
+  integration; the B3 measurements are pre-Elder evidence, not its
+  completion.
+- **#13** (logistics) and **#34** (contested-resource entitlement) bound the
+  trade half: transport cost/range and who gets a shared source.
+
 ## Constraints to keep
 
 - The engineering doctrine checklist in `AGENTS.md` for any new mechanic:
@@ -125,7 +144,7 @@ The checkpoints are ignored local files; regenerate them as described in
 
 ## Housekeeping
 
-- GitHub CLI authentication was not available on this workstation at handover
+- GitHub CLI authentication was repaired at handover with file-backed storage
   (`gh auth status` reports no login); pushes work through Git's file-backed
   credential store. Issue review and closure need `gh` repaired first.
 - Unity re-serializes whitespace in 29 MapArt `.meta` files and creates
