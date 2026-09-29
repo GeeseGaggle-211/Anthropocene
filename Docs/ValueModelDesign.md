@@ -369,37 +369,46 @@ turn without a second decision.
 - confirmed terms are recorded in the trade ledger, giving later markets and
   currency a price history.
 
-**Pending requisitions and offers.** Agreed: when a step needs a decision
-from a party that has not made it yet, the item is held as *pending* and
-carries through the turn transition. It is never settled automatically on that
-party's behalf. This applies to the player and to every AI camp alike.
+**The trade ledger: every handshake finishes in its turn.** Agreed: nothing
+is carried across the turn transition. At 20-year turns a request answered a
+turn later would be 20 years stale: the sender's needs have changed, offered
+goods may be spent, and the sender may have moved or starved.
 
-Each camp has a **pending list** with two kinds of entry:
+1. **While the player plans, they see the complete ledger for this turn.**
+   The background draft computes every neighbour's requisitions from the
+   committed boundary, so the ledger shows the requisitions addressed to the
+   player, each with what it offers and honour, counter or ignore, alongside
+   the player's own trade history and each partner's past requisitions.
+2. **The player decides everything in their orders:** answers to incoming
+   requisitions, plus any requisitions of their own, each with its acceptance
+   limit.
+3. **At End Turn the AI side finishes each handshake during preparation.** An
+   AI whose requisition the player countered accepts or rejects at once. An AI
+   receiving the player's requisition honours, counters or ignores it; a
+   counter within the player's acceptance limit is accepted automatically, and
+   one outside it **lapses**.
+4. **Goods move in this turn's resolution.** The next turn's ledger reports
+   what happened: confirmed trades with their terms, and requisitions that
+   lapsed, were ignored or went unanswered. The player can re-request on fresh
+   values.
 
-- **requisitions received**, which it can honour, counter or ignore;
-- **counters received** to its own requisitions, which it can accept or
-  reject (unless its acceptance limit already decided them).
+AI camps follow the same rule: any handshake that does not finish within the
+turn lapses. Rules:
 
-A camp answers its pending list at its next decision point: the player during
-the next planning phase, an AI camp in its next draft. Between AI camps,
-handshakes that need no outside input still complete within one preparation.
-Rules:
+- **No saved pending state.** Only the trade ledger's history (confirmed,
+  lapsed and ignored items) is saved. Every trade is judged on the current
+  boundary's values.
+- **Unanswered means lapsed.** A requisition the player did not answer by End
+  Turn lapses, as if ignored.
+- **The resolver never waits for input.** Decisions arrive only as submitted
+  orders or AI drafts.
+- **Filtered observations.** The ledger shows only requisitions addressed to
+  the camp and its own history, never other camps' trades, stores or values.
 
-- **Revalued at the answer.** A pending item is judged on the answering
-  camp's values at the new committed boundary, not the values when it was
-  sent, because stocks and needs will have changed.
-- **Exchanged at the next resolution.** Goods move in the canonical exchange
-  step of the turn in which the handshake completes, and a confirmed trade
-  enters that turn's plans as an export or import claim.
-- **Ignore clears it.** Ignoring removes the entry; an unanswered entry expires
-  after a configured number of turns.
-- **The resolver never waits for input.** Pending items are saved state
-  carried from one committed boundary to the next; decisions arrive only as
-  submitted orders or AI drafts.
-
-A trade that needs a human decision therefore takes one turn transition per
-waiting step. The requester's acceptance limit avoids the extra step on a
-counter.
+Trade-off: a counter just outside the player's acceptance limit lapses instead
+of coming back to them. The limit is the player's own decision, and they can
+re-request next turn. If this proves too strict in play, an optional setting
+could hold the player's own requisitions for one turn to review counters.
 
 Sending a REQ reveals scarcity. That is a deliberate strategic cost, and an
 Elder may hold requests back for it.
@@ -453,8 +462,8 @@ Rules this has to keep:
 - **Busy guards stay.** Save may run alongside the pure precompute; resolution
   still waits for it.
 - **Visibility timing never enters results.** Outcomes depend only on
-  submitted orders, never on when something was shown. An item the player has
-  not seen or answered stays on the pending list.
+  submitted orders, never on when something was shown. A requisition the
+  player did not answer lapses.
 
 This hides latency for a human player; it does not reduce CPU. Headless runs,
 AI-only turns and RL training get no benefit, so the handshake must stay
@@ -562,7 +571,6 @@ Agreed with the user on 29 September 2026:
 1. **`λ`**, the value curve's steepness (calibration).
 2. **The kinship reduction** of `m` for same-Society partners.
 3. **The trade contact range** until logistics (#13) defines transport.
-4. **Pending item expiry**, in turns.
 
 ## Rejected approaches
 
@@ -577,6 +585,8 @@ Agreed with the user on 29 September 2026:
 - **Shared welfare between same-Society villages.** Would let a village
   sacrifice its own needs for a sibling; replaced by surplus-only friendly
   terms.
+- **Carrying pending items across the turn transition.** At 20-year turns
+  they go stale; replaced by one-turn handshakes and the trade ledger.
 - **A turn per handshake step.** 20–60 simulated years per trade at current
   turn length; replaced by in-preparation handshakes and acceptance limits.
 - **Offering simply the lowest-value good.** Often worthless to the partner
