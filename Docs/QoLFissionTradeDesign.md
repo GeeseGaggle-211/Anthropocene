@@ -800,5 +800,5 @@ Agreed with the user when merging this design with the value model:
 8. **Daughters inherit knowledge and practice experience identical to the
    parent's at fission** (3.4).
 9. **Minimum camp spacing of 3 hexes** for all placement, so land
-   footprints never overlap,, and parallel
+   footprints never overlap, and parallel
    per-camp mobility work with canonical commits (3.1, 9).
