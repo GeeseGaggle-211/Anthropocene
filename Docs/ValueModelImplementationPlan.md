@@ -8,7 +8,7 @@ document orders the work, names the files and sets the gates. It continues
 [PlannerDirectFulfilmentPlan.md](PlannerDirectFulfilmentPlan.md), whose Phase 3
 rule interface (`IFulfilmentRule`, `SearchPath`) this plan uses unchanged.
 `EconomicAutomation.md` and `TurnResolutionPasses.md` remain the rule sources
-until WP11 updates them.
+until WP12 updates them.
 
 ## Settled parameters
 
@@ -35,6 +35,7 @@ until WP11 updates them.
 | Pots | risk placeholder `ρ` until disasters and immigration | agreed |
 | Handshake lifetime | one turn; unfinished handshakes lapse; the player sees the complete trade ledger while planning | agreed |
 | Transport | bounded range plus provisional distance and bulk costs until #13 | agreed; cost values open |
+| Contact knowledge | after the Neolithic unlock: remembered static geography and settlement snapshots from sighting (incl. hunters), trade and kin; contact expiry candidate 5 turns | agreed |
 | Value curve steepness `λ` | calibration | open |
 
 New values go in `NeolithicConfig` with matching entries in
@@ -51,7 +52,7 @@ each testing one question.
 | Set | Goods | What it tests |
 | --- | --- | --- |
 | **T0 (initial)** | Housing Material, Cloth | The two QoL needs. Housing is the #33 failure; one Weaver clothes about 80 people, so surplus is common. |
-| **TF (WP8)** | T0 + food | Village differentiation and proto-towns: food-rich villages export food for goods. Required for the section 11.2 town sweep. |
+| **TF (WP9)** | T0 + food | Village differentiation and proto-towns: food-rich villages export food for goods. Required for the section 11.2 town sweep. |
 | T1 | T0 + Animal Fabric | Agricultural–pastoral exchange. Animal Fabric substitutes for Cloth 1:1 and feeds Light Housing. |
 | T2 | T0 + Wood, Clay, Stone | Comparative advantage in raw materials for source-poor sites; stresses shared-source contention (#34). |
 | T3 | T0 + Pots | Storage exchange; mostly relevant once disasters and immigration exist. |
@@ -66,13 +67,14 @@ Hand and Regular Tools stay out: they are coverage inputs sized by
 ```
 WP0 baselines
 WP1 planning pass ─────────────────────────────────────────────┐
-WP2 QoL cohesion ──┬── WP3 value rule ── WP4 tools/Pots/expansion ├─ WP6 trade foundation ── WP7 handshake ── WP8 food trade
-                   │   WP5 Housing Material ─────────────────────┘
-                   └── WP9 lineage, fission, immigration (parallel with WP3–WP8)
-WP10 calibration sweeps (after WP8 and WP9) ── WP11 contracts
+WP2 QoL cohesion ──┬── WP3 value rule ── WP4 tools/Pots/expansion ├─ WP7 trade foundation ── WP8 handshake ── WP9 food trade
+                   │   WP5 Housing Material ─────────────────────┤
+                   │   WP6 contact knowledge ────────────────────┘
+                   └── WP10 lineage, fission, immigration (after WP6; parallel with WP3–WP9)
+WP11 calibration sweeps (after WP9 and WP10) ── WP12 contracts
 ```
 
-Kin trade terms are built in WP6 but stay inert until WP9 creates kin
+Kin trade terms are built in WP7 but stay inert until WP10 creates kin
 Societies.
 
 ## Work packages
@@ -106,7 +108,7 @@ Simulation (`TurnPlanning.cs`, `PhaseExecution.cs`):
 - Add `TurnPlanner.Draft(world, excludedPlayer, execution)`, returning a
   `PlanningDraft`: the world's turn and day stamp, AI orders and traces, the
   AI camps' tentative placements, and each automated camp's intent keyed by
-  camp ID, effective tile and its economic settings. WP7 adds handshake state.
+  camp ID, effective tile and its economic settings. WP8 adds handshake state.
 - Add an overload `Prepare(world, submitted, traces, execution, draft)`. It
   validates all orders as today, resolves `CampPlacement` with the player's
   orders, and reuses a draft intent only when its key still matches. Everything
@@ -235,7 +237,42 @@ round-trip and old-save load, observation filtering.
 Gate: shipped balance unchanged within the drift control apart from the
 scheduling change, which is reported against the #33 Construction baseline.
 
-### WP6 — Trade foundation (no AI)
+### WP6 — Contact knowledge
+
+Following QoLFissionTradeDesign.md section 3.7. Prerequisite for trade (WP7)
+and for fission and immigration (WP10): with `VisionRadius = 2` and 3-hex
+spacing, no camp can otherwise see a neighbour or a destination.
+
+- **State** (saved, optional, per Society): explored tiles in a sparse chunked
+  set; settlement contacts (camp, owner, tile, turn learned, source). Old saves
+  load with no knowledge.
+- **Updates** at the end of each turn, from the vision already computed
+  (`Agents.Visible`): record explored tiles, and record, refresh or mark moved
+  the contacts in view. Only Societies past their first breakthrough remember;
+  Paleolithic Societies keep live vision only.
+- **Trade and kin hooks:** receiving a requisition or confirming a trade
+  refreshes the partner (called from WP7–WP8); fission records parent and
+  daughter and shares the parent's knowledge copy-on-write (called from WP10).
+- **Expiry:** contacts not refreshed for a configured number of turns
+  (candidate 5) are dropped.
+- **Observations** (`AgentObservationBuilder`, `ObservationContract`): remembered
+  static geography for explored tiles outside current vision, and known
+  settlements with the turn learned. No live occupants, ecology or herds on
+  remembered tiles. Schema version bump; `HoverDetails` and the map renderer
+  show remembered tiles distinctly from visible ones.
+- **Contract:** the filtered-observation rule in `AGENTS.md` and
+  `CurrentSimulationContract.md` gains remembered knowledge as a deliberate,
+  labelled category.
+
+Headless: remembered tiles never expose live stocks, herds or occupants; a
+contact never updates without a sighting, trade or kin event; moved and expiry
+handling; Paleolithic Societies remember nothing; save continuation and old
+saves; scalar-versus-parallel fingerprints.
+
+Measurement: memory per Society against explored area, at 80 and 320 tribes
+and on the largest map; update cost per turn.
+
+### WP7 — Trade foundation (no AI)
 
 - Data: `Bid { Give, Receive, AcceptanceLimit }` bundles; requisition,
   acknowledgement (honour, counter, ignore) and close records; a saved **trade
@@ -250,11 +287,12 @@ scheduling change, which is reported against the #33 Construction baseline.
 - Orders: new order kinds for sending a requisition and for answering one,
   validated by `OrderRules` with `LegalActions` masks. A requisition carries
   the sender's acceptance limit.
+- Requisitions can be sent only to known settlements (WP6) within trade range.
 - Observations: this turn's requisitions addressed to the camp, its own trade
   history, and each partner's past requisitions to this camp. No foreign
   stores, values or other camps' messages.
 - Kin terms: an affinity lookup (0 for unrelated Societies; the saved kin
-  affinity once WP9 records lineage) sets margin `m · (1 − a)` and surplus
+  affinity once WP10 records lineage) sets margin `m · (1 − a)` and surplus
   pricing.
 - Config: tradeable set (T0), `K = 3`, `m = 10%`, contact range, provisional
   distance and bulk costs.
@@ -263,7 +301,7 @@ Headless: ledger conservation, save round-trip, order validation and masks,
 observation filtering, scaling of both sides on shortfall, integrated
 valuation monotone with diminishing gain, and no handshake surviving its turn.
 
-### WP7 — Handshake in the planning pass
+### WP8 — Handshake in the planning pass
 
 - Inside `TurnPlanner.Draft`: AI requisitions ranked by
   `RequestScore(q) = IntegratedGain(q) − ExpectedGiveCost(q)`; offers chosen
@@ -293,10 +331,10 @@ received messages.
 Measurement: handshake work count per turn at 80 and 320 tribes, and End Turn
 latency.
 
-### WP8 — Food trade
+### WP9 — Food trade
 
 Following QoLFissionTradeDesign.md section 7 (`GenerationalEconomy.cs` food
-buckets, `TurnPlanning.cs` `TurnNeeds`, the WP6 exchange step):
+buckets, `TurnPlanning.cs` `TurnNeeds`, the WP7 exchange step):
 
 - Seller bands from the prepared food ledger: protected survival food
   (consumption, manufacturing feedstock, operating reserve; never tradeable),
@@ -317,7 +355,7 @@ births; short delivery scales outcomes; no double counting; food ledger
 conservation (`FoundationChecks`); determinism under reordering and parallel
 runs.
 
-### WP9 — Lineage, fission and immigration
+### WP10 — Lineage, fission and immigration
 
 Following QoLFissionTradeDesign.md sections 3, 4, 6.4 and 9.
 
@@ -341,7 +379,7 @@ Following QoLFissionTradeDesign.md sections 3, 4, 6.4 and 9.
   progression). Herds and portable stores go with the daughter in its
   population fraction, conserving every ledger.
 - **Cached destination.** A saved optional per-camp target tile, searched
-  lazily within `r_fiss` only when the push exceeds the search threshold and no
+  lazily over explored tiles and current vision (WP6) within `r_fiss` only when the push exceeds the search threshold and no
   valid target exists; invalidated when occupied, unviable or the regime
   changes. Replaces `Camp.FissionWilling`.
 - **Minimum camp spacing.** `CampPlacement.Resolve` rejects any placement
@@ -350,7 +388,8 @@ Following QoLFissionTradeDesign.md sections 3, 4, 6.4 and 9.
   so the order masks and movement previews (`OpeningPlanning.cs`) follow it,
   and the change is validated on its own before fission is enabled.
 - **Mobility pass** in the Close phase: freeze the post-demography snapshot;
-  one immigration intent per source (opportunity term zero); otherwise one
+  one immigration intent per source toward a known settlement (WP6) within
+  `r_imm` (opportunity term zero); otherwise one
   fission intent against the cached target; reconcile immigration once, then
   fission on the remaining population, in canonical order with no rerouting;
   commit simultaneously. QoL is recomputed next turn.
@@ -374,7 +413,7 @@ counts, memory (especially any dense per-player visibility or knowledge state)
 and turn time over long runs at 80 and 320 starting tribes, with worker
 scaling at 1, 2 and 4 workers.
 
-### WP10 — Calibration sweeps
+### WP11 — Calibration sweeps
 
 - Section 11.1 fission calibration: hazard by regime and size against the
   targets (Paleolithic above 100, Nomadic about 250, Agricultural about 600
@@ -384,7 +423,7 @@ scaling at 1, 2 and 4 workers.
   volume, QoL, population, #33 windows and the proto-town diagnostic.
 - Sweep `λ`, `r`, `m`, `β`, `N_s` and the fission levers within their ranges.
 
-### WP11 — Contracts
+### WP12 — Contracts
 
 - `TurnResolutionPasses.md`: the interturn draft during the player's turn, its
   reuse rule, the exchange step, prepared food imports, and the Close-phase
@@ -398,13 +437,14 @@ scaling at 1, 2 and 4 workers.
 ## Doctrine summary
 
 - **Authoritative state:** unchanged in WP1–WP4 apart from the QoL value
-  itself. WP5 adds one inventory field; WP6 adds the trade ledger; WP9 adds the
+  itself. WP5 adds one inventory field; WP6 adds per-Society
+  knowledge (explored tiles, contacts); WP7 adds the trade ledger; WP10 adds the
   parent-Society link and cached fission target, and creates Societies and
   camps. Drafts, values, `w` and handshake working state are never saved.
 - **Temporal abstraction:** everything runs once per turn from the committed
   boundary; values use physical years; mobility is one pass per turn.
 - **Scaling:** WP1 hides latency, not CPU. WP3 adds O(claims) per search
-  probe. WP7 adds at most `3 × camps` requisitions per turn. WP9 is
+  probe. WP8 adds at most `3 × camps` requisitions per turn. WP10 is
   `O(N · r_imm² + F · r_fiss² + N)`, but raises `N` itself over time, so
   per-camp and per-Society work runs in parallel with canonical commits.
 - **RL:** QoL, values, `w` and received requisitions are observation
@@ -422,9 +462,9 @@ scaling at 1, 2 and 4 workers.
 - **Value rule lowers QoL** by under-filling needs near full coverage.
   Mitigated by the WP3 gate; `λ` is calibrated before the default switches.
 - **Fission multiplies camps and Societies,** raising every per-camp cost and
-  any dense per-Society memory. Mitigated by the WP9 long-run measurements
+  any dense per-Society memory. Mitigated by the WP10 long-run measurements
   before fission is enabled by default.
-- **Food trade breaks the food ledger.** Mitigated by the WP8 band rules and
+- **Food trade breaks the food ledger.** Mitigated by the WP9 band rules and
   conservation checks.
 - **Provisional transport costs** before #13 may overstate exchange. Report
   sweeps as provisional.

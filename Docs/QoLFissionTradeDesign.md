@@ -3,7 +3,7 @@
 Working architecture for the Neolithic social economy.
 
 Status: design working draft, 29 September 2026. Converted from the user's
-working design document of the same date. Sections 2.3–2.4, 3.1, 3.3–3.6, 4,
+working design document of the same date. Sections 2.3–2.4, 3.1, 3.3–3.7, 4,
 6.4, 7.2, 9, 10, 11.1 and 12 were amended the same day to converge with
 [ValueModelDesign.md](ValueModelDesign.md); the amendments are listed at the
 end. Not implemented. The ordered work is in
@@ -312,6 +312,61 @@ likely fission is and the size at which it starts (reference conditions of
 - Default is Neutral for every camp. The setting is visible in the owner's
   observation and settable through a legal action, like the economic
   automation policy.
+
+### 3.7 Contact knowledge (new)
+
+Today a Society sees only the tiles within `VisionRadius = 2` of its own camps
+and hunters, and remembers nothing. With 3-hex camp spacing, `r_fiss = 3` and
+`r_imm = 4`, no camp could see a neighbour, a fission destination or a trade
+partner, so neither fission nor trade could begin. Contact knowledge gives
+each Society a remembered picture of its surroundings.
+
+**Snapshots, not live data.** Knowledge records where something was when it
+was last learned, never what it is doing now.
+
+- **Explored tiles.** Every tile a Society's camps or hunters see is
+  remembered. A remembered tile shows only static geography (terrain, relief,
+  elevation level, water and rivers). Vegetation, food stocks, herds and
+  occupants are shown only while the tile is in current vision.
+- **Known settlements.** A contact record per foreign camp: owner, tile where it
+  was last known, the turn it was learned and how (sighting, trade, kin). It
+  carries location only: no population, stores, orders or movement.
+
+**How knowledge is gained** (from the first breakthrough, the Neolithic
+unlock, on):
+
+- **Sighting:** anything in current vision, including the wide areas covered
+  by dispatched hunters, is recorded or refreshed.
+- **Trade:** receiving a requisition from a camp, and every confirmed trade,
+  records or refreshes the partner's location. Contact therefore spreads along
+  trade links.
+- **Kin:** at fission the parent and daughter record each other, and the
+  daughter inherits the parent's explored tiles and contacts (knowledge is
+  identical at fission).
+
+**How knowledge goes stale.** A contact is updated only by a new sighting, trade
+or kin event. If current vision covers its recorded tile and the camp is no
+longer there, the record is marked moved, location unknown. A contact that is
+not refreshed for a configured number of turns (candidate 5 turns, 100 years)
+expires.
+
+**What uses it:**
+
+- fission site searches cover explored tiles within `r_fiss`, plus current
+  vision;
+- immigration targets are known settlements within `r_imm`;
+- trade requisitions can be sent only to known settlements within trade range.
+
+**Paleolithic groups** have no memory: their fission destinations and contacts
+come from current vision only, which dispatched hunters extend while they are
+out. Remembered knowledge begins with the Neolithic unlock.
+
+**Scaling.** Explored-tile memory is stored sparsely (for example fixed-size
+tile chunks held only where explored), so memory grows with the area a Society
+has explored, not with map size. Updating it costs the vision already
+computed each turn. Contacts are bounded by what was seen or traded with, and
+by expiry. A daughter's inherited knowledge should share its parent's chunks
+until either changes (copy on write), so fission does not duplicate memory.
 
 ## 4. Immigration interface and ordering
 
@@ -742,6 +797,8 @@ refit `N_s` with the section 3.5 formula when they change.
 - Trade remains bounded by K requisitions per camp; no global clearing pass.
 - Mobility results are identical under scalar and parallel execution and
   reordered collections.
+- Explored-tile memory grows with explored area, not map size; inherited
+  knowledge is shared, not copied, at fission.
 
 ## 12. Repository integration map
 
@@ -752,6 +809,7 @@ refit `N_s` with the section 3.5 formula when they change.
 | Fission state | `Camp.FissionWilling` currently reset | Replace with derived mobility proposal state, a saved cached target and a saved fission policy. |
 | Society lineage | `Societies.cs` (`Society`) | Add a saved parent-Society link and affinity; daughters copy knowledge and practice at fission and take a new AI player slot. |
 | Camp placement | `CampPlacement.Resolve` | Enforce the 3-hex minimum spacing for every placement. |
+| Contact knowledge | `Agents.Visible`, `AgentObservationBuilder`, `ObservationContract` | Saved per-Society explored tiles (sparse) and settlement contact snapshots; observations add remembered static geography and known settlements, labelled with the turn learned. |
 | Agricultural site scoring | `Agents` agricultural candidate forecasting | Reuse physical support projection for daughter-site desirability. |
 | Pastoral site scoring | `SiteCoverage` and husbandry forecasts | Reuse min(human food, herd forage, herd water). |
 | Economic value | `ValueModelDesign.md`, `ProductionDemand` | Integrated bundle valuation, food bands and growth-food value. |
@@ -802,3 +860,6 @@ Agreed with the user when merging this design with the value model:
 9. **Minimum camp spacing of 3 hexes** for all placement, so land
    footprints never overlap, and parallel
    per-camp mobility work with canonical commits (3.1, 9).
+10. **Contact knowledge** (3.7): after the Neolithic unlock, Societies remember
+   explored static geography and settlement locations as snapshots, gained by
+   sighting (including hunter dispatches), trade and kin.
