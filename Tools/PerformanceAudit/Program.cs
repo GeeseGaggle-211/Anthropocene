@@ -15,6 +15,10 @@ internal static class Program
     private static int PartitionSize = 64;
     private static bool ReversePartitions;
     private static bool StationaryHusbandry;
+#if !MAIN
+    // WP1 exactness: plan AI players in a draft (player 0 excluded) and prepare with it.
+    private static bool DraftMode;
+#endif
     private const int ReportSchema = 2;
 
     private static int Option(string[] args, string key, int fallback)
@@ -109,8 +113,19 @@ internal static class Program
         executeMs = clock.Elapsed.TotalMilliseconds;
         return record;
 #else
+        PlanningDraft draft = null;
+        if (DraftMode)
+        {
+            // The draft plans every player except 0; player 0's orders and trace come
+            // from the full decision, as a human's submitted orders would.
+            draft = TurnPlanner.Draft(world, 0, execution);
+            var orders = draft.Ai.Orders.ToDictionary(p => p.Key, p => p.Value);
+            orders[0] = ai.Orders[0];
+            var traces = draft.Ai.Traces.Where(t => t.Player != 0).Concat(ai.Traces.Where(t => t.Player == 0)).OrderBy(t => t.Player).ToList();
+            ai = new PlanningResult { Orders = orders, Traces = traces };
+        }
         clock.Restart();
-        var prepared = TurnPlanner.Prepare(world, ai.Orders, ai.Traces, execution);
+        var prepared = TurnPlanner.Prepare(world, ai.Orders, ai.Traces, execution, draft);
         prepareMs = clock.Elapsed.TotalMilliseconds;
         clock.Restart();
         var record = resolver.Resolve(world, prepared);
@@ -134,6 +149,10 @@ internal static class Program
         PartitionSize = Option(args, "--partition-size", 64);
         ReversePartitions = Option(args, "--reverse-partitions", 0) != 0;
         StationaryHusbandry = Option(args, "--stationary-husbandry", 0) != 0;
+#if !MAIN
+        DraftMode = Option(args, "--draft", 0) != 0;
+        if (DraftMode && StationaryHusbandry) throw new ArgumentException("--draft cannot be combined with --stationary-husbandry.");
+#endif
         if (WorkerCount < 1 || PartitionSize < 1)
             throw new ArgumentOutOfRangeException("Worker and partition counts must be positive.");
         int warmup = Option(args, "--warmup", 0);
