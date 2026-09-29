@@ -146,6 +146,27 @@ internal static class EconomicAutomationChecks
         Check(cloth.Quantity > 0 && cloth.Role == WorkforceRoles.Weaver && cloth.Rate == cloth.Recipe.Rate, "unlocked specialists carry their full recipe rate");
         var again = CampProductionDemand.Build(w, c, EconomicIntent.From(c));
         Check(again.Claims.Select(x => (x.Good, x.Quantity, x.Priority, x.Role, x.Rate)).SequenceEqual(d.Claims.Select(x => (x.Good, x.Quantity, x.Priority, x.Role, x.Rate))), "demand pass is deterministic");
+        // Fulfilment rules are swappable: the uniform rule gives every claim the
+        // path position, and a rule that withholds one claim removes its staff.
+        var shares = new double[d.Claims.Count];
+        UniformFulfilment.Instance.Shares(d.Claims, .375, shares);
+        Check(shares.All(x => x == .375), "uniform rule shares the path position with every claim");
+        var uniform = EconomicPlanner.Plan(w, c, EconomicIntent.From(c), UniformFulfilment.Instance);
+        var withheld = EconomicPlanner.Plan(w, c, EconomicIntent.From(c), new WithholdRule(CraftGood.Cloth));
+        Check(before == SaveCodec.Fingerprint(w), "rule-driven planning does not mutate world or stocks");
+        Check(uniform.Assignments.Any(a => a.Role == WorkforceRoles.Weaver), "uniform rule staffs useful Cloth");
+        Check(!withheld.Assignments.Any(a => a.Role == WorkforceRoles.Weaver), "a rule that withholds Cloth removes its Weavers");
+        Check(withheld.Assignments.Sum(a => a.Population) <= c.Population, "rule-driven plans stay resident-bounded");
+    }
+    private sealed class WithholdRule : IFulfilmentRule
+    {
+        private readonly CraftGood withheld;
+        public WithholdRule(CraftGood good) { withheld = good; }
+        public string Name => "Withhold " + withheld;
+        public void Shares(IReadOnlyList<ProductionClaim> claims, double s, double[] shares)
+        {
+            for (int i = 0; i < claims.Count; i++) shares[i] = claims[i].Good == withheld ? 0 : s;
+        }
     }
     private static void Persistence()
     {

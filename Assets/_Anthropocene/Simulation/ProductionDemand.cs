@@ -23,6 +23,28 @@ namespace Anthropocene.Simulation
         public double Rate;
     }
 
+    // A fulfilment rule maps a position s along one path from "pursue nothing"
+    // (s = 0) to "pursue all useful demand" (s = 1) to the share of each claim's
+    // quantity the planner pursues. Shares must be nondecreasing in s so the
+    // planner can search that path for the largest position the residents can
+    // staff. Rules are pure and read only the demand pass.
+    public interface IFulfilmentRule
+    {
+        string Name { get; }
+        void Shares(IReadOnlyList<ProductionClaim> claims, double s, double[] shares);
+    }
+
+    // Every claim is pursued to the same share of its useful demand.
+    public sealed class UniformFulfilment : IFulfilmentRule
+    {
+        public static readonly UniformFulfilment Instance = new UniformFulfilment();
+        public string Name => "Uniform";
+        public void Shares(IReadOnlyList<ProductionClaim> claims, double s, double[] shares)
+        {
+            for (int i = 0; i < claims.Count; i++) shares[i] = s;
+        }
+    }
+
     // Demand pass of the economic planner: everything a plan needs that does not
     // depend on the fulfilment level, built once per automated camp from the
     // prepared boundary. The fulfilment search reads it and never rebuilds it.

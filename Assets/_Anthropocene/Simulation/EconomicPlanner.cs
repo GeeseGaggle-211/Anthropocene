@@ -16,7 +16,12 @@ namespace Anthropocene.Simulation
             public EconomicIntent Intent;
             public int Workers, FoodGatherers, OperatingFarmers;
         }
+        // The fulfilment rule used by automated plans. Alternatives are
+        // evaluated through the rule parameter before they become defaults.
+        internal static readonly IFulfilmentRule DefaultRule = UniformFulfilment.Instance;
         public static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings)
+            => Plan(w, c, settings, DefaultRule);
+        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, IFulfilmentRule rule)
         {
             Interlocked.Increment(ref TurnDiagnostics.For(w).PlanCalls);
             var e = settings.Copy(); e.Assignments.Clear(); e.Labor = null;
@@ -34,9 +39,16 @@ namespace Anthropocene.Simulation
             double sparePlant = demand.SparePlant, plantEnvelope = demand.PlantEnvelope, animalEnvelope = demand.AnimalEnvelope;
             double foodRoomEnvelope = demand.FoodRoomEnvelope, housingMultiplier = demand.HousingMultiplier;
             bool HasRetainedExpansionGain() => demand.HasRetainedExpansionGain();
+            var claimIndex = new Dictionary<CraftGood, int>();
+            for (int i = 0; i < demand.Claims.Count; i++) claimIndex[demand.Claims[i].Good] = i;
 
-            Proposal Evaluate(double fulfillment)
+            // Staffing pass: turns the rule's shares at path position s into one
+            // resolver-shaped proposal and its full labor requirement.
+            Proposal Evaluate(double s)
             {
+                var shares = new double[demand.Claims.Count];
+                rule.Shares(demand.Claims, s, shares);
+                double Share(CraftGood good) => shares[claimIndex[good]];
                 var intent = e.Copy(); intent.Labor = new EconomicLaborPlan();
                 // Managed-herd work is a resident reservation, not an output
                 // appended after the agricultural proposal.  Put it on the
@@ -145,7 +157,7 @@ namespace Anthropocene.Simulation
                 // that another feasible recipe cannot substitute.
                 foreach (var r in goods.Where(r => r.Good != CraftGood.FarmTools && r.ConstructionMaterial <= 0).OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
                 {
-                    double amount = Capped(r, RemainingGoodDemand(r) * fulfillment, true);
+                    double amount = Capped(r, RemainingGoodDemand(r) * Share(r.Good), true);
                     requested[r.Good] = amount;
                     double multiplier = (r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing) ? housingMultiplier : 1;
                     if (multiplier > 0) Add(futureRoles, Role(r), amount / (Rate(r) * multiplier * intervals));
@@ -192,7 +204,7 @@ namespace Anthropocene.Simulation
                     candidate.EconomicLabor = intent.Labor;
                     // This is the sole field-tool need calculation. It includes
                     // current stock's expected wear and never uses FarmToolsTarget.
-                    double desired = NeolithicProduction.Demand(w, candidate, CraftGood.FarmTools, years, -1, false, false, sources) * fulfillment;
+                    double desired = NeolithicProduction.Demand(w, candidate, CraftGood.FarmTools, years, -1, false, false, sources) * Share(CraftGood.FarmTools);
                     // Reserve the source-feasible prospective job before applying
                     // the current tool budget. This lets the shared replacement
                     // helper bootstrap Hand Tools for a first FarmTools cycle.
@@ -221,7 +233,7 @@ namespace Anthropocene.Simulation
                 // gathering and resolver debits use MaterialEconomy's fixed plan.
                 foreach (var r in goods.Where(r => r.Good != CraftGood.FarmTools && r.ConstructionMaterial > 0).OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => r.Good))
                 {
-                    double amount = Capped(r, goals[r.Good] * fulfillment, true);
+                    double amount = Capped(r, goals[r.Good] * Share(r.Good), true);
                     requested[r.Good] = amount;
                     double multiplier = (r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing) ? housingMultiplier : 1;
                     if (multiplier > 0) Add(futureRoles, Role(r), amount / (Rate(r) * multiplier * intervals));
@@ -398,7 +410,7 @@ namespace Anthropocene.Simulation
                     (int)Math.Ceiling(Math.Max(0, requiredFoodGatherers + generalistMaterials) - Epsilon));
                 int laborEnvelope = nonFarmWorkers + Math.Max(0, requiredOperating) + requiredGatherers;
                 int actualWorkers = intent.Assignments.Sum(a => a.Population) + Math.Max(0, gatherers);
-                int totalWorkers = fulfillment <= Epsilon ? actualWorkers : Math.Max(actualWorkers, laborEnvelope);
+                int totalWorkers = s <= Epsilon ? actualWorkers : Math.Max(actualWorkers, laborEnvelope);
                 return new Proposal { Intent = intent, OperatingFarmers = operating, FoodGatherers = foodGatherers, Workers = totalWorkers };
             }
             // Allocate as much useful manufacturing as fits alongside food and its
@@ -408,9 +420,9 @@ namespace Anthropocene.Simulation
             var best = Evaluate(1);
             if (best.Workers > c.Population)
             {
+                int highWorkers = best.Workers;
                 best = Evaluate(0);
-                double low = 0, high = 1;
-                for (int i = 0; i < SearchIterations; i++) { double mid = (low + high) / 2; var p = Evaluate(mid); if (p.Workers <= c.Population) { low = mid; best = p; } else high = mid; }
+                best = SearchPath(Evaluate, best, highWorkers, c.Population);
             }
             int spare = Math.Max(0, c.Population - best.Workers);
             // The capital scoring horizon is not a mandate to feed a hypothetical
@@ -425,6 +437,39 @@ namespace Anthropocene.Simulation
             }
             best.Intent.Assignments = best.Intent.Assignments.OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
             return best.Intent;
+        }
+        // Largest staffable position on a fulfilment rule's path, to within
+        // PathTolerance. Required workers are a nondecreasing step function of
+        // the position, feasible at 0 (lowest) and infeasible at 1 (highWorkers).
+        // Each round interpolates where the requirement crosses the residents,
+        // then probes one tolerance step past that guess on the far side to
+        // close the bracket. Rounds after the second halve instead, so a poor
+        // interpolation cannot stall. Evaluations stay within SearchIterations.
+        private const double PathTolerance = 1.0 / 64;
+        private static Proposal SearchPath(Func<double, Proposal> evaluate, Proposal lowest, int highWorkers, int residents)
+        {
+            var best = lowest;
+            if (best.Workers > residents) return best;
+            double low = 0, high = 1; int lowWorkers = best.Workers;
+            int evaluations = 0;
+            bool Probe(double s)
+            {
+                evaluations++;
+                var p = evaluate(s);
+                if (p.Workers <= residents) { low = s; lowWorkers = p.Workers; best = p; return true; }
+                high = s; highWorkers = p.Workers; return false;
+            }
+            for (int round = 0; evaluations < SearchIterations && high - low > PathTolerance; round++)
+            {
+                double guess = round < 2
+                    ? low + (high - low) * (residents + .5 - lowWorkers) / Math.Max(1, highWorkers - lowWorkers)
+                    : (low + high) / 2;
+                guess = Math.Min(high - PathTolerance / 2, Math.Max(low + PathTolerance / 2, guess));
+                bool feasible = Probe(guess);
+                if (evaluations >= SearchIterations || high - low <= PathTolerance) break;
+                Probe(feasible ? low + PathTolerance : high - PathTolerance);
+            }
+            return best;
         }
         internal static int ManagedHerderReservation(WorldState w, Camp c, double years)
         {

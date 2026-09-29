@@ -1,7 +1,9 @@
 # Planner direct fulfilment plan (B3)
 
-Status: approved plan, 29 September 2026. Phases 1 and 2 are implemented.
-Phases 3–4 are not implemented; Phase 3 needs the fulfilment-rule decision. This is a design and sequencing record, not a normative
+Status: approved plan, 29 September 2026. Phases 1 and 2 are implemented;
+Phase 3's rule interface and path solve are implemented with the uniform rule.
+Decision 2 was dropped after measurement; schedule unification and Phase 4
+are not implemented. This is a design and sequencing record, not a normative
 contract; `EconomicAutomation.md` and `TurnResolutionPasses.md` remain the rule
 sources until Phase 4 updates them.
 
@@ -104,7 +106,90 @@ demand once and fulfils it directly. The scarcity curve, its bounds and any
 smoothing across turns are calibration choices to settle before that rule is
 implemented.
 
-### 2. Farm Tools for expansion — accepted
+**QoL-grounded value fill — analysis (29 September 2026).** Proposal: value
+each good by how much it moves quality of life, in the spirit of Amdahl's law,
+with tools valued as labor becomes scarce and amenities added later. The
+current formula is
+`QoL = FoodMet × WaterMet × (½·clothing + ½·housing)` with
+`clothing = 1 − E·(1 − clothCoverage)` (housing likewise) and expectation `E`
+ramping with settled years.
+
+- *What holds.* One currency tied to an existing, calibrated mechanic gives
+  explainable values and doubles as the Elder/RL reward. The multiplicative
+  food and water terms are exactly the Amdahl case: they scale every other
+  gain, so while food or water is short, marginal workers belong there. The
+  planner already reserves food first, which this formalizes.
+- *Limit 1 — no scarcity curve.* Clothing and housing are linear up to full
+  coverage, then flat. Marginal QoL per unit is constant until a need is met,
+  then zero. Pure marginal-QoL fill is bang-bang: it fills the cheaper need
+  completely before touching the other, and values do not rise smoothly
+  with scarcity as required. Scarcity sensitivity needs diminishing returns
+  somewhere.
+- *Limit 2 — Pots and tools are not in QoL.* Pots protect future food
+  (storage), tools save labor, materials are inputs. They need derived values:
+  a tool is worth the labor it saves times the shadow price of labor — the
+  marginal QoL of one more worker, which the fulfilment solve can report. That
+  is the precise form of "tools matter when labor is scarce". Pots need an
+  expected-shortage value, which does not exist yet.
+- *Limit 3 — durability.* Housing and tools last many turns; cloth is consumed
+  each turn. Single-turn QoL undervalues durables unless value covers the
+  good's service life (existing decay rates give it).
+- *Limit 4 — merging Pots into QoL.* Adding a storage term to QoL changes the
+  outcome metric and forces recalibration of population, growth and fission
+  pressure. Valuing Pots through food security keeps QoL unchanged.
+
+**Alternatives:**
+
+1. *Recommended — QoL-grounded values with a planner-only scarcity curve.*
+   Keep the QoL outcome formula. For planning, value a need by
+   `∂QoL/∂coverage × (1 − coverage)^γ` (γ > 0), so the value rises smoothly
+   as coverage falls, and price intermediates (tools, Pots, materials) by
+   shadow labor and food-security value. Behaviour changes, QoL calibration
+   does not.
+2. *Concave QoL itself* (for example CES across needs). Most principled
+   design: diminishing returns become gameplay. Requires recalibrating
+   population, growth and fission.
+3. *Least-satisfied-need first (Liebig).* Raise whichever need has the lowest
+   coverage. Simple, strongly scarcity-driven, no derivatives; weaker basis
+   for trade prices and RL.
+
+Uniform fill remains the default until one is chosen and calibrated.
+
+**Trade objection (user, 29 September 2026).** Alternative 1 values a good
+only through the village's own need coverage. Once local housing is covered
+its value falls to zero, so a village would never build surplus housing for a
+neighbor that needs it, even though trade makes that worthwhile. The
+objection holds for any valuation that sees only local needs.
+
+**Amended direction.** Value *goods*, not needs, and let a good draw value
+from every use it has:
+
+- *consumption* — local marginal QoL of the need it serves (the scarcity
+  curve applies here, to needs);
+- *exchange* — for trade, the local value of what the good can be exchanged
+  for (net of transport), or a regional price once markets exist;
+- *production input* — derived value for tools, materials and Pots through
+  the labor or food security they provide.
+
+A claim's value is the best of these. Local need-based values then act as
+reservation prices: the least a village accepts to give a good up, and the
+most it pays to acquire one. Trade demand enters the demand pass as export
+claims carrying their exchange value, so surplus housing for a neighbor
+competes for labor on equal terms with local needs. The fulfilment interface
+already supports this: claims are a list, and a rule orders them by value.
+
+Open design questions for the trade mechanic, not the planner: who sets
+exchange terms or prices and when (a turn-boundary quote keeps demand-once);
+whether production may be speculative or only against committed orders;
+transport cost and supply range (#13); and what a village may know of a
+neighbor's needs under filtered observations.
+
+### 2. Farm Tools for expansion — dropped after measurement
+
+Measured in Phase 3, it lowered QoL systematically (see decision 3) and the
+exact staffing pass does not need the circularity it removed. The user
+dropped it on 29 September 2026; expansion farmers keep their Farm Tool
+demand. The original proposal follows for the record.
 
 Farm Tools for expansion farmers become the next turn's demand. The demand
 pass sizes Farm Tools for the fixed operating-farmer floor only, removing the
@@ -117,6 +202,24 @@ proposed.
 Matched per-turn population, prior-cohort QoL and realized food within ±5% of
 the current planner are acceptable. Larger deviation requires clear evidence
 that the new method is better, because it may require recalibration.
+
+**Measured noise floor.** A same-method control — the current bisection with
+one more iteration, i.e. strictly finer precision — already moves per-turn
+prior-cohort QoL by up to 3.5–9.5% on the 80-tribe checkpoints in late turns,
+because small staffing differences diverge trajectories. Per-turn maxima on a
+volatile world aggregate therefore cannot distinguish methods. Evaluations
+should report the mean signed deviation over the 25 turns (bias; the control
+stays within ±0.5%) alongside per-turn maxima, and compare both against a
+same-method control run.
+
+| 25 turns vs baseline, mean signed | Population | QoL | Food |
+| --- | ---: | ---: | ---: |
+| Control (bisection, 7 steps) | −0.20 to +0.14% | −0.45 to −0.20% | −0.27 to +0.26% |
+| Phase 3 solver (shipped) | −0.47 to +0.43% | −0.57 to +0.03% | −0.38 to +0.45% |
+| Phase 3 + decision 2 (dropped) | +0.10 to +0.66% | −4.66 to −2.39% | +0.01 to +0.67% |
+
+Worlds: `start-80-11`, `start-80-23`, `start-80-1729`, `start-320-1729`;
+Release, four workers, 25 post-opening turns each.
 
 ## Phases
 
@@ -154,9 +257,32 @@ that the new method is better, because it may require recalibration.
   reversed), `start-80-1729` and `start-320-1729`; both headless suites are
   unchanged apart from six new demand-snapshot assertions (purity, one claim
   per good, quantities, deferred Farm Tools, specialist rates, determinism).
-- **Phase 3 — direct fulfilment solver.** Replace bisection with the
-  breakpoint solve, unify the three production schedules into one kernel
-  shared with the resolver, and apply decision 2. Gate: invariants (labor ≤ residents,
+- **Phase 3 — fulfilment rule and path solve (partly implemented).**
+  Implemented: `IFulfilmentRule` maps a path position `s ∈ [0, 1]` to a share
+  per claim (`UniformFulfilment` is the default; `EconomicPlanner.Plan`
+  accepts another rule), the staffing pass applies per-claim shares, and
+  `SearchPath` replaces six-step bisection with interpolation toward the
+  resident boundary plus a closing probe (same 1/64 tolerance and six-probe
+  cap; halving after two rounds). With the uniform rule the first two steps
+  were fingerprint-exact; the solver then evaluates 19–25% fewer staffing
+  passes (80/11: 1,655 → 1,344 over eight turns; 320/1729: 3,320 → 2,501
+  over three). Paired wall time at 80 tribes is within noise.
+
+  *Why not a closed-form breakpoint solve:* the staffing pass calls the same
+  `Demand`, `ToolReplacementDemands` and `Forecast` contracts as production,
+  which is how planner forecasts stay consistent with the resolver. A
+  closed-form labor curve would duplicate those contracts. The breakpoints
+  are therefore found by evaluating the exact pass, not derived.
+
+  *Decision 2 measured and dropped:* deferring expansion Farm Tools lowered
+  prior-cohort QoL systematically (mean −2.4% to −4.7% over 25 turns; −5% to
+  −7% over turns 11–25 on the 80-tribe worlds; single turns to −15%) with
+  population and food unchanged. Its purpose was to break the Farm
+  Tools/field-workforce circularity for a closed-form solve, which the exact
+  pass does not need.
+
+  *Not done:* unifying the three production schedules with the resolver
+  (changes authoritative production; separate step). Gate: invariants (labor ≤ residents,
   no material/food over-commitment, tool coverage respected, planner forecast
   equals resolver production on uncontended single-camp fixtures); Phase 0
   differential report; matched 25-turn distributions on the four checkpoints
