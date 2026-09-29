@@ -10,6 +10,8 @@ document is a starting point, not a contract. The design record is
 
 The value model draft is [ValueModelDesign.md](ValueModelDesign.md).
 Its implementation plan is [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md).
+The converged social design (QoL, fission, food trade) is
+[QoLFissionTradeDesign.md](QoLFissionTradeDesign.md).
 
 ## Read first
 

@@ -61,6 +61,7 @@ No historical sweep row should be silently relabeled with the current SHA.
 - **Movement/economy:** ordinary accepted village movement abandons village status and releases the old footprint's operation. Earlier “villages cannot leave” prose is obsolete. Daughter-society fission remains deferred under #15; Camp Elder and husbandry decisions remain #23/#24.
 - **Vegetation:** raw `CurrentVegetation` and effective cultivation cover are separate. Cultivation retention must not be presented as rewriting the raw ecological tier. No forest-maintenance discount is authorized.
 - **Resource entitlement:** canonical tile order is an implementation constraint, not an approved claim-priority rule. #34 remains open.
+- **Social economy (approved design, not implemented):** [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) sets the future QoL formula `Q = B · R · S(N)`, fission, immigration, food trade and proto-towns; [ValueModelDesign.md](ValueModelDesign.md) sets value-based fulfilment and trade; [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md) orders the work. Until implemented, current QoL remains `F · W · R` in `NeolithicProduction.ResolveNeeds` and fission remains deferred.
 - **Unresolved queue:** #21 is closed; #26–#34 are open at this baseline. Existing open work also includes #23/#24/#9–#13/#15. Each implementation must follow its issue contract and the approved architecture above; code presence alone does not settle a disputed rule.
 
 ## Current new-world config values

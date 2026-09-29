@@ -1,7 +1,10 @@
 # Value model for planner fulfilment (draft)
 
 Status: design agreed for implementation, 29 September 2026; not implemented.
-The ordered work is in [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md). It continues
+The ordered work is in [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md).
+Its social companion, which sets the QoL formula, fission, food trade and
+proto-towns, is [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md); where the
+two differ, that document governs QoL and food. This document continues
 [ValueFulfilmentHandover.md](ValueFulfilmentHandover.md) and the "Decisions"
 section of [PlannerDirectFulfilmentPlan.md](PlannerDirectFulfilmentPlan.md).
 `EconomicAutomation.md` and `TurnResolutionPasses.md` remain the rule sources.
@@ -48,11 +51,13 @@ v_X(c) = V_X · exp(−λ_X · c),   c = (stock after decay + planned output) / 
 - `V_X` is the value of the first unit (see "Anchoring V in QoL").
 - `λ_X` sets how quickly value falls. At `λ = 3`, the last unit that completes
   the need is worth `e⁻³ ≈ 5%` of the first.
+- The curve applies for `0 ≤ c ≤ 1`. Beyond full coverage, local-use value is
+  **zero**: surplus is worth something only through an external use such as a
+  confirmed trade claim.
 
-Why exponential rather than linear: both have closed forms, but the exponential
-never reaches zero. Surplus keeps a small positive value, so it is not
-worthless. That is the trade objection's point, and it leaves room for a
-neighbour's request to lift that value. Its inverse is cheap:
+Why exponential rather than linear: it gives value that rises smoothly with
+scarcity instead of filling the cheaper need completely before touching the
+other, and its inverse is cheap:
 
 ```
 coverage the camp buys at labour price w:  c*(w) = (1/λ) · ln(V / (w · ℓ))
@@ -63,23 +68,31 @@ coverage the camp buys at labour price w:  c*(w) = (1/λ) · ln(V / (w · ℓ))
 Use one unit throughout: the **person-QoL-year**, raising one person's QoL by
 1.0 for one year. Values are stated in physical years so the same functions
 apply at any turn length; the default 20-year turn simply evaluates them over
-20 years. The current formula is
-`QoL = F · W · (½·clothing + ½·housing)` with `clothing = 1 − E·(1 − coverage)`,
-so the constant marginal QoL of a unit of each need is:
+20 years. The QoL formula (from
+[QoLFissionTradeDesign.md](QoLFissionTradeDesign.md), sections 2.1–2.4) is
+`Q = B · R · S(N)`: survival `B = F · W`, rudimentary needs
+`R = ½·clothing + ½·housing` with `clothing = 1 − E·(1 − coverage)`, and the
+social cohesion multiplier `S(N) = exp(−(N / N_s)^β)`. QoL stays linear in each
+need's coverage, so the constant marginal QoL of a unit of each need is:
 
 | Good | First-unit value `V` (person-QoL-years) | Why |
 | --- | --- | --- |
-| Cloth, Animal Fabric | `½ · E · F · W · 20` | `FabricConsumptionPerPersonTurn = 1` per 20-year reference turn, so one unit clothes one person for 20 years. |
-| Housing, Light Housing | `4 · ½ · E · F · W · L` | One unit shelters four people for its discounted service life `L` in years. |
+| Cloth, Animal Fabric | `½ · E · B · S · 20` | `FabricConsumptionPerPersonTurn = 1` per 20-year reference turn, so one unit clothes one person for 20 years. |
+| Housing, Light Housing | `4 · ½ · E · B · S · L` | One unit shelters four people for its discounted service life `L` in years. |
+
+`S` is fixed within one plan because the prior cohort's population is fixed at
+preparation. A crowded settlement therefore values goods somewhat less, by the
+factor `S`.
 
 Housing decays 10% per 20-year reference turn, a continuous rate
 `k = −ln(0.9) / 20 ≈ 0.0053` per year (mean life about 190 years). With a
 discount rate `r` per year, the discounted service life is `L = 1 / (k + r)`:
 190 years at `r = 0`, 61 years at `r = 0.011` (equivalent to a factor of 0.8
 per 20 years). The discount rate is a real design lever (the camp's time
-preference), and a natural Elder personality or RL parameter.
+preference), and a natural Elder personality or RL parameter. Baseline 0.01
+per year, swept over 0–0.02.
 
-`F · W` (food and water met) multiplies every craft value. That is the
+`B = F · W` (food and water met) multiplies every craft value. That is the
 Amdahl effect already in QoL: while food is short, every craft is worth less
 and labour belongs on food. Food and water stay a reserved floor, as today.
 
@@ -219,8 +232,8 @@ consequences are:
    unit locally that is worth less than what a neighbour pays. X's reservation
    price becomes `max(local marginal value, best open bid)`. This is the
    "value by best use" rule from the handover, now with a concrete mechanism.
-2. **Surplus production becomes worthwhile.** Past local coverage the curve is
-   near zero, but the bid step holds value up at the bid price for R units. The
+2. **Surplus production becomes worthwhile.** Past local coverage the local
+   value is zero, but the bid step holds value up at the bid price for R units. The
    camp produces for export while `bid value ≥ w · (ℓ_X + transport)`.
 3. **Every other good is tilted too.** Export work uses labour, so `w` rises and
    the camp makes a little less of every other good. The bid shifts the camp's
@@ -257,13 +270,22 @@ To keep that path open:
   price history to start from.
 
 Each camp judges a bid on its own curves, so no common value scale across
-camps is needed:
+camps is needed. A bundle that materially changes coverage is valued by the
+**area under the curve**, not at one marginal point:
 
-- **Buyer B** offers while its marginal value of X exceeds its marginal value
-  of the Y it gives up.
-- **Seller A** accepts while A's marginal value of the Y received is at least
-  the value of the X given up: its local marginal value if taken from stock, or
-  `w_A · (ℓ_X + transport)` if newly made.
+```
+ΔU_X(c0 → c1) = (V_X · D_X / λ_X) · [exp(−λ_X · c0) − exp(−λ_X · c1)]
+```
+
+Received goods integrate upward from current coverage; goods surrendered from
+local useful stock integrate the area lost.
+
+- **Buyer B** offers while the integrated value of the X it receives exceeds
+  the integrated value of the Y it gives up.
+- **Seller A** accepts while the integrated value of the Y received is at
+  least the cost of the X given up: its integrated local value if taken from
+  stock inside useful coverage, or `w_A · ℓ_X` plus material and transport
+  costs if newly made.
 - Trade happens when their ratios of marginal values (marginal rates of
   substitution) differ. The exchange ratio lies between them; who captures the
   surplus is a design choice (seller's ask, buyer's bid or midpoint).
@@ -347,8 +369,8 @@ CLOSE  A -> B : accept counter | reject
   limit) and rejects otherwise. A confirmed trade is binding.
 
 Neither side ever sees the other's values, only the terms. `m` is a configured
-bargaining margin with a hook for the Elder, like the discount rate. For
-same-Society partners `m` falls toward zero, and surplus may go for nothing
+bargaining margin with a hook for the Elder, like the discount rate. For kin
+Societies the margin falls to `m · (1 − a)`, and surplus may go for nothing
 (see below).
 
 **Acceptance limit.** A REQ carries the worst terms A would accept, so A's
@@ -469,19 +491,30 @@ This hides latency for a human player; it does not reduce CPU. Headless runs,
 AI-only turns and RL training get no benefit, so the handshake must stay
 bounded in its own right, as above.
 
-### Within versus between societies
+### Kin Societies and unrelated Societies
 
-- **Same Society** (daughter villages, later #15): friendlier terms, never
-  self-sacrifice. A village values its own needs exactly as it would with a
-  stranger; its reservation price for any unit within its own useful demand
-  is unchanged. Only its **surplus** (units beyond useful demand) may go to a
-  same-Society village cheaply or for nothing. A kinship term `κ ∈ [0, 1]`
-  sets how much of the surplus's trade value the giver still asks for; `κ = 0`
-  is a gift. The trade remains a handshake.
-- **Different Societies**: barter only, through explicit messages under
-  filtered observations. A camp learns a neighbour's need only by receiving its
-  bid, never by reading its stores. This matches #23's rule: no overmind;
-  autonomous camps with explicit commitments.
+- **Kin Societies.** A fission daughter is an independent polity sharing its
+  parent's culture and language; parent and daughters are kin with affinity
+  `a` ([QoLFissionTradeDesign.md](QoLFissionTradeDesign.md), 6.4). Kin terms
+  are friendlier, never self-sacrificing: the margin becomes `m · (1 − a)`,
+  and only **surplus** beyond useful demand may go at `(1 − a)` of its value,
+  down to a gift. Affinity is inert at 0.9 in this pass; its change over time
+  is out of scope.
+- **Unrelated Societies** (`a = 0`): barter at the full margin, through explicit
+  messages under filtered observations. A camp learns a neighbour's need only
+  by receiving its bid, never by reading its stores. This matches #23's rule:
+  no overmind; autonomous camps with explicit commitments.
+
+### Food
+
+Food trade is required: non-food barter alone cannot produce proto-towns. It
+follows [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md), section 7:
+seller-side bands (protected survival food, growth food, safe surplus), buyer
+values ordered by starvation avoided, reserve restored and growth funded, and
+growth food valued by the marginal welfare of an added resident, which uses
+this model's labour price `w`. Confirmed food imports enter the prepared food
+envelope before demographic planning; every handshake completes during
+preparation, so the timing contract holds.
 
 ## Doctrine check
 
@@ -505,20 +538,8 @@ bounded in its own right, as above.
 
 ## Phasing
 
-1. **Local value rule.** Values, the search on `w`, value-ordered material
-   access, and the resulting `w` reported (not saved). Uniform fill remains the
-   default until this phase is calibrated and accepted.
-2. **Tool and Pot claims.** Farm and Herding Tools priced by labour saved;
-   Pots by the risk placeholder.
-3. **Housing Material.** The split recipe, inventory field and observation
-   schema above. Useful locally before any trade because it removes
-   construction's leftover-material scheduling.
-4. **Same-Society requests.** Surplus-only friendly terms, after #15.
-5. **Barter between societies.** Needs #13 (transport and range), #34 (who gets
-   a shared source) and the #23 authority rules.
-
-Background planning during the player's turn does not depend on trade. It can
-land at any point, since it already hides today's `Decide` and `Plan` latency.
+The ordered work packages are in
+[ValueModelImplementationPlan.md](ValueModelImplementationPlan.md).
 
 ## Validation
 
@@ -538,9 +559,11 @@ land at any point, since it already hides today's `Decide` and `Plan` latency.
 
 Agreed with the user on 29 September 2026:
 
-1. **QoL stays linear.** The exponential curve is only the planner's price
-   allocation; the outcome formula and its calibration are unchanged. `λ` is a
-   planner calibration value.
+1. **QoL stays linear in need coverage.** The exponential curve is only the
+   planner's price allocation. The QoL formula gains the social cohesion
+   multiplier `S(N)` from
+   [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md). `λ` is a planner
+   calibration value.
 2. **Priorities are value multipliers** (`priority / default priority`; zero
    disables).
 3. **Expansion labour sits on the same spectrum as crafts.** A worker in the
@@ -554,23 +577,27 @@ Agreed with the user on 29 September 2026:
 5. **Pots use the risk placeholder `ρ`** until disasters and immigration supply
    an expected-shortfall estimate.
 6. **Bids are bundles** so currency can be added later as one more good.
-7. **Same-Society terms are friendlier, never self-sacrificing**: only surplus
-   may be given cheaply.
-8. **Discount rate `r` is one configured constant** (around 0.01 per year),
-   with a hook for the Elder to adjust it later.
+7. **Kin terms are friendlier, never self-sacrificing**: margin `m · (1 − a)`,
+   only surplus given cheaply; affinity inert at 0.9.
+8. **Discount rate `r` is one configured constant**, baseline 0.01 per year and
+   swept over 0–0.02, with a hook for the Elder to adjust it later.
 9. **Handshake limits:** `K = 3` requisitions per camp per turn; default
    bargaining margin `m = 10%`.
 10. **Initial tradeable goods:** Housing Material and Cloth, with candidate
-    permutations for sweeps listed in the implementation plan.
-11. **Plan during the player's turn.** AI decisions, AI-to-AI handshakes and AI
-   economic plans are computed in the background while the player plans;
-   only order-dependent parts are recomputed at End Turn.
+    permutations for sweeps listed in the implementation plan. Food trade
+    follows as its own work package.
+11. **Plan during the player's turn.** AI decisions, AI-to-AI handshakes and
+    AI economic plans are computed in the background while the player plans;
+    only order-dependent parts are recomputed at End Turn.
+12. **Bundles are valued by the area under the curve**; local value beyond
+    full coverage is zero.
+13. **Transport:** bounded range plus provisional distance and bulk costs until
+    logistics (#13).
 
 ## Open decisions
 
 1. **`λ`**, the value curve's steepness (calibration).
-2. **The kinship reduction** of `m` for same-Society partners.
-3. **The trade contact range** until logistics (#13) defines transport.
+2. **Provisional distance and bulk costs** for transport until #13.
 
 ## Rejected approaches
 
@@ -580,11 +607,13 @@ Agreed with the user on 29 September 2026:
   currency needs institutions that don't yet exist. Bids are bundles so it can
   be added later without redesign.
 - **Linear marginal value as the planner's allocation curve.** Fills the
-  cheaper need completely before touching the other, and makes surplus worth
-  exactly zero. (QoL itself stays linear.)
-- **Shared welfare between same-Society villages.** Would let a village
-  sacrifice its own needs for a sibling; replaced by surplus-only friendly
-  terms.
+  cheaper need completely before touching the other. (QoL itself stays linear
+  in coverage.)
+- **Shared welfare between kin villages.** Would let a village sacrifice its
+  own needs for a sibling; replaced by surplus-only kin terms.
+- **Subtractive social friction inside a clamp.** Could zero every marginal
+  value in a large, poorly supplied settlement; replaced by the cohesion
+  multiplier.
 - **Carrying pending items across the turn transition.** At 20-year turns
   they go stale; replaced by one-turn handshakes and the trade ledger.
 - **A turn per handshake step.** 20–60 simulated years per trade at current
