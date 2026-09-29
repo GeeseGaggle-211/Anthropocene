@@ -20,7 +20,7 @@ until WP11 updates them.
 | Fission size targets | Paleolithic high above 100; Nomadic median about 250; Agricultural median about 600, upper about 1,000 | agreed |
 | Fission levers | `Q_fiss` 0.75, `ΔQ_fiss` 0.10, `θ_fiss` 0.20, `r_fiss` 3, minimum daughter 12 | candidates, swept |
 | Fission policy (per camp) | Discourage / Neutral / Encourage: `Q_fiss` −0.05 / 0 / +0.05; `f_fiss` 0.15 / 0.30 / 0.40; affinity 0.5 / 0.9 / 1.0 | agreed, calibration target |
-| Minimum camp spacing | 2 hexes, all placement | agreed |
+| Minimum camp spacing | 3 hexes, all placement (land footprints never overlap) | agreed |
 | Immigration | `θ_imm` 0.075, `r_imm` 4, lifestyle barriers; opportunity term zero | candidates; opportunity term out of scope |
 | Fission daughters | smaller group splits off as an independent kin Society in a new AI player slot; the player keeps the original camp; knowledge and practice copied at fission | agreed; affinity change out of scope |
 | Requisitions per camp per turn `K` | 3 | agreed |
@@ -345,7 +345,7 @@ Following QoLFissionTradeDesign.md sections 3, 4, 6.4 and 9.
   valid target exists; invalidated when occupied, unviable or the regime
   changes. Replaces `Camp.FissionWilling`.
 - **Minimum camp spacing.** `CampPlacement.Resolve` rejects any placement
-  closer than 2 hexes to another camp: fission destinations, relocations and
+  closer than 3 hexes to another camp: fission destinations, relocations and
   ordinary moves. This changes existing movement legality for players and AI,
   so the order masks and movement previews (`OpeningPlanning.cs`) follow it,
   and the change is validated on its own before fission is enabled.
@@ -364,7 +364,7 @@ Following QoLFissionTradeDesign.md sections 3, 4, 6.4 and 9.
 Headless: conservation across fission and immigration; daughters always
 smaller than parents; policy levers applied exactly; copied knowledge and
 practice equal to the parent's at fission; no fission without a viable site;
-no placement within 2 hexes; no same-turn multi-hop; bounded search counts;
+no placement within 3 hexes; no same-turn multi-hop; bounded search counts;
 scalar-versus-parallel and reordered-collection fingerprints; save
 continuation including the new optional fields.
 

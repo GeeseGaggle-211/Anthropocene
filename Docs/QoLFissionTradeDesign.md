@@ -182,11 +182,11 @@ valid target is already cached.
 - Pastoral or nomadic destination: feeding ground scored by human food, herd
   forage and herd water.
 - Search radius is bounded and configurable; baseline `r_fiss = 3`, sweep 2–5.
-- **Minimum camp spacing:** no two camps may be closer than 2 hexes. This
+- **Minimum camp spacing:** no two camps may be closer than 3 hexes. This
   applies to every camp placement: fission destinations, relocations and
-  moves. At distance 2 two radius-one land footprints can still share one or
-  two tiles; the shared-tile ledger resolves those, and contention rules stay
-  with #34. Distance 3 would remove land-footprint overlap entirely.
+  moves. At distance 3, two radius-one land footprints never share a tile, so
+  camps' land claims stay independent. Hunters, aquatic claims and herds can
+  still meet on shared tiles; contention rules there stay with #34.
 - The cached destination persists until fission occurs, it becomes occupied or
   invalid, the source changes subsistence regime, or ecological support falls
   below viability.
@@ -244,7 +244,7 @@ slot; the player keeps control of the original camp.
 | `θ_fiss` | 0.20 | 0.10–0.30 | Calibration |
 | `f_fiss` | 0.15 / 0.30 / 0.40 by policy (3.6) | 0.10–0.45 | Calibration |
 | `r_fiss` | 3 hexes | 2–5 | Performance-bounded |
-| Minimum camp spacing | 2 hexes | 2–3 | Agreed |
+| Minimum camp spacing | 3 hexes | — | Agreed |
 | Minimum daughter population | 12 | 8–24 | Candidate |
 
 ### 3.5 Fission size by regime (new)
@@ -671,7 +671,7 @@ migration, or recomputing QoL after each transfer.
 | `r_imm` | 4 | 3–5 | Bounded neighbour search. |
 | Fission policy reluctance | −0.05 / 0 / +0.05 on `Q_fiss` | ±0.03–0.08 | Discourage / neutral / encourage. |
 | Kin affinity `a` | 0.5 / 0.9 / 1.0 by policy, inert | — | Decay out of scope. |
-| Minimum camp spacing | 2 hexes | 2–3 | All camp placement. |
+| Minimum camp spacing | 3 hexes | — | All camp placement; no shared land-footprint tiles. |
 | `λ` | open | calibrate | Planner scarcity curve. |
 | Discount rate `r` | 0.01 / y | 0–0.02 / y | Durable-value sensitivity. |
 | Requisitions `K` | 3 | 1–3 | Bounded handshake. |
@@ -698,7 +698,7 @@ refit `N_s` with the section 3.5 formula when they change.
 - Verify no fission when no viable daughter site exists, even under low QoL.
 - Verify the fission policy shifts onset sizes as in 3.6 and that daughters
   are always smaller than their parent.
-- Verify no placement ever puts two camps closer than 2 hexes.
+- Verify no placement ever puts two camps closer than 3 hexes.
 
 ### 11.2 Food-export and town sweep
 
@@ -751,7 +751,7 @@ refit `N_s` with the section 3.5 formula when they change.
 | QoL constants | `NeolithicConfig` | Add `β`, regime `N_s`, fission, migration and affinity levers. |
 | Fission state | `Camp.FissionWilling` currently reset | Replace with derived mobility proposal state, a saved cached target and a saved fission policy. |
 | Society lineage | `Societies.cs` (`Society`) | Add a saved parent-Society link and affinity; daughters copy knowledge and practice at fission and take a new AI player slot. |
-| Camp placement | `CampPlacement.Resolve` | Enforce the 2-hex minimum spacing for every placement. |
+| Camp placement | `CampPlacement.Resolve` | Enforce the 3-hex minimum spacing for every placement. |
 | Agricultural site scoring | `Agents` agricultural candidate forecasting | Reuse physical support projection for daughter-site desirability. |
 | Pastoral site scoring | `SiteCoverage` and husbandry forecasts | Reuse min(human food, herd forage, herd water). |
 | Economic value | `ValueModelDesign.md`, `ProductionDemand` | Integrated bundle valuation, food bands and growth-food value. |
@@ -799,5 +799,6 @@ Agreed with the user when merging this design with the value model:
    daughter size and affinity (3.6).
 8. **Daughters inherit knowledge and practice experience identical to the
    parent's at fission** (3.4).
-9. **Minimum camp spacing of 2 hexes** for all placement, and parallel
+9. **Minimum camp spacing of 3 hexes** for all placement, so land
+   footprints never overlap,, and parallel
    per-camp mobility work with canonical commits (3.1, 9).
