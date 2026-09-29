@@ -60,20 +60,23 @@ coverage the camp buys at labour price w:  c*(w) = (1/λ) · ln(V / (w · ℓ))
 
 ## Anchoring V in QoL
 
-Use one unit throughout: the **person-QoL-turn**, raising one person's QoL by
-1.0 for one turn. The current formula is
+Use one unit throughout: the **person-QoL-year**, raising one person's QoL by
+1.0 for one year. Values are stated in physical years so the same functions
+apply at any turn length; the default 20-year turn simply evaluates them over
+20 years. The current formula is
 `QoL = F · W · (½·clothing + ½·housing)` with `clothing = 1 − E·(1 − coverage)`,
 so the constant marginal QoL of a unit of each need is:
 
-| Good | First-unit value `V` (person-QoL-turns) | Why |
+| Good | First-unit value `V` (person-QoL-years) | Why |
 | --- | --- | --- |
-| Cloth, Animal Fabric | `½ · E · F · W` | One unit clothes one person for one turn. |
-| Housing, Light Housing | `4 · ½ · E · F · W · L` | One unit shelters four people for its service life `L`. |
+| Cloth, Animal Fabric | `½ · E · F · W · 20` | `FabricConsumptionPerPersonTurn = 1` per 20-year reference turn, so one unit clothes one person for 20 years. |
+| Housing, Light Housing | `4 · ½ · E · F · W · L` | One unit shelters four people for its discounted service life `L` in years. |
 
-Service life with 10% decay per reference turn and a discount factor `β` per
-turn is `L = 1 / (1 − 0.9·β)`: 10 turns at `β = 1`, 3.6 turns at `β = 0.8`. `β`
-must be stated per year and converted by turn length so the same equations
-hold for shorter turns. It is a real design lever (the camp's time
+Housing decays 10% per 20-year reference turn, a continuous rate
+`k = −ln(0.9) / 20 ≈ 0.0053` per year (mean life about 190 years). With a
+discount rate `r` per year, the discounted service life is `L = 1 / (k + r)`:
+190 years at `r = 0`, 61 years at `r = 0.011` (equivalent to a factor of 0.8
+per 20 years). The discount rate is a real design lever (the camp's time
 preference), and a natural Elder personality or RL parameter.
 
 `F · W` (food and water met) multiplies every craft value. That is the
@@ -82,15 +85,16 @@ and labour belongs on food. Food and water stay a reserved floor, as today.
 
 ### Worked values at current calibration
 
-A turn is 80 intervals of 91.25 days. With `E = F = W = 1` and specialist
-rates:
+Recipe rates are configured per `BaseDays` (91.25 days), a legacy rate unit
+that the turn horizon converts once; below they are restated per worker-year.
+With `E = F = W = 1` and specialist rates:
 
-| Work | Output per worker-turn | Value per worker-turn |
+| Work | Output per worker-year | Value per worker-year (person-QoL-years) |
 | --- | --- | --- |
-| Weaver on Cloth | 80 units, clothing 80 people | 40 (plus 80 Plant Food input) |
-| Builder on Housing (`β = 1`) | 2.5 units, 10 people | 50 |
-| Builder on Housing (`β = 0.8`) | 2.5 units | 18 |
-| Generalist Craftsperson | 0.25 × the above | 10 / 12 / 4.5 |
+| Weaver on Cloth | 4 units, clothing 4 people for 20 years | 40 (plus 4 Plant Food input) |
+| Builder on Housing (`r = 0`) | 0.125 units, sheltering 0.5 people | 48 |
+| Builder on Housing (`r = 0.011`) | 0.125 units | 15 |
+| Generalist Craftsperson | 0.25 × the above | 10 / 12 / 3.8 |
 
 Cloth and Housing are of the same order, so under this model Housing is
 **not** inherently poor value. Its failure in the #33 windows (Construction
@@ -99,10 +103,10 @@ since it is built last from leftover Wood and Clay, or to capability and
 useful-demand gates. A value rule should also order material access by value,
 not only change shares.
 
-Also note that one Weaver clothes 80 people and one Builder replaces the
-housing decay of about 100 people. Crafts rarely bind the resident workforce;
-food, fields and herding do. In practice `w` will mostly be set by food-side
-and field labour. That raises open question 4.
+Also note that one Weaver keeps about 80 people clothed and one Builder
+replaces the housing decay of about 100 people. Crafts rarely bind the
+resident workforce; food, fields and herding do. In practice `w` will mostly
+be set by food-side and field labour. That raises open question 4.
 
 ## Tools price themselves through `w`
 
@@ -114,8 +118,10 @@ also labour, valued at `w`. So `w` cancels:
 
 | Tool | Saves per unit | Costs per unit (specialist / generalist) | Ratio |
 | --- | --- | --- | --- |
-| Farm Tools (1.265625× field labour, 20 farmer-years) | 21% of 80 = 16.8 worker-intervals | 2 / 8 intervals | 8.4 / 2.1 |
-| Herding Tools (2 → 2.69 animals per Herder, 20 herder-years) | 25.7% of 80 = 20.6 intervals | 3 / 12 intervals | 6.9 / 1.7 |
+| Farm Tools (1.265625× field labour, 20 farmer-years) | 21% of 20 = 4.2 worker-years | 0.5 / 2 worker-years | 8.4 / 2.1 |
+| Herding Tools (2 → 2.69 animals per Herder, 20 herder-years) | 25.7% of 20 = 5.1 worker-years | 0.75 / 3 worker-years | 6.9 / 1.7 |
+
+Costs include making the tool and extracting its Wood (and Stone) inputs.
 
 In value per worker these claims return 2–8× `w`, so a value fill takes them
 first, up to their useful demand. Beyond useful demand they save nothing (idle
@@ -243,13 +249,16 @@ Animal Product -> Animal Fabric -> Light Housing.
 
 Agreed defaults:
 
-- **Labour is split, not added.** The current Builder rate for Housing is
-  divided between making Housing Material and assembling it, so labour per
-  Housing unit and the shipped balance stay the same. The split fraction is a
-  calibration value, still to be chosen.
+- **Labour is split 50/50, not added.** The current Builder labour per Housing
+  unit is divided equally between making Housing Material and assembling it,
+  so each step runs at twice the current Housing rate (0.25 units per
+  Builder-year instead of 0.125). Labour per Housing unit and the shipped
+  balance stay the same. The split is a calibration target for later.
 - **Builders and generalists only.** Builders (Construction) make and assemble
   Housing Material; Craftspersons do both at the usual `GeneralistTaskEfficiency`
   (0.25). No new role, to keep the supply chain simple.
+- **No decay.** Stored Housing Material does not decay for now; holdings are
+  already capped by useful demand. Also a later calibration target.
 - **No stockpiling beyond useful demand.** Housing Material is made only
   against the Housing gap, as other goods are. Housing demand therefore
   remains a recurring pressure as population grows, which is intended. The
@@ -306,8 +315,9 @@ which is bounded by neighbours in range.
   derived per turn. Requisitions add deliberately designed saved state
   (commitments and their delivery ledger) only when trade is implemented.
 - **Temporal abstraction.** Once per `TurnPlanner.Prepare`, from the committed
-  boundary. Decay and discount are stated per year and converted by turn
-  length, so the same equations hold for shorter turns.
+  boundary. Values, decay and discount are functions of physical years; a
+  turn evaluates the same functions over its duration (20 years by default),
+  with no sub-turn steps.
 - **Scaling.** The local rule is O(claims) per search probe with no extra
   evaluations, so per-camp cost is unchanged. Trade adds O(bids) per turn, and
   bids per camp are bounded by neighbours in range. There is no global market
@@ -315,7 +325,7 @@ which is bounded by neighbours in range.
 - **Mature-game scale.** Goods added later, such as amenities or metal tools,
   add claims, not new mechanisms.
 - **RL and Elder.** The values, `w` and open bids are observation features.
-  `λ`, `β`, `ρ`, priority multipliers and trade margins are the Elder's actions
+  `λ`, `r`, `ρ`, priority multipliers and trade margins are the Elder's actions
   or personality. QoL, in the same unit, is the reward.
 - **Validation.** See below.
 
@@ -352,7 +362,7 @@ which is bounded by neighbours in range.
 1. **Curve and QoL.** Keep QoL linear and use the exponential only in the
    planner, or make QoL itself concave to match (which requires recalibrating
    population, growth and fission)? And what `λ`?
-2. **Discount `β` per year** for durables: a fixed constant, or an Elder
+2. **Discount rate `r` per year** for durables: a fixed constant, or an Elder
    personality trait?
 3. **Priorities as value multipliers** (recommended), or keep them as a hard
    order?
