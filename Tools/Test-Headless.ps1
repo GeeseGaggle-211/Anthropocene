@@ -7,7 +7,7 @@ $sdkCandidates = @(
 )
 $dotnetPath = $sdkCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 if (-not $dotnetPath) { $dotnetPath = (Get-Command dotnet -ErrorAction Stop).Source }
-$runArgs = @('run', '--project', (Join-Path $projectRoot 'Tools/Headless/Anthropocene.Headless.csproj'), '--', "$Seeds")
+$runArgs = @('run', '-c', 'Release', '--project', (Join-Path $projectRoot 'Tools/Headless/Anthropocene.Headless.csproj'), '--', "$Seeds")
 if ($Standard) { $runArgs += '--standard' }
 if ($Geography) { $runArgs += '--geography' }
 if ($Audit) { $runArgs += '--audit3' }

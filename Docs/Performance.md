@@ -10,6 +10,60 @@ decaying-capital reclassification. Pure projection adds no allocation. Paired
 [Issue27EcologyRecovery.md](Issue27EcologyRecovery.md). Its 5% full-turn timing
 screen was not cleared; the issue branch remains unmerged for review.
 
+## Headless runner, save codec and parallel checks — September 29, 2026
+
+Source `d69a39c` plus this change; Windows 11, Ryzen 5 5600H (6 cores/12
+threads, 14 GB), Unity-bundled .NET SDK 8.0.425. Single runs, not paired
+timing evidence.
+
+- `Tools/Test-Headless.ps1` and `.sh` previously used `dotnet run` without a
+  configuration, so checks ran an unoptimized Debug build. Both now pass
+  `-c Release`.
+- `SaveCodec.Fingerprint` previously hashed a complete GZip save; it now
+  streams the uncompressed save payload into SHA-256. GZip was about 2.3 s of
+  a 2.7 s Standard 1024×512 save.
+- Tile records are encoded and decoded as one 365-byte little-endian record
+  per tile instead of about 76 `BinaryWriter`/`BinaryReader` calls.
+- Fixed-suite checks run on bounded lanes (`ParallelChecks.cs`, default 3 on
+  this host; `--jobs=N`, `--only=Name[,Name]`, `--check-timings`). Each check
+  owns its worlds; output is buffered per check and printed in canonical order,
+  and the first failure in that order is reported.
+
+| `start-80-11` checkpoint | Before | After |
+| --- | ---: | ---: |
+| Fingerprint | 2.5–2.9 s | 0.43–0.57 s |
+| Load | 2.8–3.3 s | 2.4–2.9 s |
+| Save | 2.5–3.0 s | 2.2–2.4 s |
+
+| Suite (execution only unless noted) | Seconds |
+| --- | ---: |
+| `-Seeds 0`, Debug, original | 168.5 |
+| `-Seeds 0`, Release, original codec, sequential | 94.8 |
+| `-Seeds 0`, Release, new codec, sequential | 59.1–68.7 |
+| `-Seeds 0`, Release, new codec, 3 lanes | 32.8 |
+| `-Seeds 30 -Standard -Geography` through the script, including build | 100.6 → 63.4 |
+
+Two, three and four lanes all finish in 38–41 s with a peak working set of
+1.2–1.3 GiB, because the preset check (`ScenarioChecks`, about 32 s: one
+Standard generation, three Save/Load round trips and ten fingerprints) is the
+critical path. Lane output matched the sequential run line for line except
+wall-clock timing.
+
+Every loadable saved envelope (`-9`, `-10`, `-11`) in the local evidence
+directory re-saved to an identical uncompressed payload before and after the
+change, and unsupported envelopes raised the same exceptions. Compressed bytes
+differ: .NET's Deflate output depends on write chunking, which the old
+per-field `WriteByte` path perturbed. Saves remain compatible in both
+directions. Fingerprint equality still means payload equality, but hex values
+differ from earlier revisions: compare exact fingerprints only between builds
+that share this definition.
+
+Measured but not adopted: server GC made ten mature 80-tribe turns 2–3×
+slower. Disabling concurrent GC or raising the gen-0 budget looked 10–20%
+faster in two noisy repetitions and needs paired runs before any change.
+Those mature turns allocate about 185 MB each; gen-2 collections coincide
+with 250 ms AI-phase spikes, so allocation profiling is the next lever.
+
 ## Neolithic Options 1/5 follow-up — September 25, 2026
 
 The production resolver on `codex/turn-horizon-refactor` now evaluates one

@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -18,42 +19,57 @@ namespace Anthropocene.Simulation
         private static DataContractSerializer Serializer(Type type) => new DataContractSerializer(type, new DataContractSerializerSettings { MaxItemsInObjectGraph = int.MaxValue });
         public static byte[] Save(WorldState world)
         {
-            var owners = world.Societies.ToDictionary(s => s.Id);
-            if (world.Camps.Any(c => !owners.TryGetValue(c.SocietyId, out var owner) || !ReferenceEquals(c.People, owner))) throw new InvalidOperationException("Bind society ownership at the world-construction boundary before saving.");
+            RequireBoundOwnership(world);
             using (var output = new MemoryStream())
             {
-                using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
-                using (var buffered = new BufferedStream(zip, 65536))
-                using (var writer = new BinaryWriter(buffered))
-                {
-                    writer.Write(Magic);
-                    // Geography dominates the save. Fixed primitive records avoid reflection and repeated XML member names for every tile.
-                    var metadata = CopyWithoutTiles(world);
-                    using (var header = new MemoryStream())
-                    {
-                        using (var xml = XmlDictionaryWriter.CreateBinaryWriter(header, null, null, false)) Serializer(typeof(WorldState)).WriteObject(xml, metadata);
-                        writer.Write(checked((int)header.Length)); header.Position = 0; header.CopyTo(buffered);
-                    }
-                    writer.Write(world.Tiles.Length);
-                    foreach (var tile in world.Tiles)
-                    {
-                        writer.Write(tile.Plate); writer.Write(tile.Downstream); writer.Write((byte)tile.Environment); writer.Write((byte)tile.NaturalVegetationPotential); writer.Write((byte)tile.CurrentVegetation); writer.Write(tile.LastEcologyUpdateDays);
-                        writer.Write((byte)((tile.Continental ? 1 : 0) | (tile.Oasis ? 2 : 0) | (tile.Cultivated ? 4 : 0) | (tile.Fishery ? 8 : 0) | (tile.Irrigated ? 16 : 0)));
-                        writer.Write((byte)tile.ElevationLevel); writer.Write((byte)tile.RidgeMask); writer.Write((byte)tile.Relief); writer.Write((byte)tile.WaterBody); writer.Write((byte)tile.FreshwaterSource);
-                        writer.Write(tile.DepressionDepth); writer.Write(tile.OasisInfluence); writer.Write(tile.Saltwater); writer.Write(tile.LandCondition); writer.Write(tile.AquaticCondition);
-                        writer.Write(tile.Elevation); writer.Write(tile.Volcanism); writer.Write(tile.Flow); writer.Write(tile.Food); writer.Write(tile.PotentialFood); writer.Write(tile.Freshwater);
-                        writer.Write(tile.Cultivation);
-                        writer.Write(tile.CultivationCapital); writer.Write(tile.CultivationOperator);
-                        foreach (var s in tile.Seasons)
-                        {
-                            writer.Write(s.Temperature); writer.Write(s.Rain); writer.Write(s.Snow); writer.Write(s.WindX); writer.Write(s.Runoff); writer.Write(s.RegionalMoisture); writer.Write(s.Moisture);
-                            writer.Write(s.AccessibleFreshwater); writer.Write(s.MaxFood); writer.Write(s.MaxPotentialFood); writer.Write(s.MaxFreshwater); writer.Write(s.MaxSaltwater); writer.Write(s.FoodRecoveryPerDay); writer.Write(s.BiomassRecoveryPerDay); writer.Write(s.WaterRecoveryPerDay); writer.Write(s.Habitat);
-                        }
-                    }
-                    writer.Write(world.Resources != null);
-                    if (world.Resources != null) ResourceCodec.Write(writer, world.Resources);
-                }
+                using (var zip = new GZipStream(output, CompressionLevel.Fastest, true)) WritePayload(zip, world);
                 return output.ToArray();
+            }
+        }
+        private static void RequireBoundOwnership(WorldState world)
+        {
+            var owners = world.Societies.ToDictionary(s => s.Id);
+            if (world.Camps.Any(c => !owners.TryGetValue(c.SocietyId, out var owner) || !ReferenceEquals(c.People, owner))) throw new InvalidOperationException("Bind society ownership at the world-construction boundary before saving.");
+        }
+        // The uncompressed save payload. Save compresses it; Fingerprint hashes
+        // it directly, so state hashing never depends on compressor output or cost.
+        private static void WritePayload(Stream destination, WorldState world)
+        {
+            using (var buffered = new BufferedStream(destination, 65536))
+            using (var writer = new BinaryWriter(buffered))
+            {
+                writer.Write(Magic);
+                // Geography dominates the save. Fixed primitive records avoid reflection and repeated XML member names for every tile.
+                var metadata = CopyWithoutTiles(world);
+                using (var header = new MemoryStream())
+                {
+                    using (var xml = XmlDictionaryWriter.CreateBinaryWriter(header, null, null, false)) Serializer(typeof(WorldState)).WriteObject(xml, metadata);
+                    writer.Write(checked((int)header.Length)); header.Position = 0; header.CopyTo(buffered);
+                }
+                writer.Write(world.Tiles.Length);
+                // Encode each tile into one little-endian record, byte-identical to
+                // BinaryWriter's per-field output, to avoid ~76 stream calls per tile.
+                var record = new byte[TileRecordBytes(Magic)];
+                foreach (var tile in world.Tiles)
+                {
+                    int o = 0;
+                    PutInt(record, ref o, tile.Plate); PutInt(record, ref o, tile.Downstream); record[o++] = (byte)tile.Environment; record[o++] = (byte)tile.NaturalVegetationPotential; record[o++] = (byte)tile.CurrentVegetation; PutDouble(record, ref o, tile.LastEcologyUpdateDays);
+                    record[o++] = (byte)((tile.Continental ? 1 : 0) | (tile.Oasis ? 2 : 0) | (tile.Cultivated ? 4 : 0) | (tile.Fishery ? 8 : 0) | (tile.Irrigated ? 16 : 0));
+                    record[o++] = (byte)tile.ElevationLevel; record[o++] = (byte)tile.RidgeMask; record[o++] = (byte)tile.Relief; record[o++] = (byte)tile.WaterBody; record[o++] = (byte)tile.FreshwaterSource;
+                    PutFloat(record, ref o, tile.DepressionDepth); PutFloat(record, ref o, tile.OasisInfluence); PutDouble(record, ref o, tile.Saltwater); PutDouble(record, ref o, tile.LandCondition); PutDouble(record, ref o, tile.AquaticCondition);
+                    PutFloat(record, ref o, tile.Elevation); PutFloat(record, ref o, tile.Volcanism); PutFloat(record, ref o, tile.Flow); PutDouble(record, ref o, tile.Food); PutDouble(record, ref o, tile.PotentialFood); PutDouble(record, ref o, tile.Freshwater);
+                    PutFloat(record, ref o, tile.Cultivation);
+                    PutDouble(record, ref o, tile.CultivationCapital); PutInt(record, ref o, tile.CultivationOperator);
+                    foreach (var s in tile.Seasons)
+                    {
+                        PutFloat(record, ref o, s.Temperature); PutFloat(record, ref o, s.Rain); PutFloat(record, ref o, s.Snow); PutFloat(record, ref o, s.WindX); PutFloat(record, ref o, s.Runoff); PutFloat(record, ref o, s.RegionalMoisture); PutFloat(record, ref o, s.Moisture);
+                        PutFloat(record, ref o, s.AccessibleFreshwater); PutFloat(record, ref o, s.MaxFood); PutFloat(record, ref o, s.MaxPotentialFood); PutFloat(record, ref o, s.MaxFreshwater); PutFloat(record, ref o, s.MaxSaltwater); PutFloat(record, ref o, s.FoodRecoveryPerDay); PutFloat(record, ref o, s.BiomassRecoveryPerDay); PutFloat(record, ref o, s.WaterRecoveryPerDay); PutFloat(record, ref o, s.Habitat);
+                    }
+                    if (o != record.Length) throw new InvalidOperationException("Tile record layout does not match its declared size.");
+                    writer.Write(record, 0, o);
+                }
+                writer.Write(world.Resources != null);
+                if (world.Resources != null) ResourceCodec.Write(writer, world.Resources);
             }
         }
         public static WorldState Load(byte[] bytes)
@@ -97,25 +113,29 @@ namespace Anthropocene.Simulation
                 world.Config.Validate();
                 int count = reader.ReadInt32(); if (count != world.Config.Width * world.Config.Height) throw new InvalidDataException("Invalid tile count.");
                 world.Tiles = new Tile[count];
+                bool hasCultivation = magic == Magic || magic == LegacyMagic10;
+                var record = new byte[TileRecordBytes(magic)];
                 for (int i = 0; i < count; i++)
                 {
-                    var tile = new Tile { Id = i, Plate = reader.ReadInt32(), Downstream = reader.ReadInt32(), Environment = (EnvironmentKind)reader.ReadByte(), NaturalVegetationPotential = (VegetationTier)reader.ReadByte(), CurrentVegetation = (VegetationTier)reader.ReadByte(), LastEcologyUpdateDays = reader.ReadDouble() };
-                    byte flags = reader.ReadByte(); 
-                    tile.Continental = (flags & 1) != 0; 
-                    tile.Oasis = (flags & 2) != 0; 
-                    tile.Cultivated = (flags & 4) != 0; 
+                    ReadRecord(reader, record);
+                    int o = 0;
+                    var tile = new Tile { Id = i, Plate = GetInt(record, ref o), Downstream = GetInt(record, ref o), Environment = (EnvironmentKind)record[o++], NaturalVegetationPotential = (VegetationTier)record[o++], CurrentVegetation = (VegetationTier)record[o++], LastEcologyUpdateDays = GetDouble(record, ref o) };
+                    byte flags = record[o++];
+                    tile.Continental = (flags & 1) != 0;
+                    tile.Oasis = (flags & 2) != 0;
+                    tile.Cultivated = (flags & 4) != 0;
                     tile.Fishery = (flags & 8) != 0;
-                    tile.Irrigated = (magic == Magic || magic == LegacyMagic10) && (flags & 16) != 0;
-                    tile.ElevationLevel = reader.ReadByte(); tile.RidgeMask = reader.ReadByte(); tile.Relief = (Relief)reader.ReadByte(); tile.WaterBody = (WaterKind)reader.ReadByte(); tile.FreshwaterSource = (FreshwaterSource)reader.ReadByte();
-                    tile.DepressionDepth = reader.ReadSingle(); tile.OasisInfluence = reader.ReadSingle(); tile.Saltwater = reader.ReadDouble(); tile.LandCondition = reader.ReadDouble(); tile.AquaticCondition = reader.ReadDouble();
-                    tile.Elevation = reader.ReadSingle(); tile.Volcanism = reader.ReadSingle(); tile.Flow = reader.ReadSingle(); tile.Food = reader.ReadDouble(); tile.PotentialFood = reader.ReadDouble(); tile.Freshwater = reader.ReadDouble();
-                    tile.Cultivation = (magic == Magic || magic == LegacyMagic10) ? reader.ReadSingle() : 0;
-                    tile.CultivationCapital = magic == Magic ? reader.ReadDouble() : Math.Pow(tile.Cultivation / world.Config.ReferenceIntensity, 2);
-                    tile.CultivationOperator = magic == Magic ? reader.ReadInt32() : -1;
+                    tile.Irrigated = hasCultivation && (flags & 16) != 0;
+                    tile.ElevationLevel = record[o++]; tile.RidgeMask = record[o++]; tile.Relief = (Relief)record[o++]; tile.WaterBody = (WaterKind)record[o++]; tile.FreshwaterSource = (FreshwaterSource)record[o++];
+                    tile.DepressionDepth = GetFloat(record, ref o); tile.OasisInfluence = GetFloat(record, ref o); tile.Saltwater = GetDouble(record, ref o); tile.LandCondition = GetDouble(record, ref o); tile.AquaticCondition = GetDouble(record, ref o);
+                    tile.Elevation = GetFloat(record, ref o); tile.Volcanism = GetFloat(record, ref o); tile.Flow = GetFloat(record, ref o); tile.Food = GetDouble(record, ref o); tile.PotentialFood = GetDouble(record, ref o); tile.Freshwater = GetDouble(record, ref o);
+                    tile.Cultivation = hasCultivation ? GetFloat(record, ref o) : 0;
+                    tile.CultivationCapital = magic == Magic ? GetDouble(record, ref o) : Math.Pow(tile.Cultivation / world.Config.ReferenceIntensity, 2);
+                    tile.CultivationOperator = magic == Magic ? GetInt(record, ref o) : -1;
                     for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData
                     {
-                        Temperature = reader.ReadSingle(), Rain = reader.ReadSingle(), Snow = reader.ReadSingle(), WindX = reader.ReadSingle(), Runoff = reader.ReadSingle(), RegionalMoisture = reader.ReadSingle(), Moisture = reader.ReadSingle(),
-                        AccessibleFreshwater = reader.ReadSingle(), MaxFood = reader.ReadSingle(), MaxPotentialFood = reader.ReadSingle(), MaxFreshwater = reader.ReadSingle(), MaxSaltwater = reader.ReadSingle(), FoodRecoveryPerDay = reader.ReadSingle(), BiomassRecoveryPerDay = reader.ReadSingle(), WaterRecoveryPerDay = reader.ReadSingle(), Habitat = reader.ReadSingle()
+                        Temperature = GetFloat(record, ref o), Rain = GetFloat(record, ref o), Snow = GetFloat(record, ref o), WindX = GetFloat(record, ref o), Runoff = GetFloat(record, ref o), RegionalMoisture = GetFloat(record, ref o), Moisture = GetFloat(record, ref o),
+                        AccessibleFreshwater = GetFloat(record, ref o), MaxFood = GetFloat(record, ref o), MaxPotentialFood = GetFloat(record, ref o), MaxFreshwater = GetFloat(record, ref o), MaxSaltwater = GetFloat(record, ref o), FoodRecoveryPerDay = GetFloat(record, ref o), BiomassRecoveryPerDay = GetFloat(record, ref o), WaterRecoveryPerDay = GetFloat(record, ref o), Habitat = GetFloat(record, ref o)
                     };
                     world.Tiles[i] = tile;
                 }
@@ -135,6 +155,25 @@ namespace Anthropocene.Simulation
                 return world;
             }
         }
+        // Fixed tile record: 109 bytes of tile fields plus four 16-float season profiles.
+        // Envelopes 8/9 lack Cultivation; envelope 10 lacks capital and operator.
+        private static int TileRecordBytes(string magic) => 93 + 4 * 16 * 4
+            + (magic == Magic || magic == LegacyMagic10 ? 4 : 0) + (magic == Magic ? 12 : 0);
+        private static void ReadRecord(BinaryReader reader, byte[] record)
+        {
+            for (int read = 0; read < record.Length;)
+            {
+                int n = reader.Read(record, read, record.Length - read);
+                if (n <= 0) throw new EndOfStreamException("Unable to read beyond the end of the stream.");
+                read += n;
+            }
+        }
+        private static void PutInt(byte[] b, ref int o, int value) { BinaryPrimitives.WriteInt32LittleEndian(new Span<byte>(b, o, 4), value); o += 4; }
+        private static void PutFloat(byte[] b, ref int o, float value) => PutInt(b, ref o, BitConverter.SingleToInt32Bits(value));
+        private static void PutDouble(byte[] b, ref int o, double value) { BinaryPrimitives.WriteInt64LittleEndian(new Span<byte>(b, o, 8), BitConverter.DoubleToInt64Bits(value)); o += 8; }
+        private static int GetInt(byte[] b, ref int o) { int value = BinaryPrimitives.ReadInt32LittleEndian(new ReadOnlySpan<byte>(b, o, 4)); o += 4; return value; }
+        private static float GetFloat(byte[] b, ref int o) => BitConverter.Int32BitsToSingle(GetInt(b, ref o));
+        private static double GetDouble(byte[] b, ref int o) { double value = BitConverter.Int64BitsToDouble(BinaryPrimitives.ReadInt64LittleEndian(new ReadOnlySpan<byte>(b, o, 8))); o += 8; return value; }
         private static void MigrateGenerationalDefaults(WorldState world)
         {
             var config = world.Config;
@@ -213,7 +252,12 @@ namespace Anthropocene.Simulation
         {
             // Exclude wall-clock generation timings and memory warnings from authoritative state hashing.
             var copy = new WorldState { MaterialSources = w.MaterialSources, MaterialKnowledge = w.MaterialKnowledge, FixedHousing = w.FixedHousing?.OrderBy(s => s.CampId).ThenBy(s => s.Tile).ToList(), Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, Days = w.Days, Config = w.Config, Tiles = w.Tiles, Camps = w.Camps.OrderBy(c => c.Id).ToList(), Societies = w.Societies.OrderBy(s => s.Id).ToList(), Improvements = w.Improvements.OrderBy(i => i.Id).ToList(), Hunters = w.Hunters.OrderBy(h => h.Id).ToList(), Herds = w.Herds.OrderBy(h => h.Id).ToList(), Rivers = w.Rivers, History = w.History, Generation = null, Resources = w.Resources };
-            using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(Save(copy))).Replace("-", "");
+            RequireBoundOwnership(copy);
+            using (var hash = SHA256.Create())
+            {
+                using (var hashing = new CryptoStream(Stream.Null, hash, CryptoStreamMode.Write)) WritePayload(hashing, copy);
+                return BitConverter.ToString(hash.Hash).Replace("-", "");
+            }
         }
         // Compare pre-overlay authoritative fields without mutating the original world.
         public static string LegacyFingerprint(WorldState w)

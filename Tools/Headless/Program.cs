@@ -260,7 +260,46 @@ internal static class Program
                 return 0;
             }
             if (args.Contains("--geology-only")) { GeologyGenerationChecks.Run(); return 0; }
-            Tests(); Milestone2Checks.Run(); Milestone3Checks.Run(); Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); ClimateMoistureChecks.Run(); ClimateGenerationChecks.Run(); WorldMorphologyChecks.Run(); ArchipelagoChecks.Run(); GeologyGenerationChecks.Run(); AquaticChecks.Run(); StartViabilityChecks.Run(); ScenarioChecks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); FarmPlannerChecks.Run(); FarmFoodPhaseChecks.Run(); CultivationCacheChecks.Run(); HorizonCultivationChecks.Run(); HorizonEcologyChecks.Run(); HorizonExecutionChecks.Run(); HusbandryChecks.Run(); PastoralCraftChecks.Run(); Issue25EcologyChecks.Run(args); Issue27EcologyChecks.Run(); Issue26ForecastChecks.Run(); Issue28FoodTimebaseChecks.Run(); Issue32CapabilityChecks.Run(); int seeds = args.Length > 0 && !args[0].StartsWith("--", StringComparison.Ordinal) ? int.Parse(args[0]) : 20;
+            var jobsArgument = args.FirstOrDefault(a => a.StartsWith("--jobs=", StringComparison.Ordinal));
+            int jobs = jobsArgument != null ? int.Parse(jobsArgument.Substring(7)) : ParallelChecks.DefaultJobs;
+            var fixedChecks = new[]
+            {
+                new ParallelChecks.Entry { Name = "Program.Tests", Run = () => Tests() },
+                new ParallelChecks.Entry { Name = "Milestone2Checks", Run = () => Milestone2Checks.Run() },
+                new ParallelChecks.Entry { Name = "Milestone3Checks", Run = () => Milestone3Checks.Run() },
+                new ParallelChecks.Entry { Name = "FoundationChecks", Run = () => Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions") },
+                new ParallelChecks.Entry { Name = "ClimateMoistureChecks", Run = () => ClimateMoistureChecks.Run() },
+                new ParallelChecks.Entry { Name = "ClimateGenerationChecks", Cost = 1.5, Run = () => ClimateGenerationChecks.Run() },
+                new ParallelChecks.Entry { Name = "WorldMorphologyChecks", Cost = 7, Run = () => WorldMorphologyChecks.Run() },
+                new ParallelChecks.Entry { Name = "ArchipelagoChecks", Cost = 10, Run = () => ArchipelagoChecks.Run() },
+                new ParallelChecks.Entry { Name = "GeologyGenerationChecks", Cost = 7, Run = () => GeologyGenerationChecks.Run() },
+                new ParallelChecks.Entry { Name = "AquaticChecks", Run = () => AquaticChecks.Run() },
+                new ParallelChecks.Entry { Name = "StartViabilityChecks", Run = () => StartViabilityChecks.Run() },
+                new ParallelChecks.Entry { Name = "ScenarioChecks", Cost = 32, Run = () => ScenarioChecks.Run() },
+                new ParallelChecks.Entry { Name = "EcologyChecks", Run = () => EcologyChecks.Run() },
+                new ParallelChecks.Entry { Name = "AgentContractChecks", Run = () => AgentContractChecks.Run() },
+                new ParallelChecks.Entry { Name = "ExecutionChecks", Cost = 5, Run = () => ExecutionChecks.Run() },
+                new ParallelChecks.Entry { Name = "NeolithicChecks", Run = () => NeolithicChecks.Run() },
+                new ParallelChecks.Entry { Name = "ToolConsumptionChecks", Run = () => ToolConsumptionChecks.Run() },
+                new ParallelChecks.Entry { Name = "FarmToolChecks", Run = () => FarmToolChecks.Run() },
+                new ParallelChecks.Entry { Name = "FarmPlannerChecks", Cost = 1.2, Run = () => FarmPlannerChecks.Run() },
+                new ParallelChecks.Entry { Name = "FarmFoodPhaseChecks", Run = () => FarmFoodPhaseChecks.Run() },
+                new ParallelChecks.Entry { Name = "CultivationCacheChecks", Run = () => CultivationCacheChecks.Run() },
+                new ParallelChecks.Entry { Name = "HorizonCultivationChecks", Run = () => HorizonCultivationChecks.Run() },
+                new ParallelChecks.Entry { Name = "HorizonEcologyChecks", Run = () => HorizonEcologyChecks.Run() },
+                new ParallelChecks.Entry { Name = "HorizonExecutionChecks", Run = () => HorizonExecutionChecks.Run() },
+                new ParallelChecks.Entry { Name = "HusbandryChecks", Run = () => HusbandryChecks.Run() },
+                new ParallelChecks.Entry { Name = "PastoralCraftChecks", Run = () => PastoralCraftChecks.Run() },
+                new ParallelChecks.Entry { Name = "Issue25EcologyChecks", Run = () => Issue25EcologyChecks.Run(args) },
+                new ParallelChecks.Entry { Name = "Issue27EcologyChecks", Run = () => Issue27EcologyChecks.Run() },
+                new ParallelChecks.Entry { Name = "Issue26ForecastChecks", Run = () => Issue26ForecastChecks.Run() },
+                new ParallelChecks.Entry { Name = "Issue28FoodTimebaseChecks", Run = () => Issue28FoodTimebaseChecks.Run() },
+                new ParallelChecks.Entry { Name = "Issue32CapabilityChecks", Run = () => Issue32CapabilityChecks.Run() },
+            };
+            bool filtered = ParallelChecks.Filter(args, ref fixedChecks);
+            ParallelChecks.Run(fixedChecks, jobs, args.Contains("--check-timings"));
+            if (filtered) return 0;
+            int seeds = args.Length > 0 && !args[0].StartsWith("--", StringComparison.Ordinal) ? int.Parse(args[0]) : 20;
             var scaleArgument = args.FirstOrDefault(a => a.StartsWith("--scale=")); if (scaleArgument != null) { ExecutionChecks.Scale(int.Parse(scaleArgument.Substring(8))); return 0; }
             if (args.Contains("--nomad-standard")) { RunNomadStandardAudit(seeds); return 0; }
             int survivors = 0, total = 0, starvation = 0, growth = 0, illegal = 0;

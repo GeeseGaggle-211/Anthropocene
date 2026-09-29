@@ -146,7 +146,7 @@ The runner writes one `*.manifest.json` beside each report. Each manifest record
 
 The three runner modes are:
 
-- `Exact` (default) loads the same `start-<size>.anthro` baseline save into baseline and candidate binaries, records fingerprints, and compares exact continuation. This is the behavior gate.
+- `Exact` (default) loads the same `start-<size>.anthro` baseline save into baseline and candidate binaries, records fingerprints, and compares exact continuation. This is the behavior gate. Both sources must share one `SaveCodec.Fingerprint` definition: from 29 September 2026 it hashes the uncompressed save payload rather than its GZip output, so a baseline archived before that change cannot fingerprint-match a later candidate even for identical state. Pin exact baselines at or after that change. The uncompressed save payload is unchanged; compressed save bytes may differ.
 - `Timing` runs three matched baseline/candidate pairs per size, alternates which binary runs first, disables fingerprints and diagnostic counters, and writes paired summaries. Use this for repeated timing measurements.
 - `Option5` runs the hybrid binary once per size as an exploratory ablation. It does not create paired timing evidence or apply the acceptance gates.
 
