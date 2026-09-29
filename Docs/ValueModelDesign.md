@@ -318,36 +318,115 @@ tuning. A neighbour's request for housing is a request for Housing Material;
 the buyer spends its own builder labour on site. Sending builders to a
 neighbour's site remains a separate labour-service option for later.
 
-### Handshake: propose, confirm, trade
+### Handshake: requisition and acknowledgement
 
-Agreed: a requisition is a handshake. One camp proposes, the other confirms
-(fully, partly or not at all), and the confirmed trade is made. A confirmed
-trade is binding.
+Agreed: trade terms follow a req/ack handshake with at most one counter.
 
-A proposal posted at turn t and confirmed at t+1 would take 20–40 simulated
-years at the current turn length. Between AI-managed camps the handshake
-therefore completes inside one `TurnPlanner.Prepare`, all from the committed
-boundary:
+```
+REQ    A -> B : "I want X; I offer Y" (plus A's acceptance limit)
+ACK    B -> A : honour | counter | ignore
+CLOSE  A -> B : accept counter | reject
+```
 
-1. **Propose** (per camp, pure, parallel): each camp computes its curves and a
-   preliminary `w` from the closed-form shares, without the exact staffing
-   pass, and sends proposals to neighbours in range.
-2. **Confirm** (per recipient, canonical order): each recipient judges the
-   proposals it received on its own curves and confirms or declines. Where
-   proposals compete for the same capacity, it takes them in order of value to
-   itself, ties broken by camp ID and good.
-3. **Plan** (per camp, pure, parallel): each camp plans with its confirmed
-   export and import claims included, as above.
+- **What to request.** A requests its highest-value good: the one it is
+  scarcest in, where its value curve is steepest.
+- **What to offer.** A offers its lowest-value good *among goods B has
+  requested before*, because B's past requisitions reveal what B is short of.
+  With no history, A offers its lowest-value good. This avoids offering what
+  both sides already have in surplus.
+- **Honour.** B honours when what it receives is worth at least what it gives
+  up: its local marginal value if taken from stock, or `w_B · ℓ_X` if it must
+  make it.
+- **Counter.** B may change the quantity or swap the good: "I'll give X, but I
+  want Z", where Z is B's own highest-value good. Counters are how preferences
+  come out without anyone reading another camp's stores. B counters at its own
+  break-even terms plus a margin `m`.
+- **Ignore.** B has nothing to spare beyond its own needs, or nothing it wants
+  in exchange. Ignoring reveals nothing.
+- **Close.** A accepts the counter if it still gains (within its acceptance
+  limit) and rejects otherwise. A confirmed trade is binding.
 
-When a human player is either party, confirmation is their decision: the
-proposal waits for their next orders and completes at that preparation.
+Neither side ever sees the other's values, only the terms. `m` is a configured
+bargaining margin with a hook for the Elder, like the discount rate. For
+same-Society partners `m` falls toward zero, and surplus may go for nothing
+(see below).
 
-Goods are exchanged in one canonical step during resolution, after production,
-conserving both sides. If production falls short, both sides of the trade
-scale down in proportion.
+**Acceptance limit.** A REQ carries the worst terms A would accept, so A's
+close step is automatic. This lets a human requester complete a trade in one
+turn without a second decision.
 
-This keeps demand-once and determinism. It adds work linear in the number of
-proposals, which is bounded by neighbours in range.
+**Bounds and determinism:**
+
+- at most `K` requisitions per camp per turn (for example 1–3 goods);
+- a responder handles the REQs it received in order of value to itself, ties
+  broken by camp ID and good;
+- one handshake per pair of camps per good per turn; a rejected REQ may be
+  reissued next turn;
+- every step uses values computed from the committed boundary, not values
+  updated by trades confirmed earlier in the same turn. A responder only
+  reduces its own spare capacity as it confirms. So a change to one handshake
+  never cascades beyond that responder;
+- confirmed terms are recorded in the trade ledger, giving later markets and
+  currency a price history.
+
+Sending a REQ reveals scarcity. That is a deliberate strategic cost, and an
+Elder may hold requests back for it.
+
+Goods are exchanged in one canonical step during resolution, after
+production, conserving both sides. If production falls short, both sides of
+the trade scale down in proportion.
+
+### Scheduling: plan during the player's turn
+
+A player's thinking time can hide the planner's and the handshake's latency.
+Today `AiPlanning.Decide` and `TurnPlanner.Prepare`, which calls
+`EconomicPlanner.Plan` for every automated camp, run only after the player
+presses End Turn (`OpeningGame.EndTurn`), so the player waits for all of it.
+
+Both are pure functions of the committed boundary, and `Decide` already
+excludes the human player (`excludedPlayer = 0`). So as soon as a turn is
+committed, a background task can compute:
+
+1. every AI camp's decision (movement, dispatch, fishing);
+2. every AI camp's REQs, AI-to-AI acknowledgements and closes;
+3. every AI camp's automated economic plan, with its confirmed trades;
+4. the REQs addressed to the player, shown during planning so the player can
+   honour, counter or ignore them in the same turn's orders.
+
+At End Turn, only the parts that depend on the player's orders are
+recomputed:
+
+- the player's own camps;
+- AI camps whose effective destination changes, because
+  `CampPlacement.Resolve` settles the player's moves against theirs;
+- AI responders that received a REQ from the player, and the AI requesters
+  whose confirmed trades that changes (at most one level, per the rule above);
+- AI camps trading with the player, whose plans take the player's answers.
+
+Everything else is reused. Because each camp's plan is pure, the reuse is exact:
+the result must equal computing the whole turn after End Turn. That equality is
+the acceptance test: per-turn fingerprints, speculative versus sequential, under
+scalar and parallel runs.
+
+Rules this has to keep:
+
+- **Nothing writes the world during the planning phase.** The UI continues to
+  read the committed world while the background task reads it too. Lazily
+  created transient caches (`MaterialAccessIndex.For`, `TurnDiagnostics.For`,
+  `PlanningIndex`) must be created before the task starts, or be proven safe
+  to create concurrently.
+- **Discard on world change.** New game, load, or any change to the committed
+  world cancels the task and drops its results. Results are keyed to the
+  world's turn and day.
+- **Busy guards stay.** Save may run alongside the pure precompute; resolution
+  still waits for it.
+- **Visibility timing never enters results.** If the player ends the turn
+  before incoming REQs are shown, those REQs are simply unanswered, which
+  counts as ignored. Outcomes depend only on submitted orders.
+
+This hides latency for a human player; it does not reduce CPU. Headless runs,
+AI-only turns and RL training get no benefit, so the handshake must stay
+bounded in its own right, as above.
 
 ### Within versus between societies
 
@@ -397,6 +476,9 @@ proposals, which is bounded by neighbours in range.
 5. **Barter between societies.** Needs #13 (transport and range), #34 (who gets
    a shared source) and the #23 authority rules.
 
+Background planning during the player's turn does not depend on trade. It can
+land at any point, since it already hides today's `Decide` and `Plan` latency.
+
 ## Validation
 
 - **Fixtures.** The rule satisfies the equimarginal condition; shares never
@@ -425,21 +507,25 @@ Agreed with the user on 29 September 2026:
    the same price `w`. Its value is the food shortfall it prevents, priced by
    food security (see Pots). Workers left over after all claims still go to
    expansion, as today.
-4. **Requisitions are handshakes**: propose, confirm, trade. Confirmed trades
-   are binding.
+4. **Requisitions are req/ack handshakes**: REQ, then honour, counter or
+   ignore, then accept or reject; at most one counter; confirmed trades are
+   binding.
 5. **Pots use the risk placeholder `ρ`** until disasters and immigration supply
    an expected-shortfall estimate.
 6. **Bids are bundles** so currency can be added later as one more good.
 7. **Same-Society terms are friendlier, never self-sacrificing**: only surplus
    may be given cheaply.
+8. **Discount rate `r` is one configured constant** (around 0.01 per year),
+   with a hook for the Elder to adjust it later.
+9. **Plan during the player's turn.** AI decisions, AI-to-AI handshakes and AI
+   economic plans are computed in the background while the player plans;
+   only order-dependent parts are recomputed at End Turn.
 
 ## Open decisions
 
-1. **Discount rate `r` per year** for durables: one configured constant, or a
-   Society/Elder trait? It decides how much a Housing unit's future years
-   count against Cloth used now.
-2. **Who captures a trade's gain** between Societies: the proposer's offer as
-   stated, or a split?
+1. **`K`**, the number of requisitions per camp per turn.
+2. **The default bargaining margin `m`**, and the kinship reduction for
+   same-Society partners.
 3. **Which goods are tradeable** first. (Housing is traded as Housing
    Material; see above.)
 
@@ -456,5 +542,8 @@ Agreed with the user on 29 September 2026:
 - **Shared welfare between same-Society villages.** Would let a village
   sacrifice its own needs for a sibling; replaced by surplus-only friendly
   terms.
-- **A one-turn requisition lag.** 20–40 simulated years per trade at current
-  turn length.
+- **A turn per handshake step.** 20–60 simulated years per trade at current
+  turn length; replaced by in-preparation handshakes and acceptance limits.
+- **Offering simply the lowest-value good.** Often worthless to the partner
+  when both hold the same surplus; replaced by offers informed by the
+  partner's past requisitions.
