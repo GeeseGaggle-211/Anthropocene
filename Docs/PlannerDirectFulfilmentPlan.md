@@ -3,7 +3,9 @@
 Status: approved plan, 29 September 2026. Phases 1 and 2 are implemented;
 Phase 3's rule interface and path solve are implemented with the uniform rule.
 Decision 2 was dropped after measurement; schedule unification and Phase 4
-are not implemented. This is a design and sequencing record, not a normative
+are not implemented.
+The value-fill design continues in
+[ValueFulfilmentHandover.md](ValueFulfilmentHandover.md). This is a design and sequencing record, not a normative
 contract; `EconomicAutomation.md` and `TurnResolutionPasses.md` remain the rule
 sources until Phase 4 updates them.
 
