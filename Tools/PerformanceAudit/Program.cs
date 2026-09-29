@@ -253,6 +253,10 @@ internal static class Program
             OverrideNeolithic(world, "ValueCurveSteepness", Option(args, "--value-steepness", ""), v => double.Parse(v, CultureInfo.InvariantCulture));
             OverrideNeolithic(world, "DiscountRatePerYear", Option(args, "--discount-rate", ""), v => double.Parse(v, CultureInfo.InvariantCulture));
             world.Config.Validate();
+            // Diagnostic priority experiment: set every camp's Housing crafting priority.
+            string housingPriority = Option(args, "--housing-priority", "");
+            if (!string.IsNullOrWhiteSpace(housingPriority))
+                foreach (var camp in world.Camps) camp.CraftingPriorities.Housing = double.Parse(housingPriority, CultureInfo.InvariantCulture);
             generationMs = 0;
             players = world.Config.Players;
             seed = world.Seed;
