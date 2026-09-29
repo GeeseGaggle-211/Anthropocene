@@ -1,7 +1,7 @@
 # Value model for planner fulfilment (draft)
 
-Status: design draft for discussion, 29 September 2026. Nothing here is
-implemented or approved. It continues
+Status: design agreed for implementation, 29 September 2026; not implemented.
+The ordered work is in [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md). It continues
 [ValueFulfilmentHandover.md](ValueFulfilmentHandover.md) and the "Decisions"
 section of [PlannerDirectFulfilmentPlan.md](PlannerDirectFulfilmentPlan.md).
 `EconomicAutomation.md` and `TurnResolutionPasses.md` remain the rule sources.
@@ -369,6 +369,24 @@ turn without a second decision.
 - confirmed terms are recorded in the trade ledger, giving later markets and
   currency a price history.
 
+**Pending requisitions.** Agreed: a REQ that is not answered during planning
+is held as *pending*, not treated as ignored. This applies to the player and to
+every AI camp alike. A pending REQ is settled during turn resolution by the
+responder's standing policy (the Elder's delegated rules for an AI camp; the
+player's delegated response settings for the player). If no policy applies, it
+stays pending into the next planning window and expires after a configured
+number of turns. Rules for resolution-time settlement:
+
+- it uses values fixed at preparation from the committed boundary, never
+  values from partly resolved state;
+- it can supply only stock or production surplus left after the camp's own
+  planned needs, because workforce and claims are already fixed; it cannot add
+  production;
+- it runs in the same canonical exchange step as confirmed trades, after
+  production;
+- the resolver never waits for UI input; a player decision is either a
+  submitted order or a standing setting.
+
 Sending a REQ reveals scarcity. That is a deliberate strategic cost, and an
 Elder may hold requests back for it.
 
@@ -420,9 +438,8 @@ Rules this has to keep:
   world's turn and day.
 - **Busy guards stay.** Save may run alongside the pure precompute; resolution
   still waits for it.
-- **Visibility timing never enters results.** If the player ends the turn
-  before incoming REQs are shown, those REQs are simply unanswered, which
-  counts as ignored. Outcomes depend only on submitted orders.
+- **Visibility timing never enters results.** Outcomes depend only on
+  submitted orders and standing policies, never on when something was shown.
 
 This hides latency for a human player; it does not reduce CPU. Headless runs,
 AI-only turns and RL training get no benefit, so the handshake must stay
@@ -517,17 +534,20 @@ Agreed with the user on 29 September 2026:
    may be given cheaply.
 8. **Discount rate `r` is one configured constant** (around 0.01 per year),
    with a hook for the Elder to adjust it later.
-9. **Plan during the player's turn.** AI decisions, AI-to-AI handshakes and AI
+9. **Handshake limits:** `K = 3` requisitions per camp per turn; default
+   bargaining margin `m = 10%`.
+10. **Initial tradeable goods:** Housing Material and Cloth, with candidate
+    permutations for sweeps listed in the implementation plan.
+11. **Plan during the player's turn.** AI decisions, AI-to-AI handshakes and AI
    economic plans are computed in the background while the player plans;
    only order-dependent parts are recomputed at End Turn.
 
 ## Open decisions
 
-1. **`K`**, the number of requisitions per camp per turn.
-2. **The default bargaining margin `m`**, and the kinship reduction for
-   same-Society partners.
-3. **Which goods are tradeable** first. (Housing is traded as Housing
-   Material; see above.)
+1. **`λ`**, the value curve's steepness (calibration).
+2. **The kinship reduction** of `m` for same-Society partners.
+3. **The trade contact range** until logistics (#13) defines transport.
+4. **Pending requisition expiry**, in turns.
 
 ## Rejected approaches
 

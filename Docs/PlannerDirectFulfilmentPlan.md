@@ -10,6 +10,9 @@ sources until Phase 4 updates them.
 The value-fill design continues in
 [ValueFulfilmentHandover.md](ValueFulfilmentHandover.md).
 
+The value model is [ValueModelDesign.md](ValueModelDesign.md); its ordered work is
+[ValueModelImplementationPlan.md](ValueModelImplementationPlan.md).
+
 ## Problem
 
 `EconomicPlanner.Plan` is about 40% of mature-turn CPU (80-tribe `start-80-11`
