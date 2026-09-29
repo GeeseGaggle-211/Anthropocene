@@ -24,8 +24,8 @@ until work package 7 updates them.
 | Value curve steepness `λ` | calibration | open |
 | Kinship reduction of `m` for same-Society partners | calibration | open |
 | Trade contact range | placeholder until #13 | open |
-| Unanswered requisitions | held pending; settled in resolution by standing policy, else carried forward | agreed |
-| Pending requisition expiry | turns | open |
+| Items needing a decision | held on the camp's pending list through the turn transition; answered at its next decision point (player or AI) | agreed |
+| Pending item expiry | turns | open |
 
 New values go in `NeolithicConfig` with matching entries in
 `Assets/_Anthropocene/Resources/OpeningConfig.json`, `ConfigurationUnits.md`
@@ -195,20 +195,17 @@ scheduling change, which is reported against the #33 Construction baseline.
 
 - Data: `Bid { Give, Receive }` bundles; requisition, acknowledgement (honour,
   counter, ignore) and close records; a saved **trade ledger** of confirmed
-  terms and deliveries; saved **pending requisitions** with their expiry.
-- Standing response policies: per-camp delegated rules (honour within limits,
-  ignore) used by the Elder for AI camps and exposed as settings for the
-  player. They settle pending requisitions during resolution.
+  terms and deliveries; a saved per-camp **pending list** of requisitions
+  received (honour, counter or ignore) and counters received (accept or
+  reject), each with its expiry.
 - Resolution: one canonical exchange step after production and before needs,
-  conserving both sides; shortfalls scale both sides in proportion. The same
-  step settles pending requisitions by standing policy, using
-  preparation-time values and only surplus stock or production beyond the
-  camp's planned needs. Unsettled requisitions carry to the next turn until
-  they expire. Update conservation invariants.
+  conserving both sides; shortfalls scale both sides in proportion. Resolution
+  never settles a pending item; it only carries unanswered items to the next
+  committed boundary and drops expired ones. Update conservation invariants.
 - Orders: new order kinds for sending a requisition and for answering one,
   validated by `OrderRules` with `LegalActions` masks. A requisition carries
   the sender's acceptance limit.
-- Observations: requisitions addressed to the player, and each partner's past
+- Observations: the camp's own pending list, and each partner's past
   requisitions to this camp. No foreign stores, values or other camps'
   messages.
 - Config: tradeable set (T0), `K = 3`, `m = 10%`, contact range placeholder.
@@ -216,8 +213,8 @@ scheduling change, which is reported against the #33 Construction baseline.
 
 Headless: ledger conservation, save round-trip (including pending
 requisitions), order validation and masks, observation filtering, scaling of
-both sides on shortfall, resolution-time settlement never exceeding surplus,
-and expiry.
+both sides on shortfall, pending items carried across the transition and
+revalued at the answer, and expiry.
 
 ### WP6 — Handshake in the planning pass
 
@@ -227,10 +224,12 @@ and expiry.
   boundary values. Responders handle requisitions in order of value to
   themselves, ties by camp ID and good; at most `K` per camp; one handshake per
   pair per good per turn.
-- Requisitions addressed to the player appear during planning
-  (`OpeningPlanning.cs`); the player answers in orders. Unanswered
-  requisitions, for the player or any AI camp, stay pending and are settled in
-  resolution by standing policy or carried forward (WP5).
+- A pending-list panel in the planning UI (`OpeningPlanning.cs`) shows
+  requisitions and counters awaiting the player, each with honour, counter,
+  ignore or accept, reject. Answers are orders. Unanswered items stay on the
+  list through the transition (WP5).
+- AI camps answer their own pending lists in the draft, from the new
+  committed boundary.
 - At End Turn, recompute only: the player's camps; AI camps whose destination
   changed; responders that received the player's requisitions and the
   requesters whose confirmations that changes (one level); AI camps trading

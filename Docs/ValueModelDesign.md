@@ -369,23 +369,37 @@ turn without a second decision.
 - confirmed terms are recorded in the trade ledger, giving later markets and
   currency a price history.
 
-**Pending requisitions.** Agreed: a REQ that is not answered during planning
-is held as *pending*, not treated as ignored. This applies to the player and to
-every AI camp alike. A pending REQ is settled during turn resolution by the
-responder's standing policy (the Elder's delegated rules for an AI camp; the
-player's delegated response settings for the player). If no policy applies, it
-stays pending into the next planning window and expires after a configured
-number of turns. Rules for resolution-time settlement:
+**Pending requisitions and offers.** Agreed: when a step needs a decision
+from a party that has not made it yet, the item is held as *pending* and
+carries through the turn transition. It is never settled automatically on that
+party's behalf. This applies to the player and to every AI camp alike.
 
-- it uses values fixed at preparation from the committed boundary, never
-  values from partly resolved state;
-- it can supply only stock or production surplus left after the camp's own
-  planned needs, because workforce and claims are already fixed; it cannot add
-  production;
-- it runs in the same canonical exchange step as confirmed trades, after
-  production;
-- the resolver never waits for UI input; a player decision is either a
-  submitted order or a standing setting.
+Each camp has a **pending list** with two kinds of entry:
+
+- **requisitions received**, which it can honour, counter or ignore;
+- **counters received** to its own requisitions, which it can accept or
+  reject (unless its acceptance limit already decided them).
+
+A camp answers its pending list at its next decision point: the player during
+the next planning phase, an AI camp in its next draft. Between AI camps,
+handshakes that need no outside input still complete within one preparation.
+Rules:
+
+- **Revalued at the answer.** A pending item is judged on the answering
+  camp's values at the new committed boundary, not the values when it was
+  sent, because stocks and needs will have changed.
+- **Exchanged at the next resolution.** Goods move in the canonical exchange
+  step of the turn in which the handshake completes, and a confirmed trade
+  enters that turn's plans as an export or import claim.
+- **Ignore clears it.** Ignoring removes the entry; an unanswered entry expires
+  after a configured number of turns.
+- **The resolver never waits for input.** Pending items are saved state
+  carried from one committed boundary to the next; decisions arrive only as
+  submitted orders or AI drafts.
+
+A trade that needs a human decision therefore takes one turn transition per
+waiting step. The requester's acceptance limit avoids the extra step on a
+counter.
 
 Sending a REQ reveals scarcity. That is a deliberate strategic cost, and an
 Elder may hold requests back for it.
@@ -439,7 +453,8 @@ Rules this has to keep:
 - **Busy guards stay.** Save may run alongside the pure precompute; resolution
   still waits for it.
 - **Visibility timing never enters results.** Outcomes depend only on
-  submitted orders and standing policies, never on when something was shown.
+  submitted orders, never on when something was shown. An item the player has
+  not seen or answered stays on the pending list.
 
 This hides latency for a human player; it does not reduce CPU. Headless runs,
 AI-only turns and RL training get no benefit, so the handshake must stay
@@ -547,7 +562,7 @@ Agreed with the user on 29 September 2026:
 1. **`λ`**, the value curve's steepness (calibration).
 2. **The kinship reduction** of `m` for same-Society partners.
 3. **The trade contact range** until logistics (#13) defines transport.
-4. **Pending requisition expiry**, in turns.
+4. **Pending item expiry**, in turns.
 
 ## Rejected approaches
 
