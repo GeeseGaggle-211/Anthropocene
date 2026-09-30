@@ -136,6 +136,15 @@ pass itself 0.7% of turn time. Findings for WP11: Paleolithic QoL is at or below
 land calibration so destinations follow the tile-ID tie rule; the opening now ends at turn 12 when a late
 Paleolithic daughter exists.
 
+**WP10c fission recalibration (still opt-in).** The push is now crowding plus expected gain
+(`G = Q_after / Q_now - 1` for the stayers after the daughter leaves, with housing relief, against per-policy
+thresholds `G*` 0.113 / 0.080 / 0.0955 calibrated analytically to the design onsets within 3%), plus a daughter
+check, a destination order that falls through D, support ratio, distance and tile ID, and daughters that inherit
+the parent's opening status without delaying `Finished` (founding Societies decide it). Measured on five
+Standard/80 worlds, the specified rule still splits agricultural camps at a median of 141 residents because housing
+relief dominates the gain; `FissionHousingRelief = 0` gives a median of 906. Open decision recorded in
+[Fission.md](Fission.md).
+
 **Next, in order (user decision 30 September: correctness over speed):**
 1. ~~WP4b redo~~ (user chose the growth-margin valuation; done, see table).
 2. ~~WP4a redo~~ (done, see table) — Farm/Herding Tools at `w_farm`, Pots by food security with `ρ`.

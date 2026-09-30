@@ -39,8 +39,8 @@ namespace Anthropocene.Simulation
             // original scale and their pressure threshold remains one.
             MinimumCampSpacing = defaults.MinimumCampSpacing;
             ContactExpiryTurns = defaults.ContactExpiryTurns;
-            FissionEnabled = false; FissionQoL = defaults.FissionQoL; FissionQoLWidth = defaults.FissionQoLWidth; FissionThreshold = defaults.FissionThreshold;
-            FissionSearchPush = defaults.FissionSearchPush; FissionRadius = defaults.FissionRadius; FissionMinimumDaughter = defaults.FissionMinimumDaughter;
+            FissionEnabled = false; FissionGainThreshold = defaults.FissionGainThreshold; FissionGainDiscourage = defaults.FissionGainDiscourage; FissionGainEncourage = defaults.FissionGainEncourage;
+            FissionSearchFraction = defaults.FissionSearchFraction; FissionDaughterMargin = defaults.FissionDaughterMargin; FissionHousingRelief = defaults.FissionHousingRelief; FissionRadius = defaults.FissionRadius; FissionMinimumDaughter = defaults.FissionMinimumDaughter;
             LandBiomassMultiplier = 1;
             LandSafeUseRatio = 1;
             LandFoodRegenerationInitialized = false;
@@ -90,7 +90,10 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int ContactExpiryTurns = 5;
         // Fission (WP10a, QoLFissionTradeDesign 3.1-3.6). Saves that predate these fields load with fission disabled so they continue exactly.
         [System.Runtime.Serialization.OptionalField] public bool FissionEnabled = false;
-        [System.Runtime.Serialization.OptionalField] public double FissionQoL = .75, FissionQoLWidth = .10, FissionThreshold = .20, FissionSearchPush = .20;
+        // Push = crowding + expected gain (WP10c): a camp proposes when the stayers' QoL would rise by at least G*(policy) (relative gain).
+        // The three thresholds are the analytic calibration to the design onset populations (Docs/Fission.md); they are not monotone in the
+        // policy because the policy also sets the daughter fraction and so the gain a split delivers.
+        [System.Runtime.Serialization.OptionalField] public double FissionGainThreshold = .113, FissionGainDiscourage = .080, FissionGainEncourage = .0955, FissionSearchFraction = .8, FissionDaughterMargin = .05, FissionHousingRelief = 1;
         [System.Runtime.Serialization.OptionalField] public int FissionRadius = 3, FissionMinimumDaughter = 12;
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
@@ -160,7 +163,7 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Invalid generation or clock configuration.");
             if (MinimumCampSpacing < 1) throw new ArgumentException("Minimum camp spacing must be at least one hex.");
             if (ContactExpiryTurns < 1) throw new ArgumentException("Contact expiry must be at least one turn.");
-            if (new[] { FissionQoL, FissionQoLWidth, FissionThreshold, FissionSearchPush }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionQoL < 0 || FissionQoL > 1.5 || FissionQoLWidth <= 0 || FissionQoLWidth > 1 || FissionThreshold < 0 || FissionThreshold >= 1 || FissionSearchPush < 0 || FissionSearchPush > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1)
+            if (new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionGainThreshold < 0 || FissionGainThreshold > 5 || FissionGainDiscourage < 0 || FissionGainDiscourage > 5 || FissionGainEncourage < 0 || FissionGainEncourage > 5 || FissionSearchFraction < 0 || FissionSearchFraction > 1 || FissionDaughterMargin < 0 || FissionDaughterMargin > 1 || FissionHousingRelief < 0 || FissionHousingRelief > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1)
                 throw new ArgumentException("Invalid fission configuration.");
             if (CampMovement != 1 || HunterMovement != 2 || HerdMovement != 1 || VisionRadius != 2 || GatherRadius != 1)
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
@@ -513,7 +516,9 @@ namespace Anthropocene.Simulation
             }
         }
         public SeasonData Ecology(int tile) => Tiles[tile].Seasons[Season];
-        public bool Finished => Camps.All(c => c.People.Progression.Era != Era.Paleolithic || LinkedPopulation(c) == 0);
+        // The opening ends when every founding Society has made its breakthrough. A fission daughter (ParentSociety > 0) inherits its
+        // parent's progression but never delays this: fission shrinks neither the rule nor the clock, it only adds settlements.
+        public bool Finished => Camps.All(c => c.People.ParentSociety > 0 || c.People.Progression.Era != Era.Paleolithic || LinkedPopulation(c) == 0);
         public int LinkedPopulation(Camp camp) => camp.Population + Hunters.Where(h => h.SourceCamp == camp.Id).Sum(h => h.Population);
         public bool CanEnter(int tile, bool hunter, Camp camp = null) => tile >= 0 && tile < Tiles.Length &&
             Tiles[tile].ElevationLevel < 10 && (Tiles[tile].Land || (hunter && camp != null && camp.Technologies[(int)Technology.Watercraft] && Tiles[tile].Terrain == Terrain.Shallows));

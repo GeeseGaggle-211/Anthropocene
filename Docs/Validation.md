@@ -14,8 +14,11 @@ population, herd, and specialty distributions are in
 
 ## Fission (WP10a) — 30 September 2026
 
-`FissionChecks.cs` (368 assertions) covers the policy levers (exact tables and integer daughter
-sizes for 0-3,000 residents), push, the cached destination (lazy search, persistence without reranking,
+`FissionChecks.cs` (490 assertions; 368 in WP10a) covers the policy levers (exact tables and integer daughter
+sizes for 0-3,000 residents), the expected-gain push (closed-form cohesion gain per regime and policy, housing
+relief and its weight, the Q = 0 fallback, daughter check and margin, per-policy thresholds, search fraction), the
+analytic onset calibration per regime and policy against the design table, destination order, inheritance of
+opening status and the opening ending on the same turn with fission on, the cached destination (lazy search, persistence without reranking,
 regime/occupation/spacing invalidation), Paleolithic vision-only and Neolithic explored-tile knowledge,
 every ledger conserved across a fission (people, typed food, all inventory fields, fractional progress,
 herds, hunters, fixed Housing, fields), daughters smaller than parents, copied knowledge and practice,
@@ -23,9 +26,10 @@ lineage and derived sibling affinity, no site or no viability means no fission, 
 same-turn conflicts, bounded search counts, policy orders, owner-only observations, new player slots,
 save continuation and older-save loading, and scalar versus reversed 4-worker replay with reordered
 collections (crowded six-camp and sparse three-camp chains over six to nine turns, plus a generated
-world). Seed-53 four-tribe fixtures now found Paleolithic daughters at turns 6-7, so their opening ends at
-turn 12 instead of 9 and several replay checks run three more turns (assertion counts rise accordingly).
-Measured behaviour and limits: [Fission.md](Fission.md).
+world). WP10a's seed-53 four-tribe fixtures moved the opening from turn 9 to 12 because Paleolithic daughters
+held `Finished` open; since WP10c `Finished` ignores daughters and the opening ends on the same turn with
+fission on and off (also in five Standard/80 worlds). Measured behaviour, including the finding that housing
+relief keeps agricultural splits small under the specified rule: [Fission.md](Fission.md).
 
 ## Exact Neolithic cache validation
 

@@ -268,9 +268,14 @@ namespace Anthropocene.Simulation
         internal static double Harvest(WorldState world, int people, double repeatableLandFood, double aquaticRenewal)
         {
             var cfg = world.Config;
-            double share = Math.Min(1, Numbers.Fraction(cfg.GatherFraction, cfg.GenerationIntervals) * people / cfg.PopulationScale);
-            return Math.Min((repeatableLandFood + aquaticRenewal) * share,
+            return Math.Min((repeatableLandFood + aquaticRenewal) * WorkingShare(world, people),
                 people * cfg.GatherPerPerson * cfg.GenerationIntervals);
+        }
+        // Share of the footprint's repeatable stock a cohort of this size can work.
+        internal static double WorkingShare(WorldState world, int people)
+        {
+            var cfg = world.Config;
+            return Math.Min(1, Numbers.Fraction(cfg.GatherFraction, cfg.GenerationIntervals) * people / cfg.PopulationScale);
         }
         public void Generate(GenerationContext c)
         {

@@ -183,6 +183,8 @@ internal static class Program
         bool productionConfig = Option(args, "--production-config", 0) != 0;
         // Fission control (WP10a): 0 disables the pass (same-code baseline), 1 enables it; unset keeps the configured value.
         int fissionSwitch = Option(args, "--fission", -1);
+        // Fission housing-relief weight (WP10c): unset keeps the configured value (1); 0 counts cohesion and clothing only.
+        string fissionReliefText = Option(args, "--fission-housing-relief", "");
 
         if (openingTurnLimit < 0 || postOpeningTurns < 0 || warmup < 0)
             throw new ArgumentOutOfRangeException("Turn counts and warmup must be non-negative.");
@@ -279,6 +281,11 @@ internal static class Program
             var fissionField = world.Config.GetType().GetField("FissionEnabled") ?? throw new ArgumentException("This simulation source has no fission switch.");
             fissionField.SetValue(world.Config, fissionSwitch != 0);
         }
+        if (!string.IsNullOrWhiteSpace(fissionReliefText))
+        {
+            var reliefField = world.Config.GetType().GetField("FissionHousingRelief") ?? throw new ArgumentException("This simulation source has no fission housing-relief lever.");
+            reliefField.SetValue(world.Config, double.Parse(fissionReliefText, System.Globalization.CultureInfo.InvariantCulture));
+        }
         long managedHeapAfterLoadBytes = GC.GetTotalMemory(false);
         var detailedCounterSwitch = typeof(ResolutionMetrics).GetField("CaptureDetailedCounters");
         if (detailedCounterSwitch != null) detailedCounterSwitch.SetValue(null, metrics);
@@ -349,6 +356,7 @@ internal static class Program
             detailsEnabled = details,
             productionConfig,
             fissionSwitch,
+            fissionHousingRelief = string.IsNullOrWhiteSpace(fissionReliefText) ? (double?)null : double.Parse(fissionReliefText, System.Globalization.CultureInfo.InvariantCulture),
             fingerprintsEnabled,
             replayMode = fingerprintMode == 1 ? "exact-per-turn" : fingerprintMode == 2 ? "exact-final" : "outcomes-only",
             exactCheckMode = fingerprintMode == 1 ? "per-turn-fingerprint" : fingerprintMode == 2 ? "final-fingerprint" : "disabled; compare outcomes against replay-check run",
@@ -495,7 +503,7 @@ internal static class Program
         var turnFissions = record.Fissions ?? new List<FissionReport>();
         int fissionCount = turnFissions.Count;
         object fissionEvents = turnFissions.Select(f => new { f.ParentCamp, f.DaughterCamp, f.ParentSociety, f.DaughterSociety, f.DaughterPlayer, f.Tile, f.ParentBefore, f.Daughter,
-            regime = ((FissionRegime)f.Regime).ToString(), policy = f.Policy.ToString(), f.Push, f.Desirability, f.Score, f.Affinity, f.AnimalsMoved }).ToArray();
+            regime = ((FissionRegime)f.Regime).ToString(), policy = f.Policy.ToString(), f.Push, f.Desirability, f.Score, f.Affinity, f.AnimalsMoved, f.Gain, f.DaughterQoL }).ToArray();
 #endif
         object KnowledgeFootprint(WorldState w)
         {
@@ -541,6 +549,8 @@ internal static class Program
             fissionInvalidations = Metric("FissionCacheInvalidations"),
             fissionProposals = Metric("FissionProposals"),
             fissionDropped = Metric("FissionDropped"),
+            fissionDaughterChecks = Metric("FissionDaughterChecks"),
+            fissionDaughterBlocked = Metric("FissionDaughterBlocked"),
             managedAnimals,
             wildAnimals,
             managedHerds,

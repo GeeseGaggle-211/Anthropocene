@@ -19,11 +19,11 @@ internal static class FissionChecks
     private static readonly FieldInfo[] InventoryFields = typeof(CampInventory).GetFields().Where(f => f.FieldType == typeof(double)).ToArray();
 
     // A rich uniform 24x16 fixture: every fully food-supported footprint, freshwater everywhere. Camps at (column, row), one player each.
-    // `neolithic` camps are cultivators; the others are Paleolithic. Fission QoL pressure is set by the caller through Camp.QoL.
+    // `neolithic` camps are cultivators; the others are Paleolithic. Fission pressure is the expected gain against G*: fixtures are pressured by default (G* = 0) and use Quiet/Ratio to shape it.
     private static WorldState World(bool neolithic, params int[][] sites) => World(24, 16, neolithic, sites);
     private static WorldState World(int width, int height, bool neolithic, params int[][] sites)
     {
-        var cfg = SimulationConfig.Small(1); cfg.FissionEnabled = true; cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;
+        var cfg = SimulationConfig.Small(1); cfg.FissionEnabled = true; cfg.FissionDaughterMargin = 1; cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;
         var w = new WorldState { Seed = 101, Config = cfg, Generation = new GenerationReport(), Tiles = new Tile[cfg.Width * cfg.Height] };
         for (int i = 0; i < w.Tiles.Length; i++)
         {
@@ -37,8 +37,14 @@ internal static class FissionChecks
         Ownership.Bind(w);
         if (neolithic) foreach (var c in w.Camps) MakeNeolithic(c, Technology.Cultivation);
         foreach (var t in w.Tiles) t.LastEcologyUpdateDays = w.Days;
+        Pressure(w, 0);
         return w;
     }
+    // Every policy's expected-gain threshold G*. Zero is always met (a split never lowers the stayers' QoL); a large value never is.
+    private static void Pressure(WorldState w, double gstar) { w.Config.FissionGainThreshold = w.Config.FissionGainDiscourage = w.Config.FissionGainEncourage = gstar; }
+    private static void Quiet(WorldState w) => Pressure(w, 5);
+    // Sets G* so that the camp's expected gain is `multiple` times the threshold (push = min(1, multiple)).
+    private static void Ratio(WorldState w, Camp c, double multiple) => Pressure(w, Fission.EstimateSplit(w, c, c.FissionPolicy).Gain / multiple);
     private static void MakeNeolithic(Camp c, Technology technology)
     {
         c.Technology = technology; c.Technologies[(int)technology] = true; c.People.Progression.Era = Era.Neolithic;
@@ -60,15 +66,15 @@ internal static class FissionChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Levers(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); Spacing(); Bounded(); Policy(); Observations(); Persistence(); Replay();
+        checks = 0; Config(); Levers(); Crowding(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); Spacing(); Bounded(); Policy(); Observations(); Persistence(); Replay();
         Console.WriteLine("PASS: " + checks + " fission assertions"); return checks;
     }
 
     private static void Config()
     {
         var c = new SimulationConfig();
-        Check(!c.FissionEnabled && c.FissionQoL == .75 && c.FissionQoLWidth == .10 && c.FissionThreshold == .20 && c.FissionRadius == 3 && c.FissionMinimumDaughter == 12 && c.FissionSearchPush == c.FissionThreshold, "defaults match the design");
-        foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.FissionQoLWidth = 0, x => x.FissionThreshold = 1, x => x.FissionRadius = 0, x => x.FissionRadius = 6, x => x.FissionMinimumDaughter = 0, x => x.FissionQoL = double.NaN, x => x.FissionSearchPush = 2 })
+        Check(!c.FissionEnabled && c.FissionGainThreshold == .113 && c.FissionGainDiscourage == .080 && c.FissionGainEncourage == .0955 && c.FissionSearchFraction == .8 && c.FissionDaughterMargin == .05 && c.FissionHousingRelief == 1 && c.FissionRadius == 3 && c.FissionMinimumDaughter == 12, "defaults match the calibration");
+        foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.FissionGainThreshold = -.1, x => x.FissionGainDiscourage = 6, x => x.FissionGainEncourage = double.NaN, x => x.FissionRadius = 0, x => x.FissionRadius = 6, x => x.FissionMinimumDaughter = 0, x => x.FissionSearchFraction = 1.5, x => x.FissionSearchFraction = -.1, x => x.FissionDaughterMargin = -.01, x => x.FissionDaughterMargin = 2, x => x.FissionHousingRelief = -.1, x => x.FissionHousingRelief = 1.5 })
         {
             var x = new SimulationConfig(); bad(x); bool rejected = false; try { x.Validate(); } catch (ArgumentException) { rejected = true; }
             Check(rejected, "an invalid fission lever is rejected");
@@ -81,11 +87,11 @@ internal static class FissionChecks
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy)))
         {
             var old = (SimulationConfig)serializer.ReadObject(stream);
-            Check(!old.FissionEnabled && old.FissionQoL == .75 && old.FissionRadius == 3 && old.FissionMinimumDaughter == 12 && old.FissionThreshold == .20, "older saves load with fission disabled and default levers");
+            Check(!old.FissionEnabled && old.FissionGainThreshold == .113 && old.FissionGainDiscourage == .080 && old.FissionGainEncourage == .0955 && old.FissionSearchFraction == .8 && old.FissionDaughterMargin == .05 && old.FissionHousingRelief == 1 && old.FissionRadius == 3 && old.FissionMinimumDaughter == 12, "older saves load with fission disabled and default levers");
         }
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) Check(((SimulationConfig)serializer.ReadObject(stream)).FissionRadius == 4, "saved levers round trip");
         string json = File.ReadAllText(FindConfig());
-        foreach (var pair in new[] { ("FissionEnabled", "false"), ("FissionQoL", "0.75"), ("FissionQoLWidth", "0.1"), ("FissionThreshold", "0.2"), ("FissionRadius", "3"), ("FissionMinimumDaughter", "12"), ("FissionSearchPush", "0.2") })
+        foreach (var pair in new[] { ("FissionEnabled", "false"), ("FissionGainThreshold", "0.113"), ("FissionGainDiscourage", "0.08"), ("FissionGainEncourage", "0.0955"), ("FissionSearchFraction", "0.8"), ("FissionDaughterMargin", "0.05"), ("FissionHousingRelief", "1"), ("FissionRadius", "3"), ("FissionMinimumDaughter", "12") })
         {
             var m = Regex.Match(json, "\"" + pair.Item1 + "\":\\s*([0-9.a-z]+)");
             Check(m.Success && m.Groups[1].Value.TrimEnd('0').TrimEnd('.') == pair.Item2.TrimEnd('0').TrimEnd('.'), "OpeningConfig.json carries " + pair.Item1);
@@ -101,7 +107,8 @@ internal static class FissionChecks
     private static void Levers()
     {
         // Exact tables and exact integer daughter sizes.
-        Check(Kinship.QoLShift(FissionPolicy.Discourage) == -.05 && Kinship.QoLShift(FissionPolicy.Neutral) == 0 && Kinship.QoLShift(FissionPolicy.Encourage) == .05, "Q_fiss shift is -0.05/0/+0.05");
+        var levers = new SimulationConfig();
+        Check(Kinship.GainThreshold(levers, FissionPolicy.Neutral) == levers.FissionGainThreshold && Kinship.GainThreshold(levers, FissionPolicy.Discourage) == levers.FissionGainDiscourage && Kinship.GainThreshold(levers, FissionPolicy.Encourage) == levers.FissionGainEncourage, "each policy reads its own gain threshold");
         Check(Kinship.DaughterPercent(FissionPolicy.Discourage) == 15 && Kinship.DaughterPercent(FissionPolicy.Neutral) == 30 && Kinship.DaughterPercent(FissionPolicy.Encourage) == 40, "daughter fraction is 15/30/40 percent");
         Check(Kinship.PolicyAffinity(FissionPolicy.Discourage) == .5 && Kinship.PolicyAffinity(FissionPolicy.Neutral) == .9 && Kinship.PolicyAffinity(FissionPolicy.Encourage) == 1, "daughter affinity is 0.5/0.9/1.0");
         Check((int)default(FissionPolicy) == 0 && default(FissionPolicy) == FissionPolicy.Neutral, "an absent policy is Neutral");
@@ -113,18 +120,9 @@ internal static class FissionChecks
             }
         checks++;
         Check(Kinship.DaughterSize(100, FissionPolicy.Discourage) == 15 && Kinship.DaughterSize(100, FissionPolicy.Neutral) == 30 && Kinship.DaughterSize(100, FissionPolicy.Encourage) == 40 && Kinship.DaughterSize(39, FissionPolicy.Neutral) == 11, "daughter size examples");
-        // Push: clamp((Q_fiss - Q) / width, 0, 1) with the policy shift inside Q_fiss.
-        var cfg = new SimulationConfig();
-        Near(Fission.Push(cfg, .75, FissionPolicy.Neutral), 0, "no push at Q_fiss");
-        Near(Fission.Push(cfg, .70, FissionPolicy.Neutral), .5, "half push 0.05 below Q_fiss");
-        Near(Fission.Push(cfg, .65, FissionPolicy.Neutral), 1, "full push one width below");
-        Near(Fission.Push(cfg, .30, FissionPolicy.Neutral), 1, "push is clamped at one");
-        Near(Fission.Push(cfg, .90, FissionPolicy.Neutral), 0, "push is clamped at zero");
-        Near(Fission.Push(cfg, .75, FissionPolicy.Encourage), .5, "Encourage raises Q_fiss by 0.05");
-        Near(Fission.Push(cfg, .75, FissionPolicy.Discourage), 0, "Discourage at Q = Q_fiss has no push");
-        Near(Fission.Push(cfg, .70, FissionPolicy.Discourage), 0, "Discourage lowers Q_fiss by 0.05");
-        Near(Fission.Push(cfg, .65, FissionPolicy.Discourage), .5, "Discourage half push at 0.65");
-        Near(Fission.Push(cfg, .65, FissionPolicy.Encourage), 1, "Encourage reaches full push at 0.70");
+        // Push is the diagnostic clamp(G / G*, 0, 1); a zero threshold is always met.
+        Near(Fission.Push(.05, .10), .5, "half the threshold gives half push"); Near(Fission.Push(.10, .10), 1, "the threshold gives full push"); Near(Fission.Push(.50, .10), 1, "push is clamped at one");
+        Near(Fission.Push(-.01, .10), 0, "a negative gain is clamped at zero"); Near(Fission.Push(0, 0), 1, "a zero threshold is always met"); Near(Fission.Push(-1e-9, 0), 0, "a zero threshold is not met by a loss");
         // Affinity derivation: parent-daughter stored, siblings take the lower, everything else zero.
         var parent = new Society { Id = 1 }; var a = new Society { Id = 2, ParentSociety = 1, KinAffinity = .9 }; var b = new Society { Id = 3, ParentSociety = 1, KinAffinity = .5 }; var grand = new Society { Id = 4, ParentSociety = 2, KinAffinity = 1 };
         Near(Kinship.Affinity(a, parent), .9, "daughter to parent"); Near(Kinship.Affinity(parent, a), .9, "parent to daughter is symmetric");
@@ -132,38 +130,253 @@ internal static class FissionChecks
         Near(Kinship.Affinity(grand, parent), 0, "a grandparent is not first-degree kin"); Near(Kinship.Affinity(parent, parent), 0, "a Society has no affinity with itself"); Near(Kinship.Affinity(new Society { Id = 9 }, parent), 0, "unrelated Societies have zero affinity");
     }
 
+    // ---- WP10c: crowding + expected gain ------------------------------------------------------------------------------------------
+    // A full-coverage fixture: clothing 1 and Light Housing far beyond need, so Q = F * W * S(N) and R = 1 before and after.
+    private static Camp Covered(WorldState w, Camp c, int residents)
+    {
+        c.Population = residents; c.ClothPerCapita = 1; c.Inventory.LightHousingUnits = 1e9; return c;
+    }
+    private static double Cohesion(WorldState w, Camp c, double population) => Math.Exp(-Math.Pow(population / NeolithicProduction.CohesionScale(w.Config.Neolithic, c), w.Config.Neolithic.SocialCohesionExponent));
+    private static void Nomadic(Camp c) { c.Technologies[(int)Technology.Cultivation] = false; c.Technology = Technology.AnimalHusbandry; c.Technologies[(int)Technology.AnimalHusbandry] = true; }
+    private static void Crowding()
+    {
+        // Closed form with full goods coverage: G = S(N - N_d) / S(N) - 1 = exp((N^2 - (N - N_d)^2) / N_s^2) - 1 (beta = 2), any F, W.
+        foreach (var regime in new[] { FissionRegime.Paleolithic, FissionRegime.Nomadic, FissionRegime.Agricultural })
+            foreach (FissionPolicy policy in Enum.GetValues(typeof(FissionPolicy)))
+            {
+                var w = World(regime != FissionRegime.Paleolithic, new[] { 8, 8 }); var c = Covered(w, w.Camps[0], 300);
+                if (regime == FissionRegime.Nomadic) Nomadic(c);
+                Check(Fission.RegimeOf(c) == regime, "the fixture is " + regime);
+                c.FissionPolicy = policy; c.FoodNeedsMetRatio = .63; c.WaterNeedsMetRatio = .9;
+                double ns = regime == FissionRegime.Paleolithic ? 220 : regime == FissionRegime.Nomadic ? 550 : 1780;
+                int nd = Kinship.DaughterSize(300, policy), stay = 300 - nd;
+                var e = Fission.EstimateSplit(w, c, policy);
+                Near(e.Gain, Math.Exp((300.0 * 300 - (double)stay * stay) / (ns * ns)) - 1, regime + " " + policy + " gain is the closed form of the cohesion ratio");
+                Near(e.QNow, .63 * .9 * Math.Exp(-Math.Pow(300 / ns, 2)), regime + " " + policy + " Q_now = F W S(N)");
+                Check(e.Daughter == nd && e.QAfter > e.QNow, "the estimate carries the daughter size and a higher stayers' QoL");
+            }
+        // F, W and the goods coverage cancel in the ratio while housing is unaffected: a Paleolithic camp with no goods at all has the same gain.
+        var bare = World(false, new[] { 8, 8 }); bare.Camps[0].Population = 300; bare.Camps[0].ClothPerCapita = 0; bare.Camps[0].HousingPerCapita = 0; bare.Camps[0].FoodNeedsMetRatio = .4;
+        var bareQ = Fission.EstimateSplit(bare, bare.Camps[0], FissionPolicy.Neutral);
+        Near(bareQ.Gain, Math.Exp((300.0 * 300 - 210.0 * 210) / (220 * 220)) - 1, "with no goods and partial food the Paleolithic gain is the same cohesion gain");
+        Near(bareQ.QNow, .4 * (.5 * (1 - .25) + .5 * (1 - .25)) * Math.Exp(-Math.Pow(300 / 220.0, 2)), "Q_now uses the expectation floor for an unresolved camp");
+        // Q_now = 0 (no food): the documented fallback is the cohesion gain, so a destitute crowded camp still feels its crowding.
+        var zero = World(false, new[] { 8, 8 }); zero.Camps[0].Population = 300; zero.Camps[0].FoodNeedsMetRatio = 0;
+        var ze = Fission.EstimateSplit(zero, zero.Camps[0], FissionPolicy.Neutral);
+        Check(ze.QNow == 0 && ze.QAfter == 0, "no food gives zero QoL before and after");
+        Near(ze.Gain, Math.Exp((300.0 * 300 - 210.0 * 210) / (220 * 220)) - 1, "the zero-QoL fallback is the cohesion gain S_after / S_now - 1");
+        // Housing relief: the parent keeps all fixed Housing, so per-head housing rises once the daughter leaves; portable Light Housing splits in proportion and gives none.
+        var fixedWorld = World(true, new[] { 8, 8 }); var fc = fixedWorld.Camps[0]; fc.ClothPerCapita = 1; fc.Population = 100;
+        fixedWorld.FixedHousing.Add(new FixedHousingStock { CampId = fc.Id, Tile = fc.Tile, Units = 12.5, LastUpdatedDays = fixedWorld.Days }); // 50 people
+        Near(fixedWorld.Config.Neolithic.HousingPeoplePerUnit, 4, "four people per Housing unit");
+        double floor = fixedWorld.Config.Neolithic.RudimentaryExpectationFloor;
+        double Cov(double housing) => .5 + .5 * (1 - floor * (1 - housing));
+        var fe = Fission.EstimateSplit(fixedWorld, fc, FissionPolicy.Neutral);
+        Near(fe.QNow, Cov(.5) * Cohesion(fixedWorld, fc, 100), "fixed Housing: Q_now at 0.5 housing per head");
+        Near(fe.QAfter, Cov(50.0 / 70) * Cohesion(fixedWorld, fc, 70), "fixed Housing: the parent keeps all of it, so 50 beds for 70 stayers");
+        Near(fe.Gain, fe.QAfter / fe.QNow - 1, "gain is the relative rise of the stayers' QoL");
+        Check(fe.Gain > Math.Exp((100.0 * 100 - 70.0 * 70) / (1780.0 * 1780)) - 1, "housing relief adds to the cohesion gain");
+        // The relief weight interpolates between the cohesion-and-clothing gain (0) and the full relief (1).
+        double QAt(double weight) { fixedWorld.Config.FissionHousingRelief = weight; return Fission.EstimateSplit(fixedWorld, fc, FissionPolicy.Neutral).QAfter; }
+        double full = QAt(1), none = QAt(0), half = QAt(.5);
+        Near(none, Cov(.5) * Cohesion(fixedWorld, fc, 70), "relief weight 0: housing per head stays at its present value, only cohesion changes");
+        Near(half, Cov(.5 + .5 * (50.0 / 70 - .5)) * Cohesion(fixedWorld, fc, 70), "relief weight 0.5 counts half the housing gain"); Near(full, fe.QAfter, "relief weight 1 is the specified rule"); QAt(1);
+        Near(Fission.EstimateSplit(fixedWorld, fc, FissionPolicy.Neutral).Gain, fe.Gain, "restoring the weight restores the gain");
+        QAt(0); Near(Fission.EstimateSplit(fixedWorld, fc, FissionPolicy.Neutral).Gain, Math.Exp((100.0 * 100 - 70.0 * 70) / (1780.0 * 1780)) - 1, "with relief weight 0 a housing shortage leaves the gain at the closed-form cohesion gain"); QAt(1);
+        var mixed = World(true, new[] { 8, 8 }); var mc = mixed.Camps[0]; mc.ClothPerCapita = 1; mc.Population = 100; mc.Inventory.LightHousingUnits = 5;
+        mixed.FixedHousing.Add(new FixedHousingStock { CampId = mc.Id, Tile = mc.Tile, Units = 5, LastUpdatedDays = mixed.Days });
+        var me = Fission.EstimateSplit(mixed, mc, FissionPolicy.Neutral);
+        Near(me.QNow, Cov(.4) * Cohesion(mixed, mc, 100), "mixed housing: 10 units shelter 40 of 100 people");
+        Near(me.QAfter, Cov((5 + 5 * .7) * 4 / 70) * Cohesion(mixed, mc, 70), "mixed housing: all fixed plus 70 percent of the portable Light Housing for 70 stayers");
+        var portable = World(true, new[] { 8, 8 }); var pc = portable.Camps[0]; pc.ClothPerCapita = 1; pc.Population = 100; pc.Inventory.LightHousingUnits = 10;
+        var pe = Fission.EstimateSplit(portable, pc, FissionPolicy.Neutral);
+        Near(pe.QAfter / pe.QNow, Cohesion(portable, pc, 70) / Cohesion(portable, pc, 100), "portable Light Housing splits in proportion and brings no relief");
+        // Daughter check: F = W = 1 at the site, clothing unchanged, housing from its portable share only, expectation after a move.
+        var dw = World(true, new[] { 8, 8 }); var dc = dw.Camps[0]; dc.ClothPerCapita = 1; dc.Population = 100; dw.FixedHousing.Add(new FixedHousingStock { CampId = dc.Id, Tile = dc.Tile, Units = 25, LastUpdatedDays = dw.Days });
+        var de = Fission.EstimateSplit(dw, dc, FissionPolicy.Neutral);
+        double moved = floor + (1 - floor) * (dw.Config.TurnDays / dw.Config.DaysPerYear / dw.Config.Neolithic.RudimentaryExpectationRampYears);
+        Near(de.QNow, Cohesion(dw, dc, 100), "a fully housed parent has Q = S(N)");
+        Near(de.DaughterQoL, (.5 + .5 * (1 - moved)) * Cohesion(dw, dc, 30), "the daughter has no fixed Housing, a fresh expectation and F = W = 1");
+        Check(!de.DaughterAcceptable(.05) && de.DaughterAcceptable(.25) && de.DaughterAcceptable(de.QNow - de.DaughterQoL + 1e-12) && !de.DaughterAcceptable(de.QNow - de.DaughterQoL - 1e-6), "the margin test is daughter >= Q_now - margin");
+        // The test binds in the pass: the tight margin blocks and counts; a wide margin founds.
+        Explore(dw, dc); Ratio(dw, dc, 1.5); dw.Config.FissionDaughterMargin = .05;
+        Check(Pass(dw, out var dm) == null && dm.FissionDaughterChecks == 1 && dm.FissionDaughterBlocked == 1 && dm.FissionProposals == 0 && dw.Camps.Count == 1, "a daughter who would be much worse off is blocked and the block is counted");
+        dw.Config.FissionDaughterMargin = .25; var free = Pass(dw, out var fm);
+        Check(free != null && fm.FissionDaughterChecks == 1 && fm.FissionDaughterBlocked == 0, "a wide margin lets the same split through");
+        Near(free.DaughterQoL, de.DaughterQoL, "the report records the estimated daughter QoL"); Near(free.Gain, de.Gain, "the report records the expected gain");
+        // Policy thresholds and daughter fractions: only the camp's own policy threshold counts.
+        foreach (FissionPolicy policy in Enum.GetValues(typeof(FissionPolicy)))
+        {
+            var w = World(true, new[] { 8, 8 }); var c = w.Camps[0]; Explore(w, c); c.FissionPolicy = policy; c.Population = 200;
+            w.Config.FissionGainThreshold = w.Config.FissionGainDiscourage = w.Config.FissionGainEncourage = 5;
+            if (policy == FissionPolicy.Discourage) w.Config.FissionGainDiscourage = 0; else if (policy == FissionPolicy.Encourage) w.Config.FissionGainEncourage = 0; else w.Config.FissionGainThreshold = 0;
+            var r = Pass(w, out _);
+            Check(r != null && r.Policy == policy && r.Daughter == Kinship.DaughterSize(200, policy), policy + " fissions on its own threshold and splits its own fraction");
+            var other = World(true, new[] { 8, 8 }); var oc = other.Camps[0]; Explore(other, oc); oc.FissionPolicy = policy; oc.Population = 200;
+            other.Config.FissionGainThreshold = other.Config.FissionGainDiscourage = other.Config.FissionGainEncourage = 0;
+            if (policy == FissionPolicy.Discourage) other.Config.FissionGainDiscourage = 5; else if (policy == FissionPolicy.Encourage) other.Config.FissionGainEncourage = 5; else other.Config.FissionGainThreshold = 5;
+            Check(Pass(other, out _) == null, policy + " does not fission when only the other policies' thresholds are met");
+        }
+        // Search fraction: the lazy destination search runs from 0.8 G* and a proposal needs the full G*.
+        foreach (var (multiple, searches, founds) in new[] { (.79, 0, false), (.81, 1, false), (1.0, 1, true), (1.3, 1, true) })
+        {
+            var w = World(true, new[] { 8, 8 }); var c = w.Camps[0]; Explore(w, c); Ratio(w, c, multiple);
+            var r = Pass(w, out var m);
+            Check(m.FissionSearches == searches && (r != null) == founds, "gain " + multiple + " G*: searches " + searches + ", founds " + founds);
+        }
+        var fraction = World(true, new[] { 8, 8 }); Explore(fraction, fraction.Camps[0]); fraction.Config.FissionSearchFraction = .5; Ratio(fraction, fraction.Camps[0], .6);
+        Check(Pass(fraction, out var frm) == null && frm.FissionSearches == 1 && fraction.Camps[0].FissionDestination != null, "a lower search fraction searches earlier");
+        // The WP10a failure: a camp with no goods at default thresholds no longer splits at any size.
+        foreach (var (neo, size, expected) in new[] { (false, 60, false), (false, 110, false), (true, 143, false), (true, 400, false), (true, 1200, true) })
+        {
+            var w = World(neo, new[] { 8, 8 }); var c = w.Camps[0]; Explore(w, c); c.Population = size; c.PlantFood = 500000;
+            var d = new SimulationConfig(); w.Config.FissionGainThreshold = d.FissionGainThreshold; w.Config.FissionGainDiscourage = d.FissionGainDiscourage; w.Config.FissionGainEncourage = d.FissionGainEncourage;
+            Check((Pass(w, out _) != null) == expected, (neo ? "agricultural" : "Paleolithic") + " camp of " + size + " at default thresholds " + (expected ? "splits" : "stays whole"));
+        }
+    }
+
+    // Onset population per regime and policy under full goods coverage, for the given (default: shipped) thresholds.
+    internal static int Onset(FissionRegime regime, FissionPolicy policy, SimulationConfig config = null)
+    {
+        var w = World(regime != FissionRegime.Paleolithic, new[] { 8, 8 }); var c = w.Camps[0];
+        if (regime == FissionRegime.Nomadic) Nomadic(c);
+        var d = config ?? new SimulationConfig(); w.Config.FissionGainThreshold = d.FissionGainThreshold; w.Config.FissionGainDiscourage = d.FissionGainDiscourage; w.Config.FissionGainEncourage = d.FissionGainEncourage;
+        c.FissionPolicy = policy; double gstar = Kinship.GainThreshold(w.Config, policy);
+        for (int n = 1; n <= 6000; n++)
+        {
+            Covered(w, c, n); int nd = Kinship.DaughterSize(n, policy);
+            if (nd < w.Config.FissionMinimumDaughter || nd >= n - nd || n - nd < w.Config.MinimumCamp) continue;
+            if (Fission.EstimateSplit(w, c, policy).Gain >= gstar) return n;
+        }
+        return -1;
+    }
+    private static void Calibration()
+    {
+        // Design onsets N* (QoLFissionTradeDesign 3.5-3.6): Paleolithic 101 (116 / 83), Nomadic 252 (291 / 208), Agricultural inside 607-999 (770-1105 / 398-887).
+        var design = new Dictionary<(FissionRegime, FissionPolicy), int>
+        {
+            [(FissionRegime.Paleolithic, FissionPolicy.Neutral)] = 101, [(FissionRegime.Paleolithic, FissionPolicy.Discourage)] = 116, [(FissionRegime.Paleolithic, FissionPolicy.Encourage)] = 83,
+            [(FissionRegime.Nomadic, FissionPolicy.Neutral)] = 252, [(FissionRegime.Nomadic, FissionPolicy.Discourage)] = 291, [(FissionRegime.Nomadic, FissionPolicy.Encourage)] = 208
+        };
+        foreach (var pair in design)
+        {
+            int onset = Onset(pair.Key.Item1, pair.Key.Item2);
+            Check(onset > 0 && Math.Abs(onset - pair.Value) <= Math.Max(2, .03 * pair.Value), pair.Key + " onset " + onset + " within 3 percent of the design " + pair.Value);
+        }
+        var bands = new Dictionary<FissionPolicy, (int, int)> { [FissionPolicy.Neutral] = (607, 999), [FissionPolicy.Discourage] = (770, 1105), [FissionPolicy.Encourage] = (398, 887) };
+        foreach (var pair in bands)
+        {
+            int onset = Onset(FissionRegime.Agricultural, pair.Key);
+            Check(onset >= pair.Value.Item1 && onset <= pair.Value.Item2, "Agricultural " + pair.Key + " onset " + onset + " lies inside the design band " + pair.Value);
+        }
+        Check(Onset(FissionRegime.Agricultural, FissionPolicy.Discourage) > Onset(FissionRegime.Agricultural, FissionPolicy.Neutral) && Onset(FissionRegime.Agricultural, FissionPolicy.Neutral) > Onset(FissionRegime.Agricultural, FissionPolicy.Encourage), "Discourage delays and Encourage advances the onset");
+    }
+
+    private static void Ordering()
+    {
+        // D saturates at one: among equally viable sites the richer footprint wins over a lower tile ID.
+        var w = World(true, new[] { 8, 8 }); var parent = w.Camps[0]; Explore(w, parent);
+        var ring = w.Map.Radius(parent.Tile, 3).Where(n => w.Map.Distance(parent.Tile, n) == 3).OrderBy(n => n).ToArray();
+        Check(ring.Length == 18, "the candidate ring has 18 tiles");
+        int rich = ring.Last();
+        foreach (int n in w.Map.Radius(rich, 1)) { var t = w.Tiles[n]; t.Food *= 3; t.PotentialFood *= 3; for (int s = 0; s < 4; s++) { t.Seasons[s].MaxFood *= 3; t.Seasons[s].MaxPotentialFood *= 3; } }
+        var report = Pass(w, out var m);
+        Check(report != null && m.FissionCandidatesScored == 18 && Math.Abs(report.Desirability - 1) < 1e-12, "every ring site is fully viable (D = 1)");
+        Check(report.Tile == rich && report.Tile != ring.First(), "a richer site beats the lower tile ID when both have D = 1");
+        // Equal D and equal support: the nearer site wins, then the lower tile ID. A radius-four search in a uniform world.
+        var u = World(true, new[] { 12, 10 }); var pc = u.Camps[0]; Explore(u, pc, 6); u.Config.FissionRadius = 4;
+        var candidates = u.Map.Radius(pc.Tile, 4).Where(n => u.Map.Distance(pc.Tile, n) >= 3).OrderBy(n => n).ToArray();
+        Check(u.Map.Distance(pc.Tile, candidates.First()) == 4, "precondition: the lowest tile ID is at distance four");
+        var near = Pass(u, out _);
+        Check(near != null && u.Map.Distance(pc.Tile, near.Tile) == 3 && near.Tile == candidates.Where(n => u.Map.Distance(pc.Tile, n) == 3).Min(), "equal D and support: the nearer site wins, then the lowest tile ID");
+        // A site below D = 1 loses to a fully viable one (D is the first key): starve the lowest-ID site's footprint of food.
+        var v = World(true, new[] { 8, 8 }); var vp = v.Camps[0]; Explore(v, vp);
+        int lean = ring.First();
+        foreach (int n in v.Map.Radius(lean, 1)) { var t = v.Tiles[n]; t.Food = 20; t.PotentialFood = 20; for (int s = 0; s < 4; s++) { t.Seasons[s].MaxFood = 20; t.Seasons[s].MaxPotentialFood = 20; } }
+        var vr = Pass(v, out _);
+        Check(vr != null && vr.Tile != lean && Math.Abs(vr.Desirability - 1) < 1e-12, "a site below D = 1 loses to a fully viable site");
+    }
+
+    // A daughter inherits its parent's opening status and never delays the end of the opening.
+    private static string Describe(object o) => string.Join("|", o.GetType().GetFields().Select(f => f.Name + "=" + (f.GetValue(o) is double d ? d.ToString("R") : f.GetValue(o)?.ToString())));
+    private static void Opening()
+    {
+        // Every field of the Society that the opening logic reads is copied; only identity, the keyed seed, lineage and memory differ.
+        var w = World(false, new[] { 8, 8 }); var parent = w.Camps[0]; Explore(w, parent); var ps = parent.People;
+        ps.Experience[0] = 41; ps.Progression.EraStartDays = 123; ps.Progression.MajorityEligibilityDays = 7777; ps.Progression.ForcedTransitionDays = 8888; ps.ForcedTransition = true; ps.SecondaryDomain = 2; ps.TransitionTurn = 4;
+        ps.TransitionSeeds.Add(new TransitionSeed { Technology = Technology.Cultivation, Settlement = parent.Id, Tile = parent.Tile, Days = 99 });
+        int outpost = w.Map.Radius(parent.Tile, 2).Where(n => w.Map.Distance(parent.Tile, n) == 2).OrderBy(n => n).First();
+        w.Hunters.Add(new Hunter { Id = w.NextId++, SourceCamp = parent.Id, SocietyId = parent.SocietyId, Player = parent.Player, Tile = outpost, Population = 6, CarriedFood = 10 });
+        Check(Pass(w, out _) != null, "a Paleolithic parent fissions (its hunters see a site)");
+        var ds = Daughter(w, parent).People; var skipped = new HashSet<string> { "Id", "Player", "PolicySeed", "ParentSociety", "KinAffinity", "Memory" };
+        foreach (var f in typeof(Society).GetFields())
+        {
+            if (skipped.Contains(f.Name)) continue;
+            object a = f.GetValue(ps), b = f.GetValue(ds);
+            bool same = a is string || a is ValueType ? Equals(a, b) : a is EraProgression || a is Mandate || a is PolicyState ? Describe(a) == Describe(b) : ((System.Collections.IEnumerable)a).Cast<object>().Count() == ((System.Collections.IEnumerable)b).Cast<object>().Count();
+            Check(same, "a daughter inherits Society." + f.Name);
+        }
+        Check(ds.Progression.Era == Era.Paleolithic && ds.Technology == Technology.None && ds.ForcedTransition == ps.ForcedTransition, "a Paleolithic parent's daughter is Paleolithic");
+        // Finished: only founding Societies decide it.
+        var f1 = World(true, new[] { 8, 8 }, new[] { 18, 8 }); var p1 = f1.Camps[0]; Explore(f1, p1); Check(f1.Finished, "two Neolithic founders have finished the opening");
+        Check(Pass(f1, out _) != null, "a Neolithic founder fissions"); var late = Daughter(f1, p1).People; late.Progression.Era = Era.Paleolithic; late.Technology = Technology.None;
+        Check(late.ParentSociety > 0 && late.Progression.Era == Era.Paleolithic && f1.Finished, "a Paleolithic daughter of a finished parent does not delay the end of the opening");
+        var f2 = World(false, new[] { 8, 8 }); Check(!f2.Finished, "a Paleolithic founder still holds the opening open");
+        // The opening ends on the same turn with fission on as off (seed 53 is the four-tribe fixture that moved from turn 9 to 12 under WP10a).
+        foreach (var players in new[] { 4, 6 })
+            foreach (var mode in new[] { "default", "eager" })
+            {
+                int off = OpeningTurns(53, players, false, mode, out _), on = OpeningTurns(53, players, true, mode, out int founded);
+                // Default thresholds leave the opening untouched. Forced fission every turn (G* = 0) shrinks the founders themselves, which
+                // slows their own practice by at most a turn; it is never a daughter that holds the opening open.
+                Check(mode == "default" ? on == off : on >= off && on <= off + 1, "fission " + mode + " thresholds, " + players + " tribes: the opening ends on turn " + off + " with fission off and " + on + " on (" + founded + " settlements)");
+            }
+    }
+    private static int OpeningTurns(int seed, int players, bool fission, string mode, out int founded)
+    {
+        var cfg = SimulationConfig.Small(players); cfg.FissionEnabled = fission;
+        if (mode == "eager") cfg.FissionGainThreshold = cfg.FissionGainDiscourage = cfg.FissionGainEncourage = 0;
+        var g = new WorldGenerator().Generate(seed, cfg); var policy = new HeuristicTribePolicy(); var builder = new AgentObservationBuilder(); int turns = 0; founded = 0;
+        while (!g.Finished && turns < 20)
+        {
+            var orders = g.Camps.GroupBy(c => c.Player).ToDictionary(x => x.Key, x => policy.Decide(builder.Build(g, x.Key), x.First().Mandate).Orders);
+            new TurnResolver().Resolve(g, orders); turns++; founded += g.History.Last().Fissions.Count;
+        }
+        return turns;
+    }
+
     private static void Destination()
     {
         // A Neolithic parent with explored surroundings finds and caches the best ring tile; nothing else changes without a proposal.
         var w = World(true, new[] { 8, 8 }); var parent = w.Camps[0]; Explore(w, parent);
-        parent.QoL = .72; // push 0.3: above the search threshold, F = 0.3 * 1 above the 0.2 threshold.
+        Ratio(w, parent, 1.5); // expected gain 1.5 times G*.
         var report = Pass(w, out var m);
         Check(report != null, "a pressured parent with a supported known site founds a daughter");
         Check(m.FissionSearches == 1 && m.FissionCandidatesScored > 0 && m.FissionCampsEvaluated == 1, "one search with scored candidates");
         Check(parent.FissionDestination == null, "the parent's cache is cleared once its destination is founded");
         Check(w.Map.Distance(parent.Tile, report.Tile) == 3, "the destination is at the configured radius and at least the camp spacing away");
-        Near(report.Push, .3, "reported push"); Near(report.Desirability, 1, "a fully supported site has D = 1"); Near(report.Score, .3, "F = push * D");
+        Near(report.Push, 1, "reported push is clamped at one"); Near(report.Desirability, 1, "a fully supported site has D = 1"); Near(report.Score, 1, "score = push * D"); Check(report.Gain > 0 && report.DaughterQoL > 0, "the report carries the expected gain and the daughter estimate");
         // Below the search threshold nothing is searched and nothing is cached.
-        var quiet = World(true, new[] { 8, 8 }); Explore(quiet, quiet.Camps[0]); quiet.Camps[0].QoL = .78;
+        var quiet = World(true, new[] { 8, 8 }); Explore(quiet, quiet.Camps[0]); Quiet(quiet);
         Check(Pass(quiet, out var qm) == null && qm.FissionSearches == 0 && qm.FissionCandidatesScored == 0 && quiet.Camps[0].FissionDestination == null, "no push, no search and no cache");
         // A search below the proposal threshold caches a destination without founding (search threshold lowered).
-        var cache = World(true, new[] { 8, 8 }); Explore(cache, cache.Camps[0]); cache.Config.FissionSearchPush = .05; cache.Camps[0].QoL = .735; // push .15: F = .15 is not above .2
+        var cache = World(true, new[] { 8, 8 }); Explore(cache, cache.Camps[0]); Ratio(cache, cache.Camps[0], .9); // gain 0.9 G*: searches (above 0.8 G*) but does not found
         var cm = Pass(cache, out var cachedMetrics);
         var target = cache.Camps[0].FissionDestination;
         Check(cm == null && target != null && target.Regime == (int)FissionRegime.Agricultural && target.Turn == cache.Turn && cachedMetrics.FissionSearches == 1, "a search below the proposal threshold caches the destination with its regime and turn");
         int cachedTile = target.Tile;
         // The cache persists: no rerank while valid, even with a different best tile appearing.
-        cachedMetrics = null; cache.Turn++; cache.Camps[0].QoL = .735; Pass(cache, out var again);
+        cachedMetrics = null; cache.Turn++; Pass(cache, out var again);
         Check(cache.Camps[0].FissionDestination == target && again.FissionSearches == 0 && again.FissionValidations == 1 && target.Tile == cachedTile, "a valid cache is revalidated but never searched or reranked");
         // Regime change invalidates it even with no push; it is then searched afresh on the next pressured turn.
-        cache.Camps[0].Technologies[(int)Technology.Cultivation] = false; cache.Camps[0].Technology = Technology.AnimalHusbandry; cache.Camps[0].Technologies[(int)Technology.AnimalHusbandry] = true; cache.Camps[0].QoL = 1;
+        cache.Camps[0].Technologies[(int)Technology.Cultivation] = false; cache.Camps[0].Technology = Technology.AnimalHusbandry; cache.Camps[0].Technologies[(int)Technology.AnimalHusbandry] = true; Quiet(cache);
         Pass(cache, out var regime);
         Check(cache.Camps[0].FissionDestination == null && regime.FissionCacheInvalidations == 1, "a regime change invalidates the cached destination");
         // Occupied or within spacing of another camp invalidates it.
-        var block = World(true, new[] { 8, 8 }); Explore(block, block.Camps[0]); block.Config.FissionSearchPush = .05; block.Camps[0].QoL = .735; Pass(block, out _);
+        var block = World(true, new[] { 8, 8 }); Explore(block, block.Camps[0]); Ratio(block, block.Camps[0], .9); Pass(block, out _);
         int site = block.Camps[0].FissionDestination.Tile;
         block.Camps.Add(new Camp { Id = block.NextId++, Player = 5, Tile = block.Map.Neighbors(site).First(n => block.Map.Distance(n, block.Camps[0].Tile) >= 3), Population = 50, PlantFood = 6000 }); block.PlayerCount = 6; Ownership.Bind(block);
-        block.Camps[0].QoL = .735; Pass(block, out var blocked);
+        Pass(block, out var blocked);
         var after = block.Camps[0].FissionDestination;
         Check(blocked.FissionCacheInvalidations >= 1 && (after == null || after.Tile != site) && (after == null || block.Camps.All(c => c == block.Camps[0] || block.Map.Distance(c.Tile, after.Tile) >= 3)), "a camp founded within spacing invalidates the cached destination and the re-search respects spacing");
     }
@@ -171,12 +384,12 @@ internal static class FissionChecks
     private static void Knowledge()
     {
         // Paleolithic: current vision only, even if a memory block exists; with a hunter in view of a ring tile it finds one.
-        var w = World(false, new[] { 8, 8 }); var parent = w.Camps[0]; Explore(w, parent); parent.QoL = .6;
+        var w = World(false, new[] { 8, 8 }); var parent = w.Camps[0]; Explore(w, parent); 
         Check(!ContactKnowledge.Remembers(parent.People) && Fission.RegimeOf(parent) == FissionRegime.Paleolithic, "a Paleolithic fixture does not remember");
         var none = Pass(w, out var m);
         Check(none == null && parent.FissionDestination == null && m.FissionSearches == 1 && m.FissionCandidatesScored == 0, "explored tiles are ignored and a camp's own vision sees no site at distance three");
         // A hunter two tiles out sees ring tiles: only visible ring tiles are candidates.
-        var seen = World(false, new[] { 8, 8 }); var camp = seen.Camps[0]; camp.QoL = .6;
+        var seen = World(false, new[] { 8, 8 }); var camp = seen.Camps[0]; 
         int outpost = seen.Map.Radius(camp.Tile, 2).Where(n => seen.Map.Distance(n, camp.Tile) == 2).OrderBy(n => n).First();
         seen.Hunters.Add(new Hunter { Id = seen.NextId++, SourceCamp = camp.Id, SocietyId = camp.SocietyId, Player = camp.Player, Tile = outpost, Population = 6, CarriedFood = 10 });
         var visible = new HashSet<int>(seen.Map.Radius(camp.Tile, 2).Concat(seen.Map.Radius(outpost, 2)));
@@ -184,7 +397,7 @@ internal static class FissionChecks
         Check(found != null && visible.Contains(found.Tile) && sm.FissionCandidatesScored > 0, "with a hunter's vision the Paleolithic camp founds only at a visible tile");
         Check(sm.FissionCandidatesScored <= seen.Map.Radius(camp.Tile, 3).Count(n => seen.Map.Distance(n, camp.Tile) == 3 && visible.Contains(n)) + 0 + sm.FissionCandidatesScored - sm.FissionCandidatesScored, "candidates come from the visible ring");
         // A Neolithic Society adds explored tiles: the same outpostless camp now founds at an explored, not visible, site.
-        var neo = World(true, new[] { 8, 8 }); var ncamp = neo.Camps[0]; ncamp.QoL = .6;
+        var neo = World(true, new[] { 8, 8 }); var ncamp = neo.Camps[0]; 
         var memory = ContactKnowledge.MemoryOf(neo, ncamp.People); int only = neo.Map.Radius(ncamp.Tile, 3).Where(n => neo.Map.Distance(n, ncamp.Tile) == 3).OrderBy(n => n).Last(); memory.Explored.Add(only);
         Check(!neo.Map.Radius(ncamp.Tile, 2).Contains(only), "the explored tile lies outside current vision");
         var nfound = Pass(neo, out var nm);
@@ -194,7 +407,7 @@ internal static class FissionChecks
 
     private static void Commit()
     {
-        var w = World(true, new[] { 8, 8 }); var parent = w.Camps[0]; Explore(w, parent); parent.QoL = .7; parent.FissionPolicy = FissionPolicy.Encourage;
+        var w = World(true, new[] { 8, 8 }); var parent = w.Camps[0]; Explore(w, parent); parent.FissionPolicy = FissionPolicy.Encourage;
         var ps = parent.People; ps.Experience[0] = 10; ps.Experience[1] = 20; ps.Experience[2] = 30; ps.CraftExperience["Toolmaking"] = 123; ps.NeolithicTechnologies.Add("Toolmaking"); ps.UnlockedSpecialists.Add(WorkforceRoles.Toolmaker);
         ps.SpeciesExperience.Add(new SpeciesPractice { Species = "goat", Experience = 77 }); ps.Policy = new PolicyState { HuntingInclination = .61, GatheringInclination = .92, FishingInclination = .44 }; ps.Mandate.Risk = .31; ps.Mandate.Persistence = .22;
         ps.Progression.CompletionDays = 500; ps.Progression.CompletionTurn = 2; ps.Progression.CompletionRule = "Mastery"; ps.TransitionTurn = 2; ps.OpeningTransitionProcessed = true;
@@ -235,8 +448,8 @@ internal static class FissionChecks
         TurnResolver.Invariants(w, 100);
         Check(SaveCodec.Fingerprint(w) != before, "fission changes authoritative state");
         // Two daughters of one parent take the lower of their affinities.
-        var two = World(true, new[] { 8, 8 }); var p2 = two.Camps[0]; Explore(two, p2); p2.QoL = .6; p2.FissionPolicy = FissionPolicy.Encourage; Pass(two, out _);
-        p2.FissionPolicy = FissionPolicy.Discourage; two.Turn++; p2.QoL = .3; p2.Population = 100; Pass(two, out _);
+        var two = World(true, new[] { 8, 8 }); var p2 = two.Camps[0]; Explore(two, p2); p2.FissionPolicy = FissionPolicy.Encourage; Pass(two, out _);
+        p2.FissionPolicy = FissionPolicy.Discourage; two.Turn++; p2.Population = 100; Pass(two, out _);
         var daughters = two.Societies.Where(s => s.ParentSociety == p2.SocietyId).OrderBy(s => s.Id).ToArray();
         Check(daughters.Length == 2 && daughters[0].KinAffinity == 1 && daughters[1].KinAffinity == .5 && Kinship.Affinity(daughters[0], daughters[1]) == .5 && Kinship.Affinity(daughters[1], p2.People) == .5 && Kinship.Affinity(daughters[0], p2.People) == 1, "sibling affinity derives as the lower of the two stored affinities");
     }
@@ -261,7 +474,7 @@ internal static class FissionChecks
     {
         foreach (var policy in (FissionPolicy[])Enum.GetValues(typeof(FissionPolicy)))
         {
-            var w = World(true, new[] { 8, 8 }, new[] { 20, 3 }); var parent = w.Camps[0]; Explore(w, parent); parent.QoL = .3; parent.FissionPolicy = policy; parent.Population = 137;
+            var w = World(true, new[] { 8, 8 }, new[] { 20, 3 }); var parent = w.Camps[0]; Explore(w, parent); parent.FissionPolicy = policy; parent.Population = 137;
             MakeNeolithic(parent, Technology.Cultivation); parent.Technologies[(int)Technology.AnimalHusbandry] = true;
             double seed = 1.37; foreach (var f in InventoryFields) { f.SetValue(parent.Inventory, seed); seed += 3.1; }
             parent.PlantFood = 4321.5; parent.AnimalFood = 210.25; parent.AquaticFood = 99.125; parent.GrowthRemainder = .61; parent.DeathRemainder = .37;
@@ -294,7 +507,7 @@ internal static class FissionChecks
     private static void Viability()
     {
         // No viable site: a waterless footprint everywhere, then starved food, then a disabled switch, then too small a daughter.
-        WorldState Pressured() { var w = World(true, new[] { 8, 8 }); Explore(w, w.Camps[0]); w.Camps[0].QoL = .5; return w; }
+        WorldState Pressured() { var w = World(true, new[] { 8, 8 }); Explore(w, w.Camps[0]); return w; }
         var dry = Pressured(); foreach (var t in dry.Tiles) for (int s = 0; s < 4; s++) dry.Tiles[t.Id].Seasons[s].MaxFreshwater = 0;
         var report = Pass(dry, out var dm);
         Check(report == null && dry.Camps[0].FissionDestination == null && dry.Camps.Count == 1 && dm.FissionCandidatesScored > 0 && dm.FissionCommits == 0, "no site with freshwater means no fission and no cache");
@@ -304,11 +517,11 @@ internal static class FissionChecks
         Check(Pass(off, out om) == null && om.FissionCampsEvaluated == 0 && off.Camps.Count == 1, "fission disabled evaluates nothing");
         var small = Pressured(); small.Camps[0].Population = 39;
         Check(Pass(small, out var sm) == null && sm.FissionSearches == 0 && small.Camps.Count == 1, "a daughter below the minimum population never forms (and is never searched for)");
-        var discourage = Pressured(); discourage.Camps[0].FissionPolicy = FissionPolicy.Discourage; discourage.Camps[0].Population = 79; discourage.Camps[0].QoL = .3;
+        var discourage = Pressured(); discourage.Camps[0].FissionPolicy = FissionPolicy.Discourage; discourage.Camps[0].Population = 79; 
         Check(Pass(discourage, out _) == null && discourage.Camps.Count == 1, "Discourage at 79 residents gives 11, below the minimum daughter");
         discourage.Camps[0].Population = 80; Check(Pass(discourage, out _) != null && Daughter(discourage, discourage.Camps[0]).Population == 12, "Discourage at 80 residents gives exactly the minimum daughter");
-        var calm = Pressured(); calm.Camps[0].QoL = .75; Check(Pass(calm, out var cm) == null && cm.FissionSearches == 0, "QoL at Q_fiss gives no push");
-        var threshold = Pressured(); threshold.Config.FissionThreshold = .4; threshold.Camps[0].QoL = .72; Check(Pass(threshold, out _) == null && threshold.Camps[0].FissionDestination != null, "F must exceed the threshold: push 0.3 with threshold 0.4 caches but does not found");
+        var calm = Pressured(); Quiet(calm); Check(Pass(calm, out var cm) == null && cm.FissionSearches == 0, "a gain far below G* gives no search");
+        var threshold = Pressured(); Ratio(threshold, threshold.Camps[0], .9); Check(Pass(threshold, out _) == null && threshold.Camps[0].FissionDestination != null, "the gain must reach G*: 0.9 G* caches a destination but does not found");
         var destitute = Pressured(); destitute.Camps[0].Population = 0; Check(Pass(destitute, out var dem) == null && dem.FissionCampsEvaluated == 0, "an empty camp is not evaluated");
         // A pastoral daughter also needs herd forage and water; a herd too big for the footprint is unviable.
         var herd = Pressured(); MakeNeolithic(herd.Camps[0], Technology.AnimalHusbandry); herd.Camps[0].Technologies[(int)Technology.Cultivation] = false; herd.Camps[0].Technology = Technology.AnimalHusbandry;
@@ -323,14 +536,14 @@ internal static class FissionChecks
     {
         // Every daughter stands at least the spacing from every camp, including another daughter founded the same turn.
         var w = World(true, new[] { 4, 4 }, new[] { 10, 4 }, new[] { 16, 4 }, new[] { 7, 10 }, new[] { 13, 10 });
-        foreach (var c in w.Camps) { Explore(w, c); c.QoL = .3; }
+        foreach (var c in w.Camps) { Explore(w, c); }
         Pass(w, out var m);
         int spacing = w.Config.MinimumCampSpacing;
         var camps = w.Camps.ToArray();
         for (int i = 0; i < camps.Length; i++) for (int j = i + 1; j < camps.Length; j++) Check(w.Map.Distance(camps[i].Tile, camps[j].Tile) >= spacing, "no two camps are within " + spacing + " hexes");
         Check(camps.Length > 5 && m.FissionCommits == camps.Length - 5, "every camp count difference is a committed fission");
         // A conflict is dropped, keeps its cache, and the loser is revalidated next turn.
-        var c2 = World(true, new[] { 8, 8 }, new[] { 14, 8 }); foreach (var c in c2.Camps) { Explore(c2, c); c.QoL = .3; }
+        var c2 = World(true, new[] { 8, 8 }, new[] { 14, 8 }); foreach (var c in c2.Camps) { Explore(c2, c); }
         // Only the tile between the two parents (distance 3 from each) is explored, and only by them.
         var mid = c2.Map.At(11, 8); Check(c2.Map.Distance(c2.Camps[0].Tile, mid) == 3 && c2.Map.Distance(c2.Camps[1].Tile, mid) == 3, "the middle tile is three hexes from both parents");
         foreach (var c in c2.Camps) { c.People.Memory = new ContactMemory(c2.Config.Width); c.People.Memory.Explored.Add(mid); }
@@ -345,22 +558,22 @@ internal static class FissionChecks
     private static void Bounded()
     {
         // Cost follows active state: unpressured camps cost one push test and nothing else.
-        var quiet = World(true, new[] { 4, 4 }, new[] { 10, 4 }, new[] { 16, 4 }, new[] { 7, 10 }, new[] { 13, 10 }); foreach (var c in quiet.Camps) { Explore(quiet, c); c.QoL = .9; }
+        var quiet = World(true, new[] { 4, 4 }, new[] { 10, 4 }, new[] { 16, 4 }, new[] { 7, 10 }, new[] { 13, 10 }); foreach (var c in quiet.Camps) { Explore(quiet, c); } Quiet(quiet);
         Pass(quiet, out var q);
         Check(q.FissionCampsEvaluated == 5 && q.FissionSearches == 0 && q.FissionValidations == 0 && q.FissionCandidatesScored == 0 && q.FissionTileProjections == 0 && q.FissionProposals == 0, "five unpressured camps perform no validation, search or ecology projection");
-        var busy = World(true, new[] { 4, 4 }, new[] { 10, 4 }, new[] { 16, 4 }, new[] { 7, 10 }, new[] { 13, 10 }); foreach (var c in busy.Camps) { Explore(busy, c); c.QoL = .3; }
+        var busy = World(true, new[] { 4, 4 }, new[] { 10, 4 }, new[] { 16, 4 }, new[] { 7, 10 }, new[] { 13, 10 }); foreach (var c in busy.Camps) { Explore(busy, c); }
         Pass(busy, out var b);
         int ring = 18;
         Check(b.FissionSearches == 5 && b.FissionCandidatesScored <= b.FissionSearches * ring && b.FissionCandidatesScored > 0, "candidates per search are bounded by the ring at the fission radius (" + b.FissionCandidatesScored + ")");
         Check(b.FissionTileProjections <= b.FissionCandidatesScored * 7 && b.FissionTileProjections > 0, "tile projections are bounded by seven per candidate (" + b.FissionTileProjections + ")");
         // A cached destination is validated with one footprint and never searched while it remains valid.
-        var cached = World(true, new[] { 8, 8 }); Explore(cached, cached.Camps[0]); cached.Config.FissionSearchPush = .05; cached.Config.FissionThreshold = .9; cached.Camps[0].QoL = .7;
+        var cached = World(true, new[] { 8, 8 }); Explore(cached, cached.Camps[0]); Ratio(cached, cached.Camps[0], .9);
         Pass(cached, out var first); cached.Turn++; Pass(cached, out var second);
         Check(first.FissionSearches == 1 && second.FissionSearches == 0 && second.FissionValidations == 1 && second.FissionTileProjections <= 7 && second.FissionCandidatesScored == 0, "a valid cache costs one validation footprint");
         // The fission radius bounds the search: a radius-two search finds nothing because spacing is three.
-        var narrow = World(true, new[] { 8, 8 }); Explore(narrow, narrow.Camps[0]); narrow.Config.FissionRadius = 2; narrow.Camps[0].QoL = .3;
+        var narrow = World(true, new[] { 8, 8 }); Explore(narrow, narrow.Camps[0]); narrow.Config.FissionRadius = 2; 
         Check(Pass(narrow, out var nm) == null && nm.FissionCandidatesScored == 0, "a radius shorter than the camp spacing has no candidate");
-        var wide = World(true, new[] { 8, 8 }); Explore(wide, wide.Camps[0], 6); wide.Config.FissionRadius = 5; wide.Camps[0].QoL = .3; Pass(wide, out var wm);
+        var wide = World(true, new[] { 8, 8 }); Explore(wide, wide.Camps[0], 6); wide.Config.FissionRadius = 5;  Pass(wide, out var wm);
         Check(wm.FissionCandidatesScored > ring && wm.FissionCandidatesScored <= 3 * 5 * 6 - 3 * 2 * 3, "a wider radius scores the larger bounded disc outside the spacing");
     }
 
@@ -393,16 +606,16 @@ internal static class FissionChecks
 
     private static void Observations()
     {
-        var w = World(true, new[] { 8, 8 }, new[] { 20, 12 }); var parent = w.Camps[0]; Explore(w, parent); parent.QoL = .68; parent.FissionPolicy = FissionPolicy.Neutral;
+        var w = World(true, new[] { 8, 8 }, new[] { 20, 12 }); var parent = w.Camps[0]; Explore(w, parent); parent.FissionPolicy = FissionPolicy.Neutral;
         parent.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Potter, Population = 5 });
         // A cached destination is visible to its owner only.
-        w.Config.FissionThreshold = .95; Pass(w, out _);
+        Ratio(w, parent, .9); Pass(w, out _);
         var cached = parent.FissionDestination; Check(cached != null, "a destination is cached for the owner");
         var own = new AgentObservationBuilder().Build(w, 0); var foreign = new AgentObservationBuilder().Build(w, 1);
         Check(own.Settlements.Single().FissionDestination == cached.Tile && foreign.Settlements.Single().FissionDestination == -1 && foreign.Settlements.Single().Id != parent.Id, "a cached destination appears only in its owner's observation");
         // Found two daughters and inspect lineage and kin.
-        w.Config.FissionThreshold = .2; parent.FissionPolicy = FissionPolicy.Encourage; parent.Population = 100; Pass(w, out _);
-        parent.FissionPolicy = FissionPolicy.Discourage; w.Turn++; parent.QoL = .3; parent.Population = 100; Pass(w, out _);
+        Pressure(w, 0); w.Config.FissionGainThreshold = 5; /* Neutral daughters stay put */ parent.FissionPolicy = FissionPolicy.Encourage; parent.Population = 100; Pass(w, out _);
+        parent.FissionPolicy = FissionPolicy.Discourage; w.Turn++; parent.Population = 100; Pass(w, out _);
         var kids = w.Societies.Where(s => s.ParentSociety == parent.SocietyId).OrderBy(s => s.Id).ToArray(); Check(kids.Length == 2, "two daughters exist");
         var parentView = new AgentObservationBuilder().Build(w, 0);
         Check(parentView.ParentSociety == 0 && parentView.KinAffinity == 0 && parentView.KinRelations.Count == 2 && parentView.KinRelations.All(k => k.Relation == KinRelation.Daughter) && parentView.KinRelations.Select(k => k.Affinity).OrderBy(x => x).SequenceEqual(new[] { .5, 1 }), "the parent sees its daughters with their affinities");
@@ -424,8 +637,8 @@ internal static class FissionChecks
     private static string Key(WorldState w) => SaveCodec.Fingerprint(w);
     private static void Persistence()
     {
-        var w = World(true, new[] { 8, 8 }, new[] { 20, 12 }); var parent = w.Camps[0]; Explore(w, parent); parent.QoL = .3; parent.FissionPolicy = FissionPolicy.Encourage; w.Config.FissionSearchPush = .05;
-        w.Camps[1].QoL = .72; Explore(w, w.Camps[1]); w.Config.FissionThreshold = .45; // camp 1 caches (F .15*... below), camp 0 founds
+        var w = World(true, new[] { 8, 8 }, new[] { 20, 12 }); var parent = w.Camps[0]; Explore(w, parent); parent.FissionPolicy = FissionPolicy.Encourage;
+        Explore(w, w.Camps[1]); w.Config.FissionGainEncourage = 0; w.Config.FissionGainThreshold = Fission.EstimateSplit(w, w.Camps[1], FissionPolicy.Neutral).Gain / .9; // camp 1 (Neutral) caches, camp 0 (Encourage) founds
         Pass(w, out _); w.History.Add(record());
         w.Turn++;
         var loaded = SaveCodec.Load(SaveCodec.Save(w));
@@ -463,7 +676,7 @@ internal static class FissionChecks
     private static WorldState Busy(bool crowded = true)
     {
         var w = crowded ? World(true, new[] { 3, 3 }, new[] { 9, 3 }, new[] { 15, 3 }, new[] { 3, 10 }, new[] { 9, 10 }, new[] { 15, 10 }) : World(48, 32, true, new[] { 6, 6 }, new[] { 30, 6 }, new[] { 18, 22 });
-        w.Config.FissionQoL = 1.5; w.Config.FissionThreshold = .2; w.Config.AnnualHumanGrowthRate = 0; w.Turn = 1; w.Days = 0; foreach (var t in w.Tiles) t.LastEcologyUpdateDays = 0;
+        Pressure(w, 0); w.Config.AnnualHumanGrowthRate = 0; w.Turn = 1; w.Days = 0; foreach (var t in w.Tiles) t.LastEcologyUpdateDays = 0;
         foreach (var c in w.Camps) { Explore(w, c, crowded ? 5 : 9); c.Population = 160; c.PlantFood = 40000; }
         return w;
     }
@@ -504,7 +717,7 @@ internal static class FissionChecks
             Check(r.Camps.Sum(r.LinkedPopulation) == people, "the people ledger is conserved over turn " + t);
         }
         // Real Paleolithic worlds: a generated opening founds settlements only from vision, stays deterministic and keeps invariants.
-        var cfg = SimulationConfig.Small(6); cfg.FissionEnabled = true; cfg.FissionQoL = 1.5;
+        var cfg = SimulationConfig.Small(6); cfg.FissionEnabled = true; cfg.FissionGainThreshold = cfg.FissionGainDiscourage = cfg.FissionGainEncourage = 0;
         var g1 = new WorldGenerator().Generate(3, cfg); var g2 = new WorldGenerator().Generate(3, cfg);
         g2.Camps.Reverse(); g2.Societies.Reverse();
         var policy = new HeuristicTribePolicy(); var builder = new AgentObservationBuilder();

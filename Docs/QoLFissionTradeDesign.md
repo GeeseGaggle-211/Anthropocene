@@ -201,6 +201,10 @@ P_push = clamp((Q_fiss − Q_home) / ΔQ_fiss, 0, 1)
 `Q_fiss` is the QoL level below which the pressure to separate becomes
 meaningful. This is a smooth push rather than a hard population threshold.
 
+**Superseded by WP10c.** The shipped push is crowding plus expected gain: the stayers'
+expected QoL gain `G = Q_after / Q_now - 1` against a per-policy threshold, with a daughter
+check (see [Fission.md](Fission.md)). This section is kept as the design record.
+
 ### 3.3 Destination desirability
 
 ```

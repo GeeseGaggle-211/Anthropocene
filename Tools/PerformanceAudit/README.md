@@ -173,6 +173,7 @@ fission-off control replays the pre-fission outcomes exactly. Each per-turn samp
 `societyCount` and `playerCount` (the live player slots), `fissionCount` and `fissionEvents` (parent, daughter,
 tile, sizes, regime, policy, push, desirability, score, affinity, animals moved), the fission pass work counts
 (`fissionSearches`, `fissionCandidates`, `fissionValidations`, `fissionTileProjections`, `fissionInvalidations`,
-`fissionProposals`, `fissionDropped`) and `fissionMs`. Because fission lengthens the opening to up to 12 turns
+`fissionProposals`, `fissionDropped`, `fissionDaughterChecks`, `fissionDaughterBlocked`) and `fissionMs`; events also carry the expected
+`Gain` and estimated `DaughterQoL`. `--fission-housing-relief=0..1` overrides `FissionHousingRelief` (WP10c). Because fission lengthens the opening to up to 12 turns
 (a late Paleolithic daughter must also complete), size `--post-opening-turns` for a fixed total turn count.
 The reproducible commands and results are in [Fission.md](../../Docs/Fission.md).

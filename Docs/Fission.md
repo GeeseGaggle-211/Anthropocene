@@ -1,4 +1,4 @@
-# Fission (WP10a)
+# Fission (WP10a, push recalibrated in WP10c)
 
 Design: [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) 3.1-3.6, 6.4, 9;
 order of work: [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md) WP10.
@@ -6,16 +6,20 @@ Source: `Assets/_Anthropocene/Simulation/Fission.cs`. Checks:
 `Tools/Headless/FissionChecks.cs`. Immigration is WP10b and is not part of this
 package. Pass contract: [TurnResolutionPasses.md](TurnResolutionPasses.md), Close row.
 
-**Status: opt-in.** `FissionEnabled` is false by default and in `OpeningConfig.json`
-until the levers are calibrated (WP11): at the design levers fission founds 615
-daughters in 50 turns on Standard/80, splits agricultural camps at a median of
-143 residents and Paleolithic camps at 40-53 (design onsets about 600 and 101),
-and multiplies population about 7x (measurements below).
+**Status: opt-in.** `FissionEnabled` is false by default and in `OpeningConfig.json`.
+WP10a's push (`clamp((Q_fiss - Q) / DeltaQ)`) fired whenever total QoL was low, so camps split at any size
+(agricultural parents at a median of 143 residents against a design size near 600, Paleolithic 40-53 against
+about 101, population about 7x). WP10c replaces it with **crowding plus expected gain**: a camp splits only if
+the stayers' QoL would rise by at least a per-policy threshold once the daughter leaves, and the daughter
+would not be much worse off. The thresholds are calibrated analytically to the design onset sizes (table
+below). The measured result is mixed and is the main finding of WP10c: with the specified rule the stayers'
+housing relief dominates the gain, so agricultural camps still split at a median of 141 residents; counting
+cohesion and clothing only (`FissionHousingRelief = 0`) reproduces the design onset (median 906). See
+"Measurements (WP10c)".
 
-A camp whose committed quality of life (QoL) has fallen below `Q_fiss` may send a
-coherent kin group to a viable empty site. The group founds a new Society in a new
-AI player slot. The parent keeps its site, fields, fixed Housing and controller; the
-player keeps the original camp and never controls a daughter.
+A camp whose split would raise its stayers' QoL enough may send a coherent kin group to a viable empty
+site. The group founds a new Society in a new AI player slot. The parent keeps its site, fields, fixed Housing
+and controller; the player keeps the original camp and never controls a daughter.
 
 ## Doctrine summary
 
@@ -34,7 +38,7 @@ player keeps the original camp and never controls a daughter.
   recomputes next turn. Nothing is integrated over sub-turn time, and a daughter
   cannot itself fission in the turn it is founded.
 - **Scaling law.** `T = O(C + F_v * footprint + F_s * ring * footprint + P)` where `C`
-  is camps (one push test each), `F_v` camps with push > 0 and a feasible daughter
+  is camps (one closed-form gain estimate each: a fixed-Housing lookup and a few exponentials), `F_v` camps with `G >= 0.8 G*` and a feasible daughter
   that hold a cache (one footprint validation, at most 7 tile projections), `F_s` camps
   above the search threshold without a valid cache (at most the ring at distance
   `FissionRadius`, 18 tiles at radius 3, each one footprint) and `P` proposals
@@ -65,7 +69,7 @@ Every assumption of a fixed player count was checked before building.
 | `Config.Players` | Used only by generation (start count, `Validate` bound against map size) and by tools. It stays the *initial* count. `WorldState.PlayerCount` is the live count; `LivePlayers` and `AllocatePlayer` are the only readers. |
 | Dense per-player state | None. Players are an `int` on `Camp`, `Society`, `Hunter`; `PlanningIndex`, `AiPlanning.Decide` and `TurnPlanner.Prepare` group camps by player. Adding a player adds dictionary entries, not arrays. |
 | Visibility, observations, AI loops | Per-player and per-turn, from the committed world. New slots are picked up automatically; `TurnPlanner.Draft` and `Prepare` are unchanged and draft reuse stays exact (a daughter exists only after Close). |
-| Era progression | Per-Society days from `EraStartDays`; majority eligibility (200 years) and forced completion (240) contain no count of players. A daughter copies its parent's progression, so a daughter of a Paleolithic parent is forced no later than the parent. `WorldState.Finished` (all camps past the opening) is therefore still reached by turn 12; it can be reached one or two turns later than before because a late Paleolithic daughter must also complete. |
+| Era progression | Per-Society days from `EraStartDays`; majority eligibility (200 years) and forced completion (240) contain no count of players. A daughter copies its parent's progression. WP10a let a late Paleolithic daughter hold `WorldState.Finished` open; since WP10c `Finished` is decided by founding Societies only (see Rules, opening status). |
 | History and records | `TurnRecord` lists are keyed by camp ID and already tolerate camps appearing; a daughter has no demographic report in the turn it is founded. |
 | Save codec | Optional fields only. `Fingerprint` and the metadata copy include `PlayerCount`. Older saves: no lineage, policy, destination or player count; config loads with `FissionEnabled = false` (as `PlannerFulfilment` loads Uniform) so they continue exactly. |
 | `PlaytestScenarios`, presets | Select start camps by exchanging ownership at generation; generation is unchanged. They check `Config.Players`, the initial count. |
@@ -75,27 +79,48 @@ No assumption needed a redesign, so the work proceeded.
 
 ## Rules
 
-- **Policy** (`Kinship`): reluctance shifts `Q_fiss` by -0.05 / 0 / +0.05, the
+- **Policy** (`Kinship`): the gain threshold is `FissionGainDiscourage` / `FissionGainThreshold` /
+  `FissionGainEncourage` (0.080 / 0.113 / 0.0955), the
   daughter takes 15 / 30 / 40 percent of the residents (integer arithmetic,
   `floor(N * pct / 100)`) and its affinity with the parent is 0.5 / 0.9 / 1.0. The
   policy never forces fission. A player sets it with `Order(FissionPolicy, camp,
   target: policy)`, which may accompany one ordinary order for the same camp (two
   policy orders for one camp conflict). It is committed at the start of resolution,
   so it applies to that turn's pass. The heuristic policy never issues it.
-- **Push.** `P = clamp((Q_fiss + shift - Q_home) / FissionQoLWidth, 0, 1)` from the
-  camp's committed `QoL`.
+- **Push (WP10c): crowding plus expected gain.** `Fission.EstimateSplit` is pure and uses the camp's committed
+  terms with the same formulas as `NeolithicProduction.ResolveNeeds`. For `N` residents and daughter
+  `N_d = floor(N f(p))` (exact fraction `f = N_d / N`): food and water ratios `F`, `W` and the expectation `E`
+  are unchanged; clothing coverage is unchanged (Cloth and Animal Fabric split in proportion); social cohesion is
+  `S(N - N_d)` for the regime scale `N_s`; housing per head is
+  `min(1, (fixed + portable (1 - f)) * HousingPeoplePerUnit / (N - N_d))` because the parent keeps all fixed Housing
+  and portable Light Housing splits in proportion (weighted by `FissionHousingRelief`, default 1). With
+  `Q = F W (w_c cloth + w_h housing) S` and each coverage `1 - E (1 - c)`:
+  `G = Q_after / Q_now - 1`. Both qualities are evaluated at the post-demography snapshot (`Q_now` is the
+  formula at the present residents, not the stored `QoL`, so births after the needs cohort do not bias the gain).
+  If `Q_now = 0` (no food, or no coverage at all) the relative gain is undefined and the documented fallback is
+  the cohesion gain `S_after / S_now - 1`, the gain a unit-coverage camp would have; a destitute crowded camp
+  therefore still feels crowding. The diagnostic push is `P = clamp(G / G*, 0, 1)`.
+  With full goods coverage and `B = 1`, `G = exp((N^2 - (N - N_d)^2) / N_s^2) - 1` for `beta = 2`, and `F`,
+  `W` and partial coverage cancel unless the split changes housing per head.
+- **Daughter check** ("would part of this population be better off"). The daughter's estimated QoL at a viable
+  site (`F = W = 1`, clothing coverage unchanged, housing from its portable share only, `S(N_d)`, and the
+  expectation the game applies after a move: stationary years reset to zero then one turn elapses) must be at
+  least `Q_now - FissionDaughterMargin` (0.05). It is evaluated only for a camp whose gain reaches `G*` and
+  that holds a valid destination, and its binding is counted (`FissionDaughterChecks`, `FissionDaughterBlocked`).
 - **Daughter.** `N_daughter = floor(N * f)`. It must be at least
   `FissionMinimumDaughter` (12), smaller than the parent that remains, and leave the
   parent at least `MinimumCamp`. Hunters stay with the parent.
-- **Cached destination.** Searched only when `P > FissionSearchPush` (default equal to
-  `FissionThreshold`) and no valid cache exists. Candidates are traversable land
+- **Cached destination.** Searched only when `G >= FissionSearchFraction * G*` (0.8) and no valid cache exists. Candidates are traversable land
   tiles (gameplay levels 1-9) within `FissionRadius` that the Society can know and
   that are at least `MinimumCampSpacing` from every camp (ground truth, which is a
   superset of own, visible and contact camps: a settling group finds a neighbour
   before it founds beside it). Known means: Paleolithic, current vision only (camps
   and hunter groups); after the first breakthrough, current vision plus explored
   tiles. With the default spacing 3 and radius 3 this is the ring at distance 3. The
-  best tile by `D` wins, ties by tile ID; nothing is reranked while the cache is valid.
+  best tile wins by `D` (capped at one) descending, then the uncapped ecological support ratio (footprint supply
+  before the labor ceiling, over the daughter's need) descending, then hex distance, then tile ID; `D` saturates
+  at one on most sites, so the second key keeps the choice from defaulting to low tile IDs. Nothing is reranked
+  while the cache is valid.
   It is invalidated when the regime changes (even with no push), when a camp now stands
   on it or within spacing of it, or when `D` falls below the start-viability
   threshold (`StartViability / 100`, 0.85).
@@ -115,7 +140,8 @@ No assumption needed a redesign, so the work proceeded.
   ceiling. These are planning estimates from projected ecology, not forecasts of
   realized harvest. The regime is `Fission.RegimeOf` (the same split as the cohesion
   scale).
-- **Proposal.** `F = P * D > FissionThreshold`, plus the size rules above.
+- **Proposal.** `G >= G*(policy)`, a valid cached destination (`D >= StartViability / 100`), the daughter check and
+  the size rules above.
 - **Reconcile and commit.** Canonical camp-ID order. A proposal whose tile is the same
   as, or within spacing of, an earlier commit is dropped this turn and keeps its cache
   for revalidation next turn (there is no rerouting). Commit creates, in this order:
@@ -139,6 +165,13 @@ No assumption needed a redesign, so the work proceeded.
   are stored on the daughter. Two daughters of one parent take the lower of their two
   stored affinities, **derived** in `Kinship.Affinity`, never stored. Kinship is first
   degree only (parent, daughter, sibling); anything else is zero. Affinity is inert.
+- **Opening status (WP10c).** A daughter inherits every field the opening logic reads (era, technology,
+  progression clock and completion fields, forced/secondary transition state, `OpeningTransitionProcessed`,
+  transition seeds), so a Paleolithic parent's daughter is Paleolithic and a Neolithic parent's is Neolithic.
+  `WorldState.Finished` is decided by **founding Societies only** (`ParentSociety == 0`): a daughter never delays
+  the end of the opening. Rejected alternative: making daughters follow their root ancestor's breakthrough,
+  which would grant an unearned technology. A late Paleolithic daughter still breaks through under the same
+  rules (mastery, maturity, forced at 240 years) after the opening has ended.
 - **Economy.** The daughter copies the parent's economic settings and runs continuous
   automation so the AI economy starts at once. Its fission policy is Neutral and it
   has no destination.
@@ -155,7 +188,122 @@ player, relation, affinity; no location, stores or population). A foreign daught
 appears only through ordinary vision and contacts. `OrderRules`, `EntityActionMask` and
 `LegalActions` know `OrderKind.FissionPolicy` (three actions per settlement).
 
-## Measurements
+## Recalibration (WP10c)
+
+Decision rule: a camp proposes iff `G >= G*(policy)`, a viable destination is cached, the daughter check passes
+and the size rules hold (Rules above). Because `F`, `W` and coverage cancel in `G` while housing per head is
+unchanged, the onset population is a property of `N_s`, the daughter fraction and `G*` alone. One threshold
+per policy therefore fits every regime (the design's onsets share `N / N_s` near 0.46 for Neutral): with
+`(N / N_s)^2 (1 - (1 - f)^2) = ln(1 + G*)`, Neutral `G* = 0.113` (f 0.30), Discourage `0.080` (f 0.15) and
+Encourage `0.0955` (f 0.40). The three values are **not monotone in the policy**: the policy also sets the
+daughter fraction, and a smaller daughter delivers a smaller gain, so Discourage needs the lowest threshold to
+produce the latest onset. They are separate fields rather than multipliers for that reason.
+
+Achieved onsets under full goods coverage (`FissionChecks.Onset`: the smallest `N` whose daughter is at least
+12, smaller than the stayers and whose gain reaches `G*`; the closed form with integer daughters):
+
+| Regime (N_s) | Policy | Design N* | Achieved onset | Residual |
+| --- | --- | ---: | ---: | ---: |
+| Paleolithic (220) | Neutral / Discourage / Encourage | 101 / 116 / 83 | 102 / 119 / 84 | +1.0% / +2.6% / +1.2% |
+| Nomadic (550) | Neutral / Discourage / Encourage | 252 / 291 / 208 | 254 / 293 / 208 | +0.8% / +0.7% / 0.0% |
+| Agricultural (1,780) | Neutral / Discourage / Encourage | 607-999 / 770-1,105 / 398-887 | 817 / 940 / 673 | inside every band (design median about 803 for Neutral: +1.7%) |
+
+Every residual is below 3%, so no per-regime threshold is needed. Checks assert the Paleolithic and Nomadic
+onsets within 3% and the Agricultural onsets inside the design bands.
+
+## Measurements (WP10c)
+
+Container: 4 cores, .NET 8, `Tools/PerformanceAudit` at the WP10c working tree, `--workers=4
+--partition-size=64 --warmup=0 --details=1 --fingerprints=0 --production-config=1`, Standard/80 tribes, 12
+requested opening turns then 50 post-opening turns. Raw reports: ignored `TestResults/WP10c/{on,relief0,off}-<world>.json`
+(`on` is the shipped rule, `relief0` is `--fission-housing-relief=0`, `off` is `--fission=0` on the same binary).
+
+```
+dotnet build -c Release Tools/PerformanceAudit/Anthropocene.PerformanceAudit.csproj -o TestResults/WP10c/bin
+dotnet TestResults/WP10c/bin/Anthropocene.PerformanceAudit.dll --players=80 --seed=S --shape=SH --production-config=1 \
+  --turns=12 --post-opening-turns=50 --workers=4 --partition-size=64 --warmup=0 --details=1 --metrics=0 \
+  --fingerprints=0 --fission=1 [--fission-housing-relief=0] --output=TestResults/WP10c/<mode>-SH-S.json
+```
+
+Five worlds: Continents 1, 2, 3, Pangaea 1, Archipelagos 1. The opening ended on the same turn with fission on
+and off in every world (10, 10, 10, 11, 11): daughters no longer delay `Finished` (WP10a: 10 to 12).
+
+| World | Fissions (rule / relief 0) | Camps = players at final turn (rule / relief 0 / off) | Population at final turn (rule / relief 0 / off) | Population x off (rule / relief 0) |
+| --- | ---: | --- | --- | --- |
+| Continents 1 | 585 / 382 | 665 / 462 / 80 | 639,579 / 553,092 / 87,859 | 7.3 / 6.3 |
+| Continents 2 | 559 / 366 | 639 / 446 / 80 | 556,837 / 478,646 / 81,025 | 6.9 / 5.9 |
+| Continents 3 | 482 / 306 | 562 / 386 / 80 | 487,534 / 422,739 / 80,878 | 6.0 / 5.2 |
+| Pangaea 1 | 567 / 326 | 647 / 406 / 80 | 611,403 / 481,353 / 90,798 | 6.7 / 5.3 |
+| Archipelagos 1 | 448 / 239 | 528 / 319 / 80 | 459,778 / 327,892 / 87,223 | 5.3 / 3.8 |
+| Total | 2,641 / 1,619 | | | |
+
+The final turn is turn 60 (Pangaea and Archipelagos: 61, because their opening took 11 turns).
+
+Fissions by regime (all Neutral: the heuristic AI never changes a policy). Paleolithic and Nomadic: none in any
+world. Paleolithic camps never reach the onset during the opening (the largest Paleolithic camp in Continents 1
+and 2 was 60 and 74 residents, against the Neutral onset of 102 and the Encourage onset of 84) because every
+founder breaks through by turn 10-11; every fission in these runs was classified Agricultural.
+
+| Rule | Regime | Fissions | Parent residents P25 / median / P75 (min-max) | Daughter P25 / median / P75 (min-max) |
+| --- | --- | ---: | --- | --- |
+| Specified (`FissionHousingRelief = 1`) | Agricultural | 2,641 | 58 / 141 / 511 (40-4,463) | 17 / 42 / 153 (12-1,338) |
+| Cohesion and clothing only (`= 0`) | Agricultural | 1,619 | 857 / 906 / 971 (817-4,011) | 257 / 271 / 291 (245-1,203) |
+
+Why the specified rule splits small camps: `Q = F W R S`, so a relative gain is governed by `R`, the
+clothing-and-housing term. An agricultural camp that chronically lags its housing (housing per head below about
+0.77 at full expectation) gains 13-15% in `R` as soon as 30% of its people leave, because the parent keeps all fixed
+Housing. The gain was 0.13-0.16 at the median in every turn group, against a cohesion-only gain of 0.0005-0.05 for
+camps of 50-600 residents: nearly every fission below about 800 residents was housing-driven. Parent medians by era for
+the specified rule (all worlds): 60 (turns 0-15), 115 (16-30), 493 (31-45), 655 (46-70).
+
+Daughter check: 3,313 camp-turns reached `G >= G*` with a valid destination and were tested; 512 (15.5%) were
+blocked (Continents 1-3: 87 of 707, 131 of 720, 136 of 647; Pangaea 88 of 697; Archipelagos 70 of 542). The
+daughter loses the parent's fixed Housing and so is often worse off than a well-housed parent. With relief 0 the
+check never binds (0 of 1,688).
+
+Final cohort at post-opening turn 50, pooled over the five worlds (population P25 / median / P75; QoL P25 / median /
+P75). Founders are the 80 starting Societies per world, daughters the rest.
+
+| Rule | Cohort | Agricultural (Cultivation): n, population, QoL | Husbandry (AnimalHusbandry): n, population, QoL |
+| --- | --- | --- | --- |
+| Off | founders | 280; 480 / 781 / 1,254; 0.53 / 0.71 / 0.91 | 106; 1,050 / 1,748 / 2,172; 0.20 / 0.34 / 0.64 |
+| Specified | founders | 280; 455 / 738 / 1,164; 0.55 / 0.77 / 0.92 | 106; 997 / 1,565 / 2,137; 0.23 / 0.44 / 0.72 |
+| Specified | daughters | 1,530; 344 / 616 / 1,041; 0.62 / 0.83 / 0.94 | 1,075; 579 / 1,002 / 1,645; 0.42 / 0.72 / 0.89 |
+| Specified | pooled | 1,810; 359 / 640 / 1,065; 0.61 / 0.82 / 0.94 | 1,181; 600 / 1,059 / 1,701; 0.39 / 0.70 / 0.89 |
+| Relief 0 | founders | 280; 480 / 744 / 1,240; 0.53 / 0.73 / 0.91 | 106; 1,032 / 1,719 / 2,168; 0.22 / 0.35 / 0.66 |
+| Relief 0 | daughters | 629; 591 / 916 / 1,264; 0.52 / 0.67 / 0.82 | 970; 713 / 1,187 / 1,745; 0.38 / 0.64 / 0.86 |
+| Relief 0 | pooled | 909; 556 / 883 / 1,263; 0.52 / 0.69 / 0.86 | 1,076; 724 / 1,222 / 1,806; 0.35 / 0.62 / 0.85 |
+
+A further 50 (specified) or 34 (relief 0) Watercraft camps are not tabulated (14 with fission off). Fission lifts
+husbandry QoL because the cohesion penalty at 1,500-2,000 residents disappears (founder median 0.34 to 0.44).
+
+Cost (median over all turns of AI + preparation + resolution; five-world totals):
+
+| Rule | Median turn ms by world (Cont 1 / 2 / 3, Pangaea, Archipelagos) | Median ms per camp | Peak managed heap MiB | Fission pass |
+| --- | --- | --- | --- | --- |
+| Off | 229 / 227 / 226 / 205 / 200 | 2.9 | 643 / 637 / 685 / 627 / 567 | none |
+| Specified | 816 / 779 / 618 / 634 / 611 | 1.7-2.0 | 858 / 797 / 830 / 859 / 705 | 2,381 ms of 224,092 ms (1.06%); 53,656 searches; 2,801 proposals, 160 dropped |
+| Relief 0 | 380 / 401 / 413 / 339 / 311 | not tabulated | 699 / 644 / 709 / 670 / 590 | 1,142 ms of 126,793 ms (0.90%); 22,428 searches; 1,688 proposals, 69 dropped |
+
+Turn time follows camps linearly (about 2 ms per camp), as in WP10a; the pass itself stays near 1% of turn time.
+
+### Findings (WP10c)
+
+- **The specified rule does not reach the design agricultural size.** Housing relief makes the gain a function of
+  the housing deficit, not of size. Setting `FissionHousingRelief = 0` restores the design: Agricultural parents
+  split at a median of 906 residents (P25 857, P75 971), inside the design 607-999 band and close to the
+  analytic onset of 817, with 39% fewer fissions and about 5.3x (specified rule: 6.4x) the control population. Decision needed: ship 0, or keep 1 and
+  make housing relief depend on the daughter's own housing (the daughter check already reports the asymmetry:
+  it blocks 15.5% of qualifying splits).
+- **Paleolithic and Nomadic onsets are met analytically but never exercised** in the 20-year opening: Paleolithic
+  camps stay below 84 residents until their breakthrough.
+- **Population still multiplies about 4 to 7x** because every daughter takes a fresh footprint and camps keep
+  growing exponentially; the recalibration changes when camps split, not how many independent footprints the map
+  supports.
+- **Destination order.** `D` saturates at one, so the order now falls through to the uncapped support ratio,
+  distance and tile ID (tested: a richer site beats a lower tile ID; a nearer site beats a farther one).
+
+## Measurements (WP10a, superseded push rule)
 
 All runs: this container (4 cores, .NET 8.0.31, Ubuntu), `Tools/PerformanceAudit` at the
 WP10a working tree, `--workers=4`, production config, `--fingerprints=0`. `--fission=0` is
@@ -246,7 +394,7 @@ at turn 23). Preparation grows with the number of automated camps (about 1.9 ms 
 against 1.5 at 320). Peak managed heap 2.36 GiB against 2.13 GiB (control). The world holds 1,412 MiB
 after load in both. Generation 34.1 s against 33.4 s.
 
-### Findings
+### Findings (WP10a)
 
 - **Paleolithic QoL sits at or below `Q_fiss` at any size.** A Paleolithic camp produces no clothing or
   housing, so the rudimentary term is `1 - E (1 - 0) = 0.75` at the 0.25 expectation floor (lower as
@@ -269,8 +417,9 @@ after load in both. Generation 34.1 s against 33.4 s.
 
 ## Deliberate limits
 
-- Calibration (`FissionQoL`, `FissionQoLWidth`, `FissionThreshold`, radius, minimum
-  daughter, per-regime `N*`) is WP11; nothing here is tuned.
+- The defaults are calibrated analytically to full goods coverage (table above); the realized size depends on
+  housing per head (see Findings). `FissionRadius`, `FissionMinimumDaughter` and the daughter fractions are
+  unchanged from WP10a and untuned.
 - Sites are scored from ground-truth ecology of the footprint; only the chosen tile
   reaches the owner's observation.
 - Immigration (WP10b), affinity decay, trade with kin (WP7-WP8) and the Elder (#23)
