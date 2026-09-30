@@ -38,10 +38,27 @@ coefficients. They do not create seasonal or annual world states.
   freeze connected food consumers. Connected hunters share biological food
   demand; disconnected hunters use carried provisions and local forage.
   Provision withdrawals and deposited returns change only the remaining
-  food target, not its prepared size. Consumption, full attainable operating
-  reserve, growth,
+  food target, not its prepared size. Consumption, the clothing-need fabric
+  feedstock, full attainable operating reserve, growth together with every
+  other manufacturing input,
   starvation grace, Fabric, Housing and QoL all apply to that cohort. Births
   and pending deaths commit only after production, needs and storage.
+- Clothing-need feedstock is paid ahead of the reserve refill. Its amount is
+  `NeolithicProduction.ClothingNeedFeedstock`: the plant food (Cloth) and animal
+  food (Animal Fabric) of the fabric covering
+  `max(0, residents * FabricConsumptionPerPersonTurn * years / ReferenceTurnYears
+  - Cloth stock - Animal Fabric stock)`, met in `ResolveNeeds` order (Cloth, then
+  Animal Fabric) and capped by the planned fabric output. `TurnNeeds` records it
+  (`PlantClothingFeedstock`, `AnimalClothingFeedstock`); its feedstock-harvest gap
+  may use inventory beyond this turn's meals (`NeolithicProduction.FeedstockGaps`),
+  while every other feedstock still needs inventory beyond meals, clothing and the
+  operating reserve. `PlanGrowth` pays the clothing part first (capped by typed
+  stock left after meals), so the reserve-refill and growth budget shrink by it even
+  when the reserve is short, and the remaining feedstock shares the growth budget as
+  before. `ConsumeCampFood` already protects the typed input from meals and growth
+  spending. The planner's envelopes use the same definition: the fabric recipes
+  funded as clothing need see food after meals, all other work sees food after the
+  reserve. No saved field is added.
 - Village status is saved camp state, decided at a turn boundary from the
   average intensity of its own fields over every traversable land tile within
   radius one. Village movement is an explicit abandonment decision by a

@@ -597,8 +597,18 @@ namespace Anthropocene.Simulation
             // Provision withdrawals and return deposits change the remaining
             // ledger, never this cohort's prepared consumption or reserve size.
             double netIncome = projectedFood - needs.OpeningCampFood;
-            double available = netIncome + 1e-8 >= priorityIncome && projectedFood + 1e-8 >= populationBase + needs.ReserveTarget
-                ? Math.Min(Math.Max(0, netIncome - priorityIncome), Math.Max(0, projectedFood - populationBase - needs.ReserveTarget))
+            // Order: consumption, then the clothing-need feedstock, then the
+            // operating-reserve refill, then growth together with every other
+            // manufacturing input. The clothing part is paid even when the
+            // reserve is short; it shrinks the refill and growth budget instead.
+            double clothingPlant = Math.Min(Math.Max(0, needs.PlantClothingFeedstock), Math.Max(0, camp.PlantFood));
+            double clothingAnimal = Math.Min(Math.Max(0, needs.AnimalClothingFeedstock), Math.Max(0, camp.AnimalFood + incomingAnimalFood));
+            double afterMeals = Math.Max(0, projectedFood - populationBase);
+            clothingPlant = Math.Min(clothingPlant, afterMeals);
+            clothingAnimal = Math.Min(clothingAnimal, Math.Max(0, afterMeals - clothingPlant));
+            double clothing = clothingPlant + clothingAnimal;
+            double available = netIncome + 1e-8 >= priorityIncome + clothing && projectedFood + 1e-8 >= populationBase + clothing + needs.ReserveTarget
+                ? Math.Min(Math.Max(0, netIncome - priorityIncome - clothing), Math.Max(0, projectedFood - populationBase - clothing - needs.ReserveTarget))
                 : 0;
             double maximumRate = camp.DeficitTurns > 0 ? 0 : w.Config.AnnualHumanGrowthRate * camp.DemographicGrowthMultiplier;
             GrowthPlan ForRate(double rate)
@@ -614,6 +624,7 @@ namespace Anthropocene.Simulation
                 // prevents unavailable plant feedstock from suppressing births.
                 double plantInput = Math.Min(needs.PlantFeedstock, Math.Max(0, camp.PlantFood));
                 double animalInput = Math.Min(needs.AnimalFeedstock, Math.Max(0, camp.AnimalFood + incomingAnimalFood));
+                plantInput = Math.Max(plantInput, clothingPlant); animalInput = Math.Max(animalInput, clothingAnimal);
                 return new GrowthPlan { Required = populationBase + growthFood, ConsumptionRequired = populationBase, GrowthFood = growthFood, ReproductivePopulation = reproductivePopulation, FinalPopulation = finalPopulation, PlantManufacturingInput = plantInput, AnimalManufacturingInput = animalInput, ManufacturingInput = plantInput + animalInput };
             }
             // The integer birth outcome is the Fabric customer. Search the monotone
@@ -626,14 +637,16 @@ namespace Anthropocene.Simulation
                 {
                     double rate = (low + high) * .5;
                     var plan = ForRate(rate);
-                    if (plan.GrowthFood + plan.ManufacturingInput <= available + 1e-8) low = rate; else high = rate;
+                    if (plan.GrowthFood + plan.ManufacturingInput - clothing <= available + 1e-8) low = rate; else high = rate;
                 }
             }
             var result = ForRate(low);
             double manufacturingBudget = Math.Max(0, available - result.GrowthFood);
-            result.PlantManufacturingInput = Math.Min(result.PlantManufacturingInput, manufacturingBudget);
-            manufacturingBudget -= result.PlantManufacturingInput;
-            result.AnimalManufacturingInput = Math.Min(result.AnimalManufacturingInput, manufacturingBudget);
+            double otherPlant = Math.Min(result.PlantManufacturingInput - clothingPlant, manufacturingBudget);
+            manufacturingBudget -= otherPlant;
+            double otherAnimal = Math.Min(result.AnimalManufacturingInput - clothingAnimal, manufacturingBudget);
+            result.PlantManufacturingInput = clothingPlant + Math.Max(0, otherPlant);
+            result.AnimalManufacturingInput = clothingAnimal + Math.Max(0, otherAnimal);
             result.ManufacturingInput = result.PlantManufacturingInput + result.AnimalManufacturingInput;
             return result;
         }

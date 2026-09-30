@@ -58,8 +58,10 @@ namespace Anthropocene.Simulation
             int reservedHerdersForForecast = demand.ReservedHerders, consumers = demand.Consumers;
             var managedFood = demand.ManagedFood; var sources = demand.Sources; var accessible = demand.Accessible;
             var recipes = demand.Recipes; var goods = demand.Goods; var goals = demand.Goals; var preview = demand.Preview;
-            double sparePlant = demand.SparePlant, plantEnvelope = demand.PlantEnvelope, animalEnvelope = demand.AnimalEnvelope;
+            double plantEnvelope = demand.PlantEnvelope, animalEnvelope = demand.AnimalEnvelope;
             double foodRoomEnvelope = demand.FoodRoomEnvelope, housingMultiplier = demand.HousingMultiplier;
+            // Clothing-need feedstock alone is funded from food after this turn's meals (before the reserve).
+            double clothingPlantEnvelope = demand.PlantEnvelopeClothing, clothingAnimalEnvelope = demand.AnimalEnvelopeClothing, clothingRoomEnvelope = demand.FoodRoomEnvelopeClothing;
             bool HasRetainedExpansionGain() => demand.HasRetainedExpansionGain();
             var valueRule = rule as ValueFulfilment;
             var order = demand.Order;
@@ -89,7 +91,7 @@ namespace Anthropocene.Simulation
                 var candidate = Preview(c, intent, nextPopulation);
                 NeolithicProduction.DepreciateHousing(w, candidate, years);
                 double candidateLightHousing = candidate.Inventory.LightHousingUnits;
-                if (husbandryEnabled) { candidate.PlantFood = plantEnvelope; candidate.AnimalFood = animalEnvelope; }
+                if (husbandryEnabled) { candidate.PlantFood = Math.Max(plantEnvelope, clothingPlantEnvelope); candidate.AnimalFood = Math.Max(animalEnvelope, clothingAnimalEnvelope); }
                 if (husbandryEnabled && NeolithicProduction.Priority(preview, CraftGood.LightHousing) > 0 && c.Population > reservedHerders)
                     candidate.Workforce.Assignments.Add(new PopulationAssignment { Role = c.People.HasTech(NeolithicTech.Construction) ? WorkforceRoles.Builder : WorkforceRoles.Craftsperson, Population = 1 });
                 var room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]);
@@ -102,6 +104,7 @@ namespace Anthropocene.Simulation
                 double animalFabric = Math.Max(0, c.Inventory.AnimalFabric);
                 double housingMaterial = Math.Max(0, c.Inventory.HousingMaterial);
                 double foodRoom = foodRoomEnvelope;
+                double clothingPlant = clothingPlantEnvelope, clothingAnimal = clothingAnimalEnvelope, clothingRoom = clothingRoomEnvelope, clothingLeft = demand.ClothingNeedUnits;
                 var requested = recipes.ToDictionary(r => r.Good, r => 0d);
                 var futureRoles = new Dictionary<string, double>();
                 int proposedFarmers = 0;
@@ -135,9 +138,20 @@ namespace Anthropocene.Simulation
                         amount = materialPlan.LimitDirect(room[MaterialId.Wood], room[MaterialId.Clay], r, amount);
                     if (r.ConstructionMaterial > 0)
                         amount = materialPlan == null ? 0 : materialPlan.LimitHousing(room[MaterialId.Wood], room[MaterialId.Clay], amount, r.ConstructionMaterial, out _, out _);
+                    double unfunded = amount;
                     if (r.PlantFood > 0) amount = Math.Min(amount, plant / r.PlantFood);
                     if (r.AnimalFood > 0) amount = Math.Min(amount, animal / r.AnimalFood);
                     if (husbandryEnabled && r.PlantFood + r.AnimalFood > 0) amount = Math.Min(amount, foodRoom / (r.PlantFood + r.AnimalFood));
+                    bool fabric = r.Good == CraftGood.Cloth || r.Good == CraftGood.AnimalFabric;
+                    if (fabric && clothingLeft > Epsilon)
+                    {
+                        // Fabric that covers this turn's clothing need is paid before the reserve refill.
+                        double clothes = Math.Min(unfunded, clothingLeft);
+                        if (r.PlantFood > 0) clothes = Math.Min(clothes, clothingPlant / r.PlantFood);
+                        if (r.AnimalFood > 0) clothes = Math.Min(clothes, clothingAnimal / r.AnimalFood);
+                        if (husbandryEnabled && r.PlantFood + r.AnimalFood > 0) clothes = Math.Min(clothes, clothingRoom / (r.PlantFood + r.AnimalFood));
+                        amount = Math.Max(amount, clothes);
+                    }
                     if (r.AnimalFabric > 0) amount = Math.Min(amount, animalFabric / r.AnimalFabric);
                     if (r.HousingMaterial > 0) amount = Math.Min(amount, housingMaterial / r.HousingMaterial);
                     if (debit)
@@ -149,9 +163,13 @@ namespace Anthropocene.Simulation
                             room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= clay;
                         }
                         materialPlan?.CompleteDirect(r, amount);
-                        plant -= amount * r.PlantFood;
-                        animal -= amount * r.AnimalFood;
-                        foodRoom -= amount * (r.PlantFood + r.AnimalFood);
+                        plant = Math.Max(0, plant - amount * r.PlantFood);
+                        animal = Math.Max(0, animal - amount * r.AnimalFood);
+                        foodRoom = Math.Max(0, foodRoom - amount * (r.PlantFood + r.AnimalFood));
+                        clothingPlant = Math.Max(0, clothingPlant - amount * r.PlantFood);
+                        clothingAnimal = Math.Max(0, clothingAnimal - amount * r.AnimalFood);
+                        clothingRoom = Math.Max(0, clothingRoom - amount * (r.PlantFood + r.AnimalFood));
+                        if (fabric) clothingLeft = Math.Max(0, clothingLeft - amount);
                         animalFabric += r.Good == CraftGood.AnimalFabric ? amount : 0;
                         animalFabric -= amount * r.AnimalFabric;
                         housingMaterial += r.Good == CraftGood.HousingMaterial ? amount : 0;
@@ -334,6 +352,7 @@ namespace Anthropocene.Simulation
                 animalFabric = Math.Max(0, c.Inventory.AnimalFabric);
                 housingMaterial = Math.Max(0, c.Inventory.HousingMaterial);
                 foodRoom = foodRoomEnvelope;
+                clothingPlant = clothingPlantEnvelope; clothingAnimal = clothingAnimalEnvelope; clothingRoom = clothingRoomEnvelope; clothingLeft = demand.ClothingNeedUnits;
                 // Match production's role/recipe ordering and share one tool-time budget.
                 var orderedRecipes = ProductionOrder.Sort(recipes, good => NeolithicProduction.Priority(candidate, good), order);
                 // The candidate is fixed through this pass: one schedule run
@@ -442,14 +461,14 @@ namespace Anthropocene.Simulation
                     forecastPlantFeedstock = Math.Min(forecastPlantFeedstock, typedFeedstock.PlantFood);
                     forecastAnimalFeedstock = Math.Min(forecastAnimalFeedstock, typedFeedstock.AnimalFood);
                 }
-                double feedstock = Math.Max(0, forecastPlantFeedstock - sparePlant);
-                if (husbandryEnabled)
-                {
-                    double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, consumers, intervals), NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, intervals, years));
-                    double spareFood = Math.Max(0, c.Food - consumers * cfg.Consumption * intervals - reserve);
-                    double spareAnimal = Math.Min(c.AnimalFood, Math.Max(0, spareFood - sparePlant));
-                    feedstock += Math.Max(0, forecastAnimalFeedstock - spareAnimal);
-                }
+                var clothingFeedstock = NeolithicProduction.ClothingNeedFeedstock(n, preview.Population, years,
+                    c.Inventory.Cloth, c.Inventory.AnimalFabric, forecastPlantFeedstock, forecastAnimalFeedstock);
+                double feedstockReserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, consumers, intervals), NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, intervals, years));
+                NeolithicProduction.FeedstockGaps(c.Food, c.PlantFood, husbandryEnabled ? c.AnimalFood : 0, demand.Meals, feedstockReserve,
+                    forecastPlantFeedstock, husbandryEnabled ? forecastAnimalFeedstock : 0,
+                    new NeolithicProduction.ClothingFeedstock { Plant = clothingFeedstock.Plant, Animal = husbandryEnabled ? clothingFeedstock.Animal : 0 },
+                    out double plantGap, out double animalGap);
+                double feedstock = plantGap + animalGap;
                 double foodTarget = Math.Min(forageAfterHerds, Math.Max(0, biological + feedstock - managedFood.AnimalFood));
                 double farmRate = cfg.FarmerProductivity * cfg.GatherPerPerson * intervals;
                 int nonFarmWorkers = intent.Assignments.Where(a => a.Role != WorkforceRoles.Farmer).Sum(a => a.Population);

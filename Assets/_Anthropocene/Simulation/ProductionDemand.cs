@@ -244,6 +244,9 @@ namespace Anthropocene.Simulation
         public int LadderSteps;
         public double LadderWorkerYearsUntruncated;
         public double Meals, OperatingReserve, SparePlant, PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope, HousingMultiplier;
+        // The same envelopes measured after this turn's meals only (not the operating reserve):
+        // they fund just the clothing-need feedstock, NeolithicProduction.ClothingNeedFeedstock.
+        public double SparePlantClothing, PlantEnvelopeClothing, AnimalEnvelopeClothing, FoodRoomEnvelopeClothing, ClothingNeedUnits;
 
         private WorldState world;
         private bool? retainedExpansionPossible;
@@ -337,6 +340,12 @@ namespace Anthropocene.Simulation
                 double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, consumers, intervals), NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, intervals, years));
                 d.FoodRoomEnvelope = Math.Max(0, c.Food + d.Supply - consumers * cfg.Consumption * intervals - reserve);
             }
+            d.SparePlantClothing = Math.Min(c.PlantFood, Math.Max(0, c.Food - d.Meals));
+            d.PlantEnvelopeClothing = Math.Min(d.TerrestrialAfterHerds + d.SparePlantClothing, Math.Max(0, c.Food + d.Supply - d.Meals));
+            d.AnimalEnvelopeClothing = d.HusbandryEnabled
+                ? Math.Min(Math.Max(0, c.AnimalFood) + d.ManagedFood.AnimalFood, Math.Max(0, Math.Max(0, c.Food + d.Supply - d.Meals) - d.SparePlantClothing)) : 0;
+            d.FoodRoomEnvelopeClothing = d.HusbandryEnabled ? Math.Max(0, c.Food + d.Supply - d.Meals) : 0;
+            d.ClothingNeedUnits = NeolithicProduction.ClothingNeedUnits(n, d.Preview.Population, years, c.Inventory.Cloth, c.Inventory.AnimalFabric);
             d.HousingMultiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
             ClaimValuation.Apply(w, c, d);
             if (expansionClaim) ExpansionValuation.Apply(w, c, d);

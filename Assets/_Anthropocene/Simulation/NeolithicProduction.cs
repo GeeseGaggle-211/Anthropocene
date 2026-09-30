@@ -625,6 +625,49 @@ namespace Anthropocene.Simulation
             result.AnimalFood = planned[CraftGood.AnimalFabric];
             return result;
         }
+        // The food input of the fabric that covers this turn's clothing requirement.
+        // Requirement units are what ResolveNeeds consumes, less existing Cloth and
+        // Animal Fabric; planned output meets them in consumption order (Cloth, then
+        // Animal Fabric) and caps the result. This single definition is shared by the
+        // planner's envelopes and the resolver's needs, harvest claims and growth plan:
+        // it is paid after consumption and ahead of the operating-reserve refill.
+        public struct ClothingFeedstock
+        {
+            public double Plant, Animal;
+            public double Total => Plant + Animal;
+        }
+        public static double ClothingNeedUnits(NeolithicConfig n, double residents, double years, double clothStock, double animalFabricStock)
+            => Math.Max(0, residents * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears
+                - Math.Max(0, clothStock) - Math.Max(0, animalFabricStock));
+        public static ClothingFeedstock ClothingNeedFeedstock(NeolithicConfig n, double residents, double years,
+            double clothStock, double animalFabricStock, double plannedPlantFeedstock, double plannedAnimalFeedstock)
+        {
+            double units = ClothingNeedUnits(n, residents, years, clothStock, animalFabricStock);
+            double perCloth = n.PlantFoodPerFabricUnit;
+            double clothUnits = perCloth > 0 ? Math.Min(units, Math.Max(0, plannedPlantFeedstock) / perCloth) : 0;
+            double animalUnits = Math.Min(units - clothUnits, Math.Max(0, plannedAnimalFeedstock));
+            return new ClothingFeedstock { Plant = clothUnits * perCloth, Animal = animalUnits };
+        }
+        // Harvest still required for the planned feedstock. Clothing feedstock may
+        // draw on inventory beyond this turn's meals; every other feedstock only on
+        // inventory beyond meals, the clothing already paid and the operating reserve.
+        public static void FeedstockGaps(double food, double plantStock, double animalStock, double meals, double reserve,
+            double plantFeedstock, double animalFeedstock, ClothingFeedstock clothing, out double plantGap, out double animalGap)
+        {
+            plantStock = Math.Max(0, plantStock); animalStock = Math.Max(0, animalStock);
+            double afterMeals = Math.Max(0, food - meals);
+            double plantInventory = Math.Min(plantStock, afterMeals);
+            double animalInventory = Math.Min(animalStock, Math.Max(0, afterMeals - plantInventory));
+            double clothingPlantInventory = Math.Min(clothing.Plant, plantInventory);
+            double clothingAnimalInventory = Math.Min(clothing.Animal, animalInventory);
+            double spareFood = Math.Max(0, food - meals - clothingPlantInventory - clothingAnimalInventory - reserve);
+            double sparePlant = Math.Min(plantStock - clothingPlantInventory, spareFood);
+            double spareAnimal = Math.Min(animalStock - clothingAnimalInventory, Math.Max(0, spareFood - sparePlant));
+            plantGap = Math.Max(0, clothing.Plant - clothingPlantInventory)
+                + Math.Max(0, plantFeedstock - clothing.Plant - sparePlant);
+            animalGap = Math.Max(0, clothing.Animal - clothingAnimalInventory)
+                + Math.Max(0, animalFeedstock - clothing.Animal - spareAnimal);
+        }
         public static double FarmerMaintenanceMultiplier(Camp c) => 1;
         public static double DomesticExpectationFactor(Camp c) => c.RudimentaryExpectation;
         public static bool CanIrrigateTile(WorldState w, Camp c, int tile, out string reason) { reason = "Irrigation construction and effects are deferred."; return false; }

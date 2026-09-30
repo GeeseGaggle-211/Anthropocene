@@ -80,6 +80,11 @@ sooner (median 1,800 residents), hence 80/106. Secondary: a relocating camp
 has one turn with no production and leaves fixed Housing (209 husbandry
 camp-turns); Farm and Herding Tools absorb most tool coverage at scale.
 Fix: fabric feedstock ahead of reserve refill (user decision 30 September).
+Result on the five 50-turn worlds (Value, post-opening turn 50, before → after):
+husbandry camps without clothing 80/106 → 10/106, QoL P25/median/P75
+0.11/0.24/0.40 → 0.21/0.34/0.64; agricultural without clothing 89/280 → 33/280,
+QoL 0.44/0.63/0.89 → 0.53/0.71/0.91; total population +0.1%, food +0.4%. The
+remaining husbandry QoL gap is social cohesion at ~1,800 residents (fission).
 
 **Husbandry mobility check.** MobileHusbandryValidation's exact command
 (Continents 11/23/1729, 80 post-opening turns, `--land-m=63

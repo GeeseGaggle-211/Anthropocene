@@ -37,6 +37,8 @@ namespace Anthropocene.Simulation
         public double OpeningCampFood, OpeningAnimalFood, ConsumptionRequired, ConsumptionTarget, ReserveTarget, ReserveFillTarget, GrowthFoodTarget, FoodTarget;
         public readonly Dictionary<CraftGood, double> Goods = new Dictionary<CraftGood, double>();
         public double PlantFeedstock, PlantFeedstockGap, AnimalFeedstock, AnimalFeedstockGap;
+        // The part of the feedstock above that covers this turn's clothing requirement (paid ahead of the reserve refill).
+        public double PlantClothingFeedstock, AnimalClothingFeedstock;
         internal Dictionary<CraftGood, double> Production;
         internal HousingMaterialPlan Housing;
         // The camp's Value-rule production order, fixed for the turn (WP3b); null otherwise.
@@ -326,13 +328,15 @@ namespace Anthropocene.Simulation
                 needs.Housing = MaterialEconomy.PlanHousingMaterials(world, snapshot, recipes, needs.Production, years, world.Days, sources, order);
                 needs.PlantFeedstock = needs.Production[CraftGood.Cloth] * world.Config.Neolithic.PlantFoodPerFabricUnit;
                 needs.AnimalFeedstock = needs.Production[CraftGood.AnimalFabric];
-                // Only inventory above this cohort's consumption and reserve
-                // can substitute for a separately harvested craft input.
-                double spareFood = Math.Max(0, camp.Food - needs.ConsumptionRequired - needs.ReserveTarget);
-                double sparePlant = Math.Min(camp.PlantFood, spareFood);
-                double spareAnimal = Math.Min(camp.AnimalFood, Math.Max(0, spareFood - sparePlant));
-                needs.PlantFeedstockGap = Math.Max(0, needs.PlantFeedstock - sparePlant);
-                needs.AnimalFeedstockGap = Math.Max(0, needs.AnimalFeedstock - spareAnimal);
+                // Clothing-need feedstock is paid after this cohort's consumption
+                // and ahead of the reserve refill; other feedstock can only
+                // substitute inventory above consumption, clothing and reserve.
+                var clothing = NeolithicProduction.ClothingNeedFeedstock(world.Config.Neolithic, residents, years,
+                    camp.Inventory.Cloth, camp.Inventory.AnimalFabric, needs.PlantFeedstock, needs.AnimalFeedstock);
+                needs.PlantClothingFeedstock = clothing.Plant; needs.AnimalClothingFeedstock = clothing.Animal;
+                NeolithicProduction.FeedstockGaps(camp.Food, camp.PlantFood, camp.AnimalFood, needs.ConsumptionRequired, needs.ReserveTarget,
+                    needs.PlantFeedstock, needs.AnimalFeedstock, clothing, out double plantGap, out double animalGap);
+                needs.PlantFeedstockGap = plantGap; needs.AnimalFeedstockGap = animalGap;
             }
             return needs;
         }
