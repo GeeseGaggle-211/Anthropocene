@@ -15,8 +15,6 @@ namespace Anthropocene.Simulation
         {
             public EconomicIntent Intent;
             public int Workers, FoodGatherers, OperatingFarmers;
-            // Expansion farmers the Value rule staffed in this proposal (already in Workers).
-            public int ExpansionWorkers;
             // Path position this proposal was evaluated at (for the reported labour price).
             public double S;
         }
@@ -37,7 +35,7 @@ namespace Anthropocene.Simulation
             => Plan(w, c, settings, rule, out laborPrice, out _);
         // productionOrder is the Value rule's fixed production order for this turn
         // (null under Uniform): the resolver reads the same order (WP3b).
-        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, IFulfilmentRule rule, out double laborPrice, out ProductionOrder productionOrder, bool expansionClaim = true)
+        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, IFulfilmentRule rule, out double laborPrice, out ProductionOrder productionOrder)
         {
             laborPrice = double.NaN; productionOrder = null;
             Interlocked.Increment(ref TurnDiagnostics.For(w).PlanCalls);
@@ -46,7 +44,7 @@ namespace Anthropocene.Simulation
             var cfg = w.Config; var n = cfg.Neolithic;
             double intervals = cfg.GenerationIntervals, years = cfg.TurnDays / cfg.DaysPerYear;
             // Demand pass: every fulfilment-invariant input, built once.
-            var demand = CampProductionDemand.Build(w, c, e, expansionClaim);
+            var demand = CampProductionDemand.Build(w, c, e);
             bool cultivationEnabled = demand.CultivationEnabled, husbandryEnabled = demand.HusbandryEnabled, established = demand.Established;
             double upkeep = demand.Upkeep, supply = demand.Supply, biological = demand.Biological, nextPopulation = demand.NextPopulation;
             double forageAfterHerds = demand.ForageAfterHerds, terrestrialAfterHerds = demand.TerrestrialAfterHerds;
@@ -67,10 +65,7 @@ namespace Anthropocene.Simulation
             Proposal Evaluate(double s)
             {
                 var shares = new double[demand.Claims.Count];
-                // Under the Value rule the expansion claim (WP4b), when present, shares the price path.
-                double expansionShare = 0;
-                if (valueRule != null && demand.Expansion != null) valueRule.Shares(demand.Claims, demand.Expansion, s, shares, out expansionShare);
-                else rule.Shares(demand.Claims, s, shares);
+                rule.Shares(demand.Claims, s, shares);
                 double Share(CraftGood good) => shares[claimIndex[good]];
                 var intent = e.Copy(); intent.Labor = new EconomicLaborPlan();
                 // Managed-herd work is a resident reservation, not an output
@@ -101,8 +96,6 @@ namespace Anthropocene.Simulation
                 var futureRoles = new Dictionary<string, double>();
                 int proposedFarmers = 0;
                 double proposedExpansion = 0;
-                // Expansion farmers staffed by the Value rule's expansion claim: workers for the turn.
-                int staffedExpansion = 0;
                 var farmRecipe = goods.FirstOrDefault(r => r.Good == CraftGood.FarmTools);
                 string Role(CraftRecipe r) => c.People.HasTech(r.Track) ? r.Specialist : WorkforceRoles.Craftsperson;
                 double Rate(CraftRecipe r) => r.Rate * (c.People.HasTech(r.Track) ? 1 : n.GeneralistTaskEfficiency);
@@ -246,13 +239,6 @@ namespace Anthropocene.Simulation
                     double plannedOperating = established ? Math.Min(fieldWorkers, harvest) : 0;
                     double expansion = intendedExpansion ? Math.Max(0, fieldWorkers - plannedOperating) : 0;
                     proposedFarmers = (int)Math.Ceiling(plannedOperating + expansion - Epsilon);
-                    // Value rule: the share of the expansion claim staffs that many field
-                    // workers (workers for the turn, at most the field workers left). The
-                    // intended proposal below still sees every remaining field worker, so
-                    // the Farm Tools demand helper is sized as before; leftover residents
-                    // join expansion after the search exactly as before.
-                    if (intendedExpansion && expansionShare > 0 && demand.Expansion != null)
-                        staffedExpansion = (int)Math.Max(0, Math.Ceiling(Math.Min(expansionShare * demand.ExpansionWorkers, expansion) - Epsilon));
                     if (proposedFarmers > 0)
                         candidate.Workforce.Assignments = intent.Assignments
                             .Concat(futureRoles.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new PopulationAssignment { Role = p.Key, Population = (int)Math.Ceiling(p.Value - Epsilon) }))
@@ -283,8 +269,6 @@ namespace Anthropocene.Simulation
                             int producerReservation = (int)Math.Ceiling(producerWorkers - Epsilon);
                             proposedFarmers = Math.Max(0, proposedFarmers - producerReservation);
                             proposedExpansion = Math.Max(0, Math.Min(proposedExpansion, proposedFarmers));
-                            // Producers leave fewer field workers to staff.
-                            staffedExpansion = (int)Math.Min(staffedExpansion, Math.Max(0, proposedFarmers - Math.Ceiling(plannedOperating - Epsilon)));
                         }
                     }
                 }
@@ -490,10 +474,8 @@ namespace Anthropocene.Simulation
                     (int)Math.Ceiling(Math.Max(0, requiredFoodGatherers + generalistMaterials) - Epsilon));
                 int laborEnvelope = nonFarmWorkers + Math.Max(0, requiredOperating) + requiredGatherers;
                 int actualWorkers = intent.Assignments.Sum(a => a.Population) + Math.Max(0, gatherers);
-                // Expansion workers compete with crafts for residents (WP4b); they are in
-                // neither actualWorkers nor the envelope, so they are added on top.
-                int totalWorkers = (s <= Epsilon ? actualWorkers : Math.Max(actualWorkers, laborEnvelope)) + staffedExpansion;
-                return new Proposal { Intent = intent, OperatingFarmers = operating, FoodGatherers = foodGatherers, Workers = totalWorkers, S = s, ExpansionWorkers = staffedExpansion };
+                int totalWorkers = s <= Epsilon ? actualWorkers : Math.Max(actualWorkers, laborEnvelope);
+                return new Proposal { Intent = intent, OperatingFarmers = operating, FoodGatherers = foodGatherers, Workers = totalWorkers, S = s };
             }
             // Allocate as much useful manufacturing as fits alongside food and its
             // complete source chain. No separate craft-population percentage is imposed.
@@ -511,16 +493,14 @@ namespace Anthropocene.Simulation
             // century of exponential growth. Expand for the next demand forecast.
             double futureDemand = biological * nextPopulation / c.Population + (cultivationEnabled ? goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit : 0);
             bool expand = cultivationEnabled && futureDemand > supply && HasRetainedExpansionGain();
-            // The staffed expansion claim (Value rule) plus the leftover residents.
-            int expanders = spare + (expand ? best.ExpansionWorkers : 0);
-            if (expanders > 0 && expand)
+            if (spare > 0 && expand)
             {
                 var farmer = best.Intent.Assignments.FirstOrDefault(a => a.Role == WorkforceRoles.Farmer);
-                if (farmer == null) best.Intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = expanders }); else farmer.Population += expanders;
-                best.Intent.Labor.ExpansionFarmers = expanders;
+                if (farmer == null) best.Intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = spare }); else farmer.Population += spare;
+                best.Intent.Labor.ExpansionFarmers = spare;
             }
             best.Intent.Assignments = best.Intent.Assignments.OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
-            if (valueRule != null) laborPrice = valueRule.LaborPrice(demand.Claims, demand.Expansion, best.S);
+            if (valueRule != null) laborPrice = valueRule.LaborPrice(demand.Claims, best.S);
             return best.Intent;
         }
         // Largest staffable position on a fulfilment rule's path, to within

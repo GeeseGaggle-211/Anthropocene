@@ -80,16 +80,9 @@ namespace Anthropocene.Simulation
         // V * exp(-lambda * c) at the coverage reached by `share` of the useful quantity.
         public double MarginalValue(ProductionClaim c, double share)
             => c.FirstUnitValue * Math.Exp(-Steepness * (c.Stock + share * c.Quantity) / c.Need);
-        // Path ends. Craft claims set both ends exactly as before. The optional
-        // extra claim (WP4b expansion labour) can only raise hi (so its share is 0
-        // at s = 0 and Evaluate(0) stays feasible): it never lowers lo, because its
-        // useful demand (workers to close a food gap) usually exceeds every
-        // resident and would drag the path to a price where the plan cannot fit,
-        // wrecking the search and every other claim's share. It rides the craft
-        // path by price; only with no craft claim at all does it own both ends.
-        private bool Bounds(IReadOnlyList<ProductionClaim> claims, ProductionClaim extra, out double hi, out double lo, out bool extraOwnsPath)
+        private bool Bounds(IReadOnlyList<ProductionClaim> claims, out double hi, out double lo)
         {
-            hi = 0; lo = double.PositiveInfinity; bool any = false; extraOwnsPath = false;
+            hi = 0; lo = double.PositiveInfinity; bool any = false;
             for (int i = 0; i < claims.Count; i++)
             {
                 var c = claims[i];
@@ -103,43 +96,17 @@ namespace Anthropocene.Simulation
                 double full = first * Math.Exp(-Steepness * (c.Stock + c.Quantity) / c.Need);
                 if (full < lo) lo = full;
             }
-            if (extra != null && IsNeed(extra))
-            {
-                double first = extra.FirstUnitValue / extra.LabourPerUnit;
-                if (first > hi) hi = first;
-                if (!any)
-                {
-                    any = true; extraOwnsPath = true;
-                    lo = first * Math.Exp(-Steepness * (extra.Stock + extra.Quantity) / extra.Need);
-                }
-            }
             return any;
         }
         // The labour price w at path position s; NaN when no claim is valued.
-        public double LaborPrice(IReadOnlyList<ProductionClaim> claims, double s) => LaborPrice(claims, null, s);
-        public double LaborPrice(IReadOnlyList<ProductionClaim> claims, ProductionClaim extra, double s)
+        public double LaborPrice(IReadOnlyList<ProductionClaim> claims, double s)
         {
-            if (!Bounds(claims, extra, out double hi, out double lo, out _)) return double.NaN;
+            if (!Bounds(claims, out double hi, out double lo)) return double.NaN;
             return hi * Math.Pow(lo / hi, Numbers.Clamp(s, 0, 1));
         }
         public void Shares(IReadOnlyList<ProductionClaim> claims, double s, double[] shares)
-            => Shares(claims, null, s, shares, out _);
-        // Share of one need claim at path position s and labour price `price`.
-        private double NeedShare(ProductionClaim c, double price, double s, bool exactEnds = true)
         {
-            // The path ends are exact: floating error must not leave residue at s = 0 or a gap at s = 1.
-            if (s <= 0) return 0;
-            if (exactEnds && s >= 1) return 1;
-            double coverage = Math.Log(c.FirstUnitValue / (price * c.LabourPerUnit)) / Steepness;
-            return Numbers.Clamp((coverage * c.Need - c.Stock) / c.Quantity, 0, 1);
-        }
-        // With an extra claim (expansion labour, not a craft good) its share is
-        // returned in extraShare. It is 0 at s = 0 and nondecreasing in s, and it
-        // reaches 1 only when the price has fallen far enough (see Bounds).
-        public void Shares(IReadOnlyList<ProductionClaim> claims, ProductionClaim extra, double s, double[] shares, out double extraShare)
-        {
-            extraShare = 0;
-            if (!Bounds(claims, extra, out double hi, out double lo, out bool extraOwnsPath))
+            if (!Bounds(claims, out double hi, out double lo))
             {
                 for (int i = 0; i < claims.Count; i++) shares[i] = s;
                 return;
@@ -149,9 +116,12 @@ namespace Anthropocene.Simulation
             {
                 var c = claims[i];
                 if (!IsNeed(c)) { shares[i] = c.Valued && c.FirstUnitValue <= 0 ? 0 : s; continue; }
-                shares[i] = NeedShare(c, price, s);
+                // The path ends are exact: floating error must not leave residue at s = 0 or a gap at s = 1.
+                if (s <= 0) { shares[i] = 0; continue; }
+                if (s >= 1) { shares[i] = 1; continue; }
+                double coverage = Math.Log(c.FirstUnitValue / (price * c.LabourPerUnit)) / Steepness;
+                shares[i] = Numbers.Clamp((coverage * c.Need - c.Stock) / c.Quantity, 0, 1);
             }
-            if (extra != null && IsNeed(extra)) extraShare = NeedShare(extra, price, s, extraOwnsPath);
         }
     }
 
@@ -173,17 +143,6 @@ namespace Anthropocene.Simulation
         public IReadOnlyList<ProductionClaim> Claims;
         // Value-rule production order (WP3b); null under the Uniform rule.
         public ProductionOrder Order;
-        // WP4b expansion labour (Value rule only; null / 0 otherwise or when no
-        // shortfall is forecast). Units: see ExpansionValuation. Transient.
-        // Expansion is a claim measured in workers staffed for the turn.
-        public ProductionClaim Expansion;
-        // g (food/year per worker-year), v_food (person-QoL-years per food/year),
-        // L_cap (years), V_exp (person-QoL-years per worker-year), shortfall (food/year),
-        // D_exp (worker-years) and DExpWorkers = D_exp / years (workers for the turn).
-        public double ExpansionProductivity, FoodValue, CapitalLife, ExpansionValue, ExpansionShortfallPerYear, ExpansionWorkerYears, ExpansionWorkers;
-        // w_farm: value of one freed farmer-year at start-of-turn coverage 0
-        // (person-QoL-years per worker-year); 0 when no expansion claim.
-        public double FarmLabourPrice;
         public double Meals, OperatingReserve, SparePlant, PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope, HousingMultiplier;
 
         private WorldState world;
@@ -198,8 +157,7 @@ namespace Anthropocene.Simulation
 
         // Normalizes the plan's focus to the camp footprint before the preview
         // is built from it; every other read is of the committed boundary.
-        // expansionClaim = false omits the WP4b expansion claim (the pre-WP4b Value plan, a test reference).
-        public static CampProductionDemand Build(WorldState w, Camp c, EconomicIntent e, bool expansionClaim = true)
+        public static CampProductionDemand Build(WorldState w, Camp c, EconomicIntent e)
         {
             var d = new CampProductionDemand { world = w };
             var cfg = w.Config; var n = cfg.Neolithic;
@@ -280,7 +238,6 @@ namespace Anthropocene.Simulation
             }
             d.HousingMultiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
             ClaimValuation.Apply(w, c, d);
-            if (expansionClaim) ExpansionValuation.Apply(w, c, d);
             return d;
         }
     }
@@ -368,55 +325,6 @@ namespace Anthropocene.Simulation
                 if (value) claim.Value = claim.FirstUnitValue;
             }
             if (value) d.Order = ProductionOrder.Build(cfg, d.Claims, d.Recipes, good => NeolithicProduction.Priority(d.Preview, good));
-        }
-    }
-
-    // WP4b: expansion labour as a value claim (ValueModelDesign.md, "Revised WP4
-    // design"). Units throughout:
-    //   g       food per year per worker-year of expansion effort (the allocator's
-    //           best marginal score, CultivationEconomy.BestFieldScore);
-    //   v_food  person-QoL-years per (food unit per year) = N Q / (F D_year), the
-    //           QoL a permanent extra food unit per year protects;
-    //   L_cap   years = 1 / (ln2 / DecayHalfLife + r), the discounted life of capital;
-    //   V_exp   person-QoL-years per worker-year = g v_food L_cap;
-    //   D_exp   worker-years = shortfall_per_year / g, with the planner's per-turn
-    //           demand and supply divided by the turn's years to get food per year.
-    // The claim counts workers staffed for the turn: Quantity = Need = D_exp / years,
-    // one worker is `years` worker-years (LabourPerUnit = years) worth V_exp * years,
-    // so V / l = V_exp per worker-year, the same unit as a craft's labour price.
-    // Present only under the Value rule, cultivation enabled, and the planner's
-    // existing expansion gate: forecast demand above supply with a retained gain.
-    internal static class ExpansionValuation
-    {
-        public static double FoodValue(SimulationConfig cfg, Camp c)
-        {
-            double n = c.Population;
-            double dYear = n * cfg.Consumption * cfg.DaysPerYear / cfg.BaseDays;
-            if (!(dYear > 0)) return 0;
-            return n * c.QoL / (Math.Max(c.FoodNeedsMetRatio, 1e-6) * dYear);
-        }
-        public static double CapitalLife(NeolithicConfig n) => 1 / (Math.Log(2) / n.DecayHalfLifeYears + n.DiscountRatePerYear);
-        public static void Apply(WorldState w, Camp c, CampProductionDemand d)
-        {
-            var cfg = w.Config; var n = cfg.Neolithic;
-            if (!n.ValueFulfilmentSelected || !d.CultivationEnabled || c.Population <= 0) return;
-            double years = cfg.TurnDays / cfg.DaysPerYear;
-            double cloth = d.Goals.TryGetValue(CraftGood.Cloth, out double goal) ? goal : 0;
-            // Same forecast as the planner's expansion gate.
-            double forecast = d.Biological * d.NextPopulation / Math.Max(1, c.Population) + cloth * n.PlantFoodPerFabricUnit;
-            if (!(forecast > d.Supply) || !d.HasRetainedExpansionGain()) return;
-            double g = CultivationEconomy.BestFieldScore(w, c, d.Operated, years);
-            d.ExpansionProductivity = g;
-            d.FoodValue = FoodValue(cfg, c);
-            d.CapitalLife = CapitalLife(n);
-            d.ExpansionValue = g * d.FoodValue * d.CapitalLife;
-            if (!(g > 0) || !(d.ExpansionValue > 0) || !(years > 0)) return;
-            d.ExpansionShortfallPerYear = (forecast - d.Supply) / years;
-            d.ExpansionWorkerYears = d.ExpansionShortfallPerYear / g;
-            d.ExpansionWorkers = d.ExpansionWorkerYears / years;
-            d.Expansion = new ProductionClaim { Quantity = d.ExpansionWorkers, Need = d.ExpansionWorkers, Stock = 0, LabourPerUnit = years,
-                FirstUnitValue = d.ExpansionValue * years, Value = d.ExpansionValue * years, Priority = 1, Valued = true };
-            d.FarmLabourPrice = d.ExpansionValue * Math.Exp(-n.ValueCurveSteepness * 0);
         }
     }
 

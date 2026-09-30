@@ -160,25 +160,6 @@ Observation schema 16 exposes the owned stock in `ObservedSettlementDto.HousingM
 Production receipts list both goods (`HousingMaterial` receipts carry Wood/Clay; Housing receipts carry the consumed material in
 `ProductionReceipt.HousingMaterial`). Checks: `HousingMaterialRecipeChecks` (`--only=HousingMaterialRecipeChecks`).
 
-### Expansion labour as a value claim (WP4b)
-
-Under the Value rule, when the planner's expansion gate holds (forecast demand above supply and a retained field gain),
-the demand pass adds one transient **expansion claim** (`ExpansionValuation`, `ProductionDemand.cs`), read only by
-`ValueFulfilment`. Units: `g` = the resolver allocator's best first-step marginal score over the camp's operated fields
-(`CultivationEconomy.BestFieldScore`, sharing `NextStep` with the allocator; food per year per worker-year);
-`v_food = N Q / (F D_year)` (person-QoL-years per food unit per year); `L_cap = 1 / (ln 2 / DecayHalfLifeYears + r)` years;
-`V_exp = g v_food L_cap` person-QoL-years per worker-year, also the farm-labour price `w_farm`. Need is
-`D_exp = (forecast demand - supply) / years / g` worker-years; the claim counts **workers staffed for the turn**
-(`Quantity = Need = D_exp / years`, `l = years`, `V = V_exp * years`, so `V / l = V_exp`). Its share follows the same
-`V exp(-lambda c)` curve at the labour price `w(s)`, may raise the path's top (so its share is 0 at `s = 0`) but never
-lowers its end, and does not reach 1 at `s = 1` unless it is the only claim: its useful demand normally exceeds every
-resident, so an end forced to 1 would make the top of the path infeasible and starve the search. Staffed expansion
-(`ceil(share * workers)`, at most the field workers left) is added to the proposal's worker count, so it trades against
-crafts; Farm Tools are still sized from the unbounded field proposal, and residents left after the search join expansion
-as before (`staffed + spare`). With slack labour, or when `V_exp` is below the last craft unit's price, the plan is
-exactly the pre-WP4b Value plan. Uniform is untouched; nothing is saved. Checks: `ExpansionClaimChecks`
-(`--only=ExpansionClaimChecks`). Farm Tools and Pots are not yet priced through `w_farm` (WP4a redo).
-
 ## Persistence and limits
 
 `Camp.EconomyAutomationTurns` and `EconomicLabor`, and their `EconomicIntent` counterparts, are optional additive metadata in the existing `ANTHROPOCENE-11` envelope. Old saves default to Off with no labor reservation; explicit zeros are preserved. No tile/resource binary layout or world generation changes. Active automation, copied orders and countdowns round-trip deterministically. Stale field focus is cleared after relocation.
