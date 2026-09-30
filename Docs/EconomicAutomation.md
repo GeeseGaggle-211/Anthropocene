@@ -145,7 +145,7 @@ Fabric. It is computed once per camp at preparation from the committed start-of-
 mid-resolution. Keys, highest first (ties by `ScheduleKey`): need goods (Cloth, Animal Fabric, Housing, Light Housing)
 `V * exp(-lambda * Stock / Need)` with the same V, Stock and Need as the Value claims; Housing Material takes its Housing's
 key; Hand and Regular Tools take `outputs per tool (1 and 4) * best equipment need key * exp(-r * years)`, because tools made
-now serve the next interval and never the one that made them; Farm and Herding Tools and Pots take the WP4a keys below; a good with no usable value follows in
+now serve the next interval and never the one that made them; Pots, Farm Tools and Herding Tools (no value yet) follow in
 crafting-priority order. Animal Fabric is always ahead of Light Housing and Housing Material ahead of Housing. Coverage is
 then allocated by recipe value across roles: each recipe in order visits its specialist role and then the Craftsperson (each
 role keeps its labour pool), inside the existing layers (tool producers before the equipment layer). The planner's capped
@@ -154,28 +154,6 @@ loops and final role pass, `ToolReplacementDemands` (probe and main), `MaterialE
 It rides with the automatic intent (`AutomaticPlan`), is stored in `PreparedTurn.ProductionOrders` and each camp's
 `TurnNeeds.Order`, and is part of `PlanningDraft`'s intents so draft reuse stays exact. It is never saved, observed or
 fingerprinted. Manual camps and Uniform keep the crafting-priority order. Checks: `ProductionOrderChecks` (`--only=ProductionOrderChecks`).
-
-### Tool and Pot value claims (WP4a)
-
-Under the Value rule Farm Tools, Herding Tools and Pots are valued claims, not uniform-share goods. The demand pass computes a
-start-of-turn labour price `w0 = max over Cloth, Animal Fabric, Housing, Light Housing of V * exp(-lambda * Stock/Need) / l`
-(person-QoL-years per worker-year; 0 with no need claim), once and before the search (`ClaimValuation`, `CampProductionDemand.LabourPrice0`).
-A labour-saving tool is worth the labour it saves at `w0`: Farm Tools `V = 20 * (1 - 1/e) * w0 * P` with
-`e = (StoneFarmToolsSupportedIntensity / PrimitiveAgricultureSupportedIntensity)^2 = 1.265625` (4.20 worker-years per unit; the helper
-`CultivationEconomy.FarmToolFieldWorkEfficiency` is the same one field labour uses), Herding Tools
-`V = 20 * (1 - AnimalsPerHerder / StoneHerdingToolAnimalsPerHerder) * w0 * P` (5.13 worker-years); P is the crafting-priority multiplier.
-Their share is a price test: 0 at s = 0, 1 at s = 1 and, between, 1 exactly when `V / l >= w(s)` (nondecreasing because w falls in s),
-so a tool that saves more than it costs is pursued to its full useful demand (Farm Tools stay sized later from the bounded field workforce;
-their claim quantity is still 0 at the demand pass). Pots are a need claim on food security: `vf = years * Q / (F * Consumption * intervals)`
-person-QoL-years per food unit (N cancels), `V_Pot = rho * PotStorageFoodPerUnit * vf * L / ReferenceTurnYears` with
-`L = 1/(k + r)` the discounted Pot life (k from `PotDecayPerReferenceTurn`), Need = the reserve target in Pots (`TargetPots`), Stock = Pots
-after decay, Quantity = `PotDemand`'s gap. `rho = PotRiskWeight` (0.1) is a placeholder for the expected shortfall probability per reference
-turn until disasters and immigration exist; rho = 0 pursues no Pots under labour scarcity. Order keys: tools `V` per unit, Pots
-`V_Pot * exp(-lambda * Stock/Need)`. Hand and Regular Tools still derive their key from the need goods only, but they are moved ahead of the
-earliest of Farm Tools, Herding Tools and Pots: their keys can exceed the covering tool's derived key, and a camp with no tool stock would
-otherwise never reach coverage. Uniform is unchanged. Checks: `ToolPotValueChecks` (`--only=ToolPotValueChecks`).
-Limitation: a hand-applied Value plan on a manual camp is resolved in crafting-priority order (see the WP3b note), so the pastoral
-bootstrap fixture that applies plans by hand is pinned to Uniform.
 
 Save: the field is an optional member of the `ANTHROPOCENE-11` inventory payload (absent loads as zero; no version bump).
 Observation schema 16 exposes the owned stock in `ObservedSettlementDto.HousingMaterial`; foreign stores stay private.

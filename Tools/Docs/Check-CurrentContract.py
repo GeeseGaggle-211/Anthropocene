@@ -51,7 +51,6 @@ FIELDS = [
     ("CohesionScaleAgricultural", "people (N_s)", "shipped QoL cohesion calibration"),
     ("ValueCurveSteepness", "dimensionless lambda in exp(-lambda c)", "shipped value-rule calibration (used by the Value planner rule, the default PlannerFulfilment; ignored under Uniform)"),
     ("DiscountRatePerYear", "per year (r)", "shipped value-rule calibration (used by the Value planner rule, the default PlannerFulfilment; ignored under Uniform)"),
-    ("PotRiskWeight", "dimensionless rho: risk-weighted shortfall probability per reference turn", "shipped Pot food-security placeholder (used by the Value planner rule; ignored under Uniform)"),
 ]
 
 TESTS = [

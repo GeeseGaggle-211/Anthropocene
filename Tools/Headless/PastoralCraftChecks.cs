@@ -720,9 +720,6 @@ internal static class PastoralCraftChecks
         foreach (var allocation in new[] { "FabricOnly", "HerdingToolsAndHousing" })
         {
             var w = PlannerWorld(); var c = w.Camps.Single();
-            // Each plan is applied by hand and resolved as a manual camp, which keeps the crafting-priority order; a Value plan
-            // (value-ordered, labour-priced tools) is then not what the resolver executes, so the Uniform rule pins this legacy bootstrap.
-            w.Config.Neolithic.PlannerFulfilment = "Uniform";
             AddSurfaceResources(w, c.Tile, 1000, 1000, 1000);
             foreach (int n in w.Map.Neighbors(c.Tile)) AddSurfaceResources(w, n, 1000, 1000, 1000);
             w.Herds.Single().Animals = 150;

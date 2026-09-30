@@ -56,7 +56,6 @@
     "PlannerFulfilment": "Value",
     "ValueCurveSteepness": 3,
     "DiscountRatePerYear": 0.01,
-    "PotRiskWeight": 0.1,
     "EarlyAdvancedHerdingAnimalsPerHerder": 3.87,
     "CopperHerdingAnimalsPerHerder": 6.02,
     "IronHerdingAnimalsPerHerder": 10.71,

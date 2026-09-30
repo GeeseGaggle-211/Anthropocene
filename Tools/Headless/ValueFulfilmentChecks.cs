@@ -13,7 +13,7 @@ internal static class ValueFulfilmentChecks
     private static void Check(ref int checks, bool ok, string message) { checks++; if (!ok) throw new Exception("Value fulfilment: " + message); }
     private static bool Info => Environment.GetEnvironmentVariable("WP3_INFO") == "1";
 
-    internal static WorldState Agricultural(bool value, int population = 100)
+    private static WorldState Agricultural(bool value, int population = 100)
     {
         var w = NeolithicChecks.Fixture();
         int count = w.Tiles.Length;
