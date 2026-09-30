@@ -141,6 +141,8 @@ namespace Anthropocene.Simulation
         public Camp Preview;
         public Dictionary<CraftGood, double> Goals;
         public IReadOnlyList<ProductionClaim> Claims;
+        // Value-rule production order (WP3b); null under the Uniform rule.
+        public ProductionOrder Order;
         public double Meals, OperatingReserve, SparePlant, PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope, HousingMultiplier;
 
         private WorldState world;
@@ -321,6 +323,111 @@ namespace Anthropocene.Simulation
                 claim.LabourPerUnit = Labour(claim.Recipe);
                 claim.FirstUnitValue = (claim.Good == CraftGood.Cloth || claim.Good == CraftGood.AnimalFabric ? clothingV : housingV) * multiplier;
                 if (value) claim.Value = claim.FirstUnitValue;
+            }
+            if (value) d.Order = ProductionOrder.Build(cfg, d.Claims, d.Recipes, good => NeolithicProduction.Priority(d.Preview, good));
+        }
+    }
+
+    // The Value rule's production order for one camp and turn (WP3b): the order in
+    // which recipes claim every shared scarce input (tool coverage, Stone, Clay,
+    // Wood, feedstock, Animal Fabric). Computed once at preparation from the
+    // committed start-of-turn stocks, then fixed: nothing recomputes it mid-turn.
+    // Transient: never saved, observed or fingerprinted, and absent (null) for
+    // manual camps and under the Uniform rule, which keep the crafting-priority
+    // and role order exactly.
+    //   need goods (Cloth, Animal Fabric, Housing, Light Housing): V * exp(-lambda * c0),
+    //     c0 = Stock / Need, the value of the next unit at start-of-turn coverage;
+    //   Housing Material: its Housing's key (it precedes the assembly on ties);
+    //   Hand and Regular Tools: outputs covered per tool (1 and 4) times the best
+    //     need-good key among equipment goods, discounted one turn by exp(-r * years),
+    //     because tools made now serve the next interval, never this one;
+    //   goods the model does not price (Pots, Farm and Herding Tools): after all of
+    //     those, in crafting-priority order (WP4 prices them).
+    // Ties break by ScheduleKey. Animal Fabric always precedes Light Housing and
+    // Housing Material always precedes Housing, whatever their keys.
+    public sealed class ProductionOrder
+    {
+        public static readonly string[] Roles = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToArray();
+        private readonly Dictionary<CraftGood, int> rank = new Dictionary<CraftGood, int>();
+        private readonly Dictionary<CraftGood, double> keys = new Dictionary<CraftGood, double>();
+        // Goods from first to last in access order.
+        public readonly CraftGood[] Goods;
+        private ProductionOrder(CraftGood[] goods, Dictionary<CraftGood, double> valued)
+        {
+            Goods = goods;
+            for (int i = 0; i < goods.Length; i++) rank[goods[i]] = i;
+            foreach (var pair in valued) keys[pair.Key] = pair.Value;
+        }
+        // The value key of a priced good; NaN for goods placed by priority.
+        public double Key(CraftGood good) => keys.TryGetValue(good, out double key) ? key : double.NaN;
+        public int Rank(CraftGood good) => rank.TryGetValue(good, out int r) ? r : int.MaxValue;
+        // True when `first` is reached before `second` in access order.
+        public bool Outranks(CraftGood first, CraftGood second) => Rank(first) < Rank(second);
+        public override string ToString() => string.Join(">", Goods);
+
+        internal static ProductionOrder Build(SimulationConfig cfg, IReadOnlyList<ProductionClaim> claims, CraftRecipe[] recipes, Func<CraftGood, double> priority)
+        {
+            var n = cfg.Neolithic;
+            double years = cfg.TurnDays / cfg.DaysPerYear;
+            var valued = new Dictionary<CraftGood, double>();
+            foreach (var claim in claims)
+                if (claim.Valued && ValueFulfilment.IsNeed(claim))
+                    valued[claim.Good] = claim.FirstUnitValue * Math.Exp(-n.ValueCurveSteepness * claim.Stock / claim.Need);
+            if (valued.TryGetValue(CraftGood.Housing, out double housingKey)) valued[CraftGood.HousingMaterial] = housingKey;
+            // The value of the outputs a unit of coverage lets the camp make, at the
+            // best equipment need good; coverage from tools made now starts next turn.
+            double best = double.NaN;
+            foreach (var recipe in recipes)
+                if (recipe.Equipment && valued.TryGetValue(recipe.Good, out double key) && !(key <= best)) best = key;
+            if (!double.IsNaN(best))
+            {
+                double discount = Math.Exp(-n.DiscountRatePerYear * years);
+                valued[CraftGood.HandTools] = ToolCoverageBudget.OutputsPerHandTool * best * discount;
+                valued[CraftGood.Tools] = ToolCoverageBudget.OutputsPerTool * best * discount;
+            }
+            var pricedRecipes = recipes.Where(r => valued.ContainsKey(r.Good))
+                .OrderByDescending(r => valued[r.Good]).ThenBy(r => NeolithicProduction.ScheduleKey(r.Good)).ToList();
+            var rest = recipes.Where(r => !valued.ContainsKey(r.Good))
+                .OrderByDescending(r => priority(r.Good)).ThenBy(r => NeolithicProduction.ScheduleKey(r.Good));
+            var order = pricedRecipes.Concat(rest).Select(r => r.Good).ToList();
+            MoveBefore(order, CraftGood.AnimalFabric, CraftGood.LightHousing);
+            MoveBefore(order, CraftGood.HousingMaterial, CraftGood.Housing);
+            return new ProductionOrder(order.ToArray(), valued);
+        }
+        // Sequencing rule: an input recipe is reached before the recipe that consumes it.
+        private static void MoveBefore(List<CraftGood> order, CraftGood input, CraftGood consumer)
+        {
+            int i = order.IndexOf(input), j = order.IndexOf(consumer);
+            if (i < 0 || j < 0 || i < j) return;
+            order.RemoveAt(i); order.Insert(j, input);
+        }
+
+        // Recipes in access order: the crafting-priority order when there is no
+        // Value order (exactly today's sort), the value order otherwise.
+        public static CraftRecipe[] Sort(IEnumerable<CraftRecipe> recipes, Func<CraftGood, double> priority, ProductionOrder order)
+            => order == null
+                ? recipes.OrderByDescending(r => priority(r.Good)).ThenBy(r => NeolithicProduction.ScheduleKey(r.Good)).ToArray()
+                : recipes.OrderBy(r => order.Rank(r.Good)).ThenByDescending(r => priority(r.Good)).ThenBy(r => NeolithicProduction.ScheduleKey(r.Good)).ToArray();
+
+        // The (role, recipe) sequence of one production layer over recipes already
+        // in access order. Without a Value order the roles run in turn (today's
+        // schedule); with one every recipe is visited in value order and, for each,
+        // its specialist role first and then the Craftsperson, so shared tool
+        // coverage goes to the more valuable recipe whichever role makes it. Each
+        // role keeps its own labour pool; pairs that cannot work are skipped by
+        // the caller's ordinary guards.
+        public static IEnumerable<(string Role, CraftRecipe Recipe)> Steps(CraftRecipe[] ordered, bool byValue)
+        {
+            if (!byValue)
+            {
+                foreach (string role in Roles)
+                    foreach (var recipe in ordered) yield return (role, recipe);
+                yield break;
+            }
+            foreach (var recipe in ordered)
+            {
+                if (recipe.Specialist != null && Array.IndexOf(Roles, recipe.Specialist) >= 0) yield return (recipe.Specialist, recipe);
+                yield return (WorkforceRoles.Craftsperson, recipe);
             }
         }
     }

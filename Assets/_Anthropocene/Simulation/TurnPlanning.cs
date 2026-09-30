@@ -19,6 +19,9 @@ namespace Anthropocene.Simulation
         internal readonly HashSet<int> AutomatedCamps = new HashSet<int>();
         internal readonly HashSet<int> AbandoningVillages = new HashSet<int>();
         internal readonly Dictionary<int, TurnNeeds> Needs = new Dictionary<int, TurnNeeds>();
+        // Value-rule production order per automated camp (WP3b). Transient: never saved,
+        // observed or fingerprinted; absent for manual camps and under the Uniform rule.
+        internal readonly Dictionary<int, ProductionOrder> ProductionOrders = new Dictionary<int, ProductionOrder>();
         internal CampPlacement Placement;
 
         internal PreparedTurn(WorldState world)
@@ -36,6 +39,8 @@ namespace Anthropocene.Simulation
         public double PlantFeedstock, PlantFeedstockGap, AnimalFeedstock, AnimalFeedstockGap;
         internal Dictionary<CraftGood, double> Production;
         internal HousingMaterialPlan Housing;
+        // The camp's Value-rule production order, fixed for the turn (WP3b); null otherwise.
+        internal ProductionOrder Order;
     }
 
     // A pure WEGO placement pass. Preparation and resolution use exactly the
@@ -80,6 +85,15 @@ namespace Anthropocene.Simulation
         public int Camp, Tile;
         public bool Abandoning;
         public Order Order;
+        public ProductionOrder Production;
+    }
+
+    // An automatic economic intent with the Value-rule production order that
+    // came out of the same planning pass (null under Uniform or when abandoning).
+    internal sealed class AutomaticPlan
+    {
+        public Order Order;
+        public ProductionOrder Production;
     }
 
     // Planning done while the human player thinks. Never saved, never part of
@@ -158,14 +172,15 @@ namespace Anthropocene.Simulation
                     cached.Tile == effectiveTile && cached.Abandoning == abandoning)
                 {
                     Interlocked.Increment(ref diagnostics.DraftIntentsReused);
-                    return cached.Order.Copy();
+                    return new AutomaticPlan { Order = cached.Order.Copy(), Production = cached.Production };
                 }
                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
                 return AutomaticIntent(world, camp, effectiveTile, abandoning, index);
             });
             for (int i = 0; i < automated.Length; i++)
             {
-                var camp = automated[i]; var order = automaticOrders[i];
+                var camp = automated[i]; var order = automaticOrders[i].Order;
+                if (automaticOrders[i].Production != null) prepared.ProductionOrders[camp.Id] = automaticOrders[i].Production;
                 prepared.Orders.Add(order); prepared.AutomatedCamps.Add(camp.Id);
                 acceptedEconomy.Add(camp.Id, order);
                 prepared.OrderReceipts.Add(camp.Player + ":automation:" + order + ":accepted");
@@ -187,7 +202,7 @@ namespace Anthropocene.Simulation
         // economic order owns the economic slot; an explicit Move, NoOp, or
         // Dispatch does not suppress automation. Shared by Prepare and Draft
         // so both run literally the same code. Pure over the committed world.
-        private static Order AutomaticIntent(WorldState world, Camp camp, int effectiveTile, bool abandoning, PlanningIndex index)
+        private static AutomaticPlan AutomaticIntent(WorldState world, Camp camp, int effectiveTile, bool abandoning, PlanningIndex index)
         {
             var planningCamp = PlanningCampAt(camp, effectiveTile);
             var settings = EconomicIntent.From(camp);
@@ -196,7 +211,8 @@ namespace Anthropocene.Simulation
             // Relocating a village abandons field work for this turn. The
             // automated intent can use the prior cohort as gatherers;
             // manual assignments remain the player's responsibility.
-            var intent = abandoning ? settings.Copy() : EconomicPlanner.Plan(world, planningCamp, settings);
+            ProductionOrder production = null;
+            var intent = abandoning ? settings.Copy() : EconomicPlanner.Plan(world, planningCamp, settings, EconomicPlanner.ConfiguredRule(world.Config), out _, out production);
             if (abandoning)
             {
                 intent.Assignments.Clear();
@@ -211,7 +227,7 @@ namespace Anthropocene.Simulation
             };
             string error = EconomicIntents.Validate(constraints, intent);
             if (error != null) throw new InvalidOperationException("Invalid automatic economic plan: " + error);
-            return new Order(OrderKind.Economy, camp.Id) { Economy = intent };
+            return new AutomaticPlan { Order = new Order(OrderKind.Economy, camp.Id) { Economy = intent }, Production = production };
         }
 
         // Touch every lazily created world-attached cache on the calling
@@ -249,8 +265,9 @@ namespace Anthropocene.Simulation
             var results = (execution ?? new PhaseExecution()).Map(automated, camp =>
             {
                 int tile = placement.Destinations[camp.Id]; bool abandon = abandoning.Contains(camp.Id);
+                var plan = AutomaticIntent(world, camp, tile, abandon, index);
                 return new DraftIntent { Camp = camp.Id, Tile = tile, Abandoning = abandon,
-                    Order = AutomaticIntent(world, camp, tile, abandon, index) };
+                    Order = plan.Order, Production = plan.Production };
             });
             var draft = new PlanningDraft(world, excludedPlayer, ai);
             foreach (var result in results) draft.Intents[result.Camp] = result;
@@ -299,12 +316,14 @@ namespace Anthropocene.Simulation
                 var snapshot = EconomicPlanner.Preview(planningCamp, economy, residents);
                 var recipes = NeolithicProduction.Recipes(world.Config);
                 var sources = MaterialEconomy.KnownSources(world, snapshot, world.Days);
+                prepared.ProductionOrders.TryGetValue(camp.Id, out var order);
+                needs.Order = order;
                 foreach (var recipe in recipes)
                     needs.Goods[recipe.Good] = NeolithicProduction.Priority(snapshot, recipe.Good) > 0
-                        ? NeolithicProduction.Demand(world, snapshot, recipe.Good, years, residents, false, false, sources) : 0;
+                        ? NeolithicProduction.Demand(world, snapshot, recipe.Good, years, residents, false, false, sources, order) : 0;
                 double equipment = new ToolCoverageBudget(world, snapshot, prepared.Horizon).Remaining;
-                needs.Production = MaterialEconomy.Forecast(world, snapshot, recipes, prepared.Horizon, equipment, true, residents, false, false, -1, -1, sources);
-                needs.Housing = MaterialEconomy.PlanHousingMaterials(world, snapshot, recipes, needs.Production, years, world.Days, sources);
+                needs.Production = MaterialEconomy.Forecast(world, snapshot, recipes, prepared.Horizon, equipment, true, residents, false, false, -1, -1, sources, order);
+                needs.Housing = MaterialEconomy.PlanHousingMaterials(world, snapshot, recipes, needs.Production, years, world.Days, sources, order);
                 needs.PlantFeedstock = needs.Production[CraftGood.Cloth] * world.Config.Neolithic.PlantFoodPerFabricUnit;
                 needs.AnimalFeedstock = needs.Production[CraftGood.AnimalFabric];
                 // Only inventory above this cohort's consumption and reserve

@@ -136,6 +136,25 @@ whole expected draw) is shared by `PlanHousingMaterials`, `Gather`, `Forecast`-d
 `Produce`. Known limitation: when Farm Tools outrank Housing (non-default), the planner allocates Housing Material after
 all direct work because Farm Tool intent is bounded last; the resolver still uses rank. No rates, recipes or demands change.
 
+### Value-rule production order (WP3b)
+
+Under `PlannerFulfilment = "Value"` (opt-in; Uniform is bit-identical to before), every automated camp gets one
+transient **production order** (`ProductionOrder`, built in `ProductionDemand.cs`) that replaces the crafting-priority and
+role order wherever recipes share a scarce input: tool coverage, Stone/Clay/Wood, plant/animal feedstock and Animal
+Fabric. It is computed once per camp at preparation from the committed start-of-turn stocks and never recomputed
+mid-resolution. Keys, highest first (ties by `ScheduleKey`): need goods (Cloth, Animal Fabric, Housing, Light Housing)
+`V * exp(-lambda * Stock / Need)` with the same V, Stock and Need as the Value claims; Housing Material takes its Housing's
+key; Hand and Regular Tools take `outputs per tool (1 and 4) * best equipment need key * exp(-r * years)`, because tools made
+now serve the next interval and never the one that made them; Pots, Farm Tools and Herding Tools (no value yet) follow in
+crafting-priority order. Animal Fabric is always ahead of Light Housing and Housing Material ahead of Housing. Coverage is
+then allocated by recipe value across roles: each recipe in order visits its specialist role and then the Craftsperson (each
+role keeps its labour pool), inside the existing layers (tool producers before the equipment layer). The planner's capped
+loops and final role pass, `ToolReplacementDemands` (probe and main), `MaterialEconomy.Forecast`/`PlanHousingMaterials`/`Gather`
+(including the Housing Material hard/soft reservation ranks) and `ResolveCampNeolithic`/`Produce` all read that order.
+It rides with the automatic intent (`AutomaticPlan`), is stored in `PreparedTurn.ProductionOrders` and each camp's
+`TurnNeeds.Order`, and is part of `PlanningDraft`'s intents so draft reuse stays exact. It is never saved, observed or
+fingerprinted. Manual camps and Uniform keep today's order. Checks: `ProductionOrderChecks` (`--only=ProductionOrderChecks`).
+
 Save: the field is an optional member of the `ANTHROPOCENE-11` inventory payload (absent loads as zero; no version bump).
 Observation schema 16 exposes the owned stock in `ObservedSettlementDto.HousingMaterial`; foreign stores stay private.
 Production receipts list both goods (`HousingMaterial` receipts carry Wood/Clay; Housing receipts carry the consumed material in

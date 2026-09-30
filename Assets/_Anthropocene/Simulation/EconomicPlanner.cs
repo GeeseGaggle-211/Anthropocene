@@ -32,8 +32,12 @@ namespace Anthropocene.Simulation
         // laborPrice is the labour price w at the chosen path position (NaN for
         // rules without one). Transient diagnostic: never saved, observed or hashed.
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, IFulfilmentRule rule, out double laborPrice)
+            => Plan(w, c, settings, rule, out laborPrice, out _);
+        // productionOrder is the Value rule's fixed production order for this turn
+        // (null under Uniform): the resolver reads the same order (WP3b).
+        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, IFulfilmentRule rule, out double laborPrice, out ProductionOrder productionOrder)
         {
-            laborPrice = double.NaN;
+            laborPrice = double.NaN; productionOrder = null;
             Interlocked.Increment(ref TurnDiagnostics.For(w).PlanCalls);
             var e = settings.Copy(); e.Assignments.Clear(); e.Labor = null;
             if (c.Population <= 0 || !CultivationEconomy.EconomyEnabled(c)) { e.AutomationTurns = 0; return e; }
@@ -51,6 +55,8 @@ namespace Anthropocene.Simulation
             double foodRoomEnvelope = demand.FoodRoomEnvelope, housingMultiplier = demand.HousingMultiplier;
             bool HasRetainedExpansionGain() => demand.HasRetainedExpansionGain();
             var valueRule = rule as ValueFulfilment;
+            var order = demand.Order;
+            productionOrder = order;
             var claimIndex = new Dictionary<CraftGood, int>();
             for (int i = 0; i < demand.Claims.Count; i++) claimIndex[demand.Claims[i].Good] = i;
 
@@ -141,30 +147,13 @@ namespace Anthropocene.Simulation
                     }
                     return Math.Max(0, amount);
                 }
-                // Material access order: priority under the uniform rule; under the
-                // Value rule, marginal value V * exp(-lambda * c) at the current
-                // share, so a scarce input goes to the good worth most per unit.
-                // Goods without a valued claim follow after, by priority. Animal
-                // Fabric always precedes Light Housing, which consumes it. Housing
-                // Material takes its own place (the Housing claim's value or
-                // priority) and the Housing assembly follows it.
+                // Material access order: crafting priority under the uniform rule; under
+                // the Value rule the camp's fixed production order (start-of-turn
+                // marginal value, tools priced through the outputs they cover, goods
+                // without a value after). Animal Fabric precedes Light Housing and
+                // Housing Material precedes the Housing assembly in either.
                 IEnumerable<CraftRecipe> AccessOrder(IEnumerable<CraftRecipe> list)
-                {
-                    if (valueRule == null) return list.OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => NeolithicProduction.ScheduleKey(r.Good));
-                    double Marginal(CraftRecipe r)
-                    {
-                        // Housing Material is priced as the Housing it completes.
-                        int index = claimIndex[r.Good == CraftGood.HousingMaterial ? CraftGood.Housing : r.Good];
-                        var claim = demand.Claims[index];
-                        return ValueFulfilment.IsNeed(claim) ? valueRule.MarginalValue(claim, shares[index]) : double.NaN;
-                    }
-                    var ordered = list.OrderBy(r => double.IsNaN(Marginal(r)) ? 1 : 0)
-                        .ThenByDescending(r => double.IsNaN(Marginal(r)) ? NeolithicProduction.Priority(candidate, r.Good) : Marginal(r))
-                        .ThenBy(r => NeolithicProduction.ScheduleKey(r.Good)).ToList();
-                    int fabric = ordered.FindIndex(r => r.Good == CraftGood.AnimalFabric), shelter = ordered.FindIndex(r => r.Good == CraftGood.LightHousing);
-                    if (fabric > shelter && shelter >= 0) { var item = ordered[fabric]; ordered.RemoveAt(fabric); ordered.Insert(shelter, item); }
-                    return ordered;
-                }
+                    => ProductionOrder.Sort(list, good => NeolithicProduction.Priority(candidate, good), order);
                 // Housing Material is an ordinary member of the material-access order.
                 // Work ranked above it has already taken its inputs when it is reached;
                 // the remaining planned Wood/Clay demand of work ranked below it is
@@ -325,7 +314,7 @@ namespace Anthropocene.Simulation
                 housingMaterial = Math.Max(0, c.Inventory.HousingMaterial);
                 foodRoom = foodRoomEnvelope;
                 // Match production's role/recipe ordering and share one tool-time budget.
-                var orderedRecipes = recipes.OrderByDescending(r => NeolithicProduction.Priority(candidate, r.Good)).ThenBy(r => NeolithicProduction.ScheduleKey(r.Good)).ToArray();
+                var orderedRecipes = ProductionOrder.Sort(recipes, good => NeolithicProduction.Priority(candidate, good), order);
                 // The candidate is fixed through this pass: one schedule run
                 // answers both Hand and Regular Tool replacement demand.
                 (double HandTools, double Tools)? toolDemand = null;
@@ -337,18 +326,22 @@ namespace Anthropocene.Simulation
                 var finalPlanned = recipes.ToDictionary(r => r.Good, r => requested[r.Good]);
                 if (NeolithicProduction.Priority(candidate, CraftGood.HandTools) > 0 || NeolithicProduction.Priority(candidate, CraftGood.Tools) > 0)
                 {
-                    toolDemand = NeolithicProduction.ToolReplacementDemands(w, candidate, years, candidate.Population, false, false, sources);
+                    toolDemand = NeolithicProduction.ToolReplacementDemands(w, candidate, years, candidate.Population, false, false, sources, order);
                     finalPlanned[CraftGood.HandTools] = toolDemand.Value.HandTools; finalPlanned[CraftGood.Tools] = toolDemand.Value.Tools;
                 }
                 materialPlan = MaterialEconomy.BuildHousingPlan(orderedRecipes, finalPlanned, room[MaterialId.Stone], room[MaterialId.Clay], room[MaterialId.Wood]);
-                foreach (string role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
-                    foreach (var r in orderedRecipes)
+                // The resolver-shaped role pass: roles in turn under the uniform rule; under
+                // the Value order every recipe in value order, its role being the one that
+                // makes it, so shared coverage goes to the more valuable recipe.
+                var finalSteps = order != null ? orderedRecipes.Select(r => (Role: Role(r), Recipe: r))
+                    : ProductionOrder.Roles.SelectMany(role => orderedRecipes.Where(r => Role(r) == role).Select(r => (Role: role, Recipe: r)));
+                foreach (var (role, r) in finalSteps)
                     {
-                        if (Role(r) != role || NeolithicProduction.Priority(candidate, r.Good) <= 0) continue;
+                        if (NeolithicProduction.Priority(candidate, r.Good) <= 0) continue;
                         double wanted;
                         if (r.Good == CraftGood.HandTools || r.Good == CraftGood.Tools)
                         {
-                            toolDemand ??= NeolithicProduction.ToolReplacementDemands(w, candidate, years, candidate.Population, false, false, sources);
+                            toolDemand ??= NeolithicProduction.ToolReplacementDemands(w, candidate, years, candidate.Population, false, false, sources, order);
                             wanted = r.Good == CraftGood.HandTools ? toolDemand.Value.HandTools : toolDemand.Value.Tools;
                         }
                         else wanted = requested[r.Good];
@@ -396,8 +389,8 @@ namespace Anthropocene.Simulation
                     candidate.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = candidateFieldWorkers });
                 // Reforecast rounded staffing through the actual recipe planner. This
                 // catches shared generalist time, mixed inputs and reserve replenishment.
-                var outputs = MaterialEconomy.Forecast(w, candidate, recipes, intervals, years, new ToolCoverageBudget(w, c, intervals).Remaining, !husbandryEnabled, -1, false, false, -1, -1, sources);
-                var housing = MaterialEconomy.PlanHousingMaterials(w, c, recipes, outputs, years, w.Days, sources);
+                var outputs = MaterialEconomy.Forecast(w, candidate, recipes, intervals, years, new ToolCoverageBudget(w, c, intervals).Remaining, !husbandryEnabled, -1, false, false, -1, -1, sources, order);
+                var housing = MaterialEconomy.PlanHousingMaterials(w, c, recipes, outputs, years, w.Days, sources, order);
                 var raw = MaterialEconomy.Materials.ToDictionary(m => m, m => 0d);
                 foreach (var r in recipes)
                 {
@@ -424,7 +417,7 @@ namespace Anthropocene.Simulation
                 double forecastAnimalFeedstock = outputs[CraftGood.AnimalFabric];
                 if (husbandryEnabled)
                 {
-                    var typedFeedstock = NeolithicProduction.FabricFeedstockInputs(w, candidate, intervals, years, nextPopulation, false, false);
+                    var typedFeedstock = NeolithicProduction.FabricFeedstockInputs(w, candidate, intervals, years, nextPopulation, false, false, -1, -1, order);
                     forecastPlantFeedstock = Math.Min(forecastPlantFeedstock, typedFeedstock.PlantFood);
                     forecastAnimalFeedstock = Math.Min(forecastAnimalFeedstock, typedFeedstock.AnimalFood);
                 }

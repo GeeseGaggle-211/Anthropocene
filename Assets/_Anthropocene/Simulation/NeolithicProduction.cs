@@ -72,6 +72,8 @@ namespace Anthropocene.Simulation
         // Hand and regular tools are consumable output capacity.  Copper retains
         // the old worker-coverage hook until its own durability contract exists.
         private readonly double[] remaining, housingMultipliers, consumed;
+        // Equipment outputs one Hand Tool or one Regular Tool covers.
+        public const double OutputsPerHandTool = 1, OutputsPerTool = 4;
         public double Remaining => remaining[0] + remaining[1] + remaining[2];
         public double HandToolsConsumed => consumed[0];
         public double ToolsConsumed => consumed[1];
@@ -79,7 +81,7 @@ namespace Anthropocene.Simulation
         public ToolCoverageBudget(WorldState w, Camp c, double intervals, double limit = double.PositiveInfinity)
         {
             var n = w.Config.Neolithic;
-            remaining = new[] { c.Inventory.HandTools, c.Inventory.Tools * 4, c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools * intervals / n.ToolCoveragePerWorker : 0 }.ToArray();
+            remaining = new[] { c.Inventory.HandTools, c.Inventory.Tools * OutputsPerTool, c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools * intervals / n.ToolCoveragePerWorker : 0 }.ToArray();
             consumed = new double[3];
             // The old argument was a worker-time ceiling.  Physical inventory is
             // now the authoritative budget; callers keep the argument only for
@@ -95,7 +97,7 @@ namespace Anthropocene.Simulation
         {
             if (output <= 0) return;
             if (good == CraftGood.HandTools) remaining[0] += output;
-            else if (good == CraftGood.Tools) remaining[1] += output * 4;
+            else if (good == CraftGood.Tools) remaining[1] += output * OutputsPerTool;
         }
         // Housing Material and the assembly steps share the Builder tool multiplier.
         internal static bool IsHousingWork(CraftGood good) => good == CraftGood.Housing || good == CraftGood.LightHousing || good == CraftGood.HousingMaterial;
@@ -155,7 +157,7 @@ namespace Anthropocene.Simulation
                 {
                     double units = Math.Min(remaining[grade], Math.Max(0, output));
                     remaining[grade] = Math.Max(0, remaining[grade] - units); output -= units;
-                    consumed[grade] += units / (grade == 0 ? 1 : 4);
+                    consumed[grade] += units / (grade == 0 ? OutputsPerHandTool : OutputsPerTool);
                     used += units / (rate * multiplier);
                 }
             }
@@ -323,16 +325,16 @@ namespace Anthropocene.Simulation
 
         // Field work is resolved before growth planning, while Pots depreciate
         // later in ResolveCampNeolithic. Keep those chronology boundaries separate.
-        public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources = null)
+        public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources = null, ProductionOrder order = null)
         {
             var n = w.Config.Neolithic;
             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
             // Housing Material is made only against the Housing gap, never stockpiled beyond it.
             if (good == CraftGood.HousingMaterial)
-                return Math.Max(0, Demand(w, c, CraftGood.Housing, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources) - Math.Max(0, c.Inventory.HousingMaterial));
+                return Math.Max(0, Demand(w, c, CraftGood.Housing, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order) - Math.Max(0, c.Inventory.HousingMaterial));
             if (good == CraftGood.HandTools || good == CraftGood.Tools)
             {
-                var tools = ToolReplacementDemands(w, c, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources);
+                var tools = ToolReplacementDemands(w, c, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order);
                 return good == CraftGood.HandTools ? tools.HandTools : tools.Tools;
             }
             if (good == CraftGood.Pots)
@@ -373,7 +375,7 @@ namespace Anthropocene.Simulation
         }
         // Hand and Regular Tool replacement share one equipment schedule; one run
         // answers both goods for the same camp state.
-        internal static (double HandTools, double Tools) ToolReplacementDemands(WorldState w, Camp c, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources)
+        internal static (double HandTools, double Tools) ToolReplacementDemands(WorldState w, Camp c, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources, ProductionOrder order = null)
         {
             var n = w.Config.Neolithic;
             // Both schedule passes read the same unmodified camp, so each recipe's
@@ -385,8 +387,11 @@ namespace Anthropocene.Simulation
                     baseDemand[good] = value = DemandWithoutToolReplacement(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed);
                 return value;
             }
-            var recipes = Recipes(w.Config).Where(r => (r.Equipment || r.Good == CraftGood.HousingMaterial) && (!r.AgricultureOnly || CultivationEconomy.Enabled(c)) && (!r.HusbandryOnly || CultivationEconomy.HusbandryEnabled(c)))
-                .OrderByDescending(r => Priority(c, r.Good)).ThenBy(r => ScheduleKey(r.Good)).ToArray();
+            var recipes = ProductionOrder.Sort(Recipes(w.Config).Where(r => (r.Equipment || r.Good == CraftGood.HousingMaterial) && (!r.AgricultureOnly || CultivationEconomy.Enabled(c)) && (!r.HusbandryOnly || CultivationEconomy.HusbandryEnabled(c))),
+                good => Priority(c, good), order);
+            // Under the Value order every recipe claims coverage and material in value
+            // order across roles; otherwise the roles run in turn.
+            var steps = ProductionOrder.Steps(recipes, order != null).ToArray();
             double MaterialPriority(MaterialId material) => material == MaterialId.Stone ? c.StonePriority : material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
             var sources = knownSources ?? MaterialEconomy.KnownSources(w, c, w.Days);
             var room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) +
@@ -423,105 +428,99 @@ namespace Anthropocene.Simulation
             var probeHousingMaterial = housingMaterial;
             var probePlanned = recipes.ToDictionary(r => r.Good, r => 0d);
             var probeLabor = labor.ToDictionary(p => p.Key, p => p.Value);
-            foreach (var role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
+            foreach (var (role, recipe) in steps)
             {
                 if (!probeLabor.TryGetValue(role, out double availableLabor)) continue;
-                foreach (var recipe in recipes)
-                {
-                    if (Priority(c, recipe.Good) <= 0) continue;
-                    bool specialist = c.People.HasTech(recipe.Track);
-                    if (role != WorkforceRoles.Craftsperson && (!specialist || role != recipe.Specialist)) continue;
-                    if (role == WorkforceRoles.Craftsperson && recipe.SpecialistOnly) continue;
-                    double rate = recipe.Rate * (role == recipe.Specialist && specialist ? 1 : n.GeneralistTaskEfficiency);
-                    double wanted = Math.Max(0, BaseDemand(recipe.Good) - probePlanned[recipe.Good]);
-                    double amount = Math.Min(wanted, availableLabor * rate);
-                    if (recipe.Stone > 0) amount = Math.Min(amount, probeRoom[MaterialId.Stone] / recipe.Stone);
-                    if (recipe.Clay > 0) amount = Math.Min(amount, probeRoom[MaterialId.Clay] / recipe.Clay);
-                    if (recipe.Wood > 0) amount = Math.Min(amount, probeRoom[MaterialId.Wood] / recipe.Wood);
-                    if (recipe.PlantFood > 0) amount = Math.Min(amount, probePlant / recipe.PlantFood);
-                    if (recipe.AnimalFood > 0) amount = Math.Min(amount, probeAnimalFood / recipe.AnimalFood);
-                    if (recipe.AnimalFabric > 0) amount = Math.Min(amount, probeAnimalFabric / recipe.AnimalFabric);
-                    if (recipe.HousingMaterial > 0) amount = Math.Min(amount, probeHousingMaterial / recipe.HousingMaterial);
-                    if (recipe.Good == CraftGood.HousingMaterial) amount = Math.Min(wanted, FlatHousingMaterialLimit(rate, availableLabor, wanted, probeHousingMaterial));
-                    if (amount <= 1e-12) continue;
-                    availableLabor -= amount / rate;
-                    probePlanned[recipe.Good] += amount;
-                    probeRoom[MaterialId.Stone] -= amount * recipe.Stone;
-                    probeRoom[MaterialId.Clay] -= amount * recipe.Clay;
-                    probeRoom[MaterialId.Wood] -= amount * recipe.Wood;
-                    probePlant -= amount * recipe.PlantFood;
-                    probeAnimalFood -= amount * recipe.AnimalFood;
-                    probeAnimalFabric += recipe.Good == CraftGood.AnimalFabric ? amount : 0;
-                    probeAnimalFabric -= amount * recipe.AnimalFabric;
-                    probeHousingMaterial += recipe.Good == CraftGood.HousingMaterial ? amount : 0;
-                    probeHousingMaterial -= amount * recipe.HousingMaterial;
-                }
+                if (Priority(c, recipe.Good) <= 0) continue;
+                bool specialist = c.People.HasTech(recipe.Track);
+                if (role != WorkforceRoles.Craftsperson && (!specialist || role != recipe.Specialist)) continue;
+                if (role == WorkforceRoles.Craftsperson && recipe.SpecialistOnly) continue;
+                double rate = recipe.Rate * (role == recipe.Specialist && specialist ? 1 : n.GeneralistTaskEfficiency);
+                double wanted = Math.Max(0, BaseDemand(recipe.Good) - probePlanned[recipe.Good]);
+                double amount = Math.Min(wanted, availableLabor * rate);
+                if (recipe.Stone > 0) amount = Math.Min(amount, probeRoom[MaterialId.Stone] / recipe.Stone);
+                if (recipe.Clay > 0) amount = Math.Min(amount, probeRoom[MaterialId.Clay] / recipe.Clay);
+                if (recipe.Wood > 0) amount = Math.Min(amount, probeRoom[MaterialId.Wood] / recipe.Wood);
+                if (recipe.PlantFood > 0) amount = Math.Min(amount, probePlant / recipe.PlantFood);
+                if (recipe.AnimalFood > 0) amount = Math.Min(amount, probeAnimalFood / recipe.AnimalFood);
+                if (recipe.AnimalFabric > 0) amount = Math.Min(amount, probeAnimalFabric / recipe.AnimalFabric);
+                if (recipe.HousingMaterial > 0) amount = Math.Min(amount, probeHousingMaterial / recipe.HousingMaterial);
+                if (recipe.Good == CraftGood.HousingMaterial) amount = Math.Min(wanted, FlatHousingMaterialLimit(rate, availableLabor, wanted, probeHousingMaterial));
+                if (amount <= 1e-12) continue;
+                availableLabor -= amount / rate;
                 probeLabor[role] = availableLabor;
+                probePlanned[recipe.Good] += amount;
+                probeRoom[MaterialId.Stone] -= amount * recipe.Stone;
+                probeRoom[MaterialId.Clay] -= amount * recipe.Clay;
+                probeRoom[MaterialId.Wood] -= amount * recipe.Wood;
+                probePlant -= amount * recipe.PlantFood;
+                probeAnimalFood -= amount * recipe.AnimalFood;
+                probeAnimalFabric += recipe.Good == CraftGood.AnimalFabric ? amount : 0;
+                probeAnimalFabric -= amount * recipe.AnimalFabric;
+                probeHousingMaterial += recipe.Good == CraftGood.HousingMaterial ? amount : 0;
+                probeHousingMaterial -= amount * recipe.HousingMaterial;
             }
 
             var planned = recipes.ToDictionary(r => r.Good, r => 0d);
             double housingWoodDrawn = 0;
-            var housingPlan = MaterialEconomy.BuildHousingPlan(recipes, good => Priority(c, good), probePlanned, room[MaterialId.Stone], room[MaterialId.Clay], room[MaterialId.Wood]);
-            foreach (var role in WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }))
+            var housingPlan = MaterialEconomy.BuildHousingPlan(recipes, good => Priority(c, good), probePlanned, room[MaterialId.Stone], room[MaterialId.Clay], room[MaterialId.Wood], order);
+            foreach (var (role, recipe) in steps)
             {
                 if (!labor.TryGetValue(role, out double availableLabor)) continue;
-                foreach (var recipe in recipes)
-                {
-                    if (Priority(c, recipe.Good) <= 0) continue;
-                    bool specialist = c.People.HasTech(recipe.Track);
-                    if (role != WorkforceRoles.Craftsperson && (!specialist || role != recipe.Specialist)) continue;
-                    if (role == WorkforceRoles.Craftsperson && recipe.SpecialistOnly) continue;
-                    double rate = recipe.Rate * (role == recipe.Specialist && specialist ? 1 : n.GeneralistTaskEfficiency);
-                    double wanted = Math.Max(0, BaseDemand(recipe.Good) - planned[recipe.Good]);
-                    double amount = Math.Min(wanted, availableLabor * rate);
-                    if (recipe.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / recipe.Stone);
-                    if (recipe.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / recipe.Clay);
-                    if (recipe.Wood > 0) amount = Math.Min(amount, room[MaterialId.Wood] / recipe.Wood);
-                    if (recipe.ConstructionMaterial <= 0 && (recipe.Wood > 0 || recipe.Clay > 0))
-                        amount = housingPlan.LimitDirect(room[MaterialId.Wood], room[MaterialId.Clay], recipe, amount);
-                    if (recipe.ConstructionMaterial > 0)
-                        amount = housingPlan.LimitHousing(room[MaterialId.Wood], room[MaterialId.Clay], amount, recipe.ConstructionMaterial, out _, out _);
-                    if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
-                    if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
-                    if (recipe.AnimalFabric > 0) amount = Math.Min(amount, animalFabric / recipe.AnimalFabric);
-                    if (recipe.HousingMaterial > 0) amount = Math.Min(amount, housingMaterial / recipe.HousingMaterial);
-                    if (recipe.Good == CraftGood.HousingMaterial) amount = Math.Min(amount, FlatHousingMaterialLimit(rate, availableLabor, wanted, housingMaterial));
-                    if (amount <= 1e-12) { housingPlan.Settle(recipe, role); continue; }
-                    availableLabor -= amount / rate;
-                    planned[recipe.Good] += amount;
-                    // Material making is labour, not equipment output: it adds no
-                    // useful output but is part of the generalist's effort.
-                    if (recipe.Equipment) useful += amount;
-                    if (role == WorkforceRoles.Craftsperson)
-                    {
-                        if (recipe.Equipment) generalistUseful += amount;
-                        generalistEffort += amount / rate;
-                    }
-                    if (recipe.Equipment)
-                    {
-                        double copperRate = rate * (recipe.Good == CraftGood.Housing || recipe.Good == CraftGood.LightHousing ? n.CopperToolsHousingMultiplier : 1);
-                        double copperAmount = Math.Min(amount, copperLabor * copperRate);
-                        copperOutput += copperAmount;
-                        copperLabor -= copperRate > 0 ? copperAmount / copperRate : 0;
-                    }
-                    room[MaterialId.Stone] -= amount * recipe.Stone; room[MaterialId.Clay] -= amount * recipe.Clay; room[MaterialId.Wood] -= amount * recipe.Wood;
-                    if (recipe.ConstructionMaterial > 0)
-                    {
-                        housingPlan.LimitHousing(room[MaterialId.Wood], room[MaterialId.Clay], amount, recipe.ConstructionMaterial, out double wood, out double clay);
-                        room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= clay; housingWoodDrawn += wood;
-                    }
-                    housingPlan.CompleteDirect(recipe, amount);
-                    plant -= amount * recipe.PlantFood;
-                    animalFood -= amount * recipe.AnimalFood;
-                    animalFabric += recipe.Good == CraftGood.AnimalFabric ? amount : 0;
-                    animalFabric -= amount * recipe.AnimalFabric;
-                    housingMaterial += recipe.Good == CraftGood.HousingMaterial ? amount : 0;
-                    housingMaterial -= amount * recipe.HousingMaterial;
-                    housingPlan.Settle(recipe, role);
-                }
+                if (Priority(c, recipe.Good) <= 0) continue;
+                bool specialist = c.People.HasTech(recipe.Track);
+                if (role != WorkforceRoles.Craftsperson && (!specialist || role != recipe.Specialist)) continue;
+                if (role == WorkforceRoles.Craftsperson && recipe.SpecialistOnly) continue;
+                double rate = recipe.Rate * (role == recipe.Specialist && specialist ? 1 : n.GeneralistTaskEfficiency);
+                double wanted = Math.Max(0, BaseDemand(recipe.Good) - planned[recipe.Good]);
+                double amount = Math.Min(wanted, availableLabor * rate);
+                if (recipe.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / recipe.Stone);
+                if (recipe.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / recipe.Clay);
+                if (recipe.Wood > 0) amount = Math.Min(amount, room[MaterialId.Wood] / recipe.Wood);
+                if (recipe.ConstructionMaterial <= 0 && (recipe.Wood > 0 || recipe.Clay > 0))
+                    amount = housingPlan.LimitDirect(room[MaterialId.Wood], room[MaterialId.Clay], recipe, amount);
+                if (recipe.ConstructionMaterial > 0)
+                    amount = housingPlan.LimitHousing(room[MaterialId.Wood], room[MaterialId.Clay], amount, recipe.ConstructionMaterial, out _, out _);
+                if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
+                if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
+                if (recipe.AnimalFabric > 0) amount = Math.Min(amount, animalFabric / recipe.AnimalFabric);
+                if (recipe.HousingMaterial > 0) amount = Math.Min(amount, housingMaterial / recipe.HousingMaterial);
+                if (recipe.Good == CraftGood.HousingMaterial) amount = Math.Min(amount, FlatHousingMaterialLimit(rate, availableLabor, wanted, housingMaterial));
+                if (amount <= 1e-12) { housingPlan.Settle(recipe, role); continue; }
+                availableLabor -= amount / rate;
                 labor[role] = availableLabor;
+                planned[recipe.Good] += amount;
+                // Material making is labour, not equipment output: it adds no
+                // useful output but is part of the generalist's effort.
+                if (recipe.Equipment) useful += amount;
+                if (role == WorkforceRoles.Craftsperson)
+                {
+                    if (recipe.Equipment) generalistUseful += amount;
+                    generalistEffort += amount / rate;
+                }
+                if (recipe.Equipment)
+                {
+                    double copperRate = rate * (recipe.Good == CraftGood.Housing || recipe.Good == CraftGood.LightHousing ? n.CopperToolsHousingMultiplier : 1);
+                    double copperAmount = Math.Min(amount, copperLabor * copperRate);
+                    copperOutput += copperAmount;
+                    copperLabor -= copperRate > 0 ? copperAmount / copperRate : 0;
+                }
+                room[MaterialId.Stone] -= amount * recipe.Stone; room[MaterialId.Clay] -= amount * recipe.Clay; room[MaterialId.Wood] -= amount * recipe.Wood;
+                if (recipe.ConstructionMaterial > 0)
+                {
+                    housingPlan.LimitHousing(room[MaterialId.Wood], room[MaterialId.Clay], amount, recipe.ConstructionMaterial, out double wood, out double clay);
+                    room[MaterialId.Wood] -= wood; room[MaterialId.Clay] -= clay; housingWoodDrawn += wood;
+                }
+                housingPlan.CompleteDirect(recipe, amount);
+                plant -= amount * recipe.PlantFood;
+                animalFood -= amount * recipe.AnimalFood;
+                animalFabric += recipe.Good == CraftGood.AnimalFabric ? amount : 0;
+                animalFabric -= amount * recipe.AnimalFabric;
+                housingMaterial += recipe.Good == CraftGood.HousingMaterial ? amount : 0;
+                housingMaterial -= amount * recipe.HousingMaterial;
+                housingPlan.Settle(recipe, role);
             }
-            double capacity = c.Inventory.HandTools + c.Inventory.Tools * 4;
+            double capacity = c.Inventory.HandTools + c.Inventory.Tools * ToolCoverageBudget.OutputsPerTool;
             // Copper remains the legacy worker-time hook. Its contribution above
             // follows each useful recipe's actual rate and Housing multiplier;
             // there is no Copper output-capacity multiplier or wear.
@@ -530,14 +529,15 @@ namespace Anthropocene.Simulation
             var regularRecipe = Recipes(w.Config).Single(r => r.Good == CraftGood.Tools);
             // Regular Tools hold their place in the same access order: Wood that
             // Housing Material drew is unavailable to them only if it outranks them.
-            bool toolsOutrankHousing = Priority(c, CraftGood.Tools) > Priority(c, CraftGood.HousingMaterial) ||
+            bool toolsOutrankHousing = order != null ? order.Outranks(CraftGood.Tools, CraftGood.HousingMaterial) :
+                Priority(c, CraftGood.Tools) > Priority(c, CraftGood.HousingMaterial) ||
                 Priority(c, CraftGood.Tools) == Priority(c, CraftGood.HousingMaterial) && ScheduleKey(CraftGood.Tools) < ScheduleKey(CraftGood.HousingMaterial);
             double toolWoodRoom = room[MaterialId.Wood] + (toolsOutrankHousing ? housingWoodDrawn : 0);
             bool regularFeasible = c.People.HasTech(NeolithicTech.Toolmaking) && c.CraftingPriorities.Tools > 0 &&
                 (regularRecipe.Stone <= 0 || room[MaterialId.Stone] > 1e-12) &&
                 (regularRecipe.Wood <= 0 || toolWoodRoom > 1e-12);
             // Feasible Regular Tools carry the whole deficit; otherwise Hand Tools do.
-            if (regularFeasible) return (0, deficit / 4);
+            if (regularFeasible) return (0, deficit / ToolCoverageBudget.OutputsPerTool);
             double specialistSupply = c.People.HasTech(NeolithicTech.Toolmaking)
                 ? CultivationEconomy.Workers(c, WorkforceRoles.Toolmaker) * referenceIntervals * n.HandToolsOutput : 0;
             double specialistOutput = Math.Min(deficit, specialistSupply);
@@ -615,12 +615,12 @@ namespace Anthropocene.Simulation
         {
             return FabricFeedstockInputs(w, c, intervals, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed).Total;
         }
-        public static ManufacturingFoodPlan FabricFeedstockInputs(WorldState w, Camp c, double intervals, double years, double residentPopulation = -1, bool fieldWorkAlreadyResolved = false, bool potsAlreadyDecayed = false, double plantFoodBudget = -1, double animalFoodBudget = -1)
+        public static ManufacturingFoodPlan FabricFeedstockInputs(WorldState w, Camp c, double intervals, double years, double residentPopulation = -1, bool fieldWorkAlreadyResolved = false, bool potsAlreadyDecayed = false, double plantFoodBudget = -1, double animalFoodBudget = -1, ProductionOrder order = null)
         {
             var result = new ManufacturingFoodPlan();
             if (!CultivationEconomy.EconomyEnabled(c) || c.Population <= 0) return result;
             var coverage = new ToolCoverageBudget(w, c, intervals);
-            var planned = MaterialEconomy.Forecast(w, c, Recipes(w.Config), intervals, years, coverage.Remaining, true, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, plantFoodBudget, animalFoodBudget);
+            var planned = MaterialEconomy.Forecast(w, c, Recipes(w.Config), intervals, years, coverage.Remaining, true, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, plantFoodBudget, animalFoodBudget, null, order);
             result.PlantFood = planned[CraftGood.Cloth] * w.Config.Neolithic.PlantFoodPerFabricUnit;
             result.AnimalFood = planned[CraftGood.AnimalFabric];
             return result;
@@ -657,7 +657,7 @@ namespace Anthropocene.Simulation
             c.HousingReplacementDemand = Math.Min(Math.Max(0, before - after), c.HousingDemand);
             c.HousingGrowthDemand = Math.Max(0, c.HousingDemand - c.HousingReplacementDemand);
         }
-        public static double Produce(WorldState w, Camp c, CraftRecipe recipe, string role, double workerIntervals, double intervals, double usefulDemand, ref double equipmentIntervals, TurnRecord record, ToolCoverageBudget coverage = null, HousingMaterialPlan housing = null)
+        public static double Produce(WorldState w, Camp c, CraftRecipe recipe, string role, double workerIntervals, double intervals, double usefulDemand, ref double equipmentIntervals, TurnRecord record, ToolCoverageBudget coverage = null, HousingMaterialPlan housing = null, ProductionOrder order = null)
         {
             if (!CultivationEconomy.EconomyEnabled(c) || workerIntervals <= 0 || recipe.Rate <= 0 || usefulDemand <= 0 || intervals <= 0) return 0;
             if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c) || recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) return 0;
@@ -674,7 +674,7 @@ namespace Anthropocene.Simulation
             {
                 var planned = Recipes(w.Config).ToDictionary(r => r.Good, r => 0d);
                 planned[recipe.Good] = Math.Min(usefulDemand, recipe.Equipment ? coverage.Capacity(recipe.Good, rate, workerIntervals) : workerIntervals * rate);
-                housing = MaterialEconomy.PlanHousingMaterials(w, c, Recipes(w.Config), planned, intervals * w.Config.BaseDays / w.Config.DaysPerYear, w.Days);
+                housing = MaterialEconomy.PlanHousingMaterials(w, c, Recipes(w.Config), planned, intervals * w.Config.BaseDays / w.Config.DaysPerYear, w.Days, null, order);
             }
             // The shared budget limits finished output.  The legacy equipment
             // interval argument is retained for callers but is no longer a
@@ -755,31 +755,33 @@ namespace Anthropocene.Simulation
                 var produced = new Dictionary<CraftGood, double>();
                 var roles = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToArray();
                 var laborByRole = roles.ToDictionary(role => role, role => CultivationEconomy.Workers(c, role) * intervals);
-                var orderedRecipes = recipes.OrderByDescending(r => Priority(c, r.Good)).ThenBy(r => ScheduleKey(r.Good)).ToArray();
+                // The Value order (when this camp has one) fixes the order in which
+                // recipes claim shared tool coverage and material; the planner and
+                // forecast walk the same sequence.
+                var order = needs?.Order;
+                var orderedRecipes = ProductionOrder.Sort(recipes, good => Priority(c, good), order);
+                var steps = ProductionOrder.Steps(orderedRecipes, order != null).ToArray();
                 // Resolve an acyclic aggregate input balance: non-equipment
                 // toolmaking supplies the same turn's equipment service ledger.
                 // The two sweeps are dependency order, not production dates.
                 for (int balanceLayer = 0; balanceLayer < 2; balanceLayer++)
                 {
-                    foreach (string role in roles)
+                    foreach (var (role, recipe) in steps)
                     {
+                        bool toolInput = recipe.Good == CraftGood.HandTools || recipe.Good == CraftGood.Tools;
+                        if (toolInput != (balanceLayer == 0)) continue;
+                        if (recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c) || recipe.AgricultureOnly && !CultivationEconomy.Enabled(c)) continue;
+                        if (Priority(c, recipe.Good) <= 0) continue;
                         double labor = laborByRole[role];
-                        foreach (var recipe in orderedRecipes)
-                        {
-                            bool toolInput = recipe.Good == CraftGood.HandTools || recipe.Good == CraftGood.Tools;
-                            if (toolInput != (balanceLayer == 0)) continue;
-                            if (recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c) || recipe.AgricultureOnly && !CultivationEconomy.Enabled(c)) continue;
-                            if (Priority(c, recipe.Good) <= 0) continue;
-                            double target = needs?.Production != null
-                                ? Math.Max(0, needs.Production[recipe.Good] - (produced.TryGetValue(recipe.Good, out double made) ? made : 0))
-                                : Demand(w, c, recipe.Good, years, -1, true, true);
-                            int before = record.Production.Count;
-                            labor -= Produce(w, c, recipe, role, labor, intervals, target, ref equipment, record, coverage, housing);
-                            housing?.Settle(recipe, role);
-                            if (record.Production.Count > before)
-                                produced[recipe.Good] = (produced.TryGetValue(recipe.Good, out double prior) ? prior : 0) + record.Production[record.Production.Count - 1].Output;
-                        }
+                        double target = needs?.Production != null
+                            ? Math.Max(0, needs.Production[recipe.Good] - (produced.TryGetValue(recipe.Good, out double made) ? made : 0))
+                            : Demand(w, c, recipe.Good, years, -1, true, true, null, order);
+                        int before = record.Production.Count;
+                        labor -= Produce(w, c, recipe, role, labor, intervals, target, ref equipment, record, coverage, housing, order);
                         laborByRole[role] = labor;
+                        housing?.Settle(recipe, role);
+                        if (record.Production.Count > before)
+                            produced[recipe.Good] = (produced.TryGetValue(recipe.Good, out double prior) ? prior : 0) + record.Production[record.Production.Count - 1].Output;
                     }
                 }
             }

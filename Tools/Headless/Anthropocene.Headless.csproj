@@ -48,6 +48,7 @@
     <Compile Include="Issue32CapabilityChecks.cs" />
     <Compile Include="QoLCohesionChecks.cs" />
     <Compile Include="ValueFulfilmentChecks.cs" />
+    <Compile Include="ProductionOrderChecks.cs" />
   <Compile Include="PastoralCraftChecks.cs" />
   </ItemGroup>
 </Project>
