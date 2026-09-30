@@ -185,6 +185,8 @@ internal static class Program
         int fissionSwitch = Option(args, "--fission", -1);
         // Fission housing-relief weight (WP10c): unset keeps the configured value (1); 0 counts cohesion and clothing only.
         string fissionReliefText = Option(args, "--fission-housing-relief", "");
+        // Immigration control (WP10b): 0 disables the pass, 1 enables it; unset keeps the configured value (disabled).
+        int immigrationSwitch = Option(args, "--immigration", -1);
 
         if (openingTurnLimit < 0 || postOpeningTurns < 0 || warmup < 0)
             throw new ArgumentOutOfRangeException("Turn counts and warmup must be non-negative.");
@@ -281,6 +283,11 @@ internal static class Program
             var fissionField = world.Config.GetType().GetField("FissionEnabled") ?? throw new ArgumentException("This simulation source has no fission switch.");
             fissionField.SetValue(world.Config, fissionSwitch != 0);
         }
+        if (immigrationSwitch >= 0)
+        {
+            var immigrationField = world.Config.GetType().GetField("ImmigrationEnabled") ?? throw new ArgumentException("This simulation source has no immigration switch.");
+            immigrationField.SetValue(world.Config, immigrationSwitch != 0);
+        }
         if (!string.IsNullOrWhiteSpace(fissionReliefText))
         {
             var reliefField = world.Config.GetType().GetField("FissionHousingRelief") ?? throw new ArgumentException("This simulation source has no fission housing-relief lever.");
@@ -356,6 +363,7 @@ internal static class Program
             detailsEnabled = details,
             productionConfig,
             fissionSwitch,
+            immigrationSwitch,
             fissionHousingRelief = string.IsNullOrWhiteSpace(fissionReliefText) ? (double?)null : double.Parse(fissionReliefText, System.Globalization.CultureInfo.InvariantCulture),
             fingerprintsEnabled,
             replayMode = fingerprintMode == 1 ? "exact-per-turn" : fingerprintMode == 2 ? "exact-final" : "outcomes-only",
@@ -496,7 +504,7 @@ internal static class Program
         int population = world.Camps.Sum(world.LinkedPopulation);
 #if MAIN
         int campCount = world.Camps.Count, societyCount = world.Societies.Count, playerCount = world.Camps.Select(c => c.Player).Distinct().Count(), fissionCount = 0;
-        object fissionEvents = null;
+        object fissionEvents = null; object migrationEvents = null; int migrationCount = 0, migrantCount = 0, kinMigrants = 0;
 #else
         // Fission (WP10a): settlement, Society and player-slot counts over time, and this turn's fission events.
         int campCount = world.Camps.Count, societyCount = world.Societies.Count, playerCount = world.LivePlayers;
@@ -504,6 +512,11 @@ internal static class Program
         int fissionCount = turnFissions.Count;
         object fissionEvents = turnFissions.Select(f => new { f.ParentCamp, f.DaughterCamp, f.ParentSociety, f.DaughterSociety, f.DaughterPlayer, f.Tile, f.ParentBefore, f.Daughter,
             regime = ((FissionRegime)f.Regime).ToString(), policy = f.Policy.ToString(), f.Push, f.Desirability, f.Score, f.Affinity, f.AnimalsMoved, f.Gain, f.DaughterQoL }).ToArray();
+        // Immigration (WP10b): this turn's committed flows, canonical order.
+        var turnMigrations = record.Migrations ?? new List<MigrationReport>();
+        int migrationCount = turnMigrations.Count, migrantCount = turnMigrations.Sum(m => m.Migrants), kinMigrants = turnMigrations.Where(m => m.Kin).Sum(m => m.Migrants);
+        object migrationEvents = turnMigrations.Select(m => new { m.SourceCamp, m.DestinationCamp, m.SourceSociety, m.DestinationSociety, m.SourceBefore, m.DestinationBefore, m.Intended, m.Migrants, m.Distance, m.Kin,
+            m.SourceQoL, m.DestinationQoL, m.Utility, m.PostInflowQoL, m.Plant, m.Animal, m.Aquatic }).ToArray();
 #endif
         object KnowledgeFootprint(WorldState w)
         {
@@ -551,6 +564,17 @@ internal static class Program
             fissionDropped = Metric("FissionDropped"),
             fissionDaughterChecks = Metric("FissionDaughterChecks"),
             fissionDaughterBlocked = Metric("FissionDaughterBlocked"),
+            migrationCount,
+            migrantCount,
+            kinMigrants,
+            migrationEvents,
+            immigrationMs = Metric("ImmigrationMilliseconds"),
+            immigrationCampsEvaluated = Metric("ImmigrationCampsEvaluated"),
+            immigrationCandidates = Metric("ImmigrationCandidatesScored"),
+            immigrationIntents = Metric("ImmigrationIntents"),
+            immigrationAccepted = Metric("ImmigrationAccepted"),
+            immigrationPartial = Metric("ImmigrationPartial"),
+            immigrationRejected = Metric("ImmigrationRejected"),
             managedAnimals,
             wildAnimals,
             managedHerds,

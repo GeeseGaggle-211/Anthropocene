@@ -121,6 +121,12 @@ by user decision (agricultural onset median 906; five worlds: 1,619 fissions,
 population ×3.8–6.3, about 2 ms per camp per turn). Fission remains opt-in
 until WP10b immigration and a performance review.
 
+**WP10b immigration (opt-in, `ImmigrationEnabled = false`).** Implemented as specified in design section 4 and 9: one
+intent per source toward its best known camp within four hexes, utility `w_Q (Q_j - Q_i) - K_distance d - K_attachment -
+K_lifestyle` against a 0.075 deadband, a group of up to 10% of residents (minimum four, source keeps twelve), one canonical
+acceptance cap per destination with no rerouting, typed food carried per capita, sources and arrivals excluded from
+fission. Rules, scaling law, rejected architectures, checks and the five-world measurements: [Immigration.md](Immigration.md).
+
 **Contact knowledge (WP6).** Implemented as specified; see
 [ContactKnowledge.md](ContactKnowledge.md). No behaviour consumes it yet (trade, fission and
 immigration are later packages), so the shipped balance is unchanged by construction: the
@@ -138,7 +144,7 @@ mobile control made 298–313 moves under its older model).
 
 **Fission (WP10a).** Policy, lineage, daughter Societies in new AI player slots, cached
 destination and the Close-phase pass are implemented; see [Fission.md](Fission.md) for the audit,
-rules and measurements. Immigration (WP10b) is not. Standard/80 Continents seed 1 (12 opening + 50
+rules and measurements. Immigration (WP10b) is a separate opt-in pass ([Immigration.md](Immigration.md)). Standard/80 Continents seed 1 (12 opening + 50
 post-opening turns): camps, Societies and player slots grow from 80 to 695 in 62 turns (615 fissions;
 control 80), population about 6.9 times the control at turn 60, turn time about 2 ms per camp and the
 pass itself 0.7% of turn time. Findings for WP11: Paleolithic QoL is at or below `Q_fiss` at any size

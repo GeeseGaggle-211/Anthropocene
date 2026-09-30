@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace Anthropocene.Simulation
 {
-    public enum ContactSource { Sighting, Trade, Kin }
+    public enum ContactSource { Sighting, Trade, Kin, Migration }
 
     // A snapshot of where one foreign camp was last known. It carries location
     // only: no population, stores, orders or movement. Tile is -1 once the camp
@@ -188,6 +188,14 @@ namespace Anthropocene.Simulation
         {
             if (!Remembers(society) || partner.SocietyId == society.Id) return;
             MemoryOf(w, society).Upsert(partner.Id, partner.Player, partner.Tile, w.Turn, ContactSource.Trade);
+        }
+
+        // Migration hook (WP10b): people moved between two known settlements, so each Society learns the other camp's
+        // current location. Call once per direction. Societies before their first breakthrough remember nothing.
+        public static void RecordMigration(WorldState w, Society society, Camp other)
+        {
+            if (!Remembers(society) || other.SocietyId == society.Id) return;
+            MemoryOf(w, society).Upsert(other.Id, other.Player, other.Tile, w.Turn, ContactSource.Migration);
         }
 
         // Kin hook (called by later fission work). The daughter receives a plain copy of

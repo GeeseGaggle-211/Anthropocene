@@ -32,6 +32,16 @@ FIELDS = [
     ("FissionHousingRelief", "weight of the stayers' housing relief in the expected gain (1 = all, 0 = cohesion and clothing only)", "shipped fission lever; 0 by user decision (onset near the design sizes), 1 counts all housing relief and splits housing-short villages at a median of 141 (Docs/Fission.md)"),
     ("FissionRadius", "hexes from the camp searched for a destination (r_fiss)", "shipped fission lever, performance-bounded (validated 1-5)"),
     ("FissionMinimumDaughter", "people in the smallest daughter cohort", "shipped fission lever, uncalibrated"),
+    ("ImmigrationRadius", "hexes from the camp searched for known destination camps (r_imm)", "shipped immigration lever, performance-bounded (validated 1-5); `ImmigrationEnabled` (false by default and in OpeningConfig; opt-in) is a boolean, not listed"),
+    ("ImmigrationQualityWeight", "weight w_Q on the destination-minus-source QoL gap", "shipped immigration lever (Docs/Immigration.md); saves without it load with immigration disabled"),
+    ("ImmigrationDistanceCost", "utility per hex between source and destination (K_distance)", "shipped immigration lever, uncalibrated design baseline"),
+    ("ImmigrationAttachmentCost", "utility lost by leaving the home camp (K_attachment)", "shipped immigration lever, uncalibrated design baseline"),
+    ("ImmigrationToSedentaryCost", "utility barrier for a nomadic camp moving to a village (K_lifestyle)", "shipped immigration lever, design sweep 0 / 0.05 / 0.10"),
+    ("ImmigrationToNomadicCost", "utility barrier for a village moving to a nomadic camp (K_lifestyle)", "shipped immigration lever, design sweep 0.10 / 0.15 / 0.25"),
+    ("ImmigrationDeadband", "utility a move must exceed, and the ramp width of the group size (theta_imm)", "shipped immigration lever, design sweep 0.05 / 0.075 / 0.10"),
+    ("ImmigrationMaxFraction", "largest fraction of a source's residents that leaves in one turn", "shipped immigration lever, uncalibrated"),
+    ("ImmigrationMinimumGroup", "people in the smallest migrating group", "shipped immigration lever, uncalibrated"),
+    ("ImmigrationSourceFloor", "residents a source always keeps", "shipped immigration lever, uncalibrated"),
     ("PlanningHorizonYears", "years", "shipped forecast horizon"),
     ("LandBiomassMultiplier", "relative land biomass multiplier", "shipped new-world calibration"),
     ("LandFoodRegeneration", "fraction per legacy BaseDays profile", "shipped land recovery input"),
@@ -75,6 +85,7 @@ TESTS = [
     ("Tools/Headless/CampSpacingChecks.cs", "CampSpacingChecks.Run"),
     ("Tools/Headless/ContactKnowledgeChecks.cs", "ContactKnowledgeChecks.Run"),
     ("Tools/Headless/FissionChecks.cs", "FissionChecks.Run"),
+    ("Tools/Headless/ImmigrationChecks.cs", "ImmigrationChecks.Run"),
 ]
 API_ONLY_FIELDS = {"CultivationRegenFlux"}
 

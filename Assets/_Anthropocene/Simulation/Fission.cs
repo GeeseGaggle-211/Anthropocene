@@ -132,6 +132,31 @@ namespace Anthropocene.Simulation
             double qd = Coverage(ed, Housing(portable * f, nd)) * NeolithicProduction.SocialCohesion(n, camp, nd);
             return new Estimate { Residents = residents, Daughter = nd, QNow = qNow, QAfter = qAfter, Gain = gain, DaughterQoL = qd };
         }
+        // The camp's committed QoL terms as a pure function of headcount (WP10b; the same formulas as EstimateSplit and ResolveNeeds):
+        // F, W and the expectation E unchanged; clothing coverage and housing per head diluted because incoming people bring neither;
+        // social cohesion S evaluated at the new headcount. At(Residents) equals EstimateSplit(...).QNow.
+        public readonly struct QoLModel
+        {
+            private readonly NeolithicConfig n; private readonly Camp camp; private readonly double b0, expectation, supply;
+            public readonly int Residents;
+            internal QoLModel(WorldState w, Camp camp)
+            {
+                n = w.Config.Neolithic; this.camp = camp; Residents = camp.Population;
+                double floor = n.RudimentaryExpectationFloor;
+                expectation = camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : floor + (1 - floor) * Numbers.Clamp(camp.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+                supply = NeolithicProduction.FixedHousingAt(w, camp.Id, camp.Tile, w.Days) + Math.Max(0, camp.Inventory?.LightHousingUnits ?? 0);
+                b0 = camp.FoodNeedsMetRatio * camp.WaterNeedsMetRatio;
+            }
+            public double At(int people)
+            {
+                if (people <= 0) return 0;
+                double cloth = Math.Min(1, camp.ClothPerCapita * Residents / people), housing = Math.Min(1, supply * n.HousingPeoplePerUnit / people);
+                double coverage = n.RudimentaryWeightClothing * (1 - expectation * (1 - cloth)) + n.RudimentaryWeightHousing * (1 - expectation * (1 - housing));
+                return b0 * coverage * NeolithicProduction.SocialCohesion(n, camp, people);
+            }
+        }
+        public static QoLModel QoLModelOf(WorldState w, Camp camp) => new QoLModel(w, camp);
+
         public static FissionRegime RegimeOf(Camp camp)
             => camp.Technology == Technology.None ? FissionRegime.Paleolithic : CultivationEconomy.Enabled(camp) ? FissionRegime.Agricultural : FissionRegime.Nomadic;
 
@@ -166,12 +191,13 @@ namespace Anthropocene.Simulation
             public int Validations, Searches, Candidates, TileProjections, Invalidations;
         }
 
-        public static void Resolve(WorldState w, TurnRecord record, PhaseExecution execution, ResolutionMetrics metrics)
+        // excluded: camps that emitted an immigration intent or received arrivals this turn (WP10b); they emit no fission intent.
+        public static void Resolve(WorldState w, TurnRecord record, PhaseExecution execution, ResolutionMetrics metrics, HashSet<int> excluded = null)
         {
             if (!w.Config.FissionEnabled) return;
             var timer = System.Diagnostics.Stopwatch.StartNew();
             // Frozen post-demography snapshot: nothing below the parallel map writes to the world.
-            var camps = w.Camps.Where(c => c.Population > 0).OrderBy(c => c.Id).ToArray();
+            var camps = w.Camps.Where(c => c.Population > 0 && (excluded == null || !excluded.Contains(c.Id))).OrderBy(c => c.Id).ToArray();
             var context = new Context(w);
             var evaluations = (execution ?? new PhaseExecution()).Map(camps, c => Evaluate(context, c));
             var committed = new List<int>(); int spacing = Math.Max(1, w.Config.MinimumCampSpacing);

@@ -104,6 +104,9 @@ namespace Anthropocene.Simulation
         // Fission pass (WP10a). Transient work counts; never saved, observed or fingerprinted.
         public long FissionCampsEvaluated, FissionValidations, FissionSearches, FissionCandidatesScored, FissionTileProjections, FissionCacheInvalidations, FissionProposals, FissionCommits, FissionDropped, FissionDaughterChecks, FissionDaughterBlocked;
         public double FissionMilliseconds;
+        // Immigration pass (WP10b). Transient work counts; never saved, observed or fingerprinted.
+        public long ImmigrationCampsEvaluated, ImmigrationCandidatesScored, ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected, ImmigrationMigrants;
+        public double ImmigrationMilliseconds;
         public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans, ClaimsAllocated, ProductionReceipts;
         public long FoodForecastQueries, FoodInvestmentComparisons;
         // Opt-in activity diagnostics; these never affect authoritative state.

@@ -176,4 +176,9 @@ tile, sizes, regime, policy, push, desirability, score, affinity, animals moved)
 `fissionProposals`, `fissionDropped`, `fissionDaughterChecks`, `fissionDaughterBlocked`) and `fissionMs`; events also carry the expected
 `Gain` and estimated `DaughterQoL`. `--fission-housing-relief=0..1` overrides `FissionHousingRelief` (WP10c). Because fission lengthens the opening to up to 12 turns
 (a late Paleolithic daughter must also complete), size `--post-opening-turns` for a fixed total turn count.
-The reproducible commands and results are in [Fission.md](../../Docs/Fission.md).
+`--immigration=0|1` overrides `ImmigrationEnabled` (WP10b; unset keeps the configured value, disabled). Each sample then records
+`migrationCount`, `migrantCount`, `kinMigrants` (people moved between Societies related by lineage), `migrationEvents` (canonical flows with
+source and destination camps, sizes, distance, kin flag, `Q_i`, `Q_j`, utility, post-inflow QoL and typed food carried), the pass counts
+(`immigrationCampsEvaluated`, `immigrationCandidates`, `immigrationIntents`, `immigrationAccepted`, `immigrationPartial`,
+`immigrationRejected`) and `immigrationMs`. The two switches are independent. The reproducible commands and results are in
+[Fission.md](../../Docs/Fission.md) and [Immigration.md](../../Docs/Immigration.md).

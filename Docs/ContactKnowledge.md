@@ -59,9 +59,9 @@ snapshot of where something was, never of what it is doing now.
   tile is cleared. A moved contact is never updated without a new sighting,
   trade or kin event; a fresh sighting locates it again.
 - **Expiry.** A contact is dropped when `turn - Turn >= ContactExpiryTurns`.
-  Nothing else removes a contact, and nothing but a sighting, `RecordTrade` or
-  `RecordKin` ever changes one.
-- **Hooks (`RecordKin` is called by fission, WP10a; `RecordTrade` has no caller yet).** `RecordTrade(world, society, partnerCamp)`
+  Nothing else removes a contact, and nothing but a sighting, `RecordTrade`,
+  `RecordKin` or `RecordMigration` ever changes one.
+- **Hooks (`RecordKin` is called by fission, WP10a; `RecordMigration` by immigration, WP10b, source kind `Migration`, once per direction with the same semantics as `RecordTrade`; `RecordTrade` has no caller yet).** `RecordTrade(world, society, partnerCamp)`
   records the partner's current tile with source `Trade`; call it once per
   direction. `RecordKin(world, parent, daughter, parentCamp, daughterCamp)`
   gives the daughter a plain copy of the parent's explored tiles and contacts

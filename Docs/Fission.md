@@ -3,8 +3,8 @@
 Design: [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) 3.1-3.6, 6.4, 9;
 order of work: [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md) WP10.
 Source: `Assets/_Anthropocene/Simulation/Fission.cs`. Checks:
-`Tools/Headless/FissionChecks.cs`. Immigration is WP10b and is not part of this
-package. Pass contract: [TurnResolutionPasses.md](TurnResolutionPasses.md), Close row.
+`Tools/Headless/FissionChecks.cs`. Immigration is WP10b and lives in
+[Immigration.md](Immigration.md) (it runs before this pass and excludes its sources and arrivals from it). Pass contract: [TurnResolutionPasses.md](TurnResolutionPasses.md), Close row.
 
 **Status: opt-in.** `FissionEnabled` is false by default and in `OpeningConfig.json`.
 WP10a's push (`clamp((Q_fiss - Q) / DeltaQ)`) fired whenever total QoL was low, so camps split at any size
@@ -422,7 +422,7 @@ after load in both. Generation 34.1 s against 33.4 s.
   unchanged from WP10a and untuned.
 - Sites are scored from ground-truth ecology of the footprint; only the chosen tile
   reaches the owner's observation.
-- Immigration (WP10b), affinity decay, trade with kin (WP7-WP8) and the Elder (#23)
+- Immigration is WP10b ([Immigration.md](Immigration.md)); affinity decay, trade with kin (WP7-WP8) and the Elder (#23)
   are out of scope. `Kinship.Affinity` is the hook WP7 will read.
 - Unity: no inspector control for the policy, no journal display, no drawing of a
   cached destination, no kin panel, and `OpeningGame` has not been rebuilt. The

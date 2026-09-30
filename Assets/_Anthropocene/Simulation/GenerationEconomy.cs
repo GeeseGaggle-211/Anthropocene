@@ -26,9 +26,11 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double ManufacturingFood;
         // People who left this camp at the end of the turn to found a fission settlement (WP10a). EndingPopulation is before that split.
         [System.Runtime.Serialization.OptionalField] public int SplitOff;
+        // People who left for, and arrived from, other known settlements at the end of the turn (WP10b). EndingPopulation is before both.
+        [System.Runtime.Serialization.OptionalField] public int Emigrated, Immigrated;
 #pragma warning restore SYSLIB0050
         public string LimitingFactor;
-        public string Explanation => "Population " + StartingPopulation + " + " + Additions + " additions - " + Deaths + " deaths = " + EndingPopulation + " (" + NetPercent.ToString("+0.0;-0.0;0.0", System.Globalization.CultureInfo.InvariantCulture) + "%). " + LimitingFactor + "." + (SplitOff > 0 ? " " + SplitOff + " of them then left to found a new settlement." : "");
+        public string Explanation => "Population " + StartingPopulation + " + " + Additions + " additions - " + Deaths + " deaths = " + EndingPopulation + " (" + NetPercent.ToString("+0.0;-0.0;0.0", System.Globalization.CultureInfo.InvariantCulture) + "%). " + LimitingFactor + "." + (SplitOff > 0 ? " " + SplitOff + " of them then left to found a new settlement." : "") + (Emigrated > 0 ? " " + Emigrated + " then moved to other settlements." : "") + (Immigrated > 0 ? " " + Immigrated + " more arrived from other settlements." : "");
     }
 
     public static class PassiveGathering
