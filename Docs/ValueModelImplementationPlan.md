@@ -79,7 +79,17 @@ nothing; +40,000 food staffs 23 Weavers. Husbandry camps reach the food limit
 sooner (median 1,800 residents), hence 80/106. Secondary: a relocating camp
 has one turn with no production and leaves fixed Housing (209 husbandry
 camp-turns); Farm and Herding Tools absorb most tool coverage at scale.
-Fix pending a decision (it changes the documented food order).
+Fix: fabric feedstock ahead of reserve refill (user decision 30 September).
+
+**Husbandry mobility check.** MobileHusbandryValidation's exact command
+(Continents 11/23/1729, 80 post-opening turns, `--land-m=63
+--land-access-scale=0.5 --cultivation-effort=16`) on the pre-WP1 baseline
+`bcdef6e` and on head `4480ea9`: husbandry AI moves 214/331/278 → 196/309/248
+(−7% to −11%; last 40 turns 53/105/83 → 45/79/46), with late herd forage met
+1.000 in all runs, water met 0.950–0.967 → 0.959–0.964 and domestic animals
++1% to +8%. Herds are no worse supplied, so the lower move count is fewer
+supply-driven relocations, not a stuck-in-place regression (the report's
+mobile control made 298–313 moves under its older model).
 
 **Next, in order (user decision 30 September: correctness over speed):**
 1. ~~WP4b redo~~ (user chose the growth-margin valuation; done, see table).
