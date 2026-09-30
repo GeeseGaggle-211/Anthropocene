@@ -185,7 +185,35 @@ the ladder can inflate to many times the residents, stalled near `s = 0` and cut
 The planner reports `farmLabourPrice`: `u` of the first ladder step not covered by the plan's `ExpansionFarmers * years`
 (0 when exhausted or absent). With slack labour, or when the ladder's values are below the last craft unit's price, the plan is
 exactly the pre-WP4b Value plan. Uniform is untouched; nothing is saved. Checks: `ExpansionClaimChecks`
-(`--only=ExpansionClaimChecks`). Farm Tools and Pots are not yet priced through `w_farm` (WP4a redo).
+(`--only=ExpansionClaimChecks`).
+
+### Farm Tools, Herding Tools and Pots (WP4a redo)
+
+Under the Value rule the demand pass prices these three goods after the expansion ladder (`ClaimValuation.ApplyTools`,
+`ProductionDemand.cs`), with no saved fields. **Saved labour is priced at the marginal value of the labour it frees:**
+`w_farm0 = Expansion.ValueAfter(lastExpansionFarmers · years)`, the ladder's value after the expansion farmers that
+the camp's saved `EconomicLabor.ExpansionFarmers` (last turn's plan) staffed; 0 when there is no ladder (no forecast
+shortfall, exhausted ladder), in which case the tools stay unpriced (uniform share, tail of the order) exactly as before.
+- Farm Tool: `savedFT = FarmToolFarmerYearsPerUnit · (1 − 1/e)`, `e = FarmToolFieldWorkEfficiency` (about 1.2656, so
+  about 4.19 farmer-years), `V_FT = savedFT · w_farm0 · P` (P the crafting-priority multiplier used for need goods).
+- Herding Tool: `savedHT = HerdingToolCoverageYearsPerUnit · (S/A − 1)`, `S = StoneHerdingToolAnimalsPerHerder` (2.69),
+  `A = AnimalsPerHerder` (2): `HerdingTooling.RequiredHerders` gives a covered herder-year `S` animals that would need `S/A`
+  uncovered herders, so one covered herder-year frees `S/A − 1` herder-years (6.9 per tool), and `V_HT = savedHT · w_farm0 · P`
+  because freed herders join the same field margin. (The first WP4a attempt's `1 − A/S` understated this relation.)
+- Tool share: a priced tool claim is pursued in full when `V/ℓ >= w(s)` (`ℓ` is craft time plus input extraction, as for other
+  recipes), else not; share 0 at `s <= 0`, 1 at `s >= 1`. It is nondecreasing because `w` falls in `s`. Tool claims never enter the
+  path bounds, so the ends and the two-stage expansion search are unaffected; quantities are sized as before.
+- Pots: a need claim on food security with the risk placeholder `ρ = FoodRiskWeight`. One Pot lets the camp retain
+  `PotStorageFoodPerUnit` of operating reserve, credited once at `ρ · v_food` per food unit like reserve refill in the expansion
+  valuation: `V_Pot = ρ · PotStorageFoodPerUnit · v_food · P`, `v_food = N Q / (F D_year)`. (A per-turn credit over the discounted
+  Pot life, `L_pot / ReferenceTurnYears` ≈ 3.3 times more, raised Pot output 4–8× and cut mean QoL 0.8–1.2% at the gate.) Need is `TargetPots` (reserve beyond natural
+  storage over `PotStorageFoodPerUnit`), Stock the current pots after this turn's decay, Quantity the existing `PotDemand` gap, and the
+  claim follows the exponential curve `V·e^{−λc}` and sets the path bounds like other need claims. With `ρ = 0` or Need <= 0 it is not valued.
+- Order keys: tools by `V` per unit (when priced), Pots by `V_Pot·e^{−λ·Stock/Need}`; unpriced goods keep the tail in priority order;
+  precedence rules and ties are unchanged. Pots are excluded from the "best equipment need good" that keys Hand and Regular Tools.
+At the 80-tribe seed-1729 checkpoint the tool values are 0.03-0.4 per unit (w_farm0 0.004-0.10) against Cloth 0.5-10 and Housing 5-130,
+so tools rank below need goods; Pots key 0.7-6, comparable to Cloth. Checks: `WP4aValueChecks` (`--only=WP4aValueChecks`;
+`WP4A_CHECKPOINT=<save> WP4A_TURNS=<n>` prints per-camp magnitudes).
 
 ## Persistence and limits
 

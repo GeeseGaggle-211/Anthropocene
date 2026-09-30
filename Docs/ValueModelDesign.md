@@ -252,14 +252,30 @@ coming plan; WP4a order keys need an estimate from last turn's saved
 `EconomicLabor.ExpansionFarmers`, which the camp carries.)
 
 *WP4a (redo) — tools and Pots.*
-- Farm Tools: `V = savedFT · w_farm`; Herding Tools: herder labour is also
-  field labour whose freed years go to the same margin, so
-  `V = savedHT · w_farm`. With no food shortfall, `w_farm = 0` and labour-saving
-  tools are made only to demand at the tail of the order, as before WP4a.
-- Order keys use these per-unit values; tools that consume coverage rank
-  below need goods unless their value per unit is genuinely higher.
-- Pots: food security with the risk placeholder `ρ`:
-  `V_Pot = ρ · PotStorageFoodPerUnit · v_food · L_pot`, `L_pot` from Pot decay and `r`.
+- Built (demand pass, after the ladder; estimate `w_farm0 =
+  Expansion.ValueAfter(lastExpansionFarmers · years)` from the saved
+  `EconomicLabor.ExpansionFarmers`, 0 with no ladder).
+- Farm Tools: `savedFT = FarmToolFarmerYearsPerUnit (1 − 1/e)` (about 4.19
+  farmer-years), `V = savedFT · w_farm0 · P`; Herding Tools: herder labour is also
+  field labour whose freed years go to the same margin,
+  `V = savedHT · w_farm0 · P`, `savedHT = HerdingToolCoverageYearsPerUnit (S/A − 1)`
+  (6.9): a covered herder-year looks after `S` animals that would need `S/A`
+  uncovered herders (`HerdingTooling.RequiredHerders`). With no food shortfall,
+  `w_farm0 = 0` and labour-saving tools stay unpriced (uniform share, tail of the
+  order), as before WP4a.
+- Tool share: 0 at `s <= 0`, 1 at `s >= 1`, else 1 when `V/ℓ >= w(s)`; tool
+  claims never enter the path bounds, so ends and the two-stage search are unchanged.
+- Order keys use these per-unit values; tools rank below need goods unless their
+  value per unit is genuinely higher (checkpoint: 0.03-0.4 against Cloth 0.5-10).
+- Pots: food security with the risk placeholder `ρ = FoodRiskWeight`:
+  `V_Pot = ρ · PotStorageFoodPerUnit · v_food · P`: the reserve a Pot lets the
+  camp hold, credited once at `ρ · v_food` per food unit like reserve refill in
+  WP4b (without shocks a reserve is filled once; recurring drawdowns are what `ρ`
+  stands in for). A per-turn credit over the discounted Pot life (×3.3) failed
+  the gate: Pots ×4–8, mean QoL −0.8% to −1.2%. A need claim (Need = `TargetPots`,
+  Stock = pots after decay, Quantity = `PotDemand`) on `V·e^{−λc}`, in the path
+  bounds; not valued when `ρ = 0` or Need <= 0. Pots are excluded from the best
+  equipment need good that keys Hand and Regular Tools.
 
 *Gate for each step.* Checkpoints under `--fulfilment=Value` against the
 previous Value runs: mean QoL must not fall; population and food no bias beyond

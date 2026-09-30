@@ -50,6 +50,7 @@
     <Compile Include="ValueFulfilmentChecks.cs" />
     <Compile Include="ExpansionClaimChecks.cs" />
     <Compile Include="ProductionOrderChecks.cs" />
+    <Compile Include="WP4aValueChecks.cs" />
   <Compile Include="PastoralCraftChecks.cs" />
   </ItemGroup>
 </Project>
