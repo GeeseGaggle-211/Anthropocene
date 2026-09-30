@@ -1,7 +1,8 @@
 # Value model implementation plan
 
 Status: approved plan, 29 September 2026; converged the same day with
-[QoLFissionTradeDesign.md](QoLFissionTradeDesign.md). Not implemented. The
+[QoLFissionTradeDesign.md](QoLFissionTradeDesign.md). Partly implemented; see
+"Progress and measurements" below. The
 economic design is in [ValueModelDesign.md](ValueModelDesign.md); QoL,
 fission, food trade and proto-towns are in QoLFissionTradeDesign.md. This
 document orders the work, names the files and sets the gates. It continues
@@ -9,6 +10,40 @@ document orders the work, names the files and sets the gates. It continues
 rule interface (`IFulfilmentRule`, `SearchPath`) this plan uses unchanged.
 `EconomicAutomation.md` and `TurnResolutionPasses.md` remain the rule sources
 until WP12 updates them.
+
+## Progress and measurements (as of 30 September 2026)
+
+Branch `features/neolithic-agricultural`. Measurements use the four
+post-opening checkpoints (`TestResults/Issues26-28-33-35/start-{80-11,80-23,
+80-1729,320-1729}.anthro`, ignored local files; regenerate per
+`Tools/PerformanceAudit/ForecastUnitsREADME.md`), 25 post-opening turns, four
+workers, `Tools/PerformanceAudit` with `--details=1 --fingerprints=1`, compared
+with `Compare-Drift.py` (mean signed deviation) against a same-method control
+(planner `SearchIterations` 6 → 7: per-turn max 0.1–1.8%, mean ≤ 0.5%). The
+checkpoints predate `PlannerFulfilment`, so they load as Uniform: Value runs
+need `--fulfilment=Value`.
+
+| Package | Commit | Result |
+| --- | --- | --- |
+| WP0 baselines | — | Checkpoints generated (opening ends turn 10). #33 harness baseline on current code: Toolmaker 24/24, Weaver 24/24, Builder 11/24, Potter 8/24, Carpenter 5/24. |
+| Crash fix | `c536e5e` (+ fixture) | Adjacent camps sharing a footprint tile crashed horizon commit (`start-80-1729` turn 17). Guard + regression; other worlds fingerprint-identical. |
+| WP1 planning draft | `0c2f970` | Exact: per-turn fingerprints identical on 80-11, 80-23, 320-1729 with and without draft. Unity side uncompiled here. |
+| WP2 cohesion | `0f25a8d` | `Q = F·W·R·S(N)`; only QoL values changed. |
+| WP3 value rule | `ad7bf59`, `f044f80` | Opt-in; roughly neutral alone (mean QoL −0.7 to +0.8%): crafts rarely bind labour. |
+| WP5a Housing Material | `5c9af86` | Neutral (≤ 0.01% drift). #33 witness updated `898595c`. |
+| WP5b material order | `fd5b2be` | Neutral: housing was limited by tool coverage, not Wood order. |
+| WP3b value production order | `8dacff7` | Under Value: mean QoL **+25% to +34%**, housing 0.23–0.40 → 0.98, clothing 0.76–0.80 → 0.71–0.74, population/food −0.4% to +0.6%; #33 Builder 11/24 → 24/24. |
+| Value default (λ = 3) | `2ff638f` | `PlannerFulfilment = "Value"` for new worlds; saves without the field load Uniform. |
+| WP4a (first try) | `4cdbf25`, reverted `10dbc75` | Mean QoL −28% to −32%: saved farmer labour priced at the craft labour price; Farm Tools ×2–4 took Wood and coverage. See ValueModelDesign "Revised WP4 design". |
+
+**Next, in order (user decision 30 September: correctness over speed):**
+1. WP4b — expansion as a value claim (food-security value, farm-labour price
+   `w_farm`), per ValueModelDesign "Revised WP4 design".
+2. WP4a redo — Farm/Herding Tools at `w_farm`, Pots by food security with `ρ`.
+3. Calibration sweeps (λ, r, ρ) on the checkpoints.
+4. Performance regression: paired timing of `bcdef6e` (pre-WP1) against the
+   final planner head on a quiet machine (planner ms, total turn ms,
+   allocations); >10% triggers a phase/work audit.
 
 ## Settled parameters
 

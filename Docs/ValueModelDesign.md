@@ -169,6 +169,64 @@ in person-QoL-years. An expansion farmer prevents a *forecast* shortfall as the
 cohort grows; a Pot prevents a *risk-weighted* one. Both use the same
 formula, so neither needs its own tuning.
 
+### Revised WP4 design (30 September 2026, after the WP4a regression)
+
+**What went wrong.** WP4a priced saved labour at `w0`, the start-of-turn
+*craft* labour price (best need good's `V·e^(−λc)/ℓ`, about 6.4 person-QoL-years
+per worker-year). Farm Tools save *farmer* labour, which is slack (tens of
+thousands of farmers; leftovers go to expansion). At that price a Farm Tool was
+worth 26.9 per unit against Cloth's 2.5, went first in the production order,
+took Wood and tool coverage, and cut mean QoL by 28–32%. WP4a was reverted
+(`10dbc75`). **Rule: price saved labour at the marginal value of the labour it
+actually frees, never at another labour pool's price.**
+
+**Corrected order: WP4b (expansion) first, then tools and Pots.**
+
+*Food value per unit (person-QoL-years per food unit per year of supply).*
+One extra food unit per year covers `1/D_year` of the cohort's annual need
+(`D_year = N · Consumption · DaysPerYear / BaseDays`). Because `F` multiplies
+all of QoL, that protects `N · Q / (F · D_year)`:
+
+```
+v_food = N · Q / (F · D_year)        (F guarded ≥ 1e-6; Q, F from the committed camp)
+```
+
+*WP4b — expansion labour.* Expansion farmers prevent a forecast shortfall.
+- Productivity `g` = the resolver allocator's best marginal score over the
+  camp's operated tiles: annualised retained food per worker-year
+  (`CultivationEconomy.HorizonMarginalScore`, which already charges build
+  effort and `PlanningHorizonYears` of maintenance).
+- Capital persists: discounted life `L_cap = 1 / (ln 2 / DecayHalfLifeYears + r)` years.
+- Value per expansion worker-year: `V_exp = g · v_food · L_cap`.
+- Only while a forecast shortfall exists (the planner's existing gate:
+  forecast demand > supply and a retained gain exists). Need, in worker-years:
+  `D_exp = shortfall_per_year / g`; stock 0; quantity bounded by field workers.
+  Expansion is then a claim on the exponential curve with `ℓ = 1`
+  worker-year per unit, so it competes with crafts at the labour price `w(s)`
+  and its value falls as the gap closes. Beyond closing the gap its value is
+  zero (growth-food value is a later refinement from QoLFissionTradeDesign 7.2).
+- Workers left after all claims still go to expansion exactly as today, so an
+  economy with slack labour behaves as before; only labour-scarce camps trade
+  expansion against crafts.
+
+*Farm-labour price.* `w_farm = V_exp · e^(−λ · c_exp)` at the start-of-turn
+expansion coverage (0 when no shortfall): the value of one freed farmer-year.
+
+*WP4a (redo) — tools and Pots.*
+- Farm Tools: `V = savedFT · w_farm`; Herding Tools: herder labour is also
+  field labour whose freed years go to the same margin, so
+  `V = savedHT · w_farm`. With no food shortfall, `w_farm = 0` and labour-saving
+  tools are made only to demand at the tail of the order, as before WP4a.
+- Order keys use these per-unit values; tools that consume coverage rank
+  below need goods unless their value per unit is genuinely higher.
+- Pots: food security with the risk placeholder `ρ`:
+  `V_Pot = ρ · PotStorageFoodPerUnit · v_food · L_pot`, `L_pot` from Pot decay and `r`.
+
+*Gate for each step.* Checkpoints under `--fulfilment=Value` against the
+previous Value runs: mean QoL must not fall; population and food no bias beyond
+the control; per-camp clothing, housing, tool output and managed animals
+reported; #33 windows rerun.
+
 ## Fulfilment rule: search on `w`
 
 This fits the existing interface with no change to `SearchPath`.
