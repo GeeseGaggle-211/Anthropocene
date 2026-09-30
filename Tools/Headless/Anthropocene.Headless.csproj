@@ -49,6 +49,7 @@
     <Compile Include="QoLCohesionChecks.cs" />
     <Compile Include="ValueFulfilmentChecks.cs" />
     <Compile Include="ProductionOrderChecks.cs" />
+    <Compile Include="ToolPotValueChecks.cs" />
   <Compile Include="PastoralCraftChecks.cs" />
   </ItemGroup>
 </Project>

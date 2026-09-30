@@ -36,6 +36,9 @@ namespace Anthropocene.Simulation
         // lambda = ValueCurveSteepness (> 0, dimensionless), r = DiscountRatePerYear (>= 0, per year).
         [System.Runtime.Serialization.OptionalField] public string PlannerFulfilment = "Value";
         [System.Runtime.Serialization.OptionalField] public double ValueCurveSteepness = 3, DiscountRatePerYear = .01;
+        // rho: risk weight of the Pot food-security value (ValueModelDesign.md, "Pots"); a placeholder for
+        // the expected shortfall probability per reference turn until disasters and immigration exist. >= 0.
+        [System.Runtime.Serialization.OptionalField] public double PotRiskWeight = .1;
         public double HandToolsOutput = 1, PotsOutput = 1, WeaverFabricOutputPerBaseDays = 1, FarmToolsOutput = 1, ToolsOutput = 1;
         public double BuilderHousingOutputPerBaseDays = .03125, HandToolsHousingMultiplier = 1, ImprovedToolsHousingMultiplier = 1.5, CopperToolsHousingMultiplier = 2;
         public double PlantFoodPerFabricUnit = 1, HousingMaterialUnitsPerHousing = 1;
@@ -74,6 +77,7 @@ namespace Anthropocene.Simulation
             CohesionScalePaleolithic = 220; CohesionScaleNomadic = 550; CohesionScaleAgricultural = 1780;
             // Saves written before the value rule carry no field and keep the Uniform planner, so they
             // continue exactly; new worlds and code defaults use Value.
+            PotRiskWeight = .1;
             PlannerFulfilment = "Uniform"; ValueCurveSteepness = 3; DiscountRatePerYear = .01;
         }
         [System.Runtime.Serialization.OnDeserialized]

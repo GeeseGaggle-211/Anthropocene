@@ -108,6 +108,7 @@ in `ConfigurationUnits.md` and the save-format contract.
 | `CohesionScaleAgricultural` | 1780 | 1780 | people (N_s) | shipped QoL cohesion calibration |
 | `ValueCurveSteepness` | 3 | 3 | dimensionless lambda in exp(-lambda c) | shipped value-rule calibration (used by the Value planner rule, the default PlannerFulfilment; ignored under Uniform) |
 | `DiscountRatePerYear` | 0.01 | 0.01 | per year (r) | shipped value-rule calibration (used by the Value planner rule, the default PlannerFulfilment; ignored under Uniform) |
+| `PotRiskWeight` | 0.1 | 0.1 | dimensionless rho: risk-weighted shortfall probability per reference turn | shipped Pot food-security placeholder (used by the Value planner rule; ignored under Uniform) |
 <!-- CURRENT_CONFIG_TABLE:END -->
 
 ## Consistency check

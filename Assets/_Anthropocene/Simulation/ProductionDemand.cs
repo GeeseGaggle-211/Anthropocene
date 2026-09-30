@@ -22,11 +22,15 @@ namespace Anthropocene.Simulation
         // Value-model inputs, always computed by the demand pass (pure, O(1) per
         // claim) but read only by ValueFulfilment. Stock and Need (D = Stock +
         // Quantity) are in units of the good; LabourPerUnit is the closed-form
-        // worker-years per unit; FirstUnitValue is V. Zero means "not valued":
-        // Pots, Farm Tools and Herding Tools keep the uniform share in WP3.
+        // worker-years per unit; FirstUnitValue is V. Zero means "not valued".
+        // Tools carry no Need (they have no coverage curve).
         public double Stock, Need, LabourPerUnit, FirstUnitValue;
-        // True for the four need goods the value model prices (clothing, shelter).
+        // True for every good the value model prices: the four need goods
+        // (clothing, shelter), Pots (food security) and the labour-saving tools.
         public bool Valued;
+        // True for Farm and Herding Tools: their FirstUnitValue is labour saved times the
+        // start-of-turn labour price w0, so their share is a price test rather than a curve.
+        public bool LabourSaving;
         // Role that performs the work and its output per worker-interval.
         public string Role;
         public double Rate;
@@ -61,9 +65,12 @@ namespace Anthropocene.Simulation
     // demand may exceed. The path position s maps to w on a log scale from w_hi
     // (nothing worth making) to w_lo (every claim at its full useful demand), so
     // shares are nondecreasing in s.
-    // Goods the value model does not price (Pots, Farm and Herding Tools) take
-    // the uniform share s, as does a priced good with no usable labour estimate;
-    // a priced good whose value is zero (priority 0, or B = 0) gets share 0.
+    // Pots are need claims (food-security value). A labour-saving tool (Farm and
+    // Herding Tools) is worth its value per worker-year V / l against the labour
+    // price: share 1 while V / l >= w(s), else 0, so it is pursued in full exactly
+    // when it saves more labour than it costs at the current price (WP4a). A good
+    // with no usable labour estimate takes the uniform share s; a priced good
+    // whose value is zero (priority 0, or B = 0) gets share 0.
     // With no need claim at all the rule is uniform. Pure: reads only the claims.
     public sealed class ValueFulfilment : IFulfilmentRule
     {
@@ -76,6 +83,9 @@ namespace Anthropocene.Simulation
         public string Name => "Value";
         public static bool IsNeed(ProductionClaim c)
             => c.Quantity > 0 && c.Need > 0 && c.FirstUnitValue > 0 && c.LabourPerUnit > 0
+               && !double.IsInfinity(c.LabourPerUnit) && !double.IsInfinity(c.FirstUnitValue);
+        public static bool IsTool(ProductionClaim c)
+            => c.LabourSaving && c.FirstUnitValue > 0 && c.LabourPerUnit > 0
                && !double.IsInfinity(c.LabourPerUnit) && !double.IsInfinity(c.FirstUnitValue);
         // V * exp(-lambda * c) at the coverage reached by `share` of the useful quantity.
         public double MarginalValue(ProductionClaim c, double share)
@@ -115,6 +125,11 @@ namespace Anthropocene.Simulation
             for (int i = 0; i < claims.Count; i++)
             {
                 var c = claims[i];
+                if (IsTool(c))
+                {
+                    shares[i] = s <= 0 ? 0 : s >= 1 ? 1 : c.FirstUnitValue / c.LabourPerUnit >= price ? 1 : 0;
+                    continue;
+                }
                 if (!IsNeed(c)) { shares[i] = c.Valued && c.FirstUnitValue <= 0 ? 0 : s; continue; }
                 // The path ends are exact: floating error must not leave residue at s = 0 or a gap at s = 1.
                 if (s <= 0) { shares[i] = 0; continue; }
@@ -143,6 +158,8 @@ namespace Anthropocene.Simulation
         public IReadOnlyList<ProductionClaim> Claims;
         // Value-rule production order (WP3b); null under the Uniform rule.
         public ProductionOrder Order;
+        // Start-of-turn labour price estimate w0 (person-QoL-years per worker-year); 0 without a need claim.
+        public double LabourPrice0;
         public double Meals, OperatingReserve, SparePlant, PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope, HousingMultiplier;
 
         private WorldState world;
@@ -247,6 +264,14 @@ namespace Anthropocene.Simulation
     internal static class ClaimValuation
     {
         private static readonly Camp DefaultPriorities = new Camp { CraftingPriorities = new CraftingPriorities() };
+        // Worker-years one Farm Tool saves: its farmer-years of coverage times the share of field
+        // labour the tool removes, 1 - 1 / efficiency (CultivationEconomy.FarmToolFieldWorkEfficiency).
+        public static double FarmToolSavedYears(NeolithicConfig n)
+            => n.FarmToolFarmerYearsPerUnit * (1 - 1 / CultivationEconomy.FarmToolFieldWorkEfficiency(n));
+        // Worker-years one Herding Tool saves: herder-years of coverage times the share of herder
+        // labour removed when a herder covers StoneHerdingToolAnimalsPerHerder instead of AnimalsPerHerder.
+        public static double HerdingToolSavedYears(SimulationConfig cfg)
+            => cfg.Neolithic.HerdingToolCoverageYearsPerUnit * (1 - cfg.AnimalsPerHerder / cfg.Neolithic.StoneHerdingToolAnimalsPerHerder);
         public static bool IsNeedGood(CraftGood g) => g == CraftGood.Cloth || g == CraftGood.AnimalFabric || g == CraftGood.Housing || g == CraftGood.LightHousing;
         public static void Apply(WorldState w, Camp c, CampProductionDemand d)
         {
@@ -324,6 +349,46 @@ namespace Anthropocene.Simulation
                 claim.FirstUnitValue = (claim.Good == CraftGood.Cloth || claim.Good == CraftGood.AnimalFabric ? clothingV : housingV) * multiplier;
                 if (value) claim.Value = claim.FirstUnitValue;
             }
+            // Start-of-turn labour price: the best need good's marginal value per worker-year at
+            // its committed coverage. It prices what a labour-saving tool saves.
+            double w0 = 0;
+            foreach (var claim in d.Claims)
+            {
+                if (!claim.Valued || !IsNeedGood(claim.Good) || !(claim.FirstUnitValue > 0) || !(claim.LabourPerUnit > 0) || !(claim.Need > 0)
+                    || double.IsInfinity(claim.LabourPerUnit) || double.IsInfinity(claim.FirstUnitValue)) continue;
+                double price = claim.FirstUnitValue * Math.Exp(-n.ValueCurveSteepness * claim.Stock / claim.Need) / claim.LabourPerUnit;
+                if (price > w0) w0 = price;
+            }
+            d.LabourPrice0 = w0;
+            double Multiplier(ProductionClaim claim)
+            {
+                double defaultPriority = NeolithicProduction.Priority(DefaultPriorities, claim.Good);
+                return defaultPriority > 0 ? claim.Priority / defaultPriority : (claim.Priority > 0 ? 1 : 0);
+            }
+            double lifeTurns = life / n.ReferenceTurnYears;
+            foreach (var claim in d.Claims)
+            {
+                if (claim.Good == CraftGood.FarmTools) claim.FirstUnitValue = FarmToolSavedYears(n) * w0 * Multiplier(claim);
+                else if (claim.Good == CraftGood.HerdingTools) claim.FirstUnitValue = HerdingToolSavedYears(cfg) * w0 * Multiplier(claim);
+                else if (claim.Good == CraftGood.Pots)
+                {
+                    // Food-security value per food unit, in person-QoL-years: the QoL a unit of avoided
+                    // shortfall protects, (Q / F) * N / D, over the years of the turn. N cancels D.
+                    double f = Math.Max(1e-6, c.FoodNeedsMetRatio), residents = Math.Max(0, d.Preview.Population);
+                    double demandTurn = residents * cfg.Consumption * cfg.GenerationIntervals;
+                    double vf = demandTurn > 0 ? years * residents * c.QoL / (f * demandTurn) : 0;
+                    // One Pot buffers PotStorageFoodPerUnit of food per reference turn with probability rho
+                    // per reference turn, over its discounted service life in reference turns.
+                    claim.FirstUnitValue = n.PotRiskWeight * n.PotStorageFoodPerUnit * vf * lifeTurns * Multiplier(claim);
+                    claim.Need = NeolithicProduction.TargetPots(w, d.Preview, years);
+                    claim.Stock = Math.Max(0, c.Inventory.Pots) * Math.Pow(1 - n.PotDecayPerReferenceTurn, Math.Max(0, years) / n.ReferenceTurnYears);
+                }
+                else continue;
+                claim.Valued = true;
+                claim.LabourSaving = claim.Good != CraftGood.Pots;
+                claim.LabourPerUnit = Labour(claim.Recipe);
+                if (value) claim.Value = claim.FirstUnitValue;
+            }
             if (value) d.Order = ProductionOrder.Build(cfg, d.Claims, d.Recipes, good => NeolithicProduction.Priority(d.Preview, good));
         }
     }
@@ -341,8 +406,10 @@ namespace Anthropocene.Simulation
     //   Hand and Regular Tools: outputs covered per tool (1 and 4) times the best
     //     need-good key among equipment goods, discounted one turn by exp(-r * years),
     //     because tools made now serve the next interval, never this one;
-    //   goods the model does not price (Pots, Farm and Herding Tools): after all of
-    //     those, in crafting-priority order (WP4 prices them).
+    //   Farm and Herding Tools: their value per unit, labour saved times w0 (WP4a);
+    //   Pots: V_Pot * exp(-lambda * Stock / Need), a need claim on food security (WP4a);
+    //   any good without a usable value (priority 0, no labour estimate): after all of
+    //     those, in crafting-priority order.
     // Ties break by ScheduleKey. Animal Fabric always precedes Light Housing and
     // Housing Material always precedes Housing, whatever their keys.
     public sealed class ProductionOrder
@@ -378,7 +445,10 @@ namespace Anthropocene.Simulation
             // best equipment need good; coverage from tools made now starts next turn.
             double best = double.NaN;
             foreach (var recipe in recipes)
-                if (recipe.Equipment && valued.TryGetValue(recipe.Good, out double key) && !(key <= best)) best = key;
+                if (recipe.Equipment && ClaimValuation.IsNeedGood(recipe.Good) && valued.TryGetValue(recipe.Good, out double key) && !(key <= best)) best = key;
+            // Labour-saving tools are keyed by their value per unit (labour saved at w0).
+            foreach (var claim in claims)
+                if (claim.Valued && ValueFulfilment.IsTool(claim)) valued[claim.Good] = claim.FirstUnitValue;
             if (!double.IsNaN(best))
             {
                 double discount = Math.Exp(-n.DiscountRatePerYear * years);
@@ -392,6 +462,22 @@ namespace Anthropocene.Simulation
             var order = pricedRecipes.Concat(rest).Select(r => r.Good).ToList();
             MoveBefore(order, CraftGood.AnimalFabric, CraftGood.LightHousing);
             MoveBefore(order, CraftGood.HousingMaterial, CraftGood.Housing);
+            // Tool coverage is an input to every equipment recipe. Need goods may outrank the
+            // tools that cover them (the derived keys), but Pots and the labour-saving tools carry
+            // keys that can exceed a covering tool's, and a camp with no tool stock would then
+            // never reach coverage for them. Coverage tools precede the earliest of these.
+            int earliest = -1;
+            foreach (var good in new[] { CraftGood.FarmTools, CraftGood.HerdingTools, CraftGood.Pots })
+            {
+                int at = valued.ContainsKey(good) ? order.IndexOf(good) : -1;
+                if (at >= 0 && (earliest < 0 || at < earliest)) earliest = at;
+            }
+            if (earliest >= 0)
+            {
+                var first = order[earliest];
+                MoveBefore(order, CraftGood.Tools, first);
+                MoveBefore(order, CraftGood.HandTools, first);
+            }
             return new ProductionOrder(order.ToArray(), valued);
         }
         // Sequencing rule: an input recipe is reached before the recipe that consumes it.
