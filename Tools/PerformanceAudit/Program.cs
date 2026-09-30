@@ -241,6 +241,13 @@ internal static class Program
             config.Shape = (WorldShape)Enum.Parse(typeof(WorldShape), shapeName, true);
             world = new WorldGenerator().Generate(seed, config, resources);
             generationMs = generationClock.Elapsed.TotalMilliseconds;
+            // The planner-rule overrides also apply to freshly generated worlds.
+            OverrideNeolithic(world, "PlannerFulfilment", Option(args, "--fulfilment", ""), v => v);
+            OverrideNeolithic(world, "ValueCurveSteepness", Option(args, "--value-steepness", ""), v => double.Parse(v, CultureInfo.InvariantCulture));
+            OverrideNeolithic(world, "DiscountRatePerYear", Option(args, "--discount-rate", ""), v => double.Parse(v, CultureInfo.InvariantCulture));
+            OverrideNeolithic(world, "FoodRiskWeight", Option(args, "--food-risk-weight", ""), v => double.Parse(v, CultureInfo.InvariantCulture));
+            OverrideNeolithic(world, "PersonLifeYears", Option(args, "--person-life-years", ""), v => double.Parse(v, CultureInfo.InvariantCulture));
+            world.Config.Validate();
         }
         else
         {
