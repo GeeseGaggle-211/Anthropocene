@@ -185,6 +185,8 @@ internal static class Program
         int fissionSwitch = Option(args, "--fission", -1);
         // Fission housing-relief weight (WP10c): unset keeps the configured value (1); 0 counts cohesion and clothing only.
         string fissionReliefText = Option(args, "--fission-housing-relief", "");
+        // Top-level numeric configuration overrides for sensitivity runs: --set=Name=Value[,Name=Value] (for example SecondaryTechnologyThreshold=2000).
+        string setText = Option(args, "--set", "");
         // Immigration control (WP10b): 0 disables the pass, 1 enables it; unset keeps the configured value (disabled).
         int immigrationSwitch = Option(args, "--immigration", -1);
 
@@ -292,6 +294,14 @@ internal static class Program
         {
             var reliefField = world.Config.GetType().GetField("FissionHousingRelief") ?? throw new ArgumentException("This simulation source has no fission housing-relief lever.");
             reliefField.SetValue(world.Config, double.Parse(fissionReliefText, System.Globalization.CultureInfo.InvariantCulture));
+        }
+        foreach (string assignment in setText.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = assignment.Split('=');
+            var field = parts.Length == 2 ? world.Config.GetType().GetField(parts[0]) : null;
+            if (field == null || field.FieldType != typeof(double) && field.FieldType != typeof(int)) throw new ArgumentException("Unsupported --set override: " + assignment);
+            double value = double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);
+            field.SetValue(world.Config, field.FieldType == typeof(int) ? (object)(int)value : value);
         }
         long managedHeapAfterLoadBytes = GC.GetTotalMemory(false);
         var detailedCounterSwitch = typeof(ResolutionMetrics).GetField("CaptureDetailedCounters");
@@ -475,6 +485,7 @@ internal static class Program
                 openingLocalStocks = priorLocalStocks.TryGetValue(c.Id, out var priorStocks) ? priorStocks : null,
                 endingLocalStocks = LocalStocks(world, c.Tile),
                 linked = world.LinkedPopulation(c), technology = c.Technology.ToString(), c.QoL,
+                holdsCultivation = CultivationEconomy.Enabled(c), holdsHusbandry = CultivationEconomy.HusbandryEnabled(c), holdsWatercraft = c.Technologies[(int)Technology.Watercraft], totalMoves = c.Moves,
                 c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita,
                 c.Food, c.PlantFood, c.AnimalFood, c.FabricConsumed, c.HousingDemand,
                 c.GrowthRemainder, c.LastConsumed, c.FoodDeficit, c.DeficitTurns,

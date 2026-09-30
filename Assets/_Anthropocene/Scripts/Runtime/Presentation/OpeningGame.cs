@@ -322,7 +322,7 @@ namespace Anthropocene.Presentation
             foreach (Domain domain in Enum.GetValues(typeof(Domain)))
             {
                 var discovery = observation.TechnologyStatuses[(int)domain];
-                double progress = discovery.Progress / discovery.Threshold;
+                double progress = PracticeEffects.Progress(world.Config, camp, domain);
                 string label = progress < .25 ? "Unpracticed" : progress < .5 ? "Taking root" : progress < .8 ? "Practiced" : "Well established";
                 double ramp = PracticeEffects.Ramp(world.Config, camp, domain);
                 string effect = domain == Domain.Hunting ? " · meat +" + Math.Round(100 * world.Config.HuntingYieldBonus * ramp) + "%" : " · impact -" + Math.Round(100 * (domain == Domain.Gathering ? world.Config.GatheringImpactReduction : world.Config.FishingImpactReduction) * ramp) + "%";

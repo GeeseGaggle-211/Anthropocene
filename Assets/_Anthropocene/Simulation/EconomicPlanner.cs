@@ -53,7 +53,8 @@ namespace Anthropocene.Simulation
             // Demand pass: every fulfilment-invariant input, built once.
             var demand = CampProductionDemand.Build(w, c, e, expansionClaim);
             bool cultivationEnabled = demand.CultivationEnabled, husbandryEnabled = demand.HusbandryEnabled, established = demand.Established;
-            double upkeep = demand.Upkeep, supply = demand.Supply, biological = demand.Biological, nextPopulation = demand.NextPopulation;
+            // Herd food the herds are expected to add next turn closes the food gap before fields do (Value rule; 0 otherwise).
+            double upkeep = demand.Upkeep, supply = demand.Supply, gapSupply = demand.Supply + demand.HerdGrowthFood, biological = demand.Biological, nextPopulation = demand.NextPopulation;
             double forageAfterHerds = demand.ForageAfterHerds, terrestrialAfterHerds = demand.TerrestrialAfterHerds;
             int reservedHerdersForForecast = demand.ReservedHerders, consumers = demand.Consumers;
             var managedFood = demand.ManagedFood; var sources = demand.Sources; var accessible = demand.Accessible;
@@ -249,7 +250,7 @@ namespace Anthropocene.Simulation
                 if (cultivationEnabled && farmRecipe != null && NeolithicProduction.Priority(candidate, CraftGood.FarmTools) > 0)
                 {
                     double projectedDemand = biological * nextPopulation / Math.Max(1, c.Population) + goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit;
-                    bool intendedExpansion = projectedDemand > supply && HasRetainedExpansionGain();
+                    bool intendedExpansion = projectedDemand > gapSupply && HasRetainedExpansionGain();
                     double roleWorkers = futureRoles.Values.Sum(v => Math.Ceiling(v - Epsilon));
                     // Reserve the food-gathering share before proposing field
                     // expansion. Otherwise a full resident ledger can appear
@@ -559,9 +560,12 @@ namespace Anthropocene.Simulation
             // The capital scoring horizon is not a mandate to feed a hypothetical
             // century of exponential growth. Expand for the next demand forecast.
             double futureDemand = biological * nextPopulation / c.Population + (cultivationEnabled ? goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit : 0);
-            bool expand = cultivationEnabled && futureDemand > supply && HasRetainedExpansionGain();
+            bool expand = cultivationEnabled && futureDemand > gapSupply && HasRetainedExpansionGain();
             // The staffed expansion claim (Value rule) plus the leftover residents.
             int expanders = spare + (expand ? best.ExpansionWorkers : 0);
+            // A husbandry-primary camp that settling would not pay for stops short of the village threshold (Docs/HusbandrySettling.md).
+            if (expand && demand.ExpansionEffortCap < double.PositiveInfinity)
+                expanders = Math.Min(expanders, (int)Math.Floor(demand.ExpansionEffortCap / years + 1e-9));
             if (expanders > 0 && expand)
             {
                 var farmer = best.Intent.Assignments.FirstOrDefault(a => a.Role == WorkforceRoles.Farmer);

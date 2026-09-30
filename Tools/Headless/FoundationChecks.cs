@@ -82,6 +82,9 @@ internal static class FoundationChecks
         Check(camp.Technology == Technology.AnimalHusbandry && camp.People.Progression.Era == Era.Neolithic, "opening tie keeps its primary route");
         var seeds = camp.People.TransitionSeeds.Count; var herds = w.Herds.Count; var improvements = w.Improvements.Count;
         TechnologyDiscovery.Resolve(w, new TurnRecord());
+        Check(!camp.Technologies[(int)Technology.Cultivation], "Paleolithic practice counts toward the first breakthrough only: it grants no secondary technology");
+        camp.People.NeolithicExperience[(int)Domain.Gathering] = 225;
+        TechnologyDiscovery.Resolve(w, new TurnRecord());
         Check(camp.Technologies[(int)Technology.Cultivation] && camp.Technology == Technology.AnimalHusbandry && camp.People.TransitionSeeds.Count == seeds && w.Herds.Count == herds && w.Improvements.Count == improvements, "eligible secondary domain unlocks without opening grants");
         TechnologyDiscovery.Resolve(w, new TurnRecord());
         Check(camp.People.TransitionSeeds.Count == seeds && w.Herds.Count == herds && w.Improvements.Count == improvements, "secondary discovery is idempotent");
@@ -106,9 +109,9 @@ internal static class FoundationChecks
         firstOwner.Technology = Technology.AnimalHusbandry;
         firstOwner.Technologies[(int)Technology.AnimalHusbandry] = true;
         firstOwner.OpeningTransitionProcessed = true;
-        firstOwner.Experience = new[] { 225.0, 225.0, 225.0 };
+        firstOwner.Experience = new[] { 225.0, 225.0, 225.0 }; firstOwner.NeolithicExperience = new[] { 225.0, 225.0, 225.0 };
         var otherOwner = new Society { Id = simultaneous.NextId++, Player = 1, Technology = Technology.Watercraft,
-            Progression = new EraProgression { Era = Era.Neolithic }, Experience = new[] { 225.0, 0.0, 225.0 }, OpeningTransitionProcessed = true };
+            Progression = new EraProgression { Era = Era.Neolithic }, Experience = new[] { 225.0, 0.0, 225.0 }, NeolithicExperience = new[] { 225.0, 0.0, 225.0 }, OpeningTransitionProcessed = true };
         otherOwner.Technologies[(int)Technology.Watercraft] = true;
         simultaneous.Societies.Add(otherOwner);
         simultaneous.Camps.Add(new Camp { Id = simultaneous.NextId++, SocietyId = otherOwner.Id, Player = 1, Population = 10, Tile = 180, Food = 200 });
@@ -145,9 +148,13 @@ internal static class FoundationChecks
         var before = new AgentObservationBuilder().Build(natural, first.Player);
         Check(!before.TechnologyStatuses.Any(s => s.Acquired), "prior observation cannot see future discoveries");
         var turn = new TurnResolver().Resolve(natural, new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<Order>>());
-        Check(first.Technology == Technology.AnimalHusbandry && first.Technologies[(int)Technology.Cultivation] && first.People.TransitionSeeds.Count == 1 &&
-            turn.Events.Count(e => e.Contains("entered the Neolithic")) == 1 && turn.Events.Count(e => e.Contains("discovered Cultivation through")) == 1,
-            "first and independently eligible secondary acquisition commit in the same Close with distinct events");
+        Check(first.Technology == Technology.AnimalHusbandry && !first.Technologies[(int)Technology.Cultivation] && first.People.TransitionSeeds.Count == 1 &&
+            turn.Events.Count(e => e.Contains("entered the Neolithic")) == 1 && turn.Events.Count(e => e.Contains("discovered Cultivation through")) == 0,
+            "the breakthrough Close grants no secondary technology from Paleolithic practice");
+        first.People.NeolithicExperience[(int)Domain.Gathering] = first.People.Experience[(int)Domain.Gathering];
+        var later = new TurnRecord(); TechnologyDiscovery.Resolve(natural, later);
+        Check(first.Technologies[(int)Technology.Cultivation] && later.Events.Count(e => e.Contains("discovered Cultivation through")) == 1,
+            "a secondary technology is earned from Neolithic practice with a distinct event");
         var after = new AgentObservationBuilder().Build(natural, first.Player);
         Check(after.TechnologyStatuses.Single(s => s.Technology == Technology.Cultivation).Acquired && after.Settlements.Single().Agriculture,
             "second capability is visible and usable only at the next preparation boundary");
@@ -157,7 +164,7 @@ internal static class FoundationChecks
         workerCamp.Technology = Technology.AnimalHusbandry;
         workerCamp.Technologies[(int)Technology.AnimalHusbandry] = true;
         workerCamp.People.Progression.Era = Era.Neolithic;
-        workerCamp.Experience[(int)Domain.Gathering] = 224;
+        workerCamp.Experience[(int)Domain.Gathering] = 224; workerCamp.People.NeolithicExperience[(int)Domain.Gathering] = 224;
         var farmerIntent = new EconomicIntent { Assignments = new System.Collections.Generic.List<PopulationAssignment> { new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = 1 } } };
         var priorView = new AgentObservationBuilder().Build(earned, workerCamp.Player);
         Check(EconomicIntents.Validate(priorView, priorView.Settlements.Single(), farmerIntent) != null,
@@ -175,6 +182,9 @@ internal static class FoundationChecks
         w.Days = 1000 * 365; TechnologyDiscovery.Resolve(w, new TurnRecord());
         Check(!camp.Technologies[(int)Technology.AnimalHusbandry] && !camp.Technologies[(int)Technology.Watercraft], "time and subthreshold practice cannot unlock a secondary technology");
         camp.Experience[(int)Domain.Fishing] = 225;
+        TechnologyDiscovery.Resolve(w, new TurnRecord());
+        Check(!camp.Technologies[(int)Technology.Watercraft], "lifetime practice alone no longer unlocks a secondary technology");
+        camp.People.NeolithicExperience[(int)Domain.Fishing] = 225;
         TechnologyDiscovery.Resolve(w, new TurnRecord());
         Check(camp.Technologies[(int)Technology.Watercraft] && w.Improvements.Count == 0 && w.Herds.Count == 0, "fishing practice unlocks Watercraft without a fishery or herd");
     }

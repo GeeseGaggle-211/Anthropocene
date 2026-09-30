@@ -180,9 +180,10 @@ namespace Anthropocene.Simulation
                 if (h.DomesticCamp == c.Id && h.Animals > 0) animals = checked(animals + h.Animals);
             return animals;
         }
-        public static int RequiredHerders(WorldState w, Camp c, double years)
+        public static int RequiredHerders(WorldState w, Camp c, double years) => RequiredHerdersFor(w, c, years, DomesticAnimals(w, c));
+        // The same requirement for a hypothetical herd size (the planner's grown-herd forecast). Pure.
+        internal static int RequiredHerdersFor(WorldState w, Camp c, double years, double animals)
         {
-            double animals = DomesticAnimals(w, c);
             if (animals <= 0 || years <= 0) return 0;
             var n = w.Config.Neolithic;
             double availableCoveredHerders = Math.Max(0, c.Inventory.HerdingTools) * n.HerdingToolCoverageYearsPerUnit / years;
@@ -194,11 +195,11 @@ namespace Anthropocene.Simulation
             => RequiredHerders(w, c, horizon.Years);
         public static HerdingManagementPlan Plan(WorldState w, Camp c, TurnHorizon horizon, int herders = -1)
             => Plan(w, c, horizon.Years, herders);
-        public static HerdingManagementPlan Plan(WorldState w, Camp c, double years, int herders = -1)
+        public static HerdingManagementPlan Plan(WorldState w, Camp c, double years, int herders = -1, double animalsOverride = -1)
         {
             var n = w.Config.Neolithic;
             int assigned = herders < 0 ? c.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population) : herders;
-            double animals = DomesticAnimals(w, c), herderYears = Math.Max(0, assigned * years);
+            double animals = animalsOverride >= 0 ? animalsOverride : DomesticAnimals(w, c), herderYears = Math.Max(0, assigned * years);
             // A tool provides a fixed number of herder-years over the whole
             // horizon. The ratio is average coverage, never a breakage date.
             double serviceDemand = Math.Min(Math.Max(0, assigned), animals / n.StoneHerdingToolAnimalsPerHerder) * Math.Max(0, years);

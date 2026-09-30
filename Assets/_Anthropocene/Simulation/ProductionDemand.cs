@@ -220,6 +220,14 @@ namespace Anthropocene.Simulation
         public double Upkeep, ForageSupply, PlantSupply, ForageAfterHerds, TerrestrialAfterHerds, Supply, Biological, NextPopulation;
         public int ReservedHerders, Consumers;
         public ManagedFoodForecast ManagedFood;
+        // Value rule, cultivation and husbandry enabled (Docs/HusbandrySettling.md): the food (per turn) the camp's herds are expected to
+        // add after one more turn of breeding at the planned intensity, net of the human forage the larger herd displaces, and the
+        // herd's forecast food after that growth. Both 0 otherwise. HerdGrowthFood closes the food gap before any field is valued.
+        public double HerdGrowthFood, GrownHerdFood;
+        // Value rule: settling cost of a non-village husbandry-primary camp (person-QoL-years), and the expansion worker-years the camp may
+        // spend this turn without crossing into a village (PositiveInfinity = no limit). Diagnostics and planner cap; transient.
+        public double SettlingCost, ExpansionEffortCap = double.PositiveInfinity;
+        public bool SettlesByExpansion;
         public KnownMaterialSource[] Sources;
         public Dictionary<MaterialId, double> Accessible;
         public CraftRecipe[] Recipes, Goods;
@@ -293,6 +301,15 @@ namespace Anthropocene.Simulation
             d.ForageSupply = d.Eligible.Sum(FoodAvailability); d.PlantSupply = d.Eligible.Where(id => w.Tiles[id].Land).Sum(FoodAvailability);
             d.ReservedHerders = d.HusbandryEnabled ? EconomicPlanner.ManagedHerderReservation(w, c, years) : 0;
             d.ManagedFood = d.HusbandryEnabled ? TurnResolver.ForecastManagedAnimalFood(w, c, d.ReservedHerders, intervals, years, c.Tile) : new ManagedFoodForecast();
+            if (n.ValueFulfilmentSelected && d.HusbandryEnabled && d.CultivationEnabled && c.Population > 0)
+            {
+                var grown = TurnResolver.ForecastGrownManagedAnimalFood(w, c, e.ManagedBreedingIntensity, intervals, years, c.Tile);
+                if (grown.Animals > 0)
+                {
+                    d.GrownHerdFood = grown.AnimalFood;
+                    d.HerdGrowthFood = Math.Max(0, (grown.AnimalFood - d.ManagedFood.AnimalFood) - (grown.HumanFoodDisplaced - d.ManagedFood.HumanFoodDisplaced));
+                }
+            }
             d.ForageAfterHerds = Math.Max(0, d.ForageSupply - d.ManagedFood.HumanFoodDisplaced);
             d.TerrestrialAfterHerds = Math.Max(0, d.PlantSupply - d.ManagedFood.HumanFoodDisplaced);
             d.Supply = d.ForageAfterHerds + d.ManagedFood.AnimalFood;
@@ -596,15 +613,17 @@ namespace Anthropocene.Simulation
             double cloth = d.Goals.TryGetValue(CraftGood.Cloth, out double goal) ? goal : 0;
             // Same forecast as the planner's expansion gate.
             double forecast = d.Biological * d.NextPopulation / Math.Max(1, c.Population) + cloth * n.PlantFoodPerFabricUnit;
-            if (!(forecast > d.Supply) || !d.HasRetainedExpansionGain() || !(years > 0)) return;
+            // Herd food the herds are expected to add closes the food gap before any field is valued (Docs/HusbandrySettling.md).
+            double supply = d.Supply + d.HerdGrowthFood;
+            if (!(forecast > supply) || !d.HasRetainedExpansionGain() || !(years > 0)) return;
             // Buckets from the very targets that size the planning demand (the
             // planning cohort, as PlanningFoodDemand), per year.
             TurnResolver.FoodBucketTargets(w, c, intervals, years, d.Consumers * cfg.Consumption * intervals, c.Food,
                 out double consumption, out _, out double reserveFill, out double maximumGrowthFood);
             double security = consumption + reserveFill, growth = maximumGrowthFood + cloth * n.PlantFoodPerFabricUnit;
-            d.GapConsumptionPerYear = Math.Max(0, consumption - d.Supply) / years;
-            d.GapSecurityPerYear = Math.Max(0, security - d.Supply) / years;
-            d.GapTotalPerYear = Math.Max(0, security + growth - d.Supply) / years;
+            d.GapConsumptionPerYear = Math.Max(0, consumption - supply) / years;
+            d.GapSecurityPerYear = Math.Max(0, security - supply) / years;
+            d.GapTotalPerYear = Math.Max(0, security + growth - supply) / years;
             d.FoodValue = FoodValue(cfg, c);
             double maxRate = c.DeficitTurns <= 0 ? cfg.AnnualHumanGrowthRate * c.DemographicGrowthMultiplier : 0;
             d.FoodPerBirth = FoodPerBirth(cfg.Consumption * intervals, maxRate, years);
@@ -612,10 +631,68 @@ namespace Anthropocene.Simulation
             d.PersonLife = PersonLife(n);
             d.GrowthFoodValue = d.FoodPerBirth > 0 ? Math.Max(0, d.MarginalWelfarePerBirth) * d.PersonLife / d.FoodPerBirth : 0;
             d.CapitalLife = CapitalLife(n);
-            var steps = CultivationEconomy.ExpansionLadder(w, c, years, d.Footprint, d.GapTotalPerYear);
+            // A non-village husbandry-primary camp forfeits mobility when fields make it a village; its ladder is then read in full
+            // so the crossing step can be found and charged (SettlingTerms).
+            bool settling = SettlingApplies(w, c, d);
+            var steps = CultivationEconomy.ExpansionLadder(w, c, years, d.Footprint, settling ? double.PositiveInfinity : d.GapTotalPerYear);
             d.LadderSteps = steps.Length; d.LadderWorkerYearsUntruncated = steps.Sum(x => x.WorkerYears);
-            var ladder = Value(steps, d.GapConsumptionPerYear, d.GapSecurityPerYear, d.GapTotalPerYear, d.FoodValue, n.FoodRiskWeight * d.FoodValue, d.GrowthFoodValue, d.CapitalLife);
-            if (ladder.Any) d.Expansion = ladder;
+            double vReserve = n.FoodRiskWeight * d.FoodValue;
+            var ladder = Value(steps, d.GapConsumptionPerYear, d.GapSecurityPerYear, d.GapTotalPerYear, d.FoodValue, vReserve, d.GrowthFoodValue, d.CapitalLife);
+            if (settling) ladder = SettlingTerms(w, c, d, steps, ladder, consumption, security, growth, years, vReserve);
+            if (ladder != null && ladder.Any) d.Expansion = ladder;
+        }
+
+        // Husbandry-primary (first technology Animal Husbandry), not yet a village, with managed animals to lose: Primary-Cultivation camps
+        // and existing villages are unaffected, as is everything when SettledHerdGrowthPenalty is 0.
+        private static bool SettlingApplies(WorldState w, Camp c, CampProductionDemand d)
+            => w.Config.SettledHerdGrowthPenalty > 0 && !c.IsVillage && c.People.Technology == Technology.AnimalHusbandry && d.GrownHerdFood > 0;
+
+        // The food value of `food` per year filled into the buckets from their start (consumption, reserve refill, growth), with the
+        // bucket sizes given per year (raw gaps, before the herd credit): the same bucket values the ladder uses, per year.
+        internal static double BucketValue(double food, double gapConsumption, double gapSecurity, double gapTotal, double vFood, double vReserve, double vGrowth)
+        {
+            gapConsumption = Math.Min(gapConsumption, gapSecurity);
+            double inC = Math.Max(0, Math.Min(food, gapConsumption));
+            double inR = Math.Max(0, Math.Min(food, gapSecurity) - gapConsumption);
+            double inG = Math.Max(0, Math.Min(food, gapTotal) - gapSecurity);
+            return inC * vFood + inR * vReserve + inG * vGrowth;
+        }
+
+        // Opportunity cost of settling (person-QoL-years) = SettledHerdGrowthPenalty x the food value of the herd's forecast (grown)
+        // annual food over the capital life. Applied to the step at which the footprint average reaches the village threshold:
+        // settling is worth it only if the value of that step and every later one exceeds the cost, in which case the tail
+        // is scaled down by the cost (ordering and monotonicity are kept); otherwise the ladder stops before the crossing step and
+        // ExpansionEffortCap limits the effort the planner may spend so spare residents do not cross it either.
+        private static ExpansionLadderClaim SettlingTerms(WorldState w, Camp c, CampProductionDemand d, CultivationEconomy.ExpansionStep[] steps,
+            ExpansionLadderClaim ladder, double consumption, double security, double growth, double years, double vReserve)
+        {
+            int cross = -1;
+            for (int i = 0; i < steps.Length; i++)
+                if (steps[i].VillageAverage + 1e-10 >= CultivationEconomy.VillageIntensity) { cross = i; break; }
+            if (cross < 0) return ladder;
+            // Raw (pre-credit) gaps value the herd's food: the herd is part of supply and the loss widens the gap at its start.
+            double rawSupply = d.Supply;
+            double gc = Math.Max(0, consumption - rawSupply) / years, gs = Math.Max(0, security - rawSupply) / years, gt = Math.Max(0, security + growth - rawSupply) / years;
+            double herdFoodPerYear = d.GrownHerdFood / years;
+            double cost = w.Config.SettledHerdGrowthPenalty * d.CapitalLife
+                * BucketValue(herdFoodPerYear, gc, gs, gt, d.FoodValue, vReserve, d.GrowthFoodValue);
+            d.SettlingCost = cost;
+            double tail = 0;
+            for (int i = cross; i < ladder.Value.Length; i++) tail += ladder.Value[i] * ladder.WorkerYears[i];
+            if (tail > cost && tail > 0)
+            {
+                d.SettlesByExpansion = true;
+                double scale = 1 - cost / tail;
+                var value = (double[])ladder.Value.Clone();
+                for (int i = cross; i < value.Length; i++) value[i] *= scale;
+                return new ExpansionLadderClaim { WorkerYears = ladder.WorkerYears, Value = value, TotalWorkerYears = ladder.TotalWorkerYears };
+            }
+            double prefix = 0;
+            for (int i = 0; i < cross; i++) prefix += steps[i].WorkerYears;
+            d.ExpansionEffortCap = prefix;
+            if (cross >= ladder.Value.Length) return ladder;
+            var worker = ladder.WorkerYears.Take(cross).ToArray(); var val = ladder.Value.Take(cross).ToArray();
+            return new ExpansionLadderClaim { WorkerYears = worker, Value = val, TotalWorkerYears = worker.Sum() };
         }
     }
 

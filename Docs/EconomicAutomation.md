@@ -187,6 +187,24 @@ The planner reports `farmLabourPrice`: `u` of the first ladder step not covered 
 exactly the pre-WP4b Value plan. Uniform is untouched; nothing is saved. Checks: `ExpansionClaimChecks`
 (`--only=ExpansionClaimChecks`).
 
+#### Herds against fields (Husbandry settling)
+
+The expansion ladder above priced fields against a gap that assumed the herd stays as it is. Under the Value rule the demand pass
+now also forecasts the herd (`TurnResolver.ForecastGrownManagedAnimalFood`, pure): each herd the ordinary forecast finds fully
+nourished grows to `floor((animals + remainder) x exp(GrowthRate x breeding x years))` (the resolver's own birth rule), and the grown
+herd is run through the same forage, water and management forecast with the herders it would need. `HerdGrowthFood` is the food it
+adds net of the extra human forage it displaces; it is added to supply wherever the planner decides whether fields are needed
+(`ExpansionValuation.Apply`'s gate and gaps, `Plan`'s `expand` and `intendedExpansion`), so fields are built only for the gap the
+herds will not close. Herd growth is not labour-limited (breeding reads intensity and nutrition only; management fulfilment scales
+animal food, and the planner reserves `RequiredHerders` before anything else), so there is no herd-expansion claim.
+A non-village camp whose first technology is Animal Husbandry also pays a **settling cost**: the ladder records the village-footprint
+average after each step (`ExpansionStep.VillageAverage`), and the step that reaches `CultivationEconomy.VillageIntensity` (0.25) is
+charged `SettledHerdGrowthPenalty x L_cap x` (the bucket value of the forecast grown-herd food per year). If the value of that step
+and every later one exceeds the cost, the tail is scaled by `1 - cost / tail`; otherwise the valued ladder stops before it and the
+planner limits expansion farmers (staffed plus spare) to `floor(ExpansionEffortCap / years)`, the worker-years of the steps before it.
+Primary-Cultivation camps, villages and Uniform plans are untouched. Measurements and limits: [HusbandrySettling.md](HusbandrySettling.md).
+Checks: `SettlingChecks` (`--only=SettlingChecks`).
+
 ### Farm Tools, Herding Tools and Pots (WP4a redo)
 
 Under the Value rule the demand pass prices these three goods after the expansion ladder (`ClaimValuation.ApplyTools`,

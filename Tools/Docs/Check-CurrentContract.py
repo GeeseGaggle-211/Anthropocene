@@ -24,6 +24,9 @@ FIELDS = [
     ("ReferenceTurnYears", "years per Neolithic reference turn", "reference scale"),
     ("MinimumCampSpacing", "hexes between resolved camp destinations", "shipped placement rule (saves without the field load 3)"),
     ("ContactExpiryTurns", "turns before an unrefreshed settlement contact is forgotten", "shipped contact-knowledge rule (saves without the field load 5)"),
+    ("SecondaryTechnologyThreshold", "post-breakthrough (Neolithic) practice points that grant a secondary technology; Paleolithic practice counts toward the first breakthrough only", "shipped discovery rule (Docs/HusbandrySettling.md); equals ExperienceThreshold; saves without it load 225"),
+    ("TradePracticePerValue", "practice points credited to the receiving Society per unit of traded goods value (TechnologyDiscovery.RecordTradePractice)", "hook for the future trade work package; 0 = inert (no caller yet); saves without it load 0"),
+    ("SettledHerdGrowthPenalty", "fraction of a husbandry-primary camp's forecast herd food forfeited by becoming a village (Value rule's settling cost)", "shipped husbandry-settling lever from the measured 1.6x mobile-to-stationary herd support (Docs/MobileHusbandryValidation.md); saves without it load 0.35"),
     ("FissionGainThreshold", "expected-gain threshold G*(Neutral): the relative rise of the stayers' QoL a split must deliver (WP10c)", "shipped fission lever, analytically calibrated to the design onset sizes (Docs/Fission.md); saves without it load with fission disabled; `FissionEnabled` (false by default and in OpeningConfig until enabled deliberately; opt-in) is a boolean, not listed"),
     ("FissionGainDiscourage", "expected-gain threshold G*(Discourage)", "shipped fission lever, calibrated with the 15 percent daughter; not monotone in policy because the policy also sets the daughter fraction"),
     ("FissionGainEncourage", "expected-gain threshold G*(Encourage)", "shipped fission lever, calibrated with the 40 percent daughter"),
@@ -88,6 +91,7 @@ TESTS = [
     ("Tools/Headless/ContactKnowledgeChecks.cs", "ContactKnowledgeChecks.Run"),
     ("Tools/Headless/FissionChecks.cs", "FissionChecks.Run"),
     ("Tools/Headless/ImmigrationChecks.cs", "ImmigrationChecks.Run"),
+    ("Tools/Headless/SettlingChecks.cs", "SettlingChecks.Run"),
 ]
 API_ONLY_FIELDS = {"CultivationRegenFlux"}
 

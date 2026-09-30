@@ -143,7 +143,7 @@ namespace Anthropocene.Simulation
             if (land.Length == 0) return;
             double average = land.Sum(id => w.Tiles[id].CultivationOperator == camp.Id
                 ? Intensity(w.Config, w.Tiles[id].CultivationCapital) : 0) / land.Length;
-            if (average + 1e-10 < .25)
+            if (average + 1e-10 < VillageIntensity)
             {
                 if (camp.IsVillage) camp.VillageTurns++;
                 return;
@@ -395,7 +395,12 @@ namespace Anthropocene.Simulation
         {
             public int Tile;
             public double Score, WorkerYears, AnnualGain;
+            // Village-footprint average field intensity after this step (the quantity UpdateVillageAtBoundary compares with
+            // VillageIntensity). Recorded only for the planner's ladder; 0 elsewhere.
+            public double VillageAverage;
         }
+        // A camp becomes a village when the average field intensity over its radius-one land reaches this value.
+        internal const double VillageIntensity = .25;
 
         // The steps the resolver's farmer allocation would take from the
         // start-of-turn committed state given unlimited effort, in its order: the
@@ -515,6 +520,9 @@ namespace Anthropocene.Simulation
             var gains = new double[candidates.Length];
             bool unbounded = double.IsPositiveInfinity(effectiveWorkerYears);
             double recordedGain = 0;
+            // Ladder mode also tracks the village-footprint average: fields the camp operates at the start or has stepped.
+            int villageLand = record != null ? w.Map.Radius(camp.Tile, 1).Count(id => w.Tiles[id].TraversableLand) : 0;
+            var touched = record != null ? new bool[candidates.Length] : null;
             // Thirty-two intensity bands and at most one bridge-ceiling split per
             // field. The guard also makes unusual saved field values harmless.
             for (int pass = 0; pass < candidates.Length * 35 && remaining > 1e-10; pass++)
@@ -546,7 +554,13 @@ namespace Anthropocene.Simulation
                 double chargedEffort = c.Neolithic.CultivationMarginalEffortMultiplierPerTenth <= 1
                     ? usedE : AdditionalEffort(c, currentE, candidates[best].Capital);
                 remaining = Math.Max(0, remaining - chargedEffort * bestCostPerEffort);
-                record?.Add(new ExpansionStep { Tile = candidates[best].Tile, Score = bestScore, WorkerYears = chargedEffort * bestCostPerEffort, AnnualGain = bestGain });
+                if (record != null)
+                {
+                    touched[best] = true; double sum = 0;
+                    for (int i = 0; i < candidates.Length; i++)
+                        if (touched[i] || candidates[i].StartOperator == camp.Id) sum += Intensity(c, candidates[i].Capital);
+                    record.Add(new ExpansionStep { Tile = candidates[best].Tile, Score = bestScore, WorkerYears = chargedEffort * bestCostPerEffort, AnnualGain = bestGain, VillageAverage = villageLand > 0 ? sum / villageLand : 0 });
+                }
                 cached[best] = false;
                 if (record != null && (recordedGain += bestGain) >= annualGainCap) break;
             }

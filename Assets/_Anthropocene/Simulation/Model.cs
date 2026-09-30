@@ -39,6 +39,9 @@ namespace Anthropocene.Simulation
             // original scale and their pressure threshold remains one.
             MinimumCampSpacing = defaults.MinimumCampSpacing;
             ContactExpiryTurns = defaults.ContactExpiryTurns;
+            // Absent in older saves: secondary technologies use the established threshold, trade credits no practice, and the
+            // settling cost of a husbandry-primary camp keeps its default.
+            SecondaryTechnologyThreshold = defaults.SecondaryTechnologyThreshold; TradePracticePerValue = 0; SettledHerdGrowthPenalty = defaults.SettledHerdGrowthPenalty;
             FissionEnabled = false; FissionGainThreshold = defaults.FissionGainThreshold; FissionGainDiscourage = defaults.FissionGainDiscourage; FissionGainEncourage = defaults.FissionGainEncourage;
             FissionSearchFraction = defaults.FissionSearchFraction; FissionDaughterMargin = defaults.FissionDaughterMargin; FissionHousingRelief = defaults.FissionHousingRelief; FissionRadius = defaults.FissionRadius; FissionMinimumDaughter = defaults.FissionMinimumDaughter;
             ImmigrationEnabled = false; ImmigrationRadius = defaults.ImmigrationRadius; ImmigrationQualityWeight = defaults.ImmigrationQualityWeight; ImmigrationDistanceCost = defaults.ImmigrationDistanceCost;
@@ -118,6 +121,14 @@ namespace Anthropocene.Simulation
         public double WanderChance = .05;
         public double ExperienceThreshold = 225, UnproductivePracticeFraction = .1, CarryoverMultiplier = 1.25, CarryoverFloor = 100;
         public double PracticeBonusStart = .25, PracticeBonusFull = .5;
+        // Practice points of post-breakthrough (Neolithic) practice that grant a secondary technology. Paleolithic practice counts
+        // toward the first breakthrough only (TechnologyDiscovery.AddPractice). Default equals ExperienceThreshold.
+        [System.Runtime.Serialization.OptionalField] public double SecondaryTechnologyThreshold = 225;
+        // Practice points credited per unit of traded goods value (TechnologyDiscovery.RecordTradePractice). 0 keeps the hook inert until trade exists.
+        [System.Runtime.Serialization.OptionalField] public double TradePracticePerValue = 0;
+        // Fraction of a husbandry-primary camp's expected herd-growth value forfeited when field expansion would make it a village
+        // (measured stationary herds support about 1/1.6 of the animals of mobile herds; see Docs/HusbandrySettling.md).
+        [System.Runtime.Serialization.OptionalField] public double SettledHerdGrowthPenalty = .35;
         public double GatheringImpactReduction = .5, FishingImpactReduction = .5, HuntingFoodYieldScale = 2.5, HuntingYieldBonus = .5, HuntingPracticeMultiplier = 3.25, ActiveFishingPracticeMultiplier = 4.25, PassiveAquaticFishingPracticeShare = .5;
         public double ConditionRecoveryPerYear = .003093770185904377, SafeUseRatio = 1, SustainableProductionFraction = .5, LandUseDamagePerYear = .03, AquaticUseDamagePerYear = .03, PressureExponent = 2;
         [System.Runtime.Serialization.OptionalField] public double LandBiomassMultiplier = 63, LandSafeUseRatio = .5;
@@ -175,6 +186,8 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Invalid generation or clock configuration.");
             if (MinimumCampSpacing < 1) throw new ArgumentException("Minimum camp spacing must be at least one hex.");
             if (ContactExpiryTurns < 1) throw new ArgumentException("Contact expiry must be at least one turn.");
+            if (new[] { SecondaryTechnologyThreshold, TradePracticePerValue, SettledHerdGrowthPenalty }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || SecondaryTechnologyThreshold <= 0 || SettledHerdGrowthPenalty > 1)
+                throw new ArgumentException("Invalid secondary technology, trade practice or settling configuration.");
             if (new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionGainThreshold < 0 || FissionGainThreshold > 5 || FissionGainDiscourage < 0 || FissionGainDiscourage > 5 || FissionGainEncourage < 0 || FissionGainEncourage > 5 || FissionSearchFraction < 0 || FissionSearchFraction > 1 || FissionDaughterMargin < 0 || FissionDaughterMargin > 1 || FissionHousingRelief < 0 || FissionHousingRelief > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1)
                 throw new ArgumentException("Invalid fission configuration.");
             if (new[] { ImmigrationQualityWeight, ImmigrationDistanceCost, ImmigrationAttachmentCost, ImmigrationToSedentaryCost, ImmigrationToNomadicCost, ImmigrationDeadband, ImmigrationMaxFraction }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || ImmigrationQualityWeight < 0 || ImmigrationQualityWeight > 10 || ImmigrationDistanceCost < 0 || ImmigrationDistanceCost > 5 || ImmigrationAttachmentCost < 0 || ImmigrationAttachmentCost > 5 || ImmigrationToSedentaryCost < 0 || ImmigrationToSedentaryCost > 5 || ImmigrationToNomadicCost < 0 || ImmigrationToNomadicCost > 5 || ImmigrationDeadband <= 0 || ImmigrationDeadband > 5 || ImmigrationMaxFraction < 0 || ImmigrationMaxFraction > .5 || ImmigrationRadius < 1 || ImmigrationRadius > 5 || ImmigrationReturnCooldownTurns < 0 || ImmigrationReturnCooldownTurns > 20 || double.IsNaN(ImmigrationReturnPenalty) || double.IsInfinity(ImmigrationReturnPenalty) || ImmigrationReturnPenalty < 0 || ImmigrationReturnPenalty > 5 || ImmigrationMinimumGroup < 1 || ImmigrationSourceFloor < 1)

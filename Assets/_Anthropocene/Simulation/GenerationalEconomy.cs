@@ -7,6 +7,8 @@ namespace Anthropocene.Simulation
     public sealed class ManagedFoodForecast
     {
         public double AnimalFood, HumanFoodDisplaced;
+        // Total animals behind a grown-herd forecast (TurnResolver.ForecastGrownManagedAnimalFood); 0 otherwise.
+        public double Animals;
     }
 
     internal sealed class GenerationResource
@@ -126,20 +128,54 @@ namespace Anthropocene.Simulation
         // animals, with no newborns and no mutation. The resolver remains the
         // authority for actual source competition, survival, and accepted output.
         public static ManagedFoodForecast ForecastManagedAnimalFood(WorldState w, Camp c, int herders, double intervals, double years, int? campTile = null)
+            => ForecastManagedHerds(w, c, herders, intervals, years, campTile, null, null, -1);
+
+        // Pure planning forecast of what the camp's herds add after one more turn of breeding (Value rule, Docs/HusbandrySettling.md).
+        // Each herd that is fully nourished in the ordinary forecast (the resolver breeds only then) grows to
+        // floor((animals + remainder) * exp(GrowthRate * breeding * years)); the grown herd is then run through the same
+        // forage/water forecast with the herders it would need (capped at the residents), so pasture or water that cannot carry it
+        // lowers nutrition and yield exactly as in the resolver. Animals reports the grown total. No newborn or ecology is committed.
+        public static ManagedFoodForecast ForecastGrownManagedAnimalFood(WorldState w, Camp c, double breeding, double intervals, double years, int? campTile = null)
+        {
+            var nutrition = new Dictionary<int, double>();
+            var current = ForecastManagedHerds(w, c, 0, intervals, years, campTile, null, nutrition, -1);
+            if (nutrition.Count == 0) return new ManagedFoodForecast();
+            var grown = new Dictionary<int, double>();
+            double total = 0;
+            foreach (var herd in w.Herds.Where(h => h.DomesticCamp == c.Id && nutrition.ContainsKey(h.Id)).OrderBy(h => h.Id))
+            {
+                double animals = herd.Animals;
+                if (nutrition[herd.Id] >= 1 - 1e-12)
+                {
+                    var species = w.Config.GetSpecies(herd.Species);
+                    double target = (herd.Animals + herd.GrowthRemainder) * Math.Exp(species.GrowthRate * breeding * years * nutrition[herd.Id]);
+                    animals = Math.Max(animals, Math.Floor(target));
+                }
+                grown[herd.Id] = animals; total += animals;
+            }
+            int herders = HerdingTooling.RequiredHerdersFor(w, c, years, total);
+            var result = ForecastManagedHerds(w, c, herders, intervals, years, campTile, grown, null, total);
+            result.Animals = total;
+            return result;
+        }
+
+        private static ManagedFoodForecast ForecastManagedHerds(WorldState w, Camp c, int herders, double intervals, double years, int? campTile,
+            Dictionary<int, double> animalsOf, Dictionary<int, double> nutritionOut, double managedAnimals)
         {
             var forecast = new ManagedFoodForecast();
             if (w == null || c == null || intervals <= 0 || years <= 0 || !CultivationEconomy.HusbandryEnabled(c)) return forecast;
             var visible = Knowledge.Visible(w, c.Player);
             var herds = w.Herds.Where(h => h.DomesticCamp == c.Id && h.Animals > 0 && visible.Contains(h.Tile)).OrderBy(h => h.Id).ToArray();
             if (herds.Length == 0) return forecast;
+            double Animals(Herd h) => animalsOf != null && animalsOf.TryGetValue(h.Id, out double a) ? a : h.Animals;
             var claims = new List<Demand>();
             var requestedFood = new Dictionary<int, double>();
             var requestedWater = new Dictionary<int, double>();
             foreach (var herd in herds)
             {
                 var species = w.Config.GetSpecies(herd.Species);
-                double food = herd.Animals * species.FoodConsumption * intervals;
-                double water = herd.Animals * species.FreshwaterConsumption * intervals;
+                double food = Animals(herd) * species.FoodConsumption * intervals;
+                double water = Animals(herd) * species.FreshwaterConsumption * intervals;
                 requestedFood[herd.Id] = food; requestedWater[herd.Id] = water;
                 ManagedHerdLocalClaims.Append(w, campTile ?? c.Tile, herd.Id, food, water,
                     intervals * w.Config.BaseDays, claims, visible);
@@ -155,7 +191,7 @@ namespace Anthropocene.Simulation
                 }
                 forecast.HumanFoodDisplaced += result.Pressure.Where(p => p.Pool == "Biomass" && p.Kind == "Herd").Sum(p => p.GatherableSpill);
             }
-            double management = HerdingTooling.Plan(w, c, years, herders).Fulfillment;
+            double management = HerdingTooling.Plan(w, c, years, herders, managedAnimals).Fulfillment;
             foreach (var herd in herds)
             {
                 var species = w.Config.GetSpecies(herd.Species);
@@ -163,7 +199,8 @@ namespace Anthropocene.Simulation
                 double foodNutrition = requestedFood[herd.Id] <= 1e-12 ? 1 : Numbers.Clamp(realized.food / requestedFood[herd.Id], 0, 1);
                 double waterNutrition = requestedWater[herd.Id] <= 1e-12 ? 1 : Numbers.Clamp(realized.water / requestedWater[herd.Id], 0, 1);
                 double nutrition = Math.Min(foodNutrition, waterNutrition);
-                forecast.AnimalFood += ManagedAnimalFoodYield(w, herd.Animals, nutrition, management, intervals);
+                if (nutritionOut != null) nutritionOut[herd.Id] = nutrition;
+                forecast.AnimalFood += ManagedAnimalFoodYield(w, Animals(herd), nutrition, management, intervals);
             }
             return forecast;
         }
@@ -1027,9 +1064,9 @@ namespace Anthropocene.Simulation
                 }
                 double total = hunting + gathering + fishing; if (total <= 1e-9) continue;
                 double budget = summary.StartingPopulation * generationScale;
-                camp.Experience[(int)Domain.Hunting] += budget * hunting / total * w.Config.HuntingPracticeMultiplier;
-                camp.Experience[(int)Domain.Gathering] += budget * gathering / total;
-                camp.Experience[(int)Domain.Fishing] += budget * fishing / total;
+                TechnologyDiscovery.AddPractice(camp.People, Domain.Hunting, budget * hunting / total * w.Config.HuntingPracticeMultiplier, PracticeSource.Hunting);
+                TechnologyDiscovery.AddPractice(camp.People, Domain.Gathering, budget * gathering / total, PracticeSource.Gathering);
+                TechnologyDiscovery.AddPractice(camp.People, Domain.Fishing, budget * fishing / total, PracticeSource.Fishing);
             }
         }
     }

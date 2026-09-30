@@ -22,6 +22,11 @@ namespace Anthropocene.Simulation
     {
         public int Id, Player, PolicySeed;
         public double[] Experience = new double[3];
+        // Practice credited after this Society left the Paleolithic, by Domain (TechnologyDiscovery.AddPractice). Secondary technologies
+        // are earned from it; Experience (lifetime practice) still drives the first breakthrough. Absent in older saves: zeros.
+#pragma warning disable SYSLIB0050
+        [System.Runtime.Serialization.OptionalField] public double[] NeolithicExperience = new double[3];
+#pragma warning restore SYSLIB0050
         public List<SpeciesPractice> SpeciesExperience = new List<SpeciesPractice>();
         public Technology Technology;
         public bool[] Technologies = new bool[4];
@@ -48,6 +53,7 @@ namespace Anthropocene.Simulation
         // Lineage (WP10a): the parent Society (0 = none) and the affinity fixed by the parent camp's fission policy at fission. Inert afterwards.
         [System.Runtime.Serialization.OptionalField] public int ParentSociety;
         [System.Runtime.Serialization.OptionalField] public double KinAffinity;
+        public double NeolithicPractice(Domain domain) => NeolithicExperience == null ? 0 : NeolithicExperience[(int)domain];
         public bool HasTech(string tech) => NeolithicTechnologies != null && NeolithicTechnologies.Contains(tech);
     }
 
@@ -136,9 +142,46 @@ namespace Anthropocene.Simulation
         public string BlockedReason;
     }
 
+    // Where a practice credit came from. Amounts are decided by the caller; the source only labels the receipt.
+    public enum PracticeSource { Gathering, Hunting, Fishing, Trade }
+
     public static class TechnologyDiscovery
     {
+        // The single entry point for domain practice. Lifetime Experience always accrues (it drives the first breakthrough and the
+        // practice bonuses); after the Society leaves the Paleolithic the same credit also accrues to NeolithicExperience, which alone
+        // earns secondary technologies. Pure arithmetic on the owning Society; callers fix the amount and the canonical order.
+        public static void AddPractice(Society society, Domain domain, double amount, PracticeSource source)
+        {
+            if (amount == 0 || double.IsNaN(amount) || double.IsInfinity(amount)) return;
+            society.Experience[(int)domain] += amount;
+            if (society.Progression.Era == Era.Paleolithic) return;
+            if (society.NeolithicExperience == null) society.NeolithicExperience = new double[3];
+            society.NeolithicExperience[(int)domain] += amount;
+        }
+
+        // Trade hook (inert until trade exists, TradePracticePerValue = 0). A receiving Society learns from what it imports: the caller
+        // passes the goods' value (the same value units the exchange used) and the domain the good belongs to, for example imported
+        // grain to Gathering (Cultivation), herd products to Hunting (Husbandry) and fish to Fishing (Watercraft). The credit is
+        // goodsValue * TradePracticePerValue and flows through AddPractice like any other practice. Returns the points credited.
+        public static double RecordTradePractice(SimulationConfig config, Society receiver, Domain domain, double goodsValue)
+        {
+            double amount = goodsValue * config.TradePracticePerValue;
+            if (!(amount > 0)) return 0;
+            AddPractice(receiver, domain, amount, PracticeSource.Trade);
+            return amount;
+        }
+
+        // Progress toward a technology. For a Society already in the Neolithic this is its post-breakthrough practice, except for
+        // the forced-transition Society's secondary domain, which keeps the catch-up rule on lifetime practice exactly as before.
+        // Before the first breakthrough it is lifetime practice.
         public static double EffectiveProgress(Society society, Domain domain, SimulationConfig config)
+        {
+            if (society.ForcedTransition && society.SecondaryDomain == (int)domain) return LifetimeProgress(society, domain, config);
+            return society.Progression.Era == Era.Paleolithic ? society.Experience[(int)domain] : society.NeolithicPractice(domain);
+        }
+
+        // Lifetime progress of a domain: lifetime practice with the forced-transition catch-up on the selected secondary domain.
+        private static double LifetimeProgress(Society society, Domain domain, SimulationConfig config)
         {
             double experience = society.Experience[(int)domain];
             return society.ForcedTransition && society.SecondaryDomain == (int)domain
@@ -152,15 +195,17 @@ namespace Anthropocene.Simulation
             {
                 var domain = (Domain)i;
                 var technology = (Technology)(i + 1);
-                double progress = EffectiveProgress(society, domain, config);
                 bool inEra = society.Progression.Era == Era.Neolithic;
                 bool acquired = society.Technologies[(int)technology] || inEra && society.Technology == technology;
+                // An acquired technology keeps showing lifetime practice; an unacquired one shows the progress that can earn it.
+                double progress = acquired ? LifetimeProgress(society, domain, config) : EffectiveProgress(society, domain, config);
+                double threshold = inEra ? config.SecondaryTechnologyThreshold : config.ExperienceThreshold;
                 status[i] = new TechnologyStatus
                 {
-                    Domain = domain, Technology = technology, Experience = society.Experience[i],
-                    Progress = progress, Threshold = config.ExperienceThreshold,
-                    Acquired = acquired, Eligible = !acquired && inEra && progress >= config.ExperienceThreshold,
-                    BlockedReason = acquired ? null : !inEra ? "First breakthrough required" : progress < config.ExperienceThreshold
+                    Domain = domain, Technology = technology, Experience = inEra && !acquired ? society.NeolithicPractice(domain) : society.Experience[i],
+                    Progress = progress, Threshold = threshold,
+                    Acquired = acquired, Eligible = !acquired && inEra && progress >= threshold,
+                    BlockedReason = acquired ? null : !inEra ? "First breakthrough required" : progress < threshold
                         ? domain == Domain.Hunting ? "More Hunting practice required" : domain == Domain.Gathering ? "More Gathering practice required" : "More Fishing practice required" : null
                 };
             }
@@ -181,7 +226,7 @@ namespace Anthropocene.Simulation
                 for (int i = 0; i < 3; i++)
                 {
                     var technology = (Technology)(i + 1);
-                    if (society.Technologies[(int)technology] || society.Technology == technology || EffectiveProgress(society, (Domain)i, world.Config) < world.Config.ExperienceThreshold) continue;
+                    if (society.Technologies[(int)technology] || society.Technology == technology || EffectiveProgress(society, (Domain)i, world.Config) < world.Config.SecondaryTechnologyThreshold) continue;
                     society.Technologies[(int)technology] = true;
                     record.Log("Society " + society.Id + " discovered " + technology + " through " + (Domain)i + " practice.");
                 }
