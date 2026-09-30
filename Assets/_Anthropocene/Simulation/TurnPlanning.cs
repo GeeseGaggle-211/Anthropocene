@@ -62,6 +62,12 @@ namespace Anthropocene.Simulation
             // A camp that already occupies a tile wins, then the lowest ID.
             // Rolling losers back may block another mover, so repeat to a fixed
             // point. Every iteration can only cancel an intended move.
+            // The same rule enforces the minimum spacing between resolved
+            // destinations: of two camps closer than the spacing where at least
+            // one moved, a stayer wins, then the lower ID keeps its move.
+            // Pre-existing sub-spacing pairs may stay; only movers are rolled back.
+            int spacing = world.Config.MinimumCampSpacing;
+            var camps = world.Camps.OrderBy(c => c.Id).ToArray();
             bool changed;
             do
             {
@@ -77,6 +83,20 @@ namespace Anthropocene.Simulation
                             changed = true;
                         }
                 }
+                if (spacing > 1)
+                    for (int i = 0; i < camps.Length; i++)
+                        for (int j = i + 1; j < camps.Length; j++)
+                        {
+                            Camp a = camps[i], b = camps[j];
+                            int da = result.Destinations[a.Id], db = result.Destinations[b.Id];
+                            bool aMoved = da != a.Tile, bMoved = db != b.Tile;
+                            if (!aMoved && !bMoved || world.Map.Distance(da, db) >= spacing) continue;
+                            // A stayer wins; between two movers the lower ID (a) keeps its move.
+                            var loser = !bMoved ? a : b;
+                            result.Destinations[loser.Id] = loser.Tile;
+                            result.Blocked.Add(loser.Id);
+                            changed = true;
+                        }
             } while (changed);
             return result;
         }

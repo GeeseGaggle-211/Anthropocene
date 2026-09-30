@@ -48,7 +48,7 @@ namespace Anthropocene.Simulation
     public sealed class ObservationDto
     {
         public int Schema = AgentObservation.SchemaVersion, Player, Turn, PolicySeed, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns;
-        public int Width, Height, MinimumCamp, HunterMovement, CampMovement, WaterMovementCost, SupplyRange, SustainableHuntPopulation;
+        public int Width, Height, MinimumCamp, MinimumCampSpacing, HunterMovement, CampMovement, WaterMovementCost, SupplyRange, SustainableHuntPopulation;
         public double Days, Inertia, HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination;
         public bool Watercraft;
         public double[] Experience;
@@ -65,7 +65,7 @@ namespace Anthropocene.Simulation
         public EntityActionMask[] LegalActions;
         public static ObservationDto From(AgentObservation o, Mandate mandate) => new ObservationDto
         {
-            Player = o.Player, Turn = o.Turn, PolicySeed = o.PolicySeed, CampId = o.CampId, CampTile = o.CampTile, CampPopulation = o.CampPopulation, GathererPopulation = o.GathererPopulation, LinkedPopulation = o.LinkedPopulation, FoodCondition = o.FoodCondition, DeficitTurns = o.DeficitTurns, Width = o.Map.Width, Height = o.Map.Height, MinimumCamp = o.MinimumCamp, HunterMovement = o.HunterMovement, CampMovement = o.CampMovement, WaterMovementCost = o.WaterMovementCost, SupplyRange = o.SupplyRange, SustainableHuntPopulation = o.SustainableHuntPopulation,
+            Player = o.Player, Turn = o.Turn, PolicySeed = o.PolicySeed, CampId = o.CampId, CampTile = o.CampTile, CampPopulation = o.CampPopulation, GathererPopulation = o.GathererPopulation, LinkedPopulation = o.LinkedPopulation, FoodCondition = o.FoodCondition, DeficitTurns = o.DeficitTurns, Width = o.Map.Width, Height = o.Map.Height, MinimumCamp = o.MinimumCamp, MinimumCampSpacing = o.MinimumCampSpacing, HunterMovement = o.HunterMovement, CampMovement = o.CampMovement, WaterMovementCost = o.WaterMovementCost, SupplyRange = o.SupplyRange, SustainableHuntPopulation = o.SustainableHuntPopulation,
             Days = o.Days, Inertia = o.Inertia, HuntingFieldcraft = o.HuntingFieldcraft, HuntingInclination = o.HuntingInclination, GatheringInclination = o.GatheringInclination, FishingInclination = o.FishingInclination, Watercraft = o.Watercraft, Experience = o.Experience.ToArray(),
             TechnologyStatuses = o.TechnologyStatuses.Select(s => new ObservedTechnologyStatusDto { Domain = s.Domain, Technology = s.Technology, Experience = s.Experience, Progress = s.Progress, Threshold = s.Threshold, Acquired = s.Acquired, Eligible = s.Eligible, BlockedReason = s.BlockedReason }).ToArray(),
             Mandate = new Mandate { Risk = mandate.Risk, Mobility = mandate.Mobility, Exploration = mandate.Exploration, Reserve = mandate.Reserve, Hunting = mandate.Hunting, Gathering = mandate.Gathering, Fishing = mandate.Fishing, Persistence = mandate.Persistence },

@@ -165,7 +165,7 @@ namespace Anthropocene.Simulation
         public readonly IReadOnlyList<double> Experience;
         public readonly IReadOnlyList<TechnologyStatus> TechnologyStatuses;
         public readonly HexMap Map;
-        public readonly int MinimumCamp, HunterMovement, CampMovement, WaterMovementCost, SupplyRange, SustainableHuntPopulation;
+        public readonly int MinimumCamp, MinimumCampSpacing, HunterMovement, CampMovement, WaterMovementCost, SupplyRange, SustainableHuntPopulation;
         public readonly double Inertia;
         internal AgentObservation(WorldState w, Camp camp, PlanningIndex index, bool recommendEconomy,
             bool includeCandidateForecasts = true)
@@ -177,7 +177,7 @@ namespace Anthropocene.Simulation
             FoodCondition = Knowledge.Band(camp.Food, Math.Max(1, LinkedPopulation * w.Config.Consumption * w.Config.GenerationIntervals), w.Config);
             DeficitTurns = camp.DeficitTurns; Turn = w.Turn; PolicySeed = camp.People.PolicySeed;
             Watercraft = camp.Technologies[(int)Technology.Watercraft]; Map = w.Map;
-            WaterMovementCost = Math.Max(1, w.Config.HunterMovement / w.Config.WaterMovement); MinimumCamp = w.Config.MinimumCamp; HunterMovement = w.Config.HunterMovement; CampMovement = w.Config.CampMovement; Inertia = w.Config.RelocationInertia;
+            WaterMovementCost = Math.Max(1, w.Config.HunterMovement / w.Config.WaterMovement); MinimumCamp = w.Config.MinimumCamp; MinimumCampSpacing = w.Config.MinimumCampSpacing; HunterMovement = w.Config.HunterMovement; CampMovement = w.Config.CampMovement; Inertia = w.Config.RelocationInertia;
             SupplyRange = w.Config.SupplyRange; SustainableHuntPopulation = w.Config.SustainableHuntPopulation;
             Tiles = new ReadOnlyDictionary<int, TileObservation>(visible.OrderBy(n => n).ToDictionary(n => n, n => new TileObservation(w, w.Tiles[n], w.Rivers, index.Ecology(n))));
             Hunters = Array.AsReadOnly(index.OwnHunters(Player).Select(h => new UnitObservation(h.Id, h.Tile, h.Population, h.Player, Supply.Connected(w, h), Knowledge.Band(h.CarriedFood, Supply.Capacity(w, h), w.Config), h.DeficitTurns, h.SourceCamp)).ToArray());
@@ -473,7 +473,7 @@ namespace Anthropocene.Simulation
                 foreach (var site in o.AgriculturalSites.OrderBy(s => s.Tile))
                 {
                     int n = site.Tile;
-                    if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n)) continue;
+                    if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n) || OrderRules.CampSpacingBlocked(o, o.CampId, o.CampTile, n)) continue;
                     // Departure from an established village abandons its
                     // current field work and fixed housing. AI considers it
                     // only in a food emergency with a materially better site;
@@ -509,7 +509,7 @@ namespace Anthropocene.Simulation
                 foreach (var site in o.SiteCoverage.OrderBy(s => s.Tile))
                 {
                     int n = site.Tile;
-                    if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n)) continue;
+                    if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n) || OrderRules.CampSpacingBlocked(o, o.CampId, o.CampTile, n)) continue;
                     double support = Support(site);
                     double total = site.HumanFood + site.HerdForage + site.HerdWater;
                     if (n != o.CampTile && (margin == 0
@@ -527,7 +527,7 @@ namespace Anthropocene.Simulation
             {
                 foreach (int n in o.Map.Radius(o.CampTile, o.CampMovement).OrderBy(n => n))
                 {
-                    if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n)) continue;
+                    if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n) || OrderRules.CampSpacingBlocked(o, o.CampId, o.CampTile, n)) continue;
                     double food = Gathering(o, n) * need * m.Gathering;
                     double continuity = n == o.CampTile ? Math.Max(.25, current * o.Inertia) : -(1 - m.Mobility) * .1;
                     double herdSupport = HerdSupport(o, n) * m.Hunting * (huntingFocus ? 4 : .35 + .85 * o.HuntingFieldcraft);

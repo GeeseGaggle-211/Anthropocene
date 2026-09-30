@@ -22,6 +22,7 @@ END = "<!-- CURRENT_CONFIG_TABLE:END -->"
 # it catches prose drift for current values that have historically conflicted.
 FIELDS = [
     ("ReferenceTurnYears", "years per Neolithic reference turn", "reference scale"),
+    ("MinimumCampSpacing", "hexes between resolved camp destinations", "shipped placement rule (saves without the field load 3)"),
     ("PlanningHorizonYears", "years", "shipped forecast horizon"),
     ("LandBiomassMultiplier", "relative land biomass multiplier", "shipped new-world calibration"),
     ("LandFoodRegeneration", "fraction per legacy BaseDays profile", "shipped land recovery input"),
@@ -62,6 +63,7 @@ TESTS = [
     ("Tools/Headless/HorizonEcologyChecks.cs", "--horizon-only"),
     ("Tools/Headless/NeolithicChecks.cs", "--neolithic-only"),
     ("Tools/Headless/ExecutionChecks.cs", "--economy-only"),
+    ("Tools/Headless/CampSpacingChecks.cs", "CampSpacingChecks.Run"),
 ]
 API_ONLY_FIELDS = {"CultivationRegenFlux"}
 
@@ -82,7 +84,7 @@ def render_table(config: dict) -> str:
     model_text = MODEL.read_text(encoding="utf-8") + SIM_MODEL.read_text(encoding="utf-8")
     # Read field initializers only. Migration assignments inside callbacks are
     # legacy defaults, not the defaults of a newly constructed config.
-    declarations = "\n".join(re.findall(r"public\s+double\s+([^;\n]+);", model_text))
+    declarations = "\n".join(re.findall(r"public\s+(?:double|int)\s+([^;\n]+);", model_text))
     derived = {"GrowthReserveYears": "GrowthReserveTurns", "MinimumStorageYears": "MinimumStorageGenerations",
                "MaximumStorageYears": "MaximumStorageGenerations"}
     def default_value(name):

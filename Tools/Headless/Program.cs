@@ -129,7 +129,7 @@ internal static class Program
         Check(a.Select(t => t.Food).SequenceEqual(b.Select(t => t.Food)) && Math.Abs(a.Sum(t => t.Food) - 10) < 1e-9, "Order independent allocation");
         tiles[0].PotentialFood = 100; demands = new[] { new Demand { Tile = 0, Entity = 1, Food = 10, Kind = "Gathering" }, new Demand { Tile = 0, Entity = 2, PotentialFood = 100, Kind = "Herd" } };
         a = allocator.Allocate(demands, tiles); Check(a.Sum(t => t.Food) == 10 && a.Sum(t => t.PotentialFood) == 90, "Human gathering uses its subset while herds draw on remaining potential biomass");
-        w = Flat(); w.Camps[1].Tile = w.Camps[0].Tile + 2;
+        w = Flat(); w.Camps[1].Tile = w.Camps[0].Tile + 2; w.Config.MinimumCampSpacing = 1; // isolates the same-tile rule from camp spacing
         int destination = w.Camps[0].Tile + 1;
         resolver.Resolve(w, new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Move, w.Camps[0].Id, destination: destination) }, [1] = new List<Order> { new Order(OrderKind.Move, w.Camps[1].Id, destination: destination) } });
         Check(w.Camps[0].Tile == destination && w.Camps[1].Tile != destination, "Stable camp collision");
@@ -280,6 +280,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "AgentContractChecks", Run = () => AgentContractChecks.Run() },
                 new ParallelChecks.Entry { Name = "ExecutionChecks", Cost = 5, Run = () => ExecutionChecks.Run() },
                 new ParallelChecks.Entry { Name = "PlanningDraftChecks", Cost = 5, Run = () => PlanningDraftChecks.Run() },
+                new ParallelChecks.Entry { Name = "CampSpacingChecks", Run = () => CampSpacingChecks.Run() },
                 new ParallelChecks.Entry { Name = "ClothingFeedstockChecks", Run = () => ClothingFeedstockChecks.Run() },
                 new ParallelChecks.Entry { Name = "NeolithicChecks", Run = () => NeolithicChecks.Run() },
                 new ParallelChecks.Entry { Name = "ToolConsumptionChecks", Run = () => ToolConsumptionChecks.Run() },

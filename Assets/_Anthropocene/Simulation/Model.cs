@@ -37,6 +37,7 @@ namespace Anthropocene.Simulation
             CultivationVegetationDisplacementStart = defaults.CultivationVegetationDisplacementStart;
             // Absent in older saves: their generated land stocks keep their
             // original scale and their pressure threshold remains one.
+            MinimumCampSpacing = defaults.MinimumCampSpacing;
             LandBiomassMultiplier = 1;
             LandSafeUseRatio = 1;
             LandFoodRegenerationInitialized = false;
@@ -80,6 +81,8 @@ namespace Anthropocene.Simulation
         public int HerdSmallCountThreshold = 10, HerdCountRounding = 10, HerdBroadCountSize = 100;
         public int CampMovement = 1, HunterMovement = 2, HerdMovement = 1, WaterMovement = 1;
         public int VisionRadius = 2, GatherRadius = 1, MinimumCamp = 6, StartingPopulation = 24;
+        // Minimum hex distance between resolved camp destinations (WP10). Saves that predate it load with this default.
+        [System.Runtime.Serialization.OptionalField] public int MinimumCampSpacing = 3;
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
         public double GatherFraction = .22, GatherPerPerson = 1.8, PopulationScale = 24;
@@ -146,6 +149,7 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Unsupported map dimensions or player count.");
             if (PlateCount < 2 || PlateCount > 64 || TurnDays < MinDays || TurnDays > MaxDays || BaseDays <= 0 || StarvationGraceTurns < 0 || MajorityEligibilityYears < 0 || ForcedTransitionYears <= MajorityEligibilityYears)
                 throw new ArgumentException("Invalid generation or clock configuration.");
+            if (MinimumCampSpacing < 1) throw new ArgumentException("Minimum camp spacing must be at least one hex.");
             if (CampMovement != 1 || HunterMovement != 2 || HerdMovement != 1 || VisionRadius != 2 || GatherRadius != 1)
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
             if (StartingPopulation <= MinimumCamp || MinimumCamp < 1 || Consumption <= 0 || PopulationScale <= 0)

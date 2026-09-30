@@ -109,6 +109,7 @@
   "VisionRadius": 2,
   "GatherRadius": 1,
   "MinimumCamp": 6,
+  "MinimumCampSpacing": 3,
   "StartingPopulation": 24,
   "StartSeparation": 12,
   "StarvationGraceTurns": 2,

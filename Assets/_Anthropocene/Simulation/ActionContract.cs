@@ -28,6 +28,7 @@ namespace Anthropocene.Simulation
                 if (!o.Tiles.ContainsKey(order.Destination)) return "Destination is outside current sight.";
                 int budget = hunter == null ? o.CampMovement : o.HunterMovement;
                 if (!o.Map.Reachable(tile, order.Destination, budget, n => Enter(o, n, hunter != null), n => hunter != null && o.Tiles[n].Aquatic ? o.WaterMovementCost : 1)) return "Destination is unreachable within this turn's movement allowance.";
+                if (settlement != null && CampSpacingBlocked(o, settlement.Id, tile, order.Destination)) return "Destination is closer than the minimum camp spacing to another observed camp.";
             }
             if (order.Kind == OrderKind.Move) return order.Population != 0 || order.Target >= 0 ? "Movement cannot include a separate target or dispatch." : null;
             if (hunter == null) return "This order requires a hunter group.";
@@ -39,6 +40,15 @@ namespace Anthropocene.Simulation
                 return !o.Tiles.TryGetValue(order.Target, out var target) || !target.Aquatic || o.Map.Distance(final, order.Target) > 1 ? "Fishing requires an accessible adjacent freshwater or shallow tile." : null;
             }
             return "Unknown order.";
+        }
+        // A camp may always stay put. Any other destination must keep the minimum spacing from every camp
+        // this observation can see (own camps and visible foreign camps); unseen camps are enforced only by resolution.
+        public static bool CampSpacingBlocked(AgentObservation o, int camp, int origin, int destination)
+        {
+            if (destination == origin || o.MinimumCampSpacing <= 1) return false;
+            foreach (var other in o.Settlements) if (other.Id != camp && o.Map.Distance(destination, other.Tile) < o.MinimumCampSpacing) return true;
+            foreach (var rival in o.Rivals) if (o.Map.Distance(destination, rival.Tile) < o.MinimumCampSpacing) return true;
+            return false;
         }
         private static bool Enter(AgentObservation o, int n, bool hunter) => o.Tiles.TryGetValue(n, out var t) && t.ElevationLevel < 10 && (t.Land || hunter && o.Watercraft && t.Terrain == Terrain.Shallows);
     }

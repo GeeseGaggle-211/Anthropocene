@@ -251,6 +251,7 @@ internal static class EconomicAutomationChecks
             "an invalid explicit economic order cannot suppress enabled automation");
 
         var blocked = Fixture(); var mover = blocked.Camps[0]; mover.EconomyAutomationTurns = -1;
+        blocked.Config.MinimumCampSpacing = 1; // this check isolates the same-tile rule; spacing rejects the adjacent order earlier
         int occupied = blocked.Map.Neighbors(mover.Tile).Where(id => blocked.Tiles[id].TraversableLand).OrderBy(id => id).First();
         var stationary = new Camp { Id = blocked.NextId++, Player = mover.Player, SocietyId = mover.SocietyId,
             Tile = occupied, Population = 10 }; stationary.Bind(mover.People);

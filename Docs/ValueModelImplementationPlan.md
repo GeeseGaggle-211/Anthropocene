@@ -84,7 +84,15 @@ Result on the five 50-turn worlds (Value, post-opening turn 50, before → after
 husbandry camps without clothing 80/106 → 10/106, QoL P25/median/P75
 0.11/0.24/0.40 → 0.21/0.34/0.64; agricultural without clothing 89/280 → 33/280,
 QoL 0.44/0.63/0.89 → 0.53/0.71/0.91; total population +0.1%, food +0.4%. The
-remaining husbandry QoL gap is social cohesion at ~1,800 residents (fission).
+remaining husbandry QoL gap is social cohesion at ~1,800 residents (fission). Checkpoints
+(Value, 25 turns, vs WP4a): mean QoL +1.7% to +2.9%, N·Q +1.5% to +2.2%,
+population −0.1% to −0.65% (reserve refill waits for clothing).
+
+**Minimum camp spacing (WP10 step 1).** `MinimumCampSpacing = 3` enforced at
+placement (fixed point: stayers win, then lower ID; hidden camps only at
+resolution) and in order masks from the actor's observation. Five 50-turn
+worlds: 2 fewer agricultural moves in 1,145, outcomes otherwise unchanged
+(starts are ≥ 12 hexes apart).
 
 **Husbandry mobility check.** MobileHusbandryValidation's exact command
 (Continents 11/23/1729, 80 post-opening turns, `--land-m=63
