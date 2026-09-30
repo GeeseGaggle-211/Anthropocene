@@ -147,12 +147,25 @@ namespace Anthropocene.Simulation
                 supply = NeolithicProduction.FixedHousingAt(w, camp.Id, camp.Tile, w.Days) + Math.Max(0, camp.Inventory?.LightHousingUnits ?? 0);
                 b0 = camp.FoodNeedsMetRatio * camp.WaterNeedsMetRatio;
             }
-            public double At(int people)
+            public double At(int people) => people <= 0 ? 0 : b0 * Shape(people);
+            // Clothing coverage, housing per head and social cohesion at a headcount (everything in QoL except food and water).
+            private double Shape(int people)
             {
-                if (people <= 0) return 0;
                 double cloth = Math.Min(1, camp.ClothPerCapita * Residents / people), housing = Math.Min(1, supply * n.HousingPeoplePerUnit / people);
                 double coverage = n.RudimentaryWeightClothing * (1 - expectation * (1 - cloth)) + n.RudimentaryWeightHousing * (1 - expectation * (1 - housing));
-                return b0 * coverage * NeolithicProduction.SocialCohesion(n, camp, people);
+                return coverage * NeolithicProduction.SocialCohesion(n, camp, people);
+            }
+            // Forward-looking QoL at a headcount (WP10b-2): At() plus the food and water dilution that a change of headcount implies.
+            //   F_hat(N') = min(1, (F * N + carried) / N'), W_hat(N') = min(1, W * N / N') when W < 1 and 1 otherwise,
+            // N the present residents and `carried` the person-equivalents of the turn's food need that arrivals bring (their per-head share of
+            // stored food over the per-head requirement; 0 for a source, whose leavers take their share of stores so per-head stores are unchanged).
+            // ForwardAt(N, 0) equals At(N).
+            public double ForwardAt(int people, double carried = 0)
+            {
+                if (people <= 0) return 0;
+                double f = camp.FoodNeedsMetRatio, w = camp.WaterNeedsMetRatio;
+                double food = Math.Min(1, (f * Residents + Math.Max(0, carried)) / people), water = w < 1 ? Math.Min(1, w * Residents / people) : 1;
+                return food * water * Shape(people);
             }
         }
         public static QoLModel QoLModelOf(WorldState w, Camp camp) => new QoLModel(w, camp);

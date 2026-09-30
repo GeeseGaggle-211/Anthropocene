@@ -44,6 +44,7 @@ namespace Anthropocene.Simulation
             ImmigrationEnabled = false; ImmigrationRadius = defaults.ImmigrationRadius; ImmigrationQualityWeight = defaults.ImmigrationQualityWeight; ImmigrationDistanceCost = defaults.ImmigrationDistanceCost;
             ImmigrationAttachmentCost = defaults.ImmigrationAttachmentCost; ImmigrationToSedentaryCost = defaults.ImmigrationToSedentaryCost; ImmigrationToNomadicCost = defaults.ImmigrationToNomadicCost;
             ImmigrationDeadband = defaults.ImmigrationDeadband; ImmigrationMaxFraction = defaults.ImmigrationMaxFraction; ImmigrationMinimumGroup = defaults.ImmigrationMinimumGroup; ImmigrationSourceFloor = defaults.ImmigrationSourceFloor;
+            ImmigrationReturnCooldownTurns = defaults.ImmigrationReturnCooldownTurns; ImmigrationReturnPenalty = defaults.ImmigrationReturnPenalty;
             LandBiomassMultiplier = 1;
             LandSafeUseRatio = 1;
             LandFoodRegenerationInitialized = false;
@@ -100,6 +101,9 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int FissionRadius = 3, FissionMinimumDaughter = 12;
         // Immigration between known settlements (WP10b, QoLFissionTradeDesign 4). Saves that predate these fields load with immigration disabled.
         // dU = w_Q (Q_j - Q_i) - distance*d - attachment - lifestyle; a source emigrates to its best known camp within the radius when dU exceeds the deadband.
+        // WP10b-2: forward-looking utility and return hysteresis. A flow back to a camp that sent people within the cooldown pays a penalty decaying linearly to zero.
+        [System.Runtime.Serialization.OptionalField] public int ImmigrationReturnCooldownTurns = 3;
+        [System.Runtime.Serialization.OptionalField] public double ImmigrationReturnPenalty = .10;
         [System.Runtime.Serialization.OptionalField] public bool ImmigrationEnabled = false;
         [System.Runtime.Serialization.OptionalField] public int ImmigrationRadius = 4, ImmigrationMinimumGroup = 4, ImmigrationSourceFloor = 12;
         [System.Runtime.Serialization.OptionalField] public double ImmigrationQualityWeight = 1, ImmigrationDistanceCost = .01, ImmigrationAttachmentCost = .02, ImmigrationToSedentaryCost = .05, ImmigrationToNomadicCost = .15, ImmigrationDeadband = .075, ImmigrationMaxFraction = .10;
@@ -173,7 +177,7 @@ namespace Anthropocene.Simulation
             if (ContactExpiryTurns < 1) throw new ArgumentException("Contact expiry must be at least one turn.");
             if (new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionGainThreshold < 0 || FissionGainThreshold > 5 || FissionGainDiscourage < 0 || FissionGainDiscourage > 5 || FissionGainEncourage < 0 || FissionGainEncourage > 5 || FissionSearchFraction < 0 || FissionSearchFraction > 1 || FissionDaughterMargin < 0 || FissionDaughterMargin > 1 || FissionHousingRelief < 0 || FissionHousingRelief > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1)
                 throw new ArgumentException("Invalid fission configuration.");
-            if (new[] { ImmigrationQualityWeight, ImmigrationDistanceCost, ImmigrationAttachmentCost, ImmigrationToSedentaryCost, ImmigrationToNomadicCost, ImmigrationDeadband, ImmigrationMaxFraction }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || ImmigrationQualityWeight < 0 || ImmigrationQualityWeight > 10 || ImmigrationDistanceCost < 0 || ImmigrationDistanceCost > 5 || ImmigrationAttachmentCost < 0 || ImmigrationAttachmentCost > 5 || ImmigrationToSedentaryCost < 0 || ImmigrationToSedentaryCost > 5 || ImmigrationToNomadicCost < 0 || ImmigrationToNomadicCost > 5 || ImmigrationDeadband <= 0 || ImmigrationDeadband > 5 || ImmigrationMaxFraction < 0 || ImmigrationMaxFraction > .5 || ImmigrationRadius < 1 || ImmigrationRadius > 5 || ImmigrationMinimumGroup < 1 || ImmigrationSourceFloor < 1)
+            if (new[] { ImmigrationQualityWeight, ImmigrationDistanceCost, ImmigrationAttachmentCost, ImmigrationToSedentaryCost, ImmigrationToNomadicCost, ImmigrationDeadband, ImmigrationMaxFraction }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || ImmigrationQualityWeight < 0 || ImmigrationQualityWeight > 10 || ImmigrationDistanceCost < 0 || ImmigrationDistanceCost > 5 || ImmigrationAttachmentCost < 0 || ImmigrationAttachmentCost > 5 || ImmigrationToSedentaryCost < 0 || ImmigrationToSedentaryCost > 5 || ImmigrationToNomadicCost < 0 || ImmigrationToNomadicCost > 5 || ImmigrationDeadband <= 0 || ImmigrationDeadband > 5 || ImmigrationMaxFraction < 0 || ImmigrationMaxFraction > .5 || ImmigrationRadius < 1 || ImmigrationRadius > 5 || ImmigrationReturnCooldownTurns < 0 || ImmigrationReturnCooldownTurns > 20 || double.IsNaN(ImmigrationReturnPenalty) || double.IsInfinity(ImmigrationReturnPenalty) || ImmigrationReturnPenalty < 0 || ImmigrationReturnPenalty > 5 || ImmigrationMinimumGroup < 1 || ImmigrationSourceFloor < 1)
                 throw new ArgumentException("Invalid immigration configuration.");
             if (CampMovement != 1 || HunterMovement != 2 || HerdMovement != 1 || VisionRadius != 2 || GatherRadius != 1)
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
@@ -370,6 +374,8 @@ namespace Anthropocene.Simulation
         // Fission (WP10a). Absent policy is Neutral (the enum's zero); an absent destination is none.
         [System.Runtime.Serialization.OptionalField] public FissionPolicy FissionPolicy;
         [System.Runtime.Serialization.OptionalField] public FissionTarget FissionDestination;
+        // Immigration hysteresis (WP10b-2): sparse, pruned at commit; null when empty and absent in older saves.
+        [System.Runtime.Serialization.OptionalField] public List<MigrationMemory> RecentMigration;
         [NonSerialized] private Society people = new Society();
         public Society People => people ?? (people = new Society());
         internal void Bind(Society owner) { people = owner; SocietyId = owner.Id; Player = owner.Player; }

@@ -64,11 +64,34 @@ internal static class ImmigrationChecks
         double e = c.RudimentaryExpectation, coverage = n.RudimentaryWeightClothing * (1 - e * (1 - cloth)) + n.RudimentaryWeightHousing * (1 - e * (1 - housing));
         return c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * coverage * Math.Exp(-Math.Pow(people / Scale(w, c), n.SocialCohesionExponent));
     }
-    // Sets the destination's food ratio so that Q_j - Q_i equals `gap` at present residents (both camps with 100 residents).
-    private static void Gap(WorldState w, Camp source, Camp destination, double gap)
+    // Independent closed form of the forward-looking QoL (WP10b-2) at a headcount with `carried` person-equivalents of food arriving:
+    // F_hat = min(1, (F N + carried) / N'), W_hat = min(1, W N / N') if W < 1 else 1, clothing diluted, housing ample, cohesion at N'.
+    private static double QF(WorldState w, Camp c, int people, double carried = 0)
     {
-        source.FoodNeedsMetRatio = .5; double target = Quality(w, source, source.Population) + gap; destination.FoodNeedsMetRatio = 1;
-        destination.FoodNeedsMetRatio = target / Quality(w, destination, destination.Population);
+        var n = w.Config.Neolithic; double food = Math.Min(1, (c.FoodNeedsMetRatio * c.Population + carried) / people), water = c.WaterNeedsMetRatio < 1 ? Math.Min(1, c.WaterNeedsMetRatio * c.Population / people) : 1;
+        double cloth = Math.Min(1, c.ClothPerCapita * c.Population / (double)people), e = c.RudimentaryExpectation;
+        double coverage = n.RudimentaryWeightClothing * (1 - e * (1 - cloth)) + n.RudimentaryWeightHousing * (1 - e * (1 - 1));
+        return food * water * coverage * Math.Exp(-Math.Pow(people / Scale(w, c), n.SocialCohesionExponent));
+    }
+    private static double Need(WorldState w) => w.Config.Consumption * w.Config.TurnDays / w.Config.BaseDays;
+    private static double PerPerson(WorldState w, Camp c) => (c.PlantFood + c.AnimalFood + c.AquaticFood) / c.Population / Need(w);
+    private static int MaxGroup(WorldState w, Camp c) => Math.Min((int)Math.Floor(c.Population * w.Config.ImmigrationMaxFraction + 1e-9), c.Population - w.Config.ImmigrationSourceFloor);
+    // Independent closed form of dU(M) = w_Q (Qhat_j(N_j + inflow + M) - Qhat_i(N_i - M)) - costs - penalty, at present (frozen) residents.
+    private static double Fwd(WorldState w, Camp s, Camp d, int m, int inflow = 0, double carriedAlready = 0, double penalty = 0)
+    {
+        var cfg = w.Config; int distance = w.Map.Distance(s.Tile, d.Tile);
+        return cfg.ImmigrationQualityWeight * (QF(w, d, d.Population + inflow + m, carriedAlready + m * PerPerson(w, s)) - QF(w, s, s.Population - m))
+            - cfg.ImmigrationDistanceCost * distance - cfg.ImmigrationAttachmentCost - Immigration.LifestyleCost(cfg, s, d) - penalty;
+    }
+    // Makes the source dry (its migrants carry no food) and gives it a low food ratio, then sets the destination's food ratio (within 0..1) so that the
+    // forward utility at the source's largest group equals `utility` (clamped at the best achievable). Returns the utility reached.
+    private static double Tune(WorldState w, Camp s, Camp d, double utility, double sourceFood = .1)
+    {
+        s.PlantFood = s.AnimalFood = s.AquaticFood = 0; s.FoodNeedsMetRatio = sourceFood; int m = MaxGroup(w, s);
+        double lo = 0, hi = 1; d.FoodNeedsMetRatio = 1;
+        if (Fwd(w, s, d, m) <= utility) return Fwd(w, s, d, m);
+        for (int i = 0; i < 80; i++) { double mid = (lo + hi) / 2; d.FoodNeedsMetRatio = mid; if (Fwd(w, s, d, m) < utility) lo = mid; else hi = mid; }
+        d.FoodNeedsMetRatio = hi; return Fwd(w, s, d, m);
     }
     private static void Remember(WorldState w, Camp observer, Camp other, bool moved = false, int tile = -1)
     {
@@ -85,7 +108,7 @@ internal static class ImmigrationChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Closed(); Known(); Choice(); Deadband(); Reconcile(); Ordering(); MultiHop(); Conservation(); Records(); Replay(); Persistence();
+        checks = 0; Config(); Closed(); Known(); Choice(); Deadband(); Reconcile(); Ordering(); MultiHop(); Conservation(); Records(); Replay(); Persistence(); Forward(); Oscillation(); Hysteresis();
         Console.WriteLine("PASS: " + checks + " immigration assertions"); return checks;
     }
 
@@ -93,9 +116,10 @@ internal static class ImmigrationChecks
     {
         var c = new SimulationConfig();
         Check(!c.ImmigrationEnabled && c.ImmigrationRadius == 4 && c.ImmigrationQualityWeight == 1 && c.ImmigrationDistanceCost == .01 && c.ImmigrationAttachmentCost == .02 && c.ImmigrationToSedentaryCost == .05 && c.ImmigrationToNomadicCost == .15
-            && c.ImmigrationDeadband == .075 && c.ImmigrationMaxFraction == .10 && c.ImmigrationMinimumGroup == 4 && c.ImmigrationSourceFloor == 12, "immigration defaults are off with the specified levers");
+            && c.ImmigrationDeadband == .075 && c.ImmigrationMaxFraction == .10 && c.ImmigrationMinimumGroup == 4 && c.ImmigrationSourceFloor == 12 && c.ImmigrationReturnCooldownTurns == 3 && c.ImmigrationReturnPenalty == .10, "immigration defaults are off with the specified levers");
         foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.ImmigrationRadius = 0, x => x.ImmigrationRadius = 6, x => x.ImmigrationQualityWeight = -1, x => x.ImmigrationDistanceCost = -.1, x => x.ImmigrationAttachmentCost = double.NaN,
-            x => x.ImmigrationToSedentaryCost = -1, x => x.ImmigrationToNomadicCost = 9, x => x.ImmigrationDeadband = 0, x => x.ImmigrationMaxFraction = .6, x => x.ImmigrationMinimumGroup = 0, x => x.ImmigrationSourceFloor = 0 })
+            x => x.ImmigrationToSedentaryCost = -1, x => x.ImmigrationToNomadicCost = 9, x => x.ImmigrationDeadband = 0, x => x.ImmigrationMaxFraction = .6, x => x.ImmigrationMinimumGroup = 0, x => x.ImmigrationSourceFloor = 0,
+            x => x.ImmigrationReturnCooldownTurns = -1, x => x.ImmigrationReturnCooldownTurns = 21, x => x.ImmigrationReturnPenalty = -.1, x => x.ImmigrationReturnPenalty = double.NaN, x => x.ImmigrationReturnPenalty = 6 })
         {
             var x = new SimulationConfig(); bad(x); bool rejected = false; try { x.Validate(); } catch (ArgumentException) { rejected = true; }
             Check(rejected, "an invalid immigration lever is rejected");
@@ -109,18 +133,18 @@ internal static class ImmigrationChecks
         {
             var old = (SimulationConfig)serializer.ReadObject(stream);
             Check(!old.ImmigrationEnabled && old.ImmigrationRadius == 4 && old.ImmigrationQualityWeight == 1 && old.ImmigrationDistanceCost == .01 && old.ImmigrationAttachmentCost == .02 && old.ImmigrationToSedentaryCost == .05 && old.ImmigrationToNomadicCost == .15
-                && old.ImmigrationDeadband == .075 && old.ImmigrationMaxFraction == .10 && old.ImmigrationMinimumGroup == 4 && old.ImmigrationSourceFloor == 12, "an older config loads with immigration disabled and the default levers");
+                && old.ImmigrationDeadband == .075 && old.ImmigrationMaxFraction == .10 && old.ImmigrationMinimumGroup == 4 && old.ImmigrationSourceFloor == 12 && old.ImmigrationReturnCooldownTurns == 3 && old.ImmigrationReturnPenalty == .10, "an older config loads with immigration disabled and the default levers");
             old.Validate(); checks++;
         }
         string json = File.ReadAllText(FindConfig());
         foreach (var pair in new[] { ("ImmigrationEnabled", "false"), ("ImmigrationRadius", "4"), ("ImmigrationQualityWeight", "1"), ("ImmigrationDistanceCost", "0.01"), ("ImmigrationAttachmentCost", "0.02"), ("ImmigrationToSedentaryCost", "0.05"),
-            ("ImmigrationToNomadicCost", "0.15"), ("ImmigrationDeadband", "0.075"), ("ImmigrationMaxFraction", "0.1"), ("ImmigrationMinimumGroup", "4"), ("ImmigrationSourceFloor", "12") })
+            ("ImmigrationToNomadicCost", "0.15"), ("ImmigrationDeadband", "0.075"), ("ImmigrationMaxFraction", "0.1"), ("ImmigrationMinimumGroup", "4"), ("ImmigrationSourceFloor", "12"), ("ImmigrationReturnCooldownTurns", "3"), ("ImmigrationReturnPenalty", "0.1") })
         {
             var m = Regex.Match(json, "\"" + pair.Item1 + "\":\\s*([0-9.a-z]+)");
             Check(m.Success && m.Groups[1].Value == pair.Item2, "OpeningConfig.json carries " + pair.Item1);
         }
         // Disabled by default: the pass neither runs nor reports, whatever the populations.
-        var w = World(new[] { 8, 8 }, new[] { 8, 10 }); w.Config.ImmigrationEnabled = false; Gap(w, w.Camps[0], w.Camps[1], .5);
+        var w = World(new[] { 8, 8 }, new[] { 8, 10 }); w.Config.ImmigrationEnabled = false; Tune(w, w.Camps[0], w.Camps[1], .3);
         Check(Pass(w) == null && lastRecord.Migrations.Count == 0 && lastMetrics.ImmigrationCampsEvaluated == 0 && w.Camps.All(x => x.Population == 100), "a disabled pass changes nothing");
     }
     private static string FindConfig()
@@ -172,22 +196,22 @@ internal static class ImmigrationChecks
     private static void Known()
     {
         // Paleolithic: a far better camp at distance 3 is outside the vision radius of 2 and never targeted; at distance 2 it is seen.
-        var w = WorldAt(2, (x, i) => i == 0 ? x.Map.At(8, 8) : Ring(x, x.Map.At(8, 8), 3)); Gap(w, w.Camps[0], w.Camps[1], 1.0);
+        var w = WorldAt(2, (x, i) => i == 0 ? x.Map.At(8, 8) : Ring(x, x.Map.At(8, 8), 3)); Tune(w, w.Camps[0], w.Camps[1], .3);
         Check(w.Map.Distance(w.Camps[0].Tile, w.Camps[1].Tile) == 3 && ContactKnowledge.Remembers(w.Camps[0].People) == false, "fixture: Paleolithic source and a camp three hexes away");
         Pass(w); Check(lastRecord.Migrations.Count == 0 && lastMetrics.ImmigrationIntents == 0, "a Paleolithic source never targets a camp outside current vision");
         // The same camp is also unknown when a contact was (wrongly) stored: Paleolithic Societies use vision only.
         Remember(w, w.Camps[0], w.Camps[1]); Pass(w); Check(lastRecord.Migrations.Count == 0, "Paleolithic Societies ignore stored contacts");
-        w.Camps[1].Tile = Ring(w, w.Camps[0].Tile, 2); Gap(w, w.Camps[0], w.Camps[1], 1.0); Pass(w);
+        w.Camps[1].Tile = Ring(w, w.Camps[0].Tile, 2); Tune(w, w.Camps[0], w.Camps[1], .3); Pass(w);
         var seen = Flow(lastRecord, w.Camps[0].Id);
         Check(seen != null && seen.DestinationCamp == w.Camps[1].Id && seen.Distance == 2, "a Paleolithic source targets a camp in current vision");
         // A visible camp is seen through the source's hunters too: a hunter group extends vision.
-        var h = WorldAt(2, (x, i) => i == 0 ? x.Map.At(8, 8) : Ring(x, x.Map.At(8, 8), 4)); Gap(h, h.Camps[0], h.Camps[1], 1.0);
+        var h = WorldAt(2, (x, i) => i == 0 ? x.Map.At(8, 8) : Ring(x, x.Map.At(8, 8), 4)); Tune(h, h.Camps[0], h.Camps[1], .3);
         Pass(h); Check(lastRecord.Migrations.Count == 0, "fixture: a camp four hexes away is unseen without hunters");
         h.Hunters.Add(new Hunter { Id = h.NextId++, SourceCamp = h.Camps[0].Id, SocietyId = h.Camps[0].SocietyId, Player = h.Camps[0].Player, Population = 4, Tile = Ring(h, h.Camps[1].Tile, 1) });
         Pass(h); Check(lastRecord.Migrations.Count == 1, "a camp in the vision of the source's hunters is known");
 
         // After the first breakthrough: remembered contacts count; moved, unrecorded and mislocated ones do not.
-        var k = WorldAt(2, (x, i) => i == 0 ? x.Map.At(8, 8) : Ring(x, x.Map.At(8, 8), 4)); MakeNomadic(k.Camps[0]); MakeNomadic(k.Camps[1]); Gap(k, k.Camps[0], k.Camps[1], 1.0);
+        var k = WorldAt(2, (x, i) => i == 0 ? x.Map.At(8, 8) : Ring(x, x.Map.At(8, 8), 4)); MakeNomadic(k.Camps[0]); MakeNomadic(k.Camps[1]); Tune(k, k.Camps[0], k.Camps[1], .3);
         Check(ContactKnowledge.Remembers(k.Camps[0].People), "fixture: the source is past its first breakthrough");
         Pass(k); Check(lastRecord.Migrations.Count == 0 && lastMetrics.ImmigrationCandidatesScored == 0, "an unrecorded camp outside vision is unknown after the breakthrough");
         Remember(k, k.Camps[0], k.Camps[1], moved: true); Pass(k); Check(lastRecord.Migrations.Count == 0, "a contact marked Moved is not a destination");
@@ -195,17 +219,17 @@ internal static class ImmigrationChecks
         Remember(k, k.Camps[0], k.Camps[1]); Pass(k);
         Check(lastRecord.Migrations.Count == 1 && lastRecord.Migrations[0].DestinationCamp == k.Camps[1].Id && lastRecord.Migrations[0].Distance == 4, "a remembered contact within the radius is a destination");
         // Radius: the same contact at distance five is out of range (default radius four).
-        var far = WorldAt(2, (x, i) => i == 0 ? x.Map.At(8, 8) : Ring(x, x.Map.At(8, 8), 5)); MakeNomadic(far.Camps[0]); MakeNomadic(far.Camps[1]); Gap(far, far.Camps[0], far.Camps[1], 1.0); Remember(far, far.Camps[0], far.Camps[1]);
+        var far = WorldAt(2, (x, i) => i == 0 ? x.Map.At(8, 8) : Ring(x, x.Map.At(8, 8), 5)); MakeNomadic(far.Camps[0]); MakeNomadic(far.Camps[1]); Tune(far, far.Camps[0], far.Camps[1], .3); Remember(far, far.Camps[0], far.Camps[1]);
         Pass(far); Check(lastRecord.Migrations.Count == 0, "a known camp beyond ImmigrationRadius is not a candidate");
         far.Config.ImmigrationRadius = 5; Pass(far); Check(lastRecord.Migrations.Count == 1, "raising the radius admits it");
         // Kin contacts recorded at fission count the same way (contacts are contacts).
-        var kin = WorldAt(2, (x, i) => i == 0 ? x.Map.At(8, 8) : Ring(x, x.Map.At(8, 8), 3)); MakeNomadic(kin.Camps[0]); MakeNomadic(kin.Camps[1]); Gap(kin, kin.Camps[0], kin.Camps[1], 1.0);
+        var kin = WorldAt(2, (x, i) => i == 0 ? x.Map.At(8, 8) : Ring(x, x.Map.At(8, 8), 3)); MakeNomadic(kin.Camps[0]); MakeNomadic(kin.Camps[1]); Tune(kin, kin.Camps[0], kin.Camps[1], .3);
         ContactKnowledge.MemoryOf(kin, kin.Camps[0].People).Upsert(kin.Camps[1].Id, kin.Camps[1].Player, kin.Camps[1].Tile, kin.Turn, ContactSource.Kin); Pass(kin);
         Check(lastRecord.Migrations.Count == 1, "a kin contact is a known settlement");
         // A source never targets itself; a camp with no other known camp emits nothing.
         var alone = World(new[] { 8, 8 }); Pass(alone); Check(lastRecord.Migrations.Count == 0 && lastMetrics.ImmigrationCandidatesScored == 0, "a lone camp has no candidate (j != i)");
         // Camps of the source's own Society are always known (the owner sees its own settlements).
-        var own = WorldAt(2, (x, i) => i == 0 ? x.Map.At(8, 8) : Ring(x, x.Map.At(8, 8), 4)); own.Camps[1].Bind(own.Camps[0].People); Gap(own, own.Camps[0], own.Camps[1], 1.0); Pass(own);
+        var own = WorldAt(2, (x, i) => i == 0 ? x.Map.At(8, 8) : Ring(x, x.Map.At(8, 8), 4)); own.Camps[1].Bind(own.Camps[0].People); Tune(own, own.Camps[0], own.Camps[1], .3); Pass(own);
         Check(lastRecord.Migrations.Count == 1, "a camp of the source's own Society is known");
     }
 
@@ -213,64 +237,76 @@ internal static class ImmigrationChecks
     private static void Choice()
     {
         var w = WorldAt(4, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2, i - 1)); var s = w.Camps[0];
-        Gap(w, s, w.Camps[1], .30); Gap(w, s, w.Camps[2], .50); Gap(w, s, w.Camps[3], .40);
+        Tune(w, s, w.Camps[1], .20); Tune(w, s, w.Camps[2], .30); Tune(w, s, w.Camps[3], .25);
         foreach (var c in w.Camps.Skip(1)) c.Population = 100;
-        // The other camps also see each other: make them unattractive to each other by equalizing their quality.
-        double qi0 = Quality(w, s, 100); Pass(w);
+        double qi0 = Quality(w, s, 100);
+        int mmax = MaxGroup(w, s); double u10 = Fwd(w, s, w.Camps[2], mmax); int expectedSize = Immigration.Size(w.Config, 100, u10);
+        Check(expectedSize == 10 && Fwd(w, s, w.Camps[2], mmax) > Fwd(w, s, w.Camps[3], mmax) && Fwd(w, s, w.Camps[3], mmax) > Fwd(w, s, w.Camps[1], mmax), "fixture: three better camps, the second is best");
+        Pass(w);
         Check(lastRecord.Migrations.Count(m => m.SourceCamp == s.Id) == 1 && Flow(lastRecord, s.Id).DestinationCamp == w.Camps[2].Id, "a source with three better camps emits one intent, for the best");
         var f = Flow(lastRecord, s.Id);
-        double u = Immigration.Utility(w.Config, f.SourceQoL, f.DestinationQoL, f.Distance, s, w.Camps[2]);
-        Near(f.Utility, u, "the reported utility is the closed form"); Near(f.SourceQoL, qi0, "Q_i is the committed QoL at present residents");
-        Check(f.Intended == Immigration.Size(w.Config, 100, u), "the intended size is the closed-form size");
-        // Ties on utility: the nearer camp, then the lower camp id.
+        Near(f.Utility, u10, "the reported utility is the forward closed form at the committed group"); Near(f.SourceQoL, qi0, "Q_i is the committed QoL at present residents");
+        Check(f.Intended == expectedSize && f.Migrants == expectedSize, "the intended size is the closed-form size from the utility at the largest group");
+        Near(f.Carried, 0, "a dry source brings no food"); Near(f.Penalty, 0, "a first flow pays no return penalty");
+        // Ties on utility: identical destinations at the same distance go to the lower camp id.
         var t = WorldAt(3, (x, i) => i == 0 ? x.Map.At(10, 8) : i == 1 ? Ring(x, x.Map.At(10, 8), 2, 0) : Ring(x, x.Map.At(10, 8), 2, 1));
-        t.Camps[0].FoodNeedsMetRatio = .5; foreach (var c in t.Camps.Skip(1)) c.FoodNeedsMetRatio = 1.4;
+        Tune(t, t.Camps[0], t.Camps[1], .3); t.Camps[2].FoodNeedsMetRatio = t.Camps[1].FoodNeedsMetRatio;
         Pass(t); Check(Flow(lastRecord, t.Camps[0].Id)?.DestinationCamp == t.Camps[1].Id, "an exact tie goes to the lower camp id");
+        // Two destinations with the same quality: the nearer one is cheaper (distance costs 0.01 per hex), so it wins on utility.
         var near = WorldAt(3, (x, i) => i == 0 ? x.Map.At(10, 8) : i == 1 ? Ring(x, x.Map.At(10, 8), 2) : Ring(x, x.Map.At(10, 8), 1));
-        near.Camps[0].FoodNeedsMetRatio = .5; near.Camps[1].FoodNeedsMetRatio = 1.4;
-        // Equal utility despite different distance needs a compensating quality: the nearer camp is cheaper, so give the farther one exactly the extra gap.
-        var cfg = near.Config; double q0 = Quality(near, near.Camps[0], 100);
-        near.Camps[2].FoodNeedsMetRatio = 1; near.Camps[2].FoodNeedsMetRatio = (q0 + .40) / Quality(near, near.Camps[2], 100);
-        near.Camps[1].FoodNeedsMetRatio = 1; near.Camps[1].FoodNeedsMetRatio = (q0 + .40 + cfg.ImmigrationDistanceCost) / Quality(near, near.Camps[1], 100);
-        Pass(near); var nf = Flow(lastRecord, near.Camps[0].Id);
-        Check(nf != null && Math.Abs(Immigration.Utility(cfg, nf.SourceQoL, Quality(near, near.Camps[1], 100), 2, near.Camps[0], near.Camps[1]) - Immigration.Utility(cfg, nf.SourceQoL, Quality(near, near.Camps[2], 100), 1, near.Camps[0], near.Camps[2])) < 1e-9
-            && nf.DestinationCamp == near.Camps[2].Id, "equal utility goes to the nearer camp");
+        Tune(near, near.Camps[0], near.Camps[1], .30); near.Camps[2].FoodNeedsMetRatio = near.Camps[1].FoodNeedsMetRatio;
+        Check(Fwd(near, near.Camps[0], near.Camps[2], 10) - Fwd(near, near.Camps[0], near.Camps[1], 10) > .0099, "fixture: the nearer camp has the higher utility");
+        Pass(near); Check(Flow(lastRecord, near.Camps[0].Id)?.DestinationCamp == near.Camps[2].Id, "the nearer of two equal camps wins on utility");
         // A camp that is a better destination than a worse one chooses by utility, not by nearness.
-        near.Camps[1].FoodNeedsMetRatio *= 1.3; Pass(near); Check(Flow(lastRecord, near.Camps[0].Id).DestinationCamp == near.Camps[1].Id, "a higher utility beats a nearer camp");
+        Tune(near, near.Camps[0], near.Camps[1], .30); Tune(near, near.Camps[0], near.Camps[2], .20); Pass(near); Check(Flow(lastRecord, near.Camps[0].Id).DestinationCamp == near.Camps[1].Id, "a higher utility beats a nearer camp");
         // Distance and lifestyle barriers change the choice.
         var life = WorldAt(3, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2, i - 1)); MakeNomadic(life.Camps[0]); MakeNomadic(life.Camps[1]); MakeNomadic(life.Camps[2]);
-        life.Camps[2].IsVillage = true; life.Camps[0].FoodNeedsMetRatio = .3; life.Camps[1].FoodNeedsMetRatio = 1; life.Camps[2].FoodNeedsMetRatio = 1;
-        life.Camps[1].FoodNeedsMetRatio = (Quality(life, life.Camps[0], 100) + .35) / Quality(life, life.Camps[1], 100); life.Camps[2].FoodNeedsMetRatio = (Quality(life, life.Camps[0], 100) + .35 + .03) / Quality(life, life.Camps[2], 100);
-        foreach (var c in life.Camps) Remember(life, life.Camps[0], c);
+        life.Camps[2].IsVillage = true; foreach (var c in life.Camps) Remember(life, life.Camps[0], c);
+        Tune(life, life.Camps[0], life.Camps[1], .25, .3); Tune(life, life.Camps[0], life.Camps[2], .25 - .02, .3);   // the village's quality edge is 0.03, its barrier 0.05
         Pass(life); Check(Flow(lastRecord, life.Camps[0].Id)?.DestinationCamp == life.Camps[1].Id, "the sedentary barrier outweighs a small quality edge of a village");
-        life.Camps[2].FoodNeedsMetRatio *= 1.2; Pass(life); Check(Flow(lastRecord, life.Camps[0].Id)?.DestinationCamp == life.Camps[2].Id, "a large enough quality edge overcomes the sedentary barrier");
-        var leave = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); MakeNomadic(leave.Camps[0]); MakeNomadic(leave.Camps[1]); leave.Camps[0].IsVillage = true; Gap(leave, leave.Camps[0], leave.Camps[1], .22); Remember(leave, leave.Camps[0], leave.Camps[1]);
-        Pass(leave); Check(lastRecord.Migrations.Count == 0, "the larger village-to-nomadic barrier blocks a gap that a same-lifestyle move would take");
-        leave.Camps[0].IsVillage = false; Pass(leave); Check(lastRecord.Migrations.Count == 1, "the same gap moves a nomadic camp");
+        life.Camps[2].IsVillage = false; Pass(life); Check(Flow(lastRecord, life.Camps[0].Id)?.DestinationCamp == life.Camps[2].Id, "without the barrier the same camp wins");
+        life.Camps[2].IsVillage = true; Tune(life, life.Camps[0], life.Camps[2], .30, .3); Tune(life, life.Camps[0], life.Camps[1], .25, .3); life.Camps[2].FoodNeedsMetRatio = Math.Min(1, life.Camps[2].FoodNeedsMetRatio);
+        Pass(life); Check(Flow(lastRecord, life.Camps[0].Id)?.DestinationCamp == life.Camps[2].Id, "a large enough quality edge overcomes the sedentary barrier");
+        var leave = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); MakeNomadic(leave.Camps[0]); MakeNomadic(leave.Camps[1]); Tune(leave, leave.Camps[0], leave.Camps[1], .22); Remember(leave, leave.Camps[0], leave.Camps[1]);
+        leave.Camps[0].IsVillage = true; Pass(leave); Check(lastRecord.Migrations.Count == 0, "the larger village-to-nomadic barrier (0.15) blocks a utility that a same-lifestyle move would take");
+        leave.Camps[0].IsVillage = false; Pass(leave); Check(lastRecord.Migrations.Count == 1, "the same utility moves a nomadic camp");
     }
 
     private static void Deadband()
     {
-        // With both camps nomadic and two hexes apart, dU = gap - 0.04; the deadband is 0.075, so the gap threshold is 0.115.
-        foreach (var (gap, expected) in new[] { (.10, false), (.1149, false), (.1185, true), (.25, true) })
+        // With both camps nomadic and two hexes apart the forward utility at the largest group must exceed the deadband 0.075 (and the final group must too).
+        foreach (var (target, expected) in new[] { (.07, false), (.0749, false), (.09, true), (.15, true) })
         {
-            var w = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); Gap(w, w.Camps[0], w.Camps[1], gap); w.Config.ImmigrationMinimumGroup = 1; w.Config.ImmigrationMaxFraction = .5; Pass(w);
-            Check((lastRecord.Migrations.Count == 1) == expected, "a quality gap of " + gap + (expected ? " clears" : " stays inside") + " the deadband");
+            var w = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); w.Config.ImmigrationMinimumGroup = 1; w.Config.ImmigrationMaxFraction = .5;
+            double reached = Tune(w, w.Camps[0], w.Camps[1], target); int m = MaxGroup(w, w.Camps[0]); int size = Immigration.Size(w.Config, 100, Fwd(w, w.Camps[0], w.Camps[1], m));
+            Check(Math.Abs(reached - target) < 1e-9 || !expected, "fixture: the target utility is reachable");
+            bool independent = size >= 1 && Fwd(w, w.Camps[0], w.Camps[1], size) > w.Config.ImmigrationDeadband; Pass(w);
+            Check((lastRecord.Migrations.Count == 1) == expected && expected == independent, "a forward utility of " + target + (expected ? " clears" : " stays inside") + " the deadband");
         }
-        var b = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); Gap(b, b.Camps[0], b.Camps[1], .13);   // dU = .09: (dU - theta) / theta = 0.2 -> floor(100 * .1 * .2) = 2 < minimum group
+        var b = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); Tune(b, b.Camps[0], b.Camps[1], .075 * 1.2);   // (dU - theta) / theta = 0.2 -> floor(100 * .1 * .2) = 2 < minimum group
         Pass(b); Check(lastRecord.Migrations.Count == 0 && lastMetrics.ImmigrationIntents == 0, "a group below the minimum of four is not sent");
-        Gap(b, b.Camps[0], b.Camps[1], .115 + .075 * .6); Pass(b); Check(Flow(lastRecord, b.Camps[0].Id)?.Migrants == 6, "size follows the ramp (0.6 of the maximum fraction gives six of 100)");
-        var small = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); small.Camps[0].Population = 14; small.Camps[1].Population = 14; Gap(small, small.Camps[0], small.Camps[1], 2); Pass(small);
+        Tune(b, b.Camps[0], b.Camps[1], .075 * 1.6); Pass(b); Check(Flow(lastRecord, b.Camps[0].Id)?.Migrants == 6, "size follows the ramp at the largest group (0.6 of the maximum fraction gives six of 100)");
+        var small = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); small.Camps[0].Population = 14; small.Camps[1].Population = 14; Tune(small, small.Camps[0], small.Camps[1], .3); Pass(small);
         Check(lastRecord.Migrations.Count == 0, "a source with fewer than floor plus minimum-group residents sends nobody");
-        small.Config.ImmigrationMaxFraction = .5; small.Camps[0].Population = 20; small.Camps[1].Population = 20; Gap(small, small.Camps[0], small.Camps[1], 2); Pass(small);
+        small.Config.ImmigrationMaxFraction = .5; small.Camps[0].Population = 20; small.Camps[1].Population = 20; Tune(small, small.Camps[0], small.Camps[1], .3); Pass(small);
         Check(Flow(lastRecord, small.Camps[0].Id)?.Migrants == 8 && small.Camps[0].Population == 12, "a source never drops below twelve residents");
+        // The group is re-evaluated at its final size. The food migrants carry makes a large group worth more to a hungry destination than a small one,
+        // so the ramp (set by the utility at the largest group) can size a group whose own utility no longer clears the deadband.
+        var r = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); var rs0 = r.Camps[0]; var rd = r.Camps[1];
+        rs0.FoodNeedsMetRatio = .1; rs0.PlantFood = 3 * Need(r) * 100; rs0.AnimalFood = rs0.AquaticFood = 0; Check(Math.Abs(PerPerson(r, rs0) - 3) < 1e-12, "fixture: migrants carry three persons' need each");
+        double lo = 0, hi = 1, wanted = .075 * 1.45; int rm = MaxGroup(r, rs0);
+        for (int i = 0; i < 80; i++) { double mid = (lo + hi) / 2; rd.FoodNeedsMetRatio = mid; if (Fwd(r, rs0, rd, rm) < wanted) lo = mid; else hi = mid; }
+        rd.FoodNeedsMetRatio = hi; int rs = Immigration.Size(r.Config, 100, Fwd(r, rs0, rd, rm));
+        Check(rm == 10 && rs == 4, "fixture: the ramp sizes four of a possible ten (" + rs + ")");
+        Check(Fwd(r, rs0, rd, rs) < r.Config.ImmigrationDeadband && Fwd(r, rs0, rd, rm) > r.Config.ImmigrationDeadband, "fixture: the small group is worth less than the large one, below the deadband");
+        Pass(r); Check(lastRecord.Migrations.Count == 0 && lastMetrics.ImmigrationIntents == 0, "no intent is emitted when the utility at the final group size is inside the deadband");
     }
 
     // Destination acceptance cap, partial acceptance and no rerouting.
     private static void Reconcile()
     {
         // Three sources share one destination; all three see the same camp and rate it best. A fourth camp C is better than each source but worse than the destination.
-        for (double ratio = 1.0; ratio < 12; ratio += .01)
+        for (double last = 0; last < .5; last += .002)
         {
             var w = WorldAt(5, (x, i) =>
             {
@@ -279,31 +315,32 @@ internal static class ImmigrationChecks
             });
             var dest = w.Camps[0]; var c = w.Camps[4]; var sources = new[] { w.Camps[1], w.Camps[2], w.Camps[3] };
             foreach (var camp in w.Camps) { MakeNomadic(camp); foreach (var o in w.Camps) if (o != camp) Remember(w, camp, o); }
-            foreach (var s in sources) { s.FoodNeedsMetRatio = 8; s.Population = 100; }
-            dest.FoodNeedsMetRatio = 8 * ratio; dest.Population = 100; c.Population = 100;
-            double q = Quality(w, sources[0], 100);
-            c.FoodNeedsMetRatio = 1; c.FoodNeedsMetRatio = (q + .20) / Quality(w, c, 100);   // a better home than the sources' own, but less than the destination
-            if (Quality(w, dest, 100) - q < .30) continue;
+            double food = .5; for (int k = 0; k < 3; k++) sources[k].FoodNeedsMetRatio = k == 0 ? 0 : k == 1 ? last / 2 : last;   // the sources differ: the last has the smallest gain and is the first to be turned away
+            foreach (var s in sources) { s.Population = 300; s.PlantFood = s.AnimalFood = s.AquaticFood = 0; }
+            dest.FoodNeedsMetRatio = food; dest.Population = 100; c.Population = 100; c.PlantFood = c.AnimalFood = c.AquaticFood = 0;
+            dest.FoodNeedsMetRatio = food; c.FoodNeedsMetRatio = food * .98;   // a better home than the sources' own, but slightly less than the destination
+            if (sources.Any(s => Fwd(w, s, dest, 30) <= Fwd(w, s, c, 30) || Fwd(w, s, dest, 30) <= w.Config.ImmigrationDeadband) || Fwd(w, c, dest, 10) > w.Config.ImmigrationDeadband || Fwd(w, dest, c, 10) > w.Config.ImmigrationDeadband) continue;
             // Independent expectation by linear scan, in canonical (source id) order.
-            var sizes = sources.Select(s => Immigration.Size(w.Config, 100, Immigration.Utility(w.Config, q, Quality(w, dest, 100), w.Map.Distance(s.Tile, dest.Tile), s, dest))).ToArray();
+            var sizes = sources.Select(s => Immigration.Size(w.Config, 300, Fwd(w, s, dest, 30))).ToArray();
             int inflow = 0; var expected = new List<int>();
             foreach (int size in sizes)
             {
-                int m = 0; for (int k = size; k >= 1; k--) if (Quality(w, dest, 100 + inflow + k) >= q + w.Config.ImmigrationDeadband) { m = k; break; }
+                int m = 0; for (int k = size; k >= 1; k--) if (Fwd(w, sources[expected.Count], dest, k, inflow) > w.Config.ImmigrationDeadband) { m = k; break; }
                 expected.Add(m); inflow += m;
             }
-            if (!(expected.Any(m => m == 0) && expected.Any(m => m > 0) && expected.Zip(sizes, (m, s) => m < s).Any(x => x))) continue;
+            if (!(expected.Any(m => m == 0) && expected.Any(m => m > 0) && expected.Zip(sizes, (m, s) => m < s).Any(x => x)) && sizes.All(z => z > 0)) continue;
             var before = w.Camps.ToDictionary(x => x.Id, x => x.Population);
+            int rejected = expected.FindIndex(m => m == 0);
+            Check(Immigration.Size(w.Config, 300, Fwd(w, sources[rejected], c, 30)) > 0, "fixture: the rejected source had a valid second-best camp");
             Pass(w); var r = lastRecord;
             var actual = sources.Select(s => Flow(r, s.Id)?.Migrants ?? 0).ToArray();
-            Check(actual.SequenceEqual(expected), "the destination accepts in source-id order until its post-inflow QoL would fall below Q_i + theta (" + string.Join(",", actual) + " vs " + string.Join(",", expected) + ")");
+            Check(actual.SequenceEqual(expected), "the destination accepts in source-id order while the forward utility at the larger inflow stays above theta (" + string.Join(",", actual) + " vs " + string.Join(",", expected) + ")");
             Check(dest.Population == before[dest.Id] + actual.Sum() && sources.Zip(actual, (s, m) => s.Population == before[s.Id] - m).All(x => x), "accepted migrants move, the excess stays home");
-            int rejected = actual.ToList().FindIndex(m => m == 0); var second = Immigration.Utility(w.Config, q, Quality(w, c, 100), w.Map.Distance(sources[rejected].Tile, c.Tile), sources[rejected], c);
-            Check(Immigration.Size(w.Config, 100, second) > 0, "fixture: the rejected source had a valid second-best camp");
-            Check(c.Population == before[c.Id] && lastMetrics.ImmigrationPartial >= 1 && lastMetrics.ImmigrationAccepted >= 1 && lastMetrics.ImmigrationMigrants == actual.Sum(), "a rejected or partial source is not rerouted to the second-best camp");
-            Check(Flow(r, sources[actual.ToList().FindIndex(m => m == 0)].Id) == null, "a fully rejected source commits no flow");
+            Check(lastMetrics.ImmigrationRejected + lastMetrics.ImmigrationPartial >= 1 && lastMetrics.ImmigrationAccepted >= 1 && lastMetrics.ImmigrationMigrants == actual.Sum(), "a rejected or partial source is not rerouted to the second-best camp");
+            Check(c.Population == before[c.Id], "the second-best camp receives nobody");
+            Check(Flow(r, sources[rejected].Id) == null, "a fully rejected source commits no flow");
             Check(r.Migrations.Select(m => m.SourceCamp).SequenceEqual(r.Migrations.Select(m => m.SourceCamp).OrderBy(x => x)), "flows into one destination are recorded in source id order");
-            Check(r.Migrations.All(m => m.PostInflowQoL >= m.SourceQoL + w.Config.ImmigrationDeadband - 1e-12), "every committed flow keeps the destination at least theta above the source");
+            Check(r.Migrations.All(m => m.Utility > w.Config.ImmigrationDeadband), "every committed flow keeps its forward utility above theta");
             return;
         }
         throw new Exception("Immigration: no fixture produced a partially accepted source");
@@ -316,14 +353,14 @@ internal static class ImmigrationChecks
         {
             var w = WorldAt(3, (x, i) => i == 0 ? x.Map.At(6, 4) : i == 1 ? Ring(x, x.Map.At(6, 4), 2) : x.Map.At(18, 12));
             w.Config.ImmigrationEnabled = immigration; w.Config.FissionEnabled = true; w.Config.FissionGainThreshold = w.Config.FissionGainDiscourage = w.Config.FissionGainEncourage = 0; w.Config.FissionMinimumDaughter = 12;
-            foreach (var c in w.Camps) { MakeNomadic(c); c.Population = 100; foreach (int t in w.Map.Radius(c.Tile, 5)) ContactKnowledge.MemoryOf(w, c.People).Explored.Add(t); }
-            w.Camps[0].Population = 300; w.Camps[1].Population = 60;
+            foreach (var c in w.Camps) { MakeNomadic(c); c.Population = 100; c.RudimentaryExpectation = 1e-12; foreach (int t in w.Map.Radius(c.Tile, 5)) ContactKnowledge.MemoryOf(w, c.People).Explored.Add(t); }
+            w.Camps[0].Population = 600; w.Camps[1].Population = 60; w.Camps[0].FoodNeedsMetRatio = .3; w.Camps[0].PlantFood = w.Camps[0].AnimalFood = w.Camps[0].AquaticFood = 0;
             return w;
         }
         var control = Make(false); var cm = new ResolutionMetrics(); var cr = new TurnRecord { Turn = control.Turn };
         foreach (var c in control.Camps) cr.Demographics.Add(new DemographicReport { Camp = c.Id });
         Fission.Resolve(control, cr, new PhaseExecution(), cm);
-        Check(cr.Fissions.Count == 3, "control: with immigration off every pressured camp founds a settlement (" + cr.Fissions.Count + ")");
+        Check(cr.Fissions.Count >= 2 && cr.Fissions.Any(f => f.ParentCamp == control.Camps[2].Id) && cr.Fissions.Any(f => f.ParentCamp == control.Camps[0].Id || f.ParentCamp == control.Camps[1].Id), "control: with immigration off the source or destination would also found a settlement (" + cr.Fissions.Count + ")");
         var w = Make(true); var record = new TurnRecord { Turn = w.Turn }; var metrics = new ResolutionMetrics();
         foreach (var c in w.Camps) record.Demographics.Add(new DemographicReport { Camp = c.Id });
         var taken = Immigration.Resolve(w, record, new PhaseExecution(), metrics);
@@ -362,7 +399,7 @@ internal static class ImmigrationChecks
         var w = WorldAt(4, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2, i - 1)); var s = w.Camps[0];
         foreach (var c in w.Camps) { MakeNomadic(c); c.Workforce.Assign(WorkforceRoles.Herder, 7, c.Population); }
         s.Population = 300; s.Workforce.Assign(WorkforceRoles.Farmer, 40, 300); s.PlantFood = 9000.5; s.AnimalFood = 2345.25; s.AquaticFood = 777.125;
-        w.Camps[1].FoodNeedsMetRatio = 1.6; w.Camps[2].FoodNeedsMetRatio = .4; w.Camps[3].FoodNeedsMetRatio = .4;
+        s.FoodNeedsMetRatio = .3; w.Camps[1].FoodNeedsMetRatio = 1; w.Camps[2].FoodNeedsMetRatio = .3; w.Camps[3].FoodNeedsMetRatio = .3;
         var herd = new Herd { Id = w.NextId++, Tile = s.Tile, Animals = 50, Capacity = 100, DomesticCamp = s.Id, OwnerSociety = s.SocietyId, Species = "goat" }; w.Herds.Add(herd);
         double Sum(Func<Camp, double> f) => w.Camps.Sum(f);
         var inv = typeof(CampInventory).GetFields().Where(f => f.FieldType == typeof(double)).ToArray();
@@ -398,10 +435,150 @@ internal static class ImmigrationChecks
         Check(dreport.Immigrated == arrivals && dreport.Explanation.Contains(arrivals + " more arrived"), "the demographic explanation carries the arrivals");
     }
 
+    // The previous rule (WP10b): dU from present-state QoL, sized at its ramp, accepted while the destination's QoL at the larger headcount with food held fixed stays
+    // above Q_i + theta. Reimplemented here for two camps, as a reference for the oscillation fixture; one flow per turn (the best).
+    private static (int source, int destination, int migrants) LegacyTurn(WorldState w, Camp a, Camp b)
+    {
+        double best = 0; Camp bs = null, bd = null; int bm = 0;
+        foreach (var (s0, d0) in new[] { (a, b), (b, a) })
+        {
+            double u = Immigration.Utility(w.Config, Quality(w, s0, s0.Population), Quality(w, d0, d0.Population), w.Map.Distance(s0.Tile, d0.Tile), s0, d0);
+            int size = Immigration.Size(w.Config, s0.Population, u); if (size <= 0) continue;
+            double floor = Quality(w, s0, s0.Population) + w.Config.ImmigrationDeadband; int lo = 0, hi = size;
+            while (lo < hi) { int mid = (lo + hi + 1) >> 1; if (Quality(w, d0, d0.Population + mid) >= floor) lo = mid; else hi = mid - 1; }
+            if (lo > 0 && u > best) { best = u; bs = s0; bd = d0; bm = lo; }
+        }
+        if (bs == null) return (-1, -1, 0);
+        bs.Population -= bm; bd.Population += bm; return (bs.Id, bd.Id, bm);
+    }
+
+    // Two camps whose harvests alternate between good and bad (committed food ratios swing with the season's supply; each camp holds one person's need per head in store).
+    // mode 0: the previous present-state rule; 1: forward utility without the return penalty; 2: forward utility with hysteresis.
+    private static (int flows, int reversals, int moved) Swing(double good, double bad, int mode, int turns = 30)
+    {
+        var w = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); var a = w.Camps[0]; var b = w.Camps[1];
+        if (mode == 1) w.Config.ImmigrationReturnPenalty = 0;
+        var flows = new List<(int t, int s, int d, int m)>();
+        for (int t = 0; t < turns; t++)
+        {
+            double[] supply = t % 2 == 0 ? new[] { good, bad } : new[] { bad, good };
+            foreach (var c in w.Camps) { c.FoodNeedsMetRatio = Math.Min(1, supply[c.Id == a.Id ? 0 : 1] / c.Population); c.PlantFood = Need(w) * c.Population; c.AnimalFood = c.AquaticFood = 0; }
+            w.Turn = 10 + t;
+            if (mode == 0) { var f = LegacyTurn(w, a, b); if (f.migrants > 0) flows.Add((t, f.source, f.destination, f.migrants)); }
+            else { Pass(w); foreach (var f in lastRecord.Migrations) flows.Add((t, f.SourceCamp, f.DestinationCamp, f.Migrants)); }
+        }
+        int reversals = 0; for (int i = 1; i < flows.Count; i++) if (flows[i].s == flows[i - 1].d && flows[i].d == flows[i - 1].s && flows[i].t - flows[i - 1].t <= 2) reversals++;
+        return (flows.Count, reversals, flows.Sum(f => f.m));
+    }
+    private static void Oscillation()
+    {
+        // Alternating harvests make the previous rule swap people every turn.
+        var old = Swing(150, 60, 0); var fwd = Swing(150, 60, 1); var hyst = Swing(150, 60, 2);
+        Check(old.flows == 30 && old.reversals >= 28, "fixture: the previous present-state rule ping-pongs on alternating harvests (" + old.flows + " flows, " + old.reversals + " reversals)");
+        Check(fwd.reversals >= 28, "the forward utility alone cannot see next season's harvest, so it also swings (" + fwd.reversals + " reversals)");
+        Check(hyst.reversals * 2 <= old.reversals && hyst.moved * 2 <= old.moved && hyst.flows < old.flows, "the return penalty cuts the swapping by more than half (" + hyst.flows + " flows, " + hyst.reversals + " reversals, " + hyst.moved + " people against " + old.moved + ")");
+        // Mild swings are not worth the move once the source's gain and the destination's dilution are counted.
+        var calmOld = Swing(130, 80, 0); var calmNew = Swing(130, 80, 2);
+        Check(calmOld.flows >= 25 && calmNew.flows == 0, "a mild swing moves nobody under the forward rule while the previous rule swaps every turn (" + calmOld.flows + " vs " + calmNew.flows + ")");
+        // A genuinely persistent gap is still served: the same two camps with a stable harvest difference move people and do not reverse.
+        var w = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); int moves = 0, back = 0; int last = -1;
+        for (int t = 0; t < 12; t++)
+        {
+            w.Turn = 10 + t; foreach (var c in w.Camps) { c.FoodNeedsMetRatio = Math.Min(1, (c.Id == w.Camps[0].Id ? 60.0 : 150.0) / c.Population); c.PlantFood = Need(w) * c.Population; c.AnimalFood = c.AquaticFood = 0; }
+            Pass(w); foreach (var f in lastRecord.Migrations) { moves++; if (last >= 0 && f.SourceCamp != last) back++; last = f.SourceCamp; }
+        }
+        Check(moves >= 1 && back == 0 && w.Camps[0].Population < 100 && w.Camps[1].Population > 100, "a stable gap moves people one way and never back (" + moves + " flows)");
+    }
+
+    private static void Forward()
+    {
+        // ForwardAt equals At at present residents for valid ratios, and dilutes food and water with headcount.
+        var w = World(new[] { 8, 8 }); var c = w.Camps[0]; MakeAgricultural(c); c.ClothPerCapita = .7; c.Inventory.LightHousingUnits = 20; c.FoodNeedsMetRatio = .8; c.WaterNeedsMetRatio = .9; c.RudimentaryExpectation = 1e-12;
+        var m = Fission.QoLModelOf(w, c); var n = w.Config.Neolithic; double S(int p) => Math.Exp(-Math.Pow(p / Scale(w, c), n.SocialCohesionExponent));
+        Near(m.ForwardAt(100), m.At(100), "ForwardAt at present residents with no carried food equals At");
+        Near(m.ForwardAt(120), .8 * 100 / 120 * .9 * 100 / 120 * S(120), "food and water dilute as F N / N' and W N / N' (expectation zero leaves no clothing or housing term)");
+        Near(m.ForwardAt(120, 10), (.8 * 100 + 10) / 120 * .9 * 100 / 120 * S(120), "carried food adds person-equivalents to the food numerator only");
+        Near(m.ForwardAt(120, 40), 1 * .9 * 100 / 120 * S(120), "food satisfaction is capped at one however much food arrives");
+        Near(m.ForwardAt(80), Math.Min(1, .8 * 100 / 80) * Math.Min(1, .9 * 100 / 80) * S(80), "a smaller headcount relieves food and water up to one");
+        c.WaterNeedsMetRatio = 1; m = Fission.QoLModelOf(w, c); Near(m.ForwardAt(120, 10), (.8 * 100 + 10) / 120 * S(120), "water at one is not diluted");
+        Check(m.ForwardAt(0) == 0 && m.ForwardAt(-3, 5) == 0, "no residents has no forward QoL");
+        double last = m.ForwardAt(60, 0); bool monotone = true; for (int p = 61; p <= 300; p++) { double q = m.ForwardAt(p, 0); monotone &= q <= last + 1e-15; last = q; }
+        Check(monotone, "without carried food the forward QoL is non-increasing in headcount");
+        // The carried food per migrant and the largest group.
+        var t = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); var s = t.Camps[0]; var d = t.Camps[1];
+        s.PlantFood = 2 * Need(t) * 100; s.AnimalFood = s.AquaticFood = 0; Near(Immigration.CarriedPerPerson(t.Config, s), 2, "a source holding two needs per head sends migrants carrying two person-equivalents each");
+        Near(Need(t), 80, "the per-head requirement of a turn is 80 at the default duration");
+        s.PlantFood = 0; Near(Immigration.CarriedPerPerson(t.Config, s), 0, "a dry source carries nothing");
+        Check(Immigration.MaxGroup(t.Config, 100) == 10 && Immigration.MaxGroup(t.Config, 14) == 1 && Immigration.MaxGroup(t.Config, 400) == 40, "the largest group is ten percent of residents, keeping the floor");
+        // Closed form of the forward utility with inflow and carried food.
+        s.FoodNeedsMetRatio = .6; s.WaterNeedsMetRatio = .9; d.FoodNeedsMetRatio = .7; d.WaterNeedsMetRatio = .8; s.PlantFood = 1.5 * Need(t) * 100;
+        var sm = Fission.QoLModelOf(t, s); var dm = Fission.QoLModelOf(t, d); double per = Immigration.CarriedPerPerson(t.Config, s);
+        foreach (var (mm, inflow, carried, penalty) in new[] { (10, 0, 0.0, 0.0), (6, 12, 7.5, .05), (4, 30, 20.0, .1) })
+        {
+            double got = Immigration.ForwardUtility(t.Config, sm, dm, mm, inflow, carried + mm * per, 2, s, d, penalty);
+            Near(got, Fwd(t, s, d, mm, inflow, carried, penalty), "the forward utility matches the independent closed form for " + mm + " people with inflow " + inflow);
+            Near(got, .1 * 0 + (dm.ForwardAt(100 + inflow + mm, carried + mm * per) - sm.ForwardAt(100 - mm)) - .02 - .02 - penalty, "the forward utility is the QoL gain less distance, attachment and return costs");
+        }
+        // A source leaving gains; the food carried makes a bigger group worth more to a hungry destination.
+        Check(sm.ForwardAt(90) > sm.At(100) && dm.ForwardAt(110, 0) < dm.At(100), "leaving relieves the source and arriving without food dilutes the destination");
+        Check(dm.ForwardAt(110, 10 * per) > dm.ForwardAt(110, 0), "carried food offsets the destination's dilution");
+    }
+
+    private static Camp Other(WorldState w, Camp c) => w.Camps.Single(x => x.Id != c.Id);
+    private static void Hysteresis()
+    {
+        // Return penalty table: penalty * (cooldown - age + 1) / cooldown for ages 1..cooldown, zero otherwise; only a flow that would undo a recent one pays.
+        var w = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); var a = w.Camps[0]; var b = w.Camps[1];
+        Check(Immigration.ReturnPenalty(w, a, b) == 0, "no memory, no penalty");
+        a.RecentMigration = new List<MigrationMemory> { new MigrationMemory { Other = b.Id, Turn = 7, Direction = -1 } };   // a received people from b at turn 7
+        foreach (var (turn, expected) in new[] { (8, .10), (9, .10 * 2 / 3), (10, .10 / 3), (11, 0.0), (20, 0.0) })
+        { w.Turn = turn; Near(Immigration.ReturnPenalty(w, a, b), expected, "the return penalty at age " + (turn - 7) + " is " + expected); }
+        w.Turn = 8; a.RecentMigration[0].Direction = +1; Check(Immigration.ReturnPenalty(w, a, b) == 0, "a repeat of the same direction pays nothing");
+        a.RecentMigration[0].Direction = -1; a.RecentMigration[0].Other = 99; Check(Immigration.ReturnPenalty(w, a, b) == 0, "a flow to a camp that never sent people pays nothing");
+        a.RecentMigration[0].Other = b.Id; w.Config.ImmigrationReturnCooldownTurns = 0; Check(Immigration.ReturnPenalty(w, a, b) == 0, "a zero cooldown disables the penalty");
+        w.Config.ImmigrationReturnCooldownTurns = 5; w.Turn = 9; Near(Immigration.ReturnPenalty(w, a, b), .10 * 4 / 5, "the decay follows the configured cooldown");
+        w.Config.ImmigrationReturnCooldownTurns = 3; w.Config.ImmigrationReturnPenalty = .3; w.Turn = 8; Near(Immigration.ReturnPenalty(w, a, b), .3, "the penalty follows the configured size");
+
+        // The penalty blocks a reversal inside the cooldown and releases it as it decays.
+        foreach (var (age, blocked) in new[] { (1, true), (2, false), (3, false), (4, false) })
+        {
+            var x = WorldAt(2, (y, i) => i == 0 ? y.Map.At(10, 8) : Ring(y, y.Map.At(10, 8), 2)); x.Config.ImmigrationMinimumGroup = 1; x.Config.ImmigrationMaxFraction = .5; x.Turn = 20;
+            Tune(x, x.Camps[0], x.Camps[1], .16);
+            x.Camps[0].RecentMigration = new List<MigrationMemory> { new MigrationMemory { Other = x.Camps[1].Id, Turn = x.Turn - age, Direction = -1 } };
+            double penalty = .10 * Math.Max(0, 3 - age + 1) / 3; int mmax = MaxGroup(x, x.Camps[0]);
+            bool expectedFlow = Fwd(x, x.Camps[0], x.Camps[1], mmax, 0, 0, penalty) > x.Config.ImmigrationDeadband && Immigration.Size(x.Config, 100, Fwd(x, x.Camps[0], x.Camps[1], mmax, 0, 0, penalty)) > 0;
+            Check(expectedFlow == !blocked, "fixture: a utility of 0.16 is " + (blocked ? "blocked" : "released") + " at age " + age);
+            Pass(x); var f = lastRecord.Migrations.SingleOrDefault();
+            Check((f != null) == !blocked, "a reversal at age " + age + (blocked ? " is blocked" : " goes ahead"));
+            if (f != null) Near(f.Penalty, penalty, "the report carries the penalty paid at age " + age);
+        }
+        // A flow commits memory at both ends; old records are pruned at commit; the list returns to null when empty.
+        var y = WorldAt(3, (z, i) => i == 0 ? z.Map.At(10, 8) : i == 1 ? Ring(z, z.Map.At(10, 8), 2, 0) : z.Map.At(20, 3));
+        Tune(y, y.Camps[0], y.Camps[1], .3); y.Turn = 30; Pass(y); var flow = lastRecord.Migrations.Single();
+        var src = y.Camps[0]; var dst = y.Camps[1];
+        Check(src.RecentMigration.Count == 1 && src.RecentMigration[0].Other == dst.Id && src.RecentMigration[0].Direction == +1 && src.RecentMigration[0].Turn == 30, "the source remembers that it sent people");
+        Check(dst.RecentMigration.Count == 1 && dst.RecentMigration[0].Other == src.Id && dst.RecentMigration[0].Direction == -1 && dst.RecentMigration[0].Turn == 30, "the destination remembers that it received them");
+        Check(y.Camps[2].RecentMigration == null, "an uninvolved camp keeps no memory (sparse)");
+        y.Camps[2].RecentMigration = new List<MigrationMemory> { new MigrationMemory { Other = 1, Turn = 26, Direction = 1 }, new MigrationMemory { Other = 2, Turn = 30, Direction = -1 } };
+        y.Turn = 33; src.FoodNeedsMetRatio = 1; dst.FoodNeedsMetRatio = 1; Pass(y);
+        Check(y.Camps[2].RecentMigration.Count == 1 && y.Camps[2].RecentMigration[0].Turn == 30 && src.RecentMigration.Count == 1, "at commit a record of age 7 is dropped and one exactly at the cooldown (age 3) is kept");
+        y.Turn = 34; Pass(y);
+        Check(y.Camps.All(z => z.RecentMigration == null), "memory returns to null once every record is older than the cooldown");
+        // Memory is O(flows * cooldown): a long run of swapping leaves at most one record per (camp, other, direction), none older than the cooldown.
+        var sw = WorldAt(2, (z, i) => i == 0 ? z.Map.At(10, 8) : Ring(z, z.Map.At(10, 8), 2));
+        for (int t = 0; t < 40; t++)
+        {
+            sw.Turn = 100 + t; double[] supply = t % 2 == 0 ? new[] { 150.0, 60.0 } : new[] { 60.0, 150.0 };
+            for (int i = 0; i < 2; i++) { var c = sw.Camps[i]; c.FoodNeedsMetRatio = Math.Min(1, supply[i] / c.Population); c.PlantFood = Need(sw) * c.Population; c.AnimalFood = c.AquaticFood = 0; }
+            Pass(sw);
+            foreach (var c in sw.Camps) Check(c.RecentMigration == null || (c.RecentMigration.Count <= 2 && c.RecentMigration.All(r => sw.Turn - r.Turn <= sw.Config.ImmigrationReturnCooldownTurns)), "the memory stays bounded and within the cooldown");
+        }
+    }
+
     private static void Records()
     {
         var w = WorldAt(3, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2, i - 1)); foreach (var c in w.Camps) MakeNomadic(c);
-        w.Camps[0].Population = 300; w.Camps[1].FoodNeedsMetRatio = 1.5; w.Camps[2].FoodNeedsMetRatio = 1.5;
+        w.Camps[0].Population = 300; w.Camps[0].FoodNeedsMetRatio = .3; w.Camps[1].FoodNeedsMetRatio = 1; w.Camps[2].FoodNeedsMetRatio = 1;
         foreach (var c in w.Camps) foreach (var o in w.Camps) if (o != c) Remember(w, c, o);
         // Kin: the destination Society is the source's daughter.
         w.Societies[1].ParentSociety = w.Societies[0].Id; w.Societies[1].KinAffinity = .9;
@@ -413,7 +590,7 @@ internal static class ImmigrationChecks
         Check(sourceMemory.Find(destination.Id).Source == ContactSource.Migration && sourceMemory.Find(destination.Id).Turn == w.Turn, "the source Society records the destination contact as Migration");
         Check(destination.People.Memory.Find(w.Camps[0].Id).Source == ContactSource.Migration && destination.People.Memory.Find(w.Camps[0].Id).Tile == w.Camps[0].Tile, "the destination Society records the source contact as Migration");
         // Paleolithic Societies remember nothing, so no contact is created for them.
-        var p = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); Gap(p, p.Camps[0], p.Camps[1], 1); Pass(p);
+        var p = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2)); Tune(p, p.Camps[0], p.Camps[1], .3); Pass(p);
         Check(lastRecord.Migrations.Count == 1 && p.Camps.All(c => c.People.Memory == null), "Paleolithic Societies record no contact");
         // Serialized round trip of the report.
         var serializer = new DataContractSerializer(typeof(MigrationReport)); using (var stream = new MemoryStream())
@@ -426,7 +603,7 @@ internal static class ImmigrationChecks
     private static WorldState Cluster()
     {
         var w = WorldAt(8, (x, i) => { int center = i < 4 ? x.Map.At(6, 5) : x.Map.At(16, 11); return i % 4 == 0 ? center : Ring(x, center, 2, (i % 4) - 1 + 2 * (i % 4)); });
-        for (int i = 0; i < 8; i++) { var c = w.Camps[i]; MakeNomadic(c); c.Population = new[] { 320, 60, 150, 90, 280, 70, 210, 40 }[i]; c.PlantFood = 40000; c.RudimentaryExpectation = 0; foreach (var o in w.Camps) if (o != c) Remember(w, c, o); }
+        for (int i = 0; i < 8; i++) { var c = w.Camps[i]; MakeNomadic(c); c.Population = new[] { 320, 60, 150, 90, 280, 70, 210, 40 }[i]; c.PlantFood = 40000; c.RudimentaryExpectation = 0; c.FoodNeedsMetRatio = Math.Min(1, 150.0 / c.Population); foreach (var o in w.Camps) if (o != c) Remember(w, c, o); }
         w.Turn = 1; w.Days = 0; foreach (var t in w.Tiles) t.LastEcologyUpdateDays = 0;
         return w;
     }
@@ -466,16 +643,32 @@ internal static class ImmigrationChecks
     private static void Persistence()
     {
         var a = Cluster(); var resolver = new TurnResolver(); Advance(a, resolver);
+        for (int i = 0; i < 8 && a.History.Last().Migrations.Count == 0; i++) Advance(a, resolver);
         Check(a.History.Last().Migrations.Count > 0, "fixture: the saved world has a migration in its history");
         var b = SaveCodec.Load(SaveCodec.Save(a));
         Check(SaveCodec.Fingerprint(a) == SaveCodec.Fingerprint(b), "the fingerprint survives a round trip with migrations");
         Check(b.Config.ImmigrationEnabled && b.History.Last().Migrations.Count == a.History.Last().Migrations.Count && b.History.Last().Migrations[0].Migrants == a.History.Last().Migrations[0].Migrants, "the migration history and switch round trip");
         Check(b.History.Last().Demographics.Any(d => d.Emigrated > 0) && b.History.Last().Demographics.Any(d => d.Immigrated > 0), "the demographic report lines round trip");
+        Check(a.Camps.Any(c => c.RecentMigration != null && c.RecentMigration.Count > 0), "fixture: the saved world carries migration memory");
+        string Memory(WorldState x) => string.Join(";", x.Camps.OrderBy(c => c.Id).Select(c => c.Id + ":" + string.Join(",", (c.RecentMigration ?? new List<MigrationMemory>()).Select(r => r.Other + "/" + r.Turn + "/" + r.Direction))));
+        Check(Memory(a) == Memory(b), "the migration memory round trips through a save");
         for (int t = 0; t < 4; t++) { Advance(a, resolver); Advance(b, new TurnResolver()); Check(SaveCodec.Fingerprint(a) == SaveCodec.Fingerprint(b), "continued run equals the uninterrupted run after turn " + t); }
         // Older saves: no immigration config, no migrations in the history, no demographic lines.
         var old = Cluster(); old.Config.ImmigrationEnabled = false; Advance(old, new TurnResolver());
         var loaded = SaveCodec.Load(SaveCodec.Save(old));
         Check(!loaded.Config.ImmigrationEnabled && loaded.History.All(h => h.Migrations != null && h.Migrations.Count == 0), "a world saved with immigration off loads disabled with empty migration histories");
+        // An older camp has no RecentMigration field: it loads with no memory (and the hysteresis config loads its defaults, tested above).
+        var cs = new DataContractSerializer(typeof(Camp)); string campXml; var withMemory = new Camp { Id = 5, RecentMigration = new List<MigrationMemory> { new MigrationMemory { Other = 2, Turn = 3, Direction = -1 } } };
+        using (var stream = new MemoryStream()) { cs.WriteObject(stream, withMemory); campXml = Encoding.UTF8.GetString(stream.ToArray()); }
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(campXml))) { var back = (Camp)cs.ReadObject(stream); Check(back.RecentMigration != null && back.RecentMigration.Count == 1 && back.RecentMigration[0].Other == 2 && back.RecentMigration[0].Direction == -1, "a camp with memory round trips"); }
+        string oldCamp = Regex.Replace(campXml, "<RecentMigration.*?</RecentMigration>", "", RegexOptions.Singleline);
+        Check(oldCamp != campXml && !oldCamp.Contains("RecentMigration"), "legacy camp fixture omits the memory");
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(oldCamp))) { var back = (Camp)cs.ReadObject(stream); Check(back.RecentMigration == null && back.Id == 5, "an older camp loads with no migration memory"); }
+        var mr = new DataContractSerializer(typeof(MigrationReport)); string reportXml;
+        using (var stream = new MemoryStream()) { mr.WriteObject(stream, new MigrationReport { Migrants = 5, Penalty = .05, Carried = 7 }); reportXml = Encoding.UTF8.GetString(stream.ToArray()); }
+        string oldReport = Regex.Replace(reportXml, "<(Penalty|Carried)>[^<]*</\\1>", "");
+        Check(oldReport != reportXml && !oldReport.Contains("<Penalty>") && !oldReport.Contains("<Carried>"), "legacy report fixture omits the new fields");
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(oldReport))) { var back = (MigrationReport)mr.ReadObject(stream); Check(back.Migrants == 5 && back.Penalty == 0 && back.Carried == 0, "an older migration report loads with zero penalty and carried food"); }
         var dr = new DataContractSerializer(typeof(DemographicReport)); string xml;
         using (var stream = new MemoryStream()) { dr.WriteObject(stream, new DemographicReport { Camp = 1, Emigrated = 3, Immigrated = 2, LimitingFactor = "x" }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
         string legacy = Regex.Replace(xml, "<(Emigrated|Immigrated)>[^<]*</\\1>", "");
