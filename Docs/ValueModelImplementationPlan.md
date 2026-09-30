@@ -35,10 +35,27 @@ need `--fulfilment=Value`.
 | WP3b value production order | `8dacff7` | Under Value: mean QoL **+25% to +34%**, housing 0.23–0.40 → 0.98, clothing 0.76–0.80 → 0.71–0.74, population/food −0.4% to +0.6%; #33 Builder 11/24 → 24/24. |
 | Value default (λ = 3) | `2ff638f` | `PlannerFulfilment = "Value"` for new worlds; saves without the field load Uniform. |
 | WP4a (first try) | `4cdbf25`, reverted `10dbc75` | Mean QoL −28% to −32%: saved farmer labour priced at the craft labour price; Farm Tools ×2–4 took Wood and coverage. See ValueModelDesign "Revised WP4 design". |
+| WP4b (first try) | `853ac3d`, reverted `f7e87a6` | Mean QoL −3.4% to −4.6% (control ≤ 0.1%), population/food unbiased. The claim moved 150–270 Builders/Craftspersons per world to fields by turns 3–5 with no measurable food (±0.1%, max field intensity +0.001). Cause below. |
+
+**WP4b diagnosis.** `g` came from the allocator's
+`AnnualizedFoodPerWorkerYear`: annualised *retained next-boundary* food over
+build plus 100 years of maintenance labour, a conservative ranking score. On
+80-11 turns 11–15 it is 0.01–0.1 food/yr per worker-year (build share of that
+labour ≈ 0.8), against 4 food/yr per person: one more person fed costs
+40–400 build worker-years. The claim's need `shortfall/g` was therefore 2–6×
+the camp's whole population (up to 57×), its coverage never rose, and
+expansion acted as a flat demand at `w ≈ V_exp` = 0.1–1.1. That outbids cloth
+at coverage ≈ 0.7 (marginal V/ℓ·e^{−2.1} ≈ 0.6–1.1), so crafts were cut. By
+the model's own numbers the trade is roughly even, but the food never appears:
+surplus food beyond F = 1 only buys growth, which average food value
+`N·Q/(F·D_year)` overstates (QoLFissionTradeDesign 7.2 values growth food by
+dW/dN). A build-share correction of the need (`shortfall·B/ΔF`) was tried and
+changes little. Open decision before a redo: value expansion food at the
+growth margin (dW/dN), use a harvest-flow productivity, or keep expansion
+leftover-only and derive `w_farm` for tools from operating-farmer output.
 
 **Next, in order (user decision 30 September: correctness over speed):**
-1. WP4b — expansion as a value claim (food-security value, farm-labour price
-   `w_farm`), per ValueModelDesign "Revised WP4 design".
+1. WP4b redo, after the valuation decision above.
 2. WP4a redo — Farm/Herding Tools at `w_farm`, Pots by food security with `ρ`.
 3. Calibration sweeps (λ, r, ρ) on the checkpoints.
 4. Performance regression: paired timing of `bcdef6e` (pre-WP1) against the
