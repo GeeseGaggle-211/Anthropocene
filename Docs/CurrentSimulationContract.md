@@ -90,7 +90,7 @@ in `ConfigurationUnits.md` and the save-format contract.
 | `FissionGainEncourage` | 0.0955 | 0.0955 | expected-gain threshold G*(Encourage) | shipped fission lever, calibrated with the 40 percent daughter |
 | `FissionSearchFraction` | 0.8 | 0.8 | fraction of G* at which a camp without a valid cached destination searches | shipped fission lever |
 | `FissionDaughterMargin` | 0.05 | 0.05 | QoL the daughter may fall below the parent's before the split is blocked | shipped fission lever |
-| `FissionHousingRelief` | 1 | 1 | weight of the stayers' housing relief in the expected gain (1 = all, 0 = cohesion and clothing only) | shipped fission lever; 1 is the specified rule, 0 is the measured alternative (Docs/Fission.md) |
+| `FissionHousingRelief` | 0 | 0 | weight of the stayers' housing relief in the expected gain (1 = all, 0 = cohesion and clothing only) | shipped fission lever; 0 by user decision (onset near the design sizes), 1 counts all housing relief and splits housing-short villages at a median of 141 (Docs/Fission.md) |
 | `FissionRadius` | 3 | 3 | hexes from the camp searched for a destination (r_fiss) | shipped fission lever, performance-bounded (validated 1-5) |
 | `FissionMinimumDaughter` | 12 | 12 | people in the smallest daughter cohort | shipped fission lever, uncalibrated |
 | `PlanningHorizonYears` | 100 | 100 | years | shipped forecast horizon |

@@ -111,6 +111,16 @@ QoL; destination `D` saturates at 1 so choice falls to the tile-ID tie-break
 wait for Paleolithic daughters founded late in the opening; the 7× population
 rise (each daughter brings a new footprint).
 
+**WP10c (user decisions 30 September).** Push = stayers' expected QoL gain
+from the split (crowding + goods), per-policy thresholds calibrated to the
+design onsets (Paleolithic 102, nomadic 254, agricultural 817 at Neutral,
+full goods); daughters never delay the opening; destinations ordered by
+support then distance. Counting the stayers' fixed-Housing relief made
+housing-short villages split at a median of 141, so `FissionHousingRelief = 0`
+by user decision (agricultural onset median 906; five worlds: 1,619 fissions,
+population ×3.8–6.3, about 2 ms per camp per turn). Fission remains opt-in
+until WP10b immigration and a performance review.
+
 **Contact knowledge (WP6).** Implemented as specified; see
 [ContactKnowledge.md](ContactKnowledge.md). No behaviour consumes it yet (trade, fission and
 immigration are later packages), so the shipped balance is unchanged by construction: the

@@ -117,7 +117,7 @@
   "FissionGainEncourage": 0.0955,
   "FissionSearchFraction": 0.8,
   "FissionDaughterMargin": 0.05,
-  "FissionHousingRelief": 1.0,
+  "FissionHousingRelief": 0,
   "FissionRadius": 3,
   "FissionMinimumDaughter": 12,
   "StartingPopulation": 24,

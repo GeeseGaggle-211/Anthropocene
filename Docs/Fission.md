@@ -15,7 +15,7 @@ would not be much worse off. The thresholds are calibrated analytically to the d
 below). The measured result is mixed and is the main finding of WP10c: with the specified rule the stayers'
 housing relief dominates the gain, so agricultural camps still split at a median of 141 residents; counting
 cohesion and clothing only (`FissionHousingRelief = 0`) reproduces the design onset (median 906). See
-"Measurements (WP10c)".
+"Measurements (WP10c)". **User decision (30 September 2026): `FissionHousingRelief = 0` is the default; fission stays opt-in (`FissionEnabled = false`) until immigration (WP10b) and a performance review.**
 
 A camp whose split would raise its stayers' QoL enough may send a coherent kin group to a viable empty
 site. The group founds a new Society in a new AI player slot. The parent keeps its site, fields, fixed Housing
@@ -93,7 +93,7 @@ No assumption needed a redesign, so the work proceeded.
   are unchanged; clothing coverage is unchanged (Cloth and Animal Fabric split in proportion); social cohesion is
   `S(N - N_d)` for the regime scale `N_s`; housing per head is
   `min(1, (fixed + portable (1 - f)) * HousingPeoplePerUnit / (N - N_d))` because the parent keeps all fixed Housing
-  and portable Light Housing splits in proportion (weighted by `FissionHousingRelief`, default 1). With
+  and portable Light Housing splits in proportion (weighted by `FissionHousingRelief`, default 0). With
   `Q = F W (w_c cloth + w_h housing) S` and each coverage `1 - E (1 - c)`:
   `G = Q_after / Q_now - 1`. Both qualities are evaluated at the post-demography snapshot (`Q_now` is the
   formula at the present residents, not the stored `QoL`, so births after the needs cohort do not bias the gain).

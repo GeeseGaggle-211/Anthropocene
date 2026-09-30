@@ -93,7 +93,7 @@ namespace Anthropocene.Simulation
         // Push = crowding + expected gain (WP10c): a camp proposes when the stayers' QoL would rise by at least G*(policy) (relative gain).
         // The three thresholds are the analytic calibration to the design onset populations (Docs/Fission.md); they are not monotone in the
         // policy because the policy also sets the daughter fraction and so the gain a split delivers.
-        [System.Runtime.Serialization.OptionalField] public double FissionGainThreshold = .113, FissionGainDiscourage = .080, FissionGainEncourage = .0955, FissionSearchFraction = .8, FissionDaughterMargin = .05, FissionHousingRelief = 1;
+        [System.Runtime.Serialization.OptionalField] public double FissionGainThreshold = .113, FissionGainDiscourage = .080, FissionGainEncourage = .0955, FissionSearchFraction = .8, FissionDaughterMargin = .05, FissionHousingRelief = 0;
         [System.Runtime.Serialization.OptionalField] public int FissionRadius = 3, FissionMinimumDaughter = 12;
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;

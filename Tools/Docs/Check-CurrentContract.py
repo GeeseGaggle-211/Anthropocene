@@ -29,7 +29,7 @@ FIELDS = [
     ("FissionGainEncourage", "expected-gain threshold G*(Encourage)", "shipped fission lever, calibrated with the 40 percent daughter"),
     ("FissionSearchFraction", "fraction of G* at which a camp without a valid cached destination searches", "shipped fission lever"),
     ("FissionDaughterMargin", "QoL the daughter may fall below the parent's before the split is blocked", "shipped fission lever"),
-    ("FissionHousingRelief", "weight of the stayers' housing relief in the expected gain (1 = all, 0 = cohesion and clothing only)", "shipped fission lever; 1 is the specified rule, 0 is the measured alternative (Docs/Fission.md)"),
+    ("FissionHousingRelief", "weight of the stayers' housing relief in the expected gain (1 = all, 0 = cohesion and clothing only)", "shipped fission lever; 0 by user decision (onset near the design sizes), 1 counts all housing relief and splits housing-short villages at a median of 141 (Docs/Fission.md)"),
     ("FissionRadius", "hexes from the camp searched for a destination (r_fiss)", "shipped fission lever, performance-bounded (validated 1-5)"),
     ("FissionMinimumDaughter", "people in the smallest daughter cohort", "shipped fission lever, uncalibrated"),
     ("PlanningHorizonYears", "years", "shipped forecast horizon"),
