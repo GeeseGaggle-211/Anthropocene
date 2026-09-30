@@ -97,7 +97,7 @@ namespace Anthropocene.Simulation
                 CraftFoodFlow[camp] = value = new CampFoodFlowDiagnostic { Camp = camp };
             return value;
         }
-        public double HerdIntentMilliseconds, EcologyMilliseconds, SetupEconomyMilliseconds, ManagedHerdMilliseconds, GrowthPlanMilliseconds, SustainMilliseconds, ProductionMilliseconds, TotalMilliseconds;
+        public double HerdIntentMilliseconds, EcologyMilliseconds, SetupEconomyMilliseconds, ManagedHerdMilliseconds, GrowthPlanMilliseconds, SustainMilliseconds, ProductionMilliseconds, KnowledgeMilliseconds, TotalMilliseconds;
         public double FullTurnIntegrationMilliseconds, SeasonalPreparationMilliseconds, SeasonalIntegrationMilliseconds, SeasonalCommitMilliseconds, SeasonalExpansionMilliseconds;
         public double HorizonPreparationMilliseconds, HorizonCommitMilliseconds;
         public int ActiveTiles, TileIntegrations, SeasonalTiles, FullTurnTiles;

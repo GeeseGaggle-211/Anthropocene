@@ -478,6 +478,13 @@ internal static class Program
         double weightedQol = priorWeightedQol;
         double foodYield = record.Transfers.Where(t => t.Kind != "Herd").Sum(t => t.Food);
         int population = world.Camps.Sum(world.LinkedPopulation);
+        object KnowledgeFootprint(WorldState w)
+        {
+            var measure = typeof(WorldState).Assembly.GetType("Anthropocene.Simulation.ContactKnowledge")?.GetMethod("Measure");
+            if (measure == null) return null;
+            var f = measure.Invoke(null, new object[] { w }); var t = f.GetType();
+            return new { societies = t.GetField("Societies").GetValue(f), blocks = t.GetField("Blocks").GetValue(f), tiles = t.GetField("Tiles").GetValue(f), contacts = t.GetField("Contacts").GetValue(f), bytes = t.GetField("Bytes").GetValue(f) };
+        }
         double Metric(string name) => Convert.ToDouble(resolver.LastMetrics.GetType().GetField(name)?.GetValue(resolver.LastMetrics) ?? 0);
 
         var row = new
@@ -529,6 +536,9 @@ internal static class Program
             fingerprint,
             activeTiles = resolver.LastMetrics.ActiveTiles,
             ecologyMs = resolver.LastMetrics.EcologyMilliseconds,
+            // Contact knowledge (WP6): update cost and remembered footprint. Reflection keeps the harness buildable against older source trees.
+            knowledgeMs = Metric("KnowledgeMilliseconds"),
+            knowledge = KnowledgeFootprint(world),
             tileIntegrations = Metric("TileIntegrations"),
             seasonalTiles = Metric("SeasonalTiles"),
             fullTurnTiles = Metric("FullTurnTiles"),

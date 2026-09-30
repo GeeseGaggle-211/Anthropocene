@@ -110,6 +110,7 @@
   "GatherRadius": 1,
   "MinimumCamp": 6,
   "MinimumCampSpacing": 3,
+  "ContactExpiryTurns": 5,
   "StartingPopulation": 24,
   "StartSeparation": 12,
   "StarvationGraceTurns": 2,

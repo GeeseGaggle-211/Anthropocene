@@ -94,6 +94,11 @@ resolution) and in order masks from the actor's observation. Five 50-turn
 worlds: 2 fewer agricultural moves in 1,145, outcomes otherwise unchanged
 (starts are ≥ 12 hexes apart).
 
+**Contact knowledge (WP6).** Implemented as specified; see
+[ContactKnowledge.md](ContactKnowledge.md). No behaviour consumes it yet (trade, fission and
+immigration are later packages), so the shipped balance is unchanged by construction: the
+focused suite differs from its reference only by the new check's line.
+
 **Husbandry mobility check.** MobileHusbandryValidation's exact command
 (Continents 11/23/1729, 80 post-opening turns, `--land-m=63
 --land-access-scale=0.5 --cultivation-effort=16`) on the pre-WP1 baseline

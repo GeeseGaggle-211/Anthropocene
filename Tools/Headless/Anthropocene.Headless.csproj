@@ -16,6 +16,7 @@
     <Compile Include="ExecutionChecks.cs" />
     <Compile Include="PlanningDraftChecks.cs" />
     <Compile Include="CampSpacingChecks.cs" />
+    <Compile Include="ContactKnowledgeChecks.cs" />
     <Compile Include="ClothingFeedstockChecks.cs" />
     <Compile Include="AgentContractChecks.cs" />
     <Compile Include="EcologyChecks.cs" />

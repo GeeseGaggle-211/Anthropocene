@@ -23,6 +23,7 @@ END = "<!-- CURRENT_CONFIG_TABLE:END -->"
 FIELDS = [
     ("ReferenceTurnYears", "years per Neolithic reference turn", "reference scale"),
     ("MinimumCampSpacing", "hexes between resolved camp destinations", "shipped placement rule (saves without the field load 3)"),
+    ("ContactExpiryTurns", "turns before an unrefreshed settlement contact is forgotten", "shipped contact-knowledge rule (saves without the field load 5)"),
     ("PlanningHorizonYears", "years", "shipped forecast horizon"),
     ("LandBiomassMultiplier", "relative land biomass multiplier", "shipped new-world calibration"),
     ("LandFoodRegeneration", "fraction per legacy BaseDays profile", "shipped land recovery input"),
@@ -64,6 +65,7 @@ TESTS = [
     ("Tools/Headless/NeolithicChecks.cs", "--neolithic-only"),
     ("Tools/Headless/ExecutionChecks.cs", "--economy-only"),
     ("Tools/Headless/CampSpacingChecks.cs", "CampSpacingChecks.Run"),
+    ("Tools/Headless/ContactKnowledgeChecks.cs", "ContactKnowledgeChecks.Run"),
 ]
 API_ONLY_FIELDS = {"CultivationRegenFlux"}
 

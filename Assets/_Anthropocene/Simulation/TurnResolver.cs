@@ -123,6 +123,8 @@ namespace Anthropocene.Simulation
                 .OrderBy(g => g.Key.Tile).ThenBy(g => g.Key.Entity).ThenBy(g => g.Key.Kind, StringComparer.Ordinal)
                 .Select(g => new Transfer { Tile = g.Key.Tile, Entity = g.Key.Entity, Kind = g.Key.Kind,
                     Food = g.Sum(t => t.Food), PotentialFood = g.Sum(t => t.PotentialFood), Freshwater = g.Sum(t => t.Freshwater) }).ToList();
+            // Remembered contact knowledge: end-of-turn, after movement and placement, from the post-turn vision.
+            phaseTimer.Restart(); ContactKnowledge.EndTurn(w, execution); LastMetrics.KnowledgeMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
             w.History.Add(record); w.Turn++;
             var diagnostics = w.Diagnostics;
             if (diagnostics != null && diagnostics.Turn == prepared.Turn)

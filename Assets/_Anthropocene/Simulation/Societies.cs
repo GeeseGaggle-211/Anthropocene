@@ -43,6 +43,8 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public List<string> UnlockedSpecialists = new List<string>();
         [System.Runtime.Serialization.OptionalField] public List<string> NeolithicTechnologies = new List<string>();
 #pragma warning restore SYSLIB0050
+        // Remembered explored geography and settlement contacts (WP6). Null before the first breakthrough and in older saves.
+        [System.Runtime.Serialization.OptionalField] public ContactMemory Memory;
         public bool HasTech(string tech) => NeolithicTechnologies != null && NeolithicTechnologies.Contains(tech);
     }
 

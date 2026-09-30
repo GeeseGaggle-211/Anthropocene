@@ -45,9 +45,30 @@ namespace Anthropocene.Simulation
             }
             return occupants.OrderBy(p => p.Rank).ThenBy(p => p.Id).ToArray();
         }
+        // Remembered tiles are a distinct category: explored, outside current vision. They have
+        // no occupants; only static geography and known-settlement snapshots are ever shown.
+        public static bool IsRemembered(AgentObservation o, int tile) => !o.Tiles.ContainsKey(tile) && o.RememberedTiles.ContainsKey(tile);
+        public static string[] KnownSettlementsAt(AgentObservation o, int tile)
+        {
+            if (!IsRemembered(o, tile)) return new string[0];
+            return o.KnownSettlements.Where(c => !c.Moved && c.Tile == tile).OrderBy(c => c.Camp)
+                .Select(c => "Tribe " + (c.Owner + 1) + " camp, last known turn " + c.Turn + " (" + c.Source + "); current state unknown").ToArray();
+        }
+        public static string DescribeRemembered(AgentObservation o, int id)
+        {
+            if (!IsRemembered(o, id)) return "";
+            var t = o.RememberedTiles[id]; var b = new StringBuilder();
+            b.AppendLine("REMEMBERED · " + (t.Land ? "LAND" : "WATER TILE") + " · (" + id % o.Map.Width + ", " + id / o.Map.Width + ") / tile " + id + " · " + t.Environment);
+            b.AppendLine("Explored earlier; vegetation, food, herds and occupants are unknown until seen again.");
+            b.AppendLine("Elevation " + t.ElevationLevel + "/10 · " + ElevationLevelStage.Description(t.ElevationLevel) + " · " + t.Relief);
+            b.AppendLine("WATER · " + (t.WaterBody == WaterKind.Saltwater ? "Saltwater" : t.WaterBody == WaterKind.Freshwater ? "Freshwater body" : "No standing water"));
+            foreach (var river in t.Rivers) b.AppendLine("River edge " + river.Side + ": flow " + new[] { "", "small", "medium", "large" }[river.FlowBand] + ", width " + river.Width.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
+            foreach (string settlement in KnownSettlementsAt(o, id)) b.AppendLine("KNOWN SETTLEMENT · " + settlement);
+            return b.ToString().TrimEnd();
+        }
         public static string Describe(AgentObservation o, int id, IEnumerable<Order> queued)
         {
-            if (!o.Tiles.TryGetValue(id, out var t)) return "";
+            if (!o.Tiles.TryGetValue(id, out var t)) return DescribeRemembered(o, id);
             var b = new StringBuilder();
             b.AppendLine((t.Land ? "LAND" : "WATER TILE") + " · (" + id % o.Map.Width + ", " + id / o.Map.Width + ") / tile " + id + " · " + t.Environment);
             if (t.Land) b.AppendLine(t.NaturalVegetationRetention <= 0

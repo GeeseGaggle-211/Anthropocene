@@ -46,6 +46,10 @@ namespace Anthropocene.Simulation
         // Projection is pure, so a racing duplicate computes the same view.
         public EcologyView Ecology(int tile)
             => ecology.TryGetValue(tile, out var view) ? view : ecology.GetOrAdd(tile, project);
+        private readonly ConcurrentDictionary<int, RememberedTileObservation[]> remembered = new ConcurrentDictionary<int, RememberedTileObservation[]>();
+        // Shared by every camp of the Society in this planning phase. Pure: static geography only.
+        internal RememberedTileObservation[] Remembered(Society society, int player)
+            => society.Memory == null ? Array.Empty<RememberedTileObservation>() : remembered.GetOrAdd(society.Id, _ => ContactKnowledge.Remembered(world, society, VisibleCached(player)));
         public HashSet<int> Visible(int player) => new HashSet<int>(VisibleCached(player));
         internal HashSet<int> VisibleCached(int player) => visibility.GetOrAdd(player, p => BuildVisible(p));
         private HashSet<int> BuildVisible(int player)

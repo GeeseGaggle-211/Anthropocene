@@ -17,6 +17,16 @@ namespace Anthropocene.Simulation
         public ObservedRiverDto[] Rivers;
         internal static ObservedTileDto From(TileObservation t) => new ObservedTileDto { Id = t.Id, Food = t.Food, Biomass = t.PotentialFood, Freshwater = t.Freshwater, Productivity = t.Productivity, Moisture = t.Moisture, Condition = t.Condition, ElevationLevel = t.ElevationLevel, RidgeMask = t.RidgeMask, FoodMaximum = t.FoodMaximum, BiomassMaximum = t.PotentialMaximum, GatherablePercent = t.GatherablePercent, Terrain = t.Terrain, Environment = t.Environment, NaturalVegetation = t.NaturalVegetationPotential, CurrentVegetation = t.CurrentVegetation, EffectiveVegetation = t.EffectiveVegetation, NaturalVegetationRetention = t.NaturalVegetationRetention, EffectiveNaturalVegetationService = t.EffectiveNaturalVegetationService, Relief = t.Relief, Elevation = t.Elevation, WaterBody = t.WaterBody, FreshwaterSource = t.FreshwaterSource, River = t.River, Cultivated = t.Cultivated, Fishery = t.Fishery, Oasis = t.Oasis, Rivers = t.Rivers.Select(r => new ObservedRiverDto { Side = r.Side, FlowBand = r.FlowBand, Forward = r.Forward, Mouth = r.Mouth, Width = r.Width }).ToArray() };
     }
+    [Serializable]
+    public sealed class ObservedRememberedTileDto
+    {
+        public int Id, ElevationLevel, RidgeMask;
+        public EnvironmentKind Environment; public Relief Relief; public float Elevation; public WaterKind WaterBody;
+        public bool Land, Aquatic, River;
+        public ObservedRiverDto[] Rivers;
+        internal static ObservedRememberedTileDto From(RememberedTileObservation t) => new ObservedRememberedTileDto { Id = t.Id, ElevationLevel = t.ElevationLevel, RidgeMask = t.RidgeMask, Environment = t.Environment, Relief = t.Relief, Elevation = t.Elevation, WaterBody = t.WaterBody, Land = t.Land, Aquatic = t.Aquatic, River = t.River, Rivers = t.Rivers.Select(r => new ObservedRiverDto { Side = r.Side, FlowBand = r.FlowBand, Forward = r.Forward, Mouth = r.Mouth, Width = r.Width }).ToArray() };
+    }
+    [Serializable] public sealed class ObservedContactDto { public int Camp, Owner, Tile, Turn; public ContactSource Source; public bool Moved; }
     [Serializable] public sealed class ObservedRiverDto { public int Side, FlowBand; public bool Forward, Mouth; public float Width; }
 [Serializable] public sealed class ObservedSettlementDto { public int Id, Tile, Population, Gatherers, LinkedPopulation; public double AnimalFabric, LightHousing, HerdingTools, FixedHousing, HousingMaterial; public bool Agriculture, Husbandry, IsVillage, RecentlyMoved; public EconomicIntent Economy; public MaterialSourceObservation[] MaterialSources; }
     [Serializable]
@@ -56,6 +66,8 @@ namespace Anthropocene.Simulation
         public Mandate Mandate;
         public ObservedSettlementDto[] Settlements;
         public ObservedTileDto[] Tiles;
+        public ObservedRememberedTileDto[] RememberedTiles;
+        public ObservedContactDto[] KnownSettlements;
         public ObservedUnitDto[] Hunters, Rivals, ForeignHunters;
         public ObservedHerdDto[] Herds;
         public ObservedExtractionDto[] RecentOwnExtraction;
@@ -71,6 +83,8 @@ namespace Anthropocene.Simulation
             Mandate = new Mandate { Risk = mandate.Risk, Mobility = mandate.Mobility, Exploration = mandate.Exploration, Reserve = mandate.Reserve, Hunting = mandate.Hunting, Gathering = mandate.Gathering, Fishing = mandate.Fishing, Persistence = mandate.Persistence },
             Settlements = o.Settlements.Select(c => new ObservedSettlementDto { Id = c.Id, Tile = c.Tile, Population = c.Population, Gatherers = c.Gatherers, LinkedPopulation = c.LinkedPopulation, AnimalFabric = c.AnimalFabric, LightHousing = c.LightHousing, HerdingTools = c.HerdingTools, FixedHousing = c.FixedHousing, HousingMaterial = c.HousingMaterial, Agriculture = c.Agriculture, Husbandry = c.Husbandry, IsVillage = c.IsVillage, RecentlyMoved = c.RecentlyMoved, Economy = c.Economy.Copy(), MaterialSources = c.MaterialSources }).ToArray(),
             Tiles = o.Tiles.OrderBy(p => p.Key).Select(p => ObservedTileDto.From(p.Value)).ToArray(), Hunters = o.Hunters.Select(ObservedUnitDto.From).ToArray(), Rivals = o.Rivals.Select(ObservedUnitDto.From).ToArray(), ForeignHunters = o.ForeignHunters.Select(ObservedUnitDto.From).ToArray(),
+            RememberedTiles = o.RememberedTiles.OrderBy(p => p.Key).Select(p => ObservedRememberedTileDto.From(p.Value)).ToArray(),
+            KnownSettlements = o.KnownSettlements.Select(c => new ObservedContactDto { Camp = c.Camp, Owner = c.Owner, Tile = c.Tile, Turn = c.Turn, Source = c.Source, Moved = c.Moved }).ToArray(),
             Herds = o.Herds.Select(h => new ObservedHerdDto { Id = h.Id, Tile = h.Tile, Size = h.Size, Owner = h.Owner, DomesticCamp = h.DomesticCamp, DeficitTurns = h.DeficitTurns, StartingAnimals = h.StartingAnimals, SurvivingAnimals = h.SurvivingAnimals, NewbornAnimals = h.NewbornAnimals, StarvationDeaths = h.StarvationDeaths, RepresentativeCount = h.Count.Representative, Species = h.Species, Name = h.Name, CountLabel = h.Count.Label, Domestic = h.Domestic, OwnedDomestic = h.OwnedDomestic, ExactCount = h.Count.Exact, DeficitSeverity = h.DeficitSeverity, DeathRemainder = h.DeathRemainder, FoodNutrition = h.FoodNutrition, WaterNutrition = h.WaterNutrition, Nutrition = h.Nutrition, ManagementFulfillment = h.ManagementFulfillment, PotentialFood = h.PotentialFood, AcceptedFood = h.AcceptedFood }).ToArray(),
             RecentOwnExtraction = o.RecentOwnExtraction.OrderBy(p => p.Key).Select(p => new ObservedExtractionDto { Tile = p.Key, Food = p.Value }).ToArray(), LikelyHerdDestinations = o.LikelyHerdDestinations.OrderBy(p => p.Key).Select(p => new ObservedPredictionDto { Herd = p.Key, Tile = p.Value }).ToArray(),
             SiteCoverage = o.SiteCoverage.OrderBy(s => s.Tile).Select(s => new ObservedSiteCoverageDto { Tile = s.Tile, HumanFood = s.HumanFood, HerdForage = s.HerdForage, HerdWater = s.HerdWater }).ToArray(),

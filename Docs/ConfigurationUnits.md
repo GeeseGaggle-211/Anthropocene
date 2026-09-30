@@ -52,6 +52,7 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | `HunterCarryGenerations`, `ExpeditionProvisionTurns`, `CampProvisionReserveTurns` | Planning-horizon multiples of current interval consumption in departure/carry/reserve formulas. They deliberately remain gameplay abstractions. |
 | `SupplyRange`, `CampMovement`, `HunterMovement`, `HerdMovement`, `WaterMovement` | Hex/path allowances per strategic decision. Camp/hunter/herd movement is 1/2/1, resolved once regardless of elapsed years. |
 | `MinimumCampSpacing` (3) | Minimum hex distance between resolved camp destinations; a camp may always stay. Enforced at resolution and in order legality for observed camps. Older saves load 3. |
+| `ContactExpiryTurns` (5) | Player turns after which a settlement contact that was not refreshed by a sighting, trade or kin event is dropped. A turn count, not years, because contacts are refreshed once per resolved turn. Older saves load 5. |
 | `HuntEfficiency` | Expected animals harvested per participating hunter per `BaseDays`, before variance, contact, breeding protection and fieldcraft. |
 | `HuntVariance`, `HuntBreedingReserveFraction`, `SustainableHerdGrowthRetention` | Dimensionless harvest variance and animal protection fractions. |
 | `SustainableHuntPopulation` | Person threshold for preserving part of the herd's growth. Opening balance scaffolding. |
