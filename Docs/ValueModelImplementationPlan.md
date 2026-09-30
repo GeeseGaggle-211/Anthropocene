@@ -60,6 +60,27 @@ changes little. Open decision before a redo: value expansion food at the
 growth margin (dW/dN), use a harvest-flow productivity, or keep expansion
 leftover-only and derive `w_farm` for tools from operating-farmer output.
 
+**Clothing collapse diagnosis (30 September 2026).** Pre-existing: the
+pre-WP1 baseline `bcdef6e` has 82/106 husbandry camps without clothing at
+post-opening turn 50 (Value head 80, Uniform head 84); husbandry mobility is
+unchanged (6.0 / 6.0 / 6.2 moves per camp in 50 turns). Root cause is the food
+allocation order, not labour, tools or the planner rule: fabric feedstock (one
+food per Cloth or Animal Fabric unit) is funded only from food left after this
+turn's meals and a *full* operating-reserve refill (`GrowthReserveYears = 30`,
+about 1.5 turns of meals); `SparePlant`, `AnimalEnvelope` and
+`FoodRoomEnvelope` in the demand pass are then zero and no Weaver can be
+staffed. Camps that have grown to their food limit (supply ≈ meals) therefore
+make no clothing at all, although clothing feedstock is only about 2.5% of
+meals; clothing flips on for a turn after a good harvest refills the reserve
+and off again (the observed alternation). Witness: Continents/1/80, camp 1422
+at post-opening turn 42 (910 residents, 766 farmers, supply 70,371 < meals
+72,800, reserve target 109,200): the plan staffs 0 Weavers; +300 Tools changes
+nothing; +40,000 food staffs 23 Weavers. Husbandry camps reach the food limit
+sooner (median 1,800 residents), hence 80/106. Secondary: a relocating camp
+has one turn with no production and leaves fixed Housing (209 husbandry
+camp-turns); Farm and Herding Tools absorb most tool coverage at scale.
+Fix pending a decision (it changes the documented food order).
+
 **Next, in order (user decision 30 September: correctness over speed):**
 1. ~~WP4b redo~~ (user chose the growth-margin valuation; done, see table).
 2. ~~WP4a redo~~ (done, see table) — Farm/Herding Tools at `w_farm`, Pots by food security with `ρ`.
