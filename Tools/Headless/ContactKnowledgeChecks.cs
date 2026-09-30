@@ -240,10 +240,10 @@ internal static class ContactKnowledgeChecks
         var stale = o3.KnownSettlements.Single();
         Check(stale.Tile == At(w, 11) && !stale.Moved && stale.Turn == 1, "an out-of-vision snapshot keeps its last known tile and is not refreshed");
         Check(o3.Rivals.Count == 0 && TileDetails.KnownSettlementsAt(o3, At(w, 11)).Length == 1 && TileDetails.Describe(o3, At(w, 11), new Order[0]).Contains("KNOWN SETTLEMENT") && TileDetails.Describe(o3, At(w, 11), new Order[0]).Contains("current state unknown"), "a remembered settlement is labelled as a snapshot and is not a live rival");
-        // DTO round trip at schema 17.
+        // DTO round trip at schema 18.
         var dto = ObservationContract.Deserialize(ObservationContract.Serialize(o3, own.People.Mandate));
-        Check(dto.Schema == 17 && AgentObservation.SchemaVersion == 17 && dto.RememberedTiles.Length == o3.RememberedTiles.Count && dto.KnownSettlements.Single().Camp == stranger.Id && dto.KnownSettlements.Single().Source == ContactSource.Sighting, "the serialized observation carries remembered tiles and known settlements at schema 17");
-        Check(json.Contains("\"Schema\":17") && json.Contains("RememberedTiles") && json.Contains("KnownSettlements"), "the contract names both new blocks");
+        Check(dto.Schema == 18 && AgentObservation.SchemaVersion == 18 && dto.RememberedTiles.Length == o3.RememberedTiles.Count && dto.KnownSettlements.Single().Camp == stranger.Id && dto.KnownSettlements.Single().Source == ContactSource.Sighting, "the serialized observation carries remembered tiles and known settlements at schema 17");
+        Check(json.Contains("\"Schema\":18") && json.Contains("RememberedTiles") && json.Contains("KnownSettlements"), "the contract names both new blocks");
         // Another Society's knowledge is never visible: the Paleolithic fixture player sees none.
         var p = World(new[] { 5, 9 }, 1); Step(p);
         Check(new AgentObservationBuilder().Build(p, 0).RememberedTiles.Count == 0, "a Society's knowledge is private to it");

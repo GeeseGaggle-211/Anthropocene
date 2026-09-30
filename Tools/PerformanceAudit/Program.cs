@@ -181,6 +181,8 @@ internal static class Program
         bool fingerprintsEnabled = fingerprintMode != 0;
         bool perTurnFingerprints = fingerprintMode == 1;
         bool productionConfig = Option(args, "--production-config", 0) != 0;
+        // Fission control (WP10a): 0 disables the pass (same-code baseline), 1 enables it; unset keeps the configured value.
+        int fissionSwitch = Option(args, "--fission", -1);
 
         if (openingTurnLimit < 0 || postOpeningTurns < 0 || warmup < 0)
             throw new ArgumentOutOfRangeException("Turn counts and warmup must be non-negative.");
@@ -272,6 +274,11 @@ internal static class Program
             shapeName = world.Config.Shape.ToString();
         }
 
+        if (fissionSwitch >= 0)
+        {
+            var fissionField = world.Config.GetType().GetField("FissionEnabled") ?? throw new ArgumentException("This simulation source has no fission switch.");
+            fissionField.SetValue(world.Config, fissionSwitch != 0);
+        }
         long managedHeapAfterLoadBytes = GC.GetTotalMemory(false);
         var detailedCounterSwitch = typeof(ResolutionMetrics).GetField("CaptureDetailedCounters");
         if (detailedCounterSwitch != null) detailedCounterSwitch.SetValue(null, metrics);
@@ -341,6 +348,7 @@ internal static class Program
             metricsEnabled = metrics,
             detailsEnabled = details,
             productionConfig,
+            fissionSwitch,
             fingerprintsEnabled,
             replayMode = fingerprintMode == 1 ? "exact-per-turn" : fingerprintMode == 2 ? "exact-final" : "outcomes-only",
             exactCheckMode = fingerprintMode == 1 ? "per-turn-fingerprint" : fingerprintMode == 2 ? "final-fingerprint" : "disabled; compare outcomes against replay-check run",
@@ -414,7 +422,7 @@ internal static class Program
         double endingPopulationWeightedQol = residentPopulation <= 0 ? 0 : world.Camps.Sum(c => c.QoL * c.Population) / residentPopulation;
         double priorResidentPopulation = priorResidents.Values.Sum(v => (double)v);
         double priorWeightedQol = priorResidentPopulation <= 0 ? 0 :
-            world.Camps.Sum(c => c.QoL * priorResidents[c.Id]) / priorResidentPopulation;
+            world.Camps.Sum(c => c.QoL * (priorResidents.TryGetValue(c.Id, out int prior) ? prior : 0)) / priorResidentPopulation;
         var domesticAnimalsByCamp = world.Herds.Where(h => h.DomesticCamp >= 0)
             .GroupBy(h => h.DomesticCamp).ToDictionary(g => g.Key, g => g.Sum(h => h.Animals));
         int managedAnimals = domesticAnimalsByCamp.Values.Sum();
@@ -425,7 +433,7 @@ internal static class Program
         int husbandryResidents = husbandry.Sum(c => c.Population);
         int husbandryLinked = husbandry.Sum(world.LinkedPopulation);
         int husbandryAnimals = husbandry.Sum(c => domesticAnimalsByCamp.TryGetValue(c.Id, out int animals) ? animals : 0);
-        int husbandryMoves = details ? husbandry.Sum(c => c.Moves - priorMoves[c.Id]) : 0;
+        int husbandryMoves = details ? husbandry.Sum(c => c.Moves - (priorMoves.TryGetValue(c.Id, out int priorMove) ? priorMove : c.Moves)) : 0;
         int animalBirths = record.ManagedHerds.Sum(h => h.NewbornAnimals);
         int animalDeaths = record.ManagedHerds.Sum(h => h.StarvationDeaths);
         var domesticHerdIds = new HashSet<int>(record.ManagedHerds.Select(h => h.Herd));
@@ -445,10 +453,10 @@ internal static class Program
                 .ToArray();
             return new
             {
-                c.Id, c.Player, c.Population, c.IsVillage, priorResidents = priorResidents[c.Id],
-                startingSite = priorSites[c.Id], endingSite = c.Tile,
-                moved = c.Moves != priorMoves[c.Id],
-                openingLocalStocks = priorLocalStocks[c.Id],
+                c.Id, c.Player, c.Population, c.IsVillage, priorResidents = priorResidents.TryGetValue(c.Id, out int priorPopulation) ? priorPopulation : 0,
+                startingSite = priorSites.TryGetValue(c.Id, out int priorSite) ? priorSite : c.Tile, endingSite = c.Tile,
+                moved = priorMoves.TryGetValue(c.Id, out int priorMoveCount) && c.Moves != priorMoveCount,
+                openingLocalStocks = priorLocalStocks.TryGetValue(c.Id, out var priorStocks) ? priorStocks : null,
                 endingLocalStocks = LocalStocks(world, c.Tile),
                 linked = world.LinkedPopulation(c), technology = c.Technology.ToString(), c.QoL,
                 c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita,
@@ -478,6 +486,17 @@ internal static class Program
         double weightedQol = priorWeightedQol;
         double foodYield = record.Transfers.Where(t => t.Kind != "Herd").Sum(t => t.Food);
         int population = world.Camps.Sum(world.LinkedPopulation);
+#if MAIN
+        int campCount = world.Camps.Count, societyCount = world.Societies.Count, playerCount = world.Camps.Select(c => c.Player).Distinct().Count(), fissionCount = 0;
+        object fissionEvents = null;
+#else
+        // Fission (WP10a): settlement, Society and player-slot counts over time, and this turn's fission events.
+        int campCount = world.Camps.Count, societyCount = world.Societies.Count, playerCount = world.LivePlayers;
+        var turnFissions = record.Fissions ?? new List<FissionReport>();
+        int fissionCount = turnFissions.Count;
+        object fissionEvents = turnFissions.Select(f => new { f.ParentCamp, f.DaughterCamp, f.ParentSociety, f.DaughterSociety, f.DaughterPlayer, f.Tile, f.ParentBefore, f.Daughter,
+            regime = ((FissionRegime)f.Regime).ToString(), policy = f.Policy.ToString(), f.Push, f.Desirability, f.Score, f.Affinity, f.AnimalsMoved }).ToArray();
+#endif
         object KnowledgeFootprint(WorldState w)
         {
             var measure = typeof(WorldState).Assembly.GetType("Anthropocene.Simulation.ContactKnowledge")?.GetMethod("Measure");
@@ -508,6 +527,20 @@ internal static class Program
             preAgriculturalCamps,
             agriculturalCampsAfterTurn = CountAgriculturalCamps(world),
             population,
+            campCount,
+            societyCount,
+            playerCount,
+            fissionCount,
+            fissionEvents,
+            fissionMs = Metric("FissionMilliseconds"),
+            fissionCampsEvaluated = Metric("FissionCampsEvaluated"),
+            fissionValidations = Metric("FissionValidations"),
+            fissionSearches = Metric("FissionSearches"),
+            fissionCandidates = Metric("FissionCandidatesScored"),
+            fissionTileProjections = Metric("FissionTileProjections"),
+            fissionInvalidations = Metric("FissionCacheInvalidations"),
+            fissionProposals = Metric("FissionProposals"),
+            fissionDropped = Metric("FissionDropped"),
             managedAnimals,
             wildAnimals,
             managedHerds,
@@ -574,7 +607,7 @@ internal static class Program
         };
         samples.Add(row);
         Console.WriteLine("AUDIT turn=" + (world.Turn - 1) + " phase=" + row.phase + " preAg=" + preAgriculturalCamps +
-            " population=" + population + " food=" + foodYield.ToString("F3") + " ai=" + aiMs.ToString("F1") +
+            " camps=" + campCount + " societies=" + societyCount + " players=" + playerCount + " fissions=" + fissionCount + " population=" + population + " food=" + foodYield.ToString("F3") + " ai=" + aiMs.ToString("F1") +
             " prepare=" + prepareMs.ToString("F1") + " execute=" + executeMs.ToString("F1"));
     }
 }

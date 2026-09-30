@@ -101,6 +101,9 @@ namespace Anthropocene.Simulation
         public double FullTurnIntegrationMilliseconds, SeasonalPreparationMilliseconds, SeasonalIntegrationMilliseconds, SeasonalCommitMilliseconds, SeasonalExpansionMilliseconds;
         public double HorizonPreparationMilliseconds, HorizonCommitMilliseconds;
         public int ActiveTiles, TileIntegrations, SeasonalTiles, FullTurnTiles;
+        // Fission pass (WP10a). Transient work counts; never saved, observed or fingerprinted.
+        public long FissionCampsEvaluated, FissionValidations, FissionSearches, FissionCandidatesScored, FissionTileProjections, FissionCacheInvalidations, FissionProposals, FissionCommits, FissionDropped;
+        public double FissionMilliseconds;
         public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans, ClaimsAllocated, ProductionReceipts;
         public long FoodForecastQueries, FoodInvestmentComparisons;
         // Opt-in activity diagnostics; these never affect authoritative state.

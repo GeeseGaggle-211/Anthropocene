@@ -233,8 +233,16 @@ namespace Anthropocene.Simulation
         {
             if (!world.Tiles[tile].TraversableLand) return 0;
             var cfg = world.Config;
-            double annualWater = 0;
-            double repeatableLandFood = 0, aquaticRenewal = 0;
+            if (!Footprint(world, tile, n => RepeatableLandFood(world, n, repeatableLand), out double repeatableLandFood, out double aquaticRenewal, out _)) return 0;
+            return 100 * Harvest(world, cfg.StartingPopulation, repeatableLandFood, aquaticRenewal) / (cfg.StartingPopulation * cfg.Consumption * cfg.GenerationIntervals);
+        }
+        // The radius-one food and freshwater evaluation shared by start viability and fission destinations (WP10a).
+        // `repeatableOf` supplies each land tile's conservative repeatable stock. Returns false when freshwater
+        // fails in any season or on mean recharge. `annualWater` is the four-profile recharge sum.
+        internal static bool Footprint(WorldState world, int tile, Func<int, double> repeatableOf, out double repeatableLandFood, out double aquaticRenewal, out double annualWater)
+        {
+            var cfg = world.Config;
+            annualWater = 0; repeatableLandFood = 0; aquaticRenewal = 0;
             Span<double> seasonalWater = stackalloc double[4]; seasonalWater.Clear();
             foreach (int n in world.Map.Radius(tile, 1))
             {
@@ -250,16 +258,19 @@ namespace Anthropocene.Simulation
                     seasonalWater[s] += profile.MaxFreshwater;
                     annualWater += profile.MaxFreshwater * profile.WaterRecoveryPerDay * cfg.BaseDays;
                 }
-                if (t.Land) repeatableLandFood += RepeatableLandFood(world, n, repeatableLand);
+                if (t.Land) repeatableLandFood += repeatableOf(n);
             }
-            if (annualWater / 4 < cfg.StartFreshwaterMinimum) return 0;
-            for (int s = 0; s < 4; s++) if (seasonalWater[s] < cfg.StartFreshwaterMinimum) return 0;
-            // Same starting workforce share and land/coastal labor ceiling as
-            // passive gathering, applied to a conservative repeatable stock.
-            double share = Math.Min(1, Numbers.Fraction(cfg.GatherFraction, cfg.GenerationIntervals) * cfg.StartingPopulation / cfg.PopulationScale);
-            double harvest = Math.Min((repeatableLandFood + aquaticRenewal) * share,
-                cfg.StartingPopulation * cfg.GatherPerPerson * cfg.GenerationIntervals);
-            return 100 * harvest / (cfg.StartingPopulation * cfg.Consumption * cfg.GenerationIntervals);
+            if (annualWater / 4 < cfg.StartFreshwaterMinimum) return false;
+            for (int s = 0; s < 4; s++) if (seasonalWater[s] < cfg.StartFreshwaterMinimum) return false;
+            return true;
+        }
+        // Same working share and land/coastal labor ceiling as passive gathering, for a cohort of `people`.
+        internal static double Harvest(WorldState world, int people, double repeatableLandFood, double aquaticRenewal)
+        {
+            var cfg = world.Config;
+            double share = Math.Min(1, Numbers.Fraction(cfg.GatherFraction, cfg.GenerationIntervals) * people / cfg.PopulationScale);
+            return Math.Min((repeatableLandFood + aquaticRenewal) * share,
+                people * cfg.GatherPerPerson * cfg.GenerationIntervals);
         }
         public void Generate(GenerationContext c)
         {
@@ -286,7 +297,7 @@ namespace Anthropocene.Simulation
                 if (w.Camps.Count == c.Config.Players) break;
             }
             if (w.Camps.Count < c.Config.Players) throw new InvalidOperationException("Not enough separated viable starts. Try another seed or lower player count/separation.");
-            w.Generation.MeanStartViability /= w.Camps.Count;
+            w.Generation.MeanStartViability /= w.Camps.Count; w.PlayerCount = w.Camps.Count;
             WildHerdPlacement.EnsureOpeningHerds(w);
         }
     }

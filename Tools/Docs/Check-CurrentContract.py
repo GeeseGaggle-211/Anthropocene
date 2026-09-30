@@ -24,6 +24,12 @@ FIELDS = [
     ("ReferenceTurnYears", "years per Neolithic reference turn", "reference scale"),
     ("MinimumCampSpacing", "hexes between resolved camp destinations", "shipped placement rule (saves without the field load 3)"),
     ("ContactExpiryTurns", "turns before an unrefreshed settlement contact is forgotten", "shipped contact-knowledge rule (saves without the field load 5)"),
+    ("FissionQoL", "QoL below which fission pressure begins (Q_fiss, before the policy shift)", "shipped fission lever, uncalibrated (saves without it load with fission disabled); `FissionEnabled` (false by default and in OpeningConfig until calibrated; opt-in) is a boolean, not listed"),
+    ("FissionQoLWidth", "QoL span over which the push rises from 0 to 1 (delta Q_fiss)", "shipped fission lever, uncalibrated"),
+    ("FissionThreshold", "minimum push x destination desirability F for a proposal (theta_fiss)", "shipped fission lever, uncalibrated"),
+    ("FissionSearchPush", "push above which a camp without a valid cached destination searches (default equals the threshold)", "shipped fission lever"),
+    ("FissionRadius", "hexes from the camp searched for a destination (r_fiss)", "shipped fission lever, performance-bounded (validated 1-5)"),
+    ("FissionMinimumDaughter", "people in the smallest daughter cohort", "shipped fission lever, uncalibrated"),
     ("PlanningHorizonYears", "years", "shipped forecast horizon"),
     ("LandBiomassMultiplier", "relative land biomass multiplier", "shipped new-world calibration"),
     ("LandFoodRegeneration", "fraction per legacy BaseDays profile", "shipped land recovery input"),
@@ -66,6 +72,7 @@ TESTS = [
     ("Tools/Headless/ExecutionChecks.cs", "--economy-only"),
     ("Tools/Headless/CampSpacingChecks.cs", "CampSpacingChecks.Run"),
     ("Tools/Headless/ContactKnowledgeChecks.cs", "ContactKnowledgeChecks.Run"),
+    ("Tools/Headless/FissionChecks.cs", "FissionChecks.Run"),
 ]
 API_ONLY_FIELDS = {"CultivationRegenFlux"}
 

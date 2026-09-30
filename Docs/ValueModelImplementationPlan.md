@@ -94,6 +94,23 @@ resolution) and in order masks from the actor's observation. Five 50-turn
 worlds: 2 fewer agricultural moves in 1,145, outcomes otherwise unchanged
 (starts are ≥ 12 hexes apart).
 
+**WP10a fission (opt-in, `FissionEnabled = false`).** Implemented: policy,
+lineage, daughter Societies in new AI player slots (`WorldState.PlayerCount`),
+lazy cached destination, Close-phase pass. Enabled on Standard/80
+Continents 1 (12 + 50 turns): 615 fissions, 80 → 695 camps/players,
+population ×6.9, median turn 790 ms vs 233 ms (about 2 ms per camp), peak heap
+863 vs 640 MiB; 320 tribes: 320 → 1,094 camps in 23 turns. Splits happen far
+earlier than the design onsets: agricultural parent median 143 residents
+(design ~600), Paleolithic 40-53 (design ~101), because the realised QoL
+ceilings are below the design's reference `R`: Paleolithic camps make no
+goods, so `Q ≤ 0.75 · S(N)` sits at `Q_fiss` from the start, and agricultural
+median QoL (~0.71) is below `Q* = 0.73`, so they are pushed at any size.
+Open before enabling: recalibrate `Q_fiss`/`N_s`/`R_ref` against realised
+QoL; destination `D` saturates at 1 so choice falls to the tile-ID tie-break
+(needs a secondary order by support, then distance); whether `Finished` should
+wait for Paleolithic daughters founded late in the opening; the 7× population
+rise (each daughter brings a new footprint).
+
 **Contact knowledge (WP6).** Implemented as specified; see
 [ContactKnowledge.md](ContactKnowledge.md). No behaviour consumes it yet (trade, fission and
 immigration are later packages), so the shipped balance is unchanged by construction: the
@@ -108,6 +125,16 @@ focused suite differs from its reference only by the new check's line.
 +1% to +8%. Herds are no worse supplied, so the lower move count is fewer
 supply-driven relocations, not a stuck-in-place regression (the report's
 mobile control made 298–313 moves under its older model).
+
+**Fission (WP10a).** Policy, lineage, daughter Societies in new AI player slots, cached
+destination and the Close-phase pass are implemented; see [Fission.md](Fission.md) for the audit,
+rules and measurements. Immigration (WP10b) is not. Standard/80 Continents seed 1 (12 opening + 50
+post-opening turns): camps, Societies and player slots grow from 80 to 695 in 62 turns (615 fissions;
+control 80), population about 6.9 times the control at turn 60, turn time about 2 ms per camp and the
+pass itself 0.7% of turn time. Findings for WP11: Paleolithic QoL is at or below `Q_fiss` at any size
+(no goods), so Paleolithic and Nomadic camps split at 40-53 residents; `D` saturates at 1 under the shipped
+land calibration so destinations follow the tile-ID tie rule; the opening now ends at turn 12 when a late
+Paleolithic daughter exists.
 
 **Next, in order (user decision 30 September: correctness over speed):**
 1. ~~WP4b redo~~ (user chose the growth-margin valuation; done, see table).

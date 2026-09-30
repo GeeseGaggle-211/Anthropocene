@@ -150,7 +150,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 17;
+        public const int SchemaVersion = 18;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
@@ -159,6 +159,10 @@ namespace Anthropocene.Simulation
         // Remembered knowledge (explored static geography outside current vision, and known-settlement snapshots). Never live data.
         public readonly IReadOnlyDictionary<int, RememberedTileObservation> RememberedTiles;
         public readonly IReadOnlyList<SettlementContactObservation> KnownSettlements;
+        // Own lineage (WP10a): the parent Society (0 = none) with the affinity fixed at fission, and first-degree kin by identity and affinity only.
+        public readonly int ParentSociety;
+        public readonly double KinAffinity;
+        public readonly IReadOnlyList<KinObservation> KinRelations;
         public readonly IReadOnlyDictionary<int, double> RecentOwnExtraction;
         public readonly IReadOnlyList<UnitObservation> Hunters, Rivals, ForeignHunters;
         public readonly IReadOnlyList<HerdObservation> Herds;
@@ -185,6 +189,7 @@ namespace Anthropocene.Simulation
             Tiles = new ReadOnlyDictionary<int, TileObservation>(visible.OrderBy(n => n).ToDictionary(n => n, n => new TileObservation(w, w.Tiles[n], w.Rivers, index.Ecology(n))));
             RememberedTiles = new ReadOnlyDictionary<int, RememberedTileObservation>(index.Remembered(camp.People, Player).ToDictionary(t => t.Id));
             KnownSettlements = Array.AsReadOnly(ContactKnowledge.Contacts(camp.People));
+            ParentSociety = camp.People.ParentSociety; KinAffinity = camp.People.KinAffinity; KinRelations = Array.AsReadOnly(Kinship.Relations(camp.People, index));
             Hunters = Array.AsReadOnly(index.OwnHunters(Player).Select(h => new UnitObservation(h.Id, h.Tile, h.Population, h.Player, Supply.Connected(w, h), Knowledge.Band(h.CarriedFood, Supply.Capacity(w, h), w.Config), h.DeficitTurns, h.SourceCamp)).ToArray());
             Rivals = Array.AsReadOnly(index.VisibleCamps(visible).Where(c => c.Player != Player).Select(c => new UnitObservation(c.Id, c.Tile, 0, c.Player)).ToArray());
             ForeignHunters = Array.AsReadOnly(index.VisibleHunters(visible).Where(h => h.Player != Player).Select(h => new UnitObservation(h.Id, h.Tile, 0, h.Player)).ToArray());

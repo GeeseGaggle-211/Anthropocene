@@ -219,6 +219,8 @@ internal static class Issue32CapabilityChecks
         world.Config.TurnDays = world.Config.PracticeDays / 2;
         world.Config.OpeningCompatibilityEffects = true;
         world.Config.FishPerPerson = 100;
+        // These witnesses follow a single camp's technology progress; keep the lone camp from founding a daughter (fission has its own checks).
+        world.Config.FissionEnabled = false;
         var camp = world.Camps.Single();
         camp.Food = 0;
         int campShallows = world.Map.Neighbors(camp.Tile).First();

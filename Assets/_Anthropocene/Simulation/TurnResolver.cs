@@ -75,6 +75,12 @@ namespace Anthropocene.Simulation
             record.Orders.AddRange(prepared.OrderReceipts);
             foreach (string rejection in prepared.Rejections) record.Log(rejection);
             // Herd intentions are computed before dispatch or movement reveals new hunter positions.
+            // Fission policy is a committed camp setting; it applies before this turn's Close-phase fission pass.
+            foreach (var order in locked.Where(o => o.Kind == OrderKind.FissionPolicy).OrderBy(o => o.Entity))
+            {
+                var camp = w.Camps.First(c => c.Id == order.Entity);
+                camp.FissionPolicy = (FissionPolicy)order.Target;
+            }
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Economy).OrderBy(o => o.Entity))
             {
                 var camp = w.Camps.First(c => c.Id == order.Entity);
@@ -109,6 +115,8 @@ namespace Anthropocene.Simulation
             Ownership.Bind(w);
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) BreakthroughBound(w, camp, record);
             TechnologyDiscovery.Resolve(w, record);
+            // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
+            Fission.Resolve(w, record, execution, LastMetrics);
             foreach (var change in touched.Values.OrderBy(t => t.Tile))
             { change.AfterFood = w.Tiles[change.Tile].Food; change.AfterPotentialFood = w.Tiles[change.Tile].PotentialFood; change.AfterFreshwater = w.Tiles[change.Tile].Freshwater; change.AfterLandCondition = w.Tiles[change.Tile].LandCondition; change.AfterAquaticCondition = w.Tiles[change.Tile].AquaticCondition; record.Changes.Add(change); }
             // Untouched tiles follow the recorded configuration/clock regeneration rule; replay does not need world-sized snapshots each turn.

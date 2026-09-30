@@ -165,3 +165,14 @@ The comparator requires exactly 25 requested/completed post-opening turns by def
 Use `Compare.ps1 -Baseline <JSON> -Optimized <JSON>` for a direct report comparison. Schema-2 reports require an explicit `replayMode`; exact mode verifies every turn plus initial, opening, and final fingerprints, while outcomes-only mode compares the measured outcomes exactly. Older reports retain the historical 2% population, prior-cohort QoL, and food-yield comparison. Optional `-Main` applies the historical opening-only main timing checks; `main` lacks the Neolithic economy and is not the post-opening acceptance baseline.
 
 For isolated behavior checks, `Tools/NeolithicTransitionValidation` uses the real `AiPlanning.Decide` path. Keep its dry-marginal and placed-camp fixtures for changes that can alter outcomes. The standard audit measures wall time; detailed counters and per-camp diagnostics are separate diagnostic runs, not timing inputs.
+
+## Fission runs (WP10a)
+
+`--fission=0|1` overrides `FissionEnabled` for a run (unset keeps the configured value), so a same-code
+fission-off control replays the pre-fission outcomes exactly. Each per-turn sample records `campCount`,
+`societyCount` and `playerCount` (the live player slots), `fissionCount` and `fissionEvents` (parent, daughter,
+tile, sizes, regime, policy, push, desirability, score, affinity, animals moved), the fission pass work counts
+(`fissionSearches`, `fissionCandidates`, `fissionValidations`, `fissionTileProjections`, `fissionInvalidations`,
+`fissionProposals`, `fissionDropped`) and `fissionMs`. Because fission lengthens the opening to up to 12 turns
+(a late Paleolithic daughter must also complete), size `--post-opening-turns` for a fixed total turn count.
+The reproducible commands and results are in [Fission.md](../../Docs/Fission.md).

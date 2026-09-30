@@ -8,7 +8,7 @@ namespace Anthropocene.Simulation
     public enum Terrain { Ocean, Shallows, Lake, Grassland, Woodland, Jungle, Desert, Tundra, Mountain, Ice }
     public enum Domain { Hunting, Gathering, Fishing }
     public enum Technology { None, AnimalHusbandry, Cultivation, Watercraft }
-    public enum OrderKind { NoOp, Move, Dispatch, Hunt, Fish, Reintegrate, Economy }
+    public enum OrderKind { NoOp, Move, Dispatch, Hunt, Fish, Reintegrate, Economy, FissionPolicy }
     public enum WorldShape { Continents, Archipelagos, Pangaea }
     public enum Relief { Lowland, Hills, Highland, Mountain }
     public enum WaterKind { None, Freshwater, Saltwater }
@@ -39,6 +39,8 @@ namespace Anthropocene.Simulation
             // original scale and their pressure threshold remains one.
             MinimumCampSpacing = defaults.MinimumCampSpacing;
             ContactExpiryTurns = defaults.ContactExpiryTurns;
+            FissionEnabled = false; FissionQoL = defaults.FissionQoL; FissionQoLWidth = defaults.FissionQoLWidth; FissionThreshold = defaults.FissionThreshold;
+            FissionSearchPush = defaults.FissionSearchPush; FissionRadius = defaults.FissionRadius; FissionMinimumDaughter = defaults.FissionMinimumDaughter;
             LandBiomassMultiplier = 1;
             LandSafeUseRatio = 1;
             LandFoodRegenerationInitialized = false;
@@ -86,6 +88,10 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int MinimumCampSpacing = 3;
         // Turns after which an unrefreshed settlement contact is forgotten (WP6). Saves that predate it load with this default.
         [System.Runtime.Serialization.OptionalField] public int ContactExpiryTurns = 5;
+        // Fission (WP10a, QoLFissionTradeDesign 3.1-3.6). Saves that predate these fields load with fission disabled so they continue exactly.
+        [System.Runtime.Serialization.OptionalField] public bool FissionEnabled = false;
+        [System.Runtime.Serialization.OptionalField] public double FissionQoL = .75, FissionQoLWidth = .10, FissionThreshold = .20, FissionSearchPush = .20;
+        [System.Runtime.Serialization.OptionalField] public int FissionRadius = 3, FissionMinimumDaughter = 12;
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
         public double GatherFraction = .22, GatherPerPerson = 1.8, PopulationScale = 24;
@@ -154,6 +160,8 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Invalid generation or clock configuration.");
             if (MinimumCampSpacing < 1) throw new ArgumentException("Minimum camp spacing must be at least one hex.");
             if (ContactExpiryTurns < 1) throw new ArgumentException("Contact expiry must be at least one turn.");
+            if (new[] { FissionQoL, FissionQoLWidth, FissionThreshold, FissionSearchPush }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionQoL < 0 || FissionQoL > 1.5 || FissionQoLWidth <= 0 || FissionQoLWidth > 1 || FissionThreshold < 0 || FissionThreshold >= 1 || FissionSearchPush < 0 || FissionSearchPush > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1)
+                throw new ArgumentException("Invalid fission configuration.");
             if (CampMovement != 1 || HunterMovement != 2 || HerdMovement != 1 || VisionRadius != 2 || GatherRadius != 1)
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
             if (StartingPopulation <= MinimumCamp || MinimumCamp < 1 || Consumption <= 0 || PopulationScale <= 0)
@@ -334,7 +342,7 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public CampInventory Inventory = new CampInventory();
         [System.Runtime.Serialization.OptionalField] public CraftingPriorities CraftingPriorities = new CraftingPriorities();
         [System.Runtime.Serialization.OptionalField] public int CultivationFocusTile = -1;
-        [System.Runtime.Serialization.OptionalField] public double QoL = 1.0, FoodNeedsMetRatio = 1.0, ClothPerCapita = 1.0, HousingPerCapita = 1.0, FissionWilling = 0.0;
+        [System.Runtime.Serialization.OptionalField] public double QoL = 1.0, FoodNeedsMetRatio = 1.0, ClothPerCapita = 1.0, HousingPerCapita = 1.0;
         [System.Runtime.Serialization.OptionalField] public double StationaryYears, RudimentaryExpectation, WaterNeedsMetRatio = 1;
         [System.Runtime.Serialization.OptionalField] public double FabricConsumed, HousingDemand, HousingReplacementDemand, HousingGrowthDemand;
         [System.Runtime.Serialization.OptionalField] public double StonePriority = 1, ClayPriority = 1, WoodPriority = 1;
@@ -346,6 +354,9 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public bool ManagedBreedingPolicyInitialized = true;
         [System.Runtime.Serialization.OptionalField] public bool IsVillage;
         [System.Runtime.Serialization.OptionalField] public int VillageTurns;
+        // Fission (WP10a). Absent policy is Neutral (the enum's zero); an absent destination is none.
+        [System.Runtime.Serialization.OptionalField] public FissionPolicy FissionPolicy;
+        [System.Runtime.Serialization.OptionalField] public FissionTarget FissionDestination;
         [NonSerialized] private Society people = new Society();
         public Society People => people ?? (people = new Society());
         internal void Bind(Society owner) { people = owner; SocietyId = owner.Id; Player = owner.Player; }
@@ -443,6 +454,8 @@ namespace Anthropocene.Simulation
         public List<LogisticsRecord> Logistics = new List<LogisticsRecord>();
         public List<PopulationChange> PopulationChanges = new List<PopulationChange>();
         public List<DemographicReport> Demographics = new List<DemographicReport>();
+        // Canonical (parent camp ID order) record of the settlements founded by fission this turn. Null in saves that predate it.
+        [System.Runtime.Serialization.OptionalField] public List<FissionReport> Fissions = new List<FissionReport>();
         [System.Runtime.Serialization.OptionalField] public List<ManagedHerdReport> ManagedHerds = new List<ManagedHerdReport>();
         public void Log(string message) => Events.Add(message);
     }
@@ -457,6 +470,9 @@ namespace Anthropocene.Simulation
     {
         public const int GeneratorVersion = 13;
         public int Version = 7, Seed, Turn = 1, NextId = 1;
+        // Live player-slot count (WP10a): fission creates AI slots mid-game. 0 means not recorded (older saves and hand-built worlds);
+        // LivePlayers then falls back to Config.Players and the highest camp player.
+        [System.Runtime.Serialization.OptionalField] public int PlayerCount;
         public double Days;
         public SimulationConfig Config;
         public Tile[] Tiles;
@@ -477,6 +493,12 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public List<FixedHousingStock> FixedHousing = new List<FixedHousingStock>();
         [System.Runtime.Serialization.OnDeserializing]
         private void MarkLegacyFixedHousing(System.Runtime.Serialization.StreamingContext context) { FixedHousing = null; }
+        public int LivePlayers
+        {
+            get { int live = Math.Max(PlayerCount, Config.Players); foreach (var c in Camps) live = Math.Max(live, c.Player + 1); return live; }
+        }
+        // Player IDs are never reused. The caller is the canonical fission commit.
+        internal int AllocatePlayer() { int id = LivePlayers; PlayerCount = id + 1; return id; }
         public int Season => (int)(Days / Config.BaseDays) % 4;
         // HexMap is immutable; rebuild only if the configured dimensions change.
         [NonSerialized] private HexMap map;

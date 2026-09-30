@@ -45,6 +45,9 @@ namespace Anthropocene.Simulation
 #pragma warning restore SYSLIB0050
         // Remembered explored geography and settlement contacts (WP6). Null before the first breakthrough and in older saves.
         [System.Runtime.Serialization.OptionalField] public ContactMemory Memory;
+        // Lineage (WP10a): the parent Society (0 = none) and the affinity fixed by the parent camp's fission policy at fission. Inert afterwards.
+        [System.Runtime.Serialization.OptionalField] public int ParentSociety;
+        [System.Runtime.Serialization.OptionalField] public double KinAffinity;
         public bool HasTech(string tech) => NeolithicTechnologies != null && NeolithicTechnologies.Contains(tech);
     }
 

@@ -18,6 +18,8 @@ namespace Anthropocene.Simulation
             int tile = settlement != null ? settlement.Tile : hunter.Tile;
             if (order.Kind == OrderKind.Economy) return order.Target >= 0 || order.Destination >= 0 || order.Population != 0 ? "Economic plans cannot bundle movement or dispatch." : EconomicIntents.Validate(o, settlement, order.Economy);
             if (order.Economy != null) return "Economic payload requires an economic order.";
+            if (order.Kind == OrderKind.FissionPolicy)
+                return settlement == null || order.Target < 0 || order.Target > (int)FissionPolicy.Encourage || order.Destination >= 0 || order.Population != 0 ? "A fission policy must name Neutral, Discourage or Encourage for a settlement." : null;
             if (order.Kind == OrderKind.NoOp) return order.Destination >= 0 || order.Target >= 0 || order.Population != 0 ? "Wait cannot include movement or another action." : null;
             if (order.Kind == OrderKind.Dispatch)
                 return settlement == null || order.Destination >= 0 || order.Target >= 0 || order.Population <= 0 || order.Population > settlement.Gatherers || settlement.Population - order.Population < o.MinimumCamp ? "Dispatch must use available gatherers and preserve the camp's minimum population." : null;
@@ -77,6 +79,7 @@ namespace Anthropocene.Simulation
                 if (camp != null)
                 {
                     if (camp.Agriculture || camp.Husbandry) { mask.Economy = EconomicIntents.Constraints(o, camp); Add(new Order(OrderKind.Economy, entity) { Economy = camp.Economy.Copy() }); }
+                    foreach (FissionPolicy policy in Enum.GetValues(typeof(FissionPolicy))) Add(new Order(OrderKind.FissionPolicy, entity, target: (int)policy));
                     int max = Math.Min(camp.Gatherers, camp.Population - o.MinimumCamp);
                     if (OrderRules.Validate(o, new Order(OrderKind.Dispatch, entity, population: max)) == null) { mask.MinimumDispatch = 1; mask.MaximumDispatch = max; }
                 }

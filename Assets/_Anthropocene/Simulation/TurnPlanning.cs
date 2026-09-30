@@ -163,11 +163,16 @@ namespace Anthropocene.Simulation
                     includeCandidateForecasts: false);
                 foreach (var group in orders.Where(o => o != null).GroupBy(o => o.Entity).OrderBy(g => g.Key))
                 {
-                    if (group.Count() != 1) { prepared.Rejections.Add("Rejected conflicting orders for " + group.Key); continue; }
-                    var order = group.First(); string error = OrderRules.Validate(observation, order);
-                    prepared.OrderReceipts.Add(camp.Player + ":" + order + ":" + (error ?? "accepted"));
-                    if (error != null) prepared.Rejections.Add("Rejected " + order.Entity + ": " + error);
-                    else prepared.Orders.Add(order.Copy());
+                    // A camp may carry one ordinary order and, besides it, one fission-policy setting.
+                    var ordinary = group.Where(o => o.Kind != OrderKind.FissionPolicy).ToArray(); var policies = group.Where(o => o.Kind == OrderKind.FissionPolicy).ToArray();
+                    if (ordinary.Length > 1 || policies.Length > 1) { prepared.Rejections.Add("Rejected conflicting orders for " + group.Key); continue; }
+                    foreach (var order in ordinary.Concat(policies))
+                    {
+                        string error = OrderRules.Validate(observation, order);
+                        prepared.OrderReceipts.Add(camp.Player + ":" + order + ":" + (error ?? "accepted"));
+                        if (error != null) prepared.Rejections.Add("Rejected " + order.Entity + ": " + error);
+                        else prepared.Orders.Add(order.Copy());
+                    }
                 }
             }
             prepared.Placement = CampPlacement.Resolve(world, prepared.Orders);
@@ -175,7 +180,7 @@ namespace Anthropocene.Simulation
                 if (prepared.Placement.Destinations[camp.Id] != camp.Tile)
                     prepared.AbandoningVillages.Add(camp.Id);
             var aiEconomicRequests = new HashSet<int>(prepared.Orders.Where(o => o.RequestAutomaticEconomy).Select(o => o.Entity));
-            var acceptedActions = prepared.Orders.Where(o => o.Kind != OrderKind.Economy).ToDictionary(o => o.Entity);
+            var acceptedActions = prepared.Orders.Where(o => o.Kind != OrderKind.Economy && o.Kind != OrderKind.FissionPolicy).ToDictionary(o => o.Entity);
             var acceptedEconomy = prepared.Orders.Where(o => o.Kind == OrderKind.Economy).ToDictionary(o => o.Entity);
             var automated = world.Camps.Where(c => c.Population > 0 &&
                 (c.EconomyAutomationTurns != 0 || aiEconomicRequests.Contains(c.Id)) &&

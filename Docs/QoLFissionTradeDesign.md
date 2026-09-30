@@ -77,7 +77,7 @@ replacing them.
 | Builder output | 2.5 Housing units per Builder-generation | Retain as current calibration; sweep separately if needed. |
 | Rudimentary weights | 0.5 Clothing / 0.5 Housing | Retain for first QoL calibration. |
 | Expectation floor | 0.25, ramping to 1 over 100 stationary years; reset when a camp moves | Retain; mobile and early groups are less penalized by missing rudimentary goods. |
-| Human fission | `FissionWilling` exists but is reset to 0 | Replace with the architecture in this document. |
+| Human fission | `FissionWilling` existed but was reset to 0 | Replaced by the architecture in this document (WP10a, [Fission.md](Fission.md)). |
 | Demographic growth | Food-first; `DemographicGrowthMultiplier = 1.0` | Leave independent of QoL for now. |
 | Value planning | Equimarginal planner with shadow labour price `w` | Use as the economic half of trade and specialization. |
 

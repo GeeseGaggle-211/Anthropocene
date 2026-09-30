@@ -18,9 +18,13 @@ namespace Anthropocene.Simulation
         private readonly ConcurrentDictionary<int, EcologyView> ecology = new ConcurrentDictionary<int, EcologyView>();
         private readonly ConcurrentDictionary<int, HashSet<int>> visibility = new ConcurrentDictionary<int, HashSet<int>>();
         internal readonly Dictionary<int, Camp> Camps;
+        private readonly Dictionary<int, Society> societiesById;
+        private readonly Dictionary<int, Society[]> daughtersByParent;
         public PlanningIndex(WorldState w)
         {
             world = w; Camps = w.Camps.ToDictionary(c => c.Id);
+            societiesById = w.Societies.ToDictionary(s => s.Id);
+            daughtersByParent = w.Societies.Where(s => s.ParentSociety > 0).GroupBy(s => s.ParentSociety).ToDictionary(g => g.Key, g => g.OrderBy(s => s.Id).ToArray());
             project = n => LazyEcology.ProjectEcology(world, n, world.Days);
             campsByPlayer = w.Camps.GroupBy(c => c.Player).ToDictionary(g => g.Key, g => g.OrderBy(c => c.Id).ToArray());
             campsByTile = w.Camps.GroupBy(c => c.Tile).ToDictionary(g => g.Key, g => g.OrderBy(c => c.Id).ToArray());
@@ -34,6 +38,8 @@ namespace Anthropocene.Simulation
         }
         private static T[] At<T>(Dictionary<int, T[]> map, int id) => map.TryGetValue(id, out var result) ? result : Array.Empty<T>();
         internal Camp[] OwnCamps(int player) => At(campsByPlayer, player);
+        internal Society SocietyById(int id) => societiesById.TryGetValue(id, out var s) ? s : null;
+        internal Society[] Daughters(int parentSociety) => At(daughtersByParent, parentSociety);
         internal Hunter[] OwnHunters(int player) => At(huntersByPlayer, player);
         internal Hunter[] CampHunters(int camp) => At(huntersByCamp, camp);
         internal IEnumerable<Camp> VisibleCamps(IEnumerable<int> tiles) => tiles.SelectMany(n => At(campsByTile, n)).OrderBy(c => c.Id);
@@ -79,7 +85,10 @@ namespace Anthropocene.Simulation
         public readonly string[] Technologies;
         public readonly EconomicIntent Economy;
         public readonly EconomicIntent RecommendedEconomy;
+        // Owner-only fission state (WP10a): the camp's policy and its cached destination tile (-1 when none).
+        public readonly FissionPolicy FissionPolicy;
+        public readonly int FissionDestination;
         public readonly MaterialSourceObservation[] MaterialSources;
-        public SettlementObservation(Camp c, PlanningIndex index, bool recommendEconomy = false) { Id = c.Id; Tile = c.Tile; Population = c.Population; Gatherers = c.GathererPopulation; LinkedPopulation = index.Population(c); AnimalFabric = c.Inventory.AnimalFabric; LightHousing = c.Inventory.LightHousingUnits; HerdingTools = c.Inventory.HerdingTools; HousingMaterial = c.Inventory.HousingMaterial; FixedHousing = NeolithicProduction.FixedHousingAt(index.World, c.Id, c.Tile, index.World.Days); RecentlyMoved = c.Moves > 0 && c.StationaryTurns == 0; IsVillage = c.IsVillage; Agriculture = CultivationEconomy.Enabled(c); Husbandry = CultivationEconomy.HusbandryEnabled(c); Technologies = c.People.NeolithicTechnologies.ToArray(); Economy = EconomicIntent.From(c); RecommendedEconomy = recommendEconomy && (Agriculture || Husbandry) ? EconomicIntents.Automatic(index.World, c, true) : Economy.Copy(); MaterialSources = Agriculture || Husbandry ? MaterialEconomy.Observe(index.World, c, index.World.Days) : Array.Empty<MaterialSourceObservation>(); }
+        public SettlementObservation(Camp c, PlanningIndex index, bool recommendEconomy = false) { Id = c.Id; Tile = c.Tile; Population = c.Population; Gatherers = c.GathererPopulation; LinkedPopulation = index.Population(c); AnimalFabric = c.Inventory.AnimalFabric; LightHousing = c.Inventory.LightHousingUnits; HerdingTools = c.Inventory.HerdingTools; HousingMaterial = c.Inventory.HousingMaterial; FixedHousing = NeolithicProduction.FixedHousingAt(index.World, c.Id, c.Tile, index.World.Days); RecentlyMoved = c.Moves > 0 && c.StationaryTurns == 0; IsVillage = c.IsVillage; FissionPolicy = c.FissionPolicy; FissionDestination = c.FissionDestination == null ? -1 : c.FissionDestination.Tile; Agriculture = CultivationEconomy.Enabled(c); Husbandry = CultivationEconomy.HusbandryEnabled(c); Technologies = c.People.NeolithicTechnologies.ToArray(); Economy = EconomicIntent.From(c); RecommendedEconomy = recommendEconomy && (Agriculture || Husbandry) ? EconomicIntents.Automatic(index.World, c, true) : Economy.Copy(); MaterialSources = Agriculture || Husbandry ? MaterialEconomy.Observe(index.World, c, index.World.Days) : Array.Empty<MaterialSourceObservation>(); }
     }
 }

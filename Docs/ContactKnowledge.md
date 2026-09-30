@@ -61,7 +61,7 @@ snapshot of where something was, never of what it is doing now.
 - **Expiry.** A contact is dropped when `turn - Turn >= ContactExpiryTurns`.
   Nothing else removes a contact, and nothing but a sighting, `RecordTrade` or
   `RecordKin` ever changes one.
-- **Hooks (API only, no caller yet).** `RecordTrade(world, society, partnerCamp)`
+- **Hooks (`RecordKin` is called by fission, WP10a; `RecordTrade` has no caller yet).** `RecordTrade(world, society, partnerCamp)`
   records the partner's current tile with source `Trade`; call it once per
   direction. `RecordKin(world, parent, daughter, parentCamp, daughterCamp)`
   gives the daughter a plain copy of the parent's explored tiles and contacts
