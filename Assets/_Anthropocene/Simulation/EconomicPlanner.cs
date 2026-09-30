@@ -15,6 +15,8 @@ namespace Anthropocene.Simulation
         {
             public EconomicIntent Intent;
             public int Workers, FoodGatherers, OperatingFarmers;
+            // Expansion farmers the Value rule staffed in this proposal (already in Workers).
+            public int ExpansionWorkers;
             // Path position this proposal was evaluated at (for the reported labour price).
             public double S;
         }
@@ -35,16 +37,21 @@ namespace Anthropocene.Simulation
             => Plan(w, c, settings, rule, out laborPrice, out _);
         // productionOrder is the Value rule's fixed production order for this turn
         // (null under Uniform): the resolver reads the same order (WP3b).
-        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, IFulfilmentRule rule, out double laborPrice, out ProductionOrder productionOrder)
+        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, IFulfilmentRule rule, out double laborPrice, out ProductionOrder productionOrder, bool expansionClaim = true)
+            => Plan(w, c, settings, rule, out laborPrice, out productionOrder, out _, expansionClaim);
+        // farmLabourPrice (WP4b) is the value per worker-year of the first expansion ladder step
+        // the plan's expansion farmers (staffed plus leftover) do not cover: what a freed farmer-year
+        // is worth to the camp this turn. 0 when the ladder is exhausted or no claim exists (and under Uniform).
+        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, IFulfilmentRule rule, out double laborPrice, out ProductionOrder productionOrder, out double farmLabourPrice, bool expansionClaim = true)
         {
-            laborPrice = double.NaN; productionOrder = null;
+            laborPrice = double.NaN; productionOrder = null; farmLabourPrice = 0;
             Interlocked.Increment(ref TurnDiagnostics.For(w).PlanCalls);
             var e = settings.Copy(); e.Assignments.Clear(); e.Labor = null;
             if (c.Population <= 0 || !CultivationEconomy.EconomyEnabled(c)) { e.AutomationTurns = 0; return e; }
             var cfg = w.Config; var n = cfg.Neolithic;
             double intervals = cfg.GenerationIntervals, years = cfg.TurnDays / cfg.DaysPerYear;
             // Demand pass: every fulfilment-invariant input, built once.
-            var demand = CampProductionDemand.Build(w, c, e);
+            var demand = CampProductionDemand.Build(w, c, e, expansionClaim);
             bool cultivationEnabled = demand.CultivationEnabled, husbandryEnabled = demand.HusbandryEnabled, established = demand.Established;
             double upkeep = demand.Upkeep, supply = demand.Supply, biological = demand.Biological, nextPopulation = demand.NextPopulation;
             double forageAfterHerds = demand.ForageAfterHerds, terrestrialAfterHerds = demand.TerrestrialAfterHerds;
@@ -65,7 +72,10 @@ namespace Anthropocene.Simulation
             Proposal Evaluate(double s)
             {
                 var shares = new double[demand.Claims.Count];
-                rule.Shares(demand.Claims, s, shares);
+                // Under the Value rule the expansion ladder (WP4b), when present, buys build worker-years on the price path.
+                double expansionWorkerYears = 0;
+                if (valueRule != null && demand.Expansion != null) valueRule.Shares(demand.Claims, demand.Expansion, s, shares, out expansionWorkerYears);
+                else rule.Shares(demand.Claims, s, shares);
                 double Share(CraftGood good) => shares[claimIndex[good]];
                 var intent = e.Copy(); intent.Labor = new EconomicLaborPlan();
                 // Managed-herd work is a resident reservation, not an output
@@ -96,6 +106,8 @@ namespace Anthropocene.Simulation
                 var futureRoles = new Dictionary<string, double>();
                 int proposedFarmers = 0;
                 double proposedExpansion = 0;
+                // Expansion farmers staffed by the Value rule's expansion claim: workers for the turn.
+                int staffedExpansion = 0;
                 var farmRecipe = goods.FirstOrDefault(r => r.Good == CraftGood.FarmTools);
                 string Role(CraftRecipe r) => c.People.HasTech(r.Track) ? r.Specialist : WorkforceRoles.Craftsperson;
                 double Rate(CraftRecipe r) => r.Rate * (c.People.HasTech(r.Track) ? 1 : n.GeneralistTaskEfficiency);
@@ -239,6 +251,13 @@ namespace Anthropocene.Simulation
                     double plannedOperating = established ? Math.Min(fieldWorkers, harvest) : 0;
                     double expansion = intendedExpansion ? Math.Max(0, fieldWorkers - plannedOperating) : 0;
                     proposedFarmers = (int)Math.Ceiling(plannedOperating + expansion - Epsilon);
+                    // Value rule: the ladder's worker-years at this price staff that many field
+                    // workers for the turn (at most the field workers left). The
+                    // intended proposal below still sees every remaining field worker, so
+                    // the Farm Tools demand helper is sized as before; leftover residents
+                    // join expansion after the search exactly as before.
+                    if (intendedExpansion && expansionWorkerYears > 0 && demand.Expansion != null)
+                        staffedExpansion = (int)Math.Max(0, Math.Ceiling(Math.Min(expansionWorkerYears / years, expansion) - Epsilon));
                     if (proposedFarmers > 0)
                         candidate.Workforce.Assignments = intent.Assignments
                             .Concat(futureRoles.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new PopulationAssignment { Role = p.Key, Population = (int)Math.Ceiling(p.Value - Epsilon) }))
@@ -269,6 +288,8 @@ namespace Anthropocene.Simulation
                             int producerReservation = (int)Math.Ceiling(producerWorkers - Epsilon);
                             proposedFarmers = Math.Max(0, proposedFarmers - producerReservation);
                             proposedExpansion = Math.Max(0, Math.Min(proposedExpansion, proposedFarmers));
+                            // Producers leave fewer field workers to staff.
+                            staffedExpansion = (int)Math.Min(staffedExpansion, Math.Max(0, proposedFarmers - Math.Ceiling(plannedOperating - Epsilon)));
                         }
                     }
                 }
@@ -474,8 +495,10 @@ namespace Anthropocene.Simulation
                     (int)Math.Ceiling(Math.Max(0, requiredFoodGatherers + generalistMaterials) - Epsilon));
                 int laborEnvelope = nonFarmWorkers + Math.Max(0, requiredOperating) + requiredGatherers;
                 int actualWorkers = intent.Assignments.Sum(a => a.Population) + Math.Max(0, gatherers);
-                int totalWorkers = s <= Epsilon ? actualWorkers : Math.Max(actualWorkers, laborEnvelope);
-                return new Proposal { Intent = intent, OperatingFarmers = operating, FoodGatherers = foodGatherers, Workers = totalWorkers, S = s };
+                // Expansion workers compete with crafts for residents (WP4b); they are in
+                // neither actualWorkers nor the envelope, so they are added on top.
+                int totalWorkers = (s <= Epsilon ? actualWorkers : Math.Max(actualWorkers, laborEnvelope)) + staffedExpansion;
+                return new Proposal { Intent = intent, OperatingFarmers = operating, FoodGatherers = foodGatherers, Workers = totalWorkers, S = s, ExpansionWorkers = staffedExpansion };
             }
             // Allocate as much useful manufacturing as fits alongside food and its
             // complete source chain. No separate craft-population percentage is imposed.
@@ -484,23 +507,51 @@ namespace Anthropocene.Simulation
             var best = Evaluate(1);
             if (best.Workers > c.Population)
             {
-                int highWorkers = best.Workers;
+                var full = best;
                 best = Evaluate(0);
-                best = SearchPath(Evaluate, best, highWorkers, c.Population);
+                if (full.ExpansionWorkers == 0)
+                    best = SearchPath(Evaluate, best, 0, 1, full.Workers, c.Population, p => p.Workers);
+                else
+                {
+                    // WP4b: staffed expansion can ask for many times the residents at
+                    // the path's end, so interpolating on the total requirement drags
+                    // every guess towards 0. First find the craft plan's position on
+                    // the requirement without staffed expansion, exactly as before the
+                    // claim existed. If expansion is not staffed there, that plan
+                    // stands. Otherwise the answer lies between the position where the
+                    // price reaches the ladder's first value (below it nothing is
+                    // staffed, so that plan is feasible) and the craft position.
+                    var lowest = best;
+                    var craft = SearchPath(Evaluate, lowest, 0, 1, full.Workers - full.ExpansionWorkers, c.Population, p => p.Workers - p.ExpansionWorkers);
+                    if (craft.Workers <= c.Population) best = craft;
+                    else
+                    {
+                        double start = Math.Min(craft.S, valueRule.PositionAtPrice(demand.Claims, demand.Expansion, demand.Expansion.Value[0]));
+                        // Just above the price where the first step is staffed.
+                        start = Math.Max(0, start - 1e-9);
+                        var from = start <= Epsilon ? lowest : Evaluate(start);
+                        best = from.Workers <= c.Population
+                            ? SearchPath(Evaluate, from, start, craft.S, craft.Workers, c.Population, p => p.Workers)
+                            : lowest;
+                    }
+                }
             }
             int spare = Math.Max(0, c.Population - best.Workers);
             // The capital scoring horizon is not a mandate to feed a hypothetical
             // century of exponential growth. Expand for the next demand forecast.
             double futureDemand = biological * nextPopulation / c.Population + (cultivationEnabled ? goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit : 0);
             bool expand = cultivationEnabled && futureDemand > supply && HasRetainedExpansionGain();
-            if (spare > 0 && expand)
+            // The staffed expansion claim (Value rule) plus the leftover residents.
+            int expanders = spare + (expand ? best.ExpansionWorkers : 0);
+            if (expanders > 0 && expand)
             {
                 var farmer = best.Intent.Assignments.FirstOrDefault(a => a.Role == WorkforceRoles.Farmer);
-                if (farmer == null) best.Intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = spare }); else farmer.Population += spare;
-                best.Intent.Labor.ExpansionFarmers = spare;
+                if (farmer == null) best.Intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = expanders }); else farmer.Population += expanders;
+                best.Intent.Labor.ExpansionFarmers = expanders;
             }
             best.Intent.Assignments = best.Intent.Assignments.OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
-            if (valueRule != null) laborPrice = valueRule.LaborPrice(demand.Claims, best.S);
+            if (valueRule != null) laborPrice = valueRule.LaborPrice(demand.Claims, demand.Expansion, best.S);
+            if (demand.Expansion != null) farmLabourPrice = demand.Expansion.ValueAfter((best.Intent.Labor?.ExpansionFarmers ?? 0) * years);
             return best.Intent;
         }
         // Largest staffable position on a fulfilment rule's path, to within
@@ -511,18 +562,22 @@ namespace Anthropocene.Simulation
         // close the bracket. Rounds after the second halve instead, so a poor
         // interpolation cannot stall. Evaluations stay within SearchIterations.
         private const double PathTolerance = 1.0 / 64;
-        private static Proposal SearchPath(Func<double, Proposal> evaluate, Proposal lowest, int highWorkers, int residents)
+        // The search runs on [lowS, highS] (lowest is the proposal at lowS,
+        // highWorkers the requirement at highS) with `required` as the
+        // requirement both for feasibility and interpolation.
+        private static Proposal SearchPath(Func<double, Proposal> evaluate, Proposal lowest, double lowS, double highS, int highWorkers, int residents, Func<Proposal, int> required)
         {
             var best = lowest;
-            if (best.Workers > residents) return best;
-            double low = 0, high = 1; int lowWorkers = best.Workers;
+            if (required(best) > residents) return best;
+            double low = lowS, high = highS; int lowWorkers = required(best);
             int evaluations = 0;
             bool Probe(double s)
             {
                 evaluations++;
                 var p = evaluate(s);
-                if (p.Workers <= residents) { low = s; lowWorkers = p.Workers; best = p; return true; }
-                high = s; highWorkers = p.Workers; return false;
+                int workers = required(p);
+                if (workers <= residents) { low = s; lowWorkers = workers; best = p; return true; }
+                high = s; highWorkers = workers; return false;
             }
             for (int round = 0; evaluations < SearchIterations && high - low > PathTolerance; round++)
             {

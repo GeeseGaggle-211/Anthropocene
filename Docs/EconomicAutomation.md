@@ -160,6 +160,33 @@ Observation schema 16 exposes the owned stock in `ObservedSettlementDto.HousingM
 Production receipts list both goods (`HousingMaterial` receipts carry Wood/Clay; Housing receipts carry the consumed material in
 `ProductionReceipt.HousingMaterial`). Checks: `HousingMaterialRecipeChecks` (`--only=HousingMaterialRecipeChecks`).
 
+### Expansion labour on the allocator's step ladder (WP4b)
+
+Under the Value rule, when the planner's expansion gate holds (forecast demand above supply and a retained field gain),
+the demand pass builds one transient **expansion ladder** (`ExpansionValuation`, `ProductionDemand.cs`), read only by
+`ValueFulfilment`. The ladder (`CultivationEconomy.ExpansionLadder`) is the resolver allocator's own greedy farmer steps from the
+start-of-turn state with unbounded effort, recorded by the same loop (`NextStep`, `AllocateHorizonEffort`) and stopped once the
+cumulative annual food reaches the total gap: per step the build effort in worker-years, its score and its annual retained
+food. Farm Tool efficiency and the bridge pass are ignored (effort is worker-years). Its food is valued in three buckets
+per year, in the order supply fills them: the consumption gap at `v_food = N Q / (F D_year)`, the operating-reserve refill
+at `FoodRiskWeight · v_food` (ρ = 0.1: reserves protect against shocks the model does not yet produce), then growth (maximum growth food plus
+Cloth feedstock) at `v_growth = max(0, dW/dN) L_person / food_per_birth` (`dW/dN = W(N0+1) - W(N0)`, `W = N Q(N)` with goods
+dilution, friction and cohesion at the committed coverages; `food_per_birth` is the derivative of `GrowthFood` with respect to
+final population; `L_person = 1 / (1 / PersonLifeYears + r)`; the design's labour term is omitted as circular with the price).
+Step value per build worker-year is `u_i = score_i L_cap v_i` (`v_i` the piecewise bucket average over the step's food interval),
+truncated at the total gap and made nonincreasing. At labour price `w(s)` expansion buys the worker-years of the prefix with
+`u_i >= w`, staffing `ceil(worker-years / years)` field workers (at most those left), so affordable steps trade against crafts
+while the ladder never lowers the path's end; residents left after the search join expansion as before (`staffed + spare`).
+The fulfilment search runs in two stages when full fulfilment staffs expansion: first on the requirement without staffed
+expansion, exactly as before the claim; if expansion is unstaffed at that position the plan stands, otherwise the search
+continues on the full requirement between the position where the price reaches the ladder's first value
+(`ValueFulfilment.PositionAtPrice`) and the craft position. A single interpolating search on the total requirement, which
+the ladder can inflate to many times the residents, stalled near `s = 0` and cut crafts that expansion never staffed.
+The planner reports `farmLabourPrice`: `u` of the first ladder step not covered by the plan's `ExpansionFarmers * years`
+(0 when exhausted or absent). With slack labour, or when the ladder's values are below the last craft unit's price, the plan is
+exactly the pre-WP4b Value plan. Uniform is untouched; nothing is saved. Checks: `ExpansionClaimChecks`
+(`--only=ExpansionClaimChecks`). Farm Tools and Pots are not yet priced through `w_farm` (WP4a redo).
+
 ## Persistence and limits
 
 `Camp.EconomyAutomationTurns` and `EconomicLabor`, and their `EconomicIntent` counterparts, are optional additive metadata in the existing `ANTHROPOCENE-11` envelope. Old saves default to Off with no labor reservation; explicit zeros are preserved. No tile/resource binary layout or world generation changes. Active automation, copied orders and countdowns round-trip deterministically. Stale field focus is cleared after relocation.

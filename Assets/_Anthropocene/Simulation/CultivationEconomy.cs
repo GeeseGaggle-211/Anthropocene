@@ -351,12 +351,10 @@ namespace Anthropocene.Simulation
             public bool Eligible = true;
         }
 
-        // One proposal over the whole turn. The fixed 32 intensity bands are
-        // capital-allocation resolution, not time steps: their count does not
-        // depend on turn length, BaseDays, or the amount of available work.
-        public static HorizonCultivationAllocation PlanHorizonExpansion(WorldState w, Camp camp, double years,
-            double farmerWorkerYears, double bridgeWorkerYears, FarmToolWorkBudget toolBudget,
-            int[] cachedFootprint = null)
+        // The camp's fields at the start of the turn, in tile order: the footprint
+        // tiles it may operate, each with its projected ecology. Shared by the
+        // resolver's horizon proposal and the planner's expansion ladder.
+        private static HorizonCandidate[] StartCandidates(WorldState w, Camp camp, int[] cachedFootprint)
         {
             int[] ids = !Enabled(camp) || camp.Population <= 0
                 ? Array.Empty<int>()
@@ -374,7 +372,48 @@ namespace Anthropocene.Simulation
                     OperatingFraction = tile.CultivationOperatingFraction, StartOperator = tile.CultivationOperator
                 };
             }
+            return candidates;
+        }
+
+        // One proposal over the whole turn. The fixed 32 intensity bands are
+        // capital-allocation resolution, not time steps: their count does not
+        // depend on turn length, BaseDays, or the amount of available work.
+        public static HorizonCultivationAllocation PlanHorizonExpansion(WorldState w, Camp camp, double years,
+            double farmerWorkerYears, double bridgeWorkerYears, FarmToolWorkBudget toolBudget,
+            int[] cachedFootprint = null)
+        {
+            var candidates = StartCandidates(w, camp, cachedFootprint);
             return BuildHorizonAllocation(w, camp, years, farmerWorkerYears, bridgeWorkerYears, toolBudget, candidates);
+        }
+
+        // One step of the allocator's greedy ladder (WP4b): the field it raises,
+        // its marginal score (annualised retained food per worker-year, as the
+        // allocator compares steps), the build effort it costs in worker-years
+        // (what the allocator charges, cost-per-effort applied) and the annualised
+        // retained food it adds. Transient; never saved.
+        internal struct ExpansionStep
+        {
+            public int Tile;
+            public double Score, WorkerYears, AnnualGain;
+        }
+
+        // The steps the resolver's farmer allocation would take from the
+        // start-of-turn committed state given unlimited effort, in its order: the
+        // same candidates, decay, operator guards and greedy loop, recorded rather
+        // than capped. It ends when no step has a positive score (or at the pass
+        // guard). Effort is worker-years; Farm Tool efficiency and the bridge pass
+        // are ignored (the ladder is the plain-farmer marginal-product curve).
+        // annualGainCap stops recording once the cumulative annual food reaches it (the
+        // step that crosses it is kept): the valuation never reads beyond the total food gap.
+        // Pure: reads the projected ecology only.
+        internal static ExpansionStep[] ExpansionLadder(WorldState w, Camp camp, double years, int[] cachedFootprint = null, double annualGainCap = double.PositiveInfinity)
+        {
+            if (!(years > 0) || double.IsInfinity(years)) return Array.Empty<ExpansionStep>();
+            var candidates = StartCandidates(w, camp, cachedFootprint);
+            foreach (var field in candidates) { field.Decayed = Decay(w.Config, field.Start, field.OperatingFraction, years); field.Capital = field.Decayed; }
+            var record = new List<ExpansionStep>();
+            AllocateHorizonEffort(w, camp, candidates, double.PositiveInfinity, false, years, record, annualGainCap);
+            return record.ToArray();
         }
 
         // The preclaim bridge estimate can be corrected from realized terrestrial
@@ -458,8 +497,11 @@ namespace Anthropocene.Simulation
             return result;
         }
 
+        // record (ladder mode, WP4b): when given, each step taken is appended; an
+        // infinite effort takes every positive-score step whole. Null record and a
+        // finite effort are the resolver's allocation, unchanged.
         private static double AllocateHorizonEffort(WorldState w, Camp camp, HorizonCandidate[] candidates,
-            double effectiveWorkerYears, bool bridge, double years)
+            double effectiveWorkerYears, bool bridge, double years, List<ExpansionStep> record = null, double annualGainCap = double.PositiveInfinity)
         {
             if (effectiveWorkerYears <= 1e-10 || candidates.Length == 0) return Math.Max(0, effectiveWorkerYears);
             var c = w.Config; var n = c.Neolithic;
@@ -470,51 +512,32 @@ namespace Anthropocene.Simulation
             var scores = new double[candidates.Length];
             var steps = new double[candidates.Length];
             var costsPerEffort = new double[candidates.Length];
+            var gains = new double[candidates.Length];
+            bool unbounded = double.IsPositiveInfinity(effectiveWorkerYears);
+            double recordedGain = 0;
             // Thirty-two intensity bands and at most one bridge-ceiling split per
             // field. The guard also makes unusual saved field values harmless.
             for (int pass = 0; pass < candidates.Length * 35 && remaining > 1e-10; pass++)
             {
-                int best = -1; double bestScore = 0, bestStep = 0, bestCostPerEffort = 0;
+                int best = -1; double bestScore = 0, bestStep = 0, bestCostPerEffort = 0, bestGain = 0;
                 for (int i = 0; i < candidates.Length; i++)
                 {
                     var field = candidates[i];
                     if (!cached[i])
                     {
-                        cached[i] = true; scores[i] = 0; steps[i] = 0; costsPerEffort[i] = 0;
-                        double e = field.Capital;
-                        if (field.Eligible && e < ceiling - 1e-12)
-                        {
-                            double q = Intensity(c, e);
-                            double nextBandQ = Math.Min(bridge ? c.GathererBridgeCeiling : 1,
-                                (Math.Floor(q * 32 + 1e-10) + 1) / 32);
-                            double nextE = Math.Pow(nextBandQ / c.ReferenceIntensity, 2);
-                            double de = Math.Min(ceiling - e, Math.Max(0, nextE - e));
-                            if (!bridge && e < bridgeCeiling - 1e-12) de = Math.Min(de, bridgeCeiling - e);
-                            if (de > 1e-12)
-                            {
-                                var tile = w.Tiles[field.Tile];
-                                double build = bridge || q < c.GathererBridgeCeiling
-                                    ? n.OpenBuild : BuildMultiplier(c, tile, field.Ecology.CurrentVegetation);
-                                double costPerEffort = n.BuildWorkerYearsPerTileE * build;
-                                if (costPerEffort > 0)
-                                {
-                                    double maintenance = MaintenanceMultiplier(c, tile, field.Ecology.CurrentVegetation);
-                                    scores[i] = HorizonMarginalScore(w, tile, field.Ecology,
-                                        e, de, years, costPerEffort, maintenance);
-                                    steps[i] = de; costsPerEffort[i] = costPerEffort;
-                                }
-                            }
-                        }
+                        cached[i] = true;
+                        NextStep(w, field, bridge, years, out scores[i], out steps[i], out costsPerEffort[i], out gains[i]);
                     }
                     double score = scores[i];
                     bool focused = field.Tile == camp.CultivationFocusTile;
                     if (score > 0 && (best < 0 || focused && candidates[best].Tile != camp.CultivationFocusTile ||
                         !focused && candidates[best].Tile != camp.CultivationFocusTile && score > bestScore + 1e-12))
-                    { best = i; bestScore = score; bestStep = steps[i]; bestCostPerEffort = costsPerEffort[i]; }
+                    { best = i; bestScore = score; bestStep = steps[i]; bestCostPerEffort = costsPerEffort[i]; bestGain = gains[i]; }
                 }
                 if (best < 0) break;
                 double currentE = candidates[best].Capital;
-                double usedE = c.Neolithic.CultivationMarginalEffortMultiplierPerTenth <= 1
+                double usedE = unbounded ? bestStep
+                    : c.Neolithic.CultivationMarginalEffortMultiplierPerTenth <= 1
                     ? Math.Min(bestStep, remaining / bestCostPerEffort)
                     : Math.Min(bestStep, Math.Max(0, CapitalForEffort(c,
                         EffortForCapital(c, currentE) + remaining / bestCostPerEffort) - currentE));
@@ -523,12 +546,50 @@ namespace Anthropocene.Simulation
                 double chargedEffort = c.Neolithic.CultivationMarginalEffortMultiplierPerTenth <= 1
                     ? usedE : AdditionalEffort(c, currentE, candidates[best].Capital);
                 remaining = Math.Max(0, remaining - chargedEffort * bestCostPerEffort);
+                record?.Add(new ExpansionStep { Tile = candidates[best].Tile, Score = bestScore, WorkerYears = chargedEffort * bestCostPerEffort, AnnualGain = bestGain });
                 cached[best] = false;
+                if (record != null && (recordedGain += bestGain) >= annualGainCap) break;
             }
             return remaining;
         }
 
-        private static double HorizonMarginalScore(WorldState w, Tile tile, EcologyView opening,
+        // The next capital step one field would take and its marginal score
+        // (annualised retained food per worker-year, build effort and maintenance
+        // charged): the single definition the allocator and the planner's
+        // expansion ladder share. score is 0 when the field cannot step;
+        // annualGain is the step's annualised retained food (for that score).
+        private static void NextStep(WorldState w, HorizonCandidate field, bool bridge, double years,
+            out double score, out double step, out double costPerEffort, out double annualGain)
+        {
+            score = 0; step = 0; costPerEffort = 0; annualGain = 0;
+            var c = w.Config; var n = c.Neolithic;
+            double ceiling = Math.Pow((bridge ? c.GathererBridgeCeiling : 1) / c.ReferenceIntensity, 2);
+            double bridgeCeiling = Math.Pow(c.GathererBridgeCeiling / c.ReferenceIntensity, 2);
+            double e = field.Capital;
+            if (!(field.Eligible && e < ceiling - 1e-12)) return;
+            double q = Intensity(c, e);
+            double nextBandQ = Math.Min(bridge ? c.GathererBridgeCeiling : 1,
+                (Math.Floor(q * 32 + 1e-10) + 1) / 32);
+            double nextE = Math.Pow(nextBandQ / c.ReferenceIntensity, 2);
+            double de = Math.Min(ceiling - e, Math.Max(0, nextE - e));
+            if (!bridge && e < bridgeCeiling - 1e-12) de = Math.Min(de, bridgeCeiling - e);
+            if (de <= 1e-12) return;
+            var tile = w.Tiles[field.Tile];
+            double build = bridge || q < c.GathererBridgeCeiling
+                ? n.OpenBuild : BuildMultiplier(c, tile, field.Ecology.CurrentVegetation);
+            double cost = n.BuildWorkerYearsPerTileE * build;
+            if (cost <= 0) return;
+            double maintenance = MaintenanceMultiplier(c, tile, field.Ecology.CurrentVegetation);
+            var investment = HorizonMarginalInvestment(w, tile, field.Ecology, e, de, years, cost, maintenance);
+            score = Math.Max(0, investment.AnnualizedFoodPerWorkerYear);
+            step = de; costPerEffort = cost; annualGain = investment.AnnualizedRetainedFoodGain;
+        }
+
+        internal static double HorizonMarginalScore(WorldState w, Tile tile, EcologyView opening,
+            double capital, double step, double years, double costPerEffort, double maintenance)
+            => Math.Max(0, HorizonMarginalInvestment(w, tile, opening, capital, step, years, costPerEffort, maintenance).AnnualizedFoodPerWorkerYear);
+
+        private static FoodInvestmentForecast HorizonMarginalInvestment(WorldState w, Tile tile, EcologyView opening,
             double capital, double step, double years, double costPerEffort, double maintenance)
         {
             var c = w.Config; var n = c.Neolithic;
@@ -538,13 +599,12 @@ namespace Anthropocene.Simulation
             // gross managed flow that overfills the same pool has zero value.
             double chargedEffort = n.CultivationMarginalEffortMultiplierPerTenth <= 1
                 ? step : AdditionalEffort(c, capital, capital + step);
-            var investment = FoodHorizonForecast.Investment(w, tile.Id, opening.Days,
+            return FoodHorizonForecast.Investment(w, tile.Id, opening.Days,
                 years * c.DaysPerYear, capital, capital + .5 * step,
                 capital + step, 1, chargedEffort * costPerEffort,
                 chargedEffort * n.PlanningHorizonYears *
                     n.MaintenanceWorkersPerTileE(c.MaintenanceCoefficient) * maintenance,
                 opening);
-            return Math.Max(0, investment.AnnualizedFoodPerWorkerYear);
         }
 
         // Ecology integration has already committed the preclaim endpoint. Only

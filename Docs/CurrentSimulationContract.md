@@ -108,6 +108,8 @@ in `ConfigurationUnits.md` and the save-format contract.
 | `CohesionScaleAgricultural` | 1780 | 1780 | people (N_s) | shipped QoL cohesion calibration |
 | `ValueCurveSteepness` | 3 | 3 | dimensionless lambda in exp(-lambda c) | shipped value-rule calibration (used by the Value planner rule, the default PlannerFulfilment; ignored under Uniform) |
 | `DiscountRatePerYear` | 0.01 | 0.01 | per year (r) | shipped value-rule calibration (used by the Value planner rule, the default PlannerFulfilment; ignored under Uniform) |
+| `PersonLifeYears` | 30 | 30 | years (L_person = 1 / (1 / PersonLifeYears + r)) | shipped value-rule calibration (used only by the Value rule's expansion valuation; ignored under Uniform) |
+| `FoodRiskWeight` | 0.1 | 0.1 | fraction of food-security value (rho) | risk placeholder (reserve-refill food in the expansion valuation; Pots in WP4a); Value rule only, calibration target once disasters exist |
 <!-- CURRENT_CONFIG_TABLE:END -->
 
 ## Consistency check

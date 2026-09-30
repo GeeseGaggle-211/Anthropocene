@@ -660,7 +660,7 @@ namespace Anthropocene.Simulation
             maximumGrowthFood = GrowthFood(populationBase, maximumRate, years);
         }
 
-        private static double GrowthFood(double populationBase, double rate, double years)
+        internal static double GrowthFood(double populationBase, double rate, double years)
         {
             if (rate <= 1e-12 || years <= 0) return 0;
             double x = rate * years;

@@ -36,6 +36,13 @@ namespace Anthropocene.Simulation
         // lambda = ValueCurveSteepness (> 0, dimensionless), r = DiscountRatePerYear (>= 0, per year).
         [System.Runtime.Serialization.OptionalField] public string PlannerFulfilment = "Value";
         [System.Runtime.Serialization.OptionalField] public double ValueCurveSteepness = 3, DiscountRatePerYear = .01;
+        // Expected remaining life of a person in years (> 0); the value of a birth is the QoL-years it adds, discounted at r
+        // (L_person = 1 / (1 / PersonLifeYears + r)). Used only by the Value rule's expansion valuation (WP4b).
+        [System.Runtime.Serialization.OptionalField] public double PersonLifeYears = 30;
+        // Risk placeholder rho: the share of food-security value credited to food that
+        // only protects against shocks (operating-reserve refill; Pots in WP4a), since
+        // the model does not yet produce disasters. Value rule only.
+        [System.Runtime.Serialization.OptionalField] public double FoodRiskWeight = .1;
         public double HandToolsOutput = 1, PotsOutput = 1, WeaverFabricOutputPerBaseDays = 1, FarmToolsOutput = 1, ToolsOutput = 1;
         public double BuilderHousingOutputPerBaseDays = .03125, HandToolsHousingMultiplier = 1, ImprovedToolsHousingMultiplier = 1.5, CopperToolsHousingMultiplier = 2;
         public double PlantFoodPerFabricUnit = 1, HousingMaterialUnitsPerHousing = 1;
@@ -74,7 +81,7 @@ namespace Anthropocene.Simulation
             CohesionScalePaleolithic = 220; CohesionScaleNomadic = 550; CohesionScaleAgricultural = 1780;
             // Saves written before the value rule carry no field and keep the Uniform planner, so they
             // continue exactly; new worlds and code defaults use Value.
-            PlannerFulfilment = "Uniform"; ValueCurveSteepness = 3; DiscountRatePerYear = .01;
+            PlannerFulfilment = "Uniform"; ValueCurveSteepness = 3; DiscountRatePerYear = .01; PersonLifeYears = 30; FoodRiskWeight = .1;
         }
         [System.Runtime.Serialization.OnDeserialized]
         private void MigratePhysicalReserveHorizons(System.Runtime.Serialization.StreamingContext context)
@@ -107,6 +114,8 @@ namespace Anthropocene.Simulation
         {
             if (PlannerFulfilment != "Uniform" && PlannerFulfilment != "Value") throw new ArgumentException("Invalid planner fulfilment rule.");
             if (!(ValueCurveSteepness > 0)) throw new ArgumentException("Invalid value curve steepness.");
+            if (!(PersonLifeYears > 0) || double.IsInfinity(PersonLifeYears)) throw new ArgumentException("Invalid person life years.");
+            if (!(FoodRiskWeight >= 0) || double.IsInfinity(FoodRiskWeight)) throw new ArgumentException("Invalid food risk weight.");
             if (CultivationMarginalEffortMultiplierPerTenth < 1 || CultivationMarginalEffortMultiplierPerTenth > 32)
                 throw new ArgumentException("Invalid cultivation effort multiplier.");
             if (new[] { OpenBuild, WoodlandBuild, ForestBuild, WeaverFabricOutputPerBaseDays, BuilderHousingOutputPerBaseDays, GeneralistTaskEfficiency }.Any(v => v <= 0)) throw new ArgumentException("Neolithic construction and allocation rates must be positive.");

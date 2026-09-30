@@ -36,6 +36,7 @@ need `--fulfilment=Value`.
 | Value default (λ = 3) | `2ff638f` | `PlannerFulfilment = "Value"` for new worlds; saves without the field load Uniform. |
 | WP4a (first try) | `4cdbf25`, reverted `10dbc75` | Mean QoL −28% to −32%: saved farmer labour priced at the craft labour price; Farm Tools ×2–4 took Wood and coverage. See ValueModelDesign "Revised WP4 design". |
 | WP4b (first try) | `853ac3d`, reverted `f7e87a6` | Mean QoL −3.4% to −4.6% (control ≤ 0.1%), population/food unbiased. The claim moved 150–270 Builders/Craftspersons per world to fields by turns 3–5 with no measurable food (±0.1%, max field intensity +0.001). Cause below. |
+| WP4b (redo) | this commit | Allocator step ladder, three food buckets (consumption `v_food`, reserve `ρ·v_food`, growth dW/dN), two-stage search. Mean QoL −0.08% to −0.15% (80-1729 −0.60%, noisy control), W = N·Q −0.02% to −0.62%, population and food within ±0.13%: neutral on slack-labour checkpoints. Without the two-stage search: −3.8% to −4.6% (search artefact); with reserve at full `v_food`: −0.07% to −1.08%. |
 
 **WP4b diagnosis.** `g` came from the allocator's
 `AnnualizedFoodPerWorkerYear`: annualised *retained next-boundary* food over
@@ -55,7 +56,7 @@ growth margin (dW/dN), use a harvest-flow productivity, or keep expansion
 leftover-only and derive `w_farm` for tools from operating-farmer output.
 
 **Next, in order (user decision 30 September: correctness over speed):**
-1. WP4b redo, after the valuation decision above.
+1. ~~WP4b redo~~ (user chose the growth-margin valuation; done, see table).
 2. WP4a redo — Farm/Herding Tools at `w_farm`, Pots by food security with `ρ`.
 3. Calibration sweeps (λ, r, ρ) on the checkpoints.
 4. Performance regression: paired timing of `bcdef6e` (pre-WP1) against the

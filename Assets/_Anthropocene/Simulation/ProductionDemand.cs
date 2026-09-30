@@ -80,9 +80,16 @@ namespace Anthropocene.Simulation
         // V * exp(-lambda * c) at the coverage reached by `share` of the useful quantity.
         public double MarginalValue(ProductionClaim c, double share)
             => c.FirstUnitValue * Math.Exp(-Steepness * (c.Stock + share * c.Quantity) / c.Need);
-        private bool Bounds(IReadOnlyList<ProductionClaim> claims, out double hi, out double lo)
+        // Path ends. Craft claims set both ends exactly as before. The optional
+        // expansion ladder (WP4b) can only raise hi (so its share is 0 at s = 0 and
+        // Evaluate(0) stays feasible): it never lowers lo, because a ladder's total
+        // build effort can exceed every resident and would drag the path to a price
+        // where the plan cannot fit, wrecking the search and every other claim's
+        // share. It rides the craft path by price; only with no craft claim at all
+        // does it own both ends (lo = its last step's value).
+        private static bool Bounds(IReadOnlyList<ProductionClaim> claims, ExpansionLadderClaim ladder, double steepness, out double hi, out double lo, out bool ladderOwnsPath)
         {
-            hi = 0; lo = double.PositiveInfinity; bool any = false;
+            hi = 0; lo = double.PositiveInfinity; bool any = false; ladderOwnsPath = false;
             for (int i = 0; i < claims.Count; i++)
             {
                 var c = claims[i];
@@ -93,20 +100,66 @@ namespace Anthropocene.Simulation
                 // Full useful demand may exceed the need level (clothing carries a
                 // finished-goods reserve beyond this turn's requirement), so the
                 // path's end is the price at which every claim reaches Stock + Quantity.
-                double full = first * Math.Exp(-Steepness * (c.Stock + c.Quantity) / c.Need);
+                double full = first * Math.Exp(-steepness * (c.Stock + c.Quantity) / c.Need);
                 if (full < lo) lo = full;
+            }
+            if (ladder != null && ladder.Any)
+            {
+                if (ladder.Value[0] > hi) hi = ladder.Value[0];
+                if (!any)
+                {
+                    any = true; ladderOwnsPath = true;
+                    lo = ladder.Value[ladder.Value.Length - 1];
+                }
             }
             return any;
         }
         // The labour price w at path position s; NaN when no claim is valued.
-        public double LaborPrice(IReadOnlyList<ProductionClaim> claims, double s)
+        public double LaborPrice(IReadOnlyList<ProductionClaim> claims, double s) => LaborPrice(claims, null, s);
+        public double LaborPrice(IReadOnlyList<ProductionClaim> claims, ExpansionLadderClaim ladder, double s)
         {
-            if (!Bounds(claims, out double hi, out double lo)) return double.NaN;
+            if (!Bounds(claims, ladder, Steepness, out double hi, out double lo, out _)) return double.NaN;
             return hi * Math.Pow(lo / hi, Numbers.Clamp(s, 0, 1));
         }
-        public void Shares(IReadOnlyList<ProductionClaim> claims, double s, double[] shares)
+        // Largest path position at which the price is still at least `price`
+        // (the inverse of LaborPrice): 1 when the whole path stays above it, 0
+        // when it starts below it or no claim is valued.
+        public double PositionAtPrice(IReadOnlyList<ProductionClaim> claims, ExpansionLadderClaim ladder, double price)
         {
-            if (!Bounds(claims, out double hi, out double lo))
+            if (!Bounds(claims, ladder, Steepness, out double hi, out double lo, out _) || !(price > 0) || !(hi > 0)) return 0;
+            if (price >= hi) return 0;
+            if (!(lo > 0) || price <= lo || !(lo < hi)) return 1;
+            return Numbers.Clamp(Math.Log(price / hi) / Math.Log(lo / hi), 0, 1);
+        }
+        public void Shares(IReadOnlyList<ProductionClaim> claims, double s, double[] shares)
+            => Shares(claims, null, s, shares, out _);
+        // Share of one need claim at path position s and labour price `price`.
+        private double NeedShare(ProductionClaim c, double price, double s)
+        {
+            // The path ends are exact: floating error must not leave residue at s = 0 or a gap at s = 1.
+            if (s <= 0) return 0;
+            if (s >= 1) return 1;
+            double coverage = Math.Log(c.FirstUnitValue / (price * c.LabourPerUnit)) / Steepness;
+            return Numbers.Clamp((coverage * c.Need - c.Stock) / c.Quantity, 0, 1);
+        }
+        // Expansion worker-years bought at labour price w: the build effort of the
+        // ladder prefix whose value per worker-year is at least w (the ladder is
+        // the marginal-value curve of expansion). 0 at s <= 0 and nondecreasing in s.
+        private static double LadderWorkerYears(ExpansionLadderClaim ladder, double price, double s, bool exactEnds)
+        {
+            if (s <= 0) return 0;
+            if (exactEnds && s >= 1) return ladder.TotalWorkerYears;
+            double sum = 0;
+            for (int i = 0; i < ladder.Value.Length && ladder.Value[i] >= price; i++) sum += ladder.WorkerYears[i];
+            return sum;
+        }
+        // With an expansion ladder its worker-years at s are returned in
+        // expansionWorkerYears. It is 0 at s = 0 and nondecreasing in s, and it
+        // reaches its total at s = 1 only when it is the only claim (see Bounds).
+        public void Shares(IReadOnlyList<ProductionClaim> claims, ExpansionLadderClaim ladder, double s, double[] shares, out double expansionWorkerYears)
+        {
+            expansionWorkerYears = 0;
+            if (!Bounds(claims, ladder, Steepness, out double hi, out double lo, out bool ladderOwnsPath))
             {
                 for (int i = 0; i < claims.Count; i++) shares[i] = s;
                 return;
@@ -116,12 +169,31 @@ namespace Anthropocene.Simulation
             {
                 var c = claims[i];
                 if (!IsNeed(c)) { shares[i] = c.Valued && c.FirstUnitValue <= 0 ? 0 : s; continue; }
-                // The path ends are exact: floating error must not leave residue at s = 0 or a gap at s = 1.
-                if (s <= 0) { shares[i] = 0; continue; }
-                if (s >= 1) { shares[i] = 1; continue; }
-                double coverage = Math.Log(c.FirstUnitValue / (price * c.LabourPerUnit)) / Steepness;
-                shares[i] = Numbers.Clamp((coverage * c.Need - c.Stock) / c.Quantity, 0, 1);
+                shares[i] = NeedShare(c, price, s);
             }
+            if (ladder != null && ladder.Any) expansionWorkerYears = LadderWorkerYears(ladder, price, s, ladderOwnsPath);
+        }
+    }
+
+    // The expansion ladder as a marginal-value curve (WP4b): consecutive steps of
+    // the allocator's greedy ladder, each with its build effort in worker-years
+    // and its value per worker-year (person-QoL-years), nonincreasing. Transient.
+    public sealed class ExpansionLadderClaim
+    {
+        public double[] WorkerYears = Array.Empty<double>(), Value = Array.Empty<double>();
+        public double TotalWorkerYears;
+        public bool Any => Value.Length > 0;
+        // The value of the first step whose build effort is not covered by
+        // `coveredWorkerYears`; 0 when the ladder is exhausted.
+        public double ValueAfter(double coveredWorkerYears)
+        {
+            double sum = 0;
+            for (int i = 0; i < Value.Length; i++)
+            {
+                sum += WorkerYears[i];
+                if (sum > coveredWorkerYears + 1e-9) return Value[i];
+            }
+            return 0;
         }
     }
 
@@ -143,6 +215,18 @@ namespace Anthropocene.Simulation
         public IReadOnlyList<ProductionClaim> Claims;
         // Value-rule production order (WP3b); null under the Uniform rule.
         public ProductionOrder Order;
+        // WP4b expansion labour (Value rule only; null when no shortfall is forecast
+        // or no field step has a positive value). Transient, never saved. Units: see
+        // ExpansionValuation.
+        public ExpansionLadderClaim Expansion;
+        // Diagnostics of the valuation: per-year food gaps (security = consumption +
+        // reserve refill; total adds growth and Cloth feedstock), the two food
+        // values (person-QoL-years per food unit), food and welfare per birth, and
+        // the discounted capital and person lives (years).
+        public double GapConsumptionPerYear, GapSecurityPerYear, GapTotalPerYear, FoodValue, GrowthFoodValue, FoodPerBirth, MarginalWelfarePerBirth, CapitalLife, PersonLife;
+        // Ladder steps computed (recording stops at the total food gap) and their build worker-years (diagnostics).
+        public int LadderSteps;
+        public double LadderWorkerYearsUntruncated;
         public double Meals, OperatingReserve, SparePlant, PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope, HousingMultiplier;
 
         private WorldState world;
@@ -157,7 +241,8 @@ namespace Anthropocene.Simulation
 
         // Normalizes the plan's focus to the camp footprint before the preview
         // is built from it; every other read is of the committed boundary.
-        public static CampProductionDemand Build(WorldState w, Camp c, EconomicIntent e)
+        // expansionClaim = false omits the WP4b expansion claim (the pre-WP4b Value plan, a test reference).
+        public static CampProductionDemand Build(WorldState w, Camp c, EconomicIntent e, bool expansionClaim = true)
         {
             var d = new CampProductionDemand { world = w };
             var cfg = w.Config; var n = cfg.Neolithic;
@@ -238,6 +323,7 @@ namespace Anthropocene.Simulation
             }
             d.HousingMultiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
             ClaimValuation.Apply(w, c, d);
+            if (expansionClaim) ExpansionValuation.Apply(w, c, d);
             return d;
         }
     }
@@ -325,6 +411,126 @@ namespace Anthropocene.Simulation
                 if (value) claim.Value = claim.FirstUnitValue;
             }
             if (value) d.Order = ProductionOrder.Build(cfg, d.Claims, d.Recipes, good => NeolithicProduction.Priority(d.Preview, good));
+        }
+    }
+
+    // WP4b: expansion labour valued on the allocator's step ladder with a
+    // bucketed food value (ValueModelDesign.md, "Revised WP4 design"). Units:
+    //   ladder   the resolver allocator's own greedy steps from the start-of-turn
+    //            state (CultivationEconomy.ExpansionLadder): per step the build
+    //            effort B_i (worker-years), its score g_i (food per year per
+    //            worker-year) and its annual retained food dF_i (food per year);
+    //   buckets  food the camp is short of, per year: security (consumption +
+    //            reserve refill) then growth (maximum growth food + Cloth
+    //            feedstock). Food beyond consumption + reserve only funds births,
+    //            so it is worth far less than the average food value;
+    //   v_food   person-QoL-years per food unit = N Q / (F D_year) (security bucket);
+    //   v_growth person-QoL-years per food unit = max(0, dW/dN) L_person / food per
+    //            birth (growth bucket), W(N) = N Q(N), Q(N) = F Wtr S(N) sum_k w_k
+    //            (1 - E (1 - min(1, c_k N0 / N))) for clothing and housing at their
+    //            committed coverages. The design's labour term (+w per new worker)
+    //            is omitted: it is circular with the price being set;
+    //   u_i      person-QoL-years per build worker-year = g_i L_cap v_i, v_i the
+    //            piecewise average of the bucket values over the step's food
+    //            interval [Fc, Fc + dF_i] (0 beyond the total gap), then made
+    //            nonincreasing by a running minimum. The ladder is truncated once
+    //            the cumulative food reaches the total gap.
+    // Present only under the Value rule, cultivation enabled, and the planner's
+    // existing expansion gate: forecast demand above supply with a retained gain.
+    // Ladder effort is worker-years; Farm Tool efficiency and the bridge pass are
+    // ignored (documented in EconomicAutomation.md).
+    internal static class ExpansionValuation
+    {
+        public static double FoodValue(SimulationConfig cfg, Camp c)
+        {
+            double n = c.Population;
+            double dYear = n * cfg.Consumption * cfg.DaysPerYear / cfg.BaseDays;
+            if (!(dYear > 0)) return 0;
+            return n * c.QoL / (Math.Max(c.FoodNeedsMetRatio, 1e-6) * dYear);
+        }
+        public static double CapitalLife(NeolithicConfig n) => 1 / (Math.Log(2) / n.DecayHalfLifeYears + n.DiscountRatePerYear);
+        public static double PersonLife(NeolithicConfig n) => 1 / (1 / n.PersonLifeYears + n.DiscountRatePerYear);
+        // Food per additional birth at maximum growth: the derivative of GrowthFood
+        // with respect to final population (x = maxRate * years). Limit 0.5 C_turn as x -> 0.
+        public static double FoodPerBirth(double turnConsumption, double maxRate, double years)
+        {
+            double x = maxRate * years;
+            if (!(x > 1e-12) || !(turnConsumption > 0)) return 0;
+            // (x e^x - e^x + 1) / (x^2 e^x) = (x - 1 + e^-x) / x^2
+            double f = x < 1e-4 ? .5 - x / 6 + x * x / 24 : (x - 1 + Math.Exp(-x)) / (x * x);
+            return turnConsumption * f;
+        }
+        // W(N) = N Q(N) at the committed coverages; population n0 is the camp's present cohort.
+        public static double Welfare(NeolithicConfig n, Camp c, double population, double n0)
+        {
+            double e = c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
+                : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+            double dilution = population > 0 ? Math.Min(1, n0 / population) : 1;
+            double clothing = 1 - e * (1 - Math.Min(1, c.ClothPerCapita * dilution));
+            double housing = 1 - e * (1 - Math.Min(1, c.HousingPerCapita * dilution));
+            double q = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * NeolithicProduction.SocialCohesion(n, c, population)
+                * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing);
+            return population * q;
+        }
+        public static double MarginalWelfare(NeolithicConfig n, Camp c)
+            => Welfare(n, c, c.Population + 1, c.Population) - Welfare(n, c, c.Population, c.Population);
+        // Pure ladder valuation: bucket-average value per step, truncation at the total gap,
+        // running minimum. Inputs per year; values per food unit; lCap years.
+        public static ExpansionLadderClaim Value(CultivationEconomy.ExpansionStep[] steps, double gapSecurity, double gapTotal, double vFood, double vGrowth, double lCap)
+            => Value(steps, gapSecurity, gapSecurity, gapTotal, vFood, vFood, vGrowth, lCap);
+        // Three buckets in the order supply fills them: the consumption gap
+        // [0, gapConsumption] at vFood, the reserve refill [gapConsumption,
+        // gapSecurity] at vReserve (rho * vFood: reserves protect against shocks,
+        // which the model does not yet produce), growth [gapSecurity, gapTotal] at vGrowth.
+        public static ExpansionLadderClaim Value(CultivationEconomy.ExpansionStep[] steps, double gapConsumption, double gapSecurity, double gapTotal, double vFood, double vReserve, double vGrowth, double lCap)
+        {
+            gapConsumption = Math.Min(gapConsumption, gapSecurity);
+            var b = new List<double>(); var u = new List<double>();
+            double fc = 0, floor = double.PositiveInfinity;
+            foreach (var step in steps)
+            {
+                if (!(fc < gapTotal - 1e-12) || !(step.AnnualGain > 0)) break;
+                double end = fc + step.AnnualGain;
+                double inConsumption = Math.Max(0, Math.Min(end, gapConsumption) - fc);
+                double inReserve = Math.Max(0, Math.Min(end, gapSecurity) - Math.Max(fc, gapConsumption));
+                double inGrowth = Math.Max(0, Math.Min(end, gapTotal) - Math.Max(fc, gapSecurity));
+                double v = (inConsumption * vFood + inReserve * vReserve + inGrowth * vGrowth) / step.AnnualGain;
+                double value = step.Score * lCap * v;
+                fc = end;
+                if (!(value > 0)) break;
+                floor = Math.Min(floor, value);
+                b.Add(step.WorkerYears); u.Add(floor);
+            }
+            return new ExpansionLadderClaim { WorkerYears = b.ToArray(), Value = u.ToArray(), TotalWorkerYears = b.Sum() };
+        }
+        public static void Apply(WorldState w, Camp c, CampProductionDemand d)
+        {
+            var cfg = w.Config; var n = cfg.Neolithic;
+            if (!n.ValueFulfilmentSelected || !d.CultivationEnabled || c.Population <= 0) return;
+            double years = cfg.TurnDays / cfg.DaysPerYear, intervals = cfg.GenerationIntervals;
+            double cloth = d.Goals.TryGetValue(CraftGood.Cloth, out double goal) ? goal : 0;
+            // Same forecast as the planner's expansion gate.
+            double forecast = d.Biological * d.NextPopulation / Math.Max(1, c.Population) + cloth * n.PlantFoodPerFabricUnit;
+            if (!(forecast > d.Supply) || !d.HasRetainedExpansionGain() || !(years > 0)) return;
+            // Buckets from the very targets that size the planning demand (the
+            // planning cohort, as PlanningFoodDemand), per year.
+            TurnResolver.FoodBucketTargets(w, c, intervals, years, d.Consumers * cfg.Consumption * intervals, c.Food,
+                out double consumption, out _, out double reserveFill, out double maximumGrowthFood);
+            double security = consumption + reserveFill, growth = maximumGrowthFood + cloth * n.PlantFoodPerFabricUnit;
+            d.GapConsumptionPerYear = Math.Max(0, consumption - d.Supply) / years;
+            d.GapSecurityPerYear = Math.Max(0, security - d.Supply) / years;
+            d.GapTotalPerYear = Math.Max(0, security + growth - d.Supply) / years;
+            d.FoodValue = FoodValue(cfg, c);
+            double maxRate = c.DeficitTurns <= 0 ? cfg.AnnualHumanGrowthRate * c.DemographicGrowthMultiplier : 0;
+            d.FoodPerBirth = FoodPerBirth(cfg.Consumption * intervals, maxRate, years);
+            d.MarginalWelfarePerBirth = MarginalWelfare(n, c);
+            d.PersonLife = PersonLife(n);
+            d.GrowthFoodValue = d.FoodPerBirth > 0 ? Math.Max(0, d.MarginalWelfarePerBirth) * d.PersonLife / d.FoodPerBirth : 0;
+            d.CapitalLife = CapitalLife(n);
+            var steps = CultivationEconomy.ExpansionLadder(w, c, years, d.Footprint, d.GapTotalPerYear);
+            d.LadderSteps = steps.Length; d.LadderWorkerYearsUntruncated = steps.Sum(x => x.WorkerYears);
+            var ladder = Value(steps, d.GapConsumptionPerYear, d.GapSecurityPerYear, d.GapTotalPerYear, d.FoodValue, n.FoodRiskWeight * d.FoodValue, d.GrowthFoodValue, d.CapitalLife);
+            if (ladder.Any) d.Expansion = ladder;
         }
     }
 

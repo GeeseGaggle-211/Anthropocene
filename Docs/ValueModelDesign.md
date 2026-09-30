@@ -191,26 +191,65 @@ all of QoL, that protects `N · Q / (F · D_year)`:
 v_food = N · Q / (F · D_year)        (F guarded ≥ 1e-6; Q, F from the committed camp)
 ```
 
-*WP4b — expansion labour.* Expansion farmers prevent a forecast shortfall.
-- Productivity `g` = the resolver allocator's best marginal score over the
-  camp's operated tiles: annualised retained food per worker-year
-  (`CultivationEconomy.HorizonMarginalScore`, which already charges build
-  effort and `PlanningHorizonYears` of maintenance).
-- Capital persists: discounted life `L_cap = 1 / (ln 2 / DecayHalfLifeYears + r)` years.
-- Value per expansion worker-year: `V_exp = g · v_food · L_cap`.
-- Only while a forecast shortfall exists (the planner's existing gate:
-  forecast demand > supply and a retained gain exists). Need, in worker-years:
-  `D_exp = shortfall_per_year / g`; stock 0; quantity bounded by field workers.
-  Expansion is then a claim on the exponential curve with `ℓ = 1`
-  worker-year per unit, so it competes with crafts at the labour price `w(s)`
-  and its value falls as the gap closes. Beyond closing the gap its value is
-  zero (growth-food value is a later refinement from QoLFissionTradeDesign 7.2).
-- Workers left after all claims still go to expansion exactly as today, so an
-  economy with slack labour behaves as before; only labour-scarce camps trade
-  expansion against crafts.
+*WP4b — expansion labour (second design: step ladder, bucketed food value).*
+The first design (a single `g` and need `shortfall / g`) failed its gate: `g`
+is 0.01-0.1 food/yr per worker-year, so the need was 2-6x the whole camp; and
+in slack camps leftover residents already exhaust the allocator's positive
+steps, so a further expansion worker's marginal product is zero, not `g`. Food
+beyond consumption and reserve only funds births, which the average food value
+overstates. The redesign values what the allocator would actually do:
+- **Step ladder.** `CultivationEconomy.ExpansionLadder` runs the resolver's own
+  greedy farmer allocation (same candidates, decay, operator guards, step
+  selection; `NextStep` and `AllocateHorizonEffort` are shared) from the
+  start-of-turn committed state with unbounded effort and records each step:
+  build effort `B_i` in worker-years (what the allocator charges),
+  score `g_i` and annual retained food `dF_i` from the same
+  `FoodHorizonForecast.Investment`. It stops when no step has a positive score,
+  or (for the planner) once the cumulative `dF` reaches the total food gap.
+  Farm Tool efficiency and the bridge pass are ignored: effort is worker-years.
+- **Food buckets** (per year, from `TurnResolver.FoodBucketTargets` at the
+  planning population): `gapCons = max(0, consumption - supply)`,
+  `gapSec = max(0, consumption + reserveFill - supply)`;
+  `gapTotal = max(0, consumption + reserveFill + maxGrowthFood + clothFeedstock - supply)`
+  (the existing forecast gap; the existing gate is kept).
+- **Values per food unit** (person-QoL-years): consumption `v_food = N Q / (F D_year)`;
+  reserve refill `ρ · v_food` (`FoodRiskWeight` = 0.1, the risk placeholder
+  shared with Pots: reserve food raises no QoL until shocks exist);
+  growth `v_growth = max(0, dW/dN) · L_person / food_per_birth`, with
+  `W(N) = N Q(N)`, `Q(N) = F · Wtr · S(N) · sum_k w_k (1 - E (1 - min(1, c_k N0 / N)))`
+  for clothing and housing at their committed coverages `c_k` (goods dilution,
+  friction and cohesion included), `dW/dN = W(N0+1) - W(N0)`;
+  `food_per_birth = C_turn (x e^x - e^x + 1) / (x^2 e^x)` with
+  `x = maxRate · years`, the derivative of `GrowthFood` with respect to final
+  population (limit `0.5 C_turn`; no growth bucket when `maxRate = 0`);
+  `L_person = 1 / (1 / PersonLifeYears + r)`, `PersonLifeYears = 30`. The
+  design's labour term (+w per new worker) is omitted: it is circular with the
+  price being set.
+- **Ladder claim.** Walk the ladder with cumulative annual food `Fc`; step `i`'s
+  food `[Fc, Fc + dF_i]` is valued piecewise (consumption at `v_food`, reserve at `ρ v_food`, then
+  growth at `v_growth`, nothing beyond `gapTotal`), giving the average `v_i`;
+  value per build worker-year `u_i = g_i · L_cap · v_i`, with `L_cap =
+  1 / (ln 2 / DecayHalfLifeYears + r)`; truncated once `Fc >= gapTotal`, and
+  made nonincreasing by a running minimum. The ladder is the marginal-value
+  curve of expansion, replacing the exponential curve for this claim.
+- **Search.** At labour price `w(s)` expansion buys the build worker-years of the
+  ladder prefix with `u_i >= w` (0 at `s <= 0`); staffed workers for the turn are
+  `ceil(worker-years / years)`, at most the field workers left. The ladder can
+  only raise the path's top, never lower its end (only with no craft claim does
+  it own both ends). Workers left after the search still go to expansion exactly
+  as today, so an economy with slack labour behaves as before; only labour-scarce
+  camps trade affordable ladder steps against crafts. The search is two-stage
+  (craft requirement first, then the full requirement above the price of the
+  first ladder step): interpolating on a total that the ladder inflates to many
+  times the residents stalled near `s = 0` and cut crafts expansion never
+  staffed (a −3.8% to −4.6% QoL artefact in the gate).
 
-*Farm-labour price.* `w_farm = V_exp · e^(−λ · c_exp)` at the start-of-turn
-expansion coverage (0 when no shortfall): the value of one freed farmer-year.
+*Farm-labour price.* After the search, `w_farm` is the `u` of the first ladder
+step that the plan's total expansion worker-years (`ExpansionFarmers · years`,
+staffed plus leftover) do not cover: the value of one freed farmer-year. 0 when
+the ladder is exhausted or no claim exists. (The demand pass cannot know the
+coming plan; WP4a order keys need an estimate from last turn's saved
+`EconomicLabor.ExpansionFarmers`, which the camp carries.)
 
 *WP4a (redo) — tools and Pots.*
 - Farm Tools: `V = savedFT · w_farm`; Herding Tools: herder labour is also

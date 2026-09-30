@@ -51,6 +51,8 @@ FIELDS = [
     ("CohesionScaleAgricultural", "people (N_s)", "shipped QoL cohesion calibration"),
     ("ValueCurveSteepness", "dimensionless lambda in exp(-lambda c)", "shipped value-rule calibration (used by the Value planner rule, the default PlannerFulfilment; ignored under Uniform)"),
     ("DiscountRatePerYear", "per year (r)", "shipped value-rule calibration (used by the Value planner rule, the default PlannerFulfilment; ignored under Uniform)"),
+    ("PersonLifeYears", "years (L_person = 1 / (1 / PersonLifeYears + r))", "shipped value-rule calibration (used only by the Value rule's expansion valuation; ignored under Uniform)"),
+    ("FoodRiskWeight", "fraction of food-security value (rho)", "risk placeholder (reserve-refill food in the expansion valuation; Pots in WP4a); Value rule only, calibration target once disasters exist"),
 ]
 
 TESTS = [
