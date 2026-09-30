@@ -38,6 +38,8 @@ need `--fulfilment=Value`.
 | WP4b (first try) | `853ac3d`, reverted `f7e87a6` | Mean QoL −3.4% to −4.6% (control ≤ 0.1%), population/food unbiased. The claim moved 150–270 Builders/Craftspersons per world to fields by turns 3–5 with no measurable food (±0.1%, max field intensity +0.001). Cause below. |
 | WP4b (redo) | this commit | Allocator step ladder, three food buckets (consumption `v_food`, reserve `ρ·v_food`, growth dW/dN), two-stage search. Mean QoL −0.08% to −0.15% (80-1729 −0.60%, noisy control), W = N·Q −0.02% to −0.62%, population and food within ±0.13%: neutral on slack-labour checkpoints. Without the two-stage search: −3.8% to −4.6% (search artefact); with reserve at full `v_food`: −0.07% to −1.08%. |
 | WP4a (redo) | this commit | Farm/Herding Tools at the start-of-turn farm-labour price `w_farm0` (ladder value after last turn's expansion farmers; saved herder-years `S/A − 1` per covered herder-year), Pots `ρ·S·v_food` as a need claim. Mean QoL −0.32%, −0.16%, +0.58%, −0.20%; W = N·Q −0.59% to +0.52%; population/food within ±0.5%; Pots ×1.4–1.9 by turn 25 (risk priced, not yet rewarded). A per-turn Pot credit over its life (×3.3) failed: Pots ×4–8, QoL −0.8% to −1.2%. Tool keys 0.02–0.7 stay below need goods. |
+| #33 after WP4 | `002c889` | Natural policy windows (24): Toolmaker, Weaver, Builder 24/24; Potter 7/24 (8 before WP4); Carpenter 5/24. Unchanged. |
+| Calibration (one at a time, 80-11/80-23/80-1729, vs defaults λ = 3, ρ = 0.1, r = 0.01) | `b40ff68` | Mean QoL: λ = 2 −3.2% to −5.1% (clothing 0.70–0.74 → 0.53–0.59); λ = 4 −0.8% to −1.2%; r = 0.005 −3.5% to −5.5% (longer Housing life crowds out clothing); r = 0.02 +1.1/−0.3/+0.4% (housing falls, mixed); ρ = 0.05 +0.3/+0.7/0.0%; ρ = 0.2 −0.6/−0.1/−0.7%. Population and food within ±0.7% everywhere. Defaults kept: λ = 3 is the optimum; r = 0.02 is not decisively better; ρ only costs QoL until disasters exist (its QoL optimum is 0 by construction), so it stays a placeholder at 0.1. |
 
 **WP4b diagnosis.** `g` came from the allocator's
 `AnnualizedFoodPerWorkerYear`: annualised *retained next-boundary* food over
@@ -59,7 +61,7 @@ leftover-only and derive `w_farm` for tools from operating-farmer output.
 **Next, in order (user decision 30 September: correctness over speed):**
 1. ~~WP4b redo~~ (user chose the growth-margin valuation; done, see table).
 2. ~~WP4a redo~~ (done, see table) — Farm/Herding Tools at `w_farm`, Pots by food security with `ρ`.
-3. Calibration sweeps (λ, r, ρ) on the checkpoints.
+3. ~~Calibration sweeps (λ, r, ρ) on the checkpoints~~ (done, defaults kept).
 4. Performance regression: paired timing of `bcdef6e` (pre-WP1) against the
    final planner head on a quiet machine (planner ms, total turn ms,
    allocations); >10% triggers a phase/work audit.
