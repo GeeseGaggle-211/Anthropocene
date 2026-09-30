@@ -709,7 +709,7 @@ namespace Anthropocene.Simulation
                             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
                             var n = w.Config.Neolithic;
                             double clothing = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
-                            double shelter = lightHousingUseful ? Math.Max(0, residents / n.HousingPeoplePerUnit - NeolithicProduction.HousingSupply(w, c, w.Days + years * w.Config.DaysPerYear)) : 0;
+                            double shelter = lightHousingUseful ? NeolithicProduction.HousingGapPeople(w, c, residents, w.Days + years * w.Config.DaysPerYear) / n.LightHousingPeoplePerUnit : 0;
                             double virtualCloth = Math.Max(0, c.Inventory.Cloth) + planned[CraftGood.Cloth];
                             double virtualAnimalFabric = animalFabric;
                             double remainingClothing = Math.Max(0, clothing - virtualCloth - virtualAnimalFabric);

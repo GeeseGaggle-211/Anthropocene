@@ -132,39 +132,53 @@ internal static class FissionChecks
 
     // ---- WP10c: crowding + expected gain ------------------------------------------------------------------------------------------
     // A full-coverage fixture: clothing 1 and Light Housing far beyond need, so Q = F * W * S(N) and R = 1 before and after.
-    private static Camp Covered(WorldState w, Camp c, int residents)
+    // The camp's housing structure for the cohesion fixtures: none (H = 0), tents that shelter exactly everyone (H = p_tent) or
+    // permanent housing that shelters exactly everyone (H = 1). Derived cohesion depends on the structure, never on a technology label.
+    private enum Shelter { None, Tents, Fixed }
+    private static double ShareOf(WorldState w, Shelter s) => s == Shelter.None ? 0 : s == Shelter.Tents ? w.Config.Neolithic.LightHousingPermanence : 1;
+    private static Camp Covered(WorldState w, Camp c, int residents, Shelter shelter)
     {
-        c.Population = residents; c.ClothPerCapita = 1; c.Inventory.LightHousingUnits = 1e9; return c;
+        var n = w.Config.Neolithic;
+        c.Population = residents; c.ClothPerCapita = 1; c.Inventory.LightHousingUnits = 0; w.FixedHousing.RemoveAll(x => x.CampId == c.Id);
+        if (shelter == Shelter.Tents) c.Inventory.LightHousingUnits = residents / n.LightHousingPeoplePerUnit;
+        if (shelter == Shelter.Fixed) w.FixedHousing.Add(new FixedHousingStock { CampId = c.Id, Tile = c.Tile, Units = residents / n.HousingPeoplePerUnit, LastUpdatedDays = w.Days });
+        return c;
     }
-    private static double Cohesion(WorldState w, Camp c, double population) => Math.Exp(-Math.Pow(population / NeolithicProduction.CohesionScale(w.Config.Neolithic, c), w.Config.Neolithic.SocialCohesionExponent));
-    private static void Nomadic(Camp c) { c.Technologies[(int)Technology.Cultivation] = false; c.Technology = Technology.AnimalHusbandry; c.Technologies[(int)Technology.AnimalHusbandry] = true; }
+    // S at an explicit housing share, written out: exp(-(N / (N_band (1 + k H)))^beta).
+    private static double Cohesion(WorldState w, double share, double population) { var n = w.Config.Neolithic; return Math.Exp(-Math.Pow(population / (n.CohesionBandScale * (1 + n.CohesionHousingGain * share)), n.SocialCohesionExponent)); }
+    private static double Cohesion(WorldState w, Camp c, double population)
+    {
+        var n = w.Config.Neolithic; double cap = NeolithicProduction.FixedHousingAt(w, c.Id, c.Tile, w.Days) * n.HousingPeoplePerUnit + n.LightHousingPermanence * c.Inventory.LightHousingUnits * n.LightHousingPeoplePerUnit;
+        return Cohesion(w, Math.Min(1, cap / population), population);
+    }
     private static void Crowding()
     {
         // Closed form with full goods coverage: G = S(N - N_d) / S(N) - 1 = exp((N^2 - (N - N_d)^2) / N_s^2) - 1 (beta = 2), any F, W.
-        foreach (var regime in new[] { FissionRegime.Paleolithic, FissionRegime.Nomadic, FissionRegime.Agricultural })
+        foreach (var shelter in new[] { Shelter.None, Shelter.Tents, Shelter.Fixed })
             foreach (FissionPolicy policy in Enum.GetValues(typeof(FissionPolicy)))
             {
-                var w = World(regime != FissionRegime.Paleolithic, new[] { 8, 8 }); var c = Covered(w, w.Camps[0], 300);
-                if (regime == FissionRegime.Nomadic) Nomadic(c);
-                Check(Fission.RegimeOf(c) == regime, "the fixture is " + regime);
+                var w = World(shelter == Shelter.Fixed, new[] { 8, 8 }); var c = Covered(w, w.Camps[0], 300, shelter);
                 c.FissionPolicy = policy; c.FoodNeedsMetRatio = .63; c.WaterNeedsMetRatio = .9;
-                double ns = regime == FissionRegime.Paleolithic ? 220 : regime == FissionRegime.Nomadic ? 550 : 1780;
+                var nc = w.Config.Neolithic; double ns = nc.CohesionBandScale * (1 + nc.CohesionHousingGain * ShareOf(w, shelter));
                 int nd = Kinship.DaughterSize(300, policy), stay = 300 - nd;
                 var e = Fission.EstimateSplit(w, c, policy);
-                Near(e.Gain, Math.Exp((300.0 * 300 - (double)stay * stay) / (ns * ns)) - 1, regime + " " + policy + " gain is the closed form of the cohesion ratio");
-                Near(e.QNow, .63 * .9 * Math.Exp(-Math.Pow(300 / ns, 2)), regime + " " + policy + " Q_now = F W S(N)");
+                double e0 = nc.RudimentaryExpectationFloor + (1 - nc.RudimentaryExpectationFloor) * Math.Min(1, c.StationaryYears / nc.RudimentaryExpectationRampYears);
+                double coverage = .5 + .5 * (1 - e0 * (1 - (shelter == Shelter.None ? 0 : 1)));
+                Near(e.Gain, Math.Exp((300.0 * 300 - (double)stay * stay) / (ns * ns)) - 1, shelter + " " + policy + " gain is the closed form of the cohesion ratio at the present housing share");
+                Near(e.QNow, .63 * .9 * coverage * Math.Exp(-Math.Pow(300 / ns, 2)), shelter + " " + policy + " Q_now = F W R S(N)");
                 Check(e.Daughter == nd && e.QAfter > e.QNow, "the estimate carries the daughter size and a higher stayers' QoL");
             }
         // F, W and the goods coverage cancel in the ratio while housing is unaffected: a Paleolithic camp with no goods at all has the same gain.
+        double bandScale = new SimulationConfig().Neolithic.CohesionBandScale;   // no housing: N_s = N_band
         var bare = World(false, new[] { 8, 8 }); bare.Camps[0].Population = 300; bare.Camps[0].ClothPerCapita = 0; bare.Camps[0].HousingPerCapita = 0; bare.Camps[0].FoodNeedsMetRatio = .4;
         var bareQ = Fission.EstimateSplit(bare, bare.Camps[0], FissionPolicy.Neutral);
-        Near(bareQ.Gain, Math.Exp((300.0 * 300 - 210.0 * 210) / (220 * 220)) - 1, "with no goods and partial food the Paleolithic gain is the same cohesion gain");
-        Near(bareQ.QNow, .4 * (.5 * (1 - .25) + .5 * (1 - .25)) * Math.Exp(-Math.Pow(300 / 220.0, 2)), "Q_now uses the expectation floor for an unresolved camp");
+        Near(bareQ.Gain, Math.Exp((300.0 * 300 - 210.0 * 210) / (bandScale * bandScale)) - 1, "with no goods and partial food the Paleolithic gain is the same cohesion gain");
+        Near(bareQ.QNow, .4 * (.5 * (1 - .25) + .5 * (1 - .25)) * Math.Exp(-Math.Pow(300 / bandScale, 2)), "Q_now uses the expectation floor for an unresolved camp");
         // Q_now = 0 (no food): the documented fallback is the cohesion gain, so a destitute crowded camp still feels its crowding.
         var zero = World(false, new[] { 8, 8 }); zero.Camps[0].Population = 300; zero.Camps[0].FoodNeedsMetRatio = 0;
         var ze = Fission.EstimateSplit(zero, zero.Camps[0], FissionPolicy.Neutral);
         Check(ze.QNow == 0 && ze.QAfter == 0, "no food gives zero QoL before and after");
-        Near(ze.Gain, Math.Exp((300.0 * 300 - 210.0 * 210) / (220 * 220)) - 1, "the zero-QoL fallback is the cohesion gain S_after / S_now - 1");
+        Near(ze.Gain, Math.Exp((300.0 * 300 - 210.0 * 210) / (bandScale * bandScale)) - 1, "the zero-QoL fallback is the cohesion gain S_after / S_now - 1");
         // Housing relief: the parent keeps all fixed Housing, so per-head housing rises once the daughter leaves; portable Light Housing splits in proportion and gives none.
         var fixedWorld = World(true, new[] { 8, 8 }); var fc = fixedWorld.Camps[0]; fc.ClothPerCapita = 1; fc.Population = 100;
         fixedWorld.FixedHousing.Add(new FixedHousingStock { CampId = fc.Id, Tile = fc.Tile, Units = 12.5, LastUpdatedDays = fixedWorld.Days }); // 50 people
@@ -175,28 +189,30 @@ internal static class FissionChecks
         Near(fe.QNow, Cov(.5) * Cohesion(fixedWorld, fc, 100), "fixed Housing: Q_now at 0.5 housing per head");
         Near(fe.QAfter, Cov(50.0 / 70) * Cohesion(fixedWorld, fc, 70), "fixed Housing: the parent keeps all of it, so 50 beds for 70 stayers");
         Near(fe.Gain, fe.QAfter / fe.QNow - 1, "gain is the relative rise of the stayers' QoL");
-        Check(fe.Gain > Math.Exp((100.0 * 100 - 70.0 * 70) / (1780.0 * 1780)) - 1, "housing relief adds to the cohesion gain");
+        var nd5 = new SimulationConfig().Neolithic; double ns5 = nd5.CohesionBandScale * (1 + nd5.CohesionHousingGain * .5);
+        Check(fe.Gain > Math.Exp((100.0 * 100 - 70.0 * 70) / (ns5 * ns5)) - 1, "housing relief adds to the cohesion gain at the present housing share");
         // The relief weight interpolates between the cohesion-and-clothing gain (0) and the full relief (1).
         double QAt(double weight) { fixedWorld.Config.FissionHousingRelief = weight; return Fission.EstimateSplit(fixedWorld, fc, FissionPolicy.Neutral).QAfter; }
         double full = QAt(1), none = QAt(0), half = QAt(.5);
-        Near(none, Cov(.5) * Cohesion(fixedWorld, fc, 70), "relief weight 0: housing per head stays at its present value, only cohesion changes");
-        Near(half, Cov(.5 + .5 * (50.0 / 70 - .5)) * Cohesion(fixedWorld, fc, 70), "relief weight 0.5 counts half the housing gain"); Near(full, fe.QAfter, "relief weight 1 is the specified rule"); QAt(1);
+        Near(none, Cov(.5) * Cohesion(fixedWorld, .5, 70), "relief weight 0: housing per head and the cohesion housing share stay at their present values, only the headcount changes");
+        Near(half, Cov(.5 + .5 * (50.0 / 70 - .5)) * Cohesion(fixedWorld, .5 + .5 * (50.0 / 70 - .5), 70), "relief weight 0.5 counts half the housing gain in coverage and in the cohesion share"); Near(full, fe.QAfter, "relief weight 1 is the specified rule"); QAt(1);
         Near(Fission.EstimateSplit(fixedWorld, fc, FissionPolicy.Neutral).Gain, fe.Gain, "restoring the weight restores the gain");
-        QAt(0); Near(Fission.EstimateSplit(fixedWorld, fc, FissionPolicy.Neutral).Gain, Math.Exp((100.0 * 100 - 70.0 * 70) / (1780.0 * 1780)) - 1, "with relief weight 0 a housing shortage leaves the gain at the closed-form cohesion gain"); QAt(1);
+        QAt(0); Near(Fission.EstimateSplit(fixedWorld, fc, FissionPolicy.Neutral).Gain, Math.Exp((100.0 * 100 - 70.0 * 70) / (ns5 * ns5)) - 1, "with relief weight 0 a housing shortage leaves the gain at the closed-form cohesion gain at constant H"); QAt(1);
         var mixed = World(true, new[] { 8, 8 }); var mc = mixed.Camps[0]; mc.ClothPerCapita = 1; mc.Population = 100; mc.Inventory.LightHousingUnits = 5;
         mixed.FixedHousing.Add(new FixedHousingStock { CampId = mc.Id, Tile = mc.Tile, Units = 5, LastUpdatedDays = mixed.Days });
         var me = Fission.EstimateSplit(mixed, mc, FissionPolicy.Neutral);
-        Near(me.QNow, Cov(.4) * Cohesion(mixed, mc, 100), "mixed housing: 10 units shelter 40 of 100 people");
-        Near(me.QAfter, Cov((5 + 5 * .7) * 4 / 70) * Cohesion(mixed, mc, 70), "mixed housing: all fixed plus 70 percent of the portable Light Housing for 70 stayers");
+        double tp = mixed.Config.Neolithic.LightHousingPeoplePerUnit, tentP = 5 * tp, hMixed = (20 + .21 * tentP) / 100;
+        Near(me.QNow, Cov((20 + tentP) / 100) * Cohesion(mixed, hMixed, 100), "mixed housing: 5 houses and 5 tents shelter 20 + 5 t of 100 people, H counts the tents at p_tent");
+        Near(me.QAfter, Cov((20 + tentP * .7) / 70) * Cohesion(mixed, (20 + .21 * tentP * .7) / 70, 70), "mixed housing: all fixed plus 70 percent of the portable Light Housing for 70 stayers");
         var portable = World(true, new[] { 8, 8 }); var pc = portable.Camps[0]; pc.ClothPerCapita = 1; pc.Population = 100; pc.Inventory.LightHousingUnits = 10;
         var pe = Fission.EstimateSplit(portable, pc, FissionPolicy.Neutral);
-        Near(pe.QAfter / pe.QNow, Cohesion(portable, pc, 70) / Cohesion(portable, pc, 100), "portable Light Housing splits in proportion and brings no relief");
+        Near(pe.QAfter / pe.QNow, Cohesion(portable, .21 * 10 * portable.Config.Neolithic.LightHousingPeoplePerUnit / 100, 70) / Cohesion(portable, .21 * 10 * portable.Config.Neolithic.LightHousingPeoplePerUnit / 100, 100), "portable Light Housing splits in proportion and brings no relief: H is unchanged, only the headcount");
         // Daughter check: F = W = 1 at the site, clothing unchanged, housing from its portable share only, expectation after a move.
         var dw = World(true, new[] { 8, 8 }); var dc = dw.Camps[0]; dc.ClothPerCapita = 1; dc.Population = 100; dw.FixedHousing.Add(new FixedHousingStock { CampId = dc.Id, Tile = dc.Tile, Units = 25, LastUpdatedDays = dw.Days });
         var de = Fission.EstimateSplit(dw, dc, FissionPolicy.Neutral);
         double moved = floor + (1 - floor) * (dw.Config.TurnDays / dw.Config.DaysPerYear / dw.Config.Neolithic.RudimentaryExpectationRampYears);
         Near(de.QNow, Cohesion(dw, dc, 100), "a fully housed parent has Q = S(N)");
-        Near(de.DaughterQoL, (.5 + .5 * (1 - moved)) * Cohesion(dw, dc, 30), "the daughter has no fixed Housing, a fresh expectation and F = W = 1");
+        Near(de.DaughterQoL, (.5 + .5 * (1 - moved)) * Cohesion(dw, 0, 30), "the daughter has no housing (H = 0, N_s = N_band), a fresh expectation and F = W = 1");
         Check(!de.DaughterAcceptable(.05) && de.DaughterAcceptable(.25) && de.DaughterAcceptable(de.QNow - de.DaughterQoL + 1e-12) && !de.DaughterAcceptable(de.QNow - de.DaughterQoL - 1e-6), "the margin test is daughter >= Q_now - margin");
         // The test binds in the pass: the tight margin blocks and counts; a wide margin founds.
         Explore(dw, dc); Ratio(dw, dc, 1.5); dw.Config.FissionDaughterMargin = .05;
@@ -226,50 +242,81 @@ internal static class FissionChecks
         }
         var fraction = World(true, new[] { 8, 8 }); Explore(fraction, fraction.Camps[0]); fraction.Config.FissionSearchFraction = .5; Ratio(fraction, fraction.Camps[0], .6);
         Check(Pass(fraction, out var frm) == null && frm.FissionSearches == 1 && fraction.Camps[0].FissionDestination != null, "a lower search fraction searches earlier");
-        // The WP10a failure: a camp with no goods at default thresholds no longer splits at any size.
-        foreach (var (neo, size, expected) in new[] { (false, 60, false), (false, 110, false), (true, 143, false), (true, 400, false), (true, 1200, true) })
+        // The WP10a failure: a camp with no goods at default thresholds did not split at any size. With derived cohesion the onset depends on
+        // housing structure alone: unhoused camps split above the N_band onset, tents (exactly covering everyone) above the tent onset and permanent
+        // housing above the largest. Sizes are fractions of each closed-form onset at the shipped scale. A Paleolithic camp remembers no
+        // geography, so it has nowhere it knows to found a daughter and never splits, whatever its size.
+        var shippedConfig = new SimulationConfig(); var sn = shippedConfig.Neolithic;
+        foreach (var shelter in new[] { Shelter.None, Shelter.Tents, Shelter.Fixed })
         {
-            var w = World(neo, new[] { 8, 8 }); var c = w.Camps[0]; Explore(w, c); c.Population = size; c.PlantFood = 500000;
-            var d = new SimulationConfig(); w.Config.FissionGainThreshold = d.FissionGainThreshold; w.Config.FissionGainDiscourage = d.FissionGainDiscourage; w.Config.FissionGainEncourage = d.FissionGainEncourage;
-            Check((Pass(w, out _) != null) == expected, (neo ? "agricultural" : "Paleolithic") + " camp of " + size + " at default thresholds " + (expected ? "splits" : "stays whole"));
+            double share = shelter == Shelter.None ? 0 : shelter == Shelter.Tents ? sn.LightHousingPermanence : 1;
+            double onset = AnalyticOnset(sn.CohesionBandScale * (1 + sn.CohesionHousingGain * share), FissionPolicy.Neutral, shippedConfig);
+            foreach (var (neo, ofOnset, expected) in new[] { (true, .6, false), (true, .8, false), (true, 1.3, true), (true, 2.0, true), (false, .8, false), (false, 1.3, false), (false, 2.0, false) })
+            {
+                int size = (int)Math.Round(onset * ofOnset);
+                var w = World(neo, new[] { 8, 8 }); var c = w.Camps[0]; Explore(w, c); Covered(w, c, size, shelter); c.PlantFood = 500000;
+                w.Config.FissionGainThreshold = shippedConfig.FissionGainThreshold; w.Config.FissionGainDiscourage = shippedConfig.FissionGainDiscourage; w.Config.FissionGainEncourage = shippedConfig.FissionGainEncourage;
+                Check((Pass(w, out _) != null) == expected, (neo ? "Neolithic " : "Paleolithic ") + shelter + " camp of " + size + " (" + ofOnset + " of the onset " + onset.ToString("F0") + ") at default thresholds " + (expected ? "splits" : "stays whole"));
+            }
         }
     }
 
     // Onset population per regime and policy under full goods coverage, for the given (default: shipped) thresholds.
-    internal static int Onset(FissionRegime regime, FissionPolicy policy, SimulationConfig config = null)
+    private static int Onset(Shelter shelter, FissionPolicy policy, SimulationConfig config = null)
     {
-        var w = World(regime != FissionRegime.Paleolithic, new[] { 8, 8 }); var c = w.Camps[0];
-        if (regime == FissionRegime.Nomadic) Nomadic(c);
+        var w = World(shelter == Shelter.Fixed, new[] { 8, 8 }); var c = w.Camps[0];
         var d = config ?? new SimulationConfig(); w.Config.FissionGainThreshold = d.FissionGainThreshold; w.Config.FissionGainDiscourage = d.FissionGainDiscourage; w.Config.FissionGainEncourage = d.FissionGainEncourage;
         c.FissionPolicy = policy; double gstar = Kinship.GainThreshold(w.Config, policy);
         for (int n = 1; n <= 6000; n++)
         {
-            Covered(w, c, n); int nd = Kinship.DaughterSize(n, policy);
+            Covered(w, c, n, shelter); int nd = Kinship.DaughterSize(n, policy);
             if (nd < w.Config.FissionMinimumDaughter || nd >= n - nd || n - nd < w.Config.MinimumCamp) continue;
             if (Fission.EstimateSplit(w, c, policy).Gain >= gstar) return n;
         }
         return -1;
     }
+    // Closed-form onset under full goods coverage and constant housing share: (N / N_s)^2 (1 - (1 - d)^2) = ln(1 + G*), d the daughter share.
+    private static double AnalyticOnset(double scale, FissionPolicy policy, SimulationConfig config)
+    {
+        double d = Kinship.DaughterPercent(policy) / 100.0;
+        return scale * Math.Sqrt(Math.Log(1 + Kinship.GainThreshold(config, policy)) / (1 - (1 - d) * (1 - d)));
+    }
     private static void Calibration()
     {
-        // Design onsets N* (QoLFissionTradeDesign 3.5-3.6): Paleolithic 101 (116 / 83), Nomadic 252 (291 / 208), Agricultural inside 607-999 (770-1105 / 398-887).
-        var design = new Dictionary<(FissionRegime, FissionPolicy), int>
+        // Onsets N* follow from the derived scale N_s = N_band (1 + k H) at H = 0 (no housing), p_tent (all tents) and 1 (all permanent housing).
+        // The analytic fit to the design targets (QoLFissionTradeDesign 3.5-3.6: Paleolithic 101 (116 / 83), Nomadic 252 (291 / 208), Agricultural
+        // 607-999 (770-1105 / 398-887)) is N_band = 220, k = 7.1, p_tent = 0.21; the shipped values may differ after the calibration sweep.
+        var shipped = new SimulationConfig(); var n = shipped.Neolithic;
+        foreach (var shelter in new[] { Shelter.None, Shelter.Tents, Shelter.Fixed })
+            foreach (FissionPolicy policy in Enum.GetValues(typeof(FissionPolicy)))
+            {
+                double share = shelter == Shelter.None ? 0 : shelter == Shelter.Tents ? n.LightHousingPermanence : 1;
+                double expected = AnalyticOnset(n.CohesionBandScale * (1 + n.CohesionHousingGain * share), policy, shipped);
+                int onset = Onset(shelter, policy);
+                Check(onset > 0 && Math.Abs(onset - expected) <= Math.Max(2, .035 * expected), shelter + " " + policy + " onset " + onset + " matches the closed form " + expected.ToString("F1") + " for the configured scale");
+            }
+        // The analytic fit itself reproduces the design targets.
+        var fit = new SimulationConfig(); fit.Neolithic.CohesionBandScale = 220; fit.Neolithic.CohesionHousingGain = 7.1; fit.Neolithic.LightHousingPermanence = .21;
+        var design = new Dictionary<(Shelter, FissionPolicy), int>
         {
-            [(FissionRegime.Paleolithic, FissionPolicy.Neutral)] = 101, [(FissionRegime.Paleolithic, FissionPolicy.Discourage)] = 116, [(FissionRegime.Paleolithic, FissionPolicy.Encourage)] = 83,
-            [(FissionRegime.Nomadic, FissionPolicy.Neutral)] = 252, [(FissionRegime.Nomadic, FissionPolicy.Discourage)] = 291, [(FissionRegime.Nomadic, FissionPolicy.Encourage)] = 208
+            [(Shelter.None, FissionPolicy.Neutral)] = 101, [(Shelter.None, FissionPolicy.Discourage)] = 116, [(Shelter.None, FissionPolicy.Encourage)] = 83,
+            [(Shelter.Tents, FissionPolicy.Neutral)] = 252, [(Shelter.Tents, FissionPolicy.Discourage)] = 291, [(Shelter.Tents, FissionPolicy.Encourage)] = 208
         };
         foreach (var pair in design)
         {
-            int onset = Onset(pair.Key.Item1, pair.Key.Item2);
-            Check(onset > 0 && Math.Abs(onset - pair.Value) <= Math.Max(2, .03 * pair.Value), pair.Key + " onset " + onset + " within 3 percent of the design " + pair.Value);
+            double share = pair.Key.Item1 == Shelter.None ? 0 : .21;
+            double onset = AnalyticOnset(220 * (1 + 7.1 * share), pair.Key.Item2, fit);
+            Check(Math.Abs(onset - pair.Value) <= Math.Max(2, .03 * pair.Value), pair.Key + " analytic fit onset " + onset.ToString("F1") + " within 3 percent of the design " + pair.Value);
         }
         var bands = new Dictionary<FissionPolicy, (int, int)> { [FissionPolicy.Neutral] = (607, 999), [FissionPolicy.Discourage] = (770, 1105), [FissionPolicy.Encourage] = (398, 887) };
         foreach (var pair in bands)
         {
-            int onset = Onset(FissionRegime.Agricultural, pair.Key);
-            Check(onset >= pair.Value.Item1 && onset <= pair.Value.Item2, "Agricultural " + pair.Key + " onset " + onset + " lies inside the design band " + pair.Value);
+            double onset = AnalyticOnset(220 * (1 + 7.1), pair.Key, fit);
+            Check(onset >= pair.Value.Item1 && onset <= pair.Value.Item2, "fully housed " + pair.Key + " fit onset " + onset.ToString("F1") + " lies inside the design band " + pair.Value);
         }
-        Check(Onset(FissionRegime.Agricultural, FissionPolicy.Discourage) > Onset(FissionRegime.Agricultural, FissionPolicy.Neutral) && Onset(FissionRegime.Agricultural, FissionPolicy.Neutral) > Onset(FissionRegime.Agricultural, FissionPolicy.Encourage), "Discourage delays and Encourage advances the onset");
+        foreach (var shelter in new[] { Shelter.None, Shelter.Tents, Shelter.Fixed })
+            Check(Onset(shelter, FissionPolicy.Discourage) > Onset(shelter, FissionPolicy.Neutral) && Onset(shelter, FissionPolicy.Neutral) > Onset(shelter, FissionPolicy.Encourage), shelter + ": Discourage delays and Encourage advances the onset");
+        Check(Onset(Shelter.None, FissionPolicy.Neutral) < Onset(Shelter.Tents, FissionPolicy.Neutral) && Onset(Shelter.Tents, FissionPolicy.Neutral) < Onset(Shelter.Fixed, FissionPolicy.Neutral), "onset rises with housing share: none < tents < permanent");
     }
 
     private static void Ordering()

@@ -91,9 +91,13 @@ No assumption needed a redesign, so the work proceeded.
   terms with the same formulas as `NeolithicProduction.ResolveNeeds`. For `N` residents and daughter
   `N_d = floor(N f(p))` (exact fraction `f = N_d / N`): food and water ratios `F`, `W` and the expectation `E`
   are unchanged; clothing coverage is unchanged (Cloth and Animal Fabric split in proportion); social cohesion is
-  `S(N - N_d)` for the regime scale `N_s`; housing per head is
-  `min(1, (fixed + portable (1 - f)) * HousingPeoplePerUnit / (N - N_d))` because the parent keeps all fixed Housing
-  and portable Light Housing splits in proportion (weighted by `FissionHousingRelief`, default 0). With
+  `S(N - N_d)` at the camp's derived scale `N_s = N_band (1 + k H)` ([SocialCohesion.md](SocialCohesion.md)): `H`
+  is held at its present value when `FissionHousingRelief = 0` (only the headcount changes) and interpolates
+  towards the stayers' relieved `H` with the weight otherwise; housing per head is
+  `min(1, (fixed people + portable people (1 - f)) / (N - N_d))` (people capacities: `HousingPeoplePerUnit` per fixed unit,
+  `LightHousingPeoplePerUnit` per tent) because the parent keeps all fixed Housing
+  and portable Light Housing splits in proportion (weighted by `FissionHousingRelief`, default 0). The daughter
+  takes no fixed housing, so its `H` comes from its portable share alone (`N_band` when it has none). With
   `Q = F W (w_c cloth + w_h housing) S` and each coverage `1 - E (1 - c)`:
   `G = Q_after / Q_now - 1`. Both qualities are evaluated at the post-demography snapshot (`Q_now` is the
   formula at the present residents, not the stored `QoL`, so births after the needs cohort do not bias the gain).
@@ -138,8 +142,8 @@ No assumption needed a redesign, so the work proceeded.
   repeatable wild and aquatic food plus the managed flow cultivable footprint land
   yields at the primitive supported intensity, capped by the daughter's farm labor
   ceiling. These are planning estimates from projected ecology, not forecasts of
-  realized harvest. The regime is `Fission.RegimeOf` (the same split as the cohesion
-  scale).
+  realized harvest. The regime is `Fission.RegimeOf`; it selects only this destination-site scoring (cultivable
+  land vs pasture vs gathering) and no longer affects cohesion, which is derived from housing.
 - **Proposal.** `G >= G*(policy)`, a valid cached destination (`D >= StartViability / 100`), the daughter check and
   the size rules above.
 - **Reconcile and commit.** Canonical camp-ID order. A proposal whose tile is the same
@@ -199,14 +203,14 @@ Encourage `0.0955` (f 0.40). The three values are **not monotone in the policy**
 daughter fraction, and a smaller daughter delivers a smaller gain, so Discourage needs the lowest threshold to
 produce the latest onset. They are separate fields rather than multipliers for that reason.
 
-Achieved onsets under full goods coverage (`FissionChecks.Onset`: the smallest `N` whose daughter is at least
+**Derived cohesion scale (SocialCohesion.md):** the three rows were the Paleolithic, Nomadic and Agricultural regime scales in WP10c; the scale is now derived from housing structure, and the analytic fit `N_band = 220, k = 7.1, p_tent = 0.21` reproduces the same onsets (the table is the fit's closed form; `FissionChecks.Calibration` asserts it for the shipped scale). Achieved onsets under full goods coverage (`FissionChecks.Onset`: the smallest `N` whose daughter is at least
 12, smaller than the stayers and whose gain reaches `G*`; the closed form with integer daughters):
 
-| Regime (N_s) | Policy | Design N* | Achieved onset | Residual |
+| Housing structure (N_s) | Policy | Design N* | Achieved onset | Residual |
 | --- | --- | ---: | ---: | ---: |
-| Paleolithic (220) | Neutral / Discourage / Encourage | 101 / 116 / 83 | 102 / 119 / 84 | +1.0% / +2.6% / +1.2% |
-| Nomadic (550) | Neutral / Discourage / Encourage | 252 / 291 / 208 | 254 / 293 / 208 | +0.8% / +0.7% / 0.0% |
-| Agricultural (1,780) | Neutral / Discourage / Encourage | 607-999 / 770-1,105 / 398-887 | 817 / 940 / 673 | inside every band (design median about 803 for Neutral: +1.7%) |
+| No housing, H = 0 (220) | Neutral / Discourage / Encourage | 101 / 116 / 83 | 102 / 119 / 84 | +1.0% / +2.6% / +1.2% |
+| Tents covering everyone, H = p_tent (548) | Neutral / Discourage / Encourage | 252 / 291 / 208 | 254 / 293 / 208 | +0.8% / +0.7% / 0.0% |
+| Permanent housing covering everyone, H = 1 (1,782) | Neutral / Discourage / Encourage | 607-999 / 770-1,105 / 398-887 | 817 / 940 / 673 | inside every band (design median about 803 for Neutral: +1.7%) |
 
 Every residual is below 3%, so no per-regime threshold is needed. Checks assert the Paleolithic and Nomadic
 onsets within 3% and the Agricultural onsets inside the design bands.

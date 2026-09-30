@@ -195,7 +195,7 @@ internal static class Program
         }
         Assign(WorkforceRoles.Weaver, NeolithicTech.Weaving, c.Population * n.FabricConsumptionPerPersonTurn * (1 + n.UsefulFinishedGoodsReserveReferenceTurns) - c.Inventory.Cloth, w.Config.GenerationIntervals * n.WeaverFabricOutputPerBaseDays);
         double endDays = w.Days + w.Config.GenerationIntervals * w.Config.BaseDays;
-        Assign(WorkforceRoles.Builder, NeolithicTech.Construction, c.Population / n.HousingPeoplePerUnit - NeolithicProduction.HousingSupply(w, c, endDays), w.Config.GenerationIntervals * n.BuilderHousingOutputPerBaseDays);
+        Assign(WorkforceRoles.Builder, NeolithicTech.Construction, NeolithicProduction.HousingGapPeople(w, c, c.Population, endDays) / n.HousingPeoplePerUnit, w.Config.GenerationIntervals * n.BuilderHousingOutputPerBaseDays);
         if (slots > 0) e.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = slots });
         return e;
     }

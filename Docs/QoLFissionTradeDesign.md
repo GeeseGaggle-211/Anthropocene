@@ -142,6 +142,14 @@ A regime change takes effect at the next turn boundary. Sedentary
 organization is what lets agricultural settlements hold far larger groups
 together; the regime scale encodes that, not a production bonus.
 
+> **Amendment (derived scale, [SocialCohesion.md](SocialCohesion.md)).** The table above is historical. The scale is no longer
+> selected by technology: `N_s = N_band (1 + k H)` with `H = min(1, (fixed people + p_tent * tent people) / N)` derived from the
+> camp's housing, so a camp with no housing has `N_s = N_band`, tents shelter fewer people than permanent housing
+> (`LightHousingPeoplePerUnit` against `HousingPeoplePerUnit`) and count less towards cohesion, and acquiring a technology changes
+> nothing until housing is built. The retired 220 / 550 / 1,780 values are recovered by the analytic fit `N_band = 220`,
+> `k = 7.1`, `p_tent = 0.21` and the 101 / 252 / 607-999 onsets below are that fit's targets; the shipped values come from the
+> calibration sweep recorded there.
+
 ### 2.4 Final QoL (revised)
 
 ```

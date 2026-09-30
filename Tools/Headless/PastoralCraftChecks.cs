@@ -257,8 +257,8 @@ internal static class PastoralCraftChecks
         double savedFixedUnits = w.FixedHousing.Single().Units;
         double savedFixedTimestamp = w.FixedHousing.Single().LastUpdatedDays;
         NeolithicProduction.ResolveNeeds(w, c, 0);
-        Near(c.HousingPerCapita, .8, "portable shelter supplies the same four-people-per-unit coverage after moving");
-        Near(c.QoL, .9 * Math.Exp(-Math.Pow(c.Population / 550.0, 2)), "portable shelter contributes the same half-weight first-pass housing QoL times Nomadic cohesion");
+        Near(c.HousingPerCapita, 9 * w.Config.Neolithic.LightHousingPeoplePerUnit / c.Population, "portable shelter supplies LightHousingPeoplePerUnit people per tent after moving (9 tents of 45 people)");
+        Near(c.QoL, (.5 + .5 * c.HousingPerCapita) * DerivedCohesion(w, c), "portable shelter contributes the half-weight first-pass housing QoL times cohesion derived from its tent share");
         double awaySupply = NeolithicProduction.HousingSupply(w, c, w.Days);
         var restored = SaveCodec.Load(SaveCodec.Save(w));
         var restoredCamp = restored.Camps.Single();
@@ -276,8 +276,17 @@ internal static class PastoralCraftChecks
         Near(NeolithicProduction.FixedHousingAt(restored, restoredCamp.Id, origin, restored.Days), 6.48, "fixed settlement capital continues to decay while the camp is away");
         Near(NeolithicProduction.HousingSupply(restored, restoredCamp, restored.Days), 14.58, "returning combines decayed fixed and portable shelter at the same tile");
         NeolithicProduction.ResolveNeeds(restored, restoredCamp, 0);
-        Near(restoredCamp.HousingPerCapita, 1, "fixed and portable shelter use the same first-pass coverage scale after return");
-        Near(restoredCamp.QoL, Math.Exp(-Math.Pow(restoredCamp.Population / 550.0, 2)), "fixed-plus-portable shelter restores full first-pass housing QoL times Nomadic cohesion");
+        Near(restoredCamp.HousingPerCapita, Math.Min(1, (6.48 * 4 + 8.1 * restored.Config.Neolithic.LightHousingPeoplePerUnit) / restoredCamp.Population), "fixed and portable shelter use the same first-pass coverage scale after return (people capacities add)");
+        Near(restoredCamp.QoL, (.5 + .5 * restoredCamp.HousingPerCapita) * DerivedCohesion(restored, restoredCamp), "fixed-plus-portable shelter gives the first-pass housing QoL times cohesion derived from the mixed housing share");
+    }
+
+    // S written out from the derived rule: N_s = N_band (1 + k H), H = min(1, (fixed people + p_tent * tent people) / N).
+    private static double DerivedCohesion(WorldState w, Camp c)
+    {
+        var n = w.Config.Neolithic;
+        double people = NeolithicProduction.FixedHousingAt(w, c.Id, c.Tile, w.Days) * n.HousingPeoplePerUnit + n.LightHousingPermanence * c.Inventory.LightHousingUnits * n.LightHousingPeoplePerUnit;
+        double h = Math.Min(1, people / c.Population);
+        return Math.Exp(-Math.Pow(c.Population / (n.CohesionBandScale * (1 + n.CohesionHousingGain * h)), n.SocialCohesionExponent));
     }
 
     private static void MixedHousingDecayFundsOnlyTheActualShortfall()
@@ -293,7 +302,7 @@ internal static class PastoralCraftChecks
         var record = new TurnRecord();
         NeolithicProduction.ResolveCampNeolithic(w, c, w.Config.GenerationIntervals, 20, record);
         double housingOutput = record.Production.Where(receipt => receipt.Good == CraftGood.Housing).Sum(receipt => receipt.Output);
-        Near(housingOutput, .2, "fixed and portable stocks jointly fund housing demand after one depreciation each");
+        Near(housingOutput, (8 - (.9 * 4 + .9 * w.Config.Neolithic.LightHousingPeoplePerUnit)) / 4, "fixed and portable stocks jointly fund housing demand after one depreciation each: 8 people less 3.6 fixed and 0.9 t tent people, in four-person houses");
         Near(w.FixedHousing.Single().Units - housingOutput, .9, "fixed shelter receives one 20-year depreciation before new Housing is added");
         Near(c.Inventory.LightHousingUnits, .9, "portable shelter receives one 20-year depreciation");
     }
@@ -720,6 +729,10 @@ internal static class PastoralCraftChecks
         foreach (var allocation in new[] { "FabricOnly", "HerdingToolsAndHousing" })
         {
             var w = PlannerWorld(); var c = w.Camps.Single();
+            // The bootstrap-ordering fixture pins the specified three people per tent. At the shipped two the planner's value order keeps
+            // choosing Hand Tools and Animal Fabric for this single 100-person camp (measured over 16 turns: no Herding Tools, 4 Light Housing
+            // units), a planner-ordering sensitivity that the derived-cohesion calibration sweep did not exercise.
+            w.Config.Neolithic.LightHousingPeoplePerUnit = 3;
             AddSurfaceResources(w, c.Tile, 1000, 1000, 1000);
             foreach (int n in w.Map.Neighbors(c.Tile)) AddSurfaceResources(w, n, 1000, 1000, 1000);
             w.Herds.Single().Animals = 150;

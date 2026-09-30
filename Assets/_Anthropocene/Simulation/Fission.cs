@@ -111,15 +111,21 @@ namespace Anthropocene.Simulation
             double f = residents > 0 ? nd / (double)residents : 0;
             double floor = n.RudimentaryExpectationFloor;
             double e = camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : floor + (1 - floor) * Numbers.Clamp(camp.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
-            double fixedUnits = NeolithicProduction.FixedHousingAt(w, camp.Id, camp.Tile, w.Days), portable = Math.Max(0, camp.Inventory?.LightHousingUnits ?? 0);
-            double Housing(double supply, double people) => people > 0 ? Math.Min(1, supply * n.HousingPeoplePerUnit / people) : 1;
+            var shelter = NeolithicProduction.HousingCapacity(w, camp, w.Days); double fixedPeople = shelter.Fixed, portable = shelter.Light;
+            double Housing(double people, double capacity) => people > 0 ? Math.Min(1, capacity / people) : 1;
+            double Share(double people, double fixedCapacity, double portableCapacity) => NeolithicProduction.HousingShare(n, new NeolithicProduction.ShelterCapacity(fixedCapacity, portableCapacity), people);
             double Coverage(double expectation, double housing) => n.RudimentaryWeightClothing * (1 - expectation * (1 - camp.ClothPerCapita)) + n.RudimentaryWeightHousing * (1 - expectation * (1 - housing));
             double Ratio(double a, double b) => b > 0 ? a / b : (a > 0 ? 1e9 : 0);
             double b0 = camp.FoodNeedsMetRatio * camp.WaterNeedsMetRatio;
-            double sNow = NeolithicProduction.SocialCohesion(n, camp, residents), sAfter = NeolithicProduction.SocialCohesion(n, camp, stay);
-            double housingNow = Housing(fixedUnits + portable, residents), housingRelieved = Housing(fixedUnits + portable * (1 - f), stay);
-            // FissionHousingRelief weights how much of the stayers' housing relief counts (1 = all, the specified rule; 0 = cohesion and clothing only).
-            double housingAfter = housingNow + cfg.FissionHousingRelief * (housingRelieved - housingNow);
+            // The parent keeps all fixed housing and splits portable housing in proportion; FissionHousingRelief weights how much of the
+            // stayers' relief counts (1 = all, 0 = none) for both housing coverage and the cohesion housing share H. At relief 0 the
+            // stayers' H is exactly the present H, so only the headcount changes S (Docs/SocialCohesion.md).
+            double relief = cfg.FissionHousingRelief;
+            double housingNow = Housing(residents, fixedPeople + portable), housingRelieved = Housing(stay, fixedPeople + portable * (1 - f));
+            double housingAfter = housingNow + relief * (housingRelieved - housingNow);
+            double shareNow = Share(residents, fixedPeople, portable), shareRelieved = Share(stay, fixedPeople, portable * (1 - f));
+            double shareAfter = shareNow + relief * (shareRelieved - shareNow);
+            double sNow = NeolithicProduction.SocialCohesion(n, shareNow, residents), sAfter = NeolithicProduction.SocialCohesion(n, shareAfter, stay);
             double qNow = b0 * Coverage(e, housingNow) * sNow;
             double qAfter = b0 * Coverage(e, housingAfter) * sAfter;
             // Q_now = 0 (no food or no coverage at all) leaves a relative gain undefined: the fallback is the cohesion gain S_after / S_now - 1,
@@ -129,7 +135,7 @@ namespace Anthropocene.Simulation
             // expectation the game applies after a move (stationary years reset, then one turn elapses).
             double years = cfg.TurnDays / cfg.DaysPerYear;
             double ed = floor + (1 - floor) * Numbers.Clamp(years / n.RudimentaryExpectationRampYears, 0, 1);
-            double qd = Coverage(ed, Housing(portable * f, nd)) * NeolithicProduction.SocialCohesion(n, camp, nd);
+            double qd = Coverage(ed, Housing(nd, portable * f)) * NeolithicProduction.SocialCohesion(n, Share(nd, 0, portable * f), nd);
             return new Estimate { Residents = residents, Daughter = nd, QNow = qNow, QAfter = qAfter, Gain = gain, DaughterQoL = qd };
         }
         // The camp's committed QoL terms as a pure function of headcount (WP10b; the same formulas as EstimateSplit and ResolveNeeds):
@@ -137,23 +143,24 @@ namespace Anthropocene.Simulation
         // social cohesion S evaluated at the new headcount. At(Residents) equals EstimateSplit(...).QNow.
         public readonly struct QoLModel
         {
-            private readonly NeolithicConfig n; private readonly Camp camp; private readonly double b0, expectation, supply;
+            private readonly NeolithicConfig n; private readonly Camp camp; private readonly double b0, expectation; private readonly NeolithicProduction.ShelterCapacity shelter;
             public readonly int Residents;
             internal QoLModel(WorldState w, Camp camp)
             {
                 n = w.Config.Neolithic; this.camp = camp; Residents = camp.Population;
                 double floor = n.RudimentaryExpectationFloor;
                 expectation = camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : floor + (1 - floor) * Numbers.Clamp(camp.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
-                supply = NeolithicProduction.FixedHousingAt(w, camp.Id, camp.Tile, w.Days) + Math.Max(0, camp.Inventory?.LightHousingUnits ?? 0);
+                shelter = NeolithicProduction.HousingCapacity(w, camp, w.Days);
                 b0 = camp.FoodNeedsMetRatio * camp.WaterNeedsMetRatio;
             }
             public double At(int people) => people <= 0 ? 0 : b0 * Shape(people);
             // Clothing coverage, housing per head and social cohesion at a headcount (everything in QoL except food and water).
             private double Shape(int people)
             {
-                double cloth = Math.Min(1, camp.ClothPerCapita * Residents / people), housing = Math.Min(1, supply * n.HousingPeoplePerUnit / people);
+                double cloth = Math.Min(1, camp.ClothPerCapita * Residents / people), housing = NeolithicProduction.HousingCoverage(shelter, people);
                 double coverage = n.RudimentaryWeightClothing * (1 - expectation * (1 - cloth)) + n.RudimentaryWeightHousing * (1 - expectation * (1 - housing));
-                return coverage * NeolithicProduction.SocialCohesion(n, camp, people);
+                // Housing stays with the camp: arrivals dilute H (they have to be housed) and leavers raise it (they leave housing behind).
+                return coverage * NeolithicProduction.SocialCohesion(n, NeolithicProduction.HousingShare(n, shelter, people), people);
             }
             // Forward-looking QoL at a headcount (WP10b-2): At() plus the food and water dilution that a change of headcount implies.
             //   F_hat(N') = min(1, (F * N + carried) / N'), W_hat(N') = min(1, W * N / N') when W < 1 and 1 otherwise,

@@ -86,6 +86,12 @@ W_hat(N') = min(1, W * N / N')  if W < 1, else 1     (same dilution rule, no car
 Qhat(N')  = F_hat * W_hat * coverage(N') * S(N')     coverage: clothing and housing per head, S: cohesion, as before
 ```
 
+**Housing in the cohesion term.** `S(N')` uses the derived scale `N_s = N_band (1 + k H(N'))` with
+`H(N') = min(1, (fixed people + p_tent * tent people) / N')` ([SocialCohesion.md](SocialCohesion.md)). Housing stays with the camp:
+arrivals bring none, so the destination's `H` is diluted by headcount (they have to be housed), and the source's `H` rises as
+it loses people (they leave their housing behind). Both come out of the one formula evaluated at each camp's own headcount;
+the estimator reads the camp's current capacity once per pass (`QoLModel`), never a technology label.
+
 `carried` is the food the migrants bring, in person-equivalents of the turn's need: `M * s`, where
 `s = (PlantFood + AnimalFood + AquaticFood) / N_i / (Consumption * TurnDays / BaseDays)` is the source's stored food per
 head over the per-head requirement (80 at the default duration; `Immigration.CarriedPerPerson`). It is nonzero only

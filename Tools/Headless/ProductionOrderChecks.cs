@@ -145,7 +145,7 @@ internal static class ProductionOrderChecks
         var uniform = Resolve(uw, uc, null);
         Check(Sum(uniform, CraftGood.Cloth, p => p.Output) > 0 && Sum(uniform, CraftGood.Housing, p => p.Output) <= 1e-9, "without the order the Weaver's Cloth takes the coverage first (role order)");
         // Low clothing coverage, high housing coverage: Cloth goes first.
-        var (bw, bc) = Fixture(true, 6, 0, 26); var borderOrder = OrderOf(bw, bc);
+        var (bw, bc) = Fixture(true, 6, 0, Math.Ceiling(101.0 / new NeolithicConfig().LightHousingPeoplePerUnit)); var borderOrder = OrderOf(bw, bc); // enough tents to shelter all 100 people
         Check(borderOrder.Outranks(CraftGood.Cloth, CraftGood.Housing), "poorly clothed, well-housed camp keys Cloth above Housing (" + borderOrder + ")");
         var flipped = Resolve(bw, bc, borderOrder);
         Check(Sum(flipped, CraftGood.Cloth, p => p.Output) > 0 && Sum(flipped, CraftGood.Housing, p => p.Output) <= 1e-9, "Value order: Cloth takes the coverage when clothing is the scarcer need");

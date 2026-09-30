@@ -22,6 +22,9 @@ internal static class ExpansionClaimChecks
         c.Inventory.HandTools = 1000; c.Population = population; c.DemographicGrowthMultiplier = 1; w.Config.AnnualHumanGrowthRate = new SimulationConfig().AnnualHumanGrowthRate;
         foreach (string tech in NeolithicTech.FirstTier) c.People.NeolithicTechnologies.Add(tech);
         w.Config.Neolithic.PlannerFulfilment = "Value";
+        // The planner fixtures pin the cohesion scale at 1,780 people whatever the housing (band 1,780, housing gain 0): they test the
+        // ladder valuation at a lightly crowded village, independent of the derived-scale calibration (QoLCohesionChecks covers that).
+        w.Config.Neolithic.CohesionBandScale = 1780; w.Config.Neolithic.CohesionHousingGain = 0;
         if (richness != 1) foreach (var tl in w.Tiles) { tl.Food *= (float)richness; tl.PotentialFood *= (float)richness; for (int s = 0; s < 4; s++) { tl.Seasons[s].MaxFood *= (float)richness; tl.Seasons[s].MaxPotentialFood *= (float)richness; } }
         return w;
     }
@@ -31,11 +34,13 @@ internal static class ExpansionClaimChecks
     private static bool Near(double a, double b, double rel = 1e-9) => Math.Abs(a - b) <= rel * Math.Max(1, Math.Max(Math.Abs(a), Math.Abs(b)));
 
     // Independent W(N) = N Q(N): goods dilution, friction and cohesion, written out from the design.
-    private static double W(SimulationConfig cfg, Camp c, double n, double n0)
+    private static double W(WorldState w, Camp c, double n, double n0)
     {
-        var x = cfg.Neolithic;
+        var cfg = w.Config; var x = cfg.Neolithic;
         double e = c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation : x.RudimentaryExpectationFloor + (1 - x.RudimentaryExpectationFloor) * Math.Min(1, Math.Max(0, c.StationaryYears / x.RudimentaryExpectationRampYears));
-        double ns = c.Technology == Technology.None ? x.CohesionScalePaleolithic : CultivationEconomy.Enabled(c) ? x.CohesionScaleAgricultural : x.CohesionScaleNomadic;
+        // Derived scale, written out: N_s = N_band (1 + k H), H = min(1, (fixed people + p_tent * tent people) / N).
+        double fixedPeople = NeolithicProduction.FixedHousingAt(w, c.Id, c.Tile, w.Days) * x.HousingPeoplePerUnit, tentPeople = Math.Max(0, c.Inventory.LightHousingUnits) * x.LightHousingPeoplePerUnit;
+        double ns = x.CohesionBandScale * (1 + x.CohesionHousingGain * Math.Min(1, (fixedPeople + x.LightHousingPermanence * tentPeople) / n));
         double sCoh = Math.Exp(-Math.Pow(n / ns, x.SocialCohesionExponent));
         double goods = x.RudimentaryWeightClothing * (1 - e * (1 - Math.Min(1, c.ClothPerCapita * n0 / n))) + x.RudimentaryWeightHousing * (1 - e * (1 - Math.Min(1, c.HousingPerCapita * n0 / n)));
         return n * c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * sCoh * goods;
@@ -105,16 +110,16 @@ internal static class ExpansionClaimChecks
         foreach (int pop in new[] { 50, 100, 400 })
         {
             var mw = Agricultural(pop); var mc = mw.Camps[0]; mc.ClothPerCapita = .6; mc.HousingPerCapita = .8; mc.RudimentaryExpectation = .7; mc.FoodNeedsMetRatio = .5; mc.WaterNeedsMetRatio = .9;
-            double expected = W(mw.Config, mc, pop + 1, pop) - W(mw.Config, mc, pop, pop);
-            Check(ref checks, Near(ExpansionValuation.MarginalWelfare(mw.Config.Neolithic, mc), expected, 1e-12), "dW/dN closed form at " + pop);
+            double expected = W(mw, mc, pop + 1, pop) - W(mw, mc, pop, pop);
+            Check(ref checks, Near(ExpansionValuation.MarginalWelfare(mw, mc), expected, 1e-12), "dW/dN closed form at " + pop);
         }
         {
             // W(N0) is N0 times the camp's own QoL formula at the committed coverages.
             var qw = Agricultural(100); var qc = qw.Camps[0]; qc.ClothPerCapita = .6; qc.HousingPerCapita = .8; qc.RudimentaryExpectation = .7;
-            double qol = qc.FoodNeedsMetRatio * qc.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * (1 - .7 * (1 - .6)) + n.RudimentaryWeightHousing * (1 - .7 * (1 - .8))) * NeolithicProduction.SocialCohesion(n, qc, 100);
-            Check(ref checks, Near(ExpansionValuation.Welfare(qw.Config.Neolithic, qc, 100, 100), 100 * qol, 1e-12), "W(N0) = N0 Q at the committed coverages");
+            double qol = qc.FoodNeedsMetRatio * qc.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * (1 - .7 * (1 - .6)) + n.RudimentaryWeightHousing * (1 - .7 * (1 - .8))) * NeolithicProduction.SocialCohesion(qw, qc, 100);
+            Check(ref checks, Near(ExpansionValuation.Welfare(qw, qc, 100, 100), 100 * qol, 1e-12), "W(N0) = N0 Q at the committed coverages");
             // One more person dilutes the goods and pays the friction: dW/dN is below Q while coverage is short.
-            Check(ref checks, ExpansionValuation.MarginalWelfare(qw.Config.Neolithic, qc) < qol, "dW/dN < Q when goods are short");
+            Check(ref checks, ExpansionValuation.MarginalWelfare(qw, qc) < qol, "dW/dN < Q when goods are short");
         }
 
         // ---- Demand pass: buckets, growth value and the gates.

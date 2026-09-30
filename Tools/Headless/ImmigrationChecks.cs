@@ -17,13 +17,16 @@ internal static class ImmigrationChecks
     [ThreadStatic] private static TurnRecord lastRecord;
     [ThreadStatic] private static ResolutionMetrics lastMetrics;
 
-    // A rich uniform 24x16 fixture. Camps are Paleolithic (cohesion scale 220) unless made Nomadic or Agricultural; every camp has full
+    // A rich uniform 24x16 fixture. Every camp has the band cohesion scale (220) whatever its technology; every camp has full
     // clothing and ample Light Housing so that Q = F * W * coverage * S and the closed forms stay readable.
     private static WorldState World(params int[][] sites) => World(24, 16, sites);
     private static WorldState World(int width, int height, params int[][] sites)
     {
         var cfg = SimulationConfig.Small(1); cfg.ImmigrationEnabled = true; cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0; cfg.ContactExpiryTurns = 50;
         cfg.FissionHousingRelief = 1; cfg.FissionDaughterMargin = 1;
+        // The mechanism fixtures isolate the flow rules from housing: the scale is 220 for every camp (band 220, housing gain 0) and the ample
+        // Light Housing keeps coverage at one. Forward() and the dedicated housing checks restore the shipped gain.
+        cfg.Neolithic.CohesionBandScale = 220; cfg.Neolithic.CohesionHousingGain = 0;
         var w = new WorldState { Seed = 101, Config = cfg, Generation = new GenerationReport(), Tiles = new Tile[cfg.Width * cfg.Height] };
         for (int i = 0; i < w.Tiles.Length; i++)
         {
@@ -56,13 +59,20 @@ internal static class ImmigrationChecks
     }
     private static void MakeNomadic(Camp c) { c.Technology = Technology.AnimalHusbandry; c.Technologies[(int)Technology.AnimalHusbandry] = true; c.People.Progression.Era = Era.Neolithic; }
     private static void MakeAgricultural(Camp c) { c.Technology = Technology.Cultivation; c.Technologies[(int)Technology.Cultivation] = true; c.People.Progression.Era = Era.Neolithic; }
-    private static double Scale(WorldState w, Camp c) => NeolithicProduction.CohesionScale(w.Config.Neolithic, c);
+    // Independent derived scale at a headcount: N_band (1 + k H) with H = min(1, (fixed people + p_tent * tent people) / N). Housing stays with the
+    // camp, so arrivals dilute H and leavers raise it.
+    private static double Scale(WorldState w, Camp c, double people)
+    {
+        var n = w.Config.Neolithic;
+        double cap = NeolithicProduction.FixedHousingAt(w, c.Id, c.Tile, w.Days) * n.HousingPeoplePerUnit + n.LightHousingPermanence * Math.Max(0, c.Inventory.LightHousingUnits) * n.LightHousingPeoplePerUnit;
+        return n.CohesionBandScale * (1 + n.CohesionHousingGain * Math.Min(1, cap / people));
+    }
     // Independent closed form of the committed QoL at a headcount (incoming people bring neither clothing nor housing).
     private static double Quality(WorldState w, Camp c, int people)
     {
         var n = w.Config.Neolithic; double cloth = Math.Min(1, c.ClothPerCapita * c.Population / (double)people), housing = 1; // supply 1e9
         double e = c.RudimentaryExpectation, coverage = n.RudimentaryWeightClothing * (1 - e * (1 - cloth)) + n.RudimentaryWeightHousing * (1 - e * (1 - housing));
-        return c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * coverage * Math.Exp(-Math.Pow(people / Scale(w, c), n.SocialCohesionExponent));
+        return c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * coverage * Math.Exp(-Math.Pow(people / Scale(w, c, people), n.SocialCohesionExponent));
     }
     // Independent closed form of the forward-looking QoL (WP10b-2) at a headcount with `carried` person-equivalents of food arriving:
     // F_hat = min(1, (F N + carried) / N'), W_hat = min(1, W N / N') if W < 1 else 1, clothing diluted, housing ample, cohesion at N'.
@@ -71,7 +81,7 @@ internal static class ImmigrationChecks
         var n = w.Config.Neolithic; double food = Math.Min(1, (c.FoodNeedsMetRatio * c.Population + carried) / people), water = c.WaterNeedsMetRatio < 1 ? Math.Min(1, c.WaterNeedsMetRatio * c.Population / people) : 1;
         double cloth = Math.Min(1, c.ClothPerCapita * c.Population / (double)people), e = c.RudimentaryExpectation;
         double coverage = n.RudimentaryWeightClothing * (1 - e * (1 - cloth)) + n.RudimentaryWeightHousing * (1 - e * (1 - 1));
-        return food * water * coverage * Math.Exp(-Math.Pow(people / Scale(w, c), n.SocialCohesionExponent));
+        return food * water * coverage * Math.Exp(-Math.Pow(people / Scale(w, c, people), n.SocialCohesionExponent));
     }
     private static double Need(WorldState w) => w.Config.Consumption * w.Config.TurnDays / w.Config.BaseDays;
     private static double PerPerson(WorldState w, Camp c) => (c.PlantFood + c.AnimalFood + c.AquaticFood) / c.Population / Need(w);
@@ -493,9 +503,12 @@ internal static class ImmigrationChecks
     private static void Forward()
     {
         // ForwardAt equals At at present residents for valid ratios, and dilutes food and water with headcount.
-        var w = World(new[] { 8, 8 }); var c = w.Camps[0]; MakeAgricultural(c); c.ClothPerCapita = .7; c.Inventory.LightHousingUnits = 20; c.FoodNeedsMetRatio = .8; c.WaterNeedsMetRatio = .9; c.RudimentaryExpectation = 1e-12;
-        var m = Fission.QoLModelOf(w, c); var n = w.Config.Neolithic; double S(int p) => Math.Exp(-Math.Pow(p / Scale(w, c), n.SocialCohesionExponent));
+        var w = World(new[] { 8, 8 }); w.Config.Neolithic.CohesionHousingGain = new NeolithicConfig().CohesionHousingGain; var c = w.Camps[0]; MakeAgricultural(c); c.ClothPerCapita = .7; c.Inventory.LightHousingUnits = 20; c.FoodNeedsMetRatio = .8; c.WaterNeedsMetRatio = .9; c.RudimentaryExpectation = 1e-12;
+        var m = Fission.QoLModelOf(w, c); var n = w.Config.Neolithic; double S(int p) => Math.Exp(-Math.Pow(p / Scale(w, c, p), n.SocialCohesionExponent));
         Near(m.ForwardAt(100), m.At(100), "ForwardAt at present residents with no carried food equals At");
+        // Housing stays with the camp: 20 tents shelter 20 t people (t = LightHousingPeoplePerUnit), so arrivals dilute the cohesion housing share H = p_tent * 20 t / N and leavers raise it.
+        Check(Scale(w, c, 120) < Scale(w, c, 100) && Scale(w, c, 80) > Scale(w, c, 100), "the destination's scale falls with headcount (H diluted) and the source's rises as it loses people");
+        Near(Scale(w, c, 120), n.CohesionBandScale * (1 + n.CohesionHousingGain * n.LightHousingPermanence * 20 * n.LightHousingPeoplePerUnit / 120), "N_s at 120 residents dilutes the tent share over the larger cohort", 1e-12);
         Near(m.ForwardAt(120), .8 * 100 / 120 * .9 * 100 / 120 * S(120), "food and water dilute as F N / N' and W N / N' (expectation zero leaves no clothing or housing term)");
         Near(m.ForwardAt(120, 10), (.8 * 100 + 10) / 120 * .9 * 100 / 120 * S(120), "carried food adds person-equivalents to the food numerator only");
         Near(m.ForwardAt(120, 40), 1 * .9 * 100 / 120 * S(120), "food satisfaction is capped at one however much food arrives");

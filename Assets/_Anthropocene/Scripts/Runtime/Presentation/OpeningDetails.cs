@@ -62,8 +62,9 @@ namespace Anthropocene.Presentation
             {
                 var inv = camp.Inventory;
                 double housingSupply = NeolithicProduction.HousingSupply(world, camp, world.Days);
+                var shelter = NeolithicProduction.HousingCapacity(world, camp, world.Days);
                 value += "\nSettlement QoL: " + (camp.QoL * 100).ToString("F0") + "% (Food " + (camp.FoodNeedsMetRatio * 100).ToString("F0") + "%, Cloth " + (camp.ClothPerCapita * 100).ToString("F0") + "%, Shelter " + (camp.HousingPerCapita * 100).ToString("F0") + "%) · Automatic fission deferred" +
-                         "\nCurrent shelter: " + housingSupply.ToString("F2") + " units / " + (housingSupply * world.Config.Neolithic.HousingPeoplePerUnit).ToString("F1") + " people supported" +
+                         "\nCurrent shelter: " + housingSupply.ToString("F2") + " units / " + shelter.Total.ToString("F1") + " people supported" +
                          "\nStores: Cloth " + inv.Cloth.ToString("F0") + " · Pots " + inv.Pots.ToString("F0") + " · Tools " + inv.HandTools.ToString("F0") +
                          "\nRaw Stockpile: Stone " + inv.Stone.ToString("F0") + " · Clay " + inv.Clay.ToString("F0") + " · Wood " + inv.Wood.ToString("F0") +
                          "\nHousing Material: " + inv.HousingMaterial.ToString("F2") + " portable (assembled into fixed Housing on site)" +
@@ -72,7 +73,7 @@ namespace Anthropocene.Presentation
                 {
                     double fixedHousing = NeolithicProduction.FixedHousingAt(world, camp.Id, camp.Tile, world.Days);
                     value += "\nPastoral stores: Animal Fabric " + inv.AnimalFabric.ToString("F2") + " (shared clothing need) · Light Housing " + inv.LightHousingUnits.ToString("F2") + " portable · Herding Tools " + inv.HerdingTools.ToString("F2") +
-                             "\nShelter at camp: " + fixedHousing.ToString("F2") + " fixed + " + inv.LightHousingUnits.ToString("F2") + " portable · " + (housingSupply * world.Config.Neolithic.HousingPeoplePerUnit).ToString("F1") + " people capacity";
+                             "\nShelter at camp: " + fixedHousing.ToString("F2") + " fixed + " + inv.LightHousingUnits.ToString("F2") + " portable · " + shelter.Total.ToString("F1") + " people capacity (houses " + world.Config.Neolithic.HousingPeoplePerUnit.ToString("F0") + " each, tents " + world.Config.Neolithic.LightHousingPeoplePerUnit.ToString("F0") + " each)";
                 }
             }
             float height = text.CalcHeight(new GUIContent(value), width) + 12;

@@ -412,14 +412,14 @@ namespace Anthropocene.Simulation
             // present cohort and E from the last resolved needs (or its formula
             // for a camp that has not yet resolved any).
             double b = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio;
-            double s = NeolithicProduction.SocialCohesion(n, c, c.Population);
+            double s = NeolithicProduction.SocialCohesion(w, c, c.Population);
             double e = c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
                 : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
             double k = -Math.Log(1 - n.HousingDecayPerTurn) / n.ReferenceTurnYears;
             double life = 1 / (k + n.DiscountRatePerYear);
-            double housingSupply = NeolithicProduction.HousingSupply(w, d.Preview, w.Days + years * cfg.DaysPerYear);
+            double shelterPeople = NeolithicProduction.HousingCapacity(w, d.Preview, w.Days + years * cfg.DaysPerYear).Total;
             double clothingV = n.RudimentaryWeightClothing * e * b * s * (n.ReferenceTurnYears / n.FabricConsumptionPerPersonTurn);
-            double housingV = n.HousingPeoplePerUnit * n.RudimentaryWeightHousing * e * b * s * life;
+            double housingValuePerPerson = n.RudimentaryWeightHousing * e * b * s * life;   // a unit shelters HousingPeoplePerUnit (fixed) or LightHousingPeoplePerUnit (tent) people
             double gather = cfg.GatherPerPerson * perYear;
             double Rate(CraftRecipe r) => r.Rate * (c.People.HasTech(r.Track) ? 1 : n.GeneralistTaskEfficiency);
             double Extraction(MaterialId m, double perUnit)
@@ -503,14 +503,15 @@ namespace Anthropocene.Simulation
                 }
                 if (!IsNeedGood(claim.Good)) continue;
                 bool clothing = claim.Good == CraftGood.Cloth || claim.Good == CraftGood.AnimalFabric;
-                double stock = clothing ? clothingStock : housingSupply;
+                double peoplePerUnit = claim.Good == CraftGood.LightHousing ? n.LightHousingPeoplePerUnit : n.HousingPeoplePerUnit;
+                double stock = clothing ? clothingStock : shelterPeople / peoplePerUnit;
                 double defaultPriority = NeolithicProduction.Priority(DefaultPriorities, claim.Good);
                 double multiplier = defaultPriority > 0 ? claim.Priority / defaultPriority : (claim.Priority > 0 ? 1 : 0);
                 claim.Valued = true;
                 claim.Stock = stock;
                 claim.Need = clothing ? clothingNeed : stock + claim.Quantity;
                 claim.LabourPerUnit = Labour(claim.Recipe);
-                claim.FirstUnitValue = (claim.Good == CraftGood.Cloth || claim.Good == CraftGood.AnimalFabric ? clothingV : housingV) * multiplier;
+                claim.FirstUnitValue = (clothing ? clothingV : peoplePerUnit * housingValuePerPerson) * multiplier;
                 if (value) claim.Value = claim.FirstUnitValue;
             }
         }
@@ -563,19 +564,20 @@ namespace Anthropocene.Simulation
             return turnConsumption * f;
         }
         // W(N) = N Q(N) at the committed coverages; population n0 is the camp's present cohort.
-        public static double Welfare(NeolithicConfig n, Camp c, double population, double n0)
+        public static double Welfare(WorldState w, Camp c, double population, double n0)
         {
+            var n = w.Config.Neolithic;
             double e = c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
                 : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
             double dilution = population > 0 ? Math.Min(1, n0 / population) : 1;
             double clothing = 1 - e * (1 - Math.Min(1, c.ClothPerCapita * dilution));
             double housing = 1 - e * (1 - Math.Min(1, c.HousingPerCapita * dilution));
-            double q = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * NeolithicProduction.SocialCohesion(n, c, population)
+            double q = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * NeolithicProduction.SocialCohesion(w, c, population)
                 * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing);
             return population * q;
         }
-        public static double MarginalWelfare(NeolithicConfig n, Camp c)
-            => Welfare(n, c, c.Population + 1, c.Population) - Welfare(n, c, c.Population, c.Population);
+        public static double MarginalWelfare(WorldState w, Camp c)
+            => Welfare(w, c, c.Population + 1, c.Population) - Welfare(w, c, c.Population, c.Population);
         // Pure ladder valuation: bucket-average value per step, truncation at the total gap,
         // running minimum. Inputs per year; values per food unit; lCap years.
         public static ExpansionLadderClaim Value(CultivationEconomy.ExpansionStep[] steps, double gapSecurity, double gapTotal, double vFood, double vGrowth, double lCap)
@@ -627,7 +629,7 @@ namespace Anthropocene.Simulation
             d.FoodValue = FoodValue(cfg, c);
             double maxRate = c.DeficitTurns <= 0 ? cfg.AnnualHumanGrowthRate * c.DemographicGrowthMultiplier : 0;
             d.FoodPerBirth = FoodPerBirth(cfg.Consumption * intervals, maxRate, years);
-            d.MarginalWelfarePerBirth = MarginalWelfare(n, c);
+            d.MarginalWelfarePerBirth = MarginalWelfare(w, c);
             d.PersonLife = PersonLife(n);
             d.GrowthFoodValue = d.FoodPerBirth > 0 ? Math.Max(0, d.MarginalWelfarePerBirth) * d.PersonLife / d.FoodPerBirth : 0;
             d.CapitalLife = CapitalLife(n);

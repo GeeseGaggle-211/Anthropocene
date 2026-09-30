@@ -78,7 +78,7 @@ need's coverage, so the constant marginal QoL of a unit of each need is:
 | Good | First-unit value `V` (person-QoL-years) | Why |
 | --- | --- | --- |
 | Cloth, Animal Fabric | `½ · E · B · S · 20` | `FabricConsumptionPerPersonTurn = 1` per 20-year reference turn, so one unit clothes one person for 20 years. |
-| Housing, Light Housing | `4 · ½ · E · B · S · L` | One unit shelters four people for its discounted service life `L` in years. |
+| Housing, Light Housing | `c · ½ · E · B · S · L` | One unit shelters `c` people for its discounted service life `L` in years: `c = HousingPeoplePerUnit` (4) for Housing and `LightHousingPeoplePerUnit` (2 at the shipped calibration) for a tent ([SocialCohesion.md](SocialCohesion.md)). |
 
 `S` is fixed within one plan because the prior cohort's population is fixed at
 preparation. A crowded settlement therefore values goods somewhat less, by the

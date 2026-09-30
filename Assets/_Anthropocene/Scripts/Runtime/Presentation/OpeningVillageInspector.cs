@@ -30,7 +30,7 @@ namespace Anthropocene.Presentation
             double potYears = world.Config.TurnDays / world.Config.DaysPerYear;
             var management = HerdingTooling.Plan(world, camp, potYears, draft.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population));
             string pastoralDescription = $"Animal Fabric {camp.Inventory.AnimalFabric:F2}: 1 Animal Product makes 1 unit before tool use; it shares Cloth's clothing need and Light Housing spends 1 per unit.\n" +
-                $"Light Housing {Math.Max(0, camp.Inventory.LightHousingUnits):F2}: portable with the camp; {world.Config.Neolithic.HousingPeoplePerUnit:F0} people supported per unit. Fixed shelter stays at its original site.\n" +
+                $"Light Housing {Math.Max(0, camp.Inventory.LightHousingUnits):F2}: portable with the camp; {world.Config.Neolithic.LightHousingPeoplePerUnit:F0} people supported per unit (fixed Housing shelters {world.Config.Neolithic.HousingPeoplePerUnit:F0}). Fixed shelter stays at its original site.\n" +
                 $"Herding Tools {camp.Inventory.HerdingTools:F2}: 1 Wood + 1 Stone each; {world.Config.Neolithic.HerdingToolCoverageYearsPerUnit:F0} Herder-years per tool. Plan capacity {management.Capacity:F1} / {management.Animals:F0} animals ({management.Fulfillment:P0}); primitive {world.Config.AnimalsPerHerder:F2}, equipped {world.Config.Neolithic.StoneHerdingToolAnimalsPerHerder:F2} animals per Herder.";
             float pastoralDescriptionHeight = husbandry ? small.CalcHeight(new GUIContent(pastoralDescription), col - 8) + 8 : 0;
             float livestockRows = husbandry ? ownedLivestock.Length * 54 : 0;
@@ -41,12 +41,13 @@ namespace Anthropocene.Presentation
             double fixedHousing = NeolithicProduction.FixedHousingAt(world, camp.Id, camp.Tile, world.Days);
             double portableHousing = Math.Max(0, inventory.LightHousingUnits);
             double currentHousing = NeolithicProduction.HousingSupply(world, camp, world.Days);
+            double shelterPeople = NeolithicProduction.HousingCapacity(world, camp, world.Days).Total;
             string clothingStock = husbandry
                 ? $"Clothing {camp.ClothPerCapita:P0} · consumed {camp.FabricConsumed:F2} · stock {inventory.Cloth + inventory.AnimalFabric:F2} (plant {inventory.Cloth:F2}, animal {inventory.AnimalFabric:F2})"
                 : $"Clothing {camp.ClothPerCapita:P0} · consumed {camp.FabricConsumed:F2} · stock {inventory.Cloth:F2}";
             string housingStock = husbandry
-                ? $"Shelter {camp.HousingPerCapita:P0} · current site {currentHousing:F2} units / {currentHousing * world.Config.Neolithic.HousingPeoplePerUnit:F1} capacity (fixed {fixedHousing:F2}, portable {portableHousing:F2})"
-                : $"Housing {camp.HousingPerCapita:P0} · current site {currentHousing:F2} units · capacity {currentHousing * world.Config.Neolithic.HousingPeoplePerUnit:F1}";
+                ? $"Shelter {camp.HousingPerCapita:P0} · current site {currentHousing:F2} units / {shelterPeople:F1} capacity (fixed {fixedHousing:F2}, portable {portableHousing:F2})"
+                : $"Housing {camp.HousingPerCapita:P0} · current site {currentHousing:F2} units · capacity {shelterPeople:F1}";
             GUI.Label(new Rect(4, y, scrollContentWidth - 16, husbandry ? 102 : 76),
                 $"Population {camp.Population} · QoL {camp.QoL:P0} · food {camp.FoodNeedsMetRatio:P0} · water {camp.WaterNeedsMetRatio:P0}\n" +
                 clothingStock + "\n" + housingStock + "\n" +

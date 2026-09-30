@@ -280,6 +280,22 @@ namespace Anthropocene.Simulation
                     Math.Max(0, days - w.Days) / (w.Config.DaysPerYear * w.Config.Neolithic.ReferenceTurnYears));
             return units;
         }
+        // Allocation-free form for the hot cohesion and coverage reads: one pass over the stock list, no camp lookup. The legacy carried
+        // HousingUnits (old-save migration only) is read from the camp passed in, which is the authoritative camp or an exact copy of it.
+        public static double FixedHousingAt(WorldState w, Camp c, double days)
+        {
+            var stocks = w.FixedHousing; double units = 0; bool found = false;
+            if (stocks != null)
+                for (int i = 0; i < stocks.Count; i++)
+                {
+                    var s = stocks[i];
+                    if (s.CampId != c.Id || s.Tile != c.Tile) continue;
+                    found = true; units += ProjectFixedHousing(w, s, days);
+                }
+            if (!found && c.Inventory != null && c.Inventory.HousingUnits > 0)
+                units += c.Inventory.HousingUnits * Math.Pow(1 - w.Config.Neolithic.HousingDecayPerTurn, Math.Max(0, days - w.Days) / (w.Config.DaysPerYear * w.Config.Neolithic.ReferenceTurnYears));
+            return units;
+        }
         private static double ProjectFixedHousing(WorldState w, FixedHousingStock stock, double days)
         {
             var n = w.Config.Neolithic;
@@ -288,6 +304,30 @@ namespace Anthropocene.Simulation
         }
         public static double HousingSupply(WorldState w, Camp c, double days)
             => FixedHousingAt(w, c.Id, c.Tile, days) + Math.Max(0, c.Inventory.LightHousingUnits);
+
+        // People sheltered by the camp's housing at a clock time (Docs/SocialCohesion.md): fixed units shelter HousingPeoplePerUnit
+        // each, portable Light Housing units LightHousingPeoplePerUnit each. The one helper behind housing coverage, the cohesion
+        // housing share, light-housing demand, fission and immigration estimators, and inspector text.
+        public readonly struct ShelterCapacity
+        {
+            public readonly double Fixed, Light;
+            public ShelterCapacity(double fixedPeople, double lightPeople) { Fixed = Math.Max(0, fixedPeople); Light = Math.Max(0, lightPeople); }
+            public double Total => Fixed + Light;
+        }
+        public static ShelterCapacity HousingCapacity(WorldState w, Camp c, double days)
+        {
+            var n = w.Config.Neolithic;
+            return new ShelterCapacity(FixedHousingAt(w, c, days) * n.HousingPeoplePerUnit, Math.Max(0, c.Inventory?.LightHousingUnits ?? 0) * n.LightHousingPeoplePerUnit);
+        }
+        // Share of a cohort that is sheltered at all: min(1, capacity / people); 1 for an empty cohort.
+        public static double HousingCoverage(ShelterCapacity capacity, double people)
+            => people > 0 ? Math.Min(1, capacity.Total / people) : 1;
+        // Cohesion housing share H = min(1, (fixed + p_tent * light) / N): portable shelter counts LightHousingPermanence as much as fixed.
+        public static double HousingShare(NeolithicConfig n, ShelterCapacity capacity, double people)
+            => people > 0 ? Math.Min(1, (capacity.Fixed + n.LightHousingPermanence * capacity.Light) / people) : (capacity.Total > 0 ? 1 : 0);
+        // People still to be sheltered at a clock time, never negative.
+        public static double HousingGapPeople(WorldState w, Camp c, double residents, double days)
+            => Math.Max(0, residents - HousingCapacity(w, c, days).Total);
         public static void MigrateLegacyFixedHousing(WorldState w, Camp c)
         {
             w.FixedHousing ??= new List<FixedHousingStock>();
@@ -342,15 +382,17 @@ namespace Anthropocene.Simulation
                 return potsAlreadyDecayed ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
             double clothingTarget = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
             double clothGap = Math.Max(0, clothingTarget - Math.Max(0, c.Inventory.Cloth) - Math.Max(0, c.Inventory.AnimalFabric));
-            double lightHousingTarget = Math.Max(0, residents / n.HousingPeoplePerUnit - HousingSupply(w, c, w.Days + years * w.Config.DaysPerYear));
+            double housingGapPeople = HousingGapPeople(w, c, residents, w.Days + years * w.Config.DaysPerYear);
+            double lightHousingTarget = housingGapPeople / n.LightHousingPeoplePerUnit;
             bool lightHousingUseful = Priority(c, CraftGood.LightHousing) > 0 && CultivationEconomy.Workers(c, WorkforceRoles.Builder) + CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0;
             double target = good == CraftGood.Cloth ? Math.Max(0, clothingTarget - Math.Max(0, c.Inventory.AnimalFabric)) :
                 good == CraftGood.AnimalFabric ? Math.Max(0, clothingTarget - Math.Max(0, c.Inventory.Cloth)) + (lightHousingUseful ? lightHousingTarget : 0) :
-                good == CraftGood.Housing || good == CraftGood.LightHousing ? residents / n.HousingPeoplePerUnit :
+                good == CraftGood.Housing || good == CraftGood.LightHousing ? 0 :
                 good == CraftGood.FarmTools ? FarmToolDemand(w, c, years, fieldWorkAlreadyResolved) + Stock(c, good) :
                 good == CraftGood.HerdingTools ? HerdingToolDemand(w, c, years, fieldWorkAlreadyResolved) + Stock(c, good) : c.FarmToolsTarget;
-            if (good == CraftGood.Housing) return Math.Max(0, target - HousingSupply(w, c, w.Days + years * w.Config.DaysPerYear));
-            if (good == CraftGood.LightHousing) return Math.Max(0, target - HousingSupply(w, c, w.Days + years * w.Config.DaysPerYear));
+            // Housing demand is the unsheltered people divided by what one unit of that good shelters (tents shelter fewer than houses).
+            if (good == CraftGood.Housing) return housingGapPeople / n.HousingPeoplePerUnit;
+            if (good == CraftGood.LightHousing) return lightHousingTarget;
             if (good == CraftGood.AnimalFabric) return Math.Max(0, target - Math.Max(0, c.Inventory.AnimalFabric));
             return Math.Max(0, target - Stock(c, good));
         }
@@ -685,7 +727,7 @@ namespace Anthropocene.Simulation
         {
             var n = w.Config.Neolithic;
             double endDays = w.Days + Math.Max(0, years) * w.Config.DaysPerYear;
-            double before = HousingSupply(w, c, w.Days);
+            double before = HousingCapacity(w, c, w.Days).Total;
             bool authoritativeCamp = ReferenceEquals(w.Camps.FirstOrDefault(x => x.Id == c.Id), c);
             if (authoritativeCamp)
             {
@@ -696,9 +738,10 @@ namespace Anthropocene.Simulation
                 }
             }
             c.Inventory.LightHousingUnits = Math.Max(0, c.Inventory.LightHousingUnits) * Math.Pow(1 - n.HousingDecayPerTurn, Math.Max(0, years) / n.ReferenceTurnYears);
-            double after = HousingSupply(w, c, endDays);
-            c.HousingDemand = Math.Max(0, (residents < 0 ? c.Population : residents) / n.HousingPeoplePerUnit - after);
-            c.HousingReplacementDemand = Math.Min(Math.Max(0, before - after), c.HousingDemand);
+            double after = HousingCapacity(w, c, endDays).Total;
+            // Demand ledger in fixed-housing-unit equivalents of the unsheltered (and decayed) people.
+            c.HousingDemand = Math.Max(0, (residents < 0 ? c.Population : residents) - after) / n.HousingPeoplePerUnit;
+            c.HousingReplacementDemand = Math.Min(Math.Max(0, before - after) / n.HousingPeoplePerUnit, c.HousingDemand);
             c.HousingGrowthDemand = Math.Max(0, c.HousingDemand - c.HousingReplacementDemand);
         }
         public static double Produce(WorldState w, Camp c, CraftRecipe recipe, string role, double workerIntervals, double intervals, double usefulDemand, ref double equipmentIntervals, TurnRecord record, ToolCoverageBudget coverage = null, HousingMaterialPlan housing = null, ProductionOrder order = null)
@@ -831,14 +874,21 @@ namespace Anthropocene.Simulation
             }
             ResolveNeeds(w, c, years, residents);
         }
-        // Regime cohesion scale N_s, selected from the camp's current capability.
-        public static double CohesionScale(NeolithicConfig n, Camp c)
-            => c.Technology == Technology.None ? n.CohesionScalePaleolithic
-             : CultivationEconomy.Enabled(c) ? n.CohesionScaleAgricultural
-             : n.CohesionScaleNomadic;
-        // S(N) = exp(-(N / N_s)^beta): the single shared social-cohesion multiplier.
-        public static double SocialCohesion(NeolithicConfig n, Camp c, double population)
-            => Math.Exp(-Math.Pow(Math.Max(0, population) / CohesionScale(n, c), n.SocialCohesionExponent));
+        // Derived social-cohesion scale (Docs/SocialCohesion.md): N_s = N_band (1 + k H) with the housing share H from
+        // HousingShare. No technology or regime label enters; a camp with no housing has N_s = N_band.
+        public static double CohesionScale(NeolithicConfig n, double housingShare)
+            => n.CohesionBandScale * (1 + n.CohesionHousingGain * Numbers.Clamp(housingShare, 0, 1));
+        // S(N) = exp(-(N / N_s)^beta): the single shared social-cohesion multiplier at an explicit housing share.
+        public static double SocialCohesion(NeolithicConfig n, double housingShare, double population)
+            => Math.Exp(-Math.Pow(Math.Max(0, population) / CohesionScale(n, housingShare), n.SocialCohesionExponent));
+        // Pure: the camp's committed housing capacity at the present clock, evaluated at the cohort size N.
+        public static double CohesionScale(WorldState w, Camp c, double population)
+            => CohesionScale(w.Config.Neolithic, HousingShare(w.Config.Neolithic, HousingCapacity(w, c, w.Days), population));
+        public static double SocialCohesion(WorldState w, Camp c, double population)
+        {
+            var n = w.Config.Neolithic;
+            return SocialCohesion(n, HousingShare(n, HousingCapacity(w, c, w.Days), population), population);
+        }
         public static void ResolveNeeds(WorldState w, Camp c, double years, int residents = -1)
         {
             var n = w.Config.Neolithic;
@@ -850,11 +900,12 @@ namespace Anthropocene.Simulation
             c.ClothPerCapita = required > 0 ? c.FabricConsumed / required : 1;
             // The resolver calls this after DepreciateHousing has already aged
             // existing fixed and portable shelter through the generation.
-            c.HousingPerCapita = cohort > 0 ? Math.Min(1, HousingSupply(w, c, w.Days) * n.HousingPeoplePerUnit / cohort) : 1;
+            var shelter = HousingCapacity(w, c, w.Days);
+            c.HousingPerCapita = HousingCoverage(shelter, cohort);
             c.StationaryYears += years;
             c.RudimentaryExpectation = n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
             double clothing = 1 - c.RudimentaryExpectation * (1 - c.ClothPerCapita), housing = 1 - c.RudimentaryExpectation * (1 - c.HousingPerCapita);
-            c.QoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing) * SocialCohesion(n, c, cohort);
+            c.QoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing) * SocialCohesion(n, HousingShare(n, shelter, cohort), cohort);
         }
     }
 }

@@ -48,7 +48,7 @@ Animal Fabric costs one Animal Product per unit before manufacturing-tool wear; 
 Weaver uses the existing Fabric output rate and a Craftsperson works at 0.25x rate.
 Animal Fabric has a 1:1 clothing need equivalence with Cloth. Light Housing costs one
 Animal Fabric per unit, uses the existing Builder rate (`0.03125` per base-day),
-provides shelter for four people, and depreciates by 10% per 20-year reference turn.
+provides shelter for `LightHousingPeoplePerUnit` people (two at the shipped calibration; fixed Housing shelters four), and depreciates by 10% per 20-year reference turn.
 It is carried with the camp; agricultural Housing remains fixed site stock.
 
 Herding Tools cost one Wood and one Stone per unit, use the existing Carpenter Farm

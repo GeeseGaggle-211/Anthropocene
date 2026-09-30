@@ -333,7 +333,7 @@ internal static class HorizonCultivationChecks
         double expectedQoL = migrant.FoodNeedsMetRatio * migrant.WaterNeedsMetRatio *
             (leaving.Config.Neolithic.RudimentaryWeightClothing * clothing +
              leaving.Config.Neolithic.RudimentaryWeightHousing * housing) *
-            NeolithicProduction.SocialCohesion(leaving.Config.Neolithic, migrant, migrant.Population);
+            NeolithicProduction.SocialCohesion(leaving, migrant, migrant.Population);
         Near(migrant.QoL, expectedQoL, "village departure uses the ordinary QoL formula");
         Console.WriteLine("VILLAGE_ABANDONMENT stayFood=" + home.FoodNeedsMetRatio +
             " moveFood=" + migrant.FoodNeedsMetRatio + " stayQoL=" + home.QoL +

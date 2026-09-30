@@ -299,9 +299,14 @@ internal static class Program
         {
             var parts = assignment.Split('=');
             var field = parts.Length == 2 ? world.Config.GetType().GetField(parts[0]) : null;
+            object target = world.Config;
+#if !MAIN
+            // Names that are not top-level configuration fields fall back to the Neolithic calibration (for example CohesionBandScale).
+            if (field == null && parts.Length == 2) { field = world.Config.Neolithic.GetType().GetField(parts[0]); target = world.Config.Neolithic; }
+#endif
             if (field == null || field.FieldType != typeof(double) && field.FieldType != typeof(int)) throw new ArgumentException("Unsupported --set override: " + assignment);
             double value = double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);
-            field.SetValue(world.Config, field.FieldType == typeof(int) ? (object)(int)value : value);
+            field.SetValue(target, field.FieldType == typeof(int) ? (object)(int)value : value);
         }
         long managedHeapAfterLoadBytes = GC.GetTotalMemory(false);
         var detailedCounterSwitch = typeof(ResolutionMetrics).GetField("CaptureDetailedCounters");
@@ -487,6 +492,8 @@ internal static class Program
                 linked = world.LinkedPopulation(c), technology = c.Technology.ToString(), c.QoL,
                 holdsCultivation = CultivationEconomy.Enabled(c), holdsHusbandry = CultivationEconomy.HusbandryEnabled(c), holdsWatercraft = c.Technologies[(int)Technology.Watercraft], totalMoves = c.Moves,
                 c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita,
+                fixedShelterPeople = NeolithicProduction.HousingCapacity(world, c, world.Days).Fixed, tentShelterPeople = NeolithicProduction.HousingCapacity(world, c, world.Days).Light,
+                housingShare = NeolithicProduction.HousingShare(world.Config.Neolithic, NeolithicProduction.HousingCapacity(world, c, world.Days), c.Population),
                 c.Food, c.PlantFood, c.AnimalFood, c.FabricConsumed, c.HousingDemand,
                 c.GrowthRemainder, c.LastConsumed, c.FoodDeficit, c.DeficitTurns,
                 c.Inventory.Cloth, c.Inventory.AnimalFabric, c.Inventory.Wood, c.Inventory.Clay,

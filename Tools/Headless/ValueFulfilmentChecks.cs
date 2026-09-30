@@ -150,7 +150,7 @@ internal static class ValueFulfilmentChecks
         Check(ref checks, before == SaveCodec.Fingerprint(vw), "value demand pass does not mutate the world");
         var cloth = demand.Claims.Single(x => x.Good == CraftGood.Cloth); var housing = demand.Claims.Single(x => x.Good == CraftGood.Housing);
         var nn = vw.Config.Neolithic;
-        double e = nn.RudimentaryExpectationFloor, sCoh = NeolithicProduction.SocialCohesion(nn, vc, vc.Population);
+        double e = nn.RudimentaryExpectationFloor, sCoh = NeolithicProduction.SocialCohesion(vw, vc, vc.Population);
         double k = -Math.Log(1 - nn.HousingDecayPerTurn) / nn.ReferenceTurnYears, life = 1 / (k + nn.DiscountRatePerYear);
         Check(ref checks, Math.Abs(cloth.FirstUnitValue - .5 * e * sCoh * 20) < 1e-12 && cloth.Value == cloth.FirstUnitValue, "Cloth V = 1/2 E B S 20 and Value carries it");
         Check(ref checks, Math.Abs(housing.FirstUnitValue - 4 * .5 * e * sCoh * life) < 1e-12, "Housing V = 4 * 1/2 * E B S * discounted life");
