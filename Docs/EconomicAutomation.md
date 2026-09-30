@@ -133,12 +133,12 @@ turn a hard limit on lower-ranked direct recipes (`HousingMaterialPlan.LimitDire
 earlier by role cannot take Wood or Clay a higher-priority Housing still needs. The plan (fixed WoodShare/ClayShare = the
 whole expected draw) is shared by `PlanHousingMaterials`, `Gather`, `Forecast`-driven needs, `ToolReplacementDemands`
 (Regular Tools see Housing's Wood draw only if Housing outranks them), the planner's capped loop and final role pass, and
-`Produce`. Known limitation: when Farm Tools outrank Housing (non-default), the planner allocates Housing Material after
+`Produce`. Known limitation: when Farm Tools outrank Housing under the crafting-priority order (Uniform), the planner allocates Housing Material after
 all direct work because Farm Tool intent is bounded last; the resolver still uses rank. No rates, recipes or demands change.
 
 ### Value-rule production order (WP3b)
 
-Under `PlannerFulfilment = "Value"` (opt-in; Uniform is bit-identical to before), every automated camp gets one
+Under `PlannerFulfilment = "Value"` (the default for new worlds; saves written before the field existed load as `"Uniform"` and continue exactly, and an explicit Uniform is bit-identical to the pre-value engine), every automated camp gets one
 transient **production order** (`ProductionOrder`, built in `ProductionDemand.cs`) that replaces the crafting-priority and
 role order wherever recipes share a scarce input: tool coverage, Stone/Clay/Wood, plant/animal feedstock and Animal
 Fabric. It is computed once per camp at preparation from the committed start-of-turn stocks and never recomputed
@@ -153,7 +153,7 @@ loops and final role pass, `ToolReplacementDemands` (probe and main), `MaterialE
 (including the Housing Material hard/soft reservation ranks) and `ResolveCampNeolithic`/`Produce` all read that order.
 It rides with the automatic intent (`AutomaticPlan`), is stored in `PreparedTurn.ProductionOrders` and each camp's
 `TurnNeeds.Order`, and is part of `PlanningDraft`'s intents so draft reuse stays exact. It is never saved, observed or
-fingerprinted. Manual camps and Uniform keep today's order. Checks: `ProductionOrderChecks` (`--only=ProductionOrderChecks`).
+fingerprinted. Manual camps and Uniform keep the crafting-priority order. Checks: `ProductionOrderChecks` (`--only=ProductionOrderChecks`).
 
 Save: the field is an optional member of the `ANTHROPOCENE-11` inventory payload (absent loads as zero; no version bump).
 Observation schema 16 exposes the owned stock in `ObservedSettlementDto.HousingMaterial`; foreign stores stay private.

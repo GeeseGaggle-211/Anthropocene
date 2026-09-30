@@ -49,8 +49,8 @@ FIELDS = [
     ("CohesionScalePaleolithic", "people (N_s)", "shipped QoL cohesion calibration"),
     ("CohesionScaleNomadic", "people (N_s)", "shipped QoL cohesion calibration"),
     ("CohesionScaleAgricultural", "people (N_s)", "shipped QoL cohesion calibration"),
-    ("ValueCurveSteepness", "dimensionless lambda in exp(-lambda c)", "shipped value-rule calibration (used only when PlannerFulfilment is Value)"),
-    ("DiscountRatePerYear", "per year (r)", "shipped value-rule calibration (used only when PlannerFulfilment is Value)"),
+    ("ValueCurveSteepness", "dimensionless lambda in exp(-lambda c)", "shipped value-rule calibration (used by the Value planner rule, the default PlannerFulfilment; ignored under Uniform)"),
+    ("DiscountRatePerYear", "per year (r)", "shipped value-rule calibration (used by the Value planner rule, the default PlannerFulfilment; ignored under Uniform)"),
 ]
 
 TESTS = [

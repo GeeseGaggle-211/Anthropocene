@@ -134,6 +134,7 @@ internal static class EconomicAutomationChecks
     private static void DemandSnapshot()
     {
         var w = Fixture(); var c = w.Camps[0]; Field(w);
+        w.Config.Neolithic.PlannerFulfilment = "Uniform"; // pins the Uniform contract: claims carry Value = Priority and the swappable-rule fixtures below assume it (Value is covered by ValueFulfilmentChecks)
         c.Inventory.HandTools = 1000;
         foreach (string tech in NeolithicTech.FirstTier) c.People.NeolithicTechnologies.Add(tech);
         string before = SaveCodec.Fingerprint(w);

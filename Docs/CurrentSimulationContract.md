@@ -63,6 +63,7 @@ No historical sweep row should be silently relabeled with the current SHA.
 - **Vegetation:** raw `CurrentVegetation` and effective cultivation cover are separate. Cultivation retention must not be presented as rewriting the raw ecological tier. No forest-maintenance discount is authorized.
 - **Resource entitlement:** canonical tile order is an implementation constraint, not an approved claim-priority rule. #34 remains open.
 - **Social economy (cohesion multiplier implemented; fission, trade etc. remain design):** QoL is now `Q = F · W · R · S(N)` in `NeolithicProduction.ResolveNeeds`, with `S(N) = exp(-(N / N_s)^β)` and regime scale `N_s` (Paleolithic before the first breakthrough, Agricultural with Cultivation, otherwise Nomadic) chosen at the turn boundary via `NeolithicProduction.SocialCohesion`; growth stays independent of QoL. The rest is design: [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) sets the future QoL formula `Q = B · R · S(N)`, fission, immigration, food trade and proto-towns; [ValueModelDesign.md](ValueModelDesign.md) sets value-based fulfilment and trade; [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md) orders the work. Value-based fulfilment (WP3) exists as `ValueFulfilment` in `ProductionDemand.cs`, selected by the string config `PlannerFulfilment` (`"Uniform"` default, `"Value"`); it prices Cloth, Animal Fabric, Housing and Light Housing only, orders the planner's material-access loops by marginal value, and leaves the resolver's production order unchanged. Fission, immigration and trade remain deferred; `B` in the design formula is the existing `F · W` product.
+- **Planner fulfilment rule:** `NeolithicConfig.PlannerFulfilment` defaults to `"Value"` (code initializer and `OpeningConfig.json`): the labour-price fulfilment rule and value-driven production order in `EconomicPlanner.cs`/`ProductionDemand.cs` (`Docs/EconomicAutomation.md`, `Docs/ValueModelDesign.md`). Saves written before the field existed load as `"Uniform"` (the `OnDeserializing` hook) and continue exactly; `"Uniform"` remains selectable and is pinned by the planner-contract fixtures. Covered by `ValueFulfilmentChecks` and `ProductionOrderChecks`.
 - **Unresolved queue:** #21 is closed; #26–#34 are open at this baseline. Existing open work also includes #23/#24/#9–#13/#15. Each implementation must follow its issue contract and the approved architecture above; code presence alone does not settle a disputed rule.
 
 ## Current new-world config values
@@ -105,8 +106,8 @@ in `ConfigurationUnits.md` and the save-format contract.
 | `CohesionScalePaleolithic` | 220 | 220 | people (N_s) | shipped QoL cohesion calibration |
 | `CohesionScaleNomadic` | 550 | 550 | people (N_s) | shipped QoL cohesion calibration |
 | `CohesionScaleAgricultural` | 1780 | 1780 | people (N_s) | shipped QoL cohesion calibration |
-| `ValueCurveSteepness` | 3 | 3 | dimensionless lambda in exp(-lambda c) | shipped value-rule calibration (used only when PlannerFulfilment is Value) |
-| `DiscountRatePerYear` | 0.01 | 0.01 | per year (r) | shipped value-rule calibration (used only when PlannerFulfilment is Value) |
+| `ValueCurveSteepness` | 3 | 3 | dimensionless lambda in exp(-lambda c) | shipped value-rule calibration (used by the Value planner rule, the default PlannerFulfilment; ignored under Uniform) |
+| `DiscountRatePerYear` | 0.01 | 0.01 | per year (r) | shipped value-rule calibration (used by the Value planner rule, the default PlannerFulfilment; ignored under Uniform) |
 <!-- CURRENT_CONFIG_TABLE:END -->
 
 ## Consistency check

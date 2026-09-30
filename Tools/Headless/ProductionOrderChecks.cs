@@ -25,7 +25,7 @@ internal static class ProductionOrderChecks
         c.Inventory.HandTools = handTools; c.Inventory.Cloth = cloth; c.Inventory.LightHousingUnits = lightHousing;
         c.Inventory.Wood = 500; c.Inventory.Clay = 500; c.Inventory.Stone = 500;
         c.Workforce.Assign(WorkforceRoles.Weaver, 5, c.Population); c.Workforce.Assign(WorkforceRoles.Builder, 5, c.Population);
-        if (value) w.Config.Neolithic.PlannerFulfilment = "Value";
+        w.Config.Neolithic.PlannerFulfilment = value ? "Value" : "Uniform"; // explicit either way: the Uniform arms test the legacy no-order path, independent of the shipped default
         return (w, c);
     }
 

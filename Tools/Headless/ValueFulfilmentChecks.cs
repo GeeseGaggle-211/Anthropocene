@@ -23,7 +23,8 @@ internal static class ValueFulfilmentChecks
         var t = w.Tiles[tile]; t.CultivationCapital = .1; t.Cultivation = (float)CultivationEconomy.Intensity(w.Config, .1); t.CultivationOperator = c.Id;
         c.Inventory.HandTools = 1000; c.Population = population;
         foreach (string tech in NeolithicTech.FirstTier) c.People.NeolithicTechnologies.Add(tech);
-        if (value) w.Config.Neolithic.PlannerFulfilment = "Value";
+        // Both rules are named explicitly so these fixtures do not depend on the shipped default (Value).
+        w.Config.Neolithic.PlannerFulfilment = value ? "Value" : "Uniform";
         return w;
     }
 
@@ -52,8 +53,10 @@ internal static class ValueFulfilmentChecks
         var n = defaults.Neolithic;
 
         // ---- Config: defaults, validation, save/config round trips, hash.
-        Check(ref checks, n.PlannerFulfilment == "Uniform" && n.ValueCurveSteepness == 3 && n.DiscountRatePerYear == .01 && !n.ValueFulfilmentSelected, "config defaults keep Uniform");
-        Check(ref checks, ReferenceEquals(EconomicPlanner.ConfiguredRule(defaults), EconomicPlanner.DefaultRule), "default config selects the uniform rule instance");
+        Check(ref checks, n.PlannerFulfilment == "Value" && n.ValueCurveSteepness == 3 && n.DiscountRatePerYear == .01 && n.ValueFulfilmentSelected, "config defaults select Value");
+        Check(ref checks, EconomicPlanner.ConfiguredRule(defaults) is ValueFulfilment, "default config selects the value rule");
+        var uniformConfig = new SimulationConfig(); uniformConfig.Neolithic.PlannerFulfilment = "Uniform";
+        Check(ref checks, ReferenceEquals(EconomicPlanner.ConfiguredRule(uniformConfig), EconomicPlanner.DefaultRule), "explicit Uniform selects the uniform rule instance");
         foreach (int which in new[] { 0, 1, 2, 3, 4 })
         {
             var bad = new SimulationConfig().Neolithic;
@@ -67,7 +70,7 @@ internal static class ValueFulfilmentChecks
         var loaded = SaveCodec.Load(SaveCodec.Save(saved));
         Check(ref checks, loaded.Config.Neolithic.PlannerFulfilment == "Value" && loaded.Config.Neolithic.ValueCurveSteepness == 2.5 && loaded.Config.Neolithic.DiscountRatePerYear == .02, "save round trip keeps the value config");
         Check(ref checks, SaveCodec.Fingerprint(saved) == SaveCodec.Fingerprint(loaded), "fingerprint stable across the value-config round trip");
-        Check(ref checks, SaveCodec.ConfigurationHash(saved.Config) != SaveCodec.ConfigurationHash(new SimulationConfig()), "the selected rule enters the configuration hash");
+        Check(ref checks, SaveCodec.ConfigurationHash(uniformConfig) != SaveCodec.ConfigurationHash(new SimulationConfig()), "the selected rule enters the configuration hash");
         var serializer = new DataContractSerializer(typeof(NeolithicConfig));
         string xml;
         using (var ms = new MemoryStream()) { serializer.WriteObject(ms, new SimulationConfig().Neolithic); xml = Encoding.UTF8.GetString(ms.ToArray()); }
@@ -176,13 +179,13 @@ internal static class ValueFulfilmentChecks
         var zeroPlan = EconomicPlanner.Plan(vw, vc, EconomicIntent.From(vc));
         Check(ref checks, !zeroPlan.Assignments.Any(a => a.Role == WorkforceRoles.Weaver), "priority 0 stages no Weavers under the Value rule");
 
-        // ---- Default config: Uniform behaviour and claim contents unchanged.
+        // ---- Explicit Uniform config: legacy behaviour and claim contents unchanged (the shipped default is Value).
         var uw = Agricultural(false); var uc = uw.Camps[0];
         var ud = CampProductionDemand.Build(uw, uc, EconomicIntent.From(uc));
-        Check(ref checks, ud.Claims.All(x => x.Value == x.Priority), "default config keeps Value = Priority");
+        Check(ref checks, ud.Claims.All(x => x.Value == x.Priority), "Uniform config keeps Value = Priority");
         var defaultPlan = EconomicPlanner.Plan(uw, uc, EconomicIntent.From(uc), UniformFulfilment.Instance, out double uniformPrice);
         Check(ref checks, double.IsNaN(uniformPrice), "uniform rule reports no labour price");
-        Check(ref checks, Sig(defaultPlan) == Sig(EconomicPlanner.Plan(uw, uc, EconomicIntent.From(uc))), "default Plan uses the uniform rule");
+        Check(ref checks, Sig(defaultPlan) == Sig(EconomicPlanner.Plan(uw, uc, EconomicIntent.From(uc))), "Uniform config Plan uses the uniform rule");
 
         // ---- Ample labour: Value pursues everything Uniform does at s = 1.
         var aw = Agricultural(true, 100); var ac = aw.Camps[0]; var au = Agricultural(false, 100);
@@ -201,6 +204,7 @@ internal static class ValueFulfilmentChecks
         Check(ref checks, scarcePlan.Assignments.Sum(a => a.Population) <= sc.Population, "scarce Value plan stays within residents");
         Check(ref checks, scarce >= ample * (1 - 1e-12), "scarce labour cannot lower the labour price (" + scarce + " vs " + ample + ")");
         Check(ref checks, Sig(EconomicPlanner.Plan(sw, sc, EconomicIntent.From(sc))) == Sig(scarcePlan), "config-selected rule matches the explicit Value rule");
+        var dw = NeolithicChecks.Fixture(); Check(ref checks, dw.Config.Neolithic.ValueFulfilmentSelected && EconomicPlanner.ConfiguredRule(dw.Config) is ValueFulfilment, "untouched fixture config plans with the Value rule by default");
 
         // ---- Husbandry fixture exercises Animal Fabric / Light Housing and the ordering guard.
         var hw = PastoralCraftChecks.PlannerWorld(); var hc = hw.Camps.Single();

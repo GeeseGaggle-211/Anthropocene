@@ -154,12 +154,16 @@ public static class FarmPlannerChecks
         Check(record.Production.Any(p => p.Good == CraftGood.FarmTools && p.Output > 0), "sourced field plan realizes Farm Tool production");
     }
 
+    // Pins the Uniform planner: FieldPriorityCase asserts the priority-ordered Wood split (Farm Tools 2 over Housing 1) that
+    // the Uniform rule defines; the value-ordered split is covered by ProductionOrderChecks.
+    private static WorldState UniformPriority(WorldState w) { w.Config.Neolithic.PlannerFulfilment = "Uniform"; return w; }
+
     private static void FieldPriorityCase()
     {
         // With no existing cultivation, there is no intended field expansion.
         // The small Wood reserve must therefore flow to useful Housing rather
         // than inventing a Farm Tool producer for a zero field-work forecast.
-        var idle = Fixture(0, 0);
+        var idle = UniformPriority(Fixture(0, 0));
         var idleCamp = idle.Camps[0];
         idleCamp.Inventory.HandTools = 1000;
         idleCamp.Inventory.Wood = 2;
@@ -174,7 +178,7 @@ public static class FarmPlannerChecks
 
         // Once all seven radius-one fields carry physical E=.1, useful Farm
         // Tool maintenance demand and Housing can share a 20-unit Wood stock.
-        var established = Fixture(.1, 0);
+        var established = UniformPriority(Fixture(.1, 0));
         var establishedCamp = established.Camps[0];
         Check(CultivationEconomy.Footprint(established, establishedCamp).Count(id => established.Tiles[id].CultivationCapital > 0) == 7, "established priority fixture has seven fields");
         establishedCamp.Inventory.HandTools = 1000;
@@ -191,7 +195,7 @@ public static class FarmPlannerChecks
         // A large held stock bridges the current field cycle.  It must not be
         // treated as a single imaginary producer that consumes all residents
         // and prevents a small useful Housing job.
-        var held = Fixture(.1, 0);
+        var held = UniformPriority(Fixture(.1, 0));
         var heldCamp = held.Camps[0];
         heldCamp.Inventory.FarmTools = 100;
         heldCamp.Inventory.HandTools = 1000;

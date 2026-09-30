@@ -30,10 +30,11 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double SocialCohesionExponent = 2;
         [System.Runtime.Serialization.OptionalField] public double CohesionScalePaleolithic = 220, CohesionScaleNomadic = 550, CohesionScaleAgricultural = 1780;
         // Local value rule (ValueModelDesign.md). PlannerFulfilment selects the planner's fulfilment rule by name:
-        // "Uniform" (default; every claim shares the path position) or "Value" (shares from a labour price w).
-        // A string keeps sweeps and saved configs readable; absent in older saves/configs it loads as "Uniform".
+        // "Value" (default; shares from a labour price w, value-ordered production) or "Uniform" (every claim
+        // shares the path position). A string keeps sweeps and saved configs readable; saves written before
+        // the field existed load as "Uniform" so they continue exactly (see the OnDeserializing hook).
         // lambda = ValueCurveSteepness (> 0, dimensionless), r = DiscountRatePerYear (>= 0, per year).
-        [System.Runtime.Serialization.OptionalField] public string PlannerFulfilment = "Uniform";
+        [System.Runtime.Serialization.OptionalField] public string PlannerFulfilment = "Value";
         [System.Runtime.Serialization.OptionalField] public double ValueCurveSteepness = 3, DiscountRatePerYear = .01;
         public double HandToolsOutput = 1, PotsOutput = 1, WeaverFabricOutputPerBaseDays = 1, FarmToolsOutput = 1, ToolsOutput = 1;
         public double BuilderHousingOutputPerBaseDays = .03125, HandToolsHousingMultiplier = 1, ImprovedToolsHousingMultiplier = 1.5, CopperToolsHousingMultiplier = 2;
@@ -71,6 +72,8 @@ namespace Anthropocene.Simulation
             HerdingToolCoverageYearsPerUnit = 20;
             SocialCohesionExponent = 2;
             CohesionScalePaleolithic = 220; CohesionScaleNomadic = 550; CohesionScaleAgricultural = 1780;
+            // Saves written before the value rule carry no field and keep the Uniform planner, so they
+            // continue exactly; new worlds and code defaults use Value.
             PlannerFulfilment = "Uniform"; ValueCurveSteepness = 3; DiscountRatePerYear = .01;
         }
         [System.Runtime.Serialization.OnDeserialized]

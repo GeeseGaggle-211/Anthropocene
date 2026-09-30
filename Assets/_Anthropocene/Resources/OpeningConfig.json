@@ -53,7 +53,7 @@
     "CohesionScalePaleolithic": 220,
     "CohesionScaleNomadic": 550,
     "CohesionScaleAgricultural": 1780,
-    "PlannerFulfilment": "Uniform",
+    "PlannerFulfilment": "Value",
     "ValueCurveSteepness": 3,
     "DiscountRatePerYear": 0.01,
     "EarlyAdvancedHerdingAnimalsPerHerder": 3.87,
