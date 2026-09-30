@@ -252,6 +252,8 @@ internal static class Program
             OverrideNeolithic(world, "PlannerFulfilment", Option(args, "--fulfilment", ""), v => v);
             OverrideNeolithic(world, "ValueCurveSteepness", Option(args, "--value-steepness", ""), v => double.Parse(v, CultureInfo.InvariantCulture));
             OverrideNeolithic(world, "DiscountRatePerYear", Option(args, "--discount-rate", ""), v => double.Parse(v, CultureInfo.InvariantCulture));
+            OverrideNeolithic(world, "FoodRiskWeight", Option(args, "--food-risk-weight", ""), v => double.Parse(v, CultureInfo.InvariantCulture));
+            OverrideNeolithic(world, "PersonLifeYears", Option(args, "--person-life-years", ""), v => double.Parse(v, CultureInfo.InvariantCulture));
             world.Config.Validate();
             // Diagnostic priority experiment: set every camp's Housing crafting priority.
             string housingPriority = Option(args, "--housing-priority", "");
