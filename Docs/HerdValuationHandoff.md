@@ -13,10 +13,7 @@ baselines with the commands in section 5. The key numbers are copied into this f
 - **Branch.** Develop and push only `features/neolithic-agricultural`, using
   `git push -u origin features/neolithic-agricultural` and retrying network failures after 2, 4, 8 and 16 s. Do not
   open a pull request unless the user asks.
-- **Commits.** End every commit message with the two trailer lines used throughout this branch:
-  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
-  `Claude-Session: https://claude.ai/code/session_012PVHwPhaXNq3eB6rD7F5qX`
-  Never put model identifiers in code, docs or any repository file, and never print or commit credentials.
+- **Commits.** End every commit message with the attribution trailer lines your session's instructions supply. Never put model identifiers in code, docs or any repository file, and never print or commit credentials.
 - **Governing principles from the user:**
   - Correctness of the model matters far more than speed.
   - Ground every mechanic in the system; no arbitrary hard cutoffs or label switches.
