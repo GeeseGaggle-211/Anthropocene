@@ -9,6 +9,9 @@ namespace Anthropocene.Simulation
         public double AnimalFood, HumanFoodDisplaced;
         // Total animals behind a grown-herd forecast (TurnResolver.ForecastGrownManagedAnimalFood); 0 otherwise.
         public double Animals;
+        // Transient weighted species inputs, collected in the existing own-herd forecast pass.
+        // They describe animal units, not livestock heads, and are never persisted.
+        public double GrowthRate, CarcassFood, FoodConsumption, WaterConsumption, ManagementFulfillment;
     }
 
     internal sealed class GenerationResource
@@ -192,15 +195,27 @@ namespace Anthropocene.Simulation
                 forecast.HumanFoodDisplaced += result.Pressure.Where(p => p.Pool == "Biomass" && p.Kind == "Herd").Sum(p => p.GatherableSpill);
             }
             double management = HerdingTooling.Plan(w, c, years, herders, managedAnimals).Fulfillment;
+            forecast.ManagementFulfillment = management;
             foreach (var herd in herds)
             {
                 var species = w.Config.GetSpecies(herd.Species);
+                double count = Animals(herd);
+                forecast.GrowthRate += count * species.GrowthRate;
+                forecast.CarcassFood += count * species.FoodYield;
+                forecast.FoodConsumption += count * species.FoodConsumption;
+                forecast.WaterConsumption += count * species.FreshwaterConsumption;
                 transfers.TryGetValue(herd.Id, out var realized);
                 double foodNutrition = requestedFood[herd.Id] <= 1e-12 ? 1 : Numbers.Clamp(realized.food / requestedFood[herd.Id], 0, 1);
                 double waterNutrition = requestedWater[herd.Id] <= 1e-12 ? 1 : Numbers.Clamp(realized.water / requestedWater[herd.Id], 0, 1);
                 double nutrition = Math.Min(foodNutrition, waterNutrition);
                 if (nutritionOut != null) nutritionOut[herd.Id] = nutrition;
                 forecast.AnimalFood += ManagedAnimalFoodYield(w, Animals(herd), nutrition, management, intervals);
+            }
+            double totalAnimals = herds.Sum(Animals);
+            if (totalAnimals > 0)
+            {
+                forecast.GrowthRate /= totalAnimals; forecast.CarcassFood /= totalAnimals;
+                forecast.FoodConsumption /= totalAnimals; forecast.WaterConsumption /= totalAnimals;
             }
             return forecast;
         }

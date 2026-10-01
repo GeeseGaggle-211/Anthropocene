@@ -1,6 +1,13 @@
 # Herd valuation: herds as breeding capital, cultivation payoff and marginal land
 
-Status: **design, not implemented.** This is the next mechanic in the social-economy line. It recalibrates how the Value
+Status: **HV2 experimental candidate implemented; HV1 sources and calibration pending.**
+See [HerdValuationValidation.md](HerdValuationValidation.md) for the implementation,
+measurements, approximations and capital-life cap issue, and
+[HerdValuationGrounding.md](HerdValuationGrounding.md) for the unit derivation and
+unverified conditional range proposals. The normative design below remains the
+review target; implementation evidence is not approval to enable the lever.
+
+This mechanic recalibrates how the Value
 planner prices a managed herd against fields, so that the herd-labour coupling (`Docs/HerdLabour.md`,
 `HerdLabourEnabled`, shipped opt-in) can be turned on without wiping out pastoralism. The work queue, commands and
 baselines are in `Docs/HerdValuationHandoff.md`. Read with `Docs/HerdLabour.md`, `Docs/ValueModelDesign.md`,

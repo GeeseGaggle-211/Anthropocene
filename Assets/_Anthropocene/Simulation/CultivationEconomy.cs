@@ -132,7 +132,8 @@ namespace Anthropocene.Simulation
             return !wooded ? n.OpenMaintenance : vegetation == VegetationTier.High ? n.ForestMaintenance : n.WoodlandMaintenance;
         }
         public static int Workers(Camp camp, string role) => camp.Workforce.Assignments.Where(a => a.Role == role).Sum(a => a.Population);
-        public static int[] Footprint(WorldState w, Camp camp) => w.Map.Radius(camp.Tile, 1).Where(id => w.Tiles[id].TraversableLand && w.Tiles[id].Environment != EnvironmentKind.Ice && w.Tiles[id].Seasons.Any(s => s.MaxPotentialFood > 0)).OrderBy(id => id).ToArray();
+        internal static bool Cultivable(Tile tile) => tile.TraversableLand && tile.Environment != EnvironmentKind.Ice && tile.Seasons.Any(s => s.MaxPotentialFood > 0);
+        public static int[] Footprint(WorldState w, Camp camp) => w.Map.Radius(camp.Tile, 1).Where(id => Cultivable(w.Tiles[id])).OrderBy(id => id).ToArray();
         // Village status is an endpoint decision, never an input to this turn's
         // claim or field plan. Count every nearby land tile in the original
         // footprint average, with only this camp's fields contributing q.

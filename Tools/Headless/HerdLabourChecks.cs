@@ -44,7 +44,7 @@ internal static class HerdLabourChecks
 
     public static int Run()
     {
-        checks = 0; Buckets(); Ladder(); Capacity(); Split(); Breeding(); Slaughter(); Planner(); Trap(); Healthy(); Saves(); Contracts(); Replay();
+        checks = 0; Buckets(); Ladder(); Capital(); LandAlternatives(); GrowthCredit(); Capacity(); Split(); Breeding(); Slaughter(); Planner(); Trap(); Healthy(); Saves(); Contracts(); Replay(); CapitalReplay();
         Console.WriteLine("PASS: " + checks + " herd-labour assertions"); return checks;
     }
 
@@ -91,6 +91,99 @@ internal static class HerdLabourChecks
         // Zero-valued trailing steps never staff.
         var flat = new HerdLadder { Value = new[] { 5.0, 0, 0 }, Capacity = cap, GrownAnimals = 6, MinimumHerders = 0 };
         Check(flat.Staffed(0) == 1 && flat.Staffed(1) == 1, "steps worth nothing are never staffed");
+    }
+
+    private static void Capital()
+    {
+        Near(HerdLabour.CapitalLife(.05, .02, .02, 50, 100, 100), 1 / .06, "capacity-weighted breeding capital closed form");
+        Near(HerdLabour.CapitalLife(.05, .02, .02, 100, 100, 100), 1 / .07, "at capacity breeding adds no capital life");
+        Near(HerdLabour.CapitalLife(.01, 0, .20, 1, 100, 40), 40, "a divergent perpetuity is bounded by the shared ceiling");
+        Near(HerdLabour.CapitalLife(.05, .02, .02, 10, 0, 100), 1 / .07, "no pasture means no growth credit");
+        double ceiling = ExpansionValuation.CapitalLife(new NeolithicConfig());
+        Near(HerdLabour.CapitalLife(.01, 0, 0, 10, 100, ceiling), ceiling, "the literal design ceiling already binds without growth");
+        Near(HerdLabour.CapitalLife(.01, 0, .011055, 10, 100, ceiling), ceiling, "shipped growth cannot change the literal capped life (documented decision)");
+        double[] capacities = { 0, 2, 4 };
+        double[] Values(double carcass, double demand, double weak, double field = 18)
+            => HerdLabour.CapitalStepValues(capacities, 4, carcass, .011055, 100, weak, .01, 0,
+                ceiling, 20, 0, 0, new[] { 100.0 }, new[] { .25 }, demand, 7.2, field);
+        var net = Values(60, 0, 0);
+        double expected = 2 * (4 - 60 / ceiling) * .25;
+        Near(net[0], expected, "keep less immediate carcass is annualised over management service years");
+        Near(net[1], expected, "equal marginal assets have equal prices");
+        Check(Values(1000, 100, 100).All(x => x == 0), "a carcass worth more than keeping an animal is not rescued by labour-saving infinity");
+        Check(Values(0, 100, 100).All(double.IsPositiveInfinity), "pasture without a field alternative competes only with gathering");
+        var alluvial = Values(60, 100, 0);
+        Near(alluvial[0], expected / (1 - 8 / 18.0), "a rich marginal field makes saved labour less valuable");
+        var steppe = new HerdLadder { Value = Values(60, 100, 100), Capacity = capacities, GrownAnimals = 4 };
+        var river = new HerdLadder { Value = alluvial, Capacity = capacities, GrownAnimals = 4 };
+        Check(steppe.Staffed(3) == 2 && river.Staffed(3) == 0, "at the same price the herd wins on marginal pasture and loses against a rich field");
+        var field = new ExpansionLadderClaim { WorkerYears = new[] { 20.0 }, Value = new[] { net[0] }, TotalWorkerYears = 20 };
+        var herd = new HerdLadder { Value = new[] { net[0] }, Capacity = new[] { 0.0, 2 }, GrownAnimals = 2 };
+        var rule = new ValueFulfilment(3);
+        var claims = new[] { new ProductionClaim { Quantity = 1, Need = 1, FirstUnitValue = 10, LabourPerUnit = 1, Valued = true } };
+        // Query both assets at exactly the same price, and in both enumeration orders.
+        foreach (double price in new[] { net[0] * .99, net[0], net[0] * 1.01 })
+        {
+            int h = herd.Staffed(price);
+            double position = rule.PositionAtPrice(claims, field, price);
+            rule.Shares(claims, field, position, new double[1], out double effort);
+            Check((h > 0) == (effort > 0), "equal annualised herd/field prices cross together");
+            rule.Shares(claims, field, position, new double[1], out double reversed);
+            Check(reversed == effort && herd.Staffed(price) == h, "query order cannot change equal asset staffing");
+        }
+        for (double price = 0; price < 10; price += .1)
+            Check(river.Staffed(price) >= river.Staffed(price + .1), "capital staffing is monotone in price");
+        Trace("capital ceiling=" + ceiling.ToString("F3") + " goat netPrice=" + expected.ToString("F3")
+            + " alluvialPrice=" + alluvial[0].ToString("F3") + " steppeAt3=" + steppe.Staffed(3) + " alluvialAt3=" + river.Staffed(3));
+    }
+
+    private static void LandAlternatives()
+    {
+        var w = Camp(100, 40); var c = w.Camps[0];
+        var d = CampProductionDemand.Build(w, c, EconomicIntent.From(c));
+        Check(d.HerdLadder != null && d.HerdLadder.PastureCapacity > 0, "the production builder supplies bounded pasture capital");
+        var forecast = d.GrownHerd;
+        HerdLabour.Pasture(w, c, forecast, w.Config.GenerationIntervals, out double mobile, out double weakMobile, d);
+        c.IsVillage = true;
+        HerdLabour.Pasture(w, c, forecast, w.Config.GenerationIntervals, out double settled, out double weakSettled, d);
+        Check(mobile >= settled && weakMobile > weakSettled, "mobile range adds non-field pasture, not a higher current herd receipt");
+        c.IsVillage = false;
+        var tile = w.Tiles[c.Tile]; tile.Environment = EnvironmentKind.Ice;
+        Check(!CultivationEconomy.Cultivable(tile), "the shared fission/field predicate excludes ice");
+        var blocked = w.Map.Radius(c.Tile, 2).First(id => w.Map.Distance(c.Tile, id) == 2);
+        w.Tiles[blocked].ElevationLevel = 10;
+        var bands = HerdLabour.Pasture(w, c, forecast, w.Config.GenerationIntervals, out _, out _, d);
+        Check(bands.All(b => b.Tile != blocked), "peaks do not become pasture");
+        Check(bands.Length <= 19, "pasture work is bounded by local vision");
+        var costs = HerdLabour.SavedLabour(new[] { 0.0, 2, 4 }, new[] {
+            new HerdLabour.PastureBand { Tile = 1, Animals = 3, Rate = 7.2 },
+            new HerdLabour.PastureBand { Tile = 2, Animals = 10, Rate = 18 } }, 7.2);
+        Near(costs[0], 1 / 7.2, "weakest pasture is used first");
+        Near(costs[1], .5 / 7.2 + .5 / 18, "a herder step can straddle two tile alternatives");
+        Check(d.Expansion == null || d.Expansion.Tiles.Length == d.Expansion.FoodPerWorkerYear.Length
+            && d.Expansion.Tiles.Length == d.Expansion.Value.Length, "field alternative metadata follows the reused priced ladder");
+        var before = SaveCodec.Fingerprint(w); CampProductionDemand.Build(w, c, EconomicIntent.From(c));
+        Check(SaveCodec.Fingerprint(w) == before, "pasture and capital valuation are pure");
+    }
+
+    private static void GrowthCredit()
+    {
+        var w = Camp(100, 40); var c = w.Camps[0];
+        var valued = CampProductionDemand.Build(w, c, EconomicIntent.From(c));
+        Near(valued.HerdGrowthFood, 0, "offspring valued as herd capital are not also credited to the field food gap");
+        var uniform = CampProductionDemand.Build(w, c, EconomicIntent.From(c), true, false);
+        Check(uniform.HerdGrowthFood > 0 && uniform.HerdLadder == null, "an explicit Uniform rule retains its growth credit even with Value in config");
+        var uniformPlan = EconomicPlanner.Plan(w, c, EconomicIntent.From(c), UniformFulfilment.Instance, out _, out _);
+        w.Config.HerdLabourEnabled = false;
+        var legacy = CampProductionDemand.Build(w, c, EconomicIntent.From(c));
+        Check(legacy.HerdGrowthFood > 0 && legacy.HerdLadder == null, "lever off retains the prior herd-growth credit");
+        Check(legacy.GrownHerdFood == valued.GrownHerdFood, "removing a valuation credit leaves physical forecast receipts unchanged");
+        Check(EconomicPlanner.Plan(w, c, EconomicIntent.From(c), UniformFulfilment.Instance, out _, out _).Stamp == uniformPlan.Stamp,
+            "explicit Uniform planner output is unchanged by the capital lever");
+        var large = Camp(23, 400); large.Camps[0].QoL = .8;
+        var marginal = CampProductionDemand.Build(large, large.Camps[0], EconomicIntent.From(large.Camps[0]));
+        Check(marginal.GrownHerd.ManagementFulfillment < 1, "the marginal-yield witness actually has an under-managed whole herd");
+        Check(double.IsPositiveInfinity(marginal.HerdLadder.Value[0]), "the first fully managed animals retain their harvest-labour value despite the whole herd's low management");
     }
 
     private static void Capacity()
@@ -320,4 +413,37 @@ internal static class HerdLabourChecks
         string scalar = Run(new PhaseExecution()), workers = Run(new PhaseExecution(4, 3, true, 1));
         Check(scalar == workers, "scalar and reversed 4-worker replay agree");
     }
+    private static void CapitalReplay()
+    {
+        var cfg = SimulationConfig.Small(4);
+        cfg.HerdLabourEnabled = true; cfg.QoLMortalityEnabled = true; cfg.QoLMortalityElasticity = 1; cfg.FissionEnabled = true;
+        var scalar = new WorldGenerator().Generate(53, cfg);
+        // Generated geography plus a controlled pastoral start: this seed's natural
+        // four-tribe opening acquires no managed animals, so it cannot witness HV2.
+        var pastoral = scalar.Camps[0]; pastoral.Technology = Technology.AnimalHusbandry;
+        pastoral.Technologies[(int)Technology.AnimalHusbandry] = true;
+        pastoral.People.Progression.Era = Era.Neolithic; pastoral.EconomyAutomationTurns = -1;
+        scalar.Herds.Add(new Herd { Id = scalar.NextId++, Tile = pastoral.Tile, Species = "goat", Animals = 5,
+            DomesticCamp = pastoral.Id, OwnerSociety = pastoral.SocietyId, Capacity = 1 });
+        var parallel = SaveCodec.Load(SaveCodec.Save(scalar));
+        var workers = new PhaseExecution(4, 3, true, 1);
+        int plannedHerdTurns = 0;
+        for (int turn = 0; turn < 34; turn++)
+        {
+            var plan = AiPlanning.Decide(scalar); new TurnResolver().Resolve(scalar, plan.Orders, plan.Traces);
+            parallel.Camps.Reverse(); parallel.Herds.Reverse(); parallel.Hunters.Reverse();
+            var other = AiPlanning.Decide(parallel, workers); new TurnResolver(workers).Resolve(parallel, other.Orders, other.Traces);
+            Check(SaveCodec.Fingerprint(scalar) == SaveCodec.Fingerprint(parallel), "generated capital/secondary-tech/fission replay turn " + turn);
+            if (scalar.Camps.Any(c => c.HerdTargetSet)) plannedHerdTurns++;
+            if (turn == 15)
+            {
+                string before = SaveCodec.Fingerprint(parallel);
+                parallel = SaveCodec.Load(SaveCodec.Save(parallel));
+                Check(SaveCodec.Fingerprint(parallel) == before, "capital-plan save continuation preserves authoritative state");
+            }
+        }
+        Check(plannedHerdTurns > 0, "generated replay actually exercised the capital planner");
+        Trace("generated replay resolutions=34 capitalTurns=" + plannedHerdTurns + " camps=" + scalar.Camps.Count);
+    }
+
 }

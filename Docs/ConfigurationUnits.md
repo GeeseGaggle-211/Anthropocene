@@ -5,6 +5,13 @@ expectation constants/sweeps are listed in
 [NeolithicRealignment.md](NeolithicRealignment.md#centralized-calibration-and-sweeps).
 Both recipe coefficients are 1.0; Housing uses one total Wood/Clay unit.
 
+The HV1 animal-unit derivation and provisional productivity/growth proposals
+are in [HerdValuationGrounding.md](HerdValuationGrounding.md). At the shipped
+consumption and interval units, a fully managed animal unit supplies four food
+per year (one person's meals). It is an aggregate production unit, not one
+livestock head. Source verification is pending proxy access; none of the
+proposed ranges has changed the shipped configuration.
+
 Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Serialized defaults must match the C# defaults. [EcologyFoundation.md](EcologyFoundation.md) describes the equations and [Validation.md](Validation.md) records the tests. The prototype uses abstract food/water quantities, not kilograms or litres.
 
 | Fields | Meaning and units |

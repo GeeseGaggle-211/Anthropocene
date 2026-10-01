@@ -7,6 +7,17 @@ the numbers to compare against.
 Measurement outputs live under `TestResults/`, which git ignores. A fresh container will not have them: regenerate
 baselines with the commands in section 5. The key numbers are copied into this file.
 
+## Follow-on status (2026-10-01)
+
+The user authorized HV1/HV2 on a follow-on branch, `features/herd-valuation`,
+from `87f5a71`; this supersedes the original branch-only workflow below for
+this package. [HerdValuationValidation.md](HerdValuationValidation.md) records
+the candidate and unchanged-calibration measurements. Herd-labour checks are
+now 1,157. [HerdValuationGrounding.md](HerdValuationGrounding.md) records unit
+derivations and provisional proposals; external citations remain blocked by
+source access. HV1 is not fully sourced, HV3 ranges are not approved, and
+HV3/HV4/HV5 remain pending. Defaults remain off.
+
 ## 1. How to work here
 
 - Read `AGENTS.md` first: the engineering doctrine, contracts and source map. Then `Docs/CurrentSimulationContract.md`.

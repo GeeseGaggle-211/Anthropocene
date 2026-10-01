@@ -195,6 +195,10 @@ namespace Anthropocene.Simulation
     {
         public double[] WorkerYears = Array.Empty<double>(), Value = Array.Empty<double>();
         public double TotalWorkerYears;
+        // Marginal field productivity from the same retained-yield/build/upkeep forecast.
+        // The herd comparison reads this, never the established farmer's average rate.
+        internal double[] FoodPerWorkerYear = Array.Empty<double>();
+        internal int[] Tiles = Array.Empty<int>();
         public bool Any => Value.Length > 0;
         // The value of the first step whose build effort is not covered by
         // `coveredWorkerYears`; 0 when the ladder is exhausted.
@@ -273,7 +277,7 @@ namespace Anthropocene.Simulation
         // Normalizes the plan's focus to the camp footprint before the preview
         // is built from it; every other read is of the committed boundary.
         // expansionClaim = false omits the WP4b expansion claim (the pre-WP4b Value plan, a test reference).
-        public static CampProductionDemand Build(WorldState w, Camp c, EconomicIntent e, bool expansionClaim = true)
+        public static CampProductionDemand Build(WorldState w, Camp c, EconomicIntent e, bool expansionClaim = true, bool herdCapital = true)
         {
             var d = new CampProductionDemand { world = w };
             var cfg = w.Config; var n = cfg.Neolithic;
@@ -312,7 +316,10 @@ namespace Anthropocene.Simulation
                 if (grown.Animals > 0)
                 {
                     d.GrownHerdFood = grown.AnimalFood;
-                    d.HerdGrowthFood = Math.Max(0, (grown.AnimalFood - d.ManagedFood.AnimalFood) - (grown.HumanFoodDisplaced - d.ManagedFood.HumanFoodDisplaced));
+                    // HV2 prices offspring in the herd asset. Keep the physical grown-herd
+                    // envelope, but do not also credit its offspring against the field gap.
+                    if (!herdCapital || !HerdLabour.Applies(w, c))
+                        d.HerdGrowthFood = Math.Max(0, (grown.AnimalFood - d.ManagedFood.AnimalFood) - (grown.HumanFoodDisplaced - d.ManagedFood.HumanFoodDisplaced));
                 }
             }
             d.ForageAfterHerds = Math.Max(0, d.ForageSupply - d.ManagedFood.HumanFoodDisplaced);
@@ -373,7 +380,7 @@ namespace Anthropocene.Simulation
             if (expansionClaim) ExpansionValuation.Apply(w, c, d);
             ClaimValuation.ApplyTools(w, c, d);
             // The herder ladder reads the priced claims (feedstock values), so it comes after every claim is valued.
-            if (HerdLabour.Applies(w, c)) d.HerdLadder = HerdLabour.Build(w, c, d, e.ManagedBreedingIntensity);
+            if (herdCapital && HerdLabour.Applies(w, c)) d.HerdLadder = HerdLabour.Build(w, c, d, e.ManagedBreedingIntensity);
             return d;
         }
     }
@@ -596,7 +603,7 @@ namespace Anthropocene.Simulation
         public static ExpansionLadderClaim Value(CultivationEconomy.ExpansionStep[] steps, double gapConsumption, double gapSecurity, double gapTotal, double vFood, double vReserve, double vGrowth, double lCap)
         {
             gapConsumption = Math.Min(gapConsumption, gapSecurity);
-            var b = new List<double>(); var u = new List<double>();
+            var b = new List<double>(); var u = new List<double>(); var productivity = new List<double>(); var tiles = new List<int>();
             double fc = 0, floor = double.PositiveInfinity;
             foreach (var step in steps)
             {
@@ -610,9 +617,9 @@ namespace Anthropocene.Simulation
                 fc = end;
                 if (!(value > 0)) break;
                 floor = Math.Min(floor, value);
-                b.Add(step.WorkerYears); u.Add(floor);
+                b.Add(step.WorkerYears); u.Add(floor); productivity.Add(step.Score); tiles.Add(step.Tile);
             }
-            return new ExpansionLadderClaim { WorkerYears = b.ToArray(), Value = u.ToArray(), TotalWorkerYears = b.Sum() };
+            return new ExpansionLadderClaim { WorkerYears = b.ToArray(), Value = u.ToArray(), FoodPerWorkerYear = productivity.ToArray(), Tiles = tiles.ToArray(), TotalWorkerYears = b.Sum() };
         }
         public static void Apply(WorldState w, Camp c, CampProductionDemand d)
         {
@@ -693,15 +700,18 @@ namespace Anthropocene.Simulation
                 d.SettlesByExpansion = true;
                 double scale = 1 - cost / tail;
                 var value = (double[])ladder.Value.Clone();
-                for (int i = cross; i < value.Length; i++) value[i] *= scale;
-                return new ExpansionLadderClaim { WorkerYears = ladder.WorkerYears, Value = value, TotalWorkerYears = ladder.TotalWorkerYears };
+                var productivity = (double[])ladder.FoodPerWorkerYear.Clone();
+                for (int i = cross; i < value.Length; i++) { value[i] *= scale; productivity[i] *= scale; }
+                return new ExpansionLadderClaim { WorkerYears = ladder.WorkerYears, Value = value,
+                    FoodPerWorkerYear = productivity, Tiles = ladder.Tiles, TotalWorkerYears = ladder.TotalWorkerYears };
             }
             double prefix = 0;
             for (int i = 0; i < cross; i++) prefix += steps[i].WorkerYears;
             d.ExpansionEffortCap = prefix;
             if (cross >= ladder.Value.Length) return ladder;
             var worker = ladder.WorkerYears.Take(cross).ToArray(); var val = ladder.Value.Take(cross).ToArray();
-            return new ExpansionLadderClaim { WorkerYears = worker, Value = val, TotalWorkerYears = worker.Sum() };
+            return new ExpansionLadderClaim { WorkerYears = worker, Value = val,
+                FoodPerWorkerYear = ladder.FoodPerWorkerYear.Take(cross).ToArray(), Tiles = ladder.Tiles.Take(cross).ToArray(), TotalWorkerYears = worker.Sum() };
         }
     }
 

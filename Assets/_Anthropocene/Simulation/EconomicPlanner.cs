@@ -53,9 +53,9 @@ namespace Anthropocene.Simulation
             var cfg = w.Config; var n = cfg.Neolithic;
             double intervals = cfg.GenerationIntervals, years = cfg.TurnDays / cfg.DaysPerYear;
             // Demand pass: every fulfilment-invariant input, built once.
-            var demand = CampProductionDemand.Build(w, c, e, expansionClaim);
+            var demand = CampProductionDemand.Build(w, c, e, expansionClaim, rule is ValueFulfilment);
             bool cultivationEnabled = demand.CultivationEnabled, husbandryEnabled = demand.HusbandryEnabled, established = demand.Established;
-            // Herd food the herds are expected to add next turn closes the food gap before fields do (Value rule; 0 otherwise).
+            // Legacy grown-herd food closes the field gap; capital mode values the offspring in the herd asset instead (credit 0).
             double upkeep = demand.Upkeep, supply = demand.Supply, gapSupply = demand.Supply + demand.HerdGrowthFood, biological = demand.Biological, nextPopulation = demand.NextPopulation;
             double forageAfterHerds = demand.ForageAfterHerds, terrestrialAfterHerds = demand.TerrestrialAfterHerds;
             int reservedHerdersForForecast = demand.ReservedHerders, consumers = demand.Consumers;

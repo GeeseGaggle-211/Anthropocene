@@ -4,7 +4,18 @@ Authoritative record of the rule that lets a camp choose how many managed animal
 
 ## Status (read first)
 
-**Opt-in.** `HerdLabourEnabled` ships **false** (OpeningConfig, API default and old saves). The mechanism works (it removes the herder trap in every configuration), but under the current valuation it prices herding below farming and cuts nearly every herd to the seed herd once a camp holds fields (measurements below). The recalibration that offsets this (herd capital value over its breeding life, cultivation payoff delay, marginal-land advantage, grounded herder productivity) is specified in `Docs/HerdValuationDesign.md`; the work queue is in `Docs/HerdValuationHandoff.md`. Measurements below were taken with the lever forced on (`--herd-labour=1`).
+**Opt-in.** `HerdLabourEnabled` remains **false** (OpeningConfig, API default
+and old saves). The current HV2 candidate uses retained capital value minus
+slaughter value and local marginal field/pasture alternatives. Read
+[HerdValuationValidation.md](HerdValuationValidation.md) for current mechanics,
+tests, measurements and unresolved design decisions, and
+[HerdValuationGrounding.md](HerdValuationGrounding.md) for pending grounding.
+
+**Historical baseline below.** The following derivation and measurements
+record the original coupling at `9494571`/`87f5a71`, including its established
+farmer shortcut and herd-growth credit. Those valuation details are superseded
+by the HV2 candidate. The target, breeding cap, seed floor, slaughter ledger,
+action and save contracts continue to apply.
 
 ## Engineering doctrine header
 

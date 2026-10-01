@@ -4,12 +4,12 @@ using System.Linq;
 
 namespace Anthropocene.Simulation
 {
-    // Herd-labour coupling (Docs/HerdLabour.md). Managed herds used to grow on forage and breeding intensity alone and no animal ever
-    // left them, while the planner reserved every herder the herd required before any other claim. This file holds the two missing pieces:
-    //   * the valued herd ladder: one step per herder, each worth the food its animals yield (in the ExpansionValuation food buckets)
-    //     per herder-year, so the planner staffs herders exactly while that value is at least the labour price w;
+    // Opt-in herd-labour coupling (Docs/HerdValuationValidation.md):
+    //   * the valued herd ladder: discounted retained yield minus current slaughter value, annualized per herder-year,
+    //     including saved harvest labour at local marginal alternatives; the planner staffs steps worth at least labour price w;
     //   * controlled slaughter: after breeding, animals above the camp's HerdTarget leave the herd and become carcass food.
-    // Everything here is pure except Slaughter, which is the resolver's single mutation. Cost is O(herders staffed + herds) per camp.
+    // Everything here is pure except Slaughter, the resolver's single mutation. The added local valuation walks at most 19 pasture
+    // tiles plus field/herder ladder steps; forecasts retain their existing own-herd pass. No new persistent state or time-step loop.
 
     // Piecewise food buckets in the order supply fills them, with the value per food unit of each (person-QoL-years per food unit).
     internal static class HerdBuckets
@@ -39,6 +39,8 @@ namespace Anthropocene.Simulation
         public int Steps => Value.Length;
         // The seed herd the planner keeps managed whatever its value (SimulationConfig.MinimumHerdHerders, at most the steps there are).
         public int MinimumHerders;
+        // HV2 diagnostics are transient, like the ladder itself.
+        public double PastureCapacity, NonFieldCapacity, FieldAlternativeRate, CapitalLifeYears;
         // Herders whose step is worth at least `price` (price <= 0: every step with positive value), plus the seed floor. Nonincreasing in price.
         public int Staffed(double price)
         {
@@ -84,6 +86,126 @@ namespace Anthropocene.Simulation
 
     internal static class HerdLabour
     {
+        // The specification's bounded perpetuity. No natural managed-herd death/ageing
+        // is simulated, so production uses lossRate = 0, rather than inventing a loss.
+        internal static double CapitalLife(double discountRate, double lossRate, double growthRate, double animals, double capacity, double ceiling)
+        {
+            double effectiveGrowth = growthRate * (capacity > 0 ? Math.Max(0, 1 - animals / capacity) : 0);
+            double denominator = discountRate + lossRate - effectiveGrowth;
+            return denominator > 0 ? Math.Min(ceiling, 1 / denominator) : ceiling;
+        }
+
+        // Same units as the field ladder and w: person-QoL-years / worker-year.
+        // Keep/slaughter are discounted capital values; divide by management service
+        // life, not by build effort. Saved harvest labour uses a marginal field's
+        // retained-yield/build/upkeep productivity on cultivable pasture, gathering
+        // elsewhere. The alternatives are frozen with the other demand-pass inputs
+        // so staffing remains monotone in the shared labour price.
+        internal static double[] CapitalStepValues(double[] capacity, double yieldPerAnimalYear, double carcassFood,
+            double growthRate, double pastureCapacity, double nonFieldCapacity, double discountRate, double lossRate,
+            double lifeCeiling, double years, double storedFood, double supplyPerYear, double[] bucketSize, double[] bucketValue,
+            double demandPerYear, double gatherRate, double fieldRate, double[] savedLabourPerFood = null)
+        {
+            var values = new double[Math.Max(0, capacity.Length - 1)];
+            var instantSize = bucketSize.Select(x => x * years).ToArray();
+            double floor = double.PositiveInfinity;
+            for (int k = 1; k < capacity.Length; k++)
+            {
+                double before = capacity[k - 1], after = capacity[k], added = after - before;
+                double life = CapitalLife(discountRate, lossRate, growthRate, after, pastureCapacity, lifeCeiling);
+                double keep = HerdBuckets.ValueOf(supplyPerYear + before * yieldPerAnimalYear,
+                    supplyPerYear + after * yieldPerAnimalYear, bucketSize, bucketValue) * life;
+                double slaughter = HerdBuckets.ValueOf(storedFood + before * carcassFood,
+                    storedFood + after * carcassFood, instantSize, bucketValue);
+                double net = life > 0 ? Math.Max(0, keep - slaughter) / life : 0;
+                double weak = Math.Max(0, Math.Min(after, nonFieldCapacity) - Math.Min(before, nonFieldCapacity));
+                double needed = Math.Max(0, Math.Min(added * yieldPerAnimalYear, demandPerYear - before * yieldPerAnimalYear));
+                double saved = 0;
+                if (savedLabourPerFood != null) saved = needed * savedLabourPerFood[k - 1];
+                else if (added > 0 && gatherRate > 0)
+                    saved = needed * (weak / added / gatherRate + (1 - weak / added) / Math.Max(gatherRate, fieldRate));
+                // A zero-priced bucket can still keep a labour-saving herd. Never
+                // grant an infinite price to a step with no usable food or demand.
+                double value = keep < slaughter ? 0 : saved >= 1 ? double.PositiveInfinity : net / (1 - saved);
+                floor = Math.Min(floor, value); values[k - 1] = floor;
+            }
+            return values;
+        }
+
+        // At most 19 local visible tiles (camp vision 2, herd movement 1). Mobile
+        // outer pasture is an option for a future move, never extra current receipts.
+        // Existing grown-herd forage/water forecasts still bound the current target.
+        internal struct PastureBand
+        {
+            public int Tile;
+            public double Animals, Rate;
+        }
+        internal static PastureBand[] Pasture(WorldState w, Camp c, ManagedFoodForecast forecast, double intervals,
+            out double capacity, out double nonFieldCapacity, CampProductionDemand demand = null)
+        {
+            double forage = 0, weakForage = 0, water = 0;
+            double gatherRate = w.Config.GatherPerPerson * w.Config.DaysPerYear / w.Config.BaseDays;
+            var fields = new Dictionary<int, double>();
+            if (demand?.Expansion != null)
+                for (int i = 0; i < demand.Expansion.Tiles.Length; i++)
+                    if (!fields.ContainsKey(demand.Expansion.Tiles[i]))
+                        fields.Add(demand.Expansion.Tiles[i], demand.Expansion.FoodPerWorkerYear[i] * demand.CapitalLife);
+            var bands = new List<PastureBand>();
+            int range = c.IsVillage ? 1 : Math.Min(w.Config.VisionRadius, 1 + w.Config.HerdMovement);
+            var exposure = new SeasonExposure(w.Days, w.Config.TurnDays, w.Config.BaseDays);
+            foreach (int id in w.Map.Radius(c.Tile, range))
+            {
+                var tile = w.Tiles[id];
+                if (tile.ElevationLevel >= 10) continue;
+                var stock = LazyEcology.ProjectEcology(w, id, w.Days);
+                if (tile.TraversableLand)
+                {
+                    double biomass = Math.Max(0, stock.PotentialFood);
+                    forage += biomass;
+                    bool field = w.Map.Distance(c.Tile, id) <= 1 && CultivationEconomy.Cultivable(tile)
+                        && (tile.CultivationOperator < 0 || tile.CultivationOperator == c.Id);
+                    if (!field) weakForage += biomass;
+                    double rate = field && fields.TryGetValue(id, out double marginal) ? Math.Max(gatherRate, marginal) : gatherRate;
+                    if (biomass > 0) bands.Add(new PastureBand { Tile = id, Animals = biomass, Rate = rate });
+                }
+                if (tile.WaterBody == WaterKind.Saltwater || tile.FreshwaterSource == FreshwaterSource.None) continue;
+                water += Math.Max(0, stock.Freshwater);
+                for (int season = 0; season < 4; season++)
+                    water += Math.Max(0, tile.Seasons[season].MaxFreshwater * tile.Seasons[season].WaterRecoveryPerDay) * exposure.At(season);
+            }
+            double foodNeed = forecast.FoodConsumption * intervals, waterNeed = forecast.WaterConsumption * intervals;
+            double foodCapacity = foodNeed > 0 ? forage / foodNeed : double.PositiveInfinity;
+            double waterCapacity = waterNeed > 0 ? water / waterNeed : double.PositiveInfinity;
+            capacity = Math.Min(foodCapacity, waterCapacity);
+            if (double.IsPositiveInfinity(capacity)) capacity = forecast.Animals;
+            nonFieldCapacity = forage > 0 ? capacity * weakForage / forage : 0;
+            double animalCapacity = capacity;
+            return bands.Select(b => new PastureBand { Tile = b.Tile, Animals = forage > 0 ? animalCapacity * b.Animals / forage : 0, Rate = b.Rate })
+                .OrderBy(b => b.Rate).ThenBy(b => b.Tile).ToArray();
+        }
+
+        // Consume the cheapest pasture first. A band and a herder step can each
+        // straddle the other; walk them together once, O(steps + local tiles).
+        internal static double[] SavedLabour(double[] capacity, PastureBand[] bands, double fallbackRate)
+        {
+            var result = new double[Math.Max(0, capacity.Length - 1)];
+            int band = 0; double used = 0;
+            for (int k = 1; k < capacity.Length; k++)
+            {
+                double added = capacity[k] - capacity[k - 1], left = added, saving = 0;
+                while (left > 1e-12 && band < bands.Length)
+                {
+                    double take = Math.Min(left, Math.Max(0, bands[band].Animals - used));
+                    if (bands[band].Rate > 0) saving += take / bands[band].Rate;
+                    left -= take; used += take;
+                    if (used >= bands[band].Animals - 1e-12) { band++; used = 0; }
+                }
+                if (left > 0 && fallbackRate > 0) saving += left / fallbackRate;
+                result[k - 1] = added > 0 ? saving / added : 0;
+            }
+            return result;
+        }
+
         // The planner's herd valuation applies to automated Value-rule husbandry camps when the lever is on.
         public static bool Applies(WorldState w, Camp c)
             => w.Config.HerdLabourEnabled && w.Config.Neolithic.ValueFulfilmentSelected && CultivationEconomy.HusbandryEnabled(c) && c.Population > 0;
@@ -97,9 +219,15 @@ namespace Anthropocene.Simulation
             if (!(animals > 0) || !(years > 0)) return null;
             var grown = d.GrownHerd ?? TurnResolver.ForecastGrownManagedAnimalFood(w, c, breeding, intervals, years, c.Tile);
             double grownAnimals = grown.Animals > 0 ? grown.Animals : animals;
-            // Net food one managed animal adds per year: its yield less the human forage it displaces (full management; the grown herd's
-            // newborns count as animals kept, which is the herd-growth credit of the Value rule).
-            double yield = grown.Animals > 0 ? grown.AnimalFood / grown.Animals : d.ManagedFood.AnimalFood / animals;
+            // Net food one managed animal adds per year: its yield less displaced human forage.
+            // Newborns remain in the grown-animal target, without a second field-gap credit.
+            // Price a fully managed marginal animal, not the average of the entire
+            // under-staffed herd. Otherwise a large unstaffed herd artificially
+            // lowers the value of even its first feasible, fully managed animals.
+            var yieldForecast = grown.Animals > 0 ? grown : d.ManagedFood;
+            double animalCount = grown.Animals > 0 ? grown.Animals : animals;
+            double management = Math.Pow(yieldForecast.ManagementFulfillment, cfg.AnimalManagementExponent);
+            double yield = management > 0 ? yieldForecast.AnimalFood / animalCount / management : 0;
             double displaced = grown.Animals > 0 ? grown.HumanFoodDisplaced / grown.Animals : d.ManagedFood.HumanFoodDisplaced / animals;
             double netPerYear = Math.Max(0, yield - displaced) / years;
             // Herder steps up to the herd the pasture grows to, never more than the residents.
@@ -129,10 +257,20 @@ namespace Anthropocene.Simulation
                 Capacity = capacity.ToArray(), GrownAnimals = grownAnimals,
                 MinimumHerders = Math.Min(c.Population, Math.Max(0, cfg.MinimumHerdHerders))
             };
-            // Human supply without any herd: the no-herd forage the camp could gather per year. Herd food also saves the labour that would harvest
-            // that much food: a gatherer, or a farmer once fields are established, brings in altRate food per year.
-            double perYear = cfg.DaysPerYear / cfg.BaseDays, altRate = cfg.GatherPerPerson * perYear * (d.Established ? Math.Max(1, cfg.FarmerProductivity) : 1);
-            ladder.Value = HerdLadder.StepValues(ladder.Capacity, netPerYear, d.ForageSupply / years, sizes.ToArray(), values.ToArray(), sizes.Sum(), altRate);
+            var pasture = Pasture(w, c, grown, intervals, out ladder.PastureCapacity, out ladder.NonFieldCapacity, d);
+            double gatherRate = cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays;
+            // The next field step already includes retained next-boundary yield,
+            // build labour, upkeep, and the settling-cost adjustment. An exhausted
+            // or unavailable ladder has no field alternative. No FarmerProductivity
+            // shortcut and no second expansion forecast.
+            ladder.FieldAlternativeRate = pasture.Length > 0 ? pasture.Max(b => b.Rate) : 0;
+            ladder.CapitalLifeYears = CapitalLife(n.DiscountRatePerYear, 0, grown.GrowthRate * breeding,
+                grownAnimals, ladder.PastureCapacity, ExpansionValuation.CapitalLife(n));
+            ladder.Value = CapitalStepValues(ladder.Capacity.Select(x => Math.Min(x, grownAnimals)).ToArray(), netPerYear,
+                grown.CarcassFood, grown.GrowthRate * breeding, ladder.PastureCapacity, ladder.NonFieldCapacity,
+                n.DiscountRatePerYear, 0, ExpansionValuation.CapitalLife(n), years, c.Food,
+                d.ForageSupply / years, sizes.ToArray(), values.ToArray(), sizes.Sum(), gatherRate, ladder.FieldAlternativeRate,
+                SavedLabour(ladder.Capacity.Select(x => Math.Min(x, grownAnimals)).ToArray(), pasture, gatherRate));
             ladder.MinimumHerders = Math.Min(ladder.MinimumHerders, ladder.Steps);
             return ladder;
         }

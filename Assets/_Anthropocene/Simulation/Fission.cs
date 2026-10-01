@@ -473,7 +473,7 @@ namespace Anthropocene.Simulation
                 foreach (int n in w.Map.Radius(tile, 1))
                 {
                     var t = w.Tiles[n];
-                    if (!t.TraversableLand || t.Environment == EnvironmentKind.Ice || !t.Seasons.Any(s => s.MaxPotentialFood > 0)) continue;
+                    if (!CultivationEconomy.Cultivable(t)) continue;
                     double flow = 0;
                     for (int s = 0; s < 4; s++) flow += EcologyMath.ManagedRegenerationFlow(cfg, q, t.Seasons[s].MaxPotentialFood, t.Seasons[s].BiomassRecoveryPerDay, 1);
                     managed += flow / 4 * cfg.TurnDays;
