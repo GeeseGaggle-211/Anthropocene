@@ -174,7 +174,7 @@ fission-off control replays the pre-fission outcomes exactly. Each per-turn samp
 tile, sizes, regime, policy, push, desirability, score, affinity, animals moved), the fission pass work counts
 (`fissionSearches`, `fissionCandidates`, `fissionValidations`, `fissionTileProjections`, `fissionInvalidations`,
 `fissionProposals`, `fissionDropped`, `fissionDaughterChecks`, `fissionDaughterBlocked`) and `fissionMs`; events also carry the expected
-`Gain` and estimated `DaughterQoL`. `--fission-housing-relief=0..1` overrides `FissionHousingRelief` (WP10c). Because fission lengthens the opening to up to 12 turns
+`Gain` and estimated `DaughterQoL`. `--fission-housing-relief=0..1` overrides `FissionHousingRelief` (WP10c). `Summarize-FissionThroughput.py <run-dir>` reduces `--details=1 --metrics=1` runs named `<tag>__<Shape><seed>.json` to the daughter-check, search-count, size-by-housing-class, split-rate-by-onset and QoL tables of Docs/Fission.md ("Throughput"). Because fission lengthens the opening to up to 12 turns
 (a late Paleolithic daughter must also complete), size `--post-opening-turns` for a fixed total turn count.
 `--immigration=0|1` overrides `ImmigrationEnabled` (WP10b; unset keeps the configured value, disabled). Each sample then records
 `migrationCount`, `migrantCount`, `kinMigrants` (people moved between Societies related by lineage), `migrationEvents` (canonical flows with

@@ -40,8 +40,8 @@ and controller; the player keeps the original camp and never controls a daughter
 - **Scaling law.** `T = O(C + F_v * footprint + F_s * ring * footprint + P)` where `C`
   is camps (one closed-form gain estimate each: a fixed-Housing lookup and a few exponentials), `F_v` camps with `G >= 0.8 G*` and a feasible daughter
   that hold a cache (one footprint validation, at most 7 tile projections), `F_s` camps
-  above the search threshold without a valid cache (at most the ring at distance
-  `FissionRadius`, 18 tiles at radius 3, each one footprint) and `P` proposals
+  above the search threshold without a valid cache (at most the tiles from the camp spacing out to
+  `FissionRadius`: 18 at radius 3, 42 at 4 and 72 at 5, since spacing 3 excludes the inner disc, each one footprint) and `P` proposals
   (reconcile and commit). Nothing scales with elapsed years, map size or Society
   count. Memory per fission: one Society, one camp, the daughter's copy of the
   parent's explored set (12 bytes per occupied 8x8 block) and contacts, and copied
@@ -97,7 +97,7 @@ No assumption needed a redesign, so the work proceeded.
   `min(1, (fixed people + portable people (1 - f)) / (N - N_d))` (people capacities: `HousingPeoplePerUnit` per fixed unit,
   `LightHousingPeoplePerUnit` per tent) because the parent keeps all fixed Housing
   and portable Light Housing splits in proportion (weighted by `FissionHousingRelief`, default 0). The daughter
-  takes no fixed housing, so its `H` comes from its portable share alone (`N_band` when it has none). With
+  takes no fixed housing; its own shelter is the daughter-shelter estimate (`H = N_band` when it has none). With
   `Q = F W (w_c cloth + w_h housing) S` and each coverage `1 - E (1 - c)`:
   `G = Q_after / Q_now - 1`. Both qualities are evaluated at the post-demography snapshot (`Q_now` is the
   formula at the present residents, not the stored `QoL`, so births after the needs cohort do not bias the gain).
@@ -107,10 +107,29 @@ No assumption needed a redesign, so the work proceeded.
   With full goods coverage and `B = 1`, `G = exp((N^2 - (N - N_d)^2) / N_s^2) - 1` for `beta = 2`, and `F`,
   `W` and partial coverage cancel unless the split changes housing per head.
 - **Daughter check** ("would part of this population be better off"). The daughter's estimated QoL at a viable
-  site (`F = W = 1`, clothing coverage unchanged, housing from its portable share only, `S(N_d)`, and the
+  site (`F = W = 1`, clothing coverage unchanged, housing from what it carries and can build in its first turn
+  (`Fission.DaughterShelter`, below), `S(N_d)`, and the
   expectation the game applies after a move: stationary years reset to zero then one turn elapses) must be at
   least `Q_now - FissionDaughterMargin` (0.05). It is evaluated only for a camp whose gain reaches `G*` and
   that holds a valid destination, and its binding is counted (`FissionDaughterChecks`, `FissionDaughterBlocked`).
+- **Daughter shelter (B1).** The commit splits every double inventory field in the daughter's people fraction
+  `f` (verified in `Fission.Found`: Light Housing units, Housing Material, Wood, Clay, Animal Fabric, Cloth, Hand and
+  Regular Tools, Copper Tools) and leaves all fixed Housing with the parent. `Fission.DaughterShelter(world, camp, N_d)` is the
+  pure, O(1) estimate of the shelter the daughter has at the end of her first turn, when her QoL is next computed:
+  carried tents (`f` of the parent's Light Housing, `LightHousingPeoplePerUnit` people each) plus what her Builders assemble
+  from carried goods in one turn at the planner's and resolver's production rates. Builders are
+  `FissionDaughterBuilderShare` (0.05) of her people, fractional (an expectation, not a roster). Rate: `BuilderHousingOutputPerBaseDays`
+  per interval, times `GeneralistTaskEfficiency` unless the Society holds Construction; Housing and Housing Material each run at twice
+  the single-step rate and share the Builder pool; the tool waterfall is the resolver's `ToolCoverageBudget` over her carried
+  Hand/Regular/Copper tools (equipment limits and the 1 / 1.5 / 2 housing multipliers), so a daughter with no tools assembles
+  nothing. Order: fixed Housing first (needs Cultivation; one carried Housing Material or one carried Wood/Clay unit each, material
+  making charged to labour), then Light Housing from carried Animal Fabric (needs Husbandry), each capped at the people still
+  unsheltered. Nothing is gathered at the site, so a daughter with no Builders, tools or materials has exactly her tents. Her housing
+  coverage and cohesion share both use the result: `H_d = HousingShare(fixed built people, carried and sewn tent people, N_d)`.
+  Builder-share choice: in the five-world baseline (HEAD, fission on), camps that staff any Builder use a median 1.5 percent of their people
+  (P90 4.5 percent; 2.2 percent and 7.5 percent for camps of 300 or fewer, the size of a daughter), so 0.05 is a heavy but
+  realistic shelter crew. Omissions (stated, not corrected): decay of carried tents within the turn (at most 10 percent
+  of tent capacity), site-gathered materials, and Cloth/Animal Fabric competition between clothing and tents.
 - **Daughter.** `N_daughter = floor(N * f)`. It must be at least
   `FissionMinimumDaughter` (12), smaller than the parent that remains, and leave the
   parent at least `MinimumCamp`. Hunters stay with the parent.
@@ -120,7 +139,7 @@ No assumption needed a redesign, so the work proceeded.
   superset of own, visible and contact camps: a settling group finds a neighbour
   before it founds beside it). Known means: Paleolithic, current vision only (camps
   and hunter groups); after the first breakthrough, current vision plus explored
-  tiles. With the default spacing 3 and radius 3 this is the ring at distance 3. The
+  tiles. With spacing 3 a radius of 3 is only the ring at distance 3 (18 tiles); the default radius 4 adds the ring at distance 4 (42 tiles in all) and radius 5 the ring at 5 (72). The
   best tile wins by `D` (capped at one) descending, then the uncapped ecological support ratio (footprint supply
   before the labor ceiling, over the daughter's need) descending, then hex distance, then tile ID; `D` saturates
   at one on most sites, so the second key keeps the choice from defaulting to low tile IDs. Nothing is reranked
@@ -419,11 +438,93 @@ after load in both. Generation 34.1 s against 33.4 s.
 - **Populations rise several-fold.** More independent camps use more independent footprints, so total
   population is about 6.9 times the control at turn 60. Calibration (WP11) is out of scope here.
 
+## Throughput: daughter shelter estimate and destination radius
+
+Motivation (Docs/SocialCohesion.md, "Main finding"): in the HEAD baseline the daughter check blocked 76 percent of
+evaluations, because the daughter was charged `H = 0` (no housing, `N_s = N_band`), and radius 3 with spacing 3 searched
+only the distance-3 ring. Two changes, measured together and separately:
+
+- **B1** the daughter's housing is what she carries plus what her Builders can assemble in her first turn
+  (`Fission.DaughterShelter`, see "Daughter shelter" above; new lever `FissionDaughterBuilderShare` 0.05).
+- **B2** `FissionRadius` default 3 to **4** (destination order unchanged: D, support ratio, distance, tile ID, so the
+  nearest tied site still wins).
+
+Method: fission on, immigration off, Standard / 80 tribes, 12 opening + 50 post-opening turns, `--workers=1 --details=1 --metrics=1`,
+five worlds (Continents seeds 1, 2, 3, Pangaea 1, Archipelagos 1), three runs in parallel; counters cover every turn, size and
+split-rate rows pool post-opening turns 10 to 50 (`Tools/PerformanceAudit/Summarize-FissionThroughput.py`). Runs: `head` = commit
+1122160; `b1` = B1 only (radius 3); `b1r4` = B1 + radius 4 (the shipped default); `b1r5` = B1 + radius 5.
+
+| run | fissions | daughter checks | blocked | proposals | dropped | searches | candidates scored | final population / world | camps at turn 60 / world | mean QoL |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| head | 1,420 | 6,383 | 4,820 (76%) | 1,563 | 143 | 24,532 | 13,533 | 403,916 | 364 | 0.698 |
+| b1 | 2,142 | 2,579 | 248 (10%) | 2,331 | 189 | 36,640 | 17,422 | 534,193 | 508 | 0.715 |
+| b1r4 | 2,348 | 2,901 | 347 (12%) | 2,554 | 206 | 39,159 | 31,011 | 576,093 | 550 | 0.715 |
+| b1r5 | 2,554 | 3,268 | 381 (12%) | 2,887 | 333 | 41,951 | 49,250 | 617,814 | 591 | 0.717 |
+
+Camp-size P90 / P95 (n camp-turns) by actual housing class (targets 100, 250, 600-1,000) and median size unhoused / tent / fixed:
+
+| run | unhoused | tent-dominant | fixed-dominant | median size u/t/f | score |
+|---|---|---|---|---|---|
+| head | 65/79 (3,826) | 1,367/1,714 (17,903) | 1,683/2,011 (32,510) | 28/426/746 | 12.02 |
+| b1 | 222/243 (4,502) | 1,362/1,687 (18,324) | 1,499/1,853 (47,738) | 33/429/685 | 14.20 |
+| b1r4 | 226/246 (4,601) | 1,385/1,749 (20,359) | 1,504/1,828 (50,770) | 33/430/678 | 14.59 |
+| b1r5 | 229/247 (4,660) | 1,339/1,682 (21,964) | 1,503/1,860 (54,314) | 33/429/683 | 14.21 |
+
+Split rate of camp-turns by size relative to the closed-form Neutral onset `0.4581 N_s` (splits / camp-turns; a camp that split is
+measured at its size before the split; every camp is treated as Neutral, so this is approximate for Discourage/Encourage camps):
+
+| run | 0.5-1.0x | 1.0-1.5x | 1.5-2.0x | 2.0-3.0x | >3x |
+|---|---|---|---|---|---|
+| head | 4.7% (746/16,029) | 3.3% (325/9,953) | 1.1% (73/6,610) | 0.9% (50/5,791) | 2.3% (107/4,558) |
+| b1 | 5.6% (1,293/23,025) | 3.5% (482/13,684) | 0.8% (69/8,698) | 0.9% (61/6,665) | 2.3% (108/4,599) |
+| b1r4 | 5.8% (1,442/24,900) | 3.8% (560/14,691) | 0.7% (60/9,042) | 0.8% (59/7,291) | 1.9% (96/4,967) |
+| b1r5 | 5.8% (1,547/26,680) | 3.8% (611/15,948) | 0.8% (78/9,918) | 1.0% (75/7,532) | 2.1% (110/5,233) |
+
+QoL P25 / median / P75 by housing class (post-opening turns 10-50):
+
+| run | unhoused | tent-dominant | fixed-dominant |
+|---|---|---|---|
+| head | 0.00/0.02/0.59 | 0.65/0.88/0.95 | 0.50/0.75/0.90 |
+| b1 | 1.00/1.00/1.00 | 0.64/0.88/0.95 | 0.57/0.77/0.89 |
+| b1r4 | 1.00/1.00/1.00 | 0.64/0.88/0.95 | 0.57/0.77/0.89 |
+| b1r5 | 1.00/1.00/1.00 | 0.66/0.88/0.95 | 0.57/0.76/0.89 |
+
+Cost (Continents 1 alone, one worker, no other load; per-turn medians over the 50 post-opening turns, fission pass and whole turn):
+
+| run | fission ms (median / last 25 turns) | turn ms (median / last 25 turns) | camps at turn 60 |
+|---|---|---|---|
+| head | 6.3 / 8.1 | 617 / 865 | 371 |
+| b1 | 8.0 / 12.5 | 752 / 1,216 | 551 |
+| b1r4 | 10.3 / 13.6 | 752 / 1,353 | 605 |
+| b1r5 | 12.1 / 20.1 | 816 / 1,419 | 631 |
+
+Findings:
+
+- **B1 corrects the daughter check.** The check binds in 10 percent of evaluations instead of 76 percent, fissions rise
+  51 percent (1,420 to 2,142), camps at turn 60 from 364 to 508 and population per world by 32 percent. The estimate was therefore
+  the dominant blocker, as inferred in SocialCohesion.md; this run isolates it. Mean QoL does not fall (0.698 to 0.715).
+- **The size tail barely moves.** Fixed-dominant P90 falls from 1,683 to 1,499, tent-dominant stays near 1,360, and the
+  scores in the table worsen only because the new daughters change the *unhoused* class: a daughter of a 300-600 person village is
+  founded with about 100-200 people and no fixed Housing, so a post-opening unhoused camp is now often 200 people (P90 222, against 65
+  for the Paleolithic camps alone) with stored QoL 1.00 (the value a camp reports before its first resolution computes one; not investigated further). Camps still split mostly
+  below onset (5-6 percent of camp-turns at 0.5-1.0x) and rarely above it (0.7-1.0 percent at 1.5-3x): once a village is much larger than
+  its onset the cause is no longer the daughter check (now 10-12 percent of evaluations) but the one-split-per-turn rule from a frozen
+  snapshot with a daughter of at most 40 percent when a cohort grows several-fold in a 20-year turn. Size targets remain unmet.
+- **B2.** Radius 4 adds 10 percent more fissions and 8 percent more population than radius 3 (b1 to b1r4); radius 5 adds
+  a further 9 and 7 percent. The cost scales with the searched disc: candidates scored 17,422 / 31,011 / 49,250 for radius 3 / 4 / 5
+  (1.8x and 2.8x), whole-turn time 752 / 752 / 816 ms median on Continents 1 (the late-turn rise follows the larger camp count, not the
+  search: the fission pass is under 2 percent of the turn in every run). Radius 4 is shipped; radius 5 buys fewer extra fissions per
+  candidate and the most dropped proposals (333 against 206), and is left as a lever.
+- **Limits.** Five worlds, one seed per shape for Pangaea and Archipelagos; differences of a few percent are inside the per-world
+  spread (per-world rows reproduce with `--per-world`). Wall time was measured on a shared four-core machine. The builder share is a
+  documented estimate, not a calibration to realized first-turn building, and the daughter's realised first-turn QoL was not compared
+  with the estimate. Daughters now start larger and unhoused, which the unhoused size row reflects.
+
 ## Deliberate limits
 
 - The defaults are calibrated analytically to full goods coverage (table above); the realized size depends on
-  housing per head (see Findings). `FissionRadius`, `FissionMinimumDaughter` and the daughter fractions are
-  unchanged from WP10a and untuned.
+  housing per head (see Findings). `FissionMinimumDaughter` and the daughter fractions are
+  unchanged from WP10a and untuned; `FissionRadius` (4) and `FissionDaughterBuilderShare` are set by the throughput measurements above.
 - Sites are scored from ground-truth ecology of the footprint; only the chosen tile
   reaches the owner's observation.
 - Immigration is WP10b ([Immigration.md](Immigration.md)); affinity decay, trade with kin (WP7-WP8) and the Elder (#23)

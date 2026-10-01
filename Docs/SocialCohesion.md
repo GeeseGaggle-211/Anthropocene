@@ -58,7 +58,7 @@ with `Fixed`, `Light`, `Total`), with `HousingCoverage`, `HousingShare`, `Housin
 | `ResolveNeeds` | `HousingPerCapita = R_h` from people capacity; `QoL = F W (w_c c + w_h h) S(N)` with `S` at the camp's housing and the cohort. |
 | Demand (`NeolithicProduction.Demand`, `MaterialEconomy`) | Housing demand is the unsheltered people (`residents - capacity at the horizon end`). Housing units = gap / 4; Light Housing units = gap / `LightHousingPeoplePerUnit`; the Animal Fabric that feeds Light Housing follows the same gap. `DepreciateHousing` records its ledger in fixed-unit equivalents of people. |
 | Claim valuation (`ExpansionValuation`, `CampProductionDemand`) | `S` at the present cohort and housing. A housing claim is valued per person sheltered, so a unit of Housing is worth `4 x` and a tent `LightHousingPeoplePerUnit x` the per-person value; claim stock and need are in units of that good. `Welfare(W, N)` evaluates `S` at the camp's housing and the cohort `N`. The valuation does not add the cohesion benefit of extra housing (see limits). |
-| Fission (`EstimateSplit`) | Stayers: fixed capacity kept, portable split in proportion. The cohesion share for the stayers is the present `H` when `FissionHousingRelief = 0` (only the headcount changes) and interpolates towards the relieved `H` with the weight (`H_after = H_now + relief (H_relieved - H_now)`), the same weight as housing coverage. The daughter takes no fixed housing: its `H` comes from its portable share alone. |
+| Fission (`EstimateSplit`) | Stayers: fixed capacity kept, portable split in proportion. The cohesion share for the stayers is the present `H` when `FissionHousingRelief = 0` (only the headcount changes) and interpolates towards the relieved `H` with the weight (`H_after = H_now + relief (H_relieved - H_now)`), the same weight as housing coverage. The daughter takes no fixed housing: its `H` comes from the carried tents plus the shelter its Builders assemble from carried goods in its first turn (`Fission.DaughterShelter`, Docs/Fission.md). |
 | Immigration (`QoLModel.ForwardAt`) | Housing stays with the camp. Arrivals bring none, so the destination's `H` (and coverage) is diluted by headcount; the source's `H` rises as it loses people because they leave housing behind. One formula at each camp's own headcount; no label enters. |
 | Inspector text | Shelter is reported as people capacity (houses 4, tents `LightHousingPeoplePerUnit`). |
 
@@ -333,13 +333,16 @@ Limits of the result, stated plainly:
   50, 10,054 camp-turns evaluated), a camp at 1.0 to 1.5 times its closed-form onset split in 0.8 percent of camp-turns and a camp
   at 2 to 3 times in under 1 percent; only camps at 0.5 to 1.0 times onset (7 percent) split often, because cohorts grow by a large factor
   in one 20-year turn and a split runs at most once per turn from a frozen snapshot with a daughter of at most 40 percent. The
-  daughter check (daughter QoL at least `Q_now - 0.05`) blocked 1,040 of 1,348 evaluations (77 percent). The estimator charges a
-  daughter founded without housing `H = 0`, `N_s = N_band`, hence a low `S` at 25 to 40 percent of a large village; under the retired
-  rule a daughter kept the parent's regime scale, so this is the main behavioural difference from the old check (the attribution is
-  inferred from the estimator, not isolated by a run).
-  With `FissionDaughterMargin` raised to 1 (check disabled) fissions rose from 291 to 488 and population by 37 percent, but
-  tent and fixed P90 stayed at 1,480 and 1,553: the remainder is destination availability (minimum spacing 3, radius 3, explored
-  viable sites). These levers are fission, not cohesion, and were outside this task.
+  daughter check (daughter QoL at least `Q_now - 0.05`) blocked 1,040 of 1,348 evaluations (77 percent), because the estimator charged a
+  daughter founded without housing `H = 0`, `N_s = N_band`. **Resolved by the fission-throughput change (Docs/Fission.md,
+  "Throughput").** The daughter's estimate now counts her carried tents and the shelter her Builders assemble in her first turn
+  (`Fission.DaughterShelter`), and `FissionRadius` is 4. Measured on five Standard/80 worlds (fission on, immigration off): the
+  check blocks 10-12 percent of evaluations instead of 76 percent, fissions rise from 1,420 to 2,348 (+65 percent), camps at turn 60
+  from 364 to 550 and population by 43 percent, with mean QoL unchanged to higher (0.698 to 0.715). The size tail still barely moves
+  (fixed-dominant P90 1,683 to 1,504, tent-dominant 1,367 to 1,385; the unhoused class now includes large new daughters, P90 65 to 226):
+  the remaining cause is the one-split-per-turn rule against several-fold cohort growth, not the daughter check or the
+  destination radius (b1 to radius 5 changes P90 by under 3 percent). The earlier probe with `FissionDaughterMargin = 1` (fissions 291
+  to 488, population +37 percent, tent and fixed P90 unchanged at 1,480 and 1,553) pointed the same way.
 - **Fission off** (`Aoff`) freezes the map at 80 camps averaging about 1,065 people (85,000 total against 456,000) with P90 sizes
   above 1,500 in every class that has data.
 - **Sampling.** Each configuration is five seeded worlds. Score differences below about 10 percent (A against B, or single

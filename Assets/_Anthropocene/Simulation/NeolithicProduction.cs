@@ -88,6 +88,14 @@ namespace Anthropocene.Simulation
             // source compatibility and it must not reintroduce worker-count wear.
             housingMultipliers = new[] { n.HandToolsHousingMultiplier, n.ImprovedToolsHousingMultiplier, n.CopperToolsHousingMultiplier };
         }
+        // A budget over explicit remaining capacities (Hand Tool outputs, Regular Tool outputs, Copper worker time), for pure estimators
+        // that price work a camp does not yet own (Fission.DaughterShelter). Same grade multipliers and waterfall as the camp form.
+        internal ToolCoverageBudget(NeolithicConfig n, double handOutputs, double toolOutputs, double copperWorkerTime)
+        {
+            remaining = new[] { Math.Max(0, handOutputs), Math.Max(0, toolOutputs), Math.Max(0, copperWorkerTime) };
+            consumed = new double[3];
+            housingMultipliers = new[] { n.HandToolsHousingMultiplier, n.ImprovedToolsHousingMultiplier, n.CopperToolsHousingMultiplier };
+        }
         public ToolCoverageBudget(WorldState w, Camp c, TurnHorizon horizon, double limit = double.PositiveInfinity)
             : this(w, c, horizon.ReferenceIntervals, limit) { }
         // Toolmaking is a non-equipment input to the same turn's aggregate

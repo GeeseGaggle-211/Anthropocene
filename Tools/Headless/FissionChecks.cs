@@ -23,7 +23,7 @@ internal static class FissionChecks
     private static WorldState World(bool neolithic, params int[][] sites) => World(24, 16, neolithic, sites);
     private static WorldState World(int width, int height, bool neolithic, params int[][] sites)
     {
-        var cfg = SimulationConfig.Small(1); cfg.FissionEnabled = true; cfg.FissionHousingRelief = 1; /* mechanism fixtures exercise the full relief; the shipped default is 0 */ cfg.FissionDaughterMargin = 1; cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;
+        var cfg = SimulationConfig.Small(1); cfg.FissionEnabled = true; cfg.FissionHousingRelief = 1; /* mechanism fixtures exercise the full relief; the shipped default is 0 */ cfg.FissionDaughterMargin = 1; cfg.FissionRadius = 3; /* fixtures are written for the distance-3 ring; the shipped default is 4 */ cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;
         var w = new WorldState { Seed = 101, Config = cfg, Generation = new GenerationReport(), Tiles = new Tile[cfg.Width * cfg.Height] };
         for (int i = 0; i < w.Tiles.Length; i++)
         {
@@ -66,32 +66,93 @@ internal static class FissionChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Levers(); Crowding(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); Spacing(); Bounded(); Policy(); Observations(); Persistence(); Replay();
+        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); Spacing(); Bounded(); WiderRadius(); Policy(); Observations(); Persistence(); Replay();
         Console.WriteLine("PASS: " + checks + " fission assertions"); return checks;
+    }
+
+    // B1: the daughter's own shelter at the end of her first turn (Fission.DaughterShelter): her proportional share of carried tents
+    // and materials, plus what her Builders can assemble from them in one turn. Closed forms at 100 residents, Neutral policy (30 leave).
+    private static void DaughterHousing()
+    {
+        const double f = .3; const int nd = 30;
+        WorldState Fixture(double builders, double hand, double material, double wood = 0, double fabric = 0, double tents = 0, bool construction = false, bool husbandryOnly = false)
+        {
+            var w = World(true, new[] { 8, 8 }); var c = w.Camps[0]; c.ClothPerCapita = 1; c.Population = 100; w.Config.FissionDaughterBuilderShare = builders;
+            c.Inventory.HandTools = hand; c.Inventory.HousingMaterial = material; c.Inventory.Wood = wood; c.Inventory.AnimalFabric = fabric; c.Inventory.LightHousingUnits = tents;
+            if (construction) c.People.NeolithicTechnologies.Add(NeolithicTech.Construction);
+            if (husbandryOnly) { c.Technologies[(int)Technology.Cultivation] = false; c.Technology = Technology.AnimalHusbandry; c.Technologies[(int)Technology.AnimalHusbandry] = true; }
+            return w;
+        }
+        double Intervals(WorldState w) => w.Config.GenerationIntervals;
+        var n0 = new SimulationConfig().Neolithic;
+        double unit = n0.BuilderHousingOutputPerBaseDays, ppu = n0.HousingPeoplePerUnit, tent = n0.LightHousingPeoplePerUnit;
+        // Portable share: f of the tents, nothing built with no Builders; the parent's fixed Housing never travels.
+        var a = Fixture(0, 0, 0, tents: 10); a.FixedHousing.Add(new FixedHousingStock { CampId = a.Camps[0].Id, Tile = a.Camps[0].Tile, Units = 25, LastUpdatedDays = a.Days });
+        var sa = Fission.DaughterShelter(a, a.Camps[0], nd);
+        Near(sa.Light, 10 * f * tent, "the daughter carries her proportional share of the portable Light Housing"); Near(sa.Fixed, 0, "the daughter carries none of the parent's fixed Housing");
+        // Her tents are all she gets with no Builders, and with Builders but no tools or materials.
+        var b = Fixture(.1, 0, 0, tents: 10); var sb = Fission.DaughterShelter(b, b.Camps[0], nd);
+        Near(sb.Light, 10 * f * tent, "Builders without tools or materials add nothing"); Near(sb.Fixed, 0, "no tools, no fixed Housing");
+        var b2 = Fixture(0, 1000, 1000, tents: 10); Near(Fission.DaughterShelter(b2, b2.Camps[0], nd).Total, 10 * f * tent, "materials and tools without Builders add nothing");
+        // Labour-limited: generalist Builders (rate x GeneralistTaskEfficiency), step rate 2x, hand-tool multiplier 1, stock covers the material step.
+        var l = Fixture(.05, 1000, 1000); double lab = nd * .05 * Intervals(l), step = 2 * unit * n0.GeneralistTaskEfficiency;
+        Near(Fission.DaughterShelter(l, l.Camps[0], nd).Fixed, lab * step * ppu, "labour-limited: Builders' output over one turn at the generalist rate", 1e-6);
+        // Specialists (Construction) at 2x...: the need caps the build (30 people = 7.5 units).
+        var sp = Fixture(.1, 1000, 1000, construction: true);
+        Near(Fission.DaughterShelter(sp, sp.Camps[0], nd).Fixed, nd, "a specialist crew shelters the whole daughter when labour and materials suffice", 1e-6);
+        var sp1 = Fixture(.05, 1000, 1000, construction: true); double splab = nd * .05 * Intervals(sp1);
+        Near(Fission.DaughterShelter(sp1, sp1.Camps[0], nd).Fixed, splab * 2 * unit * ppu, "specialists build at the full Builder rate", 1e-6);
+        // Material-limited: carried Housing Material, then carried Wood/Clay at one unit per Housing; labour includes the material step.
+        var m1 = Fixture(.1, 1000, 10, construction: true); Near(Fission.DaughterShelter(m1, m1.Camps[0], nd).Fixed, 10 * f * ppu, "material-limited: carried Housing Material only", 1e-6);
+        var m2 = Fixture(.1, 1000, 10, wood: 10, construction: true); Near(Fission.DaughterShelter(m2, m2.Camps[0], nd).Fixed, (10 + 10) * f * ppu, "carried Wood adds one Housing per unit", 1e-6);
+        var m3 = Fixture(.02, 1000, 0, wood: 1000, construction: true); double mlab = nd * .02 * Intervals(m3);
+        Near(Fission.DaughterShelter(m3, m3.Camps[0], nd).Fixed, mlab * unit * ppu, "making the Housing Material first halves the labour-limited output", 1e-6);
+        // Tool-limited: Hand Tool outputs bound the assembly.
+        var t1 = Fixture(.1, 2, 1000, construction: true); Near(Fission.DaughterShelter(t1, t1.Camps[0], nd).Fixed, 2 * f * ppu, "tool-limited: one Hand Tool output per Housing", 1e-6);
+        // Light Housing from carried Animal Fabric needs Husbandry; tents are sewn after fixed Housing and only to the remaining need.
+        var h = Fixture(.05, 1000, 0, fabric: 100, husbandryOnly: true); double hl = nd * .05 * Intervals(h);
+        Near(Fission.DaughterShelter(h, h.Camps[0], nd).Light, hl * unit * n0.GeneralistTaskEfficiency * tent, "husbandry daughter sews Light Housing at the Builder rate", 1e-6); Near(Fission.DaughterShelter(h, h.Camps[0], nd).Fixed, 0, "no Cultivation, no fixed Housing");
+        var h2 = Fixture(.1, 1000, 0, fabric: 2, husbandryOnly: true, construction: true); Near(Fission.DaughterShelter(h2, h2.Camps[0], nd).Light, 2 * f * tent, "Light Housing is bounded by carried Animal Fabric", 1e-9);
+        var h3 = Fixture(.1, 1000, 1000, tents: 100, fabric: 100, construction: true); Near(Fission.DaughterShelter(h3, h3.Camps[0], nd).Total, 100 * f * tent, "a daughter already sheltered by carried tents builds nothing more");
+        // The estimate uses it: H and housing coverage of the daughter come from carried plus built shelter.
+        var e = Fixture(.1, 1000, 1000, construction: true); var ec = e.Camps[0]; e.FixedHousing.Add(new FixedHousingStock { CampId = ec.Id, Tile = ec.Tile, Units = 25, LastUpdatedDays = e.Days });
+        var ee = Fission.EstimateSplit(e, ec, FissionPolicy.Neutral); var bare = Fixture(0, 0, 0); bare.FixedHousing.Add(new FixedHousingStock { CampId = bare.Camps[0].Id, Tile = bare.Camps[0].Tile, Units = 25, LastUpdatedDays = bare.Days });
+        var be = Fission.EstimateSplit(bare, bare.Camps[0], FissionPolicy.Neutral);
+        double floor = n0.RudimentaryExpectationFloor, moved = floor + (1 - floor) * (e.Config.TurnDays / e.Config.DaysPerYear / n0.RudimentaryExpectationRampYears);
+        Near(ee.DaughterQoL, Cohesion(e, 1, 30), "a fully sheltered daughter has coverage 1 and H = 1", 1e-9);
+        Near(be.DaughterQoL, (.5 + .5 * (1 - moved)) * Cohesion(bare, 0, 30), "a daughter with no supplies is the unhoused estimate");
+        Check(!be.DaughterAcceptable(.05) && ee.DaughterAcceptable(.05) && ee.DaughterQoL > be.DaughterQoL, "the check binds the unsupplied split and passes the well supplied one");
+        // In the pass: the same counters as before, fewer blocks for the supplied camp.
+        foreach (var w in new[] { e, bare }) { w.Config.FissionDaughterMargin = .05; Explore(w, w.Camps[0]); Ratio(w, w.Camps[0], 1.5); }
+        Pass(e, out var pe); Pass(bare, out var pb);
+        Check(pe.FissionDaughterChecks == 1 && pe.FissionDaughterBlocked == 0 && pe.FissionCommits == 1 && pb.FissionDaughterChecks == 1 && pb.FissionDaughterBlocked == 1, "a well-supplied camp splits where an unsupplied one is blocked");
+        // Pure: the estimate changes no world state.
+        var before = ec.Inventory.HandTools + ec.Inventory.HousingMaterial + ec.Population; Fission.DaughterShelter(e, ec, nd);
+        Check(before == ec.Inventory.HandTools + ec.Inventory.HousingMaterial + ec.Population, "the shelter estimate is pure");
     }
 
     private static void Config()
     {
         var c = new SimulationConfig();
-        Check(!c.FissionEnabled && c.FissionGainThreshold == .113 && c.FissionGainDiscourage == .080 && c.FissionGainEncourage == .0955 && c.FissionSearchFraction == .8 && c.FissionDaughterMargin == .05 && c.FissionHousingRelief == 0 && c.FissionRadius == 3 && c.FissionMinimumDaughter == 12, "defaults match the calibration");
-        foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.FissionGainThreshold = -.1, x => x.FissionGainDiscourage = 6, x => x.FissionGainEncourage = double.NaN, x => x.FissionRadius = 0, x => x.FissionRadius = 6, x => x.FissionMinimumDaughter = 0, x => x.FissionSearchFraction = 1.5, x => x.FissionSearchFraction = -.1, x => x.FissionDaughterMargin = -.01, x => x.FissionDaughterMargin = 2, x => x.FissionHousingRelief = -.1, x => x.FissionHousingRelief = 1.5 })
+        Check(!c.FissionEnabled && c.FissionGainThreshold == .113 && c.FissionGainDiscourage == .080 && c.FissionGainEncourage == .0955 && c.FissionSearchFraction == .8 && c.FissionDaughterMargin == .05 && c.FissionHousingRelief == 0 && c.FissionDaughterBuilderShare == .05 && c.FissionRadius == 4 && c.FissionMinimumDaughter == 12, "defaults match the calibration");
+        foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.FissionGainThreshold = -.1, x => x.FissionGainDiscourage = 6, x => x.FissionGainEncourage = double.NaN, x => x.FissionRadius = 0, x => x.FissionRadius = 6, x => x.FissionMinimumDaughter = 0, x => x.FissionSearchFraction = 1.5, x => x.FissionSearchFraction = -.1, x => x.FissionDaughterMargin = -.01, x => x.FissionDaughterMargin = 2, x => x.FissionHousingRelief = -.1, x => x.FissionHousingRelief = 1.5, x => x.FissionDaughterBuilderShare = -.1, x => x.FissionDaughterBuilderShare = 1.5 })
         {
             var x = new SimulationConfig(); bad(x); bool rejected = false; try { x.Validate(); } catch (ArgumentException) { rejected = true; }
             Check(rejected, "an invalid fission lever is rejected");
         }
         var serializer = new DataContractSerializer(typeof(SimulationConfig)); string xml;
-        using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { FissionRadius = 4, FissionEnabled = true }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
+        using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { FissionRadius = 4, FissionEnabled = true, FissionDaughterBuilderShare = .2 }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
         Check(xml.Contains("<FissionRadius>4</FissionRadius>") && xml.Contains("<FissionEnabled>true</FissionEnabled>"), "fission levers are serialized");
         string legacy = Regex.Replace(xml, "<Fission[A-Za-z]*>[^<]*</Fission[A-Za-z]*>", "");
         Check(legacy != xml && !legacy.Contains("<Fission"), "legacy fixture omits every fission field");
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy)))
         {
             var old = (SimulationConfig)serializer.ReadObject(stream);
-            Check(!old.FissionEnabled && old.FissionGainThreshold == .113 && old.FissionGainDiscourage == .080 && old.FissionGainEncourage == .0955 && old.FissionSearchFraction == .8 && old.FissionDaughterMargin == .05 && old.FissionHousingRelief == 0 && old.FissionRadius == 3 && old.FissionMinimumDaughter == 12, "older saves load with fission disabled and default levers");
+            Check(!old.FissionEnabled && old.FissionGainThreshold == .113 && old.FissionGainDiscourage == .080 && old.FissionGainEncourage == .0955 && old.FissionSearchFraction == .8 && old.FissionDaughterMargin == .05 && old.FissionHousingRelief == 0 && old.FissionDaughterBuilderShare == .05 && old.FissionRadius == 4 && old.FissionMinimumDaughter == 12, "older saves load with fission disabled and default levers");
         }
-        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) Check(((SimulationConfig)serializer.ReadObject(stream)).FissionRadius == 4, "saved levers round trip");
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) { var back = (SimulationConfig)serializer.ReadObject(stream); Check(back.FissionRadius == 4 && back.FissionDaughterBuilderShare == .2, "saved levers round trip"); }
         string json = File.ReadAllText(FindConfig());
-        foreach (var pair in new[] { ("FissionEnabled", "false"), ("FissionGainThreshold", "0.113"), ("FissionGainDiscourage", "0.08"), ("FissionGainEncourage", "0.0955"), ("FissionSearchFraction", "0.8"), ("FissionDaughterMargin", "0.05"), ("FissionHousingRelief", "0"), ("FissionRadius", "3"), ("FissionMinimumDaughter", "12") })
+        foreach (var pair in new[] { ("FissionEnabled", "false"), ("FissionGainThreshold", "0.113"), ("FissionGainDiscourage", "0.08"), ("FissionGainEncourage", "0.0955"), ("FissionSearchFraction", "0.8"), ("FissionDaughterMargin", "0.05"), ("FissionHousingRelief", "0"), ("FissionDaughterBuilderShare", "0.05"), ("FissionRadius", "4"), ("FissionMinimumDaughter", "12") })
         {
             var m = Regex.Match(json, "\"" + pair.Item1 + "\":\\s*([0-9.a-z]+)");
             Check(m.Success && m.Groups[1].Value.TrimEnd('0').TrimEnd('.') == pair.Item2.TrimEnd('0').TrimEnd('.'), "OpeningConfig.json carries " + pair.Item1);
@@ -623,6 +684,37 @@ internal static class FissionChecks
         Check(Pass(narrow, out var nm) == null && nm.FissionCandidatesScored == 0, "a radius shorter than the camp spacing has no candidate");
         var wide = World(true, new[] { 8, 8 }); Explore(wide, wide.Camps[0], 6); wide.Config.FissionRadius = 5;  Pass(wide, out var wm);
         Check(wm.FissionCandidatesScored > ring && wm.FissionCandidatesScored <= 3 * 5 * 6 - 3 * 2 * 3, "a wider radius scores the larger bounded disc outside the spacing");
+    }
+
+    // B2: with spacing 3 a radius-3 search sees only the distance-3 ring; radius 4 and 5 reach sites beyond it, nearer still wins ties,
+    // and the lazily cached search stays bounded by the disc.
+    private static void WiderRadius()
+    {
+        WorldState Lean(int radius)
+        {
+            var w = World(true, new[] { 12, 8 }); var c = w.Camps[0]; Explore(w, c, 7); w.Config.FissionRadius = radius;
+            // Every site on the distance-3 ring is starved; the sites at distance 4 and 5 stay rich.
+            foreach (int n in w.Map.Radius(c.Tile, 4).Where(n => w.Map.Distance(c.Tile, n) <= 4))
+            {
+                var t = w.Tiles[n]; t.Food = 20; t.PotentialFood = 20; for (int s = 0; s < 4; s++) { t.Seasons[s].MaxFood = 20; t.Seasons[s].MaxPotentialFood = 20; }
+            }
+            return w;
+        }
+        var r3 = Lean(3); var none = Pass(r3, out var m3);
+        Check(none == null && m3.FissionCandidatesScored == 18, "radius 3 sees only the starved distance-3 ring (" + m3.FissionCandidatesScored + " candidates) and finds nothing");
+        foreach (int radius in new[] { 4, 5 })
+        {
+            var w = Lean(radius); var parent = w.Camps[0]; var report = Pass(w, out var m);
+            Check(report != null && w.Map.Distance(parent.Tile, report.Tile) > 3, "radius " + radius + " finds a site beyond the distance-3 ring");
+            int disc = w.Map.Radius(parent.Tile, radius).Count(n => w.Map.Distance(parent.Tile, n) >= 3);
+            Check(m.FissionSearches == 1 && m.FissionCandidatesScored <= disc && m.FissionCandidatesScored > 18 && m.FissionTileProjections <= 7 * m.FissionCandidatesScored, "radius " + radius + " scores at most the bounded disc outside the spacing (" + m.FissionCandidatesScored + " of " + disc + ")");
+        }
+        // Nearer still wins ties: in a uniform rich world radius 5 picks the distance-3 ring, as radius 3 does.
+        var u3 = World(true, new[] { 12, 8 }); Explore(u3, u3.Camps[0], 7); var near3 = Pass(u3, out _);
+        var u5 = World(true, new[] { 12, 8 }); Explore(u5, u5.Camps[0], 7); u5.Config.FissionRadius = 5; var near5 = Pass(u5, out _);
+        Check(near3 != null && near5 != null && near3.Tile == near5.Tile && u5.Map.Distance(u5.Camps[0].Tile, near5.Tile) == 3, "radius 5 keeps the nearest tied site, so daughters stay close when sites exist");
+        // Deterministic: the same fixture twice gives the same destination.
+        var d1 = Lean(5); var d2 = Lean(5); Check(Pass(d1, out _).Tile == Pass(d2, out _).Tile, "the wider search is deterministic");
     }
 
     private static void Policy()

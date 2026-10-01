@@ -82,8 +82,8 @@ namespace Anthropocene.Simulation
     // Temporal abstraction: one evaluation per turn boundary from the frozen post-demography snapshot; QoL is the committed
     // value of the turn just resolved and recomputes next turn. Nothing is integrated over sub-turn time.
     // Cost: O(camps) push tests; each camp with push > 0 and a feasible daughter validates its cache (one footprint, at most 7
-    // tile projections); only a camp whose expected gain is at least FissionSearchFraction of its threshold and with no valid cache searches (at most the ring at
-    // distance FissionRadius, each candidate one footprint). Reconcile and commit are proportional to proposals. Nothing scales
+    // tile projections); only a camp whose expected gain is at least FissionSearchFraction of its threshold and with no valid cache searches (at most the tiles from
+    // the camp spacing out to FissionRadius, about 3 r^2 of them, each candidate one footprint). The daughter's shelter estimate is O(1) closed forms. Reconcile and commit are proportional to proposals. Nothing scales
     // with elapsed years, map size or the number of Societies.
     public static class Fission
     {
@@ -135,9 +135,64 @@ namespace Anthropocene.Simulation
             // expectation the game applies after a move (stationary years reset, then one turn elapses).
             double years = cfg.TurnDays / cfg.DaysPerYear;
             double ed = floor + (1 - floor) * Numbers.Clamp(years / n.RudimentaryExpectationRampYears, 0, 1);
-            double qd = Coverage(ed, Housing(nd, portable * f)) * NeolithicProduction.SocialCohesion(n, Share(nd, 0, portable * f), nd);
+            var own = DaughterShelter(w, camp, nd);
+            double qd = Coverage(ed, Housing(nd, own.Total)) * NeolithicProduction.SocialCohesion(n, Share(nd, own.Fixed, own.Light), nd);
             return new Estimate { Residents = residents, Daughter = nd, QNow = qNow, QAfter = qAfter, Gain = gain, DaughterQoL = qd };
         }
+        // Shelter the daughter has at the end of her first turn (B1, Docs/Fission.md). Pure, no planner run, O(1) closed forms.
+        //   Carried: the commit splits every double inventory field in the daughter's people fraction f, so she holds f of the parent's
+        //   Light Housing units (LightHousingPeoplePerUnit people each), Housing Material, Wood, Clay, Animal Fabric and tools; the parent
+        //   keeps all fixed Housing, so she carries none.
+        //   Built: FissionDaughterBuilderShare of her people work as Builders (the planner staffs shelter with a handful of Builders
+        //   because a Builder-turn makes several units; the share bounds that staffing), at the production rates and tool waterfall the
+        //   resolver uses (Specialist when the Society holds Construction, else GeneralistTaskEfficiency; equipment limits and grade
+        //   multipliers from ToolCoverageBudget on her carried tools). The Builders first assemble fixed Housing (needs Cultivation; one
+        //   carried Housing Material or one Wood/Clay unit each, material-making labour included), then sew Light Housing from carried
+        //   Animal Fabric (needs Husbandry), each only up to the people still unsheltered. Nothing is gathered at the site, so a daughter
+        //   with no carried materials, tools or Builders keeps exactly her tents. Ignores decay of carried tents within the turn.
+        // Returns people sheltered: Fixed (assembled Housing) and Light (carried plus sewn tents) in people, for HousingShare/Coverage.
+        public static NeolithicProduction.ShelterCapacity DaughterShelter(WorldState w, Camp parent, int daughter)
+        {
+            var cfg = w.Config; var n = cfg.Neolithic; int residents = parent.Population;
+            double f = residents > 0 ? daughter / (double)residents : 0, intervals = cfg.GenerationIntervals;
+            var inv = parent.Inventory;
+            double carriedTents = Math.Max(0, inv?.LightHousingUnits ?? 0) * f, lightPeople = carriedTents * n.LightHousingPeoplePerUnit, fixedPeople = 0;
+            double need = daughter - lightPeople;
+            double builders = daughter * cfg.FissionDaughterBuilderShare, labor = builders * intervals;
+            if (inv == null || need <= 1e-9 || !(labor > 0) || !CultivationEconomy.EconomyEnabled(parent)) return new NeolithicProduction.ShelterCapacity(fixedPeople, lightPeople);
+            bool specialist = parent.People.HasTech(NeolithicTech.Construction);
+            double rate = n.BuilderHousingOutputPerBaseDays * (specialist ? 1 : n.GeneralistTaskEfficiency);
+            double copper = parent.People.HasTech(NeolithicTech.CopperWorking) ? Math.Max(0, inv.CopperTools) * f * intervals / n.ToolCoveragePerWorker : 0;
+            var tools = new ToolCoverageBudget(n, Math.Max(0, inv.HandTools) * f, Math.Max(0, inv.Tools) * f * ToolCoverageBudget.OutputsPerTool, copper);
+            if (CultivationEconomy.Enabled(parent))
+            {
+                // Housing Material and its assembly share the Builder pool and the same step rate (2x the single-step rate), as in the resolver.
+                double step = 2 * rate, stock = Math.Max(0, inv.HousingMaterial) * f;
+                double raw = (Math.Max(0, inv.Wood) + Math.Max(0, inv.Clay)) * f / Math.Max(1e-12, n.HousingMaterialUnitsPerHousing);
+                double hi = Math.Min(need / n.HousingPeoplePerUnit, stock + raw), ceiling = tools.Capacity(CraftGood.Housing, step, double.PositiveInfinity);
+                hi = Math.Min(hi, ceiling);
+                double Labour(double a) => tools.Time(CraftGood.Housing, step, a) + tools.Time(CraftGood.Housing, step, Math.Max(0, a - stock));
+                double built = 0;
+                if (hi > 0)
+                {
+                    if (Labour(hi) <= labor) built = hi;
+                    else { double lo = 0, top = hi; for (int i = 0; i < 48; i++) { double mid = (lo + top) / 2; if (Labour(mid) <= labor) lo = mid; else top = mid; } built = lo; }
+                }
+                if (built > 0)
+                {
+                    labor -= Labour(built); tools.Spend(CraftGood.Housing, step, built);
+                    fixedPeople = built * n.HousingPeoplePerUnit; need -= fixedPeople;
+                }
+            }
+            if (CultivationEconomy.HusbandryEnabled(parent) && need > 1e-9 && labor > 0)
+            {
+                double sewn = Math.Min(need / n.LightHousingPeoplePerUnit, Math.Max(0, inv.AnimalFabric) * f);
+                sewn = Math.Min(sewn, tools.Capacity(CraftGood.LightHousing, rate, labor));
+                if (sewn > 0) lightPeople += sewn * n.LightHousingPeoplePerUnit;
+            }
+            return new NeolithicProduction.ShelterCapacity(fixedPeople, lightPeople);
+        }
+
         // The camp's committed QoL terms as a pure function of headcount (WP10b; the same formulas as EstimateSplit and ResolveNeeds):
         // F, W and the expectation E unchanged; clothing coverage and housing per head diluted because incoming people bring neither;
         // social cohesion S evaluated at the new headcount. At(Residents) equals EstimateSplit(...).QNow.
