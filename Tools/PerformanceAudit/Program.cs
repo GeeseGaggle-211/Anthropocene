@@ -537,7 +537,7 @@ internal static class Program
         var turnFissions = record.Fissions ?? new List<FissionReport>();
         int fissionCount = turnFissions.Count;
         object fissionEvents = turnFissions.Select(f => new { f.ParentCamp, f.DaughterCamp, f.ParentSociety, f.DaughterSociety, f.DaughterPlayer, f.Tile, f.ParentBefore, f.Daughter,
-            regime = ((FissionRegime)f.Regime).ToString(), policy = f.Policy.ToString(), f.Push, f.Desirability, f.Score, f.Affinity, f.AnimalsMoved, f.Gain, f.DaughterQoL }).ToArray();
+            regime = ((FissionRegime)f.Regime).ToString(), policy = f.Policy.ToString(), f.Push, f.Desirability, f.Score, f.Affinity, f.AnimalsMoved, f.Gain, f.DaughterQoL, trigger = f.Trigger.ToString(), f.DaughterGain }).ToArray();
         // Immigration (WP10b): this turn's committed flows, canonical order.
         var turnMigrations = record.Migrations ?? new List<MigrationReport>();
         int migrationCount = turnMigrations.Count, migrantCount = turnMigrations.Sum(m => m.Migrants), kinMigrants = turnMigrations.Where(m => m.Kin).Sum(m => m.Migrants);
@@ -590,6 +590,10 @@ internal static class Program
             fissionDropped = Metric("FissionDropped"),
             fissionDaughterChecks = Metric("FissionDaughterChecks"),
             fissionDaughterBlocked = Metric("FissionDaughterBlocked"),
+            fissionCrowdingProposals = Metric("FissionCrowdingProposals"),
+            fissionDistressProposals = Metric("FissionDistressProposals"),
+            fissionCrowdingCommits = Metric("FissionCrowdingCommits"),
+            fissionDistressCommits = Metric("FissionDistressCommits"),
             migrationCount,
             migrantCount,
             kinMigrants,

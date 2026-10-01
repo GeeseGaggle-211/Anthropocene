@@ -10,6 +10,8 @@ namespace Anthropocene.Simulation
     public enum FissionPolicy { Neutral = 0, Discourage = 1, Encourage = 2 }
     public enum FissionRegime { Paleolithic = 0, Nomadic = 1, Agricultural = 2 }
     public enum KinRelation { Parent, Daughter, Sibling }
+    // What moved a split past its threshold. Zero is Crowding so an absent saved field means Crowding (every pre-distress split was one).
+    public enum FissionTrigger { Crowding = 0, Distress = 1 }
 
     // The cached potential fission destination of one camp. Saved, optional, null when none.
     [Serializable]
@@ -28,6 +30,10 @@ namespace Anthropocene.Simulation
         // Expected gain of the stayers' QoL (relative) and the estimated daughter QoL at the decision (WP10c); absent in older saves.
 #pragma warning disable SYSLIB0050
         [OptionalField] public double Gain, DaughterQoL;
+        // Distress fission: the trigger that fired and the relative QoL gain the leaving group expected at the parent's expectation
+        // (Docs/Fission.md, Distress fission); absent in older saves, which read as Crowding and zero.
+        [OptionalField] public FissionTrigger Trigger;
+        [OptionalField] public double DaughterGain;
 #pragma warning restore SYSLIB0050
     }
 
@@ -94,20 +100,32 @@ namespace Anthropocene.Simulation
         public static double Push(double gain, double threshold)
             => threshold <= 0 ? (gain >= 0 ? 1 : 0) : Numbers.Clamp(gain / threshold, 0, 1);
 
-        // Crowding + expected gain (WP10c). Pure, from the camp's committed terms and the same formulas as
-        // NeolithicProduction.ResolveNeeds: F and W and the expectation E unchanged; clothing coverage unchanged (Cloth and Animal
+        // Crowding + expected gain (WP10c) and the distress pull. Pure, from the camp's committed terms and the same formulas as
+        // NeolithicProduction.ResolveNeeds: the expectation E unchanged; clothing coverage unchanged (Cloth and Animal
         // Fabric split in proportion); social cohesion S at the stayers; housing per head recomputed, the parent keeping all fixed
         // Housing and splitting portable Light Housing in proportion (weighted by FissionHousingRelief, default 1). Both Q_now and Q_after are evaluated at the post-demography
         // snapshot, so the gain isolates the split and carries no births-versus-cohort bias.
+        // Stayers (distress fission): the local supply is shared by fewer mouths, so their food and water met rise exactly as in the
+        // immigration estimator, F_hat = min(1, F N / N_stay) and W_hat likewise (QoLModel.FoodAt/WaterAt; leavers take their share of
+        // stores, so per-head stores are unchanged). This is the land-limited upper bound: it assumes the local flow does not shrink with the
+        // headcount. Q_after = F_hat W_hat * coverage(housing after) * S(N_stay), so a starving camp's stayers feel their relief.
+        // Daughter (the distress trigger): Q_d = F_d W_d * coverage * S at the daughter's headcount and shelter (DaughterShelter), with F_d and W_d
+        // the destination's support (1 before a destination is known). DaughterExpected uses the parent's expectation E on both sides
+        // (like with like: the post-move expectation reset is a benefit the parent could get by moving itself and must not by itself cause a
+        // split); DaughterGain = Q_d / Q_now - 1, and 1e9 (satisfied) when Q_now is zero and Q_d is positive. DaughterQoL keeps the
+        // post-move expectation and F = W = 1: the veto and the daughter's founding QoL, as before.
         public struct Estimate
         {
             public int Residents, Daughter;
-            public double QNow, QAfter, Gain, DaughterQoL;
+            public double QNow, QAfter, Gain, DaughterQoL, StayFood, DaughterExpected, DaughterGain;
             public bool DaughterAcceptable(double margin) => DaughterQoL >= QNow - margin;
+            public bool StayersAcceptable(double margin) => QAfter >= QNow - margin;
         }
         public static Estimate EstimateSplit(WorldState w, Camp camp, FissionPolicy policy)
+            => EstimateSplit(w, camp, Kinship.DaughterSize(camp.Population, policy), 1, 1);
+        public static Estimate EstimateSplit(WorldState w, Camp camp, int daughterSize, double daughterFood, double daughterWater)
         {
-            var cfg = w.Config; var n = cfg.Neolithic; int residents = camp.Population, nd = Kinship.DaughterSize(residents, policy), stay = residents - nd;
+            var cfg = w.Config; var n = cfg.Neolithic; int residents = camp.Population, nd = daughterSize, stay = residents - nd;
             double f = residents > 0 ? nd / (double)residents : 0;
             double floor = n.RudimentaryExpectationFloor;
             double e = camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : floor + (1 - floor) * Numbers.Clamp(camp.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
@@ -117,6 +135,7 @@ namespace Anthropocene.Simulation
             double Coverage(double expectation, double housing) => n.RudimentaryWeightClothing * (1 - expectation * (1 - camp.ClothPerCapita)) + n.RudimentaryWeightHousing * (1 - expectation * (1 - housing));
             double Ratio(double a, double b) => b > 0 ? a / b : (a > 0 ? 1e9 : 0);
             double b0 = camp.FoodNeedsMetRatio * camp.WaterNeedsMetRatio;
+            double stayFood = QoLModel.FoodAt(camp.FoodNeedsMetRatio, residents, 0, stay) * QoLModel.WaterAt(camp.WaterNeedsMetRatio, residents, stay);
             // The parent keeps all fixed housing and splits portable housing in proportion; FissionHousingRelief weights how much of the
             // stayers' relief counts (1 = all, 0 = none) for both housing coverage and the cohesion housing share H. At relief 0 the
             // stayers' H is exactly the present H, so only the headcount changes S (Docs/SocialCohesion.md).
@@ -127,17 +146,20 @@ namespace Anthropocene.Simulation
             double shareAfter = shareNow + relief * (shareRelieved - shareNow);
             double sNow = NeolithicProduction.SocialCohesion(n, shareNow, residents), sAfter = NeolithicProduction.SocialCohesion(n, shareAfter, stay);
             double qNow = b0 * Coverage(e, housingNow) * sNow;
-            double qAfter = b0 * Coverage(e, housingAfter) * sAfter;
+            double qAfter = stayFood * Coverage(e, housingAfter) * sAfter;
             // Q_now = 0 (no food or no coverage at all) leaves a relative gain undefined: the fallback is the cohesion gain S_after / S_now - 1,
             // the QoL a unit-coverage camp would gain, so a destitute crowded camp still feels its crowding.
             double gain = qNow > 1e-9 ? qAfter / qNow - 1 : Ratio(sAfter, sNow) - 1;
-            // The daughter at a viable site: F = W = 1, clothing coverage unchanged, housing from its portable share alone, and the
-            // expectation the game applies after a move (stationary years reset, then one turn elapses).
+            // The daughter at a viable site: clothing coverage unchanged, housing from her carried and built shelter alone, and the
+            // expectation the game applies after a move (stationary years reset, then one turn elapses) for the veto.
             double years = cfg.TurnDays / cfg.DaysPerYear;
             double ed = floor + (1 - floor) * Numbers.Clamp(years / n.RudimentaryExpectationRampYears, 0, 1);
             var own = DaughterShelter(w, camp, nd);
-            double qd = Coverage(ed, Housing(nd, own.Total)) * NeolithicProduction.SocialCohesion(n, Share(nd, own.Fixed, own.Light), nd);
-            return new Estimate { Residents = residents, Daughter = nd, QNow = qNow, QAfter = qAfter, Gain = gain, DaughterQoL = qd };
+            double housingD = Housing(nd, own.Total), cohesionD = NeolithicProduction.SocialCohesion(n, Share(nd, own.Fixed, own.Light), nd);
+            double qd = Coverage(ed, housingD) * cohesionD;
+            double qdExpected = Numbers.Clamp(daughterFood, 0, 1) * Numbers.Clamp(daughterWater, 0, 1) * Coverage(e, housingD) * cohesionD;
+            double daughterGain = qNow > 1e-9 ? qdExpected / qNow - 1 : (qdExpected > 1e-9 ? 1e9 : -1);
+            return new Estimate { Residents = residents, Daughter = nd, QNow = qNow, QAfter = qAfter, Gain = gain, DaughterQoL = qd, StayFood = stayFood, DaughterExpected = qdExpected, DaughterGain = daughterGain };
         }
         // Shelter the daughter has at the end of her first turn (B1, Docs/Fission.md). Pure, no planner run, O(1) closed forms.
         //   Carried: the commit splits every double inventory field in the daughter's people fraction f, so she holds f of the parent's
@@ -225,10 +247,11 @@ namespace Anthropocene.Simulation
             public double ForwardAt(int people, double carried = 0)
             {
                 if (people <= 0) return 0;
-                double f = camp.FoodNeedsMetRatio, w = camp.WaterNeedsMetRatio;
-                double food = Math.Min(1, (f * Residents + Math.Max(0, carried)) / people), water = w < 1 ? Math.Min(1, w * Residents / people) : 1;
-                return food * water * Shape(people);
+                return FoodAt(camp.FoodNeedsMetRatio, Residents, carried, people) * WaterAt(camp.WaterNeedsMetRatio, Residents, people) * Shape(people);
             }
+            // The shared dilution rule of fission (stayers), immigration (both ends) and the distress estimate: local supply over a new headcount.
+            public static double FoodAt(double met, int residents, double carried, int people) => Math.Min(1, (met * residents + Math.Max(0, carried)) / people);
+            public static double WaterAt(double met, int residents, int people) => met < 1 ? Math.Min(1, met * residents / people) : 1;
         }
         public static QoLModel QoLModelOf(WorldState w, Camp camp) => new QoLModel(w, camp);
 
@@ -259,7 +282,8 @@ namespace Anthropocene.Simulation
         private sealed class Evaluation
         {
             public Camp Camp;
-            public double Push, Desirability, Score, Gain, DaughterQoL;
+            public double Push, Desirability, Score, Gain, DaughterQoL, DaughterGain;
+            public FissionTrigger Trigger;
             public int Daughter, Tile = -1;
             public bool ClearTarget, Propose, DaughterTested, DaughterBlocked;
             public FissionTarget NewTarget;
@@ -287,7 +311,7 @@ namespace Anthropocene.Simulation
                 if (e.NewTarget != null) e.Camp.FissionDestination = e.NewTarget;
                 if (e.DaughterTested) { metrics.FissionDaughterChecks++; if (e.DaughterBlocked) metrics.FissionDaughterBlocked++; }
                 if (!e.Propose) continue;
-                metrics.FissionProposals++;
+                metrics.FissionProposals++; if (e.Trigger == FissionTrigger.Distress) metrics.FissionDistressProposals++; else metrics.FissionCrowdingProposals++;
                 if (committed.Any(t => w.Map.Distance(t, e.Tile) < spacing)) { metrics.FissionDropped++; continue; }
                 if (knowledge == null)
                 {
@@ -297,32 +321,53 @@ namespace Anthropocene.Simulation
                     foreach (var d in record.Demographics) demographics[d.Camp] = d;
                 }
                 Found(w, e, record, knowledge, demographics);
-                committed.Add(e.Tile); metrics.FissionCommits++;
+                committed.Add(e.Tile); metrics.FissionCommits++; if (e.Trigger == FissionTrigger.Distress) { metrics.FissionDistressCommits++; metrics.FissionDistressDaughters += e.Daughter; } else metrics.FissionCrowdingCommits++;
             }
             metrics.FissionMilliseconds = timer.Elapsed.TotalMilliseconds;
         }
 
+        // Distress fission: a camp splits when the stayers gain from fewer mouths (crowding, now with food and water relief) OR, for a camp that
+        // cannot feed itself (F W < 1), when the leaving group would be better off at a viable destination (the distress pull), both against the
+        // same policy threshold G*. A fed camp (F = W = 1) has no distress branch: a daughter's cohesion advantage over the stayers is crowding,
+        // already measured by the stayers' branch, and counting it again would move the calibrated crowding onset (Docs/Fission.md).
+        // Sizes: the policy size n0 for the crowding test; when the camp cannot feed itself (F W < 1) the leaving group is the people the
+        // local subsistence cannot carry, n_short = ceil(N (1 - F W)), n1 = clamp(max(n0, n_short), FissionMinimumDaughter, the largest n with
+        // n < N - n and N - n >= MinimumCamp). The destination search and validation use n1 whenever the distress screen passes (it is the
+        // larger, harder-to-support group), n0 otherwise. If the distress branch passes the split uses n1, else a passing crowding branch uses n0.
+        // The trigger is Distress exactly when the distress branch (n_short > 0) was the one used.
         private static Evaluation Evaluate(Context context, Camp camp)
         {
             var w = context.World; var cfg = w.Config; var e = new Evaluation { Camp = camp };
             var regime = RegimeOf(camp); var policy = camp.FissionPolicy; var cached = camp.FissionDestination;
             // A change of subsistence regime invalidates the cached destination regardless of the push.
             if (cached != null && cached.Regime != (int)regime) { e.ClearTarget = true; e.Invalidations++; cached = null; }
-            int residents = camp.Population, daughter = Kinship.DaughterSize(residents, policy);
-            e.Daughter = daughter;
+            int residents = camp.Population, n0 = Kinship.DaughterSize(residents, policy), minimum = cfg.FissionMinimumDaughter;
+            int largest = Math.Min((residents - 1) / 2, residents - cfg.MinimumCamp);
             // The daughter is a smaller group than the parent that remains and meets the minimum viable population.
-            if (daughter < cfg.FissionMinimumDaughter || daughter >= residents - daughter || residents - daughter < cfg.MinimumCamp) return e;
-            var estimate = EstimateSplit(w, camp, policy); double threshold = Kinship.GainThreshold(cfg, policy);
-            e.Gain = estimate.Gain; e.DaughterQoL = estimate.DaughterQoL; e.Push = Push(estimate.Gain, threshold);
-            if (!(estimate.Gain >= cfg.FissionSearchFraction * threshold)) return e;
-            double viable = cfg.StartViability / 100.0; var projections = new Dictionary<int, double>();
+            bool crowdLegal = n0 >= minimum && n0 <= largest;
+            double met = camp.FoodNeedsMetRatio * camp.WaterNeedsMetRatio;
+            int short0 = met < 1 - 1e-9 ? (int)Math.Ceiling(residents * (1 - met) - 1e-9) : 0;
+            bool distressLegal = short0 > 0 && largest >= minimum;
+            int n1 = distressLegal ? Math.Max(minimum, Math.Min(largest, Math.Max(n0, short0))) : n0;
+            e.Daughter = crowdLegal ? n0 : n1;
+            if (!crowdLegal && !distressLegal) return e;
+            double threshold = Kinship.GainThreshold(cfg, policy), screen = cfg.FissionSearchFraction * threshold;
+            Estimate crowd = crowdLegal ? EstimateSplit(w, camp, n0, 1, 1) : default;
+            // Optimistic screen (F_d = W_d = 1): gates the search exactly like the crowding screen; identical to the crowding estimate for a fed camp.
+            Estimate optimistic = !distressLegal ? default : n1 == n0 && crowdLegal ? crowd : EstimateSplit(w, camp, n1, 1, 1);
+            bool crowdScreen = crowdLegal && crowd.Gain >= screen, distressScreen = distressLegal && optimistic.DaughterGain >= screen;
+            var shown = crowdLegal ? crowd : optimistic;
+            e.Gain = shown.Gain; e.DaughterQoL = shown.DaughterQoL; e.DaughterGain = shown.DaughterGain; e.Push = Push(crowdLegal ? crowd.Gain : optimistic.DaughterGain, threshold);
+            if (!crowdScreen && !distressScreen) return e;
+            int size = distressScreen ? n1 : n0;
+            double viable = cfg.StartViability / 100.0; var projections = new Dictionary<int, double>(); double siteRatio = 0;
             if (cached != null)
             {
                 e.Validations++;
-                double d = 0, ratio;
-                if (!context.Blocked(cached.Tile) && w.Tiles[cached.Tile].TraversableLand) d = Desirability(context, camp, cached.Tile, daughter, regime, projections, e, out ratio);
+                double d = 0, ratio = 0;
+                if (!context.Blocked(cached.Tile) && w.Tiles[cached.Tile].TraversableLand) d = Desirability(context, camp, cached.Tile, size, regime, projections, e, out ratio);
                 if (d < viable) { e.ClearTarget = true; e.Invalidations++; cached = null; }
-                else e.Desirability = d;
+                else { e.Desirability = d; siteRatio = ratio; }
             }
             if (cached == null)
             {
@@ -335,24 +380,35 @@ namespace Anthropocene.Simulation
                 {
                     if (!w.Tiles[tile].TraversableLand || !known.Contains(tile) || context.Blocked(tile)) continue;
                     e.Candidates++;
-                    double d = Desirability(context, camp, tile, daughter, regime, projections, e, out double ratio);
+                    double d = Desirability(context, camp, tile, size, regime, projections, e, out double ratio);
                     int distance = w.Map.Distance(camp.Tile, tile);
                     if (best < 0 || d > bestScore || d == bestScore && (ratio > bestRatio || ratio == bestRatio && distance < bestDistance)) { best = tile; bestScore = d; bestRatio = ratio; bestDistance = distance; }
                 }
                 if (best >= 0 && bestScore >= viable)
                 {
                     e.NewTarget = new FissionTarget { Tile = best, Regime = (int)regime, Turn = w.Turn }; e.ClearTarget = false;
-                    e.Desirability = bestScore; cached = e.NewTarget;
+                    e.Desirability = bestScore; siteRatio = bestRatio; cached = e.NewTarget;
                 }
             }
             if (cached == null) return e;
-            e.Tile = cached.Tile; e.Score = e.Push * e.Desirability;
-            if (estimate.Gain >= threshold)
+            e.Tile = cached.Tile;
+            // With the destination known: the leaving group's F_d is the site's support ratio for its cohort (capped at one; for herded nomads
+            // it already includes herd forage and water, so it stands for F_d W_d); W_d = 1 (freshwater is a gate of the footprint).
+            double foodD = Numbers.Clamp(siteRatio, 0, 1);
+            Estimate chosen = default; bool use = false;
+            if (distressLegal)
             {
-                // "Would part of this population be better off": the daughter's estimated QoL must not fall more than the margin below the parent's.
-                e.DaughterTested = true; e.DaughterBlocked = !estimate.DaughterAcceptable(cfg.FissionDaughterMargin);
-                e.Propose = !e.DaughterBlocked;
+                var distress = EstimateSplit(w, camp, n1, foodD, 1);
+                if (distress.DaughterGain >= threshold) { chosen = distress; use = true; e.Trigger = FissionTrigger.Distress; }
             }
+            if (!use && crowdLegal && crowd.Gain >= threshold) { chosen = EstimateSplit(w, camp, n0, foodD, 1); use = true; e.Trigger = FissionTrigger.Crowding; }
+            if (!use) return e;
+            e.Daughter = chosen.Daughter; e.Gain = chosen.Gain; e.DaughterQoL = chosen.DaughterQoL; e.DaughterGain = chosen.DaughterGain;
+            e.Push = Push(e.Trigger == FissionTrigger.Distress ? chosen.DaughterGain : chosen.Gain, threshold); e.Score = e.Push * e.Desirability;
+            // "Would part of this population be better off": the daughter's estimated QoL must not fall more than the margin below the parent's,
+            // and the stayers must not be worse off (true by construction: fewer mouths and no housing taken).
+            e.DaughterTested = true; e.DaughterBlocked = !chosen.DaughterAcceptable(cfg.FissionDaughterMargin);
+            e.Propose = !e.DaughterBlocked && chosen.StayersAcceptable(cfg.FissionDaughterMargin);
             return e;
         }
 
@@ -512,7 +568,7 @@ namespace Anthropocene.Simulation
             record.Fissions.Add(new FissionReport
             {
                 Turn = w.Turn, ParentCamp = parent.Id, DaughterCamp = camp.Id, ParentSociety = ps.Id, DaughterSociety = society.Id, DaughterPlayer = society.Player, Tile = camp.Tile, ParentBefore = before, Daughter = n, Regime = (int)RegimeOf(parent),
-                AnimalsMoved = animals, Policy = parent.FissionPolicy, Push = e.Push, Desirability = e.Desirability, Score = e.Score, Affinity = society.KinAffinity, Gain = e.Gain, DaughterQoL = e.DaughterQoL
+                AnimalsMoved = animals, Policy = parent.FissionPolicy, Push = e.Push, Desirability = e.Desirability, Score = e.Score, Affinity = society.KinAffinity, Gain = e.Gain, DaughterQoL = e.DaughterQoL, Trigger = e.Trigger, DaughterGain = e.DaughterGain
             });
             record.Log("Camp " + parent.Id + " (tribe " + parent.Player + ") split: " + n + " of " + before + " people founded camp " + camp.Id + " (tribe " + society.Player + ") at tile " + camp.Tile + ".");
         }

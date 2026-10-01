@@ -103,6 +103,8 @@ namespace Anthropocene.Simulation
         public int ActiveTiles, TileIntegrations, SeasonalTiles, FullTurnTiles;
         // Fission pass (WP10a). Transient work counts; never saved, observed or fingerprinted.
         public long FissionCampsEvaluated, FissionValidations, FissionSearches, FissionCandidatesScored, FissionTileProjections, FissionCacheInvalidations, FissionProposals, FissionCommits, FissionDropped, FissionDaughterChecks, FissionDaughterBlocked;
+        // Distress fission: proposals and commits by trigger, and the people in distress daughters.
+        public long FissionCrowdingProposals, FissionDistressProposals, FissionCrowdingCommits, FissionDistressCommits, FissionDistressDaughters;
         public double FissionMilliseconds;
         // Immigration pass (WP10b). Transient work counts; never saved, observed or fingerprinted.
         public long ImmigrationCampsEvaluated, ImmigrationCandidatesScored, ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected, ImmigrationMigrants;

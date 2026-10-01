@@ -29,7 +29,8 @@ coefficients. They do not create seasonal or annual world states.
   updates, new entities, moved ledgers) happen in the canonical serial commit. A fission
   policy order is applied with the economy intents at the start of resolution, so it is
   in force for that turn's pass. No same-turn multi-hop, no rerouting of a dropped
-  proposal, no QoL recomputation after a split. The expected gain is a pure estimate from
+  proposal, no QoL recomputation after a split. The expected gain (the stayers' crowding gain with food and water relief, and for a camp
+  short of food or water the leaving group's distress gain) is a pure estimate from
   the committed terms, never the result of a trial split.
 
 - `EconomicPlanner.Plan` is an interturn read-only policy. AI chooses movement

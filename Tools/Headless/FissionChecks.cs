@@ -66,7 +66,7 @@ internal static class FissionChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); Spacing(); Bounded(); WiderRadius(); Policy(); Observations(); Persistence(); Replay();
+        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); Spacing(); Bounded(); WiderRadius(); Policy(); Distress(); Observations(); Persistence(); Replay();
         Console.WriteLine("PASS: " + checks + " fission assertions"); return checks;
     }
 
@@ -214,7 +214,7 @@ internal static class FissionChecks
     }
     private static void Crowding()
     {
-        // Closed form with full goods coverage: G = S(N - N_d) / S(N) - 1 = exp((N^2 - (N - N_d)^2) / N_s^2) - 1 (beta = 2), any F, W.
+        // Closed form with full goods coverage: G = (F_hat W_hat / F W) S(N - N_d) / S(N) - 1, with S ratio exp((N^2 - (N - N_d)^2) / N_s^2) (beta = 2); the relief factor is 1 for F = W = 1.
         foreach (var shelter in new[] { Shelter.None, Shelter.Tents, Shelter.Fixed })
             foreach (FissionPolicy policy in Enum.GetValues(typeof(FissionPolicy)))
             {
@@ -225,7 +225,8 @@ internal static class FissionChecks
                 var e = Fission.EstimateSplit(w, c, policy);
                 double e0 = nc.RudimentaryExpectationFloor + (1 - nc.RudimentaryExpectationFloor) * Math.Min(1, c.StationaryYears / nc.RudimentaryExpectationRampYears);
                 double coverage = .5 + .5 * (1 - e0 * (1 - (shelter == Shelter.None ? 0 : 1)));
-                Near(e.Gain, Math.Exp((300.0 * 300 - (double)stay * stay) / (ns * ns)) - 1, shelter + " " + policy + " gain is the closed form of the cohesion ratio at the present housing share");
+                double relief = Math.Min(1, .63 * 300 / stay) * Math.Min(1, .9 * 300 / stay) / (.63 * .9);   // stayers' food and water relief (distress fission)
+                Near(e.Gain, relief * Math.Exp((300.0 * 300 - (double)stay * stay) / (ns * ns)) - 1, shelter + " " + policy + " gain is the closed form of the cohesion ratio at the present housing share times the stayers' food and water relief");
                 Near(e.QNow, .63 * .9 * coverage * Math.Exp(-Math.Pow(300 / ns, 2)), shelter + " " + policy + " Q_now = F W R S(N)");
                 Check(e.Daughter == nd && e.QAfter > e.QNow, "the estimate carries the daughter size and a higher stayers' QoL");
             }
@@ -233,7 +234,7 @@ internal static class FissionChecks
         double bandScale = new SimulationConfig().Neolithic.CohesionBandScale;   // no housing: N_s = N_band
         var bare = World(false, new[] { 8, 8 }); bare.Camps[0].Population = 300; bare.Camps[0].ClothPerCapita = 0; bare.Camps[0].HousingPerCapita = 0; bare.Camps[0].FoodNeedsMetRatio = .4;
         var bareQ = Fission.EstimateSplit(bare, bare.Camps[0], FissionPolicy.Neutral);
-        Near(bareQ.Gain, Math.Exp((300.0 * 300 - 210.0 * 210) / (bandScale * bandScale)) - 1, "with no goods and partial food the Paleolithic gain is the same cohesion gain");
+        Near(bareQ.Gain, Math.Min(1, .4 * 300 / 210.0) / .4 * Math.Exp((300.0 * 300 - 210.0 * 210) / (bandScale * bandScale)) - 1, "with no goods and partial food the Paleolithic gain is the cohesion gain times the stayers' food relief F_hat / F");
         Near(bareQ.QNow, .4 * (.5 * (1 - .25) + .5 * (1 - .25)) * Math.Exp(-Math.Pow(300 / bandScale, 2)), "Q_now uses the expectation floor for an unresolved camp");
         // Q_now = 0 (no food): the documented fallback is the cohesion gain, so a destitute crowded camp still feels its crowding.
         var zero = World(false, new[] { 8, 8 }); zero.Camps[0].Population = 300; zero.Camps[0].FoodNeedsMetRatio = 0;
@@ -640,6 +641,125 @@ internal static class FissionChecks
         var greedy = Pressured(); MakeNeolithic(greedy.Camps[0], Technology.AnimalHusbandry); greedy.Camps[0].Technologies[(int)Technology.Cultivation] = false; greedy.Camps[0].Technology = Technology.AnimalHusbandry;
         greedy.Herds.Add(new Herd { Id = greedy.NextId++, Tile = greedy.Camps[0].Tile, Animals = 40000, DomesticCamp = greedy.Camps[0].Id, OwnerSociety = greedy.Camps[0].SocietyId, Species = "bison" });
         Check(Pass(greedy, out _) == null && greedy.Camps.Count == 1, "a pastoral daughter whose herd share exceeds forage and water has no viable site");
+    }
+
+
+    // Distress fission (Docs/Fission.md): a camp that cannot feed itself splits for better ground regardless of crowding. Uncrowded fixture:
+    // fully housed (fixed Housing for everyone), full clothing, so the stayers' crowding gain is small and F, W carry the signal.
+    private static WorldState Famine(int people, double food, double water, double gstar = .113)
+    {
+        var w = World(true, new[] { 8, 8 }); var c = w.Camps[0]; c.Population = people; c.ClothPerCapita = 1; c.FoodNeedsMetRatio = food; c.WaterNeedsMetRatio = water;
+        w.FixedHousing.Add(new FixedHousingStock { CampId = c.Id, Tile = c.Tile, Units = people, LastUpdatedDays = w.Days });
+        Explore(w, c); Pressure(w, gstar);
+        return w;
+    }
+    private static void Nomadic(Camp c) { MakeNeolithic(c, Technology.AnimalHusbandry); c.Technologies[(int)Technology.Cultivation] = false; c.Technology = Technology.AnimalHusbandry; c.Technologies[(int)Technology.AnimalHusbandry] = true; }
+    private static void Distress()
+    {
+        // The famine fixture: N = 80, housed, F = 0.4, W = 1, a rich destination. The stayers' crowding gain alone is large only because of food relief.
+        var w0 = Famine(80, .4, 1); var c0 = w0.Camps[0]; double gstar = w0.Config.FissionGainThreshold;
+        var policySize = Fission.EstimateSplit(w0, c0, FissionPolicy.Neutral);
+        Check(policySize.Daughter == 24 && Math.Abs(policySize.StayFood - .4 * 80 / 56) < 1e-12, "the stayers' F_hat = F N / N_stay at the policy size");
+        var e39 = Fission.EstimateSplit(w0, c0, 39, 1, 1);
+        Near(e39.StayFood, .4 * 80 / 41, "the stayers' food relief at the clamped distress size");
+        Check(e39.StayFood > c0.FoodNeedsMetRatio * c0.WaterNeedsMetRatio && e39.QAfter > e39.QNow && e39.StayersAcceptable(0), "the stayers are better off (F_hat rises)");
+        double fullySupported = Fission.EstimateSplit(w0, c0, (80 - 1) / 2, 1, 1).DaughterGain;
+        var r = Pass(w0, out var m);
+        Check(r != null && r.Trigger == FissionTrigger.Distress, "a starving uncrowded camp splits with the Distress trigger");
+        int largest = (80 - 1) / 2; int nShort = (int)Math.Ceiling(80 * (1 - .4) - 1e-9);
+        Check(nShort == 48 && r.Daughter == largest && w0.Camps.Count == 2, "the leaving group is n_short = ceil(N (1 - F W)) = 48, clamped to the largest legal daughter (" + r.Daughter + ")");
+        Check(r.DaughterGain >= gstar && r.Gain > 0 && Math.Abs(r.DaughterGain - fullySupported) < 1e-9, "the report records the daughter gain at the (fully supported) destination");
+        Check(m.FissionDistressProposals == 1 && m.FissionDistressCommits == 1 && m.FissionCrowdingProposals == 0 && m.FissionCrowdingCommits == 0 && m.FissionDistressDaughters == largest, "metrics count proposals and commits per trigger");
+        Check(Daughter(w0, c0).Population == largest && c0.Population == 80 - largest && Daughter(w0, c0).Population + c0.Population == 80, "the people ledger is conserved by the distress split");
+        // Size follows the shortfall: the policy size when the shortfall is smaller, n_short in between, the cap beyond it.
+        // F = 0.8: the daughter pull is below G* but the stayers' food relief alone passes it, so the split is the policy size under Crowding.
+        foreach (var (food, expected, trigger) in new[] { (.8, 24, FissionTrigger.Crowding), (.6, 32, FissionTrigger.Distress), (.5, 39, FissionTrigger.Distress) })
+        {
+            var w = Famine(80, food, 1); var rr = Pass(w, out _);
+            Check(rr != null && rr.Trigger == trigger && rr.Daughter == expected, "F = " + food + " sends " + expected + " people (" + (rr?.Daughter.ToString() ?? "none") + ")");
+            var es = Fission.EstimateSplit(w, w.Camps[0], rr.Daughter, 1, 1);
+            Check(es.QAfter >= es.QNow, "the stayers are never worse off by construction");
+        }
+        // Water distress: the same shortfall through W alone.
+        var water = Famine(80, 1, .4); var wr = Pass(water, out _);
+        Check(wr != null && wr.Trigger == FissionTrigger.Distress && wr.Daughter == largest, "a camp short of water leaves for better ground too");
+        // A camp short enough that the policy daughter is below the minimum can still send the people its land cannot carry; one too small cannot.
+        var small = Famine(30, .5, 1); var sr = Pass(small, out _);
+        Check(Kinship.DaughterSize(30, FissionPolicy.Neutral) < small.Config.FissionMinimumDaughter && sr != null && sr.Daughter == (30 - 1) / 2 && sr.Trigger == FissionTrigger.Distress, "a starving small camp sends the people its land cannot carry although the policy size is below the minimum");
+        Check(Pass(Famine(20, .3, 1), out _) == null, "a camp whose largest legal daughter is below the minimum never splits");
+        // The same camp fed: no split, and neither gain reaches G*.
+        var fed = Famine(80, 1, 1); var fe = Fission.EstimateSplit(fed, fed.Camps[0], FissionPolicy.Neutral);
+        Check(Pass(fed, out var fm) == null && fe.Gain < gstar && fe.DaughterGain < gstar && fm.FissionSearches == 0 && fed.Camps.Count == 1, "with F = W = 1 the uncrowded camp does not split (gain " + fe.Gain.ToString("F3") + ", daughter " + fe.DaughterGain.ToString("F3") + " < G*)");
+        // The expectation reset alone does not trigger: a parent with a high expectation and no goods would see a fresh start (post-move
+        // expectation) as a large daughter gain, but the trigger compares at the parent's own expectation on both sides.
+        WorldState Reset(double threshold)
+        {
+            var w = Famine(80, .99, 1, threshold); var c = w.Camps[0]; c.ClothPerCapita = 0; c.RudimentaryExpectation = .6; w.FixedHousing.Clear(); return w;
+        }
+        var probe = Reset(.113); var pe = Fission.EstimateSplit(probe, probe.Camps[0], Kinship.DaughterSize(80, FissionPolicy.Neutral), 1, 1);
+        Check(pe.DaughterQoL > pe.DaughterExpected * 1.2 && pe.DaughterQoL / pe.QNow - 1 > 2 * Math.Max(pe.Gain, pe.DaughterGain), "the post-move expectation reset would, if counted, be a large gain (" + (pe.DaughterQoL / pe.QNow - 1).ToString("F2") + " vs " + pe.DaughterGain.ToString("F2") + ")");
+        Near(pe.DaughterGain, pe.DaughterExpected / pe.QNow - 1, "the trigger gain compares the parent's expectation on both sides");
+        var above = Reset(Math.Max(pe.Gain, pe.DaughterGain) * 1.01); Check(Pass(above, out _) == null && above.Camps.Count == 1, "the reset alone does not found a settlement");
+        var below = Reset(Math.Max(pe.Gain, pe.DaughterGain) * .99); Check(Pass(below, out _) != null, "the same camp splits once its threshold is below the like-for-like gain");
+        // No viable destination within reach: a waterless landscape, then a landscape too poor for the leaving group.
+        var dry = Famine(80, .4, 1); foreach (var t in dry.Tiles) for (int s = 0; s < 4; s++) dry.Tiles[t.Id].Seasons[s].MaxFreshwater = 0;
+        Check(Pass(dry, out var dm) == null && dry.Camps[0].FissionDestination == null && dry.Camps.Count == 1 && dm.FissionCandidatesScored > 0 && dm.FissionDistressProposals == 0, "famine without a viable destination does not split");
+        var unknown = Famine(80, .4, 1); unknown.Societies[0].Memory = null; unknown.Camps[0].People.Progression.Era = Era.Paleolithic; unknown.Camps[0].Technology = Technology.None;
+        Check(Fission.RegimeOf(unknown.Camps[0]) == FissionRegime.Paleolithic && Pass(unknown, out _) == null, "a camp that knows no reachable site does not split");
+        // A viable but only just supported destination: F_d < 1 lowers the daughter gain. With G* just below the optimistic gain the screen
+        // passes and the destination is found, but the actual gain falls short; the control with rich ground splits.
+        WorldState Ground(double k, double threshold)
+        {
+            var w = Famine(80, .4, 1, threshold); Nomadic(w.Camps[0]);
+            foreach (var t in w.Tiles) { t.Food = 1000 * k; t.PotentialFood = 8000 * k; for (int s = 0; s < 4; s++) { w.Tiles[t.Id].Seasons[s].MaxFood = (float)(1000 * k); w.Tiles[t.Id].Seasons[s].MaxPotentialFood = (float)(8000 * k); } }
+            return w;
+        }
+        double kk = 1; FissionReport probeReport = null;
+        for (double k = .02; k <= 1.0001; k += .005) { var gw = Ground(k, 0); var pr = Pass(gw, out _); if (pr != null && pr.Desirability >= .86 && pr.Desirability <= .95) { kk = k; probeReport = pr; break; } }
+        Check(probeReport != null, "a landscape with a viable but thinly supported destination exists");
+        var poorWorld = Ground(kk, 0); var pc = poorWorld.Camps[0]; Check(Fission.RegimeOf(pc) == FissionRegime.Nomadic, "the thin-ground fixture is Nomadic");
+        double g1 = Fission.EstimateSplit(poorWorld, pc, largest, 1, 1).DaughterGain, crowdGain = Fission.EstimateSplit(poorWorld, pc, FissionPolicy.Neutral).Gain;
+        double between = g1 - .02 * (1 + g1); Check(between > crowdGain && between > 0, "the fixture separates the stayers' gain from the optimistic daughter gain");
+        var thin = Ground(kk, between); var tr = Pass(thin, out var tm);
+        Check(tr == null && thin.Camps[0].FissionDestination != null && tm.FissionSearches == 1 && thin.Camps.Count == 1, "a destination with poor support (F_d < 1) is found but does not trigger distress");
+        var rich = Ground(1, between); var rr2 = Pass(rich, out _); Check(rr2 != null && rr2.Trigger == FissionTrigger.Distress, "with fully supported ground the same threshold splits");
+        // Crowding for fed camps is unchanged and labelled Crowding; with G* = 0 a fed camp splits with no distress counts.
+        var crowded = World(true, new[] { 8, 8 }); Explore(crowded, crowded.Camps[0]); var cr = Pass(crowded, out var cm);
+        Check(cr != null && cr.Trigger == FissionTrigger.Crowding && cm.FissionCrowdingCommits == 1 && cm.FissionDistressCommits == 0 && cm.FissionDistressDaughters == 0 && cr.Daughter == Kinship.DaughterSize(100, FissionPolicy.Neutral), "a fed camp over its crowding threshold splits at the policy size with the Crowding trigger");
+        // A starving crowded camp whose stayers' crowding gain passes at the policy size but whose distress pull fails still splits as Crowding.
+        var mixed = Ground(kk, 0); Nomadic(mixed.Camps[0]); var mp = mixed.Camps[0]; double stay0 = Fission.EstimateSplit(mixed, mp, FissionPolicy.Neutral).Gain; Pressure(mixed, stay0 * .9 + 0);
+        var mr = Pass(mixed, out var mm);
+        Check(mr != null && (mr.Trigger == FissionTrigger.Distress ? mm.FissionDistressCommits == 1 : mm.FissionCrowdingCommits == 1), "every commit is counted under exactly one trigger");
+        // Determinism, conservation and persistence: starving camps over several turns under the real resolver, scalar vs reversed 4-worker.
+        var hungry = new[] { Hungry(), Hungry() }; hungry[1].Camps.Reverse(); hungry[1].Societies.Reverse();
+        var lanes = new[] { new PhaseExecution(), new PhaseExecution(4, 2, true, 1) }; int distressed = 0, people = hungry[0].Camps.Sum(c => c.Population);
+        for (int t = 0; t < 5; t++)
+        {
+            for (int i = 0; i < 2; i++) Advance(hungry[i], new TurnResolver(lanes[i]));
+            Check(Key(hungry[0]) == Key(hungry[1]), "scalar and reversed 4-worker distress replay agree after turn " + t);
+            string Events(WorldState x) => string.Join(";", x.History.Last().Fissions.Select(f => f.ParentCamp + ">" + f.DaughterCamp + ":" + f.Trigger + ":" + f.Daughter));
+            Check(Events(hungry[0]) == Events(hungry[1]), "trigger and size sequences agree after turn " + t);
+            distressed += hungry[0].History.Last().Fissions.Count(f => f.Trigger == FissionTrigger.Distress);
+            TurnResolver.Invariants(hungry[0]);
+        }
+        Check(distressed >= 1, "the starving world exercises distress fission under the resolver (" + distressed + ")");
+        var saved = SaveCodec.Load(SaveCodec.Save(hungry[0]));
+        Check(Key(saved) == Key(hungry[0]) && saved.History.SelectMany(h => h.Fissions).Count(f => f.Trigger == FissionTrigger.Distress) == distressed && saved.History.SelectMany(h => h.Fissions).Where(f => f.Trigger == FissionTrigger.Distress).All(f => f.DaughterGain > 0), "the trigger and daughter gain round trip in the saved history");
+        // Older saves carry neither field: they read as Crowding with zero daughter gain.
+        var serializer = new DataContractSerializer(typeof(FissionReport)); string xml;
+        using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new FissionReport { Trigger = FissionTrigger.Distress, DaughterGain = 1.5, Gain = .5 }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
+        string old = Regex.Replace(xml, "<(Trigger|DaughterGain)>[^<]*</\\1>", "");
+        Check(xml.Contains("<Trigger>") && old != xml && !old.Contains("Trigger"), "the report serializes the new fields and the legacy fixture omits them");
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(old))) { var f = (FissionReport)serializer.ReadObject(stream); Check(f.Trigger == FissionTrigger.Crowding && f.DaughterGain == 0 && f.Gain == .5, "an older report loads as Crowding with no daughter gain"); }
+        Check(people > 0, "fixture sanity");
+    }
+    // Starving camps under the real resolver: little stored food, no growth, G* at its default so only the distress pull and crowding relief act.
+    private static WorldState Hungry()
+    {
+        var w = Busy(); Pressure(w, .113);
+        foreach (var t in w.Tiles) { t.Food = 60; t.PotentialFood = 600; for (int s = 0; s < 4; s++) { w.Tiles[t.Id].Seasons[s].MaxFood = 60; w.Tiles[t.Id].Seasons[s].MaxPotentialFood = 600; } }
+        foreach (var c in w.Camps) { c.PlantFood = 300; c.Population = 120; }
+        return w;
     }
 
     private static void Spacing()

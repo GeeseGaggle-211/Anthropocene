@@ -15,7 +15,7 @@ would not be much worse off. The thresholds are calibrated analytically to the d
 below). The measured result is mixed and is the main finding of WP10c: with the specified rule the stayers'
 housing relief dominates the gain, so agricultural camps still split at a median of 141 residents; counting
 cohesion and clothing only (`FissionHousingRelief = 0`) reproduces the design onset (median 906). See
-"Measurements (WP10c)". **User decision (30 September 2026): `FissionHousingRelief = 0` is the default; fission stays opt-in (`FissionEnabled = false`) until immigration (WP10b) and a performance review.**
+"Measurements (WP10c)". **User decision (30 September 2026): `FissionHousingRelief = 0` is the default; fission stays opt-in (`FissionEnabled = false`) until immigration (WP10b) and a performance review.** Fission is also a product of QoL, not of crowding alone: see "Distress fission" below (a camp short of food or water also splits for better ground; the stayers' estimate includes food and water relief).
 
 A camp whose split would raise its stayers' QoL enough may send a coherent kin group to a viable empty
 site. The group founds a new Society in a new AI player slot. The parent keeps its site, fields, fixed Housing
@@ -87,7 +87,7 @@ No assumption needed a redesign, so the work proceeded.
   target: policy)`, which may accompany one ordinary order for the same camp (two
   policy orders for one camp conflict). It is committed at the start of resolution,
   so it applies to that turn's pass. The heuristic policy never issues it.
-- **Push (WP10c): crowding plus expected gain.** `Fission.EstimateSplit` is pure and uses the camp's committed
+- **Push (WP10c): crowding plus expected gain** (the stayers' food and water relief and the daughter pull were added later: "Distress fission"). `Fission.EstimateSplit` is pure and uses the camp's committed
   terms with the same formulas as `NeolithicProduction.ResolveNeeds`. For `N` residents and daughter
   `N_d = floor(N f(p))` (exact fraction `f = N_d / N`): food and water ratios `F`, `W` and the expectation `E`
   are unchanged; clothing coverage is unchanged (Cloth and Animal Fabric split in proportion); social cohesion is
@@ -520,11 +520,155 @@ Findings:
   documented estimate, not a calibration to realized first-turn building, and the daughter's realised first-turn QoL was not compared
   with the estimate. Daughters now start larger and unhoused, which the unhoused size row reflects.
 
+## Distress fission: a split driven by QoL, not crowding alone
+
+**User decision.** Fission can and should be a product of QoL, not of crowding alone. If a tribe's QoL is below a
+certain amount, triggered fission should cause people to break off for better pasture; if a famine hit a village,
+many people would flee for better ground whether or not it was crowded. No arbitrary hard cutoff: the QoL below
+which people leave is an outcome of the land within reach.
+
+**The defect.** The WP10c estimate held `F` and `W` unchanged for the stayers (`b0 = F W` on both sides of the
+ratio), so `G = Q_after / Q_now - 1` measured only cohesion and housing, that is crowding. A starving, uncrowded
+camp had `G ~ 0` and never split. The daughter's QoL (`F = W = 1`) was only a veto, never a trigger.
+
+**Doctrine header.**
+
+- *Authoritative state*: the committed `Camp.FoodNeedsMetRatio` (F), `WaterNeedsMetRatio` (W), expectation, clothing
+  and housing terms and the saved destination cache. Nothing new is stored on the camp. `FissionReport` gains the
+  optional `Trigger` (Crowding = the enum's zero, so older saves read Crowding) and `DaughterGain`.
+- *Temporal abstraction*: unchanged. One evaluation per turn boundary from the frozen post-demography snapshot; F and W are the
+  turn just resolved. The estimate is a closed form at the boundary, not an integration over sub-turn time.
+- *Scaling*: O(1) extra work per camp (one more `EstimateSplit`, itself O(1) closed forms plus `DaughterShelter`; a fed
+  camp reuses its single estimate). The destination search is the existing bounded, cached search; its size argument
+  changes, not its cost. Nothing scales with elapsed years, map size or Societies. Mature-empire and RL scales are
+  therefore the WP10a/WP10c ones (Throughput section).
+- *Validation*: closed-form and fixture checks in `FissionChecks.cs` (below) and the five-world measurements below.
+
+**Rule.** `EstimateSplit(world, camp, daughterSize, F_d, W_d)` (the policy overload uses the policy size and `F_d = W_d = 1`):
+
+1. *Stayers feel relief.* `F_hat = min(1, F N / N_stay)` and `W_hat = min(1, W N / N_stay)` (`QoLModel.FoodAt` /
+   `WaterAt`, the dilution rule immigration's `ForwardAt` uses; local supply is shared by fewer mouths and the
+   leavers take their proportional share of stores, so per-head stores are unchanged).
+   `Q_after = F_hat W_hat * coverage(housing after) * S(N_stay)`. The `FissionHousingRelief` rule for housing is
+   unchanged. This is the **land-limited upper bound**: it assumes the local flow does not shrink with the
+   headcount (fields keep yielding for the stayers, the leavers' labour is not missed). For `F = W = 1` it is exactly
+   the WP10c estimate, so the closed forms in "Recalibration" hold for fed camps.
+2. *The daughter pull.* `Q_d = F_d W_d * coverage(E) * S(n_d)` at her headcount and shelter (`DaughterShelter`);
+   `G_d = Q_d / Q_now - 1` (`Q_now <= 1e-9`: satisfied, `G_d = 1e9`, if `Q_d > 0`). **The trigger compares like with
+   like**: the expectation `E` is the parent's on both sides. The post-move expectation reset is a benefit the parent could
+   get by moving itself, and must not by itself cause a split. The existing veto (`DaughterQoL`, `F = W = 1`, post-move
+   expectation, `Q_d >= Q_now - FissionDaughterMargin`) is unchanged. `F_d = min(1, ratio)`, `ratio` the destination's uncapped
+   support ratio for the daughter cohort that `Desirability` already computes (for herded nomads it already folds in herd forage
+   and water, so it stands for `F_d W_d`); `W_d = 1` because freshwater is a gate of the footprint. The screen before a destination is known
+   uses `F_d = W_d = 1` and gates the search exactly like the crowding screen (`FissionSearchFraction * G*`).
+3. *Decision.* Propose when a viable destination is cached AND (`G_stay >= G*` at the policy size, **or** `G_d >= G*` at the
+   distress size) AND the daughter veto passes AND the stayers are not worse off (`Q_after >= Q_now - FissionDaughterMargin`,
+   true by construction). Same policy thresholds, no new QoL cutoff: the effective "QoL below which people leave" is
+   `Q_now < Q_d / (1 + G*)`, set by the land within reach.
+4. *Who leaves under distress.* When the camp cannot feed itself the leaving group is the people local subsistence cannot
+   carry: `n_short = ceil(N (1 - F W))`, `n_d = clamp(max(policy size, n_short), FissionMinimumDaughter, largest n with n < N - n and
+   N - n >= MinimumCamp)`. If the distress branch passes the split uses this size; otherwise a passing crowding branch uses
+   the policy size. The destination search and validation use the distress size whenever the distress screen passes (the larger,
+   harder-to-support group). One split per camp per turn, no chaining.
+5. *Report and metrics.* `FissionReport.Trigger` is Distress when the distress branch was the one used, `DaughterGain` the
+   daughter's relative gain at the chosen destination; `ResolutionMetrics` counts proposals and commits per trigger
+   (`FissionCrowdingProposals`, `FissionDistressProposals`, `...Commits`, `FissionDistressDaughters`). The report is history only
+   (not in observations; schema unchanged).
+
+**Resolved ambiguity: the distress branch exists only for a camp short of food or water (`F W < 1`).** Applied literally to
+a fed camp, `G_d >= G*` fires whenever the smaller daughter group has better cohesion than the stayers, a crowding effect the
+stayers' branch already measures; counting it twice lowered the calibrated crowding onset (the Neutral unhoused onset check
+failed at 0.8 of the onset). A fed camp is therefore exactly the WP10c rule. The cost is a discontinuity at `F W = 1`: a camp
+at `F W = 0.99` also gets the daughter pull.
+
+**Checks** (`FissionChecks.cs`, `Distress`): the stayers' `F_hat` closed form at the policy and clamped sizes; the famine fixture
+(N = 80, housed, F = 0.4: Distress, daughter clamped to 39 from `n_short` = 48, metrics per trigger, people conserved); size follows the
+shortfall (F = 0.8 Crowding 24 through the stayers' relief, 0.6 Distress 32, 0.5 Distress 39); water distress; a small camp whose policy size is below the minimum
+still sends the people its land cannot carry, one whose largest legal daughter is below the minimum cannot; the same camp fed does not split; the
+expectation reset alone does not (the like-for-like gain is below `G*`, the post-move comparison would not be, and the camp splits as soon as `G*`
+falls below the like-for-like gain); no destination (waterless, no known site) and a thinly supported destination (`F_d < 1`) do not split while the
+control with rich ground does; a fed crowded camp splits with the Crowding trigger; scalar versus reversed 4-worker replay of a starving six-camp world
+(identical fingerprints, trigger and size sequences, invariants); save round trip of the trigger and gain; an older report without the fields loads as Crowding.
+The WP10c closed-form checks that used `F = 0.63, W = 0.9` and `F = 0.4` now include the stayers' relief factor `F_hat W_hat / (F W)`.
+
+### Measurements (distress fission)
+
+Tools/PerformanceAudit, five Standard / 80-tribe worlds (Continents 1, 2, 3, Pangaea 1, Archipelagos 1), 12 opening + 50
+post-opening turns, `--workers=1 --fission=1 --immigration=0 --details=1 --metrics=1`, pooled. Baselines `h_*` are the committed HEAD
+(01456a6) re-run with the same harness and arguments; `d_*` is this change. `_f1` has QoL mortality off, `_a1` has `--qol-mortality=1
+--set=QoLMortalityElasticity=1`. Reduced by `Summarize-DistressFission.py` (fissions by trigger, deaths, QoL, totals) and
+`Summarize-FissionThroughput.py` (camp sizes by housing class, split rates, counters). Population and food are the final turn's; "camps" are at the
+last measured turn (post-opening turn 50 = turn 60). Human deaths are the resolver's starvation deaths (the QoL-mortality deaths are not recorded).
+The timing rows ran two audits at a time beside another sweep, so turn and fission milliseconds are indicative only.
+
+| run | worlds | fissions | crowding | distress | distress size P25/med/P75 | distress share of parent (median) | human deaths | camp-turns with DeficitTurns>0 | population | food yield | camps (last turn) | turn ms (median) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| h_f1 | 5 | 2358 | 2358 | 0 | n/a | n/a | 1080 | 0.4% (263/71873) | 2906125 | 2.38e+08 | 2758 | 579 |
+| d_f1 | 5 | 2350 | 2338 | 12 | 92/108/138 | 0.30 | 728 | 0.3% (211/71761) | 2895971 | 2.37e+08 | 2750 | 563 |
+| h_a1 | 5 | 1479 | 1479 | 0 | n/a | n/a | 206 | 0.1% (61/43392) | 978004 | 8.09e+07 | 1879 | 397 |
+| d_a1 | 5 | 1484 | 1482 | 2 | 60/60/71 | 0.30 | 149 | 0.1% (45/43470) | 979955 | 8.1e+07 | 1884 | 392 |
+
+QoL by technology and the growth-blocking share (Q* = 0.746 at elasticity 1), post-opening turns 10..50:
+
+QoL P25/median/P75 (n camp-turns), post-opening turns 10..50; share of goods-economy camp-turns at or below Q* = 0.746
+| run | agricultural | husbandry | agricultural + husbandry pooled | share <= Q* |
+|---|---|---|---|---|
+| h_f1 | 0.66/0.80/0.91 (32311) | 0.41/0.76/0.91 (37652) | 0.57/0.79/0.91 (69963) | 42.5% (30546/71870) |
+| d_f1 | 0.66/0.80/0.91 (32492) | 0.41/0.76/0.91 (37359) | 0.57/0.79/0.91 (69851) | 42.5% (30517/71758) |
+| h_a1 | 0.77/0.88/0.95 (17324) | 0.70/0.82/0.92 (24216) | 0.72/0.85/0.93 (41540) | 30.0% (13028/43390) |
+| d_a1 | 0.77/0.88/0.95 (17344) | 0.70/0.82/0.92 (24274) | 0.72/0.85/0.93 (41618) | 30.0% (13024/43468) |
+
+Counters, camp size and split rate:
+
+| run | worlds | fissions | checks | blocked (%) | proposals | dropped | searches | candidates | fission ms/turn (median) | pop | camps | mean QoL | turn ms (median) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| h_f1 | 5 | 2358 | 2870 | 325 (11%) | 2545 | 187 | 39367 | 31960 | 6.7 | 581225 | 552 | 0.710 | 700 |
+| d_f1 | 5 | 2350 | 2849 | 314 (11%) | 2535 | 185 | 39314 | 32123 | 7.8 | 579194 | 550 | 0.710 | 716 |
+| h_a1 | 5 | 1479 | 1673 | 63 (4%) | 1610 | 131 | 15370 | 20187 | 3.1 | 195601 | 376 | 0.786 | 407 |
+| d_a1 | 5 | 1484 | 1679 | 62 (4%) | 1617 | 133 | 15404 | 20324 | 3.4 | 195991 | 377 | 0.786 | 423 |
+
+Camp size P90/P95 (n) by housing class; targets 100 / 250 / 600-1,000
+| run | unhoused | tent-dominant | fixed-dominant | median size u/t/f | score |
+|---|---|---|---|---|---|
+| h_f1 | 226/245 (4586) | 1365/1708 (20600) | 1508/1852 (50466) | 33/436/682 | 14.36 |
+| d_f1 | 225/244 (4592) | 1385/1717 (20351) | 1506/1848 (50597) | 33/436/679 | 14.45 |
+| h_a1 | 94/222 (5644) | 666/674 (16274) | 737/787 (25190) | 27/385/445 | 4.58 |
+| d_a1 | 93/222 (5643) | 665/674 (16337) | 737/788 (25206) | 27/384/445 | 4.58 |
+
+Split rate of camp-turns by size relative to the Neutral onset (splits / camp-turns)
+| run | 0.5-1.0x | 1.0-1.5x | 1.5-2.0x | 2.0-3.0x | >3x |
+|---|---|---|---|---|---|
+| h_f1 | 5.8% (1424/24639) | 3.9% (575/14806) | 0.7% (68/9109) | 0.9% (63/7387) | 2.0% (100/4950) |
+| d_f1 | 5.8% (1417/24515) | 3.8% (560/14712) | 0.8% (69/9123) | 0.8% (59/7353) | 2.1% (105/4938) |
+| h_a1 | 6.7% (1186/17704) | 1.6% (191/11662) | 4.7% (27/572) | 3.1% (20/654) | 6.1% (22/360) |
+| d_a1 | 6.7% (1187/17731) | 1.7% (193/11664) | 4.7% (27/573) | 2.9% (19/652) | 5.8% (21/360) |
+
+### Findings (distress fission)
+
+- **Distress is rare in these worlds, and its effect is small and in the intended direction.** Mortality off: 12 of 2,350 fissions
+  (0.5 percent) are Distress, against none before; with QoL mortality at elasticity 1: 2 of 1,484. Starvation deaths fall from 1,080 to 728
+  (-33 percent) and from 206 to 149 (-28 percent); camp-turns with `DeficitTurns > 0` fall from 263 to 211 and from 61 to 45. Total population, food yield,
+  camps at turn 60 and QoL quantiles are within 0.5 percent of the baseline (population 2,906,125 vs 2,895,971; 978,004 vs 979,955), and the share of
+  goods-economy camp-turns at or below Q* is unchanged (42.5 percent; 30.0 percent). Camp-size P90/P95 by housing class and the split rate by
+  size relative to the crowding onset are unchanged within noise, so the crowding calibration is intact.
+- **Distress daughters are mostly the policy size.** All 14 distress splits are Agricultural camps; the median share of the parent is 0.30
+  (the Neutral fraction), because a camp that has a viable destination rarely has `F W` below 0.7, the point at which `n_short` exceeds the policy size.
+  The fixtures cover the larger distress sizes (`n_short` up to the legal cap); the generated worlds seldom reach them. Two distress splits
+  were of camps of about 1,900-2,200 residents whose `Q_now` was near zero (gain in the millions); the rule treats a near-zero `Q_now` as satisfied.
+- **Why the effect is small.** Starving camps without a viable destination within `FissionRadius` still cannot leave (`D < StartViability`), exactly the
+  intended "no better ground in reach" outcome, and most famine in these worlds is transient (the deficit-camp share of camp-turns is 0.1-0.4 percent).
+  The mechanism matters in worlds with sharper local famine and nearby good ground; none of the current five is one.
+- **Cost.** Fission evaluations, searches and candidates scored are unchanged to within 0.5 percent (searches 39,314 vs 39,367; candidates 32,123 vs 31,960), and a fed camp performs
+  the same single estimate as before; the median turn time difference is within the run-to-run noise of the shared CPU.
+
 ## Deliberate limits
 
 - The defaults are calibrated analytically to full goods coverage (table above); the realized size depends on
   housing per head (see Findings). `FissionMinimumDaughter` and the daughter fractions are
   unchanged from WP10a and untuned; `FissionRadius` (4) and `FissionDaughterBuilderShare` are set by the throughput measurements above.
+- Distress fission uses the land-limited upper bound for the stayers (the local flow does not shrink with the headcount) and the
+  site support ratio for the daughter, a planning estimate from current projected ecology; the distress branch exists only for `F W < 1`
+  (a discontinuity at 1, see Distress fission). The measured effect in the five generated worlds is small.
 - Sites are scored from ground-truth ecology of the footprint; only the chosen tile
   reaches the owner's observation.
 - Immigration is WP10b ([Immigration.md](Immigration.md)); affinity decay, trade with kin (WP7-WP8) and the Elder (#23)
