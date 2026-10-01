@@ -28,9 +28,12 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int SplitOff;
         // People who left for, and arrived from, other known settlements at the end of the turn (WP10b). EndingPopulation is before both.
         [System.Runtime.Serialization.OptionalField] public int Emigrated, Immigrated;
+        // QoL-dependent mortality (Docs/QoLMortality.md): the annual growth ceiling r(1) - r(Q) that deaths at the camp's committed QoL removed, and that QoL.
+        // Zero (and not shown) when the lever is off or the camp has no goods economy. Absent in older saves.
+        [System.Runtime.Serialization.OptionalField] public double QoLMortalityReduction, QoL;
 #pragma warning restore SYSLIB0050
         public string LimitingFactor;
-        public string Explanation => "Population " + StartingPopulation + " + " + Additions + " additions - " + Deaths + " deaths = " + EndingPopulation + " (" + NetPercent.ToString("+0.0;-0.0;0.0", System.Globalization.CultureInfo.InvariantCulture) + "%). " + LimitingFactor + "." + (SplitOff > 0 ? " " + SplitOff + " of them then left to found a new settlement." : "") + (Emigrated > 0 ? " " + Emigrated + " then moved to other settlements." : "") + (Immigrated > 0 ? " " + Immigrated + " more arrived from other settlements." : "");
+        public string Explanation => "Population " + StartingPopulation + " + " + Additions + " additions - " + Deaths + " deaths = " + EndingPopulation + " (" + NetPercent.ToString("+0.0;-0.0;0.0", System.Globalization.CultureInfo.InvariantCulture) + "%). " + LimitingFactor + "." + (SplitOff > 0 ? " " + SplitOff + " of them then left to found a new settlement." : "") + (Emigrated > 0 ? " " + Emigrated + " then moved to other settlements." : "") + (Immigrated > 0 ? " " + Immigrated + " more arrived from other settlements." : "") + (QoLMortalityReduction > 1e-9 ? " Quality of life " + QoL.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " raised deaths and lowered the annual growth ceiling by " + (100 * QoLMortalityReduction).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " points." : "");
     }
 
     public static class PassiveGathering

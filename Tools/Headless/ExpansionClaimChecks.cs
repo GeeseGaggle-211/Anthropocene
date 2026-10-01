@@ -59,7 +59,7 @@ internal static class ExpansionClaimChecks
         Check(ref checks, rejected, "PersonLifeYears must be positive");
 
         // ---- The ladder is the resolver allocator's own step sequence.
-        var w = Agricultural(100); var c = w.Camps[0]; c.FoodNeedsMetRatio = .2; c.QoL = .8;
+        var w = Agricultural(100); var c = w.Camps[0]; c.FoodNeedsMetRatio = .2; c.QoL = .95; /* above Q*, so the growth ceiling is positive and a birth has a price */
         var cfg = w.Config; var n = cfg.Neolithic; double years = cfg.TurnDays / cfg.DaysPerYear;
         string before = SaveCodec.Fingerprint(w);
         var steps = CultivationEconomy.ExpansionLadder(w, c, years);
@@ -135,7 +135,7 @@ internal static class ExpansionClaimChecks
         double dYear = c.Population * cfg.Consumption * cfg.DaysPerYear / cfg.BaseDays;
         Check(ref checks, Near(d.FoodValue, c.Population * c.QoL / (c.FoodNeedsMetRatio * dYear), 1e-12), "v_food = N Q / (F D_year)");
         Check(ref checks, Near(d.CapitalLife, 1 / (Math.Log(2) / n.DecayHalfLifeYears + n.DiscountRatePerYear), 1e-12) && Near(d.PersonLife, 1 / (1 / n.PersonLifeYears + n.DiscountRatePerYear), 1e-12), "L_cap and L_person");
-        double maxRate = cfg.AnnualHumanGrowthRate * c.DemographicGrowthMultiplier;
+        double maxRate = QoLMortality.MaximumRate(w, c);
         Check(ref checks, Near(d.FoodPerBirth, ExpansionValuation.FoodPerBirth(cTurn, maxRate, years), 1e-12), "food per birth from the camp's maximum rate");
         Check(ref checks, Near(d.GrowthFoodValue, Math.Max(0, d.MarginalWelfarePerBirth) * d.PersonLife / d.FoodPerBirth, 1e-12) && d.GrowthFoodValue > 0, "v_growth = max(0, dW/dN) L_person / food per birth");
         Check(ref checks, d.Expansion != null && d.Expansion.Any, "a forecast shortfall with a retained gain gives an expansion ladder");

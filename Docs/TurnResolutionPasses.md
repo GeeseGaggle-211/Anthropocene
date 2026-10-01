@@ -52,6 +52,12 @@ coefficients. They do not create seasonal or annual world states.
   other manufacturing input,
   starvation grace, Fabric, Housing and QoL all apply to that cohort. Births
   and pending deaths commit only after production, needs and storage.
+- The growth ceiling is fixed at preparation from the committed prior-turn QoL. `QoLMortality.MaximumRate` returns
+  `max(0, b0 F - d0 M Q^-a) * DemographicGrowthMultiplier` (zero when `DeficitTurns > 0`) for camps with Cultivation or
+  Husbandry and `AnnualHumanGrowthRate * DemographicGrowthMultiplier` otherwise; `PlanGrowth`, `FoodBucketTargets`,
+  `PlanningResidentPopulation` and the Value rule read it identically. `ResolveNeeds` writes the turn's new QoL only
+  after growth is planned, so the next turn plans from it; the deaths the rate implies are not recorded
+  (`Docs/QoLMortality.md`).
 - Clothing-need feedstock is paid ahead of the reserve refill. Its amount is
   `NeolithicProduction.ClothingNeedFeedstock`: the plant food (Cloth) and animal
   food (Animal Fabric) of the fabric covering

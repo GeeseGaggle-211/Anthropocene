@@ -25,7 +25,7 @@ internal static class SettlingChecks
         c.Technology = cultivationPrimary ? Technology.Cultivation : Technology.AnimalHusbandry;
         c.Technologies[(int)Technology.Cultivation] = true; c.Technologies[(int)Technology.AnimalHusbandry] = true;
         w.Config.Neolithic.PlannerFulfilment = "Value";
-        c.FoodNeedsMetRatio = .2; c.QoL = .8;
+        c.FoodNeedsMetRatio = .2; c.QoL = .8; w.Config.QoLMortalityEnabled = false; /* these fixtures price growth at the unreduced ceiling; QoLMortalityChecks covers the lever */
         if (fieldIntensity > 0)
             foreach (int id in w.Map.Radius(tile, 1).Where(id => w.Tiles[id].TraversableLand))
             {

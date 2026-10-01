@@ -237,7 +237,7 @@ namespace Anthropocene.Simulation
 
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
-                record.Demographics.Add(new DemographicReport { Camp = camp.Id, StartingPopulation = w.LinkedPopulation(camp), Years = years, InitialReserves = camp.Food + w.Hunters.Where(h => h.SourceCamp == camp.Id).OrderBy(h => h.Id).Sum(h => h.CarriedFood) });
+                record.Demographics.Add(new DemographicReport { Camp = camp.Id, StartingPopulation = w.LinkedPopulation(camp), Years = years, QoLMortalityReduction = QoLMortality.Reduction(w, camp), QoL = camp.QoL, InitialReserves = camp.Food + w.Hunters.Where(h => h.SourceCamp == camp.Id).OrderBy(h => h.Id).Sum(h => h.CarriedFood) });
                 camp.StepFoodIncome = 0;
             }
 
@@ -647,7 +647,7 @@ namespace Anthropocene.Simulation
             double available = netIncome + 1e-8 >= priorityIncome + clothing && projectedFood + 1e-8 >= populationBase + clothing + needs.ReserveTarget
                 ? Math.Min(Math.Max(0, netIncome - priorityIncome - clothing), Math.Max(0, projectedFood - populationBase - clothing - needs.ReserveTarget))
                 : 0;
-            double maximumRate = camp.DeficitTurns > 0 ? 0 : w.Config.AnnualHumanGrowthRate * camp.DemographicGrowthMultiplier;
+            double maximumRate = QoLMortality.MaximumRate(w, camp);
             GrowthPlan ForRate(double rate)
             {
                 double growthFood = GrowthFood(populationBase, rate, years);
@@ -690,7 +690,7 @@ namespace Anthropocene.Simulation
 
         internal static void FoodBucketTargets(WorldState w, Camp camp, double intervals, double years, double populationBase, double initialFood, out double consumptionIncome, out double reserveTarget, out double reserveFill, out double maximumGrowthFood)
         {
-            double maximumRate = camp.DeficitTurns <= 0 ? w.Config.AnnualHumanGrowthRate * camp.DemographicGrowthMultiplier : 0;
+            double maximumRate = QoLMortality.MaximumRate(w, camp);
             // The reserve bucket belongs to the people who exist when this turn resolves.
             // Refill their complete configured operating reserve, bounded by what local
             // storage can retain, before funding births. Newborns happen afterward and
@@ -768,7 +768,7 @@ namespace Anthropocene.Simulation
             int reproductive = PlanningPopulation(w, camp);
             double populationBase = reproductive * w.Config.Consumption * intervals;
             FoodBucketTargets(w, camp, intervals, years, populationBase, initialFood, out double consumption, out _, out double reserve, out double growth);
-            double maximumRate = camp.DeficitTurns > 0 ? 0 : w.Config.AnnualHumanGrowthRate * camp.DemographicGrowthMultiplier;
+            double maximumRate = QoLMortality.MaximumRate(w, camp);
             GrowthPlan ForRate(double rate)
             {
                 double finalPopulation = reproductive * Math.Exp(rate * years);

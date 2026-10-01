@@ -462,6 +462,9 @@ namespace Anthropocene.Simulation
             w.Societies.Add(society);
             var camp = new Camp { Id = w.NextId++, Tile = e.Tile, Population = n, DemographicGrowthMultiplier = parent.DemographicGrowthMultiplier };
             camp.Bind(society); w.Camps.Add(camp);
+            // A daughter has no resolved needs until her first turn; her committed QoL is the estimate that justified the split (never the unset 1.0),
+            // so QoL mortality and the planner see a real value in that first turn. Fall back to the parent's committed QoL if no usable estimate exists.
+            camp.QoL = e.DaughterQoL > 0 && e.DaughterQoL <= 1 ? e.DaughterQoL : parent.QoL;
             // Food (typed), portable stores and fractional demographic progress.
             double plant = parent.PlantFood * f, animal = parent.AnimalFood * f, aquatic = parent.AquaticFood * f;
             camp.PlantFood = plant; camp.AnimalFood = animal; camp.AquaticFood = aquatic;

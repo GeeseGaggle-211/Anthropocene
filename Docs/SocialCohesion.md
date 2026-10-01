@@ -389,3 +389,6 @@ Limits of the result, stated plainly:
   adding `dS/dcapacity` to the claim value would make cohesion an incentive to build.
 - Over-built tents can lift `H` above `p_tent` because the literal formula divides total tent capacity by `N`; planner demand
   targets people, so this does not arise in play, but a covered-people form (`min(1 - fixed share, tent share)`) would close it.
+- Growth reading QoL: until the QoL-mortality change growth never read QoL, so only fission limited camp size and fission could not
+  keep up with several-fold cohort growth. Growth now reads the committed QoL through the death rate (`Docs/QoLMortality.md`); the
+  size tables there use this document's classes and targets.

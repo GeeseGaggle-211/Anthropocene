@@ -506,7 +506,7 @@ Findings:
 - **The size tail barely moves.** Fixed-dominant P90 falls from 1,683 to 1,499, tent-dominant stays near 1,360, and the
   scores in the table worsen only because the new daughters change the *unhoused* class: a daughter of a 300-600 person village is
   founded with about 100-200 people and no fixed Housing, so a post-opening unhoused camp is now often 200 people (P90 222, against 65
-  for the Paleolithic camps alone) with stored QoL 1.00 (the value a camp reports before its first resolution computes one; not investigated further). Camps still split mostly
+  for the Paleolithic camps alone) with stored QoL 1.00 (the value a camp reported before its first resolution computed one; since the QoL-mortality change `Fission.Found` stores the founding estimate instead, see Docs/QoLMortality.md). Camps still split mostly
   below onset (5-6 percent of camp-turns at 0.5-1.0x) and rarely above it (0.7-1.0 percent at 1.5-3x): once a village is much larger than
   its onset the cause is no longer the daughter check (now 10-12 percent of evaluations) but the one-split-per-turn rule from a frozen
   snapshot with a daughter of at most 40 percent when a cohort grows several-fold in a 20-year turn. Size targets remain unmet.

@@ -627,7 +627,7 @@ namespace Anthropocene.Simulation
             d.GapSecurityPerYear = Math.Max(0, security - supply) / years;
             d.GapTotalPerYear = Math.Max(0, security + growth - supply) / years;
             d.FoodValue = FoodValue(cfg, c);
-            double maxRate = c.DeficitTurns <= 0 ? cfg.AnnualHumanGrowthRate * c.DemographicGrowthMultiplier : 0;
+            double maxRate = QoLMortality.MaximumRate(w, c);
             d.FoodPerBirth = FoodPerBirth(cfg.Consumption * intervals, maxRate, years);
             d.MarginalWelfarePerBirth = MarginalWelfare(w, c);
             d.PersonLife = PersonLife(n);

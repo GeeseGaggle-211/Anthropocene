@@ -64,13 +64,13 @@ internal static class Milestone2Checks
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(expeditionCopy), "resuming an isolated expedition preserves consumption and deficit outcomes");
         // This pair measures duration scaling of growth itself, so disable the
         // independently fixed physical reserve target in both worlds.
-        w = Flat(); w.Config.AnnualHumanGrowthRate = .5; w.Config.GatherPerPerson = 100; w.Config.GrowthReserveYears = 0; w.Camps[0].Food = 0;
+        w = Flat(); w.Config.AnnualHumanGrowthRate = .5; w.Config.QoLMortalityEnabled = false; /* g = .5 exceeds BaseBirthRate */ w.Config.GatherPerPerson = 100; w.Config.GrowthReserveYears = 0; w.Camps[0].Food = 0;
         var half = SaveCodec.Load(SaveCodec.Save(w)); half.Config.TurnDays = 45;
         int before = w.Camps[0].Population; var grown = resolver.Resolve(w, Orders()); var partial = resolver.Resolve(half, Orders());
         Check(grown.Growth > partial.Growth && w.Camps[0].GrowthRemainder > 0, "net growth scales by duration and preserves its fraction");
         Check(w.Camps[0].Population == before + grown.Growth - grown.Deaths && grown.PopulationChanges.Any(p => p.Kind == "Net growth"), "growth has explicit conserved population events");
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(SaveCodec.Load(SaveCodec.Save(w))), "growth and logistics survive save/load");
-        w = Flat(); w.Config.AnnualHumanGrowthRate = .5; w.Camps[0].Food = 0; foreach (var t in w.Tiles) { t.Food = 0; for (int s = 0; s < 4; s++) t.Seasons[s].FoodRecoveryPerDay = 0; }
+        w = Flat(); w.Config.AnnualHumanGrowthRate = .5; w.Config.QoLMortalityEnabled = false; w.Camps[0].Food = 0; foreach (var t in w.Tiles) { t.Food = 0; for (int s = 0; s < 4; s++) t.Seasons[s].FoodRecoveryPerDay = 0; }
         Check(resolver.Resolve(w, Orders()).Growth == 0, "hunger blocks demographic growth");
         var salt = new Tile { WaterBody = WaterKind.Saltwater, Terrain = Terrain.Shallows, Saltwater = 1000, Freshwater = 99, FreshwaterSource = FreshwaterSource.None };
         var claim = new[] { new Demand { Tile = 0, Entity = 1, Kind = "Herd", Freshwater = 8 } };

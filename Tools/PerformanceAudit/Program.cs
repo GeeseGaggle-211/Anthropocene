@@ -189,6 +189,8 @@ internal static class Program
         string setText = Option(args, "--set", "");
         // Immigration control (WP10b): 0 disables the pass, 1 enables it; unset keeps the configured value (disabled).
         int immigrationSwitch = Option(args, "--immigration", -1);
+        // QoL-dependent mortality control: 0 disables it (same-code baseline), 1 enables it; unset keeps the configured value (enabled for new worlds).
+        int qolMortalitySwitch = Option(args, "--qol-mortality", -1);
 
         if (openingTurnLimit < 0 || postOpeningTurns < 0 || warmup < 0)
             throw new ArgumentOutOfRangeException("Turn counts and warmup must be non-negative.");
@@ -285,6 +287,11 @@ internal static class Program
             var fissionField = world.Config.GetType().GetField("FissionEnabled") ?? throw new ArgumentException("This simulation source has no fission switch.");
             fissionField.SetValue(world.Config, fissionSwitch != 0);
         }
+        if (qolMortalitySwitch >= 0)
+        {
+            var qolField = world.Config.GetType().GetField("QoLMortalityEnabled") ?? throw new ArgumentException("This simulation source has no QoL mortality switch.");
+            qolField.SetValue(world.Config, qolMortalitySwitch != 0);
+        }
         if (immigrationSwitch >= 0)
         {
             var immigrationField = world.Config.GetType().GetField("ImmigrationEnabled") ?? throw new ArgumentException("This simulation source has no immigration switch.");
@@ -379,6 +386,7 @@ internal static class Program
             productionConfig,
             fissionSwitch,
             immigrationSwitch,
+            qolMortalitySwitch,
             fissionHousingRelief = string.IsNullOrWhiteSpace(fissionReliefText) ? (double?)null : double.Parse(fissionReliefText, System.Globalization.CultureInfo.InvariantCulture),
             fingerprintsEnabled,
             replayMode = fingerprintMode == 1 ? "exact-per-turn" : fingerprintMode == 2 ? "exact-final" : "outcomes-only",
