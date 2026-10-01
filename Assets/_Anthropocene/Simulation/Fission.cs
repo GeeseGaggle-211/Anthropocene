@@ -123,7 +123,9 @@ namespace Anthropocene.Simulation
         }
         public static Estimate EstimateSplit(WorldState w, Camp camp, FissionPolicy policy)
             => EstimateSplit(w, camp, Kinship.DaughterSize(camp.Population, policy), 1, 1);
-        public static Estimate EstimateSplit(WorldState w, Camp camp, int daughterSize, double daughterFood, double daughterWater)
+        // daughterFood/daughterWater: the destination's support for the distress gain (DaughterExpected). vetoFood: the food factor F_d of the
+        // veto estimate DaughterQoL (1 = the daughter is fully fed, as before the relative destination test; Docs/Fission.md).
+        public static Estimate EstimateSplit(WorldState w, Camp camp, int daughterSize, double daughterFood, double daughterWater, double vetoFood = 1)
         {
             var cfg = w.Config; var n = cfg.Neolithic; int residents = camp.Population, nd = daughterSize, stay = residents - nd;
             double f = residents > 0 ? nd / (double)residents : 0;
@@ -156,7 +158,7 @@ namespace Anthropocene.Simulation
             double ed = floor + (1 - floor) * Numbers.Clamp(years / n.RudimentaryExpectationRampYears, 0, 1);
             var own = DaughterShelter(w, camp, nd);
             double housingD = Housing(nd, own.Total), cohesionD = NeolithicProduction.SocialCohesion(n, Share(nd, own.Fixed, own.Light), nd);
-            double qd = Coverage(ed, housingD) * cohesionD;
+            double qd = Numbers.Clamp(vetoFood, 0, 1) * Coverage(ed, housingD) * cohesionD;
             double qdExpected = Numbers.Clamp(daughterFood, 0, 1) * Numbers.Clamp(daughterWater, 0, 1) * Coverage(e, housingD) * cohesionD;
             double daughterGain = qNow > 1e-9 ? qdExpected / qNow - 1 : (qdExpected > 1e-9 ? 1e9 : -1);
             return new Estimate { Residents = residents, Daughter = nd, QNow = qNow, QAfter = qAfter, Gain = gain, DaughterQoL = qd, StayFood = stayFood, DaughterExpected = qdExpected, DaughterGain = daughterGain };
@@ -287,6 +289,7 @@ namespace Anthropocene.Simulation
             public int Daughter, Tile = -1;
             public bool ClearTarget, Propose, DaughterTested, DaughterBlocked, Screened, NoCandidates, NoViable, WithDestination, BelowThreshold, StayersBlocked;
             public FissionTarget NewTarget;
+            public double SiteHuman, SiteHerd;
             public int Validations, Searches, Candidates, TileProjections, Invalidations;
         }
 
@@ -367,20 +370,22 @@ namespace Anthropocene.Simulation
             if (!crowdScreen && !distressScreen) return e;
             e.Screened = true;
             int size = distressScreen ? n1 : n0;
-            double viable = cfg.StartViability / 100.0; var projections = new Dictionary<int, double>(); double siteRatio = 0;
+            var projections = new Dictionary<int, double>(); double siteRatio = 0, siteHuman = 0, siteHerd = double.PositiveInfinity;
             if (cached != null)
             {
                 e.Validations++;
-                double d = 0, ratio = 0;
-                if (!context.Blocked(cached.Tile) && w.Tiles[cached.Tile].TraversableLand) d = Desirability(context, camp, cached.Tile, size, regime, projections, e, out ratio);
-                if (d < viable) { e.ClearTarget = true; e.Invalidations++; cached = null; }
+                double d = 0, ratio = 0; siteHuman = 0; siteHerd = double.PositiveInfinity;
+                if (!context.Blocked(cached.Tile) && w.Tiles[cached.Tile].TraversableLand) { d = Desirability(context, camp, cached.Tile, size, regime, projections, e, out ratio); siteHuman = e.SiteHuman; siteHerd = e.SiteHerd; }
+                // Relative destination test: a site stays a destination while it is habitable (its freshwater gate passes and it supports some food);
+                // whether the daughter is better off than at home is the veto below, not an absolute viability bar.
+                if (!(ratio > 0)) { e.ClearTarget = true; e.Invalidations++; cached = null; }
                 else { e.Desirability = d; siteRatio = ratio; }
             }
             if (cached == null)
             {
                 e.Searches++;
                 var known = new Known(context, camp);
-                int best = -1, bestDistance = 0; double bestScore = -1, bestRatio = -1;
+                int best = -1, bestDistance = 0; double bestScore = -1, bestRatio = -1, bestHuman = 0, bestHerd = double.PositiveInfinity;
                 // Order: D (capped at 1) descending, then the uncapped support ratio descending, then hex distance, then tile ID
                 // (candidates arrive in tile order, so a full tie keeps the lowest ID).
                 foreach (int tile in w.Map.Radius(camp.Tile, cfg.FissionRadius).OrderBy(n => n))
@@ -389,12 +394,12 @@ namespace Anthropocene.Simulation
                     e.Candidates++;
                     double d = Desirability(context, camp, tile, size, regime, projections, e, out double ratio);
                     int distance = w.Map.Distance(camp.Tile, tile);
-                    if (best < 0 || d > bestScore || d == bestScore && (ratio > bestRatio || ratio == bestRatio && distance < bestDistance)) { best = tile; bestScore = d; bestRatio = ratio; bestDistance = distance; }
+                    if (best < 0 || d > bestScore || d == bestScore && (ratio > bestRatio || ratio == bestRatio && distance < bestDistance)) { best = tile; bestScore = d; bestRatio = ratio; bestDistance = distance; bestHuman = e.SiteHuman; bestHerd = e.SiteHerd; }
                 }
-                if (best >= 0 && bestScore >= viable)
+                if (best >= 0 && bestScore > 0 && bestRatio > 0)
                 {
                     e.NewTarget = new FissionTarget { Tile = best, Regime = (int)regime, Turn = w.Turn }; e.ClearTarget = false;
-                    e.Desirability = bestScore; siteRatio = bestRatio; cached = e.NewTarget;
+                    e.Desirability = bestScore; siteRatio = bestRatio; siteHuman = bestHuman; siteHerd = bestHerd; cached = e.NewTarget;
                 }
             }
             if (cached == null) { if (e.Candidates == 0) e.NoCandidates = true; else e.NoViable = true; return e; }
@@ -403,13 +408,16 @@ namespace Anthropocene.Simulation
             // With the destination known: the leaving group's F_d is the site's support ratio for its cohort (capped at one; for herded nomads
             // it already includes herd forage and water, so it stands for F_d W_d); W_d = 1 (freshwater is a gate of the footprint).
             double foodD = Numbers.Clamp(siteRatio, 0, 1);
+            // The veto's F_d: the site's support ratio plus the person-equivalents of the turn's need her share of the stored food covers
+            // (the same carried term as immigration), capped at one. Carried human food does not feed herds, so a herded daughter's herd forage and water coverage caps it. The daughter must be better off there than at home, not at an absolute bar.
+            double vetoFood = Math.Min(1, Math.Min(siteHerd, Math.Max(0, siteHuman) + Immigration.CarriedPerPerson(cfg, camp)));
             Estimate chosen = default; bool use = false;
             if (distressLegal)
             {
-                var distress = EstimateSplit(w, camp, n1, foodD, 1);
+                var distress = EstimateSplit(w, camp, n1, foodD, 1, vetoFood);
                 if (distress.DaughterGain >= threshold) { chosen = distress; use = true; e.Trigger = FissionTrigger.Distress; }
             }
-            if (!use && crowdLegal && crowd.Gain >= threshold) { chosen = EstimateSplit(w, camp, n0, foodD, 1); use = true; e.Trigger = FissionTrigger.Crowding; }
+            if (!use && crowdLegal && crowd.Gain >= threshold) { chosen = EstimateSplit(w, camp, n0, foodD, 1, vetoFood); use = true; e.Trigger = FissionTrigger.Crowding; }
             if (!use) { e.BelowThreshold = true; return e; }
             e.Daughter = chosen.Daughter; e.Gain = chosen.Gain; e.DaughterQoL = chosen.DaughterQoL; e.DaughterGain = chosen.DaughterGain;
             e.Push = Push(e.Trigger == FissionTrigger.Distress ? chosen.DaughterGain : chosen.Gain, threshold); e.Score = e.Push * e.Desirability;
@@ -443,7 +451,7 @@ namespace Anthropocene.Simulation
         // A planning estimate from current projected ecology, not a forecast of realized harvest.
         private static double Desirability(Context context, Camp camp, int tile, int daughter, FissionRegime regime, Dictionary<int, double> projections, Evaluation e, out double ratio)
         {
-            ratio = 0;
+            ratio = 0; e.SiteHuman = 0; e.SiteHerd = double.PositiveInfinity;
             var w = context.World; var cfg = w.Config; var index = context.Index;
             double Repeatable(int n)
             {
@@ -471,10 +479,10 @@ namespace Anthropocene.Simulation
                     managed += flow / 4 * cfg.TurnDays;
                 }
                 double support = Math.Min(land + aquatic + managed, daughter * cfg.FarmerProductivity * cfg.GatherPerPerson * cfg.GenerationIntervals);
-                ratio = (land + aquatic + managed) / need;
+                ratio = (land + aquatic + managed) / need; e.SiteHuman = ratio;
                 return Numbers.Clamp(support / need, 0, 1);
             }
-            ratio = (land + aquatic) * PlacementStage.WorkingShare(w, daughter) / need; double food = Numbers.Clamp(harvest / need, 0, 1);
+            ratio = (land + aquatic) * PlacementStage.WorkingShare(w, daughter) / need; e.SiteHuman = ratio; double food = Numbers.Clamp(harvest / need, 0, 1);
             if (regime != FissionRegime.Nomadic) return food;
             double forageNeed = 0, waterNeed = 0; int residents = camp.Population;
             foreach (var herd in index.CampHerds(camp.Id))
@@ -501,7 +509,7 @@ namespace Anthropocene.Simulation
             }
             // Ratios before the cap at one (the destination order's second key); only a herd need constrains them.
             double rawForage = forageNeed <= 0 ? double.PositiveInfinity : (forage - harvest) / forageNeed, rawWater = waterNeed <= 0 ? double.PositiveInfinity : water / waterNeed;
-            ratio = Math.Min(ratio, Math.Min(rawForage, rawWater));
+            e.SiteHerd = Math.Min(rawForage, rawWater); ratio = Math.Min(ratio, e.SiteHerd);
             return Math.Min(food, Math.Min(Numbers.Clamp(rawForage, 0, 1), Numbers.Clamp(rawWater, 0, 1)));
         }
 

@@ -34,7 +34,7 @@ internal static class ContactKnowledgeChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Sparse(); Gating(); Sightings(); MovedAndExpiry(); Hooks(); Observations(); Persistence(); Replay();
+        checks = 0; Config(); Sparse(); Gating(); Sightings(); MovedAndExpiry(); Hooks(); Observations(); Persistence(); Replay(); Hinterland(); Decay(); HinterlandReplay();
         Console.WriteLine("PASS: " + checks + " contact knowledge assertions"); return checks;
     }
 
@@ -54,6 +54,18 @@ internal static class ContactKnowledgeChecks
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) Check(((SimulationConfig)serializer.ReadObject(stream)).ContactExpiryTurns == 9, "a saved expiry round trips");
         var json = System.Text.RegularExpressions.Regex.Match(File.ReadAllText(FindConfig()), "\"ContactExpiryTurns\":\\s*(\\d+)");
         Check(json.Success && json.Groups[1].Value == "5", "OpeningConfig.json carries the default expiry");
+        var d = new SimulationConfig();
+        Check(d.HinterlandReferencePopulation == d.StartingPopulation && d.HinterlandRingsPerTurn == 1 && d.HinterlandMaxRadius == 6 && d.ExploredMemoryTurns == 5, "hinterland defaults: reference population = starting population, one ring per turn, radius cap 6, memory 5 turns");
+        foreach (var bad in new Action<SimulationConfig>[] { c => c.HinterlandReferencePopulation = 0, c => c.HinterlandRingsPerTurn = -1, c => c.HinterlandRingsPerTurn = 9, c => c.HinterlandMaxRadius = 1, c => c.HinterlandMaxRadius = 9, c => c.ExploredMemoryTurns = 0 })
+        { var c = new SimulationConfig(); bad(c); bool refused = false; try { c.Validate(); } catch (ArgumentException) { refused = true; } Check(refused, "an out-of-range hinterland or memory lever is rejected"); }
+        string hxml; var hs = new DataContractSerializer(typeof(SimulationConfig));
+        using (var stream = new MemoryStream()) { hs.WriteObject(stream, new SimulationConfig { HinterlandMaxRadius = 4, ExploredMemoryTurns = 9, HinterlandRingsPerTurn = 2, HinterlandReferencePopulation = 30 }); hxml = Encoding.UTF8.GetString(stream.ToArray()); }
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(hxml))) { var back = (SimulationConfig)hs.ReadObject(stream); Check(back.HinterlandMaxRadius == 4 && back.ExploredMemoryTurns == 9 && back.HinterlandRingsPerTurn == 2 && back.HinterlandReferencePopulation == 30, "hinterland levers round trip"); }
+        string hlegacy = Regex.Replace(hxml, "<(HinterlandMaxRadius|ExploredMemoryTurns|HinterlandRingsPerTurn|HinterlandReferencePopulation)>\\d+</\\1>", "");
+        Check(hlegacy != hxml, "legacy fixture omits the hinterland levers");
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(hlegacy))) { var back = (SimulationConfig)hs.ReadObject(stream); Check(back.HinterlandMaxRadius == 6 && back.ExploredMemoryTurns == 5 && back.HinterlandRingsPerTurn == 1 && back.HinterlandReferencePopulation == 24, "older saves load the hinterland defaults"); }
+        foreach (var key in new[] { "HinterlandReferencePopulation", "HinterlandRingsPerTurn", "HinterlandMaxRadius", "ExploredMemoryTurns" })
+            Check(Regex.IsMatch(File.ReadAllText(FindConfig()), "\"" + key + "\":\\s*\\d+"), "OpeningConfig.json carries " + key);
     }
     private static string FindConfig()
     {
@@ -250,7 +262,7 @@ internal static class ContactKnowledgeChecks
     }
 
     private static string Key(WorldState w) => SaveCodec.Fingerprint(w);
-    private static string Memory(WorldState w) => string.Join("|", w.Societies.OrderBy(s => s.Id).Select(s => s.Id + ":" + (s.Memory == null ? "-" : string.Join(",", s.Memory.Explored.Chunks) + "/" + string.Join(",", s.Memory.Explored.Words) + "/" + string.Join(",", s.Memory.Contacts.Select(c => c.Camp + "@" + c.Tile + "t" + c.Turn + c.Source + c.Moved)))));
+    private static string Memory(WorldState w) => string.Join("|", w.Societies.OrderBy(s => s.Id).Select(s => s.Id + ":" + (s.Memory == null ? "-" : string.Join(",", s.Memory.Explored.Chunks) + "/" + string.Join(",", s.Memory.Explored.Words) + "/" + (s.Memory.Explored.Turns == null ? "-" : string.Join(",", s.Memory.Explored.Turns)) + "/" + string.Join(",", s.Memory.Contacts.Select(c => c.Camp + "@" + c.Tile + "t" + c.Turn + c.Source + c.Moved)))));
 
     private static void Persistence()
     {
@@ -322,5 +334,103 @@ internal static class ContactKnowledgeChecks
             Step(x, new PhaseExecution()); Step(y, new PhaseExecution(4, 2, true, 1));
         }
         Check(Memory(x) == Memory(y) && Key(x) == Key(y) && x.Societies.All(s => s.Memory.Contacts.Count > 0), "the update is identical across workers and collection order");
+    }
+
+    private static HashSet<int> Explored(Society s) => new HashSet<int>(s.Memory.Explored.Tiles());
+    private static HashSet<int> Disc(WorldState w, int tile, int r) => new HashSet<int>(w.Map.Radius(tile, r));
+
+    // Hinterland: a stationary camp's explored radius grows by one ring per stationary turn up to the population cap and the maximum.
+    private static void Hinterland()
+    {
+        var cfg = new SimulationConfig();
+        int R(int turns, int people) => ContactKnowledge.HinterlandRadius(cfg, turns, people);
+        Check(R(0, 24) == 2 && R(5, 24) == 2 && R(0, 1000) == 2, "the hinterland starts at the vision radius and a starting-size camp never outgrows it");
+        Check(R(1, 96) == 3 && R(2, 96) == 4 && R(9, 96) == 4, "a stationary camp gains one ring per turn up to VisionRadius * sqrt(N / reference) (96 people: 4)");
+        Check(R(3, 216) == 5 && R(4, 216) == 6 && R(30, 216) == 6 && R(30, 5000) == 6, "the cap is the smaller of the population cap and the maximum radius 6");
+        cfg.HinterlandRingsPerTurn = 0; Check(R(9, 5000) == 2, "zero rings per turn disables growth");
+        cfg.HinterlandRingsPerTurn = 3; cfg.HinterlandMaxRadius = 4; Check(R(1, 5000) == 4 && R(0, 5000) == 2, "the maximum radius and the ring rate are levers");
+        // Ring growth in a world: the explored set is exactly the disc of the hinterland radius around the camp.
+        var w = World(new[] { 12 }, 0); var camp = w.Camps[0]; camp.Population = 216; var society = Soc(w, 0); int home = camp.Tile;
+        Step(w); Check(Explored(society).SetEquals(Disc(w, home, 2)), "a camp that just arrived explores only its vision");
+        camp.StationaryTurns = 1; Step(w); Check(Explored(society).SetEquals(Disc(w, home, 3)), "after one stationary turn the hinterland is radius 3");
+        camp.StationaryTurns = 2; Step(w); camp.StationaryTurns = 3; Step(w); Check(Explored(society).SetEquals(Disc(w, home, 5)), "radius 5 after three stationary turns");
+        camp.StationaryTurns = 40; Step(w); Check(Explored(society).SetEquals(Disc(w, home, 6)), "the population and maximum caps stop it at 6 for 216 people");
+        Check(Disc(w, home, 6).Count <= 3 * 6 * 6 + 3 * 6 + 1, "a radius-6 hinterland marks at most 127 tiles (the latitude clips this fixture), the bounded O(r^2) disc");
+        var small = World(new[] { 12 }, 0); small.Camps[0].StationaryTurns = 40; small.Camps[0].Population = 24; Step(small);
+        Check(Explored(Soc(small, 0)).SetEquals(Disc(small, small.Camps[0].Tile, 2)), "24 people never explore beyond their vision, however long they stay");
+        // A move resets the hinterland to vision at the new site; the old area stays remembered until it decays.
+        int away = At(w, 22); camp.Tile = away; camp.StationaryTurns = 0; Step(w);
+        var ring3 = w.Map.Radius(away, 3).First(t => w.Map.Distance(away, t) == 3 && w.Map.Distance(home, t) > 6);
+        Check(Explored(society).Contains(home) && Disc(w, away, 2).IsSubsetOf(Explored(society)) && !Explored(society).Contains(ring3), "after a move the camp explores only its vision at the new tile");
+        // Hunters never get a hinterland.
+        var h = World(new[] { 2 }, 0); h.Camps[0].Population = 216; h.Camps[0].StationaryTurns = 0;
+        h.Hunters.Add(new Hunter { Id = h.NextId++, SourceCamp = h.Camps[0].Id, SocietyId = h.Camps[0].SocietyId, Player = 0, Population = 4, Tile = At(h, 14) }); Step(h);
+        Check(Explored(Soc(h, 0)).SetEquals(Disc(h, h.Camps[0].Tile, 2).Union(Disc(h, At(h, 14), 2))), "hunter groups see only their vision radius");
+        // The hinterland feeds fission candidates: a settled camp knows the distance-3 and -4 rings, a fresh one does not.
+        var f = World(new[] { 12 }, 0); f.Camps[0].Population = 216; f.Camps[0].StationaryTurns = 2; Step(f);
+        var rings = f.Map.Radius(f.Camps[0].Tile, 4).Where(t => f.Map.Distance(f.Camps[0].Tile, t) >= 3).ToArray();
+        Check(rings.Length > 0 && rings.All(t => Soc(f, 0).Memory.Explored.Contains(t)), "a settled camp remembers the distance-3 and -4 rings a fission search needs");
+    }
+
+    // Decaying memory: blocks not refreshed for ExploredMemoryTurns are forgotten; revisits refresh; hinterlands refresh every turn; old saves start fresh.
+    private static void Decay()
+    {
+        var w = World(new[] { 12 }, 0); w.Config.ExploredMemoryTurns = 3; var camp = w.Camps[0]; var s = Soc(w, 0); int home = camp.Tile, far = At(w, 2);
+        Step(w);  // turn 0 marks home
+        camp.Tile = far; for (int t = 1; t <= 2; t++) { Step(w); Check(s.Memory.Explored.Contains(home), "a trail is remembered while younger than ExploredMemoryTurns (turn " + t + ")"); }
+        Step(w);  // turn 3: home was last refreshed at turn 0, age 3
+        Check(!s.Memory.Explored.Contains(home) && s.Memory.Explored.Contains(far) && Disc(w, far, 2).IsSubsetOf(Explored(s)), "an old trail is forgotten after ExploredMemoryTurns and the current area stays");
+        var o = new AgentObservationBuilder().Build(w, 0);
+        Check(!o.RememberedTiles.ContainsKey(home) && o.RememberedTiles.Keys.All(t => s.Memory.Explored.Contains(t)), "forgotten tiles leave the observation's remembered tiles");
+        // A revisit refreshes: go back at turn 4 and the block's clock restarts.
+        camp.Tile = home; Step(w); Check(Explored(s).IsSupersetOf(Disc(w, home, 2)), "a revisit re-explores the area");
+        camp.Tile = far; Step(w); Step(w); Check(s.Memory.Explored.Contains(home), "a revisited block starts its memory clock again");
+        Step(w); Check(!s.Memory.Explored.Contains(home), "and is forgotten again three turns later");
+        // Block granularity: any refresh within an 8x8 block keeps the whole block (documented approximation).
+        var g = World(new[] { 12 }, 0); g.Config.ExploredMemoryTurns = 3; var gc = g.Camps[0]; Step(g);
+        Check(Explored(Soc(g, 0)).Contains(g.Map.At(14, 5)), "fixture: (14,5) is explored in block (1, 0)");
+        gc.Tile = g.Map.At(22, 5); Step(g); Step(g); gc.Tile = g.Map.At(9, 5); Step(g);  // turn 3 sees x 7..11, refreshing the block that holds x 8..15
+        Check(Explored(Soc(g, 0)).Contains(g.Map.At(14, 5)), "a refresh of one tile keeps its whole block alive");
+        // A settlement keeps its hinterland by refreshing it every turn.
+        var v = World(new[] { 12 }, 0); v.Config.ExploredMemoryTurns = 2; var vc = v.Camps[0]; vc.Population = 216;
+        for (int t = 0; t < 12; t++) { vc.StationaryTurns = t; Step(v); }
+        Check(Explored(Soc(v, 0)).SetEquals(Disc(v, vc.Tile, 6)), "a stationary settlement keeps its full hinterland for as long as it stays");
+        // Old saves: no stamps. Nothing is forgotten the moment they load; blocks are stamped at the next update and age from there.
+        var old = World(new[] { 12 }, 0); old.Config.ExploredMemoryTurns = 3; Step(old);
+        var oc = old.Camps[0]; var os = Soc(old, 0); oc.Tile = At(old, 2); os.Memory.Explored.Turns = null; old.Turn = 40;
+        Check(Explored(os).Contains(At(old, 12)), "a memory without stamps still reads");
+        Step(old); Check(Explored(os).Contains(At(old, 12)) && os.Memory.Explored.TurnOf(At(old, 12)) == 40, "an old save forgets nothing at its first update and stamps its blocks with that turn");
+        Step(old); Step(old); Check(Explored(os).Contains(At(old, 12)), "and ages from the load turn");
+        Step(old); Check(!Explored(os).Contains(At(old, 12)), "forgetting resumes after ExploredMemoryTurns");
+        // Legacy XML: the Turns list is absent and loads null.
+        var sx = new DataContractSerializer(typeof(Society)); string xml;
+        var xs = World(new[] { 12 }, 0); Step(xs);
+        using (var stream = new MemoryStream()) { sx.WriteObject(stream, Soc(xs, 0)); xml = Encoding.UTF8.GetString(stream.ToArray()); }
+        Check(xml.Contains("<Turns"), "stamps are serialized");
+        string legacy = Regex.Replace(xml, "<Turns[^>]*>.*?</Turns>", "", RegexOptions.Singleline);
+        Check(legacy != xml, "legacy fixture omits the stamps");
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy))) Check(((Society)sx.ReadObject(stream)).Memory.Explored.Turns == null, "a save without stamps loads with none");
+        // Round trip keeps the stamps; the clone is independent.
+        var rt = SaveCodec.Load(SaveCodec.Save(w)); Check(Memory(rt) == Memory(w) && Key(rt) == Key(w) && Soc(rt, 0).Memory.Explored.Turns.SequenceEqual(s.Memory.Explored.Turns), "stamps round trip exactly through save and load");
+        var clone = s.Memory.Clone(); clone.Explored.Forget(1000, 1);
+        Check(clone.Explored.Chunks.Count == 0 && s.Memory.Explored.Chunks.Count > 0 && s.Memory.Explored.Turns.Count == s.Memory.Explored.Chunks.Count, "a cloned memory is independent");
+        // Paleolithic Societies still remember nothing.
+        var p = World(new[] { 12 }); Step(p); Check(Soc(p, 0).Memory == null, "a Society before its first breakthrough has no memory, hinterland or not");
+    }
+
+    // The new rules are identical across workers and collection order.
+    private static void HinterlandReplay()
+    {
+        var cols = Enumerable.Range(0, 6).Select(i => 2 + i * 4).ToArray();
+        WorldState Make() { var w = World(cols, Enumerable.Range(0, 6).ToArray()); w.Config.ExploredMemoryTurns = 2; foreach (var c in w.Camps) c.Population = 60 + 40 * c.Player; return w; }
+        var x = Make(); var y = Make(); y.Camps.Reverse(); y.Societies.Reverse();
+        for (int t = 0; t < 8; t++)
+            foreach (var w in new[] { x, y })
+            {
+                foreach (var c in w.Camps) { if (c.Player % 3 == 0) { c.Tile = w.Map.At((c.Tile % w.Map.Width + 1) % w.Map.Width, c.Tile / w.Map.Width); c.StationaryTurns = 0; } else c.StationaryTurns++; }
+                ContactKnowledge.EndTurn(w, ReferenceEquals(w, x) ? new PhaseExecution() : new PhaseExecution(4, 2, true, 1)); w.Turn++;
+            }
+        Check(Memory(x) == Memory(y) && Key(x) == Key(y), "hinterland growth and forgetting are identical across workers and collection order");
+        Check(x.Societies.Select(s => s.Memory.Explored.Count).Distinct().Count() > 1, "the replay mixes large settled and small moving camps");
     }
 }

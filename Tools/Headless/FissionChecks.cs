@@ -66,7 +66,7 @@ internal static class FissionChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); Spacing(); Bounded(); WiderRadius(); Policy(); Distress(); Observations(); Persistence(); Replay();
+        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); Relative(); Funnel(); Spacing(); Bounded(); WiderRadius(); Policy(); Distress(); Observations(); Persistence(); Replay();
         Console.WriteLine("PASS: " + checks + " fission assertions"); return checks;
     }
 
@@ -623,7 +623,11 @@ internal static class FissionChecks
         var report = Pass(dry, out var dm);
         Check(report == null && dry.Camps[0].FissionDestination == null && dry.Camps.Count == 1 && dm.FissionCandidatesScored > 0 && dm.FissionCommits == 0, "no site with freshwater means no fission and no cache");
         var poor = Pressured(); foreach (var t in poor.Tiles) { t.Food = 30; t.PotentialFood = 30; for (int s = 0; s < 4; s++) { poor.Tiles[t.Id].Seasons[s].MaxFood = 30; poor.Tiles[t.Id].Seasons[s].MaxPotentialFood = 30; } }
-        Check(Pass(poor, out _) == null && poor.Camps[0].FissionDestination == null && poor.Camps.Count == 1, "a site that cannot feed the daughter is unviable");
+        // Relative destination test: the poor site is habitable (ratio > 0) so it is cached, but a camp with nothing to carry is better off at home, so the veto blocks it.
+        poor.Camps[0].PlantFood = 0; poor.Config.FissionDaughterMargin = .05;
+        Check(Pass(poor, out var pm) == null && poor.Camps.Count == 1 && pm.FissionDaughterBlocked == 1 && pm.FissionCommits == 0, "a habitable site that cannot feed the daughter is vetoed when the parent is better off at home");
+        var barren = Pressured(); foreach (var t in barren.Tiles) { t.Food = 0; t.PotentialFood = 0; for (int s = 0; s < 4; s++) { barren.Tiles[t.Id].Seasons[s].MaxFood = 0; barren.Tiles[t.Id].Seasons[s].MaxPotentialFood = 0; } }
+        Check(Pass(barren, out var bm) == null && barren.Camps[0].FissionDestination == null && barren.Camps.Count == 1 && bm.FissionSearchesNoViable == 1, "a site with no food at all (support ratio 0) is not a destination");
         var off = Pressured(); off.Config.FissionEnabled = false; var om = new ResolutionMetrics();
         Check(Pass(off, out om) == null && om.FissionCampsEvaluated == 0 && off.Camps.Count == 1, "fission disabled evaluates nothing");
         var small = Pressured(); small.Camps[0].Population = 39;
@@ -640,9 +644,72 @@ internal static class FissionChecks
         Check(Fission.RegimeOf(herd.Camps[0]) == FissionRegime.Nomadic && Pass(herd, out var hm) != null && hm.FissionCommits == 1, "a pastoral camp with a supported herd fissions");
         var greedy = Pressured(); MakeNeolithic(greedy.Camps[0], Technology.AnimalHusbandry); greedy.Camps[0].Technologies[(int)Technology.Cultivation] = false; greedy.Camps[0].Technology = Technology.AnimalHusbandry;
         greedy.Herds.Add(new Herd { Id = greedy.NextId++, Tile = greedy.Camps[0].Tile, Animals = 40000, DomesticCamp = greedy.Camps[0].Id, OwnerSociety = greedy.Camps[0].SocietyId, Species = "bison" });
-        Check(Pass(greedy, out _) == null && greedy.Camps.Count == 1, "a pastoral daughter whose herd share exceeds forage and water has no viable site");
+        greedy.Config.FissionDaughterMargin = .05; var gr = Pass(greedy, out var gm); Check(gr == null && greedy.Camps.Count == 1 && gm.FissionDaughterBlocked == 1, "a pastoral daughter whose herd share exceeds forage and water is vetoed (carried human food cannot feed the herd)");
     }
 
+
+    // Relative destination test (Docs/Fission.md): the site must be habitable (support ratio > 0) and the daughter better off there than at home,
+    // judged with F_d = min(1, support ratio + carried food person-equivalents). No absolute viability bar.
+    private static WorldState Scaled(double scale, double parentFood, double stores)
+    {
+        var w = World(true, new[] { 8, 8 }); var c = w.Camps[0]; c.Population = 100; c.ClothPerCapita = 1; c.FoodNeedsMetRatio = parentFood; c.PlantFood = stores; c.Inventory.LightHousingUnits = 100 / w.Config.Neolithic.LightHousingPeoplePerUnit;
+        foreach (var t in w.Tiles) { t.Food *= scale; t.PotentialFood *= scale; for (int s = 0; s < 4; s++) { t.Seasons[s].MaxFood *= (float)scale; t.Seasons[s].MaxPotentialFood *= (float)scale; } }
+        w.Config.FissionDaughterMargin = .05; Explore(w, c); Pressure(w, 0);
+        return w;
+    }
+    private static void Relative()
+    {
+        const double scale = .006, even = .004;  // site richness for a 0.66 support ratio for the larger distress daughter, and 0.72 for the policy-size daughter
+        double bar = new SimulationConfig().StartViability / 100.0;
+        // A parent short of food (F = 0.3) leaves for a thin site (ratio 0.66, below the old absolute bar) that the daughter prefers to home.
+        var low = Scaled(scale, .3, 0); var lowReport = Pass(low, out var lm);
+        Check(lowReport != null && lowReport.Desirability > .55 && lowReport.Desirability < bar && lm.FissionDaughterBlocked == 0 && lm.FissionCommits == 1, "a site with support ratio 0.66 (below the old 0.85 bar) qualifies when the parent is worse off");
+        // A site of like richness is rejected when the parent is well off and carries nothing: the daughter would be worse off than at home.
+        var well = Scaled(even, 1, 0); var wm = new ResolutionMetrics(); var wellReport = Pass(well, out wm);
+        Check(wellReport == null && wm.FissionDaughterChecks == 1 && wm.FissionDaughterBlocked == 1 && well.Camps.Count == 1 && well.Camps[0].FissionDestination != null, "the site is vetoed when the parent is well off (and stays cached)");
+        // Carried food covers the shortfall: the parent's stores travel with the daughter in her proportional share.
+        var fed = Scaled(even, 1, 12000); var fedReport = Pass(fed, out var fm);
+        Check(fedReport != null && fm.FissionDaughterBlocked == 0 && Immigration.CarriedPerPerson(fed.Config, fed.Camps[0]) > 0, "a well-off parent's carried food lets the thin site qualify");
+        // The veto estimate is monotone in the site's support ratio and in the carried food, capped at F_d = 1.
+        var est = Scaled(even, 1, 0); var parent = est.Camps[0]; int nd = Kinship.DaughterSize(parent.Population, parent.FissionPolicy);
+        double q0 = Fission.EstimateSplit(est, parent, nd, 1, 1, 0).DaughterQoL, q5 = Fission.EstimateSplit(est, parent, nd, 1, 1, .5).DaughterQoL, q1 = Fission.EstimateSplit(est, parent, nd, 1, 1, 1).DaughterQoL, q2 = Fission.EstimateSplit(est, parent, nd, 1, 1, 2).DaughterQoL;
+        Near(q0, 0, "no food, no QoL"); Near(q5, q1 / 2, "the veto QoL is linear in F_d"); Near(q2, q1, "F_d is capped at one"); Near(Fission.EstimateSplit(est, parent, nd, 1, 1).DaughterQoL, q1, "the default F_d is one, as before");
+        // Ratio zero: the destination is not habitable at all (no food in reach) and is not a candidate.
+        var barren = Scaled(0, .3, 12000); var bm = new ResolutionMetrics();
+        Check(Pass(barren, out bm) == null && bm.FissionSearchesNoViable == 1 && barren.Camps[0].FissionDestination == null, "a site with support ratio 0 is rejected even for a parent in need with food to carry");
+        // More destinations qualify than under the absolute bar: count the scored sites that would have failed it.
+        Check(lowReport.Desirability < bar && fedReport.Desirability < bar, "the qualifying sites sit below the old absolute viability bar");
+    }
+
+    // The funnel adds up: every screened camp ends in exactly one outcome.
+    private static void Funnel()
+    {
+        var worlds = new List<Func<WorldState>>
+        {
+            () => { var w = World(true, new[] { 8, 8 }); Explore(w, w.Camps[0]); return w; },                                  // commits
+            () => { var w = World(true, new[] { 8, 8 }); Explore(w, w.Camps[0]); Ratio(w, w.Camps[0], .9); return w; },        // destination below threshold
+            () => Scaled(.004, 1, 0),                                                                                           // daughter veto
+            () => Scaled(0, .3, 12000),                                                                                         // no viable site
+            () => { var w = World(true, new[] { 8, 8 }); w.Camps[0].People.Memory = new ContactMemory(w.Config.Width); return w; }, // nothing known: no candidates
+            () => { var w = World(true, new[] { 8, 8 }, new[] { 14, 8 }); var mid = w.Map.At(11, 8); foreach (var c in w.Camps) { c.People.Memory = new ContactMemory(w.Config.Width); c.People.Memory.Explored.Add(mid); } return w; }, // one dropped
+            () => { var w = World(true, new[] { 4, 4 }, new[] { 10, 4 }, new[] { 16, 4 }, new[] { 7, 10 }, new[] { 13, 10 }); foreach (var c in w.Camps) Explore(w, c); return w; },
+            () => { var w = World(true, new[] { 8, 8 }); Explore(w, w.Camps[0]); Quiet(w); return w; },                          // below the search screen: not screened
+        };
+        var total = new ResolutionMetrics(); int index = 0;
+        foreach (var make in worlds)
+        {
+            var w = make(); Pass(w, out var m); index++;
+            Check(m.FissionScreened == m.FissionSearchesNoCandidates + m.FissionSearchesNoViable + m.FissionWithDestination, "world " + index + ": screened = empty searches + non-viable searches + camps with a destination");
+            Check(m.FissionWithDestination == m.FissionBelowThreshold + m.FissionDaughterBlocked + m.FissionStayersBlocked + m.FissionProposals, "world " + index + ": destinations = below threshold + daughter veto + stayers veto + proposals");
+            Check(m.FissionProposals == m.FissionDropped + m.FissionCommits && m.FissionScreened <= m.FissionCampsEvaluated, "world " + index + ": proposals = dropped + committed");
+            total.FissionScreened += m.FissionScreened; total.FissionSearchesNoCandidates += m.FissionSearchesNoCandidates; total.FissionSearchesNoViable += m.FissionSearchesNoViable; total.FissionBelowThreshold += m.FissionBelowThreshold; total.FissionDaughterBlocked += m.FissionDaughterBlocked; total.FissionDropped += m.FissionDropped; total.FissionCommits += m.FissionCommits;
+        }
+        Check(total.FissionSearchesNoCandidates >= 1 && total.FissionSearchesNoViable >= 1 && total.FissionBelowThreshold >= 1 && total.FissionDaughterBlocked >= 1 && total.FissionDropped >= 1 && total.FissionCommits >= 1, "the fixtures exercise every funnel stage");
+        // Determinism: scalar and reversed 4-worker passes report the same funnel.
+        ResolutionMetrics Run(PhaseExecution x) { var w = World(true, new[] { 4, 4 }, new[] { 10, 4 }, new[] { 16, 4 }, new[] { 7, 10 }, new[] { 13, 10 }); foreach (var c in w.Camps) Explore(w, c); Pass(w, out var m, x); return m; }
+        var a = Run(new PhaseExecution()); var b = Run(new PhaseExecution(4, 2, true, 1));
+        Check(a.FissionScreened == b.FissionScreened && a.FissionWithDestination == b.FissionWithDestination && a.FissionCommits == b.FissionCommits && a.FissionSearchesNoViable == b.FissionSearchesNoViable, "the funnel is identical across workers");
+    }
 
     // Distress fission (Docs/Fission.md): a camp that cannot feed itself splits for better ground regardless of crowding. Uncrowded fixture:
     // fully housed (fixed Housing for everyone), full clothing, so the stayers' crowding gain is small and F, W carry the signal.
@@ -814,10 +881,10 @@ internal static class FissionChecks
         WorldState Lean(int radius)
         {
             var w = World(true, new[] { 12, 8 }); var c = w.Camps[0]; Explore(w, c, 7); w.Config.FissionRadius = radius;
-            // Every site on the distance-3 ring is starved; the sites at distance 4 and 5 stay rich.
+            // Every site on the distance-3 ring has no food (support ratio 0, so not a destination at all); the sites at distance 4 and 5 stay rich.
             foreach (int n in w.Map.Radius(c.Tile, 4).Where(n => w.Map.Distance(c.Tile, n) <= 4))
             {
-                var t = w.Tiles[n]; t.Food = 20; t.PotentialFood = 20; for (int s = 0; s < 4; s++) { t.Seasons[s].MaxFood = 20; t.Seasons[s].MaxPotentialFood = 20; }
+                var t = w.Tiles[n]; t.Food = 0; t.PotentialFood = 0; for (int s = 0; s < 4; s++) { t.Seasons[s].MaxFood = 0; t.Seasons[s].MaxPotentialFood = 0; }
             }
             return w;
         }

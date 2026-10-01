@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.Serialization;
 
 namespace Anthropocene.Simulation
 {
@@ -19,16 +20,26 @@ namespace Anthropocene.Simulation
     }
 
     // Sparse explored-tile set. Tiles are grouped into 8x8 map blocks; a block
-    // costs one sorted key plus one 64-bit word, and only blocks that contain an
-    // explored tile exist, so memory follows explored area, not map size. Keys and
-    // words are kept in ascending key order so saves, fingerprints and iteration
-    // are deterministic.
+    // costs one sorted key, one 64-bit word and one last-refreshed turn, and only
+    // blocks that contain an explored tile exist, so memory follows explored area,
+    // not map size. Keys and words are kept in ascending key order so saves,
+    // fingerprints and iteration are deterministic.
+    //
+    // Decaying memory: Turns[i] is the last turn block i was refreshed (a tile in it seen or
+    // inside a hinterland). A block not refreshed for ExploredMemoryTurns is forgotten whole,
+    // so memory is block-granular: a tile can outlive its own last refresh by up to the block's
+    // other tiles being refreshed, a deliberate approximation that keeps cost and memory per block.
+    // A negative or absent stamp (saves that predate decay, or Add without a turn) is stamped at
+    // the next end-of-turn update, so nothing is forgotten the moment a save is loaded.
     [Serializable]
     public sealed class ExploredTiles
     {
         public int Width;
         public List<int> Chunks = new List<int>();
         public List<ulong> Words = new List<ulong>();
+#pragma warning disable SYSLIB0050
+        [OptionalField] public List<int> Turns;
+#pragma warning restore SYSLIB0050
         public ExploredTiles(int width) { Width = width; }
         private int Locate(int tile, out ulong mask)
         {
@@ -41,10 +52,45 @@ namespace Anthropocene.Simulation
             int key = Locate(tile, out ulong mask), at = Chunks.BinarySearch(key);
             return at >= 0 && (Words[at] & mask) != 0;
         }
-        public void Add(int tile)
+        // Marks a tile without a refresh stamp: an existing block keeps its stamp, a new one is unstamped (-1).
+        public void Add(int tile) => Add(tile, -1);
+        // Marks a tile and refreshes its block's last-refreshed turn (never moves it backwards).
+        public void Add(int tile, int turn)
         {
+            EnsureTurns();
             int key = Locate(tile, out ulong mask), at = Chunks.BinarySearch(key);
-            if (at >= 0) Words[at] |= mask; else { Chunks.Insert(~at, key); Words.Insert(~at, mask); }
+            if (at >= 0) { Words[at] |= mask; if (turn > Turns[at]) Turns[at] = turn; }
+            else { Chunks.Insert(~at, key); Words.Insert(~at, mask); Turns.Insert(~at, turn); }
+        }
+        private void EnsureTurns()
+        {
+            if (Turns == null) Turns = new List<int>();
+            while (Turns.Count < Chunks.Count) Turns.Add(-1);
+        }
+        public int TurnOf(int tile)
+        {
+            int key = Locate(tile, out _), at = Chunks.BinarySearch(key);
+            return at >= 0 && Turns != null && at < Turns.Count ? Turns[at] : -1;
+        }
+        // Stamps every unstamped block with the given turn.
+        public void StampUnstamped(int turn)
+        {
+            EnsureTurns();
+            for (int i = 0; i < Turns.Count; i++) if (Turns[i] < 0) Turns[i] = turn;
+        }
+        // Drops every block whose stamp is at least `memoryTurns` old; returns the number dropped. O(blocks).
+        public int Forget(int turn, int memoryTurns)
+        {
+            EnsureTurns();
+            int keep = 0, dropped = 0;
+            for (int i = 0; i < Chunks.Count; i++)
+            {
+                if (Turns[i] >= 0 && turn - Turns[i] >= memoryTurns) { dropped++; continue; }
+                if (keep != i) { Chunks[keep] = Chunks[i]; Words[keep] = Words[i]; Turns[keep] = Turns[i]; }
+                keep++;
+            }
+            if (dropped > 0) { Chunks.RemoveRange(keep, dropped); Words.RemoveRange(keep, dropped); Turns.RemoveRange(keep, dropped); }
+            return dropped;
         }
         public int Count
         {
@@ -66,8 +112,8 @@ namespace Anthropocene.Simulation
                     if ((Words[i] & (1UL << bit)) != 0) yield return ((cy << 3) + (bit >> 3)) * Width + (cx << 3) + (bit & 7);
             }
         }
-        public long ApproximateBytes => (long)Chunks.Count * 12;
-        public ExploredTiles Clone() => new ExploredTiles(Width) { Chunks = new List<int>(Chunks), Words = new List<ulong>(Words) };
+        public long ApproximateBytes => (long)Chunks.Count * 16;
+        public ExploredTiles Clone() { var c = new ExploredTiles(Width) { Chunks = new List<int>(Chunks), Words = new List<ulong>(Words) }; if (Turns != null) c.Turns = new List<int>(Turns); return c; }
     }
 
     // Saved, optional, per-Society memory. Null on Societies that have not
@@ -131,10 +177,9 @@ namespace Anthropocene.Simulation
     // update is pure over the frozen post-turn state (per-Society work may run on
     // bounded workers) followed by a canonical commit in Society-ID order.
     //
-    // Cost: O(camps + hunters) indexing, O(vision tiles) per remembering Society,
-    // O(log explored-blocks) per tile mark and O(contacts) per Society; nothing
-    // scales with elapsed years or map size. Memory: 12 bytes per occupied 8x8
-    // block plus ~32 bytes per contact, per Society.
+    // Cost: O(camps + hunters) indexing, O(sum of R_h^2) hinterland tiles per remembering Society (R_h <= HinterlandMaxRadius, so at most
+    // 3 r^2 + 3 r + 1 per camp), O(log explored-blocks) per tile mark, O(explored blocks) for the forgetting sweep and O(contacts) per
+    // Society; nothing scales with elapsed years or map size. Memory: 16 bytes per occupied 8x8 block plus ~32 bytes per contact, per Society.
     public static class ContactKnowledge
     {
         public static bool Remembers(Society s) => s.Progression.Era != Era.Paleolithic || s.Technology != Technology.None;
@@ -142,6 +187,17 @@ namespace Anthropocene.Simulation
 
         private sealed class Sighting { public int Camp, Owner, Tile; }
         private sealed class Update { public Society Society; public int[] Tiles; public HashSet<int> Vision; public Sighting[] Seen; }
+
+        // Hinterland radius of a camp that has stayed `stationaryTurns` turns with `population` residents: it grows by HinterlandRingsPerTurn
+        // per stationary turn from the vision radius, up to VisionRadius * sqrt(N / HinterlandReferencePopulation) (area worked proportional
+        // to people) and HinterlandMaxRadius, and never falls below the vision radius. A move (StationaryTurns = 0) resets it.
+        public static int HinterlandRadius(SimulationConfig cfg, int stationaryTurns, int population)
+        {
+            int vision = cfg.VisionRadius;
+            long grown = vision + (long)cfg.HinterlandRingsPerTurn * Math.Max(0, stationaryTurns);
+            int cap = (int)Math.Floor(vision * Math.Sqrt(Math.Max(0, population) / (double)cfg.HinterlandReferencePopulation) + 1e-9);
+            return Math.Max(vision, (int)Math.Min(Math.Min(grown, cap), cfg.HinterlandMaxRadius));
+        }
 
         public static void EndTurn(WorldState w, PhaseExecution execution = null)
         {
@@ -151,34 +207,45 @@ namespace Anthropocene.Simulation
             // Frozen post-turn sources, built once. A camp sees only while it has people, including its hunters.
             var hunterPeople = new Dictionary<int, int>();
             foreach (var h in w.Hunters) if (h.Population > 0) { hunterPeople.TryGetValue(h.SourceCamp, out int n); hunterPeople[h.SourceCamp] = n + h.Population; }
-            var sources = new Dictionary<int, List<int>>();
-            void AddSource(int society, int tile) { if (!sources.TryGetValue(society, out var list)) sources[society] = list = new List<int>(); list.Add(tile); }
-            foreach (var c in w.Camps) { hunterPeople.TryGetValue(c.Id, out int n); if (c.Population + n > 0) AddSource(c.SocietyId, c.Tile); }
-            foreach (var h in w.Hunters) if (h.Population > 0) AddSource(h.SocietyId, h.Tile);
+            var sources = new Dictionary<int, List<int[]>>();
+            int radius = w.Config.VisionRadius; var map = w.Map;
+            // A source is (tile, hinterland radius): a camp's radius grows with its stationary turns and people; hunters see only their vision.
+            void AddSource(int society, int tile, int reach) { if (!sources.TryGetValue(society, out var list)) sources[society] = list = new List<int[]>(); list.Add(new[] { tile, reach }); }
+            foreach (var c in w.Camps) { hunterPeople.TryGetValue(c.Id, out int n); if (c.Population + n > 0) AddSource(c.SocietyId, c.Tile, HinterlandRadius(w.Config, c.StationaryTurns, c.Population)); }
+            foreach (var h in w.Hunters) if (h.Population > 0) AddSource(h.SocietyId, h.Tile, radius);
             var campsByTile = new Dictionary<int, List<Camp>>();
             foreach (var c in w.Camps) { if (!campsByTile.TryGetValue(c.Tile, out var list)) campsByTile[c.Tile] = list = new List<Camp>(); list.Add(c); }
-            int radius = w.Config.VisionRadius; var map = w.Map;
             var updates = execution.Map(societies, s =>
             {
                 var vision = new HashSet<int>();
-                if (sources.TryGetValue(s.Id, out var origins)) foreach (int origin in origins) vision.UnionWith(map.Radius(origin, radius));
+                var explore = new HashSet<int>();
+                if (sources.TryGetValue(s.Id, out var origins))
+                    foreach (var origin in origins)
+                    {
+                        vision.UnionWith(map.Radius(origin[0], radius));
+                        if (origin[1] > radius) explore.UnionWith(map.Radius(origin[0], origin[1]));
+                    }
+                explore.UnionWith(vision);
                 var seen = new List<Sighting>();
                 foreach (int tile in vision)
                     if (campsByTile.TryGetValue(tile, out var here))
                         foreach (var c in here) if (c.SocietyId != s.Id) seen.Add(new Sighting { Camp = c.Id, Owner = c.Player, Tile = tile });
                 seen.Sort((a, b) => a.Camp.CompareTo(b.Camp));
-                return new Update { Society = s, Tiles = vision.ToArray(), Vision = vision, Seen = seen.ToArray() };
+                return new Update { Society = s, Tiles = explore.ToArray(), Vision = vision, Seen = seen.ToArray() };
             });
-            int turn = w.Turn, expiry = w.Config.ContactExpiryTurns;
+            int turn = w.Turn, expiry = w.Config.ContactExpiryTurns, forget = w.Config.ExploredMemoryTurns;
             foreach (var u in updates)
             {
                 var memory = MemoryOf(w, u.Society);
-                foreach (int tile in u.Tiles) memory.Explored.Add(tile);
+                // Blocks stamped at the load turn (saves that predate decay) first, then this turn's marks, then forgetting.
+                memory.Explored.StampUnstamped(turn);
+                foreach (int tile in u.Tiles) memory.Explored.Add(tile, turn);
                 foreach (var s in u.Seen) memory.Upsert(s.Camp, s.Owner, s.Tile, turn, ContactSource.Sighting);
                 // A recorded tile now in view without its camp means the camp moved away.
                 foreach (var c in memory.Contacts)
                     if (c.Turn != turn && !c.Moved && u.Vision.Contains(c.Tile)) { c.Moved = true; c.Tile = -1; }
                 memory.Contacts.RemoveAll(c => turn - c.Turn >= expiry);
+                memory.Explored.Forget(turn, forget);
             }
         }
 

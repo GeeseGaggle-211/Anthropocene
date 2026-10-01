@@ -39,6 +39,7 @@ namespace Anthropocene.Simulation
             // original scale and their pressure threshold remains one.
             MinimumCampSpacing = defaults.MinimumCampSpacing;
             ContactExpiryTurns = defaults.ContactExpiryTurns;
+            HinterlandReferencePopulation = defaults.HinterlandReferencePopulation; HinterlandRingsPerTurn = defaults.HinterlandRingsPerTurn; HinterlandMaxRadius = defaults.HinterlandMaxRadius; ExploredMemoryTurns = defaults.ExploredMemoryTurns;
             // Absent in older saves: secondary technologies use the established threshold, trade credits no practice, and the
             // settling cost of a husbandry-primary camp keeps its default.
             SecondaryTechnologyThreshold = defaults.SecondaryTechnologyThreshold; TradePracticePerValue = 0; SettledHerdGrowthPenalty = defaults.SettledHerdGrowthPenalty;
@@ -97,6 +98,11 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int MinimumCampSpacing = 3;
         // Turns after which an unrefreshed settlement contact is forgotten (WP6). Saves that predate it load with this default.
         [System.Runtime.Serialization.OptionalField] public int ContactExpiryTurns = 5;
+        // Hinterland knowledge and decaying memory (Docs/ContactKnowledge.md). A camp marks as explored every tile within R_h at the end of each turn:
+        // R_h = VisionRadius, plus HinterlandRingsPerTurn per turn it has stayed on its tile (Camp.StationaryTurns), capped by
+        // VisionRadius * sqrt(population / HinterlandReferencePopulation) (area worked proportional to people) and by HinterlandMaxRadius.
+        // An explored 8x8 block not refreshed for ExploredMemoryTurns turns is forgotten. Saves that predate these fields load these defaults.
+        [System.Runtime.Serialization.OptionalField] public int HinterlandReferencePopulation = 24, HinterlandRingsPerTurn = 1, HinterlandMaxRadius = 6, ExploredMemoryTurns = 5;
         // Fission (WP10a, QoLFissionTradeDesign 3.1-3.6). Saves that predate these fields load with fission disabled so they continue exactly.
         [System.Runtime.Serialization.OptionalField] public bool FissionEnabled = false;
         // Push = crowding + expected gain (WP10c): a camp proposes when the stayers' QoL would rise by at least G*(policy) (relative gain).
@@ -194,6 +200,8 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Invalid generation or clock configuration.");
             if (MinimumCampSpacing < 1) throw new ArgumentException("Minimum camp spacing must be at least one hex.");
             if (ContactExpiryTurns < 1) throw new ArgumentException("Contact expiry must be at least one turn.");
+            // The hinterland marks at most 3 r^2 + 3 r + 1 tiles per camp per turn; r <= 8 bounds that at 217.
+            if (HinterlandReferencePopulation < 1 || HinterlandRingsPerTurn < 0 || HinterlandRingsPerTurn > 8 || HinterlandMaxRadius < VisionRadius || HinterlandMaxRadius > 8 || ExploredMemoryTurns < 1) throw new ArgumentException("Invalid hinterland or explored-memory configuration.");
             if (new[] { SecondaryTechnologyThreshold, TradePracticePerValue, SettledHerdGrowthPenalty }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || SecondaryTechnologyThreshold <= 0 || SettledHerdGrowthPenalty > 1)
                 throw new ArgumentException("Invalid secondary technology, trade practice or settling configuration.");
             if (new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief, FissionDaughterBuilderShare }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionGainThreshold < 0 || FissionGainThreshold > 5 || FissionGainDiscourage < 0 || FissionGainDiscourage > 5 || FissionGainEncourage < 0 || FissionGainEncourage > 5 || FissionSearchFraction < 0 || FissionSearchFraction > 1 || FissionDaughterMargin < 0 || FissionDaughterMargin > 1 || FissionHousingRelief < 0 || FissionHousingRelief > 1 || FissionDaughterBuilderShare < 0 || FissionDaughterBuilderShare > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1)

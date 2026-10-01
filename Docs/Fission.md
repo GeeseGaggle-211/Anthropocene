@@ -106,8 +106,8 @@ No assumption needed a redesign, so the work proceeded.
   therefore still feels crowding. The diagnostic push is `P = clamp(G / G*, 0, 1)`.
   With full goods coverage and `B = 1`, `G = exp((N^2 - (N - N_d)^2) / N_s^2) - 1` for `beta = 2`, and `F`,
   `W` and partial coverage cancel unless the split changes housing per head.
-- **Daughter check** ("would part of this population be better off"). The daughter's estimated QoL at a viable
-  site (`F = W = 1`, clothing coverage unchanged, housing from what it carries and can build in its first turn
+- **Daughter check** ("would part of this population be better off"). The daughter's estimated QoL at the
+  destination (`F_d = min(1, support ratio + carried food)`, see Relative destinations, `W = 1`, clothing coverage unchanged, housing from what it carries and can build in its first turn
   (`Fission.DaughterShelter`, below), `S(N_d)`, and the
   expectation the game applies after a move: stationary years reset to zero then one turn elapses) must be at
   least `Q_now - FissionDaughterMargin` (0.05). It is evaluated only for a camp whose gain reaches `G*` and
@@ -145,8 +145,8 @@ No assumption needed a redesign, so the work proceeded.
   at one on most sites, so the second key keeps the choice from defaulting to low tile IDs. Nothing is reranked
   while the cache is valid.
   It is invalidated when the regime changes (even with no push), when a camp now stands
-  on it or within spacing of it, or when `D` falls below the start-viability
-  threshold (`StartViability / 100`, 0.85).
+  on it or within spacing of it, or when it stops being habitable (support ratio 0: the freshwater
+  gate fails or nothing is harvestable). There is no absolute viability bar (see Relative destinations).
 - **Desirability.** `D = clamp(SiteSupport(daughter) / TargetSupport, 0, 1)`, with
   `TargetSupport` the daughter's own annual-generation need so `D = 1` when fully
   supported. Support uses the start-viability footprint evaluation
