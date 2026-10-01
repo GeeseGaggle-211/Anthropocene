@@ -285,7 +285,7 @@ namespace Anthropocene.Simulation
             public double Push, Desirability, Score, Gain, DaughterQoL, DaughterGain;
             public FissionTrigger Trigger;
             public int Daughter, Tile = -1;
-            public bool ClearTarget, Propose, DaughterTested, DaughterBlocked;
+            public bool ClearTarget, Propose, DaughterTested, DaughterBlocked, Screened, NoCandidates, NoViable, WithDestination, BelowThreshold, StayersBlocked;
             public FissionTarget NewTarget;
             public int Validations, Searches, Candidates, TileProjections, Invalidations;
         }
@@ -310,6 +310,12 @@ namespace Anthropocene.Simulation
                 if (e.ClearTarget) e.Camp.FissionDestination = null;
                 if (e.NewTarget != null) e.Camp.FissionDestination = e.NewTarget;
                 if (e.DaughterTested) { metrics.FissionDaughterChecks++; if (e.DaughterBlocked) metrics.FissionDaughterBlocked++; }
+                if (e.Screened) metrics.FissionScreened++;
+                if (e.NoCandidates) metrics.FissionSearchesNoCandidates++;
+                if (e.NoViable) metrics.FissionSearchesNoViable++;
+                if (e.WithDestination) metrics.FissionWithDestination++;
+                if (e.BelowThreshold) metrics.FissionBelowThreshold++;
+                if (e.StayersBlocked) metrics.FissionStayersBlocked++;
                 if (!e.Propose) continue;
                 metrics.FissionProposals++; if (e.Trigger == FissionTrigger.Distress) metrics.FissionDistressProposals++; else metrics.FissionCrowdingProposals++;
                 if (committed.Any(t => w.Map.Distance(t, e.Tile) < spacing)) { metrics.FissionDropped++; continue; }
@@ -359,6 +365,7 @@ namespace Anthropocene.Simulation
             var shown = crowdLegal ? crowd : optimistic;
             e.Gain = shown.Gain; e.DaughterQoL = shown.DaughterQoL; e.DaughterGain = shown.DaughterGain; e.Push = Push(crowdLegal ? crowd.Gain : optimistic.DaughterGain, threshold);
             if (!crowdScreen && !distressScreen) return e;
+            e.Screened = true;
             int size = distressScreen ? n1 : n0;
             double viable = cfg.StartViability / 100.0; var projections = new Dictionary<int, double>(); double siteRatio = 0;
             if (cached != null)
@@ -390,7 +397,8 @@ namespace Anthropocene.Simulation
                     e.Desirability = bestScore; siteRatio = bestRatio; cached = e.NewTarget;
                 }
             }
-            if (cached == null) return e;
+            if (cached == null) { if (e.Candidates == 0) e.NoCandidates = true; else e.NoViable = true; return e; }
+            e.WithDestination = true;
             e.Tile = cached.Tile;
             // With the destination known: the leaving group's F_d is the site's support ratio for its cohort (capped at one; for herded nomads
             // it already includes herd forage and water, so it stands for F_d W_d); W_d = 1 (freshwater is a gate of the footprint).
@@ -402,13 +410,14 @@ namespace Anthropocene.Simulation
                 if (distress.DaughterGain >= threshold) { chosen = distress; use = true; e.Trigger = FissionTrigger.Distress; }
             }
             if (!use && crowdLegal && crowd.Gain >= threshold) { chosen = EstimateSplit(w, camp, n0, foodD, 1); use = true; e.Trigger = FissionTrigger.Crowding; }
-            if (!use) return e;
+            if (!use) { e.BelowThreshold = true; return e; }
             e.Daughter = chosen.Daughter; e.Gain = chosen.Gain; e.DaughterQoL = chosen.DaughterQoL; e.DaughterGain = chosen.DaughterGain;
             e.Push = Push(e.Trigger == FissionTrigger.Distress ? chosen.DaughterGain : chosen.Gain, threshold); e.Score = e.Push * e.Desirability;
             // "Would part of this population be better off": the daughter's estimated QoL must not fall more than the margin below the parent's,
             // and the stayers must not be worse off (true by construction: fewer mouths and no housing taken).
             e.DaughterTested = true; e.DaughterBlocked = !chosen.DaughterAcceptable(cfg.FissionDaughterMargin);
             e.Propose = !e.DaughterBlocked && chosen.StayersAcceptable(cfg.FissionDaughterMargin);
+            e.StayersBlocked = !e.DaughterBlocked && !e.Propose;
             return e;
         }
 

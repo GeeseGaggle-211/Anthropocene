@@ -105,6 +105,10 @@ namespace Anthropocene.Simulation
         public long FissionCampsEvaluated, FissionValidations, FissionSearches, FissionCandidatesScored, FissionTileProjections, FissionCacheInvalidations, FissionProposals, FissionCommits, FissionDropped, FissionDaughterChecks, FissionDaughterBlocked;
         // Distress fission: proposals and commits by trigger, and the people in distress daughters.
         public long FissionCrowdingProposals, FissionDistressProposals, FissionCrowdingCommits, FissionDistressCommits, FissionDistressDaughters;
+        // Fission funnel (Docs/Fission.md, Hinterland and relative destinations): every camp past the gain screen ends in exactly one outcome.
+        // Screened = SearchesNoCandidates + SearchesNoViable + WithDestination;
+        // WithDestination = BelowThreshold + DaughterBlocked + StayersBlocked + Proposals; Proposals = Dropped + Commits.
+        public long FissionScreened, FissionSearchesNoCandidates, FissionSearchesNoViable, FissionWithDestination, FissionBelowThreshold, FissionStayersBlocked;
         public double FissionMilliseconds;
         // Immigration pass (WP10b). Transient work counts; never saved, observed or fingerprinted.
         public long ImmigrationCampsEvaluated, ImmigrationCandidatesScored, ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected, ImmigrationMigrants;
