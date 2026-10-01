@@ -602,6 +602,8 @@ namespace Anthropocene.Simulation
                     herd.NewbornAnimals = newborns;
                     var report = reportByHerd[herd.Id]; report.NewbornAnimals = newborns; report.AcceptedFood = accepted; record.ManagedHerds.Add(report);
                 }
+                // Controlled slaughter after breeding (Docs/HerdLabour.md): animals above the camp's chosen herd target become carcass food.
+                HerdLabour.Slaughter(w, camp, campHerds, reportByHerd, record);
             }
         }
 
@@ -1018,7 +1020,9 @@ namespace Anthropocene.Simulation
                 summary.TerrestrialFood = harvest.Where(t => t.Kind == "Gathering" || t.Kind == "Cultivation").Sum(t => t.Food); summary.MarineFood = harvest.Where(t => t.Kind == "Marine gathering").Sum(t => t.Food); summary.LakeFood = harvest.Where(t => t.Kind == "Aquatic gathering").Sum(t => t.Food);
                 summary.HuntFood = harvest.Where(t => t.Kind == "Hunting").Sum(t => t.Food); summary.FishFood = harvest.Where(t => t.Kind == "Fishing").Sum(t => t.Food); double forage = harvest.Where(t => t.Kind == "Foraging").Sum(t => t.Food); summary.ForageFood = forage;
                 summary.AnimalFood = harvest.Where(t => t.Kind == "Animal Product").Sum(t => t.Food);
-                summary.FoodProduced = summary.TerrestrialFood + summary.MarineFood + summary.LakeFood + summary.HuntFood + summary.FishFood + summary.AnimalFood + forage;
+                summary.SlaughterFood = harvest.Where(t => t.Kind == "Slaughter").Sum(t => t.Food);
+                summary.Slaughtered = record.ManagedHerds.Where(m => m.Camp == camp.Id).Sum(m => m.Slaughtered);
+                summary.FoodProduced = summary.TerrestrialFood + summary.MarineFood + summary.LakeFood + summary.HuntFood + summary.FishFood + summary.AnimalFood + summary.SlaughterFood + forage;
                 summary.FoodReceived = summary.FoodProduced - index.Logistics[camp.Id].Sum(l => l.HarvestOverflow);
                 summary.DiscardedInventory += index.Logistics[camp.Id].Sum(l => l.InventoryLoss);
                 summary.Additions = index.Population[camp.Id].Where(p => p.Count > 0).Sum(p => p.Count); summary.Deaths = -index.Population[camp.Id].Where(p => p.Count < 0).Sum(p => p.Count);

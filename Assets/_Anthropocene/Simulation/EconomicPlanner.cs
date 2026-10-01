@@ -15,6 +15,8 @@ namespace Anthropocene.Simulation
         {
             public EconomicIntent Intent;
             public int Workers, FoodGatherers, OperatingFarmers;
+            // Herders this proposal staffed (the reservation under Uniform; the labour-price staffing under the Value rule's herd ladder).
+            public int Herders;
             // Expansion farmers the Value rule staffed in this proposal (already in Workers).
             public int ExpansionWorkers;
             // Path position this proposal was evaluated at (for the reported labour price).
@@ -65,6 +67,18 @@ namespace Anthropocene.Simulation
             double clothingPlantEnvelope = demand.PlantEnvelopeClothing, clothingAnimalEnvelope = demand.AnimalEnvelopeClothing, clothingRoomEnvelope = demand.FoodRoomEnvelopeClothing;
             bool HasRetainedExpansionGain() => demand.HasRetainedExpansionGain();
             var valueRule = rule as ValueFulfilment;
+            // Herd-labour coupling (Docs/HerdLabour.md): under the Value rule herders compete for residents on the labour price like every other claim
+            // instead of being reserved first. Null (and the unconditional reservation below) otherwise.
+            var herdLadder = valueRule != null ? demand.HerdLadder : null;
+            int StaffedHerders(double s)
+            {
+                // At the path's start (s = 0) only the seed herd is staffed, so that position stays the minimal feasible plan; at its end labour is
+                // not contested (price 0); between, the labour price w(s) the craft claims reach. No valued claim at all means labour is uncontested.
+                if (s <= 0) return Math.Min(c.Population, herdLadder.MinimumHerders);
+                double price = s >= 1 ? 0 : valueRule.LaborPrice(demand.Claims, demand.Expansion, s);
+                if (double.IsNaN(price)) price = 0;
+                return Math.Min(c.Population, herdLadder.Staffed(price));
+            }
             var order = demand.Order;
             productionOrder = order;
             var claimIndex = new Dictionary<CraftGood, int>();
@@ -86,7 +100,7 @@ namespace Anthropocene.Simulation
                 // resolver-shaped candidate before craft, food, material, and
                 // field feasibility are evaluated so every later worker budget
                 // sees the same bounded resident pool.
-                int reservedHerders = reservedHerdersForForecast;
+                int reservedHerders = herdLadder == null ? reservedHerdersForForecast : StaffedHerders(s);
                 if (reservedHerders > 0)
                     intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = reservedHerders });
                 var candidate = Preview(c, intent, nextPopulation);
@@ -518,7 +532,7 @@ namespace Anthropocene.Simulation
                 // Expansion workers compete with crafts for residents (WP4b); they are in
                 // neither actualWorkers nor the envelope, so they are added on top.
                 int totalWorkers = (s <= Epsilon ? actualWorkers : Math.Max(actualWorkers, laborEnvelope)) + staffedExpansion;
-                return new Proposal { Intent = intent, OperatingFarmers = operating, FoodGatherers = foodGatherers, Workers = totalWorkers, S = s, ExpansionWorkers = staffedExpansion };
+                return new Proposal { Intent = intent, OperatingFarmers = operating, FoodGatherers = foodGatherers, Workers = totalWorkers, S = s, ExpansionWorkers = staffedExpansion, Herders = reservedHerders };
             }
             // Allocate as much useful manufacturing as fits alongside food and its
             // complete source chain. No separate craft-population percentage is imposed.
@@ -573,6 +587,14 @@ namespace Anthropocene.Simulation
                 best.Intent.Labor.ExpansionFarmers = expanders;
             }
             best.Intent.Assignments = best.Intent.Assignments.OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
+            if (herdLadder != null)
+            {
+                // The herd the staffed herders manage (never beyond what the pasture grows): animals above it are slaughtered after breeding,
+                // and breeding is held back so the herd is not bred past it only to be slaughtered.
+                int target = herdLadder.Target(best.Herders);
+                best.Intent.HerdTargetSet = true; best.Intent.HerdTarget = target;
+                best.Intent.ManagedBreedingIntensity = HerdLabour.CapBreeding(w, c, best.Intent.ManagedBreedingIntensity, target, years);
+            }
             if (valueRule != null) laborPrice = valueRule.LaborPrice(demand.Claims, demand.Expansion, best.S);
             if (demand.Expansion != null) farmLabourPrice = demand.Expansion.ValueAfter((best.Intent.Labor?.ExpansionFarmers ?? 0) * years);
             return best.Intent;

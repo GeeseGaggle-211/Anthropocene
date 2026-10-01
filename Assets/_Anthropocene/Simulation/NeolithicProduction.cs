@@ -199,6 +199,15 @@ namespace Anthropocene.Simulation
             double requiredHerders = covered + Math.Max(0, animals - covered * n.StoneHerdingToolAnimalsPerHerder) / Math.Max(1e-12, w.Config.AnimalsPerHerder);
             return Math.Min(c.Population, Math.Max(0, (int)Math.Ceiling(requiredHerders - 1e-10)));
         }
+        // Animals `herders` herders manage at full fulfilment (the inverse of RequiredHerdersFor for a herd at least that large): tool-covered
+        // herders look after StoneHerdingToolAnimalsPerHerder animals each, the rest AnimalsPerHerder. Pure and O(1).
+        internal static double AnimalsManagedBy(WorldState w, Camp c, double years, int herders)
+        {
+            if (herders <= 0 || years <= 0) return 0;
+            var n = w.Config.Neolithic;
+            double coveredHerders = Math.Min(herders, Math.Max(0, c.Inventory.HerdingTools) * n.HerdingToolCoverageYearsPerUnit / years);
+            return coveredHerders * n.StoneHerdingToolAnimalsPerHerder + (herders - coveredHerders) * w.Config.AnimalsPerHerder;
+        }
         public static int RequiredHerders(WorldState w, Camp c, TurnHorizon horizon)
             => RequiredHerders(w, c, horizon.Years);
         public static HerdingManagementPlan Plan(WorldState w, Camp c, TurnHorizon horizon, int herders = -1)

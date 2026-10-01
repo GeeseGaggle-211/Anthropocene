@@ -51,6 +51,8 @@ namespace Anthropocene.Simulation
             ImmigrationReturnCooldownTurns = defaults.ImmigrationReturnCooldownTurns; ImmigrationReturnPenalty = defaults.ImmigrationReturnPenalty;
             // Absent in older saves: QoL-dependent mortality is off so a loaded game continues with its original growth ceiling (Docs/QoLMortality.md).
             QoLMortalityEnabled = false; BaseBirthRate = defaults.BaseBirthRate; QoLMortalityElasticity = defaults.QoLMortalityElasticity;
+            // Absent in older saves: the herd-labour coupling is off, so a loaded game keeps its unconditional herder reservation and never slaughters (Docs/HerdLabour.md).
+            HerdLabourEnabled = false; MinimumHerdHerders = defaults.MinimumHerdHerders;
             LandBiomassMultiplier = 1;
             LandSafeUseRatio = 1;
             LandFoodRegenerationInitialized = false;
@@ -124,6 +126,11 @@ namespace Anthropocene.Simulation
         // The net annual growth ceiling is max(0, b0 F - d(Q)); food still limits growth below it. Saves that predate these fields load with QoLMortalityEnabled = false.
         [System.Runtime.Serialization.OptionalField] public bool QoLMortalityEnabled = false;
         [System.Runtime.Serialization.OptionalField] public double BaseBirthRate = .045, QoLMortalityElasticity = 2;
+        // Herd-labour coupling (Docs/HerdLabour.md): the Value planner staffs herders on the labour-price rule instead of reserving them first, and animals above the
+        // camp's HerdTarget are slaughtered after breeding (carcass food = SpeciesDefinition.FoodYield per animal). MinimumHerdHerders is the seed herd the planner always keeps managed.
+        // Saves that predate these fields load with HerdLabourEnabled = false.
+        [System.Runtime.Serialization.OptionalField] public bool HerdLabourEnabled = false;
+        [System.Runtime.Serialization.OptionalField] public int MinimumHerdHerders = 1;
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
         public double GatherFraction = .22, GatherPerPerson = 1.8, PopulationScale = 24;
@@ -210,6 +217,8 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Invalid immigration configuration.");
             if (double.IsNaN(BaseBirthRate) || double.IsInfinity(BaseBirthRate) || double.IsNaN(QoLMortalityElasticity) || double.IsInfinity(QoLMortalityElasticity) || BaseBirthRate <= 0 || BaseBirthRate > .2 || QoLMortalityElasticity <= 0 || QoLMortalityElasticity > 20 || QoLMortalityEnabled && BaseBirthRate <= AnnualHumanGrowthRate)
                 throw new ArgumentException("Invalid QoL mortality configuration: BaseBirthRate must exceed AnnualHumanGrowthRate and the elasticity must be positive.");
+            if (MinimumHerdHerders < 0 || MinimumHerdHerders > 1000)
+                throw new ArgumentException("Invalid herd-labour configuration: MinimumHerdHerders must be between 0 and 1000.");
             if (CampMovement != 1 || HunterMovement != 2 || HerdMovement != 1 || VisionRadius != 2 || GatherRadius != 1)
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
             if (StartingPopulation <= MinimumCamp || MinimumCamp < 1 || Consumption <= 0 || PopulationScale <= 0)
@@ -400,6 +409,9 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public EconomicLaborPlan EconomicLabor;
         [System.Runtime.Serialization.OptionalField] public double ManagedBreedingIntensity = .55;
         [System.Runtime.Serialization.OptionalField] public bool ManagedBreedingPolicyInitialized = true;
+        // Chosen herd size (Docs/HerdLabour.md): after breeding, managed animals above HerdTarget are slaughtered. Absent (HerdTargetSet false) means no slaughter.
+        [System.Runtime.Serialization.OptionalField] public bool HerdTargetSet;
+        [System.Runtime.Serialization.OptionalField] public int HerdTarget;
         [System.Runtime.Serialization.OptionalField] public bool IsVillage;
         [System.Runtime.Serialization.OptionalField] public int VillageTurns;
         // Fission (WP10a). Absent policy is Neutral (the enum's zero); an absent destination is none.
@@ -449,6 +461,9 @@ namespace Anthropocene.Simulation
         public int Herd, Camp, StartingAnimals, SurvivingAnimals, NewbornAnimals, StarvationDeaths;
         public string Species;
         public double FoodNutrition, WaterNutrition, Nutrition, ManagementFulfillment, PotentialFood, AcceptedFood;
+        // Controlled slaughter (Docs/HerdLabour.md): animals removed after breeding to reach the camp's HerdTarget and the carcass food credited to its Animal Food store.
+        [System.Runtime.Serialization.OptionalField] public int Slaughtered;
+        [System.Runtime.Serialization.OptionalField] public double SlaughterFood;
         [System.Runtime.Serialization.OptionalField] public double CoveredHerderYears, HerdingToolsConsumed;
     }
     [Serializable]

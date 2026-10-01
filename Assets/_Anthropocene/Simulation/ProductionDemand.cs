@@ -224,6 +224,10 @@ namespace Anthropocene.Simulation
         // add after one more turn of breeding at the planned intensity, net of the human forage the larger herd displaces, and the
         // herd's forecast food after that growth. Both 0 otherwise. HerdGrowthFood closes the food gap before any field is valued.
         public double HerdGrowthFood, GrownHerdFood;
+        // Herd-labour coupling (Docs/HerdLabour.md; Value rule, husbandry, HerdLabourEnabled): the grown-herd forecast the ladder reuses and the
+        // herder ladder itself. Null otherwise. Transient, never saved.
+        internal ManagedFoodForecast GrownHerd;
+        internal HerdLadder HerdLadder;
         // Value rule: settling cost of a non-village husbandry-primary camp (person-QoL-years), and the expansion worker-years the camp may
         // spend this turn without crossing into a village (PositiveInfinity = no limit). Diagnostics and planner cap; transient.
         public double SettlingCost, ExpansionEffortCap = double.PositiveInfinity;
@@ -304,6 +308,7 @@ namespace Anthropocene.Simulation
             if (n.ValueFulfilmentSelected && d.HusbandryEnabled && d.CultivationEnabled && c.Population > 0)
             {
                 var grown = TurnResolver.ForecastGrownManagedAnimalFood(w, c, e.ManagedBreedingIntensity, intervals, years, c.Tile);
+                d.GrownHerd = grown;
                 if (grown.Animals > 0)
                 {
                     d.GrownHerdFood = grown.AnimalFood;
@@ -367,6 +372,8 @@ namespace Anthropocene.Simulation
             ClaimValuation.Apply(w, c, d);
             if (expansionClaim) ExpansionValuation.Apply(w, c, d);
             ClaimValuation.ApplyTools(w, c, d);
+            // The herder ladder reads the priced claims (feedstock values), so it comes after every claim is valued.
+            if (HerdLabour.Applies(w, c)) d.HerdLadder = HerdLabour.Build(w, c, d, e.ManagedBreedingIntensity);
             return d;
         }
     }

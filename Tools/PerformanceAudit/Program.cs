@@ -191,6 +191,8 @@ internal static class Program
         int immigrationSwitch = Option(args, "--immigration", -1);
         // QoL-dependent mortality control: 0 disables it (same-code baseline), 1 enables it; unset keeps the configured value (enabled for new worlds).
         int qolMortalitySwitch = Option(args, "--qol-mortality", -1);
+        // Herd-labour coupling control (Docs/HerdLabour.md): 0 restores the unconditional herder reservation and no slaughter, 1 enables it; unset keeps the configured value.
+        int herdLabourSwitch = Option(args, "--herd-labour", -1);
 
         if (openingTurnLimit < 0 || postOpeningTurns < 0 || warmup < 0)
             throw new ArgumentOutOfRangeException("Turn counts and warmup must be non-negative.");
@@ -292,6 +294,11 @@ internal static class Program
             var qolField = world.Config.GetType().GetField("QoLMortalityEnabled") ?? throw new ArgumentException("This simulation source has no QoL mortality switch.");
             qolField.SetValue(world.Config, qolMortalitySwitch != 0);
         }
+        if (herdLabourSwitch >= 0)
+        {
+            var herdField = world.Config.GetType().GetField("HerdLabourEnabled") ?? throw new ArgumentException("This simulation source has no herd-labour switch.");
+            herdField.SetValue(world.Config, herdLabourSwitch != 0);
+        }
         if (immigrationSwitch >= 0)
         {
             var immigrationField = world.Config.GetType().GetField("ImmigrationEnabled") ?? throw new ArgumentException("This simulation source has no immigration switch.");
@@ -387,6 +394,7 @@ internal static class Program
             fissionSwitch,
             immigrationSwitch,
             qolMortalitySwitch,
+            herdLabourSwitch,
             fissionHousingRelief = string.IsNullOrWhiteSpace(fissionReliefText) ? (double?)null : double.Parse(fissionReliefText, System.Globalization.CultureInfo.InvariantCulture),
             fingerprintsEnabled,
             replayMode = fingerprintMode == 1 ? "exact-per-turn" : fingerprintMode == 2 ? "exact-final" : "outcomes-only",
@@ -451,7 +459,7 @@ internal static class Program
         double endingPopulationWeightedQol = 0;
         int managedAnimals = 0, wildAnimals = 0, managedHerds = 0;
         int husbandryCamps = 0, husbandryResidents = 0, husbandryLinked = 0, husbandryAnimals = 0;
-        int husbandryMoves = 0, animalBirths = 0, animalDeaths = 0;
+        int husbandryMoves = 0, animalBirths = 0, animalDeaths = 0, animalSlaughtered = 0;
         double herdForageRequested = 0, herdForageRealized = 0, herdWaterRequested = 0, herdWaterRealized = 0;
         int landConditionChangedTiles = 0;
         double maximumLandConditionDelta = 0;
@@ -475,6 +483,7 @@ internal static class Program
         int husbandryMoves = details ? husbandry.Sum(c => c.Moves - (priorMoves.TryGetValue(c.Id, out int priorMove) ? priorMove : c.Moves)) : 0;
         int animalBirths = record.ManagedHerds.Sum(h => h.NewbornAnimals);
         int animalDeaths = record.ManagedHerds.Sum(h => h.StarvationDeaths);
+        int animalSlaughtered = record.ManagedHerds.Sum(h => h.Slaughtered);
         var domesticHerdIds = new HashSet<int>(record.ManagedHerds.Select(h => h.Herd));
         double herdForageRequested = record.Pressure.Where(p => domesticHerdIds.Contains(p.Entity) && p.Kind == "Herd" && p.Pool == "Biomass").Sum(p => p.Requested);
         double herdForageRealized = record.Pressure.Where(p => domesticHerdIds.Contains(p.Entity) && p.Kind == "Herd" && p.Pool == "Biomass").Sum(p => p.Realized);
@@ -622,6 +631,7 @@ internal static class Program
             husbandryMoves,
             animalBirths,
             animalDeaths,
+            animalSlaughtered,
             humanBirths = record.Growth,
             humanDeaths = record.Deaths,
             herdForageRequested,

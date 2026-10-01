@@ -89,6 +89,12 @@ coefficients. They do not create seasonal or annual world states.
   starvation and product yield; an adult shortage pauses births and fractional
   breeding progress. Fully supplied herds retain the configured growth curve,
   and newborn herd needs begin at the next preparation boundary.
+- Controlled slaughter (Docs/HerdLabour.md) is the last step of the managed-herd
+  pass: after breeding, a camp's animals above its prepared `HerdTarget` leave
+  its herds (id order, proportional) and their carcass food joins the camp's
+  Animal Food as a realized flow that claims no tile. It reads only the target
+  fixed at preparation and mutates only herd counts and that store, so the
+  turn's forage, water and management receipts are unchanged.
 - No receipt retroactively changes orders, workforce, field efficacy, claims,
   target sizes or an earlier tile result. An endpoint field-capital correction
   may adjust its endpoint capacity and overflow ledger; it does not recompute

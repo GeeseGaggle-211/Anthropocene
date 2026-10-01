@@ -19,6 +19,7 @@
     <Compile Include="ContactKnowledgeChecks.cs" />
     <Compile Include="FissionChecks.cs" />
     <Compile Include="QoLMortalityChecks.cs" />
+    <Compile Include="HerdLabourChecks.cs" />
     <Compile Include="ImmigrationChecks.cs" />
     <Compile Include="ClothingFeedstockChecks.cs" />
     <Compile Include="AgentContractChecks.cs" />

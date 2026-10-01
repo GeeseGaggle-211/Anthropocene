@@ -129,6 +129,8 @@
   "QoLMortalityEnabled": false,
   "BaseBirthRate": 0.045,
   "QoLMortalityElasticity": 2,
+  "HerdLabourEnabled": false,
+  "MinimumHerdHerders": 1,
   "ImmigrationEnabled": false,
   "ImmigrationRadius": 4,
   "ImmigrationQualityWeight": 1,

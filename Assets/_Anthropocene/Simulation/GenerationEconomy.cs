@@ -21,6 +21,9 @@ namespace Anthropocene.Simulation
         public int Camp, StartingPopulation, Additions, Deaths, EndingPopulation, SurplusSteps, DeficitSteps, RecoverySteps;
         public double Years, FoodProduced, FoodReceived, TerrestrialFood, MarineFood, LakeFood, HuntFood, FishFood, ForageFood;
         [System.Runtime.Serialization.OptionalField] public double AnimalFood;
+        // Controlled herd slaughter (Docs/HerdLabour.md): animals slaughtered this turn and their carcass food (included in FoodProduced).
+        [System.Runtime.Serialization.OptionalField] public int Slaughtered;
+        [System.Runtime.Serialization.OptionalField] public double SlaughterFood;
         public double FoodRequired, FoodConsumed, InitialReserves, FinalReserves, DiscardedInventory, FractionalProgress, NetPercent;
 #pragma warning disable SYSLIB0050 // OptionalField permits older DataContractSerializer metadata.
         [System.Runtime.Serialization.OptionalField] public double ManufacturingFood;

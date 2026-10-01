@@ -735,7 +735,7 @@ internal static class PastoralCraftChecks
             w.Config.Neolithic.LightHousingPeoplePerUnit = 3;
             AddSurfaceResources(w, c.Tile, 1000, 1000, 1000);
             foreach (int n in w.Map.Neighbors(c.Tile)) AddSurfaceResources(w, n, 1000, 1000, 1000);
-            w.Herds.Single().Animals = 150;
+            w.Herds.Single().Animals = 150; w.Config.HerdLabourEnabled = false; // pins the legacy unconditional herder reservation this bootstrap audit was written for; HerdLabourChecks covers the labour-price staffing
             c.PlantFood = 100000; c.AnimalFood = 0;
             c.Inventory.Stone = c.Inventory.Wood = c.Inventory.Clay = 0;
             c.Inventory.HandTools = c.Inventory.Tools = c.Inventory.HerdingTools = 0;

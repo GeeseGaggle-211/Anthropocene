@@ -286,6 +286,7 @@ public static class FarmPlannerChecks
         c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving); c.People.NeolithicTechnologies.Add(NeolithicTech.Carpentry); c.People.NeolithicTechnologies.Add(NeolithicTech.Construction);
         mixed.Herds.Add(new Herd { Id = mixed.NextId++, Tile = c.Tile, Species = "antelope", Animals = 50, DomesticCamp = c.Id, OwnerSociety = c.SocietyId });
         var observation = new AgentObservationBuilder().Build(mixed, c.Player); var settlement = observation.Settlements.Single();
+        mixed.Config.HerdLabourEnabled = false; // pins the legacy unconditional reservation; the labour-price staffing is covered by HerdLabourChecks
         var plan = EconomicPlanner.Plan(mixed, c, EconomicIntent.From(c));
         Check(Assigned(plan, WorkforceRoles.Herder) == 24, "managed-herd planner reserves the resident-bounded Herder envelope");
         Check(plan.Assignments.Sum(a => a.Population) <= c.Population, "mixed Agriculture/Husbandry proposal stays resident-bounded");

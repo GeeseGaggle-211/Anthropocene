@@ -21,10 +21,13 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int AutomationTurns;
         [System.Runtime.Serialization.OptionalField] public EconomicLaborPlan Labor;
         [System.Runtime.Serialization.OptionalField] public double ManagedBreedingIntensity = .55;
+        // Chosen managed-herd size (Docs/HerdLabour.md). Unset (the default, and absent in older saves) means no slaughter; set, animals above it are slaughtered after breeding.
+        [System.Runtime.Serialization.OptionalField] public bool HerdTargetSet;
+        [System.Runtime.Serialization.OptionalField] public int HerdTarget;
         public double StonePriority = 1, ClayPriority = 1, WoodPriority = 1, PotsTarget, FarmToolsTarget;
-        public EconomicIntent Copy() => new EconomicIntent { Assignments = Assignments?.Select(a => a == null ? null : new PopulationAssignment { Role = a.Role, Population = a.Population }).ToList(), Priorities = Priorities == null ? null : new CraftingPriorities { HandTools = Priorities.HandTools, Pots = Priorities.Pots, Cloth = Priorities.Cloth, FarmTools = Priorities.FarmTools, Housing = Priorities.Housing, Tools = Priorities.Tools, AnimalFabric = Priorities.AnimalFabric, LightHousing = Priorities.LightHousing, HerdingTools = Priorities.HerdingTools }, Focus = Focus, AutomationTurns = AutomationTurns, Labor = Labor?.Copy(), StonePriority = StonePriority, ClayPriority = ClayPriority, WoodPriority = WoodPriority, PotsTarget = PotsTarget, FarmToolsTarget = FarmToolsTarget, ManagedBreedingIntensity = ManagedBreedingIntensity };
-        public static EconomicIntent From(Camp c) => new EconomicIntent { Assignments = c.Workforce.Assignments, Priorities = c.CraftingPriorities, Focus = c.CultivationFocusTile, AutomationTurns = c.EconomyAutomationTurns, Labor = c.EconomicLabor, StonePriority = c.StonePriority, ClayPriority = c.ClayPriority, WoodPriority = c.WoodPriority, PotsTarget = c.PotsTarget, FarmToolsTarget = c.FarmToolsTarget, ManagedBreedingIntensity = c.ManagedBreedingIntensity }.Copy();
-        public string Stamp => string.Join(",", (Assignments ?? new List<PopulationAssignment>()).OrderBy(a => a?.Role, StringComparer.Ordinal).Select(a => a == null ? "invalid" : a.Role + "=" + a.Population)) + ":" + Focus + ":" + AutomationTurns + ":" + (Labor == null ? "manual" : string.Join(",", Labor.Values().Select(v => v.ToString("R", CultureInfo.InvariantCulture)))) + ":" + string.Join(",", Values().Select(v => v.ToString("R", CultureInfo.InvariantCulture)));
+        public EconomicIntent Copy() => new EconomicIntent { Assignments = Assignments?.Select(a => a == null ? null : new PopulationAssignment { Role = a.Role, Population = a.Population }).ToList(), Priorities = Priorities == null ? null : new CraftingPriorities { HandTools = Priorities.HandTools, Pots = Priorities.Pots, Cloth = Priorities.Cloth, FarmTools = Priorities.FarmTools, Housing = Priorities.Housing, Tools = Priorities.Tools, AnimalFabric = Priorities.AnimalFabric, LightHousing = Priorities.LightHousing, HerdingTools = Priorities.HerdingTools }, Focus = Focus, AutomationTurns = AutomationTurns, Labor = Labor?.Copy(), StonePriority = StonePriority, ClayPriority = ClayPriority, WoodPriority = WoodPriority, PotsTarget = PotsTarget, FarmToolsTarget = FarmToolsTarget, ManagedBreedingIntensity = ManagedBreedingIntensity, HerdTargetSet = HerdTargetSet, HerdTarget = HerdTarget };
+        public static EconomicIntent From(Camp c) => new EconomicIntent { Assignments = c.Workforce.Assignments, Priorities = c.CraftingPriorities, Focus = c.CultivationFocusTile, AutomationTurns = c.EconomyAutomationTurns, Labor = c.EconomicLabor, StonePriority = c.StonePriority, ClayPriority = c.ClayPriority, WoodPriority = c.WoodPriority, PotsTarget = c.PotsTarget, FarmToolsTarget = c.FarmToolsTarget, ManagedBreedingIntensity = c.ManagedBreedingIntensity, HerdTargetSet = c.HerdTargetSet, HerdTarget = c.HerdTarget }.Copy();
+        public string Stamp => string.Join(",", (Assignments ?? new List<PopulationAssignment>()).OrderBy(a => a?.Role, StringComparer.Ordinal).Select(a => a == null ? "invalid" : a.Role + "=" + a.Population)) + ":" + Focus + ":" + AutomationTurns + ":" + (Labor == null ? "manual" : string.Join(",", Labor.Values().Select(v => v.ToString("R", CultureInfo.InvariantCulture)))) + ":" + string.Join(",", Values().Select(v => v.ToString("R", CultureInfo.InvariantCulture))) + ":" + (HerdTargetSet ? HerdTarget : -1);
         public IEnumerable<double> Values() => Priorities == null ? Array.Empty<double>() : new[] { Priorities.HandTools, Priorities.Pots, Priorities.Cloth, Priorities.FarmTools, Priorities.Housing, Priorities.Tools, Priorities.AnimalFabric, Priorities.LightHousing, Priorities.HerdingTools, StonePriority, ClayPriority, WoodPriority, PotsTarget, FarmToolsTarget, ManagedBreedingIntensity };
     }
     public static class EconomicIntents
@@ -49,6 +52,7 @@ namespace Anthropocene.Simulation
             if (!c.Agriculture && e.Assignments.Any(a => a.Role == WorkforceRoles.Farmer)) return "Farmer assignments require Cultivation.";
             if (!c.Husbandry && e.Assignments.Any(a => a.Role == WorkforceRoles.Herder)) return "Herder assignments require Animal Husbandry.";
             if (e.ManagedBreedingIntensity > 1) return "Managed breeding intensity must be at most one.";
+            if (e.HerdTargetSet && (e.HerdTarget < 0 || !c.Husbandry)) return e.HerdTarget < 0 ? "Herd target cannot be negative." : "A herd target requires Animal Husbandry.";
             return null;
         }
         public static void Apply(Camp c, EconomicIntent intent)
@@ -57,6 +61,7 @@ namespace Anthropocene.Simulation
             c.EconomyAutomationTurns = e.AutomationTurns; c.EconomicLabor = e.Labor;
             c.CultivationFocusTile = e.Focus; c.StonePriority = e.StonePriority; c.ClayPriority = e.ClayPriority; c.WoodPriority = e.WoodPriority; c.PotsTarget = e.PotsTarget; c.FarmToolsTarget = e.FarmToolsTarget;
             c.ManagedBreedingIntensity = e.ManagedBreedingIntensity; c.ManagedBreedingPolicyInitialized = true;
+            c.HerdTargetSet = e.HerdTargetSet; c.HerdTarget = e.HerdTargetSet ? e.HerdTarget : 0;
         }
         // A policy proposal, copied into an ordinary validated order before use.
         public static EconomicIntent Automatic(WorldState w, Camp c, bool reset = false)

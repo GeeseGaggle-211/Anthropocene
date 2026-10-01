@@ -228,6 +228,9 @@ namespace Anthropocene.Simulation
                 else if (double.IsNaN(camp.ManagedBreedingIntensity) || double.IsInfinity(camp.ManagedBreedingIntensity) || camp.ManagedBreedingIntensity < 0 || camp.ManagedBreedingIntensity > 1)
                     throw new InvalidDataException("Invalid managed breeding intensity.");
                 camp.ManagedBreedingPolicyInitialized = true;
+                // Herd target (Docs/HerdLabour.md): absent in older saves, which load unset and so never slaughter.
+                if (!camp.HerdTargetSet) camp.HerdTarget = 0;
+                else if (camp.HerdTarget < 0) throw new InvalidDataException("Invalid herd target.");
             }
             if (config.ActiveFishingPracticeMultiplier <= 0) config.ActiveFishingPracticeMultiplier = 4.25;
             if (config.GrasslandHerdDensityMultiplier <= 0) config.GrasslandHerdDensityMultiplier = 1.35;

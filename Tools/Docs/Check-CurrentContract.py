@@ -52,8 +52,9 @@ FIELDS = [
     ("ImmigrationSourceFloor", "residents a source always keeps", "shipped immigration lever, uncalibrated"),
     ("ImmigrationReturnCooldownTurns", "turns after a camp sends people during which a flow back to it pays the return penalty", "shipped immigration hysteresis lever (WP10b-2), uncalibrated; 0 disables"),
     ("ImmigrationReturnPenalty", "utility added to the deadband for a flow back to a camp that just sent people, decaying linearly to 0 over the cooldown", "shipped immigration hysteresis lever (WP10b-2), uncalibrated"),
-    ("BaseBirthRate", "per year (b0): crude birth rate; births are fixed, QoL raises deaths d0 Q^-a with d0 = b0 - AnnualHumanGrowthRate", "shipped QoL-mortality anchor (Docs/QoLMortality.md); `QoLMortalityEnabled` (true in OpeningConfig and API default; saves without it load false) is a boolean, not listed; saves without the rate load the default"),
+    ("BaseBirthRate", "per year (b0): crude birth rate; births are fixed, QoL raises deaths d0 Q^-a with d0 = b0 - AnnualHumanGrowthRate", "shipped QoL-mortality anchor (Docs/QoLMortality.md); `QoLMortalityEnabled` (opt-in: false in OpeningConfig, API default and saves without it) is a boolean, not listed; saves without the rate load the default"),
     ("QoLMortalityElasticity", "dimensionless exponent a in d(Q) = d0 Q^-a; growth stops at Q* = ((b0 - g) / b0)^(1/a)", "shipped QoL-mortality calibration from the five-world Standard/80 sweep (Docs/QoLMortality.md); saves without it load the default"),
+    ("MinimumHerdHerders", "herders the Value planner always keeps managed for a camp with animals (the seed herd, 1 herder = AnimalsPerHerder animals); the herd-labour lever `HerdLabourEnabled` (opt-in: false in OpeningConfig, API default and saves without it) is a boolean, not listed", "shipped herd-labour seed floor (Docs/HerdLabour.md); saves without it load the default"),
     ("PlanningHorizonYears", "years", "shipped forecast horizon"),
     ("LandBiomassMultiplier", "relative land biomass multiplier", "shipped new-world calibration"),
     ("LandFoodRegeneration", "fraction per legacy BaseDays profile", "shipped land recovery input"),
@@ -100,6 +101,7 @@ TESTS = [
     ("Tools/Headless/FissionChecks.cs", "FissionChecks.Run"),
     ("Tools/Headless/QoLCohesionChecks.cs", "QoLCohesionChecks.Run"),
     ("Tools/Headless/QoLMortalityChecks.cs", "QoLMortalityChecks.Run"),
+    ("Tools/Headless/HerdLabourChecks.cs", "HerdLabourChecks.Run"),
     ("Tools/Headless/ImmigrationChecks.cs", "ImmigrationChecks.Run"),
     ("Tools/Headless/SettlingChecks.cs", "SettlingChecks.Run"),
 ]
