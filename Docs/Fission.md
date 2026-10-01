@@ -661,6 +661,106 @@ Split rate of camp-turns by size relative to the Neutral onset (splits / camp-tu
 - **Cost.** Fission evaluations, searches and candidates scored are unchanged to within 0.5 percent (searches 39,314 vs 39,367; candidates 32,123 vs 31,960), and a fed camp performs
   the same single estimate as before; the median turn time difference is within the run-to-run noise of the shared CPU.
 
+## Hinterland and relative destinations: why 90 percent of crowded camps could not split
+
+**The measured defect** (fission on, mortality off, post-opening turns 10-50, five Standard / 80-tribe worlds, before this change):
+49,713 evaluations, 23,765 camps past the gain screen, but only 23,347 candidate tiles scored in total (about one per search); 2,337
+searches found a destination (10 percent) and 1,960 split. A camp that wanted to split mostly had nowhere to go: `VisionRadius` 2 and
+`MinimumCampSpacing` 3 make the camp's own exclusion zone (radius 2) equal to its whole vision, candidates come only from remembered
+explored tiles, and a settled village explores nothing beyond its vision. A second bar sat on top: the destination had to feed the daughter
+(30 percent of a 700-person camp is about 210 people) at 85 percent of her need from first-turn harvest, a bar calibrated for 24-person starts.
+The world was not full (1024 x 512, about 550 camps).
+
+**User decisions implemented.** (1) A settlement's hinterland knowledge grows with its population while it stays put. (2) Nomads keep a decaying
+memory of previously visible tiles plus the small vision bubble. (3) Destinations are judged relative to home (the daughter must be better off),
+not against an absolute 85 percent bar. Rules (1) and (2) are in [ContactKnowledge.md](ContactKnowledge.md) (Hinterland and decaying memory);
+rule (3) is here.
+
+**Relative destination test.** A site is a destination when it is habitable: the start-viability footprint evaluation passes (four-season
+freshwater gate, terrain) and its support ratio is positive (`ratio > 0`, the uncapped footprint supply over the daughter's need; for herders
+the least of human food, herd forage and herd water). The cache is invalidated when a site stops being habitable. The ordering of candidates is
+unchanged (`D` capped at one, then the uncapped ratio, then distance, then tile ID). Whether the daughter is better off is the existing veto
+(`DaughterQoL >= Q_now - FissionDaughterMargin`), now evaluated with the destination's actual food instead of `F = 1`:
+`F_d = min(1, ratio + carried)`, where `carried` is the person-equivalents of the turn's need her proportional share of the parent's stored food
+covers (`Immigration.CarriedPerPerson`, the same term immigration uses). For a herded daughter the herd coverage caps `F_d` (carried human food does
+not feed animals). `EstimateSplit` takes it as the optional `vetoFood` argument (default 1: unchanged callers). The distress and crowding triggers
+and their gain terms are unchanged (the distress gain still uses the site's support ratio alone); only the veto sees the carried food. A parent
+that is well off (high `Q_now`) therefore blocks a thin site that a parent that is short of food, or one carrying food, accepts.
+
+**Funnel counters** (`ResolutionMetrics`, transient, in the audit JSON as `fissionScreened` ...): every camp past the gain screen ends in exactly one
+outcome. `screened = searches with no legal candidate + searches with candidates but no destination + camps with a destination`; `with destination =
+below threshold + daughter veto + stayers veto + proposals`; `proposals = dropped (spacing conflict) + committed`. `Tools/PerformanceAudit/Summarize-Hinterland.py`
+tabulates them. Checks: `FissionChecks.Funnel` (identities over eight fixtures, scalar versus reversed 4-worker) and `FissionChecks.Relative`.
+
+### Measurements (hinterland and relative destinations)
+
+`Tools/PerformanceAudit --players=80 --turns=12 --post-opening-turns=50 --seed=N --shape=S --workers=1 --fission=1 --immigration=0 --details=1`, Continents 1-3,
+Pangaea 1, Archipelagos 1, counters pooled over all 50 post-opening turns. `c_*` is the baseline (HEAD e8a77c5 plus the funnel counters; fingerprint-identical
+outcomes to the earlier `d_*` runs), `h_*` this change. `_f1` mortality off, `_a1` `--qol-mortality=1 --set=QoLMortalityElasticity=1`. `r_f1` is the relative
+test alone (`--set=HinterlandMaxRadius=2`, hinterland disabled). One run per world on a shared 4-CPU host.
+
+| stage | c_f1 | r_f1 (relative test only) | h_f1 | c_a1 | h_a1 |
+|---|---:|---:|---:|---:|---:|
+| camps evaluated | 73,794 | 67,518 | 184,721 | 45,827 | 73,417 |
+| screened (past the gain screen) | 40,703 | 37,320 | 96,380 | 16,501 | 25,743 |
+| searches with no legal candidate | 32,999 | 30,826 | 65,953 | 11,917 | 14,619 |
+| searches with candidates, none a destination | 3,381 | 2,944 | 10,337 | 1,642 | 3,192 |
+| camps with a destination | 4,323 | 3,550 | 20,090 | 2,942 | 7,932 |
+| of which below threshold | 1,522 | 1,205 | 7,898 | 1,279 | 3,454 |
+| of which daughter veto | 314 | 268 | 738 | 62 | 66 |
+| of which stayers veto | 0 | 0 | 0 | 0 | 0 |
+| proposals | 2,487 | 2,077 | 11,454 | 1,601 | 4,412 |
+| dropped (spacing) | 185 | 181 | 1,217 | 133 | 399 |
+| committed (fissions) | 2,302 | 1,896 | 10,237 | 1,468 | 4,013 |
+| share of screened with a destination | 10.6% | 9.5% | 20.8% | 17.8% | 30.8% |
+
+| run | camps at turn 60 | population at turn 60 | median turn ms |
+|---|---:|---:|---:|
+| c_f1 | 2,750 | 2,895,971 | 796 |
+| r_f1 | 2,344 | 2,546,999 | 674 |
+| h_f1 | 10,699 | 8,902,960 | 1,377 |
+| c_a1 | 1,884 | 979,955 | 423 |
+| h_a1 | 4,438 | 2,085,151 | 571 |
+
+Camp-size P90 / P95 by housing class (post-opening turns 10-50, camp-turn pooled; `Summarize-Cohesion.py`) against the design targets (unhoused 100,
+tent-dominant 250, fixed-dominant 600-1,000), and the point score (lower is better):
+
+| run | score | unhoused P90/P95 | tent P90/P95 | fixed P90/P95 | median size u/t/f |
+|---|---:|---|---|---|---|
+| c_f1 | 14.45 | 225/244 | 1385/1717 | 1506/1848 | 33/436/679 |
+| h_f1 | 10.12 | 250/266 | 823/1147 | 1397/1679 | 77/322/625 |
+| c_a1 | 4.58 | 93/222 | 665/674 | 737/788 | 27/384/445 |
+| h_a1 | 5.49 | 205/226 | 630/664 | 720/747 | 30/303/465 |
+
+QoL P25 / median / P75 by first technology (post-opening turns 10-50):
+
+| run | agricultural | husbandry |
+|---|---|---|
+| c_f1 | 0.66/0.80/0.91 (32,492) | 0.41/0.76/0.91 (37,359) |
+| h_f1 | 0.70/0.80/0.89 (73,326) | 0.64/0.87/0.93 (111,928) |
+| c_a1 | 0.77/0.88/0.95 (17,344) | 0.70/0.82/0.92 (24,274) |
+| h_a1 | 0.78/0.88/0.95 (19,929) | 0.73/0.88/0.94 (49,748) |
+
+### Findings (hinterland and relative destinations)
+
+- **The hinterland is what unblocks splitting; the relative test alone does not.** With the hinterland off (`r_f1`) the funnel is the baseline's: 83 percent
+  of screened searches still find no candidate and fissions fall slightly (1,896 vs 2,302, dynamics, not a mechanism). With the hinterland on, camps with a destination
+  rise from 4,323 to 20,090 (4.6x) and fissions from 2,302 to 10,237 (4.4x) with mortality off; with QoL mortality on, 1,468 to 4,013 (2.7x). The share of screened camps
+  that find a destination doubles (10.6 to 20.8 percent; 17.8 to 30.8 percent).
+- **Most screened searches still have no legal candidate** (68 percent mortality off, 57 percent on). A candidate must be a known, traversable tile at distance 3 or 4
+  that is not within two hexes of any camp; a camp with fewer than 54 people (cap `2 sqrt(N/24) < 3`) or one that just moved still knows only radius 2, and in
+  settled land the ring-3/4 tiles are often within spacing of a neighbour. This was not tuned further here: the levers are `HinterlandReferencePopulation`,
+  `HinterlandRingsPerTurn`, `HinterlandMaxRadius` and `FissionRadius`.
+- **The outcome is large, by design.** There is no population cap, so removing the destination bottleneck lets the world fill: camps at turn 60 rise 3.9x (mortality off)
+  and 2.4x (mortality on), population 3.1x and 2.1x. Camp-size P90/P95 move toward the targets for tents and fixed housing with mortality off (tent P90 1,385 to 823;
+  score 14.45 to 10.12) and are about unchanged with it on (score 4.58 to 5.49: unhoused P90 93 to 205 against the 100 target, the others within 10 percent of before).
+  QoL medians are unchanged or higher. Whether this population growth is the right balance (land fill, food and QoL at larger scale) is a calibration question
+  for the owner of the growth model, not settled here.
+- **The daughter veto stays rare** (738 of 20,090 destinations; 66 of 7,932 with mortality on): a thin destination is usually better than a crowded home.
+- **Cost.** Knowledge update 1.07 to 7.0 ms per turn (median, mortality off) at 3.9x the Societies and 1.5x the tiles per Society (118 to 179 explored tiles, 78 to 102 payload
+  bytes per Society); fission 9.2 to 23.5 ms per turn (4x the camps); median turn 796 to 1,377 ms (also 4x the camps). Per Society the knowledge update is about
+  0.65 ms per thousand Societies against 0.39 before.
+
 ## Deliberate limits
 
 - The defaults are calibrated analytically to full goods coverage (table above); the realized size depends on

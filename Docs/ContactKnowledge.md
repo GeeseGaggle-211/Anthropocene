@@ -147,3 +147,18 @@ headers and list slack (a few hundred bytes per Society) and the XML encoding
 in saves. Contacts are rare because starts are at least 12 hexes apart and
 camps rarely approach within vision; the rules are therefore exercised by the
 fixtures rather than by these worlds.
+
+### Measurements (hinterland and decaying memory)
+
+Same runs as the funnel table in [Fission.md](Fission.md) (Standard / 80 tribes, five worlds, fission on, 12 + 50 turns, one run per world; `ContactKnowledge.Measure` at the last turn,
+summed over worlds; update time is the audit's `knowledgeMs`, median over all post-opening turns of all worlds). `c_*` baseline, `h_*` with the hinterland and decay.
+
+| run | Societies remembering | explored tiles | tiles / Society | payload bytes / Society | knowledge update ms (median) |
+|---|---:|---:|---:|---:|---:|
+| c_f1 (mortality off) | 2,750 | 325,821 | 118 | 78 | 1.07 |
+| h_f1 | 10,699 | 1,912,671 | 179 | 102 | 7.01 |
+| c_a1 (mortality on) | 1,884 | 239,430 | 127 | 85 | 0.71 |
+| h_a1 | 4,438 | 759,220 | 171 | 104 | 2.21 |
+
+Explored tiles per Society grow about 1.5x because settled camps hold a hinterland (up to 127 tiles at radius 6, 54 or more people needed for radius 3) while trails of moving camps decay; the
+update scales with Societies, not with elapsed years or map size. The bytes column is the 16-byte block estimate plus contacts, excluding object headers and list slack.
