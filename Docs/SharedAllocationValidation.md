@@ -665,3 +665,178 @@ python3 Tools/PerformanceAudit/Run-SharedAllocationAudit.py --phase=build --outp
 # for counts/exactness and --metrics=0 --fingerprints=0 for timing pairs.
 ```
 
+## Husbandry valuation audit: harvest productivity and dry grassland
+
+Requested on 2 October 2026: why the planner still appears to undervalue
+husbandry against cultivation. No production, ecology or yield constant was
+changed.
+
+**Was the shared planner on?** Not in the controlled moisture fixture.
+`HerdEcologyProbe`'s `moisture-sites` mode enables herd labour, QoL mortality
+and fission, but not `SharedCropHerdAllocationEnabled`. It also reads
+`d.HerdLadder`, which is null under the shared planner. Its 22/200-animal
+grassland results in
+[AgricultureMoisturePlannerAudit.md](AgricultureMoisturePlannerAudit.md)
+therefore describe the legacy planner. The flag is false in `OpeningConfig`
+and in older saves. Only `Run-SharedAllocationAudit.py`, the planner-cost runs
+and `SharedAllocationChecks` enable it. The new `grassland-portfolio` mode
+runs the same site under both planners.
+
+**Physical anchors** (soil moisture .22, no river, 404 residents, seven
+radius-one footprint tiles, from the fixture):
+
+| Quantity | Value |
+| --- | --- |
+| Fully managed food per animal-year | 4 |
+| Primitive herding, food per herder-year | 8 |
+| Stone Herding Tools, food per herder-year | 10.76 |
+| Gathering, food per worker-year | 7.2 |
+| Harvest productivity at q = .4 (crop/wild mix) | 1.141 (fertile tropical .75: 1.214) |
+| Repeatable footprint food at q = .4 / q = 0 | 325 / 131 per year (+195) |
+| Fertile tropical footprint, q = .4 / q = 0 | 3,700 / 1,573 per year |
+
+On mediocre dry grassland the fields barely raise labour productivity.
+Cultivation's advantage on fertile land is land productivity: about eleven
+times the grassland's repeatable footprint food.
+
+**Diagnosis: partly confirmed.** `CampProductionDemand.Build` computes
+`HarvestProductivity` once, from the committed opening state.
+
+- *Current turn: not a bug.* The resolver computes the same quantity from
+  the same committed state (`CultivationEconomy.CalculateLabor`) for this
+  turn's operating farmers. Land harvest takes the opening stock, so the
+  turn's crop mix is the opening capital's.
+- *Future terms: confirmed.* `SharedAllocation`'s future harvest
+  (`futureMaintenance × harvest rate`), the herd ladder's future saving and
+  cheap-harvest terms, and `ExpansionValuation.SharedSchedule`'s baseline
+  harvest all reused the committed productivity. They should use the
+  portfolio's horizon-mean field state, where a reduced-operation portfolio's
+  fields have decayed.
+- *Direction.* The retained bonus made **reduced-operation** portfolios'
+  future harvest cheaper, which favoured abandoning fields. Fixing it does
+  not by itself favour husbandry.
+
+**Fix.** Each field-operation portfolio now computes
+`CampProductionDemand.FutureHarvestProductivity`, using `HarvestProductivity`'s
+own stock-weighted crop/wild rule over the footprint at its horizon-mean
+capital, weighted by repeatable refill food. Operation-independent tiles cache
+it with their forecasts. The future harvest terms listed above use it. The
+current turn keeps the committed productivity. The herd ladder is built on the
+most maintained choice, so its future rate is that choice's. Outside the
+shared planner the value equals the committed productivity, and no path
+changes.
+
+The new checks in `SharedAllocationChecks`:
+
+- current productivity stays the committed value;
+- the fully maintained portfolio keeps it;
+- future productivity never rises as operation falls;
+- the abandoned-field value matches a hand-computed horizon-mean crop share;
+- lower future productivity never lowers the herd's labour saving, and leaves
+  the current-turn herd terms unchanged.
+
+**Five-world census** (50 turns, against the previous source; husbandry
+gate). The pooled husbandry-first totals at 25 turns are identical. At 50 turns
+population is −0.04% and managed animals −0.04%: a pass, and an effect too
+small to change the crop/herd balance.
+
+**Fixture before and after.** Every selected plan is unchanged. Future
+productivity now falls with operation (grassland 1.104 at operation 0 to
+1.141 at 1; tropical 1.167 to 1.214). The winning portfolio is always full
+operation, where nothing changed.
+
+| Case (shared planner) | Herders / target | Farmers (expansion) | Winning operation | Net |
+| --- | --- | --- | --- | --- |
+| Grassland q = 0, 22 animals | 11 / 27 | 297 (297) | 0 | 3,933.94 |
+| Grassland q = 0, 200 animals | 122 / 249 | 82 (82) | 0 | 14,971.57 |
+| Grassland q = .4, 22 animals | 11 / 27 | 296 (196) | 1 | 5,895.20 |
+| Grassland q = .4, 200 animals | 122 / 249 | 195 (95) | 1 | 16,622.30 |
+| Fertile tropical q = .4, 22 animals | 11 / 27 | 120 (0) | 1 | 20,613.93 |
+
+**Why the winning portfolio wins** (grassland q = .4, 22 animals, at the
+selection prices: current labour 0, future labour 0.0284 per worker-year,
+budget 309):
+
+| Operation | Farmers | Herders (target) | Crop value | Herd now / future / residual | Current / future work (worker-years) | Expansion value | Net |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | 0 | 11 (27) | 2,450.96 | 288.19 / 1,476.19 / 288.63 | 936.5 / 1,732.0 | 73.17 | 4,528.02 |
+| .57 | 57 | 11 (27) | 3,231.04 | same | 1,232.6 / 2,882.7 | 58.33 | 5,260.61 |
+| 1 | 100 | 1 (2) | 3,939.99 | 231.73 / 72.14 / 8.83 | 1,830.8 / 4,542.0 | 52.16 | 4,176.02 |
+| **1** | **100** | **11 (27)** | **3,939.99** | **288.19 / 1,476.19 / 288.63** | **2,012.1 / 5,221.0** | **50.29** | **5,895.20** |
+
+Three things decide it:
+
+- **The herd is always kept in full.** Every operation choice prefers the
+  maximal herd and breeding. In this fixture the herd's labour saving is zero
+  for every candidate, because the 38,487 stored food already covers this
+  turn's need, so milk displaces no harvest work.
+- **Fields are kept because labour is nearly free.** Maintaining fields adds
+  1,489 crop value for 3,489 future worker-years, which costs only 99 at a
+  future price of 0.0284. Current spare labour is priced at zero.
+- **The same free labour buys field expansion even on uncultivated dry
+  grassland:** 297 expansion farmers at q = 0, 196 at q = .4.
+
+Within one plan, then, husbandry is not undervalued here. Herd size is
+bounded by the animals the camp owns, and acquisition is issue #12.
+
+**Ten-turn trajectory** (`grassland-trajectory` mode, q = 0 start, largest
+camp per turn):
+
+- *22 animals, both planners:* 200–360 residents build fields in the first
+  five turns. The camp becomes a village (mean field q .25) by turn 4, and its
+  herd target falls from 42 to about 10–21 while fission spreads people and
+  animals over 7–8 camps. Total managed animals still grow from 27 to about
+  125. Population falls from 404 to about 345–370.
+- *200 animals, shared planner:* the camp stays just below the village
+  threshold (q .245). Its herd grows from 249 to 482 and population from 404
+  to 502. The legacy planner becomes a village by turn 8.
+
+The observed path towards agriculture is therefore not harvest pricing.
+Spare labour priced at zero always buys some field expansion, because breeding
+alone cannot absorb the labour. Accumulated fields then cross the village
+threshold, which shortens pasture range to one tile; neither step is priced
+against the herd. This is a hypothesis from one fixture, not a census
+finding.
+
+**Secondary: continuation growth cliff.** `HerdLabour.Build` prices future
+breeding growth only when the option keeps the full grown herd
+(`target >= floor(grownAnimals)`) and the target fits the settled one-tile
+pasture (`target <= localCapacity`). In the 22-animal fixture, future herd
+value rises about 96 per herder up to target 24, then 610 for the last two
+herders (865.6 to 1,476.2). When the grown herd exceeds the one-tile pasture,
+no option prices growth at all. This is recorded, not changed.
+
+## Similar-camp grouping probe (rejected)
+
+This probe tested whether camps with similar start-of-turn state could share
+one plan's decisions. A scratch probe recorded, for every plan in the five
+census worlds over 50 turns (51,156 plans), a key built only from committed
+camp state:
+
+- village, capability flags and tool presence;
+- log population band and animals-per-resident band;
+- footprint mean q band and food-per-resident band;
+- clothing and housing per-capita bands.
+
+It also recorded the plan's decisions: operation, farmers, herd target,
+breeding and search position. All five runs reproduce the branch fingerprints.
+
+Within each (world, turn, key) group, the lowest-ID camp is the
+representative. A member "matches" when its own plan has the same operation,
+a position within 1/64, a herd target per resident within 5%, and the same
+breeding.
+
+| Key | Groups (full plans) | Members matching representative | Plans that could be skipped | Role-share gap P50 / P90 |
+| --- | --- | --- | --- | --- |
+| Coarse | 57.3% | 31.0% (husbandry-capable 13.7%) | 13.2% | 3.9 / 22.5 points |
+| Fine | 77.1% | 33.9% (20.3%) | 7.8% | 2.7 / 15.5 points |
+| Very fine | 90.3% | 42.1% (31.6%) | 4.1% | 1.6 / 9.9 points |
+
+The skippable share stays at 12–19% (coarse) from turn 12 to 60 and does not
+grow as camps multiply. An earlier estimate built from end-of-turn census state
+(24% of camps planning at a coarse key) overstated the grouping.
+
+Husbandry camps' decisions diverge most, which is exactly the population the
+gate protects. Sharing decisions across similar camps is therefore not
+pursued.
+

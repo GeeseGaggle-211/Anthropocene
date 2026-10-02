@@ -94,7 +94,14 @@ namespace Anthropocene.Simulation
             // tiles outside its footprint keep their own saved fraction, and a
             // field with no capital has q = 0, so operation never reaches the
             // kernel. One forecast per tile serves every operating choice.
-            var fixedLand = new Dictionary<(int, long), (double Receipts, double Food, double Biomass)>();
+            var fixedLand = new Dictionary<(int, long), (double Receipts, double Food, double Biomass, double HarvestWork)>();
+            // Future harvest productivity follows each portfolio's own future field
+            // state, with CultivationEconomy.HarvestProductivity's stock-weighted
+            // crop/wild rule over the footprint (the current turn keeps the committed
+            // productivity, which is what the resolver harvests this turn).
+            bool cropRate = world.Config.CropHarvestingOnly && world.Config.FarmerProductivity > 1;
+            int season = (int)Math.Floor(world.Days / world.Config.BaseDays) % 4;
+            var footprintTiles = new HashSet<int>(demand.Footprint);
             var cfg = world.Config; var n = cfg.Neolithic;
             years = cfg.TurnDays / cfg.DaysPerYear;
             double future = Math.Max(0, n.PlanningHorizonYears - years), r = n.DiscountRatePerYear;
@@ -129,7 +136,7 @@ namespace Anthropocene.Simulation
                 double operation = raw > 0 ? Math.Min(1, (covered * efficiency + Math.Max(0, farmers - covered)) / raw) : 0;
                 var d = demand.AllocationCopy(); d.OperationFarmers = farmers; d.Upkeep = farmers;
                 d.PhysicalExpansion = null; d.Expansion = null; d.HerdLadder = null;
-                double land = 0, futureLand = 0, futureMaintenance = 0, residual = 0, futureBiomass = 0;
+                double land = 0, futureLand = 0, futureMaintenance = 0, residual = 0, futureBiomass = 0, futureFieldFood = 0, futureFieldWork = 0;
                 foreach (int id in d.Eligible.Where(id => world.Tiles[id].Land))
                 {
                     var tile = world.Tiles[id];
@@ -164,12 +171,21 @@ namespace Anthropocene.Simulation
                         empty.PotentialFood = Math.Max(0, current.ClosingBiomass - current.ClosingFood);
                         var refill = FoodHorizonForecast.Tile(world, id, world.Days, cfg.TurnDays, null,
                             empty.CultivationCapital, terminalCapital, op, false, empty);
-                        forecast = (current.HumanFoodReceipts, refill.ClosingFood, refill.ClosingBiomass);
+                        double harvestWork = 0;
+                        if (cropRate && footprintTiles.Contains(id))
+                        {
+                            var capacity = new EcologyCapacity(world, tile, empty, season);
+                            double crop = tile.CultivationOperator >= 0 && tile.CultivationOperator != camp.Id ? 0 : Math.Max(0, capacity.Food - capacity.WildFood);
+                            double cropShare = capacity.Food > 0 ? crop / capacity.Food : 0;
+                            harvestWork = refill.ClosingFood * (1 - cropShare + cropShare / cfg.FarmerProductivity);
+                        }
+                        forecast = (current.HumanFoodReceipts, refill.ClosingFood, refill.ClosingBiomass, harvestWork);
                         TileForecasts += 2;
                         if (cache != null) fixedLand[fixedKey] = forecast;
                     }
                     else if (ResolutionMetrics.CaptureDetailedCounters) Interlocked.Add(ref TurnDiagnostics.For(world).KernelCacheHits, 2);
                     land += forecast.Receipts;
+                    if (cropRate && footprintTiles.Contains(id)) { futureFieldFood += forecast.Food; futureFieldWork += forecast.HarvestWork; }
                     futureLand += forecast.Food;
                     futureBiomass += forecast.Biomass;
                     residual += forecast.Food;
@@ -186,6 +202,7 @@ namespace Anthropocene.Simulation
                 d.ForageAfterHerds = d.TerrestrialAfterHerds + aquatic;
                 d.FutureForageAfterHerds = Math.Max(0, futureLand - demand.ManagedFood.HumanFoodDisplaced) + aquatic;
                 d.FutureUpkeep = futureMaintenance;
+                d.FutureHarvestProductivity = !d.CultivationEnabled ? 1 : !cropRate ? cfg.FarmerProductivity : futureFieldWork > 0 ? futureFieldFood / futureFieldWork : 1;
                 double forageNeed = d.ManagedFood.FoodConsumption * cfg.GenerationIntervals;
                 d.FuturePastureCapacity = forageNeed > 0
                     ? Math.Max(0, futureBiomass - Math.Min(futureLand, d.Meals)) / forageNeed : double.PositiveInfinity;
@@ -222,7 +239,7 @@ namespace Anthropocene.Simulation
                 double harvestRate = gatherRate * Math.Max(1, d.HarvestProductivity);
                 double currentHarvest = Math.Min(d.TerrestrialAfterHerds, farmers * harvestRate * years);
                 double currentWorkers = farmers + Math.Max(0, usefulCurrent - currentHarvest) / years / gatherRate;
-                double futureHarvest = Math.Min(futureMeals, futureMaintenance * harvestRate);
+                double futureHarvest = Math.Min(futureMeals, futureMaintenance * gatherRate * Math.Max(1, d.FutureHarvestProductivity));
                 double futureWorkers = futureMaintenance + Math.Max(0, futureMeals - futureHarvest) / gatherRate;
                 double value = Math.Exp(-r * years) * (incoming.Value - ledger.Receive(0, 0, 0).Value)
                     + futureLife * futureMeals * vFood
@@ -239,12 +256,53 @@ namespace Anthropocene.Simulation
                 Interlocked.Add(ref diagnostics.SharedHerdChoices, HerdChoices);
             }
         }
+        // Transient diagnostics (never authoritative or saved): every candidate's
+        // objective components at the given prices, in Select's own terms.
+        internal sealed class CandidateRow
+        {
+            public double Operation, CropValue, HerdCurrentValue, HerdFutureValue, HerdResidualValue, CurrentWork, FutureWork,
+                HerdManagementYears, HerdSavedHarvestYears, HerdReplacementYears, HerdCraftYears, ExpansionYears, ExpansionValue, Net,
+                HarvestProductivity, FutureHarvestProductivity;
+            public int Farmers, Herders, Target, Workers; public bool Feasible;
+        }
+        [ThreadStatic] internal static bool CaptureLast;
+        [ThreadStatic] internal static SharedAllocation Last;
+        [ThreadStatic] internal static double LastCurrentPrice, LastFuturePrice;
+        [ThreadStatic] internal static int LastBudget;
+        internal List<CandidateRow> Candidates(double currentPrice, double futurePrice, int residentBudget)
+        {
+            var rows = new List<CandidateRow>();
+            foreach (var p in portfolios)
+            {
+                var h = p.Herd; int first = h == null ? 0 : h.IndexOf(h.MinimumHerders);
+                for (int k = first; k <= (h?.Steps ?? 0); k++)
+                {
+                    double current = p.CurrentWork + (h?.CurrentWorkerYears[k] ?? 0);
+                    double future = p.FutureWork + (h == null ? 0 : h.WorkerYears[k] - h.CurrentWorkerYears[k]);
+                    int fixedWorkers = p.Demand.OperationFarmers + (h?.CountAt(k) ?? p.Demand.ReservedHerders);
+                    int workers = fixedWorkers + (int)Math.Max(0, Math.Ceiling(current / Math.Max(1e-12, currentLife) - fixedWorkers - 1e-9));
+                    double animal = h == null ? p.Demand.ManagedFood.AnimalFood : h.CurrentAnimalFood[k] + h.SlaughterFood[k];
+                    var expansion = p.Expansion[k] ?? (p.Expansion[k] = ExpansionValuation.SharedSchedule(world, camp, p.Demand, animal, h?.FutureAnnualFood[k], p.Ledger));
+                    expansion.Purchase(currentPrice, futurePrice, Math.Max(0, residentBudget - workers) * years, out double expansionYears, out double expansionValue);
+                    double value = p.Value + (h?.TotalValue[k] ?? 0);
+                    rows.Add(new CandidateRow { Operation = p.Operation, Farmers = p.Demand.OperationFarmers, Herders = h?.CountAt(k) ?? p.Demand.ReservedHerders,
+                        Target = h?.Target(h.CountAt(k)) ?? 0, Workers = workers, Feasible = workers <= residentBudget,
+                        CropValue = p.Value, HerdCurrentValue = h?.CurrentValue[k] ?? 0, HerdFutureValue = h?.FutureValue[k] ?? 0, HerdResidualValue = h?.ResidualValue[k] ?? 0,
+                        CurrentWork = current, FutureWork = future, HerdManagementYears = h?.ManagementYears[k] ?? 0, HerdSavedHarvestYears = h?.SavedHarvestYears[k] ?? 0,
+                        HerdReplacementYears = h?.ReplacementYears[k] ?? 0, HerdCraftYears = h?.CraftYears[k] ?? 0, ExpansionYears = expansionYears, ExpansionValue = expansionValue,
+                        Net = value - currentPrice * current - futurePrice * future + expansionValue,
+                        HarvestProductivity = p.Demand.HarvestProductivity, FutureHarvestProductivity = p.Demand.FutureHarvestProductivity });
+                }
+            }
+            return rows;
+        }
         // Current spare work can have zero price without making its committed
         // future work free. The full craft planner runs only for the selected
         // portfolio, not for each herder or a population Cartesian product.
         internal Choice Select(double currentPrice, double futurePrice, int residentBudget)
         {
             if (ResolutionMetrics.CaptureDetailedCounters) Interlocked.Increment(ref TurnDiagnostics.For(world).SharedSelections);
+            if (CaptureLast) { Last = this; LastCurrentPrice = currentPrice; LastFuturePrice = futurePrice; LastBudget = residentBudget; }
             currentPrice = double.IsNaN(currentPrice) ? 0 : Math.Max(0, currentPrice);
             futurePrice = double.IsNaN(futurePrice) ? 0 : Math.Max(0, futurePrice);
             Choice best = null; Portfolio selected = null; SharedExpansionSchedule selectedExpansion = null; double bestNet = double.NegativeInfinity;

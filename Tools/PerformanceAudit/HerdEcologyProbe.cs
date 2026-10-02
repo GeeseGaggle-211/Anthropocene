@@ -14,6 +14,8 @@ internal static class HerdEcologyProbe
         if (args[0] == "scale") { Scale(); return; }
         if (args[0] == "sites") { Sites(); return; }
         if (args[0] == "moisture-sites") { Sites(true); return; }
+        if (args[0] == "grassland-portfolio") { GrasslandPortfolio(args[1]); return; }
+        if (args[0] == "grassland-trajectory") { GrasslandTrajectory(args[1]); return; }
         var w = SaveCodec.Load(File.ReadAllBytes(args[1]));
         if (args[0] == "advance")
         {
@@ -130,6 +132,112 @@ internal static class HerdEcologyProbe
                 expansionFarmers = plan.Labor.ExpansionFarmers, milkAtSelected = TurnResolver.ForecastManagedAnimalFood(w, c, herders, cfg.GenerationIntervals, 20).AnimalFood / 20, constrainedFloor = h.MinimumHerders,
                 selectedSavedHarvestYears = selectedSavings }));
         }
+    }
+
+    // The controlled moisture-audit site with the shared allocation on: the
+    // physical crop/herd anchors, the selected plan, and every candidate's
+    // objective components at the selection prices (Docs/SharedAllocationValidation.md).
+    private static WorldState Site(float soil, float regional, bool river, double q, int startingAnimals, bool shared)
+    {
+        var cfg = SimulationConfig.Small(1); cfg.Width = 24; cfg.Height = 16; cfg.HerdLabourEnabled = true; cfg.QoLMortalityEnabled = true; cfg.QoLMortalityElasticity = 1; cfg.FissionEnabled = true;
+        cfg.SharedCropHerdAllocationEnabled = shared;
+        var w = new WorldState { Config = cfg, Seed = 1, Tiles = new Tile[384], Generation = new GenerationReport { GeneratorVersion = WorldState.GeneratorVersion } };
+        var c = new Camp { Id = w.NextId++, Tile = 100, Population = 404, PlantFood = 38487.1265, QoL = .8, ClothPerCapita = .5, HousingPerCapita = .6, RudimentaryExpectation = 1, IsVillage = q >= CultivationEconomy.VillageIntensity };
+        w.Camps.Add(c); Ownership.Bind(w); c.Technology = Technology.AnimalHusbandry; c.Technologies[(int)Technology.AnimalHusbandry] = true; c.Technologies[(int)Technology.Cultivation] = true;
+        c.People.Progression.Era = Era.Neolithic; foreach (string tech in NeolithicTech.FirstTier) c.People.NeolithicTechnologies.Add(tech);
+        c.Inventory.HandTools = 1000; c.Inventory.HerdingTools = 10; c.Inventory.Stone = 5000; c.Inventory.Wood = 5000;
+        var footprint = w.Map.Radius(c.Tile, 1).ToArray();
+        foreach (int id in Enumerable.Range(0, w.Tiles.Length))
+        {
+            var t = new Tile { Id = id, ElevationLevel = 1, Relief = Relief.Lowland, RiverEdges = river ? new[] { 1 } : null, FreshwaterSource = FreshwaterSource.RainPool };
+            t.Environment = Vegetation.Classify(25, regional, cfg);
+            for (int season = 0; season < 4; season++) t.Seasons[season] = new SeasonData { Temperature = 25, RegionalMoisture = regional, Moisture = soil,
+                MaxFreshwater = 25, FoodRecoveryPerDay = (float)EcologyMath.DailyRate(cfg.LandFoodRegeneration * (.2 + soil), cfg.BaseDays), WaterRecoveryPerDay = (float)EcologyMath.DailyRate(cfg.WaterRecovery, cfg.BaseDays) };
+            t.NaturalVegetationPotential = t.CurrentVegetation = Vegetation.Potential(t, cfg);
+            FoodEcology.ConfigurePotential(t, cfg, true); t.Freshwater = t.Seasons[0].MaxFreshwater * .9;
+            if (footprint.Contains(id) && q > 0) { t.CultivationOperator = c.Id; t.CultivationCapital = Math.Pow(q / cfg.ReferenceIntensity, 2); t.CultivationOperatingFraction = 1; }
+            t.Food = .9 * new EcologyCapacity(w, t, new EcologyView(t), 0).Food;
+            w.Tiles[id] = t;
+        }
+        w.Herds.Add(new Herd { Id = w.NextId++, Tile = c.Tile, DomesticCamp = c.Id, OwnerSociety = c.SocietyId, Animals = startingAnimals, Species = "goat", Capacity = 1 });
+        return w;
+    }
+    // Repeatable food per year of the radius-one footprint at field intensity q:
+    // an emptied food pool refilled for one turn at constant capital (the
+    // planner's own future-land quantity).
+    private static double RepeatableFieldFood(WorldState w, Camp c, double q)
+    {
+        var cfg = w.Config; double years = cfg.TurnDays / cfg.DaysPerYear, total = 0;
+        foreach (int id in CultivationEconomy.Footprint(w, c))
+        {
+            var view = LazyEcology.ProjectEcology(w, id, w.Days); double e = Math.Pow(q / cfg.ReferenceIntensity, 2);
+            view.Food = 0; view.CultivationCapital = e;
+            total += FoodHorizonForecast.Tile(w, id, w.Days, cfg.TurnDays, null, e, e, 1, false, view).ClosingFood;
+        }
+        return total / years;
+    }
+    private static void GrasslandPortfolio(string output)
+    {
+        var rows = new System.Collections.Generic.List<object>();
+        var cases = new[] { ("grassland", .22f, .22f, false), ("fertile tropical", .75f, .75f, false) };
+        foreach (var site in cases)
+        foreach (double q in site.Item1 == "grassland" ? new[] { 0.0, .4 } : new[] { .4 })
+        foreach (int animals in site.Item1 == "grassland" ? new[] { 22, 200 } : new[] { 22 })
+        foreach (bool shared in new[] { false, true })
+        {
+            var w = Site(site.Item2, site.Item3, site.Item4, q, animals, shared); var c = w.Camps[0]; var cfg = w.Config;
+            double years = cfg.TurnDays / cfg.DaysPerYear;
+            var e = EconomicIntent.From(c); e.ManagedBreedingIntensity = .55;
+            var d = CampProductionDemand.Build(w, c, e);
+            double fullFood = TurnResolver.ForecastManagedAnimalFood(w, c, 1000, cfg.GenerationIntervals, years).AnimalFood / years / animals;
+            SharedAllocation.CaptureLast = true; SharedAllocation.Last = null;
+            var plan = EconomicPlanner.Plan(w, c, e, EconomicPlanner.ConfiguredRule(cfg), out double price);
+            SharedAllocation.CaptureLast = false;
+            var last = SharedAllocation.Last;
+            int Role(string role) => plan.Assignments.Where(a => a.Role == role).Sum(a => a.Population);
+            rows.Add(new {
+                site = site.Item1, soilMoisture = site.Item2, q, animals, shared,
+                physical = new {
+                    foodPerManagedAnimalYear = fullFood,
+                    primitiveFoodPerHerderYear = cfg.AnimalsPerHerder * fullFood,
+                    stoneToolFoodPerHerderYear = cfg.Neolithic.StoneHerdingToolAnimalsPerHerder * fullFood,
+                    gatherFoodPerWorkerYear = cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays,
+                    harvestProductivity = d.HarvestProductivity,
+                    footprintFields = CultivationEconomy.Footprint(w, c).Length,
+                    repeatableFieldFoodPerYear = RepeatableFieldFood(w, c, q),
+                    repeatableUncultivatedFoodPerYear = RepeatableFieldFood(w, c, 0),
+                },
+                selected = new { herders = Role(WorkforceRoles.Herder), farmers = Role(WorkforceRoles.Farmer), gatherers = Role(WorkforceRoles.Gatherer),
+                    expansionFarmers = plan.Labor?.ExpansionFarmers ?? 0, herdTarget = plan.HerdTargetSet ? plan.HerdTarget : -1, breeding = plan.ManagedBreedingIntensity, laborPrice = price },
+                selectionPrices = last == null ? null : new { current = SharedAllocation.LastCurrentPrice, future = SharedAllocation.LastFuturePrice, budget = SharedAllocation.LastBudget },
+                candidates = last?.Candidates(SharedAllocation.LastCurrentPrice, SharedAllocation.LastFuturePrice, SharedAllocation.LastBudget)
+            });
+        }
+        File.WriteAllText(output, JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+    }
+
+    // The same site resolved for ten turns per planner: herd, fields, village and people.
+    private static void GrasslandTrajectory(string output)
+    {
+        var rows = new System.Collections.Generic.List<object>();
+        foreach (int animals in new[] { 22, 200 })
+        foreach (bool shared in new[] { false, true })
+        {
+            var w = Site(.22f, .22f, false, 0, animals, shared); var c = w.Camps[0]; c.EconomyAutomationTurns = -1;
+            for (int turn = 0; turn < 10; turn++)
+            {
+                var ai = AiPlanning.Decide(w); new TurnResolver().Resolve(w, ai.Orders, ai.Traces);
+                c = w.Camps.OrderByDescending(x => x.Population).First();
+                var footprint = CultivationEconomy.Footprint(w, c);
+                rows.Add(new { animals, shared, turn = turn + 1, camps = w.Camps.Count, population = w.Camps.Sum(x => x.Population),
+                    managedAnimals = w.Herds.Where(h => h.DomesticCamp >= 0).Sum(h => h.Animals), village = c.IsVillage,
+                    meanFieldQ = footprint.Average(id => CultivationEconomy.Intensity(w.Config, w.Tiles[id].CultivationCapital)),
+                    herders = c.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population),
+                    farmers = c.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Farmer).Sum(a => a.Population),
+                    expansionFarmers = c.EconomicLabor?.ExpansionFarmers ?? 0, herdTarget = c.HerdTargetSet ? c.HerdTarget : -1 });
+            }
+        }
+        File.WriteAllText(output, JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private static void Scale()

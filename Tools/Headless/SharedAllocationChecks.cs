@@ -197,6 +197,40 @@ internal static class SharedAllocationChecks
             exactFixtures++;
         }
         Check(exactFixtures == 5, "all cache exactness fixtures ran");
+        // Future harvest productivity follows each field-operation portfolio's own
+        // future field state (HarvestProductivity's crop/wild rule at the horizon-mean
+        // capital); the current turn keeps the committed productivity the resolver uses.
+        {
+            var w = Fixture(1000, 500, .5); var c = w.Camps[0]; var d = CampProductionDemand.Build(w, c, EconomicIntent.From(c));
+            var rows = new SharedAllocation(w, c, d, .55).Candidates(0, .05, c.Population);
+            var byOperation = rows.GroupBy(r => r.Operation).OrderBy(g => g.Key).Select(g => g.First()).ToArray();
+            Check(byOperation.Length > 2 && d.HarvestProductivity > 1.0001, "fixture has field-operation choices and a crop harvest bonus");
+            Check(rows.All(r => Same(r.HarvestProductivity, d.HarvestProductivity)), "current harvest productivity stays the committed one");
+            Near(byOperation.Last().FutureHarvestProductivity, d.HarvestProductivity, "the fully maintained portfolio keeps the committed productivity");
+            for (int i = 1; i < byOperation.Length; i++)
+                Check(byOperation[i].FutureHarvestProductivity >= byOperation[i - 1].FutureHarvestProductivity - 1e-12, "less field operation never raises future harvest productivity");
+            Check(byOperation[0].Operation == 0 && byOperation[0].FutureHarvestProductivity < d.HarvestProductivity - 1e-6, "abandoned fields lose part of the crop harvest bonus");
+            // Hand computation for the abandoned portfolio: every footprint field holds the same capital,
+            // so the stock weights cancel and one tile's horizon-mean crop share sets the rate.
+            var cfg = w.Config; var n = cfg.Neolithic; int tileId = CultivationEconomy.Footprint(w, c)[0]; var tile = w.Tiles[tileId];
+            double horizon = Math.Max(cfg.TurnDays / cfg.DaysPerYear, n.PlanningHorizonYears), rate = Math.Log(2) / n.DecayHalfLifeYears, start = LazyEcology.ProjectEcology(w, tileId, w.Days).CultivationCapital;
+            var view = LazyEcology.ProjectEcology(w, tileId, w.Days); view.Food = 0; view.CultivationCapital = start * (1 - Math.Exp(-rate * horizon)) / (rate * horizon);
+            var capacity = new EcologyCapacity(w, tile, view, (int)Math.Floor(w.Days / cfg.BaseDays) % 4);
+            double share = Math.Max(0, capacity.Food - capacity.WildFood) / capacity.Food;
+            Near(byOperation[0].FutureHarvestProductivity, 1 / (1 - share + share / cfg.FarmerProductivity), "abandoned-field productivity matches the horizon-mean crop share");
+        }
+        {
+            // A less productive future field makes each displaced harvest worth more labour,
+            // so the herd's future saving can only rise; its current saving is unchanged.
+            var w = Fixture(400, 200, .5); var c = w.Camps[0]; c.PlantFood = 0; var d = CampProductionDemand.Build(w, c, EconomicIntent.From(c));
+            var herdPortfolio = new SharedAllocation(w, c, d, .55); var choice = herdPortfolio.Select(0, .05, c.Population);
+            var reference = choice.Demand.AllocationCopy(); reference.FutureHarvestProductivity = reference.HarvestProductivity;
+            var lower = reference.AllocationCopy(); lower.FutureHarvestProductivity = 1;
+            var a = HerdLabour.Build(w, c, reference, .55); var b = HerdLabour.Build(w, c, lower, .55);
+            Check(a != null && b != null && a.Steps == b.Steps, "herd ladders exist for the productivity comparison");
+            Check(Enumerable.Range(0, a.Steps + 1).All(k => b.SavedHarvestYears[k] >= a.SavedHarvestYears[k] - 1e-9), "lower future harvest productivity never lowers the herd's labour saving");
+            Check(Enumerable.Range(0, a.Steps + 1).All(k => Same(a.CurrentWorkerYears[k], b.CurrentWorkerYears[k]) && Same(a.CurrentValue[k], b.CurrentValue[k])), "the current-turn herd terms keep the committed productivity");
+        }
         foreach (int population in new[] { 100, 1000, 10000 })
         {
             var w = Fixture(population, population / 2); var c = w.Camps[0]; var timer = new Stopwatch();

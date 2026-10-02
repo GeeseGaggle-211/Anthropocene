@@ -364,6 +364,10 @@ namespace Anthropocene.Simulation
             double harvestRate = cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays;
             if (d.Established) harvestRate *= Math.Max(1, d.HarvestProductivity);
             ladder.FieldAlternativeRate = harvestRate;
+            // Future harvesting uses the planned field state's productivity (shared
+            // planner); the current turn keeps the committed productivity.
+            double futureHarvestRate = shared && d.Established
+                ? cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays * Math.Max(1, d.FutureHarvestProductivity) : harvestRate;
             TurnResolver.FoodBucketTargets(w, c, intervals, years, d.Meals, c.Food,
                 out _, out _, out double reserveFill, out double growthFood);
             double vFood = ExpansionValuation.FoodValue(cfg, c);
@@ -488,16 +492,16 @@ namespace Anthropocene.Simulation
                 double unpaidLimit = futureMealGap + futureFabric + futureHousing;
                 double gatherRate = cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays;
                 double FoodIntegral(double limit) => futureYield > 0 ? futureYield * AnimalYears(futureTarget, growth, Math.Min(futureCapacity, limit / futureYield), r, future) : 0;
-                double cheapHarvest = d.Established ? Math.Min(baselineHarvest, shared ? d.FutureUpkeep * harvestRate : d.TerrestrialAfterHerds / years) : 0;
+                double cheapHarvest = d.Established ? Math.Min(baselineHarvest, shared ? d.FutureUpkeep * futureHarvestRate : d.TerrestrialAfterHerds / years) : 0;
                 double expensiveHarvest = baselineHarvest - cheapHarvest;
                 // Existing maintenance remains a minimum in the actual planner.
                 // Milk frees crop-harvest work only above that floor.
-                double cheapSaving = Math.Max(0, cheapHarvest - (shared ? d.FutureUpkeep : d.Upkeep) * harvestRate);
+                double cheapSaving = Math.Max(0, cheapHarvest - (shared ? d.FutureUpkeep : d.Upkeep) * futureHarvestRate);
                 double usedLimit = unpaidLimit + expensiveHarvest + cheapSaving;
                 double displacedHarvest = FoodIntegral(usedLimit) - FoodIntegral(unpaidLimit);
                 double expensiveSaved = FoodIntegral(unpaidLimit + expensiveHarvest) - FoodIntegral(unpaidLimit);
-                double futureSaved = gatherRate > 0 && harvestRate > 0 ? displacedHarvest / harvestRate
-                    + expensiveSaved * (1 / gatherRate - 1 / harvestRate) : 0;
+                double futureSaved = gatherRate > 0 && futureHarvestRate > 0 ? displacedHarvest / futureHarvestRate
+                    + expensiveSaved * (1 / gatherRate - 1 / futureHarvestRate) : 0;
                 double craftYears = Continuation(futureTarget, growth, futureCapacity, futureYield, 0, futureSizes,
                     new[] { 0.0, Math.Max(0, fabric?.LabourPerUnit ?? 0), Math.Max(0, housing?.LabourPerUnit ?? 0), 0.0, 0.0 }, r, future);
                 double replacementWorkerYears = replacement > 0 ? replacement * toolLabour * DiscountedYears(r, future) / Math.Max(1e-12, future) : 0;

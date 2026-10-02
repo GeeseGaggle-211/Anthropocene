@@ -300,6 +300,10 @@ namespace Anthropocene.Simulation
         public int LadderSteps;
         public double LadderWorkerYearsUntruncated;
         public double Meals, OperatingReserve, SparePlant, PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope, HousingMultiplier, HarvestProductivity;
+        // Harvest productivity of the field state the future work terms assume.
+        // Defaults to the committed productivity; the shared allocation sets it
+        // per field-operation portfolio.
+        internal double FutureHarvestProductivity;
         // The same envelopes measured after this turn's meals only (not the operating reserve):
         // they fund just the clothing-need feedstock, NeolithicProduction.ClothingNeedFeedstock.
         public double SparePlantClothing, PlantEnvelopeClothing, AnimalEnvelopeClothing, FoodRoomEnvelopeClothing, ClothingNeedUnits;
@@ -363,6 +367,7 @@ namespace Anthropocene.Simulation
             d.Upkeep = d.CultivationEnabled ? CultivationEconomy.MaintenanceFarmersForPlanning(w, c, years) : 0;
             d.Established = d.CultivationEnabled && operated.Any(id => LazyEcology.ProjectEcology(w, id, w.Days).CultivationCapital > 0);
             d.HarvestProductivity = d.CultivationEnabled ? CultivationEconomy.HarvestProductivity(w, c, footprint) : 1;
+            d.FutureHarvestProductivity = d.HarvestProductivity;
             d.Eligible = w.Map.Radius(c.Tile, cfg.GatherRadius).Where(id => PassiveGathering.Eligible(w, c, id)).OrderBy(id => id).ToArray();
             // Ask the same finite-stock kernel that resolves actual claims for
             // the no-contention supply envelope. Aquatic food keeps its own
@@ -651,7 +656,8 @@ namespace Anthropocene.Simulation
                     * (c.People.HasTech(EconomicIntents.RequiredTechnology(MaterialEconomy.Specialist(MaterialId.Wood))) ? 1 : n.GeneralistTaskEfficiency) * cfg.DaysPerYear / cfg.BaseDays;
                 toolLabour = rate > 0 && extraction > 0 ? 1 / rate + tool.Recipe.Wood / extraction : double.PositiveInfinity;
             }
-            double baseHarvest = Math.Min(human, d.Meals / years) / Math.Max(1e-12, d.HarvestProductivity * cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays);
+            // The baseline is the portfolio's future harvest, at its future field productivity.
+            double baseHarvest = Math.Min(human, d.Meals / years) / Math.Max(1e-12, d.FutureHarvestProductivity * cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays);
             foreach (var step in steps)
             {
                 if (!(filled < total) || !(step.WorkerYears > 0)) break;
