@@ -565,23 +565,51 @@ itself, so this is an architectural property of replanning every camp from
 scratch each turn, not of the shared allocation alone. The shared allocation
 now adds about 0.3–0.5 ms per plan on top.
 
-**Options, by expected effect** (none implemented; each needs a design note
-and, if outcome-changing, a census):
+**Measured opportunity for the options** (C1, 50 turns, 8,896 consecutive
+plan pairs of the same camp, from a scratch per-plan probe whose run
+reproduced the final fingerprint):
 
-1. **Make plan cost follow change, not camp count.** Reuse last turn's intent
-   when a camp's planning inputs are unchanged within stated tolerances
-   (field band, herd band, population band, technology, stocks relative to
-   need), with a forced refresh every N turns. `EconomicIntent` already
-   carries an N-turn automation policy, and `PlanningDraft` already key-checks
-   reuse. Settled villages near equilibrium would skip most plans. This is
-   the only option that changes the scaling law.
-2. **Warm-start the fulfilment search** from last turn's path position, to cut
-   the 2–16 full craft evaluations per plan.
-3. **Cut allocation** (about 1.5 MiB per plan; 15 GiB per turn at 10,000
-   camps) by pooling demand copies, ledgers and recipe arrays, to reduce GC
-   pressure on large boards.
-4. **Improve parallel efficiency:** preparation reaches only 2.1× on 4
-   workers, and execution is mostly serial.
+- **Reusing an unchanged plan rarely applies at this time step.** Only 4.2%
+  of replans reproduce last turn's intent exactly. With 20-year turns, the
+  median camp changes population by 6.0% per turn (P75 18.7%, P90 23.7%), and
+  its largest role-share change has a median of 2.4 points (P75 5.2). Within
+  2% tolerances on both, 21.7% of plans could be reused; within 5%, 34%
+  (villages 34%, mobile camps 17%), at the price of up to 5-point workforce
+  drift. Nearly every camp is active state every turn, so reuse would not
+  change the scaling law.
+- **Warm-starting has a small target.** 89.7% of plans reach full
+  fulfilment with exactly 2 full evaluations and cost about 1.46 ms. The 10%
+  that search (6–22 evaluations, 2.3–7.1 ms) are 22% of plan time. The search
+  position barely moves between turns (median change 0), so a warm start
+  could recover part of that 22%: roughly 10–15% of plan time.
+- **Partition size and GC are below this machine's noise.** At 4 workers,
+  partition sizes 8 and 64, with workstation or server GC (two runs each),
+  give the same final fingerprint. Their preparation times (7.5–11.8 s) are
+  not separable from noise. Peak managed heap at 4 workers is 2.3–3.5 GiB.
+  Earlier single-worker runs peaked at 0.76 GiB.
+
+**Revised options** (none implemented):
+
+1. **Reduce the common plan's constant cost.** This is exact and applies to
+   about 90% of plans: the demand pass, the allocation constructor and two
+   full craft evaluations, the second being the spare-work re-evaluation.
+   Profile-led.
+2. **Warm-start the fulfilment search** for the roughly 10% of plans that
+   search. Outcomes change within the search tolerance (1/64).
+3. **Cost-aware dynamic batching and allocation pooling.** These are exact;
+   measure them on a quiet machine with CPU-time counters. They matter more
+   if trade introduces fixed-round price iteration.
+4. **Tolerance-based plan reuse,** only if a 2–5% workforce lag is acceptable
+   for its 20–35% skip rate.
+
+**Trade and parallelism.** Trade need not serialize planning. Plans already
+read the committed prior world, so a lagged market (plans read last turn's
+committed prices and offers; trades clear in one canonical resolution pass)
+keeps planning embarrassingly parallel. A fixed-round price iteration keeps
+determinism and parallel rounds but multiplies planning cost by the round
+count. Sequential bilateral negotiation is the design to avoid. Trade
+partners come only from known settlements, so the dependency graph is sparse
+and local.
 
 ```bash
 python3 Tools/PerformanceAudit/Run-SharedAllocationAudit.py --phase=build --output=TestResults/PlannerPerf
