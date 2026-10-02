@@ -255,7 +255,7 @@ namespace Anthropocene.Simulation
                 new CraftRecipe { Good = CraftGood.Housing, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction, Rate = 2 * n.BuilderHousingOutputPerBaseDays, HousingMaterial = 1, Equipment = true, AgricultureOnly = true },
                 new CraftRecipe { Good = CraftGood.Tools, Specialist = WorkforceRoles.Toolmaker, Track = NeolithicTech.Toolmaking, Rate = n.ToolsOutput, Stone = n.StonePerTool, Wood = n.WoodPerTool, SpecialistOnly = true },
                 new CraftRecipe { Good = CraftGood.AnimalFabric, Specialist = WorkforceRoles.Weaver, Track = NeolithicTech.Weaving, Rate = n.WeaverFabricOutputPerBaseDays, AnimalFood = 1, Equipment = true, HusbandryOnly = true },
-                new CraftRecipe { Good = CraftGood.LightHousing, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction, Rate = n.BuilderHousingOutputPerBaseDays, AnimalFabric = 1, Equipment = true, HusbandryOnly = true },
+                new CraftRecipe { Good = CraftGood.LightHousing, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction, Rate = n.LightHousingBuilderOutputPerBaseDays, AnimalFabric = n.AnimalFabricPerLightHousing, Equipment = true, HusbandryOnly = true },
                 new CraftRecipe { Good = CraftGood.HerdingTools, Specialist = WorkforceRoles.Carpenter, Track = NeolithicTech.Carpentry, Rate = n.FarmToolsOutput, Wood = 1, Stone = 1, Equipment = true, HusbandryOnly = true },
                 new CraftRecipe { Good = CraftGood.HousingMaterial, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction, Rate = 2 * n.BuilderHousingOutputPerBaseDays, ConstructionMaterial = n.HousingMaterialUnitsPerHousing, AgricultureOnly = true }
             };
@@ -495,7 +495,7 @@ namespace Anthropocene.Simulation
                 bool specialist = c.People.HasTech(recipe.Track);
                 if (role != WorkforceRoles.Craftsperson && (!specialist || role != recipe.Specialist)) continue;
                 if (role == WorkforceRoles.Craftsperson && recipe.SpecialistOnly) continue;
-                double rate = recipe.Rate * (role == recipe.Specialist && specialist ? 1 : n.GeneralistTaskEfficiency);
+                double rate = SpecialistProductivity.CraftRate(w, c, recipe, role);
                 double wanted = Math.Max(0, BaseDemand(recipe.Good) - probePlanned[recipe.Good]);
                 double amount = Math.Min(wanted, availableLabor * rate);
                 if (recipe.Stone > 0) amount = Math.Min(amount, probeRoom[MaterialId.Stone] / recipe.Stone);
@@ -531,7 +531,7 @@ namespace Anthropocene.Simulation
                 bool specialist = c.People.HasTech(recipe.Track);
                 if (role != WorkforceRoles.Craftsperson && (!specialist || role != recipe.Specialist)) continue;
                 if (role == WorkforceRoles.Craftsperson && recipe.SpecialistOnly) continue;
-                double rate = recipe.Rate * (role == recipe.Specialist && specialist ? 1 : n.GeneralistTaskEfficiency);
+                double rate = SpecialistProductivity.CraftRate(w, c, recipe, role);
                 double wanted = Math.Max(0, BaseDemand(recipe.Good) - planned[recipe.Good]);
                 double amount = Math.Min(wanted, availableLabor * rate);
                 if (recipe.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / recipe.Stone);
@@ -598,8 +598,11 @@ namespace Anthropocene.Simulation
                 (regularRecipe.Wood <= 0 || toolWoodRoom > 1e-12);
             // Feasible Regular Tools carry the whole deficit; otherwise Hand Tools do.
             if (regularFeasible) return (0, deficit / ToolCoverageBudget.OutputsPerTool);
+            var handRecipe = Recipes(w.Config).Single(r => r.Good == CraftGood.HandTools);
             double specialistSupply = c.People.HasTech(NeolithicTech.Toolmaking)
-                ? CultivationEconomy.Workers(c, WorkforceRoles.Toolmaker) * referenceIntervals * n.HandToolsOutput : 0;
+                ? CultivationEconomy.Workers(c, WorkforceRoles.Toolmaker) * referenceIntervals *
+                    SpecialistProductivity.CraftRate(w, c, handRecipe, WorkforceRoles.Toolmaker)
+                : 0;
             double specialistOutput = Math.Min(deficit, specialistSupply);
             double generalistRate = n.HandToolsOutput * n.GeneralistTaskEfficiency;
             double competingRate = generalistEffort <= 0 ? 0 : generalistUseful / generalistEffort;
@@ -754,7 +757,7 @@ namespace Anthropocene.Simulation
                     stock.Units = ProjectFixedHousing(w, stock, endDays); stock.LastUpdatedDays = endDays;
                 }
             }
-            c.Inventory.LightHousingUnits = Math.Max(0, c.Inventory.LightHousingUnits) * Math.Pow(1 - n.HousingDecayPerTurn, Math.Max(0, years) / n.ReferenceTurnYears);
+            c.Inventory.LightHousingUnits = Math.Max(0, c.Inventory.LightHousingUnits) * Math.Pow(1 - n.LightHousingDecayPerReferenceTurn, Math.Max(0, years) / n.ReferenceTurnYears);
             double after = HousingCapacity(w, c, endDays).Total;
             // Demand ledger in fixed-housing-unit equivalents of the unsheltered (and decayed) people.
             c.HousingDemand = Math.Max(0, (residents < 0 ? c.Population : residents) - after) / n.HousingPeoplePerUnit;
@@ -767,7 +770,7 @@ namespace Anthropocene.Simulation
             if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c) || recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) return 0;
             bool specialist = role == recipe.Specialist && c.People.HasTech(recipe.Track);
             if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) return 0;
-            double rate = recipe.Rate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
+            double rate = SpecialistProductivity.CraftRate(w, c, recipe, role);
             if (rate <= 0) return 0;
             coverage = coverage ?? new ToolCoverageBudget(w, c, intervals, equipmentIntervals);
             // Direct callers retain the public production entry point.  Give a

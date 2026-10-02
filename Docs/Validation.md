@@ -12,6 +12,12 @@ The shipped biomass/access/field-effort defaults and three Standard/80 route
 population, herd, and specialty distributions are in
 [AgricultureHusbandryPlaytests.md](AgricultureHusbandryPlaytests.md).
 
+## Demographic structure — 2 October 2026
+
+The QoL correction, independent Light Housing parameters and bounded specialist-scale helper are covered by 678 QoL-mortality assertions and 22 focused demographic-structure assertions. The latter verify independent fixed/tent decay, configurable Animal Fabric and construction inputs, Craftsperson and Gatherer fallbacks, matching-task-only specialist qualification, monotonic saturation, material-extraction parity, forecast/resolver agreement, and missing-field migration. Nonzero specialist scaling is exercised explicitly; the rejected calibration remains disabled in new-world defaults.
+
+The complete fixed headless suite passed with zero benchmark seeds and three lanes, including scalar/2/4-worker and reordered replay, 627 fission, 659 pastoral craft, 1,687 herd-labour, 747 shared-allocation, 86,746 value-fulfilment and 192 production-order assertions. The controlled 35-run, 50-turn sweep and its checked-in CSV/JSON/SVG artifacts are documented in [DemographicStructureCalibration.md](DemographicStructureCalibration.md). The sweep rejects the overall calibration even though the mechanisms and compatibility checks pass: pastoralism is sustainable, but the controlled agricultural settlement becomes goods/QoL limited before fission and does not acquire the intended population advantage. No ecological or yield constants were changed.
+
 ## Fission (WP10a) — 30 September 2026
 
 `FissionChecks.cs` (490 assertions; 368 in WP10a) covers the policy levers (exact tables and integer daughter

@@ -432,7 +432,8 @@ namespace Anthropocene.Simulation
                 bool specialist = c.People.HasTech(r.Track);
                 double priority = NeolithicProduction.Priority(preview, r.Good);
                 return new ProductionClaim { Good = r.Good, Recipe = r, Quantity = goals[r.Good], Priority = priority, Value = priority,
-                    Role = specialist ? r.Specialist : WorkforceRoles.Craftsperson, Rate = r.Rate * (specialist ? 1 : n.GeneralistTaskEfficiency) };
+                    Role = specialist ? r.Specialist : WorkforceRoles.Craftsperson,
+                    Rate = SpecialistProductivity.CraftRate(w, c, r, specialist ? r.Specialist : WorkforceRoles.Craftsperson) };
             }).ToArray();
             int consumers = d.Consumers = c.Population + w.Hunters.Where(h => h.SourceCamp == c.Id && Simulation.Supply.InRange(w, c, h.Tile)).Sum(h => h.Population);
             d.Meals = consumers * cfg.Consumption * intervals;
@@ -493,18 +494,24 @@ namespace Anthropocene.Simulation
             double s = NeolithicProduction.SocialCohesion(w, c, c.Population);
             double e = c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
                 : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
-            double k = -Math.Log(1 - n.HousingDecayPerTurn) / n.ReferenceTurnYears;
-            double life = 1 / (k + n.DiscountRatePerYear);
+            double HousingLife(CraftGood good)
+            {
+                double decay = good == CraftGood.LightHousing ? n.LightHousingDecayPerReferenceTurn : n.HousingDecayPerTurn;
+                double k = -Math.Log(1 - decay) / n.ReferenceTurnYears;
+                return 1 / (k + n.DiscountRatePerYear);
+            }
             double shelterPeople = NeolithicProduction.HousingCapacity(w, d.Preview, w.Days + years * cfg.DaysPerYear).Total;
             double clothingV = n.RudimentaryWeightClothing * e * b * s * (n.ReferenceTurnYears / n.FabricConsumptionPerPersonTurn);
-            double housingValuePerPerson = n.RudimentaryWeightHousing * e * b * s * life;   // a unit shelters HousingPeoplePerUnit (fixed) or LightHousingPeoplePerUnit (tent) people
             double gather = cfg.GatherPerPerson * perYear;
-            double Rate(CraftRecipe r) => r.Rate * (c.People.HasTech(r.Track) ? 1 : n.GeneralistTaskEfficiency);
+            double Rate(CraftRecipe r) => SpecialistProductivity.CraftRate(w, c, r,
+                c.People.HasTech(r.Track) ? r.Specialist : WorkforceRoles.Craftsperson);
             double Extraction(MaterialId m, double perUnit)
             {
                 if (perUnit <= 0 || n.SpecialistMaterialExtractionRate <= 0) return 0;
                 bool specialist = c.People.HasTech(EconomicIntents.RequiredTechnology(MaterialEconomy.Specialist(m)));
-                return perUnit / (n.SpecialistMaterialExtractionRate * (specialist ? 1 : n.GeneralistTaskEfficiency) * perYear);
+                double rate = SpecialistProductivity.ExtractionRate(w, c, m,
+                    specialist ? MaterialEconomy.Specialist(m) : WorkforceRoles.Gatherer);
+                return perUnit / (rate * perYear);
             }
             // Worker-years per unit: craft time (divided by the tool multiplier the
             // staffing pass uses for shelter), input extraction, plant feedstock
@@ -589,6 +596,7 @@ namespace Anthropocene.Simulation
                 claim.Stock = stock;
                 claim.Need = clothing ? clothingNeed : stock + claim.Quantity;
                 claim.LabourPerUnit = Labour(claim.Recipe);
+                double housingValuePerPerson = n.RudimentaryWeightHousing * e * b * s * HousingLife(claim.Good);
                 claim.FirstUnitValue = (clothing ? clothingV : peoplePerUnit * housingValuePerPerson) * multiplier;
                 if (value) claim.Value = claim.FirstUnitValue;
             }
@@ -652,8 +660,9 @@ namespace Anthropocene.Simulation
             if (!(toolLabour > 0) && tool != null)
             {
                 double rate = tool.Rate * cfg.DaysPerYear / cfg.BaseDays;
-                double extraction = n.SpecialistMaterialExtractionRate
-                    * (c.People.HasTech(EconomicIntents.RequiredTechnology(MaterialEconomy.Specialist(MaterialId.Wood))) ? 1 : n.GeneralistTaskEfficiency) * cfg.DaysPerYear / cfg.BaseDays;
+                bool extractionSpecialist = c.People.HasTech(EconomicIntents.RequiredTechnology(MaterialEconomy.Specialist(MaterialId.Wood)));
+                double extraction = SpecialistProductivity.ExtractionRate(w, c, MaterialId.Wood,
+                    extractionSpecialist ? MaterialEconomy.Specialist(MaterialId.Wood) : WorkforceRoles.Gatherer) * cfg.DaysPerYear / cfg.BaseDays;
                 toolLabour = rate > 0 && extraction > 0 ? 1 / rate + tool.Recipe.Wood / extraction : double.PositiveInfinity;
             }
             // The baseline is the portfolio's future harvest, at its future field productivity.

@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560">
+<rect width="100%" height="100%" fill="white"/>
+<text x="480.0" y="28" text-anchor="middle" font-family="sans-serif" font-size="20">Median quality of life</text>
+<line x1="82" y1="485.00" x2="935" y2="485.00" stroke="#dddddd"/>
+<text x="72" y="489.00" text-anchor="end" font-family="sans-serif" font-size="12">0</text>
+<line x1="82" y1="397.60" x2="935" y2="397.60" stroke="#dddddd"/>
+<text x="72" y="401.60" text-anchor="end" font-family="sans-serif" font-size="12">0.212</text>
+<line x1="82" y1="310.20" x2="935" y2="310.20" stroke="#dddddd"/>
+<text x="72" y="314.20" text-anchor="end" font-family="sans-serif" font-size="12">0.424</text>
+<line x1="82" y1="222.80" x2="935" y2="222.80" stroke="#dddddd"/>
+<text x="72" y="226.80" text-anchor="end" font-family="sans-serif" font-size="12">0.636</text>
+<line x1="82" y1="135.40" x2="935" y2="135.40" stroke="#dddddd"/>
+<text x="72" y="139.40" text-anchor="end" font-family="sans-serif" font-size="12">0.848</text>
+<line x1="82" y1="48.00" x2="935" y2="48.00" stroke="#dddddd"/>
+<text x="72" y="52.00" text-anchor="end" font-family="sans-serif" font-size="12">1.06</text>
+<line x1="82.00" y1="48" x2="82.00" y2="485" stroke="#eeeeee"/>
+<text x="82.00" y="507" text-anchor="middle" font-family="sans-serif" font-size="12">0</text>
+<line x1="252.60" y1="48" x2="252.60" y2="485" stroke="#eeeeee"/>
+<text x="252.60" y="507" text-anchor="middle" font-family="sans-serif" font-size="12">10</text>
+<line x1="423.20" y1="48" x2="423.20" y2="485" stroke="#eeeeee"/>
+<text x="423.20" y="507" text-anchor="middle" font-family="sans-serif" font-size="12">20</text>
+<line x1="593.80" y1="48" x2="593.80" y2="485" stroke="#eeeeee"/>
+<text x="593.80" y="507" text-anchor="middle" font-family="sans-serif" font-size="12">30</text>
+<line x1="764.40" y1="48" x2="764.40" y2="485" stroke="#eeeeee"/>
+<text x="764.40" y="507" text-anchor="middle" font-family="sans-serif" font-size="12">40</text>
+<line x1="935.00" y1="48" x2="935.00" y2="485" stroke="#eeeeee"/>
+<text x="935.00" y="507" text-anchor="middle" font-family="sans-serif" font-size="12">50</text>
+<line x1="82" y1="48" x2="82" y2="485" stroke="black"/>
+<line x1="82" y1="485" x2="935" y2="485" stroke="black"/>
+<text x="480.0" y="542" text-anchor="middle" font-family="sans-serif" font-size="13">turn (20 years)</text>
+<text x="18" y="280.0" text-anchor="middle" transform="rotate(-90 18 280.0)" font-family="sans-serif" font-size="13">QoL</text>
+<polyline points="82.00,80.37 167.30,202.35 252.60,206.58 337.90,126.99 423.20,193.90 508.50,154.86 593.80,207.07 679.10,154.86 764.40,207.07 849.70,154.86 935.00,207.07" fill="none" stroke="#1f77b4" stroke-width="2.5"/>
+<circle cx="82.00" cy="80.37" r="2.6" fill="#1f77b4"/>
+<circle cx="167.30" cy="202.35" r="2.6" fill="#1f77b4"/>
+<circle cx="252.60" cy="206.58" r="2.6" fill="#1f77b4"/>
+<circle cx="337.90" cy="126.99" r="2.6" fill="#1f77b4"/>
+<circle cx="423.20" cy="193.90" r="2.6" fill="#1f77b4"/>
+<circle cx="508.50" cy="154.86" r="2.6" fill="#1f77b4"/>
+<circle cx="593.80" cy="207.07" r="2.6" fill="#1f77b4"/>
+<circle cx="679.10" cy="154.86" r="2.6" fill="#1f77b4"/>
+<circle cx="764.40" cy="207.07" r="2.6" fill="#1f77b4"/>
+<circle cx="849.70" cy="154.86" r="2.6" fill="#1f77b4"/>
+<circle cx="935.00" cy="207.07" r="2.6" fill="#1f77b4"/>
+<polyline points="82.00,144.87 167.30,98.15 252.60,111.48 337.90,129.05 423.20,105.36 508.50,106.80 593.80,115.31 679.10,130.05 764.40,129.04 849.70,130.79 935.00,140.73" fill="none" stroke="#d62728" stroke-width="2.5"/>
+<circle cx="82.00" cy="144.87" r="2.6" fill="#d62728"/>
+<circle cx="167.30" cy="98.15" r="2.6" fill="#d62728"/>
+<circle cx="252.60" cy="111.48" r="2.6" fill="#d62728"/>
+<circle cx="337.90" cy="129.05" r="2.6" fill="#d62728"/>
+<circle cx="423.20" cy="105.36" r="2.6" fill="#d62728"/>
+<circle cx="508.50" cy="106.80" r="2.6" fill="#d62728"/>
+<circle cx="593.80" cy="115.31" r="2.6" fill="#d62728"/>
+<circle cx="679.10" cy="130.05" r="2.6" fill="#d62728"/>
+<circle cx="764.40" cy="129.04" r="2.6" fill="#d62728"/>
+<circle cx="849.70" cy="130.79" r="2.6" fill="#d62728"/>
+<circle cx="935.00" cy="140.73" r="2.6" fill="#d62728"/>
+<polyline points="82.00,80.37 167.30,234.01 252.60,140.17 337.90,224.63 423.20,168.23 508.50,196.08 593.80,175.76 679.10,199.43 764.40,176.35 849.70,200.63 935.00,177.22" fill="none" stroke="#2ca02c" stroke-width="2.5"/>
+<circle cx="82.00" cy="80.37" r="2.6" fill="#2ca02c"/>
+<circle cx="167.30" cy="234.01" r="2.6" fill="#2ca02c"/>
+<circle cx="252.60" cy="140.17" r="2.6" fill="#2ca02c"/>
+<circle cx="337.90" cy="224.63" r="2.6" fill="#2ca02c"/>
+<circle cx="423.20" cy="168.23" r="2.6" fill="#2ca02c"/>
+<circle cx="508.50" cy="196.08" r="2.6" fill="#2ca02c"/>
+<circle cx="593.80" cy="175.76" r="2.6" fill="#2ca02c"/>
+<circle cx="679.10" cy="199.43" r="2.6" fill="#2ca02c"/>
+<circle cx="764.40" cy="176.35" r="2.6" fill="#2ca02c"/>
+<circle cx="849.70" cy="200.63" r="2.6" fill="#2ca02c"/>
+<circle cx="935.00" cy="177.22" r="2.6" fill="#2ca02c"/>
+<polyline points="82.00,144.87 167.30,98.15 252.60,109.36 337.90,107.77 423.20,113.79 508.50,105.21 593.80,116.60 679.10,117.11 764.40,120.37 849.70,130.83 935.00,143.89" fill="none" stroke="#9467bd" stroke-width="2.5"/>
+<circle cx="82.00" cy="144.87" r="2.6" fill="#9467bd"/>
+<circle cx="167.30" cy="98.15" r="2.6" fill="#9467bd"/>
+<circle cx="252.60" cy="109.36" r="2.6" fill="#9467bd"/>
+<circle cx="337.90" cy="107.77" r="2.6" fill="#9467bd"/>
+<circle cx="423.20" cy="113.79" r="2.6" fill="#9467bd"/>
+<circle cx="508.50" cy="105.21" r="2.6" fill="#9467bd"/>
+<circle cx="593.80" cy="116.60" r="2.6" fill="#9467bd"/>
+<circle cx="679.10" cy="117.11" r="2.6" fill="#9467bd"/>
+<circle cx="764.40" cy="120.37" r="2.6" fill="#9467bd"/>
+<circle cx="849.70" cy="130.83" r="2.6" fill="#9467bd"/>
+<circle cx="935.00" cy="143.89" r="2.6" fill="#9467bd"/>
+<polyline points="82.00,80.37 167.30,211.37 252.60,172.18 337.90,195.05 423.20,172.48 508.50,195.36 593.80,172.78 679.10,195.36 764.40,173.69 849.70,197.20 935.00,176.07" fill="none" stroke="#ff7f0e" stroke-width="2.5"/>
+<circle cx="82.00" cy="80.37" r="2.6" fill="#ff7f0e"/>
+<circle cx="167.30" cy="211.37" r="2.6" fill="#ff7f0e"/>
+<circle cx="252.60" cy="172.18" r="2.6" fill="#ff7f0e"/>
+<circle cx="337.90" cy="195.05" r="2.6" fill="#ff7f0e"/>
+<circle cx="423.20" cy="172.48" r="2.6" fill="#ff7f0e"/>
+<circle cx="508.50" cy="195.36" r="2.6" fill="#ff7f0e"/>
+<circle cx="593.80" cy="172.78" r="2.6" fill="#ff7f0e"/>
+<circle cx="679.10" cy="195.36" r="2.6" fill="#ff7f0e"/>
+<circle cx="764.40" cy="173.69" r="2.6" fill="#ff7f0e"/>
+<circle cx="849.70" cy="197.20" r="2.6" fill="#ff7f0e"/>
+<circle cx="935.00" cy="176.07" r="2.6" fill="#ff7f0e"/>
+<polyline points="82.00,144.87 167.30,98.15 252.60,109.64 337.90,98.08 423.20,103.46 508.50,105.25 593.80,106.92 679.10,111.66 764.40,121.68 849.70,129.10 935.00,146.94" fill="none" stroke="#17becf" stroke-width="2.5"/>
+<circle cx="82.00" cy="144.87" r="2.6" fill="#17becf"/>
+<circle cx="167.30" cy="98.15" r="2.6" fill="#17becf"/>
+<circle cx="252.60" cy="109.64" r="2.6" fill="#17becf"/>
+<circle cx="337.90" cy="98.08" r="2.6" fill="#17becf"/>
+<circle cx="423.20" cy="103.46" r="2.6" fill="#17becf"/>
+<circle cx="508.50" cy="105.25" r="2.6" fill="#17becf"/>
+<circle cx="593.80" cy="106.92" r="2.6" fill="#17becf"/>
+<circle cx="679.10" cy="111.66" r="2.6" fill="#17becf"/>
+<circle cx="764.40" cy="121.68" r="2.6" fill="#17becf"/>
+<circle cx="849.70" cy="129.10" r="2.6" fill="#17becf"/>
+<circle cx="935.00" cy="146.94" r="2.6" fill="#17becf"/>
+<line x1="82" y1="512" x2="102" y2="512" stroke="#1f77b4" stroke-width="3"/>
+<text x="107" y="516" font-family="sans-serif" font-size="11">ag_current</text>
+<line x1="367" y1="512" x2="387" y2="512" stroke="#d62728" stroke-width="3"/>
+<text x="392" y="516" font-family="sans-serif" font-size="11">pastoral_current_established</text>
+<line x1="652" y1="512" x2="672" y2="512" stroke="#2ca02c" stroke-width="3"/>
+<text x="677" y="516" font-family="sans-serif" font-size="11">ag_moderate</text>
+<line x1="82" y1="531" x2="102" y2="531" stroke="#9467bd" stroke-width="3"/>
+<text x="107" y="535" font-family="sans-serif" font-size="11">pastoral_moderate_established</text>
+<line x1="367" y1="531" x2="387" y2="531" stroke="#ff7f0e" stroke-width="3"/>
+<text x="392" y="535" font-family="sans-serif" font-size="11">ag_strong</text>
+<line x1="652" y1="531" x2="672" y2="531" stroke="#17becf" stroke-width="3"/>
+<text x="677" y="535" font-family="sans-serif" font-size="11">pastoral_strong_established</text>
+</svg>

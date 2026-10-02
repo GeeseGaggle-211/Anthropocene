@@ -1,0 +1,24 @@
+{
+  "turns": 50,
+  "years_per_turn": 20,
+  "starting_population": 240,
+  "small_herd": 5,
+  "established_herd": 80,
+  "systems_explicitly_enabled": [
+    "QoLMortalityEnabled",
+    "FissionEnabled",
+    "HerdLabourEnabled",
+    "SharedCropHerdAllocationEnabled"
+  ],
+  "planner": "continuous deterministic Value automation; no movement AI",
+  "fission_space": "128x64 all-land maps, every tile initially known to the founding society, resource-rich viable footprints",
+  "agriculture": "six river-supported fertile tiles at the Stone Farm Tool supported intensity; fixed Housing",
+  "pastoral": "productive grassland, goat herd, portable Light Housing, Animal Fabric; no Cultivation",
+  "plots": [
+    "total_population.svg",
+    "median_tribe_population.svg",
+    "tribe_count.svg",
+    "median_qol.svg",
+    "cumulative_fissions.svg"
+  ]
+}

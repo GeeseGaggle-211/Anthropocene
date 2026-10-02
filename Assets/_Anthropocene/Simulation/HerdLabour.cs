@@ -390,7 +390,7 @@ namespace Anthropocene.Simulation
             var values = new[] { vFood, ClaimValue(fabric), ClaimValue(housing), n.FoodRiskWeight * vFood, vGrowth };
             double futureFabric = fabricInput > 0 ? Math.Min(fabricInput / years, c.Population * n.FabricConsumptionPerPersonTurn / n.ReferenceTurnYears) : 0;
             double futureHousing = housingInput > 0 ? Math.Min(housingInput / years,
-                c.Population / n.LightHousingPeoplePerUnit * -Math.Log(1 - n.HousingDecayPerTurn) / n.ReferenceTurnYears) : 0;
+                c.Population / n.LightHousingPeoplePerUnit * -Math.Log(1 - n.LightHousingDecayPerReferenceTurn) / n.ReferenceTurnYears) : 0;
             double futureMealGap = Math.Max(0, annualMeals - annualHuman);
             double futureGrowthGap = Math.Max(0, growthFood / years - Math.Max(0, annualHuman - annualMeals));
             var ledger = shared ? new FoodIncomeLedger(w, c, d) : null;
@@ -415,7 +415,8 @@ namespace Anthropocene.Simulation
                 foreach (var material in new[] { MaterialId.Stone, MaterialId.Wood })
                 {
                     bool specialist = c.People.HasTech(EconomicIntents.RequiredTechnology(MaterialEconomy.Specialist(material)));
-                    double extraction = n.SpecialistMaterialExtractionRate * (specialist ? 1 : n.GeneralistTaskEfficiency) * cfg.DaysPerYear / cfg.BaseDays;
+                    double extraction = SpecialistProductivity.ExtractionRate(w, c, material,
+                        specialist ? MaterialEconomy.Specialist(material) : WorkforceRoles.Gatherer) * cfg.DaysPerYear / cfg.BaseDays;
                     toolLabour += extraction > 0 ? 1 / extraction : double.PositiveInfinity;
                 }
             }

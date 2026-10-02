@@ -1,0 +1,18 @@
+[
+  { "Name": "ag_scale025_n100_s400", "Archetype": "agricultural", "SpecialistMaxBonus": 0.25, "SpecialistOnset": 100, "SpecialistScale": 400 },
+  { "Name": "pastoral_scale025_n100_s400", "Archetype": "pastoral", "Herd": 80, "SpecialistMaxBonus": 0.25, "SpecialistOnset": 100, "SpecialistScale": 400 },
+  { "Name": "ag_scale050_n100_s400", "Archetype": "agricultural", "SpecialistMaxBonus": 0.50, "SpecialistOnset": 100, "SpecialistScale": 400 },
+  { "Name": "pastoral_scale050_n100_s400", "Archetype": "pastoral", "Herd": 80, "SpecialistMaxBonus": 0.50, "SpecialistOnset": 100, "SpecialistScale": 400 },
+  { "Name": "ag_scale075_n100_s400", "Archetype": "agricultural", "SpecialistMaxBonus": 0.75, "SpecialistOnset": 100, "SpecialistScale": 400 },
+  { "Name": "pastoral_scale075_n100_s400", "Archetype": "pastoral", "Herd": 80, "SpecialistMaxBonus": 0.75, "SpecialistOnset": 100, "SpecialistScale": 400 },
+  { "Name": "ag_scale050_n050_s200", "Archetype": "agricultural", "SpecialistMaxBonus": 0.50, "SpecialistOnset": 50, "SpecialistScale": 200 },
+  { "Name": "pastoral_scale050_n050_s200", "Archetype": "pastoral", "Herd": 80, "SpecialistMaxBonus": 0.50, "SpecialistOnset": 50, "SpecialistScale": 200 },
+  { "Name": "ag_scale050_n150_s600", "Archetype": "agricultural", "SpecialistMaxBonus": 0.50, "SpecialistOnset": 150, "SpecialistScale": 600 },
+  { "Name": "pastoral_scale050_n150_s600", "Archetype": "pastoral", "Herd": 80, "SpecialistMaxBonus": 0.50, "SpecialistOnset": 150, "SpecialistScale": 600 },
+  { "Name": "tent_combo_d030_f150_p075", "Archetype": "pastoral", "Herd": 80, "TentDecay": 0.30, "FabricPerTent": 1.5, "TentProductivity": 0.75, "SpecialistMaxBonus": 0.0 },
+  { "Name": "tent_combo_d040_f150_p075", "Archetype": "pastoral", "Herd": 80, "TentDecay": 0.40, "FabricPerTent": 1.5, "TentProductivity": 0.75, "SpecialistMaxBonus": 0.0 },
+  { "Name": "tent_combo_d040_f200_p050", "Archetype": "pastoral", "Herd": 80, "TentDecay": 0.40, "FabricPerTent": 2.0, "TentProductivity": 0.50, "SpecialistMaxBonus": 0.0 },
+  { "Name": "tent_combo_d030_f150_p075_scale050", "Archetype": "pastoral", "Herd": 80, "TentDecay": 0.30, "FabricPerTent": 1.5, "TentProductivity": 0.75, "SpecialistMaxBonus": 0.50, "SpecialistOnset": 100, "SpecialistScale": 400 },
+  { "Name": "tent_combo_d040_f150_p075_scale050", "Archetype": "pastoral", "Herd": 80, "TentDecay": 0.40, "FabricPerTent": 1.5, "TentProductivity": 0.75, "SpecialistMaxBonus": 0.50, "SpecialistOnset": 100, "SpecialistScale": 400 },
+  { "Name": "tent_combo_d040_f200_p050_scale050", "Archetype": "pastoral", "Herd": 80, "TentDecay": 0.40, "FabricPerTent": 2.0, "TentProductivity": 0.50, "SpecialistMaxBonus": 0.50, "SpecialistOnset": 100, "SpecialistScale": 400 }
+]

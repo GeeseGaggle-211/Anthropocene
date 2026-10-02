@@ -27,6 +27,9 @@ namespace Anthropocene.Simulation
         public double FoodRequired, FoodConsumed, InitialReserves, FinalReserves, DiscardedInventory, FractionalProgress, NetPercent;
 #pragma warning disable SYSLIB0050 // OptionalField permits older DataContractSerializer metadata.
         [System.Runtime.Serialization.OptionalField] public double ManufacturingFood;
+        // Growth-bucket food actually debited after consumption/reserve priority;
+        // distinct from maintenance consumption and manufacturing feedstock.
+        [System.Runtime.Serialization.OptionalField] public double GrowthFoodAccepted;
         // People who left this camp at the end of the turn to found a fission settlement (WP10a). EndingPopulation is before that split.
         [System.Runtime.Serialization.OptionalField] public int SplitOff;
         // People who left for, and arrived from, other known settlements at the end of the turn (WP10b). EndingPopulation is before both.

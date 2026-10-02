@@ -305,6 +305,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "Issue32CapabilityChecks", Run = () => Issue32CapabilityChecks.Run() },
                 new ParallelChecks.Entry { Name = "QoLCohesionChecks", Run = () => QoLCohesionChecks.Run() },
                 new ParallelChecks.Entry { Name = "QoLMortalityChecks", Run = () => QoLMortalityChecks.Run() },
+                new ParallelChecks.Entry { Name = "DemographicStructureChecks", Run = () => DemographicStructureChecks.Run() },
                 new ParallelChecks.Entry { Name = "HerdLabourChecks", Cost = 2, Run = () => HerdLabourChecks.Run() },
                 new ParallelChecks.Entry { Name = "SharedAllocationChecks", Cost = 2, Run = () => SharedAllocationChecks.Run() },
                 new ParallelChecks.Entry { Name = "ValueFulfilmentChecks", Cost = 4, Run = () => ValueFulfilmentChecks.Run() },

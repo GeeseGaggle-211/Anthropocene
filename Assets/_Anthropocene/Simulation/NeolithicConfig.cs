@@ -12,6 +12,10 @@ namespace Anthropocene.Simulation
         public double ClearingConversionPressure = 1, TimberConversionPressure = 1;
         public double OpenBuild = 1, WoodlandBuild = 1.3, ForestBuild = 1.5, OpenMaintenance = 1, WoodlandMaintenance = 1.1, ForestMaintenance = 1.2;
         public double GeneralistTaskEfficiency = .25, SpecialistMaterialExtractionRate = 1;
+        // True specialists gain a bounded local-concentration advantage only on
+        // their own recipe/task. Generalists retain the fixed efficiency above.
+        // M(N) = 1 + Bmax (1 - exp(-max(0, N - N0) / Nscale)).
+        [System.Runtime.Serialization.OptionalField] public double SpecialistScaleMaxBonus = 0, SpecialistScaleOnsetPopulation = 100, SpecialistScalePopulation = 400;
         // Reserve horizons are physical time. The 20-year default preserves the
         // Neolithic reference turn while remaining stable when turn duration changes.
         [System.Runtime.Serialization.OptionalField] public double MaterialReserveHorizonYears = 20;
@@ -47,12 +51,15 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double FoodRiskWeight = .1;
         public double HandToolsOutput = 1, PotsOutput = 1, WeaverFabricOutputPerBaseDays = 1, FarmToolsOutput = 1, ToolsOutput = 1;
         public double BuilderHousingOutputPerBaseDays = .03125, HandToolsHousingMultiplier = 1, ImprovedToolsHousingMultiplier = 1.5, CopperToolsHousingMultiplier = 2;
+        [System.Runtime.Serialization.OptionalField] public double LightHousingBuilderOutputPerBaseDays = .03125;
         public double PlantFoodPerFabricUnit = 1, HousingMaterialUnitsPerHousing = 1;
+        [System.Runtime.Serialization.OptionalField] public double AnimalFabricPerLightHousing = 1;
         public double StonePerHandTool = 1, ClayPerPot = 1, WoodPerFarmTool = 1, StonePerTool = 1, WoodPerTool = 1;
         public double ToolCoveragePerWorker = 1, CraftMasteryThreshold = 400;
         [System.Runtime.Serialization.OptionalField] public double UsefulFinishedGoodsReserveYears = 20;
         [System.Runtime.Serialization.OptionalField] public double UsefulFinishedGoodsReserveTurns = 1;
         public double FabricConsumptionPerPersonTurn = 1, HousingPeoplePerUnit = 4, HousingDecayPerTurn = .10;
+        [System.Runtime.Serialization.OptionalField] public double LightHousingDecayPerReferenceTurn = .10;
         [System.Runtime.Serialization.OptionalField] public double PotStorageFoodPerUnit = 80, PotDecayPerReferenceTurn = .10;
         public double RudimentaryWeightClothing = .5, RudimentaryWeightHousing = .5, RudimentaryExpectationFloor = .25, RudimentaryExpectationRampYears = 100;
         public double BuildWorkerYearsPerTileE => ReferencePopulation * ReferenceTurnYears * IntensificationTurns / ReferenceFootprintTiles;
@@ -68,6 +75,17 @@ namespace Anthropocene.Simulation
             UsefulFinishedGoodsReserveTurns = double.NaN;
             PotStorageFoodPerUnit = 80;
             PotDecayPerReferenceTurn = .10;
+            // Missing portable-housing fields mean the historical shared
+            // Housing values. The deserialized shared values are copied in the
+            // OnDeserialized migration after present fields overwrite these NaNs.
+            LightHousingBuilderOutputPerBaseDays = double.NaN;
+            AnimalFabricPerLightHousing = double.NaN;
+            LightHousingDecayPerReferenceTurn = double.NaN;
+            // Older saves predate specialist scaling and continue at the exact
+            // fixed specialist rate. New worlds use the field initializers.
+            SpecialistScaleMaxBonus = 0;
+            SpecialistScaleOnsetPopulation = 100;
+            SpecialistScalePopulation = 400;
             PrimitiveAgricultureSupportedIntensity = .40;
             CultivationMarginalEffortMultiplierPerTenth = 1;
             StoneFarmToolsSupportedIntensity = .45;
@@ -98,6 +116,9 @@ namespace Anthropocene.Simulation
                 UsefulFinishedGoodsReserveYears = double.IsNaN(UsefulFinishedGoodsReserveTurns) ? 20 : UsefulFinishedGoodsReserveTurns * ReferenceTurnYears;
             if (double.IsNaN(MaterialReserveHorizonTurns)) MaterialReserveHorizonTurns = MaterialReserveHorizonYears / ReferenceTurnYears;
             if (double.IsNaN(UsefulFinishedGoodsReserveTurns)) UsefulFinishedGoodsReserveTurns = UsefulFinishedGoodsReserveYears / ReferenceTurnYears;
+            if (double.IsNaN(LightHousingBuilderOutputPerBaseDays)) LightHousingBuilderOutputPerBaseDays = BuilderHousingOutputPerBaseDays;
+            if (double.IsNaN(AnimalFabricPerLightHousing)) AnimalFabricPerLightHousing = 1;
+            if (double.IsNaN(LightHousingDecayPerReferenceTurn)) LightHousingDecayPerReferenceTurn = HousingDecayPerTurn;
         }
         public double MaterialReserveDurationYears(double turnYears)
             => legacyMaterialReserveTurns ? MaterialReserveHorizonTurns * Math.Max(0, turnYears) : MaterialReserveHorizonYears;
@@ -120,9 +141,9 @@ namespace Anthropocene.Simulation
             if (!(FoodRiskWeight >= 0) || double.IsInfinity(FoodRiskWeight)) throw new ArgumentException("Invalid food risk weight.");
             if (CultivationMarginalEffortMultiplierPerTenth < 1 || CultivationMarginalEffortMultiplierPerTenth > 32)
                 throw new ArgumentException("Invalid cultivation effort multiplier.");
-            if (new[] { OpenBuild, WoodlandBuild, ForestBuild, WeaverFabricOutputPerBaseDays, BuilderHousingOutputPerBaseDays, GeneralistTaskEfficiency }.Any(v => v <= 0)) throw new ArgumentException("Neolithic construction and allocation rates must be positive.");
+            if (new[] { OpenBuild, WoodlandBuild, ForestBuild, WeaverFabricOutputPerBaseDays, BuilderHousingOutputPerBaseDays, LightHousingBuilderOutputPerBaseDays, AnimalFabricPerLightHousing, GeneralistTaskEfficiency, SpecialistScalePopulation }.Any(v => v <= 0)) throw new ArgumentException("Neolithic construction and allocation rates must be positive.");
             var values = GetType().GetFields().Where(f => f.FieldType == typeof(double)).Select(f => (double)f.GetValue(this));
-            if (values.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || ReferencePopulation <= 0 || ReferenceFootprintTiles != 7 || ReferenceTurnYears <= 0 || IntensificationTurns <= 0 || AllocationStepE <= 0 || DecayHalfLifeYears <= 0 || HousingPeoplePerUnit <= 0 || LightHousingPeoplePerUnit <= 0 || CohesionBandScale <= 0 || SocialCohesionExponent <= 0 || LightHousingPermanence > 1 || HousingDecayPerTurn >= 1 || PotStorageFoodPerUnit <= 0 || PotDecayPerReferenceTurn >= 1 || ToolCoveragePerWorker <= 0 || FarmToolFarmerYearsPerUnit <= 0 || StoneHerdingToolAnimalsPerHerder < 2 || EarlyAdvancedHerdingAnimalsPerHerder < StoneHerdingToolAnimalsPerHerder || CopperHerdingAnimalsPerHerder < EarlyAdvancedHerdingAnimalsPerHerder || IronHerdingAnimalsPerHerder < CopperHerdingAnimalsPerHerder || PoweredHerdingAnimalsPerHerder < IronHerdingAnimalsPerHerder || HerdingToolCoverageYearsPerUnit <= 0 || PrimitiveAgricultureSupportedIntensity <= 0 || StoneFarmToolsSupportedIntensity < PrimitiveAgricultureSupportedIntensity || PloughSupportedIntensity < StoneFarmToolsSupportedIntensity || CopperFarmToolsSupportedIntensity < PloughSupportedIntensity || IronFarmToolsSupportedIntensity < CopperFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity < IronFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity > 1 || RudimentaryExpectationRampYears <= 0 || RudimentaryExpectationFloor > 1 || Math.Abs(RudimentaryWeightClothing + RudimentaryWeightHousing - 1) > 1e-10 || GeneralistTaskEfficiency > 1 || CraftMasteryThreshold <= 0 || CohesionHousingGain < 0)
+            if (values.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || ReferencePopulation <= 0 || ReferenceFootprintTiles != 7 || ReferenceTurnYears <= 0 || IntensificationTurns <= 0 || AllocationStepE <= 0 || DecayHalfLifeYears <= 0 || HousingPeoplePerUnit <= 0 || LightHousingPeoplePerUnit <= 0 || CohesionBandScale <= 0 || SocialCohesionExponent <= 0 || LightHousingPermanence > 1 || HousingDecayPerTurn >= 1 || LightHousingDecayPerReferenceTurn >= 1 || PotStorageFoodPerUnit <= 0 || PotDecayPerReferenceTurn >= 1 || ToolCoveragePerWorker <= 0 || FarmToolFarmerYearsPerUnit <= 0 || StoneHerdingToolAnimalsPerHerder < 2 || EarlyAdvancedHerdingAnimalsPerHerder < StoneHerdingToolAnimalsPerHerder || CopperHerdingAnimalsPerHerder < EarlyAdvancedHerdingAnimalsPerHerder || IronHerdingAnimalsPerHerder < CopperHerdingAnimalsPerHerder || PoweredHerdingAnimalsPerHerder < IronHerdingAnimalsPerHerder || HerdingToolCoverageYearsPerUnit <= 0 || PrimitiveAgricultureSupportedIntensity <= 0 || StoneFarmToolsSupportedIntensity < PrimitiveAgricultureSupportedIntensity || PloughSupportedIntensity < StoneFarmToolsSupportedIntensity || CopperFarmToolsSupportedIntensity < PloughSupportedIntensity || IronFarmToolsSupportedIntensity < CopperFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity < IronFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity > 1 || RudimentaryExpectationRampYears <= 0 || RudimentaryExpectationFloor > 1 || Math.Abs(RudimentaryWeightClothing + RudimentaryWeightHousing - 1) > 1e-10 || GeneralistTaskEfficiency > 1 || SpecialistScaleMaxBonus > 1 || CraftMasteryThreshold <= 0 || CohesionHousingGain < 0)
                 throw new ArgumentException("Invalid Neolithic calibration.");
         }
     }

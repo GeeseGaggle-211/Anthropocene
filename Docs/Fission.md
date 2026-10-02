@@ -118,8 +118,10 @@ No assumption needed a redesign, so the work proceeded.
   pure, O(1) estimate of the shelter the daughter has at the end of her first turn, when her QoL is next computed:
   carried tents (`f` of the parent's Light Housing, `LightHousingPeoplePerUnit` people each) plus what her Builders assemble
   from carried goods in one turn at the planner's and resolver's production rates. Builders are
-  `FissionDaughterBuilderShare` (0.05) of her people, fractional (an expectation, not a roster). Rate: `BuilderHousingOutputPerBaseDays`
-  per interval, times `GeneralistTaskEfficiency` unless the Society holds Construction; Housing and Housing Material each run at twice
+  `FissionDaughterBuilderShare` (0.05) of her people, fractional (an expectation, not a roster). Fixed Housing uses
+  `BuilderHousingOutputPerBaseDays`; Light Housing uses `LightHousingBuilderOutputPerBaseDays` and
+  `AnimalFabricPerLightHousing`. Each rate is multiplied by `GeneralistTaskEfficiency` unless the Society holds Construction;
+  a qualified specialist also receives the bounded specialist multiplier evaluated at the daughter's local population. Housing and Housing Material each run at twice
   the single-step rate and share the Builder pool; the tool waterfall is the resolver's `ToolCoverageBudget` over her carried
   Hand/Regular/Copper tools (equipment limits and the 1 / 1.5 / 2 housing multipliers), so a daughter with no tools assembles
   nothing. Order: fixed Housing first (needs Cultivation; one carried Housing Material or one carried Wood/Clay unit each, material

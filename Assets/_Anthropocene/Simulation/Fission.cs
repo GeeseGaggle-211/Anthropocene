@@ -185,13 +185,15 @@ namespace Anthropocene.Simulation
             double builders = daughter * cfg.FissionDaughterBuilderShare, labor = builders * intervals;
             if (inv == null || need <= 1e-9 || !(labor > 0) || !CultivationEconomy.EconomyEnabled(parent)) return new NeolithicProduction.ShelterCapacity(fixedPeople, lightPeople);
             bool specialist = parent.People.HasTech(NeolithicTech.Construction);
-            double rate = n.BuilderHousingOutputPerBaseDays * (specialist ? 1 : n.GeneralistTaskEfficiency);
+            double Rate(double baseRate) => specialist
+                ? SpecialistProductivity.SpecialistRate(n, baseRate, daughter)
+                : baseRate * n.GeneralistTaskEfficiency;
             double copper = parent.People.HasTech(NeolithicTech.CopperWorking) ? Math.Max(0, inv.CopperTools) * f * intervals / n.ToolCoveragePerWorker : 0;
             var tools = new ToolCoverageBudget(n, Math.Max(0, inv.HandTools) * f, Math.Max(0, inv.Tools) * f * ToolCoverageBudget.OutputsPerTool, copper);
             if (CultivationEconomy.Enabled(parent))
             {
                 // Housing Material and its assembly share the Builder pool and the same step rate (2x the single-step rate), as in the resolver.
-                double step = 2 * rate, stock = Math.Max(0, inv.HousingMaterial) * f;
+                double step = 2 * Rate(n.BuilderHousingOutputPerBaseDays), stock = Math.Max(0, inv.HousingMaterial) * f;
                 double raw = (Math.Max(0, inv.Wood) + Math.Max(0, inv.Clay)) * f / Math.Max(1e-12, n.HousingMaterialUnitsPerHousing);
                 double hi = Math.Min(need / n.HousingPeoplePerUnit, stock + raw), ceiling = tools.Capacity(CraftGood.Housing, step, double.PositiveInfinity);
                 hi = Math.Min(hi, ceiling);
@@ -210,8 +212,9 @@ namespace Anthropocene.Simulation
             }
             if (CultivationEconomy.HusbandryEnabled(parent) && need > 1e-9 && labor > 0)
             {
-                double sewn = Math.Min(need / n.LightHousingPeoplePerUnit, Math.Max(0, inv.AnimalFabric) * f);
-                sewn = Math.Min(sewn, tools.Capacity(CraftGood.LightHousing, rate, labor));
+                double lightRate = Rate(n.LightHousingBuilderOutputPerBaseDays);
+                double sewn = Math.Min(need / n.LightHousingPeoplePerUnit, Math.Max(0, inv.AnimalFabric) * f / n.AnimalFabricPerLightHousing);
+                sewn = Math.Min(sewn, tools.Capacity(CraftGood.LightHousing, lightRate, labor));
                 if (sewn > 0) lightPeople += sewn * n.LightHousingPeoplePerUnit;
             }
             return new NeolithicProduction.ShelterCapacity(fixedPeople, lightPeople);

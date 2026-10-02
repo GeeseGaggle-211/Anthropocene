@@ -918,6 +918,7 @@ namespace Anthropocene.Simulation
                 {
                     double growthFood = Math.Min(plans[camp.Id].GrowthFood, camp.Food);
                     ConsumeCampFood(camp, growthFood, plans[camp.Id].PlantManufacturingInput, plans[camp.Id].AnimalManufacturingInput); camp.LastConsumed += growthFood;
+                    summary.GrowthFoodAccepted += growthFood;
                     if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
                         metrics.CraftFoodFlowFor(camp.Id).GrowthFoodUsed = growthFood;
                     pendingBirths[camp.Id] = plans[camp.Id];

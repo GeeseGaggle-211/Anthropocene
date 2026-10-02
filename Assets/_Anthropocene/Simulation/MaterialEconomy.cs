@@ -542,7 +542,7 @@ namespace Anthropocene.Simulation
             }
             bool specialist = role == Specialist(source.Material) && c.People.HasTech(EconomicIntents.RequiredTechnology(role));
             if (!specialist && role != WorkforceRoles.Gatherer) return 0;
-            double rate = w.Config.Neolithic.SpecialistMaterialExtractionRate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
+            double rate = SpecialistProductivity.ExtractionRate(w, c, source.Material, role);
             double amount = Math.Min(source.Available, Math.Min(useful, workerIntervals * rate));
             if (amount <= 1e-12) return 0;
             var state = SourceState(w, source.Id);
@@ -595,8 +595,7 @@ namespace Anthropocene.Simulation
                 if (labor <= 1e-10) continue;
                 var roleSources = localSources.Where(s => role == WorkforceRoles.Gatherer || role == Specialist(s.Material)).ToArray();
                 if (roleSources.Length == 0) continue;
-                double rate = w.Config.Neolithic.SpecialistMaterialExtractionRate *
-                    (role == WorkforceRoles.Gatherer ? w.Config.Neolithic.GeneralistTaskEfficiency : 1);
+                double rate = SpecialistProductivity.ExtractionRate(w, c, roleSources[0].Material, role);
                 // A source is considered once per role and footprint site for the
                 // whole turn. This bounds work by nearby sources, not by the
                 // number of reference intervals in the turn. Scores rank the
@@ -699,7 +698,7 @@ namespace Anthropocene.Simulation
                         if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c) || recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) continue;
                         bool specialist = role == recipe.Specialist && c.People.HasTech(recipe.Track);
                         if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) continue;
-                        double rate = recipe.Rate * (specialist ? 1 : w.Config.Neolithic.GeneralistTaskEfficiency);
+                        double rate = SpecialistProductivity.CraftRate(w, c, recipe, role);
                         if (rate <= 0) continue;
                         double labor = laborByRole[role];
                         double useful;

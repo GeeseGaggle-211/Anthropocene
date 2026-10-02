@@ -1,0 +1,11 @@
+[
+  { "Name": "ag_current", "Archetype": "agricultural", "SpecialistMaxBonus": 0.0 },
+  { "Name": "pastoral_current_established", "Archetype": "pastoral", "Herd": 80, "TentDecay": 0.40, "FabricPerTent": 1.5, "TentProductivity": 0.75, "SpecialistMaxBonus": 0.0 },
+  { "Name": "pastoral_current_seed", "Archetype": "pastoral", "Herd": 5, "TentDecay": 0.40, "FabricPerTent": 1.5, "TentProductivity": 0.75, "SpecialistMaxBonus": 0.0 },
+  { "Name": "ag_moderate", "Archetype": "agricultural", "SpecialistMaxBonus": 0.50, "SpecialistOnset": 100, "SpecialistScale": 400 },
+  { "Name": "pastoral_moderate_established", "Archetype": "pastoral", "Herd": 80, "TentDecay": 0.40, "FabricPerTent": 1.5, "TentProductivity": 0.75, "SpecialistMaxBonus": 0.50, "SpecialistOnset": 100, "SpecialistScale": 400 },
+  { "Name": "pastoral_moderate_seed", "Archetype": "pastoral", "Herd": 5, "TentDecay": 0.40, "FabricPerTent": 1.5, "TentProductivity": 0.75, "SpecialistMaxBonus": 0.50, "SpecialistOnset": 100, "SpecialistScale": 400 },
+  { "Name": "ag_strong", "Archetype": "agricultural", "SpecialistMaxBonus": 0.75, "SpecialistOnset": 75, "SpecialistScale": 300 },
+  { "Name": "pastoral_strong_established", "Archetype": "pastoral", "Herd": 80, "TentDecay": 0.40, "FabricPerTent": 1.5, "TentProductivity": 0.75, "SpecialistMaxBonus": 0.75, "SpecialistOnset": 75, "SpecialistScale": 300 },
+  { "Name": "pastoral_strong_seed", "Archetype": "pastoral", "Herd": 5, "TentDecay": 0.40, "FabricPerTent": 1.5, "TentProductivity": 0.75, "SpecialistMaxBonus": 0.75, "SpecialistOnset": 75, "SpecialistScale": 300 }
+]

@@ -30,7 +30,7 @@ Q*   = (d0 / b0)^(1/a)                                        growth stops at an
 
 ### Paleolithic handling
 
-A Paleolithic camp has no goods economy, so its resolved QoL is capped at `1 - E` of the rudimentary term (about 0.75 at the expectation floor) times food and cohesion by construction (Docs/Fission.md, WP10a findings). That number says nothing about wellbeing, and at the shipped `a` the zero-growth QoL `Q*` = 0.863 would freeze every Paleolithic camp. The rule therefore applies only to camps with Cultivation or Animal Husbandry (`CultivationEconomy.EconomyEnabled`); every other camp, including a Watercraft-only camp, keeps `AnnualHumanGrowthRate` unchanged. The opening calibration (12-turn opening, 200/240-year fallbacks) is preserved, and a camp that has just unlocked the economy plans its first economy turn from the last Paleolithic QoL; it then gets a real QoL.
+A Paleolithic camp has no goods economy, so its resolved QoL is capped at `1 - E` of the rudimentary term (about 0.75 at the expectation floor) times food and cohesion by construction (Docs/Fission.md, WP10a findings). That number says nothing about wellbeing, and even at the shipped `a = 1` the zero-growth QoL `Q*` = 0.746 is close enough to freeze rudimentary camps for an irrelevant proxy. The rule therefore applies only to camps with Cultivation or Animal Husbandry (`CultivationEconomy.EconomyEnabled`); every other camp, including a Watercraft-only camp, keeps `AnnualHumanGrowthRate` unchanged. The opening calibration (12-turn opening, 200/240-year fallbacks) is preserved, and a camp that has just unlocked the economy plans its first economy turn from the last Paleolithic QoL; it then gets a real QoL.
 
 ### Fission daughters
 
@@ -38,7 +38,7 @@ A newly founded daughter used to keep the unset `Camp.QoL = 1.0` until its first
 
 ### Old saves
 
-`QoLMortalityEnabled` is an optional field that is **false by default** (opt-in until the elasticity is chosen; orchestrator decision after the sweep, see "Shipped state") and **false when absent from a save** (the same convention as `FissionEnabled`/`ImmigrationEnabled`), so a loaded game continues with its original growth ceiling and its fingerprint continuation is unchanged. `BaseBirthRate` and `QoLMortalityElasticity` load their defaults when absent. Validation requires `0 < BaseBirthRate <= 0.2` and a positive finite elasticity, and when the lever is enabled `BaseBirthRate > AnnualHumanGrowthRate` (otherwise `d0 <= 0`). The save envelope `ANTHROPOCENE-11`, the filename and the observation schema are unchanged.
+`QoLMortalityEnabled` is an optional field that is **false by default** and **false when absent from a save** (the same convention as `FissionEnabled`/`ImmigrationEnabled`), so a loaded game continues with its original growth ceiling and its fingerprint continuation is unchanged. An old save that explicitly stores `QoLMortalityElasticity = 2` retains 2; an absent elasticity receives the current default but remains inert because the lever is off. Validation requires `0 < BaseBirthRate <= 0.2` and a positive finite elasticity, and when the lever is enabled `BaseBirthRate > AnnualHumanGrowthRate` (otherwise `d0 <= 0`). The save envelope `ANTHROPOCENE-11`, the filename and the observation schema are unchanged.
 
 ## Calibration sweep
 
@@ -179,14 +179,11 @@ QoL P25/median/P75 by first technology (n camp-turns), post-opening turns 10..50
 
 ## Shipped defaults and why
 
-`BaseBirthRate = 0.045`, `QoLMortalityElasticity = 2`, `QoLMortalityEnabled = false` (opt-in).
+`BaseBirthRate = 0.045`, `QoLMortalityElasticity = 1`, `QoLMortalityEnabled = false` (opt-in).
 
-**Shipped state.** The mechanism ships off: at a = 2 it meets the size targets but cuts fission-on population by about 92% (48k against 576k per world) and fission-off by 59%, and traps unhoused husbandry camps below Q* (husbandry QoL P25 0.06); a = 1 keeps 34% of the population with sizes above target. The elasticity, and whether herders' QoL needs work first, are open user decisions.
+The historical sweep above originally motivated `a = 2`, but the controlled demographic-structure follow-up in [DemographicStructureCalibration.md](DemographicStructureCalibration.md) supersedes that choice. At `a = 2`, `Q* = 0.863` can stop growth before a Neutral crowding split, particularly in tent-dominant husbandry camps. At `a = 1`, `Q* = 0.746`: the Neutral cohesion threshold is reached at QoL about 0.81 for both tent-dominant and fixed-housing populations, so fission is reachable while demographic growth remains positive. The earlier sweep also shows that `a = 1` avoids the severe husbandry QoL trap of `a = 2` (husbandry QoL P25 0.70 rather than 0.06).
 
-- a = 2 is the best of the specified grid {0.5, 1, 2, 4} by the combined size-target score (3.82; a = 4 is 4.15) and puts the fixed-dominant P90/P95 (643/673 fission on, 647/674 off) inside the 600-1,000 band. a = 3 and a = 4 score slightly better with fission on but move the fixed-dominant class below the band (526-548, 460-476).
-- b0 stays at the external demographic anchor 0.045. b0 = 0.055 scores marginally better (3.27) only by lowering the fixed class under its band and removing 19 percent more people; 0.035 is worse (5.74). The score gain does not justify moving an external anchor.
-- Population is the cost of the target. Per world the shipped rule leaves about 8 percent of the previous fission-on population and 41 percent of the fission-off population. If a larger population is wanted, `a = 1` keeps 34 percent (fission on) with score 4.58, mean QoL 0.786 and no husbandry QoL trap (P25 0.70), at the price of fixed-dominant P90 737 and tent-dominant 666. Fission throughput (daughters founded below onset) rather than the elasticity is then the lever to revisit.
-- Tent-dominant camps stay above their 250 target at every `a` tried (P90 458 at a = 2, 337 even at a = 4): that class is limited by its housing coverage and goods rather than by cohesion alone.
+The enable default has not changed. The controlled follow-up explicitly enables both QoL mortality and fission; ordinary new worlds and old saves still receive no QoL mortality unless requested.
 
 ## Limits
 

@@ -158,7 +158,7 @@ namespace Anthropocene.Simulation
                 int staffedExpansion = 0;
                 var farmRecipe = goods.FirstOrDefault(r => r.Good == CraftGood.FarmTools);
                 string Role(CraftRecipe r) => c.People.HasTech(r.Track) ? r.Specialist : WorkforceRoles.Craftsperson;
-                double Rate(CraftRecipe r) => r.Rate * (c.People.HasTech(r.Track) ? 1 : n.GeneralistTaskEfficiency);
+                double Rate(CraftRecipe r) => SpecialistProductivity.CraftRate(w, c, r, Role(r));
                 double RemainingGoodDemand(CraftRecipe r)
                 {
                     if (NeolithicProduction.Priority(candidate, r.Good) <= 0) return 0;
@@ -497,7 +497,8 @@ namespace Anthropocene.Simulation
                     double amount = Math.Min(accessible[m], raw[m]);
                     if (amount <= Epsilon || n.SpecialistMaterialExtractionRate <= 0) continue;
                     string role = MaterialEconomy.Specialist(m); bool specialist = c.People.HasTech(EconomicIntents.RequiredTechnology(role));
-                    double workers = amount / (intervals * n.SpecialistMaterialExtractionRate * (specialist ? 1 : n.GeneralistTaskEfficiency));
+                    double workers = amount / (intervals * SpecialistProductivity.ExtractionRate(w, c, m,
+                        specialist ? role : WorkforceRoles.Gatherer));
                     if (specialist) intent.Assignments.Add(new PopulationAssignment { Role = role, Population = (int)Math.Ceiling(workers - Epsilon) }); else generalistMaterials += workers;
                 }
                 double forecastPlantFeedstock = outputs[CraftGood.Cloth] * n.PlantFoodPerFabricUnit;

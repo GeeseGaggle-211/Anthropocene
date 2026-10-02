@@ -74,11 +74,13 @@ internal static class NeolithicChecks
         double intervals = material.Config.TurnDays / material.Config.BaseDays, equipment = 10000 * intervals / material.Config.Neolithic.ToolCoveragePerWorker;
         var materialRecord = new TurnRecord { Duration = material.Config.TurnDays };
         MaterialEconomy.Gather(material, materialCamp, NeolithicProduction.Recipes(material.Config), intervals, 10, 0, ref equipment, materialRecord);
-        Near(materialCamp.Inventory.Clay, 70, "material gathering reserves current output plus physical horizon");
+        double gatheredClay = 70 * SpecialistProductivity.Multiplier(material.Config.Neolithic, materialCamp.Population);
+        Near(materialCamp.Inventory.Clay, gatheredClay, "material gathering reserves scale-adjusted current output plus physical horizon");
         var potRecipe = NeolithicProduction.Recipes(material.Config).Single(r => r.Good == CraftGood.Pots);
         NeolithicProduction.Produce(material, materialCamp, potRecipe, WorkforceRoles.Potter, intervals, intervals, 10000, ref equipment, materialRecord, new ToolCoverageBudget(material, materialCamp, intervals));
-        Near(materialCamp.Inventory.Pots, 40, "material production remains proportional to current elapsed turn");
-        Near(materialCamp.Inventory.Clay, 30, "physical reserve remains after current production");
+        double producedPots = 40 * SpecialistProductivity.Multiplier(material.Config.Neolithic, materialCamp.Population);
+        Near(materialCamp.Inventory.Pots, producedPots, "material production remains proportional to current elapsed turn and local specialist scale");
+        Near(materialCamp.Inventory.Clay, gatheredClay - producedPots, "physical reserve remains after current production");
     }
 
     private static void TerrestrialFarmerClaims()

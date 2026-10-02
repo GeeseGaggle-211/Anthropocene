@@ -28,7 +28,7 @@ internal static class QoLMortalityChecks
 
     public static int Run()
     {
-        checks = 0; ClosedForm(); Hooks(); Applicability(); Sites(); Report(); Resolution(); Config(); Saves(); Replay();
+        checks = 0; ClosedForm(); DemographicOrdering(); Hooks(); Applicability(); Sites(); Report(); Resolution(); Config(); Saves(); Replay();
         Console.WriteLine("PASS: " + checks + " QoL mortality assertions"); return checks;
     }
 
@@ -68,6 +68,36 @@ internal static class QoLMortalityChecks
         Near(QoLMortality.CeilingRate(cfg, 1, 1, 1), g, "unit factors leave r(1) = g");
         Check(QoLMortality.CeilingRate(cfg, .9, 1, .5) > QoLMortality.CeilingRate(cfg, .9, 1, 1), "better medicine (lower mortality) raises the ceiling");
         Check(QoLMortality.CeilingRate(cfg, .95, .8, 1) < QoLMortality.CeilingRate(cfg, .95, 1, 1), "lower fertility lowers the ceiling");
+    }
+
+    private static void DemographicOrdering()
+    {
+        var cfg = new SimulationConfig(); var n = cfg.Neolithic;
+        double zero = QoLMortality.ZeroGrowthQoL(cfg);
+        Check(cfg.QoLMortalityElasticity == 1 && zero > .74 && zero < .75,
+            "new worlds use a=1 and Q* is about 0.746");
+        foreach (var form in new[] { (Name: "tent-dominant", Share: n.LightHousingPermanence), (Name: "fixed-housing", Share: 1.0) })
+        {
+            int onset = 0;
+            for (int people = cfg.FissionMinimumDaughter * 4; people < 5000; people++)
+            {
+                int daughter = (int)((long)people * 30 / 100);
+                double before = NeolithicProduction.SocialCohesion(n, form.Share, people);
+                double after = NeolithicProduction.SocialCohesion(n, form.Share, people - daughter);
+                if (after / before - 1 >= cfg.FissionGainThreshold) { onset = people; break; }
+            }
+            double healthyQoL = NeolithicProduction.SocialCohesion(n, form.Share, 24);
+            double onsetQoL = NeolithicProduction.SocialCohesion(n, form.Share, onset);
+            int zeroPopulation = onset;
+            while (NeolithicProduction.SocialCohesion(n, form.Share, zeroPopulation) > zero) zeroPopulation++;
+            Check(onset > 24 && zeroPopulation > onset,
+                form.Name + " orders healthy growth -> crowding/fission -> zero growth by population");
+            Check(healthyQoL > onsetQoL && onsetQoL > zero,
+                form.Name + " reaches its fission threshold while QoL mortality still permits growth");
+            Check(QoLMortality.CeilingRate(cfg, healthyQoL) > QoLMortality.CeilingRate(cfg, onsetQoL) &&
+                QoLMortality.CeilingRate(cfg, onsetQoL) > 0 && QoLMortality.CeilingRate(cfg, zero) <= 1e-12,
+                form.Name + " orders the corresponding demographic growth ceilings");
+        }
     }
 
     private static void Applicability()
@@ -162,7 +192,7 @@ internal static class QoLMortalityChecks
     private static void Config()
     {
         var c = new SimulationConfig();
-        Check(!c.QoLMortalityEnabled && c.BaseBirthRate == .045 && c.QoLMortalityElasticity > 0, "defaults: opt-in (off) until the elasticity is chosen, b0 = 0.045");
+        Check(!c.QoLMortalityEnabled && c.BaseBirthRate == .045 && c.QoLMortalityElasticity == 1, "defaults: opt-in off, a = 1, b0 = 0.045");
         Check(c.BaseBirthRate > c.AnnualHumanGrowthRate, "the default birth rate exceeds the growth rate (d0 > 0)");
         foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.BaseBirthRate = x.AnnualHumanGrowthRate, x => x.BaseBirthRate = .001, x => x.BaseBirthRate = double.NaN, x => x.BaseBirthRate = .5, x => x.QoLMortalityElasticity = 0, x => x.QoLMortalityElasticity = -1, x => x.QoLMortalityElasticity = double.PositiveInfinity })
         {
@@ -184,6 +214,14 @@ internal static class QoLMortalityChecks
         using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { QoLMortalityEnabled = true, BaseBirthRate = .05, QoLMortalityElasticity = 2.5 }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
         Check(xml.Contains("<QoLMortalityEnabled>true</QoLMortalityEnabled>") && xml.Contains("<BaseBirthRate>0.05</BaseBirthRate>"), "the levers are serialized");
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) { var back = (SimulationConfig)serializer.ReadObject(stream); Check(back.QoLMortalityEnabled && back.BaseBirthRate == .05 && back.QoLMortalityElasticity == 2.5, "saved levers round trip"); }
+        using (var stream = new MemoryStream())
+        {
+            serializer.WriteObject(stream, new SimulationConfig { QoLMortalityEnabled = true, QoLMortalityElasticity = 2 });
+            stream.Position = 0;
+            var calibratedLegacy = (SimulationConfig)serializer.ReadObject(stream);
+            Check(calibratedLegacy.QoLMortalityEnabled && calibratedLegacy.QoLMortalityElasticity == 2,
+                "a save that explicitly carries the former a=2 calibration is not reinterpreted");
+        }
         string legacy = Regex.Replace(xml, "<(QoLMortalityEnabled|BaseBirthRate|QoLMortalityElasticity)>[^<]*</\\1>", "");
         Check(legacy != xml && !legacy.Contains("QoLMortality") && !legacy.Contains("BaseBirthRate"), "legacy fixture omits every QoL mortality field");
         var defaults = new SimulationConfig();
