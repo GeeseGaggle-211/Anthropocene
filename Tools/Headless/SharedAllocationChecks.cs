@@ -155,7 +155,7 @@ internal static class SharedAllocationChecks
             }
             var d = CampProductionDemand.Build(w, c, EconomicIntent.From(c));
             double ladderYears = w.Config.TurnDays / w.Config.DaysPerYear;
-            var ladderCache = new PlanningKernelCache(w); int fullGrid = -1;
+            var ladderCache = new PlanningKernelCache(w);
             foreach (double operation in new[] { 1, .7, .3, 0 })
                 foreach (double cap in new[] { 0, 1e-9, 50, 500, 5000, double.PositiveInfinity })
                 {
@@ -163,10 +163,11 @@ internal static class SharedAllocationChecks
                     var cut = CultivationEconomy.ExpansionLadder(w, c, ladderYears, d.Footprint, cap, operation, ladderCache);
                     Check(capped.Length == cut.Length && capped.Zip(cut, (x, y) => x.Tile == y.Tile && Same(x.Score, y.Score) && Same(x.WorkerYears, y.WorkerYears)
                         && Same(x.AnnualGain, y.AnnualGain) && Same(x.MaintenancePerYear, y.MaintenancePerYear) && Same(x.VillageAverage, y.VillageAverage)).All(x => x),
-                        "cached ladder is the capped ladder at " + people + " operation " + operation + " cap " + cap);
-                    if (operation == 1 && cap == 0) fullGrid = ladderCache.Investments;
+                        "cached ladder is the uncached ladder at " + people + " operation " + operation + " cap " + cap);
+                    var shared = CultivationEconomy.CutLadder(CultivationEconomy.ExpansionLadder(w, c, ladderYears, d.Footprint, double.PositiveInfinity, operation, ladderCache), cap);
+                    Check(shared.Length == capped.Length && shared.Zip(capped, (x, y) => x.Tile == y.Tile && Same(x.WorkerYears, y.WorkerYears) && Same(x.AnnualGain, y.AnnualGain)).All(x => x),
+                        "a cut ladder is the capped ladder at " + people + " operation " + operation + " cap " + cap);
                 }
-            Check(fullGrid >= 0 && ladderCache.Investments >= fullGrid, "investment work does not depend on the food-need cap at " + people);
             var cached = new SharedAllocation(w, c, d, .55); var reference = new SharedAllocation(w, c, d, .55, false);
             Check(cached.OperationChoices == reference.OperationChoices && cached.HerdChoices == reference.HerdChoices, "cache keeps the portfolio set at " + people);
             Check(SameArray(cached.PriceCrossings, reference.PriceCrossings), "cache keeps every price crossing at " + people);

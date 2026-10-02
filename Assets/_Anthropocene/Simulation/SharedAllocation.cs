@@ -149,6 +149,7 @@ namespace Anthropocene.Simulation
                 staffing.Add((int)Math.Min(camp.Population, Math.Ceiling(Math.Min(toolWorkers, raw / efficiency))));
             }
             var choices = new List<Portfolio>();
+            var pending = new List<(int Farmers, double Operation, CampProductionDemand Demand, double MaximumNeed, double Aquatic, double FutureMaintenance, double Residual)>();
             foreach (int farmers in staffing)
             {
                 double covered = Math.Min(farmers, Math.Min(toolWorkers, raw / efficiency));
@@ -216,8 +217,23 @@ namespace Anthropocene.Simulation
                 d.FuturePastureCapacity = forageNeed > 0
                     ? Math.Max(0, futureBiomass - Math.Min(futureLand, d.Meals)) / forageNeed : double.PositiveInfinity;
                 double maximumNeed = Math.Max(0, (d.Meals + d.Biological) / years - d.FutureForageAfterHerds / years);
+                pending.Add((farmers, operation, d, maximumNeed, aquatic, futureMaintenance, residual));
+            }
+            // One expansion ladder per plan (Docs/SharedAllocationValidation.md,
+            // shared ladder). It is priced from the field state of the most
+            // maintained operating choice, recorded once up to the largest food
+            // need, and each choice keeps its own need-capped prefix. A reduced
+            // choice therefore cannot also buy back the decay it just accepted;
+            // its new fields are priced as if the existing ones were kept.
+            double ladderOperation = pending.Max(x => x.Operation);
+            double ladderNeed = pending.Where(x => x.Demand.CultivationEnabled && x.MaximumNeed > 0).Select(x => x.MaximumNeed).DefaultIfEmpty(0).Max();
+            var ladder = ladderNeed > 0
+                ? CultivationEconomy.ExpansionLadder(world, camp, years, demand.Footprint, ladderNeed, ladderOperation, cache)
+                : Array.Empty<CultivationEconomy.ExpansionStep>();
+            foreach (var (farmers, operation, d, maximumNeed, aquatic, futureMaintenance, residual) in pending)
+            {
                 d.PhysicalExpansion = d.CultivationEnabled && maximumNeed > 0
-                    ? CultivationEconomy.ExpansionLadder(world, camp, years, d.Footprint, maximumNeed, operation, cache)
+                    ? CultivationEconomy.CutLadder(ladder, maximumNeed)
                     : Array.Empty<CultivationEconomy.ExpansionStep>();
                 d.SetFoodEnvelopes(world, camp, demand.ManagedFood.AnimalFood);
                 var ledger = new FoodIncomeLedger(world, camp, d);

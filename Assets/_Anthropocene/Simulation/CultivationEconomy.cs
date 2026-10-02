@@ -449,11 +449,7 @@ namespace Anthropocene.Simulation
         // step that crosses it is kept): the valuation never reads beyond the total food gap.
         // Pure: reads the projected ecology only.
         // cache (optional, one plan only) memoizes the pure opening projections
-        // and marginal investments; it never changes a returned step. With a
-        // cache the greedy ladder always runs to its end and is then cut at the
-        // cap: the capped ladder is a prefix of the uncapped one, so the steps
-        // are identical, while the investments evaluated follow the local
-        // field grid instead of the camp's food need (and so its population).
+        // and marginal investments; it never changes a returned step.
         internal static ExpansionStep[] ExpansionLadder(WorldState w, Camp camp, double years, int[] cachedFootprint = null, double annualGainCap = double.PositiveInfinity, double? operatingFraction = null,
             PlanningKernelCache cache = null)
         {
@@ -466,18 +462,22 @@ namespace Anthropocene.Simulation
             // Sized to the greedy loop's own pass guard, so recording never regrows.
             var record = cache?.LadderRecord ?? new List<ExpansionStep>(); record.Clear();
             if (record.Capacity < candidates.Length * 35) record.Capacity = candidates.Length * 35;
-            AllocateHorizonEffort(w, camp, candidates, double.PositiveInfinity, false, years, record,
-                cache != null ? double.PositiveInfinity : annualGainCap, cache);
-            if (cache != null)
-            {
-                // The same running sum and test as the capped loop, step for step.
-                double recordedGain = 0; int kept = record.Count;
-                for (int i = 0; i < record.Count; i++)
-                    if ((recordedGain += record[i].AnnualGain) >= annualGainCap) { kept = i + 1; break; }
-                var steps = new ExpansionStep[kept]; record.CopyTo(0, steps, 0, kept);
-                return steps;
-            }
+            AllocateHorizonEffort(w, camp, candidates, double.PositiveInfinity, false, years, record, annualGainCap, cache);
             return record.ToArray();
+        }
+
+        // The ladder that ExpansionLadder would have recorded with annualGainCap = cap:
+        // the same running sum and test, so a capped ladder is a prefix of a longer one.
+        internal static ExpansionStep[] CutLadder(ExpansionStep[] steps, double cap)
+        {
+            double recordedGain = 0;
+            for (int i = 0; i < steps.Length; i++)
+                if ((recordedGain += steps[i].AnnualGain) >= cap)
+                {
+                    if (i + 1 == steps.Length) return steps;
+                    var cut = new ExpansionStep[i + 1]; Array.Copy(steps, cut, i + 1); return cut;
+                }
+            return steps;
         }
 
         // The preclaim bridge estimate can be corrected from realized terrestrial

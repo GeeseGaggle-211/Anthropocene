@@ -301,22 +301,14 @@ food-dependent part, which is also what `FoodBucketTargets` now calls). Each
 herd step makes one ledger receipt instead of three identical-argument ones.
 `Select` reuses one ledger per portfolio.
 
-**Work does not follow the camp's food need.** With a cache, the ladder's
-greedy loop always runs to its end and is then cut, step for step, with the
-capped loop's own running sum. The capped ladder is a prefix of the uncapped
-one, so the steps are identical. Investment comparisons therefore depend on
-the local field grid, not on how much food the camp needs:
-
-- in the isolated fixture: 154 at both 1,000 and 10,000 residents (77 and
-  154 when capped);
-- per plan, the work is bounded by `2 × eligible land tiles × operation
-  choices` tile forecasts (fields with capital only, plus one forecast per
-  other tile) and `footprint tiles × (32 bands + operation choices)`
-  investments, with at most 35 operation choices.
-
-Population can only lower these counts. Levels merge when field upkeep
-exceeds residents, and a camp with no food gap builds no ladder. The cost of
-this property is measured below.
+**Fixed-grid ladder (measured, then withdrawn).** Step 1 first ran the
+cached ladder's greedy loop to its end and cut it at the need cap. That keeps
+the steps identical and makes investment counts independent of the camp's
+food need: in the fixture, 154 at both 1,000 and 10,000 residents. It cost
++32% preparation at 50 turns (see *Timing*), so on 2 October 2026 the user
+chose the need-capped ladder. Kernel work again follows the food need, up to
+the same ceiling of `footprint tiles × (32 bands + operation choices)`
+investments. The timing table below measured the fixed-grid variant.
 
 ### Checks
 
@@ -379,17 +371,96 @@ the fixed grid costs **+32.2% preparation** [+28.7, +38.3] and **+22.8%
 total** [+17.9, +25.7]. Switching back is a one-line change in
 `CultivationEconomy.ExpansionLadder`.
 
+### Step 2: one expansion ladder per plan
+
+The user approved this outcome-changing step on 2 October 2026, with
+acceptance on per camp-turn cost and the five-world census staying within
+the current branch's P25–P75 bands. `SharedAllocation` now builds one
+expansion ladder per plan, priced from the field state of the most
+maintained operating choice. It is recorded up to the largest food need among
+the choices, and each choice takes its own need-capped prefix
+(`CultivationEconomy.CutLadder`, the capped loop's own running sum).
+
+The most maintained choice therefore gets exactly its former ladder. A
+reduced choice prices its new fields as if the existing ones were kept, and
+cannot also buy back the decay it accepts. On C1, 89.6% of plans choose full
+operation, 8.3% abandon their fields, 1.5% choose a reduced band level and
+0.6% the tool-coverage level. Restricting choices to {0, full, tool} instead
+would have kept 93.4% of plans unchanged but saved little, because plans see
+3.6 operation choices on average and at most 7. That lever was not taken.
+
+**Checks.** `SharedAllocationChecks` adds that a cut ladder equals the
+directly capped ladder for every tested cap and operation (731 assertions).
+The full fixed suite passes.
+
+**Census.** Five worlds (C1, C2, C3, P1, A1), 50 turns from the same openings,
+shared ladder versus the exact branch, pooled tribes (`linked > 0`). For each
+metric the candidate median must lie within the exact branch's P25–P75. All
+56 checks pass: 7 metrics × {all, Cultivation, Husbandry, Watercraft} × {25,
+50} turns.
+
+| Turns | Group | Tribes | Residents median [exact P25, P75] → shared | Animals | QoL |
+| --- | --- | --- | --- | --- | --- |
+| 25 | All | 668 → 668 | 296 [164, 439] → 296 | 0 [0, 15] → 0 | 0.901 [0.798, 0.959] → 0.902 |
+| 50 | All | 3,061 → 3,079 | 444 [271, 656] → 441 | 62 [0, 184] → 62 | 0.863 [0.730, 0.933] → 0.863 |
+| 50 | Cultivation | 665 → 671 | 445 [277, 609] → 451 | 0 → 0 | 0.839 → 0.838 |
+| 50 | Husbandry | 2,307 → 2,318 | 444 [271, 668] → 440 | 118 [37, 250] → 118 | 0.876 → 0.877 |
+| 50 | Watercraft | 89 → 90 | 389 [228, 562] → 389 | 0 → 0 | 0.820 [0.716, 0.917] → 0.806 |
+
+The other checked metrics are linked population, mean field q, farmer share
+and herder share. At 50 turns, pooled population is +0.14% (1,381,126 →
+1,383,033) and managed animals +0.8%. The technology mix is unchanged to
+three decimals (Cultivation 0.217 / Husbandry 0.754 / Watercraft 0.029). C1
+diverges from the exact branch from post-opening turn 8.
+
+**Work counts** (C1, 50 turns, one instrumented run each):
+
+| Per plan | Exact (need-capped) | Shared ladder |
+| --- | --- | --- |
+| Expansion ladder builds | 3.21 | 0.83 |
+| Food-kernel queries | 232.0 | 203.6 |
+| Investment comparisons | 86.3 | 72.1 |
+| Kernel cache hits | 204.8 | 29.7 |
+| `SharedAllocation` constructor | 0.605 ms | 0.510 ms |
+| Plan | 1.457 ms | 1.381 ms |
+
+The need-capped exact branch reproduces every pre-cache fingerprint. Much of
+the repeated ladder work was already a cache hit, so sharing the ladder
+mainly saves the greedy loop and the per-choice off-grid steps: about 5% of
+plan time and 16% of the constructor.
+
+**Timing.** These are C1 sequential pairs after the container resumed. The
+noise was larger than in Step 1: control preparation alone ranged 2.5–4.4 s
+over the same 25 turns, and the unchanged AI phase varied by up to 25%
+between paired runs. Three triples (control, exact, shared) at 25 and 50
+turns, plus four further alternating exact/shared pairs at 50 turns:
+
+| Measure (50 turns) | Control | Exact need-capped | Shared ladder |
+| --- | --- | --- | --- |
+| Preparation per camp-turn, triple medians | 1.266 ms | 2.048 ms | 1.690 ms |
+| Shared vs exact preparation | | | −17.0% over the 3 triples (range −17.2% to −4.9%); −8.1% over 4 alternating pairs (range −15.2% to +0.8%) |
+
+The paired 25-turn change is within noise (+2.8%, range +1.1% to +25.0%).
+Against the 2.744 ms per camp-turn measured before Step 1, the chain is:
+
+1. The exact cache.
+2. Relaxing to the need-capped ladder (exact, about −32%).
+3. The shared ladder (about −5% to −8%).
+
+Together these bring 50-turn preparation per camp-turn to roughly 1.7–1.8
+ms, against a control of about 1.2–1.3 ms. Preparation stays roughly
++35–60% over the control per camp-turn, and the candidate's camps are also
+larger. Runtime acceptance against the earlier HV3 +5% total criterion
+remains open.
+
 ### What remains
 
-A sampled trace of the cached source over 50 turns puts
-`SharedAllocation`'s constructor at 55% of planning, and 83% of it is the
-per-operation expansion ladders. The rest of planning is the craft
-fulfilment search (`Evaluate`, 30%) and the demand pass (10%), as in the
-control. The remaining exact work grows with operation choices: forecasts
-for fields with capital, plus each choice's off-grid first ladder step.
-Removing that dependence, or the gap to the control, changes the operation
-choice set. That is the outcome-changing *Step 2* of the plan and needs a
-new five-world census and approval.
+With the need-capped shared ladder, the constructor is about 0.5 ms of a
+1.4 ms plan. Most of it is the per-choice land forecasts for fields with
+capital, plus the per-choice herd ladders (2.1 per plan). The rest of the
+plan is the same craft fulfilment search and demand pass the control runs.
+Sharing the herd ladder across operation choices would be the next
+outcome-changing lever. It has not been measured.
 
 ```bash
 python3 Tools/PerformanceAudit/Run-SharedAllocationAudit.py --phase=build --output=TestResults/PlannerPerf
