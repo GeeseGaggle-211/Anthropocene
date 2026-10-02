@@ -133,6 +133,7 @@
   "BaseBirthRate": 0.045,
   "QoLMortalityElasticity": 2,
   "HerdLabourEnabled": false,
+  "SharedCropHerdAllocationEnabled": false,
   "MinimumHerdHerders": 1,
   "ImmigrationEnabled": false,
   "ImmigrationRadius": 4,

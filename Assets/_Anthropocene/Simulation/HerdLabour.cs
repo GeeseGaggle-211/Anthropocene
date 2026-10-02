@@ -43,6 +43,20 @@ namespace Anthropocene.Simulation
         // Portfolio totals are transient; legacy Value is diagnostic only in portfolio mode.
         public double[] TotalValue, WorkerYears, CurrentAnimalFood, SlaughterFood;
         public double[] CurrentValue, FutureValue, ResidualValue, ManagementYears, SavedHarvestYears, ReplacementYears, CraftYears;
+        // Joint-allocation candidates use bounded staffing breakpoints. Legacy
+        // ladders retain one index per herder for exact control continuation.
+        internal int[] HerderCounts;
+        internal double[] CurrentWorkerYears;
+        internal double[] FutureAnnualFood;
+        internal int IndexOf(int herders)
+        {
+            if (HerderCounts == null) return Math.Max(0, Math.Min(herders, Steps));
+            int index = Array.BinarySearch(HerderCounts, herders);
+            return index >= 0 ? index : Math.Max(0, ~index - 1);
+        }
+        internal int CountAt(int index) => HerderCounts == null ? index : HerderCounts[index];
+        internal double AnimalFoodAt(int herders) => CurrentAnimalFood[IndexOf(herders)];
+        internal double SlaughterFoodAt(int herders) => SlaughterFood[IndexOf(herders)];
         // HV2 diagnostics are transient, like the ladder itself.
         public double PastureCapacity, NonFieldCapacity, FieldAlternativeRate, CapitalLifeYears;
         // Production maximizes total value minus price times net discounted work, subject to the seed floor.
@@ -58,7 +72,7 @@ namespace Anthropocene.Simulation
                     int mid = (low + high) / 2;
                     if (w < PriceCrossings[mid]) low = mid + 1; else high = mid;
                 }
-                return Choices[low];
+                return CountAt(Choices[low]);
             }
             int count = 0;
             while (count < Value.Length && Value[count] > 0 && (!(price > 0) || Value[count] >= price)) count++;
@@ -75,7 +89,8 @@ namespace Anthropocene.Simulation
         {
             if (choices != null) return;
             var hull = new List<int>();
-            foreach (int k in Enumerable.Range(MinimumHerders, Steps - MinimumHerders + 1)
+            int firstIndex = IndexOf(MinimumHerders);
+            foreach (int k in Enumerable.Range(firstIndex, Steps - firstIndex + 1)
                 .OrderBy(k => WorkerYears[k]).ThenByDescending(k => TotalValue[k]).ThenBy(k => k))
             {
                 if (hull.Count > 0 && (WorkerYears[k] <= WorkerYears[hull[hull.Count - 1]] + 1e-10
@@ -97,7 +112,7 @@ namespace Anthropocene.Simulation
         // Herd size the staffed herders can manage at full fulfilment, never above the herd the pasture grows to.
         public int Target(int herders)
         {
-            double managed = Capacity[Math.Max(0, Math.Min(herders, Steps))];
+            double managed = Capacity[IndexOf(herders)];
             return (int)Math.Floor(Math.Min(GrownAnimals, managed) + 1e-9);
         }
 
@@ -280,7 +295,7 @@ namespace Anthropocene.Simulation
 
         // The planner's herd valuation applies to automated Value-rule husbandry camps when the lever is on.
         public static bool Applies(WorldState w, Camp c)
-            => w.Config.HerdLabourEnabled && w.Config.Neolithic.ValueFulfilmentSelected && CultivationEconomy.HusbandryEnabled(c) && c.Population > 0;
+            => (w.Config.HerdLabourEnabled || w.Config.SharedCropHerdAllocationEnabled) && w.Config.Neolithic.ValueFulfilmentSelected && CultivationEconomy.HusbandryEnabled(c) && c.Population > 0;
 
         // Builds the ladder after the demand pass has priced every claim. Null when the camp has no managed animals.
         public static HerdLadder Build(WorldState w, Camp c, CampProductionDemand d, double breeding)
@@ -295,24 +310,39 @@ namespace Anthropocene.Simulation
             var counts = herds.Select(h => h.Animals).ToArray();
             var carcasses = herds.Select(h => CarcassFood(w, h)).ToArray();
             var liquidation = new Liquidation(counts, carcasses);
+            bool shared = cfg.SharedCropHerdAllocationEnabled;
             var capacity = new List<double> { 0 };
-            for (int k = 1; k <= c.Population && capacity[k - 1] < grownAnimals - 1e-9; k++)
+            int[] countsOfHerders = null;
+            if (shared)
+            {
+                int maximum = Math.Min(c.Population, HerdingTooling.RequiredHerdersFor(w, c, years, grownAnimals));
+                var breaks = new SortedSet<int> { 0, maximum, Math.Min(maximum, cfg.MinimumHerdHerders), HerdingTooling.RequiredHerdersFor(w, c, years, animals) };
+                int toolBreak = (int)Math.Min(maximum, Math.Max(0, c.Inventory.HerdingTools) * n.HerdingToolCoverageYearsPerUnit / years);
+                breaks.Add(toolBreak); breaks.Add(Math.Min(maximum, toolBreak + 1));
+                // Fixed allocation resolution, not a population or time loop.
+                for (int band = 1; band < 32; band++) breaks.Add((int)Math.Ceiling(maximum * band / 32.0));
+                countsOfHerders = breaks.Where(k => k >= 0 && k <= maximum).ToArray();
+                capacity = countsOfHerders.Select(k => HerdingTooling.AnimalsManagedBy(w, c, years, k)).ToList();
+            }
+            else for (int k = 1; k <= c.Population && capacity[k - 1] < grownAnimals - 1e-9; k++)
                 capacity.Add(HerdingTooling.AnimalsManagedBy(w, c, years, k));
             var ladder = new HerdLadder { Capacity = capacity.ToArray(), GrownAnimals = grownAnimals,
-                MinimumHerders = Math.Min(capacity.Count - 1, Math.Max(0, cfg.MinimumHerdHerders)),
+                MinimumHerders = Math.Min(shared ? countsOfHerders[countsOfHerders.Length - 1] : capacity.Count - 1, Math.Max(0, cfg.MinimumHerdHerders)),
                 Value = new double[capacity.Count - 1], TotalValue = new double[capacity.Count], WorkerYears = new double[capacity.Count],
                 CurrentAnimalFood = new double[capacity.Count], SlaughterFood = new double[capacity.Count],
                 CurrentValue = new double[capacity.Count], FutureValue = new double[capacity.Count], ResidualValue = new double[capacity.Count],
-                ManagementYears = new double[capacity.Count], SavedHarvestYears = new double[capacity.Count], ReplacementYears = new double[capacity.Count], CraftYears = new double[capacity.Count] };
+                ManagementYears = new double[capacity.Count], SavedHarvestYears = new double[capacity.Count], ReplacementYears = new double[capacity.Count], CraftYears = new double[capacity.Count],
+                HerderCounts = countsOfHerders, CurrentWorkerYears = new double[capacity.Count], FutureAnnualFood = new double[capacity.Count] };
             Pasture(w, c, grown, intervals, out ladder.PastureCapacity, out ladder.NonFieldCapacity, d);
             // Continuation promises only the existing one-tile forage/water footprint.
             // Mobile outer pasture remains diagnostic, never free future receipts.
             var settled = EconomicPlanner.Preview(c, EconomicIntent.From(c), c.Population); settled.IsVillage = true;
             Pasture(w, settled, grown, intervals, out double localCapacity, out _, d);
+            if (shared) localCapacity = Math.Min(localCapacity, d.FuturePastureCapacity);
             double horizon = Math.Max(years, n.PlanningHorizonYears), future = horizon - years, r = n.DiscountRatePerYear;
             ladder.CapitalLifeYears = DiscountedYears(r, horizon);
             double nowDiscount = Math.Exp(-r * years), terminalDiscount = Math.Exp(-r * horizon);
-            double annualHuman = d.ForageAfterHerds / years, annualMeals = d.Meals / years;
+            double annualHuman = (shared ? d.FutureForageAfterHerds : d.ForageAfterHerds) / years, annualMeals = d.Meals / years;
             double harvestRate = cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays;
             if (d.Established) harvestRate *= Math.Max(1, d.HarvestProductivity);
             ladder.FieldAlternativeRate = harvestRate;
@@ -341,6 +371,13 @@ namespace Anthropocene.Simulation
                 c.Population / n.LightHousingPeoplePerUnit * -Math.Log(1 - n.HousingDecayPerTurn) / n.ReferenceTurnYears) : 0;
             double futureMealGap = Math.Max(0, annualMeals - annualHuman);
             double futureGrowthGap = Math.Max(0, growthFood / years - Math.Max(0, annualHuman - annualMeals));
+            var ledger = shared ? new FoodIncomeLedger(w, c, d) : null;
+            FoodIncomeLedger.Receipt afterHuman = default;
+            if (shared)
+            {
+                afterHuman = ledger.Receive(d.TerrestrialAfterHerds, Math.Max(0, d.ForageAfterHerds - d.TerrestrialAfterHerds), 0);
+                currentSizes = new[] { afterHuman.RemainingConsumption, fabricInput, housingInput, afterHuman.RemainingReserve, afterHuman.RemainingGrowth };
+            }
             // Reserve and finished-goods shortfalls are one-time, not annual streams.
             var futureSizes = new[] { futureMealGap, futureFabric, futureHousing, 0.0, futureGrowthGap };
             double management = Math.Pow(d.ManagedFood.ManagementFulfillment, cfg.AnimalManagementExponent);
@@ -362,21 +399,33 @@ namespace Anthropocene.Simulation
             }
             for (int k = 0; k <= ladder.Steps; k++)
             {
-                int target = ladder.Target(k);
-                var plan = HerdingTooling.Plan(w, c, years, k, animals);
+                int herdersNow = ladder.CountAt(k);
+                int target = ladder.Target(herdersNow);
+                var plan = HerdingTooling.Plan(w, c, years, herdersNow, animals);
                 double milk = fullCurrentFood * Math.Pow(plan.Fulfillment, cfg.AnimalManagementExponent);
                 double slaughter = liquidation.Food(Math.Max(0, (int)animals - target));
                 ladder.CurrentAnimalFood[k] = milk; ladder.SlaughterFood[k] = slaughter;
                 double incoming = milk + slaughter;
-                double currentValue = HerdBuckets.ValueOf(c.AnimalFood, c.AnimalFood + incoming, currentSizes, values);
+                double currentValue = shared
+                    ? ledger.Marginal(d.TerrestrialAfterHerds, Math.Max(0, d.ForageAfterHerds - d.TerrestrialAfterHerds), 0, 0, 0, incoming)
+                    : HerdBuckets.ValueOf(c.AnimalFood, c.AnimalFood + incoming, currentSizes, values);
                 // Savings are harvesting that could actually be done, after typed inputs and inventory.
                 double currentFoodNeed = Math.Max(0, d.Biological);
                 double beforeHarvest = Math.Min(d.ForageAfterHerds, currentFoodNeed);
                 double afterHarvest = Math.Min(d.ForageAfterHerds, Math.Max(0, currentFoodNeed - incoming + fabricInput + housingInput));
+                if (shared)
+                {
+                    beforeHarvest = afterHuman.Consumption + afterHuman.Reserve + afterHuman.Growth + afterHuman.IncomingPlantInput;
+                    var receipts = ledger.Receive(d.TerrestrialAfterHerds, Math.Max(0, d.ForageAfterHerds - d.TerrestrialAfterHerds), incoming);
+                    double used = receipts.Consumption + receipts.Reserve + receipts.Growth + receipts.IncomingPlantInput + receipts.IncomingAnimalInput;
+                    afterHarvest = Math.Max(receipts.IncomingPlantInput, used - incoming);
+                }
                 double gatherPerYear = cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays;
                 double HarvestWorkers(double food)
                 {
                     double land = Math.Min(d.TerrestrialAfterHerds, food);
+                    if (shared) return d.OperationFarmers + (gatherPerYear > 0
+                        ? Math.Max(0, food - Math.Min(land, d.OperationFarmers * harvestRate * years)) / years / gatherPerYear : 0);
                     double field = d.Established && harvestRate > 0 ? Math.Max(d.Upkeep, land / years / harvestRate) : 0;
                     double remaining = Math.Max(0, food - Math.Min(land, field * harvestRate * years));
                     return field + (gatherPerYear > 0 ? remaining / years / gatherPerYear : 0);
@@ -387,9 +436,13 @@ namespace Anthropocene.Simulation
                     Math.Min(animals, plan.Capacity) - plan.CoveredHerderYears / years * n.StoneHerdingToolAnimalsPerHerder) / primitive;
                 double coveredFraction = activeHerderYears > 0 ? Math.Min(1, plan.CoveredHerderYears / activeHerderYears) : 0;
                 double effective = primitive + coveredFraction * (n.StoneHerdingToolAnimalsPerHerder - primitive);
-                double growth = target <= localCapacity + 1e-9 ? baseGrowth : 0;
-                double futureCapacity = Math.Max(target, Math.Min(localCapacity, c.Population * effective));
-                double neededTools = future > 0 ? coveredFraction * AnimalYears(target, growth, futureCapacity, 0, future) / effective / n.HerdingToolCoverageYearsPerUnit : 0;
+                // A held/cut target cannot promise unrestricted offspring while
+                // the rolling plan caps them. Only the full feasible breeding
+                // option prices that continuation; the seed floor is explicit.
+                double growth = target <= localCapacity + 1e-9 && (!shared || target >= Math.Floor(grownAnimals + 1e-9)) ? baseGrowth : 0;
+                double futureTarget = shared ? Math.Min(target, localCapacity) : target;
+                double futureCapacity = Math.Max(futureTarget, Math.Min(localCapacity, c.Population * effective));
+                double neededTools = future > 0 ? coveredFraction * AnimalYears(futureTarget, growth, futureCapacity, 0, future) / effective / n.HerdingToolCoverageYearsPerUnit : 0;
                 double remainingTools = Math.Max(0, c.Inventory.HerdingTools - plan.ToolsConsumed);
                 double replacement = Math.Max(0, neededTools - remainingTools);
                 double feasibleTools = Math.Min(d.Accessible[MaterialId.Stone] + c.Inventory.Stone, d.Accessible[MaterialId.Wood] + c.Inventory.Wood);
@@ -397,41 +450,47 @@ namespace Anthropocene.Simulation
                 {
                     // Unsupported replacement is not free: use primitive continuation.
                     effective = primitive; coveredFraction = 0; replacement = 0;
-                    futureCapacity = Math.Max(target, Math.Min(localCapacity, c.Population * effective));
+                    futureCapacity = Math.Max(futureTarget, Math.Min(localCapacity, c.Population * effective));
                 }
                 double futureManagement = target > 0 ? Math.Min(1, c.Population * effective / target) : 1;
                 double futureYield = yield * Math.Pow(futureManagement, cfg.AnimalManagementExponent);
-                double futureValue = Continuation(target, growth, futureCapacity, futureYield, 0, futureSizes, values, r, future);
+                double futureValue = Continuation(futureTarget, growth, futureCapacity, futureYield, 0, futureSizes, values, r, future);
+                ladder.FutureAnnualFood[k] = future > 0 ? futureYield * AnimalYears(futureTarget, growth, futureCapacity, r, future)
+                    / Math.Max(1e-12, DiscountedYears(r, future)) : 0;
                 // Credit a usable residual only for stock the local forage/water can support.
                 // Unsupported animals do not earn salvage by assuming they survive starvation.
-                double terminal = Math.Min(localCapacity, EndAnimals(target, growth, futureCapacity, future));
+                double terminal = Math.Min(localCapacity, EndAnimals(futureTarget, growth, futureCapacity, future));
                 double terminalValue = HerdBuckets.ValueOf(0, terminal * grown.CarcassFood, currentSizes, values);
-                double baselineHarvest = Math.Min(annualHuman, annualMeals + growthFood / years);
+                // The shared future human baseline staffs recurring meals.
+                // Milk cannot release extra growth-harvest work that baseline
+                // never employed.
+                double baselineHarvest = Math.Min(annualHuman, annualMeals + (shared ? 0 : growthFood / years));
                 double unpaidLimit = futureMealGap + futureFabric + futureHousing;
                 double gatherRate = cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays;
-                double FoodIntegral(double limit) => futureYield > 0 ? futureYield * AnimalYears(target, growth, Math.Min(futureCapacity, limit / futureYield), r, future) : 0;
-                double cheapHarvest = d.Established ? Math.Min(baselineHarvest, d.TerrestrialAfterHerds / years) : 0;
+                double FoodIntegral(double limit) => futureYield > 0 ? futureYield * AnimalYears(futureTarget, growth, Math.Min(futureCapacity, limit / futureYield), r, future) : 0;
+                double cheapHarvest = d.Established ? Math.Min(baselineHarvest, shared ? d.FutureUpkeep * harvestRate : d.TerrestrialAfterHerds / years) : 0;
                 double expensiveHarvest = baselineHarvest - cheapHarvest;
                 // Existing maintenance remains a minimum in the actual planner.
                 // Milk frees crop-harvest work only above that floor.
-                double cheapSaving = Math.Max(0, cheapHarvest - d.Upkeep * harvestRate);
+                double cheapSaving = Math.Max(0, cheapHarvest - (shared ? d.FutureUpkeep : d.Upkeep) * harvestRate);
                 double usedLimit = unpaidLimit + expensiveHarvest + cheapSaving;
                 double displacedHarvest = FoodIntegral(usedLimit) - FoodIntegral(unpaidLimit);
                 double expensiveSaved = FoodIntegral(unpaidLimit + expensiveHarvest) - FoodIntegral(unpaidLimit);
                 double futureSaved = gatherRate > 0 && harvestRate > 0 ? displacedHarvest / harvestRate
                     + expensiveSaved * (1 / gatherRate - 1 / harvestRate) : 0;
-                double craftYears = Continuation(target, growth, futureCapacity, futureYield, 0, futureSizes,
+                double craftYears = Continuation(futureTarget, growth, futureCapacity, futureYield, 0, futureSizes,
                     new[] { 0.0, Math.Max(0, fabric?.LabourPerUnit ?? 0), Math.Max(0, housing?.LabourPerUnit ?? 0), 0.0, 0.0 }, r, future);
                 double replacementWorkerYears = replacement > 0 ? replacement * toolLabour * DiscountedYears(r, future) / Math.Max(1e-12, future) : 0;
                 ladder.CurrentValue[k] = nowDiscount * currentValue;
                 ladder.FutureValue[k] = nowDiscount * futureValue;
                 ladder.ResidualValue[k] = terminalDiscount * terminalValue;
-                ladder.ManagementYears[k] = k * DiscountedYears(r, years) + nowDiscount * AnimalYears(target, growth, Math.Min(futureCapacity, c.Population * effective), r, future) / effective;
+                ladder.ManagementYears[k] = herdersNow * DiscountedYears(r, years) + nowDiscount * AnimalYears(futureTarget, growth, Math.Min(futureCapacity, c.Population * effective), r, future) / effective;
                 ladder.SavedHarvestYears[k] = savedNow * DiscountedYears(r, years) + nowDiscount * futureSaved;
                 ladder.ReplacementYears[k] = nowDiscount * replacementWorkerYears;
                 ladder.CraftYears[k] = nowDiscount * craftYears;
                 ladder.TotalValue[k] = ladder.CurrentValue[k] + ladder.FutureValue[k] + ladder.ResidualValue[k];
                 ladder.WorkerYears[k] = ladder.ManagementYears[k] + ladder.ReplacementYears[k] + ladder.CraftYears[k] - ladder.SavedHarvestYears[k];
+                ladder.CurrentWorkerYears[k] = (herdersNow - savedNow) * DiscountedYears(r, years);
                 if (k > 0)
                 {
                     double cost = ladder.WorkerYears[k] - ladder.WorkerYears[k - 1];
@@ -479,7 +538,7 @@ namespace Anthropocene.Simulation
         // Credits the carcass food to the camp's Animal Food store as a realized flow (no ecology pressure) and records it.
         public static void Slaughter(WorldState w, Camp camp, IReadOnlyList<Herd> herds, IDictionary<int, ManagedHerdReport> reports, TurnRecord record)
         {
-            if (!w.Config.HerdLabourEnabled || !camp.HerdTargetSet || herds.Count == 0) return;
+            if (!(w.Config.HerdLabourEnabled || w.Config.SharedCropHerdAllocationEnabled) || !camp.HerdTargetSet || herds.Count == 0) return;
             var counts = herds.Select(h => h.Animals).ToArray();
             long total = counts.Sum(x => (long)x);
             int excess = (int)Math.Max(0, Math.Min(int.MaxValue, total - Math.Max(0, camp.HerdTarget)));

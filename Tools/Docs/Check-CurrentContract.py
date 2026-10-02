@@ -21,6 +21,7 @@ END = "<!-- CURRENT_CONFIG_TABLE:END -->"
 # JSON key -> (unit / meaning, status). Keep this registry small and purposeful:
 # it catches prose drift for current values that have historically conflicted.
 FIELDS = [
+    ("SharedCropHerdAllocationEnabled", "boolean: joint food ledger, field-operation and bounded herd portfolio under the Value rule", "branch correction, opt-in; false for new worlds and saves without the field"),
     ("ReferenceTurnYears", "years per Neolithic reference turn", "reference scale"),
     ("MinimumCampSpacing", "hexes between resolved camp destinations", "shipped placement rule (saves without the field load 3)"),
     ("ContactExpiryTurns", "turns before an unrefreshed settlement contact is forgotten", "shipped contact-knowledge rule (saves without the field load 5)"),
@@ -106,6 +107,7 @@ TESTS = [
     ("Tools/Headless/HerdLabourChecks.cs", "HerdLabourChecks.Run"),
     ("Tools/Headless/ImmigrationChecks.cs", "ImmigrationChecks.Run"),
     ("Tools/Headless/SettlingChecks.cs", "SettlingChecks.Run"),
+    ("Tools/Headless/SharedAllocationChecks.cs", "SharedAllocationChecks.Run"),
 ]
 API_ONLY_FIELDS = {"CultivationRegenFlux"}
 
@@ -126,13 +128,14 @@ def render_table(config: dict) -> str:
     model_text = MODEL.read_text(encoding="utf-8") + SIM_MODEL.read_text(encoding="utf-8")
     # Read field initializers only. Migration assignments inside callbacks are
     # legacy defaults, not the defaults of a newly constructed config.
-    declarations = "\n".join(re.findall(r"public\s+(?:double|int)\s+([^;\n]+);", model_text))
+    declarations = "\n".join(re.findall(r"public\s+(?:double|int|bool)\s+([^;\n]+);", model_text))
     derived = {"GrowthReserveYears": "GrowthReserveTurns", "MinimumStorageYears": "MinimumStorageGenerations",
                "MaximumStorageYears": "MaximumStorageGenerations"}
     def default_value(name):
-        match = re.search(rf"\b{re.escape(name)}\s*=\s*(\.\d+|\d+(?:\.\d*)?)(?:[dDfF])?\b", declarations)
+        match = re.search(rf"\b{re.escape(name)}\s*=\s*(true|false|\.\d+|\d+(?:\.\d*)?)(?:[dDfF])?\b", declarations)
         if match:
-            return float(match.group(1))
+            literal = match.group(1)
+            return literal == "true" if literal in ("true", "false") else float(literal)
         if name in derived and f"{name} = {derived[name]} * referenceYears;" in model_text:
             if "double referenceYears = Neolithic.ReferenceTurnYears;" not in model_text:
                 raise ValueError("Physical-food constructor reference changed; audit its derivation")
@@ -150,11 +153,14 @@ def render_table(config: dict) -> str:
         row_status = status
         if abs(api_default - comparable) > max(1e-10, abs(comparable) * 1e-10):
             raise ValueError(f"Undocumented OpeningConfig/API default mismatch: {name} {comparable} != {api_default}")
-        if isinstance(value, float):
+        if isinstance(value, bool):
+            shown = str(value).lower()
+        elif isinstance(value, float):
             shown = format(value, ".12g")
         else:
             shown = str(value)
-        rows.append(f"| `{name}` | {shown} | {format(api_default, '.12g')} | {unit} | {row_status} |")
+        api_shown = str(api_default).lower() if isinstance(api_default, bool) else format(api_default, ".12g")
+        rows.append(f"| `{name}` | {shown} | {api_shown} | {unit} | {row_status} |")
     return "\n".join(rows)
 
 

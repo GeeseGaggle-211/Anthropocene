@@ -251,11 +251,17 @@ namespace Anthropocene.Simulation
             }
             plan.RequiredMaintenance = required;
             double farmers = Workers(camp, WorkforceRoles.Farmer);
+            // The shared portfolio may deliberately let existing fields decay
+            // while building a more productive local field. Its explicit build
+            // work cannot first be spent maintaining the abandoned capital.
+            double buildFarmers = w.Config.SharedCropHerdAllocationEnabled
+                ? Math.Min(farmers, Math.Max(0, camp.EconomicLabor?.ExpansionFarmers ?? 0)) : 0;
+            double upkeepFarmers = farmers - buildFarmers;
             double years = segmentYears > 0 ? segmentYears : w.Config.TurnDays / w.Config.DaysPerYear;
             double efficiency = FarmToolFieldWorkEfficiency(w.Config.Neolithic);
-            double availableCovered = Math.Min(farmers, (toolBudget ?? new FarmToolWorkBudget(w, camp)).AvailableWorkerYears(w.Config.Neolithic.FarmToolFarmerYearsPerUnit) / years);
+            double availableCovered = Math.Min(upkeepFarmers, (toolBudget ?? new FarmToolWorkBudget(w, camp)).AvailableWorkerYears(w.Config.Neolithic.FarmToolFarmerYearsPerUnit) / years);
             double coveredMaintenance = Math.Min(availableCovered, required / efficiency);
-            double uncoveredMaintenance = Math.Min(Math.Max(0, farmers - coveredMaintenance), Math.Max(0, required - coveredMaintenance * efficiency));
+            double uncoveredMaintenance = Math.Min(Math.Max(0, upkeepFarmers - coveredMaintenance), Math.Max(0, required - coveredMaintenance * efficiency));
             double maintenanceFarmers = coveredMaintenance + uncoveredMaintenance;
             plan.MaintenanceFarmerWorkerYears = maintenanceFarmers * years;
             plan.MaintenanceCoveredWorkerYears = coveredMaintenance * years;
@@ -267,7 +273,8 @@ namespace Anthropocene.Simulation
             {
                 // Maintenance is a minimum, not a ceiling on harvesting employment.
                 // Explicit expansion time cannot simultaneously harvest or do upkeep.
-                plan.ExpansionFarmers = Math.Min(plan.ExpansionFarmers, camp.EconomicLabor.ExpansionFarmers);
+                plan.ExpansionFarmers = w.Config.SharedCropHerdAllocationEnabled ? buildFarmers
+                    : Math.Min(plan.ExpansionFarmers, camp.EconomicLabor.ExpansionFarmers);
                 plan.OperatingFarmers = established ? farmers - plan.ExpansionFarmers : 0;
             }
             return plan;
@@ -422,7 +429,7 @@ namespace Anthropocene.Simulation
         internal struct ExpansionStep
         {
             public int Tile;
-            public double Score, WorkerYears, AnnualGain;
+            public double Score, WorkerYears, AnnualGain, MaintenancePerYear;
             // Village-footprint average field intensity after this step (the quantity UpdateVillageAtBoundary compares with
             // VillageIntensity). Recorded only for the planner's ladder; 0 elsewhere.
             public double VillageAverage;
@@ -439,10 +446,11 @@ namespace Anthropocene.Simulation
         // annualGainCap stops recording once the cumulative annual food reaches it (the
         // step that crosses it is kept): the valuation never reads beyond the total food gap.
         // Pure: reads the projected ecology only.
-        internal static ExpansionStep[] ExpansionLadder(WorldState w, Camp camp, double years, int[] cachedFootprint = null, double annualGainCap = double.PositiveInfinity)
+        internal static ExpansionStep[] ExpansionLadder(WorldState w, Camp camp, double years, int[] cachedFootprint = null, double annualGainCap = double.PositiveInfinity, double? operatingFraction = null)
         {
             if (!(years > 0) || double.IsInfinity(years)) return Array.Empty<ExpansionStep>();
             var candidates = StartCandidates(w, camp, cachedFootprint);
+            if (operatingFraction.HasValue) foreach (var field in candidates) field.OperatingFraction = operatingFraction.Value;
             foreach (var field in candidates) { field.Decayed = Decay(w.Config, field.Start, field.OperatingFraction, years); field.Capital = field.Decayed; }
             var record = new List<ExpansionStep>();
             AllocateHorizonEffort(w, camp, candidates, double.PositiveInfinity, false, years, record, annualGainCap);
@@ -587,7 +595,10 @@ namespace Anthropocene.Simulation
                     touched[best] = true; double sum = 0;
                     for (int i = 0; i < candidates.Length; i++)
                         if (touched[i] || candidates[i].StartOperator == camp.Id) sum += Intensity(c, candidates[i].Capital);
-                    record.Add(new ExpansionStep { Tile = candidates[best].Tile, Score = bestScore, WorkerYears = chargedEffort * bestCostPerEffort, AnnualGain = bestGain, VillageAverage = villageLand > 0 ? sum / villageLand : 0 });
+                    double upkeep = MaintenanceMultiplier(c, w.Tiles[candidates[best].Tile], candidates[best].Ecology.CurrentVegetation);
+                    record.Add(new ExpansionStep { Tile = candidates[best].Tile, Score = bestScore, WorkerYears = chargedEffort * bestCostPerEffort, AnnualGain = bestGain,
+                        MaintenancePerYear = chargedEffort * n.MaintenanceWorkersPerTileE(c.MaintenanceCoefficient) * upkeep,
+                        VillageAverage = villageLand > 0 ? sum / villageLand : 0 });
                 }
                 cached[best] = false;
                 if (record != null && (recordedGain += bestGain) >= annualGainCap) break;

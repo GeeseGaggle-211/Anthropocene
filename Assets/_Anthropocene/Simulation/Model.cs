@@ -54,7 +54,7 @@ namespace Anthropocene.Simulation
             // Absent in older saves: QoL-dependent mortality is off so a loaded game continues with its original growth ceiling (Docs/QoLMortality.md).
             QoLMortalityEnabled = false; BaseBirthRate = defaults.BaseBirthRate; QoLMortalityElasticity = defaults.QoLMortalityElasticity;
             // Absent in older saves: the herd-labour coupling is off, so a loaded game keeps its unconditional herder reservation and never slaughters (Docs/HerdLabour.md).
-            HerdLabourEnabled = false; MinimumHerdHerders = defaults.MinimumHerdHerders;
+            HerdLabourEnabled = false; SharedCropHerdAllocationEnabled = false; MinimumHerdHerders = defaults.MinimumHerdHerders;
             LandBiomassMultiplier = 1;
             LandSafeUseRatio = 1;
             LandFoodRegenerationInitialized = false;
@@ -132,6 +132,9 @@ namespace Anthropocene.Simulation
         // camp's HerdTarget are slaughtered after breeding (carcass food = SpeciesDefinition.FoodYield per animal). MinimumHerdHerders is the seed herd the planner always keeps managed.
         // Saves that predate these fields load with HerdLabourEnabled = false.
         [System.Runtime.Serialization.OptionalField] public bool HerdLabourEnabled = false;
+        // Joint Value-rule food accounting, field operation and livestock investment.
+        // Opt-in; absent in legacy saves means the measured corrected control.
+        [System.Runtime.Serialization.OptionalField] public bool SharedCropHerdAllocationEnabled = false;
         [System.Runtime.Serialization.OptionalField] public int MinimumHerdHerders = 1;
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;

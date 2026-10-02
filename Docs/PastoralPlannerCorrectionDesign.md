@@ -6,6 +6,11 @@ the next correction; it does not claim a production implementation or new
 gameplay/performance results. Preserve the measured crop-moisture and
 biomass-first candidate and its fertile-land benchmarks.
 
+The subsequent opt-in implementation and matched measurements are recorded in
+[SharedAllocationValidation.md](SharedAllocationValidation.md). Runtime
+acceptance and animal-unit/rate calibration remain open; the feature stays off
+by default.
+
 ## User direction
 
 1. Spare residents must be able to invest in herd retention/breeding as well

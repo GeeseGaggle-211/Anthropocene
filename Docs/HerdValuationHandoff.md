@@ -7,6 +7,20 @@ the numbers to compare against.
 Measurement outputs live under `TestResults/`, which git ignores. A fresh container will not have them: regenerate
 baselines with the commands in section 5. The key numbers are copied into this file.
 
+## Shared planner implementation (2026-10-02)
+
+The user authorized the shared allocation correction on
+`features/herd-ecology-retention`. It is implemented behind
+`SharedCropHerdAllocationEnabled=false`, including old-save default-off
+compatibility. Read [SharedAllocationValidation.md](SharedAllocationValidation.md)
+for the mechanics, bounded computation, focused/replay checks, five-world
+population/animal/QoL quantiles and matched 25/50-turn performance.
+The control is the exact corrected simulation source at `03d1ed1`; both
+variants resume identical control opening saves. Animal rates and yields
+remain unchanged. Historical statements below that call this correction
+"next work" describe the pre-implementation checkpoint. HV3 range approval,
+animal-unit grounding, acquisition and HV4 remain separate work.
+
 ## Current follow-on checkout (2026-10-02)
 
 Use branch `features/herd-ecology-retention` for the next agent. It includes

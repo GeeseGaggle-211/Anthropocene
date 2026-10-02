@@ -214,6 +214,41 @@ namespace Anthropocene.Simulation
         }
     }
 
+    // Cached price-independent totals for one physical expansion ladder and
+    // one food portfolio. Price queries visit coefficients, not ecology kernels
+    // or demand/recipe/ledger reconstructions.
+    internal sealed class SharedExpansionSchedule
+    {
+        internal double[] Work = Array.Empty<double>(), Benefit = Array.Empty<double>(), FutureWork = Array.Empty<double>(), Productivity = Array.Empty<double>();
+        internal int[] Tiles = Array.Empty<int>();
+        internal void Purchase(double currentPrice, double futurePrice, double budget, out double years, out double net)
+        {
+            years = net = 0; double floor = double.PositiveInfinity;
+            for (int i = 0; i < Work.Length; i++)
+            {
+                floor = Math.Min(floor, Benefit[i] - futurePrice * FutureWork[i]);
+                if (!(floor > currentPrice)) break;
+                double bought = Math.Min(Work[i], Math.Max(0, budget - years));
+                years += bought; net += bought * (floor - currentPrice);
+                if (bought < Work[i]) break;
+            }
+        }
+        internal ExpansionLadderClaim Price(double futurePrice)
+        {
+            int count = 0; double floor = double.PositiveInfinity;
+            var values = new double[Work.Length];
+            for (int i = 0; i < Work.Length; i++)
+            {
+                floor = Math.Min(floor, Benefit[i] - futurePrice * FutureWork[i]);
+                if (!(floor > 0)) break;
+                values[count++] = floor;
+            }
+            if (count == 0) return null;
+            return new ExpansionLadderClaim { WorkerYears = Work.Take(count).ToArray(), Value = values.Take(count).ToArray(),
+                FoodPerWorkerYear = Productivity.Take(count).ToArray(), Tiles = Tiles.Take(count).ToArray(), TotalWorkerYears = Work.Take(count).Sum() };
+        }
+    }
+
     // Demand pass of the economic planner: everything a plan needs that does not
     // depend on the fulfilment level, built once per automated camp from the
     // prepared boundary. The fulfilment search reads it and never rebuilds it.
@@ -249,6 +284,10 @@ namespace Anthropocene.Simulation
         // ExpansionValuation.
         public ExpansionLadderClaim Expansion;
         internal CultivationEconomy.ExpansionStep[] PhysicalExpansion;
+        internal double FutureForageAfterHerds, FutureUpkeep;
+        internal double FuturePastureCapacity = double.PositiveInfinity;
+        internal int OperationFarmers;
+        internal CampProductionDemand AllocationCopy() => (CampProductionDemand)MemberwiseClone();
         // WP4a start-of-turn farm-labour price estimate w_farm0 (person-QoL-years per
         // worker-year): the ladder's value after last turn's expansion farmers; 0 with no ladder.
         public double FarmLabourPrice0;
@@ -275,15 +314,22 @@ namespace Anthropocene.Simulation
             return retainedExpansionPossible.Value;
         }
 
-        internal CampProductionDemand WithAnimalFood(WorldState w, Camp c, double animalFood)
+        internal CampProductionDemand WithAnimalFood(WorldState w, Camp c, double animalFood, double futurePrice = 0, double? futureAnnualAnimalFood = null)
         {
             var result = (CampProductionDemand)MemberwiseClone();
             result.SetFoodEnvelopes(w, c, animalFood);
             result.Expansion = null; result.ExpansionEffortCap = double.PositiveInfinity;
-            ExpansionValuation.Apply(w, c, result);
+            if (w.Config.SharedCropHerdAllocationEnabled) ExpansionValuation.ApplyShared(w, c, result, animalFood, futurePrice, futureAnnualAnimalFood);
+            else ExpansionValuation.Apply(w, c, result);
             return result;
         }
-        private void SetFoodEnvelopes(WorldState w, Camp c, double animalFood)
+        internal CampProductionDemand WithSharedExpansion(WorldState w, Camp c, double animalFood, ExpansionLadderClaim expansion)
+        {
+            var result = AllocationCopy(); result.SetFoodEnvelopes(w, c, animalFood);
+            result.Expansion = expansion; result.ExpansionEffortCap = double.PositiveInfinity;
+            return result;
+        }
+        internal void SetFoodEnvelopes(WorldState w, Camp c, double animalFood)
         {
             Supply = ForageAfterHerds + animalFood;
             SparePlant = Math.Min(c.PlantFood, Math.Max(0, c.Food - Meals - OperatingReserve));
@@ -390,10 +436,10 @@ namespace Anthropocene.Simulation
             d.ClothingNeedUnits = NeolithicProduction.ClothingNeedUnits(n, d.Preview.Population, years, c.Inventory.Cloth, c.Inventory.AnimalFabric);
             d.HousingMultiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
             ClaimValuation.Apply(w, c, d);
-            if (expansionClaim) ExpansionValuation.Apply(w, c, d, herdCapital && HerdLabour.Applies(w, c));
+            if (expansionClaim && !cfg.SharedCropHerdAllocationEnabled) ExpansionValuation.Apply(w, c, d, herdCapital && HerdLabour.Applies(w, c));
             ClaimValuation.ApplyTools(w, c, d);
             // The herder ladder reads the priced claims (feedstock values), so it comes after every claim is valued.
-            if (herdCapital && HerdLabour.Applies(w, c)) d.HerdLadder = HerdLabour.Build(w, c, d, e.ManagedBreedingIntensity);
+            if (herdCapital && HerdLabour.Applies(w, c) && !cfg.SharedCropHerdAllocationEnabled) d.HerdLadder = HerdLabour.Build(w, c, d, e.ManagedBreedingIntensity);
             return d;
         }
     }
@@ -571,6 +617,62 @@ namespace Anthropocene.Simulation
     // ignored (documented in EconomicAutomation.md).
     internal static class ExpansionValuation
     {
+        internal static void ApplyShared(WorldState w, Camp c, CampProductionDemand d, double animalFood, double futurePrice, double? futureAnnualAnimalFood = null)
+            => d.Expansion = SharedSchedule(w, c, d, animalFood, futureAnnualAnimalFood).Price(futurePrice);
+        internal static SharedExpansionSchedule SharedSchedule(WorldState w, Camp c, CampProductionDemand d, double animalFood, double? futureAnnualAnimalFood = null)
+        {
+            var schedule = new SharedExpansionSchedule();
+            if (!d.CultivationEnabled || c.Population <= 0) return schedule;
+            var cfg = w.Config; var n = cfg.Neolithic;
+            double years = cfg.TurnDays / cfg.DaysPerYear;
+            double life = Math.Exp(-n.DiscountRatePerYear * years) * HerdLabour.DiscountedYears(n.DiscountRatePerYear, Math.Max(0, n.PlanningHorizonYears - years));
+            if (!(life > 0)) return schedule;
+            var ledger = new FoodIncomeLedger(w, c, d);
+            var receipt = ledger.Receive(d.TerrestrialAfterHerds, Math.Max(0, d.ForageAfterHerds - d.TerrestrialAfterHerds), animalFood);
+            // Slaughter is an endpoint receipt, never a repeating milk stream.
+            double human = d.FutureForageAfterHerds / years, animal = Math.Max(0, futureAnnualAnimalFood ?? animalFood / years);
+            double consumption = Math.Max(0, d.Meals / years - human - animal);
+            double security = consumption + receipt.RemainingReserve / life;
+            double total = security + receipt.RemainingGrowth / years + Math.Max(0, d.ClothingNeedUnits * n.PlantFoodPerFabricUnit / years - Math.Max(0, human - d.Meals / years));
+            if (!(total > 0)) return schedule;
+            double vFood = FoodValue(cfg, c), perBirth = FoodPerBirth(cfg.Consumption * cfg.GenerationIntervals, QoLMortality.MaximumRate(w, c), years);
+            double vGrowth = perBirth > 0 ? Math.Max(0, MarginalWelfare(w, c)) * PersonLife(n) / perBirth : 0;
+            var steps = d.PhysicalExpansion ?? Array.Empty<CultivationEconomy.ExpansionStep>();
+            var worker = new List<double>(); var values = new List<double>(); var costs = new List<double>(); var productivity = new List<double>(); var tiles = new List<int>();
+            double filled = 0, upkeep = d.FutureUpkeep;
+            var tool = d.Claims.FirstOrDefault(claim => claim.Good == CraftGood.FarmTools);
+            double toolLabour = tool?.LabourPerUnit ?? 0;
+            if (!(toolLabour > 0) && tool != null)
+            {
+                double rate = tool.Rate * cfg.DaysPerYear / cfg.BaseDays;
+                double extraction = n.SpecialistMaterialExtractionRate
+                    * (c.People.HasTech(EconomicIntents.RequiredTechnology(MaterialEconomy.Specialist(MaterialId.Wood))) ? 1 : n.GeneralistTaskEfficiency) * cfg.DaysPerYear / cfg.BaseDays;
+                toolLabour = rate > 0 && extraction > 0 ? 1 / rate + tool.Recipe.Wood / extraction : double.PositiveInfinity;
+            }
+            double baseHarvest = Math.Min(human, d.Meals / years) / Math.Max(1e-12, d.HarvestProductivity * cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays);
+            foreach (var step in steps)
+            {
+                if (!(filled < total) || !(step.WorkerYears > 0)) break;
+                double gain = step.AnnualGain;
+                double benefit = life * (BucketValue(filled + gain, consumption, security, total, vFood, n.FoodRiskWeight * vFood, vGrowth)
+                    - BucketValue(filled, consumption, security, total, vFood, n.FoodRiskWeight * vFood, vGrowth));
+                double harvest = gain / Math.Max(1e-12, d.HarvestProductivity * cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays);
+                // The resolver overlaps maintenance and harvesting. Charge the
+                // incremental maximum, not two payments for the same worker.
+                double futureWorkers = Math.Max(upkeep + step.MaintenancePerYear, baseHarvest + harvest) - Math.Max(upkeep, baseHarvest);
+                double replacement = step.MaintenancePerYear * life / Math.Max(1e-12, n.FarmToolFarmerYearsPerUnit);
+                double covered = Math.Min(1, Math.Max(0, c.Inventory.FarmTools) * n.FarmToolFarmerYearsPerUnit / Math.Max(1e-12, (upkeep + step.MaintenancePerYear) * years));
+                double cost = futureWorkers * life + (covered > 0 && replacement > 0 ? covered * replacement * toolLabour : 0);
+                double value = benefit / step.WorkerYears;
+                filled += gain;
+                if (!(value > 0)) break;
+                worker.Add(step.WorkerYears); values.Add(value); costs.Add(cost / step.WorkerYears); productivity.Add(step.Score); tiles.Add(step.Tile);
+                baseHarvest += harvest; upkeep += step.MaintenancePerYear;
+            }
+            schedule.Work = worker.ToArray(); schedule.Benefit = values.ToArray(); schedule.FutureWork = costs.ToArray();
+            schedule.Productivity = productivity.ToArray(); schedule.Tiles = tiles.ToArray();
+            return schedule;
+        }
         public static double FoodValue(SimulationConfig cfg, Camp c)
         {
             double n = c.Population;

@@ -436,6 +436,7 @@ internal static class Program
     {
         bool postOpening = world.Finished;
         int preAgriculturalCamps = CountAgriculturalCamps(world);
+        int priorCampCount = world.Camps.Count;
         var priorResidents = world.Camps.ToDictionary(c => c.Id, c => c.Population);
 #if !MAIN
         var priorSites = details ? world.Camps.ToDictionary(c => c.Id, c => c.Tile) : null;
@@ -509,6 +510,7 @@ internal static class Program
                 openingLocalStocks = priorLocalStocks.TryGetValue(c.Id, out var priorStocks) ? priorStocks : null,
                 endingLocalStocks = LocalStocks(world, c.Tile),
                 linked = world.LinkedPopulation(c), technology = c.Technology.ToString(), c.QoL,
+                c.HerdTargetSet, c.HerdTarget, c.ManagedBreedingIntensity,
                 holdsCultivation = CultivationEconomy.Enabled(c), holdsHusbandry = CultivationEconomy.HusbandryEnabled(c), holdsWatercraft = c.Technologies[(int)Technology.Watercraft], totalMoves = c.Moves,
                 c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita,
                 fixedShelterPeople = NeolithicProduction.HousingCapacity(world, c, world.Days).Fixed, tentShelterPeople = NeolithicProduction.HousingCapacity(world, c, world.Days).Light,
@@ -589,6 +591,7 @@ internal static class Program
             agriculturalCampsAfterTurn = CountAgriculturalCamps(world),
             population,
             campCount,
+            priorCampCount,
             societyCount,
             playerCount,
             fissionCount,
@@ -674,6 +677,8 @@ internal static class Program
             forecastCalls = Metric("ForecastCalls"),
             foodForecastQueries = Metric("FoodForecastQueries"),
             foodInvestmentComparisons = Metric("FoodInvestmentComparisons"),
+            operatingFractionSum = Metric("OperatingFractionSum"),
+            operatingFieldTiles = Metric("OperatingFieldTiles"),
             sourceQueries = Metric("LocalSourceQueries"),
             sourceLookups = Metric("SourceLookups"),
             depositEdges = Metric("DepositEdges"),
