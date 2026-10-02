@@ -219,13 +219,16 @@ namespace Anthropocene.Simulation
                 double maximumNeed = Math.Max(0, (d.Meals + d.Biological) / years - d.FutureForageAfterHerds / years);
                 pending.Add((farmers, operation, d, maximumNeed, aquatic, futureMaintenance, residual));
             }
-            // One expansion ladder per plan (Docs/SharedAllocationValidation.md,
-            // shared ladder). It is priced from the field state of the most
-            // maintained operating choice, recorded once up to the largest food
-            // need, and each choice keeps its own need-capped prefix. A reduced
-            // choice therefore cannot also buy back the decay it just accepted;
-            // its new fields are priced as if the existing ones were kept.
+            // One expansion ladder and one herd ladder per plan
+            // (Docs/SharedAllocationValidation.md, shared ladders). Both are priced
+            // from the most maintained operating choice. The expansion ladder is
+            // recorded once up to the largest food need and each choice keeps its
+            // own need-capped prefix; a reduced choice therefore cannot also buy
+            // back the decay it just accepted. Herd values, harvest savings and
+            // future pasture likewise assume the maintained field state.
             double ladderOperation = pending.Max(x => x.Operation);
+            var reference = pending.First(x => x.Operation == ladderOperation).Demand;
+            var herd = HerdLabour.Applies(world, camp) ? HerdLabour.Build(world, camp, reference, breeding, cache) : null;
             double ladderNeed = pending.Where(x => x.Demand.CultivationEnabled && x.MaximumNeed > 0).Select(x => x.MaximumNeed).DefaultIfEmpty(0).Max();
             var ladder = ladderNeed > 0
                 ? CultivationEconomy.ExpansionLadder(world, camp, years, demand.Footprint, ladderNeed, ladderOperation, cache)
@@ -251,7 +254,6 @@ namespace Anthropocene.Simulation
                 double value = Math.Exp(-r * years) * (incoming.Value - ledger.Receive(0, 0, 0).Value)
                     + futureLife * futureMeals * vFood
                     + Math.Exp(-r * n.PlanningHorizonYears) * n.FoodRiskWeight * vFood * Math.Min(residual, d.Meals);
-                var herd = HerdLabour.Applies(world, camp) ? HerdLabour.Build(world, camp, d, breeding, cache) : null;
                 choices.Add(new Portfolio { Demand = d, Ledger = ledger, Herd = herd, Expansion = new SharedExpansionSchedule[(herd?.Steps ?? 0) + 1], Value = value,
                     CurrentWork = currentWorkers * currentLife, FutureWork = futureWorkers * futureLife, Operation = operation });
             }

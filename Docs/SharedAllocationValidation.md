@@ -453,14 +453,135 @@ ms, against a control of about 1.2–1.3 ms. Preparation stays roughly
 larger. Runtime acceptance against the earlier HV3 +5% total criterion
 remains open.
 
-### What remains
+### Step 2b: one herd ladder per plan
 
-With the need-capped shared ladder, the constructor is about 0.5 ms of a
-1.4 ms plan. Most of it is the per-choice land forecasts for fields with
-capital, plus the per-choice herd ladders (2.1 per plan). The rest of the
-plan is the same craft fulfilment search and demand pass the control runs.
-Sharing the herd ladder across operation choices would be the next
-outcome-changing lever. It has not been measured.
+The user approved this on 2 October 2026, under the same acceptance as Step 2.
+`HerdLabour.Build` is now called once per plan, on the most maintained
+choice's demand, the same reference the expansion ladder uses. Herd values,
+harvest savings and future pasture therefore assume the maintained field
+state for every operation choice. `Build` reads six choice-dependent fields
+and writes none: current, future and terrestrial forage, future pasture
+capacity, future upkeep and operating farmers. The focused herd and shared
+checks and the full fixed suite pass.
+
+**Census** (same five worlds, 50 turns, against the exact branch). All 56
+medians lie within the exact branch's P25–P75. At 50 turns: 3,061 → 3,077
+tribes, population +0.17%, managed animals −1.1%, technology mix unchanged to
+three decimals.
+
+**Work counts** (C1, per plan, against the shared expansion ladder):
+
+| Per plan | Shared ladder | + shared herd ladder |
+| --- | --- | --- |
+| Herd-ladder builds | 2.11 | 0.59 |
+| Food-kernel queries | 203.6 | 202.8 |
+| `SharedAllocation` constructor | 0.510 ms | 0.500 ms |
+
+The earlier ledger fix had already made each herd-ladder build cheap, so this
+step removes repeated work but saves almost no time.
+
+### Where planning time now goes
+
+On C1 at 50 turns the plan takes about 1.4–1.5 ms. `SharedAllocation`'s
+constructor is about 0.5 ms of that: per-choice land forecasts for fields
+with capital, one expansion ladder and one herd ladder. The rest is the craft
+fulfilment search (`Evaluate`, a full craft plan per call, 2.7 calls per
+plan) and the demand pass. The control runs these too. Its whole
+preparation is about 1.2 ms per camp-turn.
+
+## Planner scaling outlook
+
+This answers how planning cost grows as fission, villages and population
+fill the board. The measurements are on this machine (4 cores, noisy
+neighbour); the extrapolations are linear and labelled as such.
+
+**Per plan, cost does not grow with population.** A scratch single-camp
+harness measured residents from 50 to 1,000,000, villages, 1–16 herd groups,
+field q from 0 to 1, Farm Tools and animals. Work saturates once residents
+exceed about 3,000:
+
+- 322 kernel queries;
+- 112 investment comparisons;
+- 6 operation choices;
+- about 210 herd choices;
+- 33 projections for a mobile camp, 21 for a village.
+
+Each of these is bounded by the 32-band and breakpoint structure, never by
+headcount. The largest per-plan variable is the number of full craft
+evaluations in the fulfilment search, 2 or 16, set by whether full
+fulfilment fits. Villages are cheaper than mobile camps, because pasture has
+radius 1.
+
+**Per camp-turn, cost is flat along the trajectory.** On C1, camps grow from
+80 to 584, villages from 0 to 283 and mean residents from 66 to 457. Single-
+worker cost per prior camp stays at about 1.5–2.3 ms preparation, 0.3–0.9 ms
+AI and 0.3–0.8 ms execution. Fission, immigration (off in these runs) and
+contact knowledge stay at or below 0.02 ms. Turn cost therefore follows the
+number of automated camps.
+
+**Parallel workers.** Over the last 10 of 50 turns, best of two runs:
+
+| Workers | Preparation per camp-turn | AI + preparation + execution per camp-turn |
+| --- | --- | --- |
+| 1 | 2.01 ms | 2.76 ms |
+| 2 | 1.19 ms | 1.77 ms |
+| 4 | 0.97 ms | 1.62 ms |
+
+Preparation speeds up 1.6× on 2 workers and 2.1× on 4. Execution gains only
+about 1.25×.
+
+**Board capacity and timing.** With a minimum spacing of 3 hexes, the densest
+packing is one camp per 7 tiles. Fission grew camps 4–7% per turn over turns
+40–50 in all five worlds. At that rate, each world reaches its freshwater
+ceiling (freshwater land tiles / 7) around turns 94–108 and its land ceiling
+(traversable land / 7) around turns 106–115. Growth will slow before either.
+
+| World | Camps at turn 50 | Villages | Growth, turns 40–50 | Freshwater ceiling | Land ceiling |
+| --- | --- | --- | --- | --- | --- |
+| C1 | 584 | 283 | 6.1%/turn | 10,841 | 26,276 |
+| C2 | 570 | 265 | 6.8%/turn | 11,654 | 22,119 |
+| C3 | 744 | 356 | 6.2%/turn | 10,937 | 24,765 |
+| P1 | 571 | 268 | 6.4%/turn | 9,356 | 21,196 |
+| A1 | 608 | 349 | 4.2%/turn | 6,615 | 8,674 |
+
+**Linear extrapolation per turn** (from the measured per camp-turn costs;
+allocation is about 1.5 MiB per plan):
+
+| Automated camps | Planning, 1 worker | Planning, 4 workers | Whole turn, 4 workers | Planner allocation |
+| --- | --- | --- | --- | --- |
+| 584 (turn 50) | 1.2 s | 0.6 s | 0.9 s | 0.9 GiB |
+| 2,000 | 4.0 s | 1.9 s | 3.2 s | 2.9 GiB |
+| 10,000 (freshwater ceiling) | 20 s | 9.7 s | 16 s | 14.6 GiB |
+| 26,000 (land ceiling) | 52 s | 25 s | 42 s | 38 GiB |
+
+**Assessment.** The planner is not superlinear: neither population nor
+village density raises per-plan work. But it costs about 1–2 ms of CPU for
+every automated camp, every turn, whether or not anything changed for that
+camp. Fission compounds the camp count by about 6% a turn. A saturated
+Standard map would cost 10–25 s of planning per turn on 4 cores. That is
+already a poor interactive turn and far outside any RL-rollout budget
+(doctrine §2–3). The control planner costs about 1.2 ms per camp-turn by
+itself, so this is an architectural property of replanning every camp from
+scratch each turn, not of the shared allocation alone. The shared allocation
+now adds about 0.3–0.5 ms per plan on top.
+
+**Options, by expected effect** (none implemented; each needs a design note
+and, if outcome-changing, a census):
+
+1. **Make plan cost follow change, not camp count.** Reuse last turn's intent
+   when a camp's planning inputs are unchanged within stated tolerances
+   (field band, herd band, population band, technology, stocks relative to
+   need), with a forced refresh every N turns. `EconomicIntent` already
+   carries an N-turn automation policy, and `PlanningDraft` already key-checks
+   reuse. Settled villages near equilibrium would skip most plans. This is
+   the only option that changes the scaling law.
+2. **Warm-start the fulfilment search** from last turn's path position, to cut
+   the 2–16 full craft evaluations per plan.
+3. **Cut allocation** (about 1.5 MiB per plan; 15 GiB per turn at 10,000
+   camps) by pooling demand copies, ledgers and recipe arrays, to reduce GC
+   pressure on large boards.
+4. **Improve parallel efficiency:** preparation reaches only 2.1× on 4
+   workers, and execution is mostly serial.
 
 ```bash
 python3 Tools/PerformanceAudit/Run-SharedAllocationAudit.py --phase=build --output=TestResults/PlannerPerf
