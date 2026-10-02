@@ -5,42 +5,22 @@ using System.Threading;
 
 namespace Anthropocene.Simulation
 {
-    // Transient memo of pure local kernel results for one camp's plan. Every
-    // key holds the exact bit pattern of each input that varies inside the
-    // plan, so a hit returns what the uncached call computes. It is owned by
+    // Transient memo of pure local kernel results for one camp's plan (opening
+    // projections and pasture scans; SharedAllocation also keeps its
+    // operation-independent tile forecasts). Every key holds the exact bit
+    // pattern of each input that varies inside the plan, so a hit returns what
+    // the uncached call computes. It is owned by
     // one plan on one worker and is never iterated, so neither worker
     // partitioning nor collection order can change a value or a work count.
     internal sealed class PlanningKernelCache
     {
         private readonly WorldState world;
         private readonly Dictionary<(int, long), EcologyView> views = new Dictionary<(int, long), EcologyView>();
-        private readonly Dictionary<InvestmentKey, FoodInvestmentForecast> investments = new Dictionary<InvestmentKey, FoodInvestmentForecast>();
-        // Reused by every ladder of this plan; ladders return their own arrays.
-        internal readonly List<CultivationEconomy.ExpansionStep> LadderRecord = new List<CultivationEconomy.ExpansionStep>();
-        // Equality compares every input; the hash mixes the three that vary
-        // between the steps of one plan (tile, capital, step).
-        private readonly struct InvestmentKey : IEquatable<InvestmentKey>
-        {
-            private readonly int tile;
-            private readonly long days, capital, step, years, cost, maintenance;
-            public InvestmentKey(int tile, long days, long capital, long step, long years, long cost, long maintenance)
-            { this.tile = tile; this.days = days; this.capital = capital; this.step = step; this.years = years; this.cost = cost; this.maintenance = maintenance; }
-            public bool Equals(InvestmentKey o) => tile == o.tile && capital == o.capital && step == o.step && days == o.days
-                && years == o.years && cost == o.cost && maintenance == o.maintenance;
-            public override bool Equals(object obj) => obj is InvestmentKey o && Equals(o);
-            public override int GetHashCode()
-            {
-                unchecked
-                {
-                    long h = tile * 0x7F4A7C159E3779B1L ^ capital * 0x2545F4914F6CDD1DL ^ step * 0x165667B19E3779F9L;
-                    return (int)(h ^ (h >> 32));
-                }
-            }
-        }
         // Pasture capacity, non-field capacity and settled local capacity.
         internal double[] Pasture;
-        // Kernel evaluations actually performed through this cache (each
-        // investment is two tile integrations). Deterministic per plan.
+        // Kernel work done for this plan (each investment is two tile
+        // integrations). Deterministic per plan. With one ladder per plan no
+        // investment repeats, so investments are counted, not memoized.
         internal int Projections, Investments;
         internal PlanningKernelCache(WorldState world) { this.world = world; }
         private static long Bits(double value) => BitConverter.DoubleToInt64Bits(value);
@@ -52,13 +32,6 @@ namespace Anthropocene.Simulation
             if (ResolutionMetrics.CaptureDetailedCounters) Interlocked.Increment(ref TurnDiagnostics.For(world).PlannerTileProjections);
             Projections++;
             return views[key] = LazyEcology.ProjectEcology(world, tile, days);
-        }
-        internal FoodInvestmentForecast Investment(Tile tile, EcologyView opening, double capital, double step, double years, double cost, double maintenance)
-        {
-            var key = new InvestmentKey(tile.Id, Bits(opening.Days), Bits(capital), Bits(step), Bits(years), Bits(cost), Bits(maintenance));
-            if (investments.TryGetValue(key, out var investment)) { Hit(); return investment; }
-            Investments++;
-            return investments[key] = CultivationEconomy.HorizonMarginalInvestment(world, tile, opening, capital, step, years, cost, maintenance);
         }
     }
 

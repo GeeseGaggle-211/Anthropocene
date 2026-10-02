@@ -565,6 +565,53 @@ itself, so this is an architectural property of replanning every camp from
 scratch each turn, not of the shared allocation alone. The shared allocation
 now adds about 0.3–0.5 ms per plan on top.
 
+### Revised options 1 and 2 (implemented)
+
+The user approved options 1 and 2 on 2 October 2026. The acceptance limit is
+husbandry-first tribes (primary technology `AnimalHusbandry`): their
+population and managed animals may fall at most 5%, and may rise unless the
+rise is tenfold or more. The gate is checked as five-world pooled totals and
+medians at 25 and 50 turns.
+
+**Option 1, the common plan's constant cost (exact).** With one ladder per
+plan, the investment memo never hit, yet storing entries cost about a third
+of the ladder's greedy loop. Investments are now counted, not memoized. The
+ladder records into one reusable buffer per worker thread instead of a
+fresh list per plan. The two `MaterialEconomy.Forecast` calls in each
+evaluation use different coverage owners, technology flags, populations and
+source lists, so they cannot share a result. The shared craft scheduler is
+left unchanged. On C1, every camp on every turn of the 50 turns (population,
+QoL, managed animals, field q) and every aggregate match the previous source.
+The `SharedAllocation` constructor drops from 0.500 to 0.437 ms per plan,
+plan time by 2.6% and allocation by 1.5%.
+
+**Option 2, warm start (outcome-changing, shared planner only).** Each plan
+records its fulfilment position on the camp's labor plan
+(`EconomicLaborPlan.FulfilmentPositionSet` / `FulfilmentPosition`). These
+optional saved fields are absent in older saves, which load as unset; they
+are outside the intent stamp. When full fulfilment does not fit, the next
+plan first evaluates that position. It keeps the position only if it is still
+feasible and one path tolerance (1/64) above it is not, which is the search's
+own stopping test. Otherwise it runs the unchanged full interval search.
+
+- **Gate:** pass. For husbandry-first tribes at 50 turns, population is
+  −0.25% total and −0.11% median, and managed animals +0.88% total and
+  +1.7% median. At 25 turns all pooled changes are within ±0.3%.
+- **Work:** evaluations per plan fall from 2.74 to 2.65; in-process plan
+  time falls about 3% (instrumented, one run).
+- **Rejected variant:** searching upward from a feasible warm position
+  instead of rescanning saved 6.7% of evaluations. It failed the gate on
+  managed animals: −7.3% total and −13.8% median at 50 turns, −10.3% total at
+  25. A local search can stop below the best position the full scan finds,
+  and that systematically lowers herd retention.
+- **Save and default path:** a save/load check covers the new field. With
+  the flag off, 25 turns are camp-by-camp identical to the original source.
+  Fingerprints change for any world with a camp labor plan, because the
+  field is serialized.
+
+Together, options 1 and 2 cut about 5–6% of plan time at C1 scale. They do
+not change the linear-in-camps scaling described above.
+
 **Measured opportunity for the options** (C1, 50 turns, 8,896 consecutive
 plan pairs of the same camp, from a scratch per-plan probe whose run
 reproduced the final fingerprint):

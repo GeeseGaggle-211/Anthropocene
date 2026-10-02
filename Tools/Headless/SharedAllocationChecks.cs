@@ -113,6 +113,17 @@ internal static class SharedAllocationChecks
         var plan = EconomicPlanner.Plan(pure, pc, EconomicIntent.From(pc));
         Check(plan.Assignments.Sum(a => a.Population) <= pc.Population && plan.Labor.ExpansionFarmers <= plan.Assignments.Where(a => a.Role == WorkforceRoles.Farmer).Sum(a => a.Population), "returned workforce and expansion are feasible");
         Check(before == SaveCodec.Fingerprint(pure), "the integrated planner changes no authoritative state");
+        // The shared planner records its fulfilment position for next turn's warm start;
+        // it persists with the camp's labor plan and stays out of the intent stamp.
+        Check(plan.Labor != null && plan.Labor.FulfilmentPositionSet && plan.Labor.FulfilmentPosition >= 0 && plan.Labor.FulfilmentPosition <= 1, "the shared plan records its fulfilment position");
+        {
+            var warmWorld = SaveCodec.Load(SaveCodec.Save(pure)); var warmCamp = warmWorld.Camps[0];
+            EconomicIntents.Apply(warmCamp, plan);
+            var restored = SaveCodec.Load(SaveCodec.Save(warmWorld)).Camps[0].EconomicLabor;
+            Check(restored != null && restored.FulfilmentPositionSet && BitConverter.DoubleToInt64Bits(restored.FulfilmentPosition) == BitConverter.DoubleToInt64Bits(plan.Labor.FulfilmentPosition), "the fulfilment position survives save and load");
+            var unset = plan.Copy(); unset.Labor.FulfilmentPositionSet = false; unset.Labor.FulfilmentPosition = 0;
+            Check(unset.Stamp == plan.Stamp, "the fulfilment position is not part of the intent stamp");
+        }
         pc.Technology = Technology.Cultivation;
         Check(Signature(plan) == Signature(EconomicPlanner.Plan(pure, pc, EconomicIntent.From(pc))), "primary-technology labels do not select a subsistence plan");
         var loaded = SaveCodec.Load(SaveCodec.Save(pure));

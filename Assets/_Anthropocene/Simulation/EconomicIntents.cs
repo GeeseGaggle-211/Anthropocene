@@ -9,6 +9,11 @@ namespace Anthropocene.Simulation
     public sealed class EconomicLaborPlan
     {
         public double MaterialGatherers, ExpansionFarmers, EquipmentTarget;
+        // Shared-allocation planner (Docs/SharedAllocationValidation.md, warm start):
+        // the fulfilment-path position the last plan chose. Absent in older saves
+        // and outside the shared planner (unset); not part of the intent stamp.
+        [System.Runtime.Serialization.OptionalField] public bool FulfilmentPositionSet;
+        [System.Runtime.Serialization.OptionalField] public double FulfilmentPosition;
         public EconomicLaborPlan Copy() => (EconomicLaborPlan)MemberwiseClone();
         public IEnumerable<double> Values() => new[] { MaterialGatherers, ExpansionFarmers, EquipmentTarget };
     }

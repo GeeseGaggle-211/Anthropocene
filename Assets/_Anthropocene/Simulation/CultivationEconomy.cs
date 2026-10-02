@@ -450,6 +450,7 @@ namespace Anthropocene.Simulation
         // Pure: reads the projected ecology only.
         // cache (optional, one plan only) memoizes the pure opening projections
         // and marginal investments; it never changes a returned step.
+        [ThreadStatic] private static List<ExpansionStep> ladderRecord;
         internal static ExpansionStep[] ExpansionLadder(WorldState w, Camp camp, double years, int[] cachedFootprint = null, double annualGainCap = double.PositiveInfinity, double? operatingFraction = null,
             PlanningKernelCache cache = null)
         {
@@ -459,8 +460,9 @@ namespace Anthropocene.Simulation
             if (cache == null && ResolutionMetrics.CaptureDetailedCounters) Interlocked.Add(ref TurnDiagnostics.For(w).PlannerTileProjections, candidates.Length);
             if (operatingFraction.HasValue) foreach (var field in candidates) field.OperatingFraction = operatingFraction.Value;
             foreach (var field in candidates) { field.Decayed = Decay(w.Config, field.Start, field.OperatingFraction, years); field.Capital = field.Decayed; }
-            // Sized to the greedy loop's own pass guard, so recording never regrows.
-            var record = cache?.LadderRecord ?? new List<ExpansionStep>(); record.Clear();
+            // One recording buffer per worker thread, reused by every ladder; the
+            // returned array is the ladder's own. Sized to the greedy loop's pass guard.
+            var record = ladderRecord ?? (ladderRecord = new List<ExpansionStep>()); record.Clear();
             if (record.Capacity < candidates.Length * 35) record.Capacity = candidates.Length * 35;
             AllocateHorizonEffort(w, camp, candidates, double.PositiveInfinity, false, years, record, annualGainCap, cache);
             return record.ToArray();
@@ -657,9 +659,8 @@ namespace Anthropocene.Simulation
             double cost = n.BuildWorkerYearsPerTileE * build;
             if (cost <= 0) return;
             double maintenance = MaintenanceMultiplier(c, tile, field.Ecology.CurrentVegetation);
-            var investment = cache != null
-                ? cache.Investment(tile, field.Ecology, e, de, years, cost, maintenance)
-                : HorizonMarginalInvestment(w, tile, field.Ecology, e, de, years, cost, maintenance);
+            if (cache != null) cache.Investments++;
+            var investment = HorizonMarginalInvestment(w, tile, field.Ecology, e, de, years, cost, maintenance);
             score = Math.Max(0, investment.AnnualizedFoodPerWorkerYear);
             step = de; costPerEffort = cost; annualGain = investment.AnnualizedRetainedFoodGain;
         }

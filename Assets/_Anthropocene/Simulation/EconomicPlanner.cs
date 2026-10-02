@@ -50,6 +50,8 @@ namespace Anthropocene.Simulation
             laborPrice = double.NaN; productionOrder = null; farmLabourPrice = 0;
             Interlocked.Increment(ref TurnDiagnostics.For(w).PlanCalls);
             long planStart = ResolutionMetrics.CaptureDetailedCounters ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+            // Last plan's fulfilment position, read before the copy drops its labor plan.
+            double warmPosition = settings.Labor != null && settings.Labor.FulfilmentPositionSet ? settings.Labor.FulfilmentPosition : double.NaN;
             var e = settings.Copy(); e.Assignments.Clear(); e.Labor = null;
             if (c.Population <= 0 || !CultivationEconomy.EconomyEnabled(c)) { e.AutomationTurns = 0; return e; }
             var cfg = w.Config; var n = cfg.Neolithic;
@@ -569,7 +571,20 @@ namespace Anthropocene.Simulation
             // Evaluate is pure over its own previews, so the zero-fulfilment
             // fallback is only needed when full fulfilment does not fit.
             var best = Evaluate(1);
-            if (best.Workers > c.Population)
+            bool warmStarted = false;
+            if (best.Workers > c.Population && jointAllocation != null && warmPosition >= 0 && warmPosition < 1)
+            {
+                // Warm start (shared planner only): keep last turn's position when it is
+                // still feasible and one path tolerance above it is not. That is the
+                // search's own stopping test, at a local boundary; otherwise search.
+                var warm = Evaluate(warmPosition);
+                if (warm.Workers <= c.Population)
+                {
+                    double next = warmPosition + PathTolerance;
+                    if (next >= 1 || Evaluate(next).Workers > c.Population) { best = warm; warmStarted = true; }
+                }
+            }
+            if (best.Workers > c.Population && !warmStarted)
             {
                 var full = best;
                 best = Evaluate(0);
@@ -655,6 +670,7 @@ namespace Anthropocene.Simulation
                 best.Intent.Labor.ExpansionFarmers = expanders;
             }
             best.Intent.Assignments = best.Intent.Assignments.OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
+            if (jointAllocation != null && best.Intent.Labor != null) { best.Intent.Labor.FulfilmentPositionSet = true; best.Intent.Labor.FulfilmentPosition = best.S; }
             if (herdLadder != null || best.Joint?.Herd != null)
             {
                 // The herd the staffed herders manage (never beyond what the pasture grows): animals above it are slaughtered after breeding,
