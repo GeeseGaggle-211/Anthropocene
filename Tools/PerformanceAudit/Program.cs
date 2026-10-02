@@ -318,10 +318,12 @@ internal static class Program
             // Names that are not top-level configuration fields fall back to the Neolithic calibration (for example CohesionBandScale).
             if (field == null && parts.Length == 2) { field = world.Config.Neolithic.GetType().GetField(parts[0]); target = world.Config.Neolithic; }
 #endif
-            if (field == null || field.FieldType != typeof(double) && field.FieldType != typeof(int)) throw new ArgumentException("Unsupported --set override: " + assignment);
+            if (field == null || field.FieldType != typeof(double) && field.FieldType != typeof(int) && field.FieldType != typeof(bool)) throw new ArgumentException("Unsupported --set override: " + assignment);
             double value = double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);
-            field.SetValue(target, field.FieldType == typeof(int) ? (object)(int)value : value);
+            if (field.FieldType == typeof(bool) && value != 0 && value != 1) throw new ArgumentException("Boolean --set overrides must be 0 or 1.");
+            field.SetValue(target, field.FieldType == typeof(bool) ? (object)(value == 1) : field.FieldType == typeof(int) ? (object)(int)value : value);
         }
+        world.Config.Validate();
         long managedHeapAfterLoadBytes = GC.GetTotalMemory(false);
         var detailedCounterSwitch = typeof(ResolutionMetrics).GetField("CaptureDetailedCounters");
         if (detailedCounterSwitch != null) detailedCounterSwitch.SetValue(null, metrics);
@@ -520,6 +522,9 @@ internal static class Program
                 production = record.Production.Where(p => p.Camp == c.Id).GroupBy(p => p.Good).ToDictionary(g => g.Key.ToString(), g => g.Sum(p => p.Output)),
                 foodYield = record.Transfers.Where(t => t.Entity == c.Id && t.Kind != "Herd").Sum(t => t.Food),
                 managedAnimals = domesticAnimalsByCamp.TryGetValue(c.Id, out int animals) ? animals : 0,
+                sustainedAnimalFood = record.ManagedHerds.Where(h => h.Camp == c.Id).Sum(h => h.AcceptedFood),
+                slaughterFood = record.ManagedHerds.Where(h => h.Camp == c.Id).Sum(h => h.SlaughterFood),
+                animalSlaughtered = record.ManagedHerds.Where(h => h.Camp == c.Id).Sum(h => h.Slaughtered),
                 meanFieldQ = fieldIntensity.Length == 0 ? 0 : fieldIntensity.Average(),
                 maxFieldQ = fieldIntensity.Length == 0 ? 0 : fieldIntensity.Max()
             };

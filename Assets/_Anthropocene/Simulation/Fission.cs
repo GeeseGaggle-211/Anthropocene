@@ -456,7 +456,17 @@ namespace Anthropocene.Simulation
             double Repeatable(int n)
             {
                 if (projections.TryGetValue(n, out double cachedValue)) return cachedValue;
-                var t = w.Tiles[n]; var now = index.Ecology(n); var view = now;
+                var t = w.Tiles[n]; var now = index.Ecology(n);
+                if (cfg.CropHarvestingOnly)
+                {
+                    // A daughter inherits no field capital. Evaluate natural
+                    // accessible stock, without borrowing another camp's crops
+                    // or assuming primitive fields have already been built.
+                    now.CultivationCapital = 0;
+                    var natural = new EcologyCapacity(w, t, now, (int)Math.Floor(w.Days / cfg.BaseDays) % 4);
+                    now.Food = Math.Min(now.Food, natural.Food);
+                }
+                var view = now;
                 view.PotentialFood = Math.Max(0, view.PotentialFood - view.Food); view.Food = 0;
                 LazyEcology.RecoverLandAfterHarvest(w, t, ref view, w.Days, cfg.TurnDays, null, null, null);
                 LazyEcology.ClampCapacity(w, t, ref view);
@@ -467,7 +477,7 @@ namespace Anthropocene.Simulation
             double need = daughter * cfg.Consumption * cfg.GenerationIntervals;
             if (need <= 0) return 0;
             double harvest = PlacementStage.Harvest(w, daughter, land, aquatic);
-            if (regime == FissionRegime.Agricultural)
+            if (regime == FissionRegime.Agricultural && !cfg.CropHarvestingOnly)
             {
                 double q = cfg.Neolithic.PrimitiveAgricultureSupportedIntensity, managed = 0;
                 foreach (int n in w.Map.Radius(tile, 1))
@@ -482,8 +492,12 @@ namespace Anthropocene.Simulation
                 ratio = (land + aquatic + managed) / need; e.SiteHuman = ratio;
                 return Numbers.Clamp(support / need, 0, 1);
             }
-            ratio = (land + aquatic) * PlacementStage.WorkingShare(w, daughter) / need; e.SiteHuman = ratio; double food = Numbers.Clamp(harvest / need, 0, 1);
-            if (regime != FissionRegime.Nomadic) return food;
+            // Keep uncapped physical richness for destination ordering. The
+            // daughter food/veto estimate is bounded by obtainable harvest.
+            ratio = (land + aquatic) * PlacementStage.WorkingShare(w, daughter) / need;
+            e.SiteHuman = cfg.CropHarvestingOnly ? harvest / need : ratio;
+            double food = Numbers.Clamp(harvest / need, 0, 1);
+            if (regime == FissionRegime.Paleolithic || regime != FissionRegime.Nomadic && !cfg.CropHarvestingOnly) return food;
             double forageNeed = 0, waterNeed = 0; int residents = camp.Population;
             foreach (var herd in index.CampHerds(camp.Id))
             {
@@ -505,10 +519,12 @@ namespace Anthropocene.Simulation
                     if (t.TraversableLand) biomass += t.Seasons[s].MaxPotentialFood * t.Seasons[s].BiomassRecoveryPerDay * cfg.SustainableProductionFraction;
                     if (drinkable) recharge += t.Seasons[s].MaxFreshwater * t.Seasons[s].WaterRecoveryPerDay;
                 }
-                forage += biomass / 4 * cfg.TurnDays; water += recharge / 4 * cfg.TurnDays;
+                var opening = index.Ecology(n);
+                forage += cfg.CropHarvestingOnly ? (t.TraversableLand ? Math.Max(0, opening.PotentialFood) : 0) : biomass / 4 * cfg.TurnDays;
+                water += recharge / 4 * cfg.TurnDays + (cfg.CropHarvestingOnly && drinkable ? Math.Max(0, opening.Freshwater) : 0);
             }
             // Ratios before the cap at one (the destination order's second key); only a herd need constrains them.
-            double rawForage = forageNeed <= 0 ? double.PositiveInfinity : (forage - harvest) / forageNeed, rawWater = waterNeed <= 0 ? double.PositiveInfinity : water / waterNeed;
+            double rawForage = forageNeed <= 0 ? double.PositiveInfinity : (forage - Math.Min(harvest, land)) / forageNeed, rawWater = waterNeed <= 0 ? double.PositiveInfinity : water / waterNeed;
             e.SiteHerd = Math.Min(rawForage, rawWater); ratio = Math.Min(ratio, e.SiteHerd);
             return Math.Min(food, Math.Min(Numbers.Clamp(rawForage, 0, 1), Numbers.Clamp(rawWater, 0, 1)));
         }

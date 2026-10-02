@@ -191,7 +191,7 @@ namespace Anthropocene.Simulation
                         double cultivatedHarvest = transfers.Where(t => t.Entity == camp.Id && t.Kind == "Cultivation")
                             .Sum(t => t.Food);
                         fieldWork.HarvestEquivalentWorkerYears = cultivatedHarvest /
-                            Math.Max(1e-12, w.Config.FarmerProductivity * w.Config.GatherPerPerson * horizon.ReferenceIntervals)
+                            Math.Max(1e-12, agriculturalLabor[camp.Id].HarvestProductivity * w.Config.GatherPerPerson * horizon.ReferenceIntervals)
                             * horizon.Years;
                         // Maintenance and cultivation receipts share the same
                         // operating-farmer reservation in this model. Reconcile

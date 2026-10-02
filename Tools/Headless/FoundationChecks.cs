@@ -70,8 +70,35 @@ internal static class FoundationChecks
         Check(w.Herds.Count == 0 && w.Societies[0].TransitionSeeds.Single().Technology == Technology.AnimalHusbandry, "core husbandry creates a transition seed without inventing livestock");
         w = Fixture(); first = w.Camps[0]; first.Experience[1] = w.Config.ExperienceThreshold; TurnResolver.Breakthrough(w, first, new TurnRecord());
         Check(w.Improvements.Single().Society == first.SocietyId && w.Improvements[0].Settlement == first.Id, "opening compatibility improvement has explicit owner and manager");
+        BiomassFirst();
         SecondaryDiscoveries();
         return checks;
+    }
+
+    private static void BiomassFirst()
+    {
+        var cfg = new SimulationConfig();
+        Tile Profile(float moisture, float temperature, Relief relief = Relief.Lowland)
+        {
+            var t = new Tile { Id = 0, Terrain = Terrain.Desert, Relief = relief, ElevationLevel = 1 };
+            for (int season = 0; season < 4; season++) t.Seasons[season] = new SeasonData { Moisture = moisture, Temperature = temperature };
+            FoodEcology.ConfigurePotential(t, cfg, true); return t;
+        }
+        var dry = Profile(0, 22); var wet = Profile(.8f, 22); var arid = Profile(.05f, 22);
+        Check(dry.PotentialFood == 0 && dry.Food == 0 && dry.Seasons.All(x => x.MaxFood == 0 && x.MaxPotentialFood == 0), "zero moisture produces zero land biomass and food");
+        Check(wet.Seasons[0].MaxPotentialFood > arid.Seasons[0].MaxPotentialFood * 15, "moisture controls biomass before desert accessibility");
+        Check(Profile(.8f, 0).PotentialFood < wet.PotentialFood && Profile(.8f, 22, Relief.Mountain).PotentialFood < wet.PotentialFood, "warmth and relief multiply biomass production");
+        double before = arid.Seasons[0].MaxPotentialFood; cfg.AridGatherableFraction *= .5;
+        FoodEcology.ConfigurePotential(arid, cfg, true);
+        Check(arid.Seasons[0].MaxPotentialFood == before && arid.Seasons[0].MaxFood < arid.Seasons[0].MaxPotentialFood, "changing gatherability cannot create biomass");
+        var w = Fixture(); w.Generation.GeneratorVersion = 13;
+        w.Tiles[0].Seasons[0].MaxPotentialFood = 32123; w.Tiles[0].Seasons[0].MaxFood = 123;
+        w.Tiles[0].PotentialFood = 30000; w.Tiles[0].Food = 100;
+        var copy = SaveCodec.Load(SaveCodec.Save(w));
+        Check(copy.Generation.GeneratorVersion == 13 && copy.Tiles[0].Seasons[0].MaxPotentialFood == 32123 && copy.Tiles[0].Food == 100 && copy.Tiles[0].PotentialFood == 30000, "legacy stored capacities and stocks load without regeneration or clamping");
+        w.Generation.GeneratorVersion = WorldState.GeneratorVersion; w.Tiles[0] = wet;
+        copy = SaveCodec.Load(SaveCodec.Save(w));
+        Check(copy.Tiles[0].Seasons[0].MaxPotentialFood == wet.Seasons[0].MaxPotentialFood && copy.Tiles[0].PotentialFood == wet.PotentialFood, "biomass-first capacities and stocks round trip exactly");
     }
 
     private static void SecondaryDiscoveries()

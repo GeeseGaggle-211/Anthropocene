@@ -26,6 +26,7 @@ internal static class Issue27EcologyChecks
         for (int season = 0; season < 4; season++)
             tile.Seasons[season] = new SeasonData
             {
+                Moisture = .75f, RegionalMoisture = .75f, Temperature = 22,
                 MaxFood = season == 1 ? 10 : 100,
                 MaxPotentialFood = 200,
                 FoodRecoveryPerDay = .01f,

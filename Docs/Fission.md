@@ -153,7 +153,16 @@ No assumption needed a redesign, so the work proceeded.
   (`PlacementStage.Footprint` and `Harvest`: four-season freshwater gate and mean
   recharge, repeatable land stock, aquatic renewal, working share, labor ceiling),
   with the repeatable stock taken from the *current projected* ecology rather than
-  the generation-time stock:
+  the generation-time stock. Current branch/new-world correction:
+  `CropHarvestingOnly=true` removes hypothetical daughter cultivation capital and
+  clamps projected food to natural capacity. All regimes use obtainable wild/
+  aquatic harvest; daughters cannot spend fields they have not built. Camps with
+  herds, including agricultural camps with secondary Husbandry, also pass an
+  opening forage-stock gate and an opening-water-plus-recharge gate. Human land
+  harvest is subtracted from forage; aquatic harvest is not. Dairy is not yet
+  credited in daughter support. Physical site richness remains uncapped for
+  destination ordering. See [CropHerdBalanceValidation.md](CropHerdBalanceValidation.md).
+  Legacy `CropHarvestingOnly=false` retains the following approximation:
   Paleolithic (and Nomadic without herds): the start-viability result for the
   daughter cohort; Nomadic with herds: the least of that human-food coverage, herd
   forage coverage (sustainable biomass flow less the human harvest) and herd water

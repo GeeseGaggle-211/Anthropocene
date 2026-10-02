@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings><Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems><LangVersion>9</LangVersion>
+    <SimulationSource Condition="'$(SimulationSource)' == ''">../../Assets/_Anthropocene/Simulation</SimulationSource>
+    <DefineConstants Condition="'$(Baseline)' == 'true'">BASELINE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup><Compile Include="$(SimulationSource)/*.cs" /><Compile Include="HerdEcologyProbe.cs" /></ItemGroup>
+</Project>

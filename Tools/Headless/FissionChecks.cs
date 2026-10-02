@@ -66,7 +66,7 @@ internal static class FissionChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); Relative(); Funnel(); Spacing(); Bounded(); WiderRadius(); Policy(); Distress(); Observations(); Persistence(); Replay();
+        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); UnbuiltCrops(); Relative(); Funnel(); Spacing(); Bounded(); WiderRadius(); Policy(); Distress(); Observations(); Persistence(); Replay();
         Console.WriteLine("PASS: " + checks + " fission assertions"); return checks;
     }
 
@@ -659,7 +659,7 @@ internal static class FissionChecks
     }
     private static void Relative()
     {
-        const double scale = .006, even = .004;  // site richness for a 0.66 support ratio for the larger distress daughter, and 0.72 for the policy-size daughter
+        const double scale = .370416, even = .246944;  // actual opening wild stock gives the former .66/.72 support ratios, without hypothetical crop renewal
         double bar = new SimulationConfig().StartViability / 100.0;
         // A parent short of food (F = 0.3) leaves for a thin site (ratio 0.66, below the old absolute bar) that the daughter prefers to home.
         var low = Scaled(scale, .3, 0); var lowReport = Pass(low, out var lm);
@@ -679,6 +679,17 @@ internal static class FissionChecks
         Check(Pass(barren, out bm) == null && bm.FissionSearchesNoViable == 1 && barren.Camps[0].FissionDestination == null, "a site with support ratio 0 is rejected even for a parent in need with food to carry");
         // More destinations qualify than under the absolute bar: count the scored sites that would have failed it.
         Check(lowReport.Desirability < bar && fedReport.Desirability < bar, "the qualifying sites sit below the old absolute viability bar");
+    }
+    private static void UnbuiltCrops()
+    {
+        var w = World(true, new[] { 8, 8 }); Explore(w, w.Camps[0]);
+        foreach (var t in w.Tiles)
+        {
+            t.Food = 0;
+            for (int s = 0; s < 4; s++) t.Seasons[s].MaxFood = 0;
+        }
+        Check(Pass(w, out var metrics) == null && metrics.FissionSearchesNoViable == 1,
+            "biomass with no current wild food does not become free primitive farmland for a daughter");
     }
 
     // The funnel adds up: every screened camp ends in exactly one outcome.

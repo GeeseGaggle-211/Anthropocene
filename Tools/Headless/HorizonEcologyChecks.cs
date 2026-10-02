@@ -31,6 +31,7 @@ internal static class HorizonEcologyChecks
                 MaxFood = aquatic ? 100 : 70 + 10 * season,
                 MaxPotentialFood = aquatic ? 400 : 350 + 50 * season,
                 MaxFreshwater = aquatic ? 0 : 80 + 10 * season,
+                Moisture = .75f, RegionalMoisture = .75f, Temperature = 22,
                 FoodRecoveryPerDay = .01f,
                 BiomassRecoveryPerDay = .01f,
                 WaterRecoveryPerDay = .01f

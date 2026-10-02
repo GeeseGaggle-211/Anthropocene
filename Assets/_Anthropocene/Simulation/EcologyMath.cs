@@ -64,14 +64,20 @@ namespace Anthropocene.Simulation
 
         // Ecological wild food is retained first, then the remaining biomass is
         // made accessible by cultivation according to q squared.
-        public static double EffectiveWildFoodCapacity(double ecologicalWildFood, double biomass, double cultivationIntensity, SimulationConfig config)
+        public static double CropSuitability(SimulationConfig config, double soilMoisture)
+        {
+            if (config.CropMoistureReference <= 0) return 1;
+            double ratio = Numbers.Clamp(soilMoisture / config.CropMoistureReference, 0, 1);
+            return config.CropMoistureExponent == 2 ? ratio * ratio : Math.Pow(ratio, config.CropMoistureExponent);
+        }
+        public static double EffectiveWildFoodCapacity(double ecologicalWildFood, double biomass, double cultivationIntensity, SimulationConfig config, double soilMoisture = 1)
         {
             double q = Numbers.Clamp(cultivationIntensity, 0, 1), capacity = Math.Max(0, biomass);
             double wildNatural = Numbers.Clamp(RetainedWildFoodCapacity(ecologicalWildFood, q, config), 0, capacity);
-            return wildNatural + (capacity - wildNatural) * q * q;
+            return wildNatural + (capacity - wildNatural) * q * q * CropSuitability(config, soilMoisture);
         }
-        public static double ManagedRegenerationFlow(SimulationConfig config, double cultivationIntensity, double biomass, double biomassRecoveryPerDay, double operatingFraction)
-            => Math.Max(0, config.CultivationRegenFlux) * Numbers.Clamp(cultivationIntensity, 0, 1) * Math.Max(0, biomass) * Math.Max(0, biomassRecoveryPerDay) * Numbers.Clamp(operatingFraction, 0, 1);
+        public static double ManagedRegenerationFlow(SimulationConfig config, double cultivationIntensity, double biomass, double biomassRecoveryPerDay, double operatingFraction, double soilMoisture = 1)
+            => Math.Max(0, config.CultivationRegenFlux) * Numbers.Clamp(cultivationIntensity, 0, 1) * Math.Max(0, biomass) * Math.Max(0, biomassRecoveryPerDay) * Numbers.Clamp(operatingFraction, 0, 1) * CropSuitability(config, soilMoisture);
         public static double SustainableHarvestRate(double biomass, double biomassRecoveryPerDay, double sustainableProductionFraction, double managedFlow)
             => Math.Max(0, biomass) * Math.Max(0, biomassRecoveryPerDay) * Math.Max(0, sustainableProductionFraction) + Math.Max(0, managedFlow);
         public static double EffectiveWoodCapacity(double ecologicalCapacity, double cultivationIntensity, SimulationConfig config)

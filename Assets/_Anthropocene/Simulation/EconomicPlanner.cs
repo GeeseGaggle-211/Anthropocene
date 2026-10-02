@@ -61,10 +61,8 @@ namespace Anthropocene.Simulation
             int reservedHerdersForForecast = demand.ReservedHerders, consumers = demand.Consumers;
             var managedFood = demand.ManagedFood; var sources = demand.Sources; var accessible = demand.Accessible;
             var recipes = demand.Recipes; var goods = demand.Goods; var goals = demand.Goals; var preview = demand.Preview;
-            double plantEnvelope = demand.PlantEnvelope, animalEnvelope = demand.AnimalEnvelope;
-            double foodRoomEnvelope = demand.FoodRoomEnvelope, housingMultiplier = demand.HousingMultiplier;
+            double housingMultiplier = demand.HousingMultiplier;
             // Clothing-need feedstock alone is funded from food after this turn's meals (before the reserve).
-            double clothingPlantEnvelope = demand.PlantEnvelopeClothing, clothingAnimalEnvelope = demand.AnimalEnvelopeClothing, clothingRoomEnvelope = demand.FoodRoomEnvelopeClothing;
             bool HasRetainedExpansionGain() => demand.HasRetainedExpansionGain();
             var valueRule = rule as ValueFulfilment;
             // Herd-labour coupling (Docs/HerdLabour.md): under the Value rule herders compete for residents on the labour price like every other claim
@@ -72,10 +70,10 @@ namespace Anthropocene.Simulation
             var herdLadder = valueRule != null ? demand.HerdLadder : null;
             int StaffedHerders(double s)
             {
-                // At the path's start (s = 0) only the seed herd is staffed, so that position stays the minimal feasible plan; at its end labour is
-                // not contested (price 0); between, the labour price w(s) the craft claims reach. No valued claim at all means labour is uncontested.
-                if (s <= 0) return Math.Min(c.Population, herdLadder.MinimumHerders);
-                double price = s >= 1 ? 0 : valueRule.LaborPrice(demand.Claims, demand.Expansion, s);
+                // At the path's start (s = 0), minimize net work subject to the seed floor; at all other positions use
+                // the same labour price w(s) as the craft claims. No valued claim at all means labour is uncontested.
+                if (s <= 0) return Math.Min(c.Population, herdLadder.Staffed(double.PositiveInfinity));
+                double price = valueRule.LaborPrice(demand.Claims, demand.Expansion, s);
                 if (double.IsNaN(price)) price = 0;
                 return Math.Min(c.Population, herdLadder.Staffed(price));
             }
@@ -88,11 +86,26 @@ namespace Anthropocene.Simulation
             // resolver-shaped proposal and its full labor requirement.
             Proposal Evaluate(double s)
             {
+                int selectedHerders = herdLadder == null ? reservedHerdersForForecast : StaffedHerders(s);
+                double animalReceipts = herdLadder == null ? managedFood.AnimalFood
+                    : herdLadder.CurrentAnimalFood[selectedHerders] + herdLadder.SlaughterFood[selectedHerders];
+                var candidateDemand = herdLadder == null ? demand : demand.WithAnimalFood(w, c, animalReceipts);
+                double plantEnvelope = candidateDemand.PlantEnvelope, animalEnvelope = candidateDemand.AnimalEnvelope;
+                double foodRoomEnvelope = candidateDemand.FoodRoomEnvelope;
+                double clothingPlantEnvelope = candidateDemand.PlantEnvelopeClothing, clothingAnimalEnvelope = candidateDemand.AnimalEnvelopeClothing, clothingRoomEnvelope = candidateDemand.FoodRoomEnvelopeClothing;
                 var shares = new double[demand.Claims.Count];
                 // Under the Value rule the expansion ladder (WP4b), when present, buys build worker-years on the price path.
                 double expansionWorkerYears = 0;
                 if (valueRule != null && demand.Expansion != null) valueRule.Shares(demand.Claims, demand.Expansion, s, shares, out expansionWorkerYears);
                 else rule.Shares(demand.Claims, s, shares);
+                if (herdLadder != null)
+                {
+                    expansionWorkerYears = 0;
+                    double price = valueRule.LaborPrice(demand.Claims, demand.Expansion, s);
+                    if (s > 0 && candidateDemand.Expansion != null)
+                        for (int i = 0; i < candidateDemand.Expansion.Value.Length && (double.IsNaN(price) || candidateDemand.Expansion.Value[i] >= price); i++)
+                            expansionWorkerYears += candidateDemand.Expansion.WorkerYears[i];
+                }
                 double Share(CraftGood good) => shares[claimIndex[good]];
                 var intent = e.Copy(); intent.Labor = new EconomicLaborPlan();
                 // Managed-herd work is a resident reservation, not an output
@@ -100,7 +113,7 @@ namespace Anthropocene.Simulation
                 // resolver-shaped candidate before craft, food, material, and
                 // field feasibility are evaluated so every later worker budget
                 // sees the same bounded resident pool.
-                int reservedHerders = herdLadder == null ? reservedHerdersForForecast : StaffedHerders(s);
+                int reservedHerders = selectedHerders;
                 if (reservedHerders > 0)
                     intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = reservedHerders });
                 var candidate = Preview(c, intent, nextPopulation);
@@ -139,6 +152,7 @@ namespace Anthropocene.Simulation
                         candidate.Inventory.LightHousingUnits = candidateLightHousing + requested[CraftGood.LightHousing];
                         return NeolithicProduction.Demand(w, candidate, r.Good, years, -1, false, false, sources);
                     }
+                    if (herdLadder != null && r.Good == CraftGood.HerdingTools) return NeolithicProduction.Demand(w, candidate, r.Good, years, -1, false, false, sources);
                     return goals[r.Good];
                 }
                 void Add(Dictionary<string, double> roles, string role, double workers) { if (workers > Epsilon) roles[role] = (roles.TryGetValue(role, out double old) ? old : 0) + workers; }
@@ -278,7 +292,7 @@ namespace Anthropocene.Simulation
                         : 0;
                     double fieldWorkers = Math.Max(0, c.Population - reservedHerders - roleWorkers - foodReserve);
                     double maintenance = CultivationEconomy.PlannedMaintenanceFarmers(w, c, fieldWorkers);
-                    double plannedFarmRate = cfg.FarmerProductivity * cfg.GatherPerPerson * intervals;
+                    double plannedFarmRate = demand.HarvestProductivity * cfg.GatherPerPerson * intervals;
                     double plannedFoodTarget = Math.Min(terrestrialAfterHerds, biological + goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit);
                     double harvest = established && plannedFarmRate > 0 ? Math.Ceiling(Math.Max(maintenance, plannedFoodTarget / plannedFarmRate) - Epsilon) : 0;
                     double plannedOperating = established ? Math.Min(fieldWorkers, harvest) : 0;
@@ -484,8 +498,8 @@ namespace Anthropocene.Simulation
                     new NeolithicProduction.ClothingFeedstock { Plant = clothingFeedstock.Plant, Animal = husbandryEnabled ? clothingFeedstock.Animal : 0 },
                     out double plantGap, out double animalGap);
                 double feedstock = plantGap + animalGap;
-                double foodTarget = Math.Min(forageAfterHerds, Math.Max(0, biological + feedstock - managedFood.AnimalFood));
-                double farmRate = cfg.FarmerProductivity * cfg.GatherPerPerson * intervals;
+                double foodTarget = Math.Min(forageAfterHerds, Math.Max(0, biological + feedstock - animalReceipts));
+                double farmRate = demand.HarvestProductivity * cfg.GatherPerPerson * intervals;
                 int nonFarmWorkers = intent.Assignments.Where(a => a.Role != WorkforceRoles.Farmer).Sum(a => a.Population);
                 int availableFarmers = Math.Max(0, c.Population - nonFarmWorkers);
                 double terrestrialFoodTarget = Math.Min(terrestrialAfterHerds, foodTarget);
@@ -543,7 +557,29 @@ namespace Anthropocene.Simulation
             {
                 var full = best;
                 best = Evaluate(0);
-                if (full.ExpansionWorkers == 0)
+                if (herdLadder != null)
+                {
+                    // Net work is monotone in price on the portfolio envelope,
+                    // but present staffing can switch in either direction. Search
+                    // every constant-choice interval instead of discarding a
+                    // possibly feasible interval on a global monotonicity assumption.
+                    var boundaries = herdLadder.PriceCrossings.Select(price => valueRule.PositionAtPrice(demand.Claims, demand.Expansion, price))
+                        .Where(position => position > 0 && position < 1).Concat(new[] { 0.0, 1.0 }).Distinct().OrderBy(position => position).ToArray();
+                    for (int i = 1; i < boundaries.Length; i++)
+                    {
+                        double low = boundaries[i - 1] + 1e-9, high = boundaries[i] - 1e-9;
+                        if (!(high > low)) continue;
+                        var upper = Evaluate(high);
+                        if (upper.Workers <= c.Population) { if (upper.S > best.S) best = upper; continue; }
+                        var lower = Evaluate(low);
+                        if (lower.Workers <= c.Population)
+                        {
+                            var feasible = SearchPath(Evaluate, lower, low, high, upper.Workers, c.Population, p => p.Workers);
+                            if (feasible.S > best.S) best = feasible;
+                        }
+                    }
+                }
+                else if (full.ExpansionWorkers == 0)
                     best = SearchPath(Evaluate, best, 0, 1, full.Workers, c.Population, p => p.Workers);
                 else
                 {
@@ -574,12 +610,14 @@ namespace Anthropocene.Simulation
             // The capital scoring horizon is not a mandate to feed a hypothetical
             // century of exponential growth. Expand for the next demand forecast.
             double futureDemand = biological * nextPopulation / c.Population + (cultivationEnabled ? goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit : 0);
-            bool expand = cultivationEnabled && futureDemand > gapSupply && HasRetainedExpansionGain();
+            double selectedSupply = herdLadder == null ? gapSupply : forageAfterHerds + herdLadder.CurrentAnimalFood[best.Herders] + herdLadder.SlaughterFood[best.Herders];
+            var finalDemand = herdLadder == null ? demand : demand.WithAnimalFood(w, c, selectedSupply - forageAfterHerds);
+            bool expand = cultivationEnabled && futureDemand > selectedSupply && HasRetainedExpansionGain();
             // The staffed expansion claim (Value rule) plus the leftover residents.
             int expanders = spare + (expand ? best.ExpansionWorkers : 0);
             // A husbandry-primary camp that settling would not pay for stops short of the village threshold (Docs/HusbandrySettling.md).
-            if (expand && demand.ExpansionEffortCap < double.PositiveInfinity)
-                expanders = Math.Min(expanders, (int)Math.Floor(demand.ExpansionEffortCap / years + 1e-9));
+            if (expand && finalDemand.ExpansionEffortCap < double.PositiveInfinity)
+                expanders = Math.Min(expanders, (int)Math.Floor(finalDemand.ExpansionEffortCap / years + 1e-9));
             if (expanders > 0 && expand)
             {
                 var farmer = best.Intent.Assignments.FirstOrDefault(a => a.Role == WorkforceRoles.Farmer);
@@ -596,7 +634,7 @@ namespace Anthropocene.Simulation
                 best.Intent.ManagedBreedingIntensity = HerdLabour.CapBreeding(w, c, best.Intent.ManagedBreedingIntensity, target, years);
             }
             if (valueRule != null) laborPrice = valueRule.LaborPrice(demand.Claims, demand.Expansion, best.S);
-            if (demand.Expansion != null) farmLabourPrice = demand.Expansion.ValueAfter((best.Intent.Labor?.ExpansionFarmers ?? 0) * years);
+            if (finalDemand.Expansion != null) farmLabourPrice = finalDemand.Expansion.ValueAfter((best.Intent.Labor?.ExpansionFarmers ?? 0) * years);
             return best.Intent;
         }
         // Largest staffable position on a fulfilment rule's path, to within

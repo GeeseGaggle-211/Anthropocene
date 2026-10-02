@@ -59,6 +59,8 @@ FIELDS = [
     ("LandBiomassMultiplier", "relative land biomass multiplier", "shipped new-world calibration"),
     ("LandFoodRegeneration", "fraction per legacy BaseDays profile", "shipped land recovery input"),
     ("LandSafeUseRatio", "fraction of sustainable production", "shipped land extraction threshold"),
+    ("CropMoistureReference", "local soil moisture at which crop suitability reaches one", "branch crop calibration; 0 disables the response in older saves"),
+    ("CropMoistureExponent", "exponent in min(1, (soil moisture / reference)^exponent)", "branch crop calibration; applies only to cultivated food and managed renewal"),
     ("RichGatherableFraction", "fraction", "shipped new-world accessibility"),
     ("GrasslandGatherableFraction", "fraction", "shipped new-world accessibility"),
     ("AridGatherableFraction", "fraction", "shipped new-world accessibility"),

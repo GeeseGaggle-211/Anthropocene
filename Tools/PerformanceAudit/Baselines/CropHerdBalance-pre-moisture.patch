@@ -1,0 +1,329 @@
+--- a/Agents.cs
++++ b/Agents.cs
+@@ -75,9 +75,9 @@
+                 biomassCapacity = ecology.MaxPotentialFood * openingMultiplier * condition;
+                 double wildFoodEcological = Math.Min(biomassCapacity, ecology.MaxFood * openingMultiplier * condition *
+                     FoodEcology.GatherableFraction(tile, config, view.CurrentVegetation) / FoodEcology.GatherableFraction(tile, config, tile.NaturalVegetationPotential));
+-                foodCapacity = EcologyMath.EffectiveWildFoodCapacity(wildFoodEcological, biomassCapacity, Cultivation, config, ecology.Moisture);
++                foodCapacity = EcologyMath.EffectiveWildFoodCapacity(wildFoodEcological, biomassCapacity, Cultivation, config);
+                 foodRate = ecology.FoodRecoveryPerDay;
+-                managedFlow = EcologyMath.ManagedRegenerationFlow(config, Cultivation, biomassCapacity, ecology.BiomassRecoveryPerDay, tile.CultivationOperatingFraction, ecology.Moisture);
++                managedFlow = EcologyMath.ManagedRegenerationFlow(config, Cultivation, biomassCapacity, ecology.BiomassRecoveryPerDay, tile.CultivationOperatingFraction);
+             }
+             double accessibility = biomassCapacity > 1e-9 ? foodCapacity / biomassCapacity : 0;
+             FoodMaximum = Knowledge.Band(foodCapacity, 70, config);
+--- a/CultivationEconomy.cs
++++ b/CultivationEconomy.cs
+@@ -12,7 +12,6 @@
+         // Operating farmers also supply harvest capacity, so callers must treat
+         // these as overlapping measurements rather than additive work.
+         public double MaintenanceFarmerWorkerYears;
+-        public double HarvestProductivity;
+         public int[] Footprint = Array.Empty<int>();
+     }
+ 
+@@ -135,31 +134,6 @@
+         public static int Workers(Camp camp, string role) => camp.Workforce.Assignments.Where(a => a.Role == role).Sum(a => a.Population);
+         internal static bool Cultivable(Tile tile) => tile.TraversableLand && tile.Environment != EnvironmentKind.Ice && tile.Seasons.Any(s => s.MaxPotentialFood > 0);
+         public static int[] Footprint(WorldState w, Camp camp) => w.Map.Radius(camp.Tile, 1).Where(id => Cultivable(w.Tiles[id])).OrderBy(id => id).ToArray();
+-        // Infer the crop portion of the current accessible stock from the shared
+-        // capacity. Wild and cultivated food remain one conserved physical pool.
+-        // Proportional claims have the same mix, so their effective rate is the
+-        // stock-weighted harmonic rate of wild gathering and crop harvesting.
+-        // One opening-profile query per local field; no future/yearly loop.
+-        public static double HarvestProductivity(WorldState w, Camp camp, int[] footprint = null)
+-        {
+-            var cfg = w.Config;
+-            if (!cfg.CropHarvestingOnly || cfg.FarmerProductivity <= 1) return cfg.FarmerProductivity;
+-            double food = 0, work = 0;
+-            int season = (int)Math.Floor(w.Days / cfg.BaseDays) % 4;
+-            foreach (int id in footprint ?? Footprint(w, camp))
+-            {
+-                var tile = w.Tiles[id];
+-                var view = LazyEcology.ProjectEcology(w, id, Math.Max(w.Days, tile.LastEcologyUpdateDays));
+-                var capacity = new EcologyCapacity(w, tile, view, season);
+-                double available = Math.Min(Math.Max(0, view.Food), capacity.Food);
+-                double crop = tile.CultivationOperator >= 0 && tile.CultivationOperator != camp.Id
+-                    ? 0 : Math.Max(0, capacity.Food - capacity.WildFood);
+-                double cropShare = capacity.Food > 0 ? crop / capacity.Food : 0;
+-                food += available;
+-                work += available * (1 - cropShare + cropShare / cfg.FarmerProductivity);
+-            }
+-            return work > 0 ? food / work : 1;
+-        }
+         // Village status is an endpoint decision, never an input to this turn's
+         // claim or field plan. Count every nearby land tile in the original
+         // footprint average, with only this camp's fields contributing q.
+@@ -240,7 +214,6 @@
+             plan.FoodGatherers = Math.Max(0, plan.Gatherers - (camp.EconomicLabor?.MaterialGatherers ?? 0));
+             if (!Enabled(camp) || camp.Population <= 0) return plan;
+             plan.Footprint = footprint;
+-            plan.HarvestProductivity = HarvestProductivity(w, camp, footprint);
+             double required = 0;
+             foreach (int id in plan.Footprint)
+             {
+@@ -322,7 +295,7 @@
+         }
+ 
+         public static double PlannedMaintenanceFarmers(WorldState w, Camp camp, double availableFarmers)
+-            => Math.Min(Math.Max(0, availableFarmers), MaintenanceFarmersForPlanning(w, camp, w.Config.TurnDays / w.Config.DaysPerYear));
++            => Math.Min(Math.Max(0, availableFarmers), MaintenanceWorkerRequirement(w, camp) / FarmToolFieldWorkEfficiency(w.Config.Neolithic));
+ 
+         public static double MaintenanceFarmersForPlanning(WorldState w, Camp camp, double years)
+         {
+--- a/EcologyMath.cs
++++ b/EcologyMath.cs
+@@ -64,20 +64,14 @@
+ 
+         // Ecological wild food is retained first, then the remaining biomass is
+         // made accessible by cultivation according to q squared.
+-        public static double CropSuitability(SimulationConfig config, double soilMoisture)
+-        {
+-            if (config.CropMoistureReference <= 0) return 1;
+-            double ratio = Numbers.Clamp(soilMoisture / config.CropMoistureReference, 0, 1);
+-            return config.CropMoistureExponent == 2 ? ratio * ratio : Math.Pow(ratio, config.CropMoistureExponent);
+-        }
+-        public static double EffectiveWildFoodCapacity(double ecologicalWildFood, double biomass, double cultivationIntensity, SimulationConfig config, double soilMoisture = 1)
++        public static double EffectiveWildFoodCapacity(double ecologicalWildFood, double biomass, double cultivationIntensity, SimulationConfig config)
+         {
+             double q = Numbers.Clamp(cultivationIntensity, 0, 1), capacity = Math.Max(0, biomass);
+             double wildNatural = Numbers.Clamp(RetainedWildFoodCapacity(ecologicalWildFood, q, config), 0, capacity);
+-            return wildNatural + (capacity - wildNatural) * q * q * CropSuitability(config, soilMoisture);
++            return wildNatural + (capacity - wildNatural) * q * q;
+         }
+-        public static double ManagedRegenerationFlow(SimulationConfig config, double cultivationIntensity, double biomass, double biomassRecoveryPerDay, double operatingFraction, double soilMoisture = 1)
+-            => Math.Max(0, config.CultivationRegenFlux) * Numbers.Clamp(cultivationIntensity, 0, 1) * Math.Max(0, biomass) * Math.Max(0, biomassRecoveryPerDay) * Numbers.Clamp(operatingFraction, 0, 1) * CropSuitability(config, soilMoisture);
++        public static double ManagedRegenerationFlow(SimulationConfig config, double cultivationIntensity, double biomass, double biomassRecoveryPerDay, double operatingFraction)
++            => Math.Max(0, config.CultivationRegenFlux) * Numbers.Clamp(cultivationIntensity, 0, 1) * Math.Max(0, biomass) * Math.Max(0, biomassRecoveryPerDay) * Numbers.Clamp(operatingFraction, 0, 1);
+         public static double SustainableHarvestRate(double biomass, double biomassRecoveryPerDay, double sustainableProductionFraction, double managedFlow)
+             => Math.Max(0, biomass) * Math.Max(0, biomassRecoveryPerDay) * Math.Max(0, sustainableProductionFraction) + Math.Max(0, managedFlow);
+         public static double EffectiveWoodCapacity(double ecologicalCapacity, double cultivationIntensity, SimulationConfig config)
+--- a/EconomicPlanner.cs
++++ b/EconomicPlanner.cs
+@@ -292,7 +292,7 @@
+                         : 0;
+                     double fieldWorkers = Math.Max(0, c.Population - reservedHerders - roleWorkers - foodReserve);
+                     double maintenance = CultivationEconomy.PlannedMaintenanceFarmers(w, c, fieldWorkers);
+-                    double plannedFarmRate = demand.HarvestProductivity * cfg.GatherPerPerson * intervals;
++                    double plannedFarmRate = cfg.FarmerProductivity * cfg.GatherPerPerson * intervals;
+                     double plannedFoodTarget = Math.Min(terrestrialAfterHerds, biological + goals[CraftGood.Cloth] * n.PlantFoodPerFabricUnit);
+                     double harvest = established && plannedFarmRate > 0 ? Math.Ceiling(Math.Max(maintenance, plannedFoodTarget / plannedFarmRate) - Epsilon) : 0;
+                     double plannedOperating = established ? Math.Min(fieldWorkers, harvest) : 0;
+@@ -499,7 +499,7 @@
+                     out double plantGap, out double animalGap);
+                 double feedstock = plantGap + animalGap;
+                 double foodTarget = Math.Min(forageAfterHerds, Math.Max(0, biological + feedstock - animalReceipts));
+-                double farmRate = demand.HarvestProductivity * cfg.GatherPerPerson * intervals;
++                double farmRate = cfg.FarmerProductivity * cfg.GatherPerPerson * intervals;
+                 int nonFarmWorkers = intent.Assignments.Where(a => a.Role != WorkforceRoles.Farmer).Sum(a => a.Population);
+                 int availableFarmers = Math.Max(0, c.Population - nonFarmWorkers);
+                 double terrestrialFoodTarget = Math.Min(terrestrialAfterHerds, foodTarget);
+--- a/Fission.cs
++++ b/Fission.cs
+@@ -456,17 +456,7 @@
+             double Repeatable(int n)
+             {
+                 if (projections.TryGetValue(n, out double cachedValue)) return cachedValue;
+-                var t = w.Tiles[n]; var now = index.Ecology(n);
+-                if (cfg.CropHarvestingOnly)
+-                {
+-                    // A daughter inherits no field capital. Evaluate natural
+-                    // accessible stock, without borrowing another camp's crops
+-                    // or assuming primitive fields have already been built.
+-                    now.CultivationCapital = 0;
+-                    var natural = new EcologyCapacity(w, t, now, (int)Math.Floor(w.Days / cfg.BaseDays) % 4);
+-                    now.Food = Math.Min(now.Food, natural.Food);
+-                }
+-                var view = now;
++                var t = w.Tiles[n]; var now = index.Ecology(n); var view = now;
+                 view.PotentialFood = Math.Max(0, view.PotentialFood - view.Food); view.Food = 0;
+                 LazyEcology.RecoverLandAfterHarvest(w, t, ref view, w.Days, cfg.TurnDays, null, null, null);
+                 LazyEcology.ClampCapacity(w, t, ref view);
+@@ -477,7 +467,7 @@
+             double need = daughter * cfg.Consumption * cfg.GenerationIntervals;
+             if (need <= 0) return 0;
+             double harvest = PlacementStage.Harvest(w, daughter, land, aquatic);
+-            if (regime == FissionRegime.Agricultural && !cfg.CropHarvestingOnly)
++            if (regime == FissionRegime.Agricultural)
+             {
+                 double q = cfg.Neolithic.PrimitiveAgricultureSupportedIntensity, managed = 0;
+                 foreach (int n in w.Map.Radius(tile, 1))
+@@ -492,12 +482,8 @@
+                 ratio = (land + aquatic + managed) / need; e.SiteHuman = ratio;
+                 return Numbers.Clamp(support / need, 0, 1);
+             }
+-            // Keep uncapped physical richness for destination ordering. The
+-            // daughter food/veto estimate is bounded by obtainable harvest.
+-            ratio = (land + aquatic) * PlacementStage.WorkingShare(w, daughter) / need;
+-            e.SiteHuman = cfg.CropHarvestingOnly ? harvest / need : ratio;
+-            double food = Numbers.Clamp(harvest / need, 0, 1);
+-            if (regime == FissionRegime.Paleolithic || regime != FissionRegime.Nomadic && !cfg.CropHarvestingOnly) return food;
++            ratio = (land + aquatic) * PlacementStage.WorkingShare(w, daughter) / need; e.SiteHuman = ratio; double food = Numbers.Clamp(harvest / need, 0, 1);
++            if (regime != FissionRegime.Nomadic) return food;
+             double forageNeed = 0, waterNeed = 0; int residents = camp.Population;
+             foreach (var herd in index.CampHerds(camp.Id))
+             {
+@@ -519,12 +505,10 @@
+                     if (t.TraversableLand) biomass += t.Seasons[s].MaxPotentialFood * t.Seasons[s].BiomassRecoveryPerDay * cfg.SustainableProductionFraction;
+                     if (drinkable) recharge += t.Seasons[s].MaxFreshwater * t.Seasons[s].WaterRecoveryPerDay;
+                 }
+-                var opening = index.Ecology(n);
+-                forage += cfg.CropHarvestingOnly ? (t.TraversableLand ? Math.Max(0, opening.PotentialFood) : 0) : biomass / 4 * cfg.TurnDays;
+-                water += recharge / 4 * cfg.TurnDays + (cfg.CropHarvestingOnly && drinkable ? Math.Max(0, opening.Freshwater) : 0);
++                forage += biomass / 4 * cfg.TurnDays; water += recharge / 4 * cfg.TurnDays;
+             }
+             // Ratios before the cap at one (the destination order's second key); only a herd need constrains them.
+-            double rawForage = forageNeed <= 0 ? double.PositiveInfinity : (forage - Math.Min(harvest, land)) / forageNeed, rawWater = waterNeed <= 0 ? double.PositiveInfinity : water / waterNeed;
++            double rawForage = forageNeed <= 0 ? double.PositiveInfinity : (forage - harvest) / forageNeed, rawWater = waterNeed <= 0 ? double.PositiveInfinity : water / waterNeed;
+             e.SiteHerd = Math.Min(rawForage, rawWater); ratio = Math.Min(ratio, e.SiteHerd);
+             return Math.Min(food, Math.Min(Numbers.Clamp(rawForage, 0, 1), Numbers.Clamp(rawWater, 0, 1)));
+         }
+--- a/GenerationalEconomy.cs
++++ b/GenerationalEconomy.cs
+@@ -498,9 +498,7 @@
+                 }
+                 return accepted;
+             }
+-            double productivity = labor.HarvestProductivity > 0 ? labor.HarvestProductivity
+-                : CultivationEconomy.HarvestProductivity(w, camp, labor.Footprint);
+-            double farmCapacity = labor.OperatingFarmers * productivity * w.Config.GatherPerPerson * intervals;
++            double farmCapacity = labor.OperatingFarmers * w.Config.FarmerProductivity * w.Config.GatherPerPerson * intervals;
+             double gatherCapacity = labor.FoodGatherers * w.Config.GatherPerPerson * intervals;
+             double farmInput = Allocate(scratch.LandIndices, Math.Min(farmCapacity, feedstock), true, true);
+             double gatheredInput = Allocate(scratch.LandIndices, Math.Min(gatherCapacity, feedstock - farmInput), false, true);
+--- a/HerdLabour.cs
++++ b/HerdLabour.cs
+@@ -314,7 +314,7 @@
+             double nowDiscount = Math.Exp(-r * years), terminalDiscount = Math.Exp(-r * horizon);
+             double annualHuman = d.ForageAfterHerds / years, annualMeals = d.Meals / years;
+             double harvestRate = cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays;
+-            if (d.Established) harvestRate *= Math.Max(1, d.HarvestProductivity);
++            if (d.Established) harvestRate *= Math.Max(1, cfg.FarmerProductivity);
+             ladder.FieldAlternativeRate = harvestRate;
+             TurnResolver.FoodBucketTargets(w, c, intervals, years, d.Meals, c.Food,
+                 out _, out _, out double reserveFill, out double growthFood);
+@@ -370,18 +370,10 @@
+                 double incoming = milk + slaughter;
+                 double currentValue = HerdBuckets.ValueOf(c.AnimalFood, c.AnimalFood + incoming, currentSizes, values);
+                 // Savings are harvesting that could actually be done, after typed inputs and inventory.
+-                double currentFoodNeed = Math.Max(0, d.Biological);
++                double currentFoodNeed = Math.Max(0, d.Biological - c.Food);
+                 double beforeHarvest = Math.Min(d.ForageAfterHerds, currentFoodNeed);
+                 double afterHarvest = Math.Min(d.ForageAfterHerds, Math.Max(0, currentFoodNeed - incoming + fabricInput + housingInput));
+-                double gatherPerYear = cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays;
+-                double HarvestWorkers(double food)
+-                {
+-                    double land = Math.Min(d.TerrestrialAfterHerds, food);
+-                    double field = d.Established && harvestRate > 0 ? Math.Max(d.Upkeep, land / years / harvestRate) : 0;
+-                    double remaining = Math.Max(0, food - Math.Min(land, field * harvestRate * years));
+-                    return field + (gatherPerYear > 0 ? remaining / years / gatherPerYear : 0);
+-                }
+-                double savedNow = Math.Max(0, HarvestWorkers(beforeHarvest) - HarvestWorkers(afterHarvest));
++                double savedNow = harvestRate > 0 ? Math.Max(0, beforeHarvest - afterHarvest) / years / harvestRate : 0;
+                 double primitive = cfg.AnimalsPerHerder;
+                 double activeHerderYears = plan.CoveredHerderYears + years * Math.Max(0,
+                     Math.Min(animals, plan.Capacity) - plan.CoveredHerderYears / years * n.StoneHerdingToolAnimalsPerHerder) / primitive;
+@@ -407,16 +399,12 @@
+                 double terminal = Math.Min(localCapacity, EndAnimals(target, growth, futureCapacity, future));
+                 double terminalValue = HerdBuckets.ValueOf(0, terminal * grown.CarcassFood, currentSizes, values);
+                 double baselineHarvest = Math.Min(annualHuman, annualMeals + growthFood / years);
++                double usedLimit = futureMealGap + futureFabric + futureHousing + baselineHarvest;
+                 double unpaidLimit = futureMealGap + futureFabric + futureHousing;
+                 double gatherRate = cfg.GatherPerPerson * cfg.DaysPerYear / cfg.BaseDays;
+                 double FoodIntegral(double limit) => futureYield > 0 ? futureYield * AnimalYears(target, growth, Math.Min(futureCapacity, limit / futureYield), r, future) : 0;
+-                double cheapHarvest = d.Established ? Math.Min(baselineHarvest, d.TerrestrialAfterHerds / years) : 0;
+-                double expensiveHarvest = baselineHarvest - cheapHarvest;
+-                // Existing maintenance remains a minimum in the actual planner.
+-                // Milk frees crop-harvest work only above that floor.
+-                double cheapSaving = Math.Max(0, cheapHarvest - d.Upkeep * harvestRate);
+-                double usedLimit = unpaidLimit + expensiveHarvest + cheapSaving;
+                 double displacedHarvest = FoodIntegral(usedLimit) - FoodIntegral(unpaidLimit);
++                double expensiveHarvest = d.Established ? Math.Max(0, baselineHarvest - d.TerrestrialAfterHerds / years) : baselineHarvest;
+                 double expensiveSaved = FoodIntegral(unpaidLimit + expensiveHarvest) - FoodIntegral(unpaidLimit);
+                 double futureSaved = gatherRate > 0 && harvestRate > 0 ? displacedHarvest / harvestRate
+                     + expensiveSaved * (1 / gatherRate - 1 / harvestRate) : 0;
+--- a/LazyEcology.cs
++++ b/LazyEcology.cs
+@@ -21,8 +21,8 @@
+             double ecologicalWildFood = Math.Min(Biomass, s.MaxFood * multiplier * condition * FoodEcology.GatherableFraction(t, w.Config, view.CurrentVegetation) / FoodEcology.GatherableFraction(t, w.Config, t.NaturalVegetationPotential));
+             double q = CultivationEconomy.Intensity(w.Config, view.CultivationCapital);
+             WildFood = EcologyMath.RetainedWildFoodCapacity(ecologicalWildFood, q, w.Config);
+-            Food = EcologyMath.EffectiveWildFoodCapacity(ecologicalWildFood, Biomass, q, w.Config, s.Moisture);
+-            ManagedFlow = EcologyMath.ManagedRegenerationFlow(w.Config, q, Biomass, s.BiomassRecoveryPerDay, operatingFraction ?? t.CultivationOperatingFraction, s.Moisture);
++            Food = EcologyMath.EffectiveWildFoodCapacity(ecologicalWildFood, Biomass, q, w.Config);
++            ManagedFlow = EcologyMath.ManagedRegenerationFlow(w.Config, q, Biomass, s.BiomassRecoveryPerDay, operatingFraction ?? t.CultivationOperatingFraction);
+             Water = t.WaterBody == WaterKind.Saltwater || t.FreshwaterSource == FreshwaterSource.None ? 0 : s.MaxFreshwater;
+             FoodRate = s.FoodRecoveryPerDay; BiomassRate = s.BiomassRecoveryPerDay; WaterRate = s.WaterRecoveryPerDay;
+         }
+@@ -370,9 +370,9 @@
+             double previousQ = CultivationEconomy.Intensity(w.Config, previousCapital);
+             double nextQ = CultivationEconomy.Intensity(w.Config, nextCapital);
+             double oldFood = EcologyMath.EffectiveWildFoodCapacity(naturalCapacity.WildFood,
+-                naturalCapacity.Biomass, previousQ, w.Config, tile.Seasons[season].Moisture);
++                naturalCapacity.Biomass, previousQ, w.Config);
+             double newFood = EcologyMath.EffectiveWildFoodCapacity(naturalCapacity.WildFood,
+-                naturalCapacity.Biomass, nextQ, w.Config, tile.Seasons[season].Moisture);
++                naturalCapacity.Biomass, nextQ, w.Config);
+             double oldShare = naturalCapacity.Biomass <= 0 ? 0 : Numbers.Clamp(oldFood / naturalCapacity.Biomass, 0, 1);
+             double newShare = naturalCapacity.Biomass <= 0 ? 0 : Numbers.Clamp(newFood / naturalCapacity.Biomass, 0, 1);
+             double nonfood = Math.Max(0, view.PotentialFood - view.Food);
+--- a/Model.cs
++++ b/Model.cs
+@@ -35,8 +35,6 @@
+             GrowthReserveTurns = defaults.GrowthReserveTurns;
+             FarmerProductivity = defaults.FarmerProductivity; ReferenceIntensity = defaults.ReferenceIntensity; CultivationRegenFlux = defaults.CultivationRegenFlux; MaintenanceCoefficient = defaults.MaintenanceCoefficient; GathererBridgeCeiling = defaults.GathererBridgeCeiling; GathererBridgeEfficiency = defaults.GathererBridgeEfficiency;
+             CultivationVegetationDisplacementStart = defaults.CultivationVegetationDisplacementStart;
+-            // Old saves retain their crop/accessibility and whole-footprint harvest rule.
+-            CropMoistureReference = 0; CropMoistureExponent = 2; CropHarvestingOnly = false;
+             // Absent in older saves: their generated land stocks keep their
+             // original scale and their pressure threshold remains one.
+             MinimumCampSpacing = defaults.MinimumCampSpacing;
+@@ -156,8 +154,6 @@
+         public double ConditionRecoveryPerYear = .003093770185904377, SafeUseRatio = 1, SustainableProductionFraction = .5, LandUseDamagePerYear = .03, AquaticUseDamagePerYear = .03, PressureExponent = 2;
+         [System.Runtime.Serialization.OptionalField] public double LandBiomassMultiplier = 63, LandSafeUseRatio = .5;
+         [System.Runtime.Serialization.OptionalField] public double CultivationVegetationDisplacementStart = .50;
+-        [System.Runtime.Serialization.OptionalField] public double CropMoistureReference = .50, CropMoistureExponent = 2;
+-        [System.Runtime.Serialization.OptionalField] public bool CropHarvestingOnly = true;
+         public double LowPotentialRecoveryMultiplier = .5, HighPotentialRecoveryMultiplier = 1.5;
+         public double OpeningFoodMultiplier = 1.4, CultivationMoisture = .25, RelocationInertia = .18;
+         [System.Runtime.Serialization.OptionalField] public double FarmerProductivity = 1.50, ReferenceIntensity = 0.40, CultivationRegenFlux = 0.65, MaintenanceCoefficient = 0.40;
+@@ -200,9 +196,6 @@
+ 
+         public void Validate()
+         {
+-            if (double.IsNaN(CropMoistureReference) || double.IsInfinity(CropMoistureReference) || CropMoistureReference < 0 || CropMoistureReference > 1 ||
+-                double.IsNaN(CropMoistureExponent) || double.IsInfinity(CropMoistureExponent) || CropMoistureExponent <= 0)
+-                throw new ArgumentException("Invalid crop moisture response.");
+             Neolithic.Validate();
+             if (double.IsNaN(LandFoodRegeneration) || double.IsInfinity(LandFoodRegeneration)
+                 || LandFoodRegeneration < 0 || LandFoodRegeneration >= 1)
+--- a/ProductionDemand.cs
++++ b/ProductionDemand.cs
+@@ -260,7 +260,7 @@
+         // Ladder steps computed (recording stops at the total food gap) and their build worker-years (diagnostics).
+         public int LadderSteps;
+         public double LadderWorkerYearsUntruncated;
+-        public double Meals, OperatingReserve, SparePlant, PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope, HousingMultiplier, HarvestProductivity;
++        public double Meals, OperatingReserve, SparePlant, PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope, HousingMultiplier;
+         // The same envelopes measured after this turn's meals only (not the operating reserve):
+         // they fund just the clothing-need feedstock, NeolithicProduction.ClothingNeedFeedstock.
+         public double SparePlantClothing, PlantEnvelopeClothing, AnimalEnvelopeClothing, FoodRoomEnvelopeClothing, ClothingNeedUnits;
+@@ -316,7 +316,6 @@
+             var operated = d.Operated = footprint.Where(id => w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == c.Id).ToArray();
+             d.Upkeep = d.CultivationEnabled ? CultivationEconomy.MaintenanceFarmersForPlanning(w, c, years) : 0;
+             d.Established = d.CultivationEnabled && operated.Any(id => LazyEcology.ProjectEcology(w, id, w.Days).CultivationCapital > 0);
+-            d.HarvestProductivity = d.CultivationEnabled ? CultivationEconomy.HarvestProductivity(w, c, footprint) : 1;
+             d.Eligible = w.Map.Radius(c.Tile, cfg.GatherRadius).Where(id => PassiveGathering.Eligible(w, c, id)).OrderBy(id => id).ToArray();
+             // Ask the same finite-stock kernel that resolves actual claims for
+             // the no-contention supply envelope. Aquatic food keeps its own
+--- a/TurnHorizonResources.cs
++++ b/TurnHorizonResources.cs
+@@ -191,7 +191,7 @@
+                         double cultivatedHarvest = transfers.Where(t => t.Entity == camp.Id && t.Kind == "Cultivation")
+                             .Sum(t => t.Food);
+                         fieldWork.HarvestEquivalentWorkerYears = cultivatedHarvest /
+-                            Math.Max(1e-12, agriculturalLabor[camp.Id].HarvestProductivity * w.Config.GatherPerPerson * horizon.ReferenceIntervals)
++                            Math.Max(1e-12, w.Config.FarmerProductivity * w.Config.GatherPerPerson * horizon.ReferenceIntervals)
+                             * horizon.Years;
+                         // Maintenance and cultivation receipts share the same
+                         // operating-farmer reservation in this model. Reconcile

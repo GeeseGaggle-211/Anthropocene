@@ -326,8 +326,12 @@ internal static class EconomicAutomationChecks
         OpeningFood(w, c, 2000);
         c.PlantFood = 8000; c.Inventory.HandTools = 100; c.Inventory.Cloth = 100; c.Inventory.HousingUnits = 100;
         c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
-        c.Workforce.Assign(WorkforceRoles.Farmer, 40, 100); c.Workforce.Assign(WorkforceRoles.Weaver, 2, 100);
-        c.EconomicLabor = new EconomicLaborPlan { ExpansionFarmers = 2.5, MaterialGatherers = 58 };
+        // Pin the receipt budget under the mixed wild/crop harvest rate. This
+        // witness isolates food allocation, rather than assuming every land
+        // receipt receives the full crop bonus.
+        double operating = 8100 / (CultivationEconomy.HarvestProductivity(w, c) * w.Config.GatherPerPerson * w.Config.GenerationIntervals);
+        c.Workforce.Assign(WorkforceRoles.Farmer, 60, 100); c.Workforce.Assign(WorkforceRoles.Weaver, 2, 100);
+        c.EconomicLabor = new EconomicLaborPlan { ExpansionFarmers = 60 - operating, MaterialGatherers = 38 };
         var r = Resolve(w);
         Near(r.Transfers.Where(t => t.Kind == "Cultivation").Sum(t => t.Food), 8100, "controlled harvest funds consumption plus Fabric only", 1e-5);
         Check(r.Growth == 0 && c.Population == 100, "manufacturing feedstock is not reused to fund births");
@@ -339,6 +343,7 @@ internal static class EconomicAutomationChecks
         WorldState GrowingFixture(bool hunter)
         {
             var w = Fixture(); var c = w.Camps[0]; Field(w); w.Config.MaintenanceCoefficient = 0; w.Config.AnnualHumanGrowthRate = .01145;
+            w.Config.GrowthReserveYears = 0; // isolate the prior-cohort birth/Clothing contract without a reserve-refill customer
             OpeningFood(w, c, 2000);
             c.Population = 10; c.PlantFood = c.AnimalFood = c.AquaticFood = 0; c.Inventory.HandTools = 100; c.Inventory.HousingUnits = 10;
             c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);

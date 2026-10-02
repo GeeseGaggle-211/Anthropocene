@@ -35,6 +35,8 @@ namespace Anthropocene.Simulation
             GrowthReserveTurns = defaults.GrowthReserveTurns;
             FarmerProductivity = defaults.FarmerProductivity; ReferenceIntensity = defaults.ReferenceIntensity; CultivationRegenFlux = defaults.CultivationRegenFlux; MaintenanceCoefficient = defaults.MaintenanceCoefficient; GathererBridgeCeiling = defaults.GathererBridgeCeiling; GathererBridgeEfficiency = defaults.GathererBridgeEfficiency;
             CultivationVegetationDisplacementStart = defaults.CultivationVegetationDisplacementStart;
+            // Old saves retain their crop/accessibility and whole-footprint harvest rule.
+            CropMoistureReference = 0; CropMoistureExponent = 2; CropHarvestingOnly = false;
             // Absent in older saves: their generated land stocks keep their
             // original scale and their pressure threshold remains one.
             MinimumCampSpacing = defaults.MinimumCampSpacing;
@@ -154,6 +156,8 @@ namespace Anthropocene.Simulation
         public double ConditionRecoveryPerYear = .003093770185904377, SafeUseRatio = 1, SustainableProductionFraction = .5, LandUseDamagePerYear = .03, AquaticUseDamagePerYear = .03, PressureExponent = 2;
         [System.Runtime.Serialization.OptionalField] public double LandBiomassMultiplier = 63, LandSafeUseRatio = .5;
         [System.Runtime.Serialization.OptionalField] public double CultivationVegetationDisplacementStart = .50;
+        [System.Runtime.Serialization.OptionalField] public double CropMoistureReference = .50, CropMoistureExponent = 2;
+        [System.Runtime.Serialization.OptionalField] public bool CropHarvestingOnly = true;
         public double LowPotentialRecoveryMultiplier = .5, HighPotentialRecoveryMultiplier = 1.5;
         public double OpeningFoodMultiplier = 1.4, CultivationMoisture = .25, RelocationInertia = .18;
         [System.Runtime.Serialization.OptionalField] public double FarmerProductivity = 1.50, ReferenceIntensity = 0.40, CultivationRegenFlux = 0.65, MaintenanceCoefficient = 0.40;
@@ -196,6 +200,9 @@ namespace Anthropocene.Simulation
 
         public void Validate()
         {
+            if (double.IsNaN(CropMoistureReference) || double.IsInfinity(CropMoistureReference) || CropMoistureReference < 0 || CropMoistureReference > 1 ||
+                double.IsNaN(CropMoistureExponent) || double.IsInfinity(CropMoistureExponent) || CropMoistureExponent <= 0)
+                throw new ArgumentException("Invalid crop moisture response.");
             Neolithic.Validate();
             if (double.IsNaN(LandFoodRegeneration) || double.IsInfinity(LandFoodRegeneration)
                 || LandFoodRegeneration < 0 || LandFoodRegeneration >= 1)
@@ -535,7 +542,7 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldState
     {
-        public const int GeneratorVersion = 13;
+        public const int GeneratorVersion = 14;
         public int Version = 7, Seed, Turn = 1, NextId = 1;
         // Live player-slot count (WP10a): fission creates AI slots mid-game. 0 means not recorded (older saves and hand-built worlds);
         // LivePlayers then falls back to Config.Players and the highest camp player.

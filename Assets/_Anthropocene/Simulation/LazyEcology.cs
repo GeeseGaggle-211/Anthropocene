@@ -21,8 +21,8 @@ namespace Anthropocene.Simulation
             double ecologicalWildFood = Math.Min(Biomass, s.MaxFood * multiplier * condition * FoodEcology.GatherableFraction(t, w.Config, view.CurrentVegetation) / FoodEcology.GatherableFraction(t, w.Config, t.NaturalVegetationPotential));
             double q = CultivationEconomy.Intensity(w.Config, view.CultivationCapital);
             WildFood = EcologyMath.RetainedWildFoodCapacity(ecologicalWildFood, q, w.Config);
-            Food = EcologyMath.EffectiveWildFoodCapacity(ecologicalWildFood, Biomass, q, w.Config);
-            ManagedFlow = EcologyMath.ManagedRegenerationFlow(w.Config, q, Biomass, s.BiomassRecoveryPerDay, operatingFraction ?? t.CultivationOperatingFraction);
+            Food = EcologyMath.EffectiveWildFoodCapacity(ecologicalWildFood, Biomass, q, w.Config, s.Moisture);
+            ManagedFlow = EcologyMath.ManagedRegenerationFlow(w.Config, q, Biomass, s.BiomassRecoveryPerDay, operatingFraction ?? t.CultivationOperatingFraction, s.Moisture);
             Water = t.WaterBody == WaterKind.Saltwater || t.FreshwaterSource == FreshwaterSource.None ? 0 : s.MaxFreshwater;
             FoodRate = s.FoodRecoveryPerDay; BiomassRate = s.BiomassRecoveryPerDay; WaterRate = s.WaterRecoveryPerDay;
         }
@@ -370,9 +370,9 @@ namespace Anthropocene.Simulation
             double previousQ = CultivationEconomy.Intensity(w.Config, previousCapital);
             double nextQ = CultivationEconomy.Intensity(w.Config, nextCapital);
             double oldFood = EcologyMath.EffectiveWildFoodCapacity(naturalCapacity.WildFood,
-                naturalCapacity.Biomass, previousQ, w.Config);
+                naturalCapacity.Biomass, previousQ, w.Config, tile.Seasons[season].Moisture);
             double newFood = EcologyMath.EffectiveWildFoodCapacity(naturalCapacity.WildFood,
-                naturalCapacity.Biomass, nextQ, w.Config);
+                naturalCapacity.Biomass, nextQ, w.Config, tile.Seasons[season].Moisture);
             double oldShare = naturalCapacity.Biomass <= 0 ? 0 : Numbers.Clamp(oldFood / naturalCapacity.Biomass, 0, 1);
             double newShare = naturalCapacity.Biomass <= 0 ? 0 : Numbers.Clamp(newFood / naturalCapacity.Biomass, 0, 1);
             double nonfood = Math.Max(0, view.PotentialFood - view.Food);

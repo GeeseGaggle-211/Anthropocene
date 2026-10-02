@@ -49,3 +49,5 @@ TestResults/
 !Tools/LandFoodPopulationSweep/Anthropocene.LandFoodPopulationSweep.csproj
 !Tools/NeolithicHusbandryValidation/Anthropocene.NeolithicHusbandryValidation.csproj
 !Tools/NeolithicCraftValidation/Anthropocene.NeolithicCraftValidation.csproj
+!Tools/PerformanceAudit/HerdEcologyProbe.csproj
+!Tools/PerformanceAudit/PastoralPlannerProbe.csproj

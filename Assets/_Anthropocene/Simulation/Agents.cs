@@ -75,9 +75,9 @@ namespace Anthropocene.Simulation
                 biomassCapacity = ecology.MaxPotentialFood * openingMultiplier * condition;
                 double wildFoodEcological = Math.Min(biomassCapacity, ecology.MaxFood * openingMultiplier * condition *
                     FoodEcology.GatherableFraction(tile, config, view.CurrentVegetation) / FoodEcology.GatherableFraction(tile, config, tile.NaturalVegetationPotential));
-                foodCapacity = EcologyMath.EffectiveWildFoodCapacity(wildFoodEcological, biomassCapacity, Cultivation, config);
+                foodCapacity = EcologyMath.EffectiveWildFoodCapacity(wildFoodEcological, biomassCapacity, Cultivation, config, ecology.Moisture);
                 foodRate = ecology.FoodRecoveryPerDay;
-                managedFlow = EcologyMath.ManagedRegenerationFlow(config, Cultivation, biomassCapacity, ecology.BiomassRecoveryPerDay, tile.CultivationOperatingFraction);
+                managedFlow = EcologyMath.ManagedRegenerationFlow(config, Cultivation, biomassCapacity, ecology.BiomassRecoveryPerDay, tile.CultivationOperatingFraction, ecology.Moisture);
             }
             double accessibility = biomassCapacity > 1e-9 ? foodCapacity / biomassCapacity : 0;
             FoodMaximum = Knowledge.Band(foodCapacity, 70, config);

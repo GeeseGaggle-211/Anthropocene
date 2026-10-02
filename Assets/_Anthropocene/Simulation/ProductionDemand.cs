@@ -248,6 +248,7 @@ namespace Anthropocene.Simulation
         // or no field step has a positive value). Transient, never saved. Units: see
         // ExpansionValuation.
         public ExpansionLadderClaim Expansion;
+        internal CultivationEconomy.ExpansionStep[] PhysicalExpansion;
         // WP4a start-of-turn farm-labour price estimate w_farm0 (person-QoL-years per
         // worker-year): the ladder's value after last turn's expansion farmers; 0 with no ladder.
         public double FarmLabourPrice0;
@@ -259,7 +260,7 @@ namespace Anthropocene.Simulation
         // Ladder steps computed (recording stops at the total food gap) and their build worker-years (diagnostics).
         public int LadderSteps;
         public double LadderWorkerYearsUntruncated;
-        public double Meals, OperatingReserve, SparePlant, PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope, HousingMultiplier;
+        public double Meals, OperatingReserve, SparePlant, PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope, HousingMultiplier, HarvestProductivity;
         // The same envelopes measured after this turn's meals only (not the operating reserve):
         // they fund just the clothing-need feedstock, NeolithicProduction.ClothingNeedFeedstock.
         public double SparePlantClothing, PlantEnvelopeClothing, AnimalEnvelopeClothing, FoodRoomEnvelopeClothing, ClothingNeedUnits;
@@ -272,6 +273,30 @@ namespace Anthropocene.Simulation
             if (!retainedExpansionPossible.HasValue)
                 retainedExpansionPossible = Operated.Any(id => EconomicPlanner.ExpansionGain(world, id) > EconomicPlanner.Epsilon);
             return retainedExpansionPossible.Value;
+        }
+
+        internal CampProductionDemand WithAnimalFood(WorldState w, Camp c, double animalFood)
+        {
+            var result = (CampProductionDemand)MemberwiseClone();
+            result.SetFoodEnvelopes(w, c, animalFood);
+            result.Expansion = null; result.ExpansionEffortCap = double.PositiveInfinity;
+            ExpansionValuation.Apply(w, c, result);
+            return result;
+        }
+        private void SetFoodEnvelopes(WorldState w, Camp c, double animalFood)
+        {
+            Supply = ForageAfterHerds + animalFood;
+            SparePlant = Math.Min(c.PlantFood, Math.Max(0, c.Food - Meals - OperatingReserve));
+            PlantEnvelope = Math.Min(TerrestrialAfterHerds + SparePlant, Math.Max(0, c.Food + Supply - Meals));
+            double surplus = Math.Max(0, c.Food + Supply - Meals - OperatingReserve);
+            AnimalEnvelope = HusbandryEnabled ? Math.Min(Math.Max(0, c.AnimalFood) + animalFood, Math.Max(0, surplus - SparePlant)) : 0;
+            double years = w.Config.TurnDays / w.Config.DaysPerYear;
+            double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, Consumers, w.Config.GenerationIntervals), NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, w.Config.GenerationIntervals, years));
+            FoodRoomEnvelope = HusbandryEnabled ? Math.Max(0, c.Food + Supply - Meals - reserve) : 0;
+            SparePlantClothing = Math.Min(c.PlantFood, Math.Max(0, c.Food - Meals));
+            PlantEnvelopeClothing = Math.Min(TerrestrialAfterHerds + SparePlantClothing, Math.Max(0, c.Food + Supply - Meals));
+            AnimalEnvelopeClothing = HusbandryEnabled ? Math.Min(Math.Max(0, c.AnimalFood) + animalFood, Math.Max(0, Math.Max(0, c.Food + Supply - Meals) - SparePlantClothing)) : 0;
+            FoodRoomEnvelopeClothing = HusbandryEnabled ? Math.Max(0, c.Food + Supply - Meals) : 0;
         }
 
         // Normalizes the plan's focus to the camp footprint before the preview
@@ -291,6 +316,7 @@ namespace Anthropocene.Simulation
             var operated = d.Operated = footprint.Where(id => w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == c.Id).ToArray();
             d.Upkeep = d.CultivationEnabled ? CultivationEconomy.MaintenanceFarmersForPlanning(w, c, years) : 0;
             d.Established = d.CultivationEnabled && operated.Any(id => LazyEcology.ProjectEcology(w, id, w.Days).CultivationCapital > 0);
+            d.HarvestProductivity = d.CultivationEnabled ? CultivationEconomy.HarvestProductivity(w, c, footprint) : 1;
             d.Eligible = w.Map.Radius(c.Tile, cfg.GatherRadius).Where(id => PassiveGathering.Eligible(w, c, id)).OrderBy(id => id).ToArray();
             // Ask the same finite-stock kernel that resolves actual claims for
             // the no-contention supply envelope. Aquatic food keeps its own
@@ -360,24 +386,11 @@ namespace Anthropocene.Simulation
             int consumers = d.Consumers = c.Population + w.Hunters.Where(h => h.SourceCamp == c.Id && Simulation.Supply.InRange(w, c, h.Tile)).Sum(h => h.Population);
             d.Meals = consumers * cfg.Consumption * intervals;
             d.OperatingReserve = NeolithicProduction.DesiredReserveFood(w, consumers);
-            d.SparePlant = Math.Min(c.PlantFood, Math.Max(0, c.Food - d.Meals - d.OperatingReserve));
-            d.PlantEnvelope = Math.Min(d.TerrestrialAfterHerds + d.SparePlant, Math.Max(0, c.Food + d.Supply - consumers * cfg.Consumption * intervals));
-            double animalSurplus = Math.Max(0, c.Food + d.Supply - d.Meals - d.OperatingReserve);
-            d.AnimalEnvelope = d.HusbandryEnabled ? Math.Min(Math.Max(0, c.AnimalFood) + d.ManagedFood.AnimalFood, Math.Max(0, animalSurplus - d.SparePlant)) : 0;
-            if (d.HusbandryEnabled)
-            {
-                double reserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, consumers, intervals), NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, intervals, years));
-                d.FoodRoomEnvelope = Math.Max(0, c.Food + d.Supply - consumers * cfg.Consumption * intervals - reserve);
-            }
-            d.SparePlantClothing = Math.Min(c.PlantFood, Math.Max(0, c.Food - d.Meals));
-            d.PlantEnvelopeClothing = Math.Min(d.TerrestrialAfterHerds + d.SparePlantClothing, Math.Max(0, c.Food + d.Supply - d.Meals));
-            d.AnimalEnvelopeClothing = d.HusbandryEnabled
-                ? Math.Min(Math.Max(0, c.AnimalFood) + d.ManagedFood.AnimalFood, Math.Max(0, Math.Max(0, c.Food + d.Supply - d.Meals) - d.SparePlantClothing)) : 0;
-            d.FoodRoomEnvelopeClothing = d.HusbandryEnabled ? Math.Max(0, c.Food + d.Supply - d.Meals) : 0;
+            d.SetFoodEnvelopes(w, c, d.ManagedFood.AnimalFood);
             d.ClothingNeedUnits = NeolithicProduction.ClothingNeedUnits(n, d.Preview.Population, years, c.Inventory.Cloth, c.Inventory.AnimalFabric);
             d.HousingMultiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
             ClaimValuation.Apply(w, c, d);
-            if (expansionClaim) ExpansionValuation.Apply(w, c, d);
+            if (expansionClaim) ExpansionValuation.Apply(w, c, d, herdCapital && HerdLabour.Applies(w, c));
             ClaimValuation.ApplyTools(w, c, d);
             // The herder ladder reads the priced claims (feedstock values), so it comes after every claim is valued.
             if (herdCapital && HerdLabour.Applies(w, c)) d.HerdLadder = HerdLabour.Build(w, c, d, e.ManagedBreedingIntensity);
@@ -621,7 +634,7 @@ namespace Anthropocene.Simulation
             }
             return new ExpansionLadderClaim { WorkerYears = b.ToArray(), Value = u.ToArray(), FoodPerWorkerYear = productivity.ToArray(), Tiles = tiles.ToArray(), TotalWorkerYears = b.Sum() };
         }
-        public static void Apply(WorldState w, Camp c, CampProductionDemand d)
+        public static void Apply(WorldState w, Camp c, CampProductionDemand d, bool prepareHerdChoices = false)
         {
             var cfg = w.Config; var n = cfg.Neolithic;
             if (!n.ValueFulfilmentSelected || !d.CultivationEnabled || c.Population <= 0) return;
@@ -630,7 +643,7 @@ namespace Anthropocene.Simulation
             // Same forecast as the planner's expansion gate.
             double forecast = d.Biological * d.NextPopulation / Math.Max(1, c.Population) + cloth * n.PlantFoodPerFabricUnit;
             // Herd food the herds are expected to add closes the food gap before any field is valued (Docs/HusbandrySettling.md).
-            double supply = d.Supply + d.HerdGrowthFood;
+            double supply = prepareHerdChoices ? d.ForageAfterHerds : d.Supply + d.HerdGrowthFood;
             if (!(forecast > supply) || !d.HasRetainedExpansionGain() || !(years > 0)) return;
             // Buckets from the very targets that size the planning demand (the
             // planning cohort, as PlanningFoodDemand), per year.
@@ -650,7 +663,8 @@ namespace Anthropocene.Simulation
             // A non-village husbandry-primary camp forfeits mobility when fields make it a village; its ladder is then read in full
             // so the crossing step can be found and charged (SettlingTerms).
             bool settling = SettlingApplies(w, c, d);
-            var steps = CultivationEconomy.ExpansionLadder(w, c, years, d.Footprint, settling ? double.PositiveInfinity : d.GapTotalPerYear);
+            var steps = d.PhysicalExpansion ?? CultivationEconomy.ExpansionLadder(w, c, years, d.Footprint, settling ? double.PositiveInfinity : d.GapTotalPerYear);
+            d.PhysicalExpansion = steps;
             d.LadderSteps = steps.Length; d.LadderWorkerYearsUntruncated = steps.Sum(x => x.WorkerYears);
             double vReserve = n.FoodRiskWeight * d.FoodValue;
             var ladder = Value(steps, d.GapConsumptionPerYear, d.GapSecurityPerYear, d.GapTotalPerYear, d.FoodValue, vReserve, d.GrowthFoodValue, d.CapitalLife);

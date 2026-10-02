@@ -7,6 +7,8 @@ namespace Anthropocene.Simulation
     public sealed class ManagedFoodForecast
     {
         public double AnimalFood, HumanFoodDisplaced;
+        // Canonical own-herd references from this existing forecast pass; transient.
+        internal Herd[] OwnedHerds = Array.Empty<Herd>();
         // Total animals behind a grown-herd forecast (TurnResolver.ForecastGrownManagedAnimalFood); 0 otherwise.
         public double Animals;
         // Transient weighted species inputs, collected in the existing own-herd forecast pass.
@@ -168,7 +170,9 @@ namespace Anthropocene.Simulation
             var forecast = new ManagedFoodForecast();
             if (w == null || c == null || intervals <= 0 || years <= 0 || !CultivationEconomy.HusbandryEnabled(c)) return forecast;
             var visible = Knowledge.Visible(w, c.Player);
-            var herds = w.Herds.Where(h => h.DomesticCamp == c.Id && h.Animals > 0 && visible.Contains(h.Tile)).OrderBy(h => h.Id).ToArray();
+            var owned = w.Herds.Where(h => h.DomesticCamp == c.Id && h.Animals > 0).OrderBy(h => h.Id).ToArray();
+            forecast.OwnedHerds = owned;
+            var herds = owned.Where(h => visible.Contains(h.Tile)).ToArray();
             if (herds.Length == 0) return forecast;
             double Animals(Herd h) => animalsOf != null && animalsOf.TryGetValue(h.Id, out double a) ? a : h.Animals;
             var claims = new List<Demand>();
@@ -494,7 +498,9 @@ namespace Anthropocene.Simulation
                 }
                 return accepted;
             }
-            double farmCapacity = labor.OperatingFarmers * w.Config.FarmerProductivity * w.Config.GatherPerPerson * intervals;
+            double productivity = labor.HarvestProductivity > 0 ? labor.HarvestProductivity
+                : CultivationEconomy.HarvestProductivity(w, camp, labor.Footprint);
+            double farmCapacity = labor.OperatingFarmers * productivity * w.Config.GatherPerPerson * intervals;
             double gatherCapacity = labor.FoodGatherers * w.Config.GatherPerPerson * intervals;
             double farmInput = Allocate(scratch.LandIndices, Math.Min(farmCapacity, feedstock), true, true);
             double gatheredInput = Allocate(scratch.LandIndices, Math.Min(gatherCapacity, feedstock - farmInput), false, true);

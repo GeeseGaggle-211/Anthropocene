@@ -1,5 +1,13 @@
 # Demand-based Neolithic automation
 
+Current branch correction (1 October 2026):
+[CropHerdBalanceValidation.md](CropHerdBalanceValidation.md) records the shared
+crop-moisture response and proportional crop-harvest productivity. A tiny
+field no longer grants the farmer bonus to wild gathering. Planned maintenance
+uses actual starting Farm Tools, and herd harvest savings respect the existing
+maintenance floor and credit stored food once. These changes supersede older
+flat-productivity assumptions below; they do not add a field-abandonment optimizer.
+
 ## Reconciliation and scope
 
 Implemented on `features/neolithic-agricultural` after the September 20 design reconciliation and the user's approval of demand-based extractor staffing, Clay Miner/Pottery, and persistent automation. The latest user instruction supersedes the technology document's earlier statement that Pottery has no paired extractor. No recipe, population-growth, ecological, mastery-threshold or QoL calibration was changed.

@@ -8,6 +8,9 @@
 *.prefab text eol=lf
 *.meta text eol=lf
 
+# Unified baseline patches need LF and their required blank context markers.
+Tools/PerformanceAudit/Baselines/*.patch text eol=lf whitespace=-blank-at-eol
+
 # Keep binary assets out of text merge attempts.
 *.png binary
 *.jpg binary

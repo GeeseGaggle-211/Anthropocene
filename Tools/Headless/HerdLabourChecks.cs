@@ -95,46 +95,65 @@ internal static class HerdLabourChecks
 
     private static void Capital()
     {
-        Near(HerdLabour.CapitalLife(.05, .02, .02, 50, 100, 100), 1 / .06, "capacity-weighted breeding capital closed form");
-        Near(HerdLabour.CapitalLife(.05, .02, .02, 100, 100, 100), 1 / .07, "at capacity breeding adds no capital life");
-        Near(HerdLabour.CapitalLife(.01, 0, .20, 1, 100, 40), 40, "a divergent perpetuity is bounded by the shared ceiling");
-        Near(HerdLabour.CapitalLife(.05, .02, .02, 10, 0, 100), 1 / .07, "no pasture means no growth credit");
-        double ceiling = ExpansionValuation.CapitalLife(new NeolithicConfig());
-        Near(HerdLabour.CapitalLife(.01, 0, 0, 10, 100, ceiling), ceiling, "the literal design ceiling already binds without growth");
-        Near(HerdLabour.CapitalLife(.01, 0, .011055, 10, 100, ceiling), ceiling, "shipped growth cannot change the literal capped life (documented decision)");
-        double[] capacities = { 0, 2, 4 };
-        double[] Values(double carcass, double demand, double weak, double field = 18)
-            => HerdLabour.CapitalStepValues(capacities, 4, carcass, .011055, 100, weak, .01, 0,
-                ceiling, 20, 0, 0, new[] { 100.0 }, new[] { .25 }, demand, 7.2, field);
-        var net = Values(60, 0, 0);
-        double expected = 2 * (4 - 60 / ceiling) * .25;
-        Near(net[0], expected, "keep less immediate carcass is annualised over management service years");
-        Near(net[1], expected, "equal marginal assets have equal prices");
-        Check(Values(1000, 100, 100).All(x => x == 0), "a carcass worth more than keeping an animal is not rescued by labour-saving infinity");
-        Check(Values(0, 100, 100).All(double.IsPositiveInfinity), "pasture without a field alternative competes only with gathering");
-        var alluvial = Values(60, 100, 0);
-        Near(alluvial[0], expected / (1 - 8 / 18.0), "a rich marginal field makes saved labour less valuable");
-        var steppe = new HerdLadder { Value = Values(60, 100, 100), Capacity = capacities, GrownAnimals = 4 };
-        var river = new HerdLadder { Value = alluvial, Capacity = capacities, GrownAnimals = 4 };
-        Check(steppe.Staffed(3) == 2 && river.Staffed(3) == 0, "at the same price the herd wins on marginal pasture and loses against a rich field");
-        var field = new ExpansionLadderClaim { WorkerYears = new[] { 20.0 }, Value = new[] { net[0] }, TotalWorkerYears = 20 };
-        var herd = new HerdLadder { Value = new[] { net[0] }, Capacity = new[] { 0.0, 2 }, GrownAnimals = 2 };
-        var rule = new ValueFulfilment(3);
-        var claims = new[] { new ProductionClaim { Quantity = 1, Need = 1, FirstUnitValue = 10, LabourPerUnit = 1, Valued = true } };
-        // Query both assets at exactly the same price, and in both enumeration orders.
-        foreach (double price in new[] { net[0] * .99, net[0], net[0] * 1.01 })
+        // Numerical reference only in tests: production integrates at analytic crossings.
+        foreach (double growth in new[] { 0.0, .01, .03 })
+        foreach (double discount in new[] { 0.0, .01, .03 })
+        foreach (double cap in new[] { 10.0, 25, 100 })
         {
-            int h = herd.Staffed(price);
-            double position = rule.PositionAtPrice(claims, field, price);
-            rule.Shares(claims, field, position, new double[1], out double effort);
-            Check((h > 0) == (effort > 0), "equal annualised herd/field prices cross together");
-            rule.Shares(claims, field, position, new double[1], out double reversed);
-            Check(reversed == effort && herd.Staffed(price) == h, "query order cannot change equal asset staffing");
+            double reference = 0, foodReference = 0; const int samples = 10000;
+            double[] sizes = { 20.0, 35, 100 }, values = { 2.0, 8, .2 };
+            for (int i = 0; i < samples; i++)
+            {
+                double t = (i + .5) * 100 / samples, animals = Math.Min(cap, 10 * Math.Exp(growth * t));
+                reference += Math.Exp(-discount * t) * animals * 100 / samples;
+                foodReference += Math.Exp(-discount * t) * HerdBuckets.ValueOf(5, 5 + animals * 4, sizes, values) * 100 / samples;
+            }
+            Near(HerdLabour.AnimalYears(10, growth, cap, discount, 100), reference, "bounded growth integral agrees with independent quadrature", 1e-7);
+            Near(HerdLabour.Continuation(10, growth, cap, 4, 5, sizes, values, discount, 100), foodReference, "bucket crossing integral agrees with independent quadrature", 1e-6);
         }
-        for (double price = 0; price < 10; price += .1)
-            Check(river.Staffed(price) >= river.Staffed(price + .1), "capital staffing is monotone in price");
-        Trace("capital ceiling=" + ceiling.ToString("F3") + " goat netPrice=" + expected.ToString("F3")
-            + " alluvialPrice=" + alluvial[0].ToString("F3") + " steppeAt3=" + steppe.Staffed(3) + " alluvialAt3=" + river.Staffed(3));
+        Near(HerdLabour.DiscountedYears(0, 100), 100, "zero-discount finite horizon");
+        Near(HerdLabour.DiscountedYears(.01, 100), (1 - Math.Exp(-1)) / .01, "100-year discount factor");
+        Check(HerdLabour.Continuation(2, .02, 100, 4, 0, new[] { 1000.0 }, new[] { 1.0 }, .01, 100)
+            > HerdLabour.Continuation(2, 0, 100, 4, 0, new[] { 1000.0 }, new[] { 1.0 }, .01, 100), "offspring change continuation value before pasture binds");
+        var portfolio = new HerdLadder { Capacity = new[] { 0.0, 2, 4 }, GrownAnimals = 4, Value = new double[2],
+            TotalValue = new[] { 10.0, 9, 30 }, WorkerYears = new[] { 0.0, 1, 2 } };
+        Check(portfolio.Staffed(2) == 2, "a poor first marginal step cannot poison a valuable larger choice");
+        Check(portfolio.Staffed(11) == 0, "total current liquidation can win at high labour cost");
+        portfolio = new HerdLadder { Capacity = portfolio.Capacity, GrownAnimals = 4, Value = new double[2], TotalValue = new[] { 0.0, 0, 0 }, WorkerYears = new[] { 0.0, -1, -.5 } };
+        Check(portfolio.Staffed(100) == 1 && portfolio.Staffed(double.PositiveInfinity) == 1, "net harvest savings remain valuable at high prices");
+        var random = new Random(54);
+        for (int sample = 0; sample < 100; sample++)
+        {
+            var p = new HerdLadder { Capacity = Enumerable.Range(0, 21).Select(k => (double)k).ToArray(), GrownAnimals = 20,
+                Value = new double[20], TotalValue = Enumerable.Range(0, 21).Select(k => random.NextDouble() * 100).ToArray(),
+                WorkerYears = Enumerable.Range(0, 21).Select(k => random.NextDouble() * 100 - 20).ToArray(), MinimumHerders = sample % 3 };
+            foreach (double price in new[] { 0.0, .05, .5, 5, 50 })
+            {
+                int expected = Enumerable.Range(p.MinimumHerders, 21 - p.MinimumHerders).OrderByDescending(k => p.TotalValue[k] - price * p.WorkerYears[k]).ThenBy(k => p.WorkerYears[k]).First();
+                Check(p.Staffed(price) == expected, "portfolio envelope agrees with exhaustive choice for arbitrary non-concave totals");
+            }
+        }
+        var w = Camp(100, 40); var c = w.Camps[0];
+        var d = CampProductionDemand.Build(w, c, EconomicIntent.From(c)); var h = d.HerdLadder;
+        Check(h.CurrentAnimalFood[1] < h.CurrentAnimalFood[h.Steps], "candidate output follows its selected management");
+        var partial = TurnResolver.ForecastManagedAnimalFood(w, c, 1, w.Config.GenerationIntervals, Years(w), c.Tile);
+        Near(h.CurrentAnimalFood[1], partial.AnimalFood, "one-herder candidate agrees with authoritative pure forecast");
+        Near(h.SlaughterFood[1], (40 - h.Target(1)) * w.Config.GetSpecies("goat").FoodYield, "liquidation is the whole remaining tail");
+        var withMilk = d.WithAnimalFood(w, c, h.CurrentAnimalFood[1]);
+        var withoutMilk = d.WithAnimalFood(w, c, 0);
+        Check(withMilk.AnimalEnvelopeClothing >= withoutMilk.AnimalEnvelopeClothing, "candidate typed budget follows actual animal receipts");
+        Check(withMilk.PhysicalExpansion == d.PhysicalExpansion, "candidate prices reuse physical field forecasts");
+        Check(h.TotalValue.All(x => !double.IsNaN(x) && !double.IsInfinity(x)) && h.WorkerYears.All(x => !double.IsNaN(x) && !double.IsInfinity(x)), "production totals remain finite");
+        foreach (var tile in w.Tiles) { tile.Freshwater = 0; tile.FreshwaterSource = FreshwaterSource.None; }
+        var dry = CampProductionDemand.Build(w, c, EconomicIntent.From(c));
+        Check(dry.HerdLadder.FutureValue.All(x => x == 0) && dry.HerdLadder.ResidualValue.All(x => x == 0), "no drinking water earns neither sustained production nor unsupported terminal salvage");
+        foreach (double duration in new[] { .001, 1.0, 20, 100 })
+        {
+            double first = HerdLabour.AnimalYears(5, .02, 20, .01, duration / 2);
+            double next = HerdLabour.EndAnimals(5, .02, 20, duration / 2);
+            double second = Math.Exp(-.01 * duration / 2) * HerdLabour.AnimalYears(next, .02, 20, .01, duration / 2);
+            Near(HerdLabour.AnimalYears(5, .02, 20, .01, duration), first + second, "finite continuation composes across shorter durations without a new clock", 1e-10);
+        }
     }
 
     private static void LandAlternatives()
@@ -183,7 +202,7 @@ internal static class HerdLabourChecks
         var large = Camp(23, 400); large.Camps[0].QoL = .8;
         var marginal = CampProductionDemand.Build(large, large.Camps[0], EconomicIntent.From(large.Camps[0]));
         Check(marginal.GrownHerd.ManagementFulfillment < 1, "the marginal-yield witness actually has an under-managed whole herd");
-        Check(double.IsPositiveInfinity(marginal.HerdLadder.Value[0]), "the first fully managed animals retain their harvest-labour value despite the whole herd's low management");
+        Check(marginal.HerdLadder.CurrentAnimalFood[1] > 0 && marginal.HerdLadder.TotalValue.All(x => !double.IsNaN(x)), "under-managed herds have finite candidate-specific output and totals");
     }
 
     private static void Capacity()
@@ -220,6 +239,15 @@ internal static class HerdLabourChecks
             var kills = HerdLabour.Split(excess, counts);
             Check(kills.Sum() == Math.Min(excess, total) && kills.Zip(counts, (x, y) => x >= 0 && x <= y).All(b => b), "split conserves and never over-kills");
             for (int j = 0; j < counts.Length && total > 0; j++) Check(Math.Abs(kills[j] - Math.Min(excess, total) * (double)counts[j] / total) < 1, "each herd gives its proportional share within one animal");
+        }
+        foreach (double[] carcasses in new[] { new[] { 60.0, 60, 60 }, new[] { 60.0, 80, 70 }, new[] { .7, .3, 1.1 } })
+        {
+            int[] counts = { 5, 7, 13 }; var liquidation = new HerdLabour.Liquidation(counts, carcasses);
+            foreach (int excess in Enumerable.Range(0, 26).Reverse())
+            {
+                var split = HerdLabour.Split(excess, counts);
+                Near(liquidation.Food(excess), split.Select((k, i) => k * carcasses[i]).Sum(), "candidate liquidation agrees with resolver proportional carcasses at every target");
+            }
         }
         Check(HerdLabour.Split(1000000000, new[] { 1500000000, 1500000000 }).Sum() == 1000000000, "large counts do not overflow");
     }

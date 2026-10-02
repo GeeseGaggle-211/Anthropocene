@@ -185,13 +185,11 @@ namespace Anthropocene.Simulation
                     var data = tile.Seasons[s];
                     double warmth = Numbers.Clamp((data.Temperature + 8) / 30, .015, 1);
                     bool water = tile.Aquatic || tile.Environment == EnvironmentKind.Ocean;
-                    double productivity = water ? AquaticEcology.Productivity(c.World, tile, s) : (.12 + data.Moisture) * warmth;
+                    double productivity = water ? AquaticEcology.Productivity(c.World, tile, s) : FoodEcology.LandProductivity(tile, data, c.Config);
                     if (tile.Environment == EnvironmentKind.Ice) productivity = 0;
-                    if (tile.Land) productivity *= tile.Relief == Relief.Mountain ? c.Config.MountainProductivity : tile.Relief == Relief.Highland ? c.Config.HighlandProductivity : tile.Relief == Relief.Hills ? c.Config.HillsProductivity : 1;
                     double fresh = tile.FreshwaterSource == FreshwaterSource.Lake ? 120 : tile.FreshwaterSource == FreshwaterSource.River ? Math.Min(150, 70 + Math.Sqrt(tile.Flow) * 4) : tile.FreshwaterSource == FreshwaterSource.RainPool ? 25 * Numbers.Clamp(data.Rain / Math.Max(.001, averageRain), .25, 1.5) : 0;
                     double accessibleAquaticBase = tile.Environment == EnvironmentKind.Shallows ? AquaticEcology.ShallowsBaseBiomass * AquaticEcology.ShallowsHarvestableShare : 90;
-                    data.MaxFood = water ? (float)(accessibleAquaticBase * productivity * (1 + AquaticEcology.UpwellingBiomassBonus * upwelling)) : Math.Max(data.MaxFood, (float)(90 * productivity));
-                    if (tile.Land) data.MaxFood *= (float)c.Config.LandBiomassMultiplier;
+                    if (water) data.MaxFood = (float)(accessibleAquaticBase * productivity * (1 + AquaticEcology.UpwellingBiomassBonus * upwelling));
                     data.MaxFreshwater = Math.Max(data.MaxFreshwater, (float)fresh); data.AccessibleFreshwater = (float)fresh;
                     data.MaxSaltwater = tile.WaterBody == WaterKind.Saltwater ? 100 : 0;
                     double landFraction = c.Config.LandFoodRegenerationInitialized
@@ -203,7 +201,8 @@ namespace Anthropocene.Simulation
                 }
                 // Potential consumes completed local water capacities, before gatherable shares are configured.
                 tile.NaturalVegetationPotential = tile.CurrentVegetation = Vegetation.Potential(tile, c.Config);
-                tile.Food = tile.Seasons[0].MaxFood * .9; FoodEcology.ConfigurePotential(tile, c.Config, true);
+                FoodEcology.ConfigurePotential(tile, c.Config, true);
+                tile.Food = tile.Seasons[0].MaxFood * .9;
                 tile.Freshwater = tile.Seasons[0].MaxFreshwater * .9; tile.Saltwater = tile.Seasons[0].MaxSaltwater;
             }
         }

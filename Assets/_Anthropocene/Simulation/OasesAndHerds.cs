@@ -48,10 +48,13 @@ namespace Anthropocene.Simulation
                         // Groundwater greens the local soil; it never rewrites regional climate.
                         data.Moisture = Math.Max(data.Moisture, (float)(cfg.OasisVegetationMoisture * tile.OasisInfluence));
                         data.MaxFreshwater = Math.Max(data.MaxFreshwater, (float)(cfg.OasisFreshwater * factor)); data.AccessibleFreshwater = data.MaxFreshwater;
-                        data.MaxFood = Math.Max(data.MaxFood, (float)(cfg.OasisFood * factor)); data.FoodRecoveryPerDay = Math.Max(data.FoodRecoveryPerDay, (float)EcologyMath.DailyRate(cfg.OasisFoodRegeneration * factor, cfg.BaseDays));
+                        // Groundwater supports renewal and soil moisture. Edible
+                        // capacity is derived from that moisture-supported biomass.
+                        data.FoodRecoveryPerDay = Math.Max(data.FoodRecoveryPerDay, (float)EcologyMath.DailyRate(cfg.OasisFoodRegeneration * factor, cfg.BaseDays));
                         data.WaterRecoveryPerDay = (float)EcologyMath.DailyRate(cfg.OasisWaterRecovery, cfg.BaseDays); data.Habitat = Math.Max(data.Habitat, .25f * (float)factor); tile.Seasons[season] = data;
                     }
-                    tile.Freshwater = tile.Seasons[0].MaxFreshwater * .9; tile.Food = tile.Seasons[0].MaxFood * .9; FoodEcology.ConfigurePotential(tile, cfg, true);
+                    tile.Freshwater = tile.Seasons[0].MaxFreshwater * .9;
+                    FoodEcology.ConfigurePotential(tile, cfg, true); tile.Food = tile.Seasons[0].MaxFood * .9;
                 }
             Validate(w);
         }

@@ -12,6 +12,7 @@ namespace Anthropocene.Simulation
         // Operating farmers also supply harvest capacity, so callers must treat
         // these as overlapping measurements rather than additive work.
         public double MaintenanceFarmerWorkerYears;
+        public double HarvestProductivity;
         public int[] Footprint = Array.Empty<int>();
     }
 
@@ -134,6 +135,31 @@ namespace Anthropocene.Simulation
         public static int Workers(Camp camp, string role) => camp.Workforce.Assignments.Where(a => a.Role == role).Sum(a => a.Population);
         internal static bool Cultivable(Tile tile) => tile.TraversableLand && tile.Environment != EnvironmentKind.Ice && tile.Seasons.Any(s => s.MaxPotentialFood > 0);
         public static int[] Footprint(WorldState w, Camp camp) => w.Map.Radius(camp.Tile, 1).Where(id => Cultivable(w.Tiles[id])).OrderBy(id => id).ToArray();
+        // Infer the crop portion of the current accessible stock from the shared
+        // capacity. Wild and cultivated food remain one conserved physical pool.
+        // Proportional claims have the same mix, so their effective rate is the
+        // stock-weighted harmonic rate of wild gathering and crop harvesting.
+        // One opening-profile query per local field; no future/yearly loop.
+        public static double HarvestProductivity(WorldState w, Camp camp, int[] footprint = null)
+        {
+            var cfg = w.Config;
+            if (!cfg.CropHarvestingOnly || cfg.FarmerProductivity <= 1) return cfg.FarmerProductivity;
+            double food = 0, work = 0;
+            int season = (int)Math.Floor(w.Days / cfg.BaseDays) % 4;
+            foreach (int id in footprint ?? Footprint(w, camp))
+            {
+                var tile = w.Tiles[id];
+                var view = LazyEcology.ProjectEcology(w, id, Math.Max(w.Days, tile.LastEcologyUpdateDays));
+                var capacity = new EcologyCapacity(w, tile, view, season);
+                double available = Math.Min(Math.Max(0, view.Food), capacity.Food);
+                double crop = tile.CultivationOperator >= 0 && tile.CultivationOperator != camp.Id
+                    ? 0 : Math.Max(0, capacity.Food - capacity.WildFood);
+                double cropShare = capacity.Food > 0 ? crop / capacity.Food : 0;
+                food += available;
+                work += available * (1 - cropShare + cropShare / cfg.FarmerProductivity);
+            }
+            return work > 0 ? food / work : 1;
+        }
         // Village status is an endpoint decision, never an input to this turn's
         // claim or field plan. Count every nearby land tile in the original
         // footprint average, with only this camp's fields contributing q.
@@ -214,6 +240,7 @@ namespace Anthropocene.Simulation
             plan.FoodGatherers = Math.Max(0, plan.Gatherers - (camp.EconomicLabor?.MaterialGatherers ?? 0));
             if (!Enabled(camp) || camp.Population <= 0) return plan;
             plan.Footprint = footprint;
+            plan.HarvestProductivity = HarvestProductivity(w, camp, footprint);
             double required = 0;
             foreach (int id in plan.Footprint)
             {
@@ -295,7 +322,7 @@ namespace Anthropocene.Simulation
         }
 
         public static double PlannedMaintenanceFarmers(WorldState w, Camp camp, double availableFarmers)
-            => Math.Min(Math.Max(0, availableFarmers), MaintenanceWorkerRequirement(w, camp) / FarmToolFieldWorkEfficiency(w.Config.Neolithic));
+            => Math.Min(Math.Max(0, availableFarmers), MaintenanceFarmersForPlanning(w, camp, w.Config.TurnDays / w.Config.DaysPerYear));
 
         public static double MaintenanceFarmersForPlanning(WorldState w, Camp camp, double years)
         {

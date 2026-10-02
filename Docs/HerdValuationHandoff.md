@@ -7,13 +7,67 @@ the numbers to compare against.
 Measurement outputs live under `TestResults/`, which git ignores. A fresh container will not have them: regenerate
 baselines with the commands in section 5. The key numbers are copied into this file.
 
+## Current follow-on checkout (2026-10-02)
+
+Use branch `features/herd-ecology-retention` for the next agent. It includes
+the implemented ecology/crop corrections and their reproducible audit tools.
+Start with [PastoralPlannerCorrectionDesign.md](PastoralPlannerCorrectionDesign.md)
+for the user's latest shared-planner direction, then
+[PastoralPlannerAudit.md](PastoralPlannerAudit.md) for confirmed causes and
+[CropHerdBalanceValidation.md](CropHerdBalanceValidation.md) for the control,
+population distributions, QoL, herd counts and 25/50-turn performance.
+The new shared-allocation correction is proposed, not implemented. Preserve
+the existing tested mechanics while addressing it. Generated saves/logs are
+ignored; the tracked reconstruction patch, source hashes and commands in
+the validation report regenerate the baseline on a fresh checkout.
+
 ## Follow-on status (2026-10-01)
+
+The user authorized the `.50` crop-moisture response and planner corrections
+after [AgricultureMoisturePlannerAudit.md](AgricultureMoisturePlannerAudit.md).
+They are implemented on `features/herd-ecology-retention`, preserving the
+biomass-first/finite-horizon candidate. Read
+[CropHerdBalanceValidation.md](CropHerdBalanceValidation.md) first for the new
+shared crop/harvest rules, actual farm-tool coverage, corrected food credit and
+maintenance-constrained harvest savings, and fission without hypothetical
+daughter fields. The full fixed suite passes, including 104 crop and 627
+fission assertions. Five paired Standard/80 worlds were measured at 25 and
+50 post-opening turns with herd labour, fission and QoL mortality enabled
+(elasticity 1). At turn 50 the corrected worlds contain 309,902 people in
+agriculture-primary tribes and 467,833 in husbandry-primary tribes, with
+resident-weighted QoLs .813 and .843. The latter hold only 5,919 domestic
+animal units (median five per tribe); 1,069 of 1,136 have fields. This does
+not resolve pastoral balance. Matched-save timing finds a 3.2% regression at
+25 turns; the 17.3% reduction at 50 turns mostly reflects fewer tribes.
+Per-tribe-turn cost rises about 5–6%. Defaults for herd labour, fission and
+QoL mortality remain off; the new crop rules are on for new worlds and
+neutral/legacy when their save fields are absent.
+
+Subsequent user direction was to ascertain why pastoral economies remain
+small. [PastoralPlannerAudit.md](PastoralPlannerAudit.md) records the matched
+corrected-C1 source trace and one-plan sensitivities. Confirmed next issues:
+spare field workers bypass the priced expansion claim while extra herders
+face the labour price; herd value buckets credit protected inventory
+differently from the common crop/food helper; and retention is evaluated
+against a maintained-field baseline without a reduce/abandon alternative.
+The sampled desert camp's actual crops are on two wet river tiles, and
+99.26% of sampled C1 husbandry crop capacity has full suitability. The crop
+penalty is operating as designed there. No production changes were made in
+that follow-up; do not claim these remaining discrepancies are already fixed.
+
+On 2 October 2026 the user clarified the correction's intent: spare labour
+must compete between herd growth and fields; livestock is also food security;
+use one planner; and price committed future labour. The proposed
+[shared allocation correction](PastoralPlannerCorrectionDesign.md) records
+these directives and the existing q-dependent maintenance costs. It is a
+design specification, not a completed production change. Primitive herding
+is two units per worker, a linear cost rather than fixed total staffing.
 
 The user authorized HV1/HV2 on a follow-on branch, `features/herd-valuation`,
 from `87f5a71`; this supersedes the original branch-only workflow below for
 this package. [HerdValuationValidation.md](HerdValuationValidation.md) records
 the candidate and unchanged-calibration measurements. Herd-labour checks are
-now 1,157. [HerdValuationGrounding.md](HerdValuationGrounding.md) records unit
+now 1,687. [HerdValuationGrounding.md](HerdValuationGrounding.md) records unit
 derivations and provisional proposals; external citations remain blocked by
 source access. HV1 is not fully sourced, HV3 ranges are not approved, and
 HV3/HV4/HV5 remain pending. Defaults remain off.

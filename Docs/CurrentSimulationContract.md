@@ -17,6 +17,26 @@ and calibration remain unchanged. External range grounding, the capital-life
 cap/growth discrepancy, calibration acceptance and surplus-herd fission remain
 open; historical herd-labour measurements below are baseline evidence.
 
+The working candidate on `features/herd-ecology-retention` retains
+the [biomass-first and finite-horizon corrections](HerdEcologyCorrectionProposal.md).
+Following the [planner and crop-moisture audit](AgricultureMoisturePlannerAudit.md),
+the user authorized the crop-only moisture response and identified planner
+corrections on 1 October 2026. [CropHerdBalanceValidation.md](CropHerdBalanceValidation.md)
+records the implementation, five paired worlds through 25/50 turns, matched
+performance regressions, and remaining under-herding. New worlds use local
+soil suitability `min(1, (Moisture/.50)^2)` for crop accessibility and managed
+renewal, with the farmer bonus proportional to the crop share. Fission
+support uses obtainable food without assuming unbuilt daughter fields.
+Older saves missing these settings retain neutral suitability and the legacy
+flat harvesting/fission rules. This is measured branch behavior, not a claim
+that pastoral balance is complete.
+
+The subsequent [pastoral planner follow-up](PastoralPlannerAudit.md) confirms
+remaining spare-field-allocation and protected-inventory valuation discrepancies
+in the corrected source, with a matched C1 replay and disclosed sensitivities.
+Those findings are next work, not further production changes or permission to
+alter animal yields or fertile-land benchmarks.
+
 ## Authority classes
 
 | Class | Meaning |
@@ -132,6 +152,8 @@ in `ConfigurationUnits.md` and the save-format contract.
 | `LandBiomassMultiplier` | 63 | 63 | relative land biomass multiplier | shipped new-world calibration |
 | `LandFoodRegeneration` | 0.03 | 0.03 | fraction per legacy BaseDays profile | shipped land recovery input |
 | `LandSafeUseRatio` | 0.5 | 0.5 | fraction of sustainable production | shipped land extraction threshold |
+| `CropMoistureReference` | 0.5 | 0.5 | local soil moisture at which crop suitability reaches one | branch crop calibration; 0 disables the response in older saves |
+| `CropMoistureExponent` | 2 | 2 | exponent in min(1, (soil moisture / reference)^exponent) | branch crop calibration; applies only to cultivated food and managed renewal |
 | `RichGatherableFraction` | 0.125 | 0.125 | fraction | shipped new-world accessibility |
 | `GrasslandGatherableFraction` | 0.05 | 0.05 | fraction | shipped new-world accessibility |
 | `AridGatherableFraction` | 0.025 | 0.025 | fraction | shipped new-world accessibility |

@@ -25,6 +25,7 @@
     <Compile Include="AgentContractChecks.cs" />
     <Compile Include="EcologyChecks.cs" />
     <Compile Include="FoundationChecks.cs" />
+    <Compile Include="CropAgricultureChecks.cs" />
     <Compile Include="ClimateMoistureChecks.cs" />
     <Compile Include="AquaticChecks.cs" />
     <Compile Include="StartViabilityChecks.cs" />
