@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace Anthropocene.Simulation
 {
@@ -240,10 +241,12 @@ namespace Anthropocene.Simulation
             var bands = new List<PastureBand>();
             int range = c.IsVillage ? 1 : Math.Min(w.Config.VisionRadius, 1 + w.Config.HerdMovement);
             var exposure = new SeasonExposure(w.Days, w.Config.TurnDays, w.Config.BaseDays);
+            if (ResolutionMetrics.CaptureDetailedCounters) Interlocked.Increment(ref TurnDiagnostics.For(w).PastureScans);
             foreach (int id in w.Map.Radius(c.Tile, range))
             {
                 var tile = w.Tiles[id];
                 if (tile.ElevationLevel >= 10) continue;
+                if (ResolutionMetrics.CaptureDetailedCounters) Interlocked.Increment(ref TurnDiagnostics.For(w).PlannerTileProjections);
                 var stock = LazyEcology.ProjectEcology(w, id, w.Days);
                 if (tile.TraversableLand)
                 {
@@ -298,7 +301,11 @@ namespace Anthropocene.Simulation
             => (w.Config.HerdLabourEnabled || w.Config.SharedCropHerdAllocationEnabled) && w.Config.Neolithic.ValueFulfilmentSelected && CultivationEconomy.HusbandryEnabled(c) && c.Population > 0;
 
         // Builds the ladder after the demand pass has priced every claim. Null when the camp has no managed animals.
+        // cache (optional, one plan only) reuses the two pasture scans, which read
+        // only the committed boundary, across the shared allocation's portfolios.
         public static HerdLadder Build(WorldState w, Camp c, CampProductionDemand d, double breeding)
+            => Build(w, c, d, breeding, null);
+        internal static HerdLadder Build(WorldState w, Camp c, CampProductionDemand d, double breeding, PlanningKernelCache cache)
         {
             var cfg = w.Config; var n = cfg.Neolithic;
             double years = cfg.TurnDays / cfg.DaysPerYear, intervals = cfg.GenerationIntervals;
@@ -333,11 +340,22 @@ namespace Anthropocene.Simulation
                 CurrentValue = new double[capacity.Count], FutureValue = new double[capacity.Count], ResidualValue = new double[capacity.Count],
                 ManagementYears = new double[capacity.Count], SavedHarvestYears = new double[capacity.Count], ReplacementYears = new double[capacity.Count], CraftYears = new double[capacity.Count],
                 HerderCounts = countsOfHerders, CurrentWorkerYears = new double[capacity.Count], FutureAnnualFood = new double[capacity.Count] };
-            Pasture(w, c, grown, intervals, out ladder.PastureCapacity, out ladder.NonFieldCapacity, d);
-            // Continuation promises only the existing one-tile forage/water footprint.
-            // Mobile outer pasture remains diagnostic, never free future receipts.
-            var settled = EconomicPlanner.Preview(c, EconomicIntent.From(c), c.Population); settled.IsVillage = true;
-            Pasture(w, settled, grown, intervals, out double localCapacity, out _, d);
+            if (ResolutionMetrics.CaptureDetailedCounters) Interlocked.Increment(ref TurnDiagnostics.For(w).HerdLadderBuilds);
+            double localCapacity;
+            if (cache?.Pasture != null)
+            {
+                ladder.PastureCapacity = cache.Pasture[0]; ladder.NonFieldCapacity = cache.Pasture[1]; localCapacity = cache.Pasture[2];
+                if (ResolutionMetrics.CaptureDetailedCounters) Interlocked.Increment(ref TurnDiagnostics.For(w).KernelCacheHits);
+            }
+            else
+            {
+                Pasture(w, c, grown, intervals, out ladder.PastureCapacity, out ladder.NonFieldCapacity, d);
+                // Continuation promises only the existing one-tile forage/water footprint.
+                // Mobile outer pasture remains diagnostic, never free future receipts.
+                var settled = EconomicPlanner.Preview(c, EconomicIntent.From(c), c.Population); settled.IsVillage = true;
+                Pasture(w, settled, grown, intervals, out localCapacity, out _, d);
+                if (cache != null) cache.Pasture = new[] { ladder.PastureCapacity, ladder.NonFieldCapacity, localCapacity };
+            }
             if (shared) localCapacity = Math.Min(localCapacity, d.FuturePastureCapacity);
             double horizon = Math.Max(years, n.PlanningHorizonYears), future = horizon - years, r = n.DiscountRatePerYear;
             ladder.CapitalLifeYears = DiscountedYears(r, horizon);
@@ -406,8 +424,11 @@ namespace Anthropocene.Simulation
                 double slaughter = liquidation.Food(Math.Max(0, (int)animals - target));
                 ladder.CurrentAnimalFood[k] = milk; ladder.SlaughterFood[k] = slaughter;
                 double incoming = milk + slaughter;
+                // Shared mode: one receipt per step serves both the marginal value
+                // (against the human-only receipt above) and the harvest saving.
+                var receipts = shared ? ledger.Receive(d.TerrestrialAfterHerds, Math.Max(0, d.ForageAfterHerds - d.TerrestrialAfterHerds), incoming) : default;
                 double currentValue = shared
-                    ? ledger.Marginal(d.TerrestrialAfterHerds, Math.Max(0, d.ForageAfterHerds - d.TerrestrialAfterHerds), 0, 0, 0, incoming)
+                    ? receipts.Value - afterHuman.Value
                     : HerdBuckets.ValueOf(c.AnimalFood, c.AnimalFood + incoming, currentSizes, values);
                 // Savings are harvesting that could actually be done, after typed inputs and inventory.
                 double currentFoodNeed = Math.Max(0, d.Biological);
@@ -416,7 +437,6 @@ namespace Anthropocene.Simulation
                 if (shared)
                 {
                     beforeHarvest = afterHuman.Consumption + afterHuman.Reserve + afterHuman.Growth + afterHuman.IncomingPlantInput;
-                    var receipts = ledger.Receive(d.TerrestrialAfterHerds, Math.Max(0, d.ForageAfterHerds - d.TerrestrialAfterHerds), incoming);
                     double used = receipts.Consumption + receipts.Reserve + receipts.Growth + receipts.IncomingPlantInput + receipts.IncomingAnimalInput;
                     afterHarvest = Math.Max(receipts.IncomingPlantInput, used - incoming);
                 }

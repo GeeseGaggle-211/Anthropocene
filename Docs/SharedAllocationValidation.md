@@ -66,6 +66,9 @@ benefit/work coefficients once per feasible herd choice. Repeated labour-price
 queries visit those totals; they do not rerun the ecology kernel or the craft
 planner for each herd choice. There is no year-by-year production forecast,
 new dense map state or full population × field × herd × craft search.
+A per-plan `PlanningKernelCache` (below, *Planner cost*) shares opening
+projections, operation-independent tile forecasts, marginal field investments
+and pasture scans across the operation choices without changing any value.
 
 This is a bounded local valuation approximation, not a proof of a global
 optimum. The future refill uses horizon-mean capital; future upkeep uses the
@@ -254,3 +257,144 @@ Source digests are SHA-256 of compact sorted filename→file-SHA-256 maps:
 - `candidate`: `68de32e4ddf6d3f0cdef90ad1f707976a718a8165de96248ec6c81b73677bc5a`
 
 The control has 61 simulation source files; the candidate has 63. The final live candidate source hashes match the audited snapshot. Results include `summary.json`, `census-pooled.csv`, `census-by-world.csv`, `settlement-populations.csv`, `husbandry-subsets.csv`, `trajectories.csv`, `demography.csv`, `timing-runs.csv`, `timing-comparison.csv`, raw world/profile/timing JSON, source snapshots and build/check logs under `TestResults/SharedAllocation/`.
+
+## Planner cost: exact per-plan kernel cache
+
+Follow-up on 2 October 2026 to the regression above. The fixed suite and
+the matched C1 replay show it **changes no outcome**: with the flag on, all 50
+post-opening fingerprints match the pre-cache source, and with the flag off
+(default) all 25 match. It reduces the regression but does **not** close it,
+and runtime acceptance stays open.
+
+### Cause
+
+The demand pass used to build the expansion ladder and herd ladder once per
+camp. `SharedAllocation` rebuilt both for every field-operation choice, and it
+also ran two kernel forecasts per gatherable land tile and two pasture scans.
+At 50 turns that was 553 food-kernel queries and 245 investment comparisons
+per plan (control: 106 and 46). Most of that work is identical across
+operation choices:
+
+- tiles outside the footprint keep their saved operating fraction;
+- a field with zero capital has `q = 0`, so its managed flow (∝ `q · op`), its
+  decay and its effort are zero whatever the operation;
+- after the first partial band, every ladder step lands on the same 32-band
+  grid;
+- pasture capacity and the settled local capacity read only the committed
+  boundary.
+
+### Change
+
+`PlanningKernelCache` (in `SharedAllocation.cs`) belongs to one plan on one
+worker and is never iterated. Each key holds the exact bit pattern of every
+varying input, so a hit returns exactly what the uncached call would. It
+memoizes:
+
+- opening projections;
+- operation-independent tile forecasts;
+- `HorizonMarginalInvestment` results;
+- the two pasture scans.
+
+`FoodIncomeLedger` computes the opening-independent bucket basis once
+(`TurnResolver.FoodBucketBasis`, with `SplitFoodBuckets` for the
+food-dependent part, which is also what `FoodBucketTargets` now calls). Each
+herd step makes one ledger receipt instead of three identical-argument ones.
+`Select` reuses one ledger per portfolio.
+
+**Work does not follow the camp's food need.** With a cache, the ladder's
+greedy loop always runs to its end and is then cut, step for step, with the
+capped loop's own running sum. The capped ladder is a prefix of the uncapped
+one, so the steps are identical. Investment comparisons therefore depend on
+the local field grid, not on how much food the camp needs:
+
+- in the isolated fixture: 154 at both 1,000 and 10,000 residents (77 and
+  154 when capped);
+- per plan, the work is bounded by `2 × eligible land tiles × operation
+  choices` tile forecasts (fields with capital only, plus one forecast per
+  other tile) and `footprint tiles × (32 bands + operation choices)`
+  investments, with at most 35 operation choices.
+
+Population can only lower these counts. Levels merge when field upkeep
+exceeds residents, and a camp with no food gap builds no ladder. The cost of
+this property is measured below.
+
+### Checks
+
+`SharedAllocationChecks` (611 assertions) compares a cached and an uncached
+`SharedAllocation` bit for bit: every price crossing, every selection over six
+prices and two budgets, and the cut ladder against the capped ladder for four
+operations and six caps. Its fixtures include empty, half-operated and
+foreign-operated fields. The full fixed suite passes, including scalar versus
+2/4-worker and reversed-partition replay.
+
+### Work counts
+
+The new opt-in counters are `SharedAllocations`, `SharedOperationChoices`,
+`SharedHerdChoices`, `ExpansionLadderBuilds`, `HerdLadderBuilds`,
+`PastureScans`, `PlannerTileProjections`, `PlannerEvaluations`,
+`SharedSelections`, `KernelCacheHits`, `SharedAllocationMilliseconds` and
+`PlanMilliseconds`. They follow `ResolutionMetrics.CaptureDetailedCounters`
+and appear in the audit JSON. They describe one instrumented C1 50-turn run
+per source, separate from the timing pairs.
+
+| Per plan (9,459 plans) | Before | Cached |
+| --- | --- | --- |
+| Food-kernel queries | 553.4 | 403.6 |
+| Investment comparisons | 244.7 | 172.1 |
+| Planner tile projections | 116.6 | 19.9 |
+| Pasture scans | 4.2 | 1.2 |
+| Ladder / herd-ladder builds | 3.21 / 2.10 | 3.21 / 2.10 |
+| Planner evaluations (`Evaluate`) | 2.71 | 2.71 |
+| Allocated bytes | 1.94 MiB | 1.71 MiB |
+
+"Before" counts for the new counters come from the same source with the
+cache disabled (`cacheKernel: false`). Its fingerprints also match.
+`Evaluate` runs only 2.7 times per plan, so the fulfilment search was not
+the cost driver.
+
+### Timing
+
+This uses the method above: the C1 opening, one worker, sequential runs with
+pair order alternated, three pairs, no other jobs, and medians of paired
+ratios with the pair range in brackets. The opening was regenerated in this
+environment (.NET 8.0.131, SHA-256 `d7bc62e4…`). The control and candidate
+endpoints are identical to the earlier save's.
+
+| Turns | Metric | Control | Before | Cached | Cached vs before |
+| --- | --- | --- | --- | --- | --- |
+| 25 | Preparation | 3.856 s | 5.132 s | 4.722 s | −7.3% [−19.4, −7.2] |
+| 25 | Total | 7.250 s | 8.912 s | 8.543 s | −2.2% [−18.1, −1.3] |
+| 25 | Preparation per camp-turn | 1.872 ms | 2.367 ms | 2.178 ms | vs control +13.2% (before +22.9%) |
+| 50 | Preparation | 7.966 s | 25.971 s | 21.548 s | −17.0% [−24.2, −13.7] |
+| 50 | Total | 15.465 s | 35.499 s | 31.152 s | −9.7% [−19.2, −8.5] |
+| 50 | Allocated | 8.10 GiB | 17.88 GiB | 15.75 GiB | −11.9% |
+| 50 | Preparation per camp-turn | 1.171 ms | 2.744 ms | 2.276 ms | vs control +95.6% (before +135.5%) |
+
+The 25-turn ranges are wide in this environment.
+
+**Cost of need-independent work.** The same source with the ladder stopped
+at the need cap was compared at 50 turns, three pairs, before the final
+list-capacity change. The capped ladder is also exact (same endpoints), but
+the fixed grid costs **+32.2% preparation** [+28.7, +38.3] and **+22.8%
+total** [+17.9, +25.7]. Switching back is a one-line change in
+`CultivationEconomy.ExpansionLadder`.
+
+### What remains
+
+A sampled trace of the cached source over 50 turns puts
+`SharedAllocation`'s constructor at 55% of planning, and 83% of it is the
+per-operation expansion ladders. The rest of planning is the craft
+fulfilment search (`Evaluate`, 30%) and the demand pass (10%), as in the
+control. The remaining exact work grows with operation choices: forecasts
+for fields with capital, plus each choice's off-grid first ladder step.
+Removing that dependence, or the gap to the control, changes the operation
+choice set. That is the outcome-changing *Step 2* of the plan and needs a
+new five-world census and approval.
+
+```bash
+python3 Tools/PerformanceAudit/Run-SharedAllocationAudit.py --phase=build --output=TestResults/PlannerPerf
+# Generate the C1 opening with the control build, then run each build with
+# --load=<opening> --turns=0 --post-opening-turns=25|50, --metrics=1 --fingerprints=1
+# for counts/exactness and --metrics=0 --fingerprints=0 for timing pairs.
+```
+

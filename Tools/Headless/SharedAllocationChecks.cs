@@ -137,6 +137,54 @@ internal static class SharedAllocationChecks
             }
             Check(!SaveCodec.Load(output.ToArray()).Config.SharedCropHerdAllocationEnabled, "absent legacy field disables the correction");
         }
+        // The per-plan kernel cache is exact: every portfolio, price crossing and
+        // selection matches the uncached reference bit for bit, including
+        // zero-capital, partly operated and foreign-operated footprint fields.
+        static bool Same(double a, double b) => BitConverter.DoubleToInt64Bits(a) == BitConverter.DoubleToInt64Bits(b);
+        static bool SameArray(double[] a, double[] b) => a == null ? b == null : b != null && a.Length == b.Length && a.Zip(b, Same).All(x => x);
+        int exactFixtures = 0;
+        foreach (var (people, animals, q) in new[] { (100, 20, .5), (100, 0, .3), (1000, 500, .5), (40, 30, .2), (10000, 5000, .7) })
+        {
+            var w = Fixture(people, animals, q); var c = w.Camps[0]; var footprint = CultivationEconomy.Footprint(w, c);
+            // Mixed field states: an empty owned field, a half-operated field and a field another camp operates.
+            if (footprint.Length > 3)
+            {
+                w.Tiles[footprint[0]].CultivationCapital = 0;
+                w.Tiles[footprint[1]].CultivationOperatingFraction = .5;
+                w.Tiles[footprint[2]].CultivationOperator = c.Id + 1000;
+            }
+            var d = CampProductionDemand.Build(w, c, EconomicIntent.From(c));
+            double ladderYears = w.Config.TurnDays / w.Config.DaysPerYear;
+            var ladderCache = new PlanningKernelCache(w); int fullGrid = -1;
+            foreach (double operation in new[] { 1, .7, .3, 0 })
+                foreach (double cap in new[] { 0, 1e-9, 50, 500, 5000, double.PositiveInfinity })
+                {
+                    var capped = CultivationEconomy.ExpansionLadder(w, c, ladderYears, d.Footprint, cap, operation);
+                    var cut = CultivationEconomy.ExpansionLadder(w, c, ladderYears, d.Footprint, cap, operation, ladderCache);
+                    Check(capped.Length == cut.Length && capped.Zip(cut, (x, y) => x.Tile == y.Tile && Same(x.Score, y.Score) && Same(x.WorkerYears, y.WorkerYears)
+                        && Same(x.AnnualGain, y.AnnualGain) && Same(x.MaintenancePerYear, y.MaintenancePerYear) && Same(x.VillageAverage, y.VillageAverage)).All(x => x),
+                        "cached ladder is the capped ladder at " + people + " operation " + operation + " cap " + cap);
+                    if (operation == 1 && cap == 0) fullGrid = ladderCache.Investments;
+                }
+            Check(fullGrid >= 0 && ladderCache.Investments >= fullGrid, "investment work does not depend on the food-need cap at " + people);
+            var cached = new SharedAllocation(w, c, d, .55); var reference = new SharedAllocation(w, c, d, .55, false);
+            Check(cached.OperationChoices == reference.OperationChoices && cached.HerdChoices == reference.HerdChoices, "cache keeps the portfolio set at " + people);
+            Check(SameArray(cached.PriceCrossings, reference.PriceCrossings), "cache keeps every price crossing at " + people);
+            Check(cached.TileForecasts <= reference.TileForecasts, "cache never adds tile forecasts at " + people);
+            foreach (double price in new[] { 0, .01, .1, 1, 10, 1000 })
+                foreach (int budget in new[] { people / 4, people })
+                {
+                    var a = cached.Select(price, price * 2, budget); var b = reference.Select(price, price * 2, budget);
+                    Check(a.Herders == b.Herders && a.Farmers == b.Farmers && a.Workers == b.Workers && a.Target == b.Target
+                        && Same(a.AnimalFood, b.AnimalFood) && Same(a.Value, b.Value) && Same(a.CurrentWork, b.CurrentWork) && Same(a.FutureWork, b.FutureWork)
+                        && Same(a.Operation, b.Operation) && Same(a.ExpansionYears, b.ExpansionYears)
+                        && SameArray(a.Demand.Expansion?.Value, b.Demand.Expansion?.Value) && SameArray(a.Demand.Expansion?.WorkerYears, b.Demand.Expansion?.WorkerYears)
+                        && Same(a.Demand.Supply, b.Demand.Supply) && Same(a.Demand.FutureForageAfterHerds, b.Demand.FutureForageAfterHerds),
+                        "cached selection matches the reference at " + people + " price " + price + " budget " + budget);
+                }
+            exactFixtures++;
+        }
+        Check(exactFixtures == 5, "all cache exactness fixtures ran");
         foreach (int population in new[] { 100, 1000, 10000 })
         {
             var w = Fixture(population, population / 2); var c = w.Camps[0]; var timer = new Stopwatch();
@@ -152,7 +200,8 @@ internal static class SharedAllocationChecks
             times.Sort(); allocations.Sort();
             Check(p.OperationChoices <= 35 && p.HerdChoices <= p.OperationChoices * 38, "work follows bounded breakpoints at " + population);
             Check(intent.Assignments.Sum(a => a.Population) <= population, "mature staffing stays bounded at " + population);
-            Console.WriteLine("SHARED_SCALE residents=" + population + " operations=" + p.OperationChoices + " herdChoices=" + p.HerdChoices + " medianMs=" + times[2].ToString("F2") + " allocatedBytes=" + allocations[2]);
+            Console.WriteLine("SHARED_SCALE residents=" + population + " operations=" + p.OperationChoices + " herdChoices=" + p.HerdChoices
+                + " tileForecasts=" + p.TileForecasts + " investments=" + p.InvestmentComparisons + " medianMs=" + times[2].ToString("F2") + " allocatedBytes=" + allocations[2]);
         }
         // One physical prior cohort; liquidation has no future milk or offspring.
         var liquid = Fixture(); liquid.Config.MinimumHerdHerders = 0;

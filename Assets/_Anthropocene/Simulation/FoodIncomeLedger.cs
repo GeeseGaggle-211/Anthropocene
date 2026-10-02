@@ -13,6 +13,8 @@ namespace Anthropocene.Simulation
         private readonly Camp camp;
         private readonly double intervals, years, meals, plantInput, animalInput, clothingPlant, clothingAnimal;
         private readonly double plantValue, animalValue, housingInput, housingValue, foodValue, growthValue;
+        // FoodBucketTargets' camp part does not depend on the opening food.
+        private readonly double reserveTarget, maximumGrowthFood;
         internal struct Receipt
         {
             public double Value, Consumption, Reserve, Growth, PlantInput, AnimalInput, IncomingPlantInput, IncomingAnimalInput, RemainingConsumption, RemainingReserve, RemainingGrowth;
@@ -38,6 +40,7 @@ namespace Anthropocene.Simulation
             foodValue = ExpansionValuation.FoodValue(world.Config, camp);
             double perBirth = ExpansionValuation.FoodPerBirth(world.Config.Consumption * intervals, QoLMortality.MaximumRate(world, camp), years);
             growthValue = perBirth > 0 ? Math.Max(0, ExpansionValuation.MarginalWelfare(world, camp)) * ExpansionValuation.PersonLife(n) / perBirth : 0;
+            TurnResolver.FoodBucketBasis(world, camp, intervals, years, meals, out reserveTarget, out maximumGrowthFood);
         }
         // Optional typed demands are part of the ledger, never a second food
         // stock. The same calculation prices both the human and animal axes.
@@ -47,8 +50,6 @@ namespace Anthropocene.Simulation
             double incoming = plant + aquatic + animal;
             double total = Math.Max(0, camp.Food) + incoming;
             double afterMeals = Math.Max(0, total - meals);
-            TurnResolver.FoodBucketTargets(world, camp, intervals, years, meals, camp.Food,
-                out _, out double reserveTarget, out _, out _);
             double p = Math.Min(clothingPlant, Math.Min(Math.Max(0, camp.PlantFood) + plant, afterMeals));
             double a = Math.Min(clothingAnimal, Math.Min(Math.Max(0, camp.AnimalFood) + animal, Math.Max(0, afterMeals - p)));
             double otherRoom = Math.Max(0, afterMeals - p - a - reserveTarget);
@@ -59,8 +60,8 @@ namespace Anthropocene.Simulation
             double incomingInput = p + a - openingP - openingA;
             // Removing an earmarked opening input widens the reserve refill; it
             // cannot fund that reserve and the recipe at the same time.
-            TurnResolver.FoodBucketTargets(world, camp, intervals, years, meals,
-                Math.Max(0, camp.Food - openingP - openingA), out double consumption, out _, out double reserve, out double growth);
+            TurnResolver.SplitFoodBuckets(meals, Math.Max(0, camp.Food - openingP - openingA), reserveTarget, out double consumption, out double reserve);
+            double growth = maximumGrowthFood;
             double remaining = Math.Max(0, incoming - incomingInput);
             double paidMeals = Math.Min(consumption, remaining); remaining -= paidMeals;
             double paidReserve = Math.Min(reserve, remaining); remaining -= paidReserve;
@@ -75,7 +76,5 @@ namespace Anthropocene.Simulation
                 RemainingConsumption = consumption - paidMeals, RemainingReserve = reserve - paidReserve, RemainingGrowth = growth - paidGrowth
             };
         }
-        public double Marginal(double plant, double aquatic, double animal, double addPlant, double addAquatic, double addAnimal)
-            => Receive(plant + addPlant, aquatic + addAquatic, animal + addAnimal).Value - Receive(plant, aquatic, animal).Value;
     }
 }

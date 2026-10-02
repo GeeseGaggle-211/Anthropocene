@@ -713,6 +713,13 @@ namespace Anthropocene.Simulation
 
         internal static void FoodBucketTargets(WorldState w, Camp camp, double intervals, double years, double populationBase, double initialFood, out double consumptionIncome, out double reserveTarget, out double reserveFill, out double maximumGrowthFood)
         {
+            FoodBucketBasis(w, camp, intervals, years, populationBase, out reserveTarget, out maximumGrowthFood);
+            SplitFoodBuckets(populationBase, initialFood, reserveTarget, out consumptionIncome, out reserveFill);
+        }
+        // The camp/population part of the bucket targets, independent of the
+        // opening food; planners that vary only the food reuse it.
+        internal static void FoodBucketBasis(WorldState w, Camp camp, double intervals, double years, double populationBase, out double reserveTarget, out double maximumGrowthFood)
+        {
             double maximumRate = QoLMortality.MaximumRate(w, camp);
             // The reserve bucket belongs to the people who exist when this turn resolves.
             // Refill their complete configured operating reserve, bounded by what local
@@ -725,12 +732,15 @@ namespace Anthropocene.Simulation
             // does not discard an accepted receipt.
             double achievableStorage = NeolithicProduction.StorageCapacityAfterPotDepreciation(w, camp, intervals, years);
             reserveTarget = Math.Min(desiredReserve, achievableStorage);
+            maximumGrowthFood = GrowthFood(populationBase, maximumRate, years);
+        }
+        internal static void SplitFoodBuckets(double populationBase, double initialFood, double reserveTarget, out double consumptionIncome, out double reserveFill)
+        {
             double expiringInventory = Math.Max(0, initialFood - reserveTarget);
             double inventoryConsumedFirst = Math.Min(populationBase, expiringInventory);
             consumptionIncome = populationBase - inventoryConsumedFirst;
             double inventoryAfterConsumption = initialFood - inventoryConsumedFirst;
             reserveFill = Math.Max(0, reserveTarget - inventoryAfterConsumption);
-            maximumGrowthFood = GrowthFood(populationBase, maximumRate, years);
         }
 
         internal static double GrowthFood(double populationBase, double rate, double years)

@@ -147,6 +147,18 @@ namespace Anthropocene.Simulation
                 LastMetrics.BodyScans = diagnostics.BodyScans;
                 LastMetrics.FoodForecastQueries = diagnostics.FoodForecastQueries;
                 LastMetrics.FoodInvestmentComparisons = diagnostics.FoodInvestmentComparisons;
+                LastMetrics.SharedAllocations = diagnostics.SharedAllocations;
+                LastMetrics.SharedOperationChoices = diagnostics.SharedOperationChoices;
+                LastMetrics.SharedHerdChoices = diagnostics.SharedHerdChoices;
+                LastMetrics.ExpansionLadderBuilds = diagnostics.ExpansionLadderBuilds;
+                LastMetrics.HerdLadderBuilds = diagnostics.HerdLadderBuilds;
+                LastMetrics.PastureScans = diagnostics.PastureScans;
+                LastMetrics.PlannerTileProjections = diagnostics.PlannerTileProjections;
+                LastMetrics.PlannerEvaluations = diagnostics.PlannerEvaluations;
+                LastMetrics.SharedSelections = diagnostics.SharedSelections;
+                LastMetrics.KernelCacheHits = diagnostics.KernelCacheHits;
+                LastMetrics.SharedAllocationMilliseconds = diagnostics.SharedAllocationTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                LastMetrics.PlanMilliseconds = diagnostics.PlanTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
             }
             LastMetrics.TotalMilliseconds = resolutionTimer.Elapsed.TotalMilliseconds; return record;
         }

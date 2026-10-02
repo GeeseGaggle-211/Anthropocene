@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace Anthropocene.Simulation
 {
@@ -389,7 +390,7 @@ namespace Anthropocene.Simulation
         // The camp's fields at the start of the turn, in tile order: the footprint
         // tiles it may operate, each with its projected ecology. Shared by the
         // resolver's horizon proposal and the planner's expansion ladder.
-        private static HorizonCandidate[] StartCandidates(WorldState w, Camp camp, int[] cachedFootprint)
+        private static HorizonCandidate[] StartCandidates(WorldState w, Camp camp, int[] cachedFootprint, PlanningKernelCache cache = null)
         {
             int[] ids = !Enabled(camp) || camp.Population <= 0
                 ? Array.Empty<int>()
@@ -400,7 +401,8 @@ namespace Anthropocene.Simulation
             for (int i = 0; i < ids.Length; i++)
             {
                 int id = ids[i]; var tile = w.Tiles[id];
-                var view = LazyEcology.ProjectEcology(w, id, Math.Max(w.Days, tile.LastEcologyUpdateDays));
+                var view = cache != null ? cache.View(id, Math.Max(w.Days, tile.LastEcologyUpdateDays))
+                    : LazyEcology.ProjectEcology(w, id, Math.Max(w.Days, tile.LastEcologyUpdateDays));
                 candidates[i] = new HorizonCandidate
                 {
                     Tile = id, Ecology = view, Start = Math.Max(0, view.CultivationCapital),
@@ -446,14 +448,35 @@ namespace Anthropocene.Simulation
         // annualGainCap stops recording once the cumulative annual food reaches it (the
         // step that crosses it is kept): the valuation never reads beyond the total food gap.
         // Pure: reads the projected ecology only.
-        internal static ExpansionStep[] ExpansionLadder(WorldState w, Camp camp, double years, int[] cachedFootprint = null, double annualGainCap = double.PositiveInfinity, double? operatingFraction = null)
+        // cache (optional, one plan only) memoizes the pure opening projections
+        // and marginal investments; it never changes a returned step. With a
+        // cache the greedy ladder always runs to its end and is then cut at the
+        // cap: the capped ladder is a prefix of the uncapped one, so the steps
+        // are identical, while the investments evaluated follow the local
+        // field grid instead of the camp's food need (and so its population).
+        internal static ExpansionStep[] ExpansionLadder(WorldState w, Camp camp, double years, int[] cachedFootprint = null, double annualGainCap = double.PositiveInfinity, double? operatingFraction = null,
+            PlanningKernelCache cache = null)
         {
             if (!(years > 0) || double.IsInfinity(years)) return Array.Empty<ExpansionStep>();
-            var candidates = StartCandidates(w, camp, cachedFootprint);
+            if (ResolutionMetrics.CaptureDetailedCounters) Interlocked.Increment(ref TurnDiagnostics.For(w).ExpansionLadderBuilds);
+            var candidates = StartCandidates(w, camp, cachedFootprint, cache);
+            if (cache == null && ResolutionMetrics.CaptureDetailedCounters) Interlocked.Add(ref TurnDiagnostics.For(w).PlannerTileProjections, candidates.Length);
             if (operatingFraction.HasValue) foreach (var field in candidates) field.OperatingFraction = operatingFraction.Value;
             foreach (var field in candidates) { field.Decayed = Decay(w.Config, field.Start, field.OperatingFraction, years); field.Capital = field.Decayed; }
-            var record = new List<ExpansionStep>();
-            AllocateHorizonEffort(w, camp, candidates, double.PositiveInfinity, false, years, record, annualGainCap);
+            // Sized to the greedy loop's own pass guard, so recording never regrows.
+            var record = cache?.LadderRecord ?? new List<ExpansionStep>(); record.Clear();
+            if (record.Capacity < candidates.Length * 35) record.Capacity = candidates.Length * 35;
+            AllocateHorizonEffort(w, camp, candidates, double.PositiveInfinity, false, years, record,
+                cache != null ? double.PositiveInfinity : annualGainCap, cache);
+            if (cache != null)
+            {
+                // The same running sum and test as the capped loop, step for step.
+                double recordedGain = 0; int kept = record.Count;
+                for (int i = 0; i < record.Count; i++)
+                    if ((recordedGain += record[i].AnnualGain) >= annualGainCap) { kept = i + 1; break; }
+                var steps = new ExpansionStep[kept]; record.CopyTo(0, steps, 0, kept);
+                return steps;
+            }
             return record.ToArray();
         }
 
@@ -542,7 +565,8 @@ namespace Anthropocene.Simulation
         // infinite effort takes every positive-score step whole. Null record and a
         // finite effort are the resolver's allocation, unchanged.
         private static double AllocateHorizonEffort(WorldState w, Camp camp, HorizonCandidate[] candidates,
-            double effectiveWorkerYears, bool bridge, double years, List<ExpansionStep> record = null, double annualGainCap = double.PositiveInfinity)
+            double effectiveWorkerYears, bool bridge, double years, List<ExpansionStep> record = null, double annualGainCap = double.PositiveInfinity,
+            PlanningKernelCache cache = null)
         {
             if (effectiveWorkerYears <= 1e-10 || candidates.Length == 0) return Math.Max(0, effectiveWorkerYears);
             var c = w.Config; var n = c.Neolithic;
@@ -570,7 +594,7 @@ namespace Anthropocene.Simulation
                     if (!cached[i])
                     {
                         cached[i] = true;
-                        NextStep(w, field, bridge, years, out scores[i], out steps[i], out costsPerEffort[i], out gains[i]);
+                        NextStep(w, field, bridge, years, out scores[i], out steps[i], out costsPerEffort[i], out gains[i], cache);
                     }
                     double score = scores[i];
                     bool focused = field.Tile == camp.CultivationFocusTile;
@@ -612,7 +636,7 @@ namespace Anthropocene.Simulation
         // expansion ladder share. score is 0 when the field cannot step;
         // annualGain is the step's annualised retained food (for that score).
         private static void NextStep(WorldState w, HorizonCandidate field, bool bridge, double years,
-            out double score, out double step, out double costPerEffort, out double annualGain)
+            out double score, out double step, out double costPerEffort, out double annualGain, PlanningKernelCache cache = null)
         {
             score = 0; step = 0; costPerEffort = 0; annualGain = 0;
             var c = w.Config; var n = c.Neolithic;
@@ -633,7 +657,9 @@ namespace Anthropocene.Simulation
             double cost = n.BuildWorkerYearsPerTileE * build;
             if (cost <= 0) return;
             double maintenance = MaintenanceMultiplier(c, tile, field.Ecology.CurrentVegetation);
-            var investment = HorizonMarginalInvestment(w, tile, field.Ecology, e, de, years, cost, maintenance);
+            var investment = cache != null
+                ? cache.Investment(tile, field.Ecology, e, de, years, cost, maintenance)
+                : HorizonMarginalInvestment(w, tile, field.Ecology, e, de, years, cost, maintenance);
             score = Math.Max(0, investment.AnnualizedFoodPerWorkerYear);
             step = de; costPerEffort = cost; annualGain = investment.AnnualizedRetainedFoodGain;
         }
@@ -642,7 +668,7 @@ namespace Anthropocene.Simulation
             double capital, double step, double years, double costPerEffort, double maintenance)
             => Math.Max(0, HorizonMarginalInvestment(w, tile, opening, capital, step, years, costPerEffort, maintenance).AnnualizedFoodPerWorkerYear);
 
-        private static FoodInvestmentForecast HorizonMarginalInvestment(WorldState w, Tile tile, EcologyView opening,
+        internal static FoodInvestmentForecast HorizonMarginalInvestment(WorldState w, Tile tile, EcologyView opening,
             double capital, double step, double years, double costPerEffort, double maintenance)
         {
             var c = w.Config; var n = c.Neolithic;

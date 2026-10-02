@@ -49,6 +49,7 @@ namespace Anthropocene.Simulation
         {
             laborPrice = double.NaN; productionOrder = null; farmLabourPrice = 0;
             Interlocked.Increment(ref TurnDiagnostics.For(w).PlanCalls);
+            long planStart = ResolutionMetrics.CaptureDetailedCounters ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             var e = settings.Copy(); e.Assignments.Clear(); e.Labor = null;
             if (c.Population <= 0 || !CultivationEconomy.EconomyEnabled(c)) { e.AutomationTurns = 0; return e; }
             var cfg = w.Config; var n = cfg.Neolithic;
@@ -69,8 +70,11 @@ namespace Anthropocene.Simulation
             // Herd-labour coupling (Docs/HerdLabour.md): under the Value rule herders compete for residents on the labour price like every other claim
             // instead of being reserved first. Null (and the unconditional reservation below) otherwise.
             var herdLadder = valueRule != null ? demand.HerdLadder : null;
+            long sharedStart = ResolutionMetrics.CaptureDetailedCounters ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             var jointAllocation = valueRule != null && cfg.SharedCropHerdAllocationEnabled
                 ? new SharedAllocation(w, c, demand, e.ManagedBreedingIntensity) : null;
+            if (jointAllocation != null && ResolutionMetrics.CaptureDetailedCounters)
+                Interlocked.Add(ref TurnDiagnostics.For(w).SharedAllocationTicks, System.Diagnostics.Stopwatch.GetTimestamp() - sharedStart);
             bool spareCurrentWork = false;
             int jointBudget = c.Population;
             double futureWorkPrice = double.NaN;
@@ -92,6 +96,7 @@ namespace Anthropocene.Simulation
             // resolver-shaped proposal and its full labor requirement.
             Proposal Evaluate(double s)
             {
+                if (ResolutionMetrics.CaptureDetailedCounters) Interlocked.Increment(ref TurnDiagnostics.For(w).PlannerEvaluations);
                 double pathPrice = valueRule == null ? 0 : valueRule.LaborPrice(demand.Claims, demand.Expansion, s);
                 var joint = jointAllocation?.Select(spareCurrentWork ? 0 : pathPrice,
                     spareCurrentWork ? futureWorkPrice : pathPrice, jointBudget);
@@ -660,6 +665,8 @@ namespace Anthropocene.Simulation
             }
             if (valueRule != null) laborPrice = valueRule.LaborPrice(demand.Claims, demand.Expansion, best.S);
             if (finalDemand.Expansion != null) farmLabourPrice = finalDemand.Expansion.ValueAfter((best.Intent.Labor?.ExpansionFarmers ?? 0) * years);
+            if (ResolutionMetrics.CaptureDetailedCounters)
+                Interlocked.Add(ref TurnDiagnostics.For(w).PlanTicks, System.Diagnostics.Stopwatch.GetTimestamp() - planStart);
             return best.Intent;
         }
         // Largest staffable position on a fulfilment rule's path, to within

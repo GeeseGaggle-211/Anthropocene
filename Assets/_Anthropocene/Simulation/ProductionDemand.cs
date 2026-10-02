@@ -619,7 +619,9 @@ namespace Anthropocene.Simulation
     {
         internal static void ApplyShared(WorldState w, Camp c, CampProductionDemand d, double animalFood, double futurePrice, double? futureAnnualAnimalFood = null)
             => d.Expansion = SharedSchedule(w, c, d, animalFood, futureAnnualAnimalFood).Price(futurePrice);
-        internal static SharedExpansionSchedule SharedSchedule(WorldState w, Camp c, CampProductionDemand d, double animalFood, double? futureAnnualAnimalFood = null)
+        // ledger: optional FoodIncomeLedger already built for (w, c, d).
+        internal static SharedExpansionSchedule SharedSchedule(WorldState w, Camp c, CampProductionDemand d, double animalFood, double? futureAnnualAnimalFood = null,
+            FoodIncomeLedger ledger = null)
         {
             var schedule = new SharedExpansionSchedule();
             if (!d.CultivationEnabled || c.Population <= 0) return schedule;
@@ -627,7 +629,7 @@ namespace Anthropocene.Simulation
             double years = cfg.TurnDays / cfg.DaysPerYear;
             double life = Math.Exp(-n.DiscountRatePerYear * years) * HerdLabour.DiscountedYears(n.DiscountRatePerYear, Math.Max(0, n.PlanningHorizonYears - years));
             if (!(life > 0)) return schedule;
-            var ledger = new FoodIncomeLedger(w, c, d);
+            ledger = ledger ?? new FoodIncomeLedger(w, c, d);
             var receipt = ledger.Receive(d.TerrestrialAfterHerds, Math.Max(0, d.ForageAfterHerds - d.TerrestrialAfterHerds), animalFood);
             // Slaughter is an endpoint receipt, never a repeating milk stream.
             double human = d.FutureForageAfterHerds / years, animal = Math.Max(0, futureAnnualAnimalFood ?? animalFood / years);

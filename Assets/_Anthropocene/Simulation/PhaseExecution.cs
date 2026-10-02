@@ -43,6 +43,10 @@ namespace Anthropocene.Simulation
         public readonly int Turn;
         public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans;
         public long FoodForecastQueries, FoodInvestmentComparisons;
+        // Planner work counts (Docs/SharedAllocationValidation.md, planner cost):
+        // transient, opt-in through ResolutionMetrics.CaptureDetailedCounters.
+        public long SharedAllocations, SharedOperationChoices, SharedHerdChoices, ExpansionLadderBuilds, HerdLadderBuilds, PastureScans;
+        public long PlannerTileProjections, PlannerEvaluations, SharedSelections, KernelCacheHits, SharedAllocationTicks, PlanTicks;
         public long DraftIntentsReused, DraftIntentsRecomputed;
         public TurnDiagnostics(int turn) { Turn = turn; }
         public static TurnDiagnostics For(WorldState world)
@@ -115,6 +119,9 @@ namespace Anthropocene.Simulation
         public double ImmigrationMilliseconds;
         public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans, ClaimsAllocated, ProductionReceipts;
         public long FoodForecastQueries, FoodInvestmentComparisons;
+        public long SharedAllocations, SharedOperationChoices, SharedHerdChoices, ExpansionLadderBuilds, HerdLadderBuilds, PastureScans;
+        public long PlannerTileProjections, PlannerEvaluations, SharedSelections, KernelCacheHits;
+        public double SharedAllocationMilliseconds, PlanMilliseconds;
         // Opt-in activity diagnostics; these never affect authoritative state.
         public long SeasonalCampBoundaries, OperatingRegimeChanges, FieldWorkSteps, FieldChoiceSwitches;
         public long TargetCompletions, ToolExhaustions, StockDepletions;
