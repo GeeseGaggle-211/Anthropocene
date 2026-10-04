@@ -426,7 +426,7 @@ internal static class Program
         {
             string fullPath = Path.GetFullPath(output);
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
-            File.WriteAllText(fullPath, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(fullPath, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true, NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals }));
         }
 
         Console.WriteLine("AUDIT revision=" + revision + " players=" + players + " seed=" + seed +
@@ -566,6 +566,11 @@ internal static class Program
         // Trade (WP7-WP8): this turn's settled exchanges, agreement order. Read by reflection so pre-trade sources still build.
         var turnTrades = ((record.GetType().GetField("Trades")?.GetValue(record) as System.Collections.IEnumerable) ?? Array.Empty<object>()).Cast<object>()
             .Select(t => t.GetType().GetFields().ToDictionary(f => f.Name, f => f.FieldType.IsEnum ? (object)f.GetValue(t).ToString() : f.GetValue(t))).ToArray();
+        // A non-finite field in a settled record is a defect: name it (the JSON below writes it as a named literal).
+        foreach (var t in turnTrades)
+            foreach (var pair in t)
+                if (pair.Value is double x && (double.IsNaN(x) || double.IsInfinity(x)))
+                    Console.WriteLine("TRADE_NONFINITE turn=" + world.Turn + " field=" + pair.Key + " value=" + x + " record=" + string.Join(",", t.Select(kv => kv.Key + "=" + kv.Value)));
         int tradeCount = turnTrades.Length, tradeCountered = turnTrades.Count(t => (bool)t["Countered"]);
         double Moved(string g) => turnTrades.Sum(t => ((string)t["Want"] == g ? (double)t["WantQuantity"] : 0) + ((string)t["Give"] == g ? (double)t["GiveQuantity"] : 0));
         double tradeCloth = Moved("Cloth"), tradeMaterial = Moved("HousingMaterial");

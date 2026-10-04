@@ -61,7 +61,7 @@ internal static class TradeChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Valuation(); Handshake(); Eligibility(); Kin(); Settlement(); Planning(); Replay(); Persistence(); Registry(); Food(); MadeToOrder(); Pots(); Published();
+        checks = 0; Config(); Valuation(); Handshake(); Eligibility(); Kin(); Settlement(); Planning(); Replay(); Persistence(); Registry(); Food(); MadeToOrder(); Pots(); Published(); Numerics();
         Console.WriteLine("PASS: " + checks + " trade assertions"); return checks;
     }
 
@@ -661,6 +661,30 @@ internal static class TradeChecks
         double limit = Trade.MaximumRatio(values[farmer.Id], TradeGood.Pots, TradeGood.Food, pots.WantQuantity, margin, transport);
         Near(pots.Ratio, Trade.MinimumRatio(values[herder.Id], TradeGood.Pots, TradeGood.Food, pots.WantQuantity, margin, transport, limit), "the Pots price is the herder's floor", 1e-9);
         Check(pots.Ratio > 60 && pots.Ratio < 120, "food per Pot is the accepted provisional value, about 90 (" + pots.Ratio + ")");
+    }
+
+    // Make-or-buy numerics with a vanishing need (census C1 turn 52: a tent maker holding 1.8e-10 tents, so N = 1.8e-10).
+    // Shifting the curve left by the making capacity must not underflow V to zero and then integrate 0 * e^{+huge} = NaN:
+    // the loss of giving is finite, priced at the making cost, and matches a numeric integral.
+    private static void Numerics()
+    {
+        foreach (double n in new[] { 1.7736e-10, 1e-3, 5 })
+        {
+            var v = new Trade.Valuation(); int i = (int)TradeGood.LightHousing;
+            v.Active[i] = true; v.Curves[i] = new ExponentialCurve(91.1743, n, 3); v.Held[i] = n; v.Cost[i] = .254614; v.Capacity[i] = 436.119;
+            v.ToolPool = 52.4757; v.UsesTools[i] = true; v.SetCurve("Tents", n, double.NegativeInfinity);
+            double q = 52.4757, loss = v.Loss(TradeGood.LightHousing, q), gain = v.Gain(TradeGood.LightHousing, 10);
+            Check(!double.IsNaN(loss) && !double.IsInfinity(loss) && !double.IsNaN(gain) && !double.IsInfinity(gain), "make-or-buy loss and gain are finite with N = " + n + " (" + loss + ", " + gain + ")");
+            double numeric = 0; int steps = 200000;
+            for (int k = 0; k < steps; k++) numeric += v.LossMarginal(TradeGood.LightHousing, n - q + (k + .5) * q / steps) * q / steps;
+            Near(loss, numeric, "the make-or-buy loss matches a numeric integral with N = " + n, 1e-4);
+            Check(loss >= .254614 * (q - 52.4757) - 1e-9 && loss <= 91.1743 * q, "the loss lies between the making cost and the use value");
+            // The closed-form inverses agree with the integral on the shifted segments.
+            double down = ValueCurve.InverseDown(v.W(TradeGood.LightHousing), n, loss / 2);
+            Near(v.Loss(TradeGood.LightHousing, down), loss / 2, "InverseDown inverts the shifted loss with N = " + n, 1e-6);
+            double up = ValueCurve.InverseUp(v.W(TradeGood.LightHousing), n - q, loss / 2);
+            Near(ValueCurve.Integral(v.W(TradeGood.LightHousing), n - q, up), loss / 2, "InverseUp inverts the shifted integral with N = " + n, 1e-6);
+        }
     }
 
     private static TradeValueSchedule Bands(TradeGood g, double value, double end, double offset = 0, double floor = 0)

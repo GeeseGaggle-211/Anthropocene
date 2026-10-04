@@ -143,7 +143,7 @@ Any good's curve can now come from the planner instead of its provisional builde
 
 ## Verification status
 
-**Current.** `--only=TradeChecks` passes all sections (439 assertions):
+**Current.** `--only=TradeChecks` passes all sections (454 assertions, including `Numerics`):
 
 - Registry: unpriced goods have no curve, and want scores now use make-or-buy gain, as `Lists` does.
 - Food: rewritten for opening settlement of all-stock agreements. Pay on delivery moved to MadeToOrder.
@@ -155,12 +155,60 @@ Any good's curve can now come from the planner instead of its provisional builde
 
 **Still to do:**
 
-- Run the census and confirm off equals reference exactly.
+- Fix made-to-order delivery of the new goods and the husbandry gate (see the census below); profile the handshake.
 - Add a resolver-level check that goods made for export are held back from recipe inputs and Hand Tool coverage.
 - Rewrite `Docs/Trade.md` for the 11 goods and split legs; it carries a superseded note.
 - Update `Docs/CurrentSimulationContract.md`, `Docs/TurnResolutionPasses.md` and the AGENTS.md trade row.
 
-**Last measured census** (before this commit; five worlds C1, C2, C3, P1, A1; Standard/80; 50 turns):
+**Census of the 11-good semantics** (4 October 2026). Same five worlds, Standard/80, 50 post-opening turns,
+`Run-TradeAudit.py --jobs 4`, .NET SDK 8.0.318. Source is `5e8e987` plus the NaN fix below. Output is in
+`TestResults/Trade-nanfix` (ignored).
+
+- **Exactness.** Trade off equals the reference (`28eafcf`) exactly on all five worlds.
+- **Gate: FAIL**, worse than before the 11-good commit:
+
+  | Husbandry-first measure | t = 25 | t = 50 |
+  | --- | --- | --- |
+  | Animals, total | −9.33% | −11.70% |
+  | Animals, median | −16.7% | −18.5% |
+  | Linked population, total | +0.96% | −1.78% |
+  | Linked population, median | — | −0.45% |
+
+- **Delivery.** After-production delivery fell to 0.52–0.77 (was 0.96–0.97). The shortfall is concentrated in the new
+  made goods:
+
+  | Good | Mean delivered | Short legs |
+  | --- | --- | --- |
+  | Farm Tools | 0.297 | 2,855 of 3,904 |
+  | Light Housing | 0.449 | — |
+  | Pots | 0.624 | — |
+  | Hand Tools | 0.742 | — |
+  | Cloth | 0.838 | — |
+  | Animal Fabric | 0.889 | — |
+  | Housing Material | 0.898 | — |
+
+  The new goods' demand hooks (`AddedExport`, `ToolReplacementDemands`) apparently do not get them made. Check that
+  planner staffing and resolver production actually produce reserved Farm Tools, tents and Pots.
+- **Food paid for goods** is large: about 8 million food per world over 50 turns. Typical prices per unit:
+
+  | Good | Food per unit |
+  | --- | --- |
+  | Light Housing | ~250 |
+  | Housing Material | ~120 |
+  | Pots | ~82 |
+  | Cloth, Animal Fabric | ~45–55 |
+
+  These come from the provisional curves; the Pots value is kept by decision. This is the likeliest driver of the
+  animal losses. Measure which camps pay with what food before changing valuations.
+- **Handshake time.** Mean 44–68 ms per turn, max 318 ms. The last 10 turns average 113–164 ms. Before the commit it
+  was 4–6 ms mean and about 30 ms max. This needs profiling (`--trade-profile`) before the scale runs.
+- **NaN fix.** C1's first run crashed writing a `TradeRecord` with `ResponderGain = NaN`. A tent maker holding
+  1.8e-10 tents has `N = 1.8e-10`. `Valuation.W` folded the capacity shift into `V`, which underflowed to zero, and the
+  integral became `0 × e^{+huge}`. The NaN loss sent `MinimumRatio` into its zero-loss branch, so the maker agreed to
+  52 tents for 52 Stone. Segments now carry the shift (`V e^{-K(x+S)/N}`), covered by `TradeChecks.Numerics`. The
+  audit tool now logs `TRADE_NONFINITE` and writes named float literals; the rerun logged none.
+
+**Earlier census** (before `85f584e`; five worlds C1, C2, C3, P1, A1; Standard/80; 50 turns):
 
 - Trade off equals the reference exactly.
 - After-production delivery was 0.96–0.97.

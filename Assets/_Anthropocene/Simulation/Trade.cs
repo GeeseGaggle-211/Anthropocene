@@ -125,8 +125,10 @@ namespace Anthropocene.Simulation
         public abstract double IntegratedCapped(double a, double b, double cap);
         // The coverage the curve's camp wants to reach: recoverable utility is the integral up to it.
         public abstract double Target { get; }
-        // The capped curve as ordered segments [Lo, Hi): constant value C, or (Exponential) V e^{-K x/N}.
-        internal struct Segment { public double Lo, Hi, C, V, N, K; public bool Exponential; }
+        // The capped curve as ordered segments [Lo, Hi): constant value C, or (Exponential) V e^{-K (x + S)/N}. The shift S
+        // keeps a curve moved left by making capacity exact: folding it into V underflows to zero when N is tiny, and
+        // 0 * e^{+huge} is NaN; with S the exponent stays nonpositive on the segment.
+        internal struct Segment { public double Lo, Hi, C, V, N, K, S; public bool Exponential; }
         internal abstract IEnumerable<Segment> Segments(double cap);
         // The segments for the last cap asked (a camp's curve is read by one thread at a time; caps rarely change).
         private double cachedCap = double.NaN; private Segment[] cached;
@@ -141,7 +143,7 @@ namespace Anthropocene.Simulation
         internal Segment[] SegmentArrayFor(double cap) => SegmentArray(cap);
         internal static double Marginal(Segment[] segments, double x)
         {
-            foreach (var g in segments) if (x < g.Hi && x >= g.Lo) return g.Exponential ? g.V * Math.Exp(-g.K * x / g.N) : g.C;
+            foreach (var g in segments) if (x < g.Hi && x >= g.Lo) return g.Exponential ? g.V * Math.Exp(-g.K * (x + g.S) / g.N) : g.C;
             return 0;
         }
         internal static double Integral(Segment[] segments, double a, double b)
@@ -152,7 +154,7 @@ namespace Anthropocene.Simulation
             return sum;
         }
         internal static double Over(Segment g, double lo, double hi)
-            => !(hi > lo) ? 0 : g.Exponential ? g.V * g.N / g.K * (Math.Exp(-g.K * lo / g.N) - Math.Exp(-g.K * hi / g.N)) : g.C * (hi - lo);
+            => !(hi > lo) ? 0 : g.Exponential ? g.V * g.N / g.K * (Math.Exp(-g.K * (lo + g.S) / g.N) - Math.Exp(-g.K * (hi + g.S) / g.N)) : g.C * (hi - lo);
         public double InverseUp(double a, double target, double cap) => InverseUp(SegmentArray(cap), a, target);
         public double InverseDown(double top, double target, double cap) => InverseDown(SegmentArray(cap), top, target);
         // Smallest b >= a with the integral over [a, b] >= target; +infinity when no b reaches it. Closed form per segment.
@@ -167,8 +169,8 @@ namespace Anthropocene.Simulation
                 double lo = Math.Max(a, g.Lo), part = Over(g, lo, g.Hi);
                 if (part < rem) { rem -= part; continue; }
                 if (!g.Exponential) return lo + rem / g.C;
-                double e = Math.Exp(-g.K * lo / g.N) - rem * g.K / (g.V * g.N);
-                return e > 0 ? Math.Min(g.Hi, -g.N / g.K * Math.Log(e)) : g.Hi;
+                double e = Math.Exp(-g.K * (lo + g.S) / g.N) - rem * g.K / (g.V * g.N);
+                return e > 0 ? Math.Min(g.Hi, -g.N / g.K * Math.Log(e) - g.S) : g.Hi;
             }
             return double.PositiveInfinity;
         }
@@ -184,8 +186,8 @@ namespace Anthropocene.Simulation
                 double hi = Math.Min(top, g.Hi), part = Over(g, g.Lo, hi);
                 if (part <= rem) { rem -= part; continue; }
                 if (!g.Exponential) return top - (hi - rem / g.C);
-                double e = Math.Exp(-g.K * hi / g.N) + rem * g.K / (g.V * g.N);
-                return top - Math.Max(g.Lo, -g.N / g.K * Math.Log(e));
+                double e = Math.Exp(-g.K * (hi + g.S) / g.N) + rem * g.K / (g.V * g.N);
+                return top - Math.Max(g.Lo, -g.N / g.K * Math.Log(e) - g.S);
             }
             return double.PositiveInfinity;
         }
@@ -567,13 +569,13 @@ namespace Anthropocene.Simulation
                     var list = new List<ValueCurve.Segment>();
                     foreach (var seg in u)
                     {
-                        // Below x* - cap: the curve shifted down by cap (own making saturates).
+                        // Below x* - cap: the curve shifted down by cap (own making saturates), u(x + cap).
                         double lo = seg.Lo - cap, hi = Math.Min(seg.Hi, xs) - cap;
-                        if (hi > lo) list.Add(new ValueCurve.Segment { Lo = lo, Hi = hi, C = seg.C, V = seg.Exponential ? seg.V * Math.Exp(-seg.K * cap / seg.N) : 0, N = seg.N, K = seg.K, Exponential = seg.Exponential });
+                        if (hi > lo) list.Add(new ValueCurve.Segment { Lo = lo, Hi = hi, C = seg.C, V = seg.V, N = seg.N, K = seg.K, S = seg.S + cap, Exponential = seg.Exponential });
                     }
                     list.Add(new ValueCurve.Segment { Lo = xs - cap, Hi = xs, C = c });
                     foreach (var seg in u)
-                        if (seg.Hi > xs) list.Add(new ValueCurve.Segment { Lo = Math.Max(seg.Lo, xs), Hi = seg.Hi, C = seg.C, V = seg.V, N = seg.N, K = seg.K, Exponential = seg.Exponential });
+                        if (seg.Hi > xs) list.Add(new ValueCurve.Segment { Lo = Math.Max(seg.Lo, xs), Hi = seg.Hi, C = seg.C, V = seg.V, N = seg.N, K = seg.K, S = seg.S, Exponential = seg.Exponential });
                     w = list.ToArray();
                 }
                 wCache[i] = w; wCap[i] = cap;
