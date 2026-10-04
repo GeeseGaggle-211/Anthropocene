@@ -117,6 +117,9 @@ namespace Anthropocene.Simulation
         // Immigration pass (WP10b). Transient work counts; never saved, observed or fingerprinted.
         public long ImmigrationCampsEvaluated, ImmigrationCandidatesScored, ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected, ImmigrationMigrants;
         public double ImmigrationMilliseconds;
+        // Trade handshake (WP8, computed in planning) and settlement. Transient; never saved, observed or fingerprinted.
+        public long TradeEligible, TradeRequisitions, TradeHonoured, TradeCountered, TradeIgnored, TradesSettled;
+        public double TradePlanMilliseconds, TradeSettleMilliseconds;
         public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans, ClaimsAllocated, ProductionReceipts;
         public long FoodForecastQueries, FoodInvestmentComparisons;
         public long SharedAllocations, SharedOperationChoices, SharedHerdChoices, ExpansionLadderBuilds, HerdLadderBuilds, PastureScans;

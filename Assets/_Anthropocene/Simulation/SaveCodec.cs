@@ -218,7 +218,7 @@ namespace Anthropocene.Simulation
                 config.ManagedHerdDefaultsInitialized = true;
             }
             world.History ??= new System.Collections.Generic.List<TurnRecord>();
-            foreach (var turn in world.History) { turn.ManagedHerds ??= new System.Collections.Generic.List<ManagedHerdReport>(); turn.Fissions ??= new System.Collections.Generic.List<FissionReport>(); turn.Migrations ??= new System.Collections.Generic.List<MigrationReport>(); }
+            foreach (var turn in world.History) { turn.ManagedHerds ??= new System.Collections.Generic.List<ManagedHerdReport>(); turn.Fissions ??= new System.Collections.Generic.List<FissionReport>(); turn.Migrations ??= new System.Collections.Generic.List<MigrationReport>(); turn.Trades ??= new System.Collections.Generic.List<TradeRecord>(); }
             foreach (var herd in world.Herds)
                 if (!herd.NutritionInitialized) { herd.LastNutrition = herd.LastFoodNutrition = herd.LastWaterNutrition = herd.ManagementFulfillment = 1; herd.NutritionInitialized = true; }
             foreach (var camp in world.Camps)

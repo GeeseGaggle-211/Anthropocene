@@ -481,6 +481,37 @@ namespace Anthropocene.Simulation
             return defaultPriority > 0 ? claim.Priority / defaultPriority : (claim.Priority > 0 ? 1 : 0);
         }
         // Phase 1 prices need goods and Pots; ApplyTools (after the expansion ladder) prices the tools and builds the order.
+        // The camp's need-good value terms from the committed camp: B = F * W, S at
+        // the present cohort and E from the last resolved needs (or its formula).
+        internal static void CampTerms(WorldState w, Camp c, out double e, out double b, out double s)
+        {
+            var n = w.Config.Neolithic;
+            b = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio;
+            s = NeolithicProduction.SocialCohesion(w, c, c.Population);
+            e = c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
+                : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+        }
+        internal static double HousingLife(NeolithicConfig n, CraftGood good)
+        {
+            double decay = good == CraftGood.LightHousing ? n.LightHousingDecayPerReferenceTurn : n.HousingDecayPerTurn;
+            double k = -Math.Log(1 - decay) / n.ReferenceTurnYears;
+            return 1 / (k + n.DiscountRatePerYear);
+        }
+        // The clothing and fixed-Housing curves Apply prices (default priority),
+        // evaluated on the committed camp itself: trade reads these (Trade.Value).
+        internal static void NeedGoodTerms(WorldState w, Camp c, out double clothingV, out double clothingNeed, out double clothingStock,
+            out double housingV, out double housingStock)
+        {
+            var cfg = w.Config; var n = cfg.Neolithic;
+            double years = cfg.TurnDays / cfg.DaysPerYear;
+            CampTerms(w, c, out double e, out double b, out double s);
+            clothingV = n.RudimentaryWeightClothing * e * b * s * (n.ReferenceTurnYears / n.FabricConsumptionPerPersonTurn);
+            clothingNeed = c.Population * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
+            clothingStock = Math.Max(0, c.Inventory.Cloth) + Math.Max(0, c.Inventory.AnimalFabric);
+            double housingValuePerPerson = n.RudimentaryWeightHousing * e * b * s * HousingLife(n, CraftGood.Housing);
+            housingV = n.HousingPeoplePerUnit * housingValuePerPerson;
+            housingStock = NeolithicProduction.HousingCapacity(w, c, w.Days + years * cfg.DaysPerYear).Total / n.HousingPeoplePerUnit;
+        }
         public static void Apply(WorldState w, Camp c, CampProductionDemand d) => Apply(w, c, d, false);
         public static void ApplyTools(WorldState w, Camp c, CampProductionDemand d) => Apply(w, c, d, true);
         private static void Apply(WorldState w, Camp c, CampProductionDemand d, bool toolsPhase)
@@ -490,16 +521,8 @@ namespace Anthropocene.Simulation
             // Camp terms come from the committed camp: B = F * W, S at the
             // present cohort and E from the last resolved needs (or its formula
             // for a camp that has not yet resolved any).
-            double b = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio;
-            double s = NeolithicProduction.SocialCohesion(w, c, c.Population);
-            double e = c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
-                : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
-            double HousingLife(CraftGood good)
-            {
-                double decay = good == CraftGood.LightHousing ? n.LightHousingDecayPerReferenceTurn : n.HousingDecayPerTurn;
-                double k = -Math.Log(1 - decay) / n.ReferenceTurnYears;
-                return 1 / (k + n.DiscountRatePerYear);
-            }
+            CampTerms(w, c, out double e, out double b, out double s);
+            double HousingLife(CraftGood good) => ClaimValuation.HousingLife(n, good);
             double shelterPeople = NeolithicProduction.HousingCapacity(w, d.Preview, w.Days + years * cfg.DaysPerYear).Total;
             double clothingV = n.RudimentaryWeightClothing * e * b * s * (n.ReferenceTurnYears / n.FabricConsumptionPerPersonTurn);
             double gather = cfg.GatherPerPerson * perYear;

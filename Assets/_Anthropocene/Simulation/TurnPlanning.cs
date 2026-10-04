@@ -23,6 +23,10 @@ namespace Anthropocene.Simulation
         // observed or fingerprinted; absent for manual camps and under the Uniform rule.
         internal readonly Dictionary<int, ProductionOrder> ProductionOrders = new Dictionary<int, ProductionOrder>();
         internal CampPlacement Placement;
+        // The same-turn trade handshake (WP8): agreed from the committed boundary,
+        // settled at the opening of the economy phase. Transient: never saved.
+        internal TradePlan Trade = TradePlan.Empty;
+        internal double TradeMilliseconds;
 
         internal PreparedTurn(WorldState world)
         {
@@ -127,6 +131,7 @@ namespace Anthropocene.Simulation
         public readonly double Days;
         public readonly int ExcludedPlayer;
         public readonly PlanningResult Ai;
+        internal TradePlan Trade = TradePlan.Empty;
         internal readonly Dictionary<int, DraftIntent> Intents = new Dictionary<int, DraftIntent>();
         internal PlanningDraft(WorldState world, int excludedPlayer, PlanningResult ai)
         {
@@ -191,6 +196,12 @@ namespace Anthropocene.Simulation
             // then append accepted intents in stable camp-ID order.
             bool useDraft = draft != null && draft.Matches(world);
             var diagnostics = TurnDiagnostics.For(world);
+            // The handshake reads only the committed world (never orders), so a
+            // matching draft's plan is the plan Prepare would compute.
+            var tradeTimer = System.Diagnostics.Stopwatch.StartNew();
+            prepared.Trade = useDraft ? draft.Trade : Trade.Plan(world, execution);
+            prepared.TradeMilliseconds = tradeTimer.Elapsed.TotalMilliseconds;
+            var trade = prepared.Trade;
             var automaticOrders = (execution ?? new PhaseExecution()).Map(automated, camp =>
             {
                 int effectiveTile = prepared.Placement.Destinations[camp.Id];
@@ -202,7 +213,7 @@ namespace Anthropocene.Simulation
                     return new AutomaticPlan { Order = cached.Order.Copy(), Production = cached.Production };
                 }
                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
-                return AutomaticIntent(world, camp, effectiveTile, abandoning, index);
+                return AutomaticIntent(world, camp, effectiveTile, abandoning, index, trade);
             });
             for (int i = 0; i < automated.Length; i++)
             {
@@ -229,9 +240,9 @@ namespace Anthropocene.Simulation
         // economic order owns the economic slot; an explicit Move, NoOp, or
         // Dispatch does not suppress automation. Shared by Prepare and Draft
         // so both run literally the same code. Pure over the committed world.
-        private static AutomaticPlan AutomaticIntent(WorldState world, Camp camp, int effectiveTile, bool abandoning, PlanningIndex index)
+        private static AutomaticPlan AutomaticIntent(WorldState world, Camp camp, int effectiveTile, bool abandoning, PlanningIndex index, TradePlan trade)
         {
-            var planningCamp = PlanningCampAt(camp, effectiveTile);
+            var planningCamp = PlanningCampAt(camp, effectiveTile, trade);
             var settings = EconomicIntent.From(camp);
             if (CultivationEconomy.HusbandryEnabled(camp))
                 settings.ManagedBreedingIntensity = ManagedBreedingPolicy.Recommend(world, camp, effectiveTile, index);
@@ -289,14 +300,15 @@ namespace Anthropocene.Simulation
                 CultivationEconomy.EconomyEnabled(c) && !explicitEconomy.Contains(c.Id))
                 .OrderBy(c => c.Id).ToArray();
             var index = new PlanningIndex(world);
+            var trade = Trade.Plan(world, execution);
             var results = (execution ?? new PhaseExecution()).Map(automated, camp =>
             {
                 int tile = placement.Destinations[camp.Id]; bool abandon = abandoning.Contains(camp.Id);
-                var plan = AutomaticIntent(world, camp, tile, abandon, index);
+                var plan = AutomaticIntent(world, camp, tile, abandon, index, trade);
                 return new DraftIntent { Camp = camp.Id, Tile = tile, Abandoning = abandon,
                     Order = plan.Order, Production = plan.Production };
             });
-            var draft = new PlanningDraft(world, excludedPlayer, ai);
+            var draft = new PlanningDraft(world, excludedPlayer, ai) { Trade = trade };
             foreach (var result in results) draft.Intents[result.Camp] = result;
             return draft;
         }
@@ -305,7 +317,7 @@ namespace Anthropocene.Simulation
             IReadOnlyDictionary<int, Order> acceptedActions, IReadOnlyDictionary<int, Order> acceptedEconomy,
             IReadOnlyDictionary<int, Hunter[]> huntersByCamp)
         {
-            var planningCamp = PlanningCampAt(camp, prepared.Placement.Destinations[camp.Id]);
+            var planningCamp = PlanningCampAt(camp, prepared.Placement.Destinations[camp.Id], prepared.Trade);
             // Dispatch changes who remains a camp resident, but creates no
             // new person. Goods and QoL follow those staying at the camp;
             // the departing cohort follows the hunter provision rules.
@@ -357,13 +369,24 @@ namespace Anthropocene.Simulation
                 // and ahead of the reserve refill; other feedstock can only
                 // substitute inventory above consumption, clothing and reserve.
                 var clothing = NeolithicProduction.ClothingNeedFeedstock(world.Config.Neolithic, residents, years,
-                    camp.Inventory.Cloth, camp.Inventory.AnimalFabric, needs.PlantFeedstock, needs.AnimalFeedstock);
+                    planningCamp.Inventory.Cloth, planningCamp.Inventory.AnimalFabric, needs.PlantFeedstock, needs.AnimalFeedstock);
                 needs.PlantClothingFeedstock = clothing.Plant; needs.AnimalClothingFeedstock = clothing.Animal;
                 NeolithicProduction.FeedstockGaps(camp.Food, camp.PlantFood, camp.AnimalFood, needs.ConsumptionRequired, needs.ReserveTarget,
                     needs.PlantFeedstock, needs.AnimalFeedstock, clothing, out double plantGap, out double animalGap);
                 needs.PlantFeedstockGap = plantGap; needs.AnimalFeedstockGap = animalGap;
             }
             return needs;
+        }
+
+        // The camp the planner sees: at its effective tile and holding the stock its
+        // confirmed trades leave it (settled at the opening of the economy phase).
+        private static Camp PlanningCampAt(Camp camp, int tile, TradePlan trade)
+        {
+            var view = PlanningCampAt(camp, tile);
+            if (trade == null || !trade.Deltas.TryGetValue(camp.Id, out var delta)) return view;
+            if (ReferenceEquals(view, camp)) view = camp.WithPrivateInventory();
+            Trade.ApplyToPlanningInventory(view.Inventory, delta);
+            return view;
         }
 
         private static Camp PlanningCampAt(Camp camp, int tile)

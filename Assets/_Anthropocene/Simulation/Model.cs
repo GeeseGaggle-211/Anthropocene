@@ -51,6 +51,7 @@ namespace Anthropocene.Simulation
             ImmigrationAttachmentCost = defaults.ImmigrationAttachmentCost; ImmigrationToSedentaryCost = defaults.ImmigrationToSedentaryCost; ImmigrationToNomadicCost = defaults.ImmigrationToNomadicCost;
             ImmigrationDeadband = defaults.ImmigrationDeadband; ImmigrationMaxFraction = defaults.ImmigrationMaxFraction; ImmigrationMinimumGroup = defaults.ImmigrationMinimumGroup; ImmigrationSourceFloor = defaults.ImmigrationSourceFloor;
             ImmigrationReturnCooldownTurns = defaults.ImmigrationReturnCooldownTurns; ImmigrationReturnPenalty = defaults.ImmigrationReturnPenalty;
+            TradeEnabled = false; TradeRange = defaults.TradeRange; TradeRequisitionsPerCamp = defaults.TradeRequisitionsPerCamp; TradeMargin = defaults.TradeMargin; TradeDistanceCostPerHex = defaults.TradeDistanceCostPerHex;
             // Absent in older saves: QoL-dependent mortality is off so a loaded game continues with its original growth ceiling (Docs/QoLMortality.md).
             QoLMortalityEnabled = false; BaseBirthRate = defaults.BaseBirthRate; QoLMortalityElasticity = defaults.QoLMortalityElasticity;
             // Absent in older saves: the herd-labour coupling is off, so a loaded game keeps its unconditional herder reservation and never slaughters (Docs/HerdLabour.md).
@@ -124,6 +125,11 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public bool ImmigrationEnabled = false;
         [System.Runtime.Serialization.OptionalField] public int ImmigrationRadius = 4, ImmigrationMinimumGroup = 4, ImmigrationSourceFloor = 12;
         [System.Runtime.Serialization.OptionalField] public double ImmigrationQualityWeight = 1, ImmigrationDistanceCost = .01, ImmigrationAttachmentCost = .02, ImmigrationToSedentaryCost = .05, ImmigrationToNomadicCost = .15, ImmigrationDeadband = .075, ImmigrationMaxFraction = .10;
+        // Trade between known settlements (WP7-WP8, Docs/Trade.md): AI-to-AI barter of Cloth and Housing Material,
+        // agreed in the planning pass and settled from committed stock. Saves that predate these fields load with trade disabled.
+        [System.Runtime.Serialization.OptionalField] public bool TradeEnabled = false;
+        [System.Runtime.Serialization.OptionalField] public int TradeRange = 6, TradeRequisitionsPerCamp = 3;
+        [System.Runtime.Serialization.OptionalField] public double TradeMargin = .10, TradeDistanceCostPerHex = .01;
         // QoL-dependent mortality (Docs/QoLMortality.md): births stay at BaseBirthRate (times the fertility hook); deaths are d0 Q^-a with d0 = BaseBirthRate - AnnualHumanGrowthRate.
         // The net annual growth ceiling is max(0, b0 F - d(Q)); food still limits growth below it. Saves that predate these fields load with QoLMortalityEnabled = false.
         [System.Runtime.Serialization.OptionalField] public bool QoLMortalityEnabled = false;
@@ -223,8 +229,9 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Invalid secondary technology, trade practice or settling configuration.");
             if (new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief, FissionDaughterBuilderShare }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionGainThreshold < 0 || FissionGainThreshold > 5 || FissionGainDiscourage < 0 || FissionGainDiscourage > 5 || FissionGainEncourage < 0 || FissionGainEncourage > 5 || FissionSearchFraction < 0 || FissionSearchFraction > 1 || FissionDaughterMargin < 0 || FissionDaughterMargin > 1 || FissionHousingRelief < 0 || FissionHousingRelief > 1 || FissionDaughterBuilderShare < 0 || FissionDaughterBuilderShare > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1)
                 throw new ArgumentException("Invalid fission configuration.");
-            if (new[] { ImmigrationQualityWeight, ImmigrationDistanceCost, ImmigrationAttachmentCost, ImmigrationToSedentaryCost, ImmigrationToNomadicCost, ImmigrationDeadband, ImmigrationMaxFraction }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || ImmigrationQualityWeight < 0 || ImmigrationQualityWeight > 10 || ImmigrationDistanceCost < 0 || ImmigrationDistanceCost > 5 || ImmigrationAttachmentCost < 0 || ImmigrationAttachmentCost > 5 || ImmigrationToSedentaryCost < 0 || ImmigrationToSedentaryCost > 5 || ImmigrationToNomadicCost < 0 || ImmigrationToNomadicCost > 5 || ImmigrationDeadband <= 0 || ImmigrationDeadband > 5 || ImmigrationMaxFraction < 0 || ImmigrationMaxFraction > .5 || ImmigrationRadius < 1 || ImmigrationRadius > 5 || ImmigrationReturnCooldownTurns < 0 || ImmigrationReturnCooldownTurns > 20 || double.IsNaN(ImmigrationReturnPenalty) || double.IsInfinity(ImmigrationReturnPenalty) || ImmigrationReturnPenalty < 0 || ImmigrationReturnPenalty > 5 || ImmigrationMinimumGroup < 1 || ImmigrationSourceFloor < 1)
-                throw new ArgumentException("Invalid immigration configuration.");
+            if (new[] { ImmigrationQualityWeight, ImmigrationDistanceCost, ImmigrationAttachmentCost, ImmigrationToSedentaryCost, ImmigrationToNomadicCost, ImmigrationDeadband, ImmigrationMaxFraction }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || ImmigrationQualityWeight < 0 || ImmigrationQualityWeight > 10 || ImmigrationDistanceCost < 0 || ImmigrationDistanceCost > 5 || ImmigrationAttachmentCost < 0 || ImmigrationAttachmentCost > 5 || ImmigrationToSedentaryCost < 0 || ImmigrationToSedentaryCost > 5 || ImmigrationToNomadicCost < 0 || ImmigrationToNomadicCost > 5 || ImmigrationDeadband <= 0 || ImmigrationDeadband > 5 || ImmigrationMaxFraction < 0 || ImmigrationMaxFraction > .5 || ImmigrationRadius < 1 || ImmigrationRadius > 5 || ImmigrationReturnCooldownTurns < 0 || ImmigrationReturnCooldownTurns > 20 || double.IsNaN(ImmigrationReturnPenalty) || double.IsInfinity(ImmigrationReturnPenalty) || ImmigrationReturnPenalty < 0 || ImmigrationReturnPenalty > 5 || ImmigrationMinimumGroup < 1 || ImmigrationSourceFloor < 1
+                || TradeRange < 1 || TradeRange > 20 || TradeRequisitionsPerCamp < 1 || TradeRequisitionsPerCamp > 10 || double.IsNaN(TradeMargin) || double.IsInfinity(TradeMargin) || TradeMargin < 0 || TradeMargin > 5 || double.IsNaN(TradeDistanceCostPerHex) || double.IsInfinity(TradeDistanceCostPerHex) || TradeDistanceCostPerHex < 0 || TradeDistanceCostPerHex > 1)
+                throw new ArgumentException("Invalid immigration or trade configuration.");
             if (double.IsNaN(BaseBirthRate) || double.IsInfinity(BaseBirthRate) || double.IsNaN(QoLMortalityElasticity) || double.IsInfinity(QoLMortalityElasticity) || BaseBirthRate <= 0 || BaseBirthRate > .2 || QoLMortalityElasticity <= 0 || QoLMortalityElasticity > 20 || QoLMortalityEnabled && BaseBirthRate <= AnnualHumanGrowthRate)
                 throw new ArgumentException("Invalid QoL mortality configuration: BaseBirthRate must exceed AnnualHumanGrowthRate and the elasticity must be positive.");
             if (MinimumHerdHerders < 0 || MinimumHerdHerders > 1000)
@@ -331,6 +338,7 @@ namespace Anthropocene.Simulation
         public double Stone;
         public double Clay;
         public double Wood;
+        internal CampInventory Copy() => (CampInventory)MemberwiseClone();
     }
     [Serializable]
     public sealed class CraftingPriorities
@@ -432,6 +440,9 @@ namespace Anthropocene.Simulation
         [NonSerialized] private Society people = new Society();
         public Society People => people ?? (people = new Society());
         internal void Bind(Society owner) { people = owner; SocietyId = owner.Id; Player = owner.Player; }
+        // A planning view sharing every field but a private inventory copy (trade
+        // deltas, Trade.ApplyToPlanningInventory). Read-only like the camp itself.
+        internal Camp WithPrivateInventory() { var view = (Camp)MemberwiseClone(); view.Inventory = Inventory.Copy(); return view; }
         // Compatibility accessors for one-camp callers; society owns and serializes the data.
         public double[] Experience { get => People.Experience; set => People.Experience = value; }
         public List<SpeciesPractice> SpeciesExperience { get => People.SpeciesExperience; set => People.SpeciesExperience = value; }
@@ -533,6 +544,10 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public List<FissionReport> Fissions = new List<FissionReport>();
         // Canonical (destination camp, then source camp ID order) record of the immigration flows committed this turn (WP10b). Null in saves that predate it.
         [System.Runtime.Serialization.OptionalField] public List<MigrationReport> Migrations = new List<MigrationReport>();
+        // Canonical (agreement order) record of the trades settled this turn and the handshake counts (WP7). Null in saves that predate it;
+        // TradeActivity stays null in turns without trade.
+        [System.Runtime.Serialization.OptionalField] public List<TradeRecord> Trades = new List<TradeRecord>();
+        [System.Runtime.Serialization.OptionalField] public TradeSummary TradeActivity;
         [System.Runtime.Serialization.OptionalField] public List<ManagedHerdReport> ManagedHerds = new List<ManagedHerdReport>();
         public void Log(string message) => Events.Add(message);
     }

@@ -241,6 +241,8 @@ internal static class Program
         if (args.Contains("--issue27-ecology-only")) { Issue27EcologyChecks.Run(); return 0; }
         if (args.Contains("--issue26-forecast-only")) { Issue26ForecastChecks.Run(); return 0; }
         if (args.Contains("--issue28-food-timebase-only")) { Issue28FoodTimebaseChecks.Run(); return 0; }
+        var tradeProbe = args.FirstOrDefault(a => a.StartsWith("--trade-probe=", StringComparison.Ordinal));
+        if (tradeProbe != null) { TradeChecks.Probe(tradeProbe.Substring("--trade-probe=".Length)); return 0; }
         if (args.Contains("--issue32-capability-only")) { Issue32CapabilityChecks.Run(); return 0; }
         if (args.Contains("--cultivation-cache-only")) { CultivationCacheChecks.Run(); return 0; }
         if (args.Contains("--horizon-only")) { HorizonEcologyChecks.Run(); HorizonCultivationChecks.Run(); HorizonExecutionChecks.Run(); return 0; }
@@ -285,6 +287,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "ContactKnowledgeChecks", Run = () => ContactKnowledgeChecks.Run() },
                 new ParallelChecks.Entry { Name = "FissionChecks", Cost = 3, Run = () => FissionChecks.Run() },
                 new ParallelChecks.Entry { Name = "ImmigrationChecks", Cost = 2, Run = () => ImmigrationChecks.Run() },
+                new ParallelChecks.Entry { Name = "TradeChecks", Cost = 2, Run = () => TradeChecks.Run() },
                 new ParallelChecks.Entry { Name = "ClothingFeedstockChecks", Run = () => ClothingFeedstockChecks.Run() },
                 new ParallelChecks.Entry { Name = "NeolithicChecks", Run = () => NeolithicChecks.Run() },
                 new ParallelChecks.Entry { Name = "ToolConsumptionChecks", Run = () => ToolConsumptionChecks.Run() },

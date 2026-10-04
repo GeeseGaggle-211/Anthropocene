@@ -101,6 +101,15 @@ namespace Anthropocene.Simulation
             Supply.ProvisionDepartures(w, locked, record, prepared.Placement);
             Move(w, locked, herdMoves, prepared.Placement, prepared.AbandoningVillages, record);
             Supply.DepositReturns(w, record);
+            // Confirmed trades settle from committed stock before production and needs (WP7).
+            phaseTimer.Restart(); Trade.Settle(w, prepared.Trade, record); LastMetrics.TradeSettleMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
+            LastMetrics.TradePlanMilliseconds = prepared.TradeMilliseconds; LastMetrics.TradesSettled = record.Trades.Count;
+            if (prepared.Trade != null)
+            {
+                var activity = prepared.Trade.Summary;
+                LastMetrics.TradeEligible = activity.Eligible; LastMetrics.TradeRequisitions = activity.Requisitions;
+                LastMetrics.TradeHonoured = activity.Honoured; LastMetrics.TradeCountered = activity.Countered; LastMetrics.TradeIgnored = activity.Ignored;
+            }
             var touched = new Dictionary<int, TileChange>();
             Action<int> touch = id => { if (!touched.ContainsKey(id)) touched[id] = new TileChange { Tile = id, BeforeFood = w.Tiles[id].Food, BeforePotentialFood = w.Tiles[id].PotentialFood, BeforeFreshwater = w.Tiles[id].Freshwater, BeforeLandCondition = w.Tiles[id].LandCondition, BeforeAquaticCondition = w.Tiles[id].AquaticCondition }; };
             ResolveEcology(w, locked, establishedHunters, record, touch, prepared.Needs, prepared.AbandoningVillages);

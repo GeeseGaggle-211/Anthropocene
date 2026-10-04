@@ -171,6 +171,8 @@ internal static class Program
         string output = Option(args, "--output", "");
         string inputSave = Option(args, "--load", "");
         string saveFinished = Option(args, "--save-finished", "");
+        // Optional save of the world after the last measured turn (for diagnostics such as the trade probe).
+        string saveFinal = Option(args, "--save-final", "");
         string shapeName = Option(args, "--shape", "Continents");
         string revision = Option(args, "--revision", "unspecified");
         bool details = Option(args, "--details", 0) != 0;
@@ -367,6 +369,7 @@ internal static class Program
             RunOneTurn(world, execution, resolver, samples, details, perTurnFingerprints, out _);
             postOpeningTurnsMeasured++;
         }
+        if (!string.IsNullOrWhiteSpace(saveFinal)) WriteBytes(saveFinal, SaveCodec.Save(world));
 
         string configHash = SaveCodec.ConfigurationHash(world.Config);
         var result = new
@@ -547,6 +550,7 @@ internal static class Program
 #if MAIN
         int campCount = world.Camps.Count, societyCount = world.Societies.Count, playerCount = world.Camps.Select(c => c.Player).Distinct().Count(), fissionCount = 0;
         object fissionEvents = null; object migrationEvents = null; int migrationCount = 0, migrantCount = 0, kinMigrants = 0;
+        int tradeCount = 0, tradeCountered = 0; double tradeCloth = 0, tradeMaterial = 0; object tradeEvents = null;
 #else
         // Fission (WP10a): settlement, Society and player-slot counts over time, and this turn's fission events.
         int campCount = world.Camps.Count, societyCount = world.Societies.Count, playerCount = world.LivePlayers;
@@ -559,6 +563,13 @@ internal static class Program
         int migrationCount = turnMigrations.Count, migrantCount = turnMigrations.Sum(m => m.Migrants), kinMigrants = turnMigrations.Where(m => m.Kin).Sum(m => m.Migrants);
         object migrationEvents = turnMigrations.Select(m => new { m.SourceCamp, m.DestinationCamp, m.SourceSociety, m.DestinationSociety, m.SourceBefore, m.DestinationBefore, m.Intended, m.Migrants, m.Distance, m.Kin,
             m.SourceQoL, m.DestinationQoL, m.Utility, m.PostInflowQoL, m.Plant, m.Animal, m.Aquatic }).ToArray();
+        // Trade (WP7-WP8): this turn's settled exchanges, agreement order. Read by reflection so pre-trade sources still build.
+        var turnTrades = ((record.GetType().GetField("Trades")?.GetValue(record) as System.Collections.IEnumerable) ?? Array.Empty<object>()).Cast<object>()
+            .Select(t => t.GetType().GetFields().ToDictionary(f => f.Name, f => f.FieldType.IsEnum ? (object)f.GetValue(t).ToString() : f.GetValue(t))).ToArray();
+        int tradeCount = turnTrades.Length, tradeCountered = turnTrades.Count(t => (bool)t["Countered"]);
+        double Moved(string g) => turnTrades.Sum(t => ((string)t["Want"] == g ? (double)t["WantQuantity"] : 0) + ((string)t["Give"] == g ? (double)t["GiveQuantity"] : 0));
+        double tradeCloth = Moved("Cloth"), tradeMaterial = Moved("HousingMaterial");
+        object tradeEvents = details ? turnTrades : null;
 #endif
         object KnowledgeFootprint(WorldState w)
         {
@@ -629,6 +640,18 @@ internal static class Program
             immigrationAccepted = Metric("ImmigrationAccepted"),
             immigrationPartial = Metric("ImmigrationPartial"),
             immigrationRejected = Metric("ImmigrationRejected"),
+            tradeCount,
+            tradeCountered,
+            tradeCloth,
+            tradeMaterial,
+            tradeEvents,
+            tradeEligible = Metric("TradeEligible"),
+            tradeRequisitions = Metric("TradeRequisitions"),
+            tradeHonoured = Metric("TradeHonoured"),
+            tradeCounteredRequisitions = Metric("TradeCountered"),
+            tradeIgnored = Metric("TradeIgnored"),
+            tradePlanMs = Metric("TradePlanMilliseconds"),
+            tradeSettleMs = Metric("TradeSettleMilliseconds"),
             managedAnimals,
             wildAnimals,
             managedHerds,
