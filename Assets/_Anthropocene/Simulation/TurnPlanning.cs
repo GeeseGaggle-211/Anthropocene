@@ -252,7 +252,7 @@ namespace Anthropocene.Simulation
             // automated intent can use the prior cohort as gatherers;
             // manual assignments remain the player's responsibility.
             ProductionOrder production = null;
-            var intent = abandoning ? settings.Copy() : EconomicPlanner.Plan(world, planningCamp, settings, EconomicPlanner.ConfiguredRule(world.Config), out _, out production);
+            var intent = abandoning ? settings.Copy() : EconomicAllocationStrategy.Plan(world, planningCamp, settings, out production);
             if (abandoning)
             {
                 intent.Assignments.Clear();

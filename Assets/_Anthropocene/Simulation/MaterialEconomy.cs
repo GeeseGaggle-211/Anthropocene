@@ -735,6 +735,8 @@ namespace Anthropocene.Simulation
                 }
                 bool sharedFabricNeed = recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric;
                 double wanted = exportOnly ? Outstanding(recipe.Good) : sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]);
+                // DemandControl ceilings: no ordinary step makes more than the allocated output (exports keep their claim).
+                if (!exportOnly && order != null && order.HasCeilings) wanted = Math.Min(wanted, Math.Max(0, order.Ceiling(recipe.Good) - planned[recipe.Good]));
                 double amount = Math.Min(wanted, recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
                 // Housing Material and its assembly draw on one Builder pool.
                 if (recipe.Good == CraftGood.HousingMaterial)

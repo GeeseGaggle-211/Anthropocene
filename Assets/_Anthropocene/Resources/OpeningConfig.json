@@ -150,6 +150,7 @@
   "TradeFoodEnabled": true,
   "TradeFoodSafeOnly": false,
   "TradeExportLabourShare": 0,
+  "EconomicAllocation": "Legacy",
   "GoodsStorageEnabled": false,
   "GoodsBaseStoragePerResident": 2,
   "GoodsStorageSpacePerUnit": 20,

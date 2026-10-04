@@ -53,6 +53,7 @@ namespace Anthropocene.Simulation
             ImmigrationReturnCooldownTurns = defaults.ImmigrationReturnCooldownTurns; ImmigrationReturnPenalty = defaults.ImmigrationReturnPenalty;
             TradeEnabled = false; TradeRange = defaults.TradeRange; TradeRequisitionsPerCamp = defaults.TradeRequisitionsPerCamp; TradeListLength = defaults.TradeListLength; TradeMargin = defaults.TradeMargin; TradeDistanceCostPerHex = defaults.TradeDistanceCostPerHex;
             TradeFoodEnabled = defaults.TradeFoodEnabled; TradeFoodSafeOnly = defaults.TradeFoodSafeOnly; TradeExportLabourShare = defaults.TradeExportLabourShare;
+            EconomicAllocation = EconomicAllocationStrategy.Legacy;
             GoodsStorageEnabled = false; GoodsBaseStoragePerResident = defaults.GoodsBaseStoragePerResident; GoodsStorageSpacePerUnit = defaults.GoodsStorageSpacePerUnit;
             // Absent in older saves: QoL-dependent mortality is off so a loaded game continues with its original growth ceiling (Docs/QoLMortality.md).
             QoLMortalityEnabled = false; BaseBirthRate = defaults.BaseBirthRate; QoLMortalityElasticity = defaults.QoLMortalityElasticity;
@@ -142,6 +143,10 @@ namespace Anthropocene.Simulation
         // above a base allowance per resident; every counted good takes GoodsStorageSpacePerUnit food units of space and
         // additions beyond the room are blocked. Saves that predate these fields load with storage off.
         [System.Runtime.Serialization.OptionalField] public bool GoodsStorageEnabled = false;
+        // Automatic economic allocation strategy (Docs/EconomicControlContract.md §15): "Legacy" (the Value/Uniform planner,
+        // EconomicPlanner) or "DemandControl" (service controllers and Elder arbitration, DemandControl.cs). Saves without it
+        // load Legacy.
+        [System.Runtime.Serialization.OptionalField] public string EconomicAllocation = EconomicAllocationStrategy.Legacy;
         [System.Runtime.Serialization.OptionalField] public double GoodsBaseStoragePerResident = 2, GoodsStorageSpacePerUnit = 20;
         // QoL-dependent mortality (Docs/QoLMortality.md): births stay at BaseBirthRate (times the fertility hook); deaths are d0 Q^-a with d0 = BaseBirthRate - AnnualHumanGrowthRate.
         // The net annual growth ceiling is max(0, b0 F - d(Q)); food still limits growth below it. Saves that predate these fields load with QoLMortalityEnabled = false.
@@ -245,7 +250,8 @@ namespace Anthropocene.Simulation
             if (new[] { ImmigrationQualityWeight, ImmigrationDistanceCost, ImmigrationAttachmentCost, ImmigrationToSedentaryCost, ImmigrationToNomadicCost, ImmigrationDeadband, ImmigrationMaxFraction }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || ImmigrationQualityWeight < 0 || ImmigrationQualityWeight > 10 || ImmigrationDistanceCost < 0 || ImmigrationDistanceCost > 5 || ImmigrationAttachmentCost < 0 || ImmigrationAttachmentCost > 5 || ImmigrationToSedentaryCost < 0 || ImmigrationToSedentaryCost > 5 || ImmigrationToNomadicCost < 0 || ImmigrationToNomadicCost > 5 || ImmigrationDeadband <= 0 || ImmigrationDeadband > 5 || ImmigrationMaxFraction < 0 || ImmigrationMaxFraction > .5 || ImmigrationRadius < 1 || ImmigrationRadius > 5 || ImmigrationReturnCooldownTurns < 0 || ImmigrationReturnCooldownTurns > 20 || double.IsNaN(ImmigrationReturnPenalty) || double.IsInfinity(ImmigrationReturnPenalty) || ImmigrationReturnPenalty < 0 || ImmigrationReturnPenalty > 5 || ImmigrationMinimumGroup < 1 || ImmigrationSourceFloor < 1
                 || TradeRange < 1 || TradeRange > 20 || TradeRequisitionsPerCamp < 1 || TradeRequisitionsPerCamp > 10 || TradeListLength < 1 || TradeListLength > 10 || double.IsNaN(TradeMargin) || double.IsInfinity(TradeMargin) || TradeMargin < 0 || TradeMargin > 5 || double.IsNaN(TradeDistanceCostPerHex) || double.IsInfinity(TradeDistanceCostPerHex) || TradeDistanceCostPerHex < 0 || TradeDistanceCostPerHex > 1 || double.IsNaN(TradeExportLabourShare) || TradeExportLabourShare < 0 || TradeExportLabourShare > 1
                 || double.IsNaN(GoodsBaseStoragePerResident) || double.IsInfinity(GoodsBaseStoragePerResident) || GoodsBaseStoragePerResident < 0
-                || double.IsNaN(GoodsStorageSpacePerUnit) || double.IsInfinity(GoodsStorageSpacePerUnit) || GoodsStorageSpacePerUnit <= 0)
+                || double.IsNaN(GoodsStorageSpacePerUnit) || double.IsInfinity(GoodsStorageSpacePerUnit) || GoodsStorageSpacePerUnit <= 0
+                || !EconomicAllocationStrategy.IsKnown(EconomicAllocation))
                 throw new ArgumentException("Invalid immigration or trade configuration.");
             if (double.IsNaN(BaseBirthRate) || double.IsInfinity(BaseBirthRate) || double.IsNaN(QoLMortalityElasticity) || double.IsInfinity(QoLMortalityElasticity) || BaseBirthRate <= 0 || BaseBirthRate > .2 || QoLMortalityElasticity <= 0 || QoLMortalityElasticity > 20 || QoLMortalityEnabled && BaseBirthRate <= AnnualHumanGrowthRate)
                 throw new ArgumentException("Invalid QoL mortality configuration: BaseBirthRate must exceed AnnualHumanGrowthRate and the elasticity must be positive.");

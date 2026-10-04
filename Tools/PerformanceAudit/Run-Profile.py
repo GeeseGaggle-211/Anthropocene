@@ -18,6 +18,9 @@ VARIANTS = {
     'all': (1, ',TradeEnabled=1'),
     'all-mto': (1, ',TradeEnabled=1,TradeExportLabourShare=0.25'),
     'trade-mto': (0, ',TradeEnabled=1,TradeExportLabourShare=0.25'),
+    # DemandControl (Docs/EconomicControlContract.md slice 1) against the Legacy variants above.
+    'none-dc': (0, ',EconomicAllocation=DemandControl'),
+    'all-dc': (1, ',TradeEnabled=1,EconomicAllocation=DemandControl'),
 }
 
 def main():

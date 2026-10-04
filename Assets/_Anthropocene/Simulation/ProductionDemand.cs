@@ -354,6 +354,31 @@ namespace Anthropocene.Simulation
         // expansionClaim = false omits the WP4b expansion claim (the pre-WP4b Value plan, a test reference).
         public static CampProductionDemand Build(WorldState w, Camp c, EconomicIntent e, bool expansionClaim = true, bool herdCapital = true)
         {
+            var d = BuildPhysical(w, c, e, true, herdCapital);
+            var cfg = w.Config;
+            var preview = d.Preview; var goals = d.Goals;
+            d.Claims = d.Goods.Select(r =>
+            {
+                bool specialist = c.People.HasTech(r.Track);
+                double priority = NeolithicProduction.Priority(preview, r.Good);
+                return new ProductionClaim { Good = r.Good, Recipe = r, Quantity = goals[r.Good], Priority = priority, Value = priority,
+                    Role = specialist ? r.Specialist : WorkforceRoles.Craftsperson,
+                    Rate = SpecialistProductivity.CraftRate(w, c, r, specialist ? r.Specialist : WorkforceRoles.Craftsperson) };
+            }).ToArray();
+            ClaimValuation.Apply(w, c, d);
+            if (expansionClaim && !cfg.SharedCropHerdAllocationEnabled) ExpansionValuation.Apply(w, c, d, herdCapital && HerdLabour.Applies(w, c));
+            ClaimValuation.ApplyTools(w, c, d);
+            // The herder ladder reads the priced claims (feedstock values), so it comes after every claim is valued.
+            if (herdCapital && HerdLabour.Applies(w, c) && !cfg.SharedCropHerdAllocationEnabled) d.HerdLadder = HerdLabour.Build(w, c, d, e.ManagedBreedingIntensity);
+            return d;
+        }
+        // The physical demand and capability projection, without claims or valuation (Docs/EconomicControlContract.md §2):
+        // footprint, field upkeep and harvest productivity, forage supply, the current herd's reservation and food, material
+        // sources, the preview camp, each good's useful demand and the food envelopes. `legacyProbes` keeps the Value planner's
+        // two extras: the grown-herd forecast (Value rule only) and the prospective-builder shelter probe. DemandControl
+        // derives shelter demand without fictitious staffing.
+        internal static CampProductionDemand BuildPhysical(WorldState w, Camp c, EconomicIntent e, bool legacyProbes, bool herdCapital = true)
+        {
             var d = new CampProductionDemand { world = w };
             var cfg = w.Config; var n = cfg.Neolithic;
             double intervals = cfg.GenerationIntervals, years = cfg.TurnDays / cfg.DaysPerYear;
@@ -386,7 +411,7 @@ namespace Anthropocene.Simulation
             d.ForageSupply = d.Eligible.Sum(FoodAvailability); d.PlantSupply = d.Eligible.Where(id => w.Tiles[id].Land).Sum(FoodAvailability);
             d.ReservedHerders = d.HusbandryEnabled ? EconomicPlanner.ManagedHerderReservation(w, c, years) : 0;
             d.ManagedFood = d.HusbandryEnabled ? TurnResolver.ForecastManagedAnimalFood(w, c, d.ReservedHerders, intervals, years, c.Tile) : new ManagedFoodForecast();
-            if (n.ValueFulfilmentSelected && d.HusbandryEnabled && d.CultivationEnabled && c.Population > 0)
+            if (legacyProbes && n.ValueFulfilmentSelected && d.HusbandryEnabled && d.CultivationEnabled && c.Population > 0)
             {
                 var grown = TurnResolver.ForecastGrownManagedAnimalFood(w, c, e.ManagedBreedingIntensity, intervals, years, c.Tile);
                 d.GrownHerd = grown;
@@ -416,7 +441,7 @@ namespace Anthropocene.Simulation
             // demand visible to the ordered Animal Fabric recipe. This is only
             // a demand probe; actual staffing still comes from the shared
             // material, tool, food and resident budgets in the fulfilment search.
-            if (d.HusbandryEnabled && NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 && c.Population > d.ReservedHerders)
+            if (legacyProbes && d.HusbandryEnabled && NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 && c.Population > d.ReservedHerders)
                 previewIntent.Assignments.Add(new PopulationAssignment { Role = c.People.HasTech(NeolithicTech.Construction) ? WorkforceRoles.Builder : WorkforceRoles.Craftsperson, Population = 1 });
             var preview = d.Preview = EconomicPlanner.Preview(c, previewIntent, d.NextPopulation);
             NeolithicProduction.DepreciateHousing(w, preview, years);
@@ -427,25 +452,13 @@ namespace Anthropocene.Simulation
             // inventing labor, so the normal FarmTools demand helper is called
             // on the resolver-shaped candidate.
             if (goals.ContainsKey(CraftGood.FarmTools)) goals[CraftGood.FarmTools] = 0;
-            d.Claims = d.Goods.Select(r =>
-            {
-                bool specialist = c.People.HasTech(r.Track);
-                double priority = NeolithicProduction.Priority(preview, r.Good);
-                return new ProductionClaim { Good = r.Good, Recipe = r, Quantity = goals[r.Good], Priority = priority, Value = priority,
-                    Role = specialist ? r.Specialist : WorkforceRoles.Craftsperson,
-                    Rate = SpecialistProductivity.CraftRate(w, c, r, specialist ? r.Specialist : WorkforceRoles.Craftsperson) };
-            }).ToArray();
             int consumers = d.Consumers = c.Population + w.Hunters.Where(h => h.SourceCamp == c.Id && Simulation.Supply.InRange(w, c, h.Tile)).Sum(h => h.Population);
             d.Meals = consumers * cfg.Consumption * intervals;
             d.OperatingReserve = NeolithicProduction.DesiredReserveFood(w, consumers);
             d.SetFoodEnvelopes(w, c, d.ManagedFood.AnimalFood);
             d.ClothingNeedUnits = NeolithicProduction.ClothingNeedUnits(n, d.Preview.Population, years, c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth), c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric));
             d.HousingMultiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
-            ClaimValuation.Apply(w, c, d);
-            if (expansionClaim && !cfg.SharedCropHerdAllocationEnabled) ExpansionValuation.Apply(w, c, d, herdCapital && HerdLabour.Applies(w, c));
-            ClaimValuation.ApplyTools(w, c, d);
-            // The herder ladder reads the priced claims (feedstock values), so it comes after every claim is valued.
-            if (herdCapital && HerdLabour.Applies(w, c) && !cfg.SharedCropHerdAllocationEnabled) d.HerdLadder = HerdLabour.Build(w, c, d, e.ManagedBreedingIntensity);
+            d.Claims = Array.Empty<ProductionClaim>();
             return d;
         }
     }
@@ -904,6 +917,19 @@ namespace Anthropocene.Simulation
         public static readonly string[] Roles = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToArray();
         private readonly Dictionary<CraftGood, int> rank = new Dictionary<CraftGood, int>();
         private readonly Dictionary<CraftGood, double> keys = new Dictionary<CraftGood, double>();
+        // DemandControl (Docs/EconomicControlContract.md §15): the allocated output per good this turn. The forecast and the
+        // resolver produce no more than it; goods without a ceiling are unbounded (every Legacy order).
+        private readonly Dictionary<CraftGood, double> ceilings;
+        public double Ceiling(CraftGood good) => ceilings != null && ceilings.TryGetValue(good, out double c) ? c : double.PositiveInfinity;
+        public bool HasCeilings => ceilings != null;
+        // An explicit access order with output ceilings (DemandControl).
+        internal ProductionOrder(CraftGood[] goods, IReadOnlyDictionary<CraftGood, double> allocated)
+        {
+            Goods = goods;
+            for (int i = 0; i < goods.Length; i++) rank[goods[i]] = i;
+            ceilings = new Dictionary<CraftGood, double>();
+            foreach (var pair in allocated) ceilings[pair.Key] = Math.Max(0, pair.Value);
+        }
         // Goods from first to last in access order.
         public readonly CraftGood[] Goods;
         private ProductionOrder(CraftGood[] goods, Dictionary<CraftGood, double> valued)

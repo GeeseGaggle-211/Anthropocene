@@ -320,6 +320,7 @@ internal static class Program
             // Names that are not top-level configuration fields fall back to the Neolithic calibration (for example CohesionBandScale).
             if (field == null && parts.Length == 2) { field = world.Config.Neolithic.GetType().GetField(parts[0]); target = world.Config.Neolithic; }
 #endif
+            if (field != null && field.FieldType == typeof(string)) { field.SetValue(target, parts[1]); continue; }
             if (field == null || field.FieldType != typeof(double) && field.FieldType != typeof(int) && field.FieldType != typeof(bool)) throw new ArgumentException("Unsupported --set override: " + assignment);
             double value = double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);
             if (field.FieldType == typeof(bool) && value != 0 && value != 1) throw new ArgumentException("Boolean --set overrides must be 0 or 1.");

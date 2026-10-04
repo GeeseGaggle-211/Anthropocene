@@ -91,7 +91,7 @@ namespace Anthropocene.Simulation
         public static EconomicIntent Automatic(WorldState w, Camp c, bool reset = false)
         {
             if (!reset && c.EconomyAutomationTurns == 0 && c.Workforce.Assignments.Count > 0) return EconomicIntent.From(c);
-            return EconomicPlanner.Plan(w, c, EconomicIntent.From(c));
+            return EconomicAllocationStrategy.Plan(w, c, EconomicIntent.From(c), out _);
         }
     }
     [Serializable]
