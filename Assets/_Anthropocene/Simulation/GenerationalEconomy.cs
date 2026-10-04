@@ -988,6 +988,14 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 double cap = NeolithicProduction.StorageCapacity(w, camp, intervals);
+                // Goods storage: goods in Pots beyond their base allowance take food space, never the reserve's share
+                // (Docs/PlannerTradeStorageDesign.md §3). Goods consumed this turn no longer count at its end.
+                if (camp.GoodsStorage != null)
+                {
+                    var end = GoodsStorage.Begin(w, camp, w.Config.TurnDays / w.Config.DaysPerYear, camp.Population, 0, 0, true);
+                    cap = end.FoodCapacity(camp.Inventory.Pots, end.Occupied(GoodsStorage.StockOf(camp)));
+                    camp.GoodsStorage = null;
+                }
                 double loss = Math.Max(0, camp.Food - cap); camp.Food -= loss;
                 var summary = record.Demographics.First(d => d.Camp == camp.Id); summary.DiscardedInventory += loss;
             }

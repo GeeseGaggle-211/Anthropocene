@@ -89,6 +89,20 @@ namespace Anthropocene.Simulation
                 EconomicIntents.Apply(camp, order.Economy);
                 if (camp.EconomyAutomationTurns > 0) camp.EconomyAutomationTurns--;
             }
+            // Goods storage (Docs/PlannerTradeStorageDesign.md §3): each camp's storage terms for this turn, from its prepared
+            // needs, before any settlement or production adds goods. Cleared by the end-of-turn storage step.
+            if (GoodsStorage.Enabled(w.Config))
+            {
+                var storageRecipes = NeolithicProduction.Recipes(w.Config);
+                foreach (var camp in w.Camps.OrderBy(c => c.Id))
+                {
+                    prepared.Needs.TryGetValue(camp.Id, out var campNeeds);
+                    double equipmentOutputs = 0, housingAssembly = 0;
+                    if (campNeeds?.Production != null)
+                        GoodsStorage.PlannedUse(storageRecipes, g => campNeeds.Production.TryGetValue(g, out double q) ? q : 0, out equipmentOutputs, out housingAssembly);
+                    camp.GoodsStorage = GoodsStorage.Begin(w, camp, horizon.Years, campNeeds?.Residents ?? camp.Population, equipmentOutputs, housingAssembly);
+                }
+            }
             // Confirmed trades settle from committed stock before dispatch, provisions, production and needs (WP7):
             // every later step sees the post-trade stock the planner and prepared needs saw.
             var tradeTimer = System.Diagnostics.Stopwatch.StartNew(); trade = Trade.Settle(w, prepared.Trade, record); LastMetrics.TradeSettleMilliseconds = tradeTimer.Elapsed.TotalMilliseconds;

@@ -522,6 +522,8 @@ internal static class Program
                 c.GrowthRemainder, c.LastConsumed, c.FoodDeficit, c.DeficitTurns,
                 c.Inventory.Cloth, c.Inventory.AnimalFabric, c.Inventory.Wood, c.Inventory.Clay,
                 c.Inventory.HandTools, c.Inventory.Pots, c.Inventory.Stone, c.Inventory.FarmTools,
+                c.Inventory.Tools, c.Inventory.HerdingTools, c.Inventory.LightHousingUnits, c.Inventory.HousingMaterial,
+                discardedFood = record.Demographics.Where(d => d.Camp == c.Id).Sum(d => d.DiscardedInventory),
                 assignments = c.Workforce.Assignments.OrderBy(a => a.Role).Select(a => new { a.Role, a.Population }).ToArray(),
                 equipmentTarget = c.EconomicLabor?.EquipmentTarget ?? 0,
                 production = record.Production.Where(p => p.Camp == c.Id).GroupBy(p => p.Good).ToDictionary(g => g.Key.ToString(), g => g.Sum(p => p.Output)),

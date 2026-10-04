@@ -688,6 +688,17 @@ namespace Anthropocene.Simulation
                 }
                 return usefulDemand[good] = NeolithicProduction.Demand(w, c, good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order);
             }
+            // Goods storage (Docs/PlannerTradeStorageDesign.md §3): the resolver's room rule on a virtual stock, with this
+            // turn's useful equipment and Housing work in use and the Pots the turn keeps after decay (plus those it makes).
+            GoodsStorage storage = null; double[] stored = null; double storagePots = 0;
+            if (GoodsStorage.Enabled(w.Config))
+            {
+                GoodsStorage.PlannedUse(recipes, good => NeolithicProduction.Priority(c, good) > 0 ? UsefulDemand(good) : 0, out double equipmentUse, out double housingUse);
+                storage = GoodsStorage.Begin(w, c, years, residentPopulation, equipmentUse, housingUse);
+                stored = GoodsStorage.StockOf(c);
+                var nc = w.Config.Neolithic;
+                storagePots = Math.Max(0, c.Inventory.Pots) * (potsAlreadyDecayed ? 1 : Math.Pow(1 - nc.PotDecayPerReferenceTurn, Math.Max(0, years) / nc.ReferenceTurnYears));
+            }
             // Toolmaking has no equipment input. Solve that aggregate supply
             // first, then use start stock plus forecast output to cap all other
             // work. Both sweeps describe one turn allocation, not two times.
@@ -734,7 +745,10 @@ namespace Anthropocene.Simulation
                         if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                         if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
                         if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, animalFabric - HeldForExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
+                        if (storage != null && amount > 0)
+                            amount = storage.Limit(stored, storage.Capacity(c.Food, storagePots + planned[CraftGood.Pots]), recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
                         if (amount <= 0) continue;
+                        if (stored != null) GoodsStorage.Add(stored, recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
                         labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : recipe.Good == CraftGood.HousingMaterial ? tools.Time(recipe.Good, rate, amount) : amount / rate;
                         laborByRole[role] = labor;
                         double forExport = Math.Min(amount, Outstanding(recipe.Good));

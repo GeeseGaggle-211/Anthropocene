@@ -835,6 +835,8 @@ namespace Anthropocene.Simulation
                 if (housing == null) amount = Math.Min(amount, (inv.Wood + inv.Clay) / recipe.ConstructionMaterial);
                 else amount = housing.LimitHousing(c, amount, recipe.ConstructionMaterial, out _, out _);
             }
+            // Goods storage (Docs/PlannerTradeStorageDesign.md §3): an addition is cut to what fits; nothing is destroyed.
+            if (c.GoodsStorage != null) amount = c.GoodsStorage.Limit(c, recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
             if (amount <= 1e-12) return 0;
             double wood = amount * recipe.Wood, clay = amount * recipe.Clay;
             if (recipe.ConstructionMaterial > 0)

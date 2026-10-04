@@ -24,6 +24,7 @@
     <Compile Include="SharedAllocationChecks.cs" />
     <Compile Include="ImmigrationChecks.cs" />
     <Compile Include="TradeChecks.cs" />
+    <Compile Include="GoodsStorageChecks.cs" />
     <Compile Include="ClothingFeedstockChecks.cs" />
     <Compile Include="AgentContractChecks.cs" />
     <Compile Include="EcologyChecks.cs" />

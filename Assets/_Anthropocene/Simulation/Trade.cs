@@ -935,6 +935,14 @@ namespace Anthropocene.Simulation
             if (plan.Imports.TryGetValue(view.Id, out var imports)) view.TradeImports = (double[])imports.Clone();
         }
 
+        // The fraction of `quantity` of a good the receiver's goods storage still takes (Docs/PlannerTradeStorageDesign.md §3):
+        // 1 without storage or for a good it does not count (food, Pots, raw materials).
+        private static double RoomFraction(Camp receiver, TradeGood good, double quantity)
+        {
+            var storage = receiver.GoodsStorage; var d = Descriptor(good);
+            if (storage == null || !(quantity > 1e-12) || !d.Recipe.HasValue || GoodsStorage.Index(d.Recipe.Value) < 0) return 1;
+            return Math.Max(0, Math.Min(1, storage.Limit(receiver, d.Recipe.Value, quantity) / quantity));
+        }
         // The fraction of a leg the giver can deliver from what it holds now.
         private static double Available(Camp from, TradeGood good, double[] amounts)
         {
@@ -1013,6 +1021,8 @@ namespace Anthropocene.Simulation
                     s.WantEscrow[k] = Escrow(p, a.Want, a.WantParts, fw); s.GiveEscrow[k] = Escrow(r, a.Give, a.GiveParts, fg);
                     if (!a.AllStock) continue;
                     double f = Math.Min(fw, fg);
+                    // A receiver short of storage room takes less, and both legs scale with it.
+                    f = Math.Min(f * RoomFraction(r, a.Want, f * Sum(a.WantParts)), f * RoomFraction(p, a.Give, f * Sum(a.GiveParts)));
                     Release(p, r, a.Want, s.WantEscrow[k], fw > 0 ? f / fw : 0); Release(r, p, a.Give, s.GiveEscrow[k], fg > 0 ? f / fg : 0);
                     s.WantEscrow[k] = s.GiveEscrow[k] = null; s.WantScale[k] = s.GiveScale[k] = f;
                     continue;
@@ -1020,6 +1030,7 @@ namespace Anthropocene.Simulation
                 if (a.AllStock) continue;
                 double wantStock = Sum(a.WantParts), giveStock = Sum(a.GiveParts);
                 double share = Math.Min(Deliverable(p, a.Want, s.WantEscrow[k], wantStock, a.WantMade), Deliverable(r, a.Give, s.GiveEscrow[k], giveStock, a.GiveMade));
+                share = Math.Min(share * RoomFraction(r, a.Want, share * (wantStock + a.WantMade)), share * RoomFraction(p, a.Give, share * (giveStock + a.GiveMade)));
                 Deliver(p, r, a.Want, s.WantEscrow[k], wantStock, a.WantMade, share);
                 Deliver(r, p, a.Give, s.GiveEscrow[k], giveStock, a.GiveMade, share);
                 s.WantEscrow[k] = s.GiveEscrow[k] = null; s.WantScale[k] = s.GiveScale[k] = share;

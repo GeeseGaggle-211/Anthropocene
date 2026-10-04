@@ -53,6 +53,7 @@ namespace Anthropocene.Simulation
             ImmigrationReturnCooldownTurns = defaults.ImmigrationReturnCooldownTurns; ImmigrationReturnPenalty = defaults.ImmigrationReturnPenalty;
             TradeEnabled = false; TradeRange = defaults.TradeRange; TradeRequisitionsPerCamp = defaults.TradeRequisitionsPerCamp; TradeListLength = defaults.TradeListLength; TradeMargin = defaults.TradeMargin; TradeDistanceCostPerHex = defaults.TradeDistanceCostPerHex;
             TradeFoodEnabled = defaults.TradeFoodEnabled; TradeFoodSafeOnly = defaults.TradeFoodSafeOnly; TradeExportLabourShare = defaults.TradeExportLabourShare;
+            GoodsStorageEnabled = false; GoodsBaseStoragePerResident = defaults.GoodsBaseStoragePerResident; GoodsStorageSpacePerUnit = defaults.GoodsStorageSpacePerUnit;
             // Absent in older saves: QoL-dependent mortality is off so a loaded game continues with its original growth ceiling (Docs/QoLMortality.md).
             QoLMortalityEnabled = false; BaseBirthRate = defaults.BaseBirthRate; QoLMortalityElasticity = defaults.QoLMortalityElasticity;
             // Absent in older saves: the herd-labour coupling is off, so a loaded game keeps its unconditional herder reservation and never slaughters (Docs/HerdLabour.md).
@@ -135,6 +136,11 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public bool TradeFoodEnabled = true, TradeFoodSafeOnly = false;
         // Share of a seller's resident turn that may go to goods made to order for export (0 disables making to order).
         [System.Runtime.Serialization.OptionalField] public double TradeExportLabourShare = .25;
+        // Pottery storage for finished goods (Docs/PlannerTradeStorageDesign.md §3, phase S): goods share Pots with food,
+        // above a base allowance per resident; every counted good takes GoodsStorageSpacePerUnit food units of space and
+        // additions beyond the room are blocked. Saves that predate these fields load with storage off.
+        [System.Runtime.Serialization.OptionalField] public bool GoodsStorageEnabled = false;
+        [System.Runtime.Serialization.OptionalField] public double GoodsBaseStoragePerResident = 2, GoodsStorageSpacePerUnit = 20;
         // QoL-dependent mortality (Docs/QoLMortality.md): births stay at BaseBirthRate (times the fertility hook); deaths are d0 Q^-a with d0 = BaseBirthRate - AnnualHumanGrowthRate.
         // The net annual growth ceiling is max(0, b0 F - d(Q)); food still limits growth below it. Saves that predate these fields load with QoLMortalityEnabled = false.
         [System.Runtime.Serialization.OptionalField] public bool QoLMortalityEnabled = false;
@@ -235,7 +241,9 @@ namespace Anthropocene.Simulation
             if (new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief, FissionDaughterBuilderShare }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionGainThreshold < 0 || FissionGainThreshold > 5 || FissionGainDiscourage < 0 || FissionGainDiscourage > 5 || FissionGainEncourage < 0 || FissionGainEncourage > 5 || FissionSearchFraction < 0 || FissionSearchFraction > 1 || FissionDaughterMargin < 0 || FissionDaughterMargin > 1 || FissionHousingRelief < 0 || FissionHousingRelief > 1 || FissionDaughterBuilderShare < 0 || FissionDaughterBuilderShare > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1)
                 throw new ArgumentException("Invalid fission configuration.");
             if (new[] { ImmigrationQualityWeight, ImmigrationDistanceCost, ImmigrationAttachmentCost, ImmigrationToSedentaryCost, ImmigrationToNomadicCost, ImmigrationDeadband, ImmigrationMaxFraction }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || ImmigrationQualityWeight < 0 || ImmigrationQualityWeight > 10 || ImmigrationDistanceCost < 0 || ImmigrationDistanceCost > 5 || ImmigrationAttachmentCost < 0 || ImmigrationAttachmentCost > 5 || ImmigrationToSedentaryCost < 0 || ImmigrationToSedentaryCost > 5 || ImmigrationToNomadicCost < 0 || ImmigrationToNomadicCost > 5 || ImmigrationDeadband <= 0 || ImmigrationDeadband > 5 || ImmigrationMaxFraction < 0 || ImmigrationMaxFraction > .5 || ImmigrationRadius < 1 || ImmigrationRadius > 5 || ImmigrationReturnCooldownTurns < 0 || ImmigrationReturnCooldownTurns > 20 || double.IsNaN(ImmigrationReturnPenalty) || double.IsInfinity(ImmigrationReturnPenalty) || ImmigrationReturnPenalty < 0 || ImmigrationReturnPenalty > 5 || ImmigrationMinimumGroup < 1 || ImmigrationSourceFloor < 1
-                || TradeRange < 1 || TradeRange > 20 || TradeRequisitionsPerCamp < 1 || TradeRequisitionsPerCamp > 10 || TradeListLength < 1 || TradeListLength > 10 || double.IsNaN(TradeMargin) || double.IsInfinity(TradeMargin) || TradeMargin < 0 || TradeMargin > 5 || double.IsNaN(TradeDistanceCostPerHex) || double.IsInfinity(TradeDistanceCostPerHex) || TradeDistanceCostPerHex < 0 || TradeDistanceCostPerHex > 1 || double.IsNaN(TradeExportLabourShare) || TradeExportLabourShare < 0 || TradeExportLabourShare > 1)
+                || TradeRange < 1 || TradeRange > 20 || TradeRequisitionsPerCamp < 1 || TradeRequisitionsPerCamp > 10 || TradeListLength < 1 || TradeListLength > 10 || double.IsNaN(TradeMargin) || double.IsInfinity(TradeMargin) || TradeMargin < 0 || TradeMargin > 5 || double.IsNaN(TradeDistanceCostPerHex) || double.IsInfinity(TradeDistanceCostPerHex) || TradeDistanceCostPerHex < 0 || TradeDistanceCostPerHex > 1 || double.IsNaN(TradeExportLabourShare) || TradeExportLabourShare < 0 || TradeExportLabourShare > 1
+                || double.IsNaN(GoodsBaseStoragePerResident) || double.IsInfinity(GoodsBaseStoragePerResident) || GoodsBaseStoragePerResident < 0
+                || double.IsNaN(GoodsStorageSpacePerUnit) || double.IsInfinity(GoodsStorageSpacePerUnit) || GoodsStorageSpacePerUnit <= 0)
                 throw new ArgumentException("Invalid immigration or trade configuration.");
             if (double.IsNaN(BaseBirthRate) || double.IsInfinity(BaseBirthRate) || double.IsNaN(QoLMortalityElasticity) || double.IsInfinity(QoLMortalityElasticity) || BaseBirthRate <= 0 || BaseBirthRate > .2 || QoLMortalityElasticity <= 0 || QoLMortalityElasticity > 20 || QoLMortalityEnabled && BaseBirthRate <= AnnualHumanGrowthRate)
                 throw new ArgumentException("Invalid QoL mortality configuration: BaseBirthRate must exceed AnnualHumanGrowthRate and the elasticity must be positive.");
@@ -447,7 +455,7 @@ namespace Anthropocene.Simulation
         internal void Bind(Society owner) { people = owner; SocietyId = owner.Id; Player = owner.Player; }
         // A planning view sharing every field but a private inventory copy (trade
         // deltas, Trade.ApplyToPlanningInventory). Read-only like the camp itself.
-        internal Camp WithPrivateInventory() { var view = (Camp)MemberwiseClone(); view.Inventory = Inventory.Copy(); view.TradeExports = (double[])TradeExports?.Clone(); view.TradeImports = (double[])TradeImports?.Clone(); view.TradeOwed = null; return view; }
+        internal Camp WithPrivateInventory() { var view = (Camp)MemberwiseClone(); view.Inventory = Inventory.Copy(); view.TradeExports = (double[])TradeExports?.Clone(); view.TradeImports = (double[])TradeImports?.Clone(); view.TradeOwed = null; view.GoodsStorage = null; return view; }
         // Docs/Trade.md: the made-to-order part of goods this camp has agreed to deliver this turn after its
         // production, by CraftGood (the stock part has already left its stock, into escrow). Set on planning views
         // and, for the duration of production only, on the resolving camp. Demand adds it; never saved.
@@ -460,6 +468,9 @@ namespace Anthropocene.Simulation
         internal double TradeHeldForExport(CraftGood good) => Math.Max(0, TradeExport(good) - TradeOutstanding(good));
         // Goods this camp will receive after production and already counts as stock for its needs: never a recipe input this turn.
         [NonSerialized] internal double[] TradeImports;
+        // While the turn resolves with goods storage on: this camp's storage terms (Docs/PlannerTradeStorageDesign.md §3), set
+        // before the opening trade settlement and cleared at end-of-turn storage. Transient, never saved.
+        [NonSerialized] internal GoodsStorage GoodsStorage;
         internal double TradeImport(CraftGood good) => TradeImports == null ? 0 : TradeImports[(int)good];
         // Compatibility accessors for one-camp callers; society owns and serializes the data.
         public double[] Experience { get => People.Experience; set => People.Experience = value; }

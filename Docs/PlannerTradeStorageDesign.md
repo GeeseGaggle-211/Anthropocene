@@ -157,12 +157,69 @@ Without this guard, storage turns into a survival risk set by craft decisions.
 
 ### 3.5 Valuation effects
 
-- **Value is cut off at the room.** Each good's curve is truncated at free room, so overflow has no local value. That
-  is what turns stock into Export marks and stops imports into a full store.
+- **Value is cut off at the room (phase V, not S).** Each good's curve is truncated at free room, so overflow has no
+  local value. That is what turns stock into Export marks and stops imports into a full store.
+  - Phase S tried a per-good cut-off on the current trade curves and dropped it. A swap frees the room its given good
+    occupied, but a per-good cut-off cannot see that.
+  - In the fixture, an over-full Cloth camp valued Housing Material at zero, although trading Cloth away would have
+    made room for it.
+  - Phase V's curves must price the net room change of a pair. Until then, settlement alone enforces room (§3.3).
 - **Pots get a value from storage.** A Pot's value comes from the room it adds for both food and goods. This replaces
   the provisional Pots band (about 90 food per Pot, kept until now by decision) once P1 publishes Pots.
 - **Room as a planner input.** The planner treats room as a constrained input, like tool time. It does not make more
   goods than fit.
+
+### 3.6 Phase S implementation
+
+`GoodsStorage.cs` holds the rule:
+- `Begin` sets the turn's storage terms and in-use allowances;
+- `Capacity` and `FoodCapacity` apply the shared pool with the reserve guard;
+- `Occupied` measures the space goods take;
+- `Limit` cuts an addition to what fits, by bisection on a convex or monotone occupancy;
+- `Add` records an addition on a virtual stock.
+
+| Step | What happens |
+| --- | --- |
+| Turn start | `TurnResolver.Resolve` sets `Camp.GoodsStorage` (transient, never saved) from each camp's prepared needs, before the opening trade settlement. |
+| Production | `NeolithicProduction.Produce` cuts each step to `Limit`; inputs are consumed only for what is stored. |
+| Forecast | `MaterialEconomy.Forecast` applies the same rule to a virtual stock, so the prepared needs and the planner's reforecast see it. |
+| Trade settlement | The receiver's room is a third bound on each agreement's share, at the opening and after production. Both legs scale; refunds are never blocked. |
+| End of turn | `ApplyStorage` uses `FoodCapacity` and clears the terms. |
+
+These allowances come from the prepared plan (in the forecast, from useful demand): equipment outputs, which set Hand
+and Regular Tools in use, and Housing assembled, which sets Housing Material in use.
+
+The planner's own staffing pass is unchanged. That is planner-refactor work, so the planner may still staff work that
+storage then blocks.
+
+Checks are in `GoodsStorageChecks` (`--only=GoodsStorageChecks`). The census tools are
+`Tools/PerformanceAudit/Run-StorageAudit.py` and `Summarize-Storage.py`.
+
+### 3.7 Phase S census (4 October 2026)
+
+**Setup.** Five Standard/80 worlds (C1–C3, P1, A1), 50 post-opening turns, trade and immigration off, census
+configuration. Source is the phase S working tree on `a3466a1`; output is in `TestResults/Storage-S1` (ignored).
+
+| Variant | Husbandry gate | Population t50 | QoL t50 | Cloth / capita t50 | Discarded food t50 | Stored goods made |
+| --- | --- | --- | --- | --- | --- | --- |
+| off vs reference | **exact** on all five worlds | | | | | |
+| x = 4, s = 20 | pass (identical to off) | ±0 | ±0 | ±0 | ±0 | ±0 |
+| x = 2, s = 20 (default) | pass | +0.05% | +0.02% | +0.02% | ±0 | +0.02% |
+| x = 2, s = 5 | identical to x = 2, s = 20 | | | | | |
+| x = 1, s = 20 | pass (animals +6.6%, linked pop +8.6%) | +6.1% | −0.5% | +0.3% | −39% | +4.4% |
+
+**Reading.**
+- **Pots give goods no space today.** `s` does not matter (x2 and x2s5 are identical). Pots are made only up to the
+  food reserve target, and the reserve guard keeps that space for food. Goods are bounded by the base allowance
+  alone. Pots gain value from goods only once phase V prices storage.
+- **x = 2 (the default) barely binds.** Median holdings are about 1.1 goods units per resident, so x ≥ 4 never binds.
+- **x = 1 binds and outcomes rise.** Population is +6%, husbandry animals +7%, discarded food −39%, and QoL −0.5%.
+  - A plausible cause is fabric production cut by storage, which leaves its plant and animal food feedstock for
+    growth.
+  - This is one run per variant and has not been attributed. Run a ledger comparison before choosing x = 1 as a
+    calibration.
+- **Cost.** Planning time per turn rose by about 1–7% at x = 2, from the per-forecast storage terms (`Begin`, including
+  the Farm Tool need). This is one timing run on a shared machine.
 
 ## 4. Doctrine check
 
