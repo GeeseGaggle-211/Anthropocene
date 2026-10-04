@@ -263,6 +263,41 @@ The husbandry-first gate (no more than −5% and below 10×) passes at 25 and 50
 turns. The effect is small because trade moves stock, not production: a camp's
 planner adapts only from the turn after it trades.
 
+**Made-to-order census (commit `ff79821`): gate fails.** Same setup, with
+export claims and settlement between production and needs.
+
+- `off` still equals `reference` exactly on all five worlds.
+- `on` makes 3,163–4,269 trades per world over 50 turns. Housing Material is
+  now traded heavily (for food, Cloth and Animal Fabric), as is Animal Fabric
+  for food. The handshake costs 9–15 ms per turn on average (maximum 162 ms).
+- Of the made-to-order legs, a mean of 64–66% was delivered, and 2,054–2,756
+  per world (about half) were short.
+
+Pooled outcomes, trade on against off:
+
+| Turn | Population | Weighted QoL | Camps | Cultivation-first population | Husbandry-first population (median) | Husbandry-first animals (median) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 25 | −0.38% | 0.8597 → 0.8517 | 668 → 732 | −0.07% | +0.64% (−19.7%) | −0.20% (−16.7%) |
+| 50 | −1.11% | 0.8026 → 0.7862 | 3,091 → 3,451 | −7.59% | +0.92% (−13.8%) | +0.01% (−16.9%) |
+
+The husbandry-first medians fail the −5% gate. Totals do not move much, but
+there are more, smaller camps.
+
+**Diagnosis** (`--trade-resolve=<save>,1` with `TRADE_SHORT=1`, on the C1
+state after turn 46). Every short seller made exactly its prepared plan, and the
+plan carried only part of the export. For example, Housing Material: 27 planned
+against 314 owed, 13 against 263, 1 against 294; Cloth: 0 against 242.
+
+The export claim raises demand, but it does not bind the planner:
+
+- Housing Material is not a valued claim.
+- Nothing reserves labour or materials for an export.
+- Capacity is a labour share, not the planner's actual spare labour.
+
+Meanwhile buyers paid food at the opening and planned on the full import. That
+cost farming villages food (cultivation-first population −7.6% at 50 turns) and
+lowered QoL.
+
 **Earlier T0-only run (commit `89f7a54`).** With Cloth and Housing Material
 only, all 5,012 requisitions on the five worlds were ignored and outcomes
 equalled `off`. Housing Material has no boundary stock, and clothing was held

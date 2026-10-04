@@ -588,6 +588,21 @@ internal static class TradeChecks
             // Flows of one curve between one pair, by direction: a pair moving a curve both ways is a wash.
             var flows = prepared.Trade.Agreements.SelectMany(g => new[] { (From: g.Responder, To: g.Requester, Curve: Trade.Descriptor(g.Want).Curve), (From: g.Requester, To: g.Responder, Curve: Trade.Descriptor(g.Give).Curve) }).ToArray();
             int wash = flows.Count(f => f.From < f.To && flows.Any(o => o.From == f.To && o.To == f.From && o.Curve == f.Curve));
+            // TRADE_SHORT=1: list made-to-order legs delivered short, with the seller's planned and made output.
+            if (Environment.GetEnvironmentVariable("TRADE_SHORT") == "1")
+            {
+                new TurnResolver().Resolve(w, prepared); var rec = w.History.Last();
+                foreach (var g in rec.Trades.SelectMany(x => new[] { (Seller: x.Responder, Good: x.Want, Q: x.WantQuantity, F: x.Delivered, M: x.WantMadeToOrder), (Seller: x.Requester, Good: x.Give, Q: x.GiveQuantity, F: x.GiveDelivered, M: x.GiveMadeToOrder) }).Where(x => x.M).GroupBy(x => (x.Seller, x.Good)).Take(400))
+                {
+                    double owed = prepared.Needs[g.Key.Seller].Exports?[(int)Trade.Descriptor(g.Key.Good).Recipe.Value] ?? 0, f = g.Min(x => x.F);
+                    if (f > .999) continue;
+                    var made = rec.Production.Where(p => p.Camp == g.Key.Seller && p.Good == Trade.Descriptor(g.Key.Good).Recipe.Value).Sum(p => p.Output);
+                    var planned = prepared.Needs[g.Key.Seller].Production?[Trade.Descriptor(g.Key.Good).Recipe.Value] ?? 0;
+                    var camp = w.Camps.First(c => c.Id == g.Key.Seller);
+                    Console.WriteLine($"short {g.Key.Good} seller {g.Key.Seller} {camp.Technology} owed {owed:F1} fraction {f:F2} planned {planned:F1} made {made:F1} assign {string.Join(",", camp.Workforce.Assignments.Select(a => a.Role + "=" + a.Population))}");
+                }
+                return;
+            }
             try { new TurnResolver().Resolve(w, prepared); var tr = w.History.Last().Trades; Console.WriteLine("turn " + w.Turn + " ok, trades " + tr.Count + " pair washes " + wash + " | " + string.Join(", ", tr.GroupBy(x => x.Want + "<-" + x.Give).Select(gr => gr.Key + " " + gr.Count()))); }
             catch (InvalidOperationException e)
             {
