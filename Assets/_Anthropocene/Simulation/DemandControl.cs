@@ -169,11 +169,16 @@ namespace Anthropocene.Simulation
             double gapPeople = NeolithicProduction.HousingGapPeople(w, candidate, residents, endDays);
             double decayed = Math.Max(0, NeolithicProduction.HousingCapacity(w, c, w.Days).Total - NeolithicProduction.HousingCapacity(w, candidate, endDays).Total);
             double replacementPeople = Math.Min(gapPeople, decayed);
-            bool fixedRoute = CultivationEconomy.Enabled(c) && Usable(byGood[CraftGood.Housing]) && NeolithicProduction.Priority(candidate, CraftGood.Housing) > 0;
-            CraftGood shelterGood = fixedRoute ? CraftGood.Housing : CraftGood.LightHousing;
-            double peoplePerUnit = fixedRoute ? n.HousingPeoplePerUnit : n.LightHousingPeoplePerUnit;
-            Request("shelter replacement", ServiceClass.Continuity, shelterGood, replacementPeople / peoplePerUnit);
-            Request("shelter deficit", ServiceClass.Recovery, shelterGood, (gapPeople - replacementPeople) / peoplePerUnit);
+            // Permitted shelter form (v0.1 §6), one service with two routes and a fixed fallback order: the durable route
+            // (fixed Housing, where the camp can build) replaces this turn's decay, keeping the housing share that social
+            // cohesion rewards; the quick route (tents, from herd fabric) covers the remaining deficit. A camp with only one
+            // possible route uses it for both. Each person is claimed by one route only.
+            bool fixedPossible = CultivationEconomy.Enabled(c) && Usable(byGood[CraftGood.Housing]) && NeolithicProduction.Priority(candidate, CraftGood.Housing) > 0;
+            bool tentsPossible = CultivationEconomy.HusbandryEnabled(c) && Usable(byGood[CraftGood.LightHousing]) && NeolithicProduction.Priority(candidate, CraftGood.LightHousing) > 0;
+            CraftGood durable = fixedPossible ? CraftGood.Housing : CraftGood.LightHousing, quick = tentsPossible ? CraftGood.LightHousing : CraftGood.Housing;
+            double PerUnit(CraftGood g) => g == CraftGood.Housing ? n.HousingPeoplePerUnit : n.LightHousingPeoplePerUnit;
+            Request("shelter replacement", ServiceClass.Continuity, durable, replacementPeople / PerUnit(durable));
+            Request("shelter deficit", ServiceClass.Recovery, quick, (gapPeople - replacementPeople) / PerUnit(quick));
             // Field and herd equipment for the work staffed (continuity of retained assets).
             Request("farm tools", ServiceClass.Continuity, CraftGood.FarmTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.FarmTools, years, residents, false, false, d.Sources)));
             Request("herding tools", ServiceClass.Continuity, CraftGood.HerdingTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.HerdingTools, years, residents, false, false, d.Sources)));
