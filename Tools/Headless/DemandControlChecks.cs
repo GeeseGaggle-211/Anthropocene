@@ -136,6 +136,12 @@ internal static class DemandControlChecks
         NeolithicProduction.AddFixedHousing(w, c, 0.1, w.Days);
         var intent = Plan(w, c, out _, out var allocation);
         Check(EconomicIntents.Validate(Constraints(w, c), intent) == null, "a saturated plan is legal");
+        // Every resident needed for survival (census C1 turn 51: 64 herders for 64 residents): no zero-person role remains.
+        var herdsOnly = World(EconomicAllocationStrategy.DemandControl, (6, 6, 10)); var hc = CampOf(herdsOnly, 1);
+        hc.Technologies[(int)Technology.AnimalHusbandry] = true; hc.Inventory.Wood = 0; hc.Inventory.Stone = 0; hc.Inventory.Clay = 0;
+        herdsOnly.Herds.Add(new Herd { Id = herdsOnly.NextId++, Tile = hc.Tile, Animals = 400, DomesticCamp = hc.Id });
+        var herdIntent = Plan(herdsOnly, hc, out _, out _);
+        Check(herdIntent.Assignments.All(a => a.Population > 0) && EconomicIntents.Validate(Constraints(herdsOnly, hc), herdIntent) == null, "a camp whose residents all herd gets no zero-person role");
         Check(intent.Assignments.Sum(a => a.Population) + intent.Labor.MaterialGatherers <= c.Population + 1e-9, "a saturated plan fits the residents");
         Check(allocation.Requests.Where(q => q.Units > q.Granted + 1e-6).All(q => q.Unmet.Length > 0), "every shortfall names its cause");
         // Materials: no Wood or Clay in reach leaves Housing Material unmade, attributed to material shortage.
