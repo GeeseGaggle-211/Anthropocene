@@ -338,12 +338,12 @@ namespace Anthropocene.Simulation
             int foodConsumers = residents + departing + connectedHunters;
             double intervals = prepared.Horizon.ReferenceIntervals, years = prepared.Horizon.Years;
             double consumptionRequired = foodConsumers * world.Config.Consumption * intervals;
-            TurnResolver.FoodBucketTargets(world, planningCamp, intervals, years, consumptionRequired, camp.Food,
+            TurnResolver.FoodBucketTargets(world, planningCamp, intervals, years, consumptionRequired, planningCamp.Food,
                 out double consumptionTarget, out double reserveTarget, out double reserveFillTarget, out double growthFoodTarget);
             var needs = new TurnNeeds
             {
                 Camp = camp.Id, Residents = residents, LinkedPopulation = linkedPopulation,
-                FoodConsumers = foodConsumers, OpeningCampFood = camp.Food, OpeningAnimalFood = camp.AnimalFood,
+                FoodConsumers = foodConsumers, OpeningCampFood = planningCamp.Food, OpeningAnimalFood = planningCamp.AnimalFood,
                 ConsumptionRequired = consumptionRequired,
                 ConsumptionTarget = consumptionTarget, ReserveTarget = reserveTarget,
                 ReserveFillTarget = reserveFillTarget, GrowthFoodTarget = growthFoodTarget,
@@ -371,7 +371,7 @@ namespace Anthropocene.Simulation
                 var clothing = NeolithicProduction.ClothingNeedFeedstock(world.Config.Neolithic, residents, years,
                     planningCamp.Inventory.Cloth, planningCamp.Inventory.AnimalFabric, needs.PlantFeedstock, needs.AnimalFeedstock);
                 needs.PlantClothingFeedstock = clothing.Plant; needs.AnimalClothingFeedstock = clothing.Animal;
-                NeolithicProduction.FeedstockGaps(camp.Food, camp.PlantFood, camp.AnimalFood, needs.ConsumptionRequired, needs.ReserveTarget,
+                NeolithicProduction.FeedstockGaps(planningCamp.Food, planningCamp.PlantFood, planningCamp.AnimalFood, needs.ConsumptionRequired, needs.ReserveTarget,
                     needs.PlantFeedstock, needs.AnimalFeedstock, clothing, out double plantGap, out double animalGap);
                 needs.PlantFeedstockGap = plantGap; needs.AnimalFeedstockGap = animalGap;
             }
@@ -385,7 +385,7 @@ namespace Anthropocene.Simulation
             var view = PlanningCampAt(camp, tile);
             if (trade == null || !trade.Deltas.TryGetValue(camp.Id, out var delta)) return view;
             if (ReferenceEquals(view, camp)) view = camp.WithPrivateInventory();
-            Trade.ApplyToPlanningInventory(view.Inventory, delta);
+            Trade.ApplyToPlanningCamp(view, delta);
             return view;
         }
 

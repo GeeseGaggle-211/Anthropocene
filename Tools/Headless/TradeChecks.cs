@@ -20,7 +20,7 @@ internal static class TradeChecks
     // Material unit is worth the Housing unit it completes.
     private static WorldState World(params (int x, int y, double cloth, double material)[] traders)
     {
-        var cfg = SimulationConfig.Small(1); cfg.TradeEnabled = true; cfg.Width = 24; cfg.Height = 16; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0; cfg.ContactExpiryTurns = 50;
+        var cfg = SimulationConfig.Small(1); cfg.TradeEnabled = true; cfg.TradeFoodEnabled = false; cfg.Width = 24; cfg.Height = 16; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0; cfg.ContactExpiryTurns = 50;
         var w = new WorldState { Seed = 202, Config = cfg, Generation = new GenerationReport(), Tiles = new Tile[cfg.Width * cfg.Height] };
         for (int i = 0; i < w.Tiles.Length; i++)
         {
@@ -44,6 +44,8 @@ internal static class TradeChecks
         foreach (var t in w.Tiles) t.LastEcologyUpdateDays = w.Days;
         return w;
     }
+    private static double V(Trade.Valuation v, TradeGood g) => ((ExponentialCurve)v.Curve(g)).V;
+    private static double N(Trade.Valuation v, TradeGood g) => ((ExponentialCurve)v.Curve(g)).N;
     private static void Agricultural(Camp c) { c.Technology = Technology.Cultivation; c.Technologies[(int)Technology.Cultivation] = true; c.People.Progression.Era = Era.Neolithic; }
     private static void Remember(WorldState w, Camp observer, Camp other)
         => ContactKnowledge.MemoryOf(w, observer.People).Upsert(other.Id, other.Player, other.Tile, w.Turn, ContactSource.Sighting);
@@ -54,7 +56,7 @@ internal static class TradeChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Valuation(); Handshake(); Eligibility(); Kin(); Settlement(); Planning(); Replay(); Persistence();
+        checks = 0; Config(); Valuation(); Handshake(); Eligibility(); Kin(); Settlement(); Planning(); Replay(); Persistence(); Registry(); Food();
         Console.WriteLine("PASS: " + checks + " trade assertions"); return checks;
     }
 
@@ -71,6 +73,7 @@ internal static class TradeChecks
     private static void Config()
     {
         var c = new SimulationConfig();
+        Check(c.TradeFoodEnabled && !c.TradeFoodSafeOnly, "food is in the tradeable set by default with welfare-valued growth food");
         Check(!c.TradeEnabled && c.TradeRange == 6 && c.TradeRequisitionsPerCamp == 3 && c.TradeMargin == .10 && c.TradeDistanceCostPerHex == .01, "trade defaults are off with the specified levers");
         foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.TradeRange = 0, x => x.TradeRange = 21, x => x.TradeRequisitionsPerCamp = 0, x => x.TradeRequisitionsPerCamp = 11,
             x => x.TradeMargin = -.1, x => x.TradeMargin = double.NaN, x => x.TradeDistanceCostPerHex = -.01, x => x.TradeDistanceCostPerHex = 1.5 })
@@ -81,16 +84,17 @@ internal static class TradeChecks
         var serializer = new DataContractSerializer(typeof(SimulationConfig)); string xml;
         using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { TradeEnabled = true, TradeRange = 4 }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
         Check(xml.Contains("<TradeEnabled>true</TradeEnabled>") && xml.Contains("<TradeRange>4</TradeRange>"), "trade levers are serialized");
-        string legacy = Regex.Replace(xml, "<Trade(Enabled|Range|RequisitionsPerCamp|Margin|DistanceCostPerHex)>[^<]*</Trade\\1>", "");
+        string legacy = Regex.Replace(xml, "<Trade(Enabled|Range|RequisitionsPerCamp|Margin|DistanceCostPerHex|FoodEnabled|FoodSafeOnly)>[^<]*</Trade\\1>", "");
         Check(legacy != xml && !legacy.Contains("<TradeEnabled") && !legacy.Contains("<TradeRange"), "legacy fixture omits every trade field");
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy)))
         {
             var old = (SimulationConfig)serializer.ReadObject(stream);
+            Check(old.TradeFoodEnabled && !old.TradeFoodSafeOnly, "an older config loads the food levers at their defaults");
             Check(!old.TradeEnabled && old.TradeRange == 6 && old.TradeRequisitionsPerCamp == 3 && old.TradeMargin == .10 && old.TradeDistanceCostPerHex == .01, "an older config loads with trade disabled and the default levers");
             old.Validate(); checks++;
         }
         string json = File.ReadAllText(FindConfig());
-        foreach (var pair in new[] { ("TradeEnabled", "false"), ("TradeRange", "6"), ("TradeRequisitionsPerCamp", "3"), ("TradeMargin", "0.1"), ("TradeDistanceCostPerHex", "0.01") })
+        foreach (var pair in new[] { ("TradeEnabled", "false"), ("TradeRange", "6"), ("TradeRequisitionsPerCamp", "3"), ("TradeMargin", "0.1"), ("TradeDistanceCostPerHex", "0.01"), ("TradeFoodEnabled", "true"), ("TradeFoodSafeOnly", "false") })
         {
             var m = Regex.Match(json, "\"" + pair.Item1 + "\":\\s*([0-9.a-z]+)");
             Check(m.Success && m.Groups[1].Value == pair.Item2, "OpeningConfig.json carries " + pair.Item1);
@@ -112,36 +116,36 @@ internal static class TradeChecks
         var w = Complementary(); var cfg = w.Config; var n = cfg.Neolithic; var c = CampOf(w, 2); var v = Trade.Value(w, c);
         double years = cfg.TurnDays / cfg.DaysPerYear;
         double e = c.RudimentaryExpectation, b = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio, s = NeolithicProduction.SocialCohesion(w, c, c.Population);
-        Near(v.ClothingValue, n.RudimentaryWeightClothing * e * b * s * (n.ReferenceTurnYears / n.FabricConsumptionPerPersonTurn), "the clothing curve's first unit is ClaimValuation's");
-        Near(v.ClothingNeed, c.Population * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears, "the clothing need is this turn's requirement");
-        Near(v.ClothingPosition, c.Inventory.Cloth + c.Inventory.AnimalFabric, "the clothing position counts Cloth and Animal Fabric");
+        Near(V(v, TradeGood.Cloth), n.RudimentaryWeightClothing * e * b * s * (n.ReferenceTurnYears / n.FabricConsumptionPerPersonTurn), "the clothing curve's first unit is ClaimValuation's");
+        Near(N(v, TradeGood.Cloth), c.Population * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears, "the clothing need is this turn's requirement");
+        Near(v.Position(TradeGood.Cloth), c.Inventory.Cloth + c.Inventory.AnimalFabric, "the clothing position counts Cloth and Animal Fabric");
         double life = 1 / (-Math.Log(1 - n.HousingDecayPerTurn) / n.ReferenceTurnYears + n.DiscountRatePerYear);
-        Near(v.HousingValue, n.HousingPeoplePerUnit * n.RudimentaryWeightHousing * e * b * s * life, "a Housing Material unit is worth the Housing unit it completes");
-        Near(v.HousingNeed, NeolithicProduction.Demand(w, c, CraftGood.Housing, years, c.Population), "with no shelter the housing need is the Housing demand");
-        Check(v.HousingNeed > 0 && v.CanBuild, "fixture: the camp needs housing and can build");
+        Near(V(v, TradeGood.HousingMaterial), n.HousingPeoplePerUnit * n.RudimentaryWeightHousing * e * b * s * life, "a Housing Material unit is worth the Housing unit it completes");
+        Near(N(v, TradeGood.HousingMaterial), NeolithicProduction.Demand(w, c, CraftGood.Housing, years, c.Population), "with no shelter the housing need is the Housing demand");
+        Check(N(v, TradeGood.HousingMaterial) > 0 && V(v, TradeGood.HousingMaterial) > 0, "fixture: the camp needs housing and can build");
         // Integrated value: closed form, additive, monotone with diminishing increments.
         double k = n.ValueCurveSteepness;
-        Near(v.Integrated(CraftGood.HousingMaterial, 2, 7), Integral(v.HousingValue, v.HousingNeed, k, 2, 7), "integrated housing value matches the closed form");
-        Near(v.Integrated(CraftGood.Cloth, 0, 30) + v.Integrated(CraftGood.Cloth, 30, 50), v.Integrated(CraftGood.Cloth, 0, 50), "integrated value is additive");
+        Near(v.Integrated(TradeGood.HousingMaterial, 2, 7), Integral(V(v, TradeGood.HousingMaterial), N(v, TradeGood.HousingMaterial), k, 2, 7), "integrated housing value matches the closed form");
+        Near(v.Integrated(TradeGood.Cloth, 0, 30) + v.Integrated(TradeGood.Cloth, 30, 50), v.Integrated(TradeGood.Cloth, 0, 50), "integrated value is additive");
         double last = double.PositiveInfinity, total = 0;
         for (int i = 0; i < 20; i++)
         {
-            double step = v.Integrated(CraftGood.HousingMaterial, i, i + 1); total += step;
+            double step = v.Integrated(TradeGood.HousingMaterial, i, i + 1); total += step;
             Check(step > 0 && step < last, "each further unit adds less (unit " + i + ")"); last = step;
-            Check(Math.Abs(total - v.Integrated(CraftGood.HousingMaterial, 0, i + 1)) < 1e-9 * Math.Max(1, total), "the gain is monotone and cumulative");
+            Check(Math.Abs(total - v.Integrated(TradeGood.HousingMaterial, 0, i + 1)) < 1e-9 * Math.Max(1, total), "the gain is monotone and cumulative");
         }
-        Near(v.Gain(CraftGood.HousingMaterial, 10), v.Integrated(CraftGood.HousingMaterial, v.HousingPosition, v.HousingPosition + 10), "gain integrates above the current position");
-        Near(v.Loss(CraftGood.HousingMaterial, 10), v.Integrated(CraftGood.HousingMaterial, v.HousingPosition - 10, v.HousingPosition), "loss integrates below the current position");
+        Near(v.Gain(TradeGood.HousingMaterial, 10), v.Integrated(TradeGood.HousingMaterial, v.Position(TradeGood.HousingMaterial), v.Position(TradeGood.HousingMaterial) + 10), "gain integrates above the current position");
+        Near(v.Loss(TradeGood.HousingMaterial, 10), v.Integrated(TradeGood.HousingMaterial, v.Position(TradeGood.HousingMaterial) - 10, v.Position(TradeGood.HousingMaterial)), "loss integrates below the current position");
         // A camp without Construction (or without agriculture) values Housing Material at nothing.
         c.People.NeolithicTechnologies.Remove(NeolithicTech.Construction);
         var noBuild = Trade.Value(w, c);
-        Check(!noBuild.CanBuild && noBuild.Gain(CraftGood.HousingMaterial, 5) == 0 && noBuild.Marginal(CraftGood.HousingMaterial, 0) == 0, "Housing Material is worthless to a camp that cannot build");
+        Check(!(V(noBuild, TradeGood.HousingMaterial) > 0) && noBuild.Gain(TradeGood.HousingMaterial, 5) == 0 && noBuild.Marginal(TradeGood.HousingMaterial, 0) == 0, "Housing Material is worthless to a camp that cannot build");
         // The requester's best 1:1 quantity equalizes the two marginal values, within its give stock.
         var rw = Complementary(); var r = Trade.Value(rw, CampOf(rw, 1));
-        double q = Trade.BestQuantity(r, CraftGood.HousingMaterial, CraftGood.Cloth);
-        Check(q > 0 && q < r.Cloth, "the best quantity is interior");
-        Near(r.Marginal(CraftGood.HousingMaterial, r.HousingPosition + q), r.Marginal(CraftGood.Cloth, r.ClothingPosition - q), "at the best quantity the marginal want equals the marginal give", 1e-6);
-        Check(Trade.BestQuantity(r, CraftGood.Cloth, CraftGood.HousingMaterial) == 0, "a camp with no Housing Material cannot offer it");
+        double q = Trade.BestQuantity(r, TradeGood.HousingMaterial, TradeGood.Cloth);
+        Check(q > 0 && q < r.Held[(int)TradeGood.Cloth], "the best quantity is interior");
+        Near(r.Marginal(TradeGood.HousingMaterial, r.Position(TradeGood.HousingMaterial) + q), r.Marginal(TradeGood.Cloth, r.Position(TradeGood.Cloth) - q), "at the best quantity the marginal want equals the marginal give", 1e-6);
+        Check(Trade.BestQuantity(r, TradeGood.Cloth, TradeGood.HousingMaterial) == 0, "a camp with no Housing Material cannot offer it");
     }
 
     private static void Handshake()
@@ -156,25 +160,25 @@ internal static class TradeChecks
             Check(a.Distance == w.Map.Distance(w.Camps.First(c => c.Id == a.Requester).Tile, w.Camps.First(c => c.Id == a.Responder).Tile), "the agreement records the hex distance");
         }
         var honoured = plan.Agreements.Single(a => !a.Countered); var countered = plan.Agreements.Single(a => a.Countered);
-        Check(honoured.Requester == material && honoured.Want == CraftGood.Cloth && honoured.Ratio == 1, "the material-rich camp asks for cloth and is honoured at 1:1");
-        Check(countered.Requester == cloth && countered.Want == CraftGood.HousingMaterial && countered.Ratio > 1, "the cloth-rich camp's second request is countered above 1:1");
+        Check(honoured.Requester == material && honoured.Want == TradeGood.Cloth && honoured.Ratio == 1, "the material-rich camp asks for cloth and is honoured at 1:1");
+        Check(countered.Requester == cloth && countered.Want == TradeGood.HousingMaterial && countered.Ratio > 1, "the cloth-rich camp's second request is countered above 1:1");
         // Every counter sits at the responder's floor: its gain (after transport) is exactly (1 + m) of its loss.
         {
             var fresh = Complementary(); var p = Trade.Value(fresh, fresh.Camps.First(c => c.Id == countered.Responder)); var r = Trade.Value(fresh, fresh.Camps.First(c => c.Id == countered.Requester));
             // Replay the honoured agreement first (canonical order: responder IDs ascending).
-            p.Apply(CraftGood.Cloth, honoured.WantQuantity); p.Apply(CraftGood.HousingMaterial, -honoured.GiveQuantity);
-            r.Apply(CraftGood.Cloth, -honoured.WantQuantity); r.Apply(CraftGood.HousingMaterial, honoured.GiveQuantity);
+            p.Apply(TradeGood.Cloth, honoured.WantQuantity); p.Apply(TradeGood.HousingMaterial, -honoured.GiveQuantity);
+            r.Apply(TradeGood.Cloth, -honoured.WantQuantity); r.Apply(TradeGood.HousingMaterial, honoured.GiveQuantity);
             double transport = cfg.TradeDistanceCostPerHex * countered.Distance;
-            Near(p.Gain(CraftGood.Cloth, countered.GiveQuantity) * (1 - transport), (1 + cfg.TradeMargin) * p.Loss(CraftGood.HousingMaterial, countered.WantQuantity), "the counter is the responder's floor", 1e-6);
-            Check(r.Gain(CraftGood.HousingMaterial, countered.WantQuantity) * (1 - transport) >= (1 + cfg.TradeMargin) * r.Loss(CraftGood.Cloth, countered.GiveQuantity) - 1e-9, "the requester accepts the counter inside its limit");
+            Near(p.Gain(TradeGood.Cloth, countered.GiveQuantity) * (1 - transport), (1 + cfg.TradeMargin) * p.Loss(TradeGood.HousingMaterial, countered.WantQuantity), "the counter is the responder's floor", 1e-6);
+            Check(r.Gain(TradeGood.HousingMaterial, countered.WantQuantity) * (1 - transport) >= (1 + cfg.TradeMargin) * r.Loss(TradeGood.Cloth, countered.GiveQuantity) - 1e-9, "the requester accepts the counter inside its limit");
         }
         // Deltas conserve each good and sum the agreements.
-        Near(plan.Deltas.Values.Sum(d => d.Cloth), 0, "cloth deltas sum to zero", 1e-9);
-        Near(plan.Deltas.Values.Sum(d => d.HousingMaterial), 0, "housing material deltas sum to zero", 1e-9);
-        Near(plan.Deltas[material].Cloth, plan.Agreements.Where(a => a.Requester == material && a.Want == CraftGood.Cloth).Sum(a => a.WantQuantity) + plan.Agreements.Where(a => a.Responder == material && a.Give == CraftGood.Cloth).Sum(a => a.GiveQuantity), "a camp's delta sums its agreements");
+        Near(plan.Deltas.Keys.Sum(id => plan.Delta(id, TradeGood.Cloth)), 0, "cloth deltas sum to zero", 1e-9);
+        Near(plan.Deltas.Keys.Sum(id => plan.Delta(id, TradeGood.HousingMaterial)), 0, "housing material deltas sum to zero", 1e-9);
+        Near(plan.Delta(material, TradeGood.Cloth), plan.Agreements.Where(a => a.Requester == material && a.Want == TradeGood.Cloth).Sum(a => a.WantQuantity) + plan.Agreements.Where(a => a.Responder == material && a.Give == TradeGood.Cloth).Sum(a => a.GiveQuantity), "a camp's delta sums its agreements");
         foreach (var c in w.Camps.Where(c => plan.Changes(c.Id)))
         {
-            Check(c.Inventory.Cloth + plan.Deltas[c.Id].Cloth >= -1e-9 && c.Inventory.HousingMaterial + plan.Deltas[c.Id].HousingMaterial >= -1e-9, "no camp is promised more stock than it holds");
+            Check(c.Inventory.Cloth + plan.Delta(c.Id, TradeGood.Cloth) >= -1e-9 && c.Inventory.HousingMaterial + plan.Delta(c.Id, TradeGood.HousingMaterial) >= -1e-9, "no camp is promised more stock than it holds");
         }
         // The plan is pure: computing it again, or after a draft, changes nothing.
         string Canon(TradePlan x) => string.Join(";", x.Agreements.Select(a => a.Requester + ">" + a.Responder + ":" + a.Want + ":" + a.WantQuantity.ToString("R") + ":" + a.GiveQuantity.ToString("R")));
@@ -244,7 +248,7 @@ internal static class TradeChecks
         // Settlement moves exactly the agreed quantities, conserves each good and records canonically.
         var w = Complementary(); var plan = Trade.Plan(w); var record = new TurnRecord { Turn = w.Turn };
         double cloth = w.Camps.Sum(c => c.Inventory.Cloth), material = w.Camps.Sum(c => c.Inventory.HousingMaterial);
-        var expected = w.Camps.ToDictionary(c => c.Id, c => (c.Inventory.Cloth + (plan.Deltas.TryGetValue(c.Id, out var d) ? d.Cloth : 0), c.Inventory.HousingMaterial + (plan.Deltas.TryGetValue(c.Id, out var e) ? e.HousingMaterial : 0)));
+        var expected = w.Camps.ToDictionary(c => c.Id, c => (c.Inventory.Cloth + plan.Delta(c.Id, TradeGood.Cloth), c.Inventory.HousingMaterial + plan.Delta(c.Id, TradeGood.HousingMaterial)));
         Trade.Settle(w, plan, record);
         Near(w.Camps.Sum(c => c.Inventory.Cloth), cloth, "settlement conserves cloth"); Near(w.Camps.Sum(c => c.Inventory.HousingMaterial), material, "settlement conserves housing material");
         foreach (var c in w.Camps) { Near(c.Inventory.Cloth, expected[c.Id].Item1, "camp " + c.Id + " receives its planned cloth"); Near(c.Inventory.HousingMaterial, expected[c.Id].Item2, "camp " + c.Id + " receives its planned material"); }
@@ -259,8 +263,8 @@ internal static class TradeChecks
         // A short side scales both sides of that agreement in proportion.
         var s = Complementary(); var sp = Trade.Plan(s); var first = sp.Agreements[0];
         var responder = s.Camps.First(c => c.Id == first.Responder);
-        double held = first.Want == CraftGood.Cloth ? responder.Inventory.Cloth : responder.Inventory.HousingMaterial;
-        if (first.Want == CraftGood.Cloth) responder.Inventory.Cloth = first.WantQuantity / 2; else responder.Inventory.HousingMaterial = first.WantQuantity / 2;
+        double held = first.Want == TradeGood.Cloth ? responder.Inventory.Cloth : responder.Inventory.HousingMaterial;
+        if (first.Want == TradeGood.Cloth) responder.Inventory.Cloth = first.WantQuantity / 2; else responder.Inventory.HousingMaterial = first.WantQuantity / 2;
         var sr = new TurnRecord(); double sc = s.Camps.Sum(c => c.Inventory.Cloth), sm = s.Camps.Sum(c => c.Inventory.HousingMaterial);
         Trade.Settle(s, sp, sr);
         Near(sr.Trades[0].Delivered, .5, "a half-short responder delivers half"); Near(sr.Trades[0].GiveQuantity, first.GiveQuantity / 2, "the requester pays half");
@@ -346,23 +350,125 @@ internal static class TradeChecks
         Check(!loaded.Config.TradeEnabled && loaded.History.All(h => h.Trades != null && h.Trades.Count == 0 && h.TradeActivity == null), "a world saved with trade off loads disabled with empty journals");
     }
 
-    // Diagnostic (--trade-probe=<save>): trade on, then each eligible camp's curves, best direction and partner reach.
+    // The registry is data: one descriptor per TradeGood in order, curves shared by key, direction in O(goods).
+    private static void Registry()
+    {
+        Check(Trade.Registry.Select(d => (int)d.Id).SequenceEqual(Enumerable.Range(0, Enum.GetValues(typeof(TradeGood)).Length)), "every TradeGood has exactly one descriptor, in order");
+        Check(Trade.PartCount == Trade.Registry.Sum(d => d.Parts.Length) && Trade.PartIndex(TradeGood.Food, 2) == Trade.PartCount - 1, "parts are indexed contiguously");
+        var w = Complementary(); w.Config.TradeFoodEnabled = true; var v = Trade.Value(w, CampOf(w, 1));
+        Check(ReferenceEquals(v.Curve(TradeGood.Cloth), v.Curve(TradeGood.AnimalFabric)) && v.Position(TradeGood.Cloth) == v.Position(TradeGood.AnimalFabric), "Cloth and Animal Fabric share one clothing curve and position");
+        Check(Trade.BestQuantity(v, TradeGood.Cloth, TradeGood.AnimalFabric) == 0, "trading along one curve gains nothing");
+        // The request lists: wants by recoverable utility up to target coverage, gives by marginal loss, at most W each.
+        var (wants, gives) = Trade.Lists(v, w.Config.TradeListLength);
+        double Recoverable(TradeGood g) => v.Integrated(g, v.Position(g), Math.Max(v.Position(g), v.Curve(g).Target));
+        Check(wants.Length <= w.Config.TradeListLength && gives.Length <= w.Config.TradeListLength, "the lists are bounded by W");
+        Check(wants.Zip(wants.Skip(1), (a, b) => Recoverable(a) >= Recoverable(b)).All(x => x) && wants.All(g => Recoverable(g) > 0), "wants are ordered by recoverable utility");
+        Check(gives.All(g => v.Stock(g) > 0) && gives.Zip(gives.Skip(1), (a, b) => v.Marginal(a, v.Position(a) - 1e-9) <= v.Marginal(b, v.Position(b) - 1e-9)).All(x => x), "gives hold stock and are ordered by marginal loss");
+        var top = Trade.Registry.Select(d => d.Id).Where(g => Recoverable(g) > 1e-12).OrderByDescending(Recoverable).ThenBy(g => (int)g).First();
+        Check(wants[0] == top, "the first want is the good with the most recoverable utility");
+        var shortList = Trade.Lists(v, 1); Check(shortList.Wants.Length == 1 && shortList.Gives.Length == 1, "W = 1 keeps one want and one give");
+        // An inactive good is neither wanted nor given.
+        w.Config.TradeFoodEnabled = false; var off = Trade.Value(w, CampOf(w, 1));
+        Check(off.Stock(TradeGood.Food) == 0 && off.Marginal(TradeGood.Food, 0) == 0 && off.Curve(TradeGood.Food) == null, "food is inert when it is not traded");
+    }
+
+    // A farming village with food and no clothing beside a herding camp with Animal Fabric and little food.
+    private static WorldState FoodWorld()
+    {
+        var w = World((6, 6, 0, 0), (8, 6, 0, 0)); w.Config.TradeFoodEnabled = true;
+        var farmer = CampOf(w, 1); farmer.PlantFood = 30000; farmer.AnimalFood = 0; farmer.AquaticFood = 0;
+        var herder = CampOf(w, 2); herder.Technology = Technology.AnimalHusbandry; herder.Technologies[(int)Technology.Cultivation] = false; herder.Technologies[(int)Technology.AnimalHusbandry] = true;
+        herder.IsVillage = false; herder.PlantFood = 100; herder.AnimalFood = 200; herder.AquaticFood = 0; herder.Inventory.AnimalFabric = 400;
+        return w;
+    }
+    private static void Food()
+    {
+        var w = FoodWorld(); var cfg = w.Config; var farmer = CampOf(w, 1); var herder = CampOf(w, 2);
+        double years = cfg.TurnDays / cfg.DaysPerYear, intervals = cfg.GenerationIntervals;
+        // Bands: consumption of every linked consumer, then feedstock and reserve (protected), then growth, then surplus.
+        var v = Trade.Value(w, farmer); var bands = (BandCurve)v.Curve(TradeGood.Food);
+        double consumption = w.LinkedPopulation(farmer) * cfg.Consumption * intervals;
+        TurnResolver.FoodBucketBasis(w, farmer, intervals, years, consumption, out double reserve, out double growth);
+        double feed = NeolithicProduction.ClothingNeedUnits(cfg.Neolithic, farmer.Population, years, farmer.Inventory.Cloth, farmer.Inventory.AnimalFabric) * cfg.Neolithic.PlantFoodPerFabricUnit;
+        Near(bands.Ends[0], consumption, "the first band is this turn's consumption"); Near(bands.Ends[1], consumption + feed + reserve, "the protected band adds the clothing feedstock and the reserve");
+        Near(bands.Ends[2], consumption + feed + reserve + growth, "the growth band is the feasible growth food");
+        Near(bands.Values[0], ExpansionValuation.FoodValue(cfg, farmer), "consumption food is valued at v_food");
+        Check(bands.Values[0] >= bands.Values[1] && bands.Values[1] >= bands.Values[2] && bands.Marginal(bands.Ends[2] + 1) == 0, "band values decrease and surplus is worth nothing locally");
+        Near(v.Stock(TradeGood.Food), Math.Min(farmer.Food, farmer.Food - bands.Ends[1]), "only food above the protected band may be given");
+        Near(v.Position(TradeGood.Food), farmer.Food, "without a production history the envelope is the stock");
+        // The lagged envelope adds last turn's committed production.
+        var withIncome = Trade.Value(w, farmer, 500); Near(withIncome.Position(TradeGood.Food), farmer.Food + 500, "the envelope adds last turn's production");
+        // Herder short of food wants it and pays in Animal Fabric; the farmer short of clothing wants fabric.
+        var plan = Trade.Plan(w);
+        var buy = plan.Agreements.Where(a => a.Want == TradeGood.Food || a.Give == TradeGood.Food).ToArray();
+        Check(buy.Length > 0 && buy.All(a => (a.Want == TradeGood.Food ? a.Responder : a.Requester) == farmer.Id), "food flows from the farmer");
+        Check(buy.All(a => (a.Want == TradeGood.Food ? a.Give : a.Want) == TradeGood.AnimalFabric), "the herder pays in Animal Fabric");
+        double sold = buy.Sum(a => a.Want == TradeGood.Food ? a.WantQuantity : a.GiveQuantity);
+        Check(farmer.Food + plan.Delta(farmer.Id, TradeGood.Food) >= bands.Ends[1] - 1e-6, "the protected band is never debited (" + (farmer.Food - sold) + " >= " + bands.Ends[1] + ")");
+        Check(plan.Delta(herder.Id, TradeGood.Food) > 0 && plan.Delta(farmer.Id, TradeGood.AnimalFabric) > 0, "the herder imports food and the farmer imports fabric");
+        foreach (var a in buy) { var parts = a.Want == TradeGood.Food ? a.WantParts : a.GiveParts; Near(parts[0], parts.Sum(), "food moves in the seller's typed proportions (all plant)"); }
+        // Safe-only control: growth food is never exported.
+        var safe = FoodWorld(); safe.Config.TradeFoodSafeOnly = true; var sv = Trade.Value(safe, CampOf(safe, 1)); var sp = Trade.Plan(safe);
+        double safeSold = sp.Agreements.Sum(a => a.Want == TradeGood.Food && a.Responder == CampOf(safe, 1).Id ? a.WantQuantity : a.Give == TradeGood.Food && a.Requester == CampOf(safe, 1).Id ? a.GiveQuantity : 0);
+        Check(CampOf(safe, 1).Food - safeSold >= ((BandCurve)sv.Curve(TradeGood.Food)).Ends[2] - 1e-6 && safeSold <= sold + 1e-9, "safe-only exports nothing below the growth band");
+        // A camp at its protected band exports nothing.
+        var lean = FoodWorld(); var lf = CampOf(lean, 1); var lv = Trade.Value(lean, lf); lf.PlantFood = ((BandCurve)lv.Curve(TradeGood.Food)).Ends[1];
+        Check(Trade.Value(lean, lf).Stock(TradeGood.Food) <= 1e-9 && Trade.Plan(lean).Agreements.All(a => !(a.Want == TradeGood.Food && a.Responder == lf.Id)), "a camp at its protected band sells no food");
+        // Planning: imports enter the prepared envelope before demographic planning; nothing unconfirmed does.
+        var pw = FoodWorld(); var prepared = TurnPlanner.Prepare(pw, new Dictionary<int, List<Order>>());
+        foreach (var c in pw.Camps)
+            Near(prepared.Needs[c.Id].OpeningCampFood, c.Food + prepared.Trade.Delta(c.Id, TradeGood.Food), "camp " + c.Id + "'s prepared opening food is its committed food plus confirmed trade");
+        // Resolution: settles before dispatch, conserves food and typed food, and the resolver invariants hold.
+        var rw = FoodWorld(); double food0 = rw.Camps.Sum(c => c.Food); var rp = TurnPlanner.Prepare(rw, new Dictionary<int, List<Order>>());
+        var record = new TurnRecord(); var copy = SaveCodec.Load(SaveCodec.Save(rw));
+        Trade.Settle(copy, rp.Trade.Agreements.Count > 0 ? Trade.Plan(copy) : TradePlan.Empty, record);
+        Near(copy.Camps.Sum(c => c.Food), food0, "settlement conserves food"); Near(copy.Camps.Sum(c => c.PlantFood), rw.Camps.Sum(c => c.PlantFood), "settlement conserves plant food");
+        Check(record.Trades.Any(t => t.Want == TradeGood.Food || t.Give == TradeGood.Food), "a food trade settles");
+        new TurnResolver().Resolve(rw, rp); TurnResolver.Invariants(rw); checks++;
+        Check(rw.History.Last().Trades.Any(t => t.Want == TradeGood.Food || t.Give == TradeGood.Food), "a resolved turn records the food trade");
+        // Short delivery scales both sides: the seller lost half its food before settlement.
+        var sh = FoodWorld(); var shPlan = Trade.Plan(sh); var shFood = shPlan.Agreements.First(a => a.Want == TradeGood.Food || a.Give == TradeGood.Food);
+        var seller = sh.Camps.First(c => c.Id == (shFood.Want == TradeGood.Food ? shFood.Responder : shFood.Requester));
+        double owed = shPlan.Agreements.Where(a => (a.Want == TradeGood.Food ? a.Responder : a.Give == TradeGood.Food ? a.Requester : -1) == seller.Id).Sum(a => a.Want == TradeGood.Food ? a.WantQuantity : a.GiveQuantity);
+        seller.PlantFood = owed / 2; var shRecord = new TurnRecord(); double shTotal = sh.Camps.Sum(c => c.Food);
+        Trade.Settle(sh, shPlan, shRecord);
+        Check(shRecord.Trades.Any(t => t.Delivered < 1 - 1e-9) && sh.Camps.All(c => c.PlantFood >= -1e-12), "a short seller delivers in proportion and never goes negative");
+        Near(sh.Camps.Sum(c => c.Food), shTotal, "short delivery conserves food");
+        // Determinism with food: scalar against reversed 4-worker partitions, and draft against fresh preparation.
+        var worlds = new[] { FoodWorld(), FoodWorld() }; worlds[1].Camps.Reverse(); worlds[1].Societies.Reverse();
+        var workers = new[] { new PhaseExecution(), new PhaseExecution(4, 2, true, 1) };
+        for (int t = 0; t < 3; t++)
+        {
+            for (int i = 0; i < 2; i++) Advance(worlds[i], new TurnResolver(workers[i]));
+            Check(SaveCodec.Fingerprint(worlds[0]) == SaveCodec.Fingerprint(worlds[1]), "food trade replays identically across workers and order after turn " + t);
+        }
+        var da = FoodWorld(); var db = FoodWorld(); var draft = TurnPlanner.Draft(da, 0);
+        new TurnResolver().Resolve(da, TurnPlanner.Prepare(da, new Dictionary<int, List<Order>>(), null, null, draft)); Advance(db, new TurnResolver());
+        Check(SaveCodec.Fingerprint(da) == SaveCodec.Fingerprint(db), "a draft-backed food-trading turn equals a fresh one");
+        // Food off: no food moves.
+        var nf = FoodWorld(); nf.Config.TradeFoodEnabled = false;
+        Check(Trade.Plan(nf).Agreements.All(a => a.Want != TradeGood.Food && a.Give != TradeGood.Food), "with food off no food trades");
+    }
+
+    // Diagnostic (--trade-probe=<save>): trade on, then each eligible camp's direction, giveable stock and partner reach.
     public static void Probe(string path)
     {
         var w = SaveCodec.Load(File.ReadAllBytes(path)); w.Config.TradeEnabled = true; Ownership.Bind(w);
         var eligible = w.Camps.Where(c => Trade.Eligible(w, c)).OrderBy(c => c.Id).ToArray(); var ids = new HashSet<int>(eligible.Select(c => c.Id));
+        var production = Trade.LastProduction(w);
         Console.WriteLine("camps " + w.Camps.Count + " eligible " + eligible.Length + " turn " + w.Turn);
         int wanting = 0, withContacts = 0, inRange = 0;
         foreach (var c in eligible)
         {
-            var v = Trade.Value(w, c); var m = w.Config.TradeMargin;
-            double qa = Trade.BestQuantity(v, CraftGood.Cloth, CraftGood.HousingMaterial), qb = Trade.BestQuantity(v, CraftGood.HousingMaterial, CraftGood.Cloth);
-            var contacts = c.People.Memory.Contacts; var foreign = contacts.Where(k => !k.Moved && ids.Contains(k.Camp) && w.Camps.First(x => x.Id == k.Camp).SocietyId != c.SocietyId).ToArray();
+            var v = Trade.Value(w, c, production.TryGetValue(c.Id, out double p) ? p : 0); var (wantList, giveList) = Trade.Lists(v, w.Config.TradeListLength); double q = wantList.Length * giveList.Length;
+            var foreign = c.People.Memory.Contacts.Where(k => !k.Moved && ids.Contains(k.Camp) && w.Camps.First(x => x.Id == k.Camp).SocietyId != c.SocietyId).ToArray();
             int near = foreign.Count(k => w.Map.Distance(c.Tile, k.Tile) <= w.Config.TradeRange);
-            if (qa > 0 || qb > 0) wanting++; if (foreign.Length > 0) withContacts++; if (near > 0) inRange++;
-            Console.WriteLine($"{c.Id} pop={c.Population} tech={c.Technology} cloth={c.Inventory.Cloth:F1} fabric={c.Inventory.AnimalFabric:F1} hm={c.Inventory.HousingMaterial:F1} build={v.CanBuild} cv={v.ClothingValue:F3} cn={v.ClothingNeed:F1} hv={v.HousingValue:F2} hn={v.HousingNeed:F2} hp={v.HousingPosition:F2} qClothForHM={qa:F2} qHMForCloth={qb:F2} contacts={contacts.Count} foreign={foreign.Length} inRange={near} nearest={(foreign.Length > 0 ? foreign.Min(k => w.Map.Distance(c.Tile, k.Tile)) : -1)}");
+            if (q > 0) wanting++; if (foreign.Length > 0) withContacts++; if (near > 0) inRange++;
+            string goods = string.Join(" ", Trade.Registry.Select(d => d.Id).Select(g => g + "=" + v.Held[(int)g].ToString("F1") + "/" + v.Stock(g).ToString("F1") + "@" + v.Marginal(g, v.Position(g)).ToString("G3")));
+            Console.WriteLine($"{c.Id} pop={c.Population} tech={c.Technology} {goods} wants={string.Join(",", wantList)} gives={string.Join(",", giveList)} foreign={foreign.Length} inRange={near}");
         }
         Console.WriteLine($"wanting {wanting} withForeignContacts {withContacts} inRange {inRange}");
         var plan = Trade.Plan(w); Console.WriteLine($"requisitions {plan.Summary.Requisitions} honoured {plan.Summary.Honoured} countered {plan.Summary.Countered} ignored {plan.Summary.Ignored}");
+        foreach (var g in plan.Agreements.GroupBy(a => a.Want + "<-" + a.Give)) Console.WriteLine($"  {g.Key}: {g.Count()} agreements, want {g.Sum(a => a.WantQuantity):F1}, give {g.Sum(a => a.GiveQuantity):F1}");
     }
 }

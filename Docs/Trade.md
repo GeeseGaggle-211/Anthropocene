@@ -1,33 +1,36 @@
-# Trade between known settlements (phase 1: AI-to-AI barter of T0 goods)
+# Trade between known settlements (phase 1: AI-to-AI barter of goods and food)
 
 Status: **implemented, opt-in** (`TradeEnabled`, false by default, in
 `OpeningConfig.json` and in saves without the field). This is phase 1 of
-[TradeImmigrationPlannerPlan.md](TradeImmigrationPlannerPlan.md): WP7 (foundation)
-and WP8 (same-turn handshake in the planning pass) of
+[TradeImmigrationPlannerPlan.md](TradeImmigrationPlannerPlan.md): WP7 (foundation),
+WP8 (same-turn handshake in the planning pass) and WP9 (food) of
 [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md), following
-[QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) §6. Food (WP9) is the next step
-and is not traded yet.
+[QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) §6–7. The tradeable set is
+Cloth, Animal Fabric, Housing Material (T0 + T1) and food (TF).
 
 Code: `Assets/_Anthropocene/Simulation/Trade.cs`. Hooks:
 
 - `TurnPlanner.Prepare`/`Draft` compute the plan;
-- `TurnPlanner.PlanningCampAt` shows the planner the post-trade stock;
-- `TurnResolver.Resolve` settles;
-- `ClaimValuation.NeedGoodTerms` is the shared value curve.
+- `TurnPlanner.PlanningCampAt` shows the planner and the prepared needs the
+  post-trade stock and food;
+- `TurnResolver.Resolve` settles before dispatch;
+- `ClaimValuation.NeedGoodTerms` and the `ExpansionValuation` food values supply
+  the curves.
 
-Checks: `Tools/Headless/TradeChecks.cs` (fixed suite). Audit:
-`Tools/PerformanceAudit/Run-TradeAudit.py`.
+Checks: `Tools/Headless/TradeChecks.cs` (fixed suite). Probe:
+`--trade-probe=<save>`. Audit: `Tools/PerformanceAudit/Run-TradeAudit.py` and
+`Summarize-Trade.py`.
 
 ## Doctrine summary
 
 | Question | Answer |
 | --- | --- |
-| Authoritative state | Camp inventories only. Each turn's settled trades and handshake counts are journalled in `TurnRecord.Trades`/`TradeActivity`. No requisition, offer or agreement is ever saved: every handshake completes or lapses within its turn. |
-| Temporal abstraction | One handshake per turn, agreed at the committed boundary in the planning pass. It settles at the opening of the economy phase (after hunter returns, before production and needs). Quantities are stocks, not rates, so turn length does not change the rule. |
-| Scaling law | `O(camps)` valuations (pure, parallel), then `O(camps · contacts)` partner selection (parallel), then `O(camps · K)` canonical responses with a constant number of bisections each, then `O(trades)` settlement. Cost follows eligible camps; it does not follow map size or elapsed time. |
-| Determinism | Valuations and requisitions are pure per camp (`PhaseExecution.Map`). Responses run once, sequentially: by responder camp ID, then the responder's own gain (descending), then requester ID and good. Settlement is in agreement order. |
-| RL / information | Phase 1 is automation-internal, like the economic planner: no new order kinds, no observation fields. Partners come only from the Society's remembered contacts (`ContactKnowledge`), never from hidden state. A responder's valuation of its own stock is private to the pass. |
-| Validation | `TradeChecks` (fixtures, conservation, purity, replay, persistence) plus the five-world census below. |
+| Authoritative state | Camp inventories and typed food only. Each turn's settled trades and handshake counts are journalled in `TurnRecord.Trades`/`TradeActivity`. No requisition, offer or agreement is ever saved: every handshake completes or lapses within its turn. |
+| Temporal abstraction | One handshake per turn, agreed at the committed boundary in the planning pass. It settles at the opening of resolution, before dispatch, so provisions, production and needs all see the stock the planner saw. Quantities are stocks, not rates. |
+| Scaling law | `O(camps · (G log W + contacts))` pure, parallel valuation and request lists (`G` goods, `W = TradeListLength`), then `O(camps · K · W²)` canonical responses with a constant number of bisections each, then `O(trades · parts)` settlement. Cost follows eligible camps and grows linearly with the number of goods. Nothing scores all ordered pairs of goods. |
+| Determinism | Valuations and requests are pure per camp (`PhaseExecution.Map`). Responses run once, sequentially: by responder camp ID, then the responder's own best gain (descending), then requester ID. Settlement is in agreement order. |
+| RL / information | Automation-internal, like the economic planner: no new order kinds or observation fields. Partners come only from remembered contacts (`ContactKnowledge`). A request carries only the requester's ranked want and give lists; a responder's stock and values stay private to the pass. |
+| Validation | `TradeChecks` (fixtures, food bands, conservation, purity, replay, persistence) plus the five-world census below. |
 
 ## Rules
 
@@ -39,86 +42,97 @@ Checks: `Tools/Headless/TradeChecks.cs` (fixed suite). Audit:
 - a goods economy (Cultivation or Husbandry);
 - a Society with remembered knowledge (past its first breakthrough).
 
-**Goods (T0).** Cloth and Housing Material are traded from committed stock.
-Each camp values them on the planner's own curves (`ClaimValuation.NeedGoodTerms`):
-marginal value `V e^{-k x / N}` with `k = ValueCurveSteepness`.
+**Goods are data.** `Trade.Registry` holds one descriptor per `TradeGood`:
 
-- **Cloth:** the position `x` counts Cloth plus Animal Fabric. `V` and `N` are
-  the clothing claim's first-unit value and this turn's clothing requirement.
-- **Housing Material:** one unit completes one Housing unit, so it is priced on
-  the fixed-Housing curve:
+- its stock parts (camp fields), so food is one good with three typed parts;
+- the key of the value curve it is priced on (goods sharing a key share one
+  curve and one position);
+- whether the configuration trades it.
+
+Adding a good is one descriptor, plus one curve builder only if no existing
+curve fits. No handshake code names a good.
+
+**Curves** (person-QoL-years per unit, the planner's units):
+
+- **Clothing** (Cloth and Animal Fabric): the clothing claim's `V e^{-k x/N}`.
+  Position is Cloth + Animal Fabric; `N` is this turn's requirement.
+- **Housing** (Housing Material): one unit completes one fixed Housing unit.
   - `V` = people per unit × housing value per person;
-  - position = shelter units + Housing Material held;
+  - position = shelter units + material held;
   - `N` = shelter units + this turn's Housing demand.
 
-  A camp that cannot build (no Construction or no agriculture) values it at zero.
+  It is worth nothing to a camp that cannot build (no Construction or no
+  agriculture).
+- **Food** (§7): bands on the envelope `P = stock + last turn's committed
+  production` (`DemographicReport.FoodProduced`, a lagged forecast). The bands,
+  in fill order, are:
+  1. consumption of every linked consumer, at `v_food` (`FoodValue`);
+  2. clothing-need feedstock and the operating reserve, at
+     `v_reserve = FoodRiskWeight · v_food`. Bands 1 and 2 are **protected**;
+  3. feasible growth food, at
+     `v_growth = max(0, dW/dN) · L / food_per_birth` (`MarginalWelfare`,
+     `PersonLife`, `FoodPerBirth`), capped at `v_reserve`;
+  4. surplus, at 0.
 
-Integrated value over `[a, b]` is `V N / k (e^{-k a/N} − e^{-k b/N})`. A side's
-gain from receiving `q` is the integral above its position. Its loss from giving
-`q` is the integral below.
+  A camp never gives food from the protected band. The safe-only control
+  (`TradeFoodSafeOnly`) also keeps growth food. Food moves in the seller's
+  committed plant/animal/aquatic proportions.
 
-**Requisitions.** Each eligible camp picks its single best direction at 1:1
-(want Cloth and give Housing Material, or the reverse). It requests the quantity
-`q*` at which its marginal want value equals its marginal give value, bounded by
-its own give stock, and only if the net gain at margin `m` is positive. It sends
-that request to at most `K = TradeRequisitionsPerCamp` remembered partners. A
-partner qualifies if it:
+**Requests.** A requester cannot see what partners hold, so it sends ranked
+lists (§6.2's desired and offered bundles):
 
-- belongs to another Society;
-- is an eligible camp;
-- is not known to have moved;
-- lies within `TradeRange` hexes of the requester's tile (measured to the
-  partner's recorded tile).
+- **wants:** the `W` goods with the most recoverable utility, i.e. the
+  integrated gain from its position up to the curve's target coverage;
+- **gives:** the `W` giveable goods with the lowest marginal loss.
 
-Nearest partners come first; ties go to the lower camp ID.
+A request goes out only if some listed pair is one the requester itself would
+accept. It goes to at most `K` remembered, unmoved foreign partners within
+`TradeRange` hexes (nearest first, ties by camp ID).
 
-**Responses (the handshake).** Requests are processed in canonical order. For
-each one:
+**Responses (the handshake).** The responder evaluates only the `W × W` listed
+pairs against its own stock and keeps the agreement that gains it most. For
+each pair:
 
-1. The requested quantity is re-capped by:
-   - the requester's best quantity at its *current* positions (earlier
-     agreements this turn have already moved them);
-   - the responder's stock.
-2. The requester's acceptance limit `r_max` is the largest give-per-want ratio
-   with `Gain(want) (1 − t) ≥ (1 + m) Loss(give)`. The transport loss is
+1. Quantity is the requester's 1:1 best quantity (marginal values equal),
+   capped by what the responder may give.
+2. The requester's limit `r_max` is the largest give-per-want ratio with
+   `Gain(want) (1 − t) ≥ (1 + m) Loss(give)`. The transport loss is
    `t = TradeDistanceCostPerHex × distance`.
 3. The responder's floor `r_min` is the smallest ratio with
    `Gain(give) (1 − t) ≥ (1 + m) Loss(want)`.
-4. If `r_min ≤ 1`, the responder **honours** at 1:1 (or at `r_max` when that is
-   below 1). If `1 < r_min ≤ r_max`, it **counters** at `r_min`; the counter is
-   inside the requester's limit, so the requester closes it automatically.
-   Otherwise the quantity is halved, at most three times, before the request is
-   **ignored**.
-5. A confirmed agreement updates both sides' positions immediately, so no stock
-   is promised twice and later requests see diminished marginal values.
+4. If `r_min ≤ 1`, the responder **honours** at 1:1 (or at `r_max` when that
+   is below 1). If `1 < r_min ≤ r_max`, it **counters** at `r_min` and the
+   requester closes automatically. Otherwise the quantity is halved, at most
+   three times.
 
-Kin margin: between parent and daughter Societies the margin is
-`m (1 − Kinship.Affinity)`. Kinship changes terms only, never who is asked.
+If no pair works, the request is **ignored**. A confirmed agreement updates
+both sides' positions at once, so no stock is promised twice. Kin use margin
+`m (1 − Kinship.Affinity)`.
 
 **Planning injection.** The plan is a pure function of the committed world,
-independent of submitted orders. `Prepare` therefore reuses a matching draft's
-plan, and draft intents remain valid. The planner and the prepared needs see
-each trading camp with its post-trade Cloth and Housing Material (a private
-inventory copy, `Camp.WithPrivateInventory`). This is the "confirmed trades
-enter the fulfilment plan as fixed claims" interface of the plan document: the
-handshake never calls into the fulfilment search.
+independent of orders. `Prepare` therefore reuses a matching draft's plan, and
+draft intents remain valid. The planner and the prepared needs see each
+trading camp with its post-trade goods and typed food (a private copy,
+`Camp.WithPrivateInventory`). Confirmed food imports enter the prepared food
+envelope (`TurnNeeds.OpeningCampFood`, bucket targets, feedstock gaps) before
+demographic planning. Unconfirmed food never does, and a unit sold is
+counted only by the buyer.
 
-**Settlement.** Agreements transfer from committed stock in agreement order. If
-a side holds less than agreed, both sides of that agreement scale in proportion
-and the record carries `Delivered < 1`. Settlement cannot normally fall short,
-because the handshake never promises more than committed stock and nothing
-consumes stock between planning and settlement. Settlement checks that each
-good's world total is conserved and that no stock goes negative. Both Societies
-record a `ContactSource.Trade` contact.
-
-`TechnologyDiscovery.RecordTradePractice` is not called for T0 goods: Cloth and
-Housing Material belong to no subsistence `Domain`. Its first caller will be
-food trade (WP9).
+**Settlement.** Agreements transfer each stock part from committed stock in
+agreement order, before dispatch. If a side holds less than agreed, both sides
+of that agreement scale in proportion (`Delivered < 1`). The ordinary food
+ledger then scales the buyer's reserve and growth to the food actually held.
+Settlement checks conservation of every part and that no stock goes negative.
+Both Societies record a `ContactSource.Trade` contact. Imported food credits
+`RecordTradePractice` for the practice that produced it (plant to Gathering,
+animal to Hunting, aquatic to Fishing). This is inert while
+`TradePracticePerValue = 0`.
 
 ## Persistence and compatibility
 
 - **Config.** `TradeEnabled`, `TradeRange`, `TradeRequisitionsPerCamp`,
-  `TradeMargin` and `TradeDistanceCostPerHex` are `OptionalField`. Saves without
+  `TradeListLength`, `TradeMargin`, `TradeDistanceCostPerHex`,
+  `TradeFoodEnabled` and `TradeFoodSafeOnly` are `OptionalField`. Saves without
   them load disabled with the default levers.
 - **Turn records.** `TurnRecord.Trades` and `TurnRecord.TradeActivity` are
   optional. Older records load with an empty journal and no activity.
@@ -133,12 +147,16 @@ food trade (WP9).
 - AI-to-AI only. The human player neither trades nor sees trade. The player
   panel and order kinds (WP7's `OrderRules`/`LegalActions` part) need the Unity
   workstation.
-- One direction per requester per turn, and barter only. There is no food (WP9)
-  and no third good.
-- The valuation is the camp's current-turn need curve. It does not anticipate
-  next turn's production or the stock the planner will make this turn.
-- Range is measured to the remembered tile, so stale-but-unmoved contacts can
-  be out of date by at most the contact expiry.
+- Barter of one pair per agreement and one agreement per request. Multi-good
+  bundles are not formed.
+- Trade is from stock only. Goods that are made to need and consumed within
+  the turn (Housing Material, most Cloth) are rarely in stock at the boundary,
+  so they rarely trade. Producing to order is the planner's job: an export
+  claim in the fulfilment plan, which is the phase 3 interface.
+- The food envelope's income term is last turn's production, not this turn's
+  plan.
+- Animal Fabric is valued only as clothing, not as Light Housing input.
+- Range is measured to the remembered tile.
 
 ## Measurements
 

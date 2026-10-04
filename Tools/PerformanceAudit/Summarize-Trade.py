@@ -38,9 +38,14 @@ def activity(root, variant):
         x = samples(root, variant, w)
         if x is None: continue
         tot = lambda k: sum(s.get(k, 0) for s in x)
+        flows = {}
+        for s in x:
+            for e in s.get('tradeEvents') or []:
+                key = f"{e['Want']}<-{e['Give']}"; f = flows.setdefault(key, [0, 0.0, 0.0]); f[0] += 1; f[1] += e['WantQuantity']; f[2] += e['GiveQuantity']
         print(f'{variant} {w}: eligible camp-turns {tot("tradeEligible"):.0f}, requisitions {tot("tradeRequisitions"):.0f}, honoured {tot("tradeHonoured"):.0f}, '
-              f'countered {tot("tradeCounteredRequisitions"):.0f}, ignored {tot("tradeIgnored"):.0f}, trades {tot("tradeCount"):.0f}, cloth {tot("tradeCloth"):.1f}, material {tot("tradeMaterial"):.1f}, '
+              f'countered {tot("tradeCounteredRequisitions"):.0f}, ignored {tot("tradeIgnored"):.0f}, trades {tot("tradeCount"):.0f}, '
               f'plan ms mean {tot("tradePlanMs") / len(x):.3f} max {max(s.get("tradePlanMs", 0) for s in x):.2f}')
+        for key, (n, want, give) in sorted(flows.items()): print(f'    {key}: {n} trades, received {want:.1f}, paid {give:.1f}')
 
 
 def gate(root, control, candidate):

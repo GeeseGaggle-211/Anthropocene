@@ -17,9 +17,10 @@ outcome changes can be attributed.
 
 ## Phase 1: trade alone
 
-**Progress.** 1a and 1b are implemented for AI-to-AI T0 trade, with the
-same-turn handshake: [Trade.md](Trade.md). Order kinds, observations and the
-player panel are deferred to the Unity workstation. 1c (food) is next.
+**Progress.** 1a, 1b and 1c are implemented for AI-to-AI trade of Cloth,
+Animal Fabric, Housing Material and food, with the same-turn handshake:
+[Trade.md](Trade.md). Order kinds, observations and the player panel are
+deferred to the Unity workstation.
 
 **Configuration under test.** Immigration off. Fission, QoL mortality, herd
 labour and shared allocation are on, as in the census runs. A `TradeEnabled`
