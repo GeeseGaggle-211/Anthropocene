@@ -313,6 +313,57 @@ on movement orders and break draft reuse. Those legs settle at 0, with the escro
 - Farm Tools no longer trade. They are priced only when the plan's farm-labour price is set, which happens
   rarely. That price comes from the expansion ladder, a planner matter.
 
+### 3.11 Who loses from trade, and the 50-turn full-system profile (4 October 2026)
+
+**Setup.** Five Standard/80 worlds, 50 post-opening turns, census configuration, phase V source (`4350815`). Camps
+are traced to their 80 founding camps per world through fission events, so lineages are comparable across runs.
+Output is in `TestResults/Trade-V1` and `TestResults/Profile-V` (ignored).
+
+**Who loses.**
+- Losses are concentrated in lineages that **started as Cultivation** camps: at t50, population −11.1% and QoL −3.4
+  points; Watercraft lineages lose −16% population.
+  - Their Cloth per capita falls (0.787 → 0.725) and they make 20% fewer fissions (333 vs 416).
+  - Food and housing are unchanged.
+- Husbandry-start lineages gain (+1.9% population). Lineages that never trade are identical with trade on and off.
+- Founding regimes do not trade with each other. The loss is **within** the farming group:
+  - farmers make Pots to order for one another (Pots +48%, Watercraft +221%);
+  - meanwhile their own Cloth (−6%), Housing (−7%) and Tools (−5%) fall.
+- **Cause:** make-to-order. Exports take tool time first (phase C), and the make cost (`labour × w + inputs`) does not
+  charge for the tool time they displace. With `TradeExportLabourShare = 0` (stock-only trade):
+
+  | Measure at t50 | Trade off | Trade on | Stock only |
+  | --- | --- | --- | --- |
+  | Population | 1,377,024 | −1.4% | **+1.1%** |
+  | Farming lineages | | −11% | **±0** |
+  | QoL | 0.8025 | 0.7946 | 0.7999 |
+  | Husbandry animals | 408,927 | +2.1% | +2.4% |
+
+**Decision (4 October 2026).** Stock-only trade is the default (`TradeExportLabourShare = 0` in code and
+`OpeningConfig.json`) until the planner prices tool time. Make-to-order stays implemented and tested. The census
+`on` variant now measures stock-only trade. The full-system profile below used make-to-order (0.25).
+
+**Full system: fission, immigration and trade on, 50 turns.**
+- Per turn, scalar (`--workers=1`), mean over worlds: 735 ms; last 10 turns 1.66 s; max 2.4 s (single world: 3.3 s).
+- About 37 s per world for 50 turns.
+- Heap at most 568 MB.
+- Against fission and immigration without trade: about +6% total time and +14% over the last 10 turns. Migrants at
+  t50 rise to 1,501 from 868.
+
+**Settlement outcomes**, all five worlds:
+
+| Turn | Settlements | Population | Population min / p25 / median / p75 / max | QoL p25 / median / p75 |
+| --- | --- | --- | --- | --- |
+| 1 | 421 | 20,185 | 9 / 31 / 46 / 61 / 133 | 0.344 / 0.594 / 0.950 |
+| 10 | 446 | 53,645 | 6 / 55 / 100 / 174 / 469 | 0.685 / 0.886 / 0.991 |
+| 25 | 659 | 200,720 | 3 / 160 / 297 / 437 / 741 | 0.792 / 0.906 / 0.966 |
+| 40 | 1,759 | 690,330 | 1 / 227 / 384 / 538 / 879 | 0.766 / 0.886 / 0.948 |
+| 50 | 2,997 | 1,342,553 | 1 / 274 / 444 / 652 / 1,000 | 0.724 / 0.858 / 0.931 |
+
+**QoL minimum is 0.000 at every turn.** About 28–37 **stuck camps** (about 1%), one per affected AI player, keep the
+same small population for all 50 turns. They have no crafting staff, clothing or housing, so QoL is 0 with food met.
+They are present without trade too (a planner or AI issue, not trade). Excluding them, the t50 QoL minimum is
+0.004–0.285 by world.
+
 ## 4. Doctrine check
 
 | Question | Answer |

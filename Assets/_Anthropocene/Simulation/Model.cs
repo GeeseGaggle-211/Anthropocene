@@ -135,7 +135,9 @@ namespace Anthropocene.Simulation
         // Food in the tradeable set (WP9); safe-only is the control that never exports growth food.
         [System.Runtime.Serialization.OptionalField] public bool TradeFoodEnabled = true, TradeFoodSafeOnly = false;
         // Share of a seller's resident turn that may go to goods made to order for export (0 disables making to order).
-        [System.Runtime.Serialization.OptionalField] public double TradeExportLabourShare = .25;
+        // 0 by default (stock-only trade, decided 4 October 2026): made-to-order exports displace the seller's own tool-bound
+        // goods without pricing that tool time, and cost farming lineages population (Docs/PlannerTradeStorageDesign.md §3.11).
+        [System.Runtime.Serialization.OptionalField] public double TradeExportLabourShare = 0;
         // Pottery storage for finished goods (Docs/PlannerTradeStorageDesign.md §3, phase S): goods share Pots with food,
         // above a base allowance per resident; every counted good takes GoodsStorageSpacePerUnit food units of space and
         // additions beyond the room are blocked. Saves that predate these fields load with storage off.
