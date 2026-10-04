@@ -175,10 +175,45 @@ immigration and trade, reported by `Tools/PerformanceAudit/Summarize-Settlements
 - That direction moves toward the 250 estimate, so the gate's "median no worse than Legacy" rule and the estimate
   pull in opposite directions. This needs a decision before a default change.
 
-**Remaining slice 2 work:**
-- **Cost.** One known-source query per plan. Needs preparation should reuse the plan's realization. Per-settlement
-  decide + prepare is not yet measured on identical snapshots.
-- **Gates for a default change:**
+**Cost** (identical snapshots `TestResults/PlannerCost/saves`, C1 and A1 at t25 and t50, scalar; a scratch build with
+scoped timers; 6–8 repetitions; run-to-run noise about ±0.15 ms per settlement):
+
+| Measure | Slice 1 | Slice 2 | Target |
+| --- | --- | --- | --- |
+| Allocation per plan | 0.16–0.21 ms | 0.26–0.35 ms | ≤ 0.40 ms (met) |
+| Forecasts per plan | 0, plus needs' 1 | 0, plus needs' 1 | 1 (met) |
+| Tool schedules per plan | 2.0 | ≤ 2 | ≤ 2 (met) |
+| Known-source queries in the plan | 1 | 1 | 1 (met) |
+| Needs preparation per camp | 0.13–0.19 ms | **0.07–0.09 ms** | — |
+| Decide + prepare per settlement | 0.76–1.28 ms | 0.91–1.19 ms | ≤ 1.0 ms (about half the states) |
+
+- **Slice 2's added plan cost:**
+  - herd service: 0.06–0.09 ms per settlement (two managed-herd forecasts and a pasture scan);
+  - field ladder: 0.02–0.04 ms.
+- **Source queries.** The slice 1 figure of about 5 per plan counted every query in decide + prepare. Attributed by
+  caller, the plan makes exactly one (`BuildPhysical`). The others are:
+  - two settlement observations (AI decide and order validation);
+  - needs preparation;
+  - trade valuation.
+- **Needs preparation halved.** `TurnNeeds.Goods`, a per-recipe demand pass, is read by no simulation pass; its only
+  reader is `Tools/NeolithicCraftValidation`. It is now filled only while
+  `ResolutionMetrics.CaptureCraftWorkDiagnostics` is on. This applies to both strategies.
+  - Legacy stays exact against the pre-trade reference on all five worlds over 50 turns (`TestResults/DC-exact2`).
+  - The focused headless suite passes.
+- **Remaining per-settlement budget, outside the planner and the same for both strategies:**
+
+  | Part | ms per settlement |
+  | --- | --- |
+  | AI decide (movement) | 0.23–0.46 |
+  | Validation observation | 0.11–0.25 |
+  | Trade handshake | 0.08–0.13 |
+
+  The planner's own share (plan plus needs) is 0.34–0.43 ms. Meeting 1.0 ms reliably therefore needs work on those
+  shared phases, not the allocator.
+- **Not done.** Merging the herd service's forecasts with `BuildPhysical`'s would save about 0.03 ms. It is not clearly
+  exact, because the forecasts use different herder counts, and the plan already meets its target.
+
+**Gates for a default change:**
   - delivery and trade gates;
   - 80/320-tribe scale;
   - Legacy exactness re-run.

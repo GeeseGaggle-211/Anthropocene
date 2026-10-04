@@ -41,6 +41,8 @@ namespace Anthropocene.Simulation
         // Goods this camp agreed to deliver after production (by CraftGood; null without exports, Docs/Trade.md).
         internal double[] Exports;
         public double OpeningCampFood, OpeningAnimalFood, ConsumptionRequired, ConsumptionTarget, ReserveTarget, ReserveFillTarget, GrowthFoodTarget, FoodTarget;
+        // Useful demand per good at preparation. Diagnostic only (Tools/NeolithicCraftValidation): no simulation pass reads it,
+        // so it is filled only while ResolutionMetrics.CaptureCraftWorkDiagnostics is on, and is empty otherwise.
         public readonly Dictionary<CraftGood, double> Goods = new Dictionary<CraftGood, double>();
         public double PlantFeedstock, PlantFeedstockGap, AnimalFeedstock, AnimalFeedstockGap;
         // The part of the feedstock above that covers this turn's clothing requirement (paid ahead of the reserve refill).
@@ -360,9 +362,10 @@ namespace Anthropocene.Simulation
                 var sources = MaterialEconomy.KnownSources(world, snapshot, world.Days);
                 prepared.ProductionOrders.TryGetValue(camp.Id, out var order);
                 needs.Order = order;
-                foreach (var recipe in recipes)
-                    needs.Goods[recipe.Good] = NeolithicProduction.Priority(snapshot, recipe.Good) > 0
-                        ? NeolithicProduction.Demand(world, snapshot, recipe.Good, years, residents, false, false, sources, order) : 0;
+                if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+                    foreach (var recipe in recipes)
+                        needs.Goods[recipe.Good] = NeolithicProduction.Priority(snapshot, recipe.Good) > 0
+                            ? NeolithicProduction.Demand(world, snapshot, recipe.Good, years, residents, false, false, sources, order) : 0;
                 double equipment = new ToolCoverageBudget(world, snapshot, prepared.Horizon).Remaining;
                 needs.Production = MaterialEconomy.Forecast(world, snapshot, recipes, prepared.Horizon, equipment, true, residents, false, false, -1, -1, sources, order);
                 needs.Housing = MaterialEconomy.PlanHousingMaterials(world, snapshot, recipes, needs.Production, years, world.Days, sources, order);
