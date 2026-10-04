@@ -109,23 +109,76 @@ Addendum A §A7 target:
 | Known-source queries per plan | 6.5–6.9 | 4.9–5.0 | 1 (**not met**) |
 | Decide + prepare per settlement | 1.76–4.02 ms | 0.76–1.28 ms | ≤ 1.0 ms (4 of 6 states) |
 
-## Slice 2 (next)
+## Slice 2 (in progress)
 
-Ordered by measured effect:
+Census: five Standard/80 worlds, 50 turns, fission, immigration and stock-only trade on (`all` against `all-dc`).
+Legacy is `TestResults/DC-S1`; the slice 2 runs are `TestResults/DC-S2a` to `DC-S2f`.
 
-1. **Herd service and herd policy.** A herd-service controller requests the herders for the herd the selected policy
-   grows to, not only the herd held, at class 2 (operating continuity of a retained asset, Addendum A §A4). The Elder
-   strategy (v0.1 §13) sets the policy: growth target, breeding and slaughter. It reuses `HerdLabour`'s physical
-   capacity and food projections without its Value prices.
-2. **Field operation and development.** A field-service controller operates the supervisor-selected fields. The
-   strategy layer authorizes expansion, as class 4 development, at review boundaries or triggers, reusing the expansion
-   ladder's physical steps. This also restores Farm Tools pricing (`w_farm`, §A2).
-3. **Cost.**
-   - One known-source query per plan: thread `d.Sources` through the `Demand` helpers that still query their own.
-   - Needs preparation reuses the plan's realization instead of its own forecast.
-   - Measure per-settlement cost after 1–2, which add work.
-4. **Census gates for a default change:**
-   - population and QoL per founding regime no worse than Legacy;
-   - the husbandry gate;
-   - delivery and trade gates;
-   - 80/320-tribe scale.
+**What changed.**
+1. **Herd service (S2a).** Class 2 (Continuity) requests the herders for a herd grown by one turn of breeding, capped
+   at what the local pasture's forage and water carry (`HerdLabour.Pasture`). The intent holds the herd at what the
+   staffed herders manage (`HerdTarget`, `CapBreeding`).
+2. **Field development (S2a).** A projected food gap (food targets plus Cloth feedstock above supply) is closed with
+   the expansion ladder's physical steps, best first. Their build worker-years are requested as class 4 (Development)
+   Farmers.
+3. **Mixed shelter (S2d).**
+   - Decay replacement uses the durable route: fixed Housing where agriculture is enabled.
+   - The deficit uses the quick route: tents where husbandry is enabled.
+   - S2a gave husbandry camps fixed Housing only, so their housing fell (0.42 against 0.78 for Legacy at t5).
+   - S2c gave every herding camp tents only. Tents carry a lower cohesion weight, so QoL fell (0.728 at t50).
+4. **Field operation matches the resolver (S2f).**
+   - Operating Farmers now cover field upkeep only. Food beyond what they harvest is staffed as gathering.
+   - In the resolver, gathering on the footprint also builds field capital through the gatherer bridge, up to
+   `GathererBridgeCeiling` (0.25). Harvesting Farmers do not build capital.
+   - Before S2f, DemandControl staffed the whole harvest as Farmers, so fields stalled at q ≈ 0.03–0.11 while the
+   farming crew grew to 167 (median). Legacy's fields reach q = 0.25 by t25 with 47 farmers.
+
+**Rejected.**
+- S2b, a herd hold based on the food gap, collapsed herds.
+- A labour-payback trigger for intensification (steps whose discounted harvest-labour saving repays their build work)
+  never fired. Early ladder steps cost 7–440 worker-years for 0.4–9 food a year, so S2e was identical to S2d.
+
+**Census at t50.**
+
+| | Legacy | S2d | **S2f** |
+| --- | --- | --- | --- |
+| Settlements | 2,997 | 3,212 | **3,747** |
+| Population | 1,342,553 | 1,244,504 | **1,598,982 (+19.1%)** |
+| QoL, population-weighted | 0.793 | 0.796 | **0.809** |
+| Housing per capita | 0.985 | 0.952 | 0.961 |
+| Prepare + execute, mean of last 10 turns | 1,464 ms | 987 ms | 1,284 ms |
+| Per settlement, last 10 turns | 2.44 ms | 1.54 ms | 1.71 ms |
+
+**Founding lineages, S2f against Legacy, at t50.**
+
+| Founding regime | Population | QoL |
+| --- | --- | --- |
+| Husbandry | +3.3% | −0.3 points |
+| Cultivation | +79.8% | +6.5 points |
+| Watercraft | +44.8% | +3.7 points |
+
+**Calibration estimates.** These are the user's non-binding targets for median settlement population with fission,
+immigration and trade, reported by `Tools/PerformanceAudit/Summarize-Settlements.py`. They are never enforced.
+
+| Regime at t50 | n | p25 | Median | p75 | Estimate |
+| --- | --- | --- | --- | --- | --- |
+| Cultivation (S2f) | 981 | 252 | **480** | 721 | 600 (−20%) |
+| Husbandry (S2f) | 2,669 | 239 | **383** | 593 | 250 (+53%) |
+| Cultivation (Legacy) | 591 | — | 477 | — | |
+| Husbandry (Legacy) | — | — | 440 | — | |
+
+**Husbandry gate** (`Summarize-Trade.py`, husbandry-first camps).
+- Total linked population passes: +0.1% at t25, +3.3% at t50.
+- Animals are about double Legacy's.
+- **The median linked population per camp fails:** −32.5% at t25, −13.2% at t50. More fission produces more,
+  smaller camps.
+- That direction moves toward the 250 estimate, so the gate's "median no worse than Legacy" rule and the estimate
+  pull in opposite directions. This needs a decision before a default change.
+
+**Remaining slice 2 work:**
+- **Cost.** One known-source query per plan. Needs preparation should reuse the plan's realization. Per-settlement
+  decide + prepare is not yet measured on identical snapshots.
+- **Gates for a default change:**
+  - delivery and trade gates;
+  - 80/320-tribe scale;
+  - Legacy exactness re-run.

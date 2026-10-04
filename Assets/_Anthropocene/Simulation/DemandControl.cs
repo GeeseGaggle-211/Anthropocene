@@ -86,8 +86,10 @@ namespace Anthropocene.Simulation
             double foodTarget = Math.Min(d.ForageAfterHerds, Math.Max(0, d.Biological - animalReceipts));
             double terrestrial = Math.Min(d.TerrestrialAfterHerds, foodTarget);
             double farmRate = d.HarvestProductivity * cfg.GatherPerPerson * intervals;
-            int requiredOperating = d.Established && farmRate > 0
-                ? (int)Math.Ceiling(Math.Max(d.Upkeep, cfg.FarmerProductivity >= 1 ? terrestrial / farmRate : 0) - Epsilon) : 0;
+            // Operating farmers keep the fields up (and harvest while they do); the rest of the food is gathered. Gathering on
+            // the footprint also builds field capital through the resolver's gatherer bridge (up to GathererBridgeCeiling),
+            // which harvesting farmers do not, so food beyond the upkeep crew is staffed as gathering (slice 2).
+            int requiredOperating = d.Established && farmRate > 0 ? (int)Math.Ceiling(d.Upkeep - Epsilon) : 0;
             int farmers = Math.Min(Math.Max(0, residents - herders), Math.Max(0, requiredOperating));
             double harvest = Math.Min(terrestrial, farmers * farmRate);
             int wantedGatherers = gatherRate > 0 ? (int)Math.Ceiling(Math.Max(0, foodTarget - harvest) / gatherRate - Epsilon) : 0;
