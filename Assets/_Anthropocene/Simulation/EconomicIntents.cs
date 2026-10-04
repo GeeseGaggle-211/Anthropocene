@@ -18,6 +18,11 @@ namespace Anthropocene.Simulation
         // lagged cost of producing to order. Recorded only while trade is enabled; absent in older saves (unset).
         [System.Runtime.Serialization.OptionalField] public bool LabourPriceSet;
         [System.Runtime.Serialization.OptionalField] public double LabourPrice;
+        // Trade (phase V, Docs/PlannerTradeStorageDesign.md): the farm-labour price w_farm0 the last plan saw (the expansion
+        // ladder's value after its staffed farmers), which prices labour-saving tools as the planner does. Recorded only
+        // while trade is enabled; absent in older saves (unset).
+        [System.Runtime.Serialization.OptionalField] public bool FarmLabourPriceSet;
+        [System.Runtime.Serialization.OptionalField] public double FarmLabourPrice;
         // Trade: the goods values the last plan published (Docs/Trade.md, "Planner-published values"), at most one per
         // trade curve key, read lagged by the next handshake in place of the provisional curves. Recorded only while
         // trade is enabled and the fulfilment rule publishes; absent in older saves (null: every curve provisional).

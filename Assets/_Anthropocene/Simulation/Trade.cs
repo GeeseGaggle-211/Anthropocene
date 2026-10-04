@@ -425,8 +425,9 @@ namespace Anthropocene.Simulation
         internal sealed class CampContext
         {
             public double LastProduction; public CraftRecipe[] Recipes;
-            // Last turn's committed Stone, Clay and Wood use (production receipts), the lagged need for raw materials.
-            public double[] MaterialUse = new double[3];
+            // Last turn's committed Stone, Clay and Wood use and Hand Tools consumed (production receipts): the lagged need for
+            // raw materials and Hand Tools.
+            public double[] MaterialUse = new double[4];
             private bool needs; private double clothingV, clothingNeed, housingV, shelter;
             public void NeedTerms(WorldState w, Camp c, out double cv, out double cn, out double hv, out double sh)
             {
@@ -441,7 +442,7 @@ namespace Anthropocene.Simulation
             ["Clothing"] = (w, c, x) =>
             {
                 x.NeedTerms(w, c, out double v, out double need, out _, out _);
-                return new CurveTerms { Curve = new ExponentialCurve(v, need, w.Config.Neolithic.ValueCurveSteepness), Floor = double.NegativeInfinity };
+                return new CurveTerms { Curve = new ExponentialCurve(v, need, w.Config.Neolithic.ValueCurveSteepness), Floor = need };
             },
             // A Housing Material unit completes one fixed Housing unit; worthless to a camp that cannot build.
             ["Housing"] = (w, c, x) =>
@@ -450,7 +451,7 @@ namespace Anthropocene.Simulation
                 x.NeedTerms(w, c, out _, out _, out double v, out double shelter);
                 bool canBuild = CanBuild(c);
                 double quantity = canBuild ? Math.Max(0, NeolithicProduction.Demand(w, c, CraftGood.Housing, cfg.TurnDays / cfg.DaysPerYear, c.Population)) : 0;
-                return new CurveTerms { Curve = new ExponentialCurve(canBuild ? v : 0, shelter + quantity, cfg.Neolithic.ValueCurveSteepness), Offset = shelter, Floor = double.NegativeInfinity };
+                return new CurveTerms { Curve = new ExponentialCurve(canBuild ? v : 0, shelter + quantity, cfg.Neolithic.ValueCurveSteepness), Offset = shelter, Floor = shelter + quantity };
             },
             // The planner's food buckets on this turn's envelope P = stock + last turn's production: consumption of
             // every linked consumer (v_food), clothing-need feedstock and operating reserve (v_reserve), feasible
@@ -473,22 +474,40 @@ namespace Anthropocene.Simulation
                     Offset = x.LastProduction, Floor = cfg.TradeFoodSafeOnly ? growthEnd : protectedEnd
                 };
             },
-            // Provisional curves (Docs/Trade.md, "Provisional valuations"; value matching is the planner refactor's work).
-            // Tents: the shelter of LightHousingPeoplePerUnit people over a tent's discounted life, on the need curve
-            // up to held stock plus own demand.
+            // Phase V (Docs/PlannerTradeStorageDesign.md §2 P1): the planner's own claim terms (ClaimValuation), from the committed
+            // camp, so trade and the fulfilment plan price a unit alike. Every non-food curve's floor is its useful need: stock
+            // below it is never offered (the Export mark); only stock above it, or spare making capacity, is.
+            // Tents: the Light Housing claim, V = people per tent x housing value per person over a tent's life, on all shelter in
+            // tent units (fixed Housing counts), up to the shelter the residents need.
             ["Tents"] = (w, c, x) =>
             {
-                var n = w.Config.Neolithic;
+                var cfg = w.Config; var n = cfg.Neolithic; double years = cfg.TurnDays / cfg.DaysPerYear;
                 ClaimValuation.CampTerms(w, c, out double e, out double b, out double s);
                 double v = n.LightHousingPeoplePerUnit * n.RudimentaryWeightHousing * e * b * s * ClaimValuation.HousingLife(n, CraftGood.LightHousing);
-                return new CurveTerms { Curve = new ExponentialCurve(v, Held(c, TradeGood.LightHousing) + OwnDemand(w, c, CraftGood.LightHousing), n.ValueCurveSteepness), Floor = double.NegativeInfinity };
+                var shelter = NeolithicProduction.HousingCapacity(w, c, w.Days + years * cfg.DaysPerYear);
+                double stock = shelter.Total / n.LightHousingPeoplePerUnit, gap = OwnDemand(w, c, CraftGood.LightHousing);
+                double need = gap > 0 ? stock + gap : Math.Min(stock, c.Population / n.LightHousingPeoplePerUnit);
+                return new CurveTerms { Curve = new ExponentialCurve(v, need, n.ValueCurveSteepness), Offset = stock - Held(c, TradeGood.LightHousing), Floor = need };
             },
-            // Pots: the claim's per-Pot value at the camp's food value, up to held stock plus own demand.
-            ["Pots"] = (w, c, x) => Band(Held(c, TradeGood.Pots) + OwnDemand(w, c, CraftGood.Pots), ClaimValuation.PotValue(w.Config.Neolithic, ExpansionValuation.FoodValue(w.Config, c))),
-            // Hand Tools: their replacement labour at the lagged labour price. Farm Tools: the farmer-years one frees.
-            ["HandTools"] = (w, c, x) => Priced(c, price => Band(Held(c, TradeGood.HandTools) + OwnDemand(w, c, CraftGood.HandTools),
+            // Pots: the food-security claim, V = PotValue at the camp's food value, over the reserve's target Pots, positioned at
+            // the Pots this turn's decay leaves.
+            ["Pots"] = (w, c, x) =>
+            {
+                var cfg = w.Config; var n = cfg.Neolithic; double years = cfg.TurnDays / cfg.DaysPerYear;
+                double need = Math.Max(0, NeolithicProduction.TargetPots(w, c, years));
+                double retained = Held(c, TradeGood.Pots) * Math.Pow(1 - n.PotDecayPerReferenceTurn, years / n.ReferenceTurnYears);
+                return new CurveTerms { Curve = new ExponentialCurve(ClaimValuation.PotValue(n, ExpansionValuation.FoodValue(cfg, c)), need, n.ValueCurveSteepness),
+                    Offset = retained - Held(c, TradeGood.Pots), Floor = need };
+            },
+            // Hand Tools (no planner claim): their replacement labour at the lagged labour price, up to last turn's use (receipts,
+            // so no tool schedule runs here). Farm Tools: the farmer-years one frees at the lagged farm-labour price, as the
+            // planner's labour-saving claim, up to this turn's field need.
+            ["HandTools"] = (w, c, x) => Priced(c, price => Band(x.MaterialUse[3],
                 price * Math.Max(0, ClaimValuation.LabourPerUnit(w, c, x.Recipes.First(r => r.Good == CraftGood.HandTools), x.Recipes, 1)))),
-            ["FarmTools"] = (w, c, x) => Priced(c, price => Band(Held(c, TradeGood.FarmTools) + OwnDemand(w, c, CraftGood.FarmTools), price * ClaimValuation.FarmToolSavedYears(w.Config.Neolithic))),
+            ["FarmTools"] = (w, c, x) => c.EconomicLabor != null && c.EconomicLabor.FarmLabourPriceSet && c.EconomicLabor.FarmLabourPrice > 0 && CultivationEconomy.Enabled(c)
+                ? Band(Math.Max(0, CultivationEconomy.ForecastFarmToolWorkerYears(w, c, w.Config.TurnDays / w.Config.DaysPerYear)) / w.Config.Neolithic.FarmToolFarmerYearsPerUnit,
+                    c.EconomicLabor.FarmLabourPrice * ClaimValuation.FarmToolSavedYears(w.Config.Neolithic))
+                : new CurveTerms { Unpriced = true, Floor = double.PositiveInfinity },
             // Raw materials: their extraction labour at the lagged labour price, up to last turn's use over the reserve horizon.
             ["Stone"] = (w, c, x) => Material(w, c, x, MaterialId.Stone, 0),
             ["Clay"] = (w, c, x) => Material(w, c, x, MaterialId.Clay, 1),
@@ -511,7 +530,7 @@ namespace Anthropocene.Simulation
             Offset = s.Offset, Floor = s.Floor
         };
         private static CurveTerms Band(double need, double value)
-            => new CurveTerms { Curve = new BandCurve(new[] { Math.Max(0, need) }, new[] { Math.Max(0, value) }), Floor = double.NegativeInfinity };
+            => new CurveTerms { Curve = new BandCurve(new[] { Math.Max(0, need) }, new[] { Math.Max(0, value) }), Floor = Math.Max(0, need) };
         // A curve valued at the lagged labour price; unpriced (never traded by this camp) until a plan has recorded one.
         private static CurveTerms Priced(Camp c, Func<double, CurveTerms> build)
             => c.EconomicLabor != null && c.EconomicLabor.LabourPriceSet && c.EconomicLabor.LabourPrice > 0 ? build(c.EconomicLabor.LabourPrice) : new CurveTerms { Unpriced = true, Floor = double.PositiveInfinity };
@@ -541,6 +560,16 @@ namespace Anthropocene.Simulation
             // one output, a Regular Tool four), and which goods draw on it.
             public double ToolPool = double.PositiveInfinity;
             public readonly bool[] UsesTools = new bool[Registry.Length];
+            // Goods storage (Docs/PlannerTradeStorageDesign.md §3.5): free room in goods units, shared by the stored goods, and
+            // which goods it bounds; infinite without storage. A pair is checked on its net change (a swap frees the room of
+            // the stored good it gives), so a full store can still trade one stored good for another.
+            public double GoodsRoom = double.PositiveInfinity;
+            public readonly bool[] Stored = new bool[Registry.Length];
+            // Net stored units a camp takes on by receiving `inQ` of one good and giving `outQ` of another.
+            internal double NetStored(TradeGood received, double inQ, TradeGood given, double outQ)
+                => (Stored[(int)received] ? inQ : 0) - (Stored[(int)given] ? outQ : 0);
+            internal bool Fits(TradeGood received, double inQ, TradeGood given, double outQ)
+                => double.IsPositiveInfinity(GoodsRoom) || NetStored(received, inQ, given, outQ) <= Math.Max(0, GoodsRoom) + 1e-9;
             public double MakeCapacity(TradeGood g) => UsesTools[(int)g] ? Math.Min(Capacity[(int)g], ToolPool) : Capacity[(int)g];
             public readonly double[][] Shares = new double[Registry.Length][];          // committed part proportions
             private readonly Dictionary<string, (double Position, double Floor)> positions = new Dictionary<string, (double, double)>();
@@ -608,8 +637,9 @@ namespace Anthropocene.Simulation
                     if (-amount - made > giveable) made = Math.Min(Capacity[i], -amount - giveable);
                     Capacity[i] = Math.Max(0, Capacity[i] - made); if (UsesTools[i]) ToolPool = Math.Max(0, ToolPool - made);
                     Held[i] = Math.Max(0, Held[i] - (-amount - made)); madeOut = made;
+                    if (Stored[i]) GoodsRoom += -amount - made;
                 }
-                else Held[i] += amount;
+                else { Held[i] += amount; if (Stored[i]) GoodsRoom -= amount; }
                 var key = Descriptor(g).Curve; var p = positions[key]; positions[key] = (p.Position + amount, p.Floor);
                 return madeOut;
             }
@@ -637,8 +667,8 @@ namespace Anthropocene.Simulation
             if (last?.Production != null)
                 foreach (var p in last.Production)
                 {
-                    if (!result.TryGetValue(p.Camp, out var use)) result[p.Camp] = use = new double[3];
-                    use[0] += Math.Max(0, p.Stone); use[1] += Math.Max(0, p.Clay); use[2] += Math.Max(0, p.Wood);
+                    if (!result.TryGetValue(p.Camp, out var use)) result[p.Camp] = use = new double[4];
+                    use[0] += Math.Max(0, p.Stone); use[1] += Math.Max(0, p.Clay); use[2] += Math.Max(0, p.Wood); use[3] += Math.Max(0, p.HandToolsConsumed);
                 }
             return result;
         }
@@ -646,7 +676,7 @@ namespace Anthropocene.Simulation
         // O(goods) per camp: one builder call per curve key, one recipe cost per makeable good.
         internal static Valuation Value(WorldState w, Camp c, double lastProduction = 0, CraftRecipe[] recipes = null, double[] materialUse = null)
         {
-            var context = new CampContext { LastProduction = lastProduction, Recipes = recipes ?? NeolithicProduction.Recipes(w.Config), MaterialUse = materialUse ?? new double[3] };
+            var context = new CampContext { LastProduction = lastProduction, Recipes = recipes ?? NeolithicProduction.Recipes(w.Config), MaterialUse = materialUse == null ? new double[4] : materialUse.Length >= 4 ? materialUse : materialUse.Concat(new double[4 - materialUse.Length]).ToArray() };
             var cfg = w.Config;
             var v = new Valuation { Camp = c.Id, Society = c.SocietyId, Tile = c.Tile };
             var built = new Dictionary<string, CurveTerms>(); var held = new Dictionary<string, double>();
@@ -668,6 +698,12 @@ namespace Anthropocene.Simulation
             foreach (var pair in built) v.SetCurve(pair.Key, pair.Value.Offset + (held.TryGetValue(pair.Key, out double h) ? h : 0), pair.Value.Floor);
             foreach (var g in Registry) if (!v.Active[(int)g.Id] && (!built.TryGetValue(g.Curve, out var t) || t.Unpriced)) v.SetCurve(g.Curve, v.Held[(int)g.Id], double.PositiveInfinity);
             // Food a made recipe may consume: what lies above the protected band (consumption, feedstock, reserve).
+            // Goods storage: the free room at the committed boundary (this turn's tool use is not yet known, so tools count as stored).
+            if (GoodsStorage.Enabled(cfg))
+            {
+                v.GoodsRoom = Math.Max(0, GoodsStorage.Begin(w, c, cfg.TurnDays / cfg.DaysPerYear, c.Population, 0, 0).RoomUnits(c));
+                foreach (var g in Registry) v.Stored[(int)g.Id] = g.Recipe.HasValue && GoodsStorage.Index(g.Recipe.Value) >= 0;
+            }
             // A published food schedule protects the food below its floor.
             var foodTerms = built.TryGetValue("Food", out var food) ? food : Build("Food");
             bool foodPublished = published != null && published.ContainsKey("Food");
@@ -845,6 +881,8 @@ namespace Anthropocene.Simulation
                         if (double.IsNaN(floor) || floor > limit + 1e-12) continue;
                         bool countered = floor > 1 + 1e-12;
                         double ratio = countered ? floor : Math.Min(1, limit), paid = ratio * q;
+                        // Storage room, on each side's net change in stored goods; a pair that does not fit tries half.
+                        if (!r.Fits(want, q, give, paid) || !p.Fits(give, paid, want, q)) continue;
                         double responderGain = p.Gain(give, paid) * (1 - transport) - p.Loss(want, q);
                         if (best == null || responderGain > best.ResponderGain + 1e-12)
                             best = new TradeAgreement { Requester = r.Camp, Responder = p.Camp, Distance = x.Distance, Want = want, Give = give,

@@ -1,6 +1,6 @@
 # Planner-led trade and pottery storage: design note
 
-Status: **approved**, 4 October 2026 (open questions resolved in §7). Phases S and C implemented (§3.6–3.9); V next. This is the short note that phase 3 of
+Status: **approved**, 4 October 2026 (open questions resolved in §7). Phases S, C and V implemented (§3.6–3.10); R (planner refactor) next. This is the short note that phase 3 of
 [TradeImmigrationPlannerPlan.md](TradeImmigrationPlannerPlan.md) asks for before planner code.
 It sets the order in which the new economic planner and trade interact. It also adds a storage limit for finished
 goods.
@@ -263,6 +263,55 @@ The census and probes found four further fixes:
 **Known limitation.** A village that relocates this turn has its plan cleared, so it cannot make what it agreed to
 make. The handshake runs from the committed world before relocations are known. Bounding it would make the plan depend
 on movement orders and break draft reuse. Those legs settle at 0, with the escrow refunded.
+
+### 3.10 Phase V: valuation on planner terms (4 October 2026)
+
+**Implementation.** `Trade.Value` now uses the planner's claim terms (`ClaimValuation`) from the committed camp:
+
+| Good | Curve |
+| --- | --- |
+| Cloth, Animal Fabric, Housing | need goods, as before |
+| Tents | the Light Housing claim on all shelter in tent units |
+| Pots | the food-security claim (`PotValue`) over the reserve's target Pots, at the Pots this turn's decay leaves; this replaces the provisional ~90-food band, as §3.5 approved |
+| Farm Tools | labour freed at the lagged farm-labour price `EconomicLaborPlan.FarmLabourPrice`, now recorded by the planner while trade is on |
+| Hand Tools | needed up to last turn's use, from receipts; the 44 ms tool schedule no longer runs in valuation |
+
+- **Export mark:** every non-food floor is the useful need, so stock below it is never offered.
+- **Import mark:** wants are drawn only below the target, as before.
+- **Storage room:** checked on each pair's net change in stored goods (`Valuation.Fits`), so a full store still swaps
+  stored goods.
+- **Checks:** `TradeChecks.PhaseV` and the rewritten `Pots` (479 assertions).
+
+**Census.** Five worlds, 50 turns, trade on against off. Output is in `TestResults/Trade-V1` (ignored).
+
+| Measure | Phase C (`Trade-C3`) | Phase V |
+| --- | --- | --- |
+| Trade off vs reference | exact | exact |
+| Husbandry gate, animals at t50 (total / median) | −12.0% / −13.4% **fail** | **+2.1% / +0.8% pass** |
+| Herders in husbandry-first camps at t50 | −12.7% | +2.3% |
+| All-camp population at t50 | −2.6% | −1.4% |
+| QoL at t50 (population-weighted, against off 0.8025) | 0.7945 | 0.7946 |
+| Trades per world | about 9,000–13,500 | about 3,300–5,000 |
+| Food traded, all worlds | 39.7 M | 6.3 M |
+| Made-to-order delivery | 0.98–0.99 | 0.99 (every traded good ≥ 0.986) |
+| Handshake mean ms per turn | 44–67 | **20–36** (one 500 ms spike, C2) |
+
+**Reading.**
+- The husbandry losses came from herders pulled into exports. Herd size is labour-bound: animals per herder were
+  identical with trade on and off.
+- With the Export mark, camps stop selling stock they need, and food and raw-material flows collapse. Labour
+  returns to herding.
+
+**Gate.**
+- The husbandry gate passes, and delivery passes.
+- Handshake time halved but is not back to the 4–6 ms of the four-good design. The budget to agree is about
+  0.07 ms per eligible camp per turn, the current 20–36 ms at about 350 camps.
+
+**Open.**
+- Trade on is still slightly negative overall: population −1.4% and QoL −1% against off. It is not yet the
+  positive-sum design. Measure who loses before tuning (phase R prices herd growth and spare labour).
+- Farm Tools no longer trade. They are priced only when the plan's farm-labour price is set, which happens
+  rarely. That price comes from the expansion ladder, a planner matter.
 
 ## 4. Doctrine check
 

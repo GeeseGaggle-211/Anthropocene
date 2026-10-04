@@ -733,6 +733,9 @@ namespace Anthropocene.Simulation
                 if (values != null && values.Count > 0) best.Intent.Labor.TradeValues = values.Select(v => v.Copy()).ToList();
             }
             if (finalDemand.Expansion != null) farmLabourPrice = finalDemand.Expansion.ValueAfter((best.Intent.Labor?.ExpansionFarmers ?? 0) * years);
+            // Trade prices labour-saving tools at the farm-labour price the claims used (lagged, as LabourPrice).
+            if (w.Config.TradeEnabled && best.Intent.Labor != null && finalDemand.FarmLabourPrice0 > 0 && !double.IsInfinity(finalDemand.FarmLabourPrice0))
+            { best.Intent.Labor.FarmLabourPriceSet = true; best.Intent.Labor.FarmLabourPrice = finalDemand.FarmLabourPrice0; }
             if (ResolutionMetrics.CaptureDetailedCounters)
                 Interlocked.Add(ref TurnDiagnostics.For(w).PlanTicks, System.Diagnostics.Stopwatch.GetTimestamp() - planStart);
             return best.Intent;

@@ -61,7 +61,7 @@ internal static class TradeChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Valuation(); Handshake(); Eligibility(); Kin(); Settlement(); Planning(); Replay(); Persistence(); Registry(); Food(); MadeToOrder(); Pots(); Published(); Numerics(); ClaimFirst();
+        checks = 0; Config(); Valuation(); Handshake(); Eligibility(); Kin(); Settlement(); Planning(); Replay(); Persistence(); Registry(); Food(); MadeToOrder(); Pots(); Published(); Numerics(); ClaimFirst(); PhaseV();
         Console.WriteLine("PASS: " + checks + " trade assertions"); return checks;
     }
 
@@ -195,10 +195,12 @@ internal static class TradeChecks
         // Identical camps have nothing to gain.
         var same = World((6, 6, 40, 10), (8, 6, 40, 10)); var none = Trade.Plan(same);
         Check(none.Summary.Eligible == 2 && none.Agreements.Count == 0 && none.Deltas.Count == 0, "identical camps do not trade");
-        // A request the responder cannot meet even at the requester's limit is ignored: here the would-be seller is short of
-        // clothing itself, so giving any cloth costs it more than the material the requester can offer is worth.
+        // A camp short of a good does not offer it (phase V Export mark: stock below the useful need is never given), so a
+        // request for it is never sent: here the would-be seller holds 30 Cloth against a need of 80.
         var tight = World((6, 6, 0, 2), (8, 6, 30, 0)); var t = Trade.Plan(tight);
-        Check(t.Summary.Requisitions >= 1 && t.Summary.Honoured + t.Summary.Countered + t.Summary.Ignored == t.Summary.Requisitions, "the tight fixture balances its summary");
+        var seller = Trade.Value(tight, CampOf(tight, 2));
+        Check(seller.Stock(TradeGood.Cloth) == 0 && !Trade.Offers(seller)[(int)TradeGood.Cloth], "a camp below its clothing need offers no cloth");
+        Check(t.Agreements.All(a => a.Want != TradeGood.Cloth || a.Responder != CampOf(tight, 2).Id) && t.Summary.Honoured + t.Summary.Countered + t.Summary.Ignored == t.Summary.Requisitions, "the tight fixture balances its summary and sells no needed cloth");
         foreach (var a in t.Agreements) Check(a.RequesterGain > 0 && a.ResponderGain > 0, "a tight agreement still gains both sides");
     }
 
@@ -643,28 +645,29 @@ internal static class TradeChecks
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy))) { var back = (TradeRecord)tr.ReadObject(stream); Check(back.GiveDelivered == 1 && !back.WantMadeToOrder && !back.GiveMadeToOrder && back.Requester == 1, "an older trade record loads with the give leg delivered"); }
     }
 
-    // The provisional Pots value (accepted 4 October 2026 until a planner publishes Pots): with a labour price every made good
-    // trades to order, and the herder sells Pots it will make to the farmer. The herder's floor for Pots paid in food, about
-    // 90 food a Pot in this fixture, is the accepted value; what the farmer pays with depends on the other goods' curves.
+    // Pots on the planner's food-security claim (phase V replaces the provisional ~90-food band, as approved in
+    // Docs/PlannerTradeStorageDesign.md §3.5): V = PotValue at the camp's food value over the reserve's target Pots, positioned
+    // at the Pots this turn's decay leaves; Pots below that need are never offered, those beyond it are worth little.
     private static void Pots()
     {
-        var w = OrderWorld(fabricOnly: false); var cfg = w.Config; var plan = Trade.Plan(w);
+        var w = OrderWorld(fabricOnly: false); var cfg = w.Config; var n = cfg.Neolithic; double years = cfg.TurnDays / cfg.DaysPerYear;
         var farmer = CampOf(w, 1); var herder = CampOf(w, 2);
-        Check(plan.Agreements.Any(a => a.Requester == farmer.Id && a.Responder == herder.Id && a.Want == TradeGood.Pots && a.WantMade > 0), "the farmer buys Pots the herder makes to order");
-        Check(plan.Agreements.Select(a => a.Want).Concat(plan.Agreements.Select(a => a.Give)).Distinct().Count() >= 2, "with a labour price made goods trade to order");
-        var hv = Trade.Value(w, herder); double q = 5, distance = w.Map.Distance(farmer.Tile, herder.Tile);
-        Check(hv.Stock(TradeGood.Pots) >= q, "fixture: the herder can make five Pots to order");
-        double transport = cfg.TradeDistanceCostPerHex * distance;
-        // With spare making capacity a Pot costs its making cost; once that capacity is spent (or from stock with none), a Pot
-        // costs its provisional use value. The use value is the accepted ~90 food a Pot (the census-era fixture's price, which
-        // followed an earlier agreement that had used up the herder's capacity).
-        double made = Trade.MinimumRatio(hv, TradeGood.Pots, TradeGood.Food, q, cfg.TradeMargin, transport, double.PositiveInfinity);
-        var full = OrderWorld(fabricOnly: false); var fh = CampOf(full, 2); fh.Inventory.Pots = 50; fh.EconomicLabor = null;
-        var fv = Trade.Value(full, fh);
-        Check(fv.Capacity[(int)TradeGood.Pots] == 0 && fv.Stock(TradeGood.Pots) >= q, "fixture: a herder with Pots in stock and no making capacity");
-        double used = Trade.MinimumRatio(fv, TradeGood.Pots, TradeGood.Food, q, cfg.TradeMargin, transport, double.PositiveInfinity);
-        Check(used > 60 && used < 120, "a Pot from stock is priced at its provisional use value, about 90 food (" + used + ")");
-        Check(made > 0 && made < used / 5, "a Pot made with spare capacity costs far less, its making cost (" + made + " food)");
+        Check(Trade.Plan(w).Agreements.Any(a => a.Requester == farmer.Id && a.Responder == herder.Id && a.Want == TradeGood.Pots && a.WantMade > 0), "the farmer, with no Pots, buys Pots the herder makes to order");
+        var hv = Trade.Value(w, herder); var curve = (ExponentialCurve)hv.Curve(TradeGood.Pots);
+        double need = NeolithicProduction.TargetPots(w, herder, years);
+        Check(need > 0, "fixture: the herder's reserve needs Pots");
+        Near(curve.V, ClaimValuation.PotValue(n, ExpansionValuation.FoodValue(cfg, herder)), "the first Pot is worth the planner's Pot claim value");
+        Near(curve.N, need, "the Pot curve's need is the reserve's target Pots");
+        var stocked = OrderWorld(fabricOnly: false); var sh = CampOf(stocked, 2); sh.EconomicLabor = null; sh.Inventory.Pots = need / 2;
+        var sv = Trade.Value(stocked, sh);
+        Near(sv.Position(TradeGood.Pots), need / 2 * Math.Pow(1 - n.PotDecayPerReferenceTurn, years / n.ReferenceTurnYears), "the position is the Pots this turn's decay leaves");
+        Check(sv.Stock(TradeGood.Pots) == 0, "Pots below the need are never offered");
+        sh.Inventory.Pots = 3 * need; sv = Trade.Value(stocked, sh);
+        double q = Math.Min(5, sv.Stock(TradeGood.Pots)), distance = stocked.Map.Distance(CampOf(stocked, 1).Tile, sh.Tile);
+        Check(q > 0, "fixture: Pots beyond the need are offered");
+        double beyond = Trade.MinimumRatio(sv, TradeGood.Pots, TradeGood.Food, q, cfg.TradeMargin, cfg.TradeDistanceCostPerHex * distance, double.PositiveInfinity);
+        double first = curve.V / ExpansionValuation.FoodValue(cfg, herder);
+        Check(beyond > 0 && beyond < first, "a Pot beyond the need sells for less food than the first Pot is worth (" + beyond + " < " + first + ")");
         // Make-to-order capacity is bounded by the raw materials the camp holds or can reach: no Clay, no Pots.
         var dry = OrderWorld(fabricOnly: false); CampOf(dry, 2).Inventory.Clay = 0;
         Check(Trade.Value(dry, CampOf(dry, 2)).Capacity[(int)TradeGood.Pots] == 0, "a camp with no Clay to reach cannot make Pots to order");
@@ -706,6 +709,43 @@ internal static class TradeChecks
         Check(herder.Inventory.AnimalFabric == 0 && Trade.Value(o, herder).Capacity[(int)TradeGood.LightHousing] == 0, "a camp without Animal Fabric cannot make tents to order");
         herder.Inventory.AnimalFabric = 7;
         Check(Trade.Value(o, herder).Capacity[(int)TradeGood.LightHousing] <= 7 / o.Config.Neolithic.AnimalFabricPerLightHousing + 1e-9, "tents to order are bounded by the fabric held");
+    }
+
+    // Phase V (Docs/PlannerTradeStorageDesign.md §2 P1-P2): trade curves on the planner's claim terms, needs as floors, lagged
+    // prices and uses from committed plans and receipts, and a storage room checked on each pair's net change.
+    private static void PhaseV()
+    {
+        var w = OrderWorld(fabricOnly: false); var cfg = w.Config; var n = cfg.Neolithic; double years = cfg.TurnDays / cfg.DaysPerYear;
+        var herder = CampOf(w, 2); herder.Inventory.LightHousingUnits = 4;
+        // Tents: the planner's Light Housing claim, on all shelter in tent units.
+        var v = Trade.Value(w, herder); var tents = (ExponentialCurve)v.Curve(TradeGood.LightHousing);
+        ClaimValuation.CampTerms(w, herder, out double e, out double b, out double s);
+        Near(tents.V, n.LightHousingPeoplePerUnit * n.RudimentaryWeightHousing * e * b * s * ClaimValuation.HousingLife(n, CraftGood.LightHousing), "the tent curve's first unit is the planner's Light Housing claim");
+        Near(v.Position(TradeGood.LightHousing), NeolithicProduction.HousingCapacity(w, herder, w.Days + years * cfg.DaysPerYear).Total / n.LightHousingPeoplePerUnit, "the tent position is all shelter in tent units");
+        Check(v.Stock(TradeGood.LightHousing) <= v.MakeCapacity(TradeGood.LightHousing) + 1e-9, "tents sheltering residents in need are never offered from stock");
+        // Farm Tools: unpriced without the planner's farm-labour price; with it, valued at the labour they free up to this turn's need.
+        var farmer = CampOf(w, 1);
+        Check(!Trade.Value(w, farmer).Active[(int)TradeGood.FarmTools], "Farm Tools are unpriced until a plan records the farm-labour price");
+        farmer.EconomicLabor.FarmLabourPriceSet = true; farmer.EconomicLabor.FarmLabourPrice = .2;
+        var fv = Trade.Value(w, farmer); var band = (BandCurve)fv.Curve(TradeGood.FarmTools);
+        Near(band.Values[0], .2 * ClaimValuation.FarmToolSavedYears(n), "a Farm Tool is worth the labour it frees at the farm-labour price");
+        Near(band.Ends[0], CultivationEconomy.ForecastFarmToolWorkerYears(w, farmer, years) / n.FarmToolFarmerYearsPerUnit, "Farm Tools are wanted up to this turn's field need");
+        // Hand Tools: needed up to last turn's use (production receipts), not a fresh tool schedule.
+        var use = new double[] { 0, 0, 0, 7 };
+        var hv = Trade.Value(w, herder, 0, null, use);
+        Check(hv.Active[(int)TradeGood.HandTools] && ((BandCurve)hv.Curve(TradeGood.HandTools)).Ends[0] == 7, "Hand Tools are needed up to last turn's use");
+        var history = OrderWorld(fabricOnly: false); var hc = CampOf(history, 2);
+        history.History.Add(new TurnRecord { Turn = history.Turn - 1, Production = { new ProductionReceipt { Camp = hc.Id, Good = CraftGood.Cloth, HandToolsConsumed = 3 }, new ProductionReceipt { Camp = hc.Id, Good = CraftGood.Pots, HandToolsConsumed = 2, Clay = 4 } } });
+        var lagged = Trade.LastMaterialUse(history)[hc.Id];
+        Check(lagged[3] == 5 && lagged[1] == 4, "last turn's receipts give the Hand Tool and Clay use");
+        // The Value planner records the farm-labour price (when its claims have one) only while trade is on.
+        var off = OrderWorld(fabricOnly: false); off.Config.TradeEnabled = false; foreach (var c in off.Camps) c.EconomicLabor = null;
+        Check(TurnPlanner.Prepare(off, new Dictionary<int, List<Order>>()).Orders.Where(o => o.Kind == OrderKind.Economy && o.Economy?.Labor != null).All(o => !o.Economy.Labor.FarmLabourPriceSet), "no farm-labour price is recorded while trade is off");
+        // Storage room on each pair's net change: a full store trades a stored good for another, never food for one.
+        var full = Trade.Value(w, herder); full.GoodsRoom = 0; foreach (var g in Trade.Registry) full.Stored[(int)g.Id] = g.Recipe.HasValue && GoodsStorage.Index(g.Recipe.Value) >= 0;
+        Check(full.Fits(TradeGood.Cloth, 5, TradeGood.AnimalFabric, 5) && !full.Fits(TradeGood.Cloth, 5, TradeGood.Food, 50) && full.Fits(TradeGood.Food, 50, TradeGood.Cloth, 5), "a full store swaps stored goods but takes none for food");
+        full.GoodsRoom = 3; Check(full.Fits(TradeGood.Cloth, 3, TradeGood.Food, 9) && !full.Fits(TradeGood.Cloth, 4, TradeGood.Food, 9), "room bounds the net stored units received");
+        full.Apply(TradeGood.Cloth, 2); Near(full.GoodsRoom, 1, "receiving a stored good uses room");
     }
 
     // Make-or-buy numerics with a vanishing need (census C1 turn 52: a tent maker holding 1.8e-10 tents, so N = 1.8e-10).
