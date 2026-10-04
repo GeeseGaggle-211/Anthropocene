@@ -332,6 +332,50 @@ Meanwhile buyers paid food at the opening and planned on the full import. That
 cost farming villages food (cultivation-first population −7.6% at 50 turns) and
 lowered QoL.
 
+**Follow-up fixes and census (commit `2a3a02f`).** These fixes followed the
+diagnosis above, each found with `--trade-resolve` or `--trade-roles` on the C1
+state after turn 46:
+
+- **Pay on delivery.** Food is escrowed at the opening and pays the delivered
+  share after production.
+- **Planner reservation.** The planner staffs and supplies the made part of
+  each export first.
+- **Tool pool.** Made-to-order capacity is bounded by a shared tool-output
+  pool.
+- **Make or buy.** Giving and receiving are valued on the make-or-buy curve
+  `W'`, so sellers with little capacity no longer sell stock at making cost.
+- **Owed fabric.** An owed Cloth or Animal Fabric deficit is forecast as that
+  good.
+- **Import timing.** Imports are never same-turn recipe inputs, and Housing
+  Material imports are next-turn stock.
+- **Housing Material reservation.** The reservation plans its Housing Material
+  inputs, which it previously never made.
+- **Assembly ceiling.** Owed Housing Material is made outside the seller's
+  assembly ceiling.
+
+Five worlds, 50 turns, trade on against off:
+
+- `off` equals `reference` exactly.
+- Trades: 3,460–5,013 per world. Mean made-to-order delivery: 0.961–0.974,
+  with 249–378 short legs per world (about 5%).
+- Handshake: mean 4–6 ms per turn, maximum 28–32 ms, with the 4-worker
+  audit's preparation. Per-turn prepare and execute times are within run noise
+  of `off` (one run per variant on a shared machine).
+
+| Turn | Population | Weighted QoL | Camps | Cultivation-first population | Husbandry-first population, total (median) | Husbandry-first animals, total (median) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 25 | −1.85% | 0.8597 → 0.8553 | 668 → 652 | −0.23% | −3.84% (+1.35%) | −3.84% (−5.56%, 18 → 17) |
+| 50 | −3.18% | 0.8026 → 0.7965 | 3,091 → 2,998 | +0.04% | −4.17% (0.00%) | −5.06% (+2.54%) |
+
+The gate still fails narrowly: herd animals total −5.06% at 50 turns, and the
+median at 25 turns is one animal on 18. Two known losses remain:
+
+- **Cultivation-first clothing coverage** falls from 0.787 to 0.745 at 50 turns.
+- **Husbandry growth.** Making fabric to order consumes animal food this turn,
+  while its food payment arrives only after this turn's growth plan (pay on
+  delivery). Husbandry-first camps grow and fission less (2,201 against 2,312
+  camps).
+
 **Earlier T0-only run (commit `89f7a54`).** With Cloth and Housing Material
 only, all 5,012 requisitions on the five worlds were ignored and outcomes
 equalled `off`. Housing Material has no boundary stock, and clothing was held
