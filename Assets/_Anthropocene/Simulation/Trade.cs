@@ -263,7 +263,9 @@ namespace Anthropocene.Simulation
             // The marginal loss of giving at position x: its use value, but never more than the cost of making another.
             public double LossMarginal(TradeGood g, double x) => Active[(int)g] ? Math.Min(Curve(g).Marginal(x), Cost[(int)g]) : 0;
             public double Integrated(TradeGood g, double a, double b) => Active[(int)g] ? Curve(g).Integrated(a, b) : 0;
-            public double Gain(TradeGood g, double q) => Integrated(g, Position(g), Position(g) + q);
+            // The gain of receiving: its use value, but never more than making it would cost (make or buy).
+            public double Gain(TradeGood g, double q) => Active[(int)g] ? Curve(g).IntegratedCapped(Position(g), Position(g) + q, Cost[(int)g]) : 0;
+            public double GainMarginal(TradeGood g, double x) => Active[(int)g] ? Math.Min(Curve(g).Marginal(x), Cost[(int)g]) : 0;
             public double Loss(TradeGood g, double q) => Active[(int)g] ? Curve(g).IntegratedCapped(Position(g) - q, Position(g), Cost[(int)g]) : 0;
             public void Apply(TradeGood g, double amount)
             {
@@ -351,7 +353,7 @@ namespace Anthropocene.Simulation
             if (Descriptor(want).Curve == Descriptor(give).Curve) return 0;
             double hi = r.Stock(give);
             if (!(hi > 1e-9)) return 0;
-            double Slope(double q) => r.Marginal(want, r.Position(want) + q) - r.LossMarginal(give, r.Position(give) - q);
+            double Slope(double q) => r.GainMarginal(want, r.Position(want) + q) - r.LossMarginal(give, r.Position(give) - q);
             if (!(Slope(0) > 0)) return 0;
             if (Slope(hi) > 0) return hi;
             double lo = 0;
@@ -360,7 +362,7 @@ namespace Anthropocene.Simulation
         }
 
         // The requester's bundle lists (QoLFissionTradeDesign 6.2-6.3), O(goods log W): the W goods with the most
-        // recoverable utility (integrated gain up to its target coverage) and the W giveable goods of lowest marginal
+        // recoverable utility (integrated gain, capped by its own making cost, up to its target coverage) and the W giveable goods of lowest marginal
         // loss. It cannot see what a partner holds, so the responder chooses from these lists. Ties: lower good id.
         internal static (TradeGood[] Wants, TradeGood[] Gives) Lists(Valuation r, int length)
         {
@@ -368,7 +370,7 @@ namespace Anthropocene.Simulation
             foreach (var g in Registry)
             {
                 if (!r.Active[(int)g.Id]) continue;
-                double position = r.Position(g.Id), recoverable = r.Integrated(g.Id, position, Math.Max(position, r.Curve(g.Id).Target));
+                double position = r.Position(g.Id), recoverable = r.Gain(g.Id, Math.Max(0, r.Curve(g.Id).Target - position));
                 if (recoverable > 1e-12) wants.Add((recoverable, (int)g.Id));
                 if (r.Stock(g.Id) > 1e-9) gives.Add((r.LossMarginal(g.Id, position - 1e-9), (int)g.Id));
             }
@@ -413,7 +415,8 @@ namespace Anthropocene.Simulation
         // agreement that gains it most, or null (ignore). For a pair it gives at most what it may give of the
         // want; the requester's 1:1 best quantity is halved up to three times until both accept. It honours at
         // 1:1 when it accepts that, otherwise counters once at its floor inside the requester's limit (closed).
-        private static TradeAgreement Respond(Valuation r, Valuation p, Requisition x, SimulationConfig cfg)
+        // `flows` holds the (giver, receiver, curve) flows already agreed this turn: a pair never moves one curve both ways.
+        private static TradeAgreement Respond(Valuation r, Valuation p, Requisition x, SimulationConfig cfg, HashSet<(int, int, string)> flows)
         {
             double margin = cfg.TradeMargin * (1 - x.Affinity), transport = Math.Min(1, cfg.TradeDistanceCostPerHex * x.Distance);
             TradeAgreement best = null;
@@ -421,6 +424,7 @@ namespace Anthropocene.Simulation
                 foreach (var give in x.Gives)
                 {
                     if (Descriptor(want).Curve == Descriptor(give).Curve || !(p.Stock(want) > 1e-9)) continue;
+                    if (flows.Contains((r.Camp, p.Camp, Descriptor(want).Curve)) || flows.Contains((p.Camp, r.Camp, Descriptor(give).Curve))) continue;
                     double q = Math.Min(BestQuantity(r, want, give), p.Stock(want));
                     for (int attempt = 0; attempt < 4 && q > 1e-6; attempt++, q /= 2)
                     {
@@ -481,20 +485,22 @@ namespace Anthropocene.Simulation
             });
             var all = requisitions.SelectMany(x => x).ToList();
             plan.Summary.Requisitions = all.Count;
+            var flows = new HashSet<(int, int, string)>();
             foreach (var group in all.GroupBy(x => x.To).OrderBy(g => g.Key))
             {
                 var p = byCamp[group.Key];
                 // Value order: the responder's best gain from each request on its opening positions, then requester ID.
-                var ordered = group.Select(x => (x, Score: Respond(byCamp[x.From], p, x, cfg)?.ResponderGain ?? double.NegativeInfinity))
+                var ordered = group.Select(x => (x, Score: Respond(byCamp[x.From], p, x, cfg, flows)?.ResponderGain ?? double.NegativeInfinity))
                     .OrderByDescending(t => t.Score).ThenBy(t => t.x.From).Select(t => t.x).ToList();
                 foreach (var x in ordered)
                 {
                     var r = byCamp[x.From];
                     // Re-evaluated on the positions earlier agreements left, so honours from several
                     // partners never overshoot and no stock is promised twice.
-                    var agreement = Respond(r, p, x, cfg);
+                    var agreement = Respond(r, p, x, cfg, flows);
                     if (agreement == null) { plan.Summary.Ignored++; continue; }
                     plan.Agreements.Add(agreement);
+                    flows.Add((p.Camp, r.Camp, Descriptor(agreement.Want).Curve)); flows.Add((r.Camp, p.Camp, Descriptor(agreement.Give).Curve));
                     r.Apply(agreement.Want, agreement.WantQuantity); r.Apply(agreement.Give, -agreement.GiveQuantity);
                     p.Apply(agreement.Want, -agreement.WantQuantity); p.Apply(agreement.Give, agreement.GiveQuantity);
                     plan.Receive(r.Camp, agreement.Want, agreement.WantParts); plan.Send(p.Camp, agreement.Want, agreement.WantParts);
@@ -532,7 +538,8 @@ namespace Anthropocene.Simulation
             var d = Descriptor(good);
             for (int i = 0; i < amounts.Length; i++)
             {
-                double x = amounts[i] * scale; if (x == 0) continue;
+                // Never more than the giver holds, so rounding cannot leave a negative stock.
+                double x = Math.Min(amounts[i] * scale, Math.Max(0, d.Parts[i].Get(from))); if (!(x > 0)) continue;
                 d.Parts[i].Set(from, d.Parts[i].Get(from) - x); d.Parts[i].Set(to, d.Parts[i].Get(to) + x);
             }
             return scale;

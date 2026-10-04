@@ -242,6 +242,8 @@ internal static class Program
         if (args.Contains("--issue26-forecast-only")) { Issue26ForecastChecks.Run(); return 0; }
         if (args.Contains("--issue28-food-timebase-only")) { Issue28FoodTimebaseChecks.Run(); return 0; }
         var tradeProbe = args.FirstOrDefault(a => a.StartsWith("--trade-probe=", StringComparison.Ordinal));
+        var tradeResolve = args.FirstOrDefault(a => a.StartsWith("--trade-resolve=", StringComparison.Ordinal));
+        if (tradeResolve != null) { var parts = tradeResolve.Substring("--trade-resolve=".Length).Split(','); TradeChecks.ResolveProbe(parts[0], int.Parse(parts[1])); return 0; }
         if (tradeProbe != null) { TradeChecks.Probe(tradeProbe.Substring("--trade-probe=".Length)); return 0; }
         if (args.Contains("--issue32-capability-only")) { Issue32CapabilityChecks.Run(); return 0; }
         if (args.Contains("--cultivation-cache-only")) { CultivationCacheChecks.Run(); return 0; }

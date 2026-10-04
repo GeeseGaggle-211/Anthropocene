@@ -487,6 +487,7 @@ internal static class TradeChecks
         for (int k = 0; k < steps; k++) numeric += Math.Min(v.Curve(TradeGood.AnimalFabric).Marginal(pos - q + (k + .5) * q / steps), cost) * q / steps;
         Near(v.Loss(TradeGood.AnimalFabric, q), numeric, "the capped loss integral matches a numeric integral", 1e-6);
         Check(v.LossMarginal(TradeGood.AnimalFabric, pos) <= cost + 1e-12, "the marginal loss never exceeds the making cost");
+        Check(v.Gain(TradeGood.AnimalFabric, q) <= cost * q + 1e-9 && v.GainMarginal(TradeGood.AnimalFabric, pos) <= cost + 1e-12, "receiving a good the camp can make is worth at most its making cost (make or buy)");
         var fv = Trade.Value(w, farmer); double fq = 30, fpos = fv.Position(TradeGood.Cloth), fcost = fv.Cost[(int)TradeGood.Cloth], fnum = 0;
         for (int k = 0; k < steps; k++) fnum += Math.Min(fv.Curve(TradeGood.Cloth).Marginal(fpos - fq + (k + .5) * fq / steps), fcost) * fq / steps;
         Near(fv.Loss(TradeGood.Cloth, fq), fnum, "the capped exponential integral matches below zero stock too", 1e-6);
@@ -500,6 +501,9 @@ internal static class TradeChecks
         var order = plan.Agreements.Where(a => a.Want == TradeGood.AnimalFabric && a.Responder == herder.Id || a.Give == TradeGood.AnimalFabric && a.Requester == herder.Id).ToArray();
         Check(order.Length > 0 && order.All(a => (a.Want == TradeGood.AnimalFabric ? a.Give : a.Want) == TradeGood.Food), "the farmer buys made-to-order fabric with food");
         double ordered = order.Sum(a => a.Want == TradeGood.AnimalFabric ? a.WantQuantity : a.GiveQuantity);
+        // No pair moves one curve both ways in a turn (a camp may still buy from one neighbour and sell to another).
+        var pairFlows = plan.Agreements.SelectMany(g => new[] { (From: g.Responder, To: g.Requester, Curve: Trade.Descriptor(g.Want).Curve), (From: g.Requester, To: g.Responder, Curve: Trade.Descriptor(g.Give).Curve) }).ToArray();
+        Check(!pairFlows.Any(f => pairFlows.Any(o => o.From == f.To && o.To == f.From && o.Curve == f.Curve)), "no pair moves one curve both ways");
         Check(plan.Exports.TryGetValue(herder.Id, out var exports) && Math.Abs(exports[(int)CraftGood.AnimalFabric] - ordered) < 1e-9, "the agreed fabric is the herder's export claim");
         Check(!plan.Deltas.TryGetValue(herder.Id, out var hd) || hd[Trade.PartIndex(TradeGood.AnimalFabric, 0)] == 0, "a made-to-order export does not reduce the planning stock");
         Near(plan.Delta(farmer.Id, TradeGood.AnimalFabric), ordered, "the buyer plans with the import as stock");
@@ -570,5 +574,36 @@ internal static class TradeChecks
         Console.WriteLine($"wanting {wanting} withForeignContacts {withContacts} inRange {inRange}");
         var plan = Trade.Plan(w); Console.WriteLine($"requisitions {plan.Summary.Requisitions} honoured {plan.Summary.Honoured} countered {plan.Summary.Countered} ignored {plan.Summary.Ignored}");
         foreach (var g in plan.Agreements.GroupBy(a => a.Want + "<-" + a.Give)) Console.WriteLine($"  {g.Key}: {g.Count()} agreements, want {g.Sum(a => a.WantQuantity):F1}, give {g.Sum(a => a.GiveQuantity):F1}");
+    }
+
+    // Diagnostic (--trade-resolve=<save>,<turns>): advance with AI orders and trade on; on an invariant failure, name the
+    // camps whose inventory or needs left the valid range, with their trade records this turn.
+    public static void ResolveProbe(string path, int turns)
+    {
+        var w = SaveCodec.Load(File.ReadAllBytes(path)); w.Config.TradeEnabled = true; Ownership.Bind(w);
+        for (int t = 0; t < turns; t++)
+        {
+            var ai = AiPlanning.Decide(w); var prepared = TurnPlanner.Prepare(w, ai.Orders, ai.Traces);
+            var before = w.Camps.ToDictionary(c => c.Id, c => (c.Inventory.Cloth, c.Inventory.AnimalFabric, c.Inventory.HousingMaterial, c.Food, c.ClothPerCapita));
+            // Flows of one curve between one pair, by direction: a pair moving a curve both ways is a wash.
+            var flows = prepared.Trade.Agreements.SelectMany(g => new[] { (From: g.Responder, To: g.Requester, Curve: Trade.Descriptor(g.Want).Curve), (From: g.Requester, To: g.Responder, Curve: Trade.Descriptor(g.Give).Curve) }).ToArray();
+            int wash = flows.Count(f => f.From < f.To && flows.Any(o => o.From == f.To && o.To == f.From && o.Curve == f.Curve));
+            try { new TurnResolver().Resolve(w, prepared); var tr = w.History.Last().Trades; Console.WriteLine("turn " + w.Turn + " ok, trades " + tr.Count + " pair washes " + wash + " | " + string.Join(", ", tr.GroupBy(x => x.Want + "<-" + x.Give).Select(gr => gr.Key + " " + gr.Count()))); }
+            catch (InvalidOperationException e)
+            {
+                Console.WriteLine("turn failed: " + e.Message);
+                foreach (var c in w.Camps)
+                {
+                    var bad = typeof(CampInventory).GetFields().Where(f => f.FieldType == typeof(double)).Select(f => (f.Name, V: (double)f.GetValue(c.Inventory))).Where(x => double.IsNaN(x.V) || double.IsInfinity(x.V) || x.V < -1e-8).Select(x => x.Name + "=" + x.V)
+                        .Concat(new[] { ("PlantFood", c.PlantFood), ("AnimalFood", c.AnimalFood), ("AquaticFood", c.AquaticFood), ("HousingDemand", c.HousingDemand), ("FabricConsumed", c.FabricConsumed) }.Where(x => double.IsNaN(x.Item2) || double.IsInfinity(x.Item2) || x.Item2 < -1e-8).Select(x => x.Item1 + "=" + x.Item2))
+                        .Concat(new[] { ("QoL", c.QoL), ("Food", c.FoodNeedsMetRatio), ("Water", c.WaterNeedsMetRatio), ("Cloth", c.ClothPerCapita), ("Housing", c.HousingPerCapita), ("E", c.RudimentaryExpectation) }.Where(x => double.IsNaN(x.Item2) || x.Item2 < 0 || x.Item2 > 1 + 1e-8).Select(x => x.Item1 + "=" + x.Item2)).ToArray();
+                    if (bad.Length == 0) continue;
+                    Console.WriteLine($"camp {c.Id} pop {c.Population} tech {c.Technology}: {string.Join(" ", bad)}; before {before.GetValueOrDefault(c.Id)}; exports {string.Join(",", prepared.Needs.TryGetValue(c.Id, out var nd) && nd.Exports != null ? nd.Exports : new double[0])}");
+                    foreach (var a in prepared.Trade.Agreements.Where(a => a.Requester == c.Id || a.Responder == c.Id))
+                        Console.WriteLine($"   {a.Requester}<-{a.Responder} want {a.Want} {a.WantQuantity:F2} give {a.Give} {a.GiveQuantity:F2}");
+                }
+                return;
+            }
+        }
     }
 }

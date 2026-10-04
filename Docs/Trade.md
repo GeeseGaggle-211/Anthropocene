@@ -89,7 +89,10 @@ agriculture/husbandry requirement met, priority > 0) may be offered beyond stock
 - **capacity:** `TradeExportLabourShare` of its residents' turn, bounded by the
   spare (unprotected) food its recipe consumes, typed;
 - **marginal loss of giving:** `min(use value, cost)`, so a camp that can make
-  more never values a unit above its making cost.
+  more never values a unit above its making cost;
+- **marginal gain of receiving:** also `min(use value, cost)` (make or buy), so
+  goods move only where the seller's cost, after margin and transport, is below
+  the buyer's.
 
 Without a recorded labour price (for example the first trading turn), nothing is
 made to order.
@@ -136,7 +139,9 @@ each pair:
    three times.
 
 If no pair works, the request is **ignored**. A confirmed agreement updates
-both sides' positions at once, so no stock is promised twice. Kin use margin
+both sides' positions at once, so no stock is promised twice. A response may not
+move a curve in the opposite direction to a flow already agreed between the same
+pair this turn. A camp may still buy from one neighbour and sell to another. Kin use margin
 `m (1 − Kinship.Affinity)`.
 
 **Planning injection.** The plan is a pure function of the committed world,
@@ -163,8 +168,9 @@ scales by its own giver's holding: a seller that made less than it agreed
 delivers in proportion (`Delivered`/`GiveDelivered`), and food paid at the
 opening stays paid.
 
-Settlement checks conservation of every stock part and that nothing goes
-negative. Records are written after the economy phase, marking made-to-order
+A moved part never exceeds what the giver holds, so rounding cannot leave a
+negative stock. Settlement checks conservation of every stock part and that
+nothing goes negative. Records are written after the economy phase, marking made-to-order
 legs (`WantMadeToOrder`/`GiveMadeToOrder`). Both Societies record a
 `ContactSource.Trade` contact. Imported food credits the inert
 `RecordTradePractice`.
