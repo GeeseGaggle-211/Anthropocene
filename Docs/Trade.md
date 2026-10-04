@@ -172,47 +172,44 @@ There are three variants:
 
 - `reference`: the pre-trade commit `28eafcf`;
 - `off`: the current source with trade off;
-- `on`: the current source with `TradeEnabled=1`.
+- `on`: `TradeEnabled=1` with the defaults (food on, W = 3, K = 3).
 
-Use `Summarize-Trade.py` to reduce the output.
+`Summarize-Trade.py` reduces the output.
 
 **Default-off exactness.** Every per-turn outcome and per-camp row of `off`
 equals `reference` on all five worlds over 50 turns.
 
-**Trade on: structurally inert for T0 goods.** On C1 and C2:
+**Trade on.** Totals over 50 turns:
 
-- trade-eligible camp-turns: 9,566 and 9,040;
-- requisitions: 647 and 762;
-- honoured or countered: none; **all were ignored**;
-- trades settled: zero;
-- outcomes identical to `off`;
-- handshake cost: mean 0.9 ms per turn, maximum 9 ms.
+| World | Eligible camp-turns | Requisitions | Trades (honoured / countered) | Fabric ← food | Cloth ← food | Food ← clothing | Handshake ms/turn (mean / max) |
+| --- | ---: | ---: | --- | ---: | ---: | ---: | --- |
+| C1 | 9,577 | 6,723 | 1,393 (34 / 1,359) | 1,273 | 86 | 34 | 3.9 / 30 |
+| C2 | 8,983 | 5,891 | 1,243 (10 / 1,233) | 1,128 | 105 | 10 | 3.8 / 35 |
+| C3 | 11,619 | 8,821 | 1,910 (62 / 1,848) | 1,705 | 143 | 62 | 6.5 / 101 |
+| P1 | 9,068 | 6,191 | 1,331 (38 / 1,293) | 1,190 | 103 | 38 | 4.0 / 50 |
+| A1 | 12,123 | 7,502 | 1,487 (117 / 1,370) | 1,229 | 141 | 117 | 4.7 / 23 |
 
-**All five worlds.** Totals over 50 turns:
+Trade is the farmer–herder exchange. Villages buy clothing (mostly Animal
+Fabric) with food, at about 30–40 food per clothing unit (C1: 106,809 fabric
+for 3,510,578 food). That rate follows from a seller's high clothing value
+against the buyer's low growth-band food value. A few camps short of food buy
+it at 1:1 for clothing. Housing Material never trades: there is no boundary
+stock (see the limitations). No goods trade happened before contacts formed,
+around turns 18–25.
 
-| World | Eligible camp-turns | Requisitions | Trades | Handshake ms/turn (mean / max) |
-| --- | ---: | ---: | ---: | --- |
-| C1 | 9,566 | 647 | 0 | 0.89 / 7.9 |
-| C2 | 9,040 | 762 | 0 | 0.95 / 9.0 |
-| C3 | 11,441 | 916 | 0 | 1.66 / 16.5 |
-| P1 | 9,137 | 618 | 0 | 1.07 / 11.9 |
-| A1 | 12,058 | 1,069 | 0 | 1.24 / 8.4 |
+Pooled outcomes on the five worlds, trade on against off:
 
-Every requisition was ignored, and `on` equals `off` exactly. The husbandry-first
-gate therefore passes trivially (+0.00% at 25 and 50 turns).
+| Turn | Population | Weighted QoL | Camps | Cultivation-first population | Husbandry-first population (median) | Husbandry-first animals (median) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 25 | 211,270 → 209,907 (−0.65%) | 0.8597 → 0.8573 | 668 → 666 | +0.07% | −1.44% (+0.60%) | +0.07% (0%) |
+| 50 | 1,383,458 → 1,401,517 (+1.31%) | 0.8026 → 0.8008 | 3,091 → 3,097 | +1.01% | +1.42% (+2.04%) | +0.58% (+3.39%) |
 
-`--trade-probe=<save>` on the C1 state at turn 36 (119 eligible camps) shows why:
+The husbandry-first gate (no more than −5% and below 10×) passes at 25 and 50
+turns. The effect is small because trade moves stock, not production: a camp's
+planner adapts only from the turn after it trades.
 
-- **Housing Material:** total stock at the turn boundary is 0. It is a pure
-  intermediate, made and consumed within the turn of the Housing it completes.
-- **Clothing:** husbandry camps hold about one turn's requirement as Animal
-  Fabric. Cultivation camps hold none. 30 camps hold residual Cloth (3,145 units
-  in all), and it is those camps that request Housing Material that nobody holds.
-- **Contacts:** none in range at the opening. Camps start beyond each other's
-  vision; contacts appear with fission daughters from about turn 23.
-
-So barter of T0 goods from committed stock has nothing to exchange. The genuine
-complementarity is clothing (Animal Fabric from herders) against **food** (from
-farmers), which needs WP9. A goods-for-goods market needs either goods produced
-to order (forward claims in the fulfilment plan, a phase 3 interface question)
-or a counter-good held as stock. Food is that counter-good.
+**Earlier T0-only run (commit `89f7a54`).** With Cloth and Housing Material
+only, all 5,012 requisitions on the five worlds were ignored and outcomes
+equalled `off`. Housing Material has no boundary stock, and clothing was held
+only by herders, who had nothing to buy with it. That run is what motivated
+adding Animal Fabric and food.
