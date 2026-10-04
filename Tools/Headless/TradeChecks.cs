@@ -80,7 +80,7 @@ internal static class TradeChecks
         var c = new SimulationConfig();
         Check(c.TradeFoodEnabled && !c.TradeFoodSafeOnly, "food is in the tradeable set by default with welfare-valued growth food");
         Check(c.TradeExportLabourShare == 0, "trade is stock-only by default (nothing made to order)");
-        Check(!c.TradeEnabled && c.TradeRange == 6 && c.TradeRequisitionsPerCamp == 3 && c.TradeMargin == .10 && c.TradeDistanceCostPerHex == .01, "trade defaults are off with the specified levers");
+        Check(c.TradeEnabled && c.TradeRange == 6 && c.TradeRequisitionsPerCamp == 3 && c.TradeMargin == .10 && c.TradeDistanceCostPerHex == .01, "trade is on by default (plan of record) with the specified levers");
         foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.TradeRange = 0, x => x.TradeRange = 21, x => x.TradeRequisitionsPerCamp = 0, x => x.TradeRequisitionsPerCamp = 11,
             x => x.TradeMargin = -.1, x => x.TradeMargin = double.NaN, x => x.TradeDistanceCostPerHex = -.01, x => x.TradeDistanceCostPerHex = 1.5 })
         {
@@ -100,7 +100,7 @@ internal static class TradeChecks
             old.Validate(); checks++;
         }
         string json = File.ReadAllText(FindConfig());
-        foreach (var pair in new[] { ("TradeEnabled", "false"), ("TradeRange", "6"), ("TradeRequisitionsPerCamp", "3"), ("TradeMargin", "0.1"), ("TradeDistanceCostPerHex", "0.01"), ("TradeFoodEnabled", "true"), ("TradeFoodSafeOnly", "false"), ("TradeExportLabourShare", "0"), ("TradeListLength", "3") })
+        foreach (var pair in new[] { ("TradeEnabled", "true"), ("TradeRange", "6"), ("TradeRequisitionsPerCamp", "3"), ("TradeMargin", "0.1"), ("TradeDistanceCostPerHex", "0.01"), ("TradeFoodEnabled", "true"), ("TradeFoodSafeOnly", "false"), ("TradeExportLabourShare", "0"), ("TradeListLength", "3") })
         {
             var m = Regex.Match(json, "\"" + pair.Item1 + "\":\\s*([0-9.a-z]+)");
             Check(m.Success && m.Groups[1].Value == pair.Item2, "OpeningConfig.json carries " + pair.Item1);

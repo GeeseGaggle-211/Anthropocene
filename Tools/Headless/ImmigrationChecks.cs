@@ -125,8 +125,8 @@ internal static class ImmigrationChecks
     private static void Config()
     {
         var c = new SimulationConfig();
-        Check(!c.ImmigrationEnabled && c.ImmigrationRadius == 4 && c.ImmigrationQualityWeight == 1 && c.ImmigrationDistanceCost == .01 && c.ImmigrationAttachmentCost == .02 && c.ImmigrationToSedentaryCost == .05 && c.ImmigrationToNomadicCost == .15
-            && c.ImmigrationDeadband == .075 && c.ImmigrationMaxFraction == .10 && c.ImmigrationMinimumGroup == 4 && c.ImmigrationSourceFloor == 12 && c.ImmigrationReturnCooldownTurns == 3 && c.ImmigrationReturnPenalty == .10, "immigration defaults are off with the specified levers");
+        Check(c.ImmigrationEnabled && c.ImmigrationRadius == 4 && c.ImmigrationQualityWeight == 1 && c.ImmigrationDistanceCost == .01 && c.ImmigrationAttachmentCost == .02 && c.ImmigrationToSedentaryCost == .05 && c.ImmigrationToNomadicCost == .15
+            && c.ImmigrationDeadband == .075 && c.ImmigrationMaxFraction == .10 && c.ImmigrationMinimumGroup == 4 && c.ImmigrationSourceFloor == 12 && c.ImmigrationReturnCooldownTurns == 3 && c.ImmigrationReturnPenalty == .10, "immigration is on by default (plan of record) with the specified levers");
         foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.ImmigrationRadius = 0, x => x.ImmigrationRadius = 6, x => x.ImmigrationQualityWeight = -1, x => x.ImmigrationDistanceCost = -.1, x => x.ImmigrationAttachmentCost = double.NaN,
             x => x.ImmigrationToSedentaryCost = -1, x => x.ImmigrationToNomadicCost = 9, x => x.ImmigrationDeadband = 0, x => x.ImmigrationMaxFraction = .6, x => x.ImmigrationMinimumGroup = 0, x => x.ImmigrationSourceFloor = 0,
             x => x.ImmigrationReturnCooldownTurns = -1, x => x.ImmigrationReturnCooldownTurns = 21, x => x.ImmigrationReturnPenalty = -.1, x => x.ImmigrationReturnPenalty = double.NaN, x => x.ImmigrationReturnPenalty = 6 })
@@ -147,7 +147,7 @@ internal static class ImmigrationChecks
             old.Validate(); checks++;
         }
         string json = File.ReadAllText(FindConfig());
-        foreach (var pair in new[] { ("ImmigrationEnabled", "false"), ("ImmigrationRadius", "4"), ("ImmigrationQualityWeight", "1"), ("ImmigrationDistanceCost", "0.01"), ("ImmigrationAttachmentCost", "0.02"), ("ImmigrationToSedentaryCost", "0.05"),
+        foreach (var pair in new[] { ("ImmigrationEnabled", "true"), ("ImmigrationRadius", "4"), ("ImmigrationQualityWeight", "1"), ("ImmigrationDistanceCost", "0.01"), ("ImmigrationAttachmentCost", "0.02"), ("ImmigrationToSedentaryCost", "0.05"),
             ("ImmigrationToNomadicCost", "0.15"), ("ImmigrationDeadband", "0.075"), ("ImmigrationMaxFraction", "0.1"), ("ImmigrationMinimumGroup", "4"), ("ImmigrationSourceFloor", "12"), ("ImmigrationReturnCooldownTurns", "3"), ("ImmigrationReturnPenalty", "0.1") })
         {
             var m = Regex.Match(json, "\"" + pair.Item1 + "\":\\s*([0-9.a-z]+)");

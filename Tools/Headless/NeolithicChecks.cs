@@ -12,9 +12,19 @@ internal static class NeolithicChecks
     private static int checks;
     private static void Check(bool ok, string message) { checks++; if (!ok) throw new Exception("Neolithic: " + message); }
     private static void Near(double actual, double expected, string message, double tolerance = 1e-8) => Check(Math.Abs(actual - expected) <= tolerance, message + " actual=" + actual + " expected=" + expected);
+    // The settlement-economy levers as they were before fission, immigration, trade, DemandControl, QoL mortality, herd labour
+    // and shared crop/herd allocation became the defaults (5 October 2026). The planner-mechanism fixtures built on Fixture
+    // test the Legacy planner and each lever in isolation, so they pin this baseline and switch on only what they exercise.
+    internal static SimulationConfig MechanismBaseline(SimulationConfig cfg)
+    {
+        cfg.FissionEnabled = false; cfg.ImmigrationEnabled = false; cfg.TradeEnabled = false;
+        cfg.EconomicAllocation = EconomicAllocationStrategy.Legacy;
+        cfg.QoLMortalityEnabled = false; cfg.HerdLabourEnabled = false; cfg.SharedCropHerdAllocationEnabled = false;
+        return cfg;
+    }
     internal static WorldState Fixture(bool agriculture = true)
     {
-        var cfg = SimulationConfig.Small(1); cfg.Width = 24; cfg.Height = 16; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;
+        var cfg = MechanismBaseline(SimulationConfig.Small(1)); cfg.Width = 24; cfg.Height = 16; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;
         var w = new WorldState { Seed = 101, Config = cfg, Generation = new GenerationReport(), Tiles = new Tile[cfg.Width * cfg.Height] };
         for (int i = 0; i < w.Tiles.Length; i++)
         {

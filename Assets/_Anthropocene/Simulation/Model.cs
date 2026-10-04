@@ -112,7 +112,7 @@ namespace Anthropocene.Simulation
         // An explored 8x8 block not refreshed for ExploredMemoryTurns turns is forgotten. Saves that predate these fields load these defaults.
         [System.Runtime.Serialization.OptionalField] public int HinterlandReferencePopulation = 24, HinterlandRingsPerTurn = 1, HinterlandMaxRadius = 6, ExploredMemoryTurns = 5;
         // Fission (WP10a, QoLFissionTradeDesign 3.1-3.6). Saves that predate these fields load with fission disabled so they continue exactly.
-        [System.Runtime.Serialization.OptionalField] public bool FissionEnabled = false;
+        [System.Runtime.Serialization.OptionalField] public bool FissionEnabled = true;
         // Push = crowding + expected gain (WP10c): a camp proposes when the stayers' QoL would rise by at least G*(policy) (relative gain).
         // The three thresholds are the analytic calibration to the design onset populations (Docs/Fission.md); they are not monotone in the
         // policy because the policy also sets the daughter fraction and so the gain a split delivers.
@@ -125,12 +125,12 @@ namespace Anthropocene.Simulation
         // WP10b-2: forward-looking utility and return hysteresis. A flow back to a camp that sent people within the cooldown pays a penalty decaying linearly to zero.
         [System.Runtime.Serialization.OptionalField] public int ImmigrationReturnCooldownTurns = 3;
         [System.Runtime.Serialization.OptionalField] public double ImmigrationReturnPenalty = .10;
-        [System.Runtime.Serialization.OptionalField] public bool ImmigrationEnabled = false;
+        [System.Runtime.Serialization.OptionalField] public bool ImmigrationEnabled = true;
         [System.Runtime.Serialization.OptionalField] public int ImmigrationRadius = 4, ImmigrationMinimumGroup = 4, ImmigrationSourceFloor = 12;
         [System.Runtime.Serialization.OptionalField] public double ImmigrationQualityWeight = 1, ImmigrationDistanceCost = .01, ImmigrationAttachmentCost = .02, ImmigrationToSedentaryCost = .05, ImmigrationToNomadicCost = .15, ImmigrationDeadband = .075, ImmigrationMaxFraction = .10;
         // Trade between known settlements (WP7-WP8, Docs/Trade.md): AI-to-AI barter of Cloth, Animal Fabric, Housing Material and food,
         // agreed in the planning pass and settled from committed stock; with food (WP9) unless TradeFoodEnabled is off. Saves that predate these fields load with trade disabled.
-        [System.Runtime.Serialization.OptionalField] public bool TradeEnabled = false;
+        [System.Runtime.Serialization.OptionalField] public bool TradeEnabled = true;
         [System.Runtime.Serialization.OptionalField] public int TradeRange = 6, TradeRequisitionsPerCamp = 3, TradeListLength = 3;
         [System.Runtime.Serialization.OptionalField] public double TradeMargin = .10, TradeDistanceCostPerHex = .01;
         // Food in the tradeable set (WP9); safe-only is the control that never exports growth food.
@@ -146,19 +146,19 @@ namespace Anthropocene.Simulation
         // Automatic economic allocation strategy (Docs/EconomicControlContract.md §15): "Legacy" (the Value/Uniform planner,
         // EconomicPlanner) or "DemandControl" (service controllers and Elder arbitration, DemandControl.cs). Saves without it
         // load Legacy.
-        [System.Runtime.Serialization.OptionalField] public string EconomicAllocation = EconomicAllocationStrategy.Legacy;
+        [System.Runtime.Serialization.OptionalField] public string EconomicAllocation = EconomicAllocationStrategy.DemandControl;
         [System.Runtime.Serialization.OptionalField] public double GoodsBaseStoragePerResident = 2, GoodsStorageSpacePerUnit = 20;
         // QoL-dependent mortality (Docs/QoLMortality.md): births stay at BaseBirthRate (times the fertility hook); deaths are d0 Q^-a with d0 = BaseBirthRate - AnnualHumanGrowthRate.
         // The net annual growth ceiling is max(0, b0 F - d(Q)); food still limits growth below it. Saves that predate these fields load with QoLMortalityEnabled = false.
-        [System.Runtime.Serialization.OptionalField] public bool QoLMortalityEnabled = false;
+        [System.Runtime.Serialization.OptionalField] public bool QoLMortalityEnabled = true;
         [System.Runtime.Serialization.OptionalField] public double BaseBirthRate = .045, QoLMortalityElasticity = 1;
         // Herd-labour coupling (Docs/HerdLabour.md): the Value planner staffs herders on the labour-price rule instead of reserving them first, and animals above the
         // camp's HerdTarget are slaughtered after breeding (carcass food = SpeciesDefinition.FoodYield per animal). MinimumHerdHerders is the seed herd the planner always keeps managed.
         // Saves that predate these fields load with HerdLabourEnabled = false.
-        [System.Runtime.Serialization.OptionalField] public bool HerdLabourEnabled = false;
+        [System.Runtime.Serialization.OptionalField] public bool HerdLabourEnabled = true;
         // Joint Value-rule food accounting, field operation and livestock investment.
         // Opt-in; absent in legacy saves means the measured corrected control.
-        [System.Runtime.Serialization.OptionalField] public bool SharedCropHerdAllocationEnabled = false;
+        [System.Runtime.Serialization.OptionalField] public bool SharedCropHerdAllocationEnabled = true;
         [System.Runtime.Serialization.OptionalField] public int MinimumHerdHerders = 1;
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;

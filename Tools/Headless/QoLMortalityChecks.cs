@@ -192,7 +192,7 @@ internal static class QoLMortalityChecks
     private static void Config()
     {
         var c = new SimulationConfig();
-        Check(!c.QoLMortalityEnabled && c.BaseBirthRate == .045 && c.QoLMortalityElasticity == 1, "defaults: opt-in off, a = 1, b0 = 0.045");
+        Check(c.QoLMortalityEnabled && c.BaseBirthRate == .045 && c.QoLMortalityElasticity == 1, "defaults: on (plan of record), a = 1, b0 = 0.045");
         Check(c.BaseBirthRate > c.AnnualHumanGrowthRate, "the default birth rate exceeds the growth rate (d0 > 0)");
         foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.BaseBirthRate = x.AnnualHumanGrowthRate, x => x.BaseBirthRate = .001, x => x.BaseBirthRate = double.NaN, x => x.BaseBirthRate = .5, x => x.QoLMortalityElasticity = 0, x => x.QoLMortalityElasticity = -1, x => x.QoLMortalityElasticity = double.PositiveInfinity })
         {
@@ -205,7 +205,7 @@ internal static class QoLMortalityChecks
             Check(Regex.IsMatch(json, "\"" + key + "\":\\s*[0-9.a-z]+"), "OpeningConfig.json carries " + key);
         var m = Regex.Match(json, "\"QoLMortalityElasticity\":\\s*([0-9.]+)"); Check(m.Success && double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) == c.QoLMortalityElasticity, "the serialized elasticity equals the code default");
         m = Regex.Match(json, "\"BaseBirthRate\":\\s*([0-9.]+)"); Check(m.Success && double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) == c.BaseBirthRate, "the serialized birth rate equals the code default");
-        Check(Regex.IsMatch(json, "\"QoLMortalityEnabled\":\\s*false"), "the shipped file leaves QoL mortality off (opt-in)");
+        Check(Regex.IsMatch(json, "\"QoLMortalityEnabled\":\\s*true"), "the shipped file turns QoL mortality on (plan of record)");
     }
 
     private static void Saves()

@@ -72,7 +72,7 @@ internal static class DemandControlChecks
 
     private static void Config()
     {
-        Check(new SimulationConfig().EconomicAllocation == EconomicAllocationStrategy.Legacy, "Legacy is the default strategy");
+        Check(new SimulationConfig().EconomicAllocation == EconomicAllocationStrategy.DemandControl, "DemandControl is the default strategy (plan of record)");
         var bad = new SimulationConfig { EconomicAllocation = "Optimal" }; bool rejected = false; try { bad.Validate(); } catch (ArgumentException) { rejected = true; }
         Check(rejected, "an unknown strategy is rejected");
         var serializer = new DataContractSerializer(typeof(SimulationConfig)); string xml;
@@ -81,7 +81,7 @@ internal static class DemandControlChecks
         string legacy = Regex.Replace(xml, "<EconomicAllocation>[^<]*</EconomicAllocation>", "");
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy))) Check(((SimulationConfig)serializer.ReadObject(stream)).EconomicAllocation == EconomicAllocationStrategy.Legacy, "an older config loads Legacy");
         var m = Regex.Match(File.ReadAllText(FindConfig()), "\"EconomicAllocation\":\\s*\"([A-Za-z]+)\"");
-        Check(m.Success && m.Groups[1].Value == "Legacy", "OpeningConfig.json carries Legacy");
+        Check(m.Success && m.Groups[1].Value == "DemandControl", "OpeningConfig.json carries DemandControl");
     }
 
     // Pure: planning reads the committed camp and writes nothing; the intent validates.

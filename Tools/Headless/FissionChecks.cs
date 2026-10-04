@@ -134,7 +134,7 @@ internal static class FissionChecks
     private static void Config()
     {
         var c = new SimulationConfig();
-        Check(!c.FissionEnabled && c.FissionGainThreshold == .113 && c.FissionGainDiscourage == .080 && c.FissionGainEncourage == .0955 && c.FissionSearchFraction == .8 && c.FissionDaughterMargin == .05 && c.FissionHousingRelief == 0 && c.FissionDaughterBuilderShare == .05 && c.FissionRadius == 4 && c.FissionMinimumDaughter == 12, "defaults match the calibration");
+        Check(c.FissionEnabled && c.FissionGainThreshold == .113 && c.FissionGainDiscourage == .080 && c.FissionGainEncourage == .0955 && c.FissionSearchFraction == .8 && c.FissionDaughterMargin == .05 && c.FissionHousingRelief == 0 && c.FissionDaughterBuilderShare == .05 && c.FissionRadius == 4 && c.FissionMinimumDaughter == 12, "fission is on by default (plan of record) and the levers match the calibration");
         foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.FissionGainThreshold = -.1, x => x.FissionGainDiscourage = 6, x => x.FissionGainEncourage = double.NaN, x => x.FissionRadius = 0, x => x.FissionRadius = 6, x => x.FissionMinimumDaughter = 0, x => x.FissionSearchFraction = 1.5, x => x.FissionSearchFraction = -.1, x => x.FissionDaughterMargin = -.01, x => x.FissionDaughterMargin = 2, x => x.FissionHousingRelief = -.1, x => x.FissionHousingRelief = 1.5, x => x.FissionDaughterBuilderShare = -.1, x => x.FissionDaughterBuilderShare = 1.5 })
         {
             var x = new SimulationConfig(); bad(x); bool rejected = false; try { x.Validate(); } catch (ArgumentException) { rejected = true; }
@@ -152,7 +152,7 @@ internal static class FissionChecks
         }
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) { var back = (SimulationConfig)serializer.ReadObject(stream); Check(back.FissionRadius == 4 && back.FissionDaughterBuilderShare == .2, "saved levers round trip"); }
         string json = File.ReadAllText(FindConfig());
-        foreach (var pair in new[] { ("FissionEnabled", "false"), ("FissionGainThreshold", "0.113"), ("FissionGainDiscourage", "0.08"), ("FissionGainEncourage", "0.0955"), ("FissionSearchFraction", "0.8"), ("FissionDaughterMargin", "0.05"), ("FissionHousingRelief", "0"), ("FissionDaughterBuilderShare", "0.05"), ("FissionRadius", "4"), ("FissionMinimumDaughter", "12") })
+        foreach (var pair in new[] { ("FissionEnabled", "true"), ("FissionGainThreshold", "0.113"), ("FissionGainDiscourage", "0.08"), ("FissionGainEncourage", "0.0955"), ("FissionSearchFraction", "0.8"), ("FissionDaughterMargin", "0.05"), ("FissionHousingRelief", "0"), ("FissionDaughterBuilderShare", "0.05"), ("FissionRadius", "4"), ("FissionMinimumDaughter", "12") })
         {
             var m = Regex.Match(json, "\"" + pair.Item1 + "\":\\s*([0-9.a-z]+)");
             Check(m.Success && m.Groups[1].Value.TrimEnd('0').TrimEnd('.') == pair.Item2.TrimEnd('0').TrimEnd('.'), "OpeningConfig.json carries " + pair.Item1);
