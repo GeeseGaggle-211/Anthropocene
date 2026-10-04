@@ -7,14 +7,17 @@ namespace Anthropocene.Simulation
     // Trade between known settlements (Docs/Trade.md; design QoLFissionTradeDesign 6-7,
     // work order ValueModelImplementationPlan WP7-WP9). Phase 1 is AI-to-AI barter. Every
     // handshake is agreed in the planning pass from the committed boundary; nothing pending
-    // is ever saved. Stock goods (food) settle at the opening of resolution; goods a seller
-    // may make to order settle after production and before needs, and the seller's planner
-    // carries them as export claims.
+    // is ever saved. Each leg has a stock part (from the giver's opening stock) and, for a
+    // good the giver can make, a made-to-order part. Every stock part leaves its giver into
+    // escrow at the opening of resolution. An agreement with no made part settles there; one
+    // with a made part settles after production and before needs (pay on delivery), and the
+    // maker's planner carries that part as an export claim.
 
     // Identifiers of the tradeable goods. Behaviour lives in the Trade.Registry descriptors, not in this
     // list: adding a good is one descriptor and, if it needs a new one, one value-curve builder. Member
     // names match the CraftGood names used by earlier records.
-    public enum TradeGood { Cloth, AnimalFabric, HousingMaterial, Food }
+    // Append only: saved records store the numeric value.
+    public enum TradeGood { Cloth, AnimalFabric, HousingMaterial, Food, LightHousing, Pots, HandTools, FarmTools, Stone, Clay, Wood }
 
     // One confirmed and settled exchange, recorded canonically (agreement order).
     [Serializable]
@@ -45,8 +48,12 @@ namespace Anthropocene.Simulation
         public TradeGood Want, Give;
         public double WantQuantity, GiveQuantity, Ratio, Affinity, RequesterGain, ResponderGain;
         public bool Countered;
-        // Amount of each stock part the agreement moves, in the giving side's committed proportions.
+        // The stock part of each leg, per part in the giving side's committed proportions, and its made-to-order part
+        // (a made good has one part). The quantities are their sums.
         public double[] WantParts, GiveParts;
+        public double WantMade, GiveMade;
+        // No made part: both legs come from opening stock and the agreement settles at the opening.
+        public bool AllStock => !(WantMade > 1e-12) && !(GiveMade > 1e-12);
     }
 
     // Marginal local-use value of one good (person-QoL-years per unit, as the planner's claims). Decreasing in x.
@@ -190,8 +197,9 @@ namespace Anthropocene.Simulation
 
     // The handshake result for one turn. A pure function of the committed world, so Draft and Prepare
     // compute the same plan. Transient: never saved. Stock deltas (indexed by Trade.PartIndex) are what
-    // the planning views add to stock: every import, and exports of goods settled from stock. Exports
-    // of goods settled after production are export claims (by CraftGood) instead.
+    // the planning views add to stock: every stock part given (it leaves into escrow at the opening),
+    // what an all-stock agreement delivers at the opening, and imports that serve this turn's needs.
+    // The made-to-order part of a leg is an export claim of its maker (by CraftGood).
     internal sealed class TradePlan
     {
         public static readonly TradePlan Empty = new TradePlan();
@@ -200,8 +208,8 @@ namespace Anthropocene.Simulation
         public readonly Dictionary<int, double[]> Deltas = new Dictionary<int, double[]>();
         public readonly Dictionary<int, double[]> Exports = new Dictionary<int, double[]>();
         public bool Changes(int camp) => Deltas.ContainsKey(camp) || Exports.ContainsKey(camp) || Imports.ContainsKey(camp);
-        public bool AfterProduction => Agreements.Any(a => Trade.Descriptor(a.Want).AfterProduction || Trade.Descriptor(a.Give).AfterProduction);
-        // Net change of a good at a camp once the turn's trades have settled.
+        public bool AfterProduction => Agreements.Any(a => !a.AllStock);
+        // Net change of a good in a camp's planning view (made exports leave after production).
         public double Delta(int camp, TradeGood good)
         {
             double sum = 0; var g = Trade.Descriptor(good);
@@ -209,27 +217,29 @@ namespace Anthropocene.Simulation
             if (g.Recipe.HasValue && Exports.TryGetValue(camp, out var e)) sum -= e[(int)g.Recipe.Value];
             return sum;
         }
-        // A receiver plans with goods delivered before its needs. Food is paid on delivery, after production and
-        // after this turn's growth plan, so it reaches the receiver's planning only from the next turn.
+        // Goods that arrive after production (an agreement with a made part) and still serve the receiver's needs this
+        // turn, by CraftGood: they count as stock for its needs but never as this turn's recipe inputs.
         public readonly Dictionary<int, double[]> Imports = new Dictionary<int, double[]>();
-        internal void Receive(int camp, TradeGood good, double[] parts)
+        // A receipt of `parts` (stock and made together, in part order). An all-stock agreement delivers at the opening,
+        // so the receiver plans with it; after production only a good that serves needs counts this turn (food, materials,
+        // tools and Housing Material are stock from the next turn).
+        internal void Receive(int camp, TradeGood good, double[] parts, bool allStock)
         {
             var g = Trade.Descriptor(good);
-            if (!g.AfterProduction || !g.ImportServesNeeds) return;
+            if (allStock) { Stock(camp, good, parts, 1); return; }
+            if (!g.Recipe.HasValue || !g.ImportServesNeeds) return;
             Stock(camp, good, parts, 1);
             if (!Imports.TryGetValue(camp, out var m)) Imports[camp] = m = new double[Enum.GetValues(typeof(CraftGood)).Length];
             m[(int)g.Recipe.Value] += parts.Sum();
         }
-        // Exports owed after production, and the part of them the seller makes to order (its planner reserves that work).
-        public readonly Dictionary<int, double[]> Make = new Dictionary<int, double[]>();
-        internal void Send(int camp, TradeGood good, double[] parts, double made = 0)
+        // A delivery: its stock part leaves the giver's view now; its made part is the giver's export claim.
+        internal void Send(int camp, TradeGood good, double[] stockParts, double made)
         {
             var g = Trade.Descriptor(good);
-            if (!g.AfterProduction) { Stock(camp, good, parts, -1); return; }
-            int n = Enum.GetValues(typeof(CraftGood)).Length;
-            if (!Exports.TryGetValue(camp, out var e)) Exports[camp] = e = new double[n];
-            if (!Make.TryGetValue(camp, out var m)) Make[camp] = m = new double[n];
-            e[(int)g.Recipe.Value] += parts.Sum(); m[(int)g.Recipe.Value] += Math.Max(0, made);
+            Stock(camp, good, stockParts, -1);
+            if (!(made > 0) || !g.Recipe.HasValue) return;
+            if (!Exports.TryGetValue(camp, out var e)) Exports[camp] = e = new double[Enum.GetValues(typeof(CraftGood)).Length];
+            e[(int)g.Recipe.Value] += made;
         }
         private void Stock(int camp, TradeGood good, double[] parts, double sign)
         {
@@ -243,8 +253,8 @@ namespace Anthropocene.Simulation
     {
         public readonly TradePlan Plan;
         public readonly double[] WantScale, GiveScale;
-        // Pay on delivery: stock legs (food) leave their giver at the opening into escrow and reach the receiver after
-        // production, in proportion to what the agreement's goods leg delivered; the rest returns to the giver.
+        // Pay on delivery: every stock part leaves its giver at the opening into escrow. An agreement with a made part
+        // releases it after production, both legs at the fraction both sides can deliver; the rest returns to the giver.
         public readonly double[][] WantEscrow, GiveEscrow;
         public TradeSettlement(TradePlan plan)
         {
@@ -284,32 +294,34 @@ namespace Anthropocene.Simulation
         }
         // One tradeable good: its parts, the value curve it is priced on (goods sharing a key share one curve
         // and one position), whether the configuration trades it, and, for a good a camp can make, the recipe
-        // that makes it to order. Made goods settle after production; the others from opening stock.
+        // that makes it to order (a made good has one part). Everything else is traded from stock only.
         internal sealed class GoodDescriptor
         {
             public TradeGood Id; public string Curve; public Part[] Parts; public Func<SimulationConfig, bool> Active;
             public CraftGood? Recipe;
-            public bool AfterProduction => Recipe.HasValue;
-            // Goods arrive after production. One whose only use is as a production input (Housing Material) cannot serve
-            // the receiver this turn and is stock only from the next; the others still count as stock for this turn's
-            // needs, though never as this turn's recipe inputs (Camp.TradeImports).
-            public bool ImportServesNeeds = true;
+            public bool Makeable => Recipe.HasValue;
+            // A good delivered after production (its agreement has a made part) still counts as stock for the receiver's
+            // needs this turn, though never as a recipe input (Camp.TradeImports): clothing, tents and Pots. One used only
+            // in production or field work (Housing Material, tools) is stock from the next turn.
+            public bool ImportServesNeeds;
         }
-        // The terms of one curve for one camp: the curve, the position offset beyond the held parts, and
-        // the floor below which the camp never gives.
+        // The terms of one curve for one camp: the curve, the position offset beyond the held parts, the
+        // floor below which the camp never gives, and whether the camp can price it at all.
         internal struct CurveTerms
         {
-            public ValueCurve Curve; public double Offset, Floor;
+            public ValueCurve Curve; public double Offset, Floor; public bool Unpriced;
         }
+        private static Part Field(string name, Func<CampInventory, double> get, Action<CampInventory, double> set)
+            => new Part { Name = name, Get = c => get(c.Inventory), Set = (c, v) => set(c.Inventory, v) };
 
         internal static readonly GoodDescriptor[] Registry =
         {
-            new GoodDescriptor { Id = TradeGood.Cloth, Curve = "Clothing", Active = _ => true, Recipe = CraftGood.Cloth,
-                Parts = new[] { new Part { Name = "Cloth", Get = c => c.Inventory.Cloth, Set = (c, v) => c.Inventory.Cloth = v } } },
-            new GoodDescriptor { Id = TradeGood.AnimalFabric, Curve = "Clothing", Active = _ => true, Recipe = CraftGood.AnimalFabric,
-                Parts = new[] { new Part { Name = "AnimalFabric", Get = c => c.Inventory.AnimalFabric, Set = (c, v) => c.Inventory.AnimalFabric = v } } },
-            new GoodDescriptor { Id = TradeGood.HousingMaterial, Curve = "Housing", Active = _ => true, Recipe = CraftGood.HousingMaterial, ImportServesNeeds = false,
-                Parts = new[] { new Part { Name = "HousingMaterial", Get = c => c.Inventory.HousingMaterial, Set = (c, v) => c.Inventory.HousingMaterial = v } } },
+            new GoodDescriptor { Id = TradeGood.Cloth, Curve = "Clothing", Active = _ => true, Recipe = CraftGood.Cloth, ImportServesNeeds = true,
+                Parts = new[] { Field("Cloth", i => i.Cloth, (i, v) => i.Cloth = v) } },
+            new GoodDescriptor { Id = TradeGood.AnimalFabric, Curve = "Clothing", Active = _ => true, Recipe = CraftGood.AnimalFabric, ImportServesNeeds = true,
+                Parts = new[] { Field("AnimalFabric", i => i.AnimalFabric, (i, v) => i.AnimalFabric = v) } },
+            new GoodDescriptor { Id = TradeGood.HousingMaterial, Curve = "Housing", Active = _ => true, Recipe = CraftGood.HousingMaterial,
+                Parts = new[] { Field("HousingMaterial", i => i.HousingMaterial, (i, v) => i.HousingMaterial = v) } },
             new GoodDescriptor { Id = TradeGood.Food, Curve = "Food", Active = cfg => cfg.TradeFoodEnabled,
                 Parts = new[]
                 {
@@ -317,12 +329,28 @@ namespace Anthropocene.Simulation
                     new Part { Name = "AnimalFood", Get = c => c.AnimalFood, Set = (c, v) => c.AnimalFood = v, Practice = Domain.Hunting },
                     new Part { Name = "AquaticFood", Get = c => c.AquaticFood, Set = (c, v) => c.AquaticFood = v, Practice = Domain.Fishing }
                 } },
+            new GoodDescriptor { Id = TradeGood.LightHousing, Curve = "Tents", Active = _ => true, Recipe = CraftGood.LightHousing, ImportServesNeeds = true,
+                Parts = new[] { Field("LightHousing", i => i.LightHousingUnits, (i, v) => i.LightHousingUnits = v) } },
+            new GoodDescriptor { Id = TradeGood.Pots, Curve = "Pots", Active = _ => true, Recipe = CraftGood.Pots, ImportServesNeeds = true,
+                Parts = new[] { Field("Pots", i => i.Pots, (i, v) => i.Pots = v) } },
+            new GoodDescriptor { Id = TradeGood.HandTools, Curve = "HandTools", Active = _ => true, Recipe = CraftGood.HandTools,
+                Parts = new[] { Field("HandTools", i => i.HandTools, (i, v) => i.HandTools = v) } },
+            new GoodDescriptor { Id = TradeGood.FarmTools, Curve = "FarmTools", Active = _ => true, Recipe = CraftGood.FarmTools,
+                Parts = new[] { Field("FarmTools", i => i.FarmTools, (i, v) => i.FarmTools = v) } },
+            new GoodDescriptor { Id = TradeGood.Stone, Curve = "Stone", Active = _ => true, Parts = new[] { Field("Stone", i => i.Stone, (i, v) => i.Stone = v) } },
+            new GoodDescriptor { Id = TradeGood.Clay, Curve = "Clay", Active = _ => true, Parts = new[] { Field("Clay", i => i.Clay, (i, v) => i.Clay = v) } },
+            new GoodDescriptor { Id = TradeGood.Wood, Curve = "Wood", Active = _ => true, Parts = new[] { Field("Wood", i => i.Wood, (i, v) => i.Wood = v) } },
         };
         private static readonly int[] partOffsets = Offsets();
         private static int[] Offsets()
         {
             var o = new int[Registry.Length]; int n = 0;
-            for (int i = 0; i < Registry.Length; i++) { if ((int)Registry[i].Id != i) throw new InvalidOperationException("Trade registry order must match TradeGood."); o[i] = n; n += Registry[i].Parts.Length; }
+            for (int i = 0; i < Registry.Length; i++)
+            {
+                if ((int)Registry[i].Id != i) throw new InvalidOperationException("Trade registry order must match TradeGood.");
+                if (Registry[i].Makeable && Registry[i].Parts.Length != 1) throw new InvalidOperationException("A made trade good has one part.");
+                o[i] = n; n += Registry[i].Parts.Length;
+            }
             return o;
         }
         internal static readonly int PartCount = Registry.Sum(g => g.Parts.Length);
@@ -335,6 +363,8 @@ namespace Anthropocene.Simulation
         internal sealed class CampContext
         {
             public double LastProduction; public CraftRecipe[] Recipes;
+            // Last turn's committed Stone, Clay and Wood use (production receipts), the lagged need for raw materials.
+            public double[] MaterialUse = new double[3];
             private bool needs; private double clothingV, clothingNeed, housingV, shelter;
             public void NeedTerms(WorldState w, Camp c, out double cv, out double cn, out double hv, out double sh)
             {
@@ -381,7 +411,42 @@ namespace Anthropocene.Simulation
                     Offset = x.LastProduction, Floor = cfg.TradeFoodSafeOnly ? growthEnd : protectedEnd
                 };
             },
+            // Provisional curves (Docs/Trade.md, "Provisional valuations"; value matching is the planner refactor's work).
+            // Tents: the shelter of LightHousingPeoplePerUnit people over a tent's discounted life, on the need curve
+            // up to held stock plus own demand.
+            ["Tents"] = (w, c, x) =>
+            {
+                var n = w.Config.Neolithic;
+                ClaimValuation.CampTerms(w, c, out double e, out double b, out double s);
+                double v = n.LightHousingPeoplePerUnit * n.RudimentaryWeightHousing * e * b * s * ClaimValuation.HousingLife(n, CraftGood.LightHousing);
+                return new CurveTerms { Curve = new ExponentialCurve(v, Held(c, TradeGood.LightHousing) + OwnDemand(w, c, CraftGood.LightHousing), n.ValueCurveSteepness), Floor = double.NegativeInfinity };
+            },
+            // Pots: the claim's per-Pot value at the camp's food value, up to held stock plus own demand.
+            ["Pots"] = (w, c, x) => Band(Held(c, TradeGood.Pots) + OwnDemand(w, c, CraftGood.Pots), ClaimValuation.PotValue(w.Config.Neolithic, ExpansionValuation.FoodValue(w.Config, c))),
+            // Hand Tools: their replacement labour at the lagged labour price. Farm Tools: the farmer-years one frees.
+            ["HandTools"] = (w, c, x) => Priced(c, price => Band(Held(c, TradeGood.HandTools) + OwnDemand(w, c, CraftGood.HandTools),
+                price * Math.Max(0, ClaimValuation.LabourPerUnit(w, c, x.Recipes.First(r => r.Good == CraftGood.HandTools), x.Recipes, 1)))),
+            ["FarmTools"] = (w, c, x) => Priced(c, price => Band(Held(c, TradeGood.FarmTools) + OwnDemand(w, c, CraftGood.FarmTools), price * ClaimValuation.FarmToolSavedYears(w.Config.Neolithic))),
+            // Raw materials: their extraction labour at the lagged labour price, up to last turn's use over the reserve horizon.
+            ["Stone"] = (w, c, x) => Material(w, c, x, MaterialId.Stone, 0),
+            ["Clay"] = (w, c, x) => Material(w, c, x, MaterialId.Clay, 1),
+            ["Wood"] = (w, c, x) => Material(w, c, x, MaterialId.Wood, 2),
         };
+        private static CurveTerms Band(double need, double value)
+            => new CurveTerms { Curve = new BandCurve(new[] { Math.Max(0, need) }, new[] { Math.Max(0, value) }), Floor = double.NegativeInfinity };
+        // A curve valued at the lagged labour price; unpriced (never traded by this camp) until a plan has recorded one.
+        private static CurveTerms Priced(Camp c, Func<double, CurveTerms> build)
+            => c.EconomicLabor != null && c.EconomicLabor.LabourPriceSet && c.EconomicLabor.LabourPrice > 0 ? build(c.EconomicLabor.LabourPrice) : new CurveTerms { Unpriced = true, Floor = double.PositiveInfinity };
+        private static double OwnDemand(WorldState w, Camp c, CraftGood good)
+            => Math.Max(0, NeolithicProduction.Demand(w, c, good, w.Config.TurnDays / w.Config.DaysPerYear, c.Population));
+        private static CurveTerms Material(WorldState w, Camp c, CampContext x, MaterialId m, int index) => Priced(c, price =>
+        {
+            var cfg = w.Config; var n = cfg.Neolithic;
+            double years = cfg.TurnDays / cfg.DaysPerYear, perYear = cfg.DaysPerYear / cfg.BaseDays;
+            string role = MaterialEconomy.Specialist(m);
+            double rate = n.SpecialistMaterialExtractionRate > 0 ? SpecialistProductivity.ExtractionRate(w, c, m, c.People.HasTech(EconomicIntents.RequiredTechnology(role)) ? role : WorkforceRoles.Gatherer) : 0;
+            return rate > 0 ? Band(x.MaterialUse[index] * n.MaterialReserveMultiplier(years), price / (rate * perYear)) : new CurveTerms { Unpriced = true, Floor = double.PositiveInfinity };
+        });
         internal static bool CanBuild(Camp c) => CultivationEconomy.Enabled(c) && c.People.HasTech(NeolithicTech.Construction);
 
         // The value terms of one camp: one curve per key, positions over held parts, giveable stock and, for
@@ -461,7 +526,8 @@ namespace Anthropocene.Simulation
                 if (amount < 0)
                 {
                     double made = Math.Min(Induced(g, -amount), Capacity[i]);
-                    if (-amount - made > Held[i]) made = Math.Min(Capacity[i], -amount - Math.Max(0, Held[i]));
+                    double giveable = Math.Max(0, Math.Min(Held[i], Position(g) - Floor(g)));
+                    if (-amount - made > giveable) made = Math.Min(Capacity[i], -amount - giveable);
                     Capacity[i] = Math.Max(0, Capacity[i] - made); if (UsesTools[i]) ToolPool = Math.Max(0, ToolPool - made);
                     Held[i] = Math.Max(0, Held[i] - (-amount - made)); madeOut = made;
                 }
@@ -485,10 +551,24 @@ namespace Anthropocene.Simulation
             return result;
         }
 
-        // O(goods) per camp: one builder call per curve key, one recipe cost per makeable good.
-        internal static Valuation Value(WorldState w, Camp c, double lastProduction = 0, CraftRecipe[] recipes = null)
+        // Last turn's committed Stone, Clay and Wood use per camp, from its production receipts.
+        internal static Dictionary<int, double[]> LastMaterialUse(WorldState w)
         {
-            var context = new CampContext { LastProduction = lastProduction, Recipes = recipes ?? NeolithicProduction.Recipes(w.Config) };
+            var result = new Dictionary<int, double[]>();
+            var last = w.History.Count > 0 ? w.History[w.History.Count - 1] : null;
+            if (last?.Production != null)
+                foreach (var p in last.Production)
+                {
+                    if (!result.TryGetValue(p.Camp, out var use)) result[p.Camp] = use = new double[3];
+                    use[0] += Math.Max(0, p.Stone); use[1] += Math.Max(0, p.Clay); use[2] += Math.Max(0, p.Wood);
+                }
+            return result;
+        }
+
+        // O(goods) per camp: one builder call per curve key, one recipe cost per makeable good.
+        internal static Valuation Value(WorldState w, Camp c, double lastProduction = 0, CraftRecipe[] recipes = null, double[] materialUse = null)
+        {
+            var context = new CampContext { LastProduction = lastProduction, Recipes = recipes ?? NeolithicProduction.Recipes(w.Config), MaterialUse = materialUse ?? new double[3] };
             var cfg = w.Config;
             var v = new Valuation { Camp = c.Id, Society = c.SocietyId, Tile = c.Tile };
             var built = new Dictionary<string, CurveTerms>(); var held = new Dictionary<string, double>();
@@ -500,11 +580,12 @@ namespace Anthropocene.Simulation
                 v.Shares[i] = g.Parts.Select(p => v.Held[i] > 1e-12 ? Math.Max(0, p.Get(c)) / v.Held[i] : 1.0 / g.Parts.Length).ToArray();
                 if (!v.Active[i]) continue;
                 if (!built.TryGetValue(g.Curve, out var terms)) built[g.Curve] = terms = Builders[g.Curve](w, c, context);
+                if (terms.Unpriced) { v.Active[i] = false; continue; }
                 v.Curves[i] = terms.Curve;
                 held[g.Curve] = (held.TryGetValue(g.Curve, out double h) ? h : 0) + v.Held[i];
             }
-            foreach (var pair in built) v.SetCurve(pair.Key, pair.Value.Offset + held[pair.Key], pair.Value.Floor);
-            foreach (var g in Registry) if (!v.Active[(int)g.Id] && !built.ContainsKey(g.Curve)) v.SetCurve(g.Curve, v.Held[(int)g.Id], double.PositiveInfinity);
+            foreach (var pair in built) v.SetCurve(pair.Key, pair.Value.Offset + (held.TryGetValue(pair.Key, out double h) ? h : 0), pair.Value.Floor);
+            foreach (var g in Registry) if (!v.Active[(int)g.Id] && (!built.TryGetValue(g.Curve, out var t) || t.Unpriced)) v.SetCurve(g.Curve, v.Held[(int)g.Id], double.PositiveInfinity);
             // Food a made recipe may consume: what lies above the protected band (consumption, feedstock, reserve).
             var foodTerms = built.TryGetValue("Food", out var food) ? food : Builders["Food"](w, c, context);
             double foodPosition = foodTerms.Offset + Held(c, TradeGood.Food), protectedEnd = ((BandCurve)foodTerms.Curve).Ends[1];
@@ -563,17 +644,31 @@ namespace Anthropocene.Simulation
             return lo;
         }
 
+        // The list length W: at least TradeListLength and growing with the number of tradeable goods G as ceil(sqrt(G)),
+        // so the W x W pairs a responder evaluates grow linearly in G.
+        internal static int ListLength(SimulationConfig cfg)
+            => Math.Max(cfg.TradeListLength, (int)Math.Ceiling(Math.Sqrt(Registry.Count(g => g.Active(cfg)))));
+
+        // What a camp offers: every good it may give now (stock above its floor or making capacity). Goods only, no
+        // quantities: partners request only goods it offers, so a request it could never fill is never sent.
+        internal static bool[] Offers(Valuation v) => Registry.Select(g => v.Stock(g.Id) > 1e-9).ToArray();
+
         // The requester's bundle lists (QoLFissionTradeDesign 6.2-6.3), O(goods log W): the W goods with the most
-        // recoverable utility (integrated gain, capped by its own making cost, up to its target coverage) and the W giveable goods of lowest marginal
-        // loss. It cannot see what a partner holds, so the responder chooses from these lists. Ties: lower good id.
-        internal static (TradeGood[] Wants, TradeGood[] Gives) Lists(Valuation r, int length)
+        // recoverable utility (integrated gain, capped by its own making cost, up to its target coverage) among those
+        // the partner offers, and the W giveable goods of lowest marginal loss. It sees what a partner offers, never
+        // how much, so the responder chooses quantities. Ties: lower good id.
+        internal static (TradeGood[] Wants, TradeGood[] Gives) Lists(Valuation r, int length, bool[] offered = null)
         {
             var wants = new List<(double Score, int Id)>(); var gives = new List<(double Score, int Id)>();
             foreach (var g in Registry)
             {
                 if (!r.Active[(int)g.Id]) continue;
-                double position = r.Position(g.Id), recoverable = r.Gain(g.Id, Math.Max(0, r.Curve(g.Id).Target - position));
-                if (recoverable > 1e-12) wants.Add((recoverable, (int)g.Id));
+                double position = r.Position(g.Id);
+                if (offered == null || offered[(int)g.Id])
+                {
+                    double recoverable = r.Gain(g.Id, Math.Max(0, r.Curve(g.Id).Target - position));
+                    if (recoverable > 1e-12) wants.Add((recoverable, (int)g.Id));
+                }
                 if (r.Stock(g.Id) > 1e-9) gives.Add((r.LossMarginal(g.Id, position - 1e-9), (int)g.Id));
             }
             return (wants.OrderByDescending(x => x.Score).ThenBy(x => x.Id).Take(length).Select(x => (TradeGood)x.Id).ToArray(),
@@ -644,8 +739,7 @@ namespace Anthropocene.Simulation
                         if (best == null || responderGain > best.ResponderGain + 1e-12)
                             best = new TradeAgreement { Requester = r.Camp, Responder = p.Camp, Distance = x.Distance, Want = want, Give = give,
                                 WantQuantity = q, GiveQuantity = paid, Ratio = ratio, Affinity = x.Affinity, Countered = countered,
-                                RequesterGain = r.Gain(want, q) * (1 - transport) - r.Loss(give, paid), ResponderGain = responderGain,
-                                WantParts = p.Parts(want, q), GiveParts = r.Parts(give, paid) };
+                                RequesterGain = r.Gain(want, q) * (1 - transport) - r.Loss(give, paid), ResponderGain = responderGain };
                         break;
                     }
                 }
@@ -664,21 +758,19 @@ namespace Anthropocene.Simulation
             plan.Summary.Eligible = eligible.Length;
             if (eligible.Length < 2) return plan;
             var workers = execution ?? new PhaseExecution();
-            var production = LastProduction(w);
+            var production = LastProduction(w); var materialUse = LastMaterialUse(w);
             long stage = System.Diagnostics.Stopwatch.GetTimestamp();
             var recipeTable = NeolithicProduction.Recipes(cfg);
-            var values = workers.Map(eligible, c => Value(w, c, production.TryGetValue(c.Id, out double p) ? p : 0, recipeTable));
+            var values = workers.Map(eligible, c => Value(w, c, production.TryGetValue(c.Id, out double p) ? p : 0, recipeTable, materialUse.TryGetValue(c.Id, out var u) ? u : null));
             if (Counters.Enabled) { Counters.ValueTicks += System.Diagnostics.Stopwatch.GetTimestamp() - stage; stage = System.Diagnostics.Stopwatch.GetTimestamp(); }
-            var byCamp = new Dictionary<int, Valuation>();
-            for (int i = 0; i < eligible.Length; i++) byCamp[eligible[i].Id] = values[i];
+            var byCamp = new Dictionary<int, Valuation>(); var offers = new Dictionary<int, bool[]>();
+            for (int i = 0; i < eligible.Length; i++) { byCamp[eligible[i].Id] = values[i]; offers[eligible[i].Id] = Offers(values[i]); }
+            int length = ListLength(cfg);
             var societies = w.Societies.ToDictionary(s => s.Id);
             var map = w.Map;
             var requisitions = workers.Map(eligible, c =>
             {
                 var r = byCamp[c.Id]; var list = new List<Requisition>();
-                var (wants, gives) = Lists(r, cfg.TradeListLength);
-                // Only a request some pair of which this camp itself would accept is sent.
-                if (!wants.Any(a => gives.Any(b => Descriptor(a).Curve != Descriptor(b).Curve && BestQuantity(r, a, b) > 1e-6))) return list;
                 // Partners: remembered settlements of other Societies, nearest first, at most K.
                 var partners = c.People.Memory.Contacts
                     .Where(k => !k.Moved && k.Tile >= 0 && byCamp.ContainsKey(k.Camp) && byCamp[k.Camp].Society != r.Society)
@@ -687,6 +779,9 @@ namespace Anthropocene.Simulation
                     .OrderBy(p => p.Distance).ThenBy(p => p.Camp).Take(cfg.TradeRequisitionsPerCamp);
                 foreach (var p in partners)
                 {
+                    // Wants among what this partner offers; only a request some pair of which this camp itself would accept is sent.
+                    var (wants, gives) = Lists(r, length, offers[p.Camp]);
+                    if (!wants.Any(a => gives.Any(b => Descriptor(a).Curve != Descriptor(b).Curve && BestQuantity(r, a, b) > 1e-6))) continue;
                     societies.TryGetValue(r.Society, out var mine); societies.TryGetValue(byCamp[p.Camp].Society, out var theirs);
                     list.Add(new Requisition { From = c.Id, To = p.Camp, Distance = p.Distance, Wants = wants, Gives = gives, Affinity = Kinship.Affinity(mine, theirs) });
                 }
@@ -713,10 +808,14 @@ namespace Anthropocene.Simulation
                     if (agreement == null) { plan.Summary.Ignored++; continue; }
                     plan.Agreements.Add(agreement);
                     flows.Add((p.Camp, r.Camp, Descriptor(agreement.Want).Curve)); flows.Add((r.Camp, p.Camp, Descriptor(agreement.Give).Curve));
+                    // Each leg splits into the giver's stock part (its committed proportions) and its made-to-order part.
                     r.Apply(agreement.Want, agreement.WantQuantity); double giveMade = r.Apply(agreement.Give, -agreement.GiveQuantity);
                     double wantMade = p.Apply(agreement.Want, -agreement.WantQuantity); p.Apply(agreement.Give, agreement.GiveQuantity);
-                    plan.Receive(r.Camp, agreement.Want, agreement.WantParts); plan.Send(p.Camp, agreement.Want, agreement.WantParts, wantMade);
-                    plan.Send(r.Camp, agreement.Give, agreement.GiveParts, giveMade); plan.Receive(p.Camp, agreement.Give, agreement.GiveParts);
+                    agreement.WantMade = wantMade; agreement.GiveMade = giveMade;
+                    agreement.WantParts = p.Parts(agreement.Want, Math.Max(0, agreement.WantQuantity - wantMade));
+                    agreement.GiveParts = r.Parts(agreement.Give, Math.Max(0, agreement.GiveQuantity - giveMade));
+                    plan.Receive(r.Camp, agreement.Want, WithMade(agreement.WantParts, wantMade), agreement.AllStock); plan.Send(p.Camp, agreement.Want, agreement.WantParts, wantMade);
+                    plan.Send(r.Camp, agreement.Give, agreement.GiveParts, giveMade); plan.Receive(p.Camp, agreement.Give, WithMade(agreement.GiveParts, giveMade), agreement.AllStock);
                     if (agreement.Countered) plan.Summary.Countered++; else plan.Summary.Honoured++;
                 }
             }
@@ -724,8 +823,16 @@ namespace Anthropocene.Simulation
             return plan;
         }
 
-        // A planning view of a camp after its confirmed trades: imports and stock-settled exports change its
-        // stock; goods it will deliver after production become export claims its demand nets (TradeExports).
+        // A leg's whole delivery by part: its stock parts with the made part added to the (single) part of a made good.
+        internal static double[] WithMade(double[] stockParts, double made)
+        {
+            var parts = (double[])stockParts.Clone();
+            if (made > 0) parts[0] += made;
+            return parts;
+        }
+
+        // A planning view of a camp after its confirmed trades: stock given leaves its stock, receipts that serve this
+        // turn join it, and the made-to-order part it owes becomes an export claim its demand adds (TradeExports).
         internal static void ApplyToPlanningCamp(Camp view, TradePlan plan)
         {
             if (plan.Deltas.TryGetValue(view.Id, out var delta))
@@ -736,7 +843,6 @@ namespace Anthropocene.Simulation
                         if (d != 0) g.Parts[i].Set(view, Math.Max(0, g.Parts[i].Get(view) + d));
                     }
             if (plan.Exports.TryGetValue(view.Id, out var exports)) view.TradeExports = (double[])exports.Clone();
-            if (plan.Make.TryGetValue(view.Id, out var make)) view.TradeMake = (double[])make.Clone();
             if (plan.Imports.TryGetValue(view.Id, out var imports)) view.TradeImports = (double[])imports.Clone();
         }
 
@@ -747,20 +853,7 @@ namespace Anthropocene.Simulation
             for (int i = 0; i < amounts.Length; i++) if (amounts[i] > 0) scale = Math.Min(scale, Math.Max(0, d.Parts[i].Get(from)) / amounts[i]);
             return Math.Max(0, Math.Min(1, scale));
         }
-        // Moves one leg in the giver's committed proportions at the given scale. Returns the scale.
-        private static double Leg(Camp from, Camp to, TradeGood good, double[] amounts, double scale)
-        {
-            var d = Descriptor(good);
-            for (int i = 0; i < amounts.Length; i++)
-            {
-                // Never more than the giver holds, so rounding cannot leave a negative stock.
-                double x = Math.Min(amounts[i] * scale, Math.Max(0, d.Parts[i].Get(from))); if (!(x > 0)) continue;
-                d.Parts[i].Set(from, d.Parts[i].Get(from) - x); d.Parts[i].Set(to, d.Parts[i].Get(to) + x);
-            }
-            return scale;
-        }
-
-        // Takes a stock leg from its giver into escrow at the scale it can deliver. Returns the amounts held.
+        // Takes a stock part from its giver into escrow at the scale it can deliver. Returns the amounts held.
         private static double[] Escrow(Camp from, TradeGood good, double[] amounts, double scale)
         {
             var d = Descriptor(good); var held = new double[amounts.Length];
@@ -774,7 +867,8 @@ namespace Anthropocene.Simulation
         // Releases escrow: `fraction` to the receiver, the rest back to the giver.
         private static void Release(Camp giver, Camp receiver, TradeGood good, double[] held, double fraction)
         {
-            var d = Descriptor(good);
+            if (held == null) return;
+            var d = Descriptor(good); fraction = Math.Max(0, Math.Min(1, fraction));
             for (int i = 0; i < held.Length; i++)
             {
                 if (!(held[i] > 0)) continue;
@@ -782,11 +876,32 @@ namespace Anthropocene.Simulation
                 d.Parts[i].Set(receiver, d.Parts[i].Get(receiver) + paid); d.Parts[i].Set(giver, d.Parts[i].Get(giver) + (held[i] - paid));
             }
         }
+        private static double Sum(double[] a) { double s = 0; if (a != null) foreach (double x in a) s += x; return s; }
+        // After production, the fraction of a leg its giver can deliver: what escrow holds plus, of its made part,
+        // what it now holds of the good.
+        private static double Deliverable(Camp giver, TradeGood good, double[] held, double stock, double made)
+        {
+            double total = stock + made;
+            if (!(total > 0)) return 1;
+            double produced = made > 0 ? Math.Min(made, Math.Max(0, Descriptor(good).Parts[0].Get(giver))) : 0;
+            return Math.Max(0, Math.Min(1, (Sum(held) + produced) / total));
+        }
+        // Delivers `fraction` of a leg: from escrow first (the rest of escrow is refunded), then from the giver's stock.
+        private static void Deliver(Camp giver, Camp receiver, TradeGood good, double[] held, double stock, double made, double fraction)
+        {
+            double amount = fraction * (stock + made), escrowed = Sum(held), fromEscrow = Math.Min(escrowed, amount);
+            Release(giver, receiver, good, held, escrowed > 0 ? fromEscrow / escrowed : 0);
+            double rest = amount - fromEscrow;
+            if (!(rest > 0)) return;
+            // Never more than the giver holds, so rounding cannot leave a negative stock.
+            var part = Descriptor(good).Parts[0]; double x = Math.Min(rest, Math.Max(0, part.Get(giver)));
+            if (x > 0) { part.Set(giver, part.Get(giver) - x); part.Set(receiver, part.Get(receiver) + x); }
+        }
 
         // Settles, in agreement order, the legs of one timing, checking that every part (with what is in escrow)
-        // is conserved and none goes negative. At the opening, stock legs go into escrow. After production, the
-        // goods legs settle (two goods legs scale together, so a short side never receives full payment), then each
-        // escrowed leg is paid in proportion to its agreement's goods leg and the rest refunded.
+        // is conserved and none goes negative. At the opening every stock part goes into escrow at the share its giver
+        // holds, and an all-stock agreement settles both legs at the smaller share. After production each other agreement
+        // settles both legs at the smaller share their givers can deliver (pay on delivery), and the rest is refunded.
         private static void SettleLegs(WorldState w, TradeSettlement s, bool afterProduction)
         {
             var camps = w.Camps.ToDictionary(c => c.Id);
@@ -799,34 +914,26 @@ namespace Anthropocene.Simulation
                 if (!camps.TryGetValue(a.Requester, out var r) || !camps.TryGetValue(a.Responder, out var p))
                 {
                     // A party that vanished: refund any escrow to the giver still present.
-                    if (afterProduction) { if (s.WantEscrow[k] != null && camps.TryGetValue(a.Responder, out var pr)) Release(pr, pr, a.Want, s.WantEscrow[k], 0); if (s.GiveEscrow[k] != null && camps.TryGetValue(a.Requester, out var rr)) Release(rr, rr, a.Give, s.GiveEscrow[k], 0); s.WantEscrow[k] = s.GiveEscrow[k] = null; }
-                    s.WantScale[k] = s.GiveScale[k] = 0; continue;
+                    if (camps.TryGetValue(a.Responder, out var pr)) Release(pr, pr, a.Want, s.WantEscrow[k], 0);
+                    if (camps.TryGetValue(a.Requester, out var rr)) Release(rr, rr, a.Give, s.GiveEscrow[k], 0);
+                    s.WantEscrow[k] = s.GiveEscrow[k] = null; s.WantScale[k] = s.GiveScale[k] = 0; continue;
                 }
-                bool wantGoods = Descriptor(a.Want).AfterProduction, giveGoods = Descriptor(a.Give).AfterProduction;
                 if (!afterProduction)
                 {
-                    if (!wantGoods) { double f = Available(p, a.Want, a.WantParts); s.WantEscrow[k] = Escrow(p, a.Want, a.WantParts, f); s.WantScale[k] = f; }
-                    if (!giveGoods) { double f = Available(r, a.Give, a.GiveParts); s.GiveEscrow[k] = Escrow(r, a.Give, a.GiveParts, f); s.GiveScale[k] = f; }
+                    double fw = Available(p, a.Want, a.WantParts), fg = Available(r, a.Give, a.GiveParts);
+                    s.WantEscrow[k] = Escrow(p, a.Want, a.WantParts, fw); s.GiveEscrow[k] = Escrow(r, a.Give, a.GiveParts, fg);
+                    if (!a.AllStock) continue;
+                    double f = Math.Min(fw, fg);
+                    Release(p, r, a.Want, s.WantEscrow[k], fw > 0 ? f / fw : 0); Release(r, p, a.Give, s.GiveEscrow[k], fg > 0 ? f / fg : 0);
+                    s.WantEscrow[k] = s.GiveEscrow[k] = null; s.WantScale[k] = s.GiveScale[k] = f;
                     continue;
                 }
-                double wantScale = wantGoods ? Available(p, a.Want, a.WantParts) : 1, giveScale = giveGoods ? Available(r, a.Give, a.GiveParts) : 1;
-                if (wantGoods && giveGoods) wantScale = giveScale = Math.Min(wantScale, giveScale);
-                // A goods leg never delivers beyond what the other side's escrow can pay for.
-                if (wantGoods && !giveGoods) wantScale = Math.Min(wantScale, s.GiveScale[k]);
-                if (giveGoods && !wantGoods) giveScale = Math.Min(giveScale, s.WantScale[k]);
-                if (wantGoods) s.WantScale[k] = Leg(p, r, a.Want, a.WantParts, wantScale);
-                if (giveGoods) s.GiveScale[k] = Leg(r, p, a.Give, a.GiveParts, giveScale);
-                // Pay on delivery: the escrowed leg pays the goods leg's delivered share of the agreement.
-                if (s.WantEscrow[k] != null)
-                {
-                    double paidShare = s.WantScale[k] > 0 ? Math.Min(1, s.GiveScale[k] / s.WantScale[k]) : 0;
-                    Release(p, r, a.Want, s.WantEscrow[k], paidShare); s.WantScale[k] *= paidShare; s.WantEscrow[k] = null;
-                }
-                if (s.GiveEscrow[k] != null)
-                {
-                    double paidShare = s.GiveScale[k] > 0 ? Math.Min(1, s.WantScale[k] / s.GiveScale[k]) : 0;
-                    Release(r, p, a.Give, s.GiveEscrow[k], paidShare); s.GiveScale[k] *= paidShare; s.GiveEscrow[k] = null;
-                }
+                if (a.AllStock) continue;
+                double wantStock = Sum(a.WantParts), giveStock = Sum(a.GiveParts);
+                double share = Math.Min(Deliverable(p, a.Want, s.WantEscrow[k], wantStock, a.WantMade), Deliverable(r, a.Give, s.GiveEscrow[k], giveStock, a.GiveMade));
+                Deliver(p, r, a.Want, s.WantEscrow[k], wantStock, a.WantMade, share);
+                Deliver(r, p, a.Give, s.GiveEscrow[k], giveStock, a.GiveMade, share);
+                s.WantEscrow[k] = s.GiveEscrow[k] = null; s.WantScale[k] = s.GiveScale[k] = share;
             }
             var after = Enumerable.Range(0, parts.Length).Select(Total).ToArray();
             for (int i = 0; i < parts.Length; i++)
@@ -837,7 +944,7 @@ namespace Anthropocene.Simulation
         }
 
         // Opening settlement (before dispatch, so provisions and the food ledger see the stock the planner saw):
-        // stock legs (food) leave their giver into escrow. Returns the turn's settlement for the after-production step.
+        // stock parts leave their giver into escrow and all-stock agreements settle. Returns the turn's settlement.
         internal static TradeSettlement Settle(WorldState w, TradePlan plan, TurnRecord record)
         {
             if (plan == null || plan.Agreements.Count == 0 && plan.Summary.Eligible == 0) return null;
@@ -847,8 +954,8 @@ namespace Anthropocene.Simulation
             return s;
         }
 
-        // After production and before needs: goods legs settle (a seller that made less delivers in proportion and the
-        // buyer's needs see what arrived), then escrowed food is paid on delivery and the rest refunded.
+        // After production and before needs: agreements with a made part settle (a maker that made less delivers in
+        // proportion, both legs scale together, and the receiver's needs see what arrived); the rest of escrow is refunded.
         internal static void SettleAfterProduction(WorldState w, TradeSettlement s, TurnRecord record = null)
         {
             if (s == null || s.Plan.Agreements.Count == 0) return;
@@ -873,7 +980,7 @@ namespace Anthropocene.Simulation
                 record.Trades.Add(new TradeRecord { Turn = w.Turn, Requester = r.Id, Responder = p.Id, RequesterSociety = r.SocietyId, ResponderSociety = p.SocietyId,
                     Distance = a.Distance, Want = a.Want, Give = a.Give, WantQuantity = a.WantQuantity * want, GiveQuantity = a.GiveQuantity * give,
                     Ratio = a.Ratio, Affinity = a.Affinity, Countered = a.Countered, RequesterGain = a.RequesterGain, ResponderGain = a.ResponderGain, Delivered = want, GiveDelivered = give,
-                    WantMadeToOrder = Descriptor(a.Want).AfterProduction, GiveMadeToOrder = Descriptor(a.Give).AfterProduction });
+                    WantMadeToOrder = a.WantMade > 1e-12, GiveMadeToOrder = a.GiveMade > 1e-12 });
                 ContactKnowledge.RecordTrade(w, r.People, p);
                 ContactKnowledge.RecordTrade(w, p.People, r);
                 // A receiver learns the practice that produced what it imports (inert while TradePracticePerValue = 0).
@@ -884,7 +991,7 @@ namespace Anthropocene.Simulation
                     for (int i = 0; i < amounts.Length; i++)
                         if (d.Parts[i].Practice.HasValue) TechnologyDiscovery.RecordTradePractice(w.Config, receiver.People, d.Parts[i].Practice.Value, gain * scale * amounts[i] / total);
                 }
-                Learn(r, a.Want, a.WantParts, a.RequesterGain, want); Learn(p, a.Give, a.GiveParts, a.ResponderGain, give);
+                Learn(r, a.Want, WithMade(a.WantParts, a.WantMade), a.RequesterGain, want); Learn(p, a.Give, WithMade(a.GiveParts, a.GiveMade), a.ResponderGain, give);
             }
         }
     }

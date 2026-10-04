@@ -269,15 +269,15 @@ namespace Anthropocene.Simulation
         // min(m + stock, tool capacity) fits in `labor`. Both steps have the same
         // rate and tool multiplier, so with no stock this is half of today's
         // single-step Housing capacity. Pure and deterministic.
-        // Housing Material owed for export (Docs/Trade.md) is not assembled here, so it is made first, limited only by labour and
-        // tool coverage; own material is then limited by the assembly as before. With nothing owed this is HousingMaterialLimit.
+        // Housing Material still owed for export (Docs/Trade.md: the made-to-order part not yet made) is not assembled
+        // here, so it is made first, limited only by labour and tool coverage; own material (`stock`, excluding what is
+        // already held for export) is then limited by the assembly as before. With nothing owed this is HousingMaterialLimit.
         internal static double ExportedHousingMaterialLimit(ToolCoverageBudget coverage, double rate, double labor, double demand, double stock, double owed)
         {
             if (!(owed > 0)) return HousingMaterialLimit(coverage, rate, labor, demand, stock);
-            double held = Math.Max(0, stock), deficit = Math.Max(0, owed - held);
-            double made = !(rate > 0) || !(labor > 0) ? 0 : Math.Min(Math.Min(deficit, Math.Max(0, demand)), coverage.Capacity(CraftGood.HousingMaterial, rate, labor));
+            double made = !(rate > 0) || !(labor > 0) ? 0 : Math.Min(Math.Min(owed, Math.Max(0, demand)), coverage.Capacity(CraftGood.HousingMaterial, rate, labor));
             double left = Math.Max(0, labor - coverage.Time(CraftGood.HousingMaterial, rate, made));
-            return made + HousingMaterialLimit(coverage, rate, left, Math.Max(0, demand - made), held - Math.Min(owed, held));
+            return made + HousingMaterialLimit(coverage, rate, left, Math.Max(0, demand - made), Math.Max(0, stock));
         }
         internal static double HousingMaterialLimit(ToolCoverageBudget coverage, double rate, double labor, double demand, double stock)
         {
@@ -393,13 +393,17 @@ namespace Anthropocene.Simulation
 
         // Field work is resolved before growth planning, while Pots depreciate
         // later in ResolveCampNeolithic. Keep those chronology boundaries separate.
+        // Agreed exports (Docs/Trade.md): the made-to-order part of a good owed after production is added to its
+        // demand (Cloth, Animal Fabric and Housing Material net it against stock below, Hand Tools in
+        // ToolReplacementDemands); stock delivered from escrow has already left the camp's stock.
         public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources = null, ProductionOrder order = null)
+            => OwnDemand(w, c, good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order) + AddedExport(c, good);
+        private static double AddedExport(Camp c, CraftGood good) => good == CraftGood.LightHousing || good == CraftGood.Pots || good == CraftGood.FarmTools ? c.TradeExport(good) : 0;
+        private static double OwnDemand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources, ProductionOrder order)
         {
             var n = w.Config.Neolithic;
             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
             // Housing Material is made only against the Housing gap, never stockpiled beyond it.
-            // Agreed exports (planning views only, Docs/Trade.md) are delivered out of stock after production, so
-            // demand nets them: own use sees the stock left after delivery and the deficit is produced.
             if (good == CraftGood.HousingMaterial)
                 return Math.Max(0, Demand(w, c, CraftGood.Housing, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order) - (Math.Max(0, c.Inventory.HousingMaterial) - c.TradeExport(CraftGood.HousingMaterial)));
             if (good == CraftGood.HandTools || good == CraftGood.Tools)
@@ -450,7 +454,13 @@ namespace Anthropocene.Simulation
         }
         // Hand and Regular Tool replacement share one equipment schedule; one run
         // answers both goods for the same camp state.
+        // Hand Tools owed for export (their made-to-order part, Docs/Trade.md) are added to the Hand Tool demand.
         internal static (double HandTools, double Tools) ToolReplacementDemands(WorldState w, Camp c, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources, ProductionOrder order = null)
+        {
+            var own = OwnToolReplacementDemands(w, c, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order);
+            return (own.HandTools + c.TradeExport(CraftGood.HandTools), own.Tools);
+        }
+        private static (double HandTools, double Tools) OwnToolReplacementDemands(WorldState w, Camp c, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources, ProductionOrder order)
         {
             var n = w.Config.Neolithic;
             // Both schedule passes read the same unmodified camp, so each recipe's
@@ -634,7 +644,7 @@ namespace Anthropocene.Simulation
         }
         private static double DemandWithoutToolReplacement(WorldState w, Camp c, CraftGood good, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed)
         {
-            if (good == CraftGood.FarmTools) return Math.Max(0, FarmToolDemand(w, c, years, fieldWorkAlreadyResolved));
+            if (good == CraftGood.FarmTools) return Math.Max(0, FarmToolDemand(w, c, years, fieldWorkAlreadyResolved)) + c.TradeExport(good);
             return Demand(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed);
         }
         private static double IntervalsForYears(WorldState w, double years) => Math.Max(0, years) * w.Config.DaysPerYear / w.Config.BaseDays;
@@ -805,7 +815,7 @@ namespace Anthropocene.Simulation
             // Housing Material shares its Builder pool with the assembly that will
             // consume it, so it never takes labour the assembly needs this turn.
             double amount = recipe.Good == CraftGood.HousingMaterial
-                ? ExportedHousingMaterialLimit(coverage, rate, labor, usefulDemand, c.Inventory.HousingMaterial, c.TradeExport(CraftGood.HousingMaterial))
+                ? ExportedHousingMaterialLimit(coverage, rate, labor, usefulDemand, c.Inventory.HousingMaterial - c.TradeHeldForExport(CraftGood.HousingMaterial), c.TradeOutstanding(CraftGood.HousingMaterial))
                 : Math.Min(usefulDemand, recipe.Equipment ? coverage.Capacity(recipe.Good, rate, labor) : labor * rate);
             var inv = c.Inventory;
             if (recipe.Stone > 0) amount = Math.Min(amount, inv.Stone / recipe.Stone);
@@ -813,9 +823,9 @@ namespace Anthropocene.Simulation
             if (recipe.Wood > 0) amount = Math.Min(amount, inv.Wood / recipe.Wood);
             if (recipe.PlantFood > 0) amount = Math.Min(amount, c.PlantFood / recipe.PlantFood);
             if (recipe.AnimalFood > 0) amount = Math.Min(amount, c.AnimalFood / recipe.AnimalFood);
-            // Goods owed for export after production (Docs/Trade.md) are not inputs.
-            if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, inv.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
-            if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, inv.HousingMaterial - c.TradeExport(CraftGood.HousingMaterial)) / recipe.HousingMaterial);
+            // Goods already made for export after production (Docs/Trade.md) are not inputs.
+            if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, inv.AnimalFabric - c.TradeHeldForExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
+            if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, inv.HousingMaterial - c.TradeHeldForExport(CraftGood.HousingMaterial)) / recipe.HousingMaterial);
             // A recipe ranked below Housing Material leaves the Wood/Clay its
             // unfinished claim needs, whichever role happens to run first.
             if (housing != null && recipe.ConstructionMaterial <= 0 && (recipe.Wood > 0 || recipe.Clay > 0))
@@ -847,7 +857,10 @@ namespace Anthropocene.Simulation
             inv.Stone -= amount * recipe.Stone; inv.Wood -= wood; inv.Clay -= clay; c.PlantFood -= amount * recipe.PlantFood; c.AnimalFood -= amount * recipe.AnimalFood; inv.AnimalFabric -= amount * recipe.AnimalFabric; inv.HousingMaterial -= amount * recipe.HousingMaterial;
             if (housing != null) housing.CompleteDirect(recipe, amount);
             switch (recipe.Good) { case CraftGood.HandTools: inv.HandTools += amount; break; case CraftGood.Pots: inv.Pots += amount; break; case CraftGood.Cloth: inv.Cloth += amount; break; case CraftGood.FarmTools: inv.FarmTools += amount; break; case CraftGood.Housing: AddFixedHousing(w, c, amount, record.Duration > 0 ? record.StartDays + record.Duration : w.Days + intervals * w.Config.BaseDays); break; case CraftGood.Tools: inv.Tools += amount; break; case CraftGood.AnimalFabric: inv.AnimalFabric += amount; break; case CraftGood.LightHousing: inv.LightHousingUnits += amount; break; case CraftGood.HerdingTools: inv.HerdingTools += amount; break; case CraftGood.HousingMaterial: inv.HousingMaterial += amount; break; }
-            coverage.Credit(recipe.Good, amount);
+            // Output first fills what this camp still owes for export; Hand Tools made for export are not this turn's coverage.
+            double forExport = c.TradeOwed == null ? 0 : Math.Min(amount, Math.Max(0, c.TradeOwed[(int)recipe.Good]));
+            if (forExport > 0) c.TradeOwed[(int)recipe.Good] -= forExport;
+            coverage.Credit(recipe.Good, amount - forExport);
             record.Production.Add(new ProductionReceipt { Camp = c.Id, Good = recipe.Good, Role = role, Output = amount, WorkerIntervals = used, Stone = amount * recipe.Stone, Clay = clay, Wood = wood, PlantFood = amount * recipe.PlantFood, AnimalFood = amount * recipe.AnimalFood, AnimalFabric = amount * recipe.AnimalFabric, HousingMaterial = amount * recipe.HousingMaterial, EquipmentWorkerIntervals = recipe.Equipment ? used : 0, HandToolsConsumed = consumedHand, ToolsConsumed = consumedTools });
             var demographic = record.Demographics.FirstOrDefault(d => d.Camp == c.Id);
             if (demographic != null) demographic.ManufacturingFood += amount * (recipe.PlantFood + recipe.AnimalFood);
@@ -868,9 +881,9 @@ namespace Anthropocene.Simulation
         {
             if (c.Population <= 0) return;
             int residents = needs?.Residents ?? c.Population;
-            // Goods this camp owes for export are held back from its recipes while it produces; the reserve is
+            // Goods this camp makes for export are held back from its recipes while it produces; the reserve is
             // transient and cleared before needs (Docs/Trade.md).
-            c.TradeExports = (double[])needs?.Exports?.Clone();
+            c.TradeExports = (double[])needs?.Exports?.Clone(); c.TradeOwed = (double[])c.TradeExports?.Clone();
             DepreciateHousing(w, c, years, residents);
             DepreciatePots(w, c, years);
             if (CultivationEconomy.EconomyEnabled(c))
@@ -912,7 +925,7 @@ namespace Anthropocene.Simulation
                     }
                 }
             }
-            c.TradeExports = null;
+            c.TradeExports = null; c.TradeOwed = null;
             if (resolveNeeds) ResolveNeeds(w, c, years, residents);
         }
         // Derived social-cohesion scale (Docs/SocialCohesion.md): N_s = N_band (1 + k H) with the housing share H from

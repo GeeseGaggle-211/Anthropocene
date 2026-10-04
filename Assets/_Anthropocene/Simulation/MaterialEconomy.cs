@@ -662,9 +662,12 @@ namespace Anthropocene.Simulation
             var tools = new ToolCoverageBudget(w, c, intervals, equipment);
             double plant = plantFoodBudget >= 0 ? plantFoodBudget : includePlantDemand ? double.PositiveInfinity : c.PlantFood;
             double animalFood = animalFoodBudget >= 0 ? animalFoodBudget : includePlantDemand ? double.PositiveInfinity : c.AnimalFood;
-            // Goods owed for export (planning views, Docs/Trade.md) are not available as inputs or own use.
-            double animalFabric = Math.Max(0, c.Inventory.AnimalFabric) - c.TradeExport(CraftGood.AnimalFabric) - c.TradeImport(CraftGood.AnimalFabric);
-            double housingMaterial = Math.Max(0, c.Inventory.HousingMaterial) - c.TradeExport(CraftGood.HousingMaterial) - c.TradeImport(CraftGood.HousingMaterial);
+            // Imports arrive after production and are never inputs; goods made for export (Docs/Trade.md: output
+            // first fills the made-to-order part owed) are held back from inputs.
+            double animalFabric = Math.Max(0, c.Inventory.AnimalFabric) - c.TradeImport(CraftGood.AnimalFabric);
+            double housingMaterial = Math.Max(0, c.Inventory.HousingMaterial) - c.TradeImport(CraftGood.HousingMaterial);
+            double HeldForExport(CraftGood good) => Math.Min(c.TradeExport(good), planned[good]);
+            double Outstanding(CraftGood good) => Math.Max(0, c.TradeExport(good) - planned[good]);
             var orderedRecipes = ProductionOrder.Sort(recipes, good => NeolithicProduction.Priority(c, good), order);
             var steps = ProductionOrder.Steps(orderedRecipes, order != null).ToArray();
             var roles = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToArray();
@@ -711,7 +714,7 @@ namespace Anthropocene.Simulation
                             double clothing = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
                             double shelter = lightHousingUseful ? NeolithicProduction.HousingGapPeople(w, c, residents, w.Days + years * w.Config.DaysPerYear) / n.LightHousingPeoplePerUnit : 0;
                             double virtualCloth = Math.Max(0, c.Inventory.Cloth) - c.TradeExport(CraftGood.Cloth) + planned[CraftGood.Cloth];
-                            double virtualAnimalFabric = animalFabric;
+                            double virtualAnimalFabric = animalFabric - c.TradeExport(CraftGood.AnimalFabric);
                             double remainingClothing = Math.Max(0, clothing - virtualCloth - virtualAnimalFabric);
                             double clothingBeforeAnimalFabric = Math.Max(0, clothing - virtualCloth);
                             double animalFabricForShelter = Math.Max(0, virtualAnimalFabric - clothingBeforeAnimalFabric);
@@ -726,16 +729,17 @@ namespace Anthropocene.Simulation
                         double amount = Math.Min(sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
                         // Housing Material and its assembly draw on one Builder pool.
                         if (recipe.Good == CraftGood.HousingMaterial)
-                            amount = NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor, Math.Max(0, useful - planned[recipe.Good]), housingMaterial + c.TradeExport(CraftGood.HousingMaterial), Math.Max(0, c.TradeExport(CraftGood.HousingMaterial) - planned[recipe.Good]));
-                        if (recipe.HousingMaterial > 0) amount = Math.Min(amount, housingMaterial / recipe.HousingMaterial);
+                            amount = NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor, Math.Max(0, useful - planned[recipe.Good]), housingMaterial - HeldForExport(CraftGood.HousingMaterial), Outstanding(CraftGood.HousingMaterial));
+                        if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, housingMaterial - HeldForExport(CraftGood.HousingMaterial)) / recipe.HousingMaterial);
                         if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                         if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
-                        if (recipe.AnimalFabric > 0) amount = Math.Min(amount, animalFabric / recipe.AnimalFabric);
+                        if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, animalFabric - HeldForExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
                         if (amount <= 0) continue;
                         labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : recipe.Good == CraftGood.HousingMaterial ? tools.Time(recipe.Good, rate, amount) : amount / rate;
                         laborByRole[role] = labor;
+                        double forExport = Math.Min(amount, Outstanding(recipe.Good));
                         planned[recipe.Good] += amount; plant -= amount * recipe.PlantFood; animalFood -= amount * recipe.AnimalFood;
-                        tools.Credit(recipe.Good, amount);
+                        tools.Credit(recipe.Good, amount - forExport);
                         if (recipe.Good == CraftGood.AnimalFabric) animalFabric += amount;
                         animalFabric -= amount * recipe.AnimalFabric;
                         housingMaterial += recipe.Good == CraftGood.HousingMaterial ? amount : 0;

@@ -179,7 +179,10 @@ internal static class TradeChecks
         }
         // Deltas conserve each good and sum the agreements.
         Near(plan.Deltas.Keys.Union(plan.Exports.Keys).Sum(id => plan.Delta(id, TradeGood.Cloth)), 0, "cloth deltas sum to zero", 1e-9);
-        Check(plan.Deltas.Keys.Union(plan.Exports.Keys).All(id => plan.Delta(id, TradeGood.HousingMaterial) <= 1e-9), "imported Housing Material never enters a planning view (it arrives after the assembly)");
+        // Without a recorded labour price nothing is made to order: both agreements are all stock and settle at the opening,
+        // so the receivers plan with what they receive.
+        Check(plan.Agreements.All(a => a.AllStock && a.WantMade == 0 && a.GiveMade == 0) && !plan.AfterProduction && plan.Exports.Count == 0, "without a labour price every agreement is all stock");
+        Near(plan.Deltas.Keys.Sum(id => plan.Delta(id, TradeGood.HousingMaterial)), 0, "housing material deltas sum to zero", 1e-9);
         Near(plan.Delta(material, TradeGood.Cloth), plan.Agreements.Where(a => a.Requester == material && a.Want == TradeGood.Cloth).Sum(a => a.WantQuantity) + plan.Agreements.Where(a => a.Responder == material && a.Give == TradeGood.Cloth).Sum(a => a.GiveQuantity), "a camp's delta sums its agreements");
         foreach (var c in w.Camps.Where(c => plan.Changes(c.Id)))
         {
@@ -360,7 +363,12 @@ internal static class TradeChecks
     private static void Registry()
     {
         Check(Trade.Registry.Select(d => (int)d.Id).SequenceEqual(Enumerable.Range(0, Enum.GetValues(typeof(TradeGood)).Length)), "every TradeGood has exactly one descriptor, in order");
-        Check(Trade.PartCount == Trade.Registry.Sum(d => d.Parts.Length) && Trade.PartIndex(TradeGood.Food, 2) == Trade.PartCount - 1, "parts are indexed contiguously");
+        Check(Trade.PartCount == Trade.Registry.Sum(d => d.Parts.Length) && Trade.PartIndex(TradeGood.Wood, 0) == Trade.PartCount - 1
+            && Trade.PartIndex(TradeGood.LightHousing, 0) == Trade.PartIndex(TradeGood.Food, 2) + 1, "parts are indexed contiguously");
+        Check(Trade.Registry.All(d => !d.Makeable || d.Parts.Length == 1), "a made good has one part");
+        // W grows with the number of goods as ceil(sqrt(G)), never below TradeListLength.
+        Check(Trade.ListLength(w0()) == Math.Max(w0().TradeListLength, (int)Math.Ceiling(Math.Sqrt(Trade.Registry.Count(d => d.Active(w0()))))) && Trade.ListLength(w0()) >= 4, "the list length scales with the goods");
+        static SimulationConfig w0() { var c = SimulationConfig.Small(1); c.TradeFoodEnabled = true; return c; }
         var w = Complementary(); w.Config.TradeFoodEnabled = true; var v = Trade.Value(w, CampOf(w, 1));
         Check(ReferenceEquals(v.Curve(TradeGood.Cloth), v.Curve(TradeGood.AnimalFabric)) && v.Position(TradeGood.Cloth) == v.Position(TradeGood.AnimalFabric), "Cloth and Animal Fabric share one clothing curve and position");
         Check(Trade.BestQuantity(v, TradeGood.Cloth, TradeGood.AnimalFabric) == 0, "trading along one curve gains nothing");
@@ -701,8 +709,8 @@ internal static class TradeChecks
         var buyers = new HashSet<int>(); var sellers = new HashSet<int>();
         foreach (var t in rec.Trades)
         {
-            if (Trade.Descriptor(t.Want).AfterProduction) { buyers.Add(t.Requester); sellers.Add(t.Responder); }
-            if (Trade.Descriptor(t.Give).AfterProduction) { buyers.Add(t.Responder); sellers.Add(t.Requester); }
+            if (t.WantMadeToOrder) { buyers.Add(t.Requester); sellers.Add(t.Responder); }
+            if (t.GiveMadeToOrder) { buyers.Add(t.Responder); sellers.Add(t.Requester); }
         }
         var offCamps = off.Camps.ToDictionary(c => c.Id);
         foreach (var (name, pick) in new (string, Func<Camp, bool>)[] { ("buyers only", c => buyers.Contains(c.Id) && !sellers.Contains(c.Id)), ("sellers only", c => sellers.Contains(c.Id) && !buyers.Contains(c.Id)), ("both", c => buyers.Contains(c.Id) && sellers.Contains(c.Id)), ("neither", c => !buyers.Contains(c.Id) && !sellers.Contains(c.Id)) })

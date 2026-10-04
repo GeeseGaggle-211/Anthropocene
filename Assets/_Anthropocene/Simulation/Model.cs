@@ -447,14 +447,17 @@ namespace Anthropocene.Simulation
         internal void Bind(Society owner) { people = owner; SocietyId = owner.Id; Player = owner.Player; }
         // A planning view sharing every field but a private inventory copy (trade
         // deltas, Trade.ApplyToPlanningInventory). Read-only like the camp itself.
-        internal Camp WithPrivateInventory() { var view = (Camp)MemberwiseClone(); view.Inventory = Inventory.Copy(); view.TradeExports = (double[])TradeExports?.Clone(); view.TradeMake = (double[])TradeMake?.Clone(); view.TradeImports = (double[])TradeImports?.Clone(); return view; }
-        // Planning views only (Docs/Trade.md): goods this camp has agreed to deliver this turn after its production,
-        // by CraftGood. Demand nets them against stock so the planner produces them. Never set on an authoritative camp.
+        internal Camp WithPrivateInventory() { var view = (Camp)MemberwiseClone(); view.Inventory = Inventory.Copy(); view.TradeExports = (double[])TradeExports?.Clone(); view.TradeImports = (double[])TradeImports?.Clone(); view.TradeOwed = null; return view; }
+        // Docs/Trade.md: the made-to-order part of goods this camp has agreed to deliver this turn after its
+        // production, by CraftGood (the stock part has already left its stock, into escrow). Set on planning views
+        // and, for the duration of production only, on the resolving camp. Demand adds it; never saved.
         [NonSerialized] internal double[] TradeExports;
         internal double TradeExport(CraftGood good) => TradeExports == null ? 0 : TradeExports[(int)good];
-        // The part of TradeExports this camp agreed to make to order: its planner reserves that production.
-        [NonSerialized] internal double[] TradeMake;
-        internal double TradeMakeOf(CraftGood good) => TradeMake == null ? 0 : TradeMake[(int)good];
+        // While the camp produces: the part of TradeExports not yet made. Made exports are held back from
+        // inputs and tool coverage (TradeExport - TradeOutstanding).
+        [NonSerialized] internal double[] TradeOwed;
+        internal double TradeOutstanding(CraftGood good) => TradeOwed == null ? TradeExport(good) : TradeOwed[(int)good];
+        internal double TradeHeldForExport(CraftGood good) => Math.Max(0, TradeExport(good) - TradeOutstanding(good));
         // Goods this camp will receive after production and already counts as stock for its needs: never a recipe input this turn.
         [NonSerialized] internal double[] TradeImports;
         internal double TradeImport(CraftGood good) => TradeImports == null ? 0 : TradeImports[(int)good];

@@ -152,6 +152,8 @@ namespace Anthropocene.Simulation
                 double foodRoom = foodRoomEnvelope;
                 double clothingPlant = clothingPlantEnvelope, clothingAnimal = clothingAnimalEnvelope, clothingRoom = clothingRoomEnvelope, clothingLeft = demand.ClothingNeedUnits;
                 var requested = recipes.ToDictionary(r => r.Good, r => 0d);
+                // Made-to-order exports reserved below (Docs/Trade.md); part of `requested`, never own use.
+                var reserved = recipes.ToDictionary(r => r.Good, r => 0d);
                 var futureRoles = new Dictionary<string, double>();
                 int proposedFarmers = 0;
                 double proposedExpansion = 0;
@@ -167,11 +169,13 @@ namespace Anthropocene.Simulation
                     {
                         candidate.Inventory.Cloth = Math.Max(0, c.Inventory.Cloth) + requested[CraftGood.Cloth];
                         candidate.Inventory.AnimalFabric = Math.Max(0, c.Inventory.AnimalFabric) + requested[CraftGood.AnimalFabric] - requested[CraftGood.LightHousing];
-                        candidate.Inventory.LightHousingUnits = candidateLightHousing + requested[CraftGood.LightHousing];
+                        // Tents made for export never shelter this camp.
+                        candidate.Inventory.LightHousingUnits = candidateLightHousing + requested[CraftGood.LightHousing] - reserved[CraftGood.LightHousing];
                         return NeolithicProduction.Demand(w, candidate, r.Good, years, -1, false, false, sources);
                     }
                     if (herdLadder != null && r.Good == CraftGood.HerdingTools) return NeolithicProduction.Demand(w, candidate, r.Good, years, -1, false, false, sources);
-                    return goals[r.Good];
+                    // Goals include the made-to-order exports, already reserved.
+                    return Math.Max(0, goals[r.Good] - reserved[r.Good]);
                 }
                 void Add(Dictionary<string, double> roles, string role, double workers) { if (workers > Epsilon) roles[role] = (roles.TryGetValue(role, out double old) ? old : 0) + workers; }
                 double Capped(CraftRecipe r, double amount, bool debit)
@@ -265,30 +269,27 @@ namespace Anthropocene.Simulation
                                 : Capped(l, RemainingGoodDemand(l) * Share(l.Good), false);
                         }
                     materialPlan = MaterialEconomy.BuildHousingPlan(accessList.ToArray(), later, room[MaterialId.Stone], room[MaterialId.Clay], room[MaterialId.Wood]);
-                    requested[CraftGood.HousingMaterial] = Capped(materialRecipe, wantedMaterial, true);
+                    requested[CraftGood.HousingMaterial] = reserved[CraftGood.HousingMaterial] + Capped(materialRecipe, wantedMaterial, true);
                     materialPlan = null;
                 }
-                // Agreed exports (Docs/Trade.md) are fixed claims: their deficit beyond stock is staffed first, at any
-                // fulfilment position, and stock held for delivery is not available to own use. They never draw on
-                // the own clothing-need feedstock envelope.
+                // Agreed exports (Docs/Trade.md) are fixed claims: their made-to-order part (the stock part has already
+                // left this view's stock) is staffed first, at any fulfilment position, and what is made for export is
+                // never own use or an input. They never draw on the own clothing-need feedstock envelope.
                 foreach (var r in recipes)
                 {
                     double owed = c.TradeExport(r.Good);
                     if (!(owed > Epsilon)) continue;
-                    // The made-to-order part is reserved production; the rest is delivered from stock (never more than held).
-                    double held = Math.Max(0, NeolithicProduction.Stock(c, r.Good));
-                    double fromStock = Math.Min(held, Math.Max(0, owed - c.TradeMakeOf(r.Good))), deficit = Math.Max(0, owed - fromStock);
                     double keepPlant = clothingPlant, keepAnimal = clothingAnimal, keepRoom = clothingRoom, keepLeft = clothingLeft;
                     clothingLeft = 0;
                     // Housing Material's Wood/Clay are planned through its material plan, as in AllocateHousingMaterial.
-                    if (r.Good == CraftGood.HousingMaterial && deficit > Epsilon)
-                        materialPlan = MaterialEconomy.BuildHousingPlan(accessList.ToArray(), new Dictionary<CraftGood, double> { [CraftGood.HousingMaterial] = deficit }, room[MaterialId.Stone], room[MaterialId.Clay], room[MaterialId.Wood]);
-                    double made = deficit > Epsilon ? Capped(r, deficit, true) : 0;
+                    if (r.Good == CraftGood.HousingMaterial)
+                        materialPlan = MaterialEconomy.BuildHousingPlan(accessList.ToArray(), new Dictionary<CraftGood, double> { [CraftGood.HousingMaterial] = owed }, room[MaterialId.Stone], room[MaterialId.Clay], room[MaterialId.Wood]);
+                    double made = Capped(r, owed, true);
                     materialPlan = null;
                     clothingPlant = Math.Min(keepPlant, plant); clothingAnimal = Math.Min(keepAnimal, animal); clothingRoom = Math.Min(keepRoom, foodRoom); clothingLeft = keepLeft;
-                    if (r.Good == CraftGood.AnimalFabric) animalFabric -= made + fromStock;
-                    if (r.Good == CraftGood.HousingMaterial) housingMaterial -= made + fromStock;
-                    if (r.Good == CraftGood.Cloth || r.Good == CraftGood.AnimalFabric) requested[r.Good] += made;
+                    if (r.Good == CraftGood.AnimalFabric) animalFabric -= made;
+                    if (r.Good == CraftGood.HousingMaterial) housingMaterial -= made;
+                    requested[r.Good] += made; reserved[r.Good] += made;
                     double multiplier = ToolCoverageBudget.IsHousingWork(r.Good) ? housingMultiplier : 1;
                     if (made > 0 && multiplier > 0) Add(futureRoles, Role(r), made / (Rate(r) * multiplier * intervals));
                 }
@@ -303,7 +304,7 @@ namespace Anthropocene.Simulation
                     // Housing labour is added with its material after the field proposal.
                     if (r.Good == CraftGood.Housing) { if (!materialAfterFarm) requested[r.Good] = Capped(r, goals[r.Good] * Share(r.Good), true); continue; }
                     double amount = Capped(r, RemainingGoodDemand(r) * Share(r.Good), true);
-                    requested[r.Good] = amount;
+                    requested[r.Good] = reserved[r.Good] + amount;
                     double multiplier = (r.Good == CraftGood.Housing || r.Good == CraftGood.LightHousing) ? housingMultiplier : 1;
                     if (multiplier > 0) Add(futureRoles, Role(r), amount / (Rate(r) * multiplier * intervals));
                 }
@@ -357,7 +358,7 @@ namespace Anthropocene.Simulation
                     candidate.EconomicLabor = intent.Labor;
                     // This is the sole field-tool need calculation. It includes
                     // current stock's expected wear and never uses FarmToolsTarget.
-                    double desired = NeolithicProduction.Demand(w, candidate, CraftGood.FarmTools, years, -1, false, false, sources) * Share(CraftGood.FarmTools);
+                    double desired = Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.FarmTools, years, -1, false, false, sources) - reserved[CraftGood.FarmTools]) * Share(CraftGood.FarmTools);
                     // Reserve the source-feasible prospective job before applying
                     // the current tool budget. This lets the shared replacement
                     // helper bootstrap Hand Tools for a first FarmTools cycle.
@@ -365,7 +366,7 @@ namespace Anthropocene.Simulation
                     double manufacturingCapacity = new ToolCoverageBudget(w, c, intervals).Capacity(CraftGood.FarmTools, Rate(farmRecipe), c.Population * intervals);
                     double additional = Math.Min(prospective, manufacturingCapacity);
                     additional = Capped(farmRecipe, additional, true);
-                    requested[CraftGood.FarmTools] = additional;
+                    requested[CraftGood.FarmTools] = reserved[CraftGood.FarmTools] + additional;
                     // Keep a prospective, material-feasible producer visible to
                     // shared Hand/Regular replacement demand before coverage is
                     // resolved. Actual output is still limited by that coverage.
@@ -397,7 +398,7 @@ namespace Anthropocene.Simulation
                 if (housingClaimed && housingMultiplier > 0)
                 {
                     var assembly = goods.Single(x => x.Good == CraftGood.Housing);
-                    Add(futureRoles, Role(materialRecipe), requested[CraftGood.HousingMaterial] / (Rate(materialRecipe) * housingMultiplier * intervals));
+                    Add(futureRoles, Role(materialRecipe), (requested[CraftGood.HousingMaterial] - reserved[CraftGood.HousingMaterial]) / (Rate(materialRecipe) * housingMultiplier * intervals));
                     Add(futureRoles, Role(assembly), requested[CraftGood.Housing] / (Rate(assembly) * housingMultiplier * intervals));
                 }
                 // Keep the prospective producer reservation visible while the
@@ -421,8 +422,9 @@ namespace Anthropocene.Simulation
                 room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) + accessible[m]);
                 plant = plantEnvelope;
                 animal = animalEnvelope;
-                animalFabric = Math.Max(0, c.Inventory.AnimalFabric);
-                housingMaterial = Math.Max(0, c.Inventory.HousingMaterial);
+                // Imports are not inputs; what is made for export is produced into, then leaves, these stocks.
+                animalFabric = Math.Max(0, c.Inventory.AnimalFabric) - c.TradeImport(CraftGood.AnimalFabric) - reserved[CraftGood.AnimalFabric];
+                housingMaterial = Math.Max(0, c.Inventory.HousingMaterial) - c.TradeImport(CraftGood.HousingMaterial) - reserved[CraftGood.HousingMaterial];
                 foodRoom = foodRoomEnvelope;
                 clothingPlant = clothingPlantEnvelope; clothingAnimal = clothingAnimalEnvelope; clothingRoom = clothingRoomEnvelope; clothingLeft = demand.ClothingNeedUnits;
                 // Match production's role/recipe ordering and share one tool-time budget.
@@ -770,7 +772,7 @@ namespace Anthropocene.Simulation
         {
             var result = new Camp { Id = c.Id, Tile = c.Tile, Population = (int)Math.Ceiling(population), PlantFood = c.PlantFood, AnimalFood = c.AnimalFood, AquaticFood = c.AquaticFood,
                 Inventory = new CampInventory { HandTools = c.Inventory.HandTools, Tools = c.Inventory.Tools, CopperTools = c.Inventory.CopperTools, Cloth = c.Inventory.Cloth, AnimalFabric = c.Inventory.AnimalFabric, LightHousingUnits = c.Inventory.LightHousingUnits, HousingMaterial = c.Inventory.HousingMaterial, HerdingTools = c.Inventory.HerdingTools, HousingUnits = c.Inventory.HousingUnits, Pots = c.Inventory.Pots, FarmTools = c.Inventory.FarmTools, Stone = c.Inventory.Stone, Clay = c.Inventory.Clay, Wood = c.Inventory.Wood } };
-            result.QoL = c.QoL; result.TradeExports = (double[])c.TradeExports?.Clone(); result.TradeMake = (double[])c.TradeMake?.Clone(); result.TradeImports = (double[])c.TradeImports?.Clone(); result.Bind(c.People); EconomicIntents.Apply(result, intent); return result;
+            result.QoL = c.QoL; result.TradeExports = (double[])c.TradeExports?.Clone(); result.TradeImports = (double[])c.TradeImports?.Clone(); result.Bind(c.People); EconomicIntents.Apply(result, intent); return result;
         }
     }
 }
