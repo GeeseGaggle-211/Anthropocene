@@ -167,7 +167,7 @@ The trade pipeline in [PlannerTradeStorageDesign.md](PlannerTradeStorageDesign.m
    requirements.
 4. **Cost target:** set after a breakdown of current planner cost per camp-turn, the next measurement task.
 
-## A7. Planner cost breakdown and proposed target (4 October 2026)
+## A7. Planner cost breakdown and accepted target (4 October 2026)
 
 **Method.**
 - **States:** worlds C1 and A1, saved after 10, 25, 40 and 50 post-opening turns of the full system (fission,
@@ -210,7 +210,7 @@ Outside the planner, per settlement:
   - **the needs forecast, which repeats a realization the plan already made**: about 0.15 ms per settlement.
 - Early turns cost more per plan: 3.5–4.9 candidate evaluations, against about 2.3 later.
 
-**Proposed per-plan cost target for DemandControl** (scalar, median over these t25–t50 states, measured the same
+**Per-plan cost target for DemandControl, accepted by the user on 4 October 2026** (scalar, median over these t25–t50 states, measured the same
 way):
 
 | Measure | Target | Current |
@@ -232,4 +232,4 @@ The 0.40 ms target is built up from current costs:
 | One bounded allocation plus one repair | about 0.05–0.10 ms |
 | Margin | the rest |
 
-Gate the target at 80 and 320 tribes, as v0.1 §16 requires. It is proposed until the user sets it.
+Gate the target at 80 and 320 tribes, as v0.1 §16 requires. Re-measure with `Tools/PerformanceAudit/Run-Profile.py` and `Summarize-Lineages.py` (below) against this baseline.
