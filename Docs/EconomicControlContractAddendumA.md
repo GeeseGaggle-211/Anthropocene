@@ -1,7 +1,7 @@
 # Economic Control Contract, Addendum A: reconciliation with implemented trade and storage
 
-**Status:** proposed for approval, 4 October 2026. The reconciliations below are recommendations until the user
-approves them; §A6 lists the decisions.
+**Status:** **approved** by the user, 4 October 2026: all four §A6 decisions. Decision 4 is approved as a process; the
+per-plan cost target is set from the planner cost breakdown.
 
 **Reference:** `features/herd-ecology-retention`, commit `a85d5e8`, which contains the contract's reference `6a802dc`.
 
@@ -153,7 +153,7 @@ The trade pipeline in [PlannerTradeStorageDesign.md](PlannerTradeStorageDesign.m
 | §16, acceptance tests | Add the trade gates already automated: trade off equals the reference exactly (`Run-TradeAudit.py`); with trade on, the husbandry-first gate, made-to-order delivery ≥ 0.95, and the founding-lineage comparison (population and QoL by founding regime) from §3.11. Also `TradeChecks` (480 assertions) and `GoodsStorageChecks` (64). |
 | §16, cost evidence | Baseline at `a85d5e8`, five Standard/80 worlds, 50 turns, scalar, fission + immigration + make-to-order trade: 735 ms per turn mean, 1.66 s over the last 10 turns, about 4 ms per settlement-turn, heap at most 568 MB. The per-plan cost target is still to be agreed (§A6). |
 
-## A6. Decisions requested
+## A6. Decisions (approved 4 October 2026)
 
 1. **Adapter (§A2):**
    - keep the closed-form service values as a strategy-independent library;
