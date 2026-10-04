@@ -166,3 +166,70 @@ The trade pipeline in [PlannerTradeStorageDesign.md](PlannerTradeStorageDesign.m
 3. **Plan (§A4):** v0.1 together with this addendum is phase R; the other documents' phase R bullets become its
    requirements.
 4. **Cost target:** set after a breakdown of current planner cost per camp-turn, the next measurement task.
+
+## A7. Planner cost breakdown and proposed target (4 October 2026)
+
+**Method.**
+- **States:** worlds C1 and A1, saved after 10, 25, 40 and 50 post-opening turns of the full system (fission,
+  immigration and stock-only trade on; census configuration). Source `5f90b97`; saves in `TestResults/PlannerCost`
+  (ignored).
+- **Measurement:** per state, AI decisions plus `TurnPlanner.Prepare`, single-threaded (`PhaseExecution(1)`), after
+  one warm-up, averaged over three repetitions. Inclusive stopwatch scopes were added to a scratch copy of the sources,
+  so the repository code is untouched.
+- **Derivation:** times below are exclusive. Ladders are subtracted from shared allocation, and forecasts from
+  candidate evaluation.
+
+| State | Settlements | Decide + prepare (ms) | ms per settlement | Planner ms per plan | Demand pass | Expansion and herd ladders | Shared allocation (own) | Forecasts inside evaluation | Other evaluation work | Evaluations / forecasts / tool schedules / source queries per plan |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| C1 t10 | 80 | 356 | 4.45 | 2.05 | 0.27 | 0.26 | 0.15 | 0.72 | 0.63 | 3.5 / 5.8 / 11.2 / 7.3 |
+| C1 t25 | 123 | 247 | 2.01 | 1.09 | 0.16 | 0.25 | 0.13 | 0.26 | 0.27 | 2.7 / 4.7 / 9.4 / 6.9 |
+| C1 t40 | 325 | 586 | 1.80 | 1.06 | 0.17 | 0.25 | 0.12 | 0.25 | 0.26 | 2.3 / 4.4 / 8.7 / 6.9 |
+| C1 t50 | 581 | 1,181 | 2.03 | 1.13 | 0.19 | 0.27 | 0.12 | 0.24 | 0.29 | 2.2 / 4.1 / 8.2 / 6.9 |
+| A1 t10 | 113 | 235 | 2.08 | 1.18 | 0.15 | 0.11 | 0.07 | 0.43 | 0.40 | 4.9 / 7.2 / 14.1 / 7.3 |
+| A1 t25 | 171 | 301 | 1.76 | 0.99 | 0.15 | 0.20 | 0.12 | 0.24 | 0.28 | 3.0 / 4.5 / 9.5 / 6.5 |
+| A1 t40 | 413 | 722 | 1.75 | 1.07 | 0.17 | 0.25 | 0.12 | 0.23 | 0.28 | 2.4 / 4.1 / 8.5 / 6.7 |
+| A1 t50 | 592 | 1,192 | 2.01 | 1.30 | 0.18 | 0.31 | 0.13 | 0.29 | 0.38 | 2.4 / 4.3 / 8.7 / 6.9 |
+
+Outside the planner, per settlement:
+
+| Component | Cost |
+| --- | --- |
+| Prepared needs (`ComputeNeeds`: one more forecast and tool schedule per camp) | 0.13–0.16 ms |
+| AI decisions | 0.24–0.46 ms (1.6 ms at C1 t10) |
+| Trade handshake | 0.05–0.14 ms |
+
+**Reading.**
+- From t25 on, **cost per settlement is flat**: about 1.75–2.0 ms for decide plus prepare, and about 1.0–1.3 ms per
+  plan. Cost follows settlements; the planner already scales linearly.
+- The lever is the **per-plan constant**, made of:
+  - **repeated scheduler realization**: about 4.3 forecasts and 8.7 tool-schedule runs per plan, 0.23–0.29 ms;
+  - **other candidate-evaluation work**: 0.26–0.38 ms;
+  - **expansion and herd ladders rebuilt every turn**: 0.20–0.31 ms;
+  - **about 7 known-source queries per plan where one suffices**: 0.07–0.10 ms;
+  - **the demand pass**: 0.15–0.19 ms;
+  - **the needs forecast, which repeats a realization the plan already made**: about 0.15 ms per settlement.
+- Early turns cost more per plan: 3.5–4.9 candidate evaluations, against about 2.3 later.
+
+**Proposed per-plan cost target for DemandControl** (scalar, median over these t25–t50 states, measured the same
+way):
+
+| Measure | Target | Current |
+| --- | --- | --- |
+| Allocation per automated plan | **≤ 0.40 ms** | 0.99–1.30 ms |
+| Production forecasts per plan | 1 | 4.3 |
+| Tool schedules per plan | ≤ 2 | 8.7 |
+| Known-source queries per plan | 1 | 6.9 |
+| Prepared needs | reuse the plan's realization; no fresh forecast (§15 already requires carrying ceilings through) | separate forecast |
+| Expansion and herd ladders | only at strategy review boundaries or triggers (v0.1 §13), not every turn | every turn |
+| Decide + prepare per settlement | **≤ 1.0 ms** | about 2.0 ms |
+
+The 0.40 ms target is built up from current costs:
+
+| Part | Cost |
+| --- | --- |
+| Demand pass | about 0.17 ms |
+| One realization | about 0.10 ms |
+| One bounded allocation plus one repair | about 0.05–0.10 ms |
+| Margin | the rest |
+
+Gate the target at 80 and 320 tribes, as v0.1 §16 requires. It is proposed until the user sets it.
