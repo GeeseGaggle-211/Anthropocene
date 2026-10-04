@@ -178,8 +178,8 @@ internal static class TradeChecks
             Check(r.Gain(TradeGood.HousingMaterial, countered.WantQuantity) * (1 - transport) >= (1 + cfg.TradeMargin) * r.Loss(TradeGood.Cloth, countered.GiveQuantity) - 1e-9, "the requester accepts the counter inside its limit");
         }
         // Deltas conserve each good and sum the agreements.
-        Near(plan.Deltas.Keys.Sum(id => plan.Delta(id, TradeGood.Cloth)), 0, "cloth deltas sum to zero", 1e-9);
-        Near(plan.Deltas.Keys.Sum(id => plan.Delta(id, TradeGood.HousingMaterial)), 0, "housing material deltas sum to zero", 1e-9);
+        Near(plan.Deltas.Keys.Union(plan.Exports.Keys).Sum(id => plan.Delta(id, TradeGood.Cloth)), 0, "cloth deltas sum to zero", 1e-9);
+        Check(plan.Deltas.Keys.Union(plan.Exports.Keys).All(id => plan.Delta(id, TradeGood.HousingMaterial) <= 1e-9), "imported Housing Material never enters a planning view (it arrives after the assembly)");
         Near(plan.Delta(material, TradeGood.Cloth), plan.Agreements.Where(a => a.Requester == material && a.Want == TradeGood.Cloth).Sum(a => a.WantQuantity) + plan.Agreements.Where(a => a.Responder == material && a.Give == TradeGood.Cloth).Sum(a => a.GiveQuantity), "a camp's delta sums its agreements");
         foreach (var c in w.Camps.Where(c => plan.Changes(c.Id)))
         {
@@ -253,7 +253,8 @@ internal static class TradeChecks
         // Settlement moves exactly the agreed quantities, conserves each good and records canonically.
         var w = Complementary(); var plan = Trade.Plan(w); var record = new TurnRecord { Turn = w.Turn };
         double cloth = w.Camps.Sum(c => c.Inventory.Cloth), material = w.Camps.Sum(c => c.Inventory.HousingMaterial);
-        var expected = w.Camps.ToDictionary(c => c.Id, c => (c.Inventory.Cloth + plan.Delta(c.Id, TradeGood.Cloth), c.Inventory.HousingMaterial + plan.Delta(c.Id, TradeGood.HousingMaterial)));
+        double Flow(Camp c, TradeGood g) => plan.Agreements.Sum(a => (a.Requester == c.Id && a.Want == g ? a.WantQuantity : 0) - (a.Responder == c.Id && a.Want == g ? a.WantQuantity : 0) + (a.Responder == c.Id && a.Give == g ? a.GiveQuantity : 0) - (a.Requester == c.Id && a.Give == g ? a.GiveQuantity : 0));
+        var expected = w.Camps.ToDictionary(c => c.Id, c => (c.Inventory.Cloth + Flow(c, TradeGood.Cloth), c.Inventory.HousingMaterial + Flow(c, TradeGood.HousingMaterial)));
         SettleAll(w, plan, record);
         Near(w.Camps.Sum(c => c.Inventory.Cloth), cloth, "settlement conserves cloth"); Near(w.Camps.Sum(c => c.Inventory.HousingMaterial), material, "settlement conserves housing material");
         foreach (var c in w.Camps) { Near(c.Inventory.Cloth, expected[c.Id].Item1, "camp " + c.Id + " receives its planned cloth"); Near(c.Inventory.HousingMaterial, expected[c.Id].Item2, "camp " + c.Id + " receives its planned material"); }
@@ -683,6 +684,33 @@ internal static class TradeChecks
                 if (rep > 0 && total < best) { best = total; detail = $"camps {w.Camps.Count} eligible {plan.Summary.Eligible} requisitions {plan.Summary.Requisitions} agreements {plan.Agreements.Count} | " + Trade.Counters.Describe(); }
             }
             Console.WriteLine($"workers {workers.Workers}: best {best:F1} ms; {detail}");
+        }
+    }
+
+    // Diagnostic (--trade-roles=<save>): resolve one turn with trade on and off from the same state and compare clothing,
+    // housing, QoL and food by trade role (buyer / seller of goods, non-trader).
+    public static void RolesProbe(string path)
+    {
+        WorldState Run(bool trade)
+        {
+            var w = SaveCodec.Load(File.ReadAllBytes(path)); w.Config.TradeEnabled = trade; Ownership.Bind(w);
+            var ai = AiPlanning.Decide(w); new TurnResolver().Resolve(w, TurnPlanner.Prepare(w, ai.Orders, ai.Traces)); return w;
+        }
+        var on = Run(true); var off = Run(false);
+        var rec = on.History.Last();
+        var buyers = new HashSet<int>(); var sellers = new HashSet<int>();
+        foreach (var t in rec.Trades)
+        {
+            if (Trade.Descriptor(t.Want).AfterProduction) { buyers.Add(t.Requester); sellers.Add(t.Responder); }
+            if (Trade.Descriptor(t.Give).AfterProduction) { buyers.Add(t.Responder); sellers.Add(t.Requester); }
+        }
+        var offCamps = off.Camps.ToDictionary(c => c.Id);
+        foreach (var (name, pick) in new (string, Func<Camp, bool>)[] { ("buyers only", c => buyers.Contains(c.Id) && !sellers.Contains(c.Id)), ("sellers only", c => sellers.Contains(c.Id) && !buyers.Contains(c.Id)), ("both", c => buyers.Contains(c.Id) && sellers.Contains(c.Id)), ("neither", c => !buyers.Contains(c.Id) && !sellers.Contains(c.Id)) })
+        {
+            var cs = on.Camps.Where(c => offCamps.ContainsKey(c.Id) && pick(c)).ToArray();
+            if (cs.Length == 0) continue;
+            double D(Func<Camp, double> f) => cs.Average(c => f(c) - f(offCamps[c.Id]));
+            Console.WriteLine($"{name}: n={cs.Length} dCloth {D(c => c.ClothPerCapita):+0.000;-0.000} dHousing {D(c => c.HousingPerCapita):+0.000;-0.000} dQoL {D(c => c.QoL):+0.000;-0.000} dFood {D(c => c.Food):+0.0;-0.0} dPop {D(c => c.Population):+0.00;-0.00} cult {cs.Count(c => c.Technology == Technology.Cultivation)}");
         }
     }
 }

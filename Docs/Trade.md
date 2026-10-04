@@ -127,8 +127,17 @@ good is an export claim on its planning view (`Camp.TradeExports`, transient).
 - **Resolver.** Owed goods are held back from recipe inputs while the camp
   produces.
 
-The buyer's planning view counts imported goods as stock, since they arrive
-before its needs.
+Imports arrive after production:
+
+- The buyer's planning view counts Cloth and Animal Fabric imports as stock for
+  this turn's needs, but never as recipe inputs (`Camp.TradeImports`), so it
+  does not plan tents from fabric that has not arrived.
+- Housing Material is only a production input (the Housing assembly runs during
+  production). An import of it is therefore stock from the next turn and does
+  not enter the buyer's planning view.
+- Exported Housing Material is made before, and outside, the seller's own
+  assembly ceiling (`NeolithicProduction.ExportedHousingMaterialLimit`). The
+  planner reserves its Wood and Clay through its material plan.
 
 **Requests.** A requester cannot see what partners hold, so it sends ranked
 lists (§6.2's desired and offered bundles):

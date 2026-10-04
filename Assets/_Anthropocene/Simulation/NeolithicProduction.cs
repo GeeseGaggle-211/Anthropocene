@@ -269,6 +269,16 @@ namespace Anthropocene.Simulation
         // min(m + stock, tool capacity) fits in `labor`. Both steps have the same
         // rate and tool multiplier, so with no stock this is half of today's
         // single-step Housing capacity. Pure and deterministic.
+        // Housing Material owed for export (Docs/Trade.md) is not assembled here, so it is made first, limited only by labour and
+        // tool coverage; own material is then limited by the assembly as before. With nothing owed this is HousingMaterialLimit.
+        internal static double ExportedHousingMaterialLimit(ToolCoverageBudget coverage, double rate, double labor, double demand, double stock, double owed)
+        {
+            if (!(owed > 0)) return HousingMaterialLimit(coverage, rate, labor, demand, stock);
+            double held = Math.Max(0, stock), deficit = Math.Max(0, owed - held);
+            double made = !(rate > 0) || !(labor > 0) ? 0 : Math.Min(Math.Min(deficit, Math.Max(0, demand)), coverage.Capacity(CraftGood.HousingMaterial, rate, labor));
+            double left = Math.Max(0, labor - coverage.Time(CraftGood.HousingMaterial, rate, made));
+            return made + HousingMaterialLimit(coverage, rate, left, Math.Max(0, demand - made), held - Math.Min(owed, held));
+        }
         internal static double HousingMaterialLimit(ToolCoverageBudget coverage, double rate, double labor, double demand, double stock)
         {
             if (!(demand > 0) || !(labor > 0) || !(rate > 0)) return 0;
@@ -795,7 +805,7 @@ namespace Anthropocene.Simulation
             // Housing Material shares its Builder pool with the assembly that will
             // consume it, so it never takes labour the assembly needs this turn.
             double amount = recipe.Good == CraftGood.HousingMaterial
-                ? HousingMaterialLimit(coverage, rate, labor, usefulDemand, c.Inventory.HousingMaterial - c.TradeExport(CraftGood.HousingMaterial))
+                ? ExportedHousingMaterialLimit(coverage, rate, labor, usefulDemand, c.Inventory.HousingMaterial, c.TradeExport(CraftGood.HousingMaterial))
                 : Math.Min(usefulDemand, recipe.Equipment ? coverage.Capacity(recipe.Good, rate, labor) : labor * rate);
             var inv = c.Inventory;
             if (recipe.Stone > 0) amount = Math.Min(amount, inv.Stone / recipe.Stone);

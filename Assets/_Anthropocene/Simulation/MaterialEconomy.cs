@@ -663,8 +663,8 @@ namespace Anthropocene.Simulation
             double plant = plantFoodBudget >= 0 ? plantFoodBudget : includePlantDemand ? double.PositiveInfinity : c.PlantFood;
             double animalFood = animalFoodBudget >= 0 ? animalFoodBudget : includePlantDemand ? double.PositiveInfinity : c.AnimalFood;
             // Goods owed for export (planning views, Docs/Trade.md) are not available as inputs or own use.
-            double animalFabric = Math.Max(0, c.Inventory.AnimalFabric) - c.TradeExport(CraftGood.AnimalFabric);
-            double housingMaterial = Math.Max(0, c.Inventory.HousingMaterial) - c.TradeExport(CraftGood.HousingMaterial);
+            double animalFabric = Math.Max(0, c.Inventory.AnimalFabric) - c.TradeExport(CraftGood.AnimalFabric) - c.TradeImport(CraftGood.AnimalFabric);
+            double housingMaterial = Math.Max(0, c.Inventory.HousingMaterial) - c.TradeExport(CraftGood.HousingMaterial) - c.TradeImport(CraftGood.HousingMaterial);
             var orderedRecipes = ProductionOrder.Sort(recipes, good => NeolithicProduction.Priority(c, good), order);
             var steps = ProductionOrder.Steps(orderedRecipes, order != null).ToArray();
             var roles = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToArray();
@@ -726,7 +726,7 @@ namespace Anthropocene.Simulation
                         double amount = Math.Min(sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
                         // Housing Material and its assembly draw on one Builder pool.
                         if (recipe.Good == CraftGood.HousingMaterial)
-                            amount = NeolithicProduction.HousingMaterialLimit(tools, rate, labor, Math.Max(0, useful - planned[recipe.Good]), housingMaterial);
+                            amount = NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor, Math.Max(0, useful - planned[recipe.Good]), housingMaterial + c.TradeExport(CraftGood.HousingMaterial), Math.Max(0, c.TradeExport(CraftGood.HousingMaterial) - planned[recipe.Good]));
                         if (recipe.HousingMaterial > 0) amount = Math.Min(amount, housingMaterial / recipe.HousingMaterial);
                         if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                         if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);

@@ -199,7 +199,7 @@ namespace Anthropocene.Simulation
         public readonly TradeSummary Summary = new TradeSummary();
         public readonly Dictionary<int, double[]> Deltas = new Dictionary<int, double[]>();
         public readonly Dictionary<int, double[]> Exports = new Dictionary<int, double[]>();
-        public bool Changes(int camp) => Deltas.ContainsKey(camp) || Exports.ContainsKey(camp);
+        public bool Changes(int camp) => Deltas.ContainsKey(camp) || Exports.ContainsKey(camp) || Imports.ContainsKey(camp);
         public bool AfterProduction => Agreements.Any(a => Trade.Descriptor(a.Want).AfterProduction || Trade.Descriptor(a.Give).AfterProduction);
         // Net change of a good at a camp once the turn's trades have settled.
         public double Delta(int camp, TradeGood good)
@@ -211,7 +211,15 @@ namespace Anthropocene.Simulation
         }
         // A receiver plans with goods delivered before its needs. Food is paid on delivery, after production and
         // after this turn's growth plan, so it reaches the receiver's planning only from the next turn.
-        internal void Receive(int camp, TradeGood good, double[] parts) { if (Trade.Descriptor(good).AfterProduction) Stock(camp, good, parts, 1); }
+        public readonly Dictionary<int, double[]> Imports = new Dictionary<int, double[]>();
+        internal void Receive(int camp, TradeGood good, double[] parts)
+        {
+            var g = Trade.Descriptor(good);
+            if (!g.AfterProduction || !g.ImportServesNeeds) return;
+            Stock(camp, good, parts, 1);
+            if (!Imports.TryGetValue(camp, out var m)) Imports[camp] = m = new double[Enum.GetValues(typeof(CraftGood)).Length];
+            m[(int)g.Recipe.Value] += parts.Sum();
+        }
         // Exports owed after production, and the part of them the seller makes to order (its planner reserves that work).
         public readonly Dictionary<int, double[]> Make = new Dictionary<int, double[]>();
         internal void Send(int camp, TradeGood good, double[] parts, double made = 0)
@@ -282,6 +290,10 @@ namespace Anthropocene.Simulation
             public TradeGood Id; public string Curve; public Part[] Parts; public Func<SimulationConfig, bool> Active;
             public CraftGood? Recipe;
             public bool AfterProduction => Recipe.HasValue;
+            // Goods arrive after production. One whose only use is as a production input (Housing Material) cannot serve
+            // the receiver this turn and is stock only from the next; the others still count as stock for this turn's
+            // needs, though never as this turn's recipe inputs (Camp.TradeImports).
+            public bool ImportServesNeeds = true;
         }
         // The terms of one curve for one camp: the curve, the position offset beyond the held parts, and
         // the floor below which the camp never gives.
@@ -296,7 +308,7 @@ namespace Anthropocene.Simulation
                 Parts = new[] { new Part { Name = "Cloth", Get = c => c.Inventory.Cloth, Set = (c, v) => c.Inventory.Cloth = v } } },
             new GoodDescriptor { Id = TradeGood.AnimalFabric, Curve = "Clothing", Active = _ => true, Recipe = CraftGood.AnimalFabric,
                 Parts = new[] { new Part { Name = "AnimalFabric", Get = c => c.Inventory.AnimalFabric, Set = (c, v) => c.Inventory.AnimalFabric = v } } },
-            new GoodDescriptor { Id = TradeGood.HousingMaterial, Curve = "Housing", Active = _ => true, Recipe = CraftGood.HousingMaterial,
+            new GoodDescriptor { Id = TradeGood.HousingMaterial, Curve = "Housing", Active = _ => true, Recipe = CraftGood.HousingMaterial, ImportServesNeeds = false,
                 Parts = new[] { new Part { Name = "HousingMaterial", Get = c => c.Inventory.HousingMaterial, Set = (c, v) => c.Inventory.HousingMaterial = v } } },
             new GoodDescriptor { Id = TradeGood.Food, Curve = "Food", Active = cfg => cfg.TradeFoodEnabled,
                 Parts = new[]
@@ -725,6 +737,7 @@ namespace Anthropocene.Simulation
                     }
             if (plan.Exports.TryGetValue(view.Id, out var exports)) view.TradeExports = (double[])exports.Clone();
             if (plan.Make.TryGetValue(view.Id, out var make)) view.TradeMake = (double[])make.Clone();
+            if (plan.Imports.TryGetValue(view.Id, out var imports)) view.TradeImports = (double[])imports.Clone();
         }
 
         // The fraction of a leg the giver can deliver from what it holds now.

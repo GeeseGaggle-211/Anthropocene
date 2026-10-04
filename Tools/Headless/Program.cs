@@ -244,6 +244,8 @@ internal static class Program
         var tradeProbe = args.FirstOrDefault(a => a.StartsWith("--trade-probe=", StringComparison.Ordinal));
         var tradeResolve = args.FirstOrDefault(a => a.StartsWith("--trade-resolve=", StringComparison.Ordinal));
         var tradeProfile = args.FirstOrDefault(a => a.StartsWith("--trade-profile=", StringComparison.Ordinal));
+        var tradeRoles = args.FirstOrDefault(a => a.StartsWith("--trade-roles=", StringComparison.Ordinal));
+        if (tradeRoles != null) { TradeChecks.RolesProbe(tradeRoles.Substring("--trade-roles=".Length)); return 0; }
         if (tradeProfile != null) { TradeChecks.ProfileProbe(tradeProfile.Substring("--trade-profile=".Length)); return 0; }
         if (tradeResolve != null) { var parts = tradeResolve.Substring("--trade-resolve=".Length).Split(','); TradeChecks.ResolveProbe(parts[0], int.Parse(parts[1])); return 0; }
         if (tradeProbe != null) { TradeChecks.Probe(tradeProbe.Substring("--trade-probe=".Length)); return 0; }

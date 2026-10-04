@@ -146,8 +146,9 @@ namespace Anthropocene.Simulation
                 HousingMaterialPlan materialPlan = null;
                 double plant = plantEnvelope;
                 double animal = animalEnvelope;
-                double animalFabric = Math.Max(0, c.Inventory.AnimalFabric);
-                double housingMaterial = Math.Max(0, c.Inventory.HousingMaterial);
+                // Imports arrive after production: never this turn's recipe inputs (Docs/Trade.md).
+                double animalFabric = Math.Max(0, c.Inventory.AnimalFabric) - c.TradeImport(CraftGood.AnimalFabric);
+                double housingMaterial = Math.Max(0, c.Inventory.HousingMaterial) - c.TradeImport(CraftGood.HousingMaterial);
                 double foodRoom = foodRoomEnvelope;
                 double clothingPlant = clothingPlantEnvelope, clothingAnimal = clothingAnimalEnvelope, clothingRoom = clothingRoomEnvelope, clothingLeft = demand.ClothingNeedUnits;
                 var requested = recipes.ToDictionary(r => r.Good, r => 0d);
@@ -279,7 +280,11 @@ namespace Anthropocene.Simulation
                     double fromStock = Math.Min(held, Math.Max(0, owed - c.TradeMakeOf(r.Good))), deficit = Math.Max(0, owed - fromStock);
                     double keepPlant = clothingPlant, keepAnimal = clothingAnimal, keepRoom = clothingRoom, keepLeft = clothingLeft;
                     clothingLeft = 0;
+                    // Housing Material's Wood/Clay are planned through its material plan, as in AllocateHousingMaterial.
+                    if (r.Good == CraftGood.HousingMaterial && deficit > Epsilon)
+                        materialPlan = MaterialEconomy.BuildHousingPlan(accessList.ToArray(), new Dictionary<CraftGood, double> { [CraftGood.HousingMaterial] = deficit }, room[MaterialId.Stone], room[MaterialId.Clay], room[MaterialId.Wood]);
                     double made = deficit > Epsilon ? Capped(r, deficit, true) : 0;
+                    materialPlan = null;
                     clothingPlant = Math.Min(keepPlant, plant); clothingAnimal = Math.Min(keepAnimal, animal); clothingRoom = Math.Min(keepRoom, foodRoom); clothingLeft = keepLeft;
                     if (r.Good == CraftGood.AnimalFabric) animalFabric -= made + fromStock;
                     if (r.Good == CraftGood.HousingMaterial) housingMaterial -= made + fromStock;
@@ -765,7 +770,7 @@ namespace Anthropocene.Simulation
         {
             var result = new Camp { Id = c.Id, Tile = c.Tile, Population = (int)Math.Ceiling(population), PlantFood = c.PlantFood, AnimalFood = c.AnimalFood, AquaticFood = c.AquaticFood,
                 Inventory = new CampInventory { HandTools = c.Inventory.HandTools, Tools = c.Inventory.Tools, CopperTools = c.Inventory.CopperTools, Cloth = c.Inventory.Cloth, AnimalFabric = c.Inventory.AnimalFabric, LightHousingUnits = c.Inventory.LightHousingUnits, HousingMaterial = c.Inventory.HousingMaterial, HerdingTools = c.Inventory.HerdingTools, HousingUnits = c.Inventory.HousingUnits, Pots = c.Inventory.Pots, FarmTools = c.Inventory.FarmTools, Stone = c.Inventory.Stone, Clay = c.Inventory.Clay, Wood = c.Inventory.Wood } };
-            result.QoL = c.QoL; result.TradeExports = (double[])c.TradeExports?.Clone(); result.TradeMake = (double[])c.TradeMake?.Clone(); result.Bind(c.People); EconomicIntents.Apply(result, intent); return result;
+            result.QoL = c.QoL; result.TradeExports = (double[])c.TradeExports?.Clone(); result.TradeMake = (double[])c.TradeMake?.Clone(); result.TradeImports = (double[])c.TradeImports?.Clone(); result.Bind(c.People); EconomicIntents.Apply(result, intent); return result;
         }
     }
 }

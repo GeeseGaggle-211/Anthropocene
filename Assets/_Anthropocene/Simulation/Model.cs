@@ -447,7 +447,7 @@ namespace Anthropocene.Simulation
         internal void Bind(Society owner) { people = owner; SocietyId = owner.Id; Player = owner.Player; }
         // A planning view sharing every field but a private inventory copy (trade
         // deltas, Trade.ApplyToPlanningInventory). Read-only like the camp itself.
-        internal Camp WithPrivateInventory() { var view = (Camp)MemberwiseClone(); view.Inventory = Inventory.Copy(); view.TradeExports = (double[])TradeExports?.Clone(); view.TradeMake = (double[])TradeMake?.Clone(); return view; }
+        internal Camp WithPrivateInventory() { var view = (Camp)MemberwiseClone(); view.Inventory = Inventory.Copy(); view.TradeExports = (double[])TradeExports?.Clone(); view.TradeMake = (double[])TradeMake?.Clone(); view.TradeImports = (double[])TradeImports?.Clone(); return view; }
         // Planning views only (Docs/Trade.md): goods this camp has agreed to deliver this turn after its production,
         // by CraftGood. Demand nets them against stock so the planner produces them. Never set on an authoritative camp.
         [NonSerialized] internal double[] TradeExports;
@@ -455,6 +455,9 @@ namespace Anthropocene.Simulation
         // The part of TradeExports this camp agreed to make to order: its planner reserves that production.
         [NonSerialized] internal double[] TradeMake;
         internal double TradeMakeOf(CraftGood good) => TradeMake == null ? 0 : TradeMake[(int)good];
+        // Goods this camp will receive after production and already counts as stock for its needs: never a recipe input this turn.
+        [NonSerialized] internal double[] TradeImports;
+        internal double TradeImport(CraftGood good) => TradeImports == null ? 0 : TradeImports[(int)good];
         // Compatibility accessors for one-camp callers; society owns and serializes the data.
         public double[] Experience { get => People.Experience; set => People.Experience = value; }
         public List<SpeciesPractice> SpeciesExperience { get => People.SpeciesExperience; set => People.SpeciesExperience = value; }
