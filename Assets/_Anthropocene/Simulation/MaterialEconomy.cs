@@ -716,10 +716,11 @@ namespace Anthropocene.Simulation
                             double clothingBeforeAnimalFabric = Math.Max(0, clothing - virtualCloth);
                             double animalFabricForShelter = Math.Max(0, virtualAnimalFabric - clothingBeforeAnimalFabric);
                             double remainingShelter = Math.Max(0, shelter - animalFabricForShelter - planned[CraftGood.LightHousing]);
-                            // Both fabric recipes serve the same cohort demand.
+                            // Both fabric recipes serve the same cohort demand; goods owed for export are owed as that
+                            // good, so its own deficit is made whatever the pooled clothing need (Docs/Trade.md).
                             useful = recipe.Good == CraftGood.Cloth
-                                ? remainingClothing
-                                : remainingClothing + remainingShelter;
+                                ? Math.Max(remainingClothing, Math.Max(0, -virtualCloth))
+                                : Math.Max(remainingClothing + remainingShelter, Math.Max(0, -virtualAnimalFabric));
                         }
                         bool sharedFabricNeed = recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric;
                         double amount = Math.Min(sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);

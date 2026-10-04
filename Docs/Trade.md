@@ -91,11 +91,21 @@ agriculture/husbandry requirement met, priority > 0) may be offered beyond stock
   - for equipment and housing work, the same share of its tool outputs (one
     Hand Tool covers one output, one Regular Tool four). This pool is shared by
     all such goods, so a camp cannot promise the same tools twice.
-- **marginal loss of giving:** `min(use value, cost)`, so a camp that can make
-  more never values a unit above its making cost;
-- **marginal gain of receiving:** also `min(use value, cost)` (make or buy), so
-  goods move only where the seller's cost, after margin and transport, is below
-  the buyer's.
+- **make or buy:** giving and receiving are both valued on
+  `W'(x) = u(x + cap)` below `x* − cap`, `cost` on `[x* − cap, x*]`, and `u(x)`
+  above, where:
+  - `u` is the use value;
+  - `cap` is the remaining make-to-order capacity;
+  - `x*` is where `u = cost`.
+
+  `W` is what the camp's best own making leaves the good worth.
+  `min(u, cost) ≤ W' ≤ u`, so a camp with little capacity prices its stock near
+  its use value (it cannot simply remake what it sells), and receiving a good it
+  can make cheaply is worth little more than the making cost. `W'` is still
+  piecewise constant or exponential, so the responder's bounds keep their
+  closed-form inverses. A gift draws on capacity by the making it induces
+  (refilling towards `x*` within `cap`) and on held stock for the rest; the
+  induced part is the agreement's made-to-order quantity.
 
 Without a recorded labour price (for example the first trading turn), nothing is
 made to order.
@@ -104,13 +114,14 @@ made to order.
 good is an export claim on its planning view (`Camp.TradeExports`, transient).
 
 - **Fixed claim.** The Value planner (`EconomicPlanner.Plan`, `Evaluate`) staffs
-  the claim first, at any fulfilment position. It reserves the recipe role's
-  labour for the deficit beyond stock and debits the claim's materials and food
-  inputs. Stock held for delivery is excluded from own use. The claim never draws
+  the made-to-order part (`Camp.TradeMake`) first, at any fulfilment position. It
+  reserves the recipe role's labour and debits the claim's materials and food
+  inputs. The rest is delivered from stock. Stock held for delivery is excluded from own use. The claim never draws
   on the own clothing-need feedstock envelope.
 - **Demand and forecast.** `NeolithicProduction.Demand` and
   `MaterialEconomy.Forecast` net the claim against stock, so the material
-  re-forecast plans the claim's Wood and Clay. The clothing claim's position
+  re-forecast plans the claim's Wood and Clay. A good owed as itself (Cloth or
+  Animal Fabric) is forecast as that good, whatever the pooled clothing need. The clothing claim's position
   falls by it. The clothing-need feedstock, the food ledger and the prepared
   `TurnNeeds.Production` include it.
 - **Resolver.** Owed goods are held back from recipe inputs while the camp

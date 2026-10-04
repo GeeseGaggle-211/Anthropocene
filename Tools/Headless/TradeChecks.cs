@@ -500,20 +500,34 @@ internal static class TradeChecks
         double foodValue = ((BandCurve)v.Curve(TradeGood.Food)).Marginal(v.Position(TradeGood.Food));
         Near(v.Cost[(int)TradeGood.AnimalFabric], labour * .05 + (recipe.PlantFood + recipe.AnimalFood) * foodValue, "the made-to-order cost is labour at the lagged price plus food inputs at the food value");
         var bands = (BandCurve)v.Curve(TradeGood.Food); double spare = Math.Max(0, Math.Min(herder.Food, v.Position(TradeGood.Food) - bands.Ends[1]));
-        Near(v.Capacity[(int)TradeGood.AnimalFabric], Math.Min(cfg.TradeExportLabourShare * herder.Population * years / labour, Math.Min(spare, herder.AnimalFood) / recipe.AnimalFood), "capacity is the export labour share of the residents' turn, bounded by spare animal food");
+        Near(v.Capacity[(int)TradeGood.AnimalFabric], Math.Min(cfg.TradeExportLabourShare * herder.Population * years / labour, spare * herder.AnimalFood / herder.Food / recipe.AnimalFood), "capacity is the export labour share of the residents' turn, bounded by spare animal food");
         var lean = OrderWorld(); CampOf(lean, 2).AnimalFood = 1000;
         Check(Trade.Value(lean, CampOf(lean, 2)).Capacity[(int)TradeGood.AnimalFabric] == 0, "a herder without spare animal food cannot make fabric to order");
         Check(v.Stock(TradeGood.AnimalFabric) > 0 && v.Held[(int)TradeGood.AnimalFabric] == 0, "a camp with no fabric in stock may still offer to make it");
         Check(double.IsPositiveInfinity(v.Cost[(int)TradeGood.Cloth]) && v.Capacity[(int)TradeGood.Cloth] == 0, "a herding camp without agriculture cannot make Cloth");
         // The loss of giving is the use value, capped by the cost of making another: check against a numeric integral.
-        double q = 20, pos = v.Position(TradeGood.AnimalFabric), cost = v.Cost[(int)TradeGood.AnimalFabric], numeric = 0; int steps = 20000;
-        for (int k = 0; k < steps; k++) numeric += Math.Min(v.Curve(TradeGood.AnimalFabric).Marginal(pos - q + (k + .5) * q / steps), cost) * q / steps;
-        Near(v.Loss(TradeGood.AnimalFabric, q), numeric, "the capped loss integral matches a numeric integral", 1e-6);
-        Check(v.LossMarginal(TradeGood.AnimalFabric, pos) <= cost + 1e-12, "the marginal loss never exceeds the making cost");
-        Check(v.Gain(TradeGood.AnimalFabric, q) <= cost * q + 1e-9 && v.GainMarginal(TradeGood.AnimalFabric, pos) <= cost + 1e-12, "receiving a good the camp can make is worth at most its making cost (make or buy)");
-        var fv = Trade.Value(w, farmer); double fq = 30, fpos = fv.Position(TradeGood.Cloth), fcost = fv.Cost[(int)TradeGood.Cloth], fnum = 0;
-        for (int k = 0; k < steps; k++) fnum += Math.Min(fv.Curve(TradeGood.Cloth).Marginal(fpos - fq + (k + .5) * fq / steps), fcost) * fq / steps;
-        Near(fv.Loss(TradeGood.Cloth, fq), fnum, "the capped exponential integral matches below zero stock too", 1e-6);
+        // Make or buy: an independent W'(x) = u(x + cap) below x* - cap, the cost on [x* - cap, x*], u(x) above, with
+        // x* where the use value u equals the cost; losses and gains integrate it.
+        double WRef(Trade.Valuation val, TradeGood g, double x)
+        {
+            var u = val.Curve(g); double c = val.Cost[(int)g], cap = val.MakeCapacity(g), xs = u.Crossing(c);
+            if (!(cap > 0) || double.IsPositiveInfinity(c) || double.IsNegativeInfinity(xs)) return u.Marginal(x);
+            return x > xs ? u.Marginal(x) : x >= xs - cap ? c : u.Marginal(x + cap);
+        }
+        double NumericLoss(Trade.Valuation val, TradeGood g, double q) { double p0 = val.Position(g), sum = 0; int n = 40000; for (int k = 0; k < n; k++) sum += WRef(val, g, p0 - q + (k + .5) * q / n) * q / n; return sum; }
+        double q = 20, pos = v.Position(TradeGood.AnimalFabric), cost = v.Cost[(int)TradeGood.AnimalFabric];
+        Near(v.Loss(TradeGood.AnimalFabric, q), NumericLoss(v, TradeGood.AnimalFabric, q), "the make-or-buy loss integral matches a numeric integral", 1e-5);
+        for (double x = pos - 3 * v.MakeCapacity(TradeGood.AnimalFabric) - 10; x < pos + 50; x += 7.3)
+        {
+            double wv = v.LossMarginal(TradeGood.AnimalFabric, x), use = v.Curve(TradeGood.AnimalFabric).Marginal(x);
+            Check(wv <= use + 1e-9 && wv >= Math.Min(use, cost) - 1e-9, "make or buy lies between min(use, cost) and use value at x = " + x.ToString("F1"));
+            Near(wv, WRef(v, TradeGood.AnimalFabric, x), "W' matches the reference at x = " + x.ToString("F1"), 1e-9);
+        }
+        double xs0 = v.Curve(TradeGood.AnimalFabric).Crossing(cost);
+        Near(v.LossMarginal(TradeGood.AnimalFabric, xs0 - .5 * Math.Min(1, v.MakeCapacity(TradeGood.AnimalFabric))), cost, "within capacity below x* a unit is worth its making cost");
+        Check(v.Gain(TradeGood.AnimalFabric, q) <= v.Integrated(TradeGood.AnimalFabric, pos, pos + q) + 1e-9, "receiving is worth at most its use value");
+        var fv = Trade.Value(w, farmer); double fq = 30;
+        Near(fv.Loss(TradeGood.Cloth, fq), NumericLoss(fv, TradeGood.Cloth, fq), "the make-or-buy integral matches below zero stock too", 1e-5);
         // No recorded labour price or no export labour: nothing is made to order.
         var unpriced = OrderWorld(); foreach (var c in unpriced.Camps) c.EconomicLabor = null;
         Check(Trade.Value(unpriced, CampOf(unpriced, 2)).Stock(TradeGood.AnimalFabric) == 0, "without a lagged labour price nothing is made to order");

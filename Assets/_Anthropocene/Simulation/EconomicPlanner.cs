@@ -274,13 +274,15 @@ namespace Anthropocene.Simulation
                 {
                     double owed = c.TradeExport(r.Good);
                     if (!(owed > Epsilon)) continue;
-                    double held = Math.Max(0, NeolithicProduction.Stock(c, r.Good)), deficit = Math.Max(0, owed - held);
+                    // The made-to-order part is reserved production; the rest is delivered from stock (never more than held).
+                    double held = Math.Max(0, NeolithicProduction.Stock(c, r.Good));
+                    double fromStock = Math.Min(held, Math.Max(0, owed - c.TradeMakeOf(r.Good))), deficit = Math.Max(0, owed - fromStock);
                     double keepPlant = clothingPlant, keepAnimal = clothingAnimal, keepRoom = clothingRoom, keepLeft = clothingLeft;
                     clothingLeft = 0;
                     double made = deficit > Epsilon ? Capped(r, deficit, true) : 0;
                     clothingPlant = Math.Min(keepPlant, plant); clothingAnimal = Math.Min(keepAnimal, animal); clothingRoom = Math.Min(keepRoom, foodRoom); clothingLeft = keepLeft;
-                    if (r.Good == CraftGood.AnimalFabric) animalFabric -= made + Math.Min(owed, held);
-                    if (r.Good == CraftGood.HousingMaterial) housingMaterial -= made + Math.Min(owed, held);
+                    if (r.Good == CraftGood.AnimalFabric) animalFabric -= made + fromStock;
+                    if (r.Good == CraftGood.HousingMaterial) housingMaterial -= made + fromStock;
                     if (r.Good == CraftGood.Cloth || r.Good == CraftGood.AnimalFabric) requested[r.Good] += made;
                     double multiplier = ToolCoverageBudget.IsHousingWork(r.Good) ? housingMultiplier : 1;
                     if (made > 0 && multiplier > 0) Add(futureRoles, Role(r), made / (Rate(r) * multiplier * intervals));
@@ -763,7 +765,7 @@ namespace Anthropocene.Simulation
         {
             var result = new Camp { Id = c.Id, Tile = c.Tile, Population = (int)Math.Ceiling(population), PlantFood = c.PlantFood, AnimalFood = c.AnimalFood, AquaticFood = c.AquaticFood,
                 Inventory = new CampInventory { HandTools = c.Inventory.HandTools, Tools = c.Inventory.Tools, CopperTools = c.Inventory.CopperTools, Cloth = c.Inventory.Cloth, AnimalFabric = c.Inventory.AnimalFabric, LightHousingUnits = c.Inventory.LightHousingUnits, HousingMaterial = c.Inventory.HousingMaterial, HerdingTools = c.Inventory.HerdingTools, HousingUnits = c.Inventory.HousingUnits, Pots = c.Inventory.Pots, FarmTools = c.Inventory.FarmTools, Stone = c.Inventory.Stone, Clay = c.Inventory.Clay, Wood = c.Inventory.Wood } };
-            result.QoL = c.QoL; result.TradeExports = (double[])c.TradeExports?.Clone(); result.Bind(c.People); EconomicIntents.Apply(result, intent); return result;
+            result.QoL = c.QoL; result.TradeExports = (double[])c.TradeExports?.Clone(); result.TradeMake = (double[])c.TradeMake?.Clone(); result.Bind(c.People); EconomicIntents.Apply(result, intent); return result;
         }
     }
 }

@@ -68,13 +68,31 @@ namespace Anthropocene.Simulation
             if (cached == null || !cap.Equals(cachedCap)) { cached = Segments(cap).ToArray(); cachedCap = cap; }
             return cached;
         }
-        private static double Over(Segment g, double lo, double hi)
+        // The largest x with Marginal(x) >= c (-infinity when the curve never reaches c).
+        public abstract double Crossing(double c);
+        internal Segment[] Uncapped => SegmentArrayFor(double.PositiveInfinity);
+        internal Segment[] SegmentArrayFor(double cap) => SegmentArray(cap);
+        internal static double Marginal(Segment[] segments, double x)
+        {
+            foreach (var g in segments) if (x < g.Hi && x >= g.Lo) return g.Exponential ? g.V * Math.Exp(-g.K * x / g.N) : g.C;
+            return 0;
+        }
+        internal static double Integral(Segment[] segments, double a, double b)
+        {
+            if (!(b > a)) return 0;
+            double sum = 0;
+            foreach (var g in segments) sum += Over(g, Math.Max(a, g.Lo), Math.Min(b, g.Hi));
+            return sum;
+        }
+        internal static double Over(Segment g, double lo, double hi)
             => !(hi > lo) ? 0 : g.Exponential ? g.V * g.N / g.K * (Math.Exp(-g.K * lo / g.N) - Math.Exp(-g.K * hi / g.N)) : g.C * (hi - lo);
-        // Smallest b >= a with IntegratedCapped(a, b, cap) >= target; +infinity when no b reaches it. Closed form per segment.
-        public double InverseUp(double a, double target, double cap)
+        public double InverseUp(double a, double target, double cap) => InverseUp(SegmentArray(cap), a, target);
+        public double InverseDown(double top, double target, double cap) => InverseDown(SegmentArray(cap), top, target);
+        // Smallest b >= a with the integral over [a, b] >= target; +infinity when no b reaches it. Closed form per segment.
+        internal static double InverseUp(Segment[] segments, double a, double target)
         {
             if (!(target > 0)) return a;
-            double rem = target; var segments = SegmentArray(cap);
+            double rem = target;
             for (int i = 0; i < segments.Length; i++)
             {
                 var g = segments[i];
@@ -87,11 +105,11 @@ namespace Anthropocene.Simulation
             }
             return double.PositiveInfinity;
         }
-        // Largest d >= 0 with IntegratedCapped(top - d, top, cap) <= target (+infinity when the whole curve below fits).
-        public double InverseDown(double top, double target, double cap)
+        // Largest d >= 0 with the integral over [top - d, top] <= target (+infinity when the whole curve below fits).
+        internal static double InverseDown(Segment[] segments, double top, double target)
         {
             if (!(target > 0)) return 0;
-            double rem = target; var segments = SegmentArray(cap);
+            double rem = target;
             for (int i = segments.Length - 1; i >= 0; i--)
             {
                 var g = segments[i];
@@ -124,6 +142,7 @@ namespace Anthropocene.Simulation
             return cap * Math.Max(0, Math.Min(b, cross) - a) + Integrated(Math.Max(a, cross), b);
         }
         public override double Target => N;
+        public override double Crossing(double c) => !(V > 0) || !(N > 0) || !(V >= c) ? double.NegativeInfinity : !(c > 0) ? double.PositiveInfinity : N / K * Math.Log(V / c);
         internal override IEnumerable<Segment> Segments(double cap)
         {
             if (!(V > 0) || !(N > 0)) { yield return new Segment { Lo = double.NegativeInfinity, Hi = double.PositiveInfinity, C = 0 }; yield break; }
@@ -154,6 +173,13 @@ namespace Anthropocene.Simulation
             return total;
         }
         public override double Target => Ends.Length > 0 ? Ends[Ends.Length - 1] : 0;
+        public override double Crossing(double c)
+        {
+            if (!(c > 0)) return double.PositiveInfinity;
+            double x = double.NegativeInfinity;
+            for (int i = 0; i < Ends.Length; i++) if (Values[i] >= c) x = Ends[i];
+            return x;
+        }
         internal override IEnumerable<Segment> Segments(double cap)
         {
             double lo = double.NegativeInfinity;
@@ -186,12 +212,16 @@ namespace Anthropocene.Simulation
         // A receiver plans with goods delivered before its needs. Food is paid on delivery, after production and
         // after this turn's growth plan, so it reaches the receiver's planning only from the next turn.
         internal void Receive(int camp, TradeGood good, double[] parts) { if (Trade.Descriptor(good).AfterProduction) Stock(camp, good, parts, 1); }
-        internal void Send(int camp, TradeGood good, double[] parts)
+        // Exports owed after production, and the part of them the seller makes to order (its planner reserves that work).
+        public readonly Dictionary<int, double[]> Make = new Dictionary<int, double[]>();
+        internal void Send(int camp, TradeGood good, double[] parts, double made = 0)
         {
             var g = Trade.Descriptor(good);
             if (!g.AfterProduction) { Stock(camp, good, parts, -1); return; }
-            if (!Exports.TryGetValue(camp, out var e)) Exports[camp] = e = new double[Enum.GetValues(typeof(CraftGood)).Length];
-            e[(int)g.Recipe.Value] += parts.Sum();
+            int n = Enum.GetValues(typeof(CraftGood)).Length;
+            if (!Exports.TryGetValue(camp, out var e)) Exports[camp] = e = new double[n];
+            if (!Make.TryGetValue(camp, out var m)) Make[camp] = m = new double[n];
+            e[(int)g.Recipe.Value] += parts.Sum(); m[(int)g.Recipe.Value] += Math.Max(0, made);
         }
         private void Stock(int camp, TradeGood good, double[] parts, double sign)
         {
@@ -366,27 +396,66 @@ namespace Anthropocene.Simulation
             // What the camp may give of a good: held stock above its curve's floor, plus what it can make to order.
             public double Stock(TradeGood g) => Active[(int)g] ? Math.Max(0, Math.Min(Held[(int)g], Position(g) - Floor(g))) + MakeCapacity(g) : 0;
             public double Marginal(TradeGood g, double x) => Active[(int)g] ? Curve(g).Marginal(x) : 0;
-            // The marginal loss of giving at position x: its use value, but never more than the cost of making another.
-            public double LossMarginal(TradeGood g, double x) => Active[(int)g] ? Math.Min(Curve(g).Marginal(x), Cost[(int)g]) : 0;
+            // Make or buy (Docs/Trade.md): the value of a unit at position x to a camp that can still make `cap` more at cost c.
+            // With u its use value and x* = u.Crossing(c), W'(x) = u(x + cap) below x* - cap, c on [x* - cap, x*], u(x) above.
+            // Receiving and giving are both valued on W, so a camp with little making capacity prices stock near its use value.
+            private readonly ValueCurve.Segment[][] wCache = new ValueCurve.Segment[Registry.Length][];
+            private readonly double[] wCap = Enumerable.Repeat(double.NaN, Registry.Length).ToArray();
+            internal double Crossing(TradeGood g) { int i = (int)g; return Active[i] && !double.IsPositiveInfinity(Cost[i]) ? Curve(g).Crossing(Cost[i]) : double.NegativeInfinity; }
+            internal ValueCurve.Segment[] W(TradeGood g)
+            {
+                int i = (int)g; double cap = MakeCapacity(g);
+                if (wCache[i] != null && cap.Equals(wCap[i])) return wCache[i];
+                var u = Curve(g).Uncapped; double c = Cost[i], xs = Crossing(g);
+                ValueCurve.Segment[] w;
+                if (!(cap > 0) || double.IsPositiveInfinity(c) || double.IsNegativeInfinity(xs)) w = u;
+                else
+                {
+                    var list = new List<ValueCurve.Segment>();
+                    foreach (var seg in u)
+                    {
+                        // Below x* - cap: the curve shifted down by cap (own making saturates).
+                        double lo = seg.Lo - cap, hi = Math.Min(seg.Hi, xs) - cap;
+                        if (hi > lo) list.Add(new ValueCurve.Segment { Lo = lo, Hi = hi, C = seg.C, V = seg.Exponential ? seg.V * Math.Exp(-seg.K * cap / seg.N) : 0, N = seg.N, K = seg.K, Exponential = seg.Exponential });
+                    }
+                    list.Add(new ValueCurve.Segment { Lo = xs - cap, Hi = xs, C = c });
+                    foreach (var seg in u)
+                        if (seg.Hi > xs) list.Add(new ValueCurve.Segment { Lo = Math.Max(seg.Lo, xs), Hi = seg.Hi, C = seg.C, V = seg.V, N = seg.N, K = seg.K, Exponential = seg.Exponential });
+                    w = list.ToArray();
+                }
+                wCache[i] = w; wCap[i] = cap;
+                return w;
+            }
+            // The extra making that giving q from the current position induces: own making refills towards x* within cap.
+            internal double Induced(TradeGood g, double q)
+            {
+                double cap = MakeCapacity(g), xs = Crossing(g), pos = Position(g);
+                if (!(cap > 0) || double.IsNegativeInfinity(xs) || !(q > 0)) return 0;
+                double Fill(double x) => Math.Max(0, Math.Min(cap, xs - x));
+                return Math.Max(0, Math.Min(q, Fill(pos - q) - Fill(pos)));
+            }
+            public double LossMarginal(TradeGood g, double x) => Active[(int)g] ? ValueCurve.Marginal(W(g), x) : 0;
+            public double GainMarginal(TradeGood g, double x) => LossMarginal(g, x);
             public double Integrated(TradeGood g, double a, double b) => Active[(int)g] ? Curve(g).Integrated(a, b) : 0;
-            // The gain of receiving: its use value, but never more than making it would cost (make or buy).
-            public double Gain(TradeGood g, double q) { Counters.Count(ref Counters.Integrals); return Active[(int)g] ? Curve(g).IntegratedCapped(Position(g), Position(g) + q, Cost[(int)g]) : 0; }
-            public double GainMarginal(TradeGood g, double x) => Active[(int)g] ? Math.Min(Curve(g).Marginal(x), Cost[(int)g]) : 0;
-            public double Loss(TradeGood g, double q) { Counters.Count(ref Counters.Integrals); return Active[(int)g] ? Curve(g).IntegratedCapped(Position(g) - q, Position(g), Cost[(int)g]) : 0; }
+            public double Gain(TradeGood g, double q) { Counters.Count(ref Counters.Integrals); return Active[(int)g] ? ValueCurve.Integral(W(g), Position(g), Position(g) + q) : 0; }
+            public double Loss(TradeGood g, double q) { Counters.Count(ref Counters.Integrals); return Active[(int)g] ? ValueCurve.Integral(W(g), Position(g) - q, Position(g)) : 0; }
             // Bumped by every Apply: a response scored on unchanged positions is still exact.
             public int Version;
-            public void Apply(TradeGood g, double amount)
+            // Returns the part of a gift that is made to order (zero for receipts).
+            public double Apply(TradeGood g, double amount)
             {
-                int i = (int)g; Version++;
-                // Giving beyond held stock draws on the capacity to make to order.
-                if (amount < 0 && -amount > Held[i])
+                int i = (int)g; Version++; double madeOut = 0;
+                // Giving draws the induced making on capacity (and the tool pool) and the rest on held stock.
+                if (amount < 0)
                 {
-                    double made = -amount - Math.Max(0, Held[i]);
-                    Capacity[i] = Math.Max(0, Capacity[i] - made); Held[i] = 0;
-                    if (UsesTools[i]) ToolPool = Math.Max(0, ToolPool - made);
+                    double made = Math.Min(Induced(g, -amount), Capacity[i]);
+                    if (-amount - made > Held[i]) made = Math.Min(Capacity[i], -amount - Math.Max(0, Held[i]));
+                    Capacity[i] = Math.Max(0, Capacity[i] - made); if (UsesTools[i]) ToolPool = Math.Max(0, ToolPool - made);
+                    Held[i] = Math.Max(0, Held[i] - (-amount - made)); madeOut = made;
                 }
                 else Held[i] += amount;
                 var key = Descriptor(g).Curve; var p = positions[key]; positions[key] = (p.Position + amount, p.Floor);
+                return madeOut;
             }
             internal double[] Parts(TradeGood g, double quantity) => Shares[(int)g].Select(s => s * quantity).ToArray();
         }
@@ -456,8 +525,10 @@ namespace Anthropocene.Simulation
                 v.Cost[i] = labour * price + (recipe.PlantFood + recipe.AnimalFood) * Math.Max(0, foodValue);
                 double capacity = cfg.TradeExportLabourShare * c.Population * years / labour;
                 // Food inputs come from spare food only, typed: Animal Fabric needs animal food, Cloth plant food.
-                if (recipe.PlantFood > 0) capacity = Math.Min(capacity, Math.Min(spareFood, Math.Max(0, c.PlantFood)) / recipe.PlantFood);
-                if (recipe.AnimalFood > 0) capacity = Math.Min(capacity, Math.Min(spareFood, Math.Max(0, c.AnimalFood)) / recipe.AnimalFood);
+                // Spare food is shared across types in the stock's proportions (consumption draws on every type).
+                double stockFood = Math.Max(1e-12, c.Food);
+                if (recipe.PlantFood > 0) capacity = Math.Min(capacity, spareFood * Math.Max(0, c.PlantFood) / stockFood / recipe.PlantFood);
+                if (recipe.AnimalFood > 0) capacity = Math.Min(capacity, spareFood * Math.Max(0, c.AnimalFood) / stockFood / recipe.AnimalFood);
                 v.Capacity[i] = Math.Max(0, capacity);
                 // Equipment and housing work need tool coverage: their exports share the tool pool.
                 v.UsesTools[i] = recipe.Equipment || ToolCoverageBudget.IsHousingWork(recipe.Good);
@@ -506,7 +577,7 @@ namespace Anthropocene.Simulation
             double gain = r.Gain(want, q);
             if (!(gain > 0)) return double.NaN;
             double budget = gain * (1 - transport) / (1 + margin), stock = r.Stock(give);
-            double paid = r.Active[(int)give] ? Math.Min(stock, r.Curve(give).InverseDown(r.Position(give), budget, r.Cost[(int)give])) : stock;
+            double paid = r.Active[(int)give] ? Math.Min(stock, ValueCurve.InverseDown(r.W(give), r.Position(give), budget)) : stock;
             return Math.Max(0, paid) / q;
         }
 
@@ -518,7 +589,7 @@ namespace Anthropocene.Simulation
             Counters.Count(ref Counters.RatioSearches);
             if (!(q > 0) || q > p.Stock(want) + 1e-9 || !(cap > 0) || !p.Active[(int)give] || !(transport < 1)) return double.NaN;
             double needed = (1 + margin) * p.Loss(want, q) / (1 - transport);
-            double paid = needed > 0 ? p.Curve(give).InverseUp(p.Position(give), needed, p.Cost[(int)give]) - p.Position(give) : 0;
+            double paid = needed > 0 ? ValueCurve.InverseUp(p.W(give), p.Position(give), needed) - p.Position(give) : 0;
             // A zero loss still needs some payment of positive value.
             if (!(needed > 0)) paid = p.Marginal(give, p.Position(give)) > 0 ? cap * 1e-12 * q : double.PositiveInfinity;
             double ratio = paid / q;
@@ -630,10 +701,10 @@ namespace Anthropocene.Simulation
                     if (agreement == null) { plan.Summary.Ignored++; continue; }
                     plan.Agreements.Add(agreement);
                     flows.Add((p.Camp, r.Camp, Descriptor(agreement.Want).Curve)); flows.Add((r.Camp, p.Camp, Descriptor(agreement.Give).Curve));
-                    r.Apply(agreement.Want, agreement.WantQuantity); r.Apply(agreement.Give, -agreement.GiveQuantity);
-                    p.Apply(agreement.Want, -agreement.WantQuantity); p.Apply(agreement.Give, agreement.GiveQuantity);
-                    plan.Receive(r.Camp, agreement.Want, agreement.WantParts); plan.Send(p.Camp, agreement.Want, agreement.WantParts);
-                    plan.Send(r.Camp, agreement.Give, agreement.GiveParts); plan.Receive(p.Camp, agreement.Give, agreement.GiveParts);
+                    r.Apply(agreement.Want, agreement.WantQuantity); double giveMade = r.Apply(agreement.Give, -agreement.GiveQuantity);
+                    double wantMade = p.Apply(agreement.Want, -agreement.WantQuantity); p.Apply(agreement.Give, agreement.GiveQuantity);
+                    plan.Receive(r.Camp, agreement.Want, agreement.WantParts); plan.Send(p.Camp, agreement.Want, agreement.WantParts, wantMade);
+                    plan.Send(r.Camp, agreement.Give, agreement.GiveParts, giveMade); plan.Receive(p.Camp, agreement.Give, agreement.GiveParts);
                     if (agreement.Countered) plan.Summary.Countered++; else plan.Summary.Honoured++;
                 }
             }
@@ -653,6 +724,7 @@ namespace Anthropocene.Simulation
                         if (d != 0) g.Parts[i].Set(view, Math.Max(0, g.Parts[i].Get(view) + d));
                     }
             if (plan.Exports.TryGetValue(view.Id, out var exports)) view.TradeExports = (double[])exports.Clone();
+            if (plan.Make.TryGetValue(view.Id, out var make)) view.TradeMake = (double[])make.Clone();
         }
 
         // The fraction of a leg the giver can deliver from what it holds now.
