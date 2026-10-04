@@ -368,17 +368,27 @@ namespace Anthropocene.Simulation
             phaseClock.Restart();
             // Manufacturing and needs use the same assigned population. Unused gathering
             // worker-time can source materials; realized food gathering earns bridge effort.
-            foreach (var camp in w.Camps.OrderBy(c => c.Id).ToArray())
+            // Goods agreed for trade after production settle between every camp's production and every camp's
+            // needs (Docs/Trade.md); without such goods the camps produce and meet needs in one pass as before.
+            bool tradeAfterProduction = trade != null && trade.Plan.AfterProduction;
+            var neolithicCamps = w.Camps.OrderBy(c => c.Id).ToArray();
+            foreach (var camp in neolithicCamps)
             {
                 var labor = agriculturalLabor[camp.Id];
                 double gathered = gatheredFoodForMaterials.TryGetValue(camp.Id, out double amount) ? amount : 0;
                 labor.GatheringWorkerIntervals = Math.Min(labor.Gatherers * intervals, gathered / w.Config.GatherPerPerson);
-                NeolithicProduction.ResolveCampNeolithic(w, camp, horizon, record, Math.Max(0, labor.Gatherers * intervals - labor.GatheringWorkerIntervals), needs[camp.Id]);
+                NeolithicProduction.ResolveCampNeolithic(w, camp, horizon, record, Math.Max(0, labor.Gatherers * intervals - labor.GatheringWorkerIntervals), needs[camp.Id], !tradeAfterProduction);
                 if (CultivationEconomy.Enabled(camp))
                 {
                     foreach (int id in labor.Footprint) { LazyEcology.MaterializeEcology(w, id, record.StartDays + record.Duration); w.Tiles[id].Cultivation = (float)CultivationEconomy.Intensity(w.Config, w.Tiles[id].CultivationCapital); }
                     foreach (int id in labor.Footprint) w.Tiles[id].CultivationOperatingFraction = 0;
                 }
+            }
+            if (tradeAfterProduction)
+            {
+                Trade.SettleAfterProduction(w, trade);
+                foreach (var camp in neolithicCamps)
+                    if (camp.Population > 0) NeolithicProduction.ResolveNeeds(w, camp, horizon.Years, needs[camp.Id]?.Residents ?? camp.Population);
             }
             LastMetrics.ProductionMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
             LastMetrics.ProductionReceipts = record.Production.Count;

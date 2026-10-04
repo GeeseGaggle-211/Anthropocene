@@ -38,6 +38,8 @@ namespace Anthropocene.Simulation
     public sealed class TurnNeeds
     {
         public int Camp, Residents, LinkedPopulation, FoodConsumers;
+        // Goods this camp agreed to deliver after production (by CraftGood; null without exports, Docs/Trade.md).
+        internal double[] Exports;
         public double OpeningCampFood, OpeningAnimalFood, ConsumptionRequired, ConsumptionTarget, ReserveTarget, ReserveFillTarget, GrowthFoodTarget, FoodTarget;
         public readonly Dictionary<CraftGood, double> Goods = new Dictionary<CraftGood, double>();
         public double PlantFeedstock, PlantFeedstockGap, AnimalFeedstock, AnimalFeedstockGap;
@@ -347,7 +349,8 @@ namespace Anthropocene.Simulation
                 ConsumptionRequired = consumptionRequired,
                 ConsumptionTarget = consumptionTarget, ReserveTarget = reserveTarget,
                 ReserveFillTarget = reserveFillTarget, GrowthFoodTarget = growthFoodTarget,
-                FoodTarget = consumptionTarget + reserveFillTarget + growthFoodTarget
+                FoodTarget = consumptionTarget + reserveFillTarget + growthFoodTarget,
+                Exports = (double[])planningCamp.TradeExports?.Clone()
             };
             if (residents > 0 && CultivationEconomy.EconomyEnabled(camp))
             {
@@ -369,7 +372,7 @@ namespace Anthropocene.Simulation
                 // and ahead of the reserve refill; other feedstock can only
                 // substitute inventory above consumption, clothing and reserve.
                 var clothing = NeolithicProduction.ClothingNeedFeedstock(world.Config.Neolithic, residents, years,
-                    planningCamp.Inventory.Cloth, planningCamp.Inventory.AnimalFabric, needs.PlantFeedstock, needs.AnimalFeedstock);
+                    planningCamp.Inventory.Cloth - planningCamp.TradeExport(CraftGood.Cloth), planningCamp.Inventory.AnimalFabric - planningCamp.TradeExport(CraftGood.AnimalFabric), needs.PlantFeedstock, needs.AnimalFeedstock);
                 needs.PlantClothingFeedstock = clothing.Plant; needs.AnimalClothingFeedstock = clothing.Animal;
                 NeolithicProduction.FeedstockGaps(planningCamp.Food, planningCamp.PlantFood, planningCamp.AnimalFood, needs.ConsumptionRequired, needs.ReserveTarget,
                     needs.PlantFeedstock, needs.AnimalFeedstock, clothing, out double plantGap, out double animalGap);
@@ -379,13 +382,13 @@ namespace Anthropocene.Simulation
         }
 
         // The camp the planner sees: at its effective tile and holding the stock its
-        // confirmed trades leave it (settled at the opening of the economy phase).
+        // confirmed trades leave it, and the goods it agreed to make for export as claims (Docs/Trade.md).
         private static Camp PlanningCampAt(Camp camp, int tile, TradePlan trade)
         {
             var view = PlanningCampAt(camp, tile);
-            if (trade == null || !trade.Deltas.TryGetValue(camp.Id, out var delta)) return view;
+            if (trade == null || !trade.Changes(camp.Id)) return view;
             if (ReferenceEquals(view, camp)) view = camp.WithPrivateInventory();
-            Trade.ApplyToPlanningCamp(view, delta);
+            Trade.ApplyToPlanningCamp(view, trade);
             return view;
         }
 

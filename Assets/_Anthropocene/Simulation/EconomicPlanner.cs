@@ -510,7 +510,7 @@ namespace Anthropocene.Simulation
                     forecastAnimalFeedstock = Math.Min(forecastAnimalFeedstock, typedFeedstock.AnimalFood);
                 }
                 var clothingFeedstock = NeolithicProduction.ClothingNeedFeedstock(n, preview.Population, years,
-                    c.Inventory.Cloth, c.Inventory.AnimalFabric, forecastPlantFeedstock, forecastAnimalFeedstock);
+                    c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth), c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric), forecastPlantFeedstock, forecastAnimalFeedstock);
                 double feedstockReserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, consumers, intervals), NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, intervals, years));
                 NeolithicProduction.FeedstockGaps(c.Food, c.PlantFood, husbandryEnabled ? c.AnimalFood : 0, demand.Meals, feedstockReserve,
                     forecastPlantFeedstock, husbandryEnabled ? forecastAnimalFeedstock : 0,
@@ -681,6 +681,8 @@ namespace Anthropocene.Simulation
                 best.Intent.ManagedBreedingIntensity = HerdLabour.CapBreeding(w, c, best.Intent.ManagedBreedingIntensity, target, years);
             }
             if (valueRule != null) laborPrice = valueRule.LaborPrice(demand.Claims, demand.Expansion, best.S);
+            if (w.Config.TradeEnabled && best.Intent.Labor != null && valueRule != null && !double.IsNaN(laborPrice) && !double.IsInfinity(laborPrice))
+            { best.Intent.Labor.LabourPriceSet = true; best.Intent.Labor.LabourPrice = Math.Max(0, laborPrice); }
             if (finalDemand.Expansion != null) farmLabourPrice = finalDemand.Expansion.ValueAfter((best.Intent.Labor?.ExpansionFarmers ?? 0) * years);
             if (ResolutionMetrics.CaptureDetailedCounters)
                 Interlocked.Add(ref TurnDiagnostics.For(w).PlanTicks, System.Diagnostics.Stopwatch.GetTimestamp() - planStart);
@@ -743,7 +745,7 @@ namespace Anthropocene.Simulation
         {
             var result = new Camp { Id = c.Id, Tile = c.Tile, Population = (int)Math.Ceiling(population), PlantFood = c.PlantFood, AnimalFood = c.AnimalFood, AquaticFood = c.AquaticFood,
                 Inventory = new CampInventory { HandTools = c.Inventory.HandTools, Tools = c.Inventory.Tools, CopperTools = c.Inventory.CopperTools, Cloth = c.Inventory.Cloth, AnimalFabric = c.Inventory.AnimalFabric, LightHousingUnits = c.Inventory.LightHousingUnits, HousingMaterial = c.Inventory.HousingMaterial, HerdingTools = c.Inventory.HerdingTools, HousingUnits = c.Inventory.HousingUnits, Pots = c.Inventory.Pots, FarmTools = c.Inventory.FarmTools, Stone = c.Inventory.Stone, Clay = c.Inventory.Clay, Wood = c.Inventory.Wood } };
-            result.QoL = c.QoL; result.Bind(c.People); EconomicIntents.Apply(result, intent); return result;
+            result.QoL = c.QoL; result.TradeExports = (double[])c.TradeExports?.Clone(); result.Bind(c.People); EconomicIntents.Apply(result, intent); return result;
         }
     }
 }

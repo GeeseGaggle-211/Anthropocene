@@ -45,6 +45,8 @@ namespace Anthropocene.Simulation
     }
     public sealed partial class TurnResolver
     {
+        // This resolution's trade settlement (Docs/Trade.md): opening legs settled, after-production legs pending.
+        private TradeSettlement trade;
         private readonly PhaseExecution execution;
         public ResolutionMetrics LastMetrics { get; private set; } = new ResolutionMetrics();
         public TurnResolver(PhaseExecution execution = null) { this.execution = execution ?? new PhaseExecution(); }
@@ -59,7 +61,7 @@ namespace Anthropocene.Simulation
         {
             if (prepared == null || !ReferenceEquals(w, prepared.World) || w.Turn != prepared.Turn || Math.Abs(w.Days - prepared.StartDays) > 1e-8 || Math.Abs(w.Config.TurnDays - prepared.Horizon.Days) > 1e-8)
                 throw new InvalidOperationException("Prepared turn does not match the current world boundary.");
-            var resolutionTimer = System.Diagnostics.Stopwatch.StartNew(); LastMetrics = new ResolutionMetrics();
+            var resolutionTimer = System.Diagnostics.Stopwatch.StartNew(); LastMetrics = new ResolutionMetrics(); trade = null;
             Ownership.Bind(w);
             if (w.Camps.All(c => w.LinkedPopulation(c) <= 0)) throw new InvalidOperationException("All tribes have perished.");
             w.Config.Validate();
@@ -89,8 +91,8 @@ namespace Anthropocene.Simulation
             }
             // Confirmed trades settle from committed stock before dispatch, provisions, production and needs (WP7):
             // every later step sees the post-trade stock the planner and prepared needs saw.
-            var tradeTimer = System.Diagnostics.Stopwatch.StartNew(); Trade.Settle(w, prepared.Trade, record); LastMetrics.TradeSettleMilliseconds = tradeTimer.Elapsed.TotalMilliseconds;
-            LastMetrics.TradePlanMilliseconds = prepared.TradeMilliseconds; LastMetrics.TradesSettled = record.Trades.Count;
+            var tradeTimer = System.Diagnostics.Stopwatch.StartNew(); trade = Trade.Settle(w, prepared.Trade, record); LastMetrics.TradeSettleMilliseconds = tradeTimer.Elapsed.TotalMilliseconds;
+            LastMetrics.TradePlanMilliseconds = prepared.TradeMilliseconds;
             if (prepared.Trade != null)
             {
                 var activity = prepared.Trade.Summary;
@@ -114,6 +116,7 @@ namespace Anthropocene.Simulation
             var touched = new Dictionary<int, TileChange>();
             Action<int> touch = id => { if (!touched.ContainsKey(id)) touched[id] = new TileChange { Tile = id, BeforeFood = w.Tiles[id].Food, BeforePotentialFood = w.Tiles[id].PotentialFood, BeforeFreshwater = w.Tiles[id].Freshwater, BeforeLandCondition = w.Tiles[id].LandCondition, BeforeAquaticCondition = w.Tiles[id].AquaticCondition }; };
             ResolveEcology(w, locked, establishedHunters, record, touch, prepared.Needs, prepared.AbandoningVillages);
+            Trade.Finish(w, trade, record); LastMetrics.TradesSettled = record.Trades.Count; trade = null;
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Reintegrate).OrderBy(o => o.Entity))
             {
                 var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity); if (hunter == null) continue;

@@ -14,6 +14,10 @@ namespace Anthropocene.Simulation
         // and outside the shared planner (unset); not part of the intent stamp.
         [System.Runtime.Serialization.OptionalField] public bool FulfilmentPositionSet;
         [System.Runtime.Serialization.OptionalField] public double FulfilmentPosition;
+        // Trade (Docs/Trade.md): the labour price w (person-QoL-years per worker-year) the last plan chose, the
+        // lagged cost of producing to order. Recorded only while trade is enabled; absent in older saves (unset).
+        [System.Runtime.Serialization.OptionalField] public bool LabourPriceSet;
+        [System.Runtime.Serialization.OptionalField] public double LabourPrice;
         public EconomicLaborPlan Copy() => (EconomicLaborPlan)MemberwiseClone();
         public IEnumerable<double> Values() => new[] { MaterialGatherers, ExpansionFarmers, EquipmentTarget };
     }

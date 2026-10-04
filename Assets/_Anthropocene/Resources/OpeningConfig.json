@@ -149,6 +149,7 @@
   "TradeDistanceCostPerHex": 0.01,
   "TradeFoodEnabled": true,
   "TradeFoodSafeOnly": false,
+  "TradeExportLabourShare": 0.25,
   "ImmigrationEnabled": false,
   "ImmigrationRadius": 4,
   "ImmigrationQualityWeight": 1,

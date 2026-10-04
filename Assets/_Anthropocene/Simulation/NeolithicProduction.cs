@@ -388,8 +388,10 @@ namespace Anthropocene.Simulation
             var n = w.Config.Neolithic;
             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
             // Housing Material is made only against the Housing gap, never stockpiled beyond it.
+            // Agreed exports (planning views only, Docs/Trade.md) are delivered out of stock after production, so
+            // demand nets them: own use sees the stock left after delivery and the deficit is produced.
             if (good == CraftGood.HousingMaterial)
-                return Math.Max(0, Demand(w, c, CraftGood.Housing, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order) - Math.Max(0, c.Inventory.HousingMaterial));
+                return Math.Max(0, Demand(w, c, CraftGood.Housing, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order) - (Math.Max(0, c.Inventory.HousingMaterial) - c.TradeExport(CraftGood.HousingMaterial)));
             if (good == CraftGood.HandTools || good == CraftGood.Tools)
             {
                 var tools = ToolReplacementDemands(w, c, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order);
@@ -398,19 +400,22 @@ namespace Anthropocene.Simulation
             if (good == CraftGood.Pots)
                 return potsAlreadyDecayed ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
             double clothingTarget = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
-            double clothGap = Math.Max(0, clothingTarget - Math.Max(0, c.Inventory.Cloth) - Math.Max(0, c.Inventory.AnimalFabric));
+            // Stock net of agreed exports: the other clothing good counts only what is left, a good's own netting carries its deficit.
+            double cloth = Math.Max(0, c.Inventory.Cloth) - c.TradeExport(CraftGood.Cloth), fabric = Math.Max(0, c.Inventory.AnimalFabric) - c.TradeExport(CraftGood.AnimalFabric);
+            double clothGap = Math.Max(0, clothingTarget - Math.Max(0, cloth) - Math.Max(0, fabric));
             double housingGapPeople = HousingGapPeople(w, c, residents, w.Days + years * w.Config.DaysPerYear);
             double lightHousingTarget = housingGapPeople / n.LightHousingPeoplePerUnit;
             bool lightHousingUseful = Priority(c, CraftGood.LightHousing) > 0 && CultivationEconomy.Workers(c, WorkforceRoles.Builder) + CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0;
-            double target = good == CraftGood.Cloth ? Math.Max(0, clothingTarget - Math.Max(0, c.Inventory.AnimalFabric)) :
-                good == CraftGood.AnimalFabric ? Math.Max(0, clothingTarget - Math.Max(0, c.Inventory.Cloth)) + (lightHousingUseful ? lightHousingTarget : 0) :
+            double target = good == CraftGood.Cloth ? Math.Max(0, clothingTarget - Math.Max(0, fabric)) :
+                good == CraftGood.AnimalFabric ? Math.Max(0, clothingTarget - Math.Max(0, cloth)) + (lightHousingUseful ? lightHousingTarget : 0) :
                 good == CraftGood.Housing || good == CraftGood.LightHousing ? 0 :
                 good == CraftGood.FarmTools ? FarmToolDemand(w, c, years, fieldWorkAlreadyResolved) + Stock(c, good) :
                 good == CraftGood.HerdingTools ? HerdingToolDemand(w, c, years, fieldWorkAlreadyResolved) + Stock(c, good) : c.FarmToolsTarget;
             // Housing demand is the unsheltered people divided by what one unit of that good shelters (tents shelter fewer than houses).
             if (good == CraftGood.Housing) return housingGapPeople / n.HousingPeoplePerUnit;
             if (good == CraftGood.LightHousing) return lightHousingTarget;
-            if (good == CraftGood.AnimalFabric) return Math.Max(0, target - Math.Max(0, c.Inventory.AnimalFabric));
+            if (good == CraftGood.AnimalFabric) return Math.Max(0, target - fabric);
+            if (good == CraftGood.Cloth) return Math.Max(0, target - (Stock(c, good) - c.TradeExport(CraftGood.Cloth)));
             return Math.Max(0, target - Stock(c, good));
         }
         private static double HerdingToolDemand(WorldState w, Camp c, double years, bool managementAlreadyResolved)
@@ -790,7 +795,7 @@ namespace Anthropocene.Simulation
             // Housing Material shares its Builder pool with the assembly that will
             // consume it, so it never takes labour the assembly needs this turn.
             double amount = recipe.Good == CraftGood.HousingMaterial
-                ? HousingMaterialLimit(coverage, rate, labor, usefulDemand, c.Inventory.HousingMaterial)
+                ? HousingMaterialLimit(coverage, rate, labor, usefulDemand, c.Inventory.HousingMaterial - c.TradeExport(CraftGood.HousingMaterial))
                 : Math.Min(usefulDemand, recipe.Equipment ? coverage.Capacity(recipe.Good, rate, labor) : labor * rate);
             var inv = c.Inventory;
             if (recipe.Stone > 0) amount = Math.Min(amount, inv.Stone / recipe.Stone);
@@ -798,8 +803,9 @@ namespace Anthropocene.Simulation
             if (recipe.Wood > 0) amount = Math.Min(amount, inv.Wood / recipe.Wood);
             if (recipe.PlantFood > 0) amount = Math.Min(amount, c.PlantFood / recipe.PlantFood);
             if (recipe.AnimalFood > 0) amount = Math.Min(amount, c.AnimalFood / recipe.AnimalFood);
-            if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, inv.AnimalFabric) / recipe.AnimalFabric);
-            if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, inv.HousingMaterial) / recipe.HousingMaterial);
+            // Goods owed for export after production (Docs/Trade.md) are not inputs.
+            if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, inv.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
+            if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, inv.HousingMaterial - c.TradeExport(CraftGood.HousingMaterial)) / recipe.HousingMaterial);
             // A recipe ranked below Housing Material leaves the Wood/Clay its
             // unfinished claim needs, whichever role happens to run first.
             if (housing != null && recipe.ConstructionMaterial <= 0 && (recipe.Wood > 0 || recipe.Clay > 0))
@@ -845,12 +851,16 @@ namespace Anthropocene.Simulation
             }
             return used;
         }
-        public static void ResolveCampNeolithic(WorldState w, Camp c, TurnHorizon horizon, TurnRecord record, double gatheringWorkerIntervals = 0, TurnNeeds needs = null)
-            => ResolveCampNeolithic(w, c, horizon.ReferenceIntervals, horizon.Years, record, gatheringWorkerIntervals, needs);
-        public static void ResolveCampNeolithic(WorldState w, Camp c, double intervals, double years, TurnRecord record, double gatheringWorkerIntervals = 0, TurnNeeds needs = null)
+        // resolveNeeds = false leaves needs to the caller, which settles after-production trade first (Docs/Trade.md).
+        public static void ResolveCampNeolithic(WorldState w, Camp c, TurnHorizon horizon, TurnRecord record, double gatheringWorkerIntervals = 0, TurnNeeds needs = null, bool resolveNeeds = true)
+            => ResolveCampNeolithic(w, c, horizon.ReferenceIntervals, horizon.Years, record, gatheringWorkerIntervals, needs, resolveNeeds);
+        public static void ResolveCampNeolithic(WorldState w, Camp c, double intervals, double years, TurnRecord record, double gatheringWorkerIntervals = 0, TurnNeeds needs = null, bool resolveNeeds = true)
         {
             if (c.Population <= 0) return;
             int residents = needs?.Residents ?? c.Population;
+            // Goods this camp owes for export are held back from its recipes while it produces; the reserve is
+            // transient and cleared before needs (Docs/Trade.md).
+            c.TradeExports = (double[])needs?.Exports?.Clone();
             DepreciateHousing(w, c, years, residents);
             DepreciatePots(w, c, years);
             if (CultivationEconomy.EconomyEnabled(c))
@@ -892,7 +902,8 @@ namespace Anthropocene.Simulation
                     }
                 }
             }
-            ResolveNeeds(w, c, years, residents);
+            c.TradeExports = null;
+            if (resolveNeeds) ResolveNeeds(w, c, years, residents);
         }
         // Derived social-cohesion scale (Docs/SocialCohesion.md): N_s = N_band (1 + k H) with the housing share H from
         // HousingShare. No technology or regime label enters; a camp with no housing has N_s = N_band.

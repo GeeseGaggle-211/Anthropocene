@@ -38,14 +38,18 @@ def activity(root, variant):
         x = samples(root, variant, w)
         if x is None: continue
         tot = lambda k: sum(s.get(k, 0) for s in x)
-        flows = {}
+        flows = {}; ordered = [0, 0.0, 0]
         for s in x:
             for e in s.get('tradeEvents') or []:
                 key = f"{e['Want']}<-{e['Give']}"; f = flows.setdefault(key, [0, 0.0, 0.0]); f[0] += 1; f[1] += e['WantQuantity']; f[2] += e['GiveQuantity']
+                for leg, frac in (('WantMadeToOrder', 'Delivered'), ('GiveMadeToOrder', 'GiveDelivered')):
+                    if e.get(leg):
+                        ordered[0] += 1; ordered[1] += e.get(frac, 1); ordered[2] += e.get(frac, 1) < 1 - 1e-9
         print(f'{variant} {w}: eligible camp-turns {tot("tradeEligible"):.0f}, requisitions {tot("tradeRequisitions"):.0f}, honoured {tot("tradeHonoured"):.0f}, '
               f'countered {tot("tradeCounteredRequisitions"):.0f}, ignored {tot("tradeIgnored"):.0f}, trades {tot("tradeCount"):.0f}, '
               f'plan ms mean {tot("tradePlanMs") / len(x):.3f} max {max(s.get("tradePlanMs", 0) for s in x):.2f}')
         for key, (n, want, give) in sorted(flows.items()): print(f'    {key}: {n} trades, received {want:.1f}, paid {give:.1f}')
+        if ordered[0]: print(f'    after-production legs {ordered[0]}, mean delivered {ordered[1] / ordered[0]:.3f}, short {ordered[2]}')
 
 
 def gate(root, control, candidate):

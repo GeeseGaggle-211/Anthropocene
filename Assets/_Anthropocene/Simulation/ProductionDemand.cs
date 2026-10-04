@@ -439,7 +439,7 @@ namespace Anthropocene.Simulation
             d.Meals = consumers * cfg.Consumption * intervals;
             d.OperatingReserve = NeolithicProduction.DesiredReserveFood(w, consumers);
             d.SetFoodEnvelopes(w, c, d.ManagedFood.AnimalFood);
-            d.ClothingNeedUnits = NeolithicProduction.ClothingNeedUnits(n, d.Preview.Population, years, c.Inventory.Cloth, c.Inventory.AnimalFabric);
+            d.ClothingNeedUnits = NeolithicProduction.ClothingNeedUnits(n, d.Preview.Population, years, c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth), c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric));
             d.HousingMultiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
             ClaimValuation.Apply(w, c, d);
             if (expansionClaim && !cfg.SharedCropHerdAllocationEnabled) ExpansionValuation.Apply(w, c, d, herdCapital && HerdLabour.Applies(w, c));
@@ -512,6 +512,53 @@ namespace Anthropocene.Simulation
             housingV = n.HousingPeoplePerUnit * housingValuePerPerson;
             housingStock = NeolithicProduction.HousingCapacity(w, c, w.Days + years * cfg.DaysPerYear).Total / n.HousingPeoplePerUnit;
         }
+        // Worker-years per unit of a recipe for this camp: craft time (divided by the tool multiplier the
+        // staffing pass uses for shelter), input extraction, plant feedstock gathering and, for Light Housing
+        // and Housing, their Animal Fabric and Housing Material inputs. Animal Food is managed-herd output and
+        // costs no gathering labour here. Shared by the claim valuation and trade's production cost.
+        internal static double LabourPerUnit(WorldState w, Camp c, CraftRecipe r, IReadOnlyList<CraftRecipe> recipes, double housingMultiplier)
+        {
+            var cfg = w.Config; var n = cfg.Neolithic;
+            double perYear = cfg.DaysPerYear / cfg.BaseDays;
+            double gather = cfg.GatherPerPerson * perYear;
+            double Rate(CraftRecipe x) => SpecialistProductivity.CraftRate(w, c, x,
+                c.People.HasTech(x.Track) ? x.Specialist : WorkforceRoles.Craftsperson);
+            double Extraction(MaterialId m, double perUnit)
+            {
+                if (perUnit <= 0 || n.SpecialistMaterialExtractionRate <= 0) return 0;
+                bool specialist = c.People.HasTech(EconomicIntents.RequiredTechnology(MaterialEconomy.Specialist(m)));
+                double rate = SpecialistProductivity.ExtractionRate(w, c, m,
+                    specialist ? MaterialEconomy.Specialist(m) : WorkforceRoles.Gatherer);
+                return perUnit / (rate * perYear);
+            }
+            double Labour(CraftRecipe x)
+            {
+                double rate = Rate(x);
+                if (rate <= 0) return 0;
+                double m = ToolCoverageBudget.IsHousingWork(x.Good) ? housingMultiplier : 1;
+                if (m <= 0) return 0;
+                double l = 1 / (rate * perYear * m);
+                l += Extraction(MaterialId.Stone, x.Stone) + Extraction(MaterialId.Clay, x.Clay) + Extraction(MaterialId.Wood, x.Wood + x.ConstructionMaterial);
+                if (gather > 0) l += x.PlantFood / gather;
+                if (x.AnimalFabric > 0)
+                {
+                    var input = recipes.FirstOrDefault(y => y.Good == CraftGood.AnimalFabric);
+                    double inputLabour = input == null ? 0 : Labour(input);
+                    if (inputLabour <= 0) return 0;
+                    l += x.AnimalFabric * inputLabour;
+                }
+                if (x.HousingMaterial > 0)
+                {
+                    // Housing Material is planned with its Housing claim, not as a claim of its own.
+                    var input = recipes.FirstOrDefault(y => y.Good == CraftGood.HousingMaterial);
+                    double inputLabour = input == null ? 0 : Labour(input);
+                    if (inputLabour <= 0) return 0;
+                    l += x.HousingMaterial * inputLabour;
+                }
+                return l;
+            }
+            return Labour(r);
+        }
         public static void Apply(WorldState w, Camp c, CampProductionDemand d) => Apply(w, c, d, false);
         public static void ApplyTools(WorldState w, Camp c, CampProductionDemand d) => Apply(w, c, d, true);
         private static void Apply(WorldState w, Camp c, CampProductionDemand d, bool toolsPhase)
@@ -525,47 +572,7 @@ namespace Anthropocene.Simulation
             double HousingLife(CraftGood good) => ClaimValuation.HousingLife(n, good);
             double shelterPeople = NeolithicProduction.HousingCapacity(w, d.Preview, w.Days + years * cfg.DaysPerYear).Total;
             double clothingV = n.RudimentaryWeightClothing * e * b * s * (n.ReferenceTurnYears / n.FabricConsumptionPerPersonTurn);
-            double gather = cfg.GatherPerPerson * perYear;
-            double Rate(CraftRecipe r) => SpecialistProductivity.CraftRate(w, c, r,
-                c.People.HasTech(r.Track) ? r.Specialist : WorkforceRoles.Craftsperson);
-            double Extraction(MaterialId m, double perUnit)
-            {
-                if (perUnit <= 0 || n.SpecialistMaterialExtractionRate <= 0) return 0;
-                bool specialist = c.People.HasTech(EconomicIntents.RequiredTechnology(MaterialEconomy.Specialist(m)));
-                double rate = SpecialistProductivity.ExtractionRate(w, c, m,
-                    specialist ? MaterialEconomy.Specialist(m) : WorkforceRoles.Gatherer);
-                return perUnit / (rate * perYear);
-            }
-            // Worker-years per unit: craft time (divided by the tool multiplier the
-            // staffing pass uses for shelter), input extraction, plant feedstock
-            // gathering and, for Light Housing, its Animal Fabric input. Animal
-            // Food is managed-herd output and costs no gathering labour here.
-            double Labour(CraftRecipe r)
-            {
-                double rate = Rate(r);
-                if (rate <= 0) return 0;
-                double m = ToolCoverageBudget.IsHousingWork(r.Good) ? d.HousingMultiplier : 1;
-                if (m <= 0) return 0;
-                double l = 1 / (rate * perYear * m);
-                l += Extraction(MaterialId.Stone, r.Stone) + Extraction(MaterialId.Clay, r.Clay) + Extraction(MaterialId.Wood, r.Wood + r.ConstructionMaterial);
-                if (gather > 0) l += r.PlantFood / gather;
-                if (r.AnimalFabric > 0)
-                {
-                    var input = d.Recipes.FirstOrDefault(x => x.Good == CraftGood.AnimalFabric);
-                    double inputLabour = input == null ? 0 : Labour(input);
-                    if (inputLabour <= 0) return 0;
-                    l += r.AnimalFabric * inputLabour;
-                }
-                if (r.HousingMaterial > 0)
-                {
-                    // Housing Material is planned with its Housing claim, not as a claim of its own.
-                    var input = d.Recipes.FirstOrDefault(x => x.Good == CraftGood.HousingMaterial);
-                    double inputLabour = input == null ? 0 : Labour(input);
-                    if (inputLabour <= 0) return 0;
-                    l += r.HousingMaterial * inputLabour;
-                }
-                return l;
-            }
+            double Labour(CraftRecipe r) => LabourPerUnit(w, c, r, d.Recipes, d.HousingMultiplier);
             bool value = n.ValueFulfilmentSelected;
             // Clothing coverage is measured against this turn's requirement for the
             // prior cohort, with Cloth and Animal Fabric counted as one clothing
@@ -573,7 +580,9 @@ namespace Anthropocene.Simulation
             // units lie beyond coverage 1, where the curve values them little.
             // Shelter's useful demand is this turn's requirement already.
             double clothingNeed = d.Preview.Population * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
-            double clothingStock = Math.Max(0, c.Inventory.Cloth) + Math.Max(0, c.Inventory.AnimalFabric);
+            // Agreed exports leave after production (Docs/Trade.md): the position falls by them, so the units that
+            // fill the delivery sit at the top of the curve and are staffed first.
+            double clothingStock = Math.Max(0, c.Inventory.Cloth) + Math.Max(0, c.Inventory.AnimalFabric) - c.TradeExport(CraftGood.Cloth) - c.TradeExport(CraftGood.AnimalFabric);
             if (toolsPhase)
             {
                 if (!value) return;

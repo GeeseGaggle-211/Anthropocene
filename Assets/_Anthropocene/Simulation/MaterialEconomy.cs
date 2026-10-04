@@ -662,8 +662,9 @@ namespace Anthropocene.Simulation
             var tools = new ToolCoverageBudget(w, c, intervals, equipment);
             double plant = plantFoodBudget >= 0 ? plantFoodBudget : includePlantDemand ? double.PositiveInfinity : c.PlantFood;
             double animalFood = animalFoodBudget >= 0 ? animalFoodBudget : includePlantDemand ? double.PositiveInfinity : c.AnimalFood;
-            double animalFabric = Math.Max(0, c.Inventory.AnimalFabric);
-            double housingMaterial = Math.Max(0, c.Inventory.HousingMaterial);
+            // Goods owed for export (planning views, Docs/Trade.md) are not available as inputs or own use.
+            double animalFabric = Math.Max(0, c.Inventory.AnimalFabric) - c.TradeExport(CraftGood.AnimalFabric);
+            double housingMaterial = Math.Max(0, c.Inventory.HousingMaterial) - c.TradeExport(CraftGood.HousingMaterial);
             var orderedRecipes = ProductionOrder.Sort(recipes, good => NeolithicProduction.Priority(c, good), order);
             var steps = ProductionOrder.Steps(orderedRecipes, order != null).ToArray();
             var roles = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToArray();
@@ -709,7 +710,7 @@ namespace Anthropocene.Simulation
                             var n = w.Config.Neolithic;
                             double clothing = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
                             double shelter = lightHousingUseful ? NeolithicProduction.HousingGapPeople(w, c, residents, w.Days + years * w.Config.DaysPerYear) / n.LightHousingPeoplePerUnit : 0;
-                            double virtualCloth = Math.Max(0, c.Inventory.Cloth) + planned[CraftGood.Cloth];
+                            double virtualCloth = Math.Max(0, c.Inventory.Cloth) - c.TradeExport(CraftGood.Cloth) + planned[CraftGood.Cloth];
                             double virtualAnimalFabric = animalFabric;
                             double remainingClothing = Math.Max(0, clothing - virtualCloth - virtualAnimalFabric);
                             double clothingBeforeAnimalFabric = Math.Max(0, clothing - virtualCloth);
