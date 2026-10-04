@@ -159,8 +159,7 @@ There are three variants:
 Use `Summarize-Trade.py` to reduce the output.
 
 **Default-off exactness.** Every per-turn outcome and per-camp row of `off`
-equals `reference` (C1–C3 so far; the remaining worlds are recorded when the
-run completes).
+equals `reference` on all five worlds over 50 turns.
 
 **Trade on: structurally inert for T0 goods.** On C1 and C2:
 
@@ -170,6 +169,19 @@ run completes).
 - trades settled: zero;
 - outcomes identical to `off`;
 - handshake cost: mean 0.9 ms per turn, maximum 9 ms.
+
+**All five worlds.** Totals over 50 turns:
+
+| World | Eligible camp-turns | Requisitions | Trades | Handshake ms/turn (mean / max) |
+| --- | ---: | ---: | ---: | --- |
+| C1 | 9,566 | 647 | 0 | 0.89 / 7.9 |
+| C2 | 9,040 | 762 | 0 | 0.95 / 9.0 |
+| C3 | 11,441 | 916 | 0 | 1.66 / 16.5 |
+| P1 | 9,137 | 618 | 0 | 1.07 / 11.9 |
+| A1 | 12,058 | 1,069 | 0 | 1.24 / 8.4 |
+
+Every requisition was ignored, and `on` equals `off` exactly. The husbandry-first
+gate therefore passes trivially (+0.00% at 25 and 50 turns).
 
 `--trade-probe=<save>` on the C1 state at turn 36 (119 eligible camps) shows why:
 
