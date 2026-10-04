@@ -27,7 +27,7 @@ Checks: `Tools/Headless/TradeChecks.cs` (fixed suite). Probe:
 | --- | --- |
 | Authoritative state | Camp inventories and typed food only. Each turn's settled trades and handshake counts are journalled in `TurnRecord.Trades`/`TradeActivity`. No requisition, offer or agreement is ever saved: every handshake completes or lapses within its turn. |
 | Temporal abstraction | One handshake per turn, agreed at the committed boundary in the planning pass. Food (a stock) settles at the opening of resolution, before dispatch. Goods a camp can make (Cloth, Animal Fabric, Housing Material) settle after every camp's production and before every camp's needs. A seller can therefore make them to order this turn, and a buyer's needs see them. Quantities are stocks, not rates. |
-| Scaling law | `O(camps · (G log W + contacts))` pure, parallel valuation and request lists (`G` goods, `W = TradeListLength`), then `O(camps · K · W²)` canonical responses with a constant number of bisections each, then `O(trades · parts)` settlement. Cost follows eligible camps and grows linearly with the number of goods. Nothing scores all ordered pairs of goods. The planner runs once per camp as before, with export claims as fixed demand. |
+| Scaling law | `O(camps · (G log W + contacts))` (valuations cache each camp's need terms; the responder's ratio bounds are closed-form inverses of the capped curves, and a ranked answer on unchanged positions is reused) pure, parallel valuation and request lists (`G` goods, `W = TradeListLength`), then `O(camps · K · W²)` canonical responses with a constant number of bisections each, then `O(trades · parts)` settlement. Cost follows eligible camps and grows linearly with the number of goods. Nothing scores all ordered pairs of goods. The planner runs once per camp as before, with export claims as fixed demand. |
 | Determinism | Valuations and requests are pure per camp (`PhaseExecution.Map`). Responses run once, sequentially: by responder camp ID, then the responder's own best gain (descending), then requester ID. Settlement is in agreement order. |
 | RL / information | Automation-internal, like the economic planner: no new order kinds or observation fields. Partners come only from remembered contacts (`ContactKnowledge`). A request carries only the requester's ranked want and give lists; a responder's stock and values stay private to the pass. |
 | Validation | `TradeChecks` (fixtures, food bands, conservation, purity, replay, persistence) plus the five-world census below. |
@@ -97,19 +97,24 @@ agriculture/husbandry requirement met, priority > 0) may be offered beyond stock
 Without a recorded labour price (for example the first trading turn), nothing is
 made to order.
 
-**Export claims.** Every unit a seller agrees to deliver of such a good is an
-export claim on its planning view (`Camp.TradeExports`, transient):
+**Export claims and reservation.** Every unit a seller agrees to deliver of such a
+good is an export claim on its planning view (`Camp.TradeExports`, transient).
 
-- `NeolithicProduction.Demand` and `MaterialEconomy.Forecast` net the claim
-  against stock (own use sees the stock left after delivery; any deficit is
-  produced);
-- the clothing claim's position falls by it, so the exported units are staffed
-  first;
-- the clothing-need feedstock, the food ledger and the prepared
+- **Fixed claim.** The Value planner (`EconomicPlanner.Plan`, `Evaluate`) staffs
+  the claim first, at any fulfilment position. It reserves the recipe role's
+  labour for the deficit beyond stock and debits the claim's materials and food
+  inputs. Stock held for delivery is excluded from own use. The claim never draws
+  on the own clothing-need feedstock envelope.
+- **Demand and forecast.** `NeolithicProduction.Demand` and
+  `MaterialEconomy.Forecast` net the claim against stock, so the material
+  re-forecast plans the claim's Wood and Clay. The clothing claim's position
+  falls by it. The clothing-need feedstock, the food ledger and the prepared
   `TurnNeeds.Production` include it.
+- **Resolver.** Owed goods are held back from recipe inputs while the camp
+  produces.
 
-The resolver holds owed goods back from recipe inputs while the camp produces.
-The buyer's planning view counts the import as stock.
+The buyer's planning view counts imported goods as stock, since they arrive
+before its needs.
 
 **Requests.** A requester cannot see what partners hold, so it sends ranked
 lists (§6.2's desired and offered bundles):
@@ -153,26 +158,28 @@ envelope (`TurnNeeds.OpeningCampFood`, bucket targets, feedstock gaps) before
 demographic planning. Unconfirmed food never does, and a unit sold is
 counted only by the buyer.
 
-**Settlement.** Each agreement has two legs, one per good:
+**Settlement, paid on delivery.** Each agreement has two legs, one per good.
 
-- **Food legs** settle from opening stock, before dispatch, so provisions, the
-  food ledger and growth see the stock the prepared needs saw. Confirmed food
-  imports enter the prepared food envelope before demographic planning, and a
-  unit sold is counted only by the buyer.
+- **Food legs** leave their giver at the opening of resolution, before dispatch,
+  into escrow. The giver's provisions, food ledger and growth see the reduced
+  stock its prepared needs saw.
 - **Goods legs** settle after every camp's production and before every camp's
-  needs. The production/needs loop is split only in turns that have such legs;
-  otherwise it runs as before.
+  needs. The production/needs loop is split only in turns that have such legs.
+  Two goods legs scale together if a side is short. A goods leg never delivers
+  more than the other side's escrow can pay for.
+- **Releasing escrow.** After the goods legs settle, each escrowed food leg pays
+  its receiver the share of the agreement the goods leg delivered and refunds
+  the rest to its giver. Both legs therefore record the same delivered fraction
+  (`Delivered`/`GiveDelivered`). Food that moves then is reported per camp as
+  `DemographicReport.TradeFood`, so the food ledger still balances.
+- **Consequence:** food received through trade arrives after this turn's growth
+  plan. It is stock for the next turn and is not in the receiver's planning view.
 
-Legs settling together scale together if a side is short. A leg settling alone
-scales by its own giver's holding: a seller that made less than it agreed
-delivers in proportion (`Delivered`/`GiveDelivered`), and food paid at the
-opening stays paid.
-
-A moved part never exceeds what the giver holds, so rounding cannot leave a
-negative stock. Settlement checks conservation of every stock part and that
-nothing goes negative. Records are written after the economy phase, marking made-to-order
+Settlement never moves more of a part than its giver holds. It checks
+conservation of every stock part (camps plus escrow) and that nothing goes
+negative. Records are written after the economy phase, marking made-to-order
 legs (`WantMadeToOrder`/`GiveMadeToOrder`). Both Societies record a
-`ContactSource.Trade` contact. Imported food credits the inert
+`ContactSource.Trade` contact. Received food credits the inert
 `RecordTradePractice`.
 
 ## Persistence and compatibility
@@ -181,6 +188,8 @@ legs (`WantMadeToOrder`/`GiveMadeToOrder`). Both Societies record a
   `TradeListLength`, `TradeMargin`, `TradeDistanceCostPerHex`,
   `TradeFoodEnabled`, `TradeFoodSafeOnly` and `TradeExportLabourShare` are
   `OptionalField`.
+- **Reports.** `DemographicReport.TradeFood` is optional; older reports load
+  zero.
 - **Labour price and records.** `EconomicLaborPlan.LabourPriceSet`/`LabourPrice`
   (outside the intent stamp) and `TradeRecord.GiveDelivered`/`WantMadeToOrder`/
   `GiveMadeToOrder` are optional. Older records load with the give leg fully
@@ -202,12 +211,14 @@ legs (`WantMadeToOrder`/`GiveMadeToOrder`). Both Societies record a
 - Barter of one pair per agreement and one agreement per request. Multi-good
   bundles are not formed.
 - The made-to-order cost uses last turn's labour price, and capacity is a
-  labour share, not the planner's actual spare labour. A seller can therefore
-  over-promise, and then delivers in proportion. The buyer has planned on the
-  full import, so its need falls short for that turn.
+  labour share bounded by spare food inputs. The planner reserves the claim's
+  labour and inputs, but a shortage of materials or tools can still leave a
+  delivery short. The seller is then paid in proportion, and the buyer, who
+  planned on the full import, falls short that turn.
+- Food bought with goods arrives after this turn's growth plan (pay on
+  delivery), so it supports growth only from the next turn.
 - Imported Animal Fabric arrives after production, so it cannot feed this
   turn's Light Housing, although the buyer's planner counted it.
-- A short goods leg does not refund its already-settled food leg.
 - The food envelope's income term is last turn's production, not this turn's
   plan.
 - Animal Fabric is valued only as clothing, not as Light Housing input.

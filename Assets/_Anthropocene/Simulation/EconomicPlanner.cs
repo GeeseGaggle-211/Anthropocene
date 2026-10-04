@@ -267,6 +267,24 @@ namespace Anthropocene.Simulation
                     requested[CraftGood.HousingMaterial] = Capped(materialRecipe, wantedMaterial, true);
                     materialPlan = null;
                 }
+                // Agreed exports (Docs/Trade.md) are fixed claims: their deficit beyond stock is staffed first, at any
+                // fulfilment position, and stock held for delivery is not available to own use. They never draw on
+                // the own clothing-need feedstock envelope.
+                foreach (var r in recipes)
+                {
+                    double owed = c.TradeExport(r.Good);
+                    if (!(owed > Epsilon)) continue;
+                    double held = Math.Max(0, NeolithicProduction.Stock(c, r.Good)), deficit = Math.Max(0, owed - held);
+                    double keepPlant = clothingPlant, keepAnimal = clothingAnimal, keepRoom = clothingRoom, keepLeft = clothingLeft;
+                    clothingLeft = 0;
+                    double made = deficit > Epsilon ? Capped(r, deficit, true) : 0;
+                    clothingPlant = Math.Min(keepPlant, plant); clothingAnimal = Math.Min(keepAnimal, animal); clothingRoom = Math.Min(keepRoom, foodRoom); clothingLeft = keepLeft;
+                    if (r.Good == CraftGood.AnimalFabric) animalFabric -= made + Math.Min(owed, held);
+                    if (r.Good == CraftGood.HousingMaterial) housingMaterial -= made + Math.Min(owed, held);
+                    if (r.Good == CraftGood.Cloth || r.Good == CraftGood.AnimalFabric) requested[r.Good] += made;
+                    double multiplier = ToolCoverageBudget.IsHousingWork(r.Good) ? housingMultiplier : 1;
+                    if (made > 0 && multiplier > 0) Add(futureRoles, Role(r), made / (Rate(r) * multiplier * intervals));
+                }
                 foreach (var r in accessList)
                 {
                     if (r.Good == CraftGood.FarmTools) continue;

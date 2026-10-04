@@ -410,7 +410,30 @@ internal static class TradeChecks
         Check(buy.All(a => (a.Want == TradeGood.Food ? a.Give : a.Want) == TradeGood.AnimalFabric), "the herder pays in Animal Fabric");
         double sold = buy.Sum(a => a.Want == TradeGood.Food ? a.WantQuantity : a.GiveQuantity);
         Check(farmer.Food + plan.Delta(farmer.Id, TradeGood.Food) >= bands.Ends[1] - 1e-6, "the protected band is never debited (" + (farmer.Food - sold) + " >= " + bands.Ends[1] + ")");
-        Check(plan.Delta(herder.Id, TradeGood.Food) > 0 && plan.Delta(farmer.Id, TradeGood.AnimalFabric) > 0, "the herder imports food and the farmer imports fabric");
+        Check(plan.Delta(herder.Id, TradeGood.Food) == 0 && plan.Delta(farmer.Id, TradeGood.Food) < 0 && plan.Delta(farmer.Id, TradeGood.AnimalFabric) > 0, "food is paid on delivery: the payer plans without it, the receiver does not plan with it; the buyer plans with the fabric");
+        // Pay on delivery: at the opening the payer's food goes into escrow; after production the receiver is paid
+        // in proportion to the goods delivered and the rest is refunded.
+        {
+            var ew = FoodWorld(); var ep = Trade.Plan(ew); var er = new TurnRecord(); var ef = CampOf(ew, 1); var eh = CampOf(ew, 2);
+            double farmer0 = ef.Food, herder0 = eh.Food, total0 = ew.Camps.Sum(c => c.Food);
+            var st = Trade.Settle(ew, ep, er);
+            double paid = ep.Agreements.Sum(a => a.Give == TradeGood.Food && a.Requester == ef.Id ? a.GiveQuantity : a.Want == TradeGood.Food && a.Responder == ef.Id ? a.WantQuantity : 0);
+            Near(ef.Food, farmer0 - paid, "the payer's food leaves into escrow at the opening", 1e-9);
+            Near(eh.Food, herder0, "the receiver is not paid before delivery");
+            Near(ew.Camps.Sum(c => c.Food) + Enumerable.Range(0, Trade.PartCount).Sum(st.Escrowed), total0, "camps plus escrow conserve food");
+            // The herder delivers only a third of its fabric: it is paid a third, the rest returns to the farmer.
+            double owedFabric = ep.Agreements.Sum(a => a.Want == TradeGood.AnimalFabric && a.Responder == eh.Id ? a.WantQuantity : a.Give == TradeGood.AnimalFabric && a.Requester == eh.Id ? a.GiveQuantity : 0);
+            eh.Inventory.AnimalFabric = owedFabric / 3;
+            Trade.SettleAfterProduction(ew, st); Trade.Finish(ew, st, er);
+            Near(ew.Camps.Sum(c => c.Food), total0, "pay on delivery conserves food");
+            double received = er.Trades.Sum(t => t.Give == TradeGood.Food && t.Responder == eh.Id ? t.GiveQuantity : t.Want == TradeGood.Food && t.Requester == eh.Id ? t.WantQuantity : 0);
+            double fabricIn = er.Trades.Sum(t => t.Want == TradeGood.AnimalFabric && t.Responder == eh.Id ? t.WantQuantity : t.Give == TradeGood.AnimalFabric && t.Requester == eh.Id ? t.GiveQuantity : 0);
+            Near(fabricIn, owedFabric / 3, "the herder delivers the third it holds", 1e-9);
+            Near(eh.Food, herder0 + received, "the seller is paid what the records say it was paid", 1e-6);
+            Near(ef.Food, farmer0 - received, "the rest of the escrow is refunded to the payer", 1e-6);
+            Check(received < paid - 1e-6 && received > 0, "a short delivery is paid in part (" + received + " of " + paid + ")");
+            Check(er.Trades.All(t => Math.Abs(t.Delivered - t.GiveDelivered) < 1e-9), "each agreement's two legs settle at the same fraction");
+        }
         foreach (var a in buy) { var parts = a.Want == TradeGood.Food ? a.WantParts : a.GiveParts; Near(parts[0], parts.Sum(), "food moves in the seller's typed proportions (all plant)"); }
         // Safe-only control: growth food is never exported.
         var safe = FoodWorld(); safe.Config.TradeFoodSafeOnly = true; var sv = Trade.Value(safe, CampOf(safe, 1)); var sp = Trade.Plan(safe);
@@ -619,6 +642,23 @@ internal static class TradeChecks
                 }
                 return;
             }
+        }
+    }
+
+    // Diagnostic (--trade-profile=<save>): time each handshake stage on a real state, with work counts.
+    public static void ProfileProbe(string path)
+    {
+        var w = SaveCodec.Load(File.ReadAllBytes(path)); w.Config.TradeEnabled = true; Ownership.Bind(w);
+        foreach (var workers in new[] { new PhaseExecution(), new PhaseExecution(4, 16, false, 1) })
+        {
+            double best = double.PositiveInfinity; string detail = "";
+            for (int rep = 0; rep < 6; rep++)
+            {
+                Trade.Counters.Reset();
+                var clock = System.Diagnostics.Stopwatch.StartNew(); var plan = Trade.Plan(w, workers); double total = clock.Elapsed.TotalMilliseconds;
+                if (rep > 0 && total < best) { best = total; detail = $"camps {w.Camps.Count} eligible {plan.Summary.Eligible} requisitions {plan.Summary.Requisitions} agreements {plan.Agreements.Count} | " + Trade.Counters.Describe(); }
+            }
+            Console.WriteLine($"workers {workers.Workers}: best {best:F1} ms; {detail}");
         }
     }
 }

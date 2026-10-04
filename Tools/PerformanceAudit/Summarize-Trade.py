@@ -68,12 +68,27 @@ def gate(root, control, candidate):
     print('GATE', 'PASS' if not fails else 'FAIL', fails)
 
 
+def timing(root, control, candidate):
+    # Per-turn planning (prepare) and resolution (execute) wall time; trade's handshake is inside prepare. One run
+    # each on a shared machine: report means, so treat small differences as noise.
+    for key in ('prepareMs', 'executeMs', 'tradePlanMs'):
+        rows = []
+        for w in WORLDS:
+            a, b = samples(root, control, w), samples(root, candidate, w)
+            if a is None or b is None: continue
+            ma = sum(s.get(key, 0) for s in a) / len(a); mb = sum(s.get(key, 0) for s in b) / len(b)
+            la = sum(s.get(key, 0) for s in a[-10:]) / 10; lb = sum(s.get(key, 0) for s in b[-10:]) / 10
+            rows.append(f'{w} {ma:.0f}->{mb:.0f} (last10 {la:.0f}->{lb:.0f})')
+        print(f'{key} mean ms per turn: ' + '; '.join(rows))
+
+
 def main():
     root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else 'TestResults/Trade')
     print('EXACT reference/off', 'PASS' if exactness(root, 'reference', 'off') else 'FAIL')
     print('EXACT off/on', 'PASS' if exactness(root, 'off', 'on') else 'DIFFERENT')
     activity(root, 'on')
     gate(root, 'off', 'on')
+    timing(root, 'off', 'on')
 
 
 if __name__ == '__main__': main()

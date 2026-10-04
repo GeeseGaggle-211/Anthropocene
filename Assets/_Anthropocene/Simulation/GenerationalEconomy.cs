@@ -386,7 +386,7 @@ namespace Anthropocene.Simulation
             }
             if (tradeAfterProduction)
             {
-                Trade.SettleAfterProduction(w, trade);
+                Trade.SettleAfterProduction(w, trade, record);
                 foreach (var camp in neolithicCamps)
                     if (camp.Population > 0) NeolithicProduction.ResolveNeeds(w, camp, horizon.Years, needs[camp.Id]?.Residents ?? camp.Population);
             }
@@ -1070,7 +1070,7 @@ namespace Anthropocene.Simulation
                 summary.Additions = index.Population[camp.Id].Where(p => p.Count > 0).Sum(p => p.Count); summary.Deaths = -index.Population[camp.Id].Where(p => p.Count < 0).Sum(p => p.Count);
                 summary.EndingPopulation = w.LinkedPopulation(camp); summary.NetPercent = 100.0 * (summary.EndingPopulation - summary.StartingPopulation) / Math.Max(1, summary.StartingPopulation);
                 summary.FinalReserves = camp.Food + index.CampHunters[camp.Id].OrderBy(h => h.Id).Sum(h => h.CarriedFood); summary.FractionalProgress = camp.GrowthRemainder;
-                double balanceDiff = summary.InitialReserves + summary.FoodReceived - summary.FoodConsumed - summary.ManufacturingFood - summary.DiscardedInventory - summary.FinalReserves;
+                double balanceDiff = summary.InitialReserves + summary.FoodReceived + summary.TradeFood - summary.FoodConsumed - summary.ManufacturingFood - summary.DiscardedInventory - summary.FinalReserves;
                 if (Math.Abs(balanceDiff) > 1e-5) throw new InvalidOperationException($"Unexplained food balance in demographic report for Camp {camp.Id}: Initial={summary.InitialReserves:F4}, Recv={summary.FoodReceived:F4}, Consumed={summary.FoodConsumed:F4}, Discarded={summary.DiscardedInventory:F4}, Final={summary.FinalReserves:F4}, Diff={balanceDiff:F6}");
                 summary.LimitingFactor = summary.DeficitSteps > 0 ? "Food deficits limited growth" : summary.Additions > 0 ? "Growth supported by food surplus; demand rose with population" : summary.SurplusSteps > 0 ? "Demographic rounding; fractional progress " + summary.FractionalProgress.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : summary.RecoverySteps > 0 ? "Starvation recovery" : "No sustainable food surplus or insufficient reserves";
                 record.Log(summary.Explanation);
