@@ -692,6 +692,20 @@ namespace Anthropocene.Simulation
             double price = c.EconomicLabor.LabourPrice, years = cfg.TurnDays / cfg.DaysPerYear;
             v.ToolPool = cfg.TradeExportLabourShare * (Math.Max(0, c.Inventory.HandTools) * ToolCoverageBudget.OutputsPerHandTool + Math.Max(0, c.Inventory.Tools) * ToolCoverageBudget.OutputsPerTool);
             double multiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
+            // Raw materials a recipe needs: stock plus what the camp's known sources hold, as the planner counts them
+            // (CampProductionDemand.Accessible). Census C1 turn 53: Pots promised by camps with no Clay to reach.
+            Dictionary<MaterialId, double> materials = null;
+            double Material(MaterialId m)
+            {
+                if (materials == null)
+                {
+                    var n = cfg.Neolithic; var sources = MaterialEconomy.KnownSources(w, c, w.Days);
+                    double Priority(MaterialId x) => x == MaterialId.Stone ? c.StonePriority : x == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
+                    materials = MaterialEconomy.Materials.ToDictionary(x => x, x => MaterialEconomy.Inventory(c, x)
+                        + (Priority(x) <= 0 || n.SpecialistMaterialExtractionRate <= 0 ? 0 : sources.Where(s => s.Material == x).GroupBy(s => s.Id).Sum(gr => gr.Sum(s => s.Available))));
+                }
+                return Math.Max(0, materials[m]);
+            }
             foreach (var g in Registry)
             {
                 int i = (int)g.Id;
@@ -711,6 +725,13 @@ namespace Anthropocene.Simulation
                 double stockFood = Math.Max(1e-12, c.Food);
                 if (recipe.PlantFood > 0) capacity = Math.Min(capacity, spareFood * Math.Max(0, c.PlantFood) / stockFood / recipe.PlantFood);
                 if (recipe.AnimalFood > 0) capacity = Math.Min(capacity, spareFood * Math.Max(0, c.AnimalFood) / stockFood / recipe.AnimalFood);
+                // Made goods consumed as inputs (Animal Fabric for tents, Housing Material for Housing) come from stock on hand:
+                // a camp without the fabric cannot promise the tents (census C1 turn 52: tents owed with no fabric held).
+                if (recipe.AnimalFabric > 0) capacity = Math.Min(capacity, Math.Max(0, c.Inventory.AnimalFabric) / recipe.AnimalFabric);
+                if (recipe.HousingMaterial > 0) capacity = Math.Min(capacity, Math.Max(0, c.Inventory.HousingMaterial) / recipe.HousingMaterial);
+                if (recipe.Stone > 0) capacity = Math.Min(capacity, Material(MaterialId.Stone) / recipe.Stone);
+                if (recipe.Clay > 0) capacity = Math.Min(capacity, Material(MaterialId.Clay) / recipe.Clay);
+                if (recipe.Wood + recipe.ConstructionMaterial > 0) capacity = Math.Min(capacity, (recipe.ConstructionMaterial > 0 ? Material(MaterialId.Wood) + Material(MaterialId.Clay) : Material(MaterialId.Wood)) / (recipe.Wood + recipe.ConstructionMaterial));
                 v.Capacity[i] = Math.Max(0, capacity);
                 // Equipment and housing work need tool coverage: their exports share the tool pool.
                 v.UsesTools[i] = recipe.Equipment || ToolCoverageBudget.IsHousingWork(recipe.Good);

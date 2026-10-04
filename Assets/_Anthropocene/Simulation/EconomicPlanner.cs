@@ -449,6 +449,19 @@ namespace Anthropocene.Simulation
                 // makes it, so shared coverage goes to the more valuable recipe.
                 var finalSteps = order != null ? orderedRecipes.Select(r => (Role: Role(r), Recipe: r))
                     : ProductionOrder.Roles.SelectMany(role => orderedRecipes.Where(r => Role(r) == role).Select(r => (Role: role, Recipe: r)));
+                // Agreed exports first (claim-first, Docs/PlannerTradeStorageDesign.md §2 P4): their made-to-order part takes
+                // tool time, inputs and its role's labour before the ordered recipes, as in the forecast and resolver.
+                var exportStaffed = recipes.ToDictionary(r => r.Good, r => 0d);
+                foreach (var r in recipes)
+                {
+                    if (!(reserved[r.Good] > Epsilon)) continue;
+                    double amount = Capped(r, reserved[r.Good], false);
+                    if (r.Equipment || r.Good == CraftGood.HousingMaterial) amount = Math.Min(amount, coverage.Capacity(r.Good, Rate(r), c.Population * intervals));
+                    amount = Capped(r, amount, true);
+                    double work = r.Equipment ? coverage.Spend(r.Good, Rate(r), amount) : r.Good == CraftGood.HousingMaterial ? coverage.Time(r.Good, Rate(r), amount) : Rate(r) > 0 ? amount / Rate(r) : 0;
+                    Add(rolesNow, Role(r), work / intervals);
+                    exportStaffed[r.Good] = amount;
+                }
                 foreach (var (role, r) in finalSteps)
                     {
                         if (NeolithicProduction.Priority(candidate, r.Good) <= 0) continue;
@@ -459,6 +472,7 @@ namespace Anthropocene.Simulation
                             wanted = r.Good == CraftGood.HandTools ? toolDemand.Value.HandTools : toolDemand.Value.Tools;
                         }
                         else wanted = requested[r.Good];
+                        wanted = Math.Max(0, wanted - exportStaffed[r.Good]);
                         double amount = Capped(r, wanted, false);
                         if (r.Equipment || r.Good == CraftGood.HousingMaterial) amount = Math.Min(amount, coverage.Capacity(r.Good, Rate(r), c.Population * intervals));
                         amount = Capped(r, amount, true);
@@ -526,7 +540,9 @@ namespace Anthropocene.Simulation
                     string role = MaterialEconomy.Specialist(m); bool specialist = c.People.HasTech(EconomicIntents.RequiredTechnology(role));
                     double workers = amount / (intervals * SpecialistProductivity.ExtractionRate(w, c, m,
                         specialist ? role : WorkforceRoles.Gatherer));
-                    if (specialist) intent.Assignments.Add(new PopulationAssignment { Role = role, Population = (int)Math.Ceiling(workers - Epsilon) }); else generalistMaterials += workers;
+                    // A need too small to round to a worker staffs nobody (a zero-person role is an invalid assignment).
+                    int staffed = (int)Math.Ceiling(workers - Epsilon);
+                    if (specialist) { if (staffed > 0) intent.Assignments.Add(new PopulationAssignment { Role = role, Population = staffed }); } else generalistMaterials += workers;
                 }
                 double forecastPlantFeedstock = outputs[CraftGood.Cloth] * n.PlantFoodPerFabricUnit;
                 double forecastAnimalFeedstock = outputs[CraftGood.AnimalFabric];

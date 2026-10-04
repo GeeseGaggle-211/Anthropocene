@@ -1,6 +1,6 @@
 # Planner-led trade and pottery storage: design note
 
-Status: **approved**, 4 October 2026 (open questions resolved in §7). Phase S is in progress. This is the short note that phase 3 of
+Status: **approved**, 4 October 2026 (open questions resolved in §7). Phases S and C implemented (§3.6–3.9); V next. This is the short note that phase 3 of
 [TradeImmigrationPlannerPlan.md](TradeImmigrationPlannerPlan.md) asks for before planner code.
 It sets the order in which the new economic planner and trade interact. It also adds a storage limit for finished
 goods.
@@ -221,6 +221,49 @@ configuration. Source is the phase S working tree on `a3466a1`; output is in `Te
 - **Cost.** Planning time per turn rose by about 1–7% at x = 2, from the per-forecast storage terms (`Begin`, including
   the Farm Tool need). This is one timing run on a shared machine.
 
+### 3.9 Phase C: claim-first production (4 October 2026)
+
+**Implementation.** Agreed exports take labour, tool time and inputs before the camp's own recipes. Within each
+tool-dependency layer, every owed good is made first, in recipe order, by the roles that can make it
+(`NeolithicProduction.ExportRoles`: the specialist, then a Craftsperson). Where it applies:
+
+- **Resolver** (`ResolveCampNeolithic`). No Housing Material plan holds inputs back from a claim; its reservations
+  still see the output.
+- **Forecast** (`MaterialEconomy.Forecast`). The loop is now `Step(role, recipe, exportOnly)`.
+- **Planner's final staffing pass** (`exportStaffed`).
+
+The census and probes found four further fixes:
+
+1. **Inputs in `Trade.MakeToOrder`.** Make-to-order capacity is now bounded by made inputs on hand (Animal Fabric for
+   tents, Housing Material) and by raw materials in reach: stock plus known sources, as the planner counts them.
+   Before, camps promised tents with no fabric and Pots with no Clay.
+2. **Zero-person roles.** The planner no longer adds a material role staffed by zero people, which is an invalid
+   assignment. Tiny export claims reached it.
+3. **The Pots price.** About 90 food per Pot is the provisional **use value** of a Pot from stock with no making
+   capacity. A Pot made with spare capacity costs its making cost, about 4.5 food in the fixture. The census-era price
+   followed an agreement that had used up the herder's capacity. `TradeChecks.Pots` now pins both prices.
+4. **Coverage.** `TradeChecks.ClaimFirst` covers resolver, forecast and input bounds.
+
+**Census.** Five worlds, 50 turns, trade on against off. Output is in `TestResults/Trade-C3` (ignored).
+
+| Measure | Before phase C (`TestResults/Trade-nanfix`) | Phase C |
+| --- | --- | --- |
+| Trade off vs reference | exact | exact |
+| Made-to-order delivery, per world | 0.51–0.77 | **0.98–0.99** |
+| Farm Tools / Pots / Light Housing | 0.30 / 0.62 / 0.45 | 0.99 / 0.99 / 1.00 |
+| Housing Material / Cloth / Hand Tools / Animal Fabric | 0.90 / 0.84 / 0.74 / 0.89 | 0.99 / 0.97 / 1.00 / **0.92** (104 legs) |
+| Husbandry gate, animals at t50 (total / median) | −11.7% / −18.5% | **−12.0% / −13.4% (fail)** |
+| Handshake mean ms per turn | 44–68 | 44–67 |
+
+**Gate.**
+- Delivery passes overall and for every good except Animal Fabric (0.92 over 104 legs).
+- The husbandry gate still fails. Undelivered goods were not its cause; it is phase V's valuation work, as the earlier
+  census pointed to food paid for goods.
+
+**Known limitation.** A village that relocates this turn has its plan cleared, so it cannot make what it agreed to
+make. The handshake runs from the committed world before relocations are known. Bounding it would make the plan depend
+on movement orders and break draft reuse. Those legs settle at 0, with the escrow refunded.
+
 ## 4. Doctrine check
 
 | Question | Answer |
@@ -280,3 +323,42 @@ Resolved 4 October 2026: the user accepted every recommendation.
    revisit then. (No explicit recommendation had been given; this follows §2.)
 7. **O7. Mobile camps use the same rule** (Pots are carried inventory). A lower carry limit is a later lever. (No
    explicit recommendation had been given; this is the simplest consistent default.)
+
+## 8. Multi-turn contracts (allowed for, not enabled)
+
+The user asked on 4 October 2026 that the design **allow** trade agreements lasting several turns without the AI
+necessarily using them. If testing shows they improve population, QoL or performance, the findings go to the user for
+conditional approval before any default changes.
+
+Today every agreement is agreed and settled within one turn, and nothing pending is saved. A contract changes that.
+
+| Question | Answer |
+| --- | --- |
+| Authoritative state | A saved, optional `TradeContract` list: ID from `NextId`, parties, goods, per-turn quantities, ratio, first and last turn, delivered history, and a breach count. Older saves load with none. |
+| Each turn | Before P1, each live contract becomes **fixed claims**: an export claim for the seller, an import for the buyer. The goods are reserved, so the turn's handshake no longer offers them. The claims flow through P3/P4 like an agreed trade (claim-first). Settlement is pay on delivery with both legs scaling, as now. A food import committed by contract is binding at preparation, so it may support the turn's growth plan (§7.3 of the QoL design). |
+| Ending | At the last turn; when a party disappears or moves beyond `TradeRange`; or after `TradeContractBreachLimit` short deliveries in a row. Ending is canonical and recorded in the trade journal. |
+| Agreeing | Through the same bounded handshake, with a term of 1 to `TradeContractMaxTurns` turns. A contract's value is the discounted sum of per-turn gains on P1's curves. With the planner forecast still single-turn, this repeats this turn's curve; a multi-turn forecast would replace it. |
+| Switches | `TradeContractMaxTurns = 1` (default) is today's behaviour exactly. AI use needs a value above 1; no AI policy is enabled by default. |
+| Scaling | O(live contracts) per turn to expand claims and settle. Contracts can lower handshake work, because fewer goods are renegotiated each turn. |
+| Determinism and information | Contracts are handled in ID order. Each party sees only its own contracts; foreign contracts are never observed. |
+
+**Why it might help:**
+- Stable demand lets the planner staff export specialists without re-earning each order.
+- Binding food imports are what a food-importing proto-town needs (§8 of the QoL design).
+- Fewer per-turn negotiations could lower handshake cost.
+
+**Risks:**
+- Lock-in at stale terms when the curves move.
+- More saved state.
+- Breach handling adds work for the resolver.
+
+**Where it fits.** After phase V. Contract valuation needs the planner's same-turn curves, and claims need claim-first
+production (phase C). Phases S, C and V add no single-turn assumption that would block it:
+- claims are generic (good, quantity, timing);
+- storage room applies to any receipt.
+
+**Experiment before any default.** Compare `TradeContractMaxTurns = 1` with 3 and 5 on the five-world census:
+- population and QoL;
+- the husbandry gate;
+- delivery;
+- handshake and planning time.

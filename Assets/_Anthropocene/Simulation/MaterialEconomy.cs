@@ -702,63 +702,76 @@ namespace Anthropocene.Simulation
             // Toolmaking has no equipment input. Solve that aggregate supply
             // first, then use start stock plus forecast output to cap all other
             // work. Both sweeps describe one turn allocation, not two times.
+            // One production step of `recipe` by `role`. exportOnly makes only what is still owed for export (claim-first,
+            // Docs/PlannerTradeStorageDesign.md §2 P4), whatever the recipe's priority.
+            void Step(string role, CraftRecipe recipe, bool exportOnly)
+            {
+                if (!exportOnly && NeolithicProduction.Priority(c, recipe.Good) <= 0) return;
+                if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c) || recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) return;
+                bool specialist = role == recipe.Specialist && c.People.HasTech(recipe.Track);
+                if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) return;
+                double rate = SpecialistProductivity.CraftRate(w, c, recipe, role);
+                if (rate <= 0) return;
+                double labor = laborByRole[role];
+                double useful;
+                if (recipe.Good != CraftGood.Cloth && recipe.Good != CraftGood.AnimalFabric) useful = UsefulDemand(recipe.Good);
+                else
+                {
+                    double residents = residentPopulation < 0 ? c.Population : residentPopulation;
+                    var n = w.Config.Neolithic;
+                    double clothing = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
+                    double shelter = lightHousingUseful ? NeolithicProduction.HousingGapPeople(w, c, residents, w.Days + years * w.Config.DaysPerYear) / n.LightHousingPeoplePerUnit : 0;
+                    double virtualCloth = Math.Max(0, c.Inventory.Cloth) - c.TradeExport(CraftGood.Cloth) + planned[CraftGood.Cloth];
+                    double virtualAnimalFabric = animalFabric - c.TradeExport(CraftGood.AnimalFabric);
+                    double remainingClothing = Math.Max(0, clothing - virtualCloth - virtualAnimalFabric);
+                    double clothingBeforeAnimalFabric = Math.Max(0, clothing - virtualCloth);
+                    double animalFabricForShelter = Math.Max(0, virtualAnimalFabric - clothingBeforeAnimalFabric);
+                    double remainingShelter = Math.Max(0, shelter - animalFabricForShelter - planned[CraftGood.LightHousing]);
+                    // Both fabric recipes serve the same cohort demand; goods owed for export are owed as that
+                    // good, so its own deficit is made whatever the pooled clothing need (Docs/Trade.md).
+                    useful = recipe.Good == CraftGood.Cloth
+                        ? Math.Max(remainingClothing, Math.Max(0, -virtualCloth))
+                        : Math.Max(remainingClothing + remainingShelter, Math.Max(0, -virtualAnimalFabric));
+                }
+                bool sharedFabricNeed = recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric;
+                double wanted = exportOnly ? Outstanding(recipe.Good) : sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]);
+                double amount = Math.Min(wanted, recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
+                // Housing Material and its assembly draw on one Builder pool.
+                if (recipe.Good == CraftGood.HousingMaterial)
+                    amount = NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor, exportOnly ? Outstanding(recipe.Good) : Math.Max(0, useful - planned[recipe.Good]), housingMaterial - HeldForExport(CraftGood.HousingMaterial), Outstanding(CraftGood.HousingMaterial));
+                if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, housingMaterial - HeldForExport(CraftGood.HousingMaterial)) / recipe.HousingMaterial);
+                if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
+                if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
+                if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, animalFabric - HeldForExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
+                if (storage != null && amount > 0)
+                    amount = storage.Limit(stored, storage.Capacity(c.Food, storagePots + planned[CraftGood.Pots]), recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
+                if (amount <= 0) return;
+                if (stored != null) GoodsStorage.Add(stored, recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
+                labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : recipe.Good == CraftGood.HousingMaterial ? tools.Time(recipe.Good, rate, amount) : amount / rate;
+                laborByRole[role] = labor;
+                double forExport = Math.Min(amount, Outstanding(recipe.Good));
+                planned[recipe.Good] += amount; plant -= amount * recipe.PlantFood; animalFood -= amount * recipe.AnimalFood;
+                tools.Credit(recipe.Good, amount - forExport);
+                if (recipe.Good == CraftGood.AnimalFabric) animalFabric += amount;
+                animalFabric -= amount * recipe.AnimalFabric;
+                housingMaterial += recipe.Good == CraftGood.HousingMaterial ? amount : 0;
+                housingMaterial -= amount * recipe.HousingMaterial;
+            }
             for (int balanceLayer = 0; balanceLayer < 2; balanceLayer++)
             {
+                // Agreed exports first, in recipe order, from the roles that can make them: they take labour, tool time
+                // and inputs before this turn's own recipes, as in the resolver.
+                foreach (var recipe in recipes)
                 {
-                    foreach (var (role, recipe) in steps)
-                    {
-                        bool toolInput = recipe.Good == CraftGood.HandTools || recipe.Good == CraftGood.Tools;
-                        if (toolInput != (balanceLayer == 0)) continue;
-                        if (NeolithicProduction.Priority(c, recipe.Good) <= 0) continue;
-                        if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c) || recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) continue;
-                        bool specialist = role == recipe.Specialist && c.People.HasTech(recipe.Track);
-                        if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) continue;
-                        double rate = SpecialistProductivity.CraftRate(w, c, recipe, role);
-                        if (rate <= 0) continue;
-                        double labor = laborByRole[role];
-                        double useful;
-                        if (recipe.Good != CraftGood.Cloth && recipe.Good != CraftGood.AnimalFabric) useful = UsefulDemand(recipe.Good);
-                        else
-                        {
-                            double residents = residentPopulation < 0 ? c.Population : residentPopulation;
-                            var n = w.Config.Neolithic;
-                            double clothing = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
-                            double shelter = lightHousingUseful ? NeolithicProduction.HousingGapPeople(w, c, residents, w.Days + years * w.Config.DaysPerYear) / n.LightHousingPeoplePerUnit : 0;
-                            double virtualCloth = Math.Max(0, c.Inventory.Cloth) - c.TradeExport(CraftGood.Cloth) + planned[CraftGood.Cloth];
-                            double virtualAnimalFabric = animalFabric - c.TradeExport(CraftGood.AnimalFabric);
-                            double remainingClothing = Math.Max(0, clothing - virtualCloth - virtualAnimalFabric);
-                            double clothingBeforeAnimalFabric = Math.Max(0, clothing - virtualCloth);
-                            double animalFabricForShelter = Math.Max(0, virtualAnimalFabric - clothingBeforeAnimalFabric);
-                            double remainingShelter = Math.Max(0, shelter - animalFabricForShelter - planned[CraftGood.LightHousing]);
-                            // Both fabric recipes serve the same cohort demand; goods owed for export are owed as that
-                            // good, so its own deficit is made whatever the pooled clothing need (Docs/Trade.md).
-                            useful = recipe.Good == CraftGood.Cloth
-                                ? Math.Max(remainingClothing, Math.Max(0, -virtualCloth))
-                                : Math.Max(remainingClothing + remainingShelter, Math.Max(0, -virtualAnimalFabric));
-                        }
-                        bool sharedFabricNeed = recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric;
-                        double amount = Math.Min(sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]), recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
-                        // Housing Material and its assembly draw on one Builder pool.
-                        if (recipe.Good == CraftGood.HousingMaterial)
-                            amount = NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor, Math.Max(0, useful - planned[recipe.Good]), housingMaterial - HeldForExport(CraftGood.HousingMaterial), Outstanding(CraftGood.HousingMaterial));
-                        if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, housingMaterial - HeldForExport(CraftGood.HousingMaterial)) / recipe.HousingMaterial);
-                        if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
-                        if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
-                        if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, animalFabric - HeldForExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
-                        if (storage != null && amount > 0)
-                            amount = storage.Limit(stored, storage.Capacity(c.Food, storagePots + planned[CraftGood.Pots]), recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
-                        if (amount <= 0) continue;
-                        if (stored != null) GoodsStorage.Add(stored, recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
-                        labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : recipe.Good == CraftGood.HousingMaterial ? tools.Time(recipe.Good, rate, amount) : amount / rate;
-                        laborByRole[role] = labor;
-                        double forExport = Math.Min(amount, Outstanding(recipe.Good));
-                        planned[recipe.Good] += amount; plant -= amount * recipe.PlantFood; animalFood -= amount * recipe.AnimalFood;
-                        tools.Credit(recipe.Good, amount - forExport);
-                        if (recipe.Good == CraftGood.AnimalFabric) animalFabric += amount;
-                        animalFabric -= amount * recipe.AnimalFabric;
-                        housingMaterial += recipe.Good == CraftGood.HousingMaterial ? amount : 0;
-                        housingMaterial -= amount * recipe.HousingMaterial;
-                    }
+                    bool toolInput = recipe.Good == CraftGood.HandTools || recipe.Good == CraftGood.Tools;
+                    if (toolInput != (balanceLayer == 0) || !(Outstanding(recipe.Good) > 1e-12)) continue;
+                    foreach (var role in NeolithicProduction.ExportRoles(c, recipe)) if (Outstanding(recipe.Good) > 1e-12) Step(role, recipe, true);
+                }
+                foreach (var (role, recipe) in steps)
+                {
+                    bool toolInput = recipe.Good == CraftGood.HandTools || recipe.Good == CraftGood.Tools;
+                    if (toolInput != (balanceLayer == 0)) continue;
+                    Step(role, recipe, false);
                 }
             }
             return planned;

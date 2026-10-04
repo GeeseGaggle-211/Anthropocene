@@ -240,7 +240,8 @@ internal static class GoodsStorageChecks
         for (int t = 0; t < 2; t++) { Advance(a, new TurnResolver()); Advance(b, new TurnResolver()); }
         Check(a.Camps.Select(c => (c.Population, c.Food, Counted(c))).SequenceEqual(b.Camps.Select(c => (c.Population, c.Food, Counted(c)))), "with storage off the levers change nothing");
         // On and tight: fewer goods than off, and the transient terms never outlive the turn.
-        var tight = Ring(true, .05); var loose = Ring(false, .05);
+        // Storage alone (trade off): which trades happen depends on every camp's production, so it is held fixed here.
+        var tight = Ring(true, .05); var loose = Ring(false, .05); tight.Config.TradeEnabled = loose.Config.TradeEnabled = false;
         for (int t = 0; t < 2; t++)
         {
             Advance(tight, new TurnResolver()); Advance(loose, new TurnResolver());

@@ -61,7 +61,7 @@ internal static class TradeChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Valuation(); Handshake(); Eligibility(); Kin(); Settlement(); Planning(); Replay(); Persistence(); Registry(); Food(); MadeToOrder(); Pots(); Published(); Numerics();
+        checks = 0; Config(); Valuation(); Handshake(); Eligibility(); Kin(); Settlement(); Planning(); Replay(); Persistence(); Registry(); Food(); MadeToOrder(); Pots(); Published(); Numerics(); ClaimFirst();
         Console.WriteLine("PASS: " + checks + " trade assertions"); return checks;
     }
 
@@ -520,6 +520,9 @@ internal static class TradeChecks
                 p.HandTools = p.Pots = p.Cloth = p.FarmTools = p.Housing = p.Tools = p.LightHousing = p.HerdingTools = 0;
             }
         foreach (var c in w.Camps) { c.EconomicLabor = new EconomicLaborPlan { LabourPriceSet = true, LabourPrice = price }; c.EconomyAutomationTurns = -1; c.Inventory.HandTools = 60; c.Inventory.Tools = 60; }
+        // Raw stock for the herder's recipes: the fixture has no geological sources, and make-to-order capacity is bounded by the
+        // materials a camp holds or can reach. The farmer holds none, so it buys the Pots it cannot make.
+        herder.Inventory.Stone = herder.Inventory.Clay = herder.Inventory.Wood = 500;
         // Spare animal food inside the growth band: enough to make fabric, while more food still funds growth.
         var bands = (BandCurve)Trade.Value(w, herder).Curve(TradeGood.Food);
         herder.PlantFood = 0; herder.AnimalFood = bands.Ends[1] + .3 * (bands.Ends[2] - bands.Ends[1]);
@@ -640,27 +643,69 @@ internal static class TradeChecks
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy))) { var back = (TradeRecord)tr.ReadObject(stream); Check(back.GiveDelivered == 1 && !back.WantMadeToOrder && !back.GiveMadeToOrder && back.Requester == 1, "an older trade record loads with the give leg delivered"); }
     }
 
-    // The provisional Pots value (accepted for now; a planner-published Pots schedule replaces it): with a labour price
-    // every made good trades to order, and the herder sells Pots it will make to the farmer for food, countered at the
-    // herder's floor. In this fixture that is about 90 food a Pot.
+    // The provisional Pots value (accepted 4 October 2026 until a planner publishes Pots): with a labour price every made good
+    // trades to order, and the herder sells Pots it will make to the farmer. The herder's floor for Pots paid in food, about
+    // 90 food a Pot in this fixture, is the accepted value; what the farmer pays with depends on the other goods' curves.
     private static void Pots()
     {
         var w = OrderWorld(fabricOnly: false); var cfg = w.Config; var plan = Trade.Plan(w);
         var farmer = CampOf(w, 1); var herder = CampOf(w, 2);
-        var pots = plan.Agreements.FirstOrDefault(a => a.Requester == farmer.Id && a.Responder == herder.Id && a.Want == TradeGood.Pots && a.Give == TradeGood.Food);
-        Check(pots != null && pots.WantMade > 0 && pots.Countered, "the farmer buys made-to-order Pots from the herder with food, at the herder's counter");
-        Check(plan.Agreements.Select(a => a.Want).Concat(plan.Agreements.Select(a => a.Give)).Distinct().Count() >= 3, "with a labour price several made goods trade to order");
-        // Replay the agreements before it on fresh valuations: its ratio is the herder's floor for that quantity.
-        var values = new[] { farmer, herder }.ToDictionary(c => c.Id, c => Trade.Value(w, c));
-        foreach (var a in plan.Agreements.TakeWhile(a => a != pots))
-        {
-            values[a.Requester].Apply(a.Want, a.WantQuantity); values[a.Requester].Apply(a.Give, -a.GiveQuantity);
-            values[a.Responder].Apply(a.Want, -a.WantQuantity); values[a.Responder].Apply(a.Give, a.GiveQuantity);
-        }
-        double margin = cfg.TradeMargin * (1 - pots.Affinity), transport = cfg.TradeDistanceCostPerHex * pots.Distance;
-        double limit = Trade.MaximumRatio(values[farmer.Id], TradeGood.Pots, TradeGood.Food, pots.WantQuantity, margin, transport);
-        Near(pots.Ratio, Trade.MinimumRatio(values[herder.Id], TradeGood.Pots, TradeGood.Food, pots.WantQuantity, margin, transport, limit), "the Pots price is the herder's floor", 1e-9);
-        Check(pots.Ratio > 60 && pots.Ratio < 120, "food per Pot is the accepted provisional value, about 90 (" + pots.Ratio + ")");
+        Check(plan.Agreements.Any(a => a.Requester == farmer.Id && a.Responder == herder.Id && a.Want == TradeGood.Pots && a.WantMade > 0), "the farmer buys Pots the herder makes to order");
+        Check(plan.Agreements.Select(a => a.Want).Concat(plan.Agreements.Select(a => a.Give)).Distinct().Count() >= 2, "with a labour price made goods trade to order");
+        var hv = Trade.Value(w, herder); double q = 5, distance = w.Map.Distance(farmer.Tile, herder.Tile);
+        Check(hv.Stock(TradeGood.Pots) >= q, "fixture: the herder can make five Pots to order");
+        double transport = cfg.TradeDistanceCostPerHex * distance;
+        // With spare making capacity a Pot costs its making cost; once that capacity is spent (or from stock with none), a Pot
+        // costs its provisional use value. The use value is the accepted ~90 food a Pot (the census-era fixture's price, which
+        // followed an earlier agreement that had used up the herder's capacity).
+        double made = Trade.MinimumRatio(hv, TradeGood.Pots, TradeGood.Food, q, cfg.TradeMargin, transport, double.PositiveInfinity);
+        var full = OrderWorld(fabricOnly: false); var fh = CampOf(full, 2); fh.Inventory.Pots = 50; fh.EconomicLabor = null;
+        var fv = Trade.Value(full, fh);
+        Check(fv.Capacity[(int)TradeGood.Pots] == 0 && fv.Stock(TradeGood.Pots) >= q, "fixture: a herder with Pots in stock and no making capacity");
+        double used = Trade.MinimumRatio(fv, TradeGood.Pots, TradeGood.Food, q, cfg.TradeMargin, transport, double.PositiveInfinity);
+        Check(used > 60 && used < 120, "a Pot from stock is priced at its provisional use value, about 90 food (" + used + ")");
+        Check(made > 0 && made < used / 5, "a Pot made with spare capacity costs far less, its making cost (" + made + " food)");
+        // Make-to-order capacity is bounded by the raw materials the camp holds or can reach: no Clay, no Pots.
+        var dry = OrderWorld(fabricOnly: false); CampOf(dry, 2).Inventory.Clay = 0;
+        Check(Trade.Value(dry, CampOf(dry, 2)).Capacity[(int)TradeGood.Pots] == 0, "a camp with no Clay to reach cannot make Pots to order");
+        CampOf(dry, 2).Inventory.Clay = 12;
+        Check(Trade.Value(dry, CampOf(dry, 2)).Capacity[(int)TradeGood.Pots] <= 12 / dry.Config.Neolithic.ClayPerPot + 1e-9, "Pots to order are bounded by the Clay in reach");
+    }
+
+    // Claim-first production (Docs/PlannerTradeStorageDesign.md §2 P4): an agreed export takes tool time before the camp's own
+    // recipes, in the resolver and the forecast. Census C1 turn 52: Weaver Cloth took all tool time and owed Farm Tools got none.
+    private static void ClaimFirst()
+    {
+        var w = World((6, 6, 0, 0)); var cfg = w.Config; var c = CampOf(w, 1);
+        double years = cfg.TurnDays / cfg.DaysPerYear, intervals = cfg.GenerationIntervals, owed = 10, outputs = 20 * ToolCoverageBudget.OutputsPerTool;
+        c.Inventory.HandTools = 0; c.Inventory.Tools = 20; c.Inventory.Wood = 500; c.Inventory.Cloth = 0;
+        c.Workforce.Assignments = new List<PopulationAssignment> { new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = 40 } };
+        var recipes = NeolithicProduction.Recipes(cfg);
+        Check(NeolithicProduction.Priority(c, CraftGood.Cloth) > NeolithicProduction.Priority(c, CraftGood.FarmTools), "fixture: Cloth outranks Farm Tools");
+        // Resolver: the prepared plan wants far more Cloth than the tool time covers, and owes Farm Tools for export.
+        var needs = new TurnNeeds { Camp = c.Id, Residents = c.Population, Exports = new double[Enum.GetValues(typeof(CraftGood)).Length], Production = recipes.ToDictionary(r => r.Good, r => 0d) };
+        needs.Exports[(int)CraftGood.FarmTools] = owed; needs.Production[CraftGood.Cloth] = 1000; needs.Production[CraftGood.FarmTools] = owed;
+        var record = new TurnRecord { Turn = w.Turn };
+        NeolithicProduction.ResolveCampNeolithic(w, c, intervals, years, record, 0, needs, false);
+        double Made(CraftGood g) => record.Production.Where(x => x.Camp == c.Id && x.Good == g).Sum(x => x.Output);
+        Near(Made(CraftGood.FarmTools), owed, "the owed Farm Tools are made before the camp's own Cloth", 1e-9);
+        Near(Made(CraftGood.Cloth) + Made(CraftGood.FarmTools), outputs, "the tool time was binding (Cloth took the rest)", 1e-6);
+        Check(c.TradeOwed == null && c.TradeExports == null, "the export claim is transient");
+        // Forecast: the same camp's own clothing need would take every tool output; the export is still planned.
+        var f = World((6, 6, 0, 0)); var fc = CampOf(f, 1);
+        fc.Inventory.HandTools = 0; fc.Inventory.Tools = 20; fc.Inventory.Wood = 500; fc.Inventory.Cloth = 0;
+        fc.Workforce.Assignments = new List<PopulationAssignment> { new PopulationAssignment { Role = WorkforceRoles.Craftsperson, Population = 40 } };
+        fc.TradeExports = new double[Enum.GetValues(typeof(CraftGood)).Length]; fc.TradeExports[(int)CraftGood.FarmTools] = owed;
+        var planned = MaterialEconomy.Forecast(f, fc, recipes, intervals, years, new ToolCoverageBudget(f, fc, intervals).Remaining, true, -1, false, false);
+        Check(planned[CraftGood.FarmTools] >= owed - 1e-9, "the forecast plans the owed Farm Tools first (" + planned[CraftGood.FarmTools] + ")");
+        // Toolmaking in the first layer adds tool outputs: the equipment work is bounded by start tools plus those made.
+        double toolOutputs = outputs + planned[CraftGood.HandTools] * ToolCoverageBudget.OutputsPerHandTool + planned[CraftGood.Tools] * ToolCoverageBudget.OutputsPerTool;
+        Near(planned[CraftGood.Cloth] + planned[CraftGood.FarmTools], toolOutputs, "the forecast's Cloth takes the remaining tool time", 1e-6);
+        // Make-to-order capacity is bounded by made inputs on hand: no tents promised without Animal Fabric.
+        var o = OrderWorld(fabricOnly: false); var herder = CampOf(o, 2);
+        Check(herder.Inventory.AnimalFabric == 0 && Trade.Value(o, herder).Capacity[(int)TradeGood.LightHousing] == 0, "a camp without Animal Fabric cannot make tents to order");
+        herder.Inventory.AnimalFabric = 7;
+        Check(Trade.Value(o, herder).Capacity[(int)TradeGood.LightHousing] <= 7 / o.Config.Neolithic.AnimalFabricPerLightHousing + 1e-9, "tents to order are bounded by the fabric held");
     }
 
     // Make-or-buy numerics with a vanishing need (census C1 turn 52: a tent maker holding 1.8e-10 tents, so N = 1.8e-10).

@@ -876,6 +876,13 @@ namespace Anthropocene.Simulation
             }
             return used;
         }
+        // The roles that may make a recipe owed for export, best first: its specialist when the camp has the technology,
+        // then a Craftsperson unless the recipe is specialist-only (Docs/PlannerTradeStorageDesign.md §2 P4).
+        internal static IEnumerable<string> ExportRoles(Camp c, CraftRecipe recipe)
+        {
+            if (c.People.HasTech(recipe.Track)) yield return recipe.Specialist;
+            if (!recipe.SpecialistOnly) yield return WorkforceRoles.Craftsperson;
+        }
         // resolveNeeds = false leaves needs to the caller, which settles after-production trade first (Docs/Trade.md).
         public static void ResolveCampNeolithic(WorldState w, Camp c, TurnHorizon horizon, TurnRecord record, double gatheringWorkerIntervals = 0, TurnNeeds needs = null, bool resolveNeeds = true)
             => ResolveCampNeolithic(w, c, horizon.ReferenceIntervals, horizon.Years, record, gatheringWorkerIntervals, needs, resolveNeeds);
@@ -908,6 +915,27 @@ namespace Anthropocene.Simulation
                 // The two sweeps are dependency order, not production dates.
                 for (int balanceLayer = 0; balanceLayer < 2; balanceLayer++)
                 {
+                    // Agreed exports first (claim-first, Docs/PlannerTradeStorageDesign.md §2 P4): in recipe order, each owed
+                    // good takes labour, tool time and inputs before this turn's own recipes, from the roles that can make
+                    // it. No Housing Material plan holds inputs back from a claim; its reservations still see the output.
+                    if (c.TradeOwed != null)
+                        foreach (var recipe in recipes)
+                        {
+                            bool toolGood = recipe.Good == CraftGood.HandTools || recipe.Good == CraftGood.Tools;
+                            if (toolGood != (balanceLayer == 0)) continue;
+                            if (recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c) || recipe.AgricultureOnly && !CultivationEconomy.Enabled(c)) continue;
+                            foreach (var role in ExportRoles(c, recipe))
+                            {
+                                double owed = Math.Max(0, c.TradeOwed[(int)recipe.Good]);
+                                if (!(owed > 1e-12)) break;
+                                int before = record.Production.Count;
+                                laborByRole[role] -= Produce(w, c, recipe, role, laborByRole[role], intervals, owed, ref equipment, record, coverage, null, order);
+                                if (record.Production.Count <= before) continue;
+                                double output = record.Production[record.Production.Count - 1].Output;
+                                housing?.CompleteDirect(recipe, output);
+                                produced[recipe.Good] = (produced.TryGetValue(recipe.Good, out double prior) ? prior : 0) + output;
+                            }
+                        }
                     foreach (var (role, recipe) in steps)
                     {
                         bool toolInput = recipe.Good == CraftGood.HandTools || recipe.Good == CraftGood.Tools;
