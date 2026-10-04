@@ -166,7 +166,9 @@ Measured problems to solve (all in [SharedAllocationValidation.md](SharedAllocat
 - **Two planners.** The legacy and shared paths coexist behind
   `SharedCropHerdAllocationEnabled`.
 
-Proposed direction, to be designed in a short note for approval before code:
+Proposed direction, to be designed in a short note for approval before code
+(drafted: [PlannerTradeStorageDesign.md](PlannerTradeStorageDesign.md), with the
+planner-first trade order and pottery storage):
 
 - **Separate valuation, allocation and realization.** Prices come from the
   demand pass. Allocation is a closed-form or bounded portfolio over
