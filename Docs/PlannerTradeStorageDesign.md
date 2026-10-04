@@ -397,7 +397,7 @@ Each phase is behind a switch or keeps outcomes exact while off. Each ends with 
 | **S** Storage | §3 behind `GoodsStorageEnabled`: room in production, forecast, planner and settlement; reserve guard if O1 is accepted; checks for blocking, grandfathering, conservation and saves. | Off equals the reference exactly. On, with trade off: husbandry gate (−5% / under 10×), cloth and housing per capita, food discard, QoL. Sweep `s`, `x`. |
 | **C** Claim-first production | §2 P4 in forecast and resolver, then in the planner's final pass. | Trade-on census: made-to-order delivery ≥ 0.95 overall and per good. Off is exact. |
 | **V** Valuation forecast | §2 P1–P2: same-turn curves and marks for every good, replacing the provisional builders key by key. Marks drive offers and lists. | Trade-on census: the husbandry gate; handshake time back to the earlier ~4–6 ms mean, or a stated budget. Off is exact. |
-| **R** Planner refactor | Production scheduled once per plan; one planner path; spare labour, village–pasture transition and herd growth priced (plan document, phase 3). | Phase 3 gates in the plan document, including 80/320-tribe scale. |
+| **R** Planner refactor ([EconomicControlContract.md](EconomicControlContract.md) + [Addendum A](EconomicControlContractAddendumA.md), proposed as the phase R design) | Production scheduled once per plan; one planner path; spare labour, village–pasture transition and herd growth priced (plan document, phase 3). | Phase 3 gates in the plan document, including 80/320-tribe scale. |
 
 The suggested order is **S → C → V → R**:
 - S and C are small, independently measurable, and fix today's measured failures.

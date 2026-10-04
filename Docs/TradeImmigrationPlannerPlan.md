@@ -168,7 +168,9 @@ Measured problems to solve (all in [SharedAllocationValidation.md](SharedAllocat
 
 Proposed direction, to be designed in a short note for approval before code
 (drafted: [PlannerTradeStorageDesign.md](PlannerTradeStorageDesign.md), with the
-planner-first trade order and pottery storage):
+planner-first trade order and pottery storage; the architecture is proposed in
+[EconomicControlContract.md](EconomicControlContract.md) with
+[Addendum A](EconomicControlContractAddendumA.md), which these bullets become requirements of):
 
 - **Separate valuation, allocation and realization.** Prices come from the
   demand pass. Allocation is a closed-form or bounded portfolio over
