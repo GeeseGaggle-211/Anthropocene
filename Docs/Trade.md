@@ -86,8 +86,11 @@ agriculture/husbandry requirement met, priority > 0) may be offered beyond stock
   (`EconomicLaborPlan.LabourPrice`, recorded only while trade is on), and
   `LabourPerUnit` is the claim valuation's own formula
   (`ClaimValuation.LabourPerUnit`);
-- **capacity:** `TradeExportLabourShare` of its residents' turn, bounded by the
-  spare (unprotected) food its recipe consumes, typed;
+- **capacity:** `TradeExportLabourShare` of its residents' turn, bounded by:
+  - the spare (unprotected) food its recipe consumes, typed;
+  - for equipment and housing work, the same share of its tool outputs (one
+    Hand Tool covers one output, one Regular Tool four). This pool is shared by
+    all such goods, so a camp cannot promise the same tools twice.
 - **marginal loss of giving:** `min(use value, cost)`, so a camp that can make
   more never values a unit above its making cost;
 - **marginal gain of receiving:** also `min(use value, cost)` (make or buy), so

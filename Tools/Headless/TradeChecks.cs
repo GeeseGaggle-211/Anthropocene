@@ -615,6 +615,8 @@ internal static class TradeChecks
             if (Environment.GetEnvironmentVariable("TRADE_SHORT") == "1")
             {
                 new TurnResolver().Resolve(w, prepared); var rec = w.History.Last();
+                var legs = rec.Trades.SelectMany(x => new[] { (M: x.WantMadeToOrder, F: x.Delivered, G: x.Want), (M: x.GiveMadeToOrder, F: x.GiveDelivered, G: x.Give) }).Where(x => x.M).ToArray();
+                Console.WriteLine($"made-to-order legs {legs.Length}, short {legs.Count(x => x.F < .999)}, mean delivered {(legs.Length > 0 ? legs.Average(x => x.F) : 1):F3}; by good " + string.Join(", ", legs.GroupBy(x => x.G).Select(gr => gr.Key + " " + gr.Count() + "/" + gr.Average(x => x.F).ToString("F2"))));
                 foreach (var g in rec.Trades.SelectMany(x => new[] { (Seller: x.Responder, Good: x.Want, Q: x.WantQuantity, F: x.Delivered, M: x.WantMadeToOrder), (Seller: x.Requester, Good: x.Give, Q: x.GiveQuantity, F: x.GiveDelivered, M: x.GiveMadeToOrder) }).Where(x => x.M).GroupBy(x => (x.Seller, x.Good)).Take(400))
                 {
                     double owed = prepared.Needs[g.Key.Seller].Exports?[(int)Trade.Descriptor(g.Key.Good).Recipe.Value] ?? 0, f = g.Min(x => x.F);
@@ -622,6 +624,14 @@ internal static class TradeChecks
                     var made = rec.Production.Where(p => p.Camp == g.Key.Seller && p.Good == Trade.Descriptor(g.Key.Good).Recipe.Value).Sum(p => p.Output);
                     var planned = prepared.Needs[g.Key.Seller].Production?[Trade.Descriptor(g.Key.Good).Recipe.Value] ?? 0;
                     var camp = w.Camps.First(c => c.Id == g.Key.Seller);
+                    if (Environment.GetEnvironmentVariable("TRADE_SELLER") == g.Key.Seller.ToString())
+                    {
+                        var atStart = SaveCodec.Load(File.ReadAllBytes(path)); Ownership.Bind(atStart); atStart.Config.TradeEnabled = true; var sc = atStart.Camps.First(x => x.Id == g.Key.Seller);
+                        var recipe = NeolithicProduction.Recipes(atStart.Config).First(x => x.Good == Trade.Descriptor(g.Key.Good).Recipe.Value);
+                        var src = MaterialEconomy.KnownSources(atStart, sc, atStart.Days);
+                        var val = Trade.Value(atStart, sc, Trade.LastProduction(atStart).GetValueOrDefault(sc.Id));
+                        Console.WriteLine($"seller {sc.Id}: recipe wood {recipe.Wood} clay {recipe.Clay} construction {recipe.ConstructionMaterial} plant {recipe.PlantFood} animal {recipe.AnimalFood} rate {recipe.Rate}; inventory wood {sc.Inventory.Wood:F1} clay {sc.Inventory.Clay:F1}; sources wood {src.Where(x => x.Material == MaterialId.Wood).Sum(x => x.Available):F1} clay {src.Where(x => x.Material == MaterialId.Clay).Sum(x => x.Available):F1}; capacity {val.Capacity[(int)g.Key.Good]:F1} cost {val.Cost[(int)g.Key.Good]:F3} labour {ClaimValuation.LabourPerUnit(atStart, sc, recipe, NeolithicProduction.Recipes(atStart.Config), NeolithicProduction.HousingMultiplier(atStart, sc, sc.Population)):F3} tools {sc.Inventory.HandTools:F1}/{sc.Inventory.Tools:F1}");
+                    }
                     Console.WriteLine($"short {g.Key.Good} seller {g.Key.Seller} {camp.Technology} owed {owed:F1} fraction {f:F2} planned {planned:F1} made {made:F1} assign {string.Join(",", camp.Workforce.Assignments.Select(a => a.Role + "=" + a.Population))}");
                 }
                 return;

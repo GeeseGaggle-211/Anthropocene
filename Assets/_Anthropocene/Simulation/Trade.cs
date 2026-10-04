@@ -352,6 +352,11 @@ namespace Anthropocene.Simulation
             public readonly bool[] Active = new bool[Registry.Length];
             public readonly double[] Cost = Enumerable.Repeat(double.PositiveInfinity, Registry.Length).ToArray();
             public readonly double[] Capacity = new double[Registry.Length];
+            // Tool outputs left for made-to-order equipment and housing work, shared by every such good (a Hand Tool covers
+            // one output, a Regular Tool four), and which goods draw on it.
+            public double ToolPool = double.PositiveInfinity;
+            public readonly bool[] UsesTools = new bool[Registry.Length];
+            public double MakeCapacity(TradeGood g) => UsesTools[(int)g] ? Math.Min(Capacity[(int)g], ToolPool) : Capacity[(int)g];
             public readonly double[][] Shares = new double[Registry.Length][];          // committed part proportions
             private readonly Dictionary<string, (double Position, double Floor)> positions = new Dictionary<string, (double, double)>();
             internal void SetCurve(string key, double position, double floor) => positions[key] = (position, floor);
@@ -359,7 +364,7 @@ namespace Anthropocene.Simulation
             public double Position(TradeGood g) => positions[Descriptor(g).Curve].Position;
             public double Floor(TradeGood g) => positions[Descriptor(g).Curve].Floor;
             // What the camp may give of a good: held stock above its curve's floor, plus what it can make to order.
-            public double Stock(TradeGood g) => Active[(int)g] ? Math.Max(0, Math.Min(Held[(int)g], Position(g) - Floor(g))) + Capacity[(int)g] : 0;
+            public double Stock(TradeGood g) => Active[(int)g] ? Math.Max(0, Math.Min(Held[(int)g], Position(g) - Floor(g))) + MakeCapacity(g) : 0;
             public double Marginal(TradeGood g, double x) => Active[(int)g] ? Curve(g).Marginal(x) : 0;
             // The marginal loss of giving at position x: its use value, but never more than the cost of making another.
             public double LossMarginal(TradeGood g, double x) => Active[(int)g] ? Math.Min(Curve(g).Marginal(x), Cost[(int)g]) : 0;
@@ -374,7 +379,12 @@ namespace Anthropocene.Simulation
             {
                 int i = (int)g; Version++;
                 // Giving beyond held stock draws on the capacity to make to order.
-                if (amount < 0 && -amount > Held[i]) { Capacity[i] = Math.Max(0, Capacity[i] - (-amount - Math.Max(0, Held[i]))); Held[i] = 0; }
+                if (amount < 0 && -amount > Held[i])
+                {
+                    double made = -amount - Math.Max(0, Held[i]);
+                    Capacity[i] = Math.Max(0, Capacity[i] - made); Held[i] = 0;
+                    if (UsesTools[i]) ToolPool = Math.Max(0, ToolPool - made);
+                }
                 else Held[i] += amount;
                 var key = Descriptor(g).Curve; var p = positions[key]; positions[key] = (p.Position + amount, p.Floor);
             }
@@ -424,13 +434,15 @@ namespace Anthropocene.Simulation
 
         // A good the camp can make: its cost is the labour per unit at the lagged labour price w (the last plan's,
         // EconomicLaborPlan.LabourPrice) plus its food inputs at the camp's marginal food value; its capacity is what
-        // TradeExportLabourShare of the residents' turn could make, bounded by the spare food its recipe consumes.
+        // TradeExportLabourShare of the residents' turn could make, bounded by the spare food its recipe consumes and,
+        // for equipment and housing work, by that share of its tool outputs (one pool for all such goods).
         // Without a recorded price nothing is made to order.
         private static void MakeToOrder(WorldState w, Camp c, Valuation v, double foodValue, double spareFood, CraftRecipe[] recipes)
         {
             var cfg = w.Config;
             if (!(cfg.TradeExportLabourShare > 0) || c.EconomicLabor == null || !c.EconomicLabor.LabourPriceSet) return;
             double price = c.EconomicLabor.LabourPrice, years = cfg.TurnDays / cfg.DaysPerYear;
+            v.ToolPool = cfg.TradeExportLabourShare * (Math.Max(0, c.Inventory.HandTools) * ToolCoverageBudget.OutputsPerHandTool + Math.Max(0, c.Inventory.Tools) * ToolCoverageBudget.OutputsPerTool);
             double multiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
             foreach (var g in Registry)
             {
@@ -447,6 +459,8 @@ namespace Anthropocene.Simulation
                 if (recipe.PlantFood > 0) capacity = Math.Min(capacity, Math.Min(spareFood, Math.Max(0, c.PlantFood)) / recipe.PlantFood);
                 if (recipe.AnimalFood > 0) capacity = Math.Min(capacity, Math.Min(spareFood, Math.Max(0, c.AnimalFood)) / recipe.AnimalFood);
                 v.Capacity[i] = Math.Max(0, capacity);
+                // Equipment and housing work need tool coverage: their exports share the tool pool.
+                v.UsesTools[i] = recipe.Equipment || ToolCoverageBudget.IsHousingWork(recipe.Good);
             }
         }
 
