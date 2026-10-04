@@ -18,7 +18,16 @@ namespace Anthropocene.Simulation
         // lagged cost of producing to order. Recorded only while trade is enabled; absent in older saves (unset).
         [System.Runtime.Serialization.OptionalField] public bool LabourPriceSet;
         [System.Runtime.Serialization.OptionalField] public double LabourPrice;
-        public EconomicLaborPlan Copy() => (EconomicLaborPlan)MemberwiseClone();
+        // Trade: the goods values the last plan published (Docs/Trade.md, "Planner-published values"), at most one per
+        // trade curve key, read lagged by the next handshake in place of the provisional curves. Recorded only while
+        // trade is enabled and the fulfilment rule publishes; absent in older saves (null: every curve provisional).
+        [System.Runtime.Serialization.OptionalField] public List<TradeValueSchedule> TradeValues;
+        public EconomicLaborPlan Copy()
+        {
+            var copy = (EconomicLaborPlan)MemberwiseClone();
+            copy.TradeValues = TradeValues?.Select(s => s?.Copy()).ToList();
+            return copy;
+        }
         public IEnumerable<double> Values() => new[] { MaterialGatherers, ExpansionFarmers, EquipmentTarget };
     }
     [Serializable]
@@ -57,6 +66,7 @@ namespace Anthropocene.Simulation
             if (e.Labor != null && (e.Labor.Values().Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) ||
                 e.Labor.MaterialGatherers > c.Population - e.Assignments.Where(a => a.Role != WorkforceRoles.Gatherer).Sum(a => a.Population) + 1e-8 ||
                 e.Labor.ExpansionFarmers > e.Assignments.Where(a => a.Role == WorkforceRoles.Farmer).Sum(a => a.Population) + 1e-8 || e.Labor.EquipmentTarget > c.Population)) return "Labor reservations exceed the real workforce.";
+            if (e.Labor != null && TradeValueSchedule.Error(e.Labor.TradeValues) is string tradeValues) return "Invalid trade values: " + tradeValues + ".";
             if (e.Focus < -1 || e.Focus >= 0 && !c.FocusTiles.Contains(e.Focus)) return "Cultivation focus must be visible eligible radius-1 land.";
             if (!c.Agriculture && e.Assignments.Any(a => a.Role == WorkforceRoles.Farmer)) return "Farmer assignments require Cultivation.";
             if (!c.Husbandry && e.Assignments.Any(a => a.Role == WorkforceRoles.Herder)) return "Herder assignments require Animal Husbandry.";

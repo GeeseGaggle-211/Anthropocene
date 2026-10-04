@@ -61,7 +61,7 @@ internal static class TradeChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Valuation(); Handshake(); Eligibility(); Kin(); Settlement(); Planning(); Replay(); Persistence(); Registry(); Food(); MadeToOrder();
+        checks = 0; Config(); Valuation(); Handshake(); Eligibility(); Kin(); Settlement(); Planning(); Replay(); Persistence(); Registry(); Food(); MadeToOrder(); Pots(); Published();
         Console.WriteLine("PASS: " + checks + " trade assertions"); return checks;
     }
 
@@ -374,13 +374,27 @@ internal static class TradeChecks
         Check(Trade.BestQuantity(v, TradeGood.Cloth, TradeGood.AnimalFabric) == 0, "trading along one curve gains nothing");
         // The request lists: wants by recoverable utility up to target coverage, gives by marginal loss, at most W each.
         var (wants, gives) = Trade.Lists(v, w.Config.TradeListLength);
-        double Recoverable(TradeGood g) => v.Integrated(g, v.Position(g), Math.Max(v.Position(g), v.Curve(g).Target));
+        // As Lists scores it: the make-or-buy gain up to target coverage; an inactive (or unpriced) good has none.
+        double Recoverable(TradeGood g) => v.Active[(int)g] ? v.Gain(g, Math.Max(0, v.Curve(g).Target - v.Position(g))) : 0;
+        Check(Trade.Registry.Where(d => d.Curve != "Food").All(d => !v.Active[(int)d.Id] || v.Curve(d.Id) != null) && !v.Active[(int)TradeGood.HandTools] && v.Curve(TradeGood.HandTools) == null, "a labour-priced good is inactive (no curve) until a labour price is recorded");
         Check(wants.Length <= w.Config.TradeListLength && gives.Length <= w.Config.TradeListLength, "the lists are bounded by W");
         Check(wants.Zip(wants.Skip(1), (a, b) => Recoverable(a) >= Recoverable(b)).All(x => x) && wants.All(g => Recoverable(g) > 0), "wants are ordered by recoverable utility");
         Check(gives.All(g => v.Stock(g) > 0) && gives.Zip(gives.Skip(1), (a, b) => v.Marginal(a, v.Position(a) - 1e-9) <= v.Marginal(b, v.Position(b) - 1e-9)).All(x => x), "gives hold stock and are ordered by marginal loss");
         var top = Trade.Registry.Select(d => d.Id).Where(g => Recoverable(g) > 1e-12).OrderByDescending(Recoverable).ThenBy(g => (int)g).First();
         Check(wants[0] == top, "the first want is the good with the most recoverable utility");
         var shortList = Trade.Lists(v, 1); Check(shortList.Wants.Length == 1 && shortList.Gives.Length == 1, "W = 1 keeps one want and one give");
+        // Offers: the goods a camp may give (stock above its floor or making capacity), goods only. A requester wants only
+        // what its partner offers, and every agreement's goods were offered by their givers at the opening.
+        var offers = Trade.Offers(v);
+        Check(Trade.Registry.All(d => offers[(int)d.Id] == v.Stock(d.Id) > 1e-9) && offers[(int)TradeGood.Cloth] && !offers[(int)TradeGood.HousingMaterial], "a camp offers exactly the goods it may give");
+        Check(Trade.Lists(v, 4, new bool[Trade.Registry.Length]).Wants.Length == 0, "a partner that offers nothing is wanted for nothing");
+        var only = new bool[Trade.Registry.Length]; only[(int)TradeGood.HousingMaterial] = true;
+        Check(Trade.Lists(v, 4, only).Wants.All(g => g == TradeGood.HousingMaterial), "wants are drawn only from the partner's offers");
+        foreach (var world in new[] { Complementary(), OrderWorld(fabricOnly: false) })
+        {
+            var opening = world.Camps.Where(c => Trade.Eligible(world, c)).ToDictionary(c => c.Id, c => Trade.Offers(Trade.Value(world, c)));
+            Check(Trade.Plan(world).Agreements.All(a => opening[a.Responder][(int)a.Want] && opening[a.Requester][(int)a.Give]), "every agreed good was offered by its giver");
+        }
         // An inactive good is neither wanted nor given.
         w.Config.TradeFoodEnabled = false; var off = Trade.Value(w, CampOf(w, 1));
         Check(off.Stock(TradeGood.Food) == 0 && off.Marginal(TradeGood.Food, 0) == 0 && off.Curve(TradeGood.Food) == null, "food is inert when it is not traded");
@@ -419,28 +433,32 @@ internal static class TradeChecks
         Check(buy.All(a => (a.Want == TradeGood.Food ? a.Give : a.Want) == TradeGood.AnimalFabric), "the herder pays in Animal Fabric");
         double sold = buy.Sum(a => a.Want == TradeGood.Food ? a.WantQuantity : a.GiveQuantity);
         Check(farmer.Food + plan.Delta(farmer.Id, TradeGood.Food) >= bands.Ends[1] - 1e-6, "the protected band is never debited (" + (farmer.Food - sold) + " >= " + bands.Ends[1] + ")");
-        Check(plan.Delta(herder.Id, TradeGood.Food) == 0 && plan.Delta(farmer.Id, TradeGood.Food) < 0 && plan.Delta(farmer.Id, TradeGood.AnimalFabric) > 0, "food is paid on delivery: the payer plans without it, the receiver does not plan with it; the buyer plans with the fabric");
-        // Pay on delivery: at the opening the payer's food goes into escrow; after production the receiver is paid
-        // in proportion to the goods delivered and the rest is refunded.
+        // The herder has fabric in stock and no labour price, so nothing is made to order: every agreement is all stock and
+        // settles at the opening, so both sides plan with what they receive (pay on delivery is checked in MadeToOrder).
+        Check(buy.All(a => a.AllStock) && !plan.AfterProduction, "fixture: the food trades are all stock");
+        Check(plan.Delta(herder.Id, TradeGood.Food) > 0 && plan.Delta(farmer.Id, TradeGood.Food) < 0 && plan.Delta(farmer.Id, TradeGood.AnimalFabric) > 0 && plan.Delta(herder.Id, TradeGood.AnimalFabric) < 0,
+            "an all-stock food trade: both sides plan with what they receive and without what they give");
+        // Opening settlement: both legs move at once, through escrow and out again; a short giver scales both legs.
         {
             var ew = FoodWorld(); var ep = Trade.Plan(ew); var er = new TurnRecord(); var ef = CampOf(ew, 1); var eh = CampOf(ew, 2);
             double farmer0 = ef.Food, herder0 = eh.Food, total0 = ew.Camps.Sum(c => c.Food);
-            var st = Trade.Settle(ew, ep, er);
             double paid = ep.Agreements.Sum(a => a.Give == TradeGood.Food && a.Requester == ef.Id ? a.GiveQuantity : a.Want == TradeGood.Food && a.Responder == ef.Id ? a.WantQuantity : 0);
-            Near(ef.Food, farmer0 - paid, "the payer's food leaves into escrow at the opening", 1e-9);
-            Near(eh.Food, herder0, "the receiver is not paid before delivery");
-            Near(ew.Camps.Sum(c => c.Food) + Enumerable.Range(0, Trade.PartCount).Sum(st.Escrowed), total0, "camps plus escrow conserve food");
-            // The herder delivers only a third of its fabric: it is paid a third, the rest returns to the farmer.
+            // The herder holds only a third of the fabric it agreed to give. Agreements escrow in order, each at the share
+            // its giver still holds, and each settles both legs at the smaller share: all the fabric moves, food in proportion.
             double owedFabric = ep.Agreements.Sum(a => a.Want == TradeGood.AnimalFabric && a.Responder == eh.Id ? a.WantQuantity : a.Give == TradeGood.AnimalFabric && a.Requester == eh.Id ? a.GiveQuantity : 0);
             eh.Inventory.AnimalFabric = owedFabric / 3;
-            Trade.SettleAfterProduction(ew, st); Trade.Finish(ew, st, er);
-            Near(ew.Camps.Sum(c => c.Food), total0, "pay on delivery conserves food");
+            var st = Trade.Settle(ew, ep, er);
+            Near(Enumerable.Range(0, Trade.PartCount).Sum(st.Escrowed), 0, "an all-stock agreement leaves nothing in escrow after the opening");
+            Near(ew.Camps.Sum(c => c.Food), total0, "opening settlement conserves food");
+            Near(eh.Inventory.AnimalFabric, 0, "the short giver gives all it holds", 1e-6);
+            double foodBefore = ew.Camps.Sum(c => c.Food), herderOpen = eh.Food; Trade.SettleAfterProduction(ew, st); Trade.Finish(ew, st, er);
+            Near(ew.Camps.Sum(c => c.Food), foodBefore, "an all-stock plan moves nothing after production"); Near(eh.Food, herderOpen, "nothing waits for production");
             double received = er.Trades.Sum(t => t.Give == TradeGood.Food && t.Responder == eh.Id ? t.GiveQuantity : t.Want == TradeGood.Food && t.Requester == eh.Id ? t.WantQuantity : 0);
             double fabricIn = er.Trades.Sum(t => t.Want == TradeGood.AnimalFabric && t.Responder == eh.Id ? t.WantQuantity : t.Give == TradeGood.AnimalFabric && t.Requester == eh.Id ? t.GiveQuantity : 0);
-            Near(fabricIn, owedFabric / 3, "the herder delivers the third it holds", 1e-9);
-            Near(eh.Food, herder0 + received, "the seller is paid what the records say it was paid", 1e-6);
-            Near(ef.Food, farmer0 - received, "the rest of the escrow is refunded to the payer", 1e-6);
-            Check(received < paid - 1e-6 && received > 0, "a short delivery is paid in part (" + received + " of " + paid + ")");
+            Near(fabricIn, owedFabric / 3, "the records deliver the third the herder held", 1e-9);
+            Near(eh.Food, herder0 + received, "the receiver is paid at the opening what the records say", 1e-6);
+            Near(ef.Food, farmer0 - received, "the payer keeps the rest", 1e-6);
+            Check(received < paid - 1e-6 && received > 0, "a short giver is paid in part (" + received + " of " + paid + ")");
             Check(er.Trades.All(t => Math.Abs(t.Delivered - t.GiveDelivered) < 1e-9), "each agreement's two legs settle at the same fraction");
         }
         foreach (var a in buy) { var parts = a.Want == TradeGood.Food ? a.WantParts : a.GiveParts; Near(parts[0], parts.Sum(), "food moves in the seller's typed proportions (all plant)"); }
@@ -488,11 +506,19 @@ internal static class TradeChecks
     }
 
     // A farming village with food and no clothing beside a herding camp with animal food but no Animal Fabric in
-    // stock: the herder can only sell fabric by making it to order. Both carry a lagged labour price.
-    private static WorldState OrderWorld(double price = .05)
+    // stock: the herder can only sell fabric by making it to order. Both carry a lagged labour price, which also prices
+    // every other made good, so by default Pots, tents and tools trade to order too (see Pots()). `fabricOnly` gives
+    // every craft good but Animal Fabric zero priority, so only fabric can be made to order and only for food.
+    private static WorldState OrderWorld(double price = .05, bool fabricOnly = true)
     {
         var w = FoodWorld(); w.Config.Neolithic.PlannerFulfilment = "Value"; w.Config.AnnualHumanGrowthRate = new SimulationConfig().AnnualHumanGrowthRate;
         var herder = CampOf(w, 2); herder.Inventory.AnimalFabric = 0; herder.AnimalFood = 60000; herder.PlantFood = 300;
+        if (fabricOnly)
+            foreach (var c in w.Camps)
+            {
+                var p = c.CraftingPriorities;
+                p.HandTools = p.Pots = p.Cloth = p.FarmTools = p.Housing = p.Tools = p.LightHousing = p.HerdingTools = 0;
+            }
         foreach (var c in w.Camps) { c.EconomicLabor = new EconomicLaborPlan { LabourPriceSet = true, LabourPrice = price }; c.EconomyAutomationTurns = -1; c.Inventory.HandTools = 60; c.Inventory.Tools = 60; }
         // Spare animal food inside the growth band: enough to make fabric, while more food still funds growth.
         var bands = (BandCurve)Trade.Value(w, herder).Curve(TradeGood.Food);
@@ -572,18 +598,32 @@ internal static class TradeChecks
         new TurnResolver().Resolve(off, without);
         Check(farmer.ClothPerCapita > CampOf(off, 1).ClothPerCapita + 1e-9, "the buyer's clothing coverage reflects the delivery (" + farmer.ClothPerCapita + " vs " + CampOf(off, 1).ClothPerCapita + ")");
         // A seller that made less than it agreed delivers in proportion after production; the paid food stays paid.
-        var sw = OrderWorld(); var sp = Trade.Plan(sw); var srec = new TurnRecord(); var settled = Trade.Settle(sw, sp, srec);
-        var seller = CampOf(sw, 2); double owed = sp.Exports[seller.Id][(int)CraftGood.AnimalFabric];
+        // Pay on delivery: at the opening the buyer's food goes into escrow and the seller is not yet paid; after production
+        // the seller is paid the share it delivered and the rest of the escrow is refunded.
+        var sw = OrderWorld(); var sp = Trade.Plan(sw); var srec = new TurnRecord();
+        var seller = CampOf(sw, 2); var buyer = CampOf(sw, 1);
+        double seller0 = seller.Food, buyer0 = buyer.Food, food0 = sw.Camps.Sum(c => c.Food);
+        double escrowedFood = sp.Agreements.Sum(a => a.Give == TradeGood.Food && a.Requester == buyer.Id ? a.GiveQuantity : a.Want == TradeGood.Food && a.Responder == buyer.Id ? a.WantQuantity : 0);
+        Check(sp.AfterProduction && escrowedFood > 0, "fixture: the fabric order is paid in food after production");
+        var settled = Trade.Settle(sw, sp, srec);
+        Near(buyer.Food, buyer0 - escrowedFood, "the buyer's food leaves into escrow at the opening", 1e-9);
+        Near(seller.Food, seller0, "the seller is not paid before delivery");
+        Near(sw.Camps.Sum(c => c.Food) + Enumerable.Range(0, Trade.PartCount).Sum(settled.Escrowed), food0, "camps plus escrow conserve food");
+        double owed = sp.Exports[seller.Id][(int)CraftGood.AnimalFabric];
         seller.Inventory.AnimalFabric = owed / 4; double total = sw.Camps.Sum(c => c.Inventory.AnimalFabric);
         Trade.SettleAfterProduction(sw, settled); Trade.Finish(sw, settled, srec);
         Near(sw.Camps.Sum(c => c.Inventory.AnimalFabric), total, "short after-production delivery conserves fabric");
         Check(seller.Inventory.AnimalFabric >= -1e-12 && srec.Trades.Where(t => t.Want == TradeGood.AnimalFabric || t.Give == TradeGood.AnimalFabric).All(t => (t.Want == TradeGood.AnimalFabric ? t.Delivered : t.GiveDelivered) <= .25 + 1e-9), "a seller short after production delivers only what it made");
+        double paidFood = srec.Trades.Sum(t => t.Give == TradeGood.Food && t.Requester == buyer.Id ? t.GiveQuantity : t.Want == TradeGood.Food && t.Responder == buyer.Id ? t.WantQuantity : 0);
+        Near(sw.Camps.Sum(c => c.Food), food0, "pay on delivery conserves food");
+        Near(seller.Food, seller0 + paidFood, "the seller is paid what the records say", 1e-6); Near(buyer.Food, buyer0 - paidFood, "the rest of the escrow is refunded to the buyer", 1e-6);
+        Check(paidFood > 0 && paidFood < escrowedFood - 1e-6 && srec.Trades.All(t => Math.Abs(t.Delivered - t.GiveDelivered) < 1e-9), "a short delivery is paid in part, both legs at one fraction (" + paidFood + " of " + escrowedFood + ")");
         // The lagged labour price is recorded by the Value planner only while trade is enabled.
-        var pw = OrderWorld(); foreach (var c in pw.Camps) c.EconomicLabor = null;
+        var pw = OrderWorld(fabricOnly: false); foreach (var c in pw.Camps) c.EconomicLabor = null;
         var pt = TurnPlanner.Prepare(pw, new Dictionary<int, List<Order>>());
         var intents = pt.Orders.Where(o => o.Kind == OrderKind.Economy && o.Economy?.Labor != null).ToArray();
         Check(intents.Length > 0 && intents.All(o => o.Economy.Labor.LabourPriceSet && o.Economy.Labor.LabourPrice >= 0), "the Value planner records its labour price while trade is on");
-        var po = OrderWorld(); po.Config.TradeEnabled = false; foreach (var c in po.Camps) c.EconomicLabor = null;
+        var po = OrderWorld(fabricOnly: false); po.Config.TradeEnabled = false; foreach (var c in po.Camps) c.EconomicLabor = null;
         Check(TurnPlanner.Prepare(po, new Dictionary<int, List<Order>>()).Orders.Where(o => o.Kind == OrderKind.Economy && o.Economy?.Labor != null).All(o => !o.Economy.Labor.LabourPriceSet), "no labour price is recorded while trade is off");
         // Determinism with made-to-order trade: scalar against reversed 4-worker partitions over three turns.
         var worlds = new[] { OrderWorld(), OrderWorld() }; worlds[1].Camps.Reverse(); worlds[1].Societies.Reverse();
@@ -598,6 +638,139 @@ internal static class TradeChecks
         using (var stream = new MemoryStream()) { tr.WriteObject(stream, new TradeRecord { Requester = 1, GiveDelivered = .5, WantMadeToOrder = true }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
         string legacy = Regex.Replace(xml, "<(GiveDelivered|WantMadeToOrder|GiveMadeToOrder)>[^<]*</\\1>", "");
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy))) { var back = (TradeRecord)tr.ReadObject(stream); Check(back.GiveDelivered == 1 && !back.WantMadeToOrder && !back.GiveMadeToOrder && back.Requester == 1, "an older trade record loads with the give leg delivered"); }
+    }
+
+    // The provisional Pots value (accepted for now; a planner-published Pots schedule replaces it): with a labour price
+    // every made good trades to order, and the herder sells Pots it will make to the farmer for food, countered at the
+    // herder's floor. In this fixture that is about 90 food a Pot.
+    private static void Pots()
+    {
+        var w = OrderWorld(fabricOnly: false); var cfg = w.Config; var plan = Trade.Plan(w);
+        var farmer = CampOf(w, 1); var herder = CampOf(w, 2);
+        var pots = plan.Agreements.FirstOrDefault(a => a.Requester == farmer.Id && a.Responder == herder.Id && a.Want == TradeGood.Pots && a.Give == TradeGood.Food);
+        Check(pots != null && pots.WantMade > 0 && pots.Countered, "the farmer buys made-to-order Pots from the herder with food, at the herder's counter");
+        Check(plan.Agreements.Select(a => a.Want).Concat(plan.Agreements.Select(a => a.Give)).Distinct().Count() >= 3, "with a labour price several made goods trade to order");
+        // Replay the agreements before it on fresh valuations: its ratio is the herder's floor for that quantity.
+        var values = new[] { farmer, herder }.ToDictionary(c => c.Id, c => Trade.Value(w, c));
+        foreach (var a in plan.Agreements.TakeWhile(a => a != pots))
+        {
+            values[a.Requester].Apply(a.Want, a.WantQuantity); values[a.Requester].Apply(a.Give, -a.GiveQuantity);
+            values[a.Responder].Apply(a.Want, -a.WantQuantity); values[a.Responder].Apply(a.Give, a.GiveQuantity);
+        }
+        double margin = cfg.TradeMargin * (1 - pots.Affinity), transport = cfg.TradeDistanceCostPerHex * pots.Distance;
+        double limit = Trade.MaximumRatio(values[farmer.Id], TradeGood.Pots, TradeGood.Food, pots.WantQuantity, margin, transport);
+        Near(pots.Ratio, Trade.MinimumRatio(values[herder.Id], TradeGood.Pots, TradeGood.Food, pots.WantQuantity, margin, transport, limit), "the Pots price is the herder's floor", 1e-9);
+        Check(pots.Ratio > 60 && pots.Ratio < 120, "food per Pot is the accepted provisional value, about 90 (" + pots.Ratio + ")");
+    }
+
+    private static TradeValueSchedule Bands(TradeGood g, double value, double end, double offset = 0, double floor = 0)
+        => new TradeValueSchedule { Good = g, Ends = new[] { end }, Values = new[] { value }, Offset = offset, Floor = floor };
+    // A fulfilment rule that publishes one schedule per call (planner-hook fixture).
+    private sealed class PublishingRule : IFulfilmentRule, ITradeValuePublisher
+    {
+        public int Calls;
+        public string Name => "Publishing";
+        public void Shares(IReadOnlyList<ProductionClaim> claims, double s, double[] shares) => UniformFulfilment.Instance.Shares(claims, s, shares);
+        public IReadOnlyList<TradeValueSchedule> TradeValues(WorldState w, Camp c, CampProductionDemand demand, double position)
+        { Calls++; return new[] { Bands(TradeGood.Pots, 1.5, 20 + c.Population) }; }
+    }
+    // Planner-published values (Docs/Trade.md): every good's curve can come from the planner instead of its provisional
+    // builder; nothing published leaves trade unchanged.
+    private static void Published()
+    {
+        string Canon(TradePlan x) => string.Join(";", x.Agreements.Select(a => a.Requester + ">" + a.Responder + ":" + a.Want + ":" + a.Give + ":" + a.WantQuantity.ToString("R") + ":" + a.GiveQuantity.ToString("R")));
+        var plain = OrderWorld(fabricOnly: false); var empty = OrderWorld(fabricOnly: false);
+        foreach (var c in empty.Camps) if (c.EconomicLabor != null) c.EconomicLabor.TradeValues = new List<TradeValueSchedule>();
+        Check(Canon(Trade.Plan(plain)) == Canon(Trade.Plan(empty)) && Trade.Plan(plain).Agreements.Count > 0, "an empty published list leaves the handshake unchanged");
+        Check(Trade.EveryKeyBuilt, "every curve key has a provisional builder");
+        // Each good in turn: a schedule for its key replaces the provisional curve (shared by the key's goods), prices a
+        // good that is otherwise unpriced, and leaves every other key provisional.
+        foreach (var d in Trade.Registry)
+        {
+            var w = Complementary(); w.Config.TradeFoodEnabled = true; var c = CampOf(w, 1);
+            double keyHeld = Trade.Registry.Where(x => x.Curve == d.Curve).Sum(x => Trade.Held(c, x.Id)), offset = 3;
+            c.EconomicLabor = new EconomicLaborPlan { TradeValues = new List<TradeValueSchedule> { Bands(d.Id, 2.5, keyHeld + offset + 40, offset) } };
+            var v = Trade.Value(w, c); double pos = v.Position(d.Id);
+            Check(v.Active[(int)d.Id] && v.Curve(d.Id) is BandCurve && Trade.Registry.Where(x => x.Curve == d.Curve).All(x => ReferenceEquals(v.Curve(x.Id), v.Curve(d.Id))), d.Id + " is priced by its published schedule, shared by its curve key");
+            Near(pos, keyHeld + offset, d.Id + "'s position is its key's held units plus the published offset");
+            Near(v.Marginal(d.Id, pos), 2.5, d.Id + "'s marginal value is the published band"); Check(v.Marginal(d.Id, keyHeld + offset + 41) == 0, d.Id + " is worth nothing beyond the published bands");
+            Near(v.Stock(d.Id), Trade.Held(c, d.Id), d.Id + " may give everything above the published floor");
+            if (d.Curve != "Clothing") Check(v.Curve(TradeGood.Cloth) is ExponentialCurve, "publishing " + d.Id + " leaves clothing provisional");
+            else Check(!v.Active[(int)TradeGood.HandTools], "publishing clothing leaves Hand Tools unpriced");
+        }
+        // The need-curve form and a floor.
+        {
+            var w = Complementary(); var c = CampOf(w, 2);
+            c.EconomicLabor = new EconomicLaborPlan { TradeValues = new List<TradeValueSchedule> { new TradeValueSchedule { Good = TradeGood.AnimalFabric, Exponential = true, V = 4, N = 30, K = 2 }, Bands(TradeGood.HousingMaterial, 1, 500, 0, 50) } };
+            var v = Trade.Value(w, c);
+            Near(v.Marginal(TradeGood.Cloth, 10), 4 * Math.Exp(-2 * 10 / 30.0), "a published need curve V e^{-K x/N} prices the clothing key");
+            Near(v.Stock(TradeGood.HousingMaterial), c.Inventory.HousingMaterial - 50, "nothing below the published floor is given");
+        }
+        // A published make cost replaces the derived cost and lets a camp without a labour price make to order.
+        {
+            var priced = OrderWorld(); var vp = Trade.Value(priced, CampOf(priced, 2)); var curve = (ExponentialCurve)vp.Curve(TradeGood.AnimalFabric);
+            int i = (int)TradeGood.AnimalFabric;
+            TradeValueSchedule Fabric(bool cost, double makeCost) => new TradeValueSchedule { Good = TradeGood.AnimalFabric, Exponential = true, V = curve.V, N = curve.N, K = curve.K, MakeCostSet = cost, MakeCost = makeCost };
+            var unpriced = OrderWorld(); foreach (var c in unpriced.Camps) c.EconomicLabor = new EconomicLaborPlan();
+            var herder = CampOf(unpriced, 2);
+            herder.EconomicLabor.TradeValues = new List<TradeValueSchedule> { Fabric(false, 0) };
+            Check(Trade.Value(unpriced, herder).Capacity[i] == 0 && double.IsPositiveInfinity(Trade.Value(unpriced, herder).Cost[i]), "without a labour price or a published cost nothing is made to order");
+            herder.EconomicLabor.TradeValues = new List<TradeValueSchedule> { Fabric(true, vp.Cost[i]) };
+            var vu = Trade.Value(unpriced, herder);
+            Near(vu.Cost[i], vp.Cost[i], "a published make cost is the made-to-order cost"); Near(vu.Capacity[i], vp.Capacity[i], "the capacity is derived as before");
+            Check(Trade.Plan(unpriced).Agreements.Any(a => a.Responder == herder.Id && a.Want == TradeGood.AnimalFabric && a.WantMade > 0), "an unpriced camp sells fabric made to order at its published cost");
+            CampOf(priced, 2).EconomicLabor.TradeValues = new List<TradeValueSchedule> { Fabric(true, 2 * vp.Cost[i]) };
+            Near(Trade.Value(priced, CampOf(priced, 2)).Cost[i], 2 * vp.Cost[i], "a published make cost overrides the labour-price derivation");
+        }
+        // Validation: malformed schedules are rejected by intent validation and ignored by trade.
+        {
+            var bad = new[]
+            {
+                Bands(TradeGood.Pots, -1, 10), Bands(TradeGood.Pots, double.NaN, 10), Bands(TradeGood.Pots, 1, 10, -1),
+                new TradeValueSchedule { Good = TradeGood.Pots, Ends = new[] { 10.0, 5 }, Values = new[] { 2.0, 1 } },
+                new TradeValueSchedule { Good = TradeGood.Pots, Ends = new[] { 5.0, 10 }, Values = new[] { 1.0, 2 } },
+                new TradeValueSchedule { Good = TradeGood.Pots, Exponential = true, V = 1, N = 0, K = 1 },
+                new TradeValueSchedule { Good = (TradeGood)99, Ends = new[] { 1.0 }, Values = new[] { 1.0 } },
+                new TradeValueSchedule { Good = TradeGood.Pots, Ends = new[] { 1.0 }, Values = new[] { 1.0 }, MakeCostSet = true, MakeCost = -1 },
+            };
+            foreach (var s in bad) Check(s.Error() != null, "a malformed schedule is invalid: " + s.Good);
+            Check(TradeValueSchedule.Error(new[] { Bands(TradeGood.Cloth, 1, 10), Bands(TradeGood.AnimalFabric, 1, 10) }) != null, "two schedules for one curve key are invalid");
+            Check(TradeValueSchedule.Error(new[] { Bands(TradeGood.Cloth, 1, 10), Bands(TradeGood.Pots, 1, 10) }) == null, "schedules for distinct keys are valid");
+            var constraints = new EconomicConstraints { Agriculture = true, Population = 80, Technologies = new string[0], FocusTiles = new int[0] };
+            var intent = new EconomicIntent { Labor = new EconomicLaborPlan { TradeValues = new List<TradeValueSchedule> { Bands(TradeGood.Pots, 1, 10) } } };
+            Check(EconomicIntents.Validate(constraints, intent) == null, "an intent with valid trade values validates");
+            intent.Labor.TradeValues.Add(bad[0]);
+            Check(EconomicIntents.Validate(constraints, intent)?.Contains("trade values") == true, "an intent with invalid trade values is rejected");
+            var w = OrderWorld(fabricOnly: false); var c = CampOf(w, 1);
+            c.EconomicLabor.TradeValues = new List<TradeValueSchedule> { Bands(TradeGood.Pots, -1, 10) };
+            Check(Canon(Trade.Plan(w)) == Canon(Trade.Plan(OrderWorld(fabricOnly: false))), "trade ignores a malformed schedule and keeps the provisional curve");
+        }
+        // The copy is deep, and the schedules persist with the plan; an older plan loads with none.
+        {
+            var plan = new EconomicLaborPlan { LabourPriceSet = true, LabourPrice = .05, TradeValues = new List<TradeValueSchedule> { Bands(TradeGood.Pots, 1, 10) } };
+            var copy = plan.Copy(); copy.TradeValues[0].Values[0] = 9; copy.TradeValues.Clear();
+            Check(plan.TradeValues.Count == 1 && plan.TradeValues[0].Values[0] == 1, "copying a plan copies its schedules");
+            var w = OrderWorld(fabricOnly: false); CampOf(w, 2).EconomicLabor.TradeValues = new List<TradeValueSchedule> { Bands(TradeGood.Pots, .5, 300), new TradeValueSchedule { Good = TradeGood.Cloth, Exponential = true, V = 2, N = 40, K = 2, MakeCostSet = true, MakeCost = .3 } };
+            var loaded = SaveCodec.Load(SaveCodec.Save(w)); var back = CampOf(loaded, 2).EconomicLabor.TradeValues;
+            Check(back != null && back.Count == 2 && back[0].Good == TradeGood.Pots && back[0].Values[0] == .5 && back[1].Exponential && back[1].MakeCostSet && back[1].MakeCost == .3, "published schedules round trip");
+            Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded) && Canon(Trade.Plan(w)) == Canon(Trade.Plan(loaded)), "a loaded world prices and trades identically");
+            var serializer = new DataContractSerializer(typeof(EconomicLaborPlan)); string xml;
+            using (var stream = new MemoryStream()) { serializer.WriteObject(stream, plan); xml = Encoding.UTF8.GetString(stream.ToArray()); }
+            string legacy = Regex.Replace(xml, "<TradeValues>.*?</TradeValues>", "", RegexOptions.Singleline);
+            Check(legacy != xml && !legacy.Contains("TradeValues"), "legacy plan fixture omits the schedules");
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy))) { var old = (EconomicLaborPlan)serializer.ReadObject(stream); Check(old.TradeValues == null && old.LabourPriceSet && old.LabourPrice == .05, "an older plan loads with no published values"); }
+        }
+        // The planner hook: a publishing rule's schedules are recorded on the plan while trade is on, and the next
+        // handshake reads them from the committed plan.
+        {
+            var w = OrderWorld(fabricOnly: false); var c = CampOf(w, 1); var rule = new PublishingRule();
+            var intent = EconomicPlanner.Plan(w, c, EconomicIntent.From(c), rule, out _, out _);
+            Check(rule.Calls == 1 && intent.Labor?.TradeValues?.Count == 1 && intent.Labor.TradeValues[0].Good == TradeGood.Pots && intent.Labor.TradeValues[0].Ends[0] == 20 + c.Population, "a publishing rule's values are recorded on its plan");
+            EconomicIntents.Apply(c, intent);
+            var v = Trade.Value(w, c); Near(v.Marginal(TradeGood.Pots, v.Position(TradeGood.Pots)), 1.5, "the next handshake prices Pots from the published plan");
+            var off = OrderWorld(fabricOnly: false); off.Config.TradeEnabled = false; var oc = CampOf(off, 1); var offRule = new PublishingRule();
+            Check(EconomicPlanner.Plan(off, oc, EconomicIntent.From(oc), offRule, out _, out _).Labor?.TradeValues == null && offRule.Calls == 0, "nothing is published while trade is off");
+        }
     }
 
     // Diagnostic (--trade-probe=<save>): trade on, then each eligible camp's direction, giveable stock and partner reach.

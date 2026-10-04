@@ -42,6 +42,66 @@ namespace Anthropocene.Simulation
         public int Eligible, Requisitions, Honoured, Countered, Ignored;
     }
 
+    // A good's marginal local-use value published by the economic planner (its shadow price), in the planner's units
+    // (person-QoL-years per unit). It prices the good's whole curve key (Cloth and Animal Fabric share Clothing) and
+    // replaces that key's provisional curve in Trade.Value. Like EconomicLaborPlan.LabourPrice it is lagged: the plan
+    // that publishes it runs after this turn's handshake, so trade reads it from the committed plan next turn.
+    // The curve is bands (Values[i] below Ends[i], zero beyond; nonincreasing) or, when Exponential, V e^{-K x/N}.
+    // x is the curve position: held units of the key's goods plus Offset. The camp never gives below Floor.
+    [Serializable]
+    public sealed class TradeValueSchedule
+    {
+        public TradeGood Good;
+        public double Offset, Floor;
+        public double[] Ends, Values;
+        public bool Exponential;
+        public double V, N, K;
+        // The planner's cost of making one more unit to order; unset, trade derives it from the labour price.
+        public bool MakeCostSet;
+        public double MakeCost;
+        public TradeValueSchedule Copy()
+        {
+            var copy = (TradeValueSchedule)MemberwiseClone();
+            copy.Ends = (double[])Ends?.Clone(); copy.Values = (double[])Values?.Clone();
+            return copy;
+        }
+        // Null when valid, otherwise the reason.
+        public string Error()
+        {
+            if (!Enum.IsDefined(typeof(TradeGood), Good)) return "unknown trade good";
+            if (!Finite(Offset) || Offset < 0 || !Finite(Floor) || Floor < 0) return "offset and floor must be finite and nonnegative";
+            if (MakeCostSet && (!Finite(MakeCost) || MakeCost < 0)) return "make cost must be finite and nonnegative";
+            if (Exponential) return Finite(V) && V >= 0 && Finite(N) && N > 0 && Finite(K) && K > 0 ? null : "exponential terms must be finite with N, K > 0";
+            if (Ends == null || Values == null || Ends.Length != Values.Length) return "bands need matching ends and values";
+            for (int i = 0; i < Ends.Length; i++)
+            {
+                if (!Finite(Ends[i]) || !Finite(Values[i]) || Values[i] < 0) return "band ends and values must be finite and values nonnegative";
+                if (i > 0 && (!(Ends[i] > Ends[i - 1]) || Values[i] > Values[i - 1])) return "band ends must increase and values must not";
+            }
+            return null;
+        }
+        private static bool Finite(double x) => !double.IsNaN(x) && !double.IsInfinity(x);
+        internal static string Error(IReadOnlyList<TradeValueSchedule> schedules)
+        {
+            if (schedules == null) return null;
+            var keys = new HashSet<string>();
+            foreach (var s in schedules)
+            {
+                if (s == null) return "a trade value schedule is missing";
+                string error = s.Error(); if (error != null) return error;
+                if (!keys.Add(Trade.Descriptor(s.Good).Curve)) return "two trade value schedules price one curve";
+            }
+            return null;
+        }
+    }
+
+    // A fulfilment rule that prices goods implements this to publish their schedules (one per curve key at most) with
+    // its plan; EconomicPlanner records them on the plan's EconomicLaborPlan while trade is enabled.
+    internal interface ITradeValuePublisher
+    {
+        IReadOnlyList<TradeValueSchedule> TradeValues(WorldState w, Camp c, CampProductionDemand demand, double position);
+    }
+
     internal sealed class TradeAgreement
     {
         public int Requester, Responder, Distance;
@@ -432,6 +492,22 @@ namespace Anthropocene.Simulation
             ["Clay"] = (w, c, x) => Material(w, c, x, MaterialId.Clay, 1),
             ["Wood"] = (w, c, x) => Material(w, c, x, MaterialId.Wood, 2),
         };
+        // Every curve key has a provisional builder, so any good can be valued before a planner publishes a schedule for it.
+        internal static readonly bool EveryKeyBuilt = Registry.All(g => Builders.ContainsKey(g.Curve)) ? true : throw new InvalidOperationException("Every trade curve key needs a provisional builder.");
+        // The planner's published schedules by curve key (none: every key uses its provisional builder).
+        internal static Dictionary<string, TradeValueSchedule> Published(Camp c)
+        {
+            var list = c.EconomicLabor?.TradeValues;
+            if (list == null || list.Count == 0) return null;
+            var result = new Dictionary<string, TradeValueSchedule>();
+            foreach (var s in list) if (s != null && s.Error() == null && !result.ContainsKey(Descriptor(s.Good).Curve)) result[Descriptor(s.Good).Curve] = s;
+            return result;
+        }
+        internal static CurveTerms Terms(TradeValueSchedule s) => new CurveTerms
+        {
+            Curve = s.Exponential ? (ValueCurve)new ExponentialCurve(s.V, s.N, s.K) : new BandCurve((double[])s.Ends.Clone(), (double[])s.Values.Clone()),
+            Offset = s.Offset, Floor = s.Floor
+        };
         private static CurveTerms Band(double need, double value)
             => new CurveTerms { Curve = new BandCurve(new[] { Math.Max(0, need) }, new[] { Math.Max(0, value) }), Floor = double.NegativeInfinity };
         // A curve valued at the lagged labour price; unpriced (never traded by this camp) until a plan has recorded one.
@@ -572,6 +648,9 @@ namespace Anthropocene.Simulation
             var cfg = w.Config;
             var v = new Valuation { Camp = c.Id, Society = c.SocietyId, Tile = c.Tile };
             var built = new Dictionary<string, CurveTerms>(); var held = new Dictionary<string, double>();
+            // A key the planner has priced uses its published schedule; every other key its provisional builder.
+            var published = Published(c);
+            CurveTerms Build(string key) => published != null && published.TryGetValue(key, out var s) ? Terms(s) : Builders[key](w, c, context);
             foreach (var g in Registry)
             {
                 int i = (int)g.Id;
@@ -579,7 +658,7 @@ namespace Anthropocene.Simulation
                 v.Held[i] = Held(c, g.Id);
                 v.Shares[i] = g.Parts.Select(p => v.Held[i] > 1e-12 ? Math.Max(0, p.Get(c)) / v.Held[i] : 1.0 / g.Parts.Length).ToArray();
                 if (!v.Active[i]) continue;
-                if (!built.TryGetValue(g.Curve, out var terms)) built[g.Curve] = terms = Builders[g.Curve](w, c, context);
+                if (!built.TryGetValue(g.Curve, out var terms)) built[g.Curve] = terms = Build(g.Curve);
                 if (terms.Unpriced) { v.Active[i] = false; continue; }
                 v.Curves[i] = terms.Curve;
                 held[g.Curve] = (held.TryGetValue(g.Curve, out double h) ? h : 0) + v.Held[i];
@@ -587,10 +666,12 @@ namespace Anthropocene.Simulation
             foreach (var pair in built) v.SetCurve(pair.Key, pair.Value.Offset + (held.TryGetValue(pair.Key, out double h) ? h : 0), pair.Value.Floor);
             foreach (var g in Registry) if (!v.Active[(int)g.Id] && (!built.TryGetValue(g.Curve, out var t) || t.Unpriced)) v.SetCurve(g.Curve, v.Held[(int)g.Id], double.PositiveInfinity);
             // Food a made recipe may consume: what lies above the protected band (consumption, feedstock, reserve).
-            var foodTerms = built.TryGetValue("Food", out var food) ? food : Builders["Food"](w, c, context);
-            double foodPosition = foodTerms.Offset + Held(c, TradeGood.Food), protectedEnd = ((BandCurve)foodTerms.Curve).Ends[1];
+            // A published food schedule protects the food below its floor.
+            var foodTerms = built.TryGetValue("Food", out var food) ? food : Build("Food");
+            bool foodPublished = published != null && published.ContainsKey("Food");
+            double foodPosition = foodTerms.Offset + Held(c, TradeGood.Food), protectedEnd = foodPublished ? foodTerms.Floor : ((BandCurve)foodTerms.Curve).Ends[1];
             double spareFood = Math.Max(0, Math.Min(Held(c, TradeGood.Food), foodPosition - protectedEnd));
-            MakeToOrder(w, c, v, foodTerms.Curve.Marginal(foodPosition), spareFood, context.Recipes);
+            MakeToOrder(w, c, v, foodTerms.Curve.Marginal(foodPosition), spareFood, context.Recipes, published);
             return v;
         }
 
@@ -598,11 +679,14 @@ namespace Anthropocene.Simulation
         // EconomicLaborPlan.LabourPrice) plus its food inputs at the camp's marginal food value; its capacity is what
         // TradeExportLabourShare of the residents' turn could make, bounded by the spare food its recipe consumes and,
         // for equipment and housing work, by that share of its tool outputs (one pool for all such goods).
-        // Without a recorded price nothing is made to order.
-        private static void MakeToOrder(WorldState w, Camp c, Valuation v, double foodValue, double spareFood, CraftRecipe[] recipes)
+        // A make cost the planner published for the good's curve replaces that derivation. Without a recorded price or a
+        // published cost nothing is made to order.
+        private static void MakeToOrder(WorldState w, Camp c, Valuation v, double foodValue, double spareFood, CraftRecipe[] recipes, Dictionary<string, TradeValueSchedule> published)
         {
             var cfg = w.Config;
-            if (!(cfg.TradeExportLabourShare > 0) || c.EconomicLabor == null || !c.EconomicLabor.LabourPriceSet) return;
+            bool priced = c.EconomicLabor != null && c.EconomicLabor.LabourPriceSet;
+            bool anyPublishedCost = published != null && published.Values.Any(s => s.MakeCostSet);
+            if (!(cfg.TradeExportLabourShare > 0) || c.EconomicLabor == null || !priced && !anyPublishedCost) return;
             double price = c.EconomicLabor.LabourPrice, years = cfg.TurnDays / cfg.DaysPerYear;
             v.ToolPool = cfg.TradeExportLabourShare * (Math.Max(0, c.Inventory.HandTools) * ToolCoverageBudget.OutputsPerHandTool + Math.Max(0, c.Inventory.Tools) * ToolCoverageBudget.OutputsPerTool);
             double multiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
@@ -615,7 +699,10 @@ namespace Anthropocene.Simulation
                 if (NeolithicProduction.Priority(c, recipe.Good) <= 0) continue;
                 double labour = ClaimValuation.LabourPerUnit(w, c, recipe, recipes, multiplier);
                 if (!(labour > 0) || double.IsInfinity(labour)) continue;
-                v.Cost[i] = labour * price + (recipe.PlantFood + recipe.AnimalFood) * Math.Max(0, foodValue);
+                TradeValueSchedule schedule = null;
+                bool costPublished = published != null && published.TryGetValue(g.Curve, out schedule) && schedule.MakeCostSet;
+                if (!costPublished && !priced) continue;
+                v.Cost[i] = costPublished ? schedule.MakeCost : labour * price + (recipe.PlantFood + recipe.AnimalFood) * Math.Max(0, foodValue);
                 double capacity = cfg.TradeExportLabourShare * c.Population * years / labour;
                 // Food inputs come from spare food only, typed: Animal Fabric needs animal food, Cloth plant food.
                 // Spare food is shared across types in the stock's proportions (consumption draws on every type).

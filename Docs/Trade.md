@@ -8,6 +8,11 @@ WP8 (same-turn handshake in the planning pass) and WP9 (food) of
 [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) §6–7. The tradeable set is
 Cloth, Animal Fabric, Housing Material (T0 + T1) and food (TF).
 
+> **Partly superseded.** Since `85f584e` the set also includes Light Housing, Pots, Hand Tools, Farm Tools, Stone,
+> Clay and Wood. Legs split into stock and made-to-order parts, every stock part goes into escrow at the opening,
+> and all-stock agreements settle there. [TradeHandoff.md](TradeHandoff.md) describes that state and wins where this
+> file differs, until the rewrite. "Planner-published values" below is current.
+
 Code: `Assets/_Anthropocene/Simulation/Trade.cs`. Hooks:
 
 - `TurnPlanner.Prepare`/`Draft` compute the plan;
@@ -205,6 +210,44 @@ legs (`WantMadeToOrder`/`GiveMadeToOrder`). Both Societies record a
 `ContactSource.Trade` contact. Received food credits the inert
 `RecordTradePractice`.
 
+## Planner-published values
+
+Every good's curve can come from the economic planner instead of its provisional builder. This is the seam for
+value matching in the planner refactor ([TradePlannerRefactorHandoff.md](TradePlannerRefactorHandoff.md)).
+
+- **Schedule.** `TradeValueSchedule` prices one curve key, named by any of its goods. Publishing Cloth prices
+  Clothing, so Animal Fabric too. It has two forms:
+  - bands: `Values[i]` below `Ends[i]`, zero beyond, with ends increasing and values nonincreasing;
+  - the need curve `V e^{-K x/N}` (`Exponential`).
+
+  `x` is the curve position: held units of the key's goods plus `Offset`. The camp never gives below `Floor`. An
+  optional `MakeCost` is the planner's cost of one more unit made to order.
+- **Publishing.** A fulfilment rule that implements `ITradeValuePublisher` returns at most one schedule per curve key.
+  While trade is enabled, `EconomicPlanner.Plan` records them on the plan (`EconomicLaborPlan.TradeValues`).
+- **Lag.** The handshake runs before this turn's plans, so it reads the schedules from the committed plan, one turn
+  late, as it reads `LabourPrice`.
+- **Reading.** `Trade.Value` uses a published schedule for its key and the provisional builder for every other key:
+  - a published key is always priced, including keys that would be `Unpriced` without a labour price;
+  - a published `MakeCost` replaces `labour × w + food inputs × v_food`, and lets a camp with no labour price make
+    that good to order;
+  - capacity is derived as before;
+  - a published Food schedule protects food below its `Floor` from recipe inputs as well as from trade.
+- **Validation.** `TradeValueSchedule.Error` rejects non-finite or negative terms, malformed bands, unknown goods and
+  two schedules for one key. `EconomicIntents.Validate` rejects such a plan, and `Trade.Value` ignores a malformed
+  schedule, so the key stays provisional.
+- **Default.** No shipped rule publishes yet (`Uniform` and `Value` do not), so outcomes are unchanged. The
+  provisional curves remain in force, including the Pots band, which prices made-to-order Pots at about 90 food per
+  Pot in the `TradeChecks` order fixture. That value is accepted until the planner publishes Pots.
+- **Coverage.** Every curve key has a provisional builder (checked at static initialisation), so any good can be
+  valued before the planner publishes it. `TradeChecks.Published` checks, for every registered good:
+  - the override;
+  - key sharing;
+  - offset and floor;
+  - make cost;
+  - validation;
+  - persistence;
+  - the planner hook.
+
 ## Persistence and compatibility
 
 - **Config.** `TradeEnabled`, `TradeRange`, `TradeRequisitionsPerCamp`,
@@ -218,6 +261,8 @@ legs (`WantMadeToOrder`/`GiveMadeToOrder`). Both Societies record a
   `GiveMadeToOrder` are optional. Older records load with the give leg fully
   delivered. Saves without
   them load disabled with the default levers.
+- **Published values.** `EconomicLaborPlan.TradeValues` is optional (outside the intent stamp, like the labour
+  price). Older plans load null, so every curve is provisional.
 - **Turn records.** `TurnRecord.Trades` and `TurnRecord.TradeActivity` are
   optional. Older records load with an empty journal and no activity.
 - **Format.** No save-format or observation-schema change (`ANTHROPOCENE-11`,

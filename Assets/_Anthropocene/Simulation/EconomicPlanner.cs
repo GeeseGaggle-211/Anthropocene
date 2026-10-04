@@ -710,6 +710,12 @@ namespace Anthropocene.Simulation
             if (valueRule != null) laborPrice = valueRule.LaborPrice(demand.Claims, demand.Expansion, best.S);
             if (w.Config.TradeEnabled && best.Intent.Labor != null && valueRule != null && !double.IsNaN(laborPrice) && !double.IsInfinity(laborPrice))
             { best.Intent.Labor.LabourPriceSet = true; best.Intent.Labor.LabourPrice = Math.Max(0, laborPrice); }
+            // A rule that prices goods publishes their values for next turn's handshake (Docs/Trade.md, "Planner-published values").
+            if (w.Config.TradeEnabled && best.Intent.Labor != null && rule is ITradeValuePublisher publisher)
+            {
+                var values = publisher.TradeValues(w, c, demand, best.S);
+                if (values != null && values.Count > 0) best.Intent.Labor.TradeValues = values.Select(v => v.Copy()).ToList();
+            }
             if (finalDemand.Expansion != null) farmLabourPrice = finalDemand.Expansion.ValueAfter((best.Intent.Labor?.ExpansionFarmers ?? 0) * years);
             if (ResolutionMetrics.CaptureDetailedCounters)
                 Interlocked.Add(ref TurnDiagnostics.For(w).PlanTicks, System.Diagnostics.Stopwatch.GetTimestamp() - planStart);

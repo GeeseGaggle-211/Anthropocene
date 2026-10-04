@@ -71,6 +71,15 @@ because escrow and delivery timing changed. `Docs/Trade.md`, `Docs/CurrentSimula
      pooled clothing need may double-produce.
 2. **Shadow prices.** Tools, Pots and raw materials have only the provisional curves above. The planner should expose
    marginal values (per good, per camp) that trade reads directly instead of re-deriving them. This is "value matching".
+   - **The seam exists** (`Docs/Trade.md`, "Planner-published values"). The new planner's fulfilment rule implements
+     `ITradeValuePublisher.TradeValues(w, camp, demand, position)` and returns one `TradeValueSchedule` per curve key it
+     prices: bands or `V e^{-Kx/N}` over the curve position (held units of the key's goods plus `Offset`), a `Floor`,
+     and optionally a `MakeCost`.
+   - `EconomicPlanner.Plan` records them on `EconomicLaborPlan.TradeValues`. The next handshake uses them in place of
+     the provisional builders; keys left unpublished stay provisional, so goods can migrate one at a time.
+   - Publishing needs no trade code changes. `TradeChecks.Published` covers every registered good.
+   - Pots stay at the provisional value (about 90 food per Pot in the order fixture) until then: decision of
+     4 October 2026.
 3. **Valuation gaps from the last census** (before this commit; 5 worlds, 50 turns):
    - after-production delivery was 0.96–0.97;
    - the husbandry-first gate failed narrowly (animals total −5.06% at t = 50; median −5.56% at t = 25);

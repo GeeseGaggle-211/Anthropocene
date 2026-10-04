@@ -128,21 +128,37 @@ curve builder if it needs one. A good with a recipe can be made to order and has
 | Checks | `Tools/Headless/TradeChecks.cs` |
 | Audit | `Tools/PerformanceAudit/Run-TradeAudit.py`, `Summarize-Trade.py` |
 
+## Planner-published values
+
+Any good's curve can now come from the planner instead of its provisional builder: see `Docs/Trade.md`,
+"Planner-published values".
+
+- A fulfilment rule implementing `ITradeValuePublisher` returns `TradeValueSchedule`s, at most one per curve key. Each
+  is bands or `V e^{-Kx/N}`, with an offset, a floor and an optional make cost.
+- `EconomicPlanner.Plan` saves them on `EconomicLaborPlan.TradeValues` (OptionalField) while trade is on.
+- The next handshake reads them lagged, like `LabourPrice`.
+- No shipped rule publishes yet, so outcomes are unchanged.
+- **Decision (4 October 2026):** the provisional Pots band stays the Pots value for now, about 90 food per Pot in the
+  order fixture (`TradeChecks.Pots`), until the planner publishes Pots.
+
 ## Verification status
 
-**Last commit.** The headless project builds. In `--only=TradeChecks`, these sections pass under the new semantics:
-Config, Valuation, Handshake, Eligibility, Kin, Settlement and Planning. After that the run hit an outdated
-part-index assertion in Registry. It is fixed but has not been re-run.
+**Current.** `--only=TradeChecks` passes all sections (439 assertions):
+
+- Registry: unpriced goods have no curve, and want scores now use make-or-buy gain, as `Lists` does.
+- Food: rewritten for opening settlement of all-stock agreements. Pay on delivery moved to MadeToOrder.
+- MadeToOrder: `OrderWorld(fabricOnly: true)` zeroes every other craft priority, so only fabric is made to order.
+  With a labour price, Pots, tents and tools all trade to order.
+- New sections: offer sets, `Pots` and `Published`.
+
+`python Tools/Docs/Check-CurrentContract.py` passes.
 
 **Still to do:**
 
-- Run the remaining trade sections: Registry, Replay, Persistence, Food and MadeToOrder. Expect Food and MadeToOrder to
-  need expectation updates, because escrow and delivery timing changed.
-- Run the fixed suite: `./Tools/Test-Headless.ps1 -Seeds 0`, or the headless dll with `--jobs=N`.
 - Run the census and confirm off equals reference exactly.
-- Run `python Tools/Docs/Check-CurrentContract.py`.
-- Add checks for the new goods, offers, all-stock opening settlement and the split-leg deliverable share.
-- Update `Docs/Trade.md`, `Docs/CurrentSimulationContract.md`, `Docs/TurnResolutionPasses.md` and the AGENTS.md trade row.
+- Add a resolver-level check that goods made for export are held back from recipe inputs and Hand Tool coverage.
+- Rewrite `Docs/Trade.md` for the 11 goods and split legs; it carries a superseded note.
+- Update `Docs/CurrentSimulationContract.md`, `Docs/TurnResolutionPasses.md` and the AGENTS.md trade row.
 
 **Last measured census** (before this commit; five worlds C1, C2, C3, P1, A1; Standard/80; 50 turns):
 
