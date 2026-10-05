@@ -381,7 +381,9 @@ internal static class Program
         foreach(var s in sample)
         {
             int naturalSlots=s.CountClass=="exact1"?1:s.CountClass=="exact2"?2:3;
-            results.Add(RunCase(worlds[s.Seed],s,naturalSlots,"natural",1.0,turns));\n            results.Add(RunCase(worlds[s.Seed],s,naturalSlots,"labor80",0.80,turns));\n            results.Add(RunCase(worlds[s.Seed],s,naturalSlots,"labor60",0.60,turns));
+            results.Add(RunCase(worlds[s.Seed],s,naturalSlots,"natural",1.0,turns));
+            results.Add(RunCase(worlds[s.Seed],s,naturalSlots,"labor80",0.80,turns));
+            results.Add(RunCase(worlds[s.Seed],s,naturalSlots,"labor60",0.60,turns));
             if(s.CountClass=="3plus"){results.Add(RunCase(worlds[s.Seed],s,1,"paired",1.0,turns));results.Add(RunCase(worlds[s.Seed],s,2,"paired",1.0,turns));}
             else if(s.CountClass=="exact2") results.Add(RunCase(worlds[s.Seed],s,1,"paired",1.0,turns));
             turns.Flush();
