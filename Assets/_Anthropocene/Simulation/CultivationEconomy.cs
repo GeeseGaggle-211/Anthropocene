@@ -78,41 +78,83 @@ namespace Anthropocene.Simulation
         }
     }
 
+    // Cultivation and Fisheries share the same bounded effort-to-capital
+    // transform. Keeping these equations neutral avoids making either food
+    // system depend on the other's ecological or planning rules.
+    public static class NeolithicCapital
+    {
+        public static double Intensity(SimulationConfig config, double capital)
+            => Math.Min(1, config.ReferenceIntensity * Math.Sqrt(Math.Max(0, capital)));
+
+        public static double EffortForCapital(SimulationConfig config, double capital)
+        {
+            double e = Math.Max(0, capital);
+            double factor = config.Neolithic.CultivationMarginalEffortMultiplierPerTenth;
+            if (factor <= 1 || e <= 1) return e;
+            double rate = Math.Log(factor) / .1;
+            double q = Intensity(config, e);
+            return 1 + 2 / (config.ReferenceIntensity * rate) *
+                (Math.Exp(rate * (q - config.ReferenceIntensity)) - 1);
+        }
+
+        public static double AdditionalEffort(SimulationConfig config,
+            double fromCapital, double toCapital)
+        {
+            if (toCapital <= fromCapital) return 0;
+            if (config.Neolithic.CultivationMarginalEffortMultiplierPerTenth <= 1)
+                return toCapital - fromCapital;
+            return Math.Max(0, EffortForCapital(config, toCapital) -
+                EffortForCapital(config, fromCapital));
+        }
+
+        public static double CapitalForEffort(SimulationConfig config, double effort)
+        {
+            double weight = Math.Max(0, effort);
+            double factor = config.Neolithic.CultivationMarginalEffortMultiplierPerTenth;
+            if (factor <= 1 || weight <= 1) return weight;
+            double rate = Math.Log(factor) / .1;
+            double q = config.ReferenceIntensity + Math.Log(1 +
+                (weight - 1) * config.ReferenceIntensity * rate / 2) / rate;
+            return Math.Pow(Math.Min(1, q) / config.ReferenceIntensity, 2);
+        }
+
+        public static double Decay(SimulationConfig config, double capital,
+            double operatingFraction, double years)
+            => capital * Math.Exp(-Math.Log(2) / config.Neolithic.DecayHalfLifeYears *
+                (1 - Numbers.Clamp(operatingFraction, 0, 1)) * years);
+
+        public static double MeanDecayedCapital(SimulationConfig config, double capital,
+            double operatingFraction, double years)
+        {
+            double rate = Math.Log(2) / config.Neolithic.DecayHalfLifeYears *
+                (1 - Numbers.Clamp(operatingFraction, 0, 1));
+            return Math.Max(0, capital) * EcologyMath.MeanExponential(rate, years);
+        }
+    }
+
     public static class CultivationEconomy
     {
         public static bool Enabled(Camp camp) => camp.Technology == Technology.Cultivation || camp.Technologies[(int)Technology.Cultivation];
         public static bool HusbandryEnabled(Camp camp) => camp.Technology == Technology.AnimalHusbandry || camp.Technologies != null && camp.Technologies[(int)Technology.AnimalHusbandry];
         public static bool EconomyEnabled(Camp camp) => Enabled(camp) || HusbandryEnabled(camp);
-        public static double Intensity(SimulationConfig c, double capital) => Math.Min(1, c.ReferenceIntensity * Math.Sqrt(Math.Max(0, capital)));
+        public static bool EconomyEnabled(WorldState world, Camp camp)
+            => EconomyEnabled(camp) || NeolithicCapabilities.FeatureFishingEnabled(world, camp);
+        public static double Intensity(SimulationConfig c, double capital) => NeolithicCapital.Intensity(c, capital);
         // Capital remains the saved physical field state. This derived labor
         // weight leaves all q <= qt unchanged, then raises marginal effort by
         // the configured factor for every additional .1 intensity. Value and
         // first derivative agree with the legacy quadratic curve at qt.
         public static double EffortForCapital(SimulationConfig c, double capital)
-        {
-            double e = Math.Max(0, capital);
-            double factor = c.Neolithic.CultivationMarginalEffortMultiplierPerTenth;
-            if (factor <= 1 || e <= 1) return e;
-            double rate = Math.Log(factor) / .1;
-            double q = Intensity(c, e);
-            return 1 + 2 / (c.ReferenceIntensity * rate) * (Math.Exp(rate * (q - c.ReferenceIntensity)) - 1);
-        }
+            => NeolithicCapital.EffortForCapital(c, capital);
         public static double AdditionalEffort(SimulationConfig c, double fromCapital, double toCapital)
-        {
-            if (toCapital <= fromCapital) return 0;
-            if (c.Neolithic.CultivationMarginalEffortMultiplierPerTenth <= 1) return toCapital - fromCapital;
-            return Math.Max(0, EffortForCapital(c, toCapital) - EffortForCapital(c, fromCapital));
-        }
+            => NeolithicCapital.AdditionalEffort(c, fromCapital, toCapital);
         public static double CapitalForEffort(SimulationConfig c, double effort)
-        {
-            double weight = Math.Max(0, effort);
-            double factor = c.Neolithic.CultivationMarginalEffortMultiplierPerTenth;
-            if (factor <= 1 || weight <= 1) return weight;
-            double rate = Math.Log(factor) / .1;
-            double q = c.ReferenceIntensity + Math.Log(1 + (weight - 1) * c.ReferenceIntensity * rate / 2) / rate;
-            return Math.Pow(Math.Min(1, q) / c.ReferenceIntensity, 2);
-        }
-        public static double Decay(SimulationConfig c, double capital, double operatingFraction, double years) => capital * Math.Exp(-Math.Log(2) / c.Neolithic.DecayHalfLifeYears * (1 - Numbers.Clamp(operatingFraction, 0, 1)) * years);
+            => NeolithicCapital.CapitalForEffort(c, effort);
+        public static double Decay(SimulationConfig c, double capital, double operatingFraction, double years)
+            => NeolithicCapital.Decay(c, capital, operatingFraction, years);
+        public static double MeanDecayedCapital(SimulationConfig c, double capital,
+            double operatingFraction, double years)
+            => NeolithicCapital.MeanDecayedCapital(c, capital, operatingFraction, years);
         public static void Factors(SimulationConfig c, Tile t, out double build, out double maintenance)
         {
             var n = c.Neolithic;
@@ -165,13 +207,29 @@ namespace Anthropocene.Simulation
         // claim or field plan. Count every nearby land tile in the original
         // footprint average, with only this camp's fields contributing q.
         internal static void UpdateVillageAtBoundary(WorldState w, Camp camp, TurnRecord record)
+            => UpdateVillageAtBoundary(w, camp, record, 0, 0, false);
+
+        // Agriculture and Fishing share one endpoint transition. Agriculture
+        // retains its original footprint threshold; a Fishing village needs
+        // both mature worked grounds and enough realized catch to support meals.
+        internal static void UpdateVillageAtBoundary(WorldState w, Camp camp, TurnRecord record,
+            double fishingMaturity, double fishingMealSupport, bool departing)
         {
-            if (!Enabled(camp) || camp.Population <= 0) return;
-            var land = w.Map.Radius(camp.Tile, 1).Where(id => w.Tiles[id].TraversableLand).OrderBy(id => id).ToArray();
-            if (land.Length == 0) return;
-            double average = land.Sum(id => w.Tiles[id].CultivationOperator == camp.Id
-                ? Intensity(w.Config, w.Tiles[id].CultivationCapital) : 0) / land.Length;
-            if (average + 1e-10 < VillageIntensity)
+            bool agriculture = Enabled(camp);
+            bool fishing = NeolithicCapabilities.FeatureFishingEnabled(w, camp);
+            if ((!agriculture && !fishing) || camp.Population <= 0 || departing) return;
+
+            double average = 0;
+            if (agriculture)
+            {
+                var land = w.Map.Radius(camp.Tile, 1).Where(id => w.Tiles[id].TraversableLand).OrderBy(id => id).ToArray();
+                if (land.Length > 0)
+                    average = land.Sum(id => w.Tiles[id].CultivationOperator == camp.Id
+                        ? Intensity(w.Config, w.Tiles[id].CultivationCapital) : 0) / land.Length;
+            }
+            bool agriculturalQualification = agriculture && average + 1e-10 >= VillageIntensity;
+            bool fishingQualification = fishing && fishingMaturity + 1e-10 >= .5 && fishingMealSupport + 1e-10 >= .5;
+            if (!agriculturalQualification && !fishingQualification)
             {
                 if (camp.IsVillage) camp.VillageTurns++;
                 return;
@@ -180,7 +238,10 @@ namespace Anthropocene.Simulation
             {
                 camp.IsVillage = true;
                 camp.VillageTurns = 0;
-                record.Log($"Camp {camp.Id} (Player {camp.Player}) has transitioned into a Village (Avg Cultivation {average:F2}).");
+                string reason = agriculturalQualification
+                    ? $"Avg Cultivation {average:F2}"
+                    : $"Fishing maturity {fishingMaturity:F2}, meal support {fishingMealSupport:F2}";
+                record.Log($"Camp {camp.Id} (Player {camp.Player}) has transitioned into a Village ({reason}).");
             }
             camp.VillageTurns++;
         }

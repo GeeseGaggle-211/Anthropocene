@@ -181,7 +181,7 @@ namespace Anthropocene.Simulation
                 double Capped(CraftRecipe r, double amount, bool debit)
                 {
                     if (r.SpecialistOnly && !c.People.HasTech(r.Track) || Rate(r) <= 0) return 0;
-                    if (r.AgricultureOnly && !CultivationEconomy.Enabled(c) || r.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) return 0;
+                    if (!NeolithicProduction.RecipeAvailable(w, c, r)) return 0;
                     if (r.Stone > 0) amount = Math.Min(amount, room[MaterialId.Stone] / r.Stone);
                     if (r.Clay > 0) amount = Math.Min(amount, room[MaterialId.Clay] / r.Clay);
                     if (r.Wood > 0) amount = Math.Min(amount, room[MaterialId.Wood] / r.Wood);
@@ -796,7 +796,7 @@ namespace Anthropocene.Simulation
         internal static Camp Preview(Camp c, EconomicIntent intent, double population)
         {
             var result = new Camp { Id = c.Id, Tile = c.Tile, Population = (int)Math.Ceiling(population), PlantFood = c.PlantFood, AnimalFood = c.AnimalFood, AquaticFood = c.AquaticFood,
-                Inventory = new CampInventory { HandTools = c.Inventory.HandTools, Tools = c.Inventory.Tools, CopperTools = c.Inventory.CopperTools, Cloth = c.Inventory.Cloth, AnimalFabric = c.Inventory.AnimalFabric, LightHousingUnits = c.Inventory.LightHousingUnits, HousingMaterial = c.Inventory.HousingMaterial, HerdingTools = c.Inventory.HerdingTools, HousingUnits = c.Inventory.HousingUnits, Pots = c.Inventory.Pots, FarmTools = c.Inventory.FarmTools, Stone = c.Inventory.Stone, Clay = c.Inventory.Clay, Wood = c.Inventory.Wood } };
+                Inventory = new CampInventory { HandTools = c.Inventory.HandTools, Tools = c.Inventory.Tools, CopperTools = c.Inventory.CopperTools, Cloth = c.Inventory.Cloth, AnimalFabric = c.Inventory.AnimalFabric, LightHousingUnits = c.Inventory.LightHousingUnits, HousingMaterial = c.Inventory.HousingMaterial, HerdingTools = c.Inventory.HerdingTools, FishingTools = c.Inventory.FishingTools, HousingUnits = c.Inventory.HousingUnits, Pots = c.Inventory.Pots, FarmTools = c.Inventory.FarmTools, Stone = c.Inventory.Stone, Clay = c.Inventory.Clay, Wood = c.Inventory.Wood } };
             result.QoL = c.QoL; result.TradeExports = (double[])c.TradeExports?.Clone(); result.TradeImports = (double[])c.TradeImports?.Clone(); result.Bind(c.People); EconomicIntents.Apply(result, intent); return result;
         }
     }

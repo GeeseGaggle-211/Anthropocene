@@ -42,7 +42,9 @@ namespace Anthropocene.Simulation
         {
         }
         internal TileObservation(WorldState world, Tile tile, IReadOnlyList<RiverEdge> rivers, EcologyView projected)
-            : this(tile, tile.Seasons[world.Season], world.Config, rivers, projected, new EcologyCapacity(world, tile, projected, world.Season))
+            : this(tile, tile.Seasons[world.Season], world.Config, rivers, projected,
+                new EcologyCapacity(world, tile, projected, world.Season,
+                    aquaticOverlay: LazyEcology.ProjectAquaticOverlay(world, tile.Id, world.Days, 0)))
         {
         }
         private TileObservation(Tile tile, SeasonData ecology, SimulationConfig config, IReadOnlyList<RiverEdge> rivers, EcologyView? projected, EcologyCapacity? projectedCapacity)
@@ -148,13 +150,118 @@ namespace Anthropocene.Simulation
             Size = Count.Representative < config.HerdSmallCountThreshold ? 1 : Count.Representative <= 20 ? 2 : 3;
         }
     }
+    // Coarse ground knowledge for one society's policy/UI view. Ecology and
+    // fishery state are banded before leaving the observation builder; raw
+    // live aquatic stocks on hidden tiles are never represented here.
+    public sealed class FishingGroundObservation
+    {
+        public readonly int Tile, AccessibleFood, Biomass, Condition, Productivity;
+        public readonly int CapitalIntensity, Operation, OperatorCamp;
+        public readonly EnvironmentKind WaterEnvironment;
+        public readonly bool Visible, Visited, Selected, SitePresent, OperatorKnown, OwnOperator, HasOperation;
+        public readonly IReadOnlyList<int> SeasonalProductivity;
+        internal FishingGroundObservation(int tile, EnvironmentKind waterEnvironment, int accessibleFood, int biomass,
+            int condition, int productivity, int capitalIntensity, int operation, int operatorCamp, bool visible,
+            bool visited, bool selected, bool sitePresent, bool operatorKnown, bool ownOperator, bool hasOperation,
+            int[] seasonalProductivity)
+        {
+            Tile = tile; WaterEnvironment = waterEnvironment; AccessibleFood = accessibleFood; Biomass = biomass;
+            Condition = condition; Productivity = productivity; CapitalIntensity = capitalIntensity; Operation = operation;
+            OperatorCamp = operatorCamp; Visible = visible; Visited = visited; Selected = selected; SitePresent = sitePresent;
+            OperatorKnown = operatorKnown; OwnOperator = ownOperator; HasOperation = hasOperation;
+            SeasonalProductivity = Array.AsReadOnly(seasonalProductivity ?? Array.Empty<int>());
+        }
+        internal static IReadOnlyList<FishingGroundObservation> Build(WorldState world, Camp camp, PlanningIndex index,
+            HashSet<int> visible, IReadOnlyDictionary<int, TileObservation> observedTiles, bool forValidation)
+        {
+            if (forValidation || camp?.People == null || !FishingEconomy.FeatureEnabled(world, camp)) return Array.Empty<FishingGroundObservation>();
+            bool IsFisheryWater(EnvironmentKind environment) => environment == EnvironmentKind.Shallows || environment == EnvironmentKind.Lake;
+            bool InObservationRange(int tile) => tile >= 0 && tile < world.Tiles.Length &&
+                world.Map.Distance(camp.Tile, tile) <= FishingEconomy.GroundRange + 1;
+            var environmentByTile = new Dictionary<int, EnvironmentKind>();
+            foreach (var tile in observedTiles.Values.Where(t => t.Aquatic && InObservationRange(t.Id)).OrderBy(t => t.Id)) environmentByTile[tile.Id] = tile.Environment;
+            foreach (var tile in index.Remembered(camp.People, camp.Player).Where(t => t.Aquatic && IsFisheryWater(t.Environment) && InObservationRange(t.Id)).OrderBy(t => t.Id))
+                if (!environmentByTile.ContainsKey(tile.Id)) environmentByTile[tile.Id] = tile.Environment;
+            var snapshots = (camp.People.FishingGroundKnowledge ?? new List<FishingGroundSnapshot>()).OrderBy(s => s.TileId).ToDictionary(s => s.TileId);
+            foreach (int tile in (camp.LastSelectedFishingGrounds ?? new List<int>()).Where(InObservationRange))
+                if (!environmentByTile.ContainsKey(tile) && tile >= 0 && tile < world.Tiles.Length && IsFisheryWater(world.Tiles[tile].Environment))
+                    environmentByTile[tile] = world.Tiles[tile].Environment;
+            foreach (int tile in snapshots.Keys.Where(InObservationRange))
+                if (!environmentByTile.ContainsKey(tile) && tile >= 0 && tile < world.Tiles.Length && IsFisheryWater(world.Tiles[tile].Environment))
+                    environmentByTile[tile] = world.Tiles[tile].Environment;
+
+            var selected = new HashSet<int>(camp.LastSelectedFishingGrounds ?? new List<int>());
+            var ownCampIds = new HashSet<int>(world.Camps.Where(c => c.SocietyId == camp.SocietyId).Select(c => c.Id));
+            var result = new List<FishingGroundObservation>(environmentByTile.Count);
+            foreach (var pair in environmentByTile.OrderBy(p => p.Key))
+            {
+                int tileId = pair.Key;
+                TileObservation observation = null;
+                bool live = visible.Contains(tileId) && observedTiles.TryGetValue(tileId, out observation);
+                snapshots.TryGetValue(tileId, out var snapshot);
+                bool visited = snapshot != null;
+                int accessible, biomass, condition, productivity;
+                int capitalBand = 0, operationBand = 0, operatorCamp = -1;
+                bool sitePresent = false, operatorKnown = false, ownOperator = false, hasOperation = false;
+                int[] seasonal = Array.Empty<int>();
+                if (live)
+                {
+                    accessible = observation.Food; biomass = observation.PotentialFood; condition = observation.Condition; productivity = observation.Productivity;
+                    if (index.TryFisherySite(tileId, out var site))
+                    {
+                        double capital = FishingEconomy.ProjectedCapital(world, site, world.Days);
+                        capitalBand = Knowledge.Band(FishingEconomy.Intensity(world.Config, capital), 1, world.Config);
+                        sitePresent = capital > 1e-9 || site.OperatorCampId >= 0;
+                        operatorKnown = true; ownOperator = ownCampIds.Contains(site.OperatorCampId);
+                        if (ownOperator) operatorCamp = site.OperatorCampId;
+                    }
+                    if (visited)
+                    {
+                        operationBand = Knowledge.Band(snapshot.OperationFraction, 1, world.Config);
+                        hasOperation = true;
+                        if (!operatorKnown)
+                        {
+                            operatorKnown = true; ownOperator = ownCampIds.Contains(snapshot.OperatorCampId);
+                            if (ownOperator) operatorCamp = snapshot.OperatorCampId;
+                        }
+                    }
+                }
+                else if (visited)
+                {
+                    accessible = Knowledge.Band(snapshot.AccessibleFood, 70, world.Config);
+                    biomass = Knowledge.Band(snapshot.Biomass, 700, world.Config);
+                    condition = Knowledge.Band(snapshot.Condition, 1, world.Config);
+                    double projectedCapital = FishingEconomy.ProjectedCapital(world,
+                        new FisherySite { TileId = tileId, Capital = snapshot.Capital, LastUpdatedDays = snapshot.ObservedDays }, world.Days);
+                    capitalBand = Knowledge.Band(FishingEconomy.Intensity(world.Config, projectedCapital), 1, world.Config);
+                    var profile = snapshot.ProductiveProfile ?? Array.Empty<double>();
+                    productivity = Knowledge.Band(profile.Length == 0 ? 0 : profile.Average() * world.Config.BaseDays, 30, world.Config);
+                    seasonal = profile.Select(rate => Knowledge.Band(rate * world.Config.BaseDays, 30, world.Config)).ToArray();
+                    operationBand = Knowledge.Band(snapshot.OperationFraction, 1, world.Config); hasOperation = true;
+                    sitePresent = projectedCapital > 1e-9 || snapshot.OperatorCampId >= 0;
+                    operatorKnown = true; ownOperator = ownCampIds.Contains(snapshot.OperatorCampId);
+                    if (ownOperator) operatorCamp = snapshot.OperatorCampId;
+                }
+                else
+                {
+                    // Remembered geometry without an economic survey has the
+                    // approved conservative prior: no opening yield/capital.
+                    accessible = biomass = condition = productivity = 0;
+                }
+                result.Add(new FishingGroundObservation(tileId, pair.Value, accessible, biomass, condition,
+                    productivity, capitalBand, operationBand, operatorCamp, live, visited, selected.Contains(tileId),
+                    sitePresent, operatorKnown, ownOperator, hasOperation, seasonal));
+            }
+            return Array.AsReadOnly(result.ToArray());
+        }
+    }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 18;
+        public const int SchemaVersion = 19;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
-        public readonly bool Watercraft;
+        public readonly bool Watercraft, FishingEnabled;
         public readonly IReadOnlyDictionary<int, TileObservation> Tiles;
         // Remembered knowledge (explored static geography outside current vision, and known-settlement snapshots). Never live data.
         public readonly IReadOnlyDictionary<int, RememberedTileObservation> RememberedTiles;
@@ -168,6 +275,7 @@ namespace Anthropocene.Simulation
         public readonly IReadOnlyList<HerdObservation> Herds;
         public readonly IReadOnlyList<SiteCoverageObservation> SiteCoverage;
         public readonly IReadOnlyList<AgriculturalSiteObservation> AgriculturalSites;
+        public readonly IReadOnlyList<FishingGroundObservation> FishingGrounds;
         public readonly IReadOnlyDictionary<int, int> LikelyHerdDestinations;
         public readonly IReadOnlyList<double> Experience;
         public readonly IReadOnlyList<TechnologyStatus> TechnologyStatuses;
@@ -192,10 +300,12 @@ namespace Anthropocene.Simulation
             FoodCondition = Knowledge.Band(camp.Food, Math.Max(1, LinkedPopulation * w.Config.Consumption * w.Config.GenerationIntervals), w.Config);
             DeficitTurns = camp.DeficitTurns; Turn = w.Turn; PolicySeed = camp.People.PolicySeed;
             Watercraft = camp.Technologies[(int)Technology.Watercraft]; Map = w.Map;
+            FishingEnabled = w.Config.NeolithicFishingEnabled && Watercraft;
             WaterMovementCost = Math.Max(1, w.Config.HunterMovement / w.Config.WaterMovement); MinimumCamp = w.Config.MinimumCamp; MinimumCampSpacing = w.Config.MinimumCampSpacing; HunterMovement = w.Config.HunterMovement; CampMovement = w.Config.CampMovement; Inertia = w.Config.RelocationInertia;
             SupplyRange = w.Config.SupplyRange; SustainableHuntPopulation = w.Config.SustainableHuntPopulation;
             using (PhaseProfile.Scope("Tiles"))
                 Tiles = new ReadOnlyDictionary<int, TileObservation>(visible.OrderBy(n => n).ToDictionary(n => n, n => new TileObservation(w, w.Tiles[n], w.Rivers, index.Ecology(n))));
+            FishingGrounds = FishingGroundObservation.Build(w, camp, index, visible, Tiles, forValidation);
             using (PhaseProfile.Scope("Knowledge"))
             {
                 RememberedTiles = new ReadOnlyDictionary<int, RememberedTileObservation>(forValidation ? new Dictionary<int, RememberedTileObservation>()

@@ -116,7 +116,7 @@ namespace Anthropocene.Presentation
             {
                 var human = world.Camps.FirstOrDefault(c => c.Player == 0 && c.Population > 0);
                 if (human == null || world.LinkedPopulation(human) <= 0) { Finish(false, $"the human camp died at turn {world.Turn}; the player turn loop cannot continue. {configuration}"); yield break; }
-                if (CultivationEconomy.EconomyEnabled(human) && human.EconomyAutomationTurns != -1)
+                if (CultivationEconomy.EconomyEnabled(world, human) && human.EconomyAutomationTurns != -1)
                 {
                     var automated = EconomicIntent.From(human); automated.AutomationTurns = -1;
                     Queue(new Order(OrderKind.Economy, human.Id) { Economy = automated });

@@ -4,6 +4,17 @@ using System.Linq;
 
 namespace Anthropocene.Simulation
 {
+    public static class NeolithicCapabilities
+    {
+        // Crafting eligibility follows the feature + Watercraft gate; a nearby
+        // legal ground is a separate resident-harvest capability.
+        public static bool FeatureFishingEnabled(WorldState world, Camp camp)
+            => FishingEconomy.FeatureEnabled(world, camp);
+
+        public static bool ResidentFishingEnabled(WorldState world, Camp camp)
+            => FeatureFishingEnabled(world, camp) && FishingEconomy.HasLegalSource(world, camp);
+    }
+
     /// <summary>
     /// Shared conversions for food stocks whose target is a physical duration.
     /// Actual turn consumption still uses the captured TurnHorizon intervals.
@@ -42,13 +53,13 @@ namespace Anthropocene.Simulation
         public static readonly string[] Convergence = { WheelAndAxle, CopperWorking };
     }
     // Append new values so existing saved/history enum ordinals remain stable.
-    public enum CraftGood { HandTools, Pots, Cloth, FarmTools, Housing, Tools, AnimalFabric, LightHousing, HerdingTools, HousingMaterial }
+    public enum CraftGood { HandTools, Pots, Cloth, FarmTools, Housing, Tools, AnimalFabric, LightHousing, HerdingTools, HousingMaterial, FishingTools }
     public sealed class CraftRecipe
     {
         public CraftGood Good;
         public string Specialist, Track;
         public double Rate, Stone, Clay, Wood, PlantFood, AnimalFood, AnimalFabric, ConstructionMaterial, HousingMaterial;
-        public bool Equipment, SpecialistOnly, HusbandryOnly, AgricultureOnly;
+        public bool Equipment, SpecialistOnly, HusbandryOnly, AgricultureOnly, AgricultureOrFishing, FishingOnly;
     }
     [Serializable]
     public sealed class ProductionReceipt
@@ -245,23 +256,73 @@ namespace Anthropocene.Simulation
         public static CraftRecipe[] Recipes(SimulationConfig config)
         {
             var n = config.Neolithic;
-            return new[] {
+            var recipes = new[] {
                 new CraftRecipe { Good = CraftGood.HandTools, Specialist = WorkforceRoles.Toolmaker, Track = NeolithicTech.Toolmaking, Rate = n.HandToolsOutput, Stone = n.StonePerHandTool },
                 new CraftRecipe { Good = CraftGood.Pots, Specialist = WorkforceRoles.Potter, Track = NeolithicTech.Pottery, Rate = n.PotsOutput, Clay = n.ClayPerPot, Equipment = true },
-                new CraftRecipe { Good = CraftGood.Cloth, Specialist = WorkforceRoles.Weaver, Track = NeolithicTech.Weaving, Rate = n.WeaverFabricOutputPerBaseDays, PlantFood = n.PlantFoodPerFabricUnit, Equipment = true, AgricultureOnly = true },
+                new CraftRecipe { Good = CraftGood.Cloth, Specialist = WorkforceRoles.Weaver, Track = NeolithicTech.Weaving, Rate = n.WeaverFabricOutputPerBaseDays, PlantFood = n.PlantFoodPerFabricUnit, Equipment = true, AgricultureOrFishing = true },
                 new CraftRecipe { Good = CraftGood.FarmTools, Specialist = WorkforceRoles.Carpenter, Track = NeolithicTech.Carpentry, Rate = n.FarmToolsOutput, Wood = n.WoodPerFarmTool, Equipment = true, AgricultureOnly = true },
                 // Housing is split into two Builder steps at twice today's rate each, so
                 // labour, tool wear (assembly only) and material per Housing are unchanged.
-                new CraftRecipe { Good = CraftGood.Housing, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction, Rate = 2 * n.BuilderHousingOutputPerBaseDays, HousingMaterial = 1, Equipment = true, AgricultureOnly = true },
+                new CraftRecipe { Good = CraftGood.Housing, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction, Rate = 2 * n.BuilderHousingOutputPerBaseDays, HousingMaterial = 1, Equipment = true, AgricultureOrFishing = true },
                 new CraftRecipe { Good = CraftGood.Tools, Specialist = WorkforceRoles.Toolmaker, Track = NeolithicTech.Toolmaking, Rate = n.ToolsOutput, Stone = n.StonePerTool, Wood = n.WoodPerTool, SpecialistOnly = true },
                 new CraftRecipe { Good = CraftGood.AnimalFabric, Specialist = WorkforceRoles.Weaver, Track = NeolithicTech.Weaving, Rate = n.WeaverFabricOutputPerBaseDays, AnimalFood = 1, Equipment = true, HusbandryOnly = true },
                 new CraftRecipe { Good = CraftGood.LightHousing, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction, Rate = n.LightHousingBuilderOutputPerBaseDays, AnimalFabric = n.AnimalFabricPerLightHousing, Equipment = true, HusbandryOnly = true },
                 new CraftRecipe { Good = CraftGood.HerdingTools, Specialist = WorkforceRoles.Carpenter, Track = NeolithicTech.Carpentry, Rate = n.FarmToolsOutput, Wood = 1, Stone = 1, Equipment = true, HusbandryOnly = true },
-                new CraftRecipe { Good = CraftGood.HousingMaterial, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction, Rate = 2 * n.BuilderHousingOutputPerBaseDays, ConstructionMaterial = n.HousingMaterialUnitsPerHousing, AgricultureOnly = true }
+                new CraftRecipe { Good = CraftGood.HousingMaterial, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction, Rate = 2 * n.BuilderHousingOutputPerBaseDays, ConstructionMaterial = n.HousingMaterialUnitsPerHousing, AgricultureOrFishing = true }
             };
+            return config.NeolithicFishingEnabled ? recipes.Concat(new[] {
+                new CraftRecipe { Good = CraftGood.FishingTools, Specialist = WorkforceRoles.Carpenter, Track = NeolithicTech.Carpentry, Rate = n.FarmToolsOutput, Stone = 1, Wood = 1, Equipment = true, FishingOnly = true }
+            }).ToArray() : recipes;
         }
-        public static double Stock(Camp c, CraftGood good) => good == CraftGood.HandTools ? c.Inventory.HandTools : good == CraftGood.Pots ? c.Inventory.Pots : good == CraftGood.Cloth ? c.Inventory.Cloth : good == CraftGood.FarmTools ? c.Inventory.FarmTools : good == CraftGood.Tools ? c.Inventory.Tools : good == CraftGood.AnimalFabric ? c.Inventory.AnimalFabric : good == CraftGood.LightHousing ? c.Inventory.LightHousingUnits : good == CraftGood.HerdingTools ? c.Inventory.HerdingTools : good == CraftGood.HousingMaterial ? c.Inventory.HousingMaterial : c.Inventory.HousingUnits;
-        public static double Priority(Camp c, CraftGood good) => good == CraftGood.HandTools ? c.CraftingPriorities.HandTools : good == CraftGood.Pots ? c.CraftingPriorities.Pots : good == CraftGood.Cloth ? c.CraftingPriorities.Cloth : good == CraftGood.FarmTools ? c.CraftingPriorities.FarmTools : good == CraftGood.Tools ? c.CraftingPriorities.Tools : good == CraftGood.AnimalFabric ? c.CraftingPriorities.AnimalFabric : good == CraftGood.LightHousing ? c.CraftingPriorities.LightHousing : good == CraftGood.HerdingTools ? c.CraftingPriorities.HerdingTools : c.CraftingPriorities.Housing; // HousingMaterial shares Housing's priority.
+        public static double Stock(Camp c, CraftGood good)
+        {
+            switch (good)
+            {
+                case CraftGood.HandTools: return c.Inventory.HandTools;
+                case CraftGood.Pots: return c.Inventory.Pots;
+                case CraftGood.Cloth: return c.Inventory.Cloth;
+                case CraftGood.FarmTools: return c.Inventory.FarmTools;
+                case CraftGood.Housing: return c.Inventory.HousingUnits;
+                case CraftGood.Tools: return c.Inventory.Tools;
+                case CraftGood.AnimalFabric: return c.Inventory.AnimalFabric;
+                case CraftGood.LightHousing: return c.Inventory.LightHousingUnits;
+                case CraftGood.HerdingTools: return c.Inventory.HerdingTools;
+                case CraftGood.HousingMaterial: return c.Inventory.HousingMaterial;
+                case CraftGood.FishingTools: return c.Inventory.FishingTools;
+                default: throw new ArgumentOutOfRangeException(nameof(good), good, "Unknown craft good.");
+            }
+        }
+        public static double Priority(Camp c, CraftGood good)
+        {
+            switch (good)
+            {
+                case CraftGood.HandTools: return c.CraftingPriorities.HandTools;
+                case CraftGood.Pots: return c.CraftingPriorities.Pots;
+                case CraftGood.Cloth: return c.CraftingPriorities.Cloth;
+                case CraftGood.FarmTools: return c.CraftingPriorities.FarmTools;
+                case CraftGood.Housing: return c.CraftingPriorities.Housing;
+                case CraftGood.Tools: return c.CraftingPriorities.Tools;
+                case CraftGood.AnimalFabric: return c.CraftingPriorities.AnimalFabric;
+                case CraftGood.LightHousing: return c.CraftingPriorities.LightHousing;
+                case CraftGood.HerdingTools: return c.CraftingPriorities.HerdingTools;
+                case CraftGood.HousingMaterial: return c.CraftingPriorities.Housing;
+                case CraftGood.FishingTools: return c.CraftingPriorities.FishingTools;
+                default: throw new ArgumentOutOfRangeException(nameof(good), good, "Unknown craft good.");
+            }
+        }
+        public static bool RecipeAvailable(WorldState w, Camp c, CraftRecipe recipe)
+        {
+            if (recipe == null) return false;
+            if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c)) return false;
+            if (recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) return false;
+            if (recipe.AgricultureOrFishing && !CultivationEconomy.Enabled(c) &&
+                !NeolithicCapabilities.FeatureFishingEnabled(w, c)) return false;
+            // Only the Fishing Tools recipe needs the local-source check. Keep
+            // it behind the recipe gate so unrelated eligibility reads do not
+            // pay Fishing visibility/access costs.
+            if (recipe.FishingOnly && !NeolithicCapabilities.ResidentFishingEnabled(w, c)) return false;
+            return true;
+        }
         // Schedule position: Housing Material sits immediately before the Housing assembly that consumes it.
         internal static double ScheduleKey(CraftGood good) => good == CraftGood.HousingMaterial ? (int)CraftGood.Housing - .5 : (int)good;
         // One Builder pool makes Housing Material and assembles it in the same turn.
@@ -384,8 +445,6 @@ namespace Anthropocene.Simulation
                 throw new InvalidOperationException("Duplicate fixed housing stock for a camp site.");
             w.FixedHousing = w.FixedHousing.OrderBy(s => s.CampId).ThenBy(s => s.Tile).ToList();
         }
-        private static bool HusbandryOnly(CraftGood good) => good == CraftGood.AnimalFabric || good == CraftGood.LightHousing || good == CraftGood.HerdingTools;
-        private static bool AgricultureOnly(CraftGood good) => good == CraftGood.Cloth || good == CraftGood.FarmTools || good == CraftGood.Housing || good == CraftGood.HousingMaterial;
         // Compatibility wrapper for callers that resolve both agricultural work
         // and pot depreciation before forecasting production.
         public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation = -1, bool postAgriculturalResolution = false)
@@ -420,11 +479,18 @@ namespace Anthropocene.Simulation
             double housingGapPeople = HousingGapPeople(w, c, residents, w.Days + years * w.Config.DaysPerYear);
             double lightHousingTarget = housingGapPeople / n.LightHousingPeoplePerUnit;
             bool lightHousingUseful = Priority(c, CraftGood.LightHousing) > 0 && CultivationEconomy.Workers(c, WorkforceRoles.Builder) + CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0;
-            double target = good == CraftGood.Cloth ? Math.Max(0, clothingTarget - Math.Max(0, fabric)) :
-                good == CraftGood.AnimalFabric ? Math.Max(0, clothingTarget - Math.Max(0, cloth)) + (lightHousingUseful ? lightHousingTarget : 0) :
-                good == CraftGood.Housing || good == CraftGood.LightHousing ? 0 :
-                good == CraftGood.FarmTools ? FarmToolDemand(w, c, years, fieldWorkAlreadyResolved) + Stock(c, good) :
-                good == CraftGood.HerdingTools ? HerdingToolDemand(w, c, years, fieldWorkAlreadyResolved) + Stock(c, good) : c.FarmToolsTarget;
+            double target;
+            switch (good)
+            {
+                case CraftGood.Cloth: target = Math.Max(0, clothingTarget - Math.Max(0, fabric)); break;
+                case CraftGood.AnimalFabric: target = Math.Max(0, clothingTarget - Math.Max(0, cloth)) + (lightHousingUseful ? lightHousingTarget : 0); break;
+                case CraftGood.Housing:
+                case CraftGood.LightHousing: target = 0; break;
+                case CraftGood.FarmTools: target = FarmToolDemand(w, c, years, fieldWorkAlreadyResolved) + Stock(c, good); break;
+                case CraftGood.HerdingTools: target = HerdingToolDemand(w, c, years, fieldWorkAlreadyResolved) + Stock(c, good); break;
+                case CraftGood.FishingTools: target = FishingToolDemand(w, c, years, fieldWorkAlreadyResolved) + Stock(c, good); break;
+                default: throw new ArgumentOutOfRangeException(nameof(good), good, "Demand is not defined for this craft good.");
+            }
             // Housing demand is the unsheltered people divided by what one unit of that good shelters (tents shelter fewer than houses).
             if (good == CraftGood.Housing) return housingGapPeople / n.HousingPeoplePerUnit;
             if (good == CraftGood.LightHousing) return lightHousingTarget;
@@ -443,6 +509,17 @@ namespace Anthropocene.Simulation
             double expectedUse = managementAlreadyResolved ? 0 : HerdingTooling.Plan(w, c, years).ToolsConsumed;
             double availableAfterUse = Math.Max(0, stock - expectedUse);
             return Math.Max(0, usefulNextPeriod - availableAfterUse);
+        }
+        public static double FishingToolDemand(WorldState w, Camp c, double years, bool fishingAlreadyResolved = false)
+        {
+            if (!FishingEconomy.CanFish(w, c) || !(years > 0)) return 0;
+            double fishers = Math.Max(0, CultivationEconomy.Workers(c, WorkforceRoles.Fisher));
+            if (!(fishers > 0)) return 0;
+            var n = w.Config.Neolithic;
+            double usefulNextPeriod = fishers * years / n.FishingToolFisherYearsPerUnit;
+            double stock = Math.Max(0, c.Inventory.FishingTools);
+            double expectedUse = fishingAlreadyResolved ? 0 : Math.Min(fishers * years, stock * n.FishingToolFisherYearsPerUnit) / n.FishingToolFisherYearsPerUnit;
+            return Math.Max(0, usefulNextPeriod - Math.Max(0, stock - expectedUse));
         }
         public static double FarmToolDemand(WorldState w, Camp c, double years, bool fieldWorkAlreadyResolved = false)
         {
@@ -472,7 +549,7 @@ namespace Anthropocene.Simulation
                     baseDemand[good] = value = DemandWithoutToolReplacement(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed);
                 return value;
             }
-            var recipes = ProductionOrder.Sort(Recipes(w.Config).Where(r => (r.Equipment || r.Good == CraftGood.HousingMaterial) && (!r.AgricultureOnly || CultivationEconomy.Enabled(c)) && (!r.HusbandryOnly || CultivationEconomy.HusbandryEnabled(c))),
+            var recipes = ProductionOrder.Sort(Recipes(w.Config).Where(r => (r.Equipment || r.Good == CraftGood.HousingMaterial) && RecipeAvailable(w, c, r)),
                 good => Priority(c, good), order);
             // Under the Value order every recipe claims coverage and material in value
             // order across roles; otherwise the roles run in turn.
@@ -645,6 +722,7 @@ namespace Anthropocene.Simulation
         private static double DemandWithoutToolReplacement(WorldState w, Camp c, CraftGood good, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed)
         {
             if (good == CraftGood.FarmTools) return Math.Max(0, FarmToolDemand(w, c, years, fieldWorkAlreadyResolved)) + c.TradeExport(good);
+            if (good == CraftGood.FishingTools) return FishingToolDemand(w, c, years, fieldWorkAlreadyResolved);
             return Demand(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed);
         }
         private static double IntervalsForYears(WorldState w, double years) => Math.Max(0, years) * w.Config.DaysPerYear / w.Config.BaseDays;
@@ -706,7 +784,7 @@ namespace Anthropocene.Simulation
         public static ManufacturingFoodPlan FabricFeedstockInputs(WorldState w, Camp c, double intervals, double years, double residentPopulation = -1, bool fieldWorkAlreadyResolved = false, bool potsAlreadyDecayed = false, double plantFoodBudget = -1, double animalFoodBudget = -1, ProductionOrder order = null)
         {
             var result = new ManufacturingFoodPlan();
-            if (!CultivationEconomy.EconomyEnabled(c) || c.Population <= 0) return result;
+            if (!CultivationEconomy.EconomyEnabled(w, c) || c.Population <= 0) return result;
             var coverage = new ToolCoverageBudget(w, c, intervals);
             var planned = MaterialEconomy.Forecast(w, c, Recipes(w.Config), intervals, years, coverage.Remaining, true, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, plantFoodBudget, animalFoodBudget, null, order);
             result.PlantFood = planned[CraftGood.Cloth] * w.Config.Neolithic.PlantFoodPerFabricUnit;
@@ -791,8 +869,7 @@ namespace Anthropocene.Simulation
         }
         public static double Produce(WorldState w, Camp c, CraftRecipe recipe, string role, double workerIntervals, double intervals, double usefulDemand, ref double equipmentIntervals, TurnRecord record, ToolCoverageBudget coverage = null, HousingMaterialPlan housing = null, ProductionOrder order = null)
         {
-            if (!CultivationEconomy.EconomyEnabled(c) || workerIntervals <= 0 || recipe.Rate <= 0 || usefulDemand <= 0 || intervals <= 0) return 0;
-            if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c) || recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) return 0;
+            if (!CultivationEconomy.EconomyEnabled(w, c) || !RecipeAvailable(w, c, recipe) || workerIntervals <= 0 || recipe.Rate <= 0 || usefulDemand <= 0 || intervals <= 0) return 0;
             bool specialist = role == recipe.Specialist && c.People.HasTech(recipe.Track);
             if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) return 0;
             double rate = SpecialistProductivity.CraftRate(w, c, recipe, role);
@@ -858,7 +935,7 @@ namespace Anthropocene.Simulation
             inv.HandTools -= consumedHand; inv.Tools -= consumedTools;
             inv.Stone -= amount * recipe.Stone; inv.Wood -= wood; inv.Clay -= clay; c.PlantFood -= amount * recipe.PlantFood; c.AnimalFood -= amount * recipe.AnimalFood; inv.AnimalFabric -= amount * recipe.AnimalFabric; inv.HousingMaterial -= amount * recipe.HousingMaterial;
             if (housing != null) housing.CompleteDirect(recipe, amount);
-            switch (recipe.Good) { case CraftGood.HandTools: inv.HandTools += amount; break; case CraftGood.Pots: inv.Pots += amount; break; case CraftGood.Cloth: inv.Cloth += amount; break; case CraftGood.FarmTools: inv.FarmTools += amount; break; case CraftGood.Housing: AddFixedHousing(w, c, amount, record.Duration > 0 ? record.StartDays + record.Duration : w.Days + intervals * w.Config.BaseDays); break; case CraftGood.Tools: inv.Tools += amount; break; case CraftGood.AnimalFabric: inv.AnimalFabric += amount; break; case CraftGood.LightHousing: inv.LightHousingUnits += amount; break; case CraftGood.HerdingTools: inv.HerdingTools += amount; break; case CraftGood.HousingMaterial: inv.HousingMaterial += amount; break; }
+            switch (recipe.Good) { case CraftGood.HandTools: inv.HandTools += amount; break; case CraftGood.Pots: inv.Pots += amount; break; case CraftGood.Cloth: inv.Cloth += amount; break; case CraftGood.FarmTools: inv.FarmTools += amount; break; case CraftGood.Housing: AddFixedHousing(w, c, amount, record.Duration > 0 ? record.StartDays + record.Duration : w.Days + intervals * w.Config.BaseDays); break; case CraftGood.Tools: inv.Tools += amount; break; case CraftGood.AnimalFabric: inv.AnimalFabric += amount; break; case CraftGood.LightHousing: inv.LightHousingUnits += amount; break; case CraftGood.HerdingTools: inv.HerdingTools += amount; break; case CraftGood.HousingMaterial: inv.HousingMaterial += amount; break; case CraftGood.FishingTools: inv.FishingTools += amount; break; default: throw new ArgumentOutOfRangeException(nameof(recipe.Good), recipe.Good, "Unknown craft good."); }
             // Output first fills what this camp still owes for export; Hand Tools made for export are not this turn's coverage.
             double forExport = c.TradeOwed == null ? 0 : Math.Min(amount, Math.Max(0, c.TradeOwed[(int)recipe.Good]));
             if (forExport > 0) c.TradeOwed[(int)recipe.Good] -= forExport;
@@ -895,7 +972,7 @@ namespace Anthropocene.Simulation
             c.TradeExports = (double[])needs?.Exports?.Clone(); c.TradeOwed = (double[])c.TradeExports?.Clone();
             DepreciateHousing(w, c, years, residents);
             DepreciatePots(w, c, years);
-            if (CultivationEconomy.EconomyEnabled(c))
+            if (CultivationEconomy.EconomyEnabled(w, c))
             {
                 var recipes = Recipes(w.Config);
                 double equipment = (c.Inventory.HandTools + c.Inventory.Tools + (c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools : 0)) * intervals / w.Config.Neolithic.ToolCoveragePerWorker;
@@ -923,7 +1000,7 @@ namespace Anthropocene.Simulation
                         {
                             bool toolGood = recipe.Good == CraftGood.HandTools || recipe.Good == CraftGood.Tools;
                             if (toolGood != (balanceLayer == 0)) continue;
-                            if (recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c) || recipe.AgricultureOnly && !CultivationEconomy.Enabled(c)) continue;
+                            if (!RecipeAvailable(w, c, recipe)) continue;
                             foreach (var role in ExportRoles(c, recipe))
                             {
                                 double owed = Math.Max(0, c.TradeOwed[(int)recipe.Good]);
@@ -940,7 +1017,7 @@ namespace Anthropocene.Simulation
                     {
                         bool toolInput = recipe.Good == CraftGood.HandTools || recipe.Good == CraftGood.Tools;
                         if (toolInput != (balanceLayer == 0)) continue;
-                        if (recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c) || recipe.AgricultureOnly && !CultivationEconomy.Enabled(c)) continue;
+                        if (!RecipeAvailable(w, c, recipe)) continue;
                         if (Priority(c, recipe.Good) <= 0) continue;
                         double labor = laborByRole[role];
                         double target = needs?.Production != null

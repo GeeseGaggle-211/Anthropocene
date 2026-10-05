@@ -524,7 +524,7 @@ namespace Anthropocene.Simulation
 
         private static double ExtractKnown(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record, bool trustedLocalCatalog)
         {
-            if (!CultivationEconomy.EconomyEnabled(c) || workerIntervals <= 0 || useful <= 0) return 0;
+            if (!CultivationEconomy.EconomyEnabled(w, c) || workerIntervals <= 0 || useful <= 0) return 0;
             var source = trustedLocalCatalog ? requested : KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
             if (source == null) return 0;
             if (source.Material == MaterialId.Wood)
@@ -707,7 +707,7 @@ namespace Anthropocene.Simulation
             void Step(string role, CraftRecipe recipe, bool exportOnly)
             {
                 if (!exportOnly && NeolithicProduction.Priority(c, recipe.Good) <= 0) return;
-                if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c) || recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) return;
+                if (!NeolithicProduction.RecipeAvailable(w, c, recipe)) return;
                 bool specialist = role == recipe.Specialist && c.People.HasTech(recipe.Track);
                 if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) return;
                 double rate = SpecialistProductivity.CraftRate(w, c, recipe, role);

@@ -50,13 +50,13 @@ internal static class DemandControlChecks
         => DemandController.Plan(w, c, EconomicIntent.From(c), out order, out allocation);
     private static EconomicConstraints Constraints(WorldState w, Camp c) => new EconomicConstraints
     {
-        Agriculture = CultivationEconomy.Enabled(c), Husbandry = CultivationEconomy.HusbandryEnabled(c), Population = c.Population,
+        Agriculture = CultivationEconomy.Enabled(c), Husbandry = CultivationEconomy.HusbandryEnabled(c), FishingEnabled = NeolithicCapabilities.FeatureFishingEnabled(w, c), Population = c.Population,
         Technologies = c.People.NeolithicTechnologies.ToArray(), FocusTiles = CultivationEconomy.Footprint(w, c).ToArray()
     };
 
     public static int Run()
     {
-        checks = 0; Config(); Purity(); HousingReference(); Saturation(); Turns();
+        checks = 0; Config(); Purity(); HousingReference(); Saturation(); FishingIntegration(); FishingMealBreakpoint(); Turns();
         Console.WriteLine("PASS: " + checks + " demand-control assertions"); return checks;
     }
 
@@ -150,6 +150,92 @@ internal static class DemandControlChecks
         var shelter = dryAllocation.Requests.Where(q => q.Good == CraftGood.Housing && q.Units > 1e-6).ToList();
         Check(shelter.Count > 0 && shelter.All(q => q.Granted < 1e-6 && q.Unmet == "material shortage") && dryOrder.Ceiling(CraftGood.Housing) < 1e-6, "with no construction material in reach no Housing is promised");
         Check(dryAllocation.Requests.Any(q => q.Good != CraftGood.Housing && q.Granted > 1e-6), "unrelated requests still use the remaining capacity");
+    }
+
+    // Fishing-only economies use the same physical pass and resident budget. A prepared access plan is injected exactly as
+    // TurnPlanning does, so the planner must use its aquatic envelope without counting it as plant feedstock.
+    private static void FishingIntegration()
+    {
+        var w = World(EconomicAllocationStrategy.DemandControl, (6, 6, 60));
+        var c = CampOf(w, 1); var cfg = w.Config;
+        c.Food = 0;
+        cfg.NeolithicFishingEnabled = true; cfg.CorrectedAquaticSeasonalPressureEnabled = true;
+        c.Technologies[(int)Technology.Cultivation] = false;
+        c.Technologies[(int)Technology.Watercraft] = true;
+        c.Technology = Technology.Watercraft;
+        int shore = w.Map.Neighbors(c.Tile).OrderBy(id => id).First();
+        w.Tiles[shore].Terrain = Terrain.Shallows;
+
+        var ground = new FishingGroundPlan(shore, FishingRoute.Shallows, 1, FishingKnowledgeSource.Visible,
+            false, 0, 500, 1000, 1, 0, 500, 500, new double[4], 100);
+        var access = new FishingAccessPlan(c.Id, c.Tile, c.Population, w.Days, cfg.TurnDays,
+            cfg.TurnDays / cfg.DaysPerYear, cfg.Neolithic.FishingToolFisherYearsPerUnit,
+            cfg.Neolithic.FishingToolHarvestMultiplier, new[] { ground }, new[] { ground });
+
+        Check(CultivationEconomy.EconomyEnabled(w, c), "a legal Watercraft shore activates the resident goods economy without Cultivation");
+        var physical = CampProductionDemand.BuildPhysical(w, c, EconomicIntent.From(c), false, fishingAccess: access);
+        Check(ReferenceEquals(physical.FishingAccess, access), "the prebuilt accepted-tile access envelope is reused");
+        Near(physical.ForageSupply, physical.PlantSupply + physical.AquaticSupply, "plant and aquatic food remain separated");
+        Check(physical.PlantEnvelope <= physical.TerrestrialAfterHerds + Math.Max(0, c.PlantFood) + 1e-9,
+            "aquatic supply never enters the plant feedstock envelope");
+
+        var intent = DemandController.Plan(w, c, EconomicIntent.From(c), access, out _, out var allocation);
+        Check(allocation.Fishers > 0 && intent.Assignments.Any(a => a.Role == WorkforceRoles.Fisher && a.Population == allocation.Fishers),
+            "resident Fishing competes on the survival frontier and commits its Fisher staffing (fishers=" + allocation.Fishers +
+                ", catch=" + access.CatchEnvelope(1) + ", need=" + physical.Biological + ", forage=" + physical.ForageAfterHerds +
+                ", grounds=" + physical.FishingAccess.Grounds.Length + ")");
+        Check(EconomicIntents.Validate(Constraints(w, c), intent) == null, "a fishing-only DemandControl plan validates");
+        Check(intent.Assignments.Sum(a => a.Population) + intent.Labor.MaterialGatherers <= c.Population + 1e-9,
+            "Fishers share the common resident budget with goods work");
+        var fishingTools = allocation.Requests.Single(q => q.Service == "fishing tools");
+        Near(fishingTools.Units, allocation.Fishers * Years(w) / cfg.Neolithic.FishingToolFisherYearsPerUnit,
+            "FishingTools continuity is sized after Fisher staffing");
+
+        var recipes = NeolithicProduction.Recipes(cfg).ToDictionary(r => r.Good);
+        Check(NeolithicProduction.RecipeAvailable(w, c, recipes[CraftGood.Cloth]) &&
+            NeolithicProduction.RecipeAvailable(w, c, recipes[CraftGood.Housing]) &&
+            NeolithicProduction.RecipeAvailable(w, c, recipes[CraftGood.HousingMaterial]),
+            "Fishing-only Watercraft economies can use Cloth and fixed Housing recipes");
+        Check(!NeolithicProduction.RecipeAvailable(w, c, recipes[CraftGood.FarmTools]),
+            "FarmTools remain Cultivation-only for Fishing economies");
+
+        var disabled = World(EconomicAllocationStrategy.DemandControl, (6, 6, 60)); var dc = CampOf(disabled, 1);
+        dc.Technologies = new bool[Enum.GetValues(typeof(Technology)).Length]; dc.Technology = Technology.None;
+        Check(!CultivationEconomy.EconomyEnabled(disabled, dc), "feature-off eligibility remains unchanged");
+    }
+
+    private static void FishingMealBreakpoint()
+    {
+        var w = FishingEconomyChecks.Fixture(24); var c = w.Camps.Single();
+        w.Config.AnnualHumanGrowthRate = 0;
+        double meals = c.Population * w.Config.Consumption * w.Config.GenerationIntervals;
+        TurnResolver.FoodBucketBasis(w, c, w.Config.GenerationIntervals,
+            w.Config.TurnDays / w.Config.DaysPerYear, meals, out double reserve, out _);
+        c.PlantFood = reserve;
+        int shore = w.Map.Neighbors(c.Tile).OrderBy(id => id).First();
+        var tile = w.Tiles[shore];
+        tile.Terrain = Terrain.Shallows; tile.ElevationLevel = 0;
+        tile.WaterBody = WaterKind.Saltwater; tile.FreshwaterSource = FreshwaterSource.None;
+        tile.Food = 250; tile.PotentialFood = 1000; tile.AquaticCondition = 1;
+        tile.LastEcologyUpdateDays = w.Days;
+        for (int i = 0; i < tile.Seasons.Length; i++)
+        {
+            var season = tile.Seasons[i];
+            season.MaxFood = 250; season.MaxPotentialFood = 1000;
+            season.FoodRecoveryPerDay = 0; season.BiomassRecoveryPerDay = 0;
+            tile.Seasons[i] = season;
+        }
+        var access = FishingEconomy.BuildAccess(w, c, c.Tile, c.Population,
+            w.Days, w.Config.TurnDays);
+        var intent = DemandController.Plan(w, c, EconomicIntent.From(c), access,
+            out _, out var allocation);
+        Check(access.CatchEnvelope(10) >= meals - 1e-9,
+            "fixture: ten Fishers can meet the 24-person meal target");
+        Check(allocation.Fishers > 0 && allocation.Fishers + allocation.FoodGatherers == 10,
+            "the meal-target catch breakpoint selects ten mixed food workers over fourteen Gatherers"
+                + " (fishers=" + allocation.Fishers + ", gatherers=" + allocation.FoodGatherers + ")");
+        Check(EconomicIntents.Validate(Constraints(w, c), intent) == null,
+            "the meal-breakpoint Fishing plan validates");
     }
 
     // Whole turns: legal plans, ceilings honoured, invariants, replay and save continuation.

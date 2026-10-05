@@ -37,6 +37,8 @@ namespace Anthropocene.Simulation
         // QoL-dependent mortality (Docs/QoLMortality.md): the annual growth ceiling r(1) - r(Q) that deaths at the camp's committed QoL removed, and that QoL.
         // Zero (and not shown) when the lever is off or the camp has no goods economy. Absent in older saves.
         [System.Runtime.Serialization.OptionalField] public double QoLMortalityReduction, QoL;
+        // Fishing village support at the close boundary. Absent in older saves: zero.
+        [System.Runtime.Serialization.OptionalField] public double FishingVillageMaturity, FishingVillageMealSupport;
         // Net food paid to (+) or by (-) this camp through trade after production (Docs/Trade.md: food is paid on delivery,
         // refunds included). Absent in older saves: zero.
         [System.Runtime.Serialization.OptionalField] public double TradeFood;

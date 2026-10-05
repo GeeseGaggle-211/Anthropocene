@@ -53,10 +53,13 @@ namespace Anthropocene.Simulation
             double? averageCultivationCapital = null, double? endingCultivationCapital = null,
             double? operatingFraction = null, bool projectWood = true,
             Action profileEvaluated = null, EcologyView? openingEcology = null,
-            bool captureGrossForcing = false)
+            bool captureGrossForcing = false,
+            AquaticEcologyOverlay? aquaticOverlay = null)
         {
             if (duration < 0) throw new ArgumentOutOfRangeException(nameof(duration));
             var tile = w.Tiles[tileId];
+            aquaticOverlay ??= LazyEcology.ProjectAquaticOverlay(w, tileId, start,
+                duration, operatingFraction);
             // Food-only previews use the same stock kernel without initializing
             // the map-wide material-source index for an unrelated Wood sidecar.
             var wood = projectWood ? MaterialEconomy.ProjectWoodSource(w, tileId) : null;
@@ -110,7 +113,9 @@ namespace Anthropocene.Simulation
                     if (waterEntity == -1) waterEntity = r.Entity;
                     else if (waterEntity != r.Entity) contestedWater = true;
                 }
-                bool isHuman = r.Kind == "Cultivation" || r.Kind == "Gathering" || r.Kind == "Marine gathering" || r.Kind == "Aquatic gathering";
+                bool isHuman = r.Kind == "Cultivation" || r.Kind == "Gathering" ||
+                    r.Kind == "Marine gathering" || r.Kind == "Aquatic gathering" ||
+                    r.Kind == "FisheryHarvest";
                 if (isHuman)
                 {
                     if (r.Kind == "Cultivation") farmClaim += r.Food;
@@ -127,7 +132,16 @@ namespace Anthropocene.Simulation
             // condition is fixed; land-use effects remain finite stock debits.
             var representative = LazyEcology.MeanView(w, tile, v, duration, 0,
                 averageCultivationCapital, operatingFraction);
-            var capacity = new HorizonEcologyCapacity(w, tile, representative, start, duration, operatingFraction);
+            if (aquaticOverlay.HasValue && !tile.Land)
+            {
+                LazyEcology.ReclassifyAquaticFood(w, tile, ref v,
+                    aquaticOverlay.Value.OpeningCapital,
+                    aquaticOverlay.Value.AverageCapital,
+                    (int)Math.Floor(start / w.Config.BaseDays) % 4);
+                result.Balance.StartingFood = v.Food;
+            }
+            var capacity = new HorizonEcologyCapacity(w, tile, representative, start,
+                duration, operatingFraction, aquaticOverlay);
             // Aquatic ecology uses this representative horizon capacity.
             // Land recovery instead composes ordered seasonal profiles below;
             // the optional diagnostic callback records their exact forcing.
@@ -140,6 +154,11 @@ namespace Anthropocene.Simulation
             {
                 result.ManagedRenewalInput = capacity.ManagedFlow * duration;
                 result.OperatingFraction = operatingFraction ?? tile.CultivationOperatingFraction;
+            }
+            else if (aquaticOverlay.HasValue)
+            {
+                result.ManagedRenewalInput = capacity.ManagedFlow * duration;
+                result.OperatingFraction = aquaticOverlay.Value.OperatingFraction;
             }
             var flow = tile.Land
                 ? ResolveLandOpeningFlow(v, capacity, duration, foodRequest, herdRequest, waterRate)
@@ -161,7 +180,7 @@ namespace Anthropocene.Simulation
             double biomassCapacityDays = capacity.BiomassCapacityDays;
             double waterCapacityDays = capacity.WaterCapacityDays;
             double damagePerDay = SeasonalDamageRate(w, tile, representative, start, duration,
-                humans, herds, humanImpact, operatingFraction);
+                humans, herds, humanImpact, operatingFraction, aquaticOverlay);
             double damage = damagePerDay * duration;
             result.Balance.BiomassRecharge = flow.Nonfood.Recharge + flow.FirstFood.Recharge + flow.SecondFood.Recharge;
             result.Balance.BiomassHarvest = humans + herds;
@@ -219,6 +238,17 @@ namespace Anthropocene.Simulation
                     beforeHorizon.CultivationCapital, operatingFraction ?? tile.CultivationOperatingFraction,
                     duration / w.Config.DaysPerYear);
             v.Days = start + duration;
+            if (!tile.Land && aquaticOverlay.HasValue)
+            {
+                double foodBeforeAccessChange = v.Food;
+                LazyEcology.ReclassifyAquaticFood(w, tile, ref v,
+                    aquaticOverlay.Value.AverageCapital,
+                    aquaticOverlay.Value.EndingCapital,
+                    (int)Math.Floor(v.Days / w.Config.BaseDays) % 4);
+                double accessChange = v.Food - foodBeforeAccessChange;
+                if (accessChange > 0) result.Balance.FoodRecharge += accessChange;
+                else result.Balance.FoodOverflow += -accessChange;
+            }
             wood?.Recover(beforeHorizon, v, duration);
             for (int i = 0; i < requests.Length; i++)
             {
@@ -228,7 +258,9 @@ namespace Anthropocene.Simulation
                 double q = contestedWater ? contestedWaterReceipts[i] : Share(water, d.Freshwater, waterRequest);
                 // Allocate this settlement's capped share to operating farmers first;
                 // gatherers fill the remaining actual gap, never the pre-cap forecast.
-                if (!contestedFood && (d.Kind == "Cultivation" || d.Kind == "Gathering" || d.Kind == "Marine gathering" || d.Kind == "Aquatic gathering"))
+                if (!contestedFood && (d.Kind == "Cultivation" || d.Kind == "Gathering" ||
+                    d.Kind == "Marine gathering" || d.Kind == "Aquatic gathering" ||
+                    d.Kind == "FisheryHarvest"))
                 {
                     double accepted = Share(humans, farmClaim + gatherClaim, foodRequest);
                     double farmAccepted = Math.Min(farmClaim, accepted);
@@ -240,7 +272,9 @@ namespace Anthropocene.Simulation
                 if (d.Freshwater > 0) AddPressure(result, d, "Freshwater", d.Freshwater, q, waterCapacityDays, result.Balance.WaterRecharge, 0, 0);
             }
             v.Days = start + duration; v.Saltwater = tile.Seasons[(int)Math.Floor(v.Days / w.Config.BaseDays) % 4].MaxSaltwater;
-            var beforeClamp = v; LazyEcology.ClampCapacity(w, tile, ref v);
+            var beforeClamp = v;
+            LazyEcology.ClampCapacity(w, tile, ref v,
+                LazyEcology.EndpointAquaticOverlay(aquaticOverlay));
             result.Balance.BiomassOverflow += beforeClamp.PotentialFood - v.PotentialFood; result.Balance.FoodOverflow += beforeClamp.Food - v.Food; result.Balance.WaterOverflow += beforeClamp.Freshwater - v.Freshwater;
             result.Balance.EndingBiomass = v.PotentialFood; result.Balance.EndingFood = v.Food; result.Balance.EndingWater = v.Freshwater;
             result.View = v;
@@ -334,7 +368,7 @@ namespace Anthropocene.Simulation
         // estimator; actual horizon harvest is resolved by the stock solver.
         private static double SeasonalDamageRate(WorldState world, Tile tile, EcologyView representative,
             double start, double days, double humans, double herds, double humanImpact,
-            double? operatingFraction)
+            double? operatingFraction, AquaticEcologyOverlay? aquaticOverlay)
         {
             double realized = humans + herds;
             if (tile.Land || days <= 0 || realized <= 0) return 0;
@@ -343,21 +377,59 @@ namespace Anthropocene.Simulation
             double coefficient = world.Config.AquaticUseDamagePerYear;
             var exposure = new SeasonExposure(start, days, world.Config.BaseDays);
             double weightedDamage = 0;
+
+            // Keep the old one-horizon rate comparison for saves and worlds
+            // which have not opted into the aquatic-pressure correction.
+            if (!world.Config.CorrectedAquaticSeasonalPressureEnabled)
+            {
+                for (int season = 0; season < 4; season++)
+                {
+                    double weight = exposure.At(season) / days;
+                    if (weight <= 0) continue;
+                    var profile = new EcologyCapacity(world, tile, representative, season, operatingFraction, aquaticOverlay);
+                    double safe = EcologyMath.SustainableHarvestRate(profile.Biomass,
+                        profile.BiomassRate, world.Config.SustainableProductionFraction, profile.ManagedFlow);
+                    double finiteRate = profile.Biomass / Math.Min(world.Config.BaseDays, days)
+                        + profile.Biomass * profile.BiomassRate + profile.ManagedFlow;
+                    double seasonalRealized = Math.Min(realizedRate, finiteRate);
+                    if (seasonalRealized <= 0) continue;
+                    double utilization = seasonalRealized / Math.Max(SustainableRateEpsilon, safe);
+                    weightedDamage += weight * Math.Pow(Math.Max(0, utilization - world.Config.SafeUseRatio),
+                        world.Config.PressureExponent);
+                }
+                return coefficient * impact * weightedDamage / world.Config.DaysPerYear;
+            }
+
+            var exposureDays = new double[4];
+            var safeRates = new double[4];
+            var finiteRateCeilings = new double[4];
             for (int season = 0; season < 4; season++)
             {
-                double weight = exposure.At(season) / days;
-                if (weight <= 0) continue;
-                var profile = new EcologyCapacity(world, tile, representative, season, operatingFraction);
-                double safe = EcologyMath.SustainableHarvestRate(profile.Biomass,
+                double seasonDays = exposure.At(season);
+                if (seasonDays <= 0) continue;
+                var profile = new EcologyCapacity(world, tile, representative, season, operatingFraction, aquaticOverlay);
+                exposureDays[season] = seasonDays;
+                safeRates[season] = EcologyMath.SustainableHarvestRate(profile.Biomass,
                     profile.BiomassRate, world.Config.SustainableProductionFraction, profile.ManagedFlow);
-                double finiteRate = profile.Biomass / Math.Min(world.Config.BaseDays, days)
+                finiteRateCeilings[season] = profile.Biomass / Math.Min(world.Config.BaseDays, days)
                     + profile.Biomass * profile.BiomassRate + profile.ManagedFlow;
-                double seasonalRealized = Math.Min(realizedRate, finiteRate);
-                if (seasonalRealized <= 0) continue;
-                double utilization = seasonalRealized / Math.Max(SustainableRateEpsilon, safe);
-                weightedDamage += weight * Math.Pow(Math.Max(0, utilization - world.Config.SafeUseRatio),
+            }
+
+            var seasonalRates = EcologyMath.AllocateCappedSeasonalRates(realized,
+                exposureDays, finiteRateCeilings);
+            double conservedHarvest = 0;
+            for (int season = 0; season < 4; season++)
+            {
+                double seasonDays = exposureDays[season];
+                double seasonalRealized = seasonalRates[season];
+                conservedHarvest += seasonDays * seasonalRealized;
+                if (seasonDays <= 0 || seasonalRealized <= 0) continue;
+                double utilization = seasonalRealized / Math.Max(SustainableRateEpsilon, safeRates[season]);
+                weightedDamage += (seasonDays / days) * Math.Pow(Math.Max(0, utilization - world.Config.SafeUseRatio),
                     world.Config.PressureExponent);
             }
+            if (Math.Abs(conservedHarvest - realized) > 1e-10 * Math.Max(1, realized))
+                throw new InvalidOperationException("Seasonal aquatic pressure allocation did not conserve the realized horizon harvest.");
             return coefficient * impact * weightedDamage / world.Config.DaysPerYear;
         }
         private enum ClaimPool { Food, Biomass, Water }

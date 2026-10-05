@@ -33,6 +33,13 @@
     <Compile Include="CropAgricultureChecks.cs" />
     <Compile Include="ClimateMoistureChecks.cs" />
     <Compile Include="AquaticChecks.cs" />
+    <Compile Include="AquaticSeasonalPressureChecks.cs" />
+    <Compile Include="FishingObservationChecks.cs" />
+    <Compile Include="FishingEconomyChecks.cs" />
+    <Compile Include="FishingResourceChecks.cs" />
+    <Compile Include="FishingStateChecks.cs" />
+    <Compile Include="FishingWarmCalibrationChecks.cs" />
+    <Compile Include="FishingLongRunChecks.cs" />
     <Compile Include="StartViabilityChecks.cs" />
     <Compile Include="ScenarioChecks.cs" />
     <Compile Include="ClimateGenerationChecks.cs" />

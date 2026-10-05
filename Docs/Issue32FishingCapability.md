@@ -8,7 +8,33 @@ includes the #31 Close-boundary test follow-up. Issue #32 reuses the shared
 activity-driven discovery and society technology flags from #31. It adds no
 Fishing-specific progression or persistent state.
 
+## Later implementation status: resident Fishing
+
+The resident-Fishing slice in [NeolithicFishingImplementationPlan.md](NeolithicFishingImplementationPlan.md)
+supersedes the implementation-scope statements below that Watercraft-only
+Economy, Fisher jobs, Fishing Tools, fishery capital, and Fishing observations
+remain deferred. The Issue #32 capability matrix, scale timings and validation
+results below are preserved as the historical pre-resident-Fishing baseline;
+they are not evidence that the new slice passed its gates.
+
+Current feature behavior is compatibility-gated. `NeolithicFishingEnabled`
+defaults off, and enabling it requires the corrected aquatic seasonal-pressure
+gate plus DemandControl. In a Fishing-enabled world, feature-enabled Watercraft
+opens shared Economy and permits Fisher staffing; a legal Shallows/Lake source
+is separately required for a resident `FishingPlan`, not for the Economy action
+schema. Hunter Fish orders, passive coastal gathering, and the legacy opening
+`FisherySeed` remain unchanged when the feature is off. Sparse sites and
+owner-specific visited-ground knowledge are saved; only coarse visible ecology
+and a Society's own dated snapshots reach policies and observations. See
+[CurrentSimulationContract.md](CurrentSimulationContract.md) for the current
+capability, save and observation rules, and [TurnResolutionPasses.md](TurnResolutionPasses.md)
+for the normative pass contract.
+
 ## Capability matrix
+
+The following matrix records Issue #32 before the later resident-Fishing
+implementation above. Its Watercraft-only Economy row is intentionally
+historical.
 
 “Agriculture” is the player-facing name for `Technology.Cultivation`.
 Economy means the existing shared `OrderKind.Economy` plan and its current
@@ -65,9 +91,11 @@ when the first Watercraft transition has opening compatibility enabled and a
 suitable nearby Shallows tile exists. It is not a persistent fishery investment
 or a new Economy unlock.
 
-Watercraft-only Economy, Fishing recipes or occupations, dedicated extraction,
-fishery capital, additional authoritative state and observation fields remain
-deferred. `AquaticFood` remains dietary stock and does not satisfy the existing
+At the Issue #32 candidate revision, Watercraft-only Economy, Fishing recipes
+or occupations, dedicated extraction, fishery capital, additional authoritative
+state and observation fields remained deferred. This is historical scope only;
+the later resident-Fishing implementation supersedes it as described above.
+`AquaticFood` remains dietary stock and does not satisfy the existing
 PlantFood input to Cloth or AnimalFood input to AnimalFabric.
 
 No new per-tile or per-generation work is introduced. The shared discovery scan

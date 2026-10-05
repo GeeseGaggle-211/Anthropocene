@@ -6,6 +6,155 @@ namespace Anthropocene.Simulation
 {
     public sealed partial class TurnResolver
     {
+        private sealed class FisheryResourceState
+        {
+            public readonly Dictionary<int, AquaticEcologyOverlay> Overlays = new Dictionary<int, AquaticEcologyOverlay>();
+            public readonly Dictionary<int, int> Operators = new Dictionary<int, int>();
+            public readonly Dictionary<int, FishingGroundPlan> ManagingGrounds = new Dictionary<int, FishingGroundPlan>();
+            public long SiteLookups;
+        }
+
+        private static FisherySite FisherySiteAt(WorldState world, int tile)
+        {
+            var sites = world.FisherySites;
+            if (sites == null) return null;
+            int low = 0, high = sites.Count - 1;
+            while (low <= high)
+            {
+                int middle = low + ((high - low) >> 1);
+                int compare = sites[middle].TileId.CompareTo(tile);
+                if (compare == 0) return sites[middle];
+                if (compare < 0) low = middle + 1;
+                else high = middle - 1;
+            }
+            return null;
+        }
+
+        private FisheryResourceState PrepareFisheryResources(WorldState world,
+            TurnHorizon horizon, IReadOnlyDictionary<int, FishingPlan> fishingPlans,
+            HashSet<int> activeTiles)
+        {
+            var state = new FisheryResourceState();
+            if (fishingPlans == null) fishingPlans = new Dictionary<int, FishingPlan>();
+            if (!world.Config.NeolithicFishingEnabled) return state;
+            world.FisherySites ??= new List<FisherySite>();
+            var camps = world.Camps.ToDictionary(c => c.Id);
+            var candidates = new Dictionary<int, List<(int Camp, FishingGroundPlan Ground)>>();
+            // The persisted last-selected sets are the bounded reverse index
+            // for operators that may need release. Capture them before current
+            // plans replace those sets; dormant sites never require a scan.
+            var affectedSites = new SortedSet<int>();
+            FisherySite SiteAt(int tile)
+            {
+                state.SiteLookups++;
+                return FisherySiteAt(world, tile);
+            }
+            foreach (var camp in camps.Values)
+                foreach (int tile in camp.LastSelectedFishingGrounds ?? new List<int>())
+                    affectedSites.Add(tile);
+
+            // Plans are already destination-aware and immutable. A camp can
+            // manage a site only when it did not depart and supplied positive
+            // ground work. Losing plans retain their legal harvest request.
+            foreach (var plan in fishingPlans.Values.OrderBy(p => p.CampId))
+            {
+                if (camps.TryGetValue(plan.CampId, out var camp))
+                {
+                    camp.LastSelectedFishingGrounds = plan.Departing
+                        ? new List<int>() : plan.Grounds.Select(g => g.TileId).Distinct().OrderBy(id => id).ToList();
+                }
+                foreach (var ground in plan.Grounds.OrderBy(g => g.TileId))
+                {
+                    activeTiles.Add(ground.TileId);
+                    affectedSites.Add(ground.TileId);
+                    if (plan.Departing || !plan.OperatorEligible ||
+                        ground.AssignedFisherYears <= 1e-12 ||
+                        ground.KnowledgeSource == FishingKnowledgeSource.ConservativePrior ||
+                        !camps.TryGetValue(plan.CampId, out camp) ||
+                        camp.Tile != plan.CampTile || camp.Population <= 0) continue;
+                    if (!candidates.TryGetValue(ground.TileId, out var list))
+                        candidates.Add(ground.TileId, list = new List<(int, FishingGroundPlan)>());
+                    list.Add((plan.CampId, ground));
+                }
+            }
+
+            // Reconcile all prior sites and selected candidates before workers
+            // integrate ecology. Keep a reachable, working incumbent; otherwise
+            // the lowest eligible camp ID wins the one operator slot.
+            foreach (int tile in affectedSites)
+            {
+                var site = SiteAt(tile);
+                int prior = site?.OperatorCampId ?? -1;
+                candidates.TryGetValue(tile, out var eligible);
+                eligible ??= new List<(int Camp, FishingGroundPlan Ground)>();
+                var selected = eligible.FirstOrDefault(candidate => candidate.Camp == prior);
+                if (selected.Ground == null && eligible.Count > 0) selected = eligible[0];
+                int operatorCamp = selected.Ground == null ? -1 : selected.Camp;
+                state.Operators[tile] = operatorCamp;
+                if (selected.Ground != null)
+                    state.ManagingGrounds[tile] = selected.Ground;
+                if (site != null) site.OperatorCampId = operatorCamp;
+            }
+
+            // Construct an explicit ecology overlay for every selected ground
+            // and any already-active tile with stored fishery capital. Quiet
+            // sites remain lazy and cost no integration until their tile is used.
+            foreach (int tile in activeTiles.OrderBy(id => id).ToArray())
+            {
+                if (state.ManagingGrounds.TryGetValue(tile, out var ground))
+                {
+                    var site = SiteAt(tile);
+                    double opening = site == null ? 0
+                        : FishingEconomy.ProjectedCapital(world, site, horizon.StartDays);
+                    var capital = FishingEconomy.AllocateCapital(world, opening,
+                        ground.CapitalWorkerYears, horizon.Years);
+                    state.Overlays[tile] = new AquaticEcologyOverlay(capital.OpeningCapital,
+                        capital.AverageCapital, capital.EndingCapital, capital.OperationFraction);
+                }
+                else
+                {
+                    var overlay = LazyEcology.ProjectAquaticOverlay(world, tile,
+                        horizon.StartDays, horizon.Days);
+                    if (overlay.HasValue) state.Overlays[tile] = overlay.Value;
+                }
+            }
+            resolvedFisheryOperations = state.ManagingGrounds.Keys.ToDictionary(tile => tile,
+                tile => state.Overlays[tile].OperatingFraction);
+            LastMetrics.FisherySiteLookups += state.SiteLookups;
+            return state;
+        }
+
+        private void CommitFisherySite(WorldState world, int tile,
+            AquaticEcologyOverlay overlay, int operatorCamp, double endpointDays)
+        {
+            LastMetrics.FisherySiteLookups++;
+            world.FisherySites ??= new List<FisherySite>();
+            int low = 0, high = world.FisherySites.Count - 1;
+            while (low <= high)
+            {
+                int middle = low + ((high - low) >> 1);
+                int compare = world.FisherySites[middle].TileId.CompareTo(tile);
+                if (compare == 0)
+                {
+                    var existing = world.FisherySites[middle];
+                    existing.Capital = overlay.EndingCapital;
+                    existing.OperatorCampId = operatorCamp;
+                    existing.LastUpdatedDays = endpointDays;
+                    if (existing.Capital <= 1e-12 && operatorCamp < 0)
+                        world.FisherySites.RemoveAt(middle);
+                    return;
+                }
+                if (compare < 0) low = middle + 1;
+                else high = middle - 1;
+            }
+            if (overlay.EndingCapital <= 1e-12 && operatorCamp < 0) return;
+            world.FisherySites.Insert(low, new FisherySite
+            {
+                TileId = tile, OperatorCampId = operatorCamp,
+                Capital = overlay.EndingCapital, LastUpdatedDays = endpointDays
+            });
+        }
+
         // A claim set is constructed once from locked allocations. Each tile is
         // evaluated once over the full horizon and all receipts are committed in
         // tile order. The cultivation plan uses private average/end-capital values;
@@ -14,7 +163,8 @@ namespace Anthropocene.Simulation
             WorldState w, List<Demand> demands, TurnRecord record, Action<int> touch,
             Dictionary<int, double> foraged, TurnHorizon horizon,
             Dictionary<int, AgriculturalLabor> agriculturalLabor,
-            Dictionary<int, TurnNeeds> needs, IReadOnlyCollection<int> abandoningVillages)
+            Dictionary<int, TurnNeeds> needs, IReadOnlyCollection<int> abandoningVillages,
+            IReadOnlyDictionary<int, FishingPlan> fishingPlans)
         {
             var timer = System.Diagnostics.Stopwatch.StartNew();
             var herds = w.Herds.ToDictionary(h => h.Id);
@@ -33,6 +183,13 @@ namespace Anthropocene.Simulation
             var transfers = new List<Transfer>();
             var claims = demands.Where(d => d.Kind != "Field operation").ToList();
             var activeTiles = new HashSet<int>(demands.Select(d => d.Tile));
+            var residentFishReservations = claims.Where(d => d.Kind == "FisheryHarvest" && d.Food > 0)
+                .GroupBy(d => d.Entity).ToDictionary(g => g.Key,
+                    g => g.GroupBy(d => d.Tile).ToDictionary(tileGroup => tileGroup.Key,
+                        tileGroup => tileGroup.Sum(d => d.Food)));
+            var fishery = PrepareFisheryResources(w, horizon, fishingPlans, activeTiles);
+            AquaticEcologyOverlay? FisheryOverlay(int tile)
+                => fishery.Overlays.TryGetValue(tile, out var overlay) ? overlay : (AquaticEcologyOverlay?)null;
 
             // Active stocks and field ownership are brought to the start boundary
             // before any read-only tile worker sees them.
@@ -105,9 +262,17 @@ namespace Anthropocene.Simulation
                 campScratch.Clear();
                 double biological = RemainingFoodTarget(camp, needs[camp.Id]);
                 double feedstock = needs[camp.Id].PlantFeedstockGap;
-                double Available(int tile) => LazyEcology.AccessibleAvailability(w, tile,
+                var reservations = residentFishReservations.TryGetValue(camp.Id, out var campFishAllocations)
+                    ? campFishAllocations : new Dictionary<int, double>();
+                double Available(int tile)
+                {
+                    double availability = LazyEcology.AccessibleAvailability(w, tile,
                     horizon.StartDays, horizon.Days, null,
-                    averageCapital.TryGetValue(tile, out double capital) ? capital : (double?)null);
+                    averageCapital.TryGetValue(tile, out double capital) ? capital : (double?)null,
+                    FisheryOverlay(tile));
+                    return Math.Max(0, availability -
+                        (reservations.TryGetValue(tile, out double reserved) ? reserved : 0));
+                }
                 AddAgriculturalClaims(w, camp, agriculturalLabor[camp.Id],
                     horizon.ReferenceIntervals, biological, feedstock, Available, claims, campScratch);
             }
@@ -146,7 +311,8 @@ namespace Anthropocene.Simulation
             var results = execution.Map(groups, group => EcologicalPressure.Integrate(w, group.Tile,
                 group.Claims, horizon.StartDays, horizon.Days,
                 averageCapital.TryGetValue(group.Tile, out double average) ? average : (double?)null,
-                endingCapital.TryGetValue(group.Tile, out double end) ? end : (double?)null));
+                endingCapital.TryGetValue(group.Tile, out double end) ? end : (double?)null,
+                aquaticOverlay: FisheryOverlay(group.Tile)));
             LastMetrics.FullTurnIntegrationMilliseconds = integrationTimer.Elapsed.TotalMilliseconds;
             var commitTimer = System.Diagnostics.Stopwatch.StartNew();
             for (int i = 0; i < groups.Length; i++)
@@ -160,6 +326,10 @@ namespace Anthropocene.Simulation
                     LastMetrics.OperatingFieldTiles++;
                 }
                 result.View.Commit(w.Tiles[tile]);
+                if (fishery.Overlays.TryGetValue(tile, out var fisheryOverlay))
+                    CommitFisherySite(w, tile, fisheryOverlay,
+                        fishery.Operators.TryGetValue(tile, out int operatorCamp) ? operatorCamp : -1,
+                        horizon.StartDays + horizon.Days);
                 if (result.HasWoodSource)
                     MaterialEconomy.CommitWoodProjection(w, tile, result.WoodRemaining, result.WoodDays);
                 record.Pressure.AddRange(result.Pressure);
@@ -174,6 +344,21 @@ namespace Anthropocene.Simulation
                             + transfer.Food;
                 }
             }
+
+            // Tools present at the opening support this turn's harvest only;
+            // newly crafted tools arrive after resolution and cannot be spent
+            // retroactively. The prepared coverage is charged once per camp.
+            foreach (var plan in (fishingPlans ?? new Dictionary<int, FishingPlan>()).Values.OrderBy(p => p.CampId))
+                if (camps.TryGetValue(plan.CampId, out var fisherCamp))
+                {
+                    double coveredWork = plan.Grounds.Sum(g => Math.Max(0, g.ToolCoveredHarvestWorkerYears));
+                    double plannedUse = coveredWork / Math.Max(1e-12,
+                        w.Config.Neolithic.FishingToolFisherYearsPerUnit);
+                    double available = Math.Min(Math.Max(0, fisherCamp.Inventory.FishingTools),
+                        Math.Max(0, plan.FishingToolsAtOpen));
+                    fisherCamp.Inventory.FishingTools = Math.Max(0,
+                        fisherCamp.Inventory.FishingTools - Math.Min(available, plannedUse));
+                }
 
             foreach (var camp in agriculturalCamps)
             {
@@ -208,10 +393,37 @@ namespace Anthropocene.Simulation
                 CultivationEconomy.CommitHorizonExpansion(w, camp, corrected, record,
                     farmToolBudgets[camp.Id], allocations[camp.Id]);
             }
-            // All competing field endpoints are committed before settlement
-            // status reads the completed radius-one footprint.
-            foreach (var camp in agriculturalCamps)
-                CultivationEconomy.UpdateVillageAtBoundary(w, camp, record);
+            // All competing agriculture/fishery endpoints are committed before
+            // the single combined endpoint village decision.
+            var reportByCamp = record.Demographics.ToDictionary(report => report.Camp);
+            foreach (var camp in w.Camps.OrderBy(c => c.Id))
+            {
+                double maturityNumerator = 0, maturityWork = 0;
+                foreach (var pair in fishery.ManagingGrounds.OrderBy(pair => pair.Key))
+                    if (fishery.Operators.TryGetValue(pair.Key, out int owner) && owner == camp.Id)
+                    {
+                        double work = Math.Max(0, pair.Value.AssignedFisherYears);
+                        double intensity = fishery.Overlays.TryGetValue(pair.Key, out var overlay)
+                            ? FishingEconomy.Intensity(w.Config, overlay.AverageCapital)
+                            : pair.Value.ManagementIntensity;
+                        maturityNumerator += work * Numbers.Clamp(intensity, 0, 1);
+                        maturityWork += work;
+                    }
+                double maturity = maturityWork > 0 ? Numbers.Clamp(maturityNumerator / maturityWork, 0, 1) : 0;
+                double managedCatch = transfers.Where(t => t.Entity == camp.Id && t.Kind == "FisheryHarvest" &&
+                    fishery.Operators.TryGetValue(t.Tile, out int owner) && owner == camp.Id).Sum(t => t.Food);
+                double consumptionRequired = needs.TryGetValue(camp.Id, out var campNeeds)
+                    ? Math.Max(0, campNeeds.ConsumptionRequired) : 0;
+                double mealSupport = consumptionRequired > 0
+                    ? Numbers.Clamp(managedCatch / consumptionRequired, 0, 1) : 0;
+                if (reportByCamp.TryGetValue(camp.Id, out var report))
+                {
+                    report.FishingVillageMaturity = maturity;
+                    report.FishingVillageMealSupport = mealSupport;
+                }
+                CultivationEconomy.UpdateVillageAtBoundary(w, camp, record,
+                    maturity, mealSupport, abandoningVillages.Contains(camp.Id));
+            }
             LastMetrics.HorizonCommitMilliseconds = commitTimer.Elapsed.TotalMilliseconds;
             foreach (var transfer in transfers)
             {

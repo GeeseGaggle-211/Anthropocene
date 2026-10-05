@@ -50,6 +50,9 @@ namespace Anthropocene.Simulation
 #pragma warning restore SYSLIB0050
         // Remembered explored geography and settlement contacts (WP6). Null before the first breakthrough and in older saves.
         [System.Runtime.Serialization.OptionalField] public ContactMemory Memory;
+        // Owner-only visited Fishing-ground economics, stored sparsely by tile.
+        // Absent in old saves: an empty memory list is installed by save migration.
+        [System.Runtime.Serialization.OptionalField] public List<FishingGroundSnapshot> FishingGroundKnowledge = new List<FishingGroundSnapshot>();
         // Lineage (WP10a): the parent Society (0 = none) and the affinity fixed by the parent camp's fission policy at fission. Inert afterwards.
         [System.Runtime.Serialization.OptionalField] public int ParentSociety;
         [System.Runtime.Serialization.OptionalField] public double KinAffinity;
@@ -121,6 +124,9 @@ namespace Anthropocene.Simulation
                 w.Herds.Add(new Herd { Id = w.NextId++, Tile = camp.Tile, DomesticCamp = camp.Id, OwnerSociety = society.Id, OpeningCompatibility = true, Species = species, Animals = w.Config.InitialDomesticAnimals });
             else
             {
+                // Resident Fishing develops sparse fishery capital through work;
+                // retain the historical opening FisherySeed only in feature-off worlds.
+                if (technology == Technology.Watercraft && w.Config.NeolithicFishingEnabled) return;
                 int tile = w.Map.Radius(camp.Tile, 1).Where(n => technology == Technology.Cultivation ? w.Tiles[n].TraversableLand && w.Ecology(n).Moisture >= w.Config.CultivationMoisture : w.Tiles[n].Terrain == Terrain.Shallows)
                     .OrderByDescending(n => w.Ecology(n).MaxFood).ThenBy(n => n).DefaultIfEmpty(-1).First();
                 if (tile < 0) return;

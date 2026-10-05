@@ -74,7 +74,8 @@ namespace Anthropocene.Simulation
             double startDays, double durationDays, double beforeCapital,
             double afterMeanCapital, double afterEndCapital, double operatingFraction,
             double buildWorkerYears = 0, double operationWorkerYears = 0,
-            EcologyView? openingEcology = null)
+            EcologyView? openingEcology = null,
+            AquaticEcologyOverlay? aquaticOverlay = null)
         {
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
             if (durationDays < 0 || double.IsNaN(durationDays) || double.IsInfinity(durationDays))
@@ -83,10 +84,10 @@ namespace Anthropocene.Simulation
                 Interlocked.Increment(ref TurnDiagnostics.For(snapshot).FoodInvestmentComparisons);
             var before = Tile(snapshot, tileId, startDays, durationDays,
                 null, beforeCapital, beforeCapital, operatingFraction, true,
-                openingEcology);
+                openingEcology, aquaticOverlay: aquaticOverlay);
             var after = Tile(snapshot, tileId, startDays, durationDays,
                 null, afterMeanCapital, afterEndCapital, operatingFraction, true,
-                openingEcology);
+                openingEcology, aquaticOverlay: aquaticOverlay);
             double gain = after.ClosingFood - before.ClosingFood;
             return new FoodInvestmentForecast
             {
@@ -107,7 +108,8 @@ namespace Anthropocene.Simulation
             double durationDays, IEnumerable<Demand> claims = null,
             double? averageCultivationCapital = null, double? endingCultivationCapital = null,
             double? operatingFraction = null, bool allCompetitionKnown = false,
-            EcologyView? openingEcology = null, bool countRecoveryProfiles = false)
+            EcologyView? openingEcology = null, bool countRecoveryProfiles = false,
+            AquaticEcologyOverlay? aquaticOverlay = null)
         {
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
             if (tileId < 0 || tileId >= snapshot.Tiles.Length) throw new ArgumentOutOfRangeException(nameof(tileId));
@@ -124,7 +126,8 @@ namespace Anthropocene.Simulation
                 averageCultivationCapital, endingCultivationCapital, operatingFraction,
                 projectWood: false,
                 profileEvaluated: profileCounter == null ? null : new Action(profileCounter.Increment),
-                openingEcology: openingEcology, captureGrossForcing: true);
+                openingEcology: openingEcology, captureGrossForcing: true,
+                aquaticOverlay: aquaticOverlay);
             var forecast = new FoodTileForecast
             {
                 Tile = tileId,
@@ -148,8 +151,12 @@ namespace Anthropocene.Simulation
             forecast.GrossFoodInputLessNetRecovery = Math.Max(0,
                 forecast.GrossNaturalFoodInput + forecast.GrossManagedFoodInput -
                 forecast.RetainedFoodRecovery);
+            var closingOverlay = LazyEcology.EndpointAquaticOverlay(aquaticOverlay ??
+                LazyEcology.ProjectAquaticOverlay(snapshot, tileId, startDays,
+                    durationDays, operatingFraction));
             var closingCapacity = new EcologyCapacity(snapshot, snapshot.Tiles[tileId],
-                result.View, (int)Math.Floor(result.View.Days / snapshot.Config.BaseDays) % 4);
+                result.View, (int)Math.Floor(result.View.Days / snapshot.Config.BaseDays) % 4,
+                aquaticOverlay: closingOverlay);
             forecast.ClosingFoodCapacity = Math.Min(closingCapacity.Food,
                 forecast.ClosingBiomass);
             forecast.FoodAtCapacity = forecast.ClosingFoodCapacity > 0 &&

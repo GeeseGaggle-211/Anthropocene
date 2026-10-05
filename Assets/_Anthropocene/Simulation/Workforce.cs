@@ -6,6 +6,7 @@ namespace Anthropocene.Simulation
     public static class WorkforceRoles
     {
         public const string Gatherer = "Gatherer";
+        public const string Fisher = "Fisher";
         public const string Herder = "Herder";
         public const string Farmer = "Farmer";
         public const string Craftsperson = "Craftsperson";
@@ -20,7 +21,7 @@ namespace Anthropocene.Simulation
         public static readonly string[] Extractors = { Stonecutter, Woodcutter, ClayMiner };
 
         public static readonly string[] Specialists = { Toolmaker, Potter, Weaver, Carpenter, Builder };
-        public static readonly string[] All = { Gatherer, Farmer, Herder, Craftsperson, Toolmaker, Potter, Weaver, Carpenter, Builder, Woodcutter, Stonecutter, ClayMiner };
+        public static readonly string[] All = { Gatherer, Farmer, Herder, Fisher, Craftsperson, Toolmaker, Potter, Weaver, Carpenter, Builder, Woodcutter, Stonecutter, ClayMiner };
     }
 
     public sealed partial class PopulationLedger

@@ -122,6 +122,9 @@ namespace Anthropocene.Simulation
         public long TradeEligible, TradeRequisitions, TradeHonoured, TradeCountered, TradeIgnored, TradesSettled;
         public double TradePlanMilliseconds, TradeSettleMilliseconds;
         public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans, ClaimsAllocated, ProductionReceipts;
+        // Sparse Fishing uses sorted point lookups; this counter verifies that
+        // dormant sites are not scanned during ordinary resource resolution.
+        public long FisherySiteLookups;
         public long FoodForecastQueries, FoodInvestmentComparisons;
         public long SharedAllocations, SharedOperationChoices, SharedHerdChoices, ExpansionLadderBuilds, HerdLadderBuilds, PastureScans;
         public long PlannerTileProjections, PlannerEvaluations, SharedSelections, KernelCacheHits;

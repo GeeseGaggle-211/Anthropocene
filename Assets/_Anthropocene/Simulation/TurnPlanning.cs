@@ -19,6 +19,9 @@ namespace Anthropocene.Simulation
         internal readonly HashSet<int> AutomatedCamps = new HashSet<int>();
         internal readonly HashSet<int> AbandoningVillages = new HashSet<int>();
         internal readonly Dictionary<int, TurnNeeds> Needs = new Dictionary<int, TurnNeeds>();
+        // Frozen resident fishery work for the horizon resource resolver. This
+        // is preparation state only; it is not saved, observed, or fingerprinted.
+        internal readonly Dictionary<int, FishingPlan> FishingPlans = new Dictionary<int, FishingPlan>();
         // Value-rule production order per automated camp (WP3b). Transient: never saved,
         // observed or fingerprinted; absent for manual camps and under the Uniform rule.
         internal readonly Dictionary<int, ProductionOrder> ProductionOrders = new Dictionary<int, ProductionOrder>();
@@ -147,6 +150,7 @@ namespace Anthropocene.Simulation
         public bool Abandoning;
         public Order Order;
         public ProductionOrder Production;
+        public FishingAccessPlan FishingAccess;
     }
 
     // An automatic economic intent with the Value-rule production order that
@@ -155,6 +159,7 @@ namespace Anthropocene.Simulation
     {
         public Order Order;
         public ProductionOrder Production;
+        public FishingAccessPlan FishingAccess;
     }
 
     // Planning done while the human player thinks. Never saved, never part of
@@ -226,7 +231,7 @@ namespace Anthropocene.Simulation
             var acceptedEconomy = prepared.Orders.Where(o => o.Kind == OrderKind.Economy).ToDictionary(o => o.Entity);
             var automated = world.Camps.Where(c => c.Population > 0 &&
                 (c.EconomyAutomationTurns != 0 || aiEconomicRequests.Contains(c.Id)) &&
-                CultivationEconomy.EconomyEnabled(c) && !acceptedEconomy.ContainsKey(c.Id))
+                CultivationEconomy.EconomyEnabled(world, c) && !acceptedEconomy.ContainsKey(c.Id))
                 .OrderBy(c => c.Id).ToArray();
             // Each forecast owns a private camp preview and reads only the
             // committed world plus prewarmed indexes. Evaluate in parallel,
@@ -239,6 +244,8 @@ namespace Anthropocene.Simulation
             prepared.Trade = useDraft ? draft.Trade : Trade.Plan(world, execution);
             prepared.TradeMilliseconds = tradeTimer.Elapsed.TotalMilliseconds;
             var trade = prepared.Trade;
+            var fishingAccess = BuildFishingAccessPlans(world, world.Camps, prepared.Placement,
+                prepared.Horizon, useDraft ? draft.Intents : null);
             var intentsScope = PhaseProfile.Scope("Intents");
             var automaticOrders = (execution ?? new PhaseExecution()).Map(automated, camp =>
             {
@@ -248,10 +255,12 @@ namespace Anthropocene.Simulation
                     cached.Tile == effectiveTile && cached.Abandoning == abandoning)
                 {
                     Interlocked.Increment(ref diagnostics.DraftIntentsReused);
-                    return new AutomaticPlan { Order = cached.Order.Copy(), Production = cached.Production };
+                    return new AutomaticPlan { Order = cached.Order.Copy(), Production = cached.Production,
+                        FishingAccess = fishingAccess.TryGetValue(camp.Id, out var cachedAccess) ? cachedAccess : null };
                 }
                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
-                return AutomaticIntent(world, camp, effectiveTile, abandoning, index, trade);
+                fishingAccess.TryGetValue(camp.Id, out var access);
+                return AutomaticIntent(world, camp, effectiveTile, abandoning, index, trade, access);
             });
             intentsScope.Dispose();
             for (int i = 0; i < automated.Length; i++)
@@ -274,6 +283,21 @@ namespace Anthropocene.Simulation
                     ComputeNeeds(world, c, prepared, acceptedActions, acceptedEconomy, huntersByCamp));
             for (int i = 0; i < camps.Length; i++)
                 prepared.Needs[camps[i].Id] = needsResults[i];
+            foreach (var camp in camps.Where(c => FishingEconomy.FeatureEnabled(world, c)))
+            {
+                fishingAccess.TryGetValue(camp.Id, out var access);
+                var intent = acceptedEconomy.TryGetValue(camp.Id, out var economyOrder)
+                    ? economyOrder.Economy : EconomicIntent.From(camp);
+                int fishers = Math.Max(0, intent?.Assignments?.Where(a => a != null && a.Role == WorkforceRoles.Fisher)
+                    .Sum(a => a.Population) ?? 0);
+                int residents = prepared.Needs.TryGetValue(camp.Id, out var need) ? need.Residents : camp.Population;
+                fishers = Math.Min(Math.Max(0, residents), fishers);
+                var planningCamp = PlanningCampAt(camp, prepared.Placement.Destinations[camp.Id], trade);
+                double fishingTools = Math.Max(0, planningCamp.Inventory.FishingTools);
+                bool departing = prepared.Placement.Destinations[camp.Id] != camp.Tile;
+                prepared.FishingPlans[camp.Id] = FishingEconomy.PreparePlan(world, camp, access,
+                    fishers, fishingTools, prepared.Horizon.Days, departing, residents);
+            }
             return prepared;
         }
 
@@ -281,7 +305,8 @@ namespace Anthropocene.Simulation
         // economic order owns the economic slot; an explicit Move, NoOp, or
         // Dispatch does not suppress automation. Shared by Prepare and Draft
         // so both run literally the same code. Pure over the committed world.
-        private static AutomaticPlan AutomaticIntent(WorldState world, Camp camp, int effectiveTile, bool abandoning, PlanningIndex index, TradePlan trade)
+        private static AutomaticPlan AutomaticIntent(WorldState world, Camp camp, int effectiveTile, bool abandoning,
+            PlanningIndex index, TradePlan trade, FishingAccessPlan fishingAccess)
         {
             using var profile = PhaseProfile.Scope("Intent");
             var planningCamp = PlanningCampAt(camp, effectiveTile, trade);
@@ -293,7 +318,8 @@ namespace Anthropocene.Simulation
             // manual assignments remain the player's responsibility.
             ProductionOrder production = null;
             EconomicIntent intent;
-            using (PhaseProfile.Scope("Allocator")) intent = abandoning ? settings.Copy() : EconomicAllocationStrategy.Plan(world, planningCamp, settings, out production);
+            using (PhaseProfile.Scope("Allocator")) intent = abandoning ? settings.Copy()
+                : EconomicAllocationStrategy.Plan(world, planningCamp, settings, fishingAccess, out production);
             if (abandoning)
             {
                 intent.Assignments.Clear();
@@ -303,12 +329,42 @@ namespace Anthropocene.Simulation
             var constraints = new EconomicConstraints
             {
                 Agriculture = CultivationEconomy.Enabled(camp), Husbandry = CultivationEconomy.HusbandryEnabled(camp),
+                FishingEnabled = FishingEconomy.FeatureEnabled(world, camp),
                 Population = camp.Population, Technologies = camp.People.NeolithicTechnologies.ToArray(),
                 FocusTiles = CultivationEconomy.Footprint(world, planningCamp).ToArray()
             };
             string error = EconomicIntents.Validate(constraints, intent);
             if (error != null) throw new InvalidOperationException("Invalid automatic economic plan: " + error);
-            return new AutomaticPlan { Order = new Order(OrderKind.Economy, camp.Id) { Economy = intent }, Production = production };
+            return new AutomaticPlan { Order = new Order(OrderKind.Economy, camp.Id) { Economy = intent },
+                Production = production, FishingAccess = fishingAccess };
+        }
+
+        private static Dictionary<int, FishingAccessPlan> BuildFishingAccessPlans(WorldState world,
+            IEnumerable<Camp> camps, CampPlacement placement, TurnHorizon horizon,
+            IReadOnlyDictionary<int, DraftIntent> reusable = null)
+        {
+            var result = new Dictionary<int, FishingAccessPlan>();
+            var cache = new FishingAccessCache(world);
+            foreach (var camp in camps.OrderBy(c => c.Id))
+            {
+                if (!FishingEconomy.FeatureEnabled(world, camp)) continue;
+                int tile = placement.Destinations.TryGetValue(camp.Id, out int acceptedTile) ? acceptedTile : camp.Tile;
+                bool abandoning = camp.IsVillage && tile != camp.Tile;
+                int residents = Math.Max(0, camp.Population);
+                FishingAccessPlan access = null;
+                if (reusable != null && reusable.TryGetValue(camp.Id, out var draft) &&
+                    draft.Tile == tile && draft.Abandoning == abandoning && draft.FishingAccess != null)
+                {
+                    var candidate = draft.FishingAccess;
+                    if (candidate.CampId == camp.Id && candidate.CampTile == tile &&
+                        candidate.Residents == residents && candidate.StartDays == horizon.StartDays &&
+                        candidate.HorizonDays == horizon.Days)
+                        access = candidate;
+                }
+                result[camp.Id] = access ?? FishingEconomy.BuildAccess(world, camp, tile,
+                    residents, horizon.StartDays, horizon.Days, cache);
+            }
+            return result;
         }
 
         // Touch every lazily created world-attached cache on the calling
@@ -341,17 +397,19 @@ namespace Anthropocene.Simulation
             var explicitEconomy = new HashSet<int>(orders.Where(o => o.Kind == OrderKind.Economy).Select(o => o.Entity));
             var automated = world.Camps.Where(c => c.Population > 0 &&
                 (c.EconomyAutomationTurns != 0 || requests.Contains(c.Id)) &&
-                CultivationEconomy.EconomyEnabled(c) && !explicitEconomy.Contains(c.Id))
+                CultivationEconomy.EconomyEnabled(world, c) && !explicitEconomy.Contains(c.Id))
                 .OrderBy(c => c.Id).ToArray();
             var index = new PlanningIndex(world);
             var trade = Trade.Plan(world, execution);
+            var fishingAccess = BuildFishingAccessPlans(world, world.Camps, placement, TurnHorizon.Next(world));
             var intentsScope = PhaseProfile.Scope("Intents");
             var results = (execution ?? new PhaseExecution()).Map(automated, camp =>
             {
                 int tile = placement.Destinations[camp.Id]; bool abandon = abandoning.Contains(camp.Id);
-                var plan = AutomaticIntent(world, camp, tile, abandon, index, trade);
+                fishingAccess.TryGetValue(camp.Id, out var access);
+                var plan = AutomaticIntent(world, camp, tile, abandon, index, trade, access);
                 return new DraftIntent { Camp = camp.Id, Tile = tile, Abandoning = abandon,
-                    Order = plan.Order, Production = plan.Production };
+                    Order = plan.Order, Production = plan.Production, FishingAccess = plan.FishingAccess };
             });
             intentsScope.Dispose();
             var draft = new PlanningDraft(world, excludedPlayer, ai) { Trade = trade };
@@ -397,7 +455,7 @@ namespace Anthropocene.Simulation
                 FoodTarget = consumptionTarget + reserveFillTarget + growthFoodTarget,
                 Exports = (double[])planningCamp.TradeExports?.Clone()
             };
-            if (residents > 0 && CultivationEconomy.EconomyEnabled(camp))
+            if (residents > 0 && CultivationEconomy.EconomyEnabled(world, planningCamp))
             {
                 var economy = acceptedEconomy.TryGetValue(camp.Id, out var economyOrder) ? economyOrder.Economy : EconomicIntent.From(camp);
                 var snapshot = EconomicPlanner.Preview(planningCamp, economy, residents);

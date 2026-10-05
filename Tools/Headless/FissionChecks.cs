@@ -113,6 +113,13 @@ internal static class FissionChecks
         var h = Fixture(.05, 1000, 0, fabric: 100, husbandryOnly: true); double hl = nd * .05 * Intervals(h);
         Near(Fission.DaughterShelter(h, h.Camps[0], nd).Light, hl * unit * n0.GeneralistTaskEfficiency * tent, "husbandry daughter sews Light Housing at the Builder rate", 1e-6); Near(Fission.DaughterShelter(h, h.Camps[0], nd).Fixed, 0, "no Cultivation, no fixed Housing");
         var h2 = Fixture(.1, 1000, 0, fabric: 2, husbandryOnly: true, construction: true); Near(Fission.DaughterShelter(h2, h2.Camps[0], nd).Light, 2 * f * tent, "Light Housing is bounded by carried Animal Fabric", 1e-9);
+        var fishing = Fixture(.1, 1000, 1000, construction: true); var fishingCamp = fishing.Camps[0];
+        fishing.Config.NeolithicFishingEnabled = true;
+        fishingCamp.Technologies[(int)Technology.Cultivation] = false;
+        fishingCamp.Technologies[(int)Technology.Watercraft] = true;
+        fishingCamp.Technology = Technology.Watercraft;
+        Near(Fission.DaughterShelter(fishing, fishingCamp, nd).Fixed, nd,
+            "a Fishing-only daughter can assemble the fixed Housing recipe", 1e-6);
         var h3 = Fixture(.1, 1000, 1000, tents: 100, fabric: 100, construction: true); Near(Fission.DaughterShelter(h3, h3.Camps[0], nd).Total, 100 * f * tent, "a daughter already sheltered by carried tents builds nothing more");
         // The estimate uses it: H and housing coverage of the daughter come from carried plus built shelter.
         var e = Fixture(.1, 1000, 1000, construction: true); var ec = e.Camps[0]; e.FixedHousing.Add(new FixedHousingStock { CampId = ec.Id, Tile = ec.Tile, Units = 25, LastUpdatedDays = e.Days });
@@ -964,7 +971,7 @@ internal static class FissionChecks
         Check(stranger.KinRelations.Count == 0 && stranger.ParentSociety == 0, "an unrelated Society sees no kin");
         Check(!stranger.Rivals.Any(r => r.Player == kids[0].Player) || w.Map.Radius(w.Camps.Single(c => c.Player == 1).Tile, 2).Contains(w.Camps.Single(c => c.SocietyId == kids[0].Id).Tile), "foreign daughters appear only through ordinary vision");
         var dto = ObservationContract.Deserialize(ObservationContract.Serialize(kidView, kids[0].Mandate));
-        Check(dto.Schema == 18 && dto.ParentSociety == parent.SocietyId && dto.KinAffinity == 1 && dto.KinRelations.Length == 2 && dto.Settlements.Single().FissionPolicy == FissionPolicy.Neutral && dto.Settlements.Single().FissionDestination == -1, "the serialized contract carries lineage, kin and the settlement's fission state");
+        Check(dto.Schema == 19 && dto.ParentSociety == parent.SocietyId && dto.KinAffinity == 1 && dto.KinRelations.Length == 2 && dto.Settlements.Single().FissionPolicy == FissionPolicy.Neutral && dto.Settlements.Single().FissionDestination == -1, "the serialized contract carries lineage, kin and the settlement's fission state");
         var own2 = ObservationContract.Deserialize(ObservationContract.Serialize(new AgentObservationBuilder().Build(w, 0), parent.Mandate));
         Check(own2.Settlements.Single().FissionPolicy == FissionPolicy.Discourage, "the serialized contract carries the owner's policy");
         // Daughters are AI players: they take part in planning, the human stays player 0.

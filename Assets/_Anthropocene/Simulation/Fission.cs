@@ -170,7 +170,8 @@ namespace Anthropocene.Simulation
         //   Built: FissionDaughterBuilderShare of her people work as Builders (the planner staffs shelter with a handful of Builders
         //   because a Builder-turn makes several units; the share bounds that staffing), at the production rates and tool waterfall the
         //   resolver uses (Specialist when the Society holds Construction, else GeneralistTaskEfficiency; equipment limits and grade
-        //   multipliers from ToolCoverageBudget on her carried tools). The Builders first assemble fixed Housing (needs Cultivation; one
+        //   multipliers from ToolCoverageBudget on her carried tools). The Builders first assemble fixed Housing (needs Agriculture or
+        //   feature-enabled Fishing; one
         //   carried Housing Material or one Wood/Clay unit each, material-making labour included), then sew Light Housing from carried
         //   Animal Fabric (needs Husbandry), each only up to the people still unsheltered. Nothing is gathered at the site, so a daughter
         //   with no carried materials, tools or Builders keeps exactly her tents. Ignores decay of carried tents within the turn.
@@ -183,14 +184,14 @@ namespace Anthropocene.Simulation
             double carriedTents = Math.Max(0, inv?.LightHousingUnits ?? 0) * f, lightPeople = carriedTents * n.LightHousingPeoplePerUnit, fixedPeople = 0;
             double need = daughter - lightPeople;
             double builders = daughter * cfg.FissionDaughterBuilderShare, labor = builders * intervals;
-            if (inv == null || need <= 1e-9 || !(labor > 0) || !CultivationEconomy.EconomyEnabled(parent)) return new NeolithicProduction.ShelterCapacity(fixedPeople, lightPeople);
+            if (inv == null || need <= 1e-9 || !(labor > 0) || !CultivationEconomy.EconomyEnabled(w, parent)) return new NeolithicProduction.ShelterCapacity(fixedPeople, lightPeople);
             bool specialist = parent.People.HasTech(NeolithicTech.Construction);
             double Rate(double baseRate) => specialist
                 ? SpecialistProductivity.SpecialistRate(n, baseRate, daughter)
                 : baseRate * n.GeneralistTaskEfficiency;
             double copper = parent.People.HasTech(NeolithicTech.CopperWorking) ? Math.Max(0, inv.CopperTools) * f * intervals / n.ToolCoveragePerWorker : 0;
             var tools = new ToolCoverageBudget(n, Math.Max(0, inv.HandTools) * f, Math.Max(0, inv.Tools) * f * ToolCoverageBudget.OutputsPerTool, copper);
-            if (CultivationEconomy.Enabled(parent))
+            if (CultivationEconomy.Enabled(parent) || NeolithicCapabilities.FeatureFishingEnabled(w, parent))
             {
                 // Housing Material and its assembly share the Builder pool and the same step rate (2x the single-step rate), as in the resolver.
                 double step = 2 * Rate(n.BuilderHousingOutputPerBaseDays), stock = Math.Max(0, inv.HousingMaterial) * f;
@@ -549,6 +550,7 @@ namespace Anthropocene.Simulation
                 TransitionSeeds = ps.TransitionSeeds.Select(t => new TransitionSeed { Technology = t.Technology, Settlement = t.Settlement, Tile = t.Tile, Species = t.Species, Days = t.Days }).ToList(),
                 OpeningTransitionProcessed = ps.OpeningTransitionProcessed, OpeningTransitionProcessedInitialized = ps.OpeningTransitionProcessedInitialized,
                 CraftExperience = new Dictionary<string, double>(ps.CraftExperience), UnlockedSpecialists = new List<string>(ps.UnlockedSpecialists), NeolithicTechnologies = new List<string>(ps.NeolithicTechnologies),
+                FishingGroundKnowledge = (ps.FishingGroundKnowledge ?? new List<FishingGroundSnapshot>()).OrderBy(s => s.TileId).Select(s => s.Copy()).ToList(),
                 ParentSociety = ps.Id, KinAffinity = Kinship.PolicyAffinity(parent.FissionPolicy)
             };
             w.Societies.Add(society);
@@ -571,7 +573,7 @@ namespace Anthropocene.Simulation
             SplitWorkforce(parent, camp, before, n);
             parent.Population = before - n;
             // Same economic settings; automation continuous so the AI economy runs. Fission policy Neutral, no destination.
-            camp.CraftingPriorities = new CraftingPriorities { HandTools = parent.CraftingPriorities.HandTools, Pots = parent.CraftingPriorities.Pots, Cloth = parent.CraftingPriorities.Cloth, FarmTools = parent.CraftingPriorities.FarmTools, Housing = parent.CraftingPriorities.Housing, Tools = parent.CraftingPriorities.Tools, AnimalFabric = parent.CraftingPriorities.AnimalFabric, LightHousing = parent.CraftingPriorities.LightHousing, HerdingTools = parent.CraftingPriorities.HerdingTools };
+            camp.CraftingPriorities = new CraftingPriorities { HandTools = parent.CraftingPriorities.HandTools, Pots = parent.CraftingPriorities.Pots, Cloth = parent.CraftingPriorities.Cloth, FarmTools = parent.CraftingPriorities.FarmTools, Housing = parent.CraftingPriorities.Housing, Tools = parent.CraftingPriorities.Tools, AnimalFabric = parent.CraftingPriorities.AnimalFabric, LightHousing = parent.CraftingPriorities.LightHousing, HerdingTools = parent.CraftingPriorities.HerdingTools, FishingTools = parent.CraftingPriorities.FishingTools };
             camp.StonePriority = parent.StonePriority; camp.ClayPriority = parent.ClayPriority; camp.WoodPriority = parent.WoodPriority;
             camp.PotsTarget = parent.PotsTarget * f; camp.FarmToolsTarget = parent.FarmToolsTarget * f;
             camp.ManagedBreedingIntensity = parent.ManagedBreedingIntensity; camp.ManagedBreedingPolicyInitialized = true;

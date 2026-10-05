@@ -48,21 +48,21 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public bool HerdTargetSet;
         [System.Runtime.Serialization.OptionalField] public int HerdTarget;
         public double StonePriority = 1, ClayPriority = 1, WoodPriority = 1, PotsTarget, FarmToolsTarget;
-        public EconomicIntent Copy() => new EconomicIntent { Assignments = Assignments?.Select(a => a == null ? null : new PopulationAssignment { Role = a.Role, Population = a.Population }).ToList(), Priorities = Priorities == null ? null : new CraftingPriorities { HandTools = Priorities.HandTools, Pots = Priorities.Pots, Cloth = Priorities.Cloth, FarmTools = Priorities.FarmTools, Housing = Priorities.Housing, Tools = Priorities.Tools, AnimalFabric = Priorities.AnimalFabric, LightHousing = Priorities.LightHousing, HerdingTools = Priorities.HerdingTools }, Focus = Focus, AutomationTurns = AutomationTurns, Labor = Labor?.Copy(), StonePriority = StonePriority, ClayPriority = ClayPriority, WoodPriority = WoodPriority, PotsTarget = PotsTarget, FarmToolsTarget = FarmToolsTarget, ManagedBreedingIntensity = ManagedBreedingIntensity, HerdTargetSet = HerdTargetSet, HerdTarget = HerdTarget };
+        public EconomicIntent Copy() => new EconomicIntent { Assignments = Assignments?.Select(a => a == null ? null : new PopulationAssignment { Role = a.Role, Population = a.Population }).ToList(), Priorities = Priorities == null ? null : new CraftingPriorities { HandTools = Priorities.HandTools, Pots = Priorities.Pots, Cloth = Priorities.Cloth, FarmTools = Priorities.FarmTools, Housing = Priorities.Housing, Tools = Priorities.Tools, AnimalFabric = Priorities.AnimalFabric, LightHousing = Priorities.LightHousing, HerdingTools = Priorities.HerdingTools, FishingTools = Priorities.FishingTools }, Focus = Focus, AutomationTurns = AutomationTurns, Labor = Labor?.Copy(), StonePriority = StonePriority, ClayPriority = ClayPriority, WoodPriority = WoodPriority, PotsTarget = PotsTarget, FarmToolsTarget = FarmToolsTarget, ManagedBreedingIntensity = ManagedBreedingIntensity, HerdTargetSet = HerdTargetSet, HerdTarget = HerdTarget };
         public static EconomicIntent From(Camp c) => new EconomicIntent { Assignments = c.Workforce.Assignments, Priorities = c.CraftingPriorities, Focus = c.CultivationFocusTile, AutomationTurns = c.EconomyAutomationTurns, Labor = c.EconomicLabor, StonePriority = c.StonePriority, ClayPriority = c.ClayPriority, WoodPriority = c.WoodPriority, PotsTarget = c.PotsTarget, FarmToolsTarget = c.FarmToolsTarget, ManagedBreedingIntensity = c.ManagedBreedingIntensity, HerdTargetSet = c.HerdTargetSet, HerdTarget = c.HerdTarget }.Copy();
         public string Stamp => string.Join(",", (Assignments ?? new List<PopulationAssignment>()).OrderBy(a => a?.Role, StringComparer.Ordinal).Select(a => a == null ? "invalid" : a.Role + "=" + a.Population)) + ":" + Focus + ":" + AutomationTurns + ":" + (Labor == null ? "manual" : string.Join(",", Labor.Values().Select(v => v.ToString("R", CultureInfo.InvariantCulture)))) + ":" + string.Join(",", Values().Select(v => v.ToString("R", CultureInfo.InvariantCulture))) + ":" + (HerdTargetSet ? HerdTarget : -1);
-        public IEnumerable<double> Values() => Priorities == null ? Array.Empty<double>() : new[] { Priorities.HandTools, Priorities.Pots, Priorities.Cloth, Priorities.FarmTools, Priorities.Housing, Priorities.Tools, Priorities.AnimalFabric, Priorities.LightHousing, Priorities.HerdingTools, StonePriority, ClayPriority, WoodPriority, PotsTarget, FarmToolsTarget, ManagedBreedingIntensity };
+        public IEnumerable<double> Values() => Priorities == null ? Array.Empty<double>() : new[] { Priorities.HandTools, Priorities.Pots, Priorities.Cloth, Priorities.FarmTools, Priorities.Housing, Priorities.Tools, Priorities.AnimalFabric, Priorities.LightHousing, Priorities.HerdingTools, Priorities.FishingTools, StonePriority, ClayPriority, WoodPriority, PotsTarget, FarmToolsTarget, ManagedBreedingIntensity };
     }
     public static class EconomicIntents
     {
         public static string RequiredTechnology(string role) => role == WorkforceRoles.Toolmaker || role == WorkforceRoles.Stonecutter ? NeolithicTech.Toolmaking : role == WorkforceRoles.Potter || role == WorkforceRoles.ClayMiner ? NeolithicTech.Pottery : role == WorkforceRoles.Weaver ? NeolithicTech.Weaving : role == WorkforceRoles.Carpenter || role == WorkforceRoles.Woodcutter ? NeolithicTech.Carpentry : role == WorkforceRoles.Builder ? NeolithicTech.Construction : null;
         public static string Validate(AgentObservation o, SettlementObservation c, EconomicIntent e)
             => Validate(Constraints(o, c), e);
-        public static EconomicConstraints Constraints(AgentObservation o, SettlementObservation c) => c == null ? null : new EconomicConstraints { Agriculture = c.Agriculture, Husbandry = c.Husbandry, Population = c.Population, Technologies = c.Technologies.ToArray(), FocusTiles = o.Tiles.Values.Where(t => t.Cultivable && o.Map.Distance(c.Tile, t.Id) <= 1).Select(t => t.Id).OrderBy(id => id).ToArray() };
+        public static EconomicConstraints Constraints(AgentObservation o, SettlementObservation c) => c == null ? null : new EconomicConstraints { Agriculture = c.Agriculture, Husbandry = c.Husbandry, FishingEnabled = c.FishingEnabled, Population = c.Population, Technologies = c.Technologies.ToArray(), FocusTiles = o.Tiles.Values.Where(t => t.Cultivable && o.Map.Distance(c.Tile, t.Id) <= 1).Select(t => t.Id).OrderBy(id => id).ToArray() };
         public static string Validate(EconomicConstraints c, EconomicIntent e)
         {
             if (c == null) return "Economic capability information is unavailable.";
-            if (!(c.Agriculture || c.Husbandry)) return "Economy requires Agriculture or Animal Husbandry.";
+            if (!(c.Agriculture || c.Husbandry || c.FishingEnabled)) return "Economy requires Agriculture or Animal Husbandry.";
             if (e == null || e.Assignments == null || e.Priorities == null) return "Economic plan is incomplete; assignments and priorities are required.";
             if (e.Assignments.Any(a => a == null || !WorkforceRoles.All.Contains(a.Role) || a.Population <= 0) || e.Assignments.GroupBy(a => a.Role).Any(g => g.Count() > 1) || e.Assignments.Sum(a => (long)a.Population) > c.Population) return "Invalid workforce allocation.";
             if (e.Assignments.Any(a => RequiredTechnology(a.Role) != null && !c.Technologies.Contains(RequiredTechnology(a.Role)))) return "Specialist technology is not mastered.";
@@ -75,6 +75,7 @@ namespace Anthropocene.Simulation
             if (e.Focus < -1 || e.Focus >= 0 && !c.FocusTiles.Contains(e.Focus)) return "Cultivation focus must be visible eligible radius-1 land.";
             if (!c.Agriculture && e.Assignments.Any(a => a.Role == WorkforceRoles.Farmer)) return "Farmer assignments require Cultivation.";
             if (!c.Husbandry && e.Assignments.Any(a => a.Role == WorkforceRoles.Herder)) return "Herder assignments require Animal Husbandry.";
+            if (!c.FishingEnabled && e.Assignments.Any(a => a.Role == WorkforceRoles.Fisher)) return "Fisher assignments require feature-enabled Watercraft Fishing.";
             if (e.ManagedBreedingIntensity > 1) return "Managed breeding intensity must be at most one.";
             if (e.HerdTargetSet && (e.HerdTarget < 0 || !c.Husbandry)) return e.HerdTarget < 0 ? "Herd target cannot be negative." : "A herd target requires Animal Husbandry.";
             return null;
@@ -99,6 +100,7 @@ namespace Anthropocene.Simulation
     {
         public bool Agriculture;
         public bool Husbandry;
+        public bool FishingEnabled;
         public int Population;
         public string[] Technologies = Array.Empty<string>();
         public int[] FocusTiles = Array.Empty<int>();

@@ -59,6 +59,9 @@ namespace Anthropocene.Simulation
             QoLMortalityEnabled = false; BaseBirthRate = defaults.BaseBirthRate; QoLMortalityElasticity = defaults.QoLMortalityElasticity;
             // Absent in older saves: the herd-labour coupling is off, so a loaded game keeps its unconditional herder reservation and never slaughters (Docs/HerdLabour.md).
             HerdLabourEnabled = false; SharedCropHerdAllocationEnabled = false; MinimumHerdHerders = defaults.MinimumHerdHerders;
+            // Resident Fishing and the aquatic-pressure correction are separate opt-in
+            // compatibility gates. Saves that predate either feature stay feature-off.
+            NeolithicFishingEnabled = false; CorrectedAquaticSeasonalPressureEnabled = false;
             LandBiomassMultiplier = 1;
             LandSafeUseRatio = 1;
             LandFoodRegenerationInitialized = false;
@@ -160,6 +163,8 @@ namespace Anthropocene.Simulation
         // Opt-in; absent in legacy saves means the measured corrected control.
         [System.Runtime.Serialization.OptionalField] public bool SharedCropHerdAllocationEnabled = true;
         [System.Runtime.Serialization.OptionalField] public int MinimumHerdHerders = 1;
+        [System.Runtime.Serialization.OptionalField] public bool NeolithicFishingEnabled;
+        [System.Runtime.Serialization.OptionalField] public bool CorrectedAquaticSeasonalPressureEnabled;
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
         public double GatherFraction = .22, GatherPerPerson = 1.8, PopulationScale = 24;
@@ -257,6 +262,10 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Invalid QoL mortality configuration: BaseBirthRate must exceed AnnualHumanGrowthRate and the elasticity must be positive.");
             if (MinimumHerdHerders < 0 || MinimumHerdHerders > 1000)
                 throw new ArgumentException("Invalid herd-labour configuration: MinimumHerdHerders must be between 0 and 1000.");
+            if (NeolithicFishingEnabled && !CorrectedAquaticSeasonalPressureEnabled)
+                throw new ArgumentException("Neolithic Fishing requires corrected aquatic seasonal pressure.");
+            if (NeolithicFishingEnabled && EconomicAllocation != EconomicAllocationStrategy.DemandControl)
+                throw new ArgumentException("Neolithic Fishing requires DemandControl economic allocation.");
             if (CampMovement != 1 || HunterMovement != 2 || HerdMovement != 1 || VisionRadius != 2 || GatherRadius != 1)
                 throw new ArgumentException("Paleolithic movement and vision must be 1/2/1 and radius 2/1.");
             if (StartingPopulation <= MinimumCamp || MinimumCamp < 1 || Consumption <= 0 || PopulationScale <= 0)
@@ -355,6 +364,8 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double AnimalFabric, LightHousingUnits, HerdingTools;
         // Portable Housing Material (Wood/Clay made into a stored intermediate); absent in older saves means zero.
         [System.Runtime.Serialization.OptionalField] public double HousingMaterial;
+        // Portable equipment for resident Fishing. Absent in older saves: zero.
+        [System.Runtime.Serialization.OptionalField] public double FishingTools;
         public double Houses;
         public double Stone;
         public double Clay;
@@ -368,7 +379,7 @@ namespace Anthropocene.Simulation
         private void InitializeNewRecipeDefaults(System.Runtime.Serialization.StreamingContext context)
         {
             var defaults = new CraftingPriorities();
-            Tools = defaults.Tools; AnimalFabric = defaults.AnimalFabric; LightHousing = defaults.LightHousing; HerdingTools = defaults.HerdingTools;
+            Tools = defaults.Tools; AnimalFabric = defaults.AnimalFabric; LightHousing = defaults.LightHousing; HerdingTools = defaults.HerdingTools; FishingTools = defaults.FishingTools;
         }
         public double HandTools = 0.15;
         public double Pots = 0.10;
@@ -377,6 +388,7 @@ namespace Anthropocene.Simulation
         public double Housing = 0.20;
         [System.Runtime.Serialization.OptionalField] public double Tools = .15;
         [System.Runtime.Serialization.OptionalField] public double AnimalFabric = .45, LightHousing = .20, HerdingTools = .10;
+        [System.Runtime.Serialization.OptionalField] public double FishingTools = .10;
     }
     [Serializable]
     public sealed class PopulationAssignment
@@ -414,6 +426,7 @@ namespace Anthropocene.Simulation
             CultivationFocusTile = -1; StonePriority = ClayPriority = WoodPriority = 1;
             QoL = FoodNeedsMetRatio = WaterNeedsMetRatio = ClothPerCapita = HousingPerCapita = 1;
             DemographicGrowthMultiplier = 1;
+            LastSelectedFishingGrounds = null;
         }
         public int Id, Player, SocietyId, Tile, Population, DeficitTurns;
         public double PlantFood, AnimalFood, AquaticFood;
@@ -451,6 +464,8 @@ namespace Anthropocene.Simulation
         // Chosen herd size (Docs/HerdLabour.md): after breeding, managed animals above HerdTarget are slaughtered. Absent (HerdTargetSet false) means no slaughter.
         [System.Runtime.Serialization.OptionalField] public bool HerdTargetSet;
         [System.Runtime.Serialization.OptionalField] public int HerdTarget;
+        // Last selected grounds retain incumbent preference and departure release across saves.
+        [System.Runtime.Serialization.OptionalField] public List<int> LastSelectedFishingGrounds = new List<int>();
         [System.Runtime.Serialization.OptionalField] public bool IsVillage;
         [System.Runtime.Serialization.OptionalField] public int VillageTurns;
         // Fission (WP10a). Absent policy is Neutral (the enum's zero); an absent destination is none.
@@ -595,6 +610,73 @@ namespace Anthropocene.Simulation
         public double Units, LastUpdatedDays;
     }
     [Serializable]
+    public sealed class FisherySite
+    {
+        public int TileId, OperatorCampId = -1;
+        public double Capital, LastUpdatedDays;
+    }
+    [Serializable]
+    public sealed class FishingGroundSnapshot
+    {
+        public int TileId, OperatorCampId = -1;
+        public double AccessibleFood, Biomass, Condition, Capital, ObservedDays;
+        [System.Runtime.Serialization.OptionalField] public double OperationFraction;
+        // Four seasonal sustainable accessible-food rates, in food per day.
+        public double[] ProductiveProfile = new double[4];
+        public FishingGroundSnapshot Copy() => new FishingGroundSnapshot
+        {
+            TileId = TileId, OperatorCampId = OperatorCampId, AccessibleFood = AccessibleFood,
+            Biomass = Biomass, Condition = Condition, Capital = Capital, ObservedDays = ObservedDays, OperationFraction = OperationFraction,
+            ProductiveProfile = ProductiveProfile == null ? null : (double[])ProductiveProfile.Clone()
+        };
+    }
+    public static class FisheryState
+    {
+        // Canonicalize sparse Fishing records at load/save/fingerprint
+        // boundaries; physical capital never enters the dense tile record.
+        public static void Normalize(WorldState world)
+        {
+            world.FisherySites ??= new List<FisherySite>();
+            world.Camps ??= new List<Camp>();
+            world.Societies ??= new List<Society>();
+            var campIds = new HashSet<int>(world.Camps.Select(c => c.Id));
+            if (world.FisherySites.Any(s => s == null || s.TileId < 0 || world.Tiles == null || s.TileId >= world.Tiles.Length ||
+                !(world.Tiles[s.TileId].Environment == EnvironmentKind.Shallows || world.Tiles[s.TileId].Environment == EnvironmentKind.Lake) ||
+                s.OperatorCampId < -1 || s.OperatorCampId >= 0 && !campIds.Contains(s.OperatorCampId) ||
+                !Finite(s.Capital) || s.Capital < 0 || !Finite(s.LastUpdatedDays) || s.LastUpdatedDays < 0 || s.LastUpdatedDays > world.Days + 1e-8))
+                throw new InvalidOperationException("Invalid fishery site.");
+            if (world.FisherySites.GroupBy(s => s.TileId).Any(g => g.Count() > 1))
+                throw new InvalidOperationException("Duplicate fishery site tile.");
+            world.FisherySites = world.FisherySites.OrderBy(s => s.TileId).ToList();
+            foreach (var camp in world.Camps)
+            {
+                camp.LastSelectedFishingGrounds ??= new List<int>();
+                if (camp.LastSelectedFishingGrounds.Count > 3 || camp.LastSelectedFishingGrounds.Any(t => t < 0 || world.Tiles == null || t >= world.Tiles.Length ||
+                    !(world.Tiles[t].Environment == EnvironmentKind.Shallows || world.Tiles[t].Environment == EnvironmentKind.Lake)) ||
+                    camp.LastSelectedFishingGrounds.Distinct().Count() != camp.LastSelectedFishingGrounds.Count)
+                    throw new InvalidOperationException("Invalid last-selected Fishing grounds.");
+                camp.LastSelectedFishingGrounds.Sort();
+            }
+            foreach (var society in world.Societies)
+            {
+                society.FishingGroundKnowledge ??= new List<FishingGroundSnapshot>();
+                if (society.FishingGroundKnowledge.Any(s => s == null || s.TileId < 0 || world.Tiles == null || s.TileId >= world.Tiles.Length ||
+                    !(world.Tiles[s.TileId].Environment == EnvironmentKind.Shallows || world.Tiles[s.TileId].Environment == EnvironmentKind.Lake) ||
+                    s.OperatorCampId < -1 || s.OperatorCampId >= 0 && !campIds.Contains(s.OperatorCampId) ||
+                    !Finite(s.AccessibleFood) || s.AccessibleFood < 0 || !Finite(s.Biomass) || s.Biomass < 0 ||
+                    !Finite(s.Condition) || s.Condition < 0 || s.Condition > 1 || !Finite(s.Capital) || s.Capital < 0 ||
+                    !Finite(s.OperationFraction) || s.OperationFraction < 0 || s.OperationFraction > 1 ||
+                    !Finite(s.ObservedDays) || s.ObservedDays < 0 || s.ObservedDays > world.Days + 1e-8 ||
+                    s.ProductiveProfile == null || s.ProductiveProfile.Length != 4 || s.ProductiveProfile.Any(v => !Finite(v) || v < 0)))
+                    throw new InvalidOperationException("Invalid remembered Fishing ground snapshot.");
+                if (society.FishingGroundKnowledge.GroupBy(s => s.TileId).Any(g => g.Count() > 1))
+                    throw new InvalidOperationException("Duplicate remembered Fishing ground snapshot.");
+                society.FishingGroundKnowledge = society.FishingGroundKnowledge.OrderBy(s => s.TileId).ToList();
+            }
+        }
+        private static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+    }
+    [Serializable]
     public sealed class WorldState
     {
         public const int GeneratorVersion = 14;
@@ -621,8 +703,9 @@ namespace Anthropocene.Simulation
         [NonSerialized] internal TurnDiagnostics Diagnostics;
         [System.Runtime.Serialization.OptionalField] public List<MaterialKnowledge> MaterialKnowledge = new List<MaterialKnowledge>();
         [System.Runtime.Serialization.OptionalField] public List<FixedHousingStock> FixedHousing = new List<FixedHousingStock>();
+        [System.Runtime.Serialization.OptionalField] public List<FisherySite> FisherySites = new List<FisherySite>();
         [System.Runtime.Serialization.OnDeserializing]
-        private void MarkLegacyFixedHousing(System.Runtime.Serialization.StreamingContext context) { FixedHousing = null; }
+        private void MarkLegacyFixedHousing(System.Runtime.Serialization.StreamingContext context) { FixedHousing = null; FisherySites = null; }
         public int LivePlayers
         {
             get { int live = Math.Max(PlayerCount, Config.Players); foreach (var c in Camps) live = Math.Max(live, c.Player + 1); return live; }

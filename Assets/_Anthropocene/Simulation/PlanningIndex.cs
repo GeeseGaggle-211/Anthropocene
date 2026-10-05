@@ -46,6 +46,21 @@ namespace Anthropocene.Simulation
         internal IEnumerable<Hunter> VisibleHunters(IEnumerable<int> tiles) => tiles.SelectMany(n => At(huntersByTile, n)).OrderBy(h => h.Id);
         internal IEnumerable<Herd> VisibleHerds(IEnumerable<int> tiles) => tiles.SelectMany(n => At(herdsByTile, n)).OrderBy(h => h.Id);
         internal Herd[] CampHerds(int camp) => At(herdsByCamp, camp);
+        internal bool TryFisherySite(int tile, out FisherySite site)
+        {
+            var sites = world.FisherySites;
+            int low = 0, high = (sites?.Count ?? 0) - 1;
+            while (low <= high)
+            {
+                int middle = low + ((high - low) >> 1);
+                int comparison = sites[middle].TileId.CompareTo(tile);
+                if (comparison == 0) { site = sites[middle]; return true; }
+                if (comparison < 0) low = middle + 1;
+                else high = middle - 1;
+            }
+            site = null;
+            return false;
+        }
         internal IEnumerable<Transfer> Extraction(IEnumerable<int> entities) => entities.OrderBy(n => n).SelectMany(n => At(extractionByEntity, n));
         internal int Population(Camp c) => c.Population + CampHunters(c.Id).Sum(h => h.Population);
         private readonly Func<int, EcologyView> project;
@@ -77,11 +92,12 @@ namespace Anthropocene.Simulation
     }
     public sealed class SettlementObservation
     {
-        public readonly int Id, Tile, Population, Gatherers, LinkedPopulation;
+        public readonly int Id, Tile, Population, Gatherers, LinkedPopulation, FisherPopulation, FishingVillageMaturity, FishingVillageMealSupport;
+        public readonly double FishingTools;
         public readonly double AnimalFabric, LightHousing, HerdingTools, FixedHousing, HousingMaterial;
         public readonly bool RecentlyMoved;
         public readonly bool IsVillage;
-        public readonly bool Agriculture, Husbandry;
+        public readonly bool Agriculture, Husbandry, FishingEnabled;
         public readonly string[] Technologies;
         public readonly EconomicIntent Economy;
         public readonly EconomicIntent RecommendedEconomy;
@@ -90,6 +106,26 @@ namespace Anthropocene.Simulation
         public readonly int FissionDestination;
         public readonly MaterialSourceObservation[] MaterialSources;
         // forValidation (order validation only): MaterialSources is empty and FixedHousing 0; OrderRules.Validate reads neither.
-        public SettlementObservation(Camp c, PlanningIndex index, bool recommendEconomy = false, bool forValidation = false) { Id = c.Id; Tile = c.Tile; Population = c.Population; Gatherers = c.GathererPopulation; LinkedPopulation = index.Population(c); AnimalFabric = c.Inventory.AnimalFabric; LightHousing = c.Inventory.LightHousingUnits; HerdingTools = c.Inventory.HerdingTools; HousingMaterial = c.Inventory.HousingMaterial; FixedHousing = forValidation ? 0 : NeolithicProduction.FixedHousingAt(index.World, c, index.World.Days); RecentlyMoved = c.Moves > 0 && c.StationaryTurns == 0; IsVillage = c.IsVillage; FissionPolicy = c.FissionPolicy; FissionDestination = c.FissionDestination == null ? -1 : c.FissionDestination.Tile; Agriculture = CultivationEconomy.Enabled(c); Husbandry = CultivationEconomy.HusbandryEnabled(c); Technologies = c.People.NeolithicTechnologies.ToArray(); Economy = EconomicIntent.From(c); RecommendedEconomy = recommendEconomy && (Agriculture || Husbandry) ? EconomicIntents.Automatic(index.World, c, true) : Economy.Copy(); MaterialSources = !forValidation && (Agriculture || Husbandry) ? MaterialEconomy.Observe(index.World, c, index.World.Days) : Array.Empty<MaterialSourceObservation>(); }
+        public SettlementObservation(Camp c, PlanningIndex index, bool recommendEconomy = false, bool forValidation = false)
+        {
+            Id = c.Id; Tile = c.Tile; Population = c.Population; Gatherers = c.GathererPopulation; LinkedPopulation = index.Population(c);
+            FisherPopulation = c.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Fisher).Sum(a => a.Population);
+            FishingTools = c.Inventory.FishingTools;
+            AnimalFabric = c.Inventory.AnimalFabric; LightHousing = c.Inventory.LightHousingUnits; HerdingTools = c.Inventory.HerdingTools; HousingMaterial = c.Inventory.HousingMaterial;
+            FixedHousing = forValidation ? 0 : NeolithicProduction.FixedHousingAt(index.World, c, index.World.Days);
+            RecentlyMoved = c.Moves > 0 && c.StationaryTurns == 0; IsVillage = c.IsVillage; FissionPolicy = c.FissionPolicy; FissionDestination = c.FissionDestination == null ? -1 : c.FissionDestination.Tile;
+            Agriculture = CultivationEconomy.Enabled(c); Husbandry = CultivationEconomy.HusbandryEnabled(c);
+            // Economy capability is a society flag, not a prediction that a
+            // currently eligible ground will produce. Ground access belongs
+            // to the prepared Fishing plan, so action masks cannot reveal
+            // hidden water quality or route/source availability.
+            FishingEnabled = index.World.Config.NeolithicFishingEnabled && c.Technologies[(int)Technology.Watercraft];
+            var lastReport = forValidation ? null : index.World.History.LastOrDefault()?.Demographics?.FirstOrDefault(d => d.Camp == c.Id);
+            FishingVillageMaturity = Knowledge.Band(lastReport?.FishingVillageMaturity ?? 0, 1, index.World.Config);
+            FishingVillageMealSupport = Knowledge.Band(lastReport?.FishingVillageMealSupport ?? 0, 1, index.World.Config);
+            Technologies = c.People.NeolithicTechnologies.ToArray(); Economy = EconomicIntent.From(c);
+            RecommendedEconomy = recommendEconomy && (Agriculture || Husbandry || FishingEnabled) ? EconomicIntents.Automatic(index.World, c, true) : Economy.Copy();
+            MaterialSources = !forValidation && (Agriculture || Husbandry || FishingEnabled) ? MaterialEconomy.Observe(index.World, c, index.World.Days) : Array.Empty<MaterialSourceObservation>();
+        }
     }
 }

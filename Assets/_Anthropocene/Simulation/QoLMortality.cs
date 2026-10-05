@@ -26,7 +26,7 @@ namespace Anthropocene.Simulation
 
         // Camps whose QoL the goods economy resolves. A Paleolithic camp produces no clothing or housing, so its resolved QoL is capped at
         // 1 - E (about 0.75 times food and cohesion) by construction and says nothing about wellbeing: its growth is left unchanged.
-        public static bool Applies(WorldState w, Camp camp) => w.Config.QoLMortalityEnabled && CultivationEconomy.EconomyEnabled(camp);
+        public static bool Applies(WorldState w, Camp camp) => w.Config.QoLMortalityEnabled && CultivationEconomy.EconomyEnabled(w, camp);
 
         // Annual deaths per head at QoL q for explicit factors.
         public static double DeathRate(SimulationConfig cfg, double qol, double mortalityFactor = 1)
