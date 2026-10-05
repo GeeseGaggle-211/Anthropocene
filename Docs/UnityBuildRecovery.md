@@ -66,6 +66,27 @@ Inspect `git status` after the editor exits. Unity can rewrite `.meta` whitespac
 
 Report the built commit, whether upstream was included and local commits preserved, the build outcome, the actual player checks and the executable location. Explain any remaining synchronization problem separately. Do not describe automated captures as a human usability playtest.
 
+### Headless long run
+
+`--anthropocene-long-run-output <fresh-absolute-directory>` (optional `--anthropocene-long-run-turns N`, default 50) exercises the post-breakthrough economy in the player. It:
+- generates the default world;
+- puts the human camp on continuous economic automation once it has an economy;
+- resolves N turns through `EndTurn`;
+- writes per-turn `turns.csv` (settlements, population, fissions, migrations, trades, turn time);
+- checks an exact save/load of the continued world;
+- writes `result.txt` and exits with code 0 (PASS) or 1 (FAIL).
+
+It needs no window, so run it with `-batchmode -nographics`. Screenshots are taken only when a window exists. The smoke route above stops at turn 3, in the Paleolithic.
+
 ## Recorded successful recovery
 
 September 15: upstream main was `8257614`; local main `9dceda7` included it and the newer balance commit. The explicit Hub-pipe graphical launch built that local main successfully. The visible Standard/Continents/1729/32 smoke run passed dispatch, exact stack selection, both tilesets, supply preview and save/load, finishing at turn 3 with 37 people. All nine captures were present; opening/restored frames were visually inspected, and six transparency probes plus 2,431 differing icon pixels passed. Evidence is ignored under `TestResults/Rebuild-20260915/Build.log` and `Player/`; source and user saves were preserved. This is a verified recovery procedure, not a promise that all future licensing failures have the same cause.
+
+October 5, 2026:
+- **Licensing:** the Hub licensing pipe was `Unity-LicenseClient-sbhatt` (inspect it; do not assume it). With that pipe passed through `-licensingIpc`, the plain `-batchmode -nographics -quit ... -executeMethod Anthropocene.Editor.PrototypeBuild.Windows` build succeeded. So did the EditMode test run (29/29; hidden graphical launch with the same pipe).
+- **Long run:** the player ran `--anthropocene-long-run-turns 60` under `-batchmode -nographics` and passed. From commit `4dda12a` plus the long-run route, with the plan-of-record defaults:
+  - 32 founding camps became 259 settlements and about 106,000 people;
+  - 227 fissions, 77 migrations and 159 trades;
+  - slowest turn 801 ms;
+  - exact save/load.
+  Evidence is in `TestResults/HeadlessBuild-20261005-093548/` (ignored).

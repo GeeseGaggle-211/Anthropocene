@@ -20,6 +20,13 @@ namespace Anthropocene.Presentation
             int resources = Array.IndexOf(args, "--anthropocene-resources-output");
             int neolithic = Array.IndexOf(args, "--anthropocene-neolithic-smoke-output");
             int husbandry = Array.IndexOf(args, "--anthropocene-husbandry-smoke-output");
+            int longRun = Array.IndexOf(args, "--anthropocene-long-run-output");
+            if (longRun >= 0 && longRun + 1 < args.Length)
+            {
+                int turnsAt = Array.IndexOf(args, "--anthropocene-long-run-turns");
+                int turns = turnsAt >= 0 && turnsAt + 1 < args.Length && int.TryParse(args[turnsAt + 1], out int parsed) && parsed > 0 ? parsed : 50;
+                yield return LongRun(args[longRun + 1], turns); yield break;
+            }
             if (neolithic >= 0 && neolithic + 1 < args.Length) { yield return NeolithicSmoke(args[neolithic + 1]); yield break; }
             if (husbandry >= 0 && husbandry + 1 < args.Length) { yield return HusbandrySmoke(args[husbandry + 1]); yield break; }
             if (resources >= 0 && resources + 1 < args.Length) { yield return ResourceSmoke(args[resources + 1]); yield break; }
@@ -74,6 +81,72 @@ namespace Anthropocene.Presentation
             if (captures.Any(name => !File.Exists(Path.Combine(output, name + ".png")))) throw new InvalidOperationException("Player screenshots are missing. Run this visual check in a visible game window.");
             File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: Standard / Continents / 1729 / 32 tribes. Dispatch, exact stack selection, both symbol sets, distant layer simplification, generated two-hop supply route " + camp.Tile + " -> " + route.First + " -> " + route.Second + ", and separate save/load round trip. Final turn " + world.Turn + ", population " + world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) + ". Screenshots captured from the Windows player.\n");
             Application.Quit();
+        }
+
+        // Opt-in long run of the shipped configuration through the real player's turn loop (NewGame, EndTurn, the worker
+        // resolution, Update/FinishTurn), so the post-breakthrough economy (DemandControl, fission, immigration, trade) runs
+        // in Unity rather than only in the headless runner. Works under -batchmode -nographics: screenshots are taken only
+        // when a window exists. The human camp switches to continuous economic automation once it has an economy, and
+        // otherwise holds. Writes turns.csv and result.txt (PASS/FAIL) and exits with code 0 or 1. Never uses the user's save slot.
+        private IEnumerator LongRun(string directory, int turns)
+        {
+            Application.runInBackground = true;
+            string output = Path.GetFullPath(directory); Directory.CreateDirectory(output);
+            bool windowed = !Application.isBatchMode && SystemInfo.graphicsDeviceType != UnityEngine.Rendering.GraphicsDeviceType.Null;
+            void Finish(bool pass, string message)
+            {
+                File.WriteAllText(Path.Combine(output, "result.txt"), (pass ? "PASS: " : "FAIL: ") + message + "\n");
+                Debug.Log("Anthropocene long run " + (pass ? "PASS: " : "FAIL: ") + message);
+                Application.Quit(pass ? 0 : 1);
+            }
+            NewGame(); while (generating != null) yield return null;
+            if (world == null) { Finish(false, "world did not generate; status=" + status); yield break; }
+            var cfg = world.Config;
+            string configuration = $"EconomicAllocation={cfg.EconomicAllocation} Fission={cfg.FissionEnabled} Immigration={cfg.ImmigrationEnabled} Trade={cfg.TradeEnabled} " +
+                $"QoLMortality={cfg.QoLMortalityEnabled} HerdLabour={cfg.HerdLabourEnabled} SharedAllocation={cfg.SharedCropHerdAllocationEnabled}";
+            var csv = new System.Text.StringBuilder("turn,years,players,settlements,population,villages,neolithicSettlements,fissions,migrations,trades,humanPopulation,humanEra,turnMs\n");
+            var timer = new System.Diagnostics.Stopwatch();
+            double slowest = 0;
+            for (int i = 0; i < turns; i++)
+            {
+                var human = world.Camps.FirstOrDefault(c => c.Player == 0 && c.Population > 0);
+                if (human == null || world.LinkedPopulation(human) <= 0) { Finish(false, $"the human camp died at turn {world.Turn}; the player turn loop cannot continue. {configuration}"); yield break; }
+                if (CultivationEconomy.EconomyEnabled(human) && human.EconomyAutomationTurns != -1)
+                {
+                    var automated = EconomicIntent.From(human); automated.AutomationTurns = -1;
+                    Queue(new Order(OrderKind.Economy, human.Id) { Economy = automated });
+                }
+                int turnBefore = world.Turn;
+                timer.Restart(); EndTurn();
+                while (resolving != null) yield return null;
+                timer.Stop(); slowest = Math.Max(slowest, timer.Elapsed.TotalMilliseconds);
+                if (world.Turn != turnBefore + 1) { Finish(false, $"turn {turnBefore} did not resolve; status={status}. {configuration}"); yield break; }
+                var record = world.History.Last(); var live = world.Camps.Where(c => c.Population > 0).ToArray();
+                human = world.Camps.FirstOrDefault(c => c.Player == 0);
+                csv.Append(world.Turn).Append(',').Append((world.Days / cfg.DaysPerYear).ToString("F0", System.Globalization.CultureInfo.InvariantCulture)).Append(',')
+                   .Append(world.LivePlayers).Append(',').Append(live.Length).Append(',').Append(live.Sum(c => c.Population)).Append(',')
+                   .Append(live.Count(c => c.IsVillage)).Append(',').Append(live.Count(c => c.People.Progression.Era != Era.Paleolithic)).Append(',')
+                   .Append(record.Fissions?.Count ?? 0).Append(',').Append(record.Migrations?.Count ?? 0).Append(',').Append(record.Trades?.Count ?? 0).Append(',')
+                   .Append(human == null ? 0 : world.LinkedPopulation(human)).Append(',').Append(human?.People.Progression.Era.ToString() ?? "-").Append(',')
+                   .Append(timer.Elapsed.TotalMilliseconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)).Append('\n');
+                File.WriteAllText(Path.Combine(output, "turns.csv"), csv.ToString());
+                if (windowed && world.Turn % 10 == 0)
+                {
+                    yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, $"turn-{world.Turn:D3}.png")); yield return new WaitForSeconds(.4f);
+                }
+            }
+            // The continued world must survive the player's own save/load path exactly.
+            string before = SaveCodec.Fingerprint(world); var savedWorld = world;
+            operation = "Checking the long-run save";
+            generating = Task.Run(() => { var bytes = SaveCodec.Save(savedWorld); File.WriteAllBytes(Path.Combine(output, "long-run.anthro"), bytes); return SaveCodec.Load(bytes); });
+            while (generating != null) yield return null;
+            if (SaveCodec.Fingerprint(world) != before) { Finish(false, "save/load changed the continued world. " + configuration); yield break; }
+            var final = world.Camps.Where(c => c.Population > 0).ToArray();
+            var history = world.History.Skip(Math.Max(0, world.History.Count - turns)).ToArray();
+            Finish(true, $"{turns} turns through the player loop ({(windowed ? "windowed" : "batch mode, no graphics")}); final turn {world.Turn}, {final.Length} settlements, " +
+                $"{final.Sum(c => c.Population)} people, {world.LivePlayers} players, {final.Count(c => c.People.Progression.Era != Era.Paleolithic)} settlements past the breakthrough; " +
+                $"{history.Sum(r => r.Fissions?.Count ?? 0)} fissions, {history.Sum(r => r.Migrations?.Count ?? 0)} migrations, {history.Sum(r => r.Trades?.Count ?? 0)} trades; " +
+                $"slowest turn {slowest:F0} ms; exact save/load of the continued world. {configuration}");
         }
 
         private IEnumerator NeolithicSmoke(string directory)
