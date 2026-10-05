@@ -230,14 +230,14 @@ internal static class Program
             foreach(var g in grounds)
             {
                 if(!touched.Contains(g.Tile)&&touched.Count>=slots)continue;
-                double add=Math.Min(step,available-used);
-                var next=EvaluateGround(w,g,work[g.Tile]+add,years);
+                double candidateAdd=Math.Min(step,available-used);
+                var next=EvaluateGround(w,g,work[g.Tile]+candidateAdd,years);
                 double marginal=next.Catch-current[g.Tile].Catch;
                 if(best<0||marginal>bestMarginal+1e-10||Math.Abs(marginal-bestMarginal)<=1e-10&&(g.Distance<grounds.First(x=>x.Tile==best).Distance||g.Distance==grounds.First(x=>x.Tile==best).Distance&&g.Tile<best))
                 {best=g.Tile;bestMarginal=marginal;}
             }
             if(best<0||bestMarginal<=1e-9)break;
-            double add=Math.Min(step,available-used); work[best]+=add;used+=add;touched.Add(best);lastTile=best;
+            double chosenAdd=Math.Min(step,available-used); work[best]+=chosenAdd;used+=chosenAdd;touched.Add(best);lastTile=best;
             var gs=grounds.First(x=>x.Tile==best); current[best]=EvaluateGround(w,gs,work[best],years);
             double total=current.Where(p=>touched.Contains(p.Key)).Sum(p=>p.Value.Catch);
             if(total>=target-1e-7)break;
