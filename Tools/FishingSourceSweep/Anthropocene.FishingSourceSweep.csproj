@@ -7,7 +7,7 @@
   <ItemGroup>
     <Compile Include="../../Assets/_Anthropocene/Simulation/*.cs" />
     <Compile Include="../Headless/AquaticChecks.cs" />
-    <Compile Include="Program.cs" />
+    <Compile Include="Program.cs" />\n    <Compile Include="DamageDiagnostic.cs" />
   </ItemGroup>
   <Target Name="PrepareTestAdapter" BeforeTargets="CoreCompile">
     <Exec Command="python3 &quot;$(MSBuildProjectDirectory)/Prepare.py&quot;" />
