@@ -11,5 +11,6 @@
   </ItemGroup>
   <Target Name="PrepareTestAdapter" BeforeTargets="CoreCompile">
     <Exec Command="python3 &quot;$(MSBuildProjectDirectory)/Prepare.py&quot;" />
+    <Exec Command="python3 &quot;$(MSBuildProjectDirectory)/../FishingSourceSweepPhaseTwo.py&quot;" />
   </Target>
 </Project>
