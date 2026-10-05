@@ -617,6 +617,7 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public WorldResourceState Resources;
         [System.Runtime.Serialization.OptionalField] public List<MaterialSourceState> MaterialSources = new List<MaterialSourceState>();
         [NonSerialized] internal MaterialAccessIndex MaterialIndex;
+        [NonSerialized] internal FixedHousingIndex HousingIndex;
         [NonSerialized] internal TurnDiagnostics Diagnostics;
         [System.Runtime.Serialization.OptionalField] public List<MaterialKnowledge> MaterialKnowledge = new List<MaterialKnowledge>();
         [System.Runtime.Serialization.OptionalField] public List<FixedHousingStock> FixedHousing = new List<FixedHousingStock>();

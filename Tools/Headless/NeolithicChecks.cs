@@ -45,7 +45,7 @@ internal static class NeolithicChecks
     }
     public static int Run()
     {
-        checks = 0; Cultivation(); TerrestrialFarmerClaims(); ReserveHorizons(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); PotStorage(); Smoke(); HousingMaterialChecks.Run(); WoodEcologyChecks.Run(); EconomicAutomationChecks.Run();
+        checks = 0; HousingIndexEquivalence(); Cultivation(); TerrestrialFarmerClaims(); ReserveHorizons(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); PotStorage(); Smoke(); HousingMaterialChecks.Run(); WoodEcologyChecks.Run(); EconomicAutomationChecks.Run();
         Console.WriteLine("PASS: " + checks + " Neolithic realignment assertions"); return checks;
     }
 
@@ -577,5 +577,51 @@ internal static class NeolithicChecks
             }
             return output.ToArray();
         }
+    }
+
+    // FixedHousingIndex against the linear scan FixedHousingAt used before it (5 October 2026): bit-identical shelter for every
+    // camp and tile, through API additions, in-place unit updates, direct list edits that keep the count (remove one record,
+    // add another) and list replacement, at several clock times.
+    private static double LinearFixedHousing(WorldState w, int campId, int tile, double days)
+    {
+        var n = w.Config.Neolithic; double units = 0;
+        foreach (var s in w.FixedHousing ?? new List<FixedHousingStock>())
+            if (s.CampId == campId && s.Tile == tile)
+                units += Math.Max(0, s.Units) * Math.Pow(1 - n.HousingDecayPerTurn, Math.Max(0, days - s.LastUpdatedDays) / w.Config.DaysPerYear / n.ReferenceTurnYears);
+        return units;
+    }
+    private static void HousingIndexEquivalence()
+    {
+        var w = Fixture(); var random = new Random(51);
+        var camps = new List<Camp> { w.Camps[0] };
+        for (int i = 0; i < 40; i++) { var c = new Camp { Id = w.NextId++, Player = 0, Tile = 10 + i * 7, Population = 50 }; w.Camps.Add(c); camps.Add(c); }
+        Ownership.Bind(w);
+        void Compare(string step)
+        {
+            foreach (var c in camps)
+                foreach (int tile in new[] { c.Tile, c.Tile + 1 })
+                    foreach (double days in new[] { w.Days, w.Days + 3650, w.Days + 7300.5 })
+                    {
+                        double expected = LinearFixedHousing(w, c.Id, tile, days), actual = NeolithicProduction.FixedHousingAt(w, c.Id, tile, days);
+                        Check(BitConverter.DoubleToInt64Bits(expected) == BitConverter.DoubleToInt64Bits(actual), $"indexed fixed housing equals the scan ({step}, camp {c.Id}, tile {tile}: {actual} vs {expected})");
+                        if (tile == c.Tile && c.Inventory.HousingUnits <= 0)
+                            Check(BitConverter.DoubleToInt64Bits(NeolithicProduction.FixedHousingAt(w, c, days)) == BitConverter.DoubleToInt64Bits(expected), "the camp overload agrees (" + step + ")");
+                    }
+        }
+        Compare("empty");
+        for (int round = 0; round < 60; round++)
+        {
+            var c = camps[random.Next(camps.Count)];
+            switch (round % 6)
+            {
+                case 0: case 1: NeolithicProduction.AddFixedHousing(w, c, 1 + random.Next(30), w.Days - random.Next(4000)); break;
+                case 2: w.FixedHousing.Add(new FixedHousingStock { CampId = c.Id, Tile = c.Tile + 1, Units = random.Next(20), LastUpdatedDays = w.Days }); break;
+                case 3: if (w.FixedHousing.Count > 1) { w.FixedHousing.RemoveAt(random.Next(w.FixedHousing.Count)); w.FixedHousing.Add(new FixedHousingStock { CampId = c.Id, Tile = c.Tile, Units = 3, LastUpdatedDays = w.Days }); NeolithicProduction.FixedHousingChanged(w); } break;
+                case 4: if (w.FixedHousing.Count > 0) w.FixedHousing[random.Next(w.FixedHousing.Count)].Units += 2.5; break;
+                case 5: if (round == 23) w.FixedHousing = w.FixedHousing.OrderBy(x => x.CampId).ThenBy(x => x.Tile).ToList(); else if (round == 41) w.FixedHousing.Clear(); break;
+            }
+            Compare("round " + round);
+        }
+        Check(w.FixedHousing.Count >= 5, "the sequence leaves several records after clearing (" + w.FixedHousing.Count + ")");
     }
 }

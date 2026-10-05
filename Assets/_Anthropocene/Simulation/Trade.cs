@@ -901,31 +901,44 @@ namespace Anthropocene.Simulation
         {
             var cfg = w.Config;
             if (!cfg.TradeEnabled) return TradePlan.Empty;
+            using var profile = PhaseProfile.Scope("Trade.Plan");
             var plan = new TradePlan();
             var eligible = w.Camps.Where(c => Eligible(w, c)).OrderBy(c => c.Id).ToArray();
+            PhaseProfile.Count("Trade.Eligible", eligible.Length);
             plan.Summary.Eligible = eligible.Length;
             if (eligible.Length < 2) return plan;
             var workers = execution ?? new PhaseExecution();
             var production = LastProduction(w); var materialUse = LastMaterialUse(w);
             long stage = System.Diagnostics.Stopwatch.GetTimestamp();
             var recipeTable = NeolithicProduction.Recipes(cfg);
-            var values = workers.Map(eligible, c => Value(w, c, production.TryGetValue(c.Id, out double p) ? p : 0, recipeTable, materialUse.TryGetValue(c.Id, out var u) ? u : null));
+            var map = w.Map;
+            // Partners: remembered settlements of other Societies, nearest first, at most K. They depend only on the contact
+            // memory, each eligible camp's Society and distance, never on a valuation, so they are chosen first and only camps
+            // that can take part (a requester with a partner, and its partners) are valued; a camp with no possible partner
+            // could never send or receive a requisition.
+            var societyOf = eligible.ToDictionary(c => c.Id, c => c.SocietyId);
+            var partnersOf = workers.Map(eligible, c => c.People.Memory.Contacts
+                .Where(k => !k.Moved && k.Tile >= 0 && societyOf.TryGetValue(k.Camp, out int society) && society != c.SocietyId)
+                .Select(k => (k.Camp, Distance: map.Distance(c.Tile, k.Tile)))
+                .Where(p => p.Distance <= cfg.TradeRange)
+                .OrderBy(p => p.Distance).ThenBy(p => p.Camp).Take(cfg.TradeRequisitionsPerCamp).ToArray());
+            var taking = new HashSet<int>();
+            for (int i = 0; i < eligible.Length; i++)
+                if (partnersOf[i].Length > 0) { taking.Add(eligible[i].Id); foreach (var partner in partnersOf[i]) taking.Add(partner.Camp); }
+            var participants = eligible.Where(c => taking.Contains(c.Id)).ToArray();
+            var valueScope = PhaseProfile.Scope("Valuation");
+            var values = workers.Map(participants, c => Value(w, c, production.TryGetValue(c.Id, out double p) ? p : 0, recipeTable, materialUse.TryGetValue(c.Id, out var u) ? u : null));
+            valueScope.Dispose(); PhaseProfile.Count("Trade.Valued", participants.Length);
             if (Counters.Enabled) { Counters.ValueTicks += System.Diagnostics.Stopwatch.GetTimestamp() - stage; stage = System.Diagnostics.Stopwatch.GetTimestamp(); }
             var byCamp = new Dictionary<int, Valuation>(); var offers = new Dictionary<int, bool[]>();
-            for (int i = 0; i < eligible.Length; i++) { byCamp[eligible[i].Id] = values[i]; offers[eligible[i].Id] = Offers(values[i]); }
+            for (int i = 0; i < participants.Length; i++) { byCamp[participants[i].Id] = values[i]; offers[participants[i].Id] = Offers(values[i]); }
             int length = ListLength(cfg);
             var societies = w.Societies.ToDictionary(s => s.Id);
-            var map = w.Map;
-            var requisitions = workers.Map(eligible, c =>
+            var requestScope = PhaseProfile.Scope("Requisitions");
+            var requisitions = workers.Map(Enumerable.Range(0, eligible.Length).Where(i => partnersOf[i].Length > 0).ToArray(), i =>
             {
-                var r = byCamp[c.Id]; var list = new List<Requisition>();
-                // Partners: remembered settlements of other Societies, nearest first, at most K.
-                var partners = c.People.Memory.Contacts
-                    .Where(k => !k.Moved && k.Tile >= 0 && byCamp.ContainsKey(k.Camp) && byCamp[k.Camp].Society != r.Society)
-                    .Select(k => (k.Camp, Distance: map.Distance(c.Tile, k.Tile)))
-                    .Where(p => p.Distance <= cfg.TradeRange)
-                    .OrderBy(p => p.Distance).ThenBy(p => p.Camp).Take(cfg.TradeRequisitionsPerCamp);
-                foreach (var p in partners)
+                var c = eligible[i]; var r = byCamp[c.Id]; var list = new List<Requisition>();
+                foreach (var p in partnersOf[i])
                 {
                     // Wants among what this partner offers; only a request some pair of which this camp itself would accept is sent.
                     var (wants, gives) = Lists(r, length, offers[p.Camp]);
@@ -935,7 +948,9 @@ namespace Anthropocene.Simulation
                 }
                 return list;
             });
+            requestScope.Dispose();
             var all = requisitions.SelectMany(x => x).ToList();
+            var responseScope = PhaseProfile.Scope("Responses");
             if (Counters.Enabled) { Counters.RequestTicks += System.Diagnostics.Stopwatch.GetTimestamp() - stage; stage = System.Diagnostics.Stopwatch.GetTimestamp(); }
             plan.Summary.Requisitions = all.Count;
             var flows = new HashSet<(int, int, string)>();
@@ -968,6 +983,8 @@ namespace Anthropocene.Simulation
                 }
             }
             if (Counters.Enabled) Counters.ResponseTicks += System.Diagnostics.Stopwatch.GetTimestamp() - stage;
+            responseScope.Dispose();
+            if (PhaseProfile.Enabled) PhaseProfile.Count("Trade.Participants", all.Select(x => x.From).Concat(all.Select(x => x.To)).Distinct().Count());
             return plan;
         }
 

@@ -174,11 +174,19 @@ namespace Anthropocene.Simulation
         public readonly HexMap Map;
         public readonly int MinimumCamp, MinimumCampSpacing, HunterMovement, CampMovement, WaterMovementCost, SupplyRange, SustainableHuntPopulation;
         public readonly double Inertia;
+        // forValidation builds the view TurnPlanner.Prepare validates orders against (OrderRules.Validate): the same visible tiles,
+        // own settlements and hunters, rivals, herds and scalars, but without what order rules never read: remembered tiles,
+        // known settlements and kin, candidate forecasts, likely herd destinations, recent extraction, technology statuses and the
+        // settlements' material sources and fixed-housing projections, which are left empty. Never handed to a policy or the UI.
         internal AgentObservation(WorldState w, Camp camp, PlanningIndex index, bool recommendEconomy,
-            bool includeCandidateForecasts = true)
+            bool includeCandidateForecasts = true, bool forValidation = false)
         {
+            if (forValidation) { recommendEconomy = false; includeCandidateForecasts = false; }
+            using var profile = PhaseProfile.Scope("Observation");
             var visible = index.Visible(camp.Player);
-            Days = w.Days; Settlements = Array.AsReadOnly(index.OwnCamps(camp.Player).Select(c => new SettlementObservation(c, index, recommendEconomy)).ToArray());
+            using (PhaseProfile.Scope("Settlements"))
+                Settlements = Array.AsReadOnly(index.OwnCamps(camp.Player).Select(c => new SettlementObservation(c, index, recommendEconomy, forValidation)).ToArray());
+            Days = w.Days;
             var preferences = camp.People.Policy; HuntingInclination = preferences.HuntingInclination; GatheringInclination = preferences.GatheringInclination; FishingInclination = preferences.FishingInclination;
             Player = camp.Player; CampId = camp.Id; CampTile = camp.Tile; CampPopulation = camp.Population; GathererPopulation = camp.GathererPopulation; LinkedPopulation = index.Population(camp);
             FoodCondition = Knowledge.Band(camp.Food, Math.Max(1, LinkedPopulation * w.Config.Consumption * w.Config.GenerationIntervals), w.Config);
@@ -186,14 +194,21 @@ namespace Anthropocene.Simulation
             Watercraft = camp.Technologies[(int)Technology.Watercraft]; Map = w.Map;
             WaterMovementCost = Math.Max(1, w.Config.HunterMovement / w.Config.WaterMovement); MinimumCamp = w.Config.MinimumCamp; MinimumCampSpacing = w.Config.MinimumCampSpacing; HunterMovement = w.Config.HunterMovement; CampMovement = w.Config.CampMovement; Inertia = w.Config.RelocationInertia;
             SupplyRange = w.Config.SupplyRange; SustainableHuntPopulation = w.Config.SustainableHuntPopulation;
-            Tiles = new ReadOnlyDictionary<int, TileObservation>(visible.OrderBy(n => n).ToDictionary(n => n, n => new TileObservation(w, w.Tiles[n], w.Rivers, index.Ecology(n))));
-            RememberedTiles = new ReadOnlyDictionary<int, RememberedTileObservation>(index.Remembered(camp.People, Player).ToDictionary(t => t.Id));
-            KnownSettlements = Array.AsReadOnly(ContactKnowledge.Contacts(camp.People));
-            ParentSociety = camp.People.ParentSociety; KinAffinity = camp.People.KinAffinity; KinRelations = Array.AsReadOnly(Kinship.Relations(camp.People, index));
+            using (PhaseProfile.Scope("Tiles"))
+                Tiles = new ReadOnlyDictionary<int, TileObservation>(visible.OrderBy(n => n).ToDictionary(n => n, n => new TileObservation(w, w.Tiles[n], w.Rivers, index.Ecology(n))));
+            using (PhaseProfile.Scope("Knowledge"))
+            {
+                RememberedTiles = new ReadOnlyDictionary<int, RememberedTileObservation>(forValidation ? new Dictionary<int, RememberedTileObservation>()
+                    : index.Remembered(camp.People, Player).ToDictionary(t => t.Id));
+                KnownSettlements = Array.AsReadOnly(forValidation ? Array.Empty<SettlementContactObservation>() : ContactKnowledge.Contacts(camp.People));
+            }
+            ParentSociety = camp.People.ParentSociety; KinAffinity = camp.People.KinAffinity;
+            KinRelations = Array.AsReadOnly(forValidation ? Array.Empty<KinObservation>() : Kinship.Relations(camp.People, index));
             Hunters = Array.AsReadOnly(index.OwnHunters(Player).Select(h => new UnitObservation(h.Id, h.Tile, h.Population, h.Player, Supply.Connected(w, h), Knowledge.Band(h.CarriedFood, Supply.Capacity(w, h), w.Config), h.DeficitTurns, h.SourceCamp)).ToArray());
             Rivals = Array.AsReadOnly(index.VisibleCamps(visible).Where(c => c.Player != Player).Select(c => new UnitObservation(c.Id, c.Tile, 0, c.Player)).ToArray());
             ForeignHunters = Array.AsReadOnly(index.VisibleHunters(visible).Where(h => h.Player != Player).Select(h => new UnitObservation(h.Id, h.Tile, 0, h.Player)).ToArray());
             Herds = Array.AsReadOnly(index.VisibleHerds(visible).Select(h => new HerdObservation(h, w.Config, h.DomesticCamp < 0 ? -1 : index.Camps[h.DomesticCamp].Player, Player)).ToArray());
+            var forecastScope = PhaseProfile.Scope("Forecasts");
             SiteCoverage = Array.AsReadOnly(includeCandidateForecasts && CultivationEconomy.HusbandryEnabled(camp)
                 ? w.Map.Radius(camp.Tile, CampMovement).Where(visible.Contains).OrderBy(id => id)
                     .Select(id => Coverage(w, camp, index, visible, id, Hunters, Herds)).ToArray()
@@ -203,14 +218,21 @@ namespace Anthropocene.Simulation
                 CultivationEconomy.Enabled(camp) && !CultivationEconomy.HusbandryEnabled(camp)
                 ? AgriculturalCandidates(w, camp, index, visible)
                 : Array.Empty<AgriculturalSiteObservation>());
+            forecastScope.Dispose();
             HuntingFieldcraft = PracticeEffects.Ramp(w.Config, camp, Domain.Hunting);
             var observedHunters = Hunters.Concat(ForeignHunters).ToArray();
-            LikelyHerdDestinations = new ReadOnlyDictionary<int, int>(HuntingFieldcraft <= 0 ? new Dictionary<int, int>() : Herds.Where(h => !h.Domestic).ToDictionary(h => h.Id, h => PredictHerdDestination(h, Tiles, observedHunters, Map)));
+            LikelyHerdDestinations = new ReadOnlyDictionary<int, int>(HuntingFieldcraft <= 0 || forValidation ? new Dictionary<int, int>() : Herds.Where(h => !h.Domestic).ToDictionary(h => h.Id, h => PredictHerdDestination(h, Tiles, observedHunters, Map)));
+            Experience = Array.AsReadOnly((double[])camp.Experience.Clone());
+            if (forValidation)
+            {
+                RecentOwnExtraction = new ReadOnlyDictionary<int, double>(new Dictionary<int, double>());
+                TechnologyStatuses = Array.AsReadOnly(Array.Empty<TechnologyStatus>());
+                return;
+            }
             var ownIds = new HashSet<int>(Hunters.Select(h => h.Id)) { CampId };
             var recent = w.History.LastOrDefault();
             if (recent != null) ownIds.UnionWith(recent.Logistics.Where(l => l.Camp == CampId).Select(l => l.Hunter));
             RecentOwnExtraction = new ReadOnlyDictionary<int, double>(index.Extraction(ownIds).Where(t => visible.Contains(t.Tile)).GroupBy(t => t.Tile).ToDictionary(g => g.Key, g => g.Sum(t => t.Food)));
-            Experience = Array.AsReadOnly((double[])camp.Experience.Clone());
             TechnologyStatuses = Array.AsReadOnly(TechnologyDiscovery.Statuses(w, camp.People));
         }
         private static SiteCoverageObservation Coverage(WorldState world, Camp camp, PlanningIndex index, HashSet<int> visible, int site,
@@ -353,6 +375,9 @@ namespace Anthropocene.Simulation
         public AgentObservation Build(WorldState world, int player, PlanningIndex index = null,
             bool recommendEconomy = false, bool includeCandidateForecasts = true)
         { index = index ?? new PlanningIndex(world); return new AgentObservation(world, index.OwnCamps(player).First(), index, recommendEconomy, includeCandidateForecasts); }
+        // The order-validation view (see the forValidation constructor): only what OrderRules.Validate reads.
+        internal AgentObservation BuildForValidation(WorldState world, int player, PlanningIndex index)
+            => new AgentObservation(world, index.OwnCamps(player).First(), index, false, false, forValidation: true);
     }
     [Serializable]
     public sealed class CandidateTrace

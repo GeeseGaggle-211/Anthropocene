@@ -63,6 +63,7 @@ namespace Anthropocene.Simulation
 
         public static CampPlacement Resolve(WorldState world, IEnumerable<Order> orders)
         {
+            using var profile = PhaseProfile.Scope("Placement");
             var result = new CampPlacement();
             foreach (var camp in world.Camps.OrderBy(c => c.Id)) result.Destinations[camp.Id] = camp.Tile;
             foreach (var order in orders.Where(o => o.Destination >= 0).OrderBy(o => o.Entity))
@@ -76,35 +77,65 @@ namespace Anthropocene.Simulation
             // Pre-existing sub-spacing pairs may stay; only movers are rolled back.
             int spacing = world.Config.MinimumCampSpacing;
             var camps = world.Camps.OrderBy(c => c.Id).ToArray();
+            // Spacing conflicts are local: a pair can conflict only when its destinations lie within spacing - 1 hexes.
+            // Each sweep visits the rows in camp-ID order and, within a row, its later camps in ID order, exactly as the
+            // all-pairs sweep did, but enumerates only the camps whose current destination is near the row's camp (an index
+            // of destination tiles, updated on every rollback). Work is O(camps x hexes within spacing) per sweep.
+            var at = new Dictionary<int, List<int>>();   // destination tile -> indices into camps
+            void Place(int index, int tile) { if (!at.TryGetValue(tile, out var list)) at[tile] = list = new List<int>(1); list.Add(index); }
+            for (int i = 0; i < camps.Length; i++) Place(i, result.Destinations[camps[i].Id]);
+            var index = new Dictionary<int, int>(); for (int i = 0; i < camps.Length; i++) index[camps[i].Id] = i;
+            void RollBack(Camp loser)
+            {
+                int i = index[loser.Id], from = result.Destinations[loser.Id];
+                at[from].Remove(i); Place(i, loser.Tile);
+                result.Destinations[loser.Id] = loser.Tile;
+                result.Blocked.Add(loser.Id);
+            }
+            var near = new List<int>();
             bool changed;
             do
             {
-                changed = false;
+                changed = false; PhaseProfile.Count("Placement.Passes");
                 foreach (var group in world.Camps.GroupBy(c => result.Destinations[c.Id]).OrderBy(g => g.Key).Where(g => g.Count() > 1).ToArray())
                 {
                     var winner = group.OrderBy(c => c.Tile == group.Key ? 0 : 1).ThenBy(c => c.Id).First();
                     foreach (var loser in group.Where(c => c != winner).OrderBy(c => c.Id))
                         if (result.Destinations[loser.Id] != loser.Tile)
                         {
-                            result.Destinations[loser.Id] = loser.Tile;
-                            result.Blocked.Add(loser.Id);
+                            RollBack(loser);
                             changed = true;
                         }
                 }
                 if (spacing > 1)
                     for (int i = 0; i < camps.Length; i++)
-                        for (int j = i + 1; j < camps.Length; j++)
+                    {
+                        Camp a = camps[i]; int from = i + 1;
+                        while (true)
                         {
-                            Camp a = camps[i], b = camps[j];
-                            int da = result.Destinations[a.Id], db = result.Destinations[b.Id];
-                            bool aMoved = da != a.Tile, bMoved = db != b.Tile;
-                            if (!aMoved && !bMoved || world.Map.Distance(da, db) >= spacing) continue;
-                            // A stayer wins; between two movers the lower ID (a) keeps its move.
-                            var loser = !bMoved ? a : b;
-                            result.Destinations[loser.Id] = loser.Tile;
-                            result.Blocked.Add(loser.Id);
-                            changed = true;
+                            // The later camps whose destination is within spacing of a's current destination, in ID order.
+                            int da = result.Destinations[a.Id]; near.Clear();
+                            foreach (int tile in world.Map.Radius(da, spacing - 1))
+                                if (at.TryGetValue(tile, out var here))
+                                    foreach (int j in here) if (j >= from && world.Map.Distance(da, tile) < spacing) near.Add(j);
+                            near.Sort();
+                            PhaseProfile.Count("Placement.PairsChecked", near.Count);
+                            bool aRolledBack = false;
+                            foreach (int j in near)
+                            {
+                                Camp b = camps[j];
+                                bool aMoved = da != a.Tile, bMoved = result.Destinations[b.Id] != b.Tile;
+                                if (!aMoved && !bMoved) continue;
+                                // A stayer wins; between two movers the lower ID (a) keeps its move.
+                                var loser = !bMoved ? a : b;
+                                RollBack(loser);
+                                changed = true;
+                                // a's destination changed: its remaining pairs are taken from its new destination.
+                                if (loser == a) { from = j + 1; aRolledBack = true; break; }
+                            }
+                            if (!aRolledBack) break;
                         }
+                    }
             } while (changed);
             return result;
         }
@@ -157,19 +188,20 @@ namespace Anthropocene.Simulation
             IEnumerable<DecisionTrace> traces, PhaseExecution execution, PlanningDraft draft)
         {
             if (world == null || submitted == null) throw new ArgumentNullException(world == null ? nameof(world) : nameof(submitted));
+            using var profile = PhaseProfile.Scope("Prepare");
             TurnDiagnostics.For(world);
             if (world.Resources != null) MaterialAccessIndex.For(world);
             var prepared = new PreparedTurn(world);
             if (traces != null) prepared.Traces.AddRange(traces.OrderBy(t => t.Player));
             var index = new PlanningIndex(world);
+            var validateScope = PhaseProfile.Scope("Validate");
             foreach (var camp in world.Camps.GroupBy(c => c.Player).OrderBy(g => g.Key).Select(g => g.OrderBy(c => c.Id).First()))
             {
                 if (!submitted.TryGetValue(camp.Player, out var orders)) continue;
-                // Candidate food and field forecasts guide the AI decision,
-                // but no order rule reads them. Validation retains the same
-                // filtered tiles, entities, economy constraints, and masks.
-                var observation = new AgentObservationBuilder().Build(world, camp.Player, index,
-                    includeCandidateForecasts: false);
+                // Validation reads the order-rule view: the same filtered tiles, entities, economy
+                // constraints and masks as the AI's observation, without the knowledge, forecasts
+                // and settlement detail no order rule reads (AgentObservation, forValidation).
+                var observation = new AgentObservationBuilder().BuildForValidation(world, camp.Player, index);
                 foreach (var group in orders.Where(o => o != null).GroupBy(o => o.Entity).OrderBy(g => g.Key))
                 {
                     // A camp may carry one ordinary order and, besides it, one fission-policy setting.
@@ -184,6 +216,7 @@ namespace Anthropocene.Simulation
                     }
                 }
             }
+            validateScope.Dispose();
             prepared.Placement = CampPlacement.Resolve(world, prepared.Orders);
             foreach (var camp in world.Camps.Where(c => c.IsVillage))
                 if (prepared.Placement.Destinations[camp.Id] != camp.Tile)
@@ -206,6 +239,7 @@ namespace Anthropocene.Simulation
             prepared.Trade = useDraft ? draft.Trade : Trade.Plan(world, execution);
             prepared.TradeMilliseconds = tradeTimer.Elapsed.TotalMilliseconds;
             var trade = prepared.Trade;
+            var intentsScope = PhaseProfile.Scope("Intents");
             var automaticOrders = (execution ?? new PhaseExecution()).Map(automated, camp =>
             {
                 int effectiveTile = prepared.Placement.Destinations[camp.Id];
@@ -219,6 +253,7 @@ namespace Anthropocene.Simulation
                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
                 return AutomaticIntent(world, camp, effectiveTile, abandoning, index, trade);
             });
+            intentsScope.Dispose();
             for (int i = 0; i < automated.Length; i++)
             {
                 var camp = automated[i]; var order = automaticOrders[i].Order;
@@ -233,8 +268,10 @@ namespace Anthropocene.Simulation
             var huntersByCamp = world.Hunters.GroupBy(h => h.SourceCamp)
                 .ToDictionary(g => g.Key, g => g.OrderBy(h => h.Id).ToArray());
             var camps = world.Camps.OrderBy(c => c.Id).ToArray();
-            var needsResults = (execution ?? new PhaseExecution()).Map(camps, c =>
-                ComputeNeeds(world, c, prepared, acceptedActions, acceptedEconomy, huntersByCamp));
+            TurnNeeds[] needsResults;
+            using (PhaseProfile.Scope("Needs"))
+                needsResults = (execution ?? new PhaseExecution()).Map(camps, c =>
+                    ComputeNeeds(world, c, prepared, acceptedActions, acceptedEconomy, huntersByCamp));
             for (int i = 0; i < camps.Length; i++)
                 prepared.Needs[camps[i].Id] = needsResults[i];
             return prepared;
@@ -246,6 +283,7 @@ namespace Anthropocene.Simulation
         // so both run literally the same code. Pure over the committed world.
         private static AutomaticPlan AutomaticIntent(WorldState world, Camp camp, int effectiveTile, bool abandoning, PlanningIndex index, TradePlan trade)
         {
+            using var profile = PhaseProfile.Scope("Intent");
             var planningCamp = PlanningCampAt(camp, effectiveTile, trade);
             var settings = EconomicIntent.From(camp);
             if (CultivationEconomy.HusbandryEnabled(camp))
@@ -254,7 +292,8 @@ namespace Anthropocene.Simulation
             // automated intent can use the prior cohort as gatherers;
             // manual assignments remain the player's responsibility.
             ProductionOrder production = null;
-            var intent = abandoning ? settings.Copy() : EconomicAllocationStrategy.Plan(world, planningCamp, settings, out production);
+            EconomicIntent intent;
+            using (PhaseProfile.Scope("Allocator")) intent = abandoning ? settings.Copy() : EconomicAllocationStrategy.Plan(world, planningCamp, settings, out production);
             if (abandoning)
             {
                 intent.Assignments.Clear();
@@ -290,6 +329,7 @@ namespace Anthropocene.Simulation
         public static PlanningDraft Draft(WorldState world, int excludedPlayer, PhaseExecution execution = null)
         {
             if (world == null) throw new ArgumentNullException(nameof(world));
+            using var profile = PhaseProfile.Scope("Draft");
             Prewarm(world);
             var ai = AiPlanning.Decide(world, execution, excludedPlayer);
             var orders = ai.Orders.OrderBy(p => p.Key).SelectMany(p => p.Value).Where(o => o != null).ToArray();
@@ -305,6 +345,7 @@ namespace Anthropocene.Simulation
                 .OrderBy(c => c.Id).ToArray();
             var index = new PlanningIndex(world);
             var trade = Trade.Plan(world, execution);
+            var intentsScope = PhaseProfile.Scope("Intents");
             var results = (execution ?? new PhaseExecution()).Map(automated, camp =>
             {
                 int tile = placement.Destinations[camp.Id]; bool abandon = abandoning.Contains(camp.Id);
@@ -312,6 +353,7 @@ namespace Anthropocene.Simulation
                 return new DraftIntent { Camp = camp.Id, Tile = tile, Abandoning = abandon,
                     Order = plan.Order, Production = plan.Production };
             });
+            intentsScope.Dispose();
             var draft = new PlanningDraft(world, excludedPlayer, ai) { Trade = trade };
             foreach (var result in results) draft.Intents[result.Camp] = result;
             return draft;
@@ -321,6 +363,7 @@ namespace Anthropocene.Simulation
             IReadOnlyDictionary<int, Order> acceptedActions, IReadOnlyDictionary<int, Order> acceptedEconomy,
             IReadOnlyDictionary<int, Hunter[]> huntersByCamp)
         {
+            using var profile = PhaseProfile.Scope("Camp");
             var planningCamp = PlanningCampAt(camp, prepared.Placement.Destinations[camp.Id], prepared.Trade);
             // Dispatch changes who remains a camp resident, but creates no
             // new person. Goods and QoL follow those staying at the camp;

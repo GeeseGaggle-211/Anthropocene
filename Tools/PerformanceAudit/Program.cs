@@ -153,6 +153,9 @@ internal static class Program
 
     private static void Main(string[] args)
     {
+#if ATTRIBUTION
+        if (args.Any(a => a.StartsWith("--attribution=", StringComparison.Ordinal))) { Attribution.Run(args); return; }
+#endif
         WorkerCount = Option(args, "--workers", 4);
         PartitionSize = Option(args, "--partition-size", 64);
         ReversePartitions = Option(args, "--reverse-partitions", 0) != 0;

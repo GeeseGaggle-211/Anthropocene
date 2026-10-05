@@ -60,6 +60,7 @@ internal static class AgentContractChecks
         Check(preferences.Any(p => p.HuntingInclination > p.GatheringInclination) && preferences.Any(p => p.FishingInclination > p.GatheringInclination) && preferences.Any(p => p.GatheringInclination > Math.Max(p.HuntingInclination, p.FishingInclination)), "seeded policy state supports all three preferences without player-ID cohorts");
         HusbandryMovement();
         AgriculturalMovement();
+        ValidationView();
         Console.WriteLine("PASS: " + count + " agent-contract assertions"); return count;
     }
 
@@ -231,5 +232,68 @@ internal static class AgentContractChecks
         var rejected = new Order(OrderKind.Move, camp.Id, destination: world.Tiles.Length + 1);
         Check(OrderRules.Validate(full, rejected) == OrderRules.Validate(validation, rejected),
             "validation-only observation preserves rejected movement decisions");
+    }
+
+    // TurnPlanner.Prepare validates orders against the order-rule view (AgentObservationBuilder.BuildForValidation), not the
+    // full observation. Every order must get the same verdict from both, and the view must hold the same entities and tiles
+    // (no information beyond the full observation). Grown from a generated world into the Neolithic, every turn, every player:
+    // all legal actions plus moves to every tile within three hexes beyond the movement allowance, dispatch sizes around the
+    // limits, every visible and one unknown herd, fishing targets, reintegration, fission policies, economy payloads that are
+    // valid, oversized and unmastered, and orders naming another player's camps and hunters.
+    private static void ValidationView()
+    {
+        var cfg = SimulationConfig.Small(6);
+        var w = new WorldGenerator().Generate(11, cfg);
+        var resolver = new TurnResolver(new PhaseExecution(1)); int compared = 0, illegal = 0, neolithicTurns = 0;
+        for (int turn = 0; turn < 22 && w.Camps.Any(c => w.LinkedPopulation(c) > 0); turn++)
+        {
+            var index = new PlanningIndex(w); var builder = new AgentObservationBuilder();
+            foreach (int player in w.Camps.Where(c => w.LinkedPopulation(c) > 0).Select(c => c.Player).Distinct().OrderBy(x => x))
+            {
+                var full = builder.Build(w, player, index, includeCandidateForecasts: false); var view = builder.BuildForValidation(w, player, index);
+                Check(full.Tiles.Keys.SequenceEqual(view.Tiles.Keys) && full.Settlements.Select(x => x.Id).SequenceEqual(view.Settlements.Select(x => x.Id))
+                    && full.Hunters.Select(x => x.Id).SequenceEqual(view.Hunters.Select(x => x.Id)) && full.Rivals.Select(x => x.Id).SequenceEqual(view.Rivals.Select(x => x.Id))
+                    && full.Herds.Select(x => x.Id).SequenceEqual(view.Herds.Select(x => x.Id)), "the validation view holds the full observation's entities and visible tiles");
+                Check(view.RememberedTiles.Count == 0 && view.KnownSettlements.Count == 0 && view.Settlements.All(x => x.MaterialSources.Length == 0),
+                    "the validation view carries no remembered knowledge or material sources");
+                var orders = new List<Order>();
+                foreach (var mask in LegalActions.Build(full)) orders.AddRange(mask.Actions);
+                foreach (var camp in full.Settlements)
+                {
+                    foreach (int tile in w.Map.Radius(camp.Tile, full.CampMovement + 3)) orders.Add(new Order(OrderKind.Move, camp.Id, destination: tile));
+                    foreach (int size in new[] { 0, 1, camp.Gatherers, camp.Gatherers + 1, camp.Population - full.MinimumCamp, camp.Population - full.MinimumCamp + 1, camp.Population })
+                        orders.Add(new Order(OrderKind.Dispatch, camp.Id, population: size));
+                    for (int policy = -1; policy <= 3; policy++) orders.Add(new Order(OrderKind.FissionPolicy, camp.Id, target: policy));
+                    orders.Add(new Order(OrderKind.NoOp, camp.Id, destination: camp.Tile));
+                    var economy = camp.Economy.Copy(); orders.Add(new Order(OrderKind.Economy, camp.Id) { Economy = economy });
+                    var oversized = camp.Economy.Copy(); oversized.Assignments = new List<PopulationAssignment> { new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = camp.Population + 5 } };
+                    orders.Add(new Order(OrderKind.Economy, camp.Id) { Economy = oversized });
+                    var unmastered = camp.Economy.Copy(); unmastered.Assignments = new List<PopulationAssignment> { new PopulationAssignment { Role = WorkforceRoles.Potter, Population = 1 } };
+                    orders.Add(new Order(OrderKind.Economy, camp.Id) { Economy = unmastered });
+                }
+                foreach (var hunter in full.Hunters)
+                {
+                    foreach (int tile in w.Map.Radius(hunter.Tile, full.HunterMovement + 3)) orders.Add(new Order(OrderKind.Move, hunter.Id, destination: tile));
+                    foreach (var herd in full.Herds) orders.Add(new Order(OrderKind.Hunt, hunter.Id, target: herd.Id));
+                    orders.Add(new Order(OrderKind.Hunt, hunter.Id, target: w.NextId + 1000));
+                    foreach (int tile in w.Map.Radius(hunter.Tile, 2)) orders.Add(new Order(OrderKind.Fish, hunter.Id, target: tile));
+                    orders.Add(new Order(OrderKind.Reintegrate, hunter.Id, target: hunter.SourceCamp));
+                    orders.Add(new Order(OrderKind.Dispatch, hunter.Id, population: 1));
+                }
+                foreach (var other in w.Camps.Where(c => c.Player != player).Take(3)) orders.Add(new Order(OrderKind.NoOp, other.Id));
+                foreach (var other in w.Hunters.Where(h => h.Player != player).Take(3)) orders.Add(new Order(OrderKind.Move, other.Id, destination: other.Tile));
+                foreach (var order in orders)
+                {
+                    string expected = OrderRules.Validate(full, order), actual = OrderRules.Validate(view, order);
+                    Check(expected == actual, $"order {order} gets the same verdict from the validation view (turn {w.Turn}, player {player}: '{expected}' / '{actual}')");
+                    compared++; if (expected != null) illegal++;
+                }
+            }
+            if (w.Camps.Any(c => c.People.Progression.Era != Era.Paleolithic)) neolithicTurns++;
+            var ai = AiPlanning.Decide(w, new PhaseExecution(1));
+            resolver.Resolve(w, ai.Orders, ai.Traces);
+        }
+        Check(neolithicTurns >= 5 && compared > 5000 && illegal > compared / 4 && illegal < compared,
+            $"the comparison covers Neolithic turns and both verdicts ({compared} orders, {illegal} illegal, {neolithicTurns} Neolithic turns)");
     }
 }

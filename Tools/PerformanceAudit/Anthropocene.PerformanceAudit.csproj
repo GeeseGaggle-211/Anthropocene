@@ -11,5 +11,10 @@
   <ItemGroup>
     <Compile Include="$(SimulationSource)/*.cs" />
     <Compile Include="Program.cs" />
+    <!-- Cost attribution needs the simulation's PhaseProfile; historical sources built for comparisons omit it. -->
+    <Compile Include="Attribution.cs" Condition="Exists('$(SimulationSource)/PhaseProfile.cs')" />
   </ItemGroup>
+  <PropertyGroup Condition="Exists('$(SimulationSource)/PhaseProfile.cs')">
+    <DefineConstants>$(DefineConstants);ATTRIBUTION</DefineConstants>
+  </PropertyGroup>
 </Project>

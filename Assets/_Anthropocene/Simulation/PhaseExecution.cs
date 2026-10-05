@@ -62,6 +62,7 @@ namespace Anthropocene.Simulation
     {
         public static PlanningResult Decide(WorldState world, PhaseExecution execution = null, int excludedPlayer = -1)
         {
+            using var profile = PhaseProfile.Scope("Decide");
             var timer = Stopwatch.StartNew(); var result = new PlanningResult();
             TurnDiagnostics.For(world);
             if (world.Resources != null) MaterialAccessIndex.For(world);

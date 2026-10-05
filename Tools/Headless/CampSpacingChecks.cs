@@ -36,7 +36,7 @@ internal static class CampSpacingChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Pairs(); Chains(); Wrapping(); OrderIndependence(); Masks(); Hidden(); Policy(); Replay();
+        checks = 0; Config(); Pairs(); Chains(); Wrapping(); OrderIndependence(); Masks(); Hidden(); Policy(); Replay(); LocalEnumeration();
         Console.WriteLine("PASS: " + checks + " camp spacing assertions"); return checks;
     }
 
@@ -257,5 +257,67 @@ internal static class CampSpacingChecks
             if (turn >= 2) Check(SaveCodec.Fingerprint(worlds[0]) == SaveCodec.Fingerprint(worlds[2]), "save continuation agrees after turn " + turn);
         }
         Check(blocked >= 1, "the replay exercises at least one spacing rollback");
+    }
+
+    // The all-pairs sweep CampPlacement.Resolve used before local conflict enumeration (5 October 2026), kept verbatim as the
+    // reference: the local form must give the same destinations and the same rolled-back camps.
+    private static CampPlacement ReferenceResolve(WorldState world, IEnumerable<Order> orders)
+    {
+        var result = new CampPlacement();
+        foreach (var camp in world.Camps.OrderBy(c => c.Id)) result.Destinations[camp.Id] = camp.Tile;
+        foreach (var order in orders.Where(o => o.Destination >= 0).OrderBy(o => o.Entity))
+            if (result.Destinations.ContainsKey(order.Entity)) result.Destinations[order.Entity] = order.Destination;
+        int spacing = world.Config.MinimumCampSpacing;
+        var camps = world.Camps.OrderBy(c => c.Id).ToArray();
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var group in world.Camps.GroupBy(c => result.Destinations[c.Id]).OrderBy(g => g.Key).Where(g => g.Count() > 1).ToArray())
+            {
+                var winner = group.OrderBy(c => c.Tile == group.Key ? 0 : 1).ThenBy(c => c.Id).First();
+                foreach (var loser in group.Where(c => c != winner).OrderBy(c => c.Id))
+                    if (result.Destinations[loser.Id] != loser.Tile) { result.Destinations[loser.Id] = loser.Tile; result.Blocked.Add(loser.Id); changed = true; }
+            }
+            if (spacing > 1)
+                for (int i = 0; i < camps.Length; i++)
+                    for (int j = i + 1; j < camps.Length; j++)
+                    {
+                        Camp a = camps[i], b = camps[j];
+                        int da = result.Destinations[a.Id], db = result.Destinations[b.Id];
+                        bool aMoved = da != a.Tile, bMoved = db != b.Tile;
+                        if (!aMoved && !bMoved || world.Map.Distance(da, db) >= spacing) continue;
+                        var loser = !bMoved ? a : b;
+                        result.Destinations[loser.Id] = loser.Tile; result.Blocked.Add(loser.Id); changed = true;
+                    }
+        } while (changed);
+        return result;
+    }
+
+    // Randomized dense boards on a small wrapped map: every camp at a random tile (shared tiles allowed), a random share of
+    // them moving up to three hexes (including across the longitude seam and onto the polar rows), spacing 1 to 5, and
+    // orders presented in shuffled order. The local enumeration must match the reference exactly every time.
+    private static void LocalEnumeration()
+    {
+        var random = new Random(20261005); int conflicts = 0;
+        for (int trial = 0; trial < 600; trial++)
+        {
+            var w = NeolithicChecks.Fixture(false); w.Camps.Clear();
+            w.Config.MinimumCampSpacing = 1 + trial % 5;
+            int count = 2 + random.Next(60), cells = w.Map.Width * w.Map.Height;
+            for (int i = 0; i < count; i++) AddCamp(w, i % 7, random.Next(cells));
+            var orders = new List<Order>();
+            foreach (var c in w.Camps)
+                if (random.NextDouble() < .6)
+                {
+                    var options = w.Map.Radius(c.Tile, 1 + random.Next(3)).ToArray();
+                    orders.Add(new Order(OrderKind.Move, c.Id, destination: options[random.Next(options.Length)]));
+                }
+            var shuffled = orders.OrderBy(o => random.Next()).ToList();
+            var expected = ReferenceResolve(w, orders); var actual = CampPlacement.Resolve(w, shuffled);
+            conflicts += expected.Blocked.Count;
+            Check(Key(actual) == Key(expected), $"local enumeration matches the all-pairs reference (trial {trial}, spacing {w.Config.MinimumCampSpacing}, {count} camps)");
+        }
+        Check(conflicts > 600, "the randomized boards exercise many rollbacks (" + conflicts + ")");
     }
 }

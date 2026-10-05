@@ -298,11 +298,13 @@ namespace Anthropocene.Simulation
             => Math.Max(0, Math.Min(demand, (labor * rate - Math.Max(0, stock)) / 2));
         public static double FixedHousingAt(WorldState w, int campId, int tile, double days)
         {
-            double units = (w.FixedHousing ?? new List<FixedHousingStock>()).Where(s => s.CampId == campId && s.Tile == tile)
-                .Sum(s => ProjectFixedHousing(w, s, days));
+            using var profile = PhaseProfile.Scope("Housing.FixedAt");
+            var positions = FixedHousingIndex.Positions(w, campId, tile); double units = 0;
+            foreach (int p in positions) units += ProjectFixedHousing(w, w.FixedHousing[p], days);
+            // Legacy carried HousingUnits (old-save migration only) count only where no fixed stock is recorded.
+            if (positions.Length > 0) return units;
             var legacy = w.Camps.FirstOrDefault(c => c.Id == campId);
-            if (legacy != null && legacy.Tile == tile && legacy.Inventory != null && legacy.Inventory.HousingUnits > 0 &&
-                !(w.FixedHousing ?? new List<FixedHousingStock>()).Any(s => s.CampId == campId && s.Tile == tile))
+            if (legacy != null && legacy.Tile == tile && legacy.Inventory != null && legacy.Inventory.HousingUnits > 0)
                 units += legacy.Inventory.HousingUnits * Math.Pow(1 - w.Config.Neolithic.HousingDecayPerTurn,
                     Math.Max(0, days - w.Days) / (w.Config.DaysPerYear * w.Config.Neolithic.ReferenceTurnYears));
             return units;
@@ -311,14 +313,9 @@ namespace Anthropocene.Simulation
         // HousingUnits (old-save migration only) is read from the camp passed in, which is the authoritative camp or an exact copy of it.
         public static double FixedHousingAt(WorldState w, Camp c, double days)
         {
-            var stocks = w.FixedHousing; double units = 0; bool found = false;
-            if (stocks != null)
-                for (int i = 0; i < stocks.Count; i++)
-                {
-                    var s = stocks[i];
-                    if (s.CampId != c.Id || s.Tile != c.Tile) continue;
-                    found = true; units += ProjectFixedHousing(w, s, days);
-                }
+            using var profile = PhaseProfile.Scope("Housing.FixedAt");
+            var positions = FixedHousingIndex.Positions(w, c.Id, c.Tile); double units = 0; bool found = positions.Length > 0;
+            foreach (int p in positions) units += ProjectFixedHousing(w, w.FixedHousing[p], days);
             if (!found && c.Inventory != null && c.Inventory.HousingUnits > 0)
                 units += c.Inventory.HousingUnits * Math.Pow(1 - w.Config.Neolithic.HousingDecayPerTurn, Math.Max(0, days - w.Days) / (w.Config.DaysPerYear * w.Config.Neolithic.ReferenceTurnYears));
             return units;
@@ -329,8 +326,11 @@ namespace Anthropocene.Simulation
             double elapsedYears = Math.Max(0, days - stock.LastUpdatedDays) / w.Config.DaysPerYear;
             return Math.Max(0, stock.Units) * Math.Pow(1 - n.HousingDecayPerTurn, elapsedYears / n.ReferenceTurnYears);
         }
+        // Call after editing WorldState.FixedHousing directly in a way that keeps its count (removing one record and adding
+        // another, or changing a record's camp or tile). The simulation's own writers never need it (FixedHousingIndex).
+        public static void FixedHousingChanged(WorldState w) => w.HousingIndex = null;
         public static double HousingSupply(WorldState w, Camp c, double days)
-            => FixedHousingAt(w, c.Id, c.Tile, days) + Math.Max(0, c.Inventory.LightHousingUnits);
+            => FixedHousingAt(w, c, days) + Math.Max(0, c.Inventory.LightHousingUnits);
 
         // People sheltered by the camp's housing at a clock time (Docs/SocialCohesion.md): fixed units shelter HousingPeoplePerUnit
         // each, portable Light Housing units LightHousingPeoplePerUnit each. The one helper behind housing coverage, the cohesion

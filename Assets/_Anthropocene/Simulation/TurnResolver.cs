@@ -61,6 +61,7 @@ namespace Anthropocene.Simulation
         {
             if (prepared == null || !ReferenceEquals(w, prepared.World) || w.Turn != prepared.Turn || Math.Abs(w.Days - prepared.StartDays) > 1e-8 || Math.Abs(w.Config.TurnDays - prepared.Horizon.Days) > 1e-8)
                 throw new InvalidOperationException("Prepared turn does not match the current world boundary.");
+            using var profile = PhaseProfile.Scope("Resolve");
             var resolutionTimer = System.Diagnostics.Stopwatch.StartNew(); LastMetrics = new ResolutionMetrics(); trade = null;
             Ownership.Bind(w);
             if (w.Camps.All(c => w.LinkedPopulation(c) <= 0)) throw new InvalidOperationException("All tribes have perished.");
@@ -105,7 +106,7 @@ namespace Anthropocene.Simulation
             }
             // Confirmed trades settle from committed stock before dispatch, provisions, production and needs (WP7):
             // every later step sees the post-trade stock the planner and prepared needs saw.
-            var tradeTimer = System.Diagnostics.Stopwatch.StartNew(); trade = Trade.Settle(w, prepared.Trade, record); LastMetrics.TradeSettleMilliseconds = tradeTimer.Elapsed.TotalMilliseconds;
+            var tradeTimer = System.Diagnostics.Stopwatch.StartNew(); using (PhaseProfile.Scope("Trade.Settle")) trade = Trade.Settle(w, prepared.Trade, record); LastMetrics.TradeSettleMilliseconds = tradeTimer.Elapsed.TotalMilliseconds;
             LastMetrics.TradePlanMilliseconds = prepared.TradeMilliseconds;
             if (prepared.Trade != null)
             {
@@ -115,7 +116,7 @@ namespace Anthropocene.Simulation
             }
             var phaseTimer = System.Diagnostics.Stopwatch.StartNew();
             var herdInputs = w.Herds.OrderBy(h => h.Id).ToArray();
-            var destinations = execution.Map(herdInputs, h => HerdDestination(w, h, planning));
+            int[] destinations; using (PhaseProfile.Scope("HerdIntents")) destinations = execution.Map(herdInputs, h => HerdDestination(w, h, planning));
             var herdMoves = herdInputs.Select((h, i) => new { h.Id, Destination = destinations[i] }).ToDictionary(x => x.Id, x => x.Destination);
             LastMetrics.HerdIntentMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Dispatch).OrderBy(o => o.Entity))
@@ -124,12 +125,15 @@ namespace Anthropocene.Simulation
                 var hunter = new Hunter { Id = w.NextId++, SourceCamp = camp.Id, SocietyId = camp.SocietyId, Player = camp.Player, Population = order.Population, Tile = camp.Tile };
                 w.Hunters.Add(hunter); record.Log("Tribe " + camp.Player + " dispatched " + hunter.Population + " hunters [" + hunter.Id + "].");
             }
-            Supply.ProvisionDepartures(w, locked, record, prepared.Placement);
-            Move(w, locked, herdMoves, prepared.Placement, prepared.AbandoningVillages, record);
-            Supply.DepositReturns(w, record);
+            using (PhaseProfile.Scope("Movement"))
+            {
+                Supply.ProvisionDepartures(w, locked, record, prepared.Placement);
+                Move(w, locked, herdMoves, prepared.Placement, prepared.AbandoningVillages, record);
+                Supply.DepositReturns(w, record);
+            }
             var touched = new Dictionary<int, TileChange>();
             Action<int> touch = id => { if (!touched.ContainsKey(id)) touched[id] = new TileChange { Tile = id, BeforeFood = w.Tiles[id].Food, BeforePotentialFood = w.Tiles[id].PotentialFood, BeforeFreshwater = w.Tiles[id].Freshwater, BeforeLandCondition = w.Tiles[id].LandCondition, BeforeAquaticCondition = w.Tiles[id].AquaticCondition }; };
-            ResolveEcology(w, locked, establishedHunters, record, touch, prepared.Needs, prepared.AbandoningVillages);
+            using (PhaseProfile.Scope("Economy")) ResolveEcology(w, locked, establishedHunters, record, touch, prepared.Needs, prepared.AbandoningVillages);
             Trade.Finish(w, trade, record); LastMetrics.TradesSettled = record.Trades.Count; trade = null;
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Reintegrate).OrderBy(o => o.Entity))
             {
@@ -141,15 +145,15 @@ namespace Anthropocene.Simulation
             w.Hunters.RemoveAll(h => h.Population <= 0);
             Ownership.Bind(w);
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) BreakthroughBound(w, camp, record);
-            TechnologyDiscovery.Resolve(w, record);
+            using (PhaseProfile.Scope("Technology")) TechnologyDiscovery.Resolve(w, record);
             // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
             // Immigration between known settlements precedes fission (QoLFissionTradeDesign 4, 9); its sources and arrivals sit out fission this turn.
-            var mobile = Immigration.Resolve(w, record, execution, LastMetrics);
-            Fission.Resolve(w, record, execution, LastMetrics, mobile);
+            HashSet<int> mobile; using (PhaseProfile.Scope("Immigration")) mobile = Immigration.Resolve(w, record, execution, LastMetrics);
+            using (PhaseProfile.Scope("Fission")) Fission.Resolve(w, record, execution, LastMetrics, mobile);
             foreach (var change in touched.Values.OrderBy(t => t.Tile))
             { change.AfterFood = w.Tiles[change.Tile].Food; change.AfterPotentialFood = w.Tiles[change.Tile].PotentialFood; change.AfterFreshwater = w.Tiles[change.Tile].Freshwater; change.AfterLandCondition = w.Tiles[change.Tile].LandCondition; change.AfterAquaticCondition = w.Tiles[change.Tile].AquaticCondition; record.Changes.Add(change); }
             // Untouched tiles follow the recorded configuration/clock regeneration rule; replay does not need world-sized snapshots each turn.
-            Invariants(w, peopleBefore + record.Growth - record.Deaths, touched.Keys.Select(id => w.Tiles[id]));
+            using (PhaseProfile.Scope("Invariants")) Invariants(w, peopleBefore + record.Growth - record.Deaths, touched.Keys.Select(id => w.Tiles[id]));
             // Per-claim pressure and numerical balances are transient phase diagnostics.
             // Persisted transfer totals, condition changes and demographics remain intact.
             if (w.History.Count > 0) { w.History[w.History.Count - 1].Pressure?.Clear(); w.History[w.History.Count - 1].EcologyBalances?.Clear(); }
@@ -161,7 +165,7 @@ namespace Anthropocene.Simulation
                 .Select(g => new Transfer { Tile = g.Key.Tile, Entity = g.Key.Entity, Kind = g.Key.Kind,
                     Food = g.Sum(t => t.Food), PotentialFood = g.Sum(t => t.PotentialFood), Freshwater = g.Sum(t => t.Freshwater) }).ToList();
             // Remembered contact knowledge: end-of-turn, after movement and placement, from the post-turn vision.
-            phaseTimer.Restart(); ContactKnowledge.EndTurn(w, execution); LastMetrics.KnowledgeMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
+            phaseTimer.Restart(); using (PhaseProfile.Scope("ContactKnowledge")) ContactKnowledge.EndTurn(w, execution); LastMetrics.KnowledgeMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
             w.History.Add(record); w.Turn++;
             var diagnostics = w.Diagnostics;
             if (diagnostics != null && diagnostics.Turn == prepared.Turn)
