@@ -9,4 +9,7 @@
     <Compile Include="../Headless/AquaticChecks.cs" />
     <Compile Include="Program.cs" />
   </ItemGroup>
+  <Target Name="PrepareTestAdapter" BeforeTargets="CoreCompile">
+    <Exec Command="python3 &quot;$(MSBuildProjectDirectory)/Prepare.py&quot;" />
+  </Target>
 </Project>
