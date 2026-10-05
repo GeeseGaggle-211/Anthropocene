@@ -1,0 +1,38 @@
+name: Fishing source sweep (experiment only)
+on:
+  push:
+    branches: [experiments/fishing-source-sweep-20261005]
+    paths:
+      - Tools/FishingSourceSweep/**
+      - .github/workflows/fishing-source-sweep.yml
+permissions:
+  contents: read
+concurrency:
+  group: fishing-source-sweep-20261005
+  cancel-in-progress: true
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v6
+        id: dotnet
+        with:
+          dotnet-version: 8.0.x
+      - name: Pin SDK and confirm production source is unchanged
+        run: |
+          printf '{"sdk":{"version":"%s","rollForward":"latestPatch"}}\n' '${{ steps.dotnet.outputs.dotnet-version }}' > global.json
+          git diff --exit-code 86cba712dfd76673bd9637052543bde85f810e0b -- Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources/OpeningConfig.json
+          dotnet --info
+      - name: Run actual C# source-linked tests and sweeps
+        run: dotnet run --configuration Release --project Tools/FishingSourceSweep/Anthropocene.FishingSourceSweep.csproj
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: fishing-source-sweep-results
+          path: SweepResults/
+          if-no-files-found: warn
+          retention-days: 14
