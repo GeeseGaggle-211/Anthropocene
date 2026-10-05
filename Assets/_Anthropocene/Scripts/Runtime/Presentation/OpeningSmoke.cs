@@ -25,7 +25,12 @@ namespace Anthropocene.Presentation
             {
                 int turnsAt = Array.IndexOf(args, "--anthropocene-long-run-turns");
                 int turns = turnsAt >= 0 && turnsAt + 1 < args.Length && int.TryParse(args[turnsAt + 1], out int parsed) && parsed > 0 ? parsed : 50;
-                yield return LongRun(args[longRun + 1], turns); yield break;
+                // Optional tribe count on the Standard world (one of its menu choices) and screenshot interval in turns.
+                int tribesAt = Array.IndexOf(args, "--anthropocene-long-run-tribes");
+                if (tribesAt >= 0 && tribesAt + 1 < args.Length && int.TryParse(args[tribesAt + 1], out int tribes) && TribeChoices[0].Contains(tribes)) { sizeIndex = 0; players = tribes; }
+                int everyAt = Array.IndexOf(args, "--anthropocene-long-run-screenshot-every");
+                int every = everyAt >= 0 && everyAt + 1 < args.Length && int.TryParse(args[everyAt + 1], out int interval) && interval > 0 ? interval : 10;
+                yield return LongRun(args[longRun + 1], turns, every); yield break;
             }
             if (neolithic >= 0 && neolithic + 1 < args.Length) { yield return NeolithicSmoke(args[neolithic + 1]); yield break; }
             if (husbandry >= 0 && husbandry + 1 < args.Length) { yield return HusbandrySmoke(args[husbandry + 1]); yield break; }
@@ -88,7 +93,7 @@ namespace Anthropocene.Presentation
         // in Unity rather than only in the headless runner. Works under -batchmode -nographics: screenshots are taken only
         // when a window exists. The human camp switches to continuous economic automation once it has an economy, and
         // otherwise holds. Writes turns.csv and result.txt (PASS/FAIL) and exits with code 0 or 1. Never uses the user's save slot.
-        private IEnumerator LongRun(string directory, int turns)
+        private IEnumerator LongRun(string directory, int turns, int screenshotEvery)
         {
             Application.runInBackground = true;
             string output = Path.GetFullPath(directory); Directory.CreateDirectory(output);
@@ -130,7 +135,7 @@ namespace Anthropocene.Presentation
                    .Append(human == null ? 0 : world.LinkedPopulation(human)).Append(',').Append(human?.People.Progression.Era.ToString() ?? "-").Append(',')
                    .Append(timer.Elapsed.TotalMilliseconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)).Append('\n');
                 File.WriteAllText(Path.Combine(output, "turns.csv"), csv.ToString());
-                if (windowed && world.Turn % 10 == 0)
+                if (windowed && world.Turn % screenshotEvery == 0)
                 {
                     yield return new WaitForEndOfFrame(); ScreenCapture.CaptureScreenshot(Path.Combine(output, $"turn-{world.Turn:D3}.png")); yield return new WaitForSeconds(.4f);
                 }
@@ -143,7 +148,7 @@ namespace Anthropocene.Presentation
             if (SaveCodec.Fingerprint(world) != before) { Finish(false, "save/load changed the continued world. " + configuration); yield break; }
             var final = world.Camps.Where(c => c.Population > 0).ToArray();
             var history = world.History.Skip(Math.Max(0, world.History.Count - turns)).ToArray();
-            Finish(true, $"{turns} turns through the player loop ({(windowed ? "windowed" : "batch mode, no graphics")}); final turn {world.Turn}, {final.Length} settlements, " +
+            Finish(true, $"{cfg.Players} tribes, {turns} turns through the player loop ({(windowed ? "windowed" : "batch mode, no graphics")}); final turn {world.Turn}, {final.Length} settlements, " +
                 $"{final.Sum(c => c.Population)} people, {world.LivePlayers} players, {final.Count(c => c.People.Progression.Era != Era.Paleolithic)} settlements past the breakthrough; " +
                 $"{history.Sum(r => r.Fissions?.Count ?? 0)} fissions, {history.Sum(r => r.Migrations?.Count ?? 0)} migrations, {history.Sum(r => r.Trades?.Count ?? 0)} trades; " +
                 $"slowest turn {slowest:F0} ms; exact save/load of the continued world. {configuration}");

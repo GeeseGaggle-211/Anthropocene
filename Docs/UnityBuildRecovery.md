@@ -68,7 +68,7 @@ Report the built commit, whether upstream was included and local commits preserv
 
 ### Headless long run
 
-`--anthropocene-long-run-output <fresh-absolute-directory>` (optional `--anthropocene-long-run-turns N`, default 50) exercises the post-breakthrough economy in the player. It:
+`--anthropocene-long-run-output <fresh-absolute-directory>` (optional `--anthropocene-long-run-turns N`, default 50; `--anthropocene-long-run-tribes N` for a Standard-world tribe count; `--anthropocene-long-run-screenshot-every N`, default 10) exercises the post-breakthrough economy in the player. It:
 - generates the default world;
 - puts the human camp on continuous economic automation once it has an economy;
 - resolves N turns through `EndTurn`;
@@ -90,3 +90,10 @@ October 5, 2026:
   - slowest turn 801 ms;
   - exact save/load.
   Evidence is in `TestResults/HeadlessBuild-20261005-093548/` (ignored).
+- **80-tribe Standard run:** 80 tribes for 50 turns, windowed, with a screenshot every 25 turns, also passed.
+  - 323 settlements and about 110,000 people;
+  - 243 fissions, 104 migrations and 132 trades;
+  - mean turn 548 ms, slowest 1,126 ms;
+  - exact save/load.
+
+  Evidence is in `TestResults/LongRun80-20261005-095318/` (ignored). The route does not dismiss the Neolithic breakthrough dialog, so it stays on screen in later captures.
