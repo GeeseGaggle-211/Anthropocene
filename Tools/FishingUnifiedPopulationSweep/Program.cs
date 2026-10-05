@@ -24,7 +24,7 @@ internal static class Program
         public Dictionary<int,int> Distance = new Dictionary<int,int>();
         public double NaturalScore;
     }
-    sealed class GroundState { public int Tile, Distance; public double Capital; }
+    sealed class GroundState { public int Tile, Distance; public double Capital; public EcologyView Ecology; }
     sealed class GroundEval
     {
         public int Tile, Distance; public double WorkerYears, EffectiveWork, MaintenanceWorkerYears, OperatingFraction;
@@ -162,7 +162,7 @@ internal static class Program
 
     static GroundEval EvaluateGround(WorldState w, GroundState g, double workerYears, double years, double toolMultiplier=1)
     {
-        var t=w.Tiles[g.Tile]; double start=w.Days, days=w.Config.TurnDays;
+        var t=w.Tiles[g.Tile]; double start=g.Ecology.Days, days=w.Config.TurnDays;
         double d=DistanceRetention(g.Distance), effective=Math.Max(0,workerYears)*d;
         double startE=Math.Max(0,g.Capital);
         double maintenanceWorkers=w.Config.Neolithic.MaintenanceWorkersPerTileE(w.Config.MaintenanceCoefficient)
@@ -178,7 +178,7 @@ internal static class Program
         double avgE=Math.Max(0,meanDecay+.5*(endE-decayed));
         double q0=CultivationEconomy.Intensity(w.Config,startE), qavg=CultivationEconomy.Intensity(w.Config,avgE), qend=CultivationEconomy.Intensity(w.Config,endE);
 
-        var v=LazyEcology.ProjectEcology(w,g.Tile,start);
+        var v=g.Ecology;
         Reclassify(w,t,ref v,q0,qavg);
         var h=Horizon(w,t,v,qavg,operation,start,days);
         double rate=w.Config.FishPerPerson*w.Config.DaysPerYear/w.Config.BaseDays*d*toolMultiplier;
@@ -255,16 +255,18 @@ internal static class Program
         var selected=current.Where(p=>work[p.Key]>1e-8).Select(p=>p.Value).OrderBy(e=>e.Tile).ToList();
         foreach(var e in selected)
         {
-            e.EndView.Commit(w.Tiles[e.Tile]);
-            grounds.First(g=>g.Tile==e.Tile).Capital=e.EndE;
+            var state=grounds.First(g=>g.Tile==e.Tile);
+            state.Capital=e.EndE; state.Ecology=e.EndView;
         }
-        // Unworked candidates undergo ordinary natural recovery and fishery-capital abandonment.
+        // Unworked candidates still evolve through the SAME fishing-capital-aware
+        // ecology adapter: q decays, accessibility reclassifies accordingly, and
+        // natural aquatic stock/condition recover. Do not hand them to the source
+        // q=0 lazy projector, because Fishery Capital is sparse experiment state.
         var selectedIds=new HashSet<int>(selected.Select(e=>e.Tile));
         foreach(var g in grounds.Where(g=>!selectedIds.Contains(g.Tile)))
         {
-            var natural=EcologicalPressure.Integrate(w,g.Tile,Array.Empty<Demand>(),w.Days,w.Config.TurnDays,projectWood:false);
-            natural.View.Commit(w.Tiles[g.Tile]);
-            g.Capital=CultivationEconomy.Decay(w.Config,g.Capital,0,years);
+            var idle=EvaluateGround(w,g,0,years);
+            g.Capital=idle.EndE; g.Ecology=idle.EndView;
         }
         return (selected,selected.Sum(e=>e.Catch),selected.Sum(e=>e.WorkerYears));
     }
@@ -294,7 +296,7 @@ internal static class Program
         w.FixedHousing.Add(new FixedHousingStock{CampId=c.Id,Tile=c.Tile,Units=1e9,LastUpdatedDays=w.Days});
         c.PlantFood=0;c.AnimalFood=0;c.AquaticFood=StartPopulation*w.Config.Consumption*w.Config.GenerationIntervals*w.Config.StartingReserveGenerations;
         c.FoodNeedsMetRatio=1;c.WaterNeedsMetRatio=1;c.QoL=1;c.RudimentaryExpectation=w.Config.Neolithic.RudimentaryExpectationFloor;
-        var grounds=site.Distance.OrderBy(p=>p.Key).Select(p=>new GroundState{Tile=p.Key,Distance=p.Value,Capital=0}).ToList();
+        var grounds=site.Distance.OrderBy(p=>p.Key).Select(p=>new GroundState{Tile=p.Key,Distance=p.Value,Capital=0,Ecology=new EcologyView(w.Tiles[p.Key])}).ToList();
         double years=w.Config.TurnDays/w.Config.DaysPerYear, intervals=w.Config.GenerationIntervals, generationScale=w.Config.TurnDays/w.Config.PracticeDays;
         var result=new CaseResult{Id=$"{mode}_s{site.Seed}_t{site.CampTile}_k{slots}",Mode=mode,Site=site,SlotLimit=slots,MaxPopulation=c.Population};
         double sumFishers=0,sumQ=0,sumCatch=0,sumTarget=0,sumUtil=0;int observations=0;
@@ -334,6 +336,11 @@ internal static class Program
             // Keep only the ordinary operating reserve; the fishing allocator never deliberately overharvests for surplus.
             c.Food=Math.Min(c.Food,reserve);
             w.Days+=w.Config.TurnDays;
+            // Fishery ecology is carried in GroundState because production Tile
+            // has no Fishery Capital field yet. Every ground must remain on the
+            // same authoritative experiment clock.
+            if(grounds.Any(g=>Math.Abs(g.Ecology.Days-w.Days)>1e-7))
+                throw new InvalidOperationException("Fishing ground clock drift.");
             result.Births+=births;result.Deaths+=deaths;result.MaxPopulation=Math.Max(result.MaxPopulation,c.Population);
             if(turn==10)result.P200=c.Population;if(turn==25)result.P500=c.Population;if(turn==40)result.P800=c.Population;
             double qmean=plan.evals.Count==0?0:plan.evals.Average(e=>e.QAverage),qmax=plan.evals.Count==0?0:plan.evals.Max(e=>e.QEnd);
