@@ -128,6 +128,12 @@ namespace Anthropocene.Presentation
                 if (world.Turn != turnBefore + 1) { Finish(false, $"turn {turnBefore} did not resolve; status={status}. {configuration}"); yield break; }
                 var record = world.History.Last(); var live = world.Camps.Where(c => c.Population > 0).ToArray();
                 human = world.Camps.FirstOrDefault(c => c.Player == 0);
+                // Dismiss the breakthrough dialog as its CONTINUE PLAYING button does, leaving the village inspector closed
+                // so later captures show the map.
+                if (human != null && human.People.Progression.Era != Era.Paleolithic && !transitionDismissed)
+                {
+                    transitionDismissed = true; selected = human.Id; inspected = human.Tile; mode = "Inspect"; villageInspectorOpen = false;
+                }
                 csv.Append(world.Turn).Append(',').Append((world.Days / cfg.DaysPerYear).ToString("F0", System.Globalization.CultureInfo.InvariantCulture)).Append(',')
                    .Append(world.LivePlayers).Append(',').Append(live.Length).Append(',').Append(live.Sum(c => c.Population)).Append(',')
                    .Append(live.Count(c => c.IsVillage)).Append(',').Append(live.Count(c => c.People.Progression.Era != Era.Paleolithic)).Append(',')
