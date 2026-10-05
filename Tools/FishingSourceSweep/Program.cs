@@ -258,7 +258,7 @@ internal static class Program
             {
                 Console.WriteLine("Generating source world "+seed);var w=new WorldGenerator().Generate(seed,Config());worlds.Add(w);sites.AddRange(Sites(w));
             }
-            foreach(var s in sites)
+            foreach(var generated in worlds) DamageDiagnostic.RunIfTargetWorld(generated);\n            foreach(var s in sites)
             {
                 foreach(int id in s.Grounds)
                 {
