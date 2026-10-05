@@ -27,8 +27,8 @@ jobs:
           printf '{"sdk":{"version":"%s","rollForward":"latestPatch"}}\n' '${{ steps.dotnet.outputs.dotnet-version }}' > global.json
           git diff --exit-code 86cba712dfd76673bd9637052543bde85f810e0b -- Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources/OpeningConfig.json
           dotnet --info
-      - name: Run actual C# source-linked tests and sweeps
-        run: dotnet run --configuration Release --project Tools/FishingSourceSweep/Anthropocene.FishingSourceSweep.csproj
+      - name: Run exact source-linked aquatic condition diagnostic
+        run: dotnet run --configuration Release --project Tools/FishingSourceSweep/Anthropocene.FishingDamageDiagnostic.csproj
       - uses: actions/upload-artifact@v7
         if: always()
         with:
