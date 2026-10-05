@@ -388,6 +388,15 @@ internal static class Program
             else if(s.CountClass=="exact2") results.Add(RunCase(worlds[s.Seed],s,1,"paired",1.0,turns));
             turns.Flush();
         }
+        // One-ground risk audit: run EVERY warm exact-one-ground site, not just
+        // percentile samples, both as an ecological ceiling and with 40% resident
+        // labor reserved from Fishing for the rest of the economy.
+        foreach(var s in all.Where(x=>x.CountClass=="exact1").OrderBy(x=>x.Seed).ThenBy(x=>x.CampTile))
+        {
+            results.Add(RunCase(worlds[s.Seed],s,1,"all1-natural",1.0,turns));
+            results.Add(RunCase(worlds[s.Seed],s,1,"all1-labor60",0.60,turns));
+            turns.Flush();
+        }
         using(var sw=new StreamWriter("SweepResults/summary.csv"))
         {
             sw.WriteLine("case,mode,seed,campTile,waterClass,countClass,naturalCandidates,slotLimit,p200,p500,p800,finalPopulation,maxPopulation,births,deaths,deficitTurns,meanFishers,meanFisherShare,meanQ,maxQ,finalQoL,finalReserve,meanCatch,meanTarget");
