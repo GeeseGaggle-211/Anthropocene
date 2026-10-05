@@ -286,7 +286,7 @@ internal static class Program
         double lo=0,hi=max;for(int i=0;i<64;i++){double mid=(lo+hi)/2;if(TurnResolver.GrowthFood(populationBase,mid,years)<=available)lo=mid;else hi=mid;}return lo;
     }
 
-    static CaseResult RunCase(byte[] original,Site site,int slots,string mode,StreamWriter turns)
+    static CaseResult RunCase(byte[] original,Site site,int slots,string mode,double maxFisherShare,StreamWriter turns)
     {
         var w=SaveCodec.Load(original); var c=w.Camps.OrderBy(x=>x.Id).First();
         w.Camps=new List<Camp>{c};w.Hunters.Clear();w.Herds.Clear();w.FixedHousing.Clear();
@@ -311,7 +311,7 @@ internal static class Program
             double maxRate=c.DeficitTurns>0?0:QoLMortality.CeilingRate(w.Config,c.QoL)*c.DemographicGrowthMultiplier;
             double maxGrowth=TurnResolver.GrowthFood(populationBase,maxRate,years);
             double target=consumptionIncome+reserveFill+maxGrowth;
-            var plan=PlanAndCommit(w,grounds,slots,target,startPop,years);
+            var plan=PlanAndCommit(w,grounds,slots,target,(int)Math.Floor(startPop*maxFisherShare+1e-9),years);
             c.AquaticFood += plan.catchAmount;
             double consumed=Math.Min(populationBase,c.Food);c.Food= Math.Max(0,c.Food-consumed);c.LastConsumed=consumed;c.FoodDeficit=populationBase-consumed;
             c.FoodNeedsMetRatio=populationBase>0?consumed/populationBase:1;
@@ -381,9 +381,9 @@ internal static class Program
         foreach(var s in sample)
         {
             int naturalSlots=s.CountClass=="exact1"?1:s.CountClass=="exact2"?2:3;
-            results.Add(RunCase(worlds[s.Seed],s,naturalSlots,"natural",turns));
-            if(s.CountClass=="3plus"){results.Add(RunCase(worlds[s.Seed],s,1,"paired",turns));results.Add(RunCase(worlds[s.Seed],s,2,"paired",turns));}
-            else if(s.CountClass=="exact2") results.Add(RunCase(worlds[s.Seed],s,1,"paired",turns));
+            results.Add(RunCase(worlds[s.Seed],s,naturalSlots,"natural",1.0,turns));\n            results.Add(RunCase(worlds[s.Seed],s,naturalSlots,"labor80",0.80,turns));\n            results.Add(RunCase(worlds[s.Seed],s,naturalSlots,"labor60",0.60,turns));
+            if(s.CountClass=="3plus"){results.Add(RunCase(worlds[s.Seed],s,1,"paired",1.0,turns));results.Add(RunCase(worlds[s.Seed],s,2,"paired",1.0,turns));}
+            else if(s.CountClass=="exact2") results.Add(RunCase(worlds[s.Seed],s,1,"paired",1.0,turns));
             turns.Flush();
         }
         using(var sw=new StreamWriter("SweepResults/summary.csv"))
@@ -413,7 +413,7 @@ internal static class Program
         File.WriteAllText("SweepResults/manifest.json",JsonSerializer.Serialize(new{baseline=Baseline,seeds=Seeds,turns=Turns,bands=Bands,startPopulation=StartPopulation,
             primaryFilter="all radius-3 connected Shallows/Lake grounds have minimum seasonal temperature > 0C",
             distanceRetention="0.75^(d-1), d=1..3",capitalModel="CultivationEconomy Intensity/EffortForCapital/CapitalForEffort/Decay; open build/maintenance factors=1; effective on-ground effort is worker-years times route retention; maintenance first, residual effort builds capital; same fishing effort also harvests",
-            accessibility="G=G0+(B-G0)q^2",managedRenewal="CultivationRegenFlux*q*B*BiomassRate*operatingFraction",nonFoodNeeds="fully supplied Cloth/Housing/Pots to isolate fishing ecology + current QoL/social-cohesion demography",
+            accessibility="G=G0+(B-G0)q^2",managedRenewal="CultivationRegenFlux*q*B*BiomassRate*operatingFraction",nonFoodNeeds="fully supplied Cloth/Housing/Pots to isolate fishing ecology + current QoL/social-cohesion demography; labor80/labor60 reserve 20%/40% of residents from Fishing as economic-headroom sensitivities",
             caveats=new[]{"resident Fishing is an experiment adapter, not production integration","no Fishing Tools multiplier in central sweep","no trade immigration fission","cold-water catchments excluded because of known source condition bug","nonfood production labor/cost is not charged; sizes are ecological-demographic ceilings, not final live-economy census"}},Json));
         Console.WriteLine($"DONE sites_all={all.Count} sampled={sample.Count} cases={results.Count}");
     }
