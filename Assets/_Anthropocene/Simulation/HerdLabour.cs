@@ -236,42 +236,45 @@ namespace Anthropocene.Simulation
         internal static PastureBand[] Pasture(WorldState w, Camp c, ManagedFoodForecast forecast, double intervals,
             out double capacity, out double nonFieldCapacity, CampProductionDemand demand = null)
         {
-            double forage = 0, weakForage = 0, water = 0;
             double gatherRate = w.Config.GatherPerPerson * w.Config.DaysPerYear / w.Config.BaseDays;
             var bands = new List<PastureBand>();
-            int range = c.IsVillage ? 1 : Math.Min(w.Config.VisionRadius, 1 + w.Config.HerdMovement);
-            var exposure = new SeasonExposure(w.Days, w.Config.TurnDays, w.Config.BaseDays);
+            // Managed herds actually claim the camp's radius-one footprint.
+            // Use that same support envelope here; mobility is evaluated by
+            // comparing candidate radius-one sites, not by granting the
+            // current camp a larger fictitious pasture.
+            const int range = 1;
             if (ResolutionMetrics.CaptureDetailedCounters) Interlocked.Increment(ref TurnDiagnostics.For(w).PastureScans);
-            foreach (int id in w.Map.Radius(c.Tile, range))
+            var survey = LocalHerdEcology.Survey(w, c.Tile, range, w.Config.TurnDays);
+            if (ResolutionMetrics.CaptureDetailedCounters)
+                Interlocked.Add(ref TurnDiagnostics.For(w).PlannerTileProjections, survey.Sites.Length);
+            var support = LocalHerdEcology.Support(survey,
+                HerdConsumptionProfile.Forecast(forecast), intervals);
+            capacity = support.AbsoluteCapacity;
+            nonFieldCapacity = support.ZeroDisplacementCapacity;
+            double zeroCapacity = support.ZeroDisplacementCapacity;
+            double displacedCapacity = Math.Max(0,
+                support.AbsoluteCapacity - zeroCapacity);
+            foreach (var site in survey.Sites)
             {
-                var tile = w.Tiles[id];
-                if (tile.ElevationLevel >= 10) continue;
-                if (ResolutionMetrics.CaptureDetailedCounters) Interlocked.Increment(ref TurnDiagnostics.For(w).PlannerTileProjections);
-                var stock = LazyEcology.ProjectEcology(w, id, w.Days);
-                if (tile.TraversableLand)
-                {
-                    double biomass = Math.Max(0, stock.PotentialFood);
-                    forage += biomass;
-                    bool field = w.Map.Distance(c.Tile, id) <= 1 && CultivationEconomy.Cultivable(tile)
-                        && (tile.CultivationOperator < 0 || tile.CultivationOperator == c.Id);
-                    if (!field) weakForage += biomass;
-                    double rate = field ? gatherRate * Math.Max(1, w.Config.FarmerProductivity) : gatherRate;
-                    if (biomass > 0) bands.Add(new PastureBand { Tile = id, Animals = biomass, Rate = rate });
-                }
-                if (tile.WaterBody == WaterKind.Saltwater || tile.FreshwaterSource == FreshwaterSource.None) continue;
-                water += Math.Max(0, stock.Freshwater);
-                for (int season = 0; season < 4; season++)
-                    water += Math.Max(0, tile.Seasons[season].MaxFreshwater * tile.Seasons[season].WaterRecoveryPerDay) * exposure.At(season);
+                if (!site.Land || capacity <= 0) continue;
+                var tile = w.Tiles[site.Tile];
+                bool field = w.Map.Distance(c.Tile, site.Tile) <= 1 &&
+                    CultivationEconomy.Cultivable(tile) &&
+                    (tile.CultivationOperator < 0 || tile.CultivationOperator == c.Id);
+                // Nonhuman biomass carries no displaced human-harvest labour.
+                // Human-accessible biomass retains the old local marginal rate.
+                if (site.NonhumanFood > 0 && survey.NonhumanFood > 0)
+                    bands.Add(new PastureBand { Tile = site.Tile,
+                        Animals = zeroCapacity * site.NonhumanFood /
+                            survey.NonhumanFood, Rate = 0 });
+                if (site.HumanFood > 0 && survey.HumanFood > 0 &&
+                    displacedCapacity > 0)
+                    bands.Add(new PastureBand { Tile = site.Tile,
+                        Animals = displacedCapacity * site.HumanFood /
+                            survey.HumanFood,
+                        Rate = field ? gatherRate * Math.Max(1, w.Config.FarmerProductivity) : gatherRate });
             }
-            double foodNeed = forecast.FoodConsumption * intervals, waterNeed = forecast.WaterConsumption * intervals;
-            double foodCapacity = foodNeed > 0 ? forage / foodNeed : double.PositiveInfinity;
-            double waterCapacity = waterNeed > 0 ? water / waterNeed : double.PositiveInfinity;
-            capacity = Math.Min(foodCapacity, waterCapacity);
-            if (double.IsPositiveInfinity(capacity)) capacity = forecast.Animals;
-            nonFieldCapacity = forage > 0 ? capacity * weakForage / forage : 0;
-            double animalCapacity = capacity;
-            return bands.Select(b => new PastureBand { Tile = b.Tile, Animals = forage > 0 ? animalCapacity * b.Animals / forage : 0, Rate = b.Rate })
-                .OrderBy(b => b.Rate).ThenBy(b => b.Tile).ToArray();
+            return bands.OrderBy(b => b.Rate).ThenBy(b => b.Tile).ToArray();
         }
 
         // Consume the cheapest pasture first. A band and a herder step can each

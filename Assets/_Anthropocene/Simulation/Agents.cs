@@ -115,9 +115,20 @@ namespace Anthropocene.Simulation
     public sealed class SiteCoverageObservation
     {
         public readonly int Tile;
-        public readonly double HumanFood, HerdForage, HerdWater;
-        public SiteCoverageObservation(int tile, double humanFood, double herdForage, double herdWater)
-        { Tile = tile; HumanFood = humanFood; HerdForage = herdForage; HerdWater = herdWater; }
+        public readonly double HumanFood, HumanFoodAfterHerd;
+        public readonly double HerdForage, HerdAbsolute, HerdWater;
+        public readonly double FixedShelter, RecurringLabor;
+        public SiteCoverageObservation(int tile, double humanFood,
+            double humanFoodAfterHerd, double herdForage,
+            double herdAbsolute, double herdWater,
+            double fixedShelter, double recurringLabor)
+        {
+            Tile = tile; HumanFood = humanFood;
+            HumanFoodAfterHerd = humanFoodAfterHerd;
+            HerdForage = herdForage; HerdAbsolute = herdAbsolute;
+            HerdWater = herdWater; FixedShelter = fixedShelter;
+            RecurringLabor = recurringLabor;
+        }
     }
     // Expected three-turn benefit from retained own visible fields, and the
     // effort needed to restore them after a candidate leaves the footprint.
@@ -150,7 +161,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 18;
+        public const int SchemaVersion = 19;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
@@ -209,13 +220,16 @@ namespace Anthropocene.Simulation
             ForeignHunters = Array.AsReadOnly(index.VisibleHunters(visible).Where(h => h.Player != Player).Select(h => new UnitObservation(h.Id, h.Tile, 0, h.Player)).ToArray());
             Herds = Array.AsReadOnly(index.VisibleHerds(visible).Select(h => new HerdObservation(h, w.Config, h.DomesticCamp < 0 ? -1 : index.Camps[h.DomesticCamp].Player, Player)).ToArray());
             var forecastScope = PhaseProfile.Scope("Forecasts");
-            SiteCoverage = Array.AsReadOnly(includeCandidateForecasts && CultivationEconomy.HusbandryEnabled(camp)
+            var herdProfile = HerdConsumptionProfile.Owned(w, camp);
+            SiteCoverage = Array.AsReadOnly(includeCandidateForecasts && CultivationEconomy.EconomyEnabled(camp)
                 ? w.Map.Radius(camp.Tile, CampMovement).Where(visible.Contains).OrderBy(id => id)
-                    .Select(id => Coverage(w, camp, index, visible, id, Hunters, Herds)).ToArray()
+                    .Select(id => Coverage(w, camp, index, visible, id, Hunters, herdProfile)).ToArray()
                 : Array.Empty<SiteCoverageObservation>());
-            AgriculturalSites = Array.AsReadOnly(includeCandidateForecasts &&
-                (!camp.IsVillage || FoodCondition <= 1 || DeficitTurns > 0) &&
-                CultivationEconomy.Enabled(camp) && !CultivationEconomy.HusbandryEnabled(camp)
+            bool retainedFields = CultivationEconomy.Enabled(camp) &&
+                w.Map.Radius(camp.Tile, 1).Any(id => visible.Contains(id) &&
+                    w.Tiles[id].CultivationOperator == camp.Id &&
+                    index.Ecology(id).CultivationCapital > 1e-9);
+            AgriculturalSites = Array.AsReadOnly(includeCandidateForecasts && retainedFields
                 ? AgriculturalCandidates(w, camp, index, visible)
                 : Array.Empty<AgriculturalSiteObservation>());
             forecastScope.Dispose();
@@ -236,45 +250,29 @@ namespace Anthropocene.Simulation
             TechnologyStatuses = Array.AsReadOnly(TechnologyDiscovery.Statuses(w, camp.People));
         }
         private static SiteCoverageObservation Coverage(WorldState world, Camp camp, PlanningIndex index, HashSet<int> visible, int site,
-            IReadOnlyList<UnitObservation> ownHunters, IReadOnlyList<HerdObservation> observedHerds)
+            IReadOnlyList<UnitObservation> ownHunters, HerdConsumptionProfile herd)
         {
             int people = camp.Population + ownHunters.Where(h => h.SourceCamp == camp.Id &&
                 world.Map.Distance(site, h.Tile) <= world.Config.SupplyRange).Sum(h => h.Population);
-            double forageNeed = 0, waterNeed = 0;
-            foreach (var herd in observedHerds.Where(h => h.OwnedDomestic && h.DomesticCamp == camp.Id && h.Count.Representative > 0))
-            {
-                var species = world.Config.GetSpecies(herd.Species);
-                forageNeed += herd.Count.Representative * species.FoodConsumption * world.Config.GenerationIntervals;
-                waterNeed += herd.Count.Representative * species.FreshwaterConsumption * world.Config.GenerationIntervals;
-            }
-            return LocalCoverage(world, camp, index, visible, site, people, forageNeed, waterNeed);
+            return LocalCoverage(world, camp, index, visible, site, people, herd);
         }
         internal static SiteCoverageObservation LocalCoverage(WorldState world, Camp camp, PlanningIndex index,
-            HashSet<int> visible, int site, int people, double forageNeed, double waterNeed)
+            HashSet<int> visible, int site, int people, HerdConsumptionProfile herd)
         {
-            double food = Math.Max(0, camp.Food), forage = 0, water = 0;
-            var exposure = new SeasonExposure(world.Days, world.Config.TurnDays, world.Config.BaseDays);
-            foreach (int id in world.Map.Radius(site, 1).Where(visible.Contains).OrderBy(id => id))
-            {
-                var tile = world.Tiles[id]; var stock = index.Ecology(id);
-                if (tile.TraversableLand)
-                {
-                    food += Math.Max(0, stock.Food);
-                    forage += Math.Max(0, stock.PotentialFood);
-                }
-                else if (tile.Terrain == Terrain.Shallows) food += Math.Max(0, stock.Food);
-                if (tile.ElevationLevel >= 10 || tile.WaterBody == WaterKind.Saltwater || tile.FreshwaterSource == FreshwaterSource.None) continue;
-                double recharge = 0;
-                for (int season = 0; season < 4; season++)
-                    recharge += Math.Max(0, tile.Seasons[season].MaxFreshwater * tile.Seasons[season].WaterRecoveryPerDay)
-                        * exposure.At(season);
-                water += Math.Max(0, stock.Freshwater) + recharge;
-            }
+            var siteEvaluation = SettlementSiteEvaluation.Evaluate(world, camp,
+                site, people, herd, index.Ecology, visible);
             double humanNeed = Math.Max(1, people * world.Config.Consumption * world.Config.GenerationIntervals);
             double Quantize(double ratio) => Math.Round(Numbers.Clamp(ratio, 0, 3) * 20, MidpointRounding.AwayFromZero) / 20;
-            return new SiteCoverageObservation(site, Quantize(food / humanNeed),
-                forageNeed <= 0 ? 3 : Quantize(forage / forageNeed),
-                waterNeed <= 0 ? 3 : Quantize(water / waterNeed));
+            double fixedPeople = siteEvaluation.FixedHousing *
+                world.Config.Neolithic.HousingPeoplePerUnit;
+            return new SiteCoverageObservation(site,
+                Quantize(siteEvaluation.HumanFood / humanNeed),
+                Quantize(siteEvaluation.HumanFoodAfterAbsoluteHerd / humanNeed),
+                herd.Exists ? Quantize(siteEvaluation.Herd.ZeroDisplacementForageCapacity / herd.Animals) : 3,
+                herd.Exists ? Quantize(siteEvaluation.Herd.AbsoluteForageCapacity / herd.Animals) : 3,
+                herd.Exists ? Quantize(siteEvaluation.Herd.WaterCapacity / herd.Animals) : 3,
+                Quantize(fixedPeople / Math.Max(1, people)),
+                Quantize(siteEvaluation.RequiredRecurringLabor / Math.Max(1, camp.Population)));
         }
         private static AgriculturalSiteObservation[] AgriculturalCandidates(WorldState world, Camp camp,
             PlanningIndex index, HashSet<int> visible)
@@ -432,23 +430,20 @@ namespace Anthropocene.Simulation
             double burden = camp.Population <= 0 ? 1 : camp.Workforce.Assignments
                 .Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population) / (double)camp.Population;
             var visible = index.VisibleCached(camp.Player);
-            double forageNeed = 0, waterNeed = 0;
-            foreach (var herd in herds.Where(h => h.Animals > 0))
-            {
-                var species = world.Config.GetSpecies(herd.Species);
-                forageNeed += herd.Animals * species.FoodConsumption * world.Config.GenerationIntervals;
-                waterNeed += herd.Animals * species.FreshwaterConsumption * world.Config.GenerationIntervals;
-            }
             int people = camp.Population + index.CampHunters(camp.Id)
                 .Where(h => world.Map.Distance(campTile, h.Tile) <= world.Config.SupplyRange).Sum(h => h.Population);
-            var coverage = AgentObservation.LocalCoverage(world, camp, index, visible, campTile, people, forageNeed, waterNeed);
+            var coverage = AgentObservation.LocalCoverage(world, camp, index,
+                visible, campTile, people, HerdConsumptionProfile.Owned(world, camp));
             int room = 0;
             foreach (int id in world.Map.Radius(campTile, 1).Where(id => id != campTile && visible.Contains(id)))
             {
                 var tile = world.Tiles[id];
                 if (!tile.TraversableLand) continue;
                 var stock = index.Ecology(id);
-                if (Knowledge.Band(stock.PotentialFood, Math.Max(1, tile.Seasons[world.Season].MaxPotentialFood), world.Config) >= 2 &&
+                double nonhuman = Math.Max(0, stock.PotentialFood - stock.Food);
+                double nonhumanMaximum = Math.Max(1,
+                    tile.Seasons[world.Season].MaxPotentialFood - tile.Seasons[world.Season].MaxFood);
+                if (Knowledge.Band(nonhuman, nonhumanMaximum, world.Config) >= 2 &&
                     Knowledge.Band(stock.Freshwater, 70, world.Config) >= 2) room++;
             }
             bool adequate = coverage.HerdForage >= 1 && coverage.HerdWater >= 1 && room >= 3;
@@ -503,59 +498,60 @@ namespace Anthropocene.Simulation
             var economicCamp = o.Settlements.FirstOrDefault(c => c.Id == o.CampId && (c.Agriculture || c.Husbandry));
             var campCandidates = new List<Candidate>();
             double current = Gathering(o, o.CampTile);
-            if (economicCamp != null && economicCamp.Agriculture && !economicCamp.Husbandry)
+            var agricultural = o.AgriculturalSites.ToDictionary(s => s.Tile);
+            agricultural.TryGetValue(o.CampTile, out var currentFields);
+            double ownedAnimals = o.Herds.Where(h => h.OwnedDomestic && h.DomesticCamp == o.CampId)
+                .Sum(h => (double)h.Count.Representative);
+            bool retainedEconomicCapital = economicCamp != null &&
+                (ownedAnimals > 0 || economicCamp.FixedHousing > 1e-9 ||
+                 economicCamp.LightHousing > 1e-9 || economicCamp.IsVillage ||
+                 currentFields != null && currentFields.RetainedFields > 0);
+            if (retainedEconomicCapital && o.SiteCoverage.Count > 0)
             {
-                foreach (var site in o.AgriculturalSites.OrderBy(s => s.Tile))
-                {
-                    int n = site.Tile;
-                    if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n) || OrderRules.CampSpacingBlocked(o, o.CampId, o.CampTile, n)) continue;
-                    // Departure from an established village abandons its
-                    // current field work and fixed housing. AI considers it
-                    // only in a food emergency with a materially better site;
-                    // a player can still choose the move at any time.
-                    if (economicCamp.IsVillage && n != o.CampTile &&
-                        (o.FoodCondition > 1 && o.DeficitTurns == 0 ||
-                         Gathering(o, n) < current * 1.25)) continue;
-                    double food = Gathering(o, n) * need * m.Gathering;
-                    double continuity = n == o.CampTile ? Math.Max(.25, current * o.Inertia) : -(1 - m.Mobility) * .1;
-                    double herdSupport = HerdSupport(o, n) * m.Hunting * (huntingFocus ? 4 : .35 + .85 * o.HuntingFieldcraft);
-                    double fishingSupport = FishingSupport(o, n) * m.Fishing * (fishingFocus ? 3 : .2);
-                    // Three forthcoming turns of managed recovery are a
-                    // forward benefit of retained own fields. Rebuilding
-                    // abandoned capital is charged using the same soft-effort
-                    // curve as field construction, normalized to local labor.
-                    double fieldPayoff = 4 * site.ManagedRecoveryCoverage - 3 * site.LostRebuildBurden;
-                    campCandidates.Add(new Candidate { Order = n == o.CampTile ? new Order(OrderKind.NoOp, o.CampId) : new Order(OrderKind.Move, o.CampId, destination: n),
-                        Score = food + continuity + herdSupport + fishingSupport + fieldPayoff,
-                        Components = "GatheringOpportunity + ManagedFieldRecovery - LostFieldRebuildEffort + SurvivalNeed + RelocationInertia" });
-                }
-            }
-            else if (economicCamp != null && economicCamp.Husbandry)
-            {
-                // The observation contains only rounded support ratios for
-                // visible local sites. The weakest need leads the decision;
-                // once all needs are covered, require a meaningful gain before
-                // relocating so a camp can let its pasture rest.
-                var currentCoverage = o.SiteCoverage.First(s => s.Tile == o.CampTile);
-                double Support(SiteCoverageObservation s) => Math.Min(s.HumanFood, Math.Min(s.HerdForage, s.HerdWater));
-                double currentSupport = Support(currentCoverage);
-                double currentTotal = currentCoverage.HumanFood + currentCoverage.HerdForage + currentCoverage.HerdWater;
-                double margin = currentCoverage.HumanFood < 1 || currentCoverage.HerdForage < 1 || currentCoverage.HerdWater < 1 ? 0 : .05;
+                // One settlement comparison for every physical mixture of fields,
+                // housing, fishing access and livestock. Capabilities determine
+                // which terms exist; they never select a movement policy.
+                var stay = o.SiteCoverage.First(s => s.Tile == o.CampTile);
+                double stayHerd = ownedAnimals > 0
+                    ? Math.Min(1, Math.Min(stay.HerdForage, stay.HerdWater)) : 0;
                 foreach (var site in o.SiteCoverage.OrderBy(s => s.Tile))
                 {
                     int n = site.Tile;
                     if (!Reach(o, o.CampTile, n, false) || o.Rivals.Any(r => r.Tile == n) || OrderRules.CampSpacingBlocked(o, o.CampId, o.CampTile, n)) continue;
-                    double support = Support(site);
-                    double total = site.HumanFood + site.HerdForage + site.HerdWater;
-                    if (n != o.CampTile && (margin == 0
-                        ? support + 1e-9 < currentSupport || support <= currentSupport + 1e-9 && total <= currentTotal + 1e-9
-                        : support + 1e-9 < currentSupport + margin)) continue;
-                    // Small secondary weights distinguish equal weakest-need
-                    // sites without permitting a worse bottleneck to win.
-                    double score = support + .001 * total;
-                    if (n == o.CampTile) score += margin;
-                    campCandidates.Add(new Candidate { Order = n == o.CampTile ? new Order(OrderKind.NoOp, o.CampId) : new Order(OrderKind.Move, o.CampId, destination: n), Score = score,
-                        Components = "FilteredHumanFoodCoverage + FilteredHerdForageCoverage + FilteredHerdWaterCoverage + RelocationInertia" });
+                    if (n == o.CampTile)
+                    {
+                        campCandidates.Add(new Candidate { Order = new Order(OrderKind.NoOp, o.CampId),
+                            Score = 0, Components = "RetainedSettlementPortfolio + RelocationInertia" });
+                        continue;
+                    }
+                    agricultural.TryGetValue(n, out var candidateFields);
+                    double moveHerd = ownedAnimals > 0
+                        ? Math.Min(1, Math.Min(site.HerdAbsolute, site.HerdWater)) : 0;
+                    // The herd term is deliberately a delta: moving earns only
+                    // animals preserved beyond the stay option (or pays for a
+                    // loss), never the value of the whole herd a second time.
+                    double herdDelta = moveHerd - stayHerd;
+                    double humanDelta = site.HumanFoodAfterHerd - stay.HumanFood;
+                    double fixedLoss = Math.Max(0, stay.FixedShelter - site.FixedShelter);
+                    double fieldLoss = currentFields == null ? 0
+                        : Math.Max(0, currentFields.ManagedRecoveryCoverage -
+                            (candidateFields?.ManagedRecoveryCoverage ?? 0)) +
+                          (candidateFields?.LostRebuildBurden ?? currentFields.LostRebuildBurden);
+                    double laborBurden = Math.Max(0, site.RecurringLabor - stay.RecurringLabor);
+                    // Inertia is continuity value, not a veto on survival.
+                    // With no observed food support at all it contributes no
+                    // retained service; actual field and shelter losses still
+                    // remain priced below.
+                    double relocationInertia = o.FoodCondition <= 0 ? 0 : o.Inertia;
+                    double discontinuity = relocationInertia + fixedLoss +
+                        fieldLoss + laborBurden;
+                    double score = humanDelta + herdDelta - discontinuity;
+                    campCandidates.Add(new Candidate
+                    {
+                        Order = new Order(OrderKind.Move, o.CampId, destination: n),
+                        Score = score,
+                        Components = "AdditionalHumanSupport + ExtraRetainedHerd - LostFields - LostFixedHousing - RecurringLabor - RelocationInertia"
+                    });
                 }
             }
             else
@@ -580,7 +576,7 @@ namespace Anthropocene.Simulation
             int desiredHunters = opportunity ? Math.Max(8, (int)Math.Round(o.LinkedPopulation * hunterShare)) : 0;
             int dispatchable = Math.Min(o.GathererPopulation, o.CampPopulation - o.MinimumCamp - (huntingFocus ? 0 : 4));
             int allocation = Math.Min(8, Math.Min(Math.Max(0, desiredHunters - assignedHunters), dispatchable));
-            if (economicCamp == null && (campChoice.Kind == OrderKind.NoOp || huntingFocus || fishingFocus && fishingOpportunity) && allocation >= 4 && opportunity && o.DeficitTurns == 0 && o.FoodCondition >= 1)
+            if (!retainedEconomicCapital && (campChoice.Kind == OrderKind.NoOp || huntingFocus || fishingFocus && fishingOpportunity) && allocation >= 4 && opportunity && o.DeficitTurns == 0 && o.FoodCondition >= 1)
             { campChoice = new Order(OrderKind.Dispatch, o.CampId, population: allocation); result.Trace.Candidates.Add(new CandidateTrace { Plan = campChoice.ToString(), Components = "Growing population and visible subsistence opportunity; hunter share expands while preserving the camp reserve", Score = 1, Selected = true }); }
             // AI economic preparation is a distinct pass, even when its camp
             // movement is the submitted action. The persisted automation-Off

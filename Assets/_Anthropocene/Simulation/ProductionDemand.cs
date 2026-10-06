@@ -267,8 +267,10 @@ namespace Anthropocene.Simulation
         // herder ladder itself. Null otherwise. Transient, never saved.
         internal ManagedFoodForecast GrownHerd;
         internal HerdLadder HerdLadder;
-        // Value rule: settling cost of a non-village husbandry-primary camp (person-QoL-years), and the expansion worker-years the camp may
-        // spend this turn without crossing into a village (PositiveInfinity = no limit). Diagnostics and planner cap; transient.
+        // Value rule: settling cost of a physically mobile herd-bearing camp
+        // (person-QoL-years), and the expansion worker-years it may spend this
+        // turn without crossing into a village (PositiveInfinity = no limit).
+        // Diagnostics and planner cap; transient.
         public double SettlingCost, ExpansionEffortCap = double.PositiveInfinity;
         public bool SettlesByExpansion;
         public KnownMaterialSource[] Sources;
@@ -349,6 +351,22 @@ namespace Anthropocene.Simulation
             FoodRoomEnvelopeClothing = HusbandryEnabled ? Math.Max(0, c.Food + Supply - Meals) : 0;
         }
 
+        internal void ApplyManagedHerd(WorldState w, Camp c, int herders)
+        {
+            double intervals = w.Config.GenerationIntervals;
+            double years = w.Config.TurnDays / w.Config.DaysPerYear;
+            ReservedHerders = HusbandryEnabled ? Math.Min(c.Population,
+                Math.Max(0, herders)) : 0;
+            ManagedFood = HusbandryEnabled
+                ? TurnResolver.ForecastManagedAnimalFood(w, c, ReservedHerders,
+                    intervals, years, c.Tile)
+                : new ManagedFoodForecast();
+            ForageAfterHerds = Math.Max(0, ForageSupply - ManagedFood.HumanFoodDisplaced);
+            TerrestrialAfterHerds = Math.Max(0, PlantSupply - ManagedFood.HumanFoodDisplaced);
+            Supply = ForageAfterHerds + ManagedFood.AnimalFood;
+            SetFoodEnvelopes(w, c, ManagedFood.AnimalFood);
+        }
+
         // Normalizes the plan's focus to the camp footprint before the preview
         // is built from it; every other read is of the committed boundary.
         // expansionClaim = false omits the WP4b expansion claim (the pre-WP4b Value plan, a test reference).
@@ -377,7 +395,9 @@ namespace Anthropocene.Simulation
         // sources, the preview camp, each good's useful demand and the food envelopes. `legacyProbes` keeps the Value planner's
         // two extras: the grown-herd forecast (Value rule only) and the prospective-builder shelter probe. DemandControl
         // derives shelter demand without fictitious staffing.
-        internal static CampProductionDemand BuildPhysical(WorldState w, Camp c, EconomicIntent e, bool legacyProbes, bool herdCapital = true)
+        internal static CampProductionDemand BuildPhysical(WorldState w, Camp c,
+            EconomicIntent e, bool legacyProbes, bool herdCapital = true,
+            int reservedHerdersOverride = -1)
         {
             var d = new CampProductionDemand { world = w };
             var cfg = w.Config; var n = cfg.Neolithic;
@@ -409,7 +429,11 @@ namespace Anthropocene.Simulation
                     .HumanFoodReceipts;
             }
             d.ForageSupply = d.Eligible.Sum(FoodAvailability); d.PlantSupply = d.Eligible.Where(id => w.Tiles[id].Land).Sum(FoodAvailability);
-            d.ReservedHerders = d.HusbandryEnabled ? EconomicPlanner.ManagedHerderReservation(w, c, years) : 0;
+            d.ReservedHerders = d.HusbandryEnabled
+                ? reservedHerdersOverride >= 0
+                    ? Math.Min(c.Population, reservedHerdersOverride)
+                    : EconomicPlanner.ManagedHerderReservation(w, c, years)
+                : 0;
             d.ManagedFood = d.HusbandryEnabled ? TurnResolver.ForecastManagedAnimalFood(w, c, d.ReservedHerders, intervals, years, c.Tile) : new ManagedFoodForecast();
             if (legacyProbes && n.ValueFulfilmentSelected && d.HusbandryEnabled && d.CultivationEnabled && c.Population > 0)
             {
@@ -824,8 +848,10 @@ namespace Anthropocene.Simulation
             d.PersonLife = PersonLife(n);
             d.GrowthFoodValue = d.FoodPerBirth > 0 ? Math.Max(0, d.MarginalWelfarePerBirth) * d.PersonLife / d.FoodPerBirth : 0;
             d.CapitalLife = CapitalLife(n);
-            // A non-village husbandry-primary camp forfeits mobility when fields make it a village; its ladder is then read in full
-            // so the crossing step can be found and charged (SettlingTerms).
+            // A physically mobile, herd-bearing camp can forfeit herd value
+            // when field investment makes it a village; its ladder is then
+            // read in full so the crossing step can be found and charged.
+            // First-breakthrough identity never participates.
             bool settling = SettlingApplies(w, c, d);
             var steps = d.PhysicalExpansion ?? CultivationEconomy.ExpansionLadder(w, c, years, d.Footprint, settling ? double.PositiveInfinity : d.GapTotalPerYear);
             d.PhysicalExpansion = steps;
@@ -836,10 +862,13 @@ namespace Anthropocene.Simulation
             if (ladder != null && ladder.Any) d.Expansion = ladder;
         }
 
-        // Husbandry-primary (first technology Animal Husbandry), not yet a village, with managed animals to lose: Primary-Cultivation camps
-        // and existing villages are unaffected, as is everything when SettledHerdGrowthPenalty is 0.
+        // Not yet a village, with managed animals to lose. Equivalent physical
+        // camps receive the same transition term regardless of which capability
+        // happened to be learned first. Existing villages and a zero penalty
+        // remain unaffected.
         private static bool SettlingApplies(WorldState w, Camp c, CampProductionDemand d)
-            => w.Config.SettledHerdGrowthPenalty > 0 && !c.IsVillage && c.People.Technology == Technology.AnimalHusbandry && d.GrownHerdFood > 0;
+            => w.Config.SettledHerdGrowthPenalty > 0 && !c.IsVillage &&
+                d.GrownHerdFood > 0;
 
         // The food value of `food` per year filled into the buckets from their start (consumption, reserve refill, growth), with the
         // bucket sizes given per year (raw gaps, before the herd credit): the same bucket values the ladder uses, per year.

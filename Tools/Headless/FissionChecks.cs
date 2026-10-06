@@ -35,7 +35,15 @@ internal static class FissionChecks
             w.Camps.Add(new Camp { Id = w.NextId++, Player = i, Tile = w.Map.At(sites[i][0], sites[i][1]), Population = 100, PlantFood = 12000, QoL = .5 });
         w.Config.Players = sites.Length; w.PlayerCount = sites.Length; w.Turn = 3; w.Days = 1000;
         Ownership.Bind(w);
-        if (neolithic) foreach (var c in w.Camps) MakeNeolithic(c, Technology.Cultivation);
+        if (neolithic) foreach (var c in w.Camps)
+        {
+            MakeNeolithic(c, Technology.Cultivation);
+            // The agricultural site-evaluation fixture now carries actual
+            // retained field capital; capability alone is not a regime.
+            w.Tiles[c.Tile].CultivationOperator = c.Id;
+            w.Tiles[c.Tile].CultivationCapital = .1;
+            w.Tiles[c.Tile].CultivationOperatingFraction = 1;
+        }
         foreach (var t in w.Tiles) t.LastEcologyUpdateDays = w.Days;
         Pressure(w, 0);
         return w;
@@ -479,7 +487,10 @@ internal static class FissionChecks
         cachedMetrics = null; cache.Turn++; Pass(cache, out var again);
         Check(cache.Camps[0].FissionDestination == target && again.FissionSearches == 0 && again.FissionValidations == 1 && target.Tile == cachedTile, "a valid cache is revalidated but never searched or reranked");
         // Regime change invalidates it even with no push; it is then searched afresh on the next pressured turn.
-        cache.Camps[0].Technologies[(int)Technology.Cultivation] = false; cache.Camps[0].Technology = Technology.AnimalHusbandry; cache.Camps[0].Technologies[(int)Technology.AnimalHusbandry] = true; Quiet(cache);
+        cache.Camps[0].Technologies[(int)Technology.Cultivation] = false; cache.Camps[0].Technology = Technology.AnimalHusbandry; cache.Camps[0].Technologies[(int)Technology.AnimalHusbandry] = true;
+        cache.Tiles[cache.Camps[0].Tile].CultivationOperator = -1;
+        cache.Tiles[cache.Camps[0].Tile].CultivationCapital = 0;
+        Quiet(cache);
         Pass(cache, out var regime);
         Check(cache.Camps[0].FissionDestination == null && regime.FissionCacheInvalidations == 1, "a regime change invalidates the cached destination");
         // Occupied or within spacing of another camp invalidates it.
@@ -495,7 +506,7 @@ internal static class FissionChecks
     {
         // Paleolithic: current vision only, even if a memory block exists; with a hunter in view of a ring tile it finds one.
         var w = World(false, new[] { 8, 8 }); var parent = w.Camps[0]; Explore(w, parent); 
-        Check(!ContactKnowledge.Remembers(parent.People) && Fission.RegimeOf(parent) == FissionRegime.Paleolithic, "a Paleolithic fixture does not remember");
+        Check(!ContactKnowledge.Remembers(parent.People) && Fission.RegimeOf(w, parent) == FissionRegime.Paleolithic, "a Paleolithic fixture does not remember");
         var none = Pass(w, out var m);
         Check(none == null && parent.FissionDestination == null && m.FissionSearches == 1 && m.FissionCandidatesScored == 0, "explored tiles are ignored and a camp's own vision sees no site at distance three");
         // A hunter two tiles out sees ring tiles: only visible ring tiles are candidates.
@@ -639,10 +650,10 @@ internal static class FissionChecks
         var threshold = Pressured(); Ratio(threshold, threshold.Camps[0], .9); Check(Pass(threshold, out _) == null && threshold.Camps[0].FissionDestination != null, "the gain must reach G*: 0.9 G* caches a destination but does not found");
         var destitute = Pressured(); destitute.Camps[0].Population = 0; Check(Pass(destitute, out var dem) == null && dem.FissionCampsEvaluated == 0, "an empty camp is not evaluated");
         // A pastoral daughter also needs herd forage and water; a herd too big for the footprint is unviable.
-        var herd = Pressured(); MakeNeolithic(herd.Camps[0], Technology.AnimalHusbandry); herd.Camps[0].Technologies[(int)Technology.Cultivation] = false; herd.Camps[0].Technology = Technology.AnimalHusbandry;
+        var herd = Pressured(); Nomadic(herd, herd.Camps[0]);
         herd.Herds.Add(new Herd { Id = herd.NextId++, Tile = herd.Camps[0].Tile, Animals = 60, DomesticCamp = herd.Camps[0].Id, OwnerSociety = herd.Camps[0].SocietyId, Species = "goat" });
-        Check(Fission.RegimeOf(herd.Camps[0]) == FissionRegime.Nomadic && Pass(herd, out var hm) != null && hm.FissionCommits == 1, "a pastoral camp with a supported herd fissions");
-        var greedy = Pressured(); MakeNeolithic(greedy.Camps[0], Technology.AnimalHusbandry); greedy.Camps[0].Technologies[(int)Technology.Cultivation] = false; greedy.Camps[0].Technology = Technology.AnimalHusbandry;
+        Check(Fission.RegimeOf(herd, herd.Camps[0]) == FissionRegime.Nomadic && Pass(herd, out var hm) != null && hm.FissionCommits == 1, "a pastoral camp with a supported herd fissions");
+        var greedy = Pressured(); Nomadic(greedy, greedy.Camps[0]);
         greedy.Herds.Add(new Herd { Id = greedy.NextId++, Tile = greedy.Camps[0].Tile, Animals = 40000, DomesticCamp = greedy.Camps[0].Id, OwnerSociety = greedy.Camps[0].SocietyId, Species = "bison" });
         greedy.Config.FissionDaughterMargin = .05; var gr = Pass(greedy, out var gm); Check(gr == null && greedy.Camps.Count == 1 && gm.FissionDaughterBlocked == 1, "a pastoral daughter whose herd share exceeds forage and water is vetoed (carried human food cannot feed the herd)");
     }
@@ -731,7 +742,20 @@ internal static class FissionChecks
         Explore(w, c); Pressure(w, gstar);
         return w;
     }
-    private static void Nomadic(Camp c) { MakeNeolithic(c, Technology.AnimalHusbandry); c.Technologies[(int)Technology.Cultivation] = false; c.Technology = Technology.AnimalHusbandry; c.Technologies[(int)Technology.AnimalHusbandry] = true; }
+    private static void Nomadic(WorldState world, Camp c)
+    {
+        MakeNeolithic(c, Technology.AnimalHusbandry);
+        c.Technologies[(int)Technology.Cultivation] = false;
+        c.Technology = Technology.AnimalHusbandry;
+        c.Technologies[(int)Technology.AnimalHusbandry] = true;
+        foreach (int id in world.Map.Radius(c.Tile, 1))
+            if (world.Tiles[id].CultivationOperator == c.Id)
+            {
+                world.Tiles[id].CultivationOperator = -1;
+                world.Tiles[id].CultivationCapital = 0;
+                world.Tiles[id].CultivationOperatingFraction = 0;
+            }
+    }
     private static void Distress()
     {
         // The famine fixture: N = 80, housed, F = 0.4, W = 1, a rich destination. The stayers' crowding gain alone is large only because of food relief.
@@ -783,19 +807,19 @@ internal static class FissionChecks
         var dry = Famine(80, .4, 1); foreach (var t in dry.Tiles) for (int s = 0; s < 4; s++) dry.Tiles[t.Id].Seasons[s].MaxFreshwater = 0;
         Check(Pass(dry, out var dm) == null && dry.Camps[0].FissionDestination == null && dry.Camps.Count == 1 && dm.FissionCandidatesScored > 0 && dm.FissionDistressProposals == 0, "famine without a viable destination does not split");
         var unknown = Famine(80, .4, 1); unknown.Societies[0].Memory = null; unknown.Camps[0].People.Progression.Era = Era.Paleolithic; unknown.Camps[0].Technology = Technology.None;
-        Check(Fission.RegimeOf(unknown.Camps[0]) == FissionRegime.Paleolithic && Pass(unknown, out _) == null, "a camp that knows no reachable site does not split");
+        Check(Fission.RegimeOf(unknown, unknown.Camps[0]) == FissionRegime.Paleolithic && Pass(unknown, out _) == null, "a camp that knows no reachable site does not split");
         // A viable but only just supported destination: F_d < 1 lowers the daughter gain. With G* just below the optimistic gain the screen
         // passes and the destination is found, but the actual gain falls short; the control with rich ground splits.
         WorldState Ground(double k, double threshold)
         {
-            var w = Famine(80, .4, 1, threshold); Nomadic(w.Camps[0]);
+            var w = Famine(80, .4, 1, threshold); Nomadic(w, w.Camps[0]);
             foreach (var t in w.Tiles) { t.Food = 1000 * k; t.PotentialFood = 8000 * k; for (int s = 0; s < 4; s++) { w.Tiles[t.Id].Seasons[s].MaxFood = (float)(1000 * k); w.Tiles[t.Id].Seasons[s].MaxPotentialFood = (float)(8000 * k); } }
             return w;
         }
         double kk = 1; FissionReport probeReport = null;
         for (double k = .02; k <= 1.0001; k += .005) { var gw = Ground(k, 0); var pr = Pass(gw, out _); if (pr != null && pr.Desirability >= .86 && pr.Desirability <= .95) { kk = k; probeReport = pr; break; } }
         Check(probeReport != null, "a landscape with a viable but thinly supported destination exists");
-        var poorWorld = Ground(kk, 0); var pc = poorWorld.Camps[0]; Check(Fission.RegimeOf(pc) == FissionRegime.Nomadic, "the thin-ground fixture is Nomadic");
+        var poorWorld = Ground(kk, 0); var pc = poorWorld.Camps[0]; Check(Fission.RegimeOf(poorWorld, pc) == FissionRegime.Nomadic, "the thin-ground fixture is Nomadic");
         double g1 = Fission.EstimateSplit(poorWorld, pc, largest, 1, 1).DaughterGain, crowdGain = Fission.EstimateSplit(poorWorld, pc, FissionPolicy.Neutral).Gain;
         double between = g1 - .02 * (1 + g1); Check(between > crowdGain && between > 0, "the fixture separates the stayers' gain from the optimistic daughter gain");
         var thin = Ground(kk, between); var tr = Pass(thin, out var tm);
@@ -805,7 +829,7 @@ internal static class FissionChecks
         var crowded = World(true, new[] { 8, 8 }); Explore(crowded, crowded.Camps[0]); var cr = Pass(crowded, out var cm);
         Check(cr != null && cr.Trigger == FissionTrigger.Crowding && cm.FissionCrowdingCommits == 1 && cm.FissionDistressCommits == 0 && cm.FissionDistressDaughters == 0 && cr.Daughter == Kinship.DaughterSize(100, FissionPolicy.Neutral), "a fed camp over its crowding threshold splits at the policy size with the Crowding trigger");
         // A starving crowded camp whose stayers' crowding gain passes at the policy size but whose distress pull fails still splits as Crowding.
-        var mixed = Ground(kk, 0); Nomadic(mixed.Camps[0]); var mp = mixed.Camps[0]; double stay0 = Fission.EstimateSplit(mixed, mp, FissionPolicy.Neutral).Gain; Pressure(mixed, stay0 * .9 + 0);
+        var mixed = Ground(kk, 0); Nomadic(mixed, mixed.Camps[0]); var mp = mixed.Camps[0]; double stay0 = Fission.EstimateSplit(mixed, mp, FissionPolicy.Neutral).Gain; Pressure(mixed, stay0 * .9 + 0);
         var mr = Pass(mixed, out var mm);
         Check(mr != null && (mr.Trigger == FissionTrigger.Distress ? mm.FissionDistressCommits == 1 : mm.FissionCrowdingCommits == 1), "every commit is counted under exactly one trigger");
         // Determinism, conservation and persistence: starving camps over several turns under the real resolver, scalar vs reversed 4-worker.
@@ -964,7 +988,7 @@ internal static class FissionChecks
         Check(stranger.KinRelations.Count == 0 && stranger.ParentSociety == 0, "an unrelated Society sees no kin");
         Check(!stranger.Rivals.Any(r => r.Player == kids[0].Player) || w.Map.Radius(w.Camps.Single(c => c.Player == 1).Tile, 2).Contains(w.Camps.Single(c => c.SocietyId == kids[0].Id).Tile), "foreign daughters appear only through ordinary vision");
         var dto = ObservationContract.Deserialize(ObservationContract.Serialize(kidView, kids[0].Mandate));
-        Check(dto.Schema == 18 && dto.ParentSociety == parent.SocietyId && dto.KinAffinity == 1 && dto.KinRelations.Length == 2 && dto.Settlements.Single().FissionPolicy == FissionPolicy.Neutral && dto.Settlements.Single().FissionDestination == -1, "the serialized contract carries lineage, kin and the settlement's fission state");
+        Check(dto.Schema == AgentObservation.SchemaVersion && dto.ParentSociety == parent.SocietyId && dto.KinAffinity == 1 && dto.KinRelations.Length == 2 && dto.Settlements.Single().FissionPolicy == FissionPolicy.Neutral && dto.Settlements.Single().FissionDestination == -1, "the serialized contract carries lineage, kin and the settlement's fission state");
         var own2 = ObservationContract.Deserialize(ObservationContract.Serialize(new AgentObservationBuilder().Build(w, 0), parent.Mandate));
         Check(own2.Settlements.Single().FissionPolicy == FissionPolicy.Discourage, "the serialized contract carries the owner's policy");
         // Daughters are AI players: they take part in planning, the human stays player 0.

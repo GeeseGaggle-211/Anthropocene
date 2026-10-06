@@ -26,6 +26,7 @@
     <Compile Include="TradeChecks.cs" />
     <Compile Include="GoodsStorageChecks.cs" />
     <Compile Include="DemandControlChecks.cs" />
+    <Compile Include="EconomicSettlementChecks.cs" />
     <Compile Include="ClothingFeedstockChecks.cs" />
     <Compile Include="AgentContractChecks.cs" />
     <Compile Include="EcologyChecks.cs" />

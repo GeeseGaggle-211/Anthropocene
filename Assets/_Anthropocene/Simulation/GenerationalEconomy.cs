@@ -32,54 +32,16 @@ namespace Anthropocene.Simulation
     // tile integration remains the sole authority when claimants compete.
     internal static class ManagedHerdLocalClaims
     {
-        private struct Site
-        {
-            public int Tile;
-            public bool Land, WaterSource;
-            public double NonhumanFood, HumanFood, Water;
-        }
-
         public static void Append(WorldState world, int campTile, int herdId, double foodNeed,
             double waterNeed, double duration, List<Demand> claims, HashSet<int> visible = null)
         {
             if (foodNeed <= 0 && waterNeed <= 0) return;
-            var sites = new List<Site>(7);
-            var exposure = new SeasonExposure(world.Days, Math.Max(0, duration), world.Config.BaseDays);
-            foreach (int tileId in world.Map.Radius(campTile, 1).OrderBy(id => id))
-            {
-                if (visible != null && !visible.Contains(tileId)) continue;
-                var tile = world.Tiles[tileId];
-                if (!tile.TraversableLand && tile.WaterBody != WaterKind.Freshwater) continue;
-                var stock = LazyEcology.ProjectEcology(world, tileId, world.Days);
-                var site = new Site { Tile = tileId, Land = tile.TraversableLand };
-                if (tile.TraversableLand)
-                {
-                    double biomass = Math.Max(0, stock.PotentialFood);
-                    site.HumanFood = Numbers.Clamp(stock.Food, 0, biomass);
-                    site.NonhumanFood = biomass - site.HumanFood;
-                }
-                if (tile.WaterBody != WaterKind.Saltwater && tile.FreshwaterSource != FreshwaterSource.None)
-                {
-                    site.WaterSource = true;
-                    // Recharge is a water-only horizon flow. Include a bounded
-                    // recharge proxy when splitting requests, so an empty but
-                    // renewing spring is still visited. Integration calculates
-                    // the actual receipt and clamps its finite source ledger.
-                    double recharge = 0;
-                    for (int season = 0; season < 4; season++)
-                    {
-                        var profile = tile.Seasons[season];
-                        recharge += Math.Max(0, profile.MaxFreshwater * profile.WaterRecoveryPerDay)
-                            * exposure.At(season);
-                    }
-                    site.Water = Math.Max(0, stock.Freshwater) + recharge;
-                }
-                sites.Add(site);
-            }
-            if (sites.Count == 0) return;
+            var sites = LocalHerdEcology.Survey(world, campTile, 1, duration,
+                null, visible).Sites;
+            if (sites.Length == 0) return;
 
-            var foodClaims = new double[sites.Count];
-            var waterClaims = new double[sites.Count];
+            var foodClaims = new double[sites.Length];
+            var waterClaims = new double[sites.Length];
             double nonhuman = sites.Sum(s => s.NonhumanFood);
             double human = sites.Sum(s => s.HumanFood);
             double requestedFood = Math.Max(0, foodNeed);
@@ -88,9 +50,9 @@ namespace Anthropocene.Simulation
             double additional = Math.Max(0, requestedFood - first - second);
             double totalBiomass = nonhuman + human;
             int landCount = sites.Count(s => s.Land);
-            int lastLand = sites.FindLastIndex(s => s.Land);
+            int lastLand = Array.FindLastIndex(sites, s => s.Land);
             double remainingFood = Math.Max(0, foodNeed);
-            for (int i = 0; i < sites.Count; i++)
+            for (int i = 0; i < sites.Length; i++)
             {
                 if (!sites[i].Land) continue;
                 double proposed = Portion(first, sites[i].NonhumanFood, nonhuman)
@@ -105,9 +67,9 @@ namespace Anthropocene.Simulation
             double water = sites.Sum(s => s.Water);
             double requestedWater = Math.Max(0, waterNeed);
             int sourceCount = sites.Count(s => s.WaterSource);
-            int lastSource = sites.FindLastIndex(s => s.WaterSource);
+            int lastSource = Array.FindLastIndex(sites, s => s.WaterSource);
             double remainingWater = Math.Max(0, waterNeed);
-            for (int i = 0; i < sites.Count; i++)
+            for (int i = 0; i < sites.Length; i++)
             {
                 if (!sites[i].WaterSource) continue;
                 double proposed = water > 0 ? Portion(requestedWater, sites[i].Water, water)
@@ -117,7 +79,7 @@ namespace Anthropocene.Simulation
                 remainingWater = Math.Max(0, remainingWater - waterClaims[i]);
             }
 
-            for (int i = 0; i < sites.Count; i++)
+            for (int i = 0; i < sites.Length; i++)
                 if (foodClaims[i] > 0 || waterClaims[i] > 0)
                     claims.Add(new Demand { Tile = sites[i].Tile, Entity = herdId, Kind = "Herd",
                         PotentialFood = foodClaims[i], Freshwater = waterClaims[i] });

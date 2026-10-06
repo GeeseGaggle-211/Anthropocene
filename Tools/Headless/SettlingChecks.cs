@@ -11,7 +11,8 @@ internal static class SettlingChecks
     private static bool Info => Environment.GetEnvironmentVariable("SETTLING_INFO") == "1";
     private static bool Near(double a, double b, double tolerance = 1e-9) => Math.Abs(a - b) <= tolerance * Math.Max(1, Math.Max(Math.Abs(a), Math.Abs(b)));
 
-    // Value-rule camp with both technologies, food short, husbandry-primary unless `cultivationPrimary`, with `animals` goats on its tile.
+    // Value-rule camp with both capabilities and identical physical state;
+    // `cultivationPrimary` changes only the historical first-breakthrough label.
     private static WorldState Camp(int population, int animals, bool cultivationPrimary = false, double pasture = 1, double fieldIntensity = 0)
     {
         var w = NeolithicChecks.Fixture();
@@ -210,25 +211,33 @@ internal static class SettlingChecks
         Check(ref checks, SaveCodec.Fingerprint(w) == fp && Sig(p1) == Sig(p2) && Sig(p1) == Sig(p3), "planning with the herd credit is pure, repeatable and save-stable");
     }
 
-    // ---- Settling cost of a husbandry-primary camp.
+    // ---- Settling cost of a physically herd-bearing mobile camp.
     private static void Settling(ref int checks)
     {
         // Near the village threshold with many spare residents and a herd worth more than the fields would add.
         var h = Camp(400, 160, false, 1, .24); var k = Camp(400, 160, true, 1, .24);
         var dh = CampProductionDemand.Build(h, h.Camps[0], EconomicIntent.From(h.Camps[0])); var dk = CampProductionDemand.Build(k, k.Camps[0], EconomicIntent.From(k.Camps[0]));
         double years = h.Config.TurnDays / h.Config.DaysPerYear;
-        Check(ref checks, dh.SettlingCost > 0 && !dh.SettlesByExpansion && dh.ExpansionEffortCap < double.PositiveInfinity, "a husbandry-primary camp near the threshold is charged a settling cost and capped (" + dh.SettlingCost.ToString("F0") + ", cap " + dh.ExpansionEffortCap.ToString("F0") + " worker-years)");
-        Check(ref checks, dk.SettlingCost == 0 && !dk.SettlesByExpansion && double.IsPositiveInfinity(dk.ExpansionEffortCap), "a primary-Cultivation camp is never charged");
+        Check(ref checks, dh.SettlingCost > 0 && !dh.SettlesByExpansion && dh.ExpansionEffortCap < double.PositiveInfinity, "a mobile herd-bearing camp near the threshold is charged a settling cost and capped (" + dh.SettlingCost.ToString("F0") + ", cap " + dh.ExpansionEffortCap.ToString("F0") + " worker-years)");
+        Check(ref checks, Near(dk.SettlingCost, dh.SettlingCost) &&
+            dk.SettlesByExpansion == dh.SettlesByExpansion &&
+            Near(dk.ExpansionEffortCap, dh.ExpansionEffortCap),
+            "the same physical transition cost is independent of primary technology");
         var ph = EconomicPlanner.Plan(h, h.Camps[0], EconomicIntent.From(h.Camps[0])); var pk = EconomicPlanner.Plan(k, k.Camps[0], EconomicIntent.From(k.Camps[0]));
-        Check(ref checks, Expansion(ph) <= Math.Floor(dh.ExpansionEffortCap / years + 1e-9) && Expansion(pk) > Expansion(ph), "settling cost blocks field steps for the husbandry camp but not the cultivator (" + Expansion(ph) + " vs " + Expansion(pk) + ")");
+        Check(ref checks, Expansion(ph) <= Math.Floor(dh.ExpansionEffortCap / years + 1e-9) &&
+            Expansion(pk) == Expansion(ph),
+            "equivalent primary-technology labels produce the same capped field plan (" + Expansion(ph) + " vs " + Expansion(pk) + ")");
         Check(ref checks, dh.Expansion == null || dh.Expansion.TotalWorkerYears <= dh.ExpansionEffortCap + 1e-9, "the valued ladder stops before the crossing step");
         // The capped plan really leaves the footprint below the village threshold at the turn's end.
         var after = Camp(400, 160, false, 1, .245); after.Camps[0].EconomyAutomationTurns = -1; new TurnResolver().Resolve(after, new Dictionary<int, List<Order>>());
         var kept = Camp(400, 160, true, 1, .245); kept.Camps[0].EconomyAutomationTurns = -1; new TurnResolver().Resolve(kept, new Dictionary<int, List<Order>>());
         double Average(WorldState x) { var camp = x.Camps[0]; var land = x.Map.Radius(camp.Tile, 1).Where(id => x.Tiles[id].TraversableLand).ToArray(); return land.Sum(id => x.Tiles[id].CultivationOperator == camp.Id ? CultivationEconomy.Intensity(x.Config, x.Tiles[id].CultivationCapital) : 0) / land.Length; }
-        Check(ref checks, Average(after) < CultivationEconomy.VillageIntensity && !after.Camps[0].IsVillage && Average(kept) >= CultivationEconomy.VillageIntensity && kept.Camps[0].IsVillage, "resolved under automation, the husbandry camp stays a camp below the threshold while the cultivator becomes a village (" + Average(after).ToString("F3") + " vs " + Average(kept).ToString("F3") + ")");
+        Check(ref checks, Average(after) < CultivationEconomy.VillageIntensity &&
+            !after.Camps[0].IsVillage && Near(Average(after), Average(kept)) &&
+            kept.Camps[0].IsVillage == after.Camps[0].IsVillage,
+            "resolved automation gives equivalent physical camps the same transition outcome (" + Average(after).ToString("F3") + " vs " + Average(kept).ToString("F3") + ")");
         if (Info) Console.WriteLine("SETTLING resolved husbandry avg=" + Average(after).ToString("F3") + " village=" + after.Camps[0].IsVillage + " | cultivator avg=" + Average(kept).ToString("F3") + " village=" + kept.Camps[0].IsVillage);
-        // A zero penalty restores the no-cost behaviour; existing villages and non-husbandry-primary camps are unaffected.
+        // A zero penalty restores the no-cost behaviour; existing villages are unaffected.
         var free = Camp(400, 160, false, 1, .24); free.Config.SettledHerdGrowthPenalty = 0;
         var df = CampProductionDemand.Build(free, free.Camps[0], EconomicIntent.From(free.Camps[0]));
         Check(ref checks, df.SettlingCost == 0 && double.IsPositiveInfinity(df.ExpansionEffortCap), "a zero settling penalty restores the uncapped ladder");
@@ -239,9 +248,11 @@ internal static class SettlingChecks
         var rich = Camp(400, 20, false, 1, .24);
         var dr = CampProductionDemand.Build(rich, rich.Camps[0], EconomicIntent.From(rich.Camps[0]));
         Check(ref checks, dr.SettlingCost > 0 && dr.SettlesByExpansion && double.IsPositiveInfinity(dr.ExpansionEffortCap) && dr.Expansion != null && dr.Expansion.Value.All(v => v > 0) && dr.Expansion.Value.Zip(dr.Expansion.Value.Skip(1), (a, b) => a >= b).All(x => x), "when the fields clearly beat the herd settling proceeds with a scaled ladder");
-        var uncharged = Camp(400, 20, true, 1, .24);
-        var du = CampProductionDemand.Build(uncharged, uncharged.Camps[0], EconomicIntent.From(uncharged.Camps[0]));
-        Check(ref checks, dr.Expansion.Value.Zip(du.Expansion.Value, (a, b) => a <= b + 1e-12).All(x => x) && dr.Expansion.Value.Zip(du.Expansion.Value, (a, b) => a < b - 1e-9).Any(x => x), "the settling cost lowers the tail of the ladder relative to the same camp without it");
+        var relabeled = Camp(400, 20, true, 1, .24);
+        var du = CampProductionDemand.Build(relabeled, relabeled.Camps[0], EconomicIntent.From(relabeled.Camps[0]));
+        Check(ref checks, Near(dr.SettlingCost, du.SettlingCost) &&
+            dr.Expansion.Value.SequenceEqual(du.Expansion.Value),
+            "relabelling the same herd/field state leaves every transition-ladder value unchanged");
         // The threshold step is reported by the ladder.
         var steps = CultivationEconomy.ExpansionLadder(rich, rich.Camps[0], years, dr.Footprint);
         Check(ref checks, steps.Length > 0 && steps.Zip(steps.Skip(1), (a, b) => a.VillageAverage <= b.VillageAverage + 1e-12).All(x => x) && steps.Any(s => s.VillageAverage + 1e-10 >= CultivationEconomy.VillageIntensity), "ladder steps report a nondecreasing village-footprint average that reaches the threshold");

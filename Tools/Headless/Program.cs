@@ -235,6 +235,7 @@ internal static class Program
     }
     private static int Main(string[] args)
     {
+        if (args.Contains("--economic-settlement-probe")) { EconomicSettlementChecks.Probe(); return 0; }
         if (args.Contains("--issue31-microbench")) { Issue31Microbench(); return 0; }
         if (args.Contains("--foundation-only")) { Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); return 0; }
         if (args.Contains("--issue25-ecology-only")) { Issue25EcologyChecks.Run(args); return 0; }
@@ -254,7 +255,7 @@ internal static class Program
         if (args.Contains("--horizon-only")) { HorizonEcologyChecks.Run(); HorizonCultivationChecks.Run(); HorizonExecutionChecks.Run(); return 0; }
         if (args.Contains("--land-food-only")) { AquaticChecks.Run(); HorizonEcologyChecks.Run(); Issue27EcologyChecks.Run(); return 0; }
         if (args.Contains("--neolithic-only")) { NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); FarmPlannerChecks.Run(); FarmFoodPhaseChecks.Run(); CultivationCacheChecks.Run(); HorizonCultivationChecks.Run(); HorizonEcologyChecks.Run(); HorizonExecutionChecks.Run(); HusbandryChecks.Run(); PastoralCraftChecks.Run(); Issue25EcologyChecks.Run(args); Issue27EcologyChecks.Run(); Issue26ForecastChecks.Run(); Issue28FoodTimebaseChecks.Run(); Issue32CapabilityChecks.Run(); return 0; }
-        if (args.Contains("--economy-only")) { Milestone2Checks.Run(); Milestone3Checks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); FarmPlannerChecks.Run(); FarmFoodPhaseChecks.Run(); CultivationCacheChecks.Run(); HorizonCultivationChecks.Run(); HorizonEcologyChecks.Run(); HorizonExecutionChecks.Run(); HusbandryChecks.Run(); PastoralCraftChecks.Run(); Issue25EcologyChecks.Run(args); Issue27EcologyChecks.Run(); Issue26ForecastChecks.Run(); Issue28FoodTimebaseChecks.Run(); Issue32CapabilityChecks.Run(); return 0; }
+        if (args.Contains("--economy-only")) { Milestone2Checks.Run(); Milestone3Checks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); FarmPlannerChecks.Run(); FarmFoodPhaseChecks.Run(); CultivationCacheChecks.Run(); HorizonCultivationChecks.Run(); HorizonEcologyChecks.Run(); HorizonExecutionChecks.Run(); HusbandryChecks.Run(); PastoralCraftChecks.Run(); Issue25EcologyChecks.Run(args); Issue27EcologyChecks.Run(); Issue26ForecastChecks.Run(); Issue28FoodTimebaseChecks.Run(); Issue32CapabilityChecks.Run(); EconomicSettlementChecks.Run(); return 0; }
         if (args.Contains("--pastoral-craft-only")) { PastoralCraftChecks.Run(); return 0; }
         if (args.Contains("--husbandry-only")) { HusbandryChecks.Run(); return 0; }
         if (args.Contains("--farm-food-phase")) { FarmFoodPhaseChecks.Run(); return 0; }
@@ -296,6 +297,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "TradeChecks", Cost = 2, Run = () => TradeChecks.Run() },
                 new ParallelChecks.Entry { Name = "GoodsStorageChecks", Cost = 2, Run = () => GoodsStorageChecks.Run() },
                 new ParallelChecks.Entry { Name = "DemandControlChecks", Cost = 2, Run = () => DemandControlChecks.Run() },
+                new ParallelChecks.Entry { Name = "EconomicSettlementChecks", Cost = 2, Run = () => EconomicSettlementChecks.Run() },
                 new ParallelChecks.Entry { Name = "ClothingFeedstockChecks", Run = () => ClothingFeedstockChecks.Run() },
                 new ParallelChecks.Entry { Name = "NeolithicChecks", Run = () => NeolithicChecks.Run() },
                 new ParallelChecks.Entry { Name = "ToolConsumptionChecks", Run = () => ToolConsumptionChecks.Run() },
@@ -400,7 +402,12 @@ internal static class Program
             var technologies = new int[4]; var timer = Stopwatch.StartNew();
             for (int seed = 1; seed <= seeds; seed++)
             {
-                var config = SimulationConfig.Small(); var w = new WorldGenerator().Generate(seed, config);
+                // This legacy Paleolithic balance benchmark predates fission and
+                // keeps founder-indexed habitat/population ledgers. Keep its
+                // intended fixed cohort explicit instead of letting daughters
+                // enter dictionaries that only contain the founders.
+                var config = SimulationConfig.Small(); config.FissionEnabled = false;
+                var w = new WorldGenerator().Generate(seed, config);
                 int startingWildHerds = w.Herds.Count(herd => herd.DomesticCamp < 0);
                 var startingHabitats = w.Camps.ToDictionary(camp => camp.Id, camp => StartingHabitat(w, camp));
                 var startingPopulations = w.Camps.ToDictionary(camp => camp.Id, camp => (double)w.LinkedPopulation(camp));

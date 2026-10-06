@@ -165,7 +165,10 @@ internal static class HerdLabourChecks
         HerdLabour.Pasture(w, c, forecast, w.Config.GenerationIntervals, out double mobile, out double weakMobile, d);
         c.IsVillage = true;
         HerdLabour.Pasture(w, c, forecast, w.Config.GenerationIntervals, out double settled, out double weakSettled, d);
-        Check(mobile >= settled && weakMobile > weakSettled, "mobile range adds non-field pasture, not a higher current herd receipt");
+        Near(mobile, settled,
+            "current herd capacity uses the same radius-one ecological envelope regardless of village label");
+        Near(weakMobile, weakSettled,
+            "zero-displacement capacity is not enlarged by a mobile identity");
         c.IsVillage = false;
         var tile = w.Tiles[c.Tile]; tile.Environment = EnvironmentKind.Ice;
         Check(!CultivationEconomy.Cultivable(tile), "the shared fission/field predicate excludes ice");
@@ -173,7 +176,8 @@ internal static class HerdLabourChecks
         w.Tiles[blocked].ElevationLevel = 10;
         var bands = HerdLabour.Pasture(w, c, forecast, w.Config.GenerationIntervals, out _, out _, d);
         Check(bands.All(b => b.Tile != blocked), "peaks do not become pasture");
-        Check(bands.Length <= 19, "pasture work is bounded by local vision");
+        Check(bands.Length <= 38,
+            "pasture work is bounded by local vision with at most one nonhuman and one human-food band per tile");
         var costs = HerdLabour.SavedLabour(new[] { 0.0, 2, 4 }, new[] {
             new HerdLabour.PastureBand { Tile = 1, Animals = 3, Rate = 7.2 },
             new HerdLabour.PastureBand { Tile = 2, Animals = 10, Rate = 18 } }, 7.2);

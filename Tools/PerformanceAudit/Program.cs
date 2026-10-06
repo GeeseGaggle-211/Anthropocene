@@ -448,6 +448,7 @@ internal static class Program
 #if !MAIN
         var priorSites = details ? world.Camps.ToDictionary(c => c.Id, c => c.Tile) : null;
         var priorMoves = details ? world.Camps.ToDictionary(c => c.Id, c => c.Moves) : null;
+        var priorVillages = details ? world.Camps.ToDictionary(c => c.Id, c => c.IsVillage) : null;
         var priorLocalStocks = details ? world.Camps.ToDictionary(c => c.Id, c => LocalStocks(world, c.Tile)) : null;
 #endif
         int gc0Before = GC.CollectionCount(0), gc1Before = GC.CollectionCount(1), gc2Before = GC.CollectionCount(2);
@@ -469,6 +470,7 @@ internal static class Program
         double endingPopulationWeightedQol = 0;
         int managedAnimals = 0, wildAnimals = 0, managedHerds = 0;
         int husbandryCamps = 0, husbandryResidents = 0, husbandryLinked = 0, husbandryAnimals = 0;
+        int campMoves = 0, villageToCampTransitions = 0;
         int husbandryMoves = 0, animalBirths = 0, animalDeaths = 0, animalSlaughtered = 0;
         double herdForageRequested = 0, herdForageRealized = 0, herdWaterRequested = 0, herdWaterRealized = 0;
         int landConditionChangedTiles = 0;
@@ -490,6 +492,11 @@ internal static class Program
         int husbandryResidents = husbandry.Sum(c => c.Population);
         int husbandryLinked = husbandry.Sum(world.LinkedPopulation);
         int husbandryAnimals = husbandry.Sum(c => domesticAnimalsByCamp.TryGetValue(c.Id, out int animals) ? animals : 0);
+        int campMoves = details ? world.Camps.Sum(c => c.Moves -
+            (priorMoves.TryGetValue(c.Id, out int priorMove) ? priorMove : c.Moves)) : 0;
+        int villageToCampTransitions = details ? world.Camps.Count(c =>
+            priorVillages.TryGetValue(c.Id, out bool priorVillage) &&
+            priorVillage && !c.IsVillage) : 0;
         int husbandryMoves = details ? husbandry.Sum(c => c.Moves - (priorMoves.TryGetValue(c.Id, out int priorMove) ? priorMove : c.Moves)) : 0;
         int animalBirths = record.ManagedHerds.Sum(h => h.NewbornAnimals);
         int animalDeaths = record.ManagedHerds.Sum(h => h.StarvationDeaths);
@@ -509,11 +516,14 @@ internal static class Program
                 .Where(id => world.Tiles[id].Land)
                 .Select(id => CultivationEconomy.Intensity(world.Config, world.Tiles[id].CultivationCapital))
                 .ToArray();
+            var herdSite = SettlementSiteEvaluation.Evaluate(world, c, c.Tile,
+                c.Population, HerdConsumptionProfile.Owned(world, c));
             return new
             {
                 c.Id, c.Player, c.Population, c.IsVillage, priorResidents = priorResidents.TryGetValue(c.Id, out int priorPopulation) ? priorPopulation : 0,
                 startingSite = priorSites.TryGetValue(c.Id, out int priorSite) ? priorSite : c.Tile, endingSite = c.Tile,
                 moved = priorMoves.TryGetValue(c.Id, out int priorMoveCount) && c.Moves != priorMoveCount,
+                villageToCamp = priorVillages.TryGetValue(c.Id, out bool priorVillage) && priorVillage && !c.IsVillage,
                 openingLocalStocks = priorLocalStocks.TryGetValue(c.Id, out var priorStocks) ? priorStocks : null,
                 endingLocalStocks = LocalStocks(world, c.Tile),
                 linked = world.LinkedPopulation(c), technology = c.Technology.ToString(), c.QoL,
@@ -533,6 +543,8 @@ internal static class Program
                 production = record.Production.Where(p => p.Camp == c.Id).GroupBy(p => p.Good).ToDictionary(g => g.Key.ToString(), g => g.Sum(p => p.Output)),
                 foodYield = record.Transfers.Where(t => t.Entity == c.Id && t.Kind != "Herd").Sum(t => t.Food),
                 managedAnimals = domesticAnimalsByCamp.TryGetValue(c.Id, out int animals) ? animals : 0,
+                zeroDisplacementHerdCapacity = herdSite.Herd.ZeroDisplacementCapacity,
+                absoluteHerdCapacity = herdSite.Herd.AbsoluteCapacity,
                 sustainedAnimalFood = record.ManagedHerds.Where(h => h.Camp == c.Id).Sum(h => h.AcceptedFood),
                 slaughterFood = record.ManagedHerds.Where(h => h.Camp == c.Id).Sum(h => h.SlaughterFood),
                 animalSlaughtered = record.ManagedHerds.Where(h => h.Camp == c.Id).Sum(h => h.Slaughtered),
@@ -670,6 +682,8 @@ internal static class Program
             husbandryResidents,
             husbandryLinked,
             husbandryAnimals,
+            campMoves,
+            villageToCampTransitions,
             husbandryMoves,
             animalBirths,
             animalDeaths,
@@ -686,6 +700,9 @@ internal static class Program
             weightedQol,
             endingPopulationWeightedQol,
             foodYield,
+            plantFoodReceipts = record.Demographics.Sum(d => d.TerrestrialFood + d.ForageFood),
+            animalFoodReceipts = record.Demographics.Sum(d => d.HuntFood + d.AnimalFood + d.SlaughterFood),
+            aquaticFoodReceipts = record.Demographics.Sum(d => d.MarineFood + d.LakeFood + d.FishFood),
             foodByKind = details ? record.Transfers.GroupBy(t => t.Kind)
                 .OrderBy(g => g.Key, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.Sum(t => t.Food)) : null,

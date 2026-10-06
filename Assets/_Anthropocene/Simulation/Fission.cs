@@ -260,8 +260,21 @@ namespace Anthropocene.Simulation
         }
         public static QoLModel QoLModelOf(WorldState w, Camp camp) => new QoLModel(w, camp);
 
-        public static FissionRegime RegimeOf(Camp camp)
-            => camp.Technology == Technology.None ? FissionRegime.Paleolithic : CultivationEconomy.Enabled(camp) ? FissionRegime.Agricultural : FissionRegime.Nomadic;
+        public static FissionRegime RegimeOf(WorldState world, Camp camp)
+        {
+            if (camp.People.Progression.Era == Era.Paleolithic)
+                return FissionRegime.Paleolithic;
+            // This legacy label is a transient site-evaluation shape, not an
+            // economic identity. Select it from retained physical field
+            // capital; learning Cultivation alone cannot change destination
+            // policy, and a husbandry-first settlement with the same fields is
+            // evaluated identically.
+            bool retainedFields = world.Map.Radius(camp.Tile, 1).Any(id =>
+                world.Tiles[id].CultivationOperator == camp.Id &&
+                world.Tiles[id].CultivationCapital > 1e-9);
+            return retainedFields ? FissionRegime.Agricultural :
+                FissionRegime.Nomadic;
+        }
 
         private sealed class Context
         {
@@ -350,7 +363,7 @@ namespace Anthropocene.Simulation
         private static Evaluation Evaluate(Context context, Camp camp)
         {
             var w = context.World; var cfg = w.Config; var e = new Evaluation { Camp = camp };
-            var regime = RegimeOf(camp); var policy = camp.FissionPolicy; var cached = camp.FissionDestination;
+            var regime = RegimeOf(w, camp); var policy = camp.FissionPolicy; var cached = camp.FissionDestination;
             // A change of subsistence regime invalidates the cached destination regardless of the push.
             if (cached != null && cached.Regime != (int)regime) { e.ClearTarget = true; e.Invalidations++; cached = null; }
             int residents = camp.Population, n0 = Kinship.DaughterSize(residents, policy), minimum = cfg.FissionMinimumDaughter;
@@ -603,7 +616,7 @@ namespace Anthropocene.Simulation
             if (demographics.TryGetValue(parent.Id, out var report)) report.SplitOff += n;
             record.Fissions.Add(new FissionReport
             {
-                Turn = w.Turn, ParentCamp = parent.Id, DaughterCamp = camp.Id, ParentSociety = ps.Id, DaughterSociety = society.Id, DaughterPlayer = society.Player, Tile = camp.Tile, ParentBefore = before, Daughter = n, Regime = (int)RegimeOf(parent),
+                Turn = w.Turn, ParentCamp = parent.Id, DaughterCamp = camp.Id, ParentSociety = ps.Id, DaughterSociety = society.Id, DaughterPlayer = society.Player, Tile = camp.Tile, ParentBefore = before, Daughter = n, Regime = (int)RegimeOf(w, parent),
                 AnimalsMoved = animals, Policy = parent.FissionPolicy, Push = e.Push, Desirability = e.Desirability, Score = e.Score, Affinity = society.KinAffinity, Gain = e.Gain, DaughterQoL = e.DaughterQoL, Trigger = e.Trigger, DaughterGain = e.DaughterGain
             });
             record.Log("Camp " + parent.Id + " (tribe " + parent.Player + ") split: " + n + " of " + before + " people founded camp " + camp.Id + " (tribe " + society.Player + ") at tile " + camp.Tile + ".");

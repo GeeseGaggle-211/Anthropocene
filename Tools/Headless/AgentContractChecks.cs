@@ -32,11 +32,9 @@ internal static class AgentContractChecks
             dto.TechnologyStatuses.Select(s => s.Progress).SequenceEqual(o.TechnologyStatuses.Select(s => s.Progress)),
             "owned technology progress, threshold and acquisition state survive filtered serialization");
         Check(dto.SiteCoverage.Length == o.SiteCoverage.Count && dto.SiteCoverage.All(s =>
-            s.HumanFood >= 0 && s.HumanFood <= 3 && s.HerdForage >= 0 && s.HerdForage <= 3 &&
-            s.HerdWater >= 0 && s.HerdWater <= 3 &&
-            Math.Abs(s.HumanFood * 20 - Math.Round(s.HumanFood * 20)) < 1e-8 &&
-            Math.Abs(s.HerdForage * 20 - Math.Round(s.HerdForage * 20)) < 1e-8 &&
-            Math.Abs(s.HerdWater * 20 - Math.Round(s.HerdWater * 20)) < 1e-8),
+            new[] { s.HumanFood, s.HumanFoodAfterHerd, s.HerdForage, s.HerdAbsolute,
+                s.HerdWater, s.FixedShelter, s.RecurringLabor }.All(v =>
+                v >= 0 && v <= 3 && Math.Abs(v * 20 - Math.Round(v * 20)) < 1e-8)),
             "candidate-site coverage remains local, capped and quantized in the serialized observation");
         Check(dto.Herds.Single(h => h.Id == wild.Id).RepresentativeCount == 10 && !dto.Herds.Single(h => h.Id == wild.Id).ExactCount, "serialized wild counts remain estimates");
         Check(dto.LegalActions.All(m => m.Actions.All(a => OrderRules.Validate(o, a) == null && m.Allows(a))), "every enumerated action is accepted by the shared validator");
@@ -99,11 +97,9 @@ internal static class AgentContractChecks
         var current = observation.SiteCoverage.Single(s => s.Tile == camp.Tile);
         var roundTrip = ObservationContract.Deserialize(ObservationContract.Serialize(observation, camp.Mandate));
         Check(roundTrip.SiteCoverage.Length == observation.SiteCoverage.Count && roundTrip.SiteCoverage.All(s =>
-            s.HumanFood >= 0 && s.HumanFood <= 3 && s.HerdForage >= 0 && s.HerdForage <= 3 &&
-            s.HerdWater >= 0 && s.HerdWater <= 3 &&
-            Math.Abs(s.HumanFood * 20 - Math.Round(s.HumanFood * 20)) < 1e-8 &&
-            Math.Abs(s.HerdForage * 20 - Math.Round(s.HerdForage * 20)) < 1e-8 &&
-            Math.Abs(s.HerdWater * 20 - Math.Round(s.HerdWater * 20)) < 1e-8),
+            new[] { s.HumanFood, s.HumanFoodAfterHerd, s.HerdForage, s.HerdAbsolute,
+                s.HerdWater, s.FixedShelter, s.RecurringLabor }.All(v =>
+                v >= 0 && v <= 3 && Math.Abs(v * 20 - Math.Round(v * 20)) < 1e-8)),
             "husbandry support estimates survive the filtered observation contract");
         Check(current.HerdForage == 0 && current.HerdWater == 0,
             "the filtered husbandry view detects exhausted local pasture and water");
@@ -178,9 +174,10 @@ internal static class AgentContractChecks
         camp.IsVillage = true;
         camp.PlantFood = 100000;
         var secureVillage = new AgentObservationBuilder().Build(developed, camp.Player);
-        Check(secureVillage.AgriculturalSites.Count == 0 &&
+        Check(secureVillage.SiteCoverage.Count > 0 &&
+            secureVillage.SiteCoverage.Count <= developed.Map.Radius(camp.Tile, developed.Config.CampMovement).Count() &&
             new HeuristicTribePolicy().Decide(secureVillage, camp.Mandate).Orders.Single(o => o.Entity == camp.Id).Kind == OrderKind.NoOp,
-            "secure villages skip relocation forecasts and do not abandon fields");
+            "secure villages use the bounded settlement comparison and do not abandon fields");
         var virgin = Fixture(false); var freshCamp = virgin.Camps[0];
         var move = new HeuristicTribePolicy().Decide(new AgentObservationBuilder().Build(virgin, freshCamp.Player), freshCamp.Mandate)
             .Orders.Single(o => o.Entity == freshCamp.Id);
@@ -206,10 +203,12 @@ internal static class AgentContractChecks
         depletedCamp.IsVillage = true;
         depletedCamp.PlantFood = 0;
         var emergencyVillage = new AgentObservationBuilder().Build(depleted, depletedCamp.Player);
-        var emergencyChoice = new HeuristicTribePolicy().Decide(emergencyVillage, depletedCamp.Mandate)
-            .Orders.Single(o => o.Entity == depletedCamp.Id);
-        Check(emergencyVillage.AgriculturalSites.Count > 0 && emergencyChoice.Kind == OrderKind.Move,
-            "the same AI can abandon a village in a severe food emergency");
+        var emergencyDecision = new HeuristicTribePolicy().Decide(emergencyVillage, depletedCamp.Mandate);
+        var emergencyChoice = emergencyDecision.Orders.Single(o => o.Entity == depletedCamp.Id);
+        Check(emergencyVillage.SiteCoverage.Count > 0 && emergencyChoice.Kind == OrderKind.Move,
+            "the same AI can abandon a village in a severe food emergency: " +
+            string.Join("; ", emergencyDecision.Trace.Candidates.Select(t =>
+                t.Plan + "=" + t.Score.ToString("F3"))));
     }
 
     private static void ValidationOnlyObservationMatchesActions(WorldState world, Camp camp, AgentObservation full)

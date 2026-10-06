@@ -286,7 +286,8 @@ namespace Anthropocene.Simulation
             using var profile = PhaseProfile.Scope("Intent");
             var planningCamp = PlanningCampAt(camp, effectiveTile, trade);
             var settings = EconomicIntent.From(camp);
-            if (CultivationEconomy.HusbandryEnabled(camp))
+            if (CultivationEconomy.HusbandryEnabled(camp) &&
+                HerdingTooling.DomesticAnimals(world, camp) > 0)
                 settings.ManagedBreedingIntensity = ManagedBreedingPolicy.Recommend(world, camp, effectiveTile, index);
             // Relocating a village abandons field work for this turn. The
             // automated intent can use the prior cohort as gatherers;
