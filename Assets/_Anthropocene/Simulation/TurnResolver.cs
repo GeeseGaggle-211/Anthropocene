@@ -259,11 +259,13 @@ namespace Anthropocene.Simulation
                 {
                     if (!visibleByPlayer.TryGetValue(camp.Player, out var visible))
                         visibleByPlayer[camp.Player] = visible = accessCache.Visible(camp.Player);
-                    var access = FishingEconomy.BuildAccess(world, camp, camp.Tile,
-                        camp.Population, world.Days, Math.Max(1, world.Config.TurnDays), accessCache);
-                    foreach (var candidate in access.Candidates)
-                        if (candidate.KnowledgeSource == FishingKnowledgeSource.Visible && visible.Contains(candidate.TileId))
-                            observed.Add(candidate.TileId);
+                    // Closing knowledge needs only reachable visible geometry.
+                    // Do not rebuild stock, capital, rivalry, yield and ranking
+                    // forecasts that were used by the opening planner.
+                    var remembered = accessCache.Remembered(camp.People);
+                    foreach (var route in new[] { FishingRoute.Shallows, FishingRoute.Lake })
+                        foreach (int tile in accessCache.Distances(camp, camp.Tile, route, visible, remembered).Keys)
+                            if (visible.Contains(tile)) observed.Add(tile);
                 }
                 if (plansByCamp.TryGetValue(camp.Id, out var plan) && !plan.Departing)
                     foreach (var ground in plan.Grounds)
@@ -477,7 +479,9 @@ namespace Anthropocene.Simulation
                     // Keep accumulated experience intact; carryover is stored as progress separately at transition display/save.
                 }
                 progression.Era = Era.Neolithic; progression.CompletionDays = w.Days; progression.CompletionTurn = w.Turn; progression.CompletionRule = threshold ? "Mastery" : majority ? "Maturity" : "Forced";
-                OpeningTransitions.Apply(w, camp, camp.Technology); record.Log("Tribe " + camp.Player + " discovered " + camp.Technology + " and entered the Neolithic.");
+                OpeningTransitions.Apply(w, camp, camp.Technology);
+                TechnologyDiscovery.QueueEligible(w, camp.People);
+                record.Log("Tribe " + camp.Player + " discovered " + camp.Technology + " and entered the Neolithic.");
             }
         }
         public static double NeolithicProgress(WorldState w, Camp camp, Domain domain)

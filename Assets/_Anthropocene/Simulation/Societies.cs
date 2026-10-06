@@ -153,10 +153,10 @@ namespace Anthropocene.Simulation
 
     public static class TechnologyDiscovery
     {
-        // The single entry point for domain practice. Lifetime Experience always accrues (it drives the first breakthrough and the
+        // Lifetime Experience always accrues (it drives the first breakthrough and the
         // practice bonuses); after the Society leaves the Paleolithic the same credit also accrues to NeolithicExperience, which alone
         // earns secondary technologies. Pure arithmetic on the owning Society; callers fix the amount and the canonical order.
-        public static void AddPractice(Society society, Domain domain, double amount, PracticeSource source)
+        private static void AccruePractice(Society society, Domain domain, double amount)
         {
             if (amount == 0 || double.IsNaN(amount) || double.IsInfinity(amount)) return;
             society.Experience[(int)domain] += amount;
@@ -165,15 +165,27 @@ namespace Anthropocene.Simulation
             society.NeolithicExperience[(int)domain] += amount;
         }
 
+        // Authoritative simulation entry point. Practice mutates only its owner,
+        // then publishes a threshold crossing to the world's sparse Close queue.
+        // Permanent planner capabilities therefore change only on an unlock
+        // event; Close never scans every Society and technology combination.
+        public static void AddPractice(WorldState world, Society society, Domain domain,
+            double amount, PracticeSource source)
+        {
+            AccruePractice(society, domain, amount);
+            if (world != null && amount != 0 && !double.IsNaN(amount) && !double.IsInfinity(amount))
+                QueueEligible(world, society, domain);
+        }
+
         // Trade hook (inert until trade exists, TradePracticePerValue = 0). A receiving Society learns from what it imports: the caller
         // passes the goods' value (the same value units the exchange used) and the domain the good belongs to, for example imported
         // grain to Gathering (Cultivation), herd products to Hunting (Husbandry) and fish to Fishing (Watercraft). The credit is
         // goodsValue * TradePracticePerValue and flows through AddPractice like any other practice. Returns the points credited.
-        public static double RecordTradePractice(SimulationConfig config, Society receiver, Domain domain, double goodsValue)
+        public static double RecordTradePractice(WorldState world, Society receiver, Domain domain, double goodsValue)
         {
-            double amount = goodsValue * config.TradePracticePerValue;
+            double amount = goodsValue * world.Config.TradePracticePerValue;
             if (!(amount > 0)) return 0;
-            AddPractice(receiver, domain, amount, PracticeSource.Trade);
+            AddPractice(world, receiver, domain, amount, PracticeSource.Trade);
             return amount;
         }
 
@@ -220,23 +232,49 @@ namespace Anthropocene.Simulation
 
         public static TechnologyStatus[] Statuses(WorldState world, Society society) => Statuses(world.Config, society);
 
+        // Explicit bridge for first breakthroughs, migrations/tests, and other
+        // boundary code that installs progress without a practice receipt.
+        public static void QueueEligible(WorldState world, Society society)
+        {
+            if (world == null || society == null) return;
+            for (int i = 0; i < 3; i++) QueueEligible(world, society, (Domain)i);
+        }
+
+        public static void QueueEligible(WorldState world, Society society, Domain domain)
+        {
+            if (world == null || society == null || society.Progression.Era != Era.Neolithic) return;
+            int i = (int)domain;
+            if (i < 0 || i >= 3) return;
+            var technology = (Technology)(i + 1);
+            if (society.Technologies[(int)technology] || society.Technology == technology ||
+                EffectiveProgress(society, domain, world.Config) < world.Config.SecondaryTechnologyThreshold) return;
+            world.PendingTechnologyUnlocks ??= new Dictionary<int, int>();
+            world.PendingTechnologyUnlocks.TryGetValue(society.Id, out int pending);
+            world.PendingTechnologyUnlocks[society.Id] = pending | 1 << i;
+        }
+
         // Called only at Close, after all realized food/practice receipts have been credited.
         public static void Resolve(WorldState world, TurnRecord record)
         {
-            var hunterSources = new HashSet<int>(world.Hunters.Where(h => h.Population > 0).Select(h => h.SourceCamp));
-            var active = new HashSet<int>(world.Camps.Where(c => c.Population > 0 || hunterSources.Contains(c.Id)).Select(c => c.SocietyId));
-            // Ownership.Bind sorted societies at the resolution boundary.
-            foreach (var society in world.Societies)
+            var pending = world.PendingTechnologyUnlocks;
+            if (pending == null || pending.Count == 0) return;
+            var societies = world.Societies.ToDictionary(society => society.Id);
+            foreach (var entry in pending.OrderBy(pair => pair.Key))
             {
-                if (!active.Contains(society.Id) || society.Progression.Era != Era.Neolithic) continue;
+                if (!societies.TryGetValue(entry.Key, out var society) || society.Progression.Era != Era.Neolithic) continue;
+                bool active = world.Camps.Any(camp => camp.SocietyId == society.Id &&
+                    (camp.Population > 0 || world.Hunters.Any(hunter => hunter.SourceCamp == camp.Id && hunter.Population > 0)));
+                if (!active) continue;
                 for (int i = 0; i < 3; i++)
                 {
+                    if ((entry.Value & 1 << i) == 0) continue;
                     var technology = (Technology)(i + 1);
                     if (society.Technologies[(int)technology] || society.Technology == technology || EffectiveProgress(society, (Domain)i, world.Config) < world.Config.SecondaryTechnologyThreshold) continue;
                     society.Technologies[(int)technology] = true;
                     record.Log("Society " + society.Id + " discovered " + technology + " through " + (Domain)i + " practice.");
                 }
             }
+            pending.Clear();
         }
     }
 }

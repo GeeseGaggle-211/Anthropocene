@@ -47,15 +47,15 @@ internal static class SettlingChecks
         Check(ref checks, cfg.SecondaryTechnologyThreshold == cfg.ExperienceThreshold || cfg.ExperienceThreshold != 225 && cfg.SecondaryTechnologyThreshold == 225, "the secondary threshold defaults to the 225-point experience threshold");
         Check(ref checks, new SimulationConfig().SecondaryTechnologyThreshold == new SimulationConfig().ExperienceThreshold && new SimulationConfig().TradePracticePerValue == 0 && new SimulationConfig().SettledHerdGrowthPenalty == .35, "new configuration defaults");
         // Paleolithic credits accrue to lifetime practice only.
-        TechnologyDiscovery.AddPractice(society, Domain.Gathering, 40, PracticeSource.Gathering);
-        TechnologyDiscovery.AddPractice(society, Domain.Hunting, 7.5, PracticeSource.Hunting);
+        TechnologyDiscovery.AddPractice(w, society, Domain.Gathering, 40, PracticeSource.Gathering);
+        TechnologyDiscovery.AddPractice(w, society, Domain.Hunting, 7.5, PracticeSource.Hunting);
         Check(ref checks, society.Experience[(int)Domain.Gathering] == 40 && society.Experience[(int)Domain.Hunting] == 7.5 && society.NeolithicExperience.All(x => x == 0), "Paleolithic practice credits lifetime experience only");
         // After the breakthrough the same credit also accrues to Neolithic practice, whatever its source.
         society.Progression.Era = Era.Neolithic;
         foreach (var source in new[] { PracticeSource.Gathering, PracticeSource.Hunting, PracticeSource.Fishing, PracticeSource.Trade })
-            TechnologyDiscovery.AddPractice(society, Domain.Fishing, 3, source);
+            TechnologyDiscovery.AddPractice(w, society, Domain.Fishing, 3, source);
         Check(ref checks, society.Experience[(int)Domain.Fishing] == 12 && society.NeolithicExperience[(int)Domain.Fishing] == 12 && society.NeolithicExperience[(int)Domain.Gathering] == 0, "Neolithic practice credits both lifetime and Neolithic experience, independent of source");
-        TechnologyDiscovery.AddPractice(society, Domain.Fishing, 0, PracticeSource.Fishing); TechnologyDiscovery.AddPractice(society, Domain.Fishing, double.NaN, PracticeSource.Fishing);
+        TechnologyDiscovery.AddPractice(w, society, Domain.Fishing, 0, PracticeSource.Fishing); TechnologyDiscovery.AddPractice(w, society, Domain.Fishing, double.NaN, PracticeSource.Fishing);
         Check(ref checks, society.Experience[(int)Domain.Fishing] == 12, "an empty or invalid credit changes nothing");
 
         // The real accrual path: a resolved Paleolithic turn credits the same totals as before and stays out of Neolithic practice;
@@ -85,13 +85,16 @@ internal static class SettlingChecks
         Check(ref checks, TechnologyDiscovery.Statuses(d, soc)[(int)Domain.Hunting].Acquired && TechnologyDiscovery.Statuses(d, soc)[(int)Domain.Hunting].Experience == 900 && TechnologyDiscovery.Statuses(d, soc)[(int)Domain.Hunting].Progress == 900, "the acquired first technology keeps showing lifetime experience and progress");
         soc.NeolithicExperience[(int)Domain.Gathering] = d.Config.SecondaryTechnologyThreshold;
         Check(ref checks, TechnologyDiscovery.Statuses(d, soc)[(int)Domain.Gathering].Eligible, "at the threshold the status is eligible");
+        TechnologyDiscovery.Resolve(d, new TurnRecord());
+        Check(ref checks, !soc.Technologies[(int)Technology.Cultivation], "Close does not rediscover permanent planner capabilities by scanning Society state");
+        TechnologyDiscovery.QueueEligible(d, soc);
         var record = new TurnRecord(); TechnologyDiscovery.Resolve(d, record);
         Check(ref checks, soc.Technologies[(int)Technology.Cultivation] && record.Events.Any(e => e.Contains("discovered Cultivation through Gathering")), "Neolithic practice at the threshold grants the technology");
         // A different threshold is honoured, and a technology already held is kept whatever the practice.
         var t2 = NeolithicChecks.Fixture(false); var s2 = t2.Camps[0].People; s2.Progression.Era = Era.Neolithic; s2.Technology = Technology.Cultivation; s2.Technologies[(int)Technology.Cultivation] = true;
         t2.Config.SecondaryTechnologyThreshold = 50; s2.NeolithicExperience[(int)Domain.Fishing] = 49;
         TechnologyDiscovery.Resolve(t2, new TurnRecord()); Check(ref checks, !s2.Technologies[(int)Technology.Watercraft], "a configured threshold applies: below it nothing");
-        s2.NeolithicExperience[(int)Domain.Fishing] = 50; TechnologyDiscovery.Resolve(t2, new TurnRecord()); Check(ref checks, s2.Technologies[(int)Technology.Watercraft], "a configured threshold applies: at it the technology is granted");
+        s2.NeolithicExperience[(int)Domain.Fishing] = 50; TechnologyDiscovery.QueueEligible(t2, s2); TechnologyDiscovery.Resolve(t2, new TurnRecord()); Check(ref checks, s2.Technologies[(int)Technology.Watercraft], "a configured threshold applies: at it the technology is granted");
         s2.NeolithicExperience[(int)Domain.Fishing] = 0; TechnologyDiscovery.Resolve(t2, new TurnRecord()); Check(ref checks, s2.Technologies[(int)Technology.Watercraft], "a technology already held is kept");
 
         // The forced-transition catch-up is unchanged: the secondary domain carries lifetime practice x 1.25 (floor 100).
@@ -128,18 +131,18 @@ internal static class SettlingChecks
 
         // Trade hook: inert at weight 0, credits goods value x weight through the same API otherwise.
         var tw = NeolithicChecks.Fixture(false); var tr = tw.Camps[0].People; tr.Progression.Era = Era.Neolithic;
-        Check(ref checks, TechnologyDiscovery.RecordTradePractice(tw.Config, tr, Domain.Gathering, 500) == 0 && tr.Experience.All(x => x == 0) && tr.NeolithicExperience.All(x => x == 0), "trade practice is inert at weight 0");
+        Check(ref checks, TechnologyDiscovery.RecordTradePractice(tw, tr, Domain.Gathering, 500) == 0 && tr.Experience.All(x => x == 0) && tr.NeolithicExperience.All(x => x == 0), "trade practice is inert at weight 0");
         tw.Config.TradePracticePerValue = .1;
-        double credited = TechnologyDiscovery.RecordTradePractice(tw.Config, tr, Domain.Gathering, 500);
+        double credited = TechnologyDiscovery.RecordTradePractice(tw, tr, Domain.Gathering, 500);
         Check(ref checks, Near(credited, 50) && Near(tr.Experience[(int)Domain.Gathering], 50) && Near(tr.NeolithicExperience[(int)Domain.Gathering], 50) && tr.Experience[(int)Domain.Hunting] == 0, "trade practice credits goods value x weight to the receiver's domain");
-        TechnologyDiscovery.RecordTradePractice(tw.Config, tr, Domain.Fishing, -10); TechnologyDiscovery.RecordTradePractice(tw.Config, tr, Domain.Fishing, 0);
+        TechnologyDiscovery.RecordTradePractice(tw, tr, Domain.Fishing, -10); TechnologyDiscovery.RecordTradePractice(tw, tr, Domain.Fishing, 0);
         Check(ref checks, tr.Experience[(int)Domain.Fishing] == 0, "no goods, no practice");
-        tw.Config.TradePracticePerValue = 1; TechnologyDiscovery.RecordTradePractice(tw.Config, tr, Domain.Fishing, tw.Config.SecondaryTechnologyThreshold);
+        tw.Config.TradePracticePerValue = 1; TechnologyDiscovery.RecordTradePractice(tw, tr, Domain.Fishing, tw.Config.SecondaryTechnologyThreshold);
         tr.Technology = Technology.AnimalHusbandry; tr.Technologies[(int)Technology.AnimalHusbandry] = true;
         TechnologyDiscovery.Resolve(tw, new TurnRecord());
         Check(ref checks, tr.Technologies[(int)Technology.Watercraft], "imported practice can earn a secondary technology");
         var pw = NeolithicChecks.Fixture(false); pw.Config.TradePracticePerValue = 1;
-        TechnologyDiscovery.RecordTradePractice(pw.Config, pw.Camps[0].People, Domain.Hunting, 10);
+        TechnologyDiscovery.RecordTradePractice(pw, pw.Camps[0].People, Domain.Hunting, 10);
         Check(ref checks, pw.Camps[0].People.Experience[(int)Domain.Hunting] == 10 && pw.Camps[0].People.NeolithicExperience[(int)Domain.Hunting] == 0, "before the breakthrough trade practice counts toward it like any practice");
     }
     private static string FindConfig()

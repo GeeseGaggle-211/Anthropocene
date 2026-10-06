@@ -701,6 +701,10 @@ namespace Anthropocene.Simulation
         [NonSerialized] internal MaterialAccessIndex MaterialIndex;
         [NonSerialized] internal FixedHousingIndex HousingIndex;
         [NonSerialized] internal TurnDiagnostics Diagnostics;
+        // Secondary technology discovery is receipt-driven. Bits are Domains
+        // whose threshold was crossed during this turn, grouped by Society ID;
+        // the Close boundary consumes the sparse queue in canonical order.
+        [NonSerialized] internal Dictionary<int, int> PendingTechnologyUnlocks = new Dictionary<int, int>();
         [System.Runtime.Serialization.OptionalField] public List<MaterialKnowledge> MaterialKnowledge = new List<MaterialKnowledge>();
         [System.Runtime.Serialization.OptionalField] public List<FixedHousingStock> FixedHousing = new List<FixedHousingStock>();
         [System.Runtime.Serialization.OptionalField] public List<FisherySite> FisherySites = new List<FisherySite>();

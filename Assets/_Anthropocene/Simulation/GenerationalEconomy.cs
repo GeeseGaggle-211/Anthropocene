@@ -1146,9 +1146,9 @@ namespace Anthropocene.Simulation
                 }
                 double total = hunting + gathering + fishing; if (total <= 1e-9) continue;
                 double budget = summary.StartingPopulation * generationScale;
-                TechnologyDiscovery.AddPractice(camp.People, Domain.Hunting, budget * hunting / total * w.Config.HuntingPracticeMultiplier, PracticeSource.Hunting);
-                TechnologyDiscovery.AddPractice(camp.People, Domain.Gathering, budget * gathering / total, PracticeSource.Gathering);
-                TechnologyDiscovery.AddPractice(camp.People, Domain.Fishing, budget * fishing / total, PracticeSource.Fishing);
+                TechnologyDiscovery.AddPractice(w, camp.People, Domain.Hunting, budget * hunting / total * w.Config.HuntingPracticeMultiplier, PracticeSource.Hunting);
+                TechnologyDiscovery.AddPractice(w, camp.People, Domain.Gathering, budget * gathering / total, PracticeSource.Gathering);
+                TechnologyDiscovery.AddPractice(w, camp.People, Domain.Fishing, budget * fishing / total, PracticeSource.Fishing);
             }
         }
     }

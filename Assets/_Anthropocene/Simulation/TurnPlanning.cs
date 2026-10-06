@@ -344,10 +344,13 @@ namespace Anthropocene.Simulation
             IReadOnlyDictionary<int, DraftIntent> reusable = null)
         {
             var result = new Dictionary<int, FishingAccessPlan>();
+            if (!world.Config.NeolithicFishingEnabled) return result;
+            var eligible = camps.Where(camp => FishingEconomy.FeatureEnabled(world, camp))
+                .OrderBy(camp => camp.Id).ToArray();
+            if (eligible.Length == 0) return result;
             var cache = new FishingAccessCache(world);
-            foreach (var camp in camps.OrderBy(c => c.Id))
+            foreach (var camp in eligible)
             {
-                if (!FishingEconomy.FeatureEnabled(world, camp)) continue;
                 int tile = placement.Destinations.TryGetValue(camp.Id, out int acceptedTile) ? acceptedTile : camp.Tile;
                 bool abandoning = camp.IsVillage && tile != camp.Tile;
                 int residents = Math.Max(0, camp.Population);

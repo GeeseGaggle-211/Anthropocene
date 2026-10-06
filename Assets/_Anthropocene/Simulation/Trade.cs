@@ -1165,7 +1165,7 @@ namespace Anthropocene.Simulation
                     var d = Descriptor(good); double total = amounts.Sum();
                     if (!(total > 0) || !(gain > 0)) return;
                     for (int i = 0; i < amounts.Length; i++)
-                        if (d.Parts[i].Practice.HasValue) TechnologyDiscovery.RecordTradePractice(w.Config, receiver.People, d.Parts[i].Practice.Value, gain * scale * amounts[i] / total);
+                        if (d.Parts[i].Practice.HasValue) TechnologyDiscovery.RecordTradePractice(w, receiver.People, d.Parts[i].Practice.Value, gain * scale * amounts[i] / total);
                 }
                 Learn(r, a.Want, WithMade(a.WantParts, a.WantMade), a.RequesterGain, want); Learn(p, a.Give, WithMade(a.GiveParts, a.GiveMade), a.ResponderGain, give);
             }

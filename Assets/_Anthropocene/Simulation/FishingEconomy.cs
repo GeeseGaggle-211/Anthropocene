@@ -149,9 +149,18 @@ namespace Anthropocene.Simulation
     {
         private readonly WorldState world;
         private readonly Dictionary<int, HashSet<int>> visibleByPlayer = new Dictionary<int, HashSet<int>>();
+        private Dictionary<int, VisionSource[]> visionSourcesByPlayer;
         private readonly Dictionary<RouteKey, Dictionary<int, int>> routes = new Dictionary<RouteKey, Dictionary<int, int>>();
         private readonly Dictionary<int, int[]> visibleCampIds = new Dictionary<int, int[]>();
-        private readonly Dictionary<int, int[]> campsByTile;
+        private Dictionary<int, int[]> campsByTile;
+        private Dictionary<int, Camp> campsById;
+        private Dictionary<int, int[]> selectedGroundCamps;
+
+        private readonly struct VisionSource
+        {
+            public readonly int Tile, Radius;
+            public VisionSource(int tile, int radius) { Tile = tile; Radius = radius; }
+        }
 
         private readonly struct RouteKey : IEquatable<RouteKey>
         {
@@ -166,8 +175,6 @@ namespace Anthropocene.Simulation
         public FishingAccessCache(WorldState world)
         {
             this.world = world ?? throw new ArgumentNullException(nameof(world));
-            campsByTile = world.Camps.Where(camp => camp != null).GroupBy(camp => camp.Tile)
-                .ToDictionary(group => group.Key, group => group.Select(camp => camp.Id).OrderBy(id => id).ToArray());
         }
 
         internal bool TrySite(int tile, out FisherySite site)
@@ -189,7 +196,33 @@ namespace Anthropocene.Simulation
         internal HashSet<int> Visible(int player)
         {
             if (!visibleByPlayer.TryGetValue(player, out var visible))
-                visibleByPlayer[player] = visible = Knowledge.Visible(world, player);
+            {
+                if (visionSourcesByPlayer == null)
+                {
+                    var hunterPeople = new Dictionary<int, int>();
+                    foreach (var hunter in world.Hunters)
+                        if (hunter.Population > 0)
+                            hunterPeople[hunter.SourceCamp] = (hunterPeople.TryGetValue(hunter.SourceCamp, out int prior)
+                                ? prior : 0) + hunter.Population;
+                    var sourceIndex = new Dictionary<int, List<VisionSource>>();
+                    void Add(int owner, int tile)
+                    {
+                        if (!sourceIndex.TryGetValue(owner, out var list)) sourceIndex[owner] = list = new List<VisionSource>();
+                        list.Add(new VisionSource(tile, world.Config.VisionRadius));
+                    }
+                    foreach (var camp in world.Camps)
+                        if (camp.Population + (hunterPeople.TryGetValue(camp.Id, out int linked) ? linked : 0) > 0)
+                            Add(camp.Player, camp.Tile);
+                    foreach (var hunter in world.Hunters)
+                        if (hunter.Population > 0) Add(hunter.Player, hunter.Tile);
+                    visionSourcesByPlayer = sourceIndex.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray());
+                }
+                visible = new HashSet<int>();
+                if (visionSourcesByPlayer.TryGetValue(player, out var visibleSources))
+                    foreach (var source in visibleSources)
+                        visible.UnionWith(world.Map.Radius(source.Tile, source.Radius));
+                visibleByPlayer[player] = visible;
+            }
             return visible;
         }
 
@@ -199,6 +232,9 @@ namespace Anthropocene.Simulation
         {
             if (!visibleCampIds.TryGetValue(player, out var ids))
             {
+                if (campsByTile == null)
+                    campsByTile = world.Camps.Where(camp => camp != null).GroupBy(camp => camp.Tile)
+                        .ToDictionary(group => group.Key, group => group.Select(camp => camp.Id).OrderBy(id => id).ToArray());
                 var visible = Visible(player);
                 ids = visible.OrderBy(tile => tile)
                     .Where(tile => campsByTile.ContainsKey(tile))
@@ -206,6 +242,29 @@ namespace Anthropocene.Simulation
                 visibleCampIds[player] = ids;
             }
             return ids;
+        }
+
+        internal Camp Camp(int id)
+        {
+            if (campsById == null) campsById = world.Camps.Where(camp => camp != null)
+                .ToDictionary(camp => camp.Id);
+            return campsById.TryGetValue(id, out var camp) ? camp : null;
+        }
+
+        internal int[] SelectedGroundCamps(int tile)
+        {
+            if (selectedGroundCamps == null)
+            {
+                var index = new Dictionary<int, List<int>>();
+                foreach (var camp in world.Camps.Where(camp => camp != null).OrderBy(camp => camp.Id))
+                    foreach (int ground in camp.LastSelectedFishingGrounds ?? new List<int>())
+                    {
+                        if (!index.TryGetValue(ground, out var camps)) index[ground] = camps = new List<int>();
+                        camps.Add(camp.Id);
+                    }
+                selectedGroundCamps = index.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray());
+            }
+            return selectedGroundCamps.TryGetValue(tile, out var result) ? result : Array.Empty<int>();
         }
 
         internal Dictionary<int, int> Distances(Camp camp, int acceptedTile, FishingRoute route,
@@ -571,15 +630,18 @@ namespace Anthropocene.Simulation
                 operatorCamp = snapshot.OperatorCampId;
             if (operatorCamp >= 0 && operatorCamp != camp.Id)
             {
-                var other = world.Camps.FirstOrDefault(c => c.Id == operatorCamp);
+                var other = cache.Camp(operatorCamp);
                 if (other != null && other.SocietyId != camp.SocietyId &&
                     (source == FishingKnowledgeSource.Snapshot || visibleRivals.Contains(other.Id))) count++;
             }
             if (source == FishingKnowledgeSource.Visible)
             {
-                foreach (var other in world.Camps.Where(c => c.Id != camp.Id && c.SocietyId != camp.SocietyId && visibleRivals.Contains(c.Id)))
-                    if (other.LastSelectedFishingGrounds != null && other.LastSelectedFishingGrounds.Contains(tile)
-                        && other.Id != operatorCamp) count++;
+                foreach (int otherId in cache.SelectedGroundCamps(tile))
+                {
+                    if (otherId == camp.Id || otherId == operatorCamp || !visibleRivals.Contains(otherId)) continue;
+                    var other = cache.Camp(otherId);
+                    if (other != null && other.SocietyId != camp.SocietyId) count++;
+                }
             }
             return count;
         }
