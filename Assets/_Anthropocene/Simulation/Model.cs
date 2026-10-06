@@ -515,6 +515,17 @@ namespace Anthropocene.Simulation
         public int Id, Player, SocietyId, SourceCamp, Tile, Population;
         public double CarriedFood, LastConsumed, FoodDeficit, DeficitSeverity, DeathRemainder;
         public int DeficitTurns;
+        // Set only on detachments that already exist when their Society first
+        // gains a resident food economy. The built-in policy recalls this
+        // bounded cohort; hunter groups dispatched later remain ordinary.
+        [System.Runtime.Serialization.OptionalField] public bool EconomicTransitionRecall;
+        // The current depth-first return path, including the hunter's current
+        // tile. It is extended only through owner-visible terrain and popped
+        // during backtracking; it never contains a route through hidden tiles.
+        [System.Runtime.Serialization.OptionalField] public List<int> EconomicTransitionRoute;
+        // Tiles already explored by the visible-only return search. Constant-
+        // time membership keeps each decision bounded by the local degree.
+        [System.Runtime.Serialization.OptionalField] public HashSet<int> EconomicTransitionVisited;
     }
     [Serializable]
     public sealed class Herd

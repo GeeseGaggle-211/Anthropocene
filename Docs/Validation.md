@@ -620,3 +620,25 @@ The full headless correctness path with zero benchmark seeds passed 55,884 count
 The first breakthrough still selects one primary route and applies its optional compatibility seed/reward once. At the same Close boundary and on later turns, independently qualified Society-owned Hunting, Gathering and Fishing practice can acquire Husbandry, Cultivation and Watercraft respectively at the configured 225 effective points. The existing selected secondary-domain carryover after a forced first transition applies without rewriting raw experience. Later acquisitions add only knowledge; no second opening herd, field, fishery or reserve is created. The next Prepare is the first opportunity to assign newly legal labor or use newly legal movement. Watercraft does not enable the shared Economy control in this change.
 
 The focused progression checks cover same-Close dual acquisition, a real gathering receipt crossing the threshold without retroactive Farmer output, forced carryover, a future-time/subthreshold negative, once-only compatibility rewards, old completed Neolithic saves without transition seeds, legitimate false/zero new-save values, and own-only observation serialization that remains unchanged when rival knowledge changes. Existing 34-resolution scalar/2/4-worker, reordered-collection and save-continuation checks passed in the focused economy suite. The full fixed suite with zero seeded benchmark worlds is rerun on the final branch revision; natural multi-world secondary-discovery rates and native player interaction are not inferred from these fixtures.
+
+## Opening-to-economy hunter recall — October 6, 2026
+
+The event-driven transition marks only hunter detachments already present when
+Agriculture, Husbandry, or feature-enabled Fishing first opens a resident food
+economy. The built-in policy holds their source camp, returns and explicitly
+reintegrates them, while later dispatches remain ordinary. Feature-off
+Watercraft waits for a qualifying secondary unlock. The optional saved hunter
+bit is absent/false in older saves and owner-visible in observation schema 20.
+
+The 27 focused assertions, complete fixed zero-seed suite, documentation checker
+and both registered 50-turn Fishing tests passed; the latter reproduced their
+per-turn JSON and final fingerprints exactly. A larger paired census over
+Continents 1–5 and Archipelagos 1–5 reduced the no-movement `<=50` resident tail
+from 228 camps to 40 and the all-feature linked tail from 135/4,272 (3.16%) to
+82/9,195 (0.89%). Turn-50 medians clear the 384 Agriculture and 306.4 Husbandry
+population gates in both configurations. All residual `peak >= 100` to `final
+<= 50` cases in the all-feature run were migration/fission dispersal, not
+starvation. The all-feature cohort is much larger and therefore slower: the
+result creates 8,395 post-checkpoint daughter camps versus 3,472 before. Full
+statistics, scaling interpretation and ignored evidence paths are in
+[EconomicTransitionRecall.md](EconomicTransitionRecall.md).

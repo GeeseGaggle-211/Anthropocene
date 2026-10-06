@@ -971,7 +971,7 @@ internal static class FissionChecks
         Check(stranger.KinRelations.Count == 0 && stranger.ParentSociety == 0, "an unrelated Society sees no kin");
         Check(!stranger.Rivals.Any(r => r.Player == kids[0].Player) || w.Map.Radius(w.Camps.Single(c => c.Player == 1).Tile, 2).Contains(w.Camps.Single(c => c.SocietyId == kids[0].Id).Tile), "foreign daughters appear only through ordinary vision");
         var dto = ObservationContract.Deserialize(ObservationContract.Serialize(kidView, kids[0].Mandate));
-        Check(dto.Schema == 19 && dto.ParentSociety == parent.SocietyId && dto.KinAffinity == 1 && dto.KinRelations.Length == 2 && dto.Settlements.Single().FissionPolicy == FissionPolicy.Neutral && dto.Settlements.Single().FissionDestination == -1, "the serialized contract carries lineage, kin and the settlement's fission state");
+        Check(dto.Schema == 20 && dto.ParentSociety == parent.SocietyId && dto.KinAffinity == 1 && dto.KinRelations.Length == 2 && dto.Settlements.Single().FissionPolicy == FissionPolicy.Neutral && dto.Settlements.Single().FissionDestination == -1, "the serialized contract carries lineage, kin and the settlement's fission state");
         var own2 = ObservationContract.Deserialize(ObservationContract.Serialize(new AgentObservationBuilder().Build(w, 0), parent.Mandate));
         Check(own2.Settlements.Single().FissionPolicy == FissionPolicy.Discourage, "the serialized contract carries the owner's policy");
         // Daughters are AI players: they take part in planning, the human stays player 0.

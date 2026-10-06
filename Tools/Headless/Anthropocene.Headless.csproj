@@ -28,6 +28,7 @@
     <Compile Include="DemandControlChecks.cs" />
     <Compile Include="ClothingFeedstockChecks.cs" />
     <Compile Include="AgentContractChecks.cs" />
+    <Compile Include="EconomicTransitionChecks.cs" />
     <Compile Include="EcologyChecks.cs" />
     <Compile Include="FoundationChecks.cs" />
     <Compile Include="CropAgricultureChecks.cs" />

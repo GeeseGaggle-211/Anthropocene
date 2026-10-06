@@ -137,6 +137,85 @@ namespace Anthropocene.Simulation
         public static double FoodMultiplier(WorldState w, Tile tile) => w.Config.OpeningCompatibilityEffects && tile.Fishery ? w.Config.OpeningFoodMultiplier : 1;
     }
 
+    // Event-driven handoff from the mobile opening to resident production.
+    // Technologies are permanent, so unlock boundaries are the only place
+    // that needs to identify the already-existing detachments to recall.
+    public static class EconomicTransition
+    {
+        public static bool Enabled(WorldState world, Society society)
+        {
+            if (world == null || society == null) return false;
+            bool Has(Technology technology) => society.Technology == technology ||
+                society.Technologies != null && society.Technologies.Length > (int)technology &&
+                society.Technologies[(int)technology];
+            return Has(Technology.Cultivation) || Has(Technology.AnimalHusbandry) ||
+                world.Config.NeolithicFishingEnabled && Has(Technology.Watercraft);
+        }
+
+        public static int Begin(WorldState world, Society society)
+        {
+            var sourceCamps = world.Camps
+                .Where(camp => camp.SocietyId == society.Id)
+                .Select(camp => camp.Id).ToHashSet();
+            int marked = 0;
+            foreach (var hunter in world.Hunters)
+            {
+                if (hunter.Population <= 0 || !sourceCamps.Contains(hunter.SourceCamp) ||
+                    hunter.EconomicTransitionRecall) continue;
+                hunter.EconomicTransitionRecall = true;
+                hunter.EconomicTransitionRoute = new List<int> { hunter.Tile };
+                hunter.EconomicTransitionVisited = new HashSet<int> { hunter.Tile };
+                marked++;
+            }
+            return marked;
+        }
+
+        // Apply one visible-search step. The normal path is a stack, so both
+        // discovery and backtracking are O(1). A movement-bounded final hop to
+        // the source camp may cover more than one adjacent tile.
+        internal static void Advance(WorldState world, Hunter hunter, Camp source, int destination)
+        {
+            var route = hunter.EconomicTransitionRoute;
+            var visited = hunter.EconomicTransitionVisited;
+            if (source == null || source.Id != hunter.SourceCamp || route == null || route.Count == 0 ||
+                route[route.Count - 1] != hunter.Tile || visited == null)
+            {
+                Cancel(hunter);
+                return;
+            }
+            if (destination == source.Tile)
+            {
+                visited.Add(destination);
+                route.Add(destination);
+                return;
+            }
+            if (world.Map.Distance(hunter.Tile, destination) != 1)
+            {
+                Cancel(hunter);
+                return;
+            }
+            int last = route.Count - 1;
+            if (last > 0 && route[last - 1] == destination)
+            {
+                route.RemoveAt(last);
+                return;
+            }
+            if (!visited.Add(destination))
+            {
+                Cancel(hunter);
+                return;
+            }
+            route.Add(destination);
+        }
+
+        internal static void Cancel(Hunter hunter)
+        {
+            hunter.EconomicTransitionRecall = false;
+            hunter.EconomicTransitionRoute = null;
+            hunter.EconomicTransitionVisited = null;
+        }
+    }
+
     // A pure, owned-society view shared by player presentation and AI observations.
     // No map query or turn-count deadline participates in subsequent learning.
     public struct TechnologyStatus
@@ -270,7 +349,10 @@ namespace Anthropocene.Simulation
                     if ((entry.Value & 1 << i) == 0) continue;
                     var technology = (Technology)(i + 1);
                     if (society.Technologies[(int)technology] || society.Technology == technology || EffectiveProgress(society, (Domain)i, world.Config) < world.Config.SecondaryTechnologyThreshold) continue;
+                    bool economyBefore = EconomicTransition.Enabled(world, society);
                     society.Technologies[(int)technology] = true;
+                    if (!economyBefore && EconomicTransition.Enabled(world, society))
+                        EconomicTransition.Begin(world, society);
                     record.Log("Society " + society.Id + " discovered " + technology + " through " + (Domain)i + " practice.");
                 }
             }

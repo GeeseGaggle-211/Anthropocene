@@ -43,8 +43,16 @@ public sealed class ObservedSettlementDto
     [Serializable]
     public sealed class ObservedUnitDto
     {
-        public int Id, Tile, Population, Player, SourceCamp, Provisions, DeficitTurns; public bool InSupply;
-        internal static ObservedUnitDto From(UnitObservation u) => new ObservedUnitDto { Id = u.Id, Tile = u.Tile, Population = u.Population, Player = u.Player, SourceCamp = u.SourceCamp, Provisions = u.Provisions, DeficitTurns = u.DeficitTurns, InSupply = u.InSupply };
+        public int Id, Tile, Population, Player, SourceCamp, Provisions, DeficitTurns, EconomicTransitionWaypoint;
+        public bool InSupply, EconomicTransitionRecall;
+        internal static ObservedUnitDto From(UnitObservation u) => new ObservedUnitDto
+        {
+            Id = u.Id, Tile = u.Tile, Population = u.Population, Player = u.Player,
+            SourceCamp = u.SourceCamp, Provisions = u.Provisions,
+            DeficitTurns = u.DeficitTurns, InSupply = u.InSupply,
+            EconomicTransitionRecall = u.EconomicTransitionRecall,
+            EconomicTransitionWaypoint = u.EconomicTransitionWaypoint
+        };
     }
     [Serializable]
     public sealed class ObservedHerdDto

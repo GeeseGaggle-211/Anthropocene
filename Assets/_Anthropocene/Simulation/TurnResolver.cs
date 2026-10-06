@@ -131,7 +131,8 @@ namespace Anthropocene.Simulation
             using (PhaseProfile.Scope("Movement"))
             {
                 Supply.ProvisionDepartures(w, locked, record, prepared.Placement);
-                Move(w, locked, herdMoves, prepared.Placement, prepared.AbandoningVillages, record);
+                Move(w, locked, herdMoves, prepared.Placement, prepared.AbandoningVillages,
+                    planning, record);
                 Supply.DepositReturns(w, record);
             }
             var touched = new Dictionary<int, TileChange>();
@@ -325,7 +326,7 @@ namespace Anthropocene.Simulation
         }
 
         private static void Move(WorldState w, List<Order> orders, Dictionary<int, int> herds, CampPlacement placement,
-            IReadOnlyCollection<int> abandoningVillages, TurnRecord record)
+            IReadOnlyCollection<int> abandoningVillages, PlanningIndex planning, TurnRecord record)
         {
             foreach (int id in placement.Blocked.OrderBy(id => id))
                 record.Log("Camp " + id + " movement blocked by another camp.");
@@ -338,6 +339,8 @@ namespace Anthropocene.Simulation
                 NeolithicProduction.MigrateLegacyFixedHousing(w, camp);
                 if (target != camp.Tile)
                 {
+                    foreach (var hunter in planning.CampHunters(camp.Id).Where(h =>
+                        h.EconomicTransitionRecall)) EconomicTransition.Cancel(hunter);
                     bool abandoning = abandoningVillages.Contains(camp.Id);
                     if (abandoning)
                     {
@@ -377,7 +380,21 @@ namespace Anthropocene.Simulation
             foreach (var hunter in w.Hunters.OrderBy(h => h.Id))
             {
                 var order = orders.FirstOrDefault(o => o.Entity == hunter.Id);
-                if (order != null && order.Destination >= 0) { record.Log("Hunters " + hunter.Id + " moved to " + order.Destination + "."); hunter.Tile = order.Destination; }
+                if (order != null && order.Destination >= 0)
+                {
+                    if (hunter.EconomicTransitionRecall)
+                    {
+                        planning.Camps.TryGetValue(hunter.SourceCamp, out var source);
+                        if (order.Kind == OrderKind.Move)
+                            EconomicTransition.Advance(w, hunter, source, order.Destination);
+                        else EconomicTransition.Cancel(hunter);
+                    }
+                    record.Log("Hunters " + hunter.Id + " moved to " + order.Destination + ".");
+                    hunter.Tile = order.Destination;
+                }
+                else if (hunter.EconomicTransitionRecall && order != null &&
+                    order.Kind != OrderKind.Reintegrate)
+                    EconomicTransition.Cancel(hunter);
             }
             foreach (var herd in w.Herds.OrderBy(h => h.Id))
             {
@@ -470,6 +487,7 @@ namespace Anthropocene.Simulation
                 bool threshold = camp.Experience[best] >= w.Config.ExperienceThreshold;
                 bool majority = (elapsed >= progression.MajorityEligibilityDays && elapsed < progression.ForcedTransitionDays) && camp.Experience[best] > total * .5;
                 if (!threshold && !majority && elapsed < progression.ForcedTransitionDays) return;
+                bool economyBefore = EconomicTransition.Enabled(w, camp.People);
                 camp.ForcedTransition = elapsed >= progression.ForcedTransitionDays && !threshold && !majority;
                 camp.Technology = (Technology)(best + 1); camp.TransitionTurn = w.Turn;
                 if (camp.ForcedTransition)
@@ -480,6 +498,8 @@ namespace Anthropocene.Simulation
                 }
                 progression.Era = Era.Neolithic; progression.CompletionDays = w.Days; progression.CompletionTurn = w.Turn; progression.CompletionRule = threshold ? "Mastery" : majority ? "Maturity" : "Forced";
                 OpeningTransitions.Apply(w, camp, camp.Technology);
+                if (!economyBefore && EconomicTransition.Enabled(w, camp.People))
+                    EconomicTransition.Begin(w, camp.People);
                 TechnologyDiscovery.QueueEligible(w, camp.People);
                 record.Log("Tribe " + camp.Player + " discovered " + camp.Technology + " and entered the Neolithic.");
             }

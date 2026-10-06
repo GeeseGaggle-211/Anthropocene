@@ -250,6 +250,7 @@ internal static class Program
         if (tradeResolve != null) { var parts = tradeResolve.Substring("--trade-resolve=".Length).Split(','); TradeChecks.ResolveProbe(parts[0], int.Parse(parts[1])); return 0; }
         if (tradeProbe != null) { TradeChecks.Probe(tradeProbe.Substring("--trade-probe=".Length)); return 0; }
         if (args.Contains("--issue32-capability-only")) { Issue32CapabilityChecks.Run(); return 0; }
+        if (args.Contains("--economic-transition-only")) { EconomicTransitionChecks.Run(); return 0; }
         if (args.Contains("--aquatic-pressure-only")) { AquaticSeasonalPressureChecks.Run(); return 0; }
         if (args.Contains("--fishing-observation-only")) { FishingObservationChecks.Run(); return 0; }
         if (args.Contains("--fishing-economy-only")) { FishingEconomyChecks.Run(); return 0; }
@@ -301,6 +302,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "ScenarioChecks", Cost = 32, Run = () => ScenarioChecks.Run() },
                 new ParallelChecks.Entry { Name = "EcologyChecks", Run = () => EcologyChecks.Run() },
                 new ParallelChecks.Entry { Name = "AgentContractChecks", Run = () => AgentContractChecks.Run() },
+                new ParallelChecks.Entry { Name = "EconomicTransitionChecks", Run = () => EconomicTransitionChecks.Run() },
                 new ParallelChecks.Entry { Name = "ExecutionChecks", Cost = 5, Run = () => ExecutionChecks.Run() },
                 new ParallelChecks.Entry { Name = "PlanningDraftChecks", Cost = 5, Run = () => PlanningDraftChecks.Run() },
                 new ParallelChecks.Entry { Name = "CampSpacingChecks", Run = () => CampSpacingChecks.Run() },

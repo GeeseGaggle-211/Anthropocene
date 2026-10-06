@@ -266,7 +266,7 @@ value matching in the planner refactor ([TradePlannerRefactorHandoff.md](TradePl
 - **Turn records.** `TurnRecord.Trades` and `TurnRecord.TradeActivity` are
   optional. Older records load with an empty journal and no activity.
 - **Format.** No save-format or observation-schema change attributable to Trade
-  (`ANTHROPOCENE-11`; the current overall observation schema is 19).
+  (`ANTHROPOCENE-11`; the current overall observation schema is 20).
 - **Default-off behaviour.** The disabled path computes nothing and moves
   nothing. The config fields enter the fingerprint, so default-off exactness is
   measured on outcomes against the pre-trade commit (below).
