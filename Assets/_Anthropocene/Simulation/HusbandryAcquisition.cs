@@ -1,14 +1,39 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace Anthropocene.Simulation
 {
     // Physical livestock acquisition for a Society that already knows Husbandry.
-    // Knowledge never creates animals: taming transfers living animals out of a
-    // nearby wild herd into an owned managed herd.
+    // Knowledge never creates animals: a hunt establishes a taming opportunity,
+    // then actual living animals transfer from a nearby wild herd at the turn boundary.
     public static class HusbandryAcquisition
     {
-        public static int TryTame(WorldState world, Camp camp, Herd wild, TurnRecord record)
+        public readonly struct Opportunity
+        {
+            public readonly int CampId, HerdId;
+            public Opportunity(int campId, int herdId) { CampId = campId; HerdId = herdId; }
+        }
+
+        public static int ResolveTaming(WorldState world,
+            IEnumerable<Opportunity> opportunities, TurnRecord record)
+        {
+            if (world == null || record == null || opportunities == null ||
+                !world.Config.HusbandryTamingEnabled) return 0;
+            int capturedTotal = 0;
+            foreach (var opportunity in opportunities
+                .GroupBy(o => (o.CampId, o.HerdId))
+                .Select(g => g.First())
+                .OrderBy(o => o.CampId).ThenBy(o => o.HerdId))
+            {
+                var camp = world.Camps.FirstOrDefault(c => c.Id == opportunity.CampId);
+                var wild = world.Herds.FirstOrDefault(h => h.Id == opportunity.HerdId);
+                capturedTotal += TryTame(world, camp, wild, record);
+            }
+            return capturedTotal;
+        }
+
+        internal static int TryTame(WorldState world, Camp camp, Herd wild, TurnRecord record)
         {
             if (world == null || camp == null || wild == null || record == null ||
                 !world.Config.HusbandryTamingEnabled || wild.DomesticCamp >= 0 ||
