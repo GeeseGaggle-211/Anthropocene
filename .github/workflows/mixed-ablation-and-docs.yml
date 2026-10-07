@@ -1,0 +1,113 @@
+name: Mixed integration attribution and documentation
+on:
+  push:
+    branches: [feature/mixed-subsistence-diffusion-v5]
+    paths: ['.github/workflows/mixed-ablation-and-docs.yml']
+permissions:
+  contents: read
+jobs:
+  ablation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [fishing-only, diffusion-only]
+        seed: [23, 101]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a217fd20d8afb3c9310732340bb4d66e8c45da0d
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Separate feature effects without retuning physics
+        shell: bash
+        run: |
+          mkdir -p TestResults/MixedAblation
+          if [ "${{ matrix.mode }}" = "fishing-only" ]; then
+            EXTRA="--set=TradePracticePerValue=0,HusbandryProximityPracticePerYear=0,HusbandryTamingEnabled=0"
+          else
+            EXTRA="--set=NeolithicFishingEnabled=0,CorrectedAquaticSeasonalPressureEnabled=0"
+          fi
+          set -o pipefail
+          dotnet run -c Release --project Tools/PerformanceAudit/Anthropocene.PerformanceAudit.csproj -- --players=80 --seed=${{ matrix.seed }} --shape=Continents --production-config=1 --turns=12 --post-opening-turns=40 --workers=4 --partition-size=64 --warmup=0 --details=1 --metrics=1 --fingerprints=0 $EXTRA --output=TestResults/MixedAblation/${{ matrix.mode }}-${{ matrix.seed }}.json 2>&1 | tee TestResults/MixedAblation/${{ matrix.mode }}-${{ matrix.seed }}.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: attribution-${{ matrix.mode }}-${{ matrix.seed }}
+          path: TestResults/MixedAblation
+          retention-days: 14
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Synchronize only implemented semantics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('Tools/Docs/Check-CurrentContract.py'); s=p.read_text()
+          updates={
+            'NeolithicFishingEnabled':('boolean: resident Watercraft Fishing and shared goods Economy','enabled for new worlds on the mixed integration/RL lineage; absent old-save field remains false'),
+            'CorrectedAquaticSeasonalPressureEnabled':('boolean: capped seasonal aquatic-pressure allocation','enabled with resident Fishing for new worlds; absent old-save field remains false'),
+            'SecondaryTechnologyThreshold':('post-breakthrough activity practice plus social knowledge required for a secondary technology','225; first breakthrough still requires original activity rules; social exposure does not raise productive proficiency'),
+            'TradePracticePerValue':('social knowledge per realized received trade-leg value, in both directions','0.1 starting integration tuning; only counterparty-held unknown opening technologies; absent old-save field remains zero')
+          }
+          lines=s.splitlines()
+          for key,(unit,status) in updates.items():
+              hits=[i for i,line in enumerate(lines) if line.startswith('    ("'+key+'",')]
+              assert len(hits)==1,key
+              lines[hits[0]]='    '+repr((key,unit,status))+','
+          s='\n'.join(lines)+'\n'
+          extras=[
+            ('HusbandryProximityPracticePerYear','secondary Husbandry exposure per simulated year at full reference contact','2.5 starting integration tuning; zero in saves without the field'),
+            ('HusbandryProximityReferenceAnimals','weighted local domesticable animals for full exposure','20; radius-one contacts, deduplicated per society'),
+            ('HusbandryDomesticExposureMultiplier','relative weight of foreign managed animals','2; own managed herds do not reteach their owner'),
+            ('TamingSpeciesPracticeThreshold','species familiarity needed for capture','50 starting integration tuning; real local wild animals and Husbandry capability also required'),
+            ('HusbandryTamingEnabled','boolean: boundary-time physical livestock acquisition','true for new worlds; false in saves without the field; no retrospective products or invented animals')
+          ]
+          assert s.count('FIELDS = [')==1
+          s=s.replace('FIELDS = [','FIELDS = [\n'+''.join('    '+repr(row)+',\n' for row in extras))
+          p.write_text(s)
+          p=Path('Docs/CurrentSimulationContract.md'); s=p.read_text()
+          s=s.replace('`NeolithicFishingEnabled` remains false in the general opening until the named Fishing validation profile is approved; old saves without the field load false.','`NeolithicFishingEnabled` is enabled for new worlds on the mixed integration/RL lineage; old saves without the field load false. Functional acceptance and remaining cohort balance differences are recorded in [MixedSubsistenceDiffusionValidation.md](MixedSubsistenceDiffusionValidation.md).')
+          s=s.replace('Fishing is opt-in in production until both the corrected cold-water ecology suite and the two independent 50-turn system tests pass their contracts.','Fishing is enabled on this integration lineage; this does not assert that every fishing-first population or QoL benchmark is non-regressive.')
+          s=s.replace('and the inert `RecordTradePractice` is credited.','and bilateral discovery-only knowledge is credited for realized deliveries; see [MixedSubsistenceDiffusion.md](MixedSubsistenceDiffusion.md).')
+          lines=s.splitlines()
+          for i,line in enumerate(lines):
+              if line.startswith('| Subsistence progression —'):
+                  lines[i]='| Subsistence progression — current mixed integration | First breakthrough remains once-only and activity-driven. Secondary capabilities unlock independently at 225 post-breakthrough practice plus social-exposure points; forced-secondary carryover is preserved. Bilateral settled trade teaches unknown counterparty-held opening capabilities; radius-one domesticable-animal exposure teaches Husbandry. Knowledge never boosts productive proficiency or repeats opening rewards. | Society owns separate NeolithicExperience and TechnologyExposure ledgers; Close queues and resolves unlocks; daughters deep-copy knowledge. | [MixedSubsistenceDiffusion.md](MixedSubsistenceDiffusion.md) | mixed integration/RL lineage | HusbandryDiffusionChecks; MixedSettlementAcquisitionChecks; SettlingChecks; FissionChecks | Resident Fishing uses the current feature-enabled Economy; old feature-off behavior remains a compatibility path. | Physical live-animal trade is not implemented; taming uses actual wild animals. |'
+              elif line.startswith('- **Secondary technologies and the practice API'):
+                  lines[i]='- **Secondary technologies, trade and proximity:** activity accrues ordinary domain practice; bilateral delivered trade and local animal contact accrue separate Society.TechnologyExposure, only after the first breakthrough. EffectiveProgress combines discovery evidence without raising performance practice. Unknown counterparty technologies can be learned in either direction at TradePracticePerValue=0.1. Resident taming does not require a hunter detachment: it transfers existing wild animals after production, respects breeding reserves and deliberate herd liquidation, and conserves fractional progress. See [MixedSubsistenceDiffusion.md](MixedSubsistenceDiffusion.md).'
+          s='\n'.join(lines)+'\n'
+          heading='## Mixed integration status (7 October 2026)\n\n'
+          note='The current mixed integration/RL lineage enables resident Fishing, bilateral trade knowledge, local Husbandry exposure and resident taming for new worlds. See [MixedSubsistenceDiffusion.md](MixedSubsistenceDiffusion.md) and [MixedSubsistenceDiffusionValidation.md](MixedSubsistenceDiffusionValidation.md). Earlier audit rows remain historical evidence, not current feature flags. CurrentPlusExitOpportunity at threshold 0.05 and search fraction 0.8 remains the fission baseline. Accepted Dispatch changes the resident workforce before automation but does not erase departing consumers. This is functional integration, not a claim of uniformly improved strategic outcomes.\n\n'
+          pos=s.index('\n')+1; s=s[:pos]+'\n'+heading+note+s[pos:]
+          p.write_text(s)
+          PY
+          python3 Tools/Docs/Check-CurrentContract.py --write
+          python3 Tools/Docs/Check-CurrentContract.py
+          git diff --check
+      - name: Commit checked docs without replacing concurrent changes
+        run: |
+          git add Tools/Docs/Check-CurrentContract.py Docs/CurrentSimulationContract.md
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Synchronize current contract with mixed subsistence integration'
+          git push origin HEAD:feature/mixed-subsistence-diffusion-v5
+  collect:
+    needs: ablation
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: attribution-*
+          path: TestResults/MixedAblation
+          merge-multiple: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mixed-attribution-evidence
+          path: TestResults/MixedAblation
+          retention-days: 14
