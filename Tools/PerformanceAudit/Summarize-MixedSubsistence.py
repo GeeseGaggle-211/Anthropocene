@@ -1,69 +1,109 @@
 #!/usr/bin/env python3
-import argparse, glob, json, os, statistics
-from collections import defaultdict
+"""Summarize complete, matched mixed-subsistence audit banks; never hide missing worlds."""
+import argparse
+import json
+import math
+from pathlib import Path
 
-def pct(xs,p):
-    xs=sorted(xs)
-    return xs[round((len(xs)-1)*p)] if xs else 0
-def tri(xs): return (pct(xs,.25),pct(xs,.5),pct(xs,.75))
-def fmt(t,dec=0):
-    return " / ".join(f"{x:,.{dec}f}" for x in t)
-def change(c,b):
-    return tuple(100*(x/y-1) if y else 0 for x,y in zip(c,b))
-def fchg(t): return " / ".join(f"{x:+.1f}%" for x in t)
 
-ap=argparse.ArgumentParser(); ap.add_argument("root"); ap.add_argument("--out",default="")
-a=ap.parse_args()
-runs=[]
-for path in glob.glob(os.path.join(a.root,"*.json")):
-    base=os.path.basename(path)[:-5]
-    if "-" not in base: continue
-    mode,seed=base.rsplit("-",1)
-    if mode not in ("control","candidate"): continue
-    d=json.load(open(path)); samples=d.get("samples") or []
-    post=[s for s in samples if s.get("postOpening")]
-    if not post: continue
-    last=post[-1]; camps=last.get("camps") or []
-    def subset(flag): return [c for c in camps if c.get(flag)]
-    h=subset("holdsHusbandry"); f=subset("holdsWatercraft"); ag=subset("holdsCultivation")
-    def pop(cs): return sum(int(c.get("Population",0) or 0) for c in cs)
-    def wq(cs):
-        n=pop(cs); return sum(int(c.get("Population",0) or 0)*float(c.get("QoL",0) or 0) for c in cs)/n if n else 0
-    animals=sum(int(c.get("managedAnimals",0) or 0) for c in h)
-    fishers=0
-    for c in camps:
-        for x in c.get("assignments") or []:
-            if x.get("Role")=="Fisher": fishers += int(x.get("Population",0) or 0)
-    mixed2=sum(1 for c in camps if sum(bool(c.get(k)) for k in ("holdsCultivation","holdsHusbandry","holdsWatercraft"))>=2)
-    mixed3=sum(1 for c in camps if all(c.get(k) for k in ("holdsCultivation","holdsHusbandry","holdsWatercraft")))
-    runs.append(dict(mode=mode,seed=int(seed),population=int(last["population"]),qol=float(last.get("priorWeightedQol",0) or 0),
-        camps=int(last["campCount"]),hpop=pop(h),hq=wq(h),animals=animals,hcamps=len(h),
-        fpop=pop(f),fq=wq(f),fcamps=len(f),fishers=fishers,apop=pop(ag),acamps=len(ag),
-        mixed2=mixed2,mixed3=mixed3,fissions=sum(int(s.get("fissionCount",0) or 0) for s in samples),
-        deaths=sum(int(s.get("humanDeaths",0) or 0) for s in samples),
-        totalms=sum(float(s.get("totalMs",0) or 0) for s in post)))
-by=defaultdict(list)
-for r in runs: by[r["mode"]].append(r)
-metrics=[
- ("Total population","population",0),("Weighted QoL","qol",4),("Final camps","camps",0),
- ("Husbandry population","hpop",0),("Husbandry weighted QoL","hq",4),("Managed Husbandry animals","animals",0),("Husbandry camps","hcamps",0),
- ("Watercraft population","fpop",0),("Watercraft weighted QoL","fq",4),("Watercraft camps","fcamps",0),("Assigned Fishers","fishers",0),
- ("Cultivation population","apop",0),("Mixed-capability camps (2+)","mixed2",0),("Triple-capability camps","mixed3",0)
-]
-lines=["# Mixed subsistence matched-world comparison","",
-"Five matched Continents worlds, seeds 11/23/47/101/1729, 80 founders, production config, opening plus 40 post-opening turns.",
-"Control uses the same code with resident Fishing, trade/proximity diffusion, and taming disabled. Candidate uses production defaults.","",
-"| Metric | Control P25 / median / P75 | Candidate P25 / median / P75 | Candidate change |",
-"|---|---:|---:|---:|"]
-for label,key,dec in metrics:
-    b=tri([r[key] for r in by["control"]]); c=tri([r[key] for r in by["candidate"]])
-    lines.append(f"| {label} | {fmt(b,dec)} | {fmt(c,dec)} | {fchg(change(c,b))} |")
-lines += ["","## Per-seed","",
-"| Mode | Seed | Population | QoL | H pop | H QoL | Animals | Watercraft pop | Fishers | Mixed 2+ | Triple | Camps |",
-"|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
-for mode in ("control","candidate"):
-    for r in sorted(by[mode],key=lambda x:x["seed"]):
-        lines.append(f"| {mode} | {r['seed']} | {r['population']:,} | {r['qol']:.4f} | {r['hpop']:,} | {r['hq']:.4f} | {r['animals']:,} | {r['fpop']:,} | {r['fishers']:,} | {r['mixed2']} | {r['mixed3']} | {r['camps']} |")
-out="\n".join(lines)+"\n"; print(out)
-if a.out:
-    os.makedirs(os.path.dirname(a.out) or ".",exist_ok=True); open(a.out,"w").write(out)
+def triplet(values):
+    values = sorted(values)
+    if not values or not all(math.isfinite(v) for v in values):
+        raise ValueError('Empty or non-finite metric distribution')
+    return tuple(values[round((len(values) - 1) * p)] for p in (.25, .5, .75))
+
+
+def show(values, decimals=0):
+    return ' / '.join(f'{v:,.{decimals}f}' for v in values)
+
+
+def changes(candidate, control):
+    return ' / '.join(f'{100 * (c / b - 1):+.1f}%' if b else 'n/a (zero baseline)'
+                      for c, b in zip(candidate, control))
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('root', type=Path)
+    parser.add_argument('--out', type=Path)
+    parser.add_argument('--seeds', default='11,23,47,101,1729')
+    parser.add_argument('--post-opening-turns', type=int, default=40)
+    args = parser.parse_args()
+    seeds = sorted({int(x) for x in args.seeds.split(',')})
+    if not seeds or args.post_opening_turns <= 0:
+        parser.error('Expected seeds and continuation length must be nonempty/positive')
+    bank = {}
+    metadata = {}
+    for mode in ('control', 'candidate'):
+        for seed in seeds:
+            path = args.root / f'{mode}-{seed}.json'
+            data = json.loads(path.read_text(encoding='utf-8'))
+            post = [s for s in data['samples'] if s['postOpening']]
+            if data['seed'] != seed or len(post) != args.post_opening_turns:
+                raise ValueError(f'Incomplete or mismatched world: {path}')
+            last = post[-1]
+            camps = last['camps']
+            pop = lambda cs: sum(c['Population'] for c in cs)
+            def weighted_qol(cs):
+                n = pop(cs)
+                return sum(c['Population'] * c['QoL'] for c in cs) / n if n else 0
+            def active(camp, role):
+                return sum(a['Population'] for a in camp['assignments'] if a['Role'] == role) > 0
+            h = [c for c in camps if c['holdsHusbandry']]
+            f = [c for c in camps if c['holdsWatercraft']]
+            ag = [c for c in camps if c['holdsCultivation']]
+            bank[mode, seed] = dict(
+                population=last['population'], qol=last['priorWeightedQol'], camps=last['campCount'],
+                hpop=pop(h), hq=weighted_qol(h), animals=sum(c['managedAnimals'] for c in h), hcamps=len(h),
+                fpop=pop(f), fq=weighted_qol(f), fcamps=len(f), apop=pop(ag),
+                fishers=sum(a['Population'] for c in camps for a in c['assignments'] if a['Role'] == 'Fisher'),
+                mixed2=sum(sum(bool(c[k]) for k in ('holdsCultivation','holdsHusbandry','holdsWatercraft')) >= 2 for c in camps),
+                mixed3=sum(all(c[k] for k in ('holdsCultivation','holdsHusbandry','holdsWatercraft')) for c in camps),
+                active_fishing=sum(active(c, 'Fisher') for c in camps),
+                active_mixed=sum(sum(active(c, role) for role in ('Farmer','Herder','Fisher')) >= 2 for c in camps),
+                fishing_first=pop([c for c in camps if c['technology'] == 'Watercraft']))
+            metadata[mode, seed] = data
+    for mode in ('control', 'candidate'):
+        hashes = {metadata[mode, seed]['configHash'] for seed in seeds}
+        if len(hashes) != 1:
+            raise ValueError(f'Configuration changed within {mode} bank')
+    for seed in seeds:
+        for key in ('players', 'shape', 'worldWidth', 'worldHeight', 'turnDays', 'workerCount'):
+            if metadata['control', seed][key] != metadata['candidate', seed][key]:
+                raise ValueError(f'Unmatched {key} in seed {seed}')
+    metrics = [
+        ('Total population','population',0), ('Prior-cohort weighted QoL','qol',4),
+        ('Husbandry-capable residents','hpop',0), ('Husbandry-capable endpoint resident-weighted QoL','hq',4),
+        ('Managed Husbandry animals','animals',0), ('Husbandry-capable settlements','hcamps',0),
+        ('Watercraft-capable residents','fpop',0), ('Watercraft-capable endpoint resident-weighted QoL','fq',4),
+        ('Assigned Fishers','fishers',0), ('Settlements staffing Fishers','active_fishing',0),
+        ('Cultivation-capable residents','apop',0), ('Settlements with 2+ capabilities','mixed2',0),
+        ('Settlements with all 3 capabilities','mixed3',0),
+        ('Settlements staffing 2+ food occupations','active_mixed',0),
+        ('Watercraft-first lineage residents (diagnostic only)','fishing_first',0)]
+    lines = ['# Mixed subsistence matched-world comparison', '',
+             f'Complete paired bank: {len(seeds)} seeds ({seeds}); {args.post_opening_turns} post-opening turns.',
+             'Control disables the added Fishing/diffusion/taming features in the same corrected code. Candidate enables them.',
+             'Capability groups overlap and are not production or identity categories. World QoL is prior-cohort weighted; subgroup QoL uses endpoint resident weights.',
+             'Quartiles are descriptive nearest-index order statistics, not confidence intervals. Zero-baseline percentage changes are undefined.', '',
+             '| Metric | Control P25 / median / P75 | Candidate P25 / median / P75 | Relative change |',
+             '|---|---:|---:|---:|']
+    for label, key, decimals in metrics:
+        control = triplet([bank['control', s][key] for s in seeds])
+        candidate = triplet([bank['candidate', s][key] for s in seeds])
+        lines.append(f'| {label} | {show(control, decimals)} | {show(candidate, decimals)} | {changes(candidate, control)} |')
+    lines += ['', '## Paired seed outcomes', '',
+              '| Seed | Control population | Candidate population | Population change | Control animals | Candidate animals | Animal change | QoL change (absolute) |',
+              '|---:|---:|---:|---:|---:|---:|---:|---:|']
+    for seed in seeds:
+        b, c = bank['control', seed], bank['candidate', seed]
+        lines.append(f"| {seed} | {b['population']:,} | {c['population']:,} | {changes([c['population']],[b['population']])} | {b['animals']:,} | {c['animals']:,} | {changes([c['animals']],[b['animals']])} | {c['qol']-b['qol']:+.6f} |")
+    output = '\n'.join(lines) + '\n'
+    print(output)
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(output, encoding='utf-8')
+
+
+if __name__ == '__main__':
+    main()
