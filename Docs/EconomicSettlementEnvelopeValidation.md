@@ -14,6 +14,13 @@ The implementation follows `EconomicControlContract.md`,
 `PastoralPlannerCorrectionDesign.md`, `EconomicControlContractAddendumA.md`,
 and `CurrentSimulationContract.md`.
 
+The later deterministic supervisor experiment on
+`fix/economic-pastoral-emergence` is recorded in
+[EconomicSupervisorOptionA.md](EconomicSupervisorOptionA.md). It preserves the
+architectural correction but fails its matched population acceptance gates.
+Treat this document as validation of the envelope refactor, not as acceptance
+of that subsequent strategy checkpoint.
+
 ## Violations in the before source
 
 - `HeuristicTribePolicy` selected agricultural versus pastoral movement from
