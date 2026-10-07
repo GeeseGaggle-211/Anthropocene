@@ -118,3 +118,48 @@ Before the learned Elder is trained, add targeted fixed-settlement fixtures in w
 - preservation of the current crowding and food/water distress mechanisms.
 
 The experiment branch should remain isolated until that calibration is complete.
+
+
+## Percentile comparison: Current versus CurrentPlusExitOpportunity
+
+The aggregate means above can hide seed-specific regressions, so the five matched worlds were also compared as distributions. P25 / median / P75 below are taken across the five final worlds unless explicitly labeled as settlement-level.
+
+### World-level and Husbandry-track outcomes
+
+| Metric | Current P25 / median / P75 | Exit P25 / median / P75 | Relative change at P25 / median / P75 |
+|---|---:|---:|---:|
+| Total population | 88,937 / 95,570 / 103,657 | 94,867 / 119,163 / 121,200 | +6.7% / +24.7% / +16.9% |
+| Prior-cohort weighted QoL | 0.8547 / 0.8551 / 0.8589 | 0.8596 / 0.8608 / 0.8620 | +0.6% / +0.7% / +0.4% |
+| Husbandry resident population | 54,605 / 62,120 / 70,357 | 59,581 / 85,593 / 87,558 | +9.1% / +37.8% / +24.4% |
+| Husbandry resident-weighted QoL | 0.8528 / 0.8588 / 0.8639 | 0.8669 / 0.8704 / 0.8728 | +1.6% / +1.4% / +1.0% |
+| Managed Husbandry animals | 35,516 / 54,464 / 61,181 | 41,599 / 59,032 / 71,840 | +17.1% / +8.4% / +17.4% |
+| Husbandry settlements | 165 / 168 / 184 | 198 / 231 / 271 | +20.0% / +37.5% / +47.3% |
+
+There is therefore **no world-level percentile regression** in the requested success metrics. Population improves at P25, median and P75; QoL improves at all three; Husbandry population improves strongly; and total managed Husbandry animals improve at all three percentiles. The QoL gain is modest in absolute terms but consistently positive.
+
+### Per-Husbandry-settlement structure
+
+Pooling final settlements across all five worlds shows the cost of those gains:
+
+| Metric | Current P25 / median / P75 | Exit P25 / median / P75 |
+|---|---:|---:|
+| Husbandry settlement population | 168 / 265 / 494 | 134 / 230 / 457 |
+| Husbandry settlement QoL | 0.8475 / 0.9039 / 0.9427 | 0.8656 / 0.9246 / 0.9594 |
+| Managed animals per Husbandry settlement | 66 / 175 / 352 | 55 / 139 / 285 |
+
+So the proposed rule does **not** increase the size of the typical individual pastoral/mixed settlement. It increases the number of functioning Husbandry settlements and raises their QoL, producing a higher total Husbandry population and a larger total managed herd across each matched world.
+
+A related intensity diagnostic is total managed animals per Husbandry resident, evaluated per world:
+
+- Current P25 / median / P75: **0.650 / 0.774 / 0.856 animals per resident**.
+- Exit P25 / median / P75: **0.690 / 0.698 / 0.772 animals per resident**.
+
+The P25 improves, but the median and P75 fall by about 9.8%. This is a real structural shift toward more numerous, smaller, somewhat less herd-intensive Husbandry settlements. It is not hidden by the aggregate improvement and should be watched in later threshold calibration.
+
+### Interpretation
+
+For the stated non-regression gate, the provisional exit rule passes at the **world/Husbandry-track level**: no P25, median or P75 regression in total population, weighted QoL, Husbandry population, Husbandry QoL or total Husbandry animals.
+
+It does **not** pass a hypothetical requirement that each individual Husbandry settlement or pastoral household maintain at least the same herd size/intensity. The experiment currently trades some local herd concentration for more independent settlements, higher local QoL and greater total Husbandry carrying capacity.
+
+This is acceptable only if the design goal is heterogeneous decentralization rather than preserving large pastoral concentrations. Future threshold sweeps should therefore track both total Husbandry animals and animals per Husbandry resident, so improved aggregate welfare cannot conceal excessive fragmentation of pastoral economies.
