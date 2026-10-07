@@ -163,3 +163,62 @@ For the stated non-regression gate, the provisional exit rule passes at the **wo
 It does **not** pass a hypothetical requirement that each individual Husbandry settlement or pastoral household maintain at least the same herd size/intensity. The experiment currently trades some local herd concentration for more independent settlements, higher local QoL and greater total Husbandry carrying capacity.
 
 This is acceptable only if the design goal is heterogeneous decentralization rather than preserving large pastoral concentrations. Future threshold sweeps should therefore track both total Husbandry animals and animals per Husbandry resident, so improved aggregate welfare cannot conceal excessive fragmentation of pastoral economies.
+
+
+## Threshold sweep and baseline decision
+
+User decision: **CurrentPlusExitOpportunity with FissionExitThreshold = 0.05 is the new working baseline.**
+
+A coarse sweep (0.05 / 0.075 / 0.10 / 0.125) showed that 0.075 already suppresses nearly all exit events and gives back a large share of the new baseline's population/Husbandry gains. A fine sweep therefore tested 0.055 / 0.060 / 0.065 / 0.070 on the same five seeds.
+
+All 20 fine-sweep simulations completed without invariant failures.
+
+### Fine sweep: world-level P25 / median / P75
+
+| Threshold | Total population | Population-weighted QoL | Husbandry population | Husbandry weighted QoL | Managed Husbandry animals |
+|---:|---:|---:|---:|---:|---:|
+| **0.050** | **94,867 / 119,163 / 121,200** | **0.8596 / 0.8608 / 0.8620** | **59,581 / 85,593 / 87,558** | **0.8669 / 0.8704 / 0.8728** | **41,599 / 59,032 / 71,840** |
+| 0.055 | 92,057 / 109,022 / 113,680 | 0.8584 / 0.8589 / 0.8597 | 58,124 / 76,053 / 80,002 | 0.8644 / 0.8671 / 0.8683 | 39,193 / 57,925 / 65,417 |
+| 0.060 | 88,656 / 106,927 / 107,905 | 0.8571 / 0.8572 / 0.8608 | 54,726 / 73,668 / 74,936 | 0.8569 / 0.8649 / 0.8680 | 34,751 / 54,752 / 65,782 |
+| 0.065 | 88,123 / 105,378 / 107,889 | 0.8548 / 0.8556 / 0.8593 | 54,193 / 72,399 / 74,920 | 0.8536 / 0.8615 / 0.8655 | 34,276 / 54,294 / 65,329 |
+| 0.070 | 87,791 / 104,964 / 106,318 | 0.8548 / 0.8573 / 0.8598 | 53,861 / 72,535 / 73,349 | 0.8538 / 0.8640 / 0.8660 | 33,978 / 55,108 / 65,161 |
+| 0.075 | 87,782 / 93,751 / 104,478 | 0.8552 / 0.8568 / 0.8569 | 53,852 / 60,782 / 71,498 | 0.8541 / 0.8613 / 0.8633 | 33,979 / 55,064 / 59,595 |
+
+Even the smallest upward adjustment, 0.055, fails the strict non-regression criterion against 0.05. Relative to 0.05 its P25 / median / P75 changes are:
+
+- total population: **-3.0% / -8.5% / -6.2%**;
+- Husbandry population: **-2.5% / -11.2% / -8.6%**;
+- managed Husbandry animals: **-5.8% / -1.9% / -8.9%**;
+- weighted QoL: -0.14% / -0.22% / -0.26%;
+- Husbandry weighted QoL: -0.28% / -0.39% / -0.52%.
+
+### Fragmentation trade-off
+
+| Threshold | Mean final camps | Total fissions | Exit fissions | Husbandry settlements (P25 / median / P75) |
+|---:|---:|---:|---:|---:|
+| **0.050** | **298.8** | **1,094** | **388** | **198 / 231 / 271** |
+| 0.055 | 270.6 | 953 | 237 | 181 / 212 / 230 |
+| 0.060 | 259.8 | 899 | 107 | 168 / 202 / 220 |
+| 0.065 | 254.0 | 870 | 62 | 165 / 194 / 218 |
+| 0.070 | 252.4 | 862 | 35 | 166 / 195 / 211 |
+| 0.075 | 242.4 | 812 | 20 | 166 / 170 / 194 |
+
+At 0.055, the engine buys roughly 9% fewer final camps and 13% fewer total fissions, but pays materially more than that in median population and Husbandry population. Above 0.060, the exit channel is rapidly approaching the current-rule behavior.
+
+Per-Husbandry-settlement herd concentration increases as the threshold rises, confirming the expected trade: less fission produces fewer, larger and more herd-intensive settlements. However, the resulting loss in total Husbandry residents and total managed animals is too large to justify the concentration gain under the agreed baseline criteria.
+
+### Decision
+
+Keep **0.05**. It is not merely the best point in the original coarse sweep; the fine sweep shows that the useful behavior sits below a sharp threshold cliff. Raising the threshold sacrifices population, Husbandry participation, herd totals and QoL before it produces an attractive reduction in fragmentation.
+
+Therefore the working fission baseline for the Elder RL environment is:
+
+```
+FissionPressureRule = CurrentPlusExitOpportunity
+FissionExitThreshold = 0.05
+FissionExitSearchFraction = 0.8
+```
+
+This baseline retains the existing crowding and food/water-distress channels and adds the independent relative exit-opportunity channel. Future changes must compare against this baseline, not against the pre-exit Current rule.
+
+The next calibration should not continue increasing this scalar threshold. Future anti-oppression work should instead use targeted mature-village/tax/requisition fixtures and, if necessary, alter the structure of the exit opportunity term or its social/political inputs.
