@@ -21,8 +21,16 @@ internal static class PreparedResidentCohortChecks
         w.Config.HusbandryTamingEnabled = false;
         var c = w.Camps.Single();
         c.Population = 100; c.EconomyAutomationTurns = -1;
+        c.PlantFood = c.AnimalFood = c.AquaticFood = 0;
         c.Technologies[(int)Technology.Watercraft] = true;
         c.Workforce.Assignments.Clear();
+        foreach (int tile in w.Map.Radius(c.Tile, 1))
+        {
+            w.Tiles[tile].CultivationCapital = 1;
+            w.Tiles[tile].Cultivation = .4f;
+            w.Tiles[tile].CultivationOperator = c.Id;
+            w.Tiles[tile].CultivationOperatingFraction = 1;
+        }
         return w;
     }
     private static Dictionary<int, List<Order>> Orders(WorldState w)
@@ -36,6 +44,9 @@ internal static class PreparedResidentCohortChecks
         var c = w.Camps.Single();
         Check(p.Rejections.Count == 0, "dispatch and automation remain legal together");
         var e = p.Orders.Single(o => o.Kind == OrderKind.Economy).Economy;
+        Console.WriteLine("COHORT prepared residents=" + p.Needs[c.Id].Residents +
+            " consumers=" + p.Needs[c.Id].FoodConsumers +
+            " assigned=" + e.Assignments.Sum(a => a.Population));
         Check(e.Assignments.Sum(a => a.Population) <= 6,
             "automatic assignments must fit the post-dispatch resident cohort");
         Check(p.Needs[c.Id].Residents == 6 && p.Needs[c.Id].FoodConsumers == 100,
