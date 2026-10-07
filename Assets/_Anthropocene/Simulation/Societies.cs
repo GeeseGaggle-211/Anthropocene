@@ -26,6 +26,10 @@ namespace Anthropocene.Simulation
         // are earned from it; Experience (lifetime practice) still drives the first breakthrough. Absent in older saves: zeros.
 #pragma warning disable SYSLIB0050
         [System.Runtime.Serialization.OptionalField] public double[] NeolithicExperience = new double[3];
+        // Social/observational knowledge is separate from performance practice.
+        // It can unlock secondary technologies without increasing hunting,
+        // gathering, or fishing proficiency.
+        [System.Runtime.Serialization.OptionalField] public double[] TechnologyExposure = new double[3];
 #pragma warning restore SYSLIB0050
         public List<SpeciesPractice> SpeciesExperience = new List<SpeciesPractice>();
         public Technology Technology;
@@ -57,6 +61,7 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int ParentSociety;
         [System.Runtime.Serialization.OptionalField] public double KinAffinity;
         public double NeolithicPractice(Domain domain) => NeolithicExperience == null ? 0 : NeolithicExperience[(int)domain];
+        public double KnowledgeExposure(Domain domain) => TechnologyExposure == null ? 0 : TechnologyExposure[(int)domain];
         public bool HasTech(string tech) => NeolithicTechnologies != null && NeolithicTechnologies.Contains(tech);
     }
 
@@ -228,7 +233,7 @@ namespace Anthropocene.Simulation
     }
 
     // Where a practice credit came from. Amounts are decided by the caller; the source only labels the receipt.
-    public enum PracticeSource { Gathering, Hunting, Fishing, Trade }
+    public enum PracticeSource { Gathering, Hunting, Fishing, Trade, Proximity }
 
     public static class TechnologyDiscovery
     {
@@ -256,16 +261,105 @@ namespace Anthropocene.Simulation
                 QueueEligible(world, society, domain);
         }
 
-        // Trade hook (inert until trade exists, TradePracticePerValue = 0). A receiving Society learns from what it imports: the caller
-        // passes the goods' value (the same value units the exchange used) and the domain the good belongs to, for example imported
-        // grain to Gathering (Cultivation), herd products to Hunting (Husbandry) and fish to Fishing (Watercraft). The credit is
-        // goodsValue * TradePracticePerValue and flows through AddPractice like any other practice. Returns the points credited.
+        private static bool Holds(Society society, Technology technology)
+            => society != null && (society.Technology == technology ||
+                society.Technologies != null && society.Technologies.Length > (int)technology &&
+                society.Technologies[(int)technology]);
+
+        // Social knowledge is deliberately separate from practice/performance.
+        // Only post-breakthrough Societies accumulate it; it contributes to
+        // secondary discovery but never to hunting/gathering/fishing yield.
+        public static double AddKnowledgeExposure(WorldState world, Society society, Domain domain,
+            double amount, PracticeSource source)
+        {
+            if (society == null || society.Progression.Era != Era.Neolithic || !(amount > 0) ||
+                double.IsNaN(amount) || double.IsInfinity(amount)) return 0;
+            int i = (int)domain;
+            if (i < 0 || i >= 3) return 0;
+            var technology = (Technology)(i + 1);
+            if (Holds(society, technology)) return 0;
+            if (society.TechnologyExposure == null || society.TechnologyExposure.Length != 3)
+                society.TechnologyExposure = new double[3];
+            society.TechnologyExposure[i] += amount;
+            if (world != null) QueueEligible(world, society, domain);
+            return amount;
+        }
+
+        // Direct domain hook retained for tests and non-trade callers. Unlike
+        // ordinary practice, trade knowledge affects discovery only.
         public static double RecordTradePractice(WorldState world, Society receiver, Domain domain, double goodsValue)
         {
             double amount = goodsValue * world.Config.TradePracticePerValue;
-            if (!(amount > 0)) return 0;
-            AddPractice(world, receiver, domain, amount, PracticeSource.Trade);
-            return amount;
+            return AddKnowledgeExposure(world, receiver, domain, amount, PracticeSource.Trade);
+        }
+
+        // A completed exchange is a bilateral contact. Each party can learn any
+        // opening technology already held by its counterparty, regardless of
+        // which leg of the barter carried the physical good.
+        public static double RecordTradeContactPractice(WorldState world, Society receiver,
+            Society teacher, double realizedValue)
+        {
+            if (world == null || receiver == null || teacher == null || !(realizedValue > 0)) return 0;
+            double credited = 0;
+            for (int i = 0; i < 3; i++)
+            {
+                var technology = (Technology)(i + 1);
+                if (!Holds(teacher, technology) || Holds(receiver, technology)) continue;
+                credited += RecordTradePractice(world, receiver, (Domain)i, realizedValue);
+            }
+            return credited;
+        }
+
+        private static void AddSpeciesExposure(Society society, string species, double amount)
+        {
+            if (society == null || string.IsNullOrWhiteSpace(species) || !(amount > 0)) return;
+            var practice = society.SpeciesExperience.FirstOrDefault(p => p.Species == species);
+            if (practice == null)
+            {
+                practice = new SpeciesPractice { Species = species };
+                society.SpeciesExperience.Add(practice);
+            }
+            practice.Experience += amount;
+        }
+
+        // Repeated local contact with domesticable herds creates Husbandry
+        // knowledge without increasing hunting proficiency. Foreign managed
+        // herds are stronger demonstrations than wild animals. Species exposure
+        // is retained separately and gates later physical taming.
+        public static double RecordHusbandryProximity(WorldState world)
+        {
+            if (world == null || !(world.Config.HusbandryProximityPracticePerYear > 0)) return 0;
+            double years = Math.Max(0, world.Config.TurnDays / world.Config.DaysPerYear);
+            if (!(years > 0)) return 0;
+            double totalCredited = 0;
+            var domesticable = world.Herds.Where(h => h.Animals > 0 && world.Config.GetSpecies(h.Species).Domesticable)
+                .OrderBy(h => h.Id).ToArray();
+
+            foreach (var society in world.Societies.OrderBy(s => s.Id))
+            {
+                var camps = world.Camps.Where(c => c.SocietyId == society.Id && world.LinkedPopulation(c) > 0)
+                    .OrderBy(c => c.Id).ToArray();
+                if (camps.Length == 0) continue;
+                var bySpecies = new Dictionary<string, double>(StringComparer.Ordinal);
+                foreach (var herd in domesticable)
+                {
+                    if (herd.DomesticCamp >= 0 && herd.OwnerSociety == society.Id) continue;
+                    bool nearby = camps.Any(c => world.Map.Distance(c.Tile, herd.Tile) <= 1);
+                    if (!nearby) continue;
+                    double weight = herd.Animals * (herd.DomesticCamp >= 0
+                        ? world.Config.HusbandryDomesticExposureMultiplier : 1);
+                    bySpecies[herd.Species] = (bySpecies.TryGetValue(herd.Species, out double prior) ? prior : 0) + weight;
+                }
+                double weightedAnimals = bySpecies.Values.Sum();
+                if (!(weightedAnimals > 0)) continue;
+                double amount = years * world.Config.HusbandryProximityPracticePerYear *
+                    Math.Min(1, weightedAnimals / world.Config.HusbandryProximityReferenceAnimals);
+                if (!Holds(society, Technology.AnimalHusbandry))
+                    totalCredited += AddKnowledgeExposure(world, society, Domain.Hunting, amount, PracticeSource.Proximity);
+                foreach (var pair in bySpecies.OrderBy(p => p.Key, StringComparer.Ordinal))
+                    AddSpeciesExposure(society, pair.Key, amount * pair.Value / weightedAnimals);
+            }
+            return totalCredited;
         }
 
         // Progress toward a technology. For a Society already in the Neolithic this is its post-breakthrough practice, except for
@@ -273,8 +367,11 @@ namespace Anthropocene.Simulation
         // Before the first breakthrough it is lifetime practice.
         public static double EffectiveProgress(Society society, Domain domain, SimulationConfig config)
         {
-            if (society.ForcedTransition && society.SecondaryDomain == (int)domain) return LifetimeProgress(society, domain, config);
-            return society.Progression.Era == Era.Paleolithic ? society.Experience[(int)domain] : society.NeolithicPractice(domain);
+            if (society.Progression.Era == Era.Paleolithic) return society.Experience[(int)domain];
+            double exposure = society.KnowledgeExposure(domain);
+            if (society.ForcedTransition && society.SecondaryDomain == (int)domain)
+                return LifetimeProgress(society, domain, config) + exposure;
+            return society.NeolithicPractice(domain) + exposure;
         }
 
         // Lifetime progress of a domain: lifetime practice with the forced-transition catch-up on the selected secondary domain.
@@ -299,7 +396,7 @@ namespace Anthropocene.Simulation
                 double threshold = inEra ? config.SecondaryTechnologyThreshold : config.ExperienceThreshold;
                 status[i] = new TechnologyStatus
                 {
-                    Domain = domain, Technology = technology, Experience = inEra && !acquired ? society.NeolithicPractice(domain) : society.Experience[i],
+                    Domain = domain, Technology = technology, Experience = inEra && !acquired ? society.NeolithicPractice(domain) + society.KnowledgeExposure(domain) : society.Experience[i],
                     Progress = progress, Threshold = threshold,
                     Acquired = acquired, Eligible = !acquired && inEra && progress >= threshold,
                     BlockedReason = acquired ? null : !inEra ? "First breakthrough required" : progress < threshold
