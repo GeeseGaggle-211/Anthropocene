@@ -1043,7 +1043,7 @@ internal static class FissionChecks
         // Generalized exit pressure is additive to the current rule. Suppress current crowding, keep survival met,
         // then lower rudimentary QoL so only a credible better daughter can create pressure.
         var exit = Rich(FissionPressureRule.CurrentPlusExitOpportunity); var ec = exit.Camps[0]; Pressure(exit, 5);
-        ec.ClothPerCapita = 0; ec.Inventory.LightHousingUnits = 0; ec.PlantFood = 12000;
+        ec.Population = 120; ec.ClothPerCapita = 0; ec.Inventory.LightHousingUnits = 0; ec.PlantFood = 12000;
         var before = Fission.EstimateSplit(exit, ec, FissionPolicy.Neutral);
         Check(before.QNow < 1 && Fission.ExitOpportunityPressure(.4, .75) > Fission.ExitOpportunityPressure(.85, .90),
             "exit pressure rises with both home dissatisfaction and daughter improvement");
@@ -1060,15 +1060,15 @@ internal static class FissionChecks
 
         // A miserable camp with no habitable alternative still cannot manufacture an escape.
         var trapped = Rich(FissionPressureRule.CurrentPlusExitOpportunity); var tc = trapped.Camps[0]; Pressure(trapped, 5);
-        tc.ClothPerCapita = 0; tc.Inventory.LightHousingUnits = 0;
+        tc.Population = 120; tc.ClothPerCapita = 0; tc.Inventory.LightHousingUnits = 0;
         foreach (var t in trapped.Tiles)
         {
             if (t.Id == tc.Tile) continue;
             t.Food = 0; t.PotentialFood = 0;
             for (int season = 0; season < 4; season++) { t.Seasons[season].MaxFood = 0; t.Seasons[season].MaxPotentialFood = 0; }
         }
-        Check(Pass(trapped, out var trappedMetrics) == null && trappedMetrics.FissionCommits == 0 && trapped.Camps.Count == 1,
-            "exit opportunity still requires a genuinely habitable known destination");
+        Check(Pass(trapped, out var trappedMetrics) == null && trappedMetrics.FissionSearches == 1 && trappedMetrics.FissionCommits == 0 && trapped.Camps.Count == 1,
+            "exit opportunity searches under real pressure but still requires a genuinely habitable known destination");
     }
 
     private static void Policy()
