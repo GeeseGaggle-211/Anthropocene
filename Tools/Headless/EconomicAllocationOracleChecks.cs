@@ -36,9 +36,22 @@ internal static class EconomicAllocationOracleChecks
 
     public sealed class PlannerChoice
     {
-        public double Useful, PricedWork, FieldBudget, HerdBudget;
+        public double Useful, PricedWork, FieldBudget, HerdBudget,
+            FinalUseful, FinalPricedWork, FinalFieldBudget, FinalHerdBudget,
+            FieldOpportunityCrossingBudget;
         public int Farmers, Herders, Gatherers, HerdTarget;
         public string Ray;
+    }
+
+    public sealed class InvestmentBand
+    {
+        public string Channel, Rejection;
+        public int Band;
+        public double Units, CurrentWorkerYears, RecurringWorkerYears,
+            ForecastFood, UsefulServiceCap, FiniteAlternativeFood,
+            FiniteAlternativeWorkerYears, Return, AdmissionHurdle,
+            SelectedUnits, GrantedUnits;
+        public bool PhysicallyFeasible, DefaultAdmitted, Admitted;
     }
 
     public sealed class RegretResult
@@ -49,8 +62,13 @@ internal static class EconomicAllocationOracleChecks
         public double DenseGridStep, DenseMilliseconds,
             BoundedMilliseconds, BestUsefulAtBoundedWork,
             MinimumWorkAtBoundedUseful, UsefulRegretAtSameWork,
-            ExcessWorkAtSameUseful;
+            ExcessWorkAtSameUseful, FinalUsefulRegret,
+            FinalExcessWork;
         public bool BoundedDominated, PlanningPure;
+        public List<InvestmentBand> BoundedInvestments =
+            new List<InvestmentBand>();
+        public List<InvestmentBand> DenseInvestments =
+            new List<InvestmentBand>();
     }
 
     public sealed class RolloutTurn
@@ -71,16 +89,41 @@ internal static class EconomicAllocationOracleChecks
         public bool FinalFingerprintEqual;
     }
 
+    public sealed class WorldTurn
+    {
+        public int Turn, Settlements, Villages, MobileSettlements,
+            Population, Animals, Farmers, Herders, Moves, Slaughtered;
+        public double WeightedQoL, FieldCapital;
+    }
+
+    public sealed class CausalRollout
+    {
+        public string Source;
+        public List<WorldTurn> Frozen = new List<WorldTurn>();
+        public List<WorldTurn> ExposedFields = new List<WorldTurn>();
+        public List<WorldTurn> FiniteOpportunity = new List<WorldTurn>();
+        public List<WorldTurn> FiniteOpportunityBoundedMovement =
+            new List<WorldTurn>();
+        public List<WorldTurn> BoundedMovement = new List<WorldTurn>();
+        public string FrozenFinalFingerprint, ExposedFinalFingerprint,
+            FiniteFinalFingerprint, FiniteBoundedMovementFinalFingerprint,
+            BoundedMovementFinalFingerprint;
+        public bool FinalFingerprintEqual;
+    }
+
     public sealed class AuditReport
     {
-        public int Schema = 1;
+        public int Schema = 2;
         public string ProductionCandidateRevision, DiagnosticRevision,
             LoadedSavePath, LoadedSaveSha256, Runtime;
+        public List<string> LoadedSaves = new List<string>();
         public int DenseReferenceMaximumPopulation;
         public string DenseReferenceRule;
         public List<StateSnapshot> StateBank = new List<StateSnapshot>();
         public List<RegretResult> Regret = new List<RegretResult>();
         public List<RolloutResult> Rollouts = new List<RolloutResult>();
+        public List<CausalRollout> CausalRollouts =
+            new List<CausalRollout>();
         public double BoundedPlannerMedianMilliseconds,
             BoundedPlannerP75Milliseconds;
     }
@@ -235,6 +278,12 @@ internal static class EconomicAllocationOracleChecks
             PricedWork = allocation.SelectedDevelopmentWork,
             FieldBudget = allocation.SelectedFieldBudget,
             HerdBudget = allocation.SelectedHerdBudget,
+            FinalUseful = allocation.FinalDevelopmentUseful,
+            FinalPricedWork = allocation.FinalDevelopmentWork,
+            FinalFieldBudget = allocation.FinalFieldBudget,
+            FinalHerdBudget = allocation.FinalHerdBudget,
+            FieldOpportunityCrossingBudget =
+                allocation.FieldOpportunityCrossingBudget,
             Farmers = Role(intent, WorkforceRoles.Farmer),
             Herders = Role(intent, WorkforceRoles.Herder),
             Gatherers = allocation.FoodGatherers,
@@ -242,13 +291,42 @@ internal static class EconomicAllocationOracleChecks
             Ray = allocation.SelectedDevelopmentRay
         };
 
+    private static List<InvestmentBand> Investments(
+        DemandController.Allocation allocation)
+        => allocation.InvestmentTraces.Select(trace => new InvestmentBand
+        {
+            Channel = trace.Channel,
+            Rejection = trace.Rejection,
+            Band = trace.Band,
+            Units = trace.Units,
+            CurrentWorkerYears = trace.CurrentWorkerYears,
+            RecurringWorkerYears = trace.RecurringWorkerYears,
+            ForecastFood = trace.ForecastFood,
+            UsefulServiceCap = trace.UsefulServiceCap,
+            FiniteAlternativeFood = trace.FiniteAlternativeFood,
+            FiniteAlternativeWorkerYears = trace.FiniteAlternativeWorkerYears,
+            Return = trace.Return,
+            AdmissionHurdle = trace.AdmissionHurdle,
+            SelectedUnits = trace.SelectedUnits,
+            GrantedUnits = trace.GrantedUnits,
+            PhysicallyFeasible = trace.PhysicallyFeasible,
+            DefaultAdmitted = trace.DefaultAdmitted,
+            Admitted = trace.Admitted
+        }).ToList();
+
     private static RegretResult Compare(StateCase state)
     {
         var world = state.World; var camp = CampOf(state);
         string before = SaveCodec.Fingerprint(world);
+        var diagnostics = new DemandController.DevelopmentDiagnostics
+        {
+            UseFiniteFieldOpportunity = true,
+            CaptureInvestmentTrace = true
+        };
         var boundedTimer = Stopwatch.StartNew();
         var boundedIntent = DemandController.Plan(world, camp,
-            Settings(world, camp), out _, out var boundedAllocation);
+            Settings(world, camp), null, out _, out var boundedAllocation,
+            diagnostics: diagnostics);
         boundedTimer.Stop();
         var trace = new DenseTrace(
             boundedAllocation.SelectedDevelopmentUseful,
@@ -256,7 +334,7 @@ internal static class EconomicAllocationOracleChecks
         var denseTimer = Stopwatch.StartNew();
         var denseIntent = DemandController.Plan(world, camp,
             Settings(world, camp), null, out _, out var denseAllocation,
-            trace.Search);
+            trace.Search, diagnostics);
         denseTimer.Stop();
         double minimumWork = double.IsPositiveInfinity(
             trace.MinimumWorkAtBoundedUseful)
@@ -267,6 +345,15 @@ internal static class EconomicAllocationOracleChecks
             boundedAllocation.SelectedDevelopmentUseful);
         double excessWork = Math.Max(0,
             boundedAllocation.SelectedDevelopmentWork - minimumWork);
+        bool finalDominated =
+            denseAllocation.FinalDevelopmentUseful + Epsilon >=
+                boundedAllocation.FinalDevelopmentUseful &&
+            denseAllocation.FinalDevelopmentWork <=
+                boundedAllocation.FinalDevelopmentWork + Epsilon &&
+            (denseAllocation.FinalDevelopmentUseful >
+                    boundedAllocation.FinalDevelopmentUseful + Epsilon ||
+                denseAllocation.FinalDevelopmentWork + Epsilon <
+                    boundedAllocation.FinalDevelopmentWork);
         return new RegretResult
         {
             State = state.Name,
@@ -281,9 +368,16 @@ internal static class EconomicAllocationOracleChecks
             MinimumWorkAtBoundedUseful = minimumWork,
             UsefulRegretAtSameWork = usefulRegret,
             ExcessWorkAtSameUseful = excessWork,
-            BoundedDominated = usefulRegret > Epsilon ||
-                excessWork > Epsilon,
-            PlanningPure = before == SaveCodec.Fingerprint(world)
+            FinalUsefulRegret = finalDominated ? Math.Max(0,
+                denseAllocation.FinalDevelopmentUseful -
+                    boundedAllocation.FinalDevelopmentUseful) : 0,
+            FinalExcessWork = finalDominated ? Math.Max(0,
+                boundedAllocation.FinalDevelopmentWork -
+                    denseAllocation.FinalDevelopmentWork) : 0,
+            BoundedDominated = finalDominated,
+            PlanningPure = before == SaveCodec.Fingerprint(world),
+            BoundedInvestments = Investments(boundedAllocation),
+            DenseInvestments = Investments(denseAllocation)
         };
     }
 
@@ -354,7 +448,8 @@ internal static class EconomicAllocationOracleChecks
         yield return Wrap("equipment-threshold", equipment);
     }
 
-    private static IEnumerable<StateCase> LoadedStates(WorldState world)
+    private static IEnumerable<StateCase> LoadedStates(WorldState world,
+        string source)
     {
         if (world == null) yield break;
         var eligible = world.Camps.Where(camp => camp.Population > 0 &&
@@ -398,8 +493,8 @@ internal static class EconomicAllocationOracleChecks
         foreach (var camp in chosen.Take(12))
             yield return new StateCase
             {
-                Name = "loaded-camp-" + camp.Id,
-                Source = "loaded", World = world, CampId = camp.Id
+                Name = source + "-camp-" + camp.Id,
+                Source = source, World = world, CampId = camp.Id
             };
     }
 
@@ -487,6 +582,82 @@ internal static class EconomicAllocationOracleChecks
         return result;
     }
 
+    private static WorldTurn AdvanceWorld(WorldState world, int fieldPolicy)
+    {
+        int priorMoves = world.Camps.Sum(camp => camp.Moves);
+        var execution = new PhaseExecution(4, 64, false);
+        var ai = AiPlanning.DecideWithEconomicDiagnostics(world, execution,
+            fieldPolicy == 3 || fieldPolicy == 4);
+        var diagnostics = new DemandController.DevelopmentDiagnostics
+        {
+            ExposePhysicalFieldBands = fieldPolicy == 1,
+            UseFiniteFieldOpportunity = fieldPolicy == 2 || fieldPolicy == 3,
+            UseLegacyUnboundedFieldHurdle = fieldPolicy == 0 ||
+                fieldPolicy == 4
+        };
+        PreparedTurn prepared = TurnPlanner.PrepareWithDevelopmentDiagnostics(
+            world, ai.Orders, diagnostics, ai.Traces, execution);
+        var record = new TurnResolver(execution).Resolve(world, prepared);
+        int residentPopulation = world.Camps.Sum(camp => Math.Max(0,
+            camp.Population));
+        int population = world.Camps.Sum(world.LinkedPopulation);
+        return new WorldTurn
+        {
+            Turn = world.Turn,
+            Settlements = world.Camps.Count(camp => camp.Population > 0),
+            Villages = world.Camps.Count(camp => camp.Population > 0 &&
+                camp.IsVillage),
+            MobileSettlements = world.Camps.Count(camp =>
+                camp.Population > 0 && !camp.IsVillage),
+            Population = population,
+            Animals = world.Herds.Where(herd => herd.DomesticCamp >= 0)
+                .Sum(herd => Math.Max(0, herd.Animals)),
+            Farmers = world.Camps.Sum(camp => Role(
+                EconomicIntent.From(camp), WorkforceRoles.Farmer)),
+            Herders = world.Camps.Sum(camp => Role(
+                EconomicIntent.From(camp), WorkforceRoles.Herder)),
+            Moves = Math.Max(0, world.Camps.Sum(camp => camp.Moves) -
+                priorMoves),
+            Slaughtered = record.ManagedHerds.Sum(value =>
+                value.Slaughtered),
+            WeightedQoL = residentPopulation > 0 ? world.Camps.Sum(camp =>
+                Math.Max(0, camp.Population) * camp.QoL) /
+                    residentPopulation : 0,
+            FieldCapital = world.Tiles.Sum(tile => Math.Max(0,
+                tile.CultivationCapital))
+        };
+    }
+
+    private static CausalRollout Causal(string source, WorldState initial,
+        int turns)
+    {
+        var frozen = SaveCodec.Load(SaveCodec.Save(initial));
+        var exposed = SaveCodec.Load(SaveCodec.Save(initial));
+        var finite = SaveCodec.Load(SaveCodec.Save(initial));
+        var finiteBoundedMovement = SaveCodec.Load(SaveCodec.Save(initial));
+        var boundedMovement = SaveCodec.Load(SaveCodec.Save(initial));
+        var result = new CausalRollout { Source = source };
+        for (int turn = 0; turn < turns; turn++)
+        {
+            result.Frozen.Add(AdvanceWorld(frozen, 0));
+            result.ExposedFields.Add(AdvanceWorld(exposed, 1));
+            result.FiniteOpportunity.Add(AdvanceWorld(finite, 2));
+            result.FiniteOpportunityBoundedMovement.Add(AdvanceWorld(
+                finiteBoundedMovement, 3));
+            result.BoundedMovement.Add(AdvanceWorld(boundedMovement, 4));
+        }
+        result.FrozenFinalFingerprint = SaveCodec.Fingerprint(frozen);
+        result.ExposedFinalFingerprint = SaveCodec.Fingerprint(exposed);
+        result.FiniteFinalFingerprint = SaveCodec.Fingerprint(finite);
+        result.FiniteBoundedMovementFinalFingerprint =
+            SaveCodec.Fingerprint(finiteBoundedMovement);
+        result.BoundedMovementFinalFingerprint =
+            SaveCodec.Fingerprint(boundedMovement);
+        result.FinalFingerprintEqual = result.FrozenFinalFingerprint ==
+            result.ExposedFinalFingerprint;
+        return result;
+    }
+
     private static (double Median, double P75) Benchmark(
         IReadOnlyList<StateCase> states)
     {
@@ -519,6 +690,10 @@ internal static class EconomicAllocationOracleChecks
         string output = Argument(args, "--oracle-output=",
             "/tmp/economic-allocation-oracle/report.json");
         string loadedPath = Argument(args, "--oracle-save=");
+        string loadedPathsText = Argument(args, "--oracle-saves=");
+        int causalTurns = int.Parse(Argument(args,
+            "--oracle-causal-turns=", "0"), CultureInfo.InvariantCulture);
+        bool causalOnly = args.Contains("--oracle-causal-only");
         string productionRevision = Argument(args,
             "--oracle-production-revision=", "unknown");
         string diagnosticRevision = Argument(args,
@@ -529,20 +704,40 @@ internal static class EconomicAllocationOracleChecks
         string bankPath = Path.Combine(directory, "state-bank");
         Directory.CreateDirectory(bankPath);
 
-        WorldState loaded = null; string loadedHash = null;
-        if (!string.IsNullOrEmpty(loadedPath) && File.Exists(loadedPath))
+        var requestedSaves = new List<string>();
+        if (!string.IsNullOrWhiteSpace(loadedPath))
+            requestedSaves.Add(loadedPath);
+        if (!string.IsNullOrWhiteSpace(loadedPathsText))
+            requestedSaves.AddRange(loadedPathsText.Split(new[] { ',' },
+                StringSplitOptions.RemoveEmptyEntries));
+        var loadedWorlds = new List<(string Path, string Hash, string Label,
+            WorldState World)>();
+        foreach (string requested in requestedSaves.Distinct(
+            StringComparer.Ordinal))
         {
-            byte[] bytes = File.ReadAllBytes(loadedPath);
-            loadedHash = Sha256(bytes); loaded = SaveCodec.Load(bytes);
+            if (!File.Exists(requested))
+                throw new FileNotFoundException("Oracle save not found.",
+                    requested);
+            byte[] bytes = File.ReadAllBytes(requested);
+            string parent = Path.GetFileName(Path.GetDirectoryName(
+                Path.GetFullPath(requested)));
+            string label = (parent + "-" +
+                Path.GetFileNameWithoutExtension(requested)).Replace(' ', '-');
+            loadedWorlds.Add((requested, Sha256(bytes), label,
+                SaveCodec.Load(bytes)));
         }
         var synthetic = SyntheticStates().ToList();
-        var states = synthetic.Concat(LoadedStates(loaded)).ToList();
+        var states = causalOnly ? new List<StateCase>() : synthetic.Concat(
+            loadedWorlds.SelectMany(loaded => LoadedStates(loaded.World,
+                loaded.Label))).ToList();
         var report = new AuditReport
         {
             ProductionCandidateRevision = productionRevision,
             DiagnosticRevision = diagnosticRevision,
-            LoadedSavePath = loadedPath,
-            LoadedSaveSha256 = loadedHash,
+            LoadedSavePath = loadedWorlds.FirstOrDefault().Path,
+            LoadedSaveSha256 = loadedWorlds.FirstOrDefault().Hash,
+            LoadedSaves = loadedWorlds.Select(loaded =>
+                Path.GetFullPath(loaded.Path) + "#" + loaded.Hash).ToList(),
             Runtime = System.Runtime.InteropServices.RuntimeInformation
                 .FrameworkDescription,
             DenseReferenceMaximumPopulation = 180,
@@ -574,17 +769,30 @@ internal static class EconomicAllocationOracleChecks
                 " pure=" + regret.PlanningPure);
         }
 
-        report.Rollouts.Add(Rollout("small-complementary-herd",
-            EconomicSettlementChecks.DiagnosticVillage(8)));
-        report.Rollouts.Add(Rollout("oversized-acquired-herd",
-            EconomicSettlementChecks.DiagnosticVillage(400)));
-        report.Rollouts.Add(Rollout("marginal-mobile-mixed",
-            EconomicSettlementChecks.DiagnosticMobileMixed(true)));
-        report.Rollouts.Add(Rollout("productive-mixed-village",
-            EconomicSettlementChecks.DiagnosticProductiveVillage()));
-        report.Rollouts.Add(Rollout("productive-mobile-fields",
-            EconomicSettlementChecks.DiagnosticMobileMixed(true, true, 0)));
-        var timing = Benchmark(synthetic);
+        if (!causalOnly)
+        {
+            report.Rollouts.Add(Rollout("small-complementary-herd",
+                EconomicSettlementChecks.DiagnosticVillage(8)));
+            report.Rollouts.Add(Rollout("oversized-acquired-herd",
+                EconomicSettlementChecks.DiagnosticVillage(400)));
+            report.Rollouts.Add(Rollout("marginal-mobile-mixed",
+                EconomicSettlementChecks.DiagnosticMobileMixed(true)));
+            report.Rollouts.Add(Rollout("productive-mixed-village",
+                EconomicSettlementChecks.DiagnosticProductiveVillage()));
+            report.Rollouts.Add(Rollout("productive-mobile-fields",
+                EconomicSettlementChecks.DiagnosticMobileMixed(true, true,
+                    0)));
+        }
+        if (causalTurns > 0)
+            foreach (var loaded in loadedWorlds)
+            {
+                Console.WriteLine("ORACLE_CAUSAL source=" + loaded.Label +
+                    " turns=" + causalTurns);
+                report.CausalRollouts.Add(Causal(loaded.Label,
+                    loaded.World, causalTurns));
+            }
+        var timing = causalOnly ? (Median: 0.0, P75: 0.0) :
+            Benchmark(synthetic);
         report.BoundedPlannerMedianMilliseconds = timing.Median;
         report.BoundedPlannerP75Milliseconds = timing.P75;
 

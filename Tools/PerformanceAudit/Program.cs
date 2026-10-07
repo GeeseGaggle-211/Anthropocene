@@ -176,6 +176,22 @@ internal static class Program
         string saveFinished = Option(args, "--save-finished", "");
         // Optional save of the world after the last measured turn (for diagnostics such as the trade probe).
         string saveFinal = Option(args, "--save-final", "");
+        // Optional absolute turn-boundary checkpoint bank. This is diagnostic
+        // output only and is written outside measured phase timings.
+        string checkpointTurnsText = Option(args, "--checkpoint-turns", "");
+        string checkpointDirectory = Option(args, "--checkpoint-dir", "");
+        var checkpointTurns = new HashSet<int>(checkpointTurnsText
+            .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => int.Parse(value, CultureInfo.InvariantCulture)));
+        if (checkpointTurns.Any(turn => turn < 0))
+            throw new ArgumentOutOfRangeException(
+                "Checkpoint turns must be non-negative.");
+        if (checkpointTurns.Count > 0 &&
+            string.IsNullOrWhiteSpace(checkpointDirectory))
+            throw new ArgumentException(
+                "--checkpoint-dir is required with --checkpoint-turns.");
+        if (checkpointTurns.Count > 0)
+            Directory.CreateDirectory(checkpointDirectory);
         string shapeName = Option(args, "--shape", "Continents");
         string revision = Option(args, "--revision", "unspecified");
         bool details = Option(args, "--details", 0) != 0;
@@ -341,6 +357,17 @@ internal static class Program
         string finishedFingerprint = world.Finished ? initialFingerprint : null;
         int openingTurnsMeasured = 0;
 
+        void WriteCheckpoint()
+        {
+            if (!checkpointTurns.Contains(world.Turn)) return;
+            string path = Path.Combine(checkpointDirectory,
+                "turn-" + world.Turn.ToString(CultureInfo.InvariantCulture) +
+                ".anthro");
+            WriteBytes(path, SaveCodec.Save(world));
+        }
+
+        WriteCheckpoint();
+
         if (world.Finished && !string.IsNullOrWhiteSpace(saveFinished))
             finishedSaveSha256 = WriteBytes(saveFinished, SaveCodec.Save(world));
 
@@ -350,6 +377,7 @@ internal static class Program
         for (int i = 0; i < openingTurnLimit && !world.Finished; i++)
         {
             RunOneTurn(world, execution, resolver, samples, details, perTurnFingerprints, out string turnFingerprint);
+            WriteCheckpoint();
             openingTurnsMeasured++;
             if (world.Finished)
             {
@@ -371,6 +399,7 @@ internal static class Program
             if (!world.Finished && i == 0)
                 throw new InvalidOperationException("Post-opening turns require a completed opening checkpoint.");
             RunOneTurn(world, execution, resolver, samples, details, perTurnFingerprints, out _);
+            WriteCheckpoint();
             postOpeningTurnsMeasured++;
         }
         if (!string.IsNullOrWhiteSpace(saveFinal)) WriteBytes(saveFinal, SaveCodec.Save(world));

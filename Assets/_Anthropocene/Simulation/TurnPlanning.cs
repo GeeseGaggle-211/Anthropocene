@@ -191,7 +191,8 @@ namespace Anthropocene.Simulation
         // Every other input to the intent is the committed world itself.
         public static PreparedTurn Prepare(WorldState world, IReadOnlyDictionary<int, List<Order>> submitted,
             IEnumerable<DecisionTrace> traces, PhaseExecution execution, PlanningDraft draft)
-            => PrepareCore(world, submitted, traces, execution, draft, null);
+            => PrepareCore(world, submitted, traces, execution, draft, null,
+                null);
 
         // Headless strategy audit seam. The supplied selector replaces only
         // DemandControl's bounded Development-ray choice; all placement,
@@ -204,13 +205,27 @@ namespace Anthropocene.Simulation
             PhaseExecution execution = null)
             => PrepareCore(world, submitted, null, execution, null,
                 developmentSearch ?? throw new ArgumentNullException(
-                    nameof(developmentSearch)));
+                    nameof(developmentSearch)), null);
+
+        // Headless causal-audit seam. This changes only which physically
+        // forecast field bands reach DemandControl's ordinary arbitration; AI
+        // movement, trade, needs and resolution remain on their normal paths.
+        internal static PreparedTurn PrepareWithDevelopmentDiagnostics(
+            WorldState world,
+            IReadOnlyDictionary<int, List<Order>> submitted,
+            DemandController.DevelopmentDiagnostics diagnostics,
+            IEnumerable<DecisionTrace> traces = null,
+            PhaseExecution execution = null)
+            => PrepareCore(world, submitted, traces, execution, null, null,
+                diagnostics ?? throw new ArgumentNullException(
+                    nameof(diagnostics)));
 
         private static PreparedTurn PrepareCore(WorldState world,
             IReadOnlyDictionary<int, List<Order>> submitted,
             IEnumerable<DecisionTrace> traces, PhaseExecution execution,
             PlanningDraft draft,
-            DemandController.DevelopmentSearch developmentSearch)
+            DemandController.DevelopmentSearch developmentSearch,
+            DemandController.DevelopmentDiagnostics developmentDiagnostics)
         {
             if (world == null || submitted == null) throw new ArgumentNullException(world == null ? nameof(world) : nameof(submitted));
             using var profile = PhaseProfile.Scope("Prepare");
@@ -281,7 +296,8 @@ namespace Anthropocene.Simulation
                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
                 fishingAccess.TryGetValue(camp.Id, out var access);
                 return AutomaticIntent(world, camp, effectiveTile, abandoning,
-                    index, trade, access, developmentSearch);
+                    index, trade, access, developmentSearch,
+                    developmentDiagnostics);
             });
             intentsScope.Dispose();
             for (int i = 0; i < automated.Length; i++)
@@ -328,7 +344,9 @@ namespace Anthropocene.Simulation
         // so both run literally the same code. Pure over the committed world.
         private static AutomaticPlan AutomaticIntent(WorldState world, Camp camp, int effectiveTile, bool abandoning,
             PlanningIndex index, TradePlan trade, FishingAccessPlan fishingAccess,
-            DemandController.DevelopmentSearch developmentSearch = null)
+            DemandController.DevelopmentSearch developmentSearch = null,
+            DemandController.DevelopmentDiagnostics developmentDiagnostics =
+                null)
         {
             using var profile = PhaseProfile.Scope("Intent");
             var planningCamp = PlanningCampAt(camp, effectiveTile, trade);
@@ -343,10 +361,12 @@ namespace Anthropocene.Simulation
             EconomicIntent intent;
             using (PhaseProfile.Scope("Allocator")) intent = abandoning
                 ? settings.Copy()
-                : developmentSearch != null &&
+                : (developmentSearch != null ||
+                    developmentDiagnostics != null) &&
                     EconomicAllocationStrategy.IsDemandControl(world.Config)
                     ? DemandController.Plan(world, planningCamp, settings,
-                        fishingAccess, out production, out _, developmentSearch)
+                        fishingAccess, out production, out _, developmentSearch,
+                        developmentDiagnostics)
                     : EconomicAllocationStrategy.Plan(world, planningCamp,
                         settings, fishingAccess, out production);
             if (abandoning)
@@ -439,7 +459,8 @@ namespace Anthropocene.Simulation
             {
                 int tile = placement.Destinations[camp.Id]; bool abandon = abandoning.Contains(camp.Id);
                 fishingAccess.TryGetValue(camp.Id, out var access);
-                var plan = AutomaticIntent(world, camp, tile, abandon, index, trade, access);
+                var plan = AutomaticIntent(world, camp, tile, abandon, index,
+                    trade, access);
                 return new DraftIntent { Camp = camp.Id, Tile = tile, Abandoning = abandon,
                     Order = plan.Order, Production = plan.Production, FishingAccess = plan.FishingAccess };
             });

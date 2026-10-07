@@ -206,16 +206,20 @@ internal static class AgentContractChecks
         Check(unworkedPayoff.ManagedRecoveryCoverage == 0 &&
             unworkedView.AgriculturalSites.All(s => s.LostRebuildBurden == 0),
             "full fields without operating labor cannot invent managed renewal or an abandonment penalty");
-        var stay = new HeuristicTribePolicy().Decide(view, camp.Mandate).Orders.Single(o => o.Entity == camp.Id);
-        Check(stay.Kind == OrderKind.NoOp,
-            "developed own fields and their coming managed recovery retain an agricultural camp at a productive site");
+        var marginalFieldMove = new HeuristicTribePolicy().Decide(view,
+            camp.Mandate).Orders.Single(o => o.Entity == camp.Id);
+        Check(marginalFieldMove.Kind == OrderKind.Move,
+            "a materially superior site can beat the bounded retained value of marginal operated fields");
         camp.IsVillage = true;
         camp.PlantFood = 100000;
+        NeolithicProduction.AddFixedHousing(developed, camp,
+            camp.Population / developed.Config.Neolithic.HousingPeoplePerUnit,
+            developed.Days);
         var secureVillage = new AgentObservationBuilder().Build(developed, camp.Player);
         Check(secureVillage.SiteCoverage.Count > 0 &&
             secureVillage.SiteCoverage.Count <= developed.Map.Radius(camp.Tile, developed.Config.CampMovement).Count() &&
             new HeuristicTribePolicy().Decide(secureVillage, camp.Mandate).Orders.Single(o => o.Entity == camp.Id).Kind == OrderKind.NoOp,
-            "secure villages use the bounded settlement comparison and do not abandon fields");
+            "healthy fixed settlement capital requires a substantial material relocation advantage");
         var virgin = Fixture(false); var freshCamp = virgin.Camps[0];
         var move = new HeuristicTribePolicy().Decide(new AgentObservationBuilder().Build(virgin, freshCamp.Player), freshCamp.Mandate)
             .Orders.Single(o => o.Entity == freshCamp.Id);

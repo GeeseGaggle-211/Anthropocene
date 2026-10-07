@@ -647,6 +647,15 @@ namespace Anthropocene.Simulation
     }
     public sealed class HeuristicTribePolicy : IAgentPolicy
     {
+        private readonly bool boundFieldCapitalByService;
+
+        public HeuristicTribePolicy() : this(true) { }
+
+        internal HeuristicTribePolicy(bool boundFieldCapitalByService)
+        {
+            this.boundFieldCapitalByService = boundFieldCapitalByService;
+        }
+
         private sealed class Candidate
         {
             public Order Order;
@@ -742,11 +751,20 @@ namespace Anthropocene.Simulation
                     double settlementOpportunity = Math.Max(
                         sustainableMoveValue, absoluteMoveValue) - stayValue;
                     double fixedLoss = Math.Max(0, stay.FixedShelter - site.FixedShelter);
-                    double fieldLoss = currentFields == null ? 0
-                        : Math.Max(0, currentFields.ManagedRecoveryCoverage -
-                            (candidateFields?.ManagedRecoveryCoverage ?? 0)) +
-                          (candidateFields?.LostRebuildBurden ??
-                              currentFields.LostRebuildBurden);
+                    double recoveryLoss = currentFields == null ? 0 :
+                        Math.Max(0, currentFields.ManagedRecoveryCoverage -
+                            (candidateFields?.ManagedRecoveryCoverage ?? 0));
+                    double rebuildBurden = currentFields == null ? 0 :
+                        candidateFields?.LostRebuildBurden ??
+                            currentFields.LostRebuildBurden;
+                    // A rebuild option is valuable only up to the retained food
+                    // service it protects over the same horizon, matching the
+                    // settlement supervisor's productive-capital bound. The
+                    // uncapped path remains available only to the headless
+                    // causal audit.
+                    if (boundFieldCapitalByService)
+                        rebuildBurden = Math.Min(rebuildBurden, recoveryLoss);
+                    double fieldLoss = recoveryLoss + rebuildBurden;
                     // Inertia is continuity value, not a veto on survival.
                     // With no observed food support at all it contributes no
                     // retained service; actual field and shelter losses still

@@ -61,6 +61,20 @@ namespace Anthropocene.Simulation
     public static class AiPlanning
     {
         public static PlanningResult Decide(WorldState world, PhaseExecution execution = null, int excludedPlayer = -1)
+            => DecideCore(world, execution, excludedPlayer, true);
+
+        // Headless-only causal seam for the shared settlement-envelope audit.
+        // It can restore the formerly uncapped field-capital term inside the
+        // unified movement comparison; production callers use Decide above.
+        internal static PlanningResult DecideWithEconomicDiagnostics(
+            WorldState world, PhaseExecution execution,
+            bool boundFieldCapitalByService, int excludedPlayer = -1)
+            => DecideCore(world, execution, excludedPlayer,
+                boundFieldCapitalByService);
+
+        private static PlanningResult DecideCore(WorldState world,
+            PhaseExecution execution, int excludedPlayer,
+            bool boundFieldCapitalByService)
         {
             using var profile = PhaseProfile.Scope("Decide");
             var timer = Stopwatch.StartNew(); var result = new PlanningResult();
@@ -70,7 +84,10 @@ namespace Anthropocene.Simulation
             // AI chooses movement from the filtered view. Economic automation
             // runs once in TurnPlanner after effective camp destinations are
             // fixed, so observation construction never triggers an early plan.
-            var decisions = (execution ?? new PhaseExecution()).Map(camps, c => new HeuristicTribePolicy().Decide(new AgentObservationBuilder().Build(world, c.Player, index), c.Mandate));
+            var decisions = (execution ?? new PhaseExecution()).Map(camps,
+                c => new HeuristicTribePolicy(boundFieldCapitalByService)
+                    .Decide(new AgentObservationBuilder().Build(world,
+                        c.Player, index), c.Mandate));
             for (int i = 0; i < camps.Length; i++) { result.Orders[camps[i].Player] = decisions[i].Orders; result.Traces.Add(decisions[i].Trace); }
             result.Milliseconds = timer.Elapsed.TotalMilliseconds; return result;
         }

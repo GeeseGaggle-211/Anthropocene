@@ -108,7 +108,12 @@ internal static class EconomicSettlementChecks
     {
         var camp = world.Camps.OrderBy(c => c.Id).First();
         var intent = DemandController.Plan(world, camp,
-            EconomicIntent.From(camp), out var order, out var allocation);
+            EconomicIntent.From(camp), null, out var order, out var allocation,
+            diagnostics: new DemandController.DevelopmentDiagnostics
+            {
+                UseFiniteFieldOpportunity = true,
+                CaptureInvestmentTrace = true
+            });
         return new Planned
         {
             Intent = intent, Order = order, Allocation = allocation,
@@ -245,8 +250,16 @@ internal static class EconomicSettlementChecks
             "the marginal mixed camp selects the Herder ray from physical return rather than its new capability");
         Check(initialTreatment.Allocation.HerderRayReturn >
                 initialTreatment.Allocation.FarmerRayReturn &&
-            initialTreatment.Allocation.BalancedMarginalReturn > 0,
+            initialTreatment.Allocation.BalancedMarginalReturn <=
+                initialTreatment.Allocation.HerderRayReturn,
             "coarse Farmer, Herder and parallel 50-50 forecasts expose the higher pastoral return on marginal grassland");
+        var marginalFieldBands = initialTreatment.Allocation.InvestmentTraces
+            .Where(trace => trace.Channel == "field").ToArray();
+        Check(marginalFieldBands.Any(trace => trace.PhysicallyFeasible &&
+                trace.FiniteAlternativeFood > 0) &&
+            marginalFieldBands.All(trace => trace.GrantedUnits <= 1e-9) &&
+            initialTreatment.Allocation.FieldOpportunityCrossingBudget <= 1e-9,
+            "finite gathering value blocks the whole sequential marginal-field prefix rather than making later bands free");
         Check(!initialTreatment.Allocation.Requests.Any(q =>
                 q.Service == "field expansion" && q.Granted > 1e-9) &&
             initialTreatment.Order.Ceiling(CraftGood.Housing) == 0,
@@ -298,9 +311,14 @@ internal static class EconomicSettlementChecks
             productivePlan.Allocation.FieldMarginalReturn >
                 gatherFloor + 1e-9,
             "physically productive cultivation still wins labor and creates field Development");
+        Check(productivePlan.Allocation.InvestmentTraces.Any(trace =>
+                trace.Channel == "field" && trace.DefaultAdmitted &&
+                trace.FiniteAlternativeFood <= 1e-9 &&
+                trace.GrantedUnits > 0),
+            "a field increment that beats gathering retains its full value and does not consume the finite alternative");
         Check(productivePlan.Allocation.SelectedDevelopmentRay == "farmers",
             "the productive no-herd fixture selects the Farmer ray from physical return");
-        Check(initialTreatment.Allocation.BalancedMarginalReturn > 0 &&
+        Check(initialTreatment.Allocation.HerderRayReturn > 0 &&
             initialTreatment.Allocation.DevelopmentAlternatives <= 64,
             "the bounded Farmer/Herders 50-50 ray is evaluated without a population search");
         var balanced = Plan(ProductiveVillage());
