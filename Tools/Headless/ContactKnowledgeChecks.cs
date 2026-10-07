@@ -254,8 +254,8 @@ internal static class ContactKnowledgeChecks
         Check(o3.Rivals.Count == 0 && TileDetails.KnownSettlementsAt(o3, At(w, 11)).Length == 1 && TileDetails.Describe(o3, At(w, 11), new Order[0]).Contains("KNOWN SETTLEMENT") && TileDetails.Describe(o3, At(w, 11), new Order[0]).Contains("current state unknown"), "a remembered settlement is labelled as a snapshot and is not a live rival");
         // DTO round trip at the current schema.
         var dto = ObservationContract.Deserialize(ObservationContract.Serialize(o3, own.People.Mandate));
-        Check(dto.Schema == AgentObservation.SchemaVersion && AgentObservation.SchemaVersion == 19 && dto.RememberedTiles.Length == o3.RememberedTiles.Count && dto.KnownSettlements.Single().Camp == stranger.Id && dto.KnownSettlements.Single().Source == ContactSource.Sighting, "the serialized observation carries remembered tiles and known settlements");
-        Check(json.Contains("\"Schema\":19") && json.Contains("RememberedTiles") && json.Contains("KnownSettlements"), "the contract names both new blocks");
+        Check(dto.Schema == AgentObservation.SchemaVersion && AgentObservation.SchemaVersion == 20 && dto.RememberedTiles.Length == o3.RememberedTiles.Count && dto.KnownSettlements.Single().Camp == stranger.Id && dto.KnownSettlements.Single().Source == ContactSource.Sighting, "the serialized observation carries remembered tiles and known settlements");
+        Check(json.Contains("\"Schema\":20") && json.Contains("RememberedTiles") && json.Contains("KnownSettlements"), "the contract names both new blocks");
         // Another Society's knowledge is never visible: the Paleolithic fixture player sees none.
         var p = World(new[] { 5, 9 }, 1); Step(p);
         Check(new AgentObservationBuilder().Build(p, 0).RememberedTiles.Count == 0, "a Society's knowledge is private to it");

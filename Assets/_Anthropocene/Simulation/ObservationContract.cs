@@ -51,7 +51,7 @@ namespace Anthropocene.Simulation
         public int Tile;
         public double HumanFood, HumanFoodAfterHerd;
         public double HerdForage, HerdAbsolute, HerdWater;
-        public double FixedShelter, RecurringLabor;
+        public double FixedShelter, RecurringLabor, AbsoluteRecurringLabor;
     }
     [Serializable] public sealed class ObservedAgriculturalSiteDto { public int Tile, RetainedFields; public double ManagedRecoveryCoverage, LostRebuildBurden; }
     [Serializable] public sealed class ObservedTechnologyStatusDto
@@ -101,7 +101,8 @@ namespace Anthropocene.Simulation
             SiteCoverage = o.SiteCoverage.OrderBy(s => s.Tile).Select(s => new ObservedSiteCoverageDto
                 { Tile = s.Tile, HumanFood = s.HumanFood, HumanFoodAfterHerd = s.HumanFoodAfterHerd,
                     HerdForage = s.HerdForage, HerdAbsolute = s.HerdAbsolute, HerdWater = s.HerdWater,
-                    FixedShelter = s.FixedShelter, RecurringLabor = s.RecurringLabor }).ToArray(),
+                    FixedShelter = s.FixedShelter, RecurringLabor = s.RecurringLabor,
+                    AbsoluteRecurringLabor = s.AbsoluteRecurringLabor }).ToArray(),
             AgriculturalSites = o.AgriculturalSites.OrderBy(s => s.Tile).Select(s => new ObservedAgriculturalSiteDto
                 { Tile = s.Tile, RetainedFields = s.RetainedFields, ManagedRecoveryCoverage = s.ManagedRecoveryCoverage, LostRebuildBurden = s.LostRebuildBurden }).ToArray(),
             LegalActions = Simulation.LegalActions.Build(o)

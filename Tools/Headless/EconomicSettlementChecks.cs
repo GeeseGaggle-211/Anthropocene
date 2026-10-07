@@ -356,6 +356,87 @@ internal static class EconomicSettlementChecks
             "an infeasible preferred shelter route admits a feasible bounded fallback");
     }
 
+    private static void ReviewerRegressions()
+    {
+        // A full pantry removes every immediate food-gap authorization. Natural
+        // growth inside the sustainable envelope must still be an explicit
+        // Development request, never hidden Continuity or spare-labor growth.
+        var stocked = Village(8); var stockedCamp = stocked.Camps[0];
+        stockedCamp.PlantFood = 200000; stockedCamp.AnimalFood = 0;
+        stockedCamp.Inventory.Cloth = 1000;
+        var growth = Plan(stocked);
+        var natural = growth.Allocation.Requests.Single(r =>
+            r.Service == "herd development");
+        Check(natural.Class == DemandController.ServiceClass.Development &&
+            natural.PolicyDevelopmentUnits > 0 && natural.Granted > 0 &&
+            growth.Intent.HerdTarget > 8,
+            "sustainable natural growth remains an admitted Development request even with no immediate food gap");
+
+        // Fixed shelter is not evidence of a plant textile chain. A physically
+        // herd-bearing camp with no operated fields may keep the feasible animal
+        // route while retaining its fixed Housing shelter route.
+        var animalChain = Village(8, fields: false, housing: 30);
+        var animalPlan = Plan(animalChain);
+        Check(animalPlan.Order.Ceiling(CraftGood.AnimalFabric) > 0 &&
+            animalPlan.Order.Ceiling(CraftGood.Cloth) == 0 &&
+            animalPlan.Order.Ceiling(CraftGood.LightHousing) == 0,
+            "fixed housing alone does not invent a retained plant-textile strategy");
+
+        // Construction cost is not useful output. With physically worthless
+        // fields, making reconstruction arbitrarily expensive cannot make their
+        // operation attractive through the retained-capital term.
+        WorldState Worthless(double intensificationTurns)
+        {
+            var world = Village(0); var camp = world.Camps[0];
+            world.Config.Neolithic.IntensificationTurns = intensificationTurns;
+            camp.PlantFood = 200000; camp.AnimalFood = 0;
+            foreach (int id in world.Map.Radius(camp.Tile, 1))
+            {
+                var tile = world.Tiles[id];
+                tile.Food = tile.PotentialFood = 0;
+                for (int season = 0; season < tile.Seasons.Length; season++)
+                {
+                    var profile = tile.Seasons[season];
+                    profile.MaxFood = profile.MaxPotentialFood = 0;
+                    profile.FoodRecoveryPerDay =
+                        profile.BiomassRecoveryPerDay = 0;
+                    tile.Seasons[season] = profile;
+                }
+            }
+            return world;
+        }
+        var ordinaryCost = Plan(Worthless(10));
+        var extremeCost = Plan(Worthless(10000));
+        Check(ordinaryCost.Allocation.SelectedFieldOperation == 0 &&
+            extremeCost.Allocation.SelectedFieldOperation == 0,
+            "avoided reconstruction cost cannot reward a field with no useful continuation");
+
+        // Retained operating farmers harvest while maintaining fields. Their
+        // unused physical capacity must pass through the shared food ledger
+        // before another Gatherer is requested for the same growth service.
+        var farmerCapacity = Village(0); var farmerCamp = farmerCapacity.Camps[0];
+        farmerCapacity.Config.AnnualHumanGrowthRate = .01145;
+        farmerCamp.PlantFood = 200000;
+        farmerCamp.Inventory.Cloth = 1000;
+        var farmerPlan = Plan(farmerCapacity);
+        Check(farmerPlan.Allocation.Farmers > 0 &&
+            farmerPlan.Allocation.RetainedFarmerFoodService > 0 &&
+            !farmerPlan.Allocation.Requests.Any(r =>
+                r.Service == "food growth gathering") &&
+            farmerPlan.Allocation.DevelopmentFoodGap <= 1e-8,
+            "retained farmer harvest capacity serves growth once without duplicate gathering labor");
+
+        // Field capital is built after this turn's harvest. Its future closing
+        // stock may justify Development work, but cannot erase an unmet current
+        // receipt merely by winning the return ordering.
+        var temporal = Plan(Village(8));
+        var futureField = temporal.Allocation.Requests.Single(r =>
+            r.Service == "field expansion");
+        Check(futureField.Granted > 0 && futureField.DevelopmentFood > 0 &&
+            temporal.Allocation.DevelopmentFoodGap > 0,
+            "future field stock does not satisfy the current-turn food ledger");
+    }
+
     private static Camp AddMatureCamp(WorldState world, int x, int y,
         int player, int animals, Technology primary)
     {
@@ -454,6 +535,10 @@ internal static class EconomicSettlementChecks
             HerdConsumptionProfile.Owned(large, large.Camps[0])).SurveyedTiles;
         Check(ordinaryTiles <= 7 && largeTiles == ordinaryTiles,
             "the shared settlement envelope stays footprint-bounded as population grows");
+        int ordinaryAlternatives = Plan(ordinary).Allocation.PortfolioAlternatives;
+        int largeAlternatives = Plan(large).Allocation.PortfolioAlternatives;
+        Check(ordinaryAlternatives <= 64 && largeAlternatives <= 64,
+            "joint settlement alternatives remain fixed-bounded rather than scaling with population");
     }
 
     public static void Probe()
@@ -464,30 +549,53 @@ internal static class EconomicSettlementChecks
         var technologyA = Plan(technologyControl);
         var technologyB = Plan(technologyTreatment);
         Console.WriteLine("SETTLEMENT_TECH_ONLY control=farmers=" + technologyA.Farmers +
+            " retainedFarmers=" + technologyA.Allocation.Farmers +
+            " expansionFarmers=" + technologyA.Intent.Labor.ExpansionFarmers +
             " herders=" + technologyA.Herders +
             " housing=" + technologyA.Order.Ceiling(CraftGood.Housing).ToString("F3") +
             " tents=" + technologyA.Order.Ceiling(CraftGood.LightHousing).ToString("F3") +
             " treatment=farmers=" + technologyB.Farmers +
+            " retainedFarmers=" + technologyB.Allocation.Farmers +
+            " expansionFarmers=" + technologyB.Intent.Labor.ExpansionFarmers +
             " herders=" + technologyB.Herders +
             " housing=" + technologyB.Order.Ceiling(CraftGood.Housing).ToString("F3") +
             " tents=" + technologyB.Order.Ceiling(CraftGood.LightHousing).ToString("F3"));
         foreach (int animals in new[] { 8, 400 })
         {
             var w = Village(animals); var c = w.Camps[0];
+            var ladder = CultivationEconomy.ExpansionLadder(w, c,
+                w.Config.TurnDays / w.Config.DaysPerYear,
+                CultivationEconomy.Footprint(w, c));
             var intent = DemandController.Plan(w, c, EconomicIntent.From(c), out var order, out var allocation);
             int farmers = intent.Assignments.Where(a => a.Role == WorkforceRoles.Farmer).Sum(a => a.Population);
             int herders = intent.Assignments.Where(a => a.Role == WorkforceRoles.Herder).Sum(a => a.Population);
             var herdRequests = allocation.Requests.Where(q => q.Service.IndexOf("herd", StringComparison.OrdinalIgnoreCase) >= 0)
                 .Select(q => q.Service + ":" + q.Class + ":" + q.Units.ToString("F3") + ":" + q.Granted.ToString("F3"));
+            var developmentRequests = allocation.Requests
+                .Where(q => q.Class == DemandController.ServiceClass.Development)
+                .Select(q => q.Service + ":" + q.Units.ToString("F3") + ":" +
+                    q.Granted.ToString("F3") + ":" + q.PriorityScore.ToString("F3") +
+                    ":" + q.Unmet);
             Console.WriteLine("SETTLEMENT_PROBE animals=" + animals +
                 " farmers=" + farmers + " herders=" + herders +
+                " retainedFarmers=" + allocation.Farmers +
+                " foodGatherers=" + allocation.FoodGatherers +
+                " retainedFood=" + allocation.RetainedFoodSupply.ToString("F3") +
+                " developmentGap=" + allocation.DevelopmentFoodGap.ToString("F3") +
+                " fieldOperation=" + allocation.SelectedFieldOperation.ToString("F3") +
+                " portfolioValue=" + allocation.SelectedPortfolioValue.ToString("F3") +
+                " portfolioUnmet=" + allocation.SelectedPortfolioUnmet.ToString("F3") +
                 " herdTarget=" + (intent.HerdTargetSet ? intent.HerdTarget : -1) +
                 " sustainable=" + allocation.HSustainable.ToString("F3") +
                 " absolute=" + allocation.HAbsolute.ToString("F3") +
                 " grown=" + allocation.HGrown.ToString("F3") +
                 " housing=" + order.Ceiling(CraftGood.Housing).ToString("F3") +
                 " tents=" + order.Ceiling(CraftGood.LightHousing).ToString("F3") +
-                " herdRequests=" + string.Join("|", herdRequests));
+                " cloth=" + order.Ceiling(CraftGood.Cloth).ToString("F3") +
+                " animalFabric=" + order.Ceiling(CraftGood.AnimalFabric).ToString("F3") +
+                " fieldScore=" + ladder.Select(s => s.Score).DefaultIfEmpty(0).Max().ToString("F3") +
+                " herdRequests=" + string.Join("|", herdRequests) +
+                " development=" + string.Join("|", developmentRequests));
         }
         var matureCultivation = Village(80, husbandry: true,
             primary: Technology.Cultivation);
@@ -501,6 +609,25 @@ internal static class EconomicSettlementChecks
         Console.WriteLine("SETTLEMENT_MOVE pastoral.cultivationPrimary=" +
             Movement(pastoralCultivation) + " husbandryPrimary=" +
             Movement(pastoralHusbandry));
+        var farmerCapacity = Village(0);
+        farmerCapacity.Config.AnnualHumanGrowthRate = .01145;
+        farmerCapacity.Camps[0].PlantFood = 200000;
+        farmerCapacity.Camps[0].Inventory.Cloth = 1000;
+        var farmerCapacityPlan = Plan(farmerCapacity);
+        Console.WriteLine("SETTLEMENT_FARMER_CAPACITY retainedFarmers=" +
+            farmerCapacityPlan.Allocation.Farmers + " foodGatherers=" +
+            farmerCapacityPlan.Allocation.FoodGatherers + " retainedFood=" +
+            farmerCapacityPlan.Allocation.RetainedFoodSupply.ToString("F3") +
+            " farmerFood=" + farmerCapacityPlan.Allocation
+                .RetainedFarmerFoodService.ToString("F3") +
+            " farmerPlant=" + farmerCapacityPlan.Allocation
+                .RetainedFarmerPlantService.ToString("F3") +
+            " developmentGap=" +
+            farmerCapacityPlan.Allocation.DevelopmentFoodGap.ToString("F3") +
+            " requests=" + string.Join("|", farmerCapacityPlan.Allocation.Requests
+                .Where(q => q.Service.IndexOf("food", StringComparison.OrdinalIgnoreCase) >= 0)
+                .Select(q => q.Service + ":" + q.Units.ToString("F3") + ":" +
+                    q.Granted.ToString("F3"))));
     }
 
     public static int Run()
@@ -513,6 +640,7 @@ internal static class EconomicSettlementChecks
         LegitimatePastoralMovement();
         PrimaryTechnologyInvariance();
         ShelterCapabilityInvariance();
+        ReviewerRegressions();
         DeterminismAndPersistence();
         Console.WriteLine("PASS: " + checks +
             " economic-settlement assertions (A-I)");

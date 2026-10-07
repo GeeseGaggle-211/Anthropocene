@@ -4,232 +4,283 @@
 
 This report validates the architectural correction on branch
 `refactor/economic-settlement-envelope`. The before source is commit
-`86cba712dfd76673bd9637052543bde85f810e0b`; the candidate is this working
-tree. No animal yield, crop productivity, movement inertia, breeding rate,
-housing value, arbitrary herd cap or technology-specific weight was changed.
-Husbandry diffusion, taming and live-animal trade remain out of scope.
+`86cba712dfd76673bd9637052543bde85f810e0b`; the rejected intermediate
+candidate is `eaac614`; the corrected candidate is this working tree. No
+animal yield, crop productivity, movement inertia, breeding rate, housing
+value, arbitrary herd cap, or technology-specific weight changed.
+Husbandry diffusion, taming, and live-animal trade remain out of scope.
 
 The implementation follows `EconomicControlContract.md`,
-`PastoralPlannerCorrectionDesign.md`, `EconomicControlContractAddendumA.md`
+`PastoralPlannerCorrectionDesign.md`, `EconomicControlContractAddendumA.md`,
 and `CurrentSimulationContract.md`.
 
 ## Violations in the before source
 
-- `HeuristicTribePolicy` chose separate agricultural and pastoral movement
-  algorithms from `Agriculture && !Husbandry` versus `Husbandry`. A secondary
-  capability therefore changed the policy being run even when the physical
-  settlement had not changed.
-- DemandControl described fixed Housing as the farming route and Light Housing
-  as the herding route. Once Husbandry made tents feasible, an ordinary fixed
-  village's remaining shelter deficit could be redirected into tents.
-- DemandControl reserved labor for the current herd before calculating field
-  operation. It then set the target toward the biologically grown herd and
-  classified the extra herders as Continuity. Spare capacity in an existing
-  herder assignment could authorize growth without a Development grant.
+- `HeuristicTribePolicy` selected agricultural versus pastoral movement from
+  `Agriculture && !Husbandry` and `Husbandry`. A secondary capability could
+  therefore replace the movement policy even when the physical settlement did
+  not change.
+- DemandControl described Housing as the farming route and Light Housing as
+  the herding route. Once Husbandry exposed tents, a mature fixed settlement's
+  ordinary shelter deficit could switch routes.
+- DemandControl reserved the whole current herd before field operation, raised
+  `HerdTarget` toward the biologically grown herd, and classified extra herders
+  as Continuity. Spare management capacity could authorize growth without a
+  Development allocation.
 - Actual managed-herd claims consumed `PotentialFood - Food` before `Food`,
-  while `HerdLabour.Pasture` and movement coverage treated all
-  `PotentialFood` as pasture. The three answers could disagree about the same
-  site.
-- The legacy Value settling term and the fission site regime still used
-  technology identity/capability as a strategy selector.
+  while herd labor and movement treated all `PotentialFood` as pasture. The
+  three forecasts could disagree about the same site.
+- The first corrected candidate still overvalued cultivation on marginal land:
+  retained farmers' unused harvest capacity was omitted from service accounting,
+  future field stock was allowed to satisfy current-turn food demand, and a
+  one-transition closing-stock gain was projected across the planning horizon.
 
 ## Correction
 
 `SettlementEconomy.cs` now owns one pure local model:
 
-- `HerdSupportEnvelope` exposes zero-displacement forage, absolute forage and
+- `HerdSupportEnvelope` exposes zero-displacement forage, absolute forage, and
   water capacities for the owned species mix.
-- `LocalHerdEcology.Survey` projects a fixed radius-one footprint without
+- `LocalHerdEcology.Survey` projects the fixed radius-one footprint without
   mutating ecology. Land contributes nonhuman forage
   `max(0, PotentialFood - Food)` and human-accessible `Food`; water uses the
-  same stock plus bounded horizon-recharge proxy as actual herd claims.
-- `SettlementSiteEvaluation` adds human food, retained fields, fixed Housing
-  and recurring labor. Both movement and DemandControl consume it; it is not a
-  recursive production plan.
-- `SettlementPortfolioSupervisor` selects retained operated fields and the
-  herd supportable by zero-displacement forage, water and labor actually left
-  after that field commitment. Its labor feasibility scan has fewer than 40
-  fixed breakpoints, independent of population.
+  same bounded horizon semantics as the actual managed-herd claims.
+- `SettlementSiteEvaluation` adds human food, retained fields, fixed Housing,
+  and recurring labor. Movement and DemandControl consume this cheap
+  evaluation; it is not a recursive production plan.
+- `SettlementPortfolioSupervisor` selects one retained field/herd portfolio.
+  Field and herd alternatives share the same survival, finite-return, labor,
+  and ecological comparison; neither capability or primary technology chooses
+  the branch.
 
-DemandControl then treats retained field and herd work as Continuity. A larger
-herd target is an indivisible Development request competing with field
-Development. An oversized herd lowers the existing authoritative
-`HerdTarget`; current animals still graze and drink before breeding and
-`HerdLabour.Slaughter` liquidates the excess.
+DemandControl treats retained field and herd work as Continuity. A larger herd
+target is an indivisible Development request competing with field Development.
+An oversized herd lowers the existing authoritative `HerdTarget`; all opening
+animals still graze and drink before `HerdLabour.Slaughter` liquidates excess.
+
+The Astra-high review identified three remaining cultivation accounting
+defects. They were corrected without changing calibration:
+
+1. retained farmers' complete remaining harvest capacity is allocated once,
+   feedstock first and then current biological-food service, before any extra
+   Gatherers are requested;
+2. current receipts and future continuation returns use separate ledgers, so a
+   future field stock or newborn herd return cannot fund this turn's meals,
+   reserve refill, or birth food; and
+3. a field step receives only its authoritative next-boundary retained-food
+   change and pays build work plus the larger of transition maintenance or
+   harvest work. A single closing-stock change is no longer repeated across
+   the whole planning horizon.
 
 Movement now has one settlement comparison. Stay credits retained fields,
-fixed shelter, human support and the sustainable herd. Move credits candidate
+fixed shelter, human support, and the sustainable herd. Move credits candidate
 human support and only the extra herd retained beyond Stay, then charges lost
-fields, fixed shelter, recurring labor, discontinuity and inertia. Primary
-technology is not read. Shelter is likewise one service: retained fixed and
-portable capital request their own replacement, and a physical operating
-policy chooses the remaining deficit route with one bounded feasible fallback.
+fields, fixed shelter, recurring labor, discontinuity, and inertia. Primary
+technology is not read. Shelter is one service: retained capital determines
+the preferred replacement route and bounded feasibility permits fallback.
 
 ## Focused regression results
 
-`EconomicSettlementChecks` contains 36 assertions covering A-I:
+`EconomicSettlementChecks` passes 42 assertions covering A-I plus the Astra
+food-ledger regressions:
 
 | Case | Result |
 | --- | --- |
-| A. Technology-only invariance | A fixed-housing village with an ordinary shelter deficit produced the same NoOp, 47 Farmers, zero Herders, 16.5 Housing and zero Light Housing with or without secondary Husbandry. Human-food staffing and unmet food were equal; no herd target or herd Development request appeared. |
-| B. Small complementary herd | Eight animals stayed below `H_sustainable = 135.8`; the village stayed, staffed 49 Farmers and 3 Herders, retained fixed Housing and targeted 8 animals. The possible ninth animal was a Development request and received no grant; forecast human-food displacement was zero. |
-| C. Oversized acquired herd | Four hundred animals were below `H_absolute = 2625` but above labor-bounded `H_sustainable = 227.8`. The plan retained 13 Farmers, staffed 107 Herders, set target 227, stayed, requested current-turn forage and water for all 400 animals, and only then resolved the excess through authoritative slaughter while retaining field capital. |
-| D. Grossly oversized herd | Four thousand animals exceeded absolute site support. Staffing stayed resident-bounded, the deterministic target was liquidated through the existing resolver, living/dead/born/slaughtered animals and carcass food conserved, and humans did not starve solely to preserve livestock. |
-| E. Legitimate pastoral move | A weak-capital, herd-dependent camp with failed local forage/water moved to the materially superior site (tile 127). |
-| F. Husbandry-first mixed settlement | Physically identical cultivation-first and husbandry-first mature mixed settlements both stayed and produced byte-equivalent intent/production descriptions; fission classified both from their retained fields. |
-| G. Agriculture-first pastoral outcome | A cultivation-first camp with negligible field/housing capital and a valuable herd moved to tile 127 and received the mobile fission site regime. |
-| H. Shelter capability invariance | Secondary Husbandry did not redirect either replacement or the ordinary fixed-village deficit to tents. When fixed construction was physically infeasible and animal fabric was available, the bounded Light Housing fallback was admitted. |
-| I. Determinism and persistence | Scalar and reversed one-item partitions under four workers matched for two turns; save/load continuation matched across execution modes for two more turns. The site survey examined the same seven tiles for populations 120 and 10,000. |
+| A. Technology-only invariance | The fixed-housing control and a clone with secondary Husbandry both stayed and assigned 47 Farmers, zero Herders, 16.5 Housing, and zero Light Housing. Human-food planning and herd requests were identical. |
+| B. Small complementary herd | Eight animals stayed below `H_sustainable = 223.8`; the village stayed, retained its operated fields and fixed Housing, assigned four Herders, and admitted the ninth animal only through a granted Development request. |
+| C. Oversized acquired herd | Four hundred animals were below `H_absolute = 2625` but above `H_sustainable = 223.8`. The plan retained 13 operating Farmers, assigned 105 Herders, set target 223, and stayed. Excess animals use authoritative slaughter after current-turn grazing and water claims. |
+| D. Grossly oversized herd | Resident staffing remained bounded; liquidation was deterministic; living, born, dead, and slaughtered animals and carcass food conserved; humans were not assigned an unbounded preservation obligation. |
+| E. Legitimate pastoral move | A weak-capital, herd-dependent camp with failed local forage/water moved to materially superior tile 127. |
+| F. Husbandry-first mixed settlement | Physically identical cultivation-first and husbandry-first mixed settlements both stayed and produced equivalent intents. |
+| G. Agriculture-first pastoral outcome | A cultivation-first camp with negligible field/housing capital and a valuable herd moved to tile 127. |
+| H. Shelter capability invariance | Secondary Husbandry did not redirect fixed replacement or an ordinary village shelter deficit to tents; a physically infeasible preferred route admitted a feasible fallback. |
+| I. Determinism and persistence | Scalar, four-worker reversed partitions/collections, and save/load continuation matched. The site survey remained at seven tiles and portfolio alternatives remained at most 64 for populations 120 and 10,000. |
+| Retained-farmer capacity | Thirteen retained Farmers supplied 1,188.138 current food with no duplicate food Gatherer and no remaining Development-food gap. |
+| Current/future timebase | A granted future field step did not reduce the unmet current-turn food ledger. |
 
-Relevant suites after the final test change:
+The complete fixed-check run passed, including:
 
 ```text
 PASS: 61530 agent-contract assertions
+PASS: scalar / 2-worker / 4-worker / reversed replay and save-load continuation
 PASS: 627 fission assertions
+PASS: 336 immigration assertions
+PASS: 480 trade assertions
 PASS: 132 demand-control assertions
-PASS: 36 economic-settlement assertions (A-I)
+PASS: 42 economic-settlement assertions (A-I)
 PASS: 1688 herd-labour assertions
 PASS: 60 settling assertions
 ```
 
-The full fixed-check set also passed, including replay, save/load, production,
-trade, immigration, ecology and Neolithic checks. The current-contract checker
-passed 77 JSON/API values, 15 test claims and all document links.
+## Before/after focused behavior
 
-## Before/after fixture behavior
+The before probe uses `86cba71`; the corrected probe uses this branch.
 
-The before probe was built from commit `86cba71`; the after probe uses this
-branch. Numbers are residents assigned for the turn and production ceilings.
-
-| Fixture | Before | After |
+| Fixture | Before | Corrected |
 | --- | --- | --- |
-| Technology-only control | 47 Farmers, 0 Herders, Housing 16.5, tents 0 | 47 Farmers, 0 Herders, Housing 16.5, tents 0 |
-| Same village + secondary Husbandry, no animals | 41 Farmers, 0 Herders, Housing 1.5, tents 20 | 47 Farmers, 0 Herders, Housing 16.5, tents 0 |
-| Small herd (8) | 48 Farmers, 4 Herders, target 9; the additional herder was Continuity | 49 Farmers, 3 Herders, target 8; possible increment is Development and received no grant |
-| Oversized herd (400) | 0 Farmers, 120 Herders, target 253 | 13 Farmers, 107 Herders, sustainable target 227 |
+| Technology-only control | 47 Farmers, 0 Herders, Housing 16.5, tents 0 | same |
+| Same village + secondary Husbandry, no animals | 41 Farmers, 0 Herders, Housing 1.5, tents 20 | identical to control: 47 Farmers, Housing 16.5, tents 0 |
+| Small herd (8) | 48 Farmers, 4 Herders, target 9; added herder was Continuity | 48 Farmers, 4 Herders, target 9; the increment is a granted Development request |
+| Oversized herd (400) | 0 Farmers, 120 Herders, target 253 | 13 retained Farmers, 105 Herders, sustainable target 223 |
 
-Equivalent-physical-state movement decisions were:
+Equivalent physical settlements now use the same evaluator:
 
-| Physical state | Before cultivation-first | Before husbandry-first | After cultivation-first | After husbandry-first |
+| Physical state | Before cultivation-first | Before husbandry-first | Corrected cultivation-first | Corrected husbandry-first |
 | --- | --- | --- | --- | --- |
-| Mature mixed fields, fixed Housing and 80 animals | Stay | Stay | Stay | Stay |
-| Negligible fields/Housing, 180 animals, dominant candidate | Move to 127 | Move to 127 | Move to 127 | Move to 127 |
+| Mature mixed fields, fixed Housing, 80 animals | Stay | Stay | Stay | Stay |
+| Negligible fields/Housing, 180 animals, dominant candidate | Move 127 | Move 127 | Move 127 | Move 127 |
 
-The stable decisions are intentional. Before, the cases reached different
-technology-selected code paths; after, each pair reaches the same physical
-comparison and produces the same result.
+The before choices happened to agree but came from distinct technology-selected
+policies. The corrected pairs reach the same physical comparison and produce
+the same decision; primary technology is absent from that calculation.
 
-## Matched mixed-economy cohort
+## Five-run full-system cohort
 
-Three Continents worlds (seeds 11, 23 and 1729), 80 founding settlements each,
-were opened with the before binary. Both binaries then loaded the identical
-turn-10 save for each seed and ran 40 post-opening turns. Fission, immigration
-and trade were disabled to keep cohort membership fixed and isolate allocator
-and movement behavior. All six reports used config hash
-`878A5F56C465557FB72905CC198498E22D28F9B8C2D6C565C939B52CB5F3DE7A`.
-Primary technology below is a diagnostic label only.
+Five Continents worlds used seeds 11, 23, 47, 101, and 1729 with 80 founding
+tribes. Each ran ten opening turns followed by 40 measured turns with production
+configuration, trade, immigration, and fission enabled, four workers, and
+partition size 64. All reports have configuration hash
+`15A89E1FFDE0CA5BE61BCCE280AB04278D87A2DF86F4731984C292A7526E743F`;
+comparisons use the same seeds and workload. Quartiles use linear interpolation
+over the five final worlds.
 
-| Final diagnostic (240 settlements) | Before | After |
-| --- | ---: | ---: |
-| Population | 85,963 | 101,901 |
-| Settlement population P25 / median / P75 | 50.25 / 219.5 / 623.25 | 87.25 / 373 / 744.25 |
-| Settlement QoL P25 / median / P75 | 0.466 / 0.746 / 0.919 | 0.743 / 0.844 / 0.958 |
-| Operating field tiles | 1,359 | 1,507 |
-| Mean operating fraction on those tiles | 1.000 | 0.9995 |
-| Mean settlement field intensity | 0.255 | 0.309 |
-| Farmer share | 37.31% | 42.71% |
-| Managed animals / owning settlements | 11,939 / 52 | 410 / 37 |
-| Animals per owner P25 / median / P75 | 38 / 67 / 252.25 | 8 / 10 / 14 |
-| Herder share | 6.13% | 0.17% |
-| Slaughtered animals over 40 turns | 888 | 97 |
-| Camp moves / village-to-camp transitions | 192 / 0 | 123 / 0 |
-| Fixed / portable shelter capacity (people) | 74,344 / 3,990 | 97,312 / 521 |
+| Seed | Final population | Population-weighted QoL | Herd population | Settlements |
+| ---: | ---: | ---: | ---: | ---: |
+| 11 | 90,281 | 0.8661 | 8,499 | 205 |
+| 23 | 122,934 | 0.8599 | 51,931 | 259 |
+| 47 | 114,523 | 0.8772 | 45,072 | 282 |
+| 101 | 100,632 | 0.8682 | 29,212 | 226 |
+| 1729 | 103,645 | 0.8508 | 15,589 | 213 |
 
-Realized food receipts over the matched 120 world-turns were:
+### Run-level endpoint quartiles
 
-| Channel | Before | After | Ratio |
-| --- | ---: | ---: | ---: |
-| Plant (Gathering, Cultivation, Foraging) | 177.261m | 205.451m | 1.159 |
-| Animal (Hunting, Animal Product, Slaughter) | 14.301m | 4.845m | 0.339 |
-| Aquatic (Fishing and passive aquatic gathering) | 3.718m | 3.441m | 0.925 |
+| Version | Population P25 / median / P75 | QoL P25 / median / P75 | Herd P25 / median / P75 |
+| --- | --- | --- | --- |
+| Pre-refactor `86cba71` | 89,175 / 91,739 / 104,479 | 0.8035 / 0.8285 / 0.8408 | 36,595 / 43,889 / 62,823 |
+| Rejected intermediate `eaac614` | 65,333 / 71,118 / 73,822 | 0.8653 / 0.8653 / 0.8705 | 20 / 26 / 29 |
+| Corrected | **100,632 / 103,645 / 114,523** | **0.8599 / 0.8661 / 0.8682** | 15,589 / 29,212 / 45,072 |
 
-Final after-state primary-technology diagnostics were:
+The Astra fixes remove the rejected candidate's population regression and put
+all three population and QoL quartiles above the pre-refactor cohort. Herd
+population remains below the pre-refactor result because biological expansion
+is no longer automatic Continuity; this was not hidden with calibration.
+QoL improved in all five matched seeds; population improved in three, was
+within one percent in seed 1729, and remained lower in seed 101.
 
-| Primary label | Settlements | Population | Villages | Animals | Farmer share | Herder share |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Animal Husbandry | 52 | 19,217 | 31 | 410 | 42.37% | 0.91% |
-| Cultivation | 182 | 79,739 | 132 | 0 | 42.36% | 0% |
-| Watercraft | 6 | 2,945 | 5 | 0 | 54.43% | 0% |
+For clarity, pooled final-settlement quartiles (not quartiles of world totals)
+are:
 
-All 37 final livestock owners were at or below zero-displacement capacity.
-Their capacities summed to 22,682 animals for both zero-displacement and
-absolute support because water, not forage, was the binding resource in these
-natural worlds. The focused fixture separately observes the intended forage
-distinction (`135.8` zero-displacement versus `2625` absolute).
+| Version | N | Population P25 / median / P75 | QoL P25 / median / P75 | Herd P25 / median / P75 |
+| --- | ---: | --- | --- | --- |
+| Pre-refactor | 1,455 | 153 / 301 / 515 | 0.7455 / 0.8633 / 0.9357 | 0 / 50 / 250.5 |
+| Rejected intermediate | 794 | 217.25 / 411.5 / 639.75 | 0.8115 / 0.8923 / 0.9632 | 0 / 0 / 0 |
+| Corrected | 1,185 | 224 / 405 / 650 | 0.8265 / 0.8965 / 0.9615 | 0 / 0 / 149 |
 
-There were 37 secondary Husbandry acquisitions with zero animals. On the next
-allocation they produced zero Herders, zero animal change and zero change in
-portable shelter in every case. One acquisition coincided with a move on the
-following turn, but the camp already had Cultivation and retained capital, so
-both observations use the same physical movement path; no Husbandry term
-exists when owned animals are zero. The exact cloned A/H regressions establish
-causality: changing only the flag changes no plan or movement.
+Among the corrected cohort's 399 livestock-owning settlements, herd P25,
+median, and P75 are 142.5, 257, and 452.5.
 
-These cohort outcomes are not a calibration acceptance result. The large shift
-from herds/animal receipts toward fields/plant receipts is a semantic-repair
-consequence under current returns and should be assessed in a later calibration
-pass. It was not hidden by changing productivity, breeding, shelter values,
-inertia or caps here.
+### Movement and physical settlement outcomes
+
+Across the 200 measured world-turns there were 490 moves. At the final boundary:
+
+- 475 villages had never moved, providing a conservative physical proxy for
+  sedentary settlements;
+- 102 non-villages had moved at least once and 66 had moved more than once,
+  demonstrating persistent mobile outcomes without a lifestyle enum; and
+- 0 village-to-camp transitions occurred in this sample. The focused pastoral
+  fixture separately proves that abandoning weak capital remains possible.
+
+The five final-world counts by seed were:
+
+| Seed | Villages / other camps | Never-moved villages | Moved non-villages | Multi-move non-villages |
+| ---: | ---: | ---: | ---: | ---: |
+| 11 | 98 / 107 | 85 | 23 | 15 |
+| 23 | 134 / 125 | 111 | 17 | 9 |
+| 47 | 103 / 179 | 87 | 25 | 18 |
+| 101 | 113 / 113 | 89 | 22 | 11 |
+| 1729 | 121 / 92 | 103 | 15 | 13 |
+
+### Economy, demography, and interaction totals
+
+Over the five measured runs:
+
+| Metric | Corrected total |
+| --- | ---: |
+| Plant / animal / aquatic food receipts | 508.983m / 56.699m / 6.642m |
+| Trades | 294 |
+| Migrants / accepted immigration events | 1,199 / 86 |
+| Fissions | 780 |
+| Herd slaughter / births / deaths | 2,149 / 152,075 / 31 |
+| Human births / deaths | 507,623 / 410 |
+
+Final states contained 5,972 operated field tiles with summed operating
+fraction 5,920.90, 150,303 livestock, and 532,015 humans (525,148 resident in
+the final camps and classified in the primary-technology diagnostic). At
+livestock-owner sites, reported zero-displacement and absolute capacity happened
+to bind at the same aggregate value in these natural worlds; focused fixtures
+exercise the distinct forage bounds directly.
+
+Primary technology is retained only as a diagnostic label. Pooled final states
+were 454 husbandry-primary settlements (177,719 residents, weighted QoL
+0.8572), 712 cultivation-primary settlements (339,661 residents, weighted QoL
+0.8675), and 19 watercraft-primary settlements (7,768 residents, weighted QoL
+0.8961). These are not planner modes.
+
+### Secondary-capability discontinuity audit
+
+The five traces contained 119 secondary-Husbandry acquisitions. Every acquiring
+camp owned zero livestock; all produced zero Herders and zero tents immediately
+after acquisition. Ninety-seven already had fixed shelter and none switched
+from fixed shelter to tents. The exact clone regression establishes causality:
+changing only the flag changes no plan or move.
+
+There were 101 secondary-Cultivation acquisitions in husbandry-primary camps.
+None assigned a Farmer immediately merely because the flag appeared; 93 kept
+the same Herder count. The mobile subset continued its pre-existing movement
+sequence rather than becoming sedentary. Capability can enable a later demanded
+action, but the acquisition itself no longer selects strategy.
 
 ## Performance and work bound
 
-Three alternating before/after timing pairs used the same seed-1729 opening
-save, 80 settlements, four workers and 25 post-opening turns, with diagnostics,
-fingerprints and counters off. Medians across the three process runs:
+The full-system counter totals are normalized by the actual 25,472 pre-refactor
+and 22,100 corrected camp-turns:
 
-| Metric | Before | After | After / before |
+| Metric per camp-turn | Pre-refactor | Corrected | Corrected / pre |
 | --- | ---: | ---: | ---: |
-| 25-turn total | 5,151.8 ms | 5,167.9 ms | 1.003 |
-| Median turn | 204.2 ms | 160.6 ms | 0.786 |
-| P95 turn | 332.8 ms | 318.5 ms | 0.957 |
-| AI total | 1,937.2 ms | 1,968.7 ms | 1.016 |
-| Prepare total | 1,028.1 ms | 1,044.1 ms | 1.016 |
-| Execute total | 2,178.3 ms | 2,089.0 ms | 0.959 |
-| Allocated bytes | 2.489 GB | 2.580 GB | 1.037 |
+| AI time | 0.428 ms | 0.420 ms | 0.98 |
+| Prepare time | 0.361 ms | 0.461 ms | 1.28 |
+| Execute time | 0.819 ms | 0.866 ms | 1.06 |
+| Allocated bytes | 1.031 MB | 1.295 MB | 1.26 |
+| Food forecast queries | 60.86 | 138.53 | 2.28 |
+| Planner tile projections | 9.12 | 5.55 | 0.61 |
+| Expansion ladder builds | 0.261 | 0.802 | 3.07 |
 
-The behavioral paths diverge after the shared checkpoint, so these are matched
-input gameplay timings rather than an identical-work microbenchmark. They show
-no runtime blow-up. In the counter-enabled 3-world run, maximum per-turn
-planner tile projections fell from 645 to 373. The current 80-tribe scale run
-completed 10 opening turns with exact scalar/worker replay (`total AI 592.0
-ms`, `total resolve 976.6 ms`).
-
-The stronger bound is structural and test-pinned: each local envelope surveys
-at most seven tiles, movement considers a fixed-radius candidate set, and the
-portfolio supervisor checks fewer than 40 breakpoints. None scale with elapsed
-years, population, field count times herd count, or a population × field × herd
-Cartesian product.
+The corrected planner performs more bounded forecast/ladder work and allocates
+more memory, but AI time per camp-turn is slightly lower; there is no runtime
+blow-up. The structural bound is test-pinned: the local envelope surveys at
+most seven tiles and the joint supervisor evaluates at most 64 alternatives
+for both 120 and 10,000 residents. The independent scale check likewise has
+84 tile forecasts and 210 herd choices at both 1,000 and 10,000 residents.
+There is no year loop, global optimizer, or population x field x herd search.
 
 ## Remaining selector audit
 
-No remaining current DemandControl, camp-movement, shelter or fission regime
-path selects strategy from primary technology, `Agriculture`, `Husbandry`,
-`Fishing` or `IsVillage` as an economic identity.
+No current DemandControl, shelter, movement, or fission-regime path selects an
+economic strategy from primary technology.
 
-The remaining nearby reads are capability or physical-state reads:
+Nearby reads that remain are capability or physical-state reads:
 
-- `CultivationEconomy.Enabled` / `HusbandryEnabled`, recipe filters,
-  `EconomicIntents` validation and `ActionContract` expose feasible actions.
+- `Agents.cs` checks cultivation or husbandry only to decide whether the camp
+  can use automatic Neolithic economy actions. Inside that path, animals,
+  fields, Housing, and `IsVillage` are physical/sunk-capital terms.
+- recipe filters and intent validation use Cultivation, Husbandry, Fishing, or
+  learned technologies to expose feasible actions; they do not choose a mode.
 - `OpeningTransitions` uses the first breakthrough only for the once-only
-  compatibility reward. Secondary discovery only adds the capability flag and
-  never replays it.
-- `TurnPlanning.AutomaticIntent` asks for a breeding recommendation only when
-  Husbandry and living owned animals both exist.
-- `Fission.DaughterShelter` uses capabilities to expose build recipes; carried
-  shelter, inputs and labor still bound the result. `Fission.RegimeOf` now uses
-  era plus actual owned field capital.
-- `IsVillage` remains where it denotes physical sunk settlement state:
-  abandonment/release, village transition, cohesion/fission terms and the
-  immigration barrier. It does not mean “run Agriculture AI.”
-- contact-memory and save-migration checks use era/technology status, not an
-  economic strategy.
+  opening reward. Secondary acquisition does not replay it.
+- `Fission.RegimeOf` retains legacy result names `Agricultural` and `Nomadic`,
+  but chooses them from era and owned field capital, never primary technology.
+- `IsVillage` remains for physical abandonment, cohesion, fission, and
+  immigration state. It does not mean "run Agriculture AI."
+
+Husbandry diffusion, proximity taming, and live-animal trade remain deliberately
+outside this refactor.

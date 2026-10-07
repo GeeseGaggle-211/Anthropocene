@@ -251,7 +251,7 @@ internal static class HousingMaterialRecipeChecks
         var observed = new AgentObservationBuilder().Build(w, own.Player);
         string json = ObservationContract.Serialize(observed, own.People.Mandate);
         var dto = ObservationContract.Deserialize(json);
-        Check(AgentObservation.SchemaVersion == 19 && dto.Schema == 19, "observation schema is 19");
+        Check(AgentObservation.SchemaVersion == 20 && dto.Schema == 20, "observation schema is 20");
         Near(dto.Settlements.Single(s => s.Id == own.Id).HousingMaterial, 2.75, "owned Housing Material stock is exposed");
         Check(dto.Settlements.All(s => s.Id != rival.Id) && !json.Contains("6543.5"), "foreign Housing Material stays private");
         Near(observed.Settlements.Single(s => s.Id == own.Id).HousingMaterial, 2.75, "the in-process observation exposes the same stock");

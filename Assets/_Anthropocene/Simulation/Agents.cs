@@ -117,17 +117,20 @@ namespace Anthropocene.Simulation
         public readonly int Tile;
         public readonly double HumanFood, HumanFoodAfterHerd;
         public readonly double HerdForage, HerdAbsolute, HerdWater;
-        public readonly double FixedShelter, RecurringLabor;
+        public readonly double FixedShelter, RecurringLabor,
+            AbsoluteRecurringLabor;
         public SiteCoverageObservation(int tile, double humanFood,
             double humanFoodAfterHerd, double herdForage,
             double herdAbsolute, double herdWater,
-            double fixedShelter, double recurringLabor)
+            double fixedShelter, double recurringLabor,
+            double absoluteRecurringLabor)
         {
             Tile = tile; HumanFood = humanFood;
             HumanFoodAfterHerd = humanFoodAfterHerd;
             HerdForage = herdForage; HerdAbsolute = herdAbsolute;
             HerdWater = herdWater; FixedShelter = fixedShelter;
             RecurringLabor = recurringLabor;
+            AbsoluteRecurringLabor = absoluteRecurringLabor;
         }
     }
     // Expected three-turn benefit from retained own visible fields, and the
@@ -161,7 +164,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 19;
+        public const int SchemaVersion = 20;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
@@ -268,11 +271,16 @@ namespace Anthropocene.Simulation
             return new SiteCoverageObservation(site,
                 Quantize(siteEvaluation.HumanFood / humanNeed),
                 Quantize(siteEvaluation.HumanFoodAfterAbsoluteHerd / humanNeed),
-                herd.Exists ? Quantize(siteEvaluation.Herd.ZeroDisplacementForageCapacity / herd.Animals) : 3,
-                herd.Exists ? Quantize(siteEvaluation.Herd.AbsoluteForageCapacity / herd.Animals) : 3,
+                herd.Exists ? Quantize(siteEvaluation.SustainableHerdCapacity /
+                    herd.Animals) : 3,
+                herd.Exists ? Quantize(siteEvaluation.AbsoluteHerdCapacity /
+                    herd.Animals) : 3,
                 herd.Exists ? Quantize(siteEvaluation.Herd.WaterCapacity / herd.Animals) : 3,
                 Quantize(fixedPeople / Math.Max(1, people)),
-                Quantize(siteEvaluation.RequiredRecurringLabor / Math.Max(1, camp.Population)));
+                Quantize(siteEvaluation.RequiredRecurringLabor /
+                    Math.Max(1, camp.Population)),
+                Quantize(siteEvaluation.AbsoluteRecurringLabor /
+                    Math.Max(1, camp.Population)));
         }
         private static AgriculturalSiteObservation[] AgriculturalCandidates(WorldState world, Camp camp,
             PlanningIndex index, HashSet<int> visible)
@@ -512,8 +520,16 @@ namespace Anthropocene.Simulation
                 // housing, fishing access and livestock. Capabilities determine
                 // which terms exist; they never select a movement policy.
                 var stay = o.SiteCoverage.First(s => s.Tile == o.CampTile);
-                double stayHerd = ownedAnimals > 0
+                double sustainableStayHerd = ownedAnimals > 0
                     ? Math.Min(1, Math.Min(stay.HerdForage, stay.HerdWater)) : 0;
+                double absoluteStayHerd = ownedAnimals > 0
+                    ? Math.Min(1, Math.Min(stay.HerdAbsolute, stay.HerdWater)) : 0;
+                double sustainableStayValue = stay.HumanFood +
+                    sustainableStayHerd - stay.RecurringLabor;
+                double absoluteStayValue = stay.HumanFoodAfterHerd +
+                    absoluteStayHerd - stay.AbsoluteRecurringLabor;
+                double stayValue = Math.Max(sustainableStayValue,
+                    absoluteStayValue);
                 foreach (var site in o.SiteCoverage.OrderBy(s => s.Tile))
                 {
                     int n = site.Tile;
@@ -525,27 +541,35 @@ namespace Anthropocene.Simulation
                         continue;
                     }
                     agricultural.TryGetValue(n, out var candidateFields);
-                    double moveHerd = ownedAnimals > 0
+                    double sustainableMoveHerd = ownedAnimals > 0
+                        ? Math.Min(1, Math.Min(site.HerdForage, site.HerdWater)) : 0;
+                    double absoluteMoveHerd = ownedAnimals > 0
                         ? Math.Min(1, Math.Min(site.HerdAbsolute, site.HerdWater)) : 0;
-                    // The herd term is deliberately a delta: moving earns only
-                    // animals preserved beyond the stay option (or pays for a
-                    // loss), never the value of the whole herd a second time.
-                    double herdDelta = moveHerd - stayHerd;
-                    double humanDelta = site.HumanFoodAfterHerd - stay.HumanFood;
+                    // Each site gets the same two physical alternatives. The
+                    // absolute option pays both its human-food displacement and
+                    // its own management work. Comparing the best portfolio on
+                    // each side values only extra livestock preserved by moving,
+                    // never the destination's whole herd against a herdless stay.
+                    double sustainableMoveValue = site.HumanFood +
+                        sustainableMoveHerd - site.RecurringLabor;
+                    double absoluteMoveValue = site.HumanFoodAfterHerd +
+                        absoluteMoveHerd - site.AbsoluteRecurringLabor;
+                    double settlementOpportunity = Math.Max(
+                        sustainableMoveValue, absoluteMoveValue) - stayValue;
                     double fixedLoss = Math.Max(0, stay.FixedShelter - site.FixedShelter);
                     double fieldLoss = currentFields == null ? 0
                         : Math.Max(0, currentFields.ManagedRecoveryCoverage -
                             (candidateFields?.ManagedRecoveryCoverage ?? 0)) +
-                          (candidateFields?.LostRebuildBurden ?? currentFields.LostRebuildBurden);
-                    double laborBurden = Math.Max(0, site.RecurringLabor - stay.RecurringLabor);
+                          (candidateFields?.LostRebuildBurden ??
+                              currentFields.LostRebuildBurden);
                     // Inertia is continuity value, not a veto on survival.
                     // With no observed food support at all it contributes no
                     // retained service; actual field and shelter losses still
                     // remain priced below.
                     double relocationInertia = o.FoodCondition <= 0 ? 0 : o.Inertia;
                     double discontinuity = relocationInertia + fixedLoss +
-                        fieldLoss + laborBurden;
-                    double score = humanDelta + herdDelta - discontinuity;
+                        fieldLoss;
+                    double score = settlementOpportunity - discontinuity;
                     campCandidates.Add(new Candidate
                     {
                         Order = new Order(OrderKind.Move, o.CampId, destination: n),
