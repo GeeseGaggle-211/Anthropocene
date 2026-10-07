@@ -51,6 +51,21 @@ These values are not worker counts.
 
 A Python/framework adapter may flatten schema v1 for a small MLP experiment. Later set/token encoders should reuse the same semantic records rather than require the C# simulation to adopt ML-library data structures.
 
+## Fission environment baseline
+
+The RL branch uses `CurrentPlusExitOpportunity` as the default fission methodology:
+
+- `FissionExitThreshold = 0.05`
+- `FissionExitSearchFraction = 0.8`
+- existing crowding/stayer-gain remains active;
+- existing food/water distress remains active;
+- the relative exit channel uses `(1 - Q_home) * max(0, Q_daughter_expected - Q_home)`;
+- daughter opportunity is expectation-neutral for pressure, while actual post-move daughter QoL remains a viability veto.
+
+Fission is an environment/social process, not a direct Village Elder action in the first learned-supervisor experiment. A locally optimizing Elder therefore experiences population loss or redistribution when a subgroup has a credible better alternative. Newly founded daughters may initially run the conservative heuristic supervisor; later they can instantiate the same shared learned Elder policy with their own local observation and reward.
+
+The rejected absolute low-QoL trigger remains available only as an experimental comparator. It reproduced minimum-size fragmentation under the modern radius/spacing/daughter-viability machinery and is not the baseline.
+
 ## v1 / v2 curriculum
 
 **v1**: ordinary settlement strategy using the real simulation systems.
