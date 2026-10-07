@@ -225,8 +225,9 @@ namespace Anthropocene.Simulation
 
             // Movement happens once. Herd reproduction is realized before the generation's hunting harvest.
             var startingHerdPopulation = w.Herds.OrderBy(h => h.Id).ToDictionary(h => h.Id, h => h.Animals);
+            var taming = new List<HusbandryAcquisition.Opportunity>();
             ReproduceHerds(w, intervals, years);
-            Hunt(w, orders, establishedHunters, startingHerdPopulation, record, intervals, years, needs);
+            Hunt(w, orders, establishedHunters, startingHerdPopulation, record, intervals, years, needs, taming);
             foreach (var herd in w.Herds.Where(h => h.DomesticCamp < 0 && !w.Config.WildHerdFissionEnabled))
                 herd.Animals = Math.Min(herd.Animals, herd.Capacity);
             var demands = new List<Demand>();
@@ -382,6 +383,10 @@ namespace Anthropocene.Simulation
             LastMetrics.ProductionReceipts = record.Production.Count;
             ApplyStorage(w, record, intervals);
 
+            // Taming commits at the end boundary: captured animals were part of
+            // the wild herd's ecology this turn and become managed only for the
+            // next decision/production horizon.
+            HusbandryAcquisition.ResolveTaming(w, taming, record);
             if (w.Config.WildHerdFissionEnabled) SplitHerds(w, record);
             // Demographic losses are applied after this cohort has completed
             // production, needs and storage. They cannot reduce the workforce
