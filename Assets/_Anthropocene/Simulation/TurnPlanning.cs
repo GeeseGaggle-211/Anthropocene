@@ -191,6 +191,26 @@ namespace Anthropocene.Simulation
         // Every other input to the intent is the committed world itself.
         public static PreparedTurn Prepare(WorldState world, IReadOnlyDictionary<int, List<Order>> submitted,
             IEnumerable<DecisionTrace> traces, PhaseExecution execution, PlanningDraft draft)
+            => PrepareCore(world, submitted, traces, execution, draft, null);
+
+        // Headless strategy audit seam. The supplied selector replaces only
+        // DemandControl's bounded Development-ray choice; all placement,
+        // production, needs and resolver preparation remains the production
+        // path. Runtime callers cannot reach this internal entry point.
+        internal static PreparedTurn PrepareWithDevelopmentSearch(
+            WorldState world,
+            IReadOnlyDictionary<int, List<Order>> submitted,
+            DemandController.DevelopmentSearch developmentSearch,
+            PhaseExecution execution = null)
+            => PrepareCore(world, submitted, null, execution, null,
+                developmentSearch ?? throw new ArgumentNullException(
+                    nameof(developmentSearch)));
+
+        private static PreparedTurn PrepareCore(WorldState world,
+            IReadOnlyDictionary<int, List<Order>> submitted,
+            IEnumerable<DecisionTrace> traces, PhaseExecution execution,
+            PlanningDraft draft,
+            DemandController.DevelopmentSearch developmentSearch)
         {
             if (world == null || submitted == null) throw new ArgumentNullException(world == null ? nameof(world) : nameof(submitted));
             using var profile = PhaseProfile.Scope("Prepare");
@@ -260,7 +280,8 @@ namespace Anthropocene.Simulation
                 }
                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
                 fishingAccess.TryGetValue(camp.Id, out var access);
-                return AutomaticIntent(world, camp, effectiveTile, abandoning, index, trade, access);
+                return AutomaticIntent(world, camp, effectiveTile, abandoning,
+                    index, trade, access, developmentSearch);
             });
             intentsScope.Dispose();
             for (int i = 0; i < automated.Length; i++)
@@ -306,7 +327,8 @@ namespace Anthropocene.Simulation
         // Dispatch does not suppress automation. Shared by Prepare and Draft
         // so both run literally the same code. Pure over the committed world.
         private static AutomaticPlan AutomaticIntent(WorldState world, Camp camp, int effectiveTile, bool abandoning,
-            PlanningIndex index, TradePlan trade, FishingAccessPlan fishingAccess)
+            PlanningIndex index, TradePlan trade, FishingAccessPlan fishingAccess,
+            DemandController.DevelopmentSearch developmentSearch = null)
         {
             using var profile = PhaseProfile.Scope("Intent");
             var planningCamp = PlanningCampAt(camp, effectiveTile, trade);
@@ -319,8 +341,14 @@ namespace Anthropocene.Simulation
             // manual assignments remain the player's responsibility.
             ProductionOrder production = null;
             EconomicIntent intent;
-            using (PhaseProfile.Scope("Allocator")) intent = abandoning ? settings.Copy()
-                : EconomicAllocationStrategy.Plan(world, planningCamp, settings, fishingAccess, out production);
+            using (PhaseProfile.Scope("Allocator")) intent = abandoning
+                ? settings.Copy()
+                : developmentSearch != null &&
+                    EconomicAllocationStrategy.IsDemandControl(world.Config)
+                    ? DemandController.Plan(world, planningCamp, settings,
+                        fishingAccess, out production, out _, developmentSearch)
+                    : EconomicAllocationStrategy.Plan(world, planningCamp,
+                        settings, fishingAccess, out production);
             if (abandoning)
             {
                 intent.Assignments.Clear();

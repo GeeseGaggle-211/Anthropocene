@@ -93,17 +93,72 @@ namespace Anthropocene.Simulation
                 DevelopmentAlternatives;
             public double FieldMarginalReturn, HerdMarginalReturn,
                 FarmerRayReturn, HerderRayReturn, BalancedMarginalReturn,
-                DefaultLaborReturn;
+                DefaultLaborReturn, SelectedDevelopmentUseful,
+                SelectedDevelopmentWork, SelectedFieldBudget,
+                SelectedHerdBudget;
             public string SelectedDevelopmentRay = "none";
             public readonly Dictionary<CraftGood, double> Ceilings = new Dictionary<CraftGood, double>();
             public string FoodUnmet = ""; public int RepairPasses;
         }
 
+        // Diagnostic-only strategy seam. Production calls Plan without a
+        // selector and therefore keeps the bounded coarse search. Headless
+        // audits may enumerate a slow reference frontier through Evaluate;
+        // every returned choice still uses this planner's exact request,
+        // feasibility, useful-service and downstream compilation paths.
+        internal sealed class DevelopmentChoice
+        {
+            internal readonly Dictionary<Request, double> Grants;
+            public readonly double FieldBudget, HerdBudget, Useful,
+                PricedWork;
+            public readonly bool Feasible;
+
+            internal DevelopmentChoice(Dictionary<Request, double> grants,
+                double fieldBudget, double herdBudget, double useful,
+                double pricedWork, bool feasible)
+            {
+                Grants = grants ?? new Dictionary<Request, double>();
+                FieldBudget = fieldBudget; HerdBudget = herdBudget;
+                Useful = useful; PricedWork = pricedWork;
+                Feasible = feasible;
+            }
+
+            public double Return => PricedWork > Epsilon
+                ? Useful / PricedWork : Useful > Epsilon
+                    ? double.PositiveInfinity : 0;
+        }
+
+        internal sealed class DevelopmentSearchContext
+        {
+            public readonly int Residents, StrategicLaborStep;
+            public readonly IReadOnlyList<Request> FieldRequests,
+                HerdRequests;
+            private readonly Func<double, double, DevelopmentChoice> evaluate;
+
+            internal DevelopmentSearchContext(int residents,
+                int strategicLaborStep, IReadOnlyList<Request> fieldRequests,
+                IReadOnlyList<Request> herdRequests,
+                Func<double, double, DevelopmentChoice> evaluate)
+            {
+                Residents = residents;
+                StrategicLaborStep = strategicLaborStep;
+                FieldRequests = fieldRequests; HerdRequests = herdRequests;
+                this.evaluate = evaluate;
+            }
+
+            public DevelopmentChoice Evaluate(double fieldPeople,
+                double herdPeople) => evaluate(fieldPeople, herdPeople);
+        }
+
+        internal delegate DevelopmentChoice DevelopmentSearch(
+            DevelopmentSearchContext context);
+
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, out ProductionOrder production, out Allocation allocation)
             => Plan(w, c, settings, null, out production, out allocation);
 
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, FishingAccessPlan fishingAccess,
-            out ProductionOrder production, out Allocation allocation)
+            out ProductionOrder production, out Allocation allocation,
+            DevelopmentSearch developmentSearch = null)
         {
             production = null; var alloc = new Allocation(); allocation = alloc;
             var e = settings.Copy(); e.Assignments.Clear(); e.Labor = null;
@@ -1187,6 +1242,43 @@ namespace Anthropocene.Simulation
                     ? grants.TryGetValue(q, out double units) ? units : 0
                     : q.Class == ServiceClass.Development ? 0 : q.Granted) == null;
 
+            DevelopmentChoice EvaluateAbsolute(double fieldBudget,
+                double herdBudget)
+            {
+                fieldBudget = Math.Max(0, fieldBudget);
+                herdBudget = Math.Max(0, herdBudget);
+                var proposed = RayPrefix(fieldBudget, herdBudget);
+                if (!RayFeasible(proposed))
+                {
+                    Dictionary<Request, double> Scale(double share)
+                    {
+                        var clipped = new Dictionary<Request, double>();
+                        foreach (var pair in proposed)
+                        {
+                            double units = pair.Value * share;
+                            if (pair.Key.WholeUnits)
+                                units = Math.Floor(units + Epsilon);
+                            if (units > Epsilon)
+                                clipped[pair.Key] = units;
+                        }
+                        return clipped;
+                    }
+                    double low = 0, high = 1;
+                    for (int iteration = 0; iteration < 20; iteration++)
+                    {
+                        double middle = (low + high) * .5;
+                        if (RayFeasible(Scale(middle))) low = middle;
+                        else high = middle;
+                    }
+                    proposed = Scale(low);
+                }
+                bool feasible = RayFeasible(proposed);
+                var budgets = RayCurrentBudgets(proposed);
+                return new DevelopmentChoice(proposed, budgets.Field,
+                    budgets.Herd, RayUsefulFood(proposed),
+                    RayPricedWork(proposed), feasible);
+            }
+
             // Walk one bounded strategic prefix. At each coarse increment the
             // Elder compares Farmer, Herder and real 50/50 additions from the
             // same already accepted portfolio. Ranking incremental useful
@@ -1198,111 +1290,145 @@ namespace Anthropocene.Simulation
             var acceptedRay = new Dictionary<Request, double>();
             double acceptedFieldBudget = 0, acceptedHerdBudget = 0;
             double acceptedUseful = 0, acceptedPricedWork = 0;
-            int strategicRounds = residents > 0
-                ? Math.Max(1, (int)Math.Ceiling((double)residents /
-                    portfolio.StrategicLaborStep - Epsilon)) : 0;
-            for (int round = 0; round < strategicRounds; round++)
+            if (developmentSearch != null)
             {
-                double remaining = Math.Max(0, residents -
-                    acceptedFieldBudget - acceptedHerdBudget);
-                if (!(remaining > Epsilon)) break;
-                double increment = Math.Min(
-                    portfolio.StrategicLaborStep, remaining);
-                var candidates = new List<(string Ray,
-                    Dictionary<Request, double> Grants, double FieldBudget,
-                    double HerdBudget, double Useful, double PricedWork,
-                    double MarginalReturn)>();
-
-                void ConsiderIncrement(string ray, double addField,
-                    double addHerd)
+                var context = new DevelopmentSearchContext(residents,
+                    portfolio.StrategicLaborStep,
+                    fieldDevelopment.AsReadOnly(),
+                    herdDevelopment.AsReadOnly(), EvaluateAbsolute);
+                var selected = developmentSearch(context) ??
+                    EvaluateAbsolute(0, 0);
+                bool valid = selected.Feasible &&
+                    selected.Grants.All(pair => rayRequests.Contains(pair.Key) &&
+                        pair.Value >= -Epsilon &&
+                        pair.Value <= pair.Key.Units + Epsilon) &&
+                    RayFeasible(selected.Grants);
+                if (!valid)
+                    throw new InvalidOperationException(
+                        "Diagnostic Development search returned an invalid choice.");
+                var budgets = RayCurrentBudgets(selected.Grants);
+                acceptedRay = new Dictionary<Request, double>(
+                    selected.Grants);
+                acceptedFieldBudget = budgets.Field;
+                acceptedHerdBudget = budgets.Herd;
+                acceptedUseful = RayUsefulFood(acceptedRay);
+                acceptedPricedWork = RayPricedWork(acceptedRay);
+            }
+            else
+            {
+                int strategicRounds = residents > 0
+                    ? Math.Max(1, (int)Math.Ceiling((double)residents /
+                        portfolio.StrategicLaborStep - Epsilon)) : 0;
+                for (int round = 0; round < strategicRounds; round++)
                 {
-                    double fieldBudget = acceptedFieldBudget + addField;
-                    double herdBudget = acceptedHerdBudget + addHerd;
-                    var grants = RayPrefix(fieldBudget, herdBudget);
-                    bool changed = grants.Any(pair =>
-                        !acceptedRay.TryGetValue(pair.Key, out double prior) ||
-                        pair.Value > prior + Epsilon);
-                    if (!changed) return;
-                    if (!RayFeasible(grants))
+                    double remaining = Math.Max(0, residents -
+                        acceptedFieldBudget - acceptedHerdBudget);
+                    if (!(remaining > Epsilon)) break;
+                    double increment = Math.Min(
+                        portfolio.StrategicLaborStep, remaining);
+                    var candidates = new List<(string Ray,
+                        Dictionary<Request, double> Grants,
+                        double FieldBudget, double HerdBudget, double Useful,
+                        double PricedWork, double MarginalReturn)>();
+
+                    void ConsiderIncrement(string ray, double addField,
+                        double addHerd)
                     {
-                        Dictionary<Request, double> Interpolate(double share)
-                        {
-                            var clipped = new Dictionary<Request, double>();
-                            foreach (var pair in grants)
-                            {
-                                acceptedRay.TryGetValue(pair.Key,
-                                    out double prior);
-                                double units = prior +
-                                    (pair.Value - prior) * share;
-                                if (pair.Key.WholeUnits)
-                                    units = Math.Floor(units + Epsilon);
-                                if (units > Epsilon)
-                                    clipped[pair.Key] = units;
-                            }
-                            return clipped;
-                        }
-                        double low = 0, high = 1;
-                        for (int iteration = 0; iteration < 16; iteration++)
-                        {
-                            double middle = (low + high) * .5;
-                            var clipped = Interpolate(middle);
-                            if (RayFeasible(clipped)) low = middle;
-                            else high = middle;
-                        }
-                        grants = Interpolate(low);
-                        changed = grants.Any(pair =>
+                        double fieldBudget = acceptedFieldBudget + addField;
+                        double herdBudget = acceptedHerdBudget + addHerd;
+                        var grants = RayPrefix(fieldBudget, herdBudget);
+                        bool changed = grants.Any(pair =>
                             !acceptedRay.TryGetValue(pair.Key,
                                 out double prior) ||
                             pair.Value > prior + Epsilon);
-                        if (!changed || !RayFeasible(grants)) return;
+                        if (!changed) return;
+                        if (!RayFeasible(grants))
+                        {
+                            Dictionary<Request, double> Interpolate(
+                                double share)
+                            {
+                                var clipped = new Dictionary<Request, double>();
+                                foreach (var pair in grants)
+                                {
+                                    acceptedRay.TryGetValue(pair.Key,
+                                        out double prior);
+                                    double units = prior +
+                                        (pair.Value - prior) * share;
+                                    if (pair.Key.WholeUnits)
+                                        units = Math.Floor(units + Epsilon);
+                                    if (units > Epsilon)
+                                        clipped[pair.Key] = units;
+                                }
+                                return clipped;
+                            }
+                            double low = 0, high = 1;
+                            for (int iteration = 0; iteration < 16;
+                                iteration++)
+                            {
+                                double middle = (low + high) * .5;
+                                var clipped = Interpolate(middle);
+                                if (RayFeasible(clipped)) low = middle;
+                                else high = middle;
+                            }
+                            grants = Interpolate(low);
+                            changed = grants.Any(pair =>
+                                !acceptedRay.TryGetValue(pair.Key,
+                                    out double prior) ||
+                                pair.Value > prior + Epsilon);
+                            if (!changed || !RayFeasible(grants)) return;
+                        }
+                        var currentBudgets = RayCurrentBudgets(grants);
+                        fieldBudget = currentBudgets.Field;
+                        herdBudget = currentBudgets.Herd;
+                        double useful = RayUsefulFood(grants);
+                        double pricedWork = RayPricedWork(grants);
+                        double addedUseful = useful - acceptedUseful;
+                        double addedWork = pricedWork - acceptedPricedWork;
+                        if (!(addedUseful > Epsilon) || addedWork < -Epsilon)
+                            return;
+                        double value = addedWork > Epsilon
+                            ? addedUseful / (addedWork * years)
+                            : double.PositiveInfinity;
+                        alloc.DevelopmentAlternatives++;
+                        if (ray == "farmers")
+                            alloc.FarmerRayReturn = Math.Max(
+                                alloc.FarmerRayReturn, value);
+                        else if (ray == "herders")
+                            alloc.HerderRayReturn = Math.Max(
+                                alloc.HerderRayReturn, value);
+                        else
+                            alloc.BalancedMarginalReturn = Math.Max(
+                                alloc.BalancedMarginalReturn, value);
+                        candidates.Add((ray, grants, fieldBudget, herdBudget,
+                            useful, pricedWork, value));
                     }
-                    var currentBudgets = RayCurrentBudgets(grants);
-                    fieldBudget = currentBudgets.Field;
-                    herdBudget = currentBudgets.Herd;
-                    double useful = RayUsefulFood(grants);
-                    double pricedWork = RayPricedWork(grants);
-                    double addedUseful = useful - acceptedUseful;
-                    double addedWork = pricedWork - acceptedPricedWork;
-                    if (!(addedUseful > Epsilon) || addedWork < -Epsilon)
-                        return;
-                    double value = addedWork > Epsilon
-                        ? addedUseful / (addedWork * years)
-                        : double.PositiveInfinity;
-                    alloc.DevelopmentAlternatives++;
-                    if (ray == "farmers")
-                        alloc.FarmerRayReturn = Math.Max(
-                            alloc.FarmerRayReturn, value);
-                    else if (ray == "herders")
-                        alloc.HerderRayReturn = Math.Max(
-                            alloc.HerderRayReturn, value);
-                    else
-                        alloc.BalancedMarginalReturn = Math.Max(
-                            alloc.BalancedMarginalReturn, value);
-                    candidates.Add((ray, grants, fieldBudget, herdBudget,
-                        useful, pricedWork, value));
-                }
 
-                ConsiderIncrement("farmers", increment, 0);
-                ConsiderIncrement("herders", 0, increment);
-                ConsiderIncrement("balanced", increment * .5,
-                    increment * .5);
-                var selected = candidates
-                    .OrderByDescending(candidate =>
-                        candidate.MarginalReturn)
-                    .ThenByDescending(candidate =>
-                        candidate.Useful - acceptedUseful)
-                    .ThenBy(candidate => candidate.PricedWork -
-                        acceptedPricedWork)
-                    .ThenBy(candidate => candidate.Ray,
-                        StringComparer.Ordinal)
-                    .FirstOrDefault();
-                if (selected.Grants == null) break;
-                acceptedRay = selected.Grants;
-                acceptedFieldBudget = selected.FieldBudget;
-                acceptedHerdBudget = selected.HerdBudget;
-                acceptedUseful = selected.Useful;
-                acceptedPricedWork = selected.PricedWork;
+                    ConsiderIncrement("farmers", increment, 0);
+                    ConsiderIncrement("herders", 0, increment);
+                    ConsiderIncrement("balanced", increment * .5,
+                        increment * .5);
+                    var selected = candidates
+                        .OrderByDescending(candidate =>
+                            candidate.MarginalReturn)
+                        .ThenByDescending(candidate =>
+                            candidate.Useful - acceptedUseful)
+                        .ThenBy(candidate => candidate.PricedWork -
+                            acceptedPricedWork)
+                        .ThenBy(candidate => candidate.Ray,
+                            StringComparer.Ordinal)
+                        .FirstOrDefault();
+                    if (selected.Grants == null) break;
+                    acceptedRay = selected.Grants;
+                    acceptedFieldBudget = selected.FieldBudget;
+                    acceptedHerdBudget = selected.HerdBudget;
+                    acceptedUseful = selected.Useful;
+                    acceptedPricedWork = selected.PricedWork;
+                }
             }
+            alloc.SelectedDevelopmentUseful = acceptedUseful;
+            alloc.SelectedDevelopmentWork = acceptedPricedWork;
+            alloc.SelectedFieldBudget = acceptedFieldBudget;
+            alloc.SelectedHerdBudget = acceptedHerdBudget;
             foreach (var pair in acceptedRay)
                 developmentRayLimits[pair.Key] = pair.Value;
 

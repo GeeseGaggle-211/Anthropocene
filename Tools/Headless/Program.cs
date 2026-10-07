@@ -235,6 +235,7 @@ internal static class Program
     }
     private static int Main(string[] args)
     {
+        if (args.Contains("--economic-allocation-oracle")) { EconomicAllocationOracleChecks.Run(args); return 0; }
         if (args.Contains("--economic-settlement-probe")) { EconomicSettlementChecks.Probe(); return 0; }
         if (args.Contains("--issue31-microbench")) { Issue31Microbench(); return 0; }
         if (args.Contains("--foundation-only")) { Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); return 0; }

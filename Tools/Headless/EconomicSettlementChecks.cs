@@ -161,6 +161,21 @@ internal static class EconomicSettlementChecks
         return world;
     }
 
+    // Stable state-bank inputs for the allocator strategy audit. Keeping the
+    // audit on the same fixtures as A-I prevents a second, subtly different
+    // interpretation of field capital, shelter and local herd support.
+    internal static WorldState DiagnosticVillage(int animals,
+        bool husbandry = true, Technology primary = Technology.Cultivation,
+        bool fields = true, double housing = 30, bool village = true)
+        => Village(animals, husbandry, primary, fields, housing, village);
+
+    internal static WorldState DiagnosticProductiveVillage(int animals = 8)
+        => ProductiveVillage(animals);
+
+    internal static WorldState DiagnosticMobileMixed(bool cultivation,
+        bool productive = false, int animals = 80)
+        => MobileMixed(cultivation, productive, animals);
+
     private static Order Movement(WorldState world)
     {
         var camp = world.Camps.OrderBy(c => c.Id).First();
@@ -434,6 +449,9 @@ internal static class EconomicSettlementChecks
         }
         return world;
     }
+
+    internal static WorldState DiagnosticPastoralOpportunity(
+        Technology primary) => PastoralOpportunity(primary);
 
     private static void LegitimatePastoralMovement()
     {
