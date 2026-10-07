@@ -331,32 +331,39 @@ namespace Anthropocene.Simulation
             if (world == null || !(world.Config.HusbandryProximityPracticePerYear > 0)) return 0;
             double years = Math.Max(0, world.Config.TurnDays / world.Config.DaysPerYear);
             if (!(years > 0)) return 0;
+            // O(H + C + local contacts), apart from canonical sorting. The old
+            // society-by-all-herds scan was not suitable for mature RL worlds.
+            var byTile = world.Herds.Where(h => h.Animals > 0 &&
+                    world.Config.GetSpecies(h.Species).Domesticable)
+                .OrderBy(h => h.Id).ToLookup(h => h.Tile);
+            var campsBySociety = world.Camps.Where(c => c.Population > 0)
+                .OrderBy(c => c.Id).ToLookup(c => c.SocietyId);
             double totalCredited = 0;
-            var domesticable = world.Herds.Where(h => h.Animals > 0 && world.Config.GetSpecies(h.Species).Domesticable)
-                .OrderBy(h => h.Id).ToArray();
-
-            foreach (var society in world.Societies.OrderBy(s => s.Id))
+            foreach (var society in world.Societies.Where(s => s.Progression.Era == Era.Neolithic)
+                .OrderBy(s => s.Id))
             {
-                var camps = world.Camps.Where(c => c.SocietyId == society.Id && world.LinkedPopulation(c) > 0)
-                    .OrderBy(c => c.Id).ToArray();
-                if (camps.Length == 0) continue;
+                var seen = new HashSet<int>();
                 var bySpecies = new Dictionary<string, double>(StringComparer.Ordinal);
-                foreach (var herd in domesticable)
-                {
-                    if (herd.DomesticCamp >= 0 && herd.OwnerSociety == society.Id) continue;
-                    bool nearby = camps.Any(c => world.Map.Distance(c.Tile, herd.Tile) <= 1);
-                    if (!nearby) continue;
-                    double weight = herd.Animals * (herd.DomesticCamp >= 0
-                        ? world.Config.HusbandryDomesticExposureMultiplier : 1);
-                    bySpecies[herd.Species] = (bySpecies.TryGetValue(herd.Species, out double prior) ? prior : 0) + weight;
-                }
-                double weightedAnimals = bySpecies.Values.Sum();
+                foreach (var camp in campsBySociety[society.Id])
+                    foreach (int tile in world.Map.Radius(camp.Tile, 1))
+                        foreach (var herd in byTile[tile])
+                        {
+                            if (herd.DomesticCamp >= 0 && herd.OwnerSociety == society.Id ||
+                                !seen.Add(herd.Id)) continue;
+                            double weight = herd.Animals * (herd.DomesticCamp >= 0
+                                ? world.Config.HusbandryDomesticExposureMultiplier : 1);
+                            bySpecies[herd.Species] = (bySpecies.TryGetValue(herd.Species,
+                                out double prior) ? prior : 0) + weight;
+                        }
+                var species = bySpecies.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray();
+                double weightedAnimals = species.Sum(p => p.Value);
                 if (!(weightedAnimals > 0)) continue;
                 double amount = years * world.Config.HusbandryProximityPracticePerYear *
                     Math.Min(1, weightedAnimals / world.Config.HusbandryProximityReferenceAnimals);
                 if (!Holds(society, Technology.AnimalHusbandry))
-                    totalCredited += AddKnowledgeExposure(world, society, Domain.Hunting, amount, PracticeSource.Proximity);
-                foreach (var pair in bySpecies.OrderBy(p => p.Key, StringComparer.Ordinal))
+                    totalCredited += AddKnowledgeExposure(world, society, Domain.Hunting,
+                        amount, PracticeSource.Proximity);
+                foreach (var pair in species)
                     AddSpeciesExposure(society, pair.Key, amount * pair.Value / weightedAnimals);
             }
             return totalCredited;
