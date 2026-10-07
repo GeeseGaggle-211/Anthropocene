@@ -21,9 +21,15 @@ END = "<!-- CURRENT_CONFIG_TABLE:END -->"
 # JSON key -> (unit / meaning, status). Keep this registry small and purposeful:
 # it catches prose drift for current values that have historically conflicted.
 FIELDS = [
+    ('HusbandryProximityPracticePerYear', 'secondary Husbandry exposure per simulated year at full reference contact', '2.5 starting integration tuning; zero in saves without the field'),
+    ('HusbandryProximityReferenceAnimals', 'weighted local domesticable animals for full exposure', '20; radius-one contacts, deduplicated per society'),
+    ('HusbandryDomesticExposureMultiplier', 'relative weight of foreign managed animals', '2; own managed herds do not reteach their owner'),
+    ('TamingSpeciesPracticeThreshold', 'species familiarity needed for capture', '50 starting integration tuning; real local wild animals and Husbandry capability also required'),
+    ('HusbandryTamingEnabled', 'boolean: boundary-time physical livestock acquisition', 'true for new worlds; false in saves without the field; no retrospective products or invented animals'),
+
     ("SharedCropHerdAllocationEnabled", "boolean: joint food ledger, field-operation and bounded herd portfolio under the Value rule", "plan of record since 5 October 2026: true for new worlds; saves without the field load false"),
-    ("NeolithicFishingEnabled", "boolean: resident Watercraft Fishing and its shared goods-economy capability", "compatibility gate: false in the general opening and in saves missing the field"),
-    ("CorrectedAquaticSeasonalPressureEnabled", "boolean: capped seasonal-pressure allocation for aquatic claims", "separate compatibility gate: false in the general opening and in saves missing the field; required by resident Fishing"),
+    ('NeolithicFishingEnabled', 'boolean: resident Watercraft Fishing and shared goods Economy', 'enabled for new worlds on the mixed integration/RL lineage; absent old-save field remains false'),
+    ('CorrectedAquaticSeasonalPressureEnabled', 'boolean: capped seasonal aquatic-pressure allocation', 'enabled with resident Fishing for new worlds; absent old-save field remains false'),
     ("ReferenceTurnYears", "years per Neolithic reference turn", "reference scale"),
     ("MinimumCampSpacing", "hexes between resolved camp destinations", "shipped placement rule (saves without the field load 3)"),
     ("ContactExpiryTurns", "turns before an unrefreshed settlement contact is forgotten", "shipped contact-knowledge rule (saves without the field load 5)"),
@@ -31,8 +37,8 @@ FIELDS = [
     ("HinterlandRingsPerTurn", "rings of hinterland a camp gains per turn it stays on its tile (a move resets to VisionRadius)", "shipped hinterland lever (Docs/ContactKnowledge.md); saves without it load 1"),
     ("HinterlandMaxRadius", "largest hinterland radius in hexes, validated VisionRadius to 8 (at most 217 tiles marked per camp per turn)", "shipped hinterland lever, performance-bounded; saves without it load 6"),
     ("ExploredMemoryTurns", "turns after which an explored 8x8 block not refreshed by vision or a hinterland is forgotten", "shipped decaying-memory rule, same order as ContactExpiryTurns (100 years); saves without it load 5"),
-    ("SecondaryTechnologyThreshold", "post-breakthrough (Neolithic) practice points that grant a secondary technology; Paleolithic practice counts toward the first breakthrough only", "shipped discovery rule (Docs/HusbandrySettling.md); equals ExperienceThreshold; saves without it load 225"),
-    ("TradePracticePerValue", "practice points credited to the receiving Society per unit of traded goods value (TechnologyDiscovery.RecordTradePractice)", "trade hook, called by food-trade settlement; 0 = inert; saves without it load 0"),
+    ('SecondaryTechnologyThreshold', 'post-breakthrough activity practice plus social knowledge required for a secondary technology', '225; first breakthrough still requires original activity rules; social exposure does not raise productive proficiency'),
+    ('TradePracticePerValue', 'social knowledge per realized received trade-leg value, in both directions', '0.1 starting integration tuning; only counterparty-held unknown opening technologies; absent old-save field remains zero'),
     ("SettledHerdGrowthPenalty", "fraction of a physically mobile herd-bearing camp's forecast herd food forfeited by becoming a village (legacy Value rule's settling cost)", "shipped settling lever from the measured 1.6x mobile-to-stationary herd support (Docs/MobileHusbandryValidation.md); first technology is irrelevant; saves without it load 0.35"),
     ("FissionGainThreshold", "expected-gain threshold G*(Neutral): the relative rise of the stayers' QoL a split must deliver (WP10c)", "shipped fission lever, analytically calibrated to the design onset sizes (Docs/Fission.md); saves without it load with fission disabled; `FissionEnabled` (plan of record: true by default and in OpeningConfig; saves without it load false) is a boolean, not listed"),
     ("FissionGainDiscourage", "expected-gain threshold G*(Discourage)", "shipped fission lever, calibrated with the 15 percent daughter; not monotone in policy because the policy also sets the daughter fraction"),
