@@ -141,6 +141,58 @@ internal static class HusbandryDiffusionChecks
             "trade contact changes no performance practice");
     }
 
+    private static void SettledTradePath()
+    {
+        var world = Settlement(Technology.Cultivation);
+        var requester = world.Camps.Single();
+        requester.Inventory.HousingMaterial = 10;
+
+        var responder = new Camp
+        {
+            Id = world.NextId++, Player = 1,
+            Tile = world.Map.Radius(requester.Tile, 4)
+                .Where(id => world.Map.Distance(requester.Tile, id) == 4 && world.Tiles[id].TraversableLand)
+                .OrderBy(id => id).First(),
+            Population = 40
+        };
+        responder.Inventory.Cloth = 10;
+        world.Camps.Add(responder);
+        world.Config.Players = 2; world.PlayerCount = 2;
+        Ownership.Bind(world);
+        responder.People.Progression.Era = Era.Neolithic;
+        responder.Technology = Technology.AnimalHusbandry;
+        responder.Technologies[(int)Technology.AnimalHusbandry] = true;
+        responder.Technologies[(int)Technology.Watercraft] = true;
+        world.Config.TradePracticePerValue = .1;
+
+        var plan = new TradePlan();
+        plan.Agreements.Add(new TradeAgreement
+        {
+            Requester = requester.Id, Responder = responder.Id,
+            Distance = world.Map.Distance(requester.Tile, responder.Tile),
+            Want = TradeGood.Cloth, Give = TradeGood.HousingMaterial,
+            WantQuantity = 1, GiveQuantity = 1, Ratio = 1,
+            WantParts = new[] { 1.0 }, GiveParts = new[] { 1.0 },
+            RequesterGain = 100, ResponderGain = 100
+        });
+        var record = new TurnRecord { Turn = world.Turn };
+        var settlement = Trade.Settle(world, plan, record);
+        Trade.SettleAfterProduction(world, settlement, record);
+        Trade.Finish(world, settlement, record);
+
+        Check(record.Trades.Count == 1 && record.Trades[0].Delivered == 1,
+            "the bilateral knowledge witness settles one real all-stock barter");
+        Check(requester.People.TechnologyExposure[(int)Domain.Hunting] > 0 &&
+            requester.People.TechnologyExposure[(int)Domain.Fishing] > 0,
+            "the requester learns both unknown opening technologies held by its counterparty");
+        Check(responder.People.TechnologyExposure[(int)Domain.Gathering] > 0,
+            "the responder learns Cultivation knowledge from the requester");
+        Check(requester.Experience[(int)Domain.Hunting] == 0 &&
+            requester.Experience[(int)Domain.Fishing] == 0 &&
+            responder.Experience[(int)Domain.Gathering] == 0,
+            "settled bilateral knowledge leaves performance practice unchanged");
+    }
+
     private static void Taming()
     {
         var world = Settlement(Technology.Cultivation);
@@ -218,6 +270,7 @@ internal static class HusbandryDiffusionChecks
         checks = 0;
         Proximity();
         TradeContact();
+        SettledTradePath();
         Taming();
         Console.WriteLine("PASS: " + checks + " husbandry diffusion assertions");
         return checks;
