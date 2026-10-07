@@ -196,9 +196,9 @@ internal static class FissionChecks
     {
         var c = new SimulationConfig();
         Check(c.FissionEnabled && c.FissionGainThreshold == .113 && c.FissionGainDiscourage == .080 && c.FissionGainEncourage == .0955 && c.FissionSearchFraction == .8 && c.FissionDaughterMargin == .05 && c.FissionHousingRelief == 0 && c.FissionDaughterBuilderShare == .05 && c.FissionRadius == 4 && c.FissionMinimumDaughter == 12
-            && c.FissionPressureRule == FissionPressureRule.Current && c.FissionLegacyQoL == .75 && c.FissionLegacyQoLWidth == .10 && c.FissionLegacyThreshold == .20 && c.FissionLegacySearchPush == .20
+            && c.FissionPressureRule == FissionPressureRule.CurrentPlusExitOpportunity && c.FissionLegacyQoL == .75 && c.FissionLegacyQoLWidth == .10 && c.FissionLegacyThreshold == .20 && c.FissionLegacySearchPush == .20
             && c.FissionExitThreshold == .05 && c.FissionExitSearchFraction == .8,
-            "fission is on by default, production uses the current rule, and experimental comparison constants are stable");
+            "fission is on by default, production uses the current-plus-exit baseline, and experimental comparison constants are stable");
         foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.FissionGainThreshold = -.1, x => x.FissionGainDiscourage = 6, x => x.FissionGainEncourage = double.NaN, x => x.FissionRadius = 0, x => x.FissionRadius = 6, x => x.FissionMinimumDaughter = 0, x => x.FissionSearchFraction = 1.5, x => x.FissionSearchFraction = -.1, x => x.FissionDaughterMargin = -.01, x => x.FissionDaughterMargin = 2, x => x.FissionHousingRelief = -.1, x => x.FissionHousingRelief = 1.5, x => x.FissionDaughterBuilderShare = -.1, x => x.FissionDaughterBuilderShare = 1.5,
             x => x.FissionPressureRule = (FissionPressureRule)99, x => x.FissionLegacyQoL = 1.1, x => x.FissionLegacyQoLWidth = 0, x => x.FissionLegacyThreshold = -1, x => x.FissionLegacySearchPush = 2,
             x => x.FissionExitThreshold = 0, x => x.FissionExitSearchFraction = 2 })
@@ -215,9 +215,9 @@ internal static class FissionChecks
         {
             var old = (SimulationConfig)serializer.ReadObject(stream);
             Check(!old.FissionEnabled && old.FissionGainThreshold == .113 && old.FissionGainDiscourage == .080 && old.FissionGainEncourage == .0955 && old.FissionSearchFraction == .8 && old.FissionDaughterMargin == .05 && old.FissionHousingRelief == 0 && old.FissionDaughterBuilderShare == .05 && old.FissionRadius == 4 && old.FissionMinimumDaughter == 12
-                && old.FissionPressureRule == FissionPressureRule.Current && old.FissionLegacyQoL == .75 && old.FissionLegacyQoLWidth == .10 && old.FissionLegacyThreshold == .20 && old.FissionLegacySearchPush == .20
+                && old.FissionPressureRule == FissionPressureRule.CurrentPlusExitOpportunity && old.FissionLegacyQoL == .75 && old.FissionLegacyQoLWidth == .10 && old.FissionLegacyThreshold == .20 && old.FissionLegacySearchPush == .20
                 && old.FissionExitThreshold == .05 && old.FissionExitSearchFraction == .8,
-                "older saves load with fission disabled, the production pressure rule, and stable experiment defaults");
+                "older saves load with fission disabled, the production exit-opportunity baseline, and stable experiment defaults");
         }
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) { var back = (SimulationConfig)serializer.ReadObject(stream); Check(back.FissionRadius == 4 && back.FissionDaughterBuilderShare == .2, "saved levers round trip"); }
         string json = File.ReadAllText(FindConfig());
