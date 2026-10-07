@@ -149,6 +149,10 @@ namespace Anthropocene.Simulation
             }
             w.Hunters.RemoveAll(h => h.Population <= 0);
             Ownership.Bind(w);
+            // Local herd contact is an end-boundary knowledge receipt. It is
+            // separate from hunting performance and can unlock Husbandry at the
+            // same Close boundary as trade-derived knowledge.
+            TechnologyDiscovery.RecordHusbandryProximity(w);
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) BreakthroughBound(w, camp, record);
             using (PhaseProfile.Scope("Technology")) TechnologyDiscovery.Resolve(w, record);
             // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
@@ -466,6 +470,11 @@ namespace Anthropocene.Simulation
                 int realizedKills = kills.Sum();
                 herd.Animals -= realizedKills;
                 if (realizedKills < total) record.Log("Herd " + herd.Id + " retained " + herd.Animals + " breeding animals after the generation's harvest.");
+                // Taming is a physical transfer from this interacted wild herd.
+                // Canonical camp order makes simultaneous claims deterministic.
+                foreach (var camp in sorted.Select(x => w.Camps.First(c => c.Id == x.Item1.SourceCamp))
+                    .GroupBy(c => c.Id).Select(g => g.First()).OrderBy(c => c.Id))
+                    HusbandryAcquisition.TryTame(w, camp, herd, record);
                 if (huntingPopulation <= w.Config.SustainableHuntPopulation && herd.Animals > startingHerdPopulation[herd.Id]) record.Log("Limited hunting pressure allowed herd " + herd.Id + " to keep growing.");
             }
             // Managed herds retain legitimate zero state for persistence and later
