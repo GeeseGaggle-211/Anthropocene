@@ -129,6 +129,52 @@ internal static class FissionChecks
         Near(Fission.DaughterShelter(fishing, fishingCamp, nd).Fixed, nd,
             "a Fishing-only daughter can assemble the fixed Housing recipe", 1e-6);
         var h3 = Fixture(.1, 1000, 1000, tents: 100, fabric: 100, construction: true); Near(Fission.DaughterShelter(h3, h3.Camps[0], nd).Total, 100 * f * tent, "a daughter already sheltered by carried tents builds nothing more");
+        // Both shelter recipes are feasible, but retained physical capital --
+        // not the primary or newly acquired technology -- chooses the first
+        // route. A herd-dominated parent remains portable after learning
+        // Cultivation, while an established fixed parent keeps building fixed
+        // Housing after learning Husbandry.
+        var portable = Fixture(.1, 1000, 1000, fabric: 100,
+            husbandryOnly: true, construction: true);
+        var portableCamp = portable.Camps[0];
+        portable.Herds.Add(new Herd { Id = portable.NextId++,
+            Tile = portableCamp.Tile, DomesticCamp = portableCamp.Id,
+            OwnerSociety = portableCamp.SocietyId, Animals = 20 });
+        var portableMixed = SaveCodec.Load(SaveCodec.Save(portable));
+        var portableMixedCamp = portableMixed.Camps[0];
+        portableMixedCamp.Technologies[(int)Technology.Cultivation] = true;
+        var portableOnlyShelter = Fission.DaughterShelter(portable,
+            portableCamp, nd);
+        var portableMixedShelter = Fission.DaughterShelter(portableMixed,
+            portableMixedCamp, nd);
+        Near(portableMixedShelter.Light, portableOnlyShelter.Light,
+            "secondary Cultivation does not redirect a retained herd portfolio from portable shelter", 1e-9);
+        Near(portableMixedShelter.Fixed, 0,
+            "fixed Housing feasibility alone does not make a portable daughter sedentary", 1e-9);
+        portableMixedCamp.Technology = Technology.Cultivation;
+        var primarySwappedShelter = Fission.DaughterShelter(portableMixed,
+            portableMixedCamp, nd);
+        Near(primarySwappedShelter.Light, portableMixedShelter.Light,
+            "primary technology does not select the daughter's shelter route", 1e-9);
+        Near(primarySwappedShelter.Fixed, portableMixedShelter.Fixed,
+            "primary technology leaves fixed daughter shelter unchanged", 1e-9);
+
+        var fixedParent = Fixture(.05, 1000, 1000, fabric: 100,
+            construction: true);
+        var fixedCamp = fixedParent.Camps[0];
+        fixedParent.FixedHousing.Add(new FixedHousingStock { CampId = fixedCamp.Id,
+            Tile = fixedCamp.Tile, Units = 1, LastUpdatedDays = fixedParent.Days });
+        var fixedMixed = SaveCodec.Load(SaveCodec.Save(fixedParent));
+        var fixedMixedCamp = fixedMixed.Camps[0];
+        fixedMixedCamp.Technologies[(int)Technology.AnimalHusbandry] = true;
+        var fixedOnlyShelter = Fission.DaughterShelter(fixedParent,
+            fixedCamp, nd);
+        var fixedMixedShelter = Fission.DaughterShelter(fixedMixed,
+            fixedMixedCamp, nd);
+        Near(fixedMixedShelter.Fixed, fixedOnlyShelter.Fixed,
+            "secondary Husbandry does not divert fixed-settlement Builder labor into tents", 1e-9);
+        Check(fixedMixedShelter.Fixed > 0,
+            "retained fixed capital keeps the fixed daughter route active");
         // The estimate uses it: H and housing coverage of the daughter come from carried plus built shelter.
         var e = Fixture(.1, 1000, 1000, construction: true); var ec = e.Camps[0]; e.FixedHousing.Add(new FixedHousingStock { CampId = ec.Id, Tile = ec.Tile, Units = 25, LastUpdatedDays = e.Days });
         var ee = Fission.EstimateSplit(e, ec, FissionPolicy.Neutral); var bare = Fixture(0, 0, 0); bare.FixedHousing.Add(new FixedHousingStock { CampId = bare.Camps[0].Id, Tile = bare.Camps[0].Tile, Units = 25, LastUpdatedDays = bare.Days });

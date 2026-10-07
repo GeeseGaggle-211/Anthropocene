@@ -3,13 +3,18 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Anthropocene.Simulation;
 
 // Diagnostic-only stationary plans and explicitly hypothetical endowments.
 // No production policy changes; every temporary input is restored before replay.
 internal static class PastoralPlannerProbe
 {
-    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions { WriteIndented = false };
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions
+    {
+        WriteIndented = false,
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals
+    };
     private static void Main(string[] args)
     {
         var world = SaveCodec.Load(File.ReadAllBytes(args[1]));
@@ -40,7 +45,70 @@ internal static class PastoralPlannerProbe
         }
         else if (args[0] == "snapshot") Snapshot(world, args[2], args.Length > 3
             ? int.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : world.Turn);
-        else throw new ArgumentException("timeline|snapshot save output-directory");
+        else if (args[0] == "demand-snapshot") DemandSnapshot(world,
+            args[2]);
+        else throw new ArgumentException(
+            "timeline|snapshot|demand-snapshot save output-directory");
+    }
+
+    private static void DemandSnapshot(WorldState world, string directory)
+    {
+        using (var output = new StreamWriter(Path.Combine(directory,
+            "demand-snapshot.jsonl")))
+        foreach (var camp in world.Camps.Where(c => c.Population > 0 &&
+            CultivationEconomy.EconomyEnabled(world, c)).OrderBy(c => c.Id))
+        {
+            var production = CampProductionDemand.Build(world, camp,
+                EconomicIntent.From(camp));
+            var intent = DemandController.Plan(world, camp,
+                EconomicIntent.From(camp), out var order, out var allocation);
+            output.WriteLine(JsonSerializer.Serialize(new
+            {
+                camp.Id, camp.Population, camp.Technology,
+                husbandry = CultivationEconomy.HusbandryEnabled(camp),
+                animals = allocation.HCurrent,
+                farmers = intent.Assignments.Where(a =>
+                    a.Role == WorkforceRoles.Farmer).Sum(a => a.Population),
+                herders = intent.Assignments.Where(a =>
+                    a.Role == WorkforceRoles.Herder).Sum(a => a.Population),
+                allocation.FoodGatherers, allocation.DevelopmentFoodGap,
+                allocation.StrategicLaborStep,
+                allocation.FieldMarginalReturn,
+                allocation.FarmerRayReturn,
+                allocation.HerderRayReturn,
+                allocation.BalancedMarginalReturn,
+                allocation.SelectedDevelopmentRay,
+                allocation.DevelopmentAlternatives,
+                retainedFieldCapital = production.RetainedFieldCapital,
+                fixedHousing = NeolithicProduction.FixedHousingAt(world,
+                    camp, world.Days),
+                fields = production.Operated.Select(tile => new
+                {
+                    tile,
+                    capital = LazyEcology.ProjectEcology(world, tile,
+                        world.Days).CultivationCapital,
+                    world.Tiles[tile].CultivationOperator,
+                    world.Tiles[tile].CultivationOperatingFraction,
+                    openingSeed = world.Improvements.Any(improvement =>
+                        improvement.Kind == ImprovementKind.CultivationSeed &&
+                        improvement.Settlement == camp.Id &&
+                        improvement.Tile == tile)
+                }),
+                staff = allocation.Staff,
+                allRequests = allocation.Requests.Select(r => new
+                {
+                    r.Service, r.Class, r.Role, r.Good, r.Units, r.Granted,
+                    r.PriorityScore, r.Unmet
+                }),
+                requests = allocation.Requests.Where(r =>
+                    r.Class == DemandController.ServiceClass.Development)
+                    .Select(r => new { r.Service, r.Units, r.Granted,
+                        r.PriorityScore, r.DevelopmentFood,
+                        r.DevelopmentFoodPerUnit, r.Unmet }),
+                housing = order.Ceiling(CraftGood.Housing),
+                tents = order.Ceiling(CraftGood.LightHousing)
+            }, Json));
+        }
     }
 
     private static object Inspect(WorldState w, Camp c, int t, string scenario)

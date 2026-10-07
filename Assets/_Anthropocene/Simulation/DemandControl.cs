@@ -89,7 +89,12 @@ namespace Anthropocene.Simulation
                 RetainedFarmerFoodService;
             public double SelectedFieldOperation, SelectedPortfolioValue,
                 SelectedPortfolioUnmet;
-            public int PortfolioAlternatives;
+            public int PortfolioAlternatives, StrategicLaborStep,
+                DevelopmentAlternatives;
+            public double FieldMarginalReturn, HerdMarginalReturn,
+                FarmerRayReturn, HerderRayReturn, BalancedMarginalReturn,
+                DefaultLaborReturn;
+            public string SelectedDevelopmentRay = "none";
             public readonly Dictionary<CraftGood, double> Ceilings = new Dictionary<CraftGood, double>();
             public string FoodUnmet = ""; public int RepairPasses;
         }
@@ -126,11 +131,13 @@ namespace Anthropocene.Simulation
             alloc.SelectedPortfolioValue = portfolio.SelectedPortfolioValue;
             alloc.SelectedPortfolioUnmet = portfolio.SelectedPortfolioUnmet;
             alloc.PortfolioAlternatives = portfolio.AlternativesEvaluated;
+            alloc.StrategicLaborStep = portfolio.StrategicLaborStep;
             var recipes = d.Recipes; var byGood = recipes.ToDictionary(r => r.Good);
             double gatherRate = cfg.GatherPerPerson * intervals;  // food one gatherer brings in over the turn
-            TurnResolver.FoodBucketTargets(w, c, intervals, years,
-                d.Meals, c.Food, out double survivalFood, out _,
-                out double reserveFood, out double growthFood);
+            var continuation = SettlementContinuationDemand.For(w, c, d);
+            double survivalFood = continuation.ConsumptionIncome;
+            double reserveFood = continuation.ReserveFill;
+            double growthFood = continuation.GrowthFood;
             // ResolveNeeds protects typed manufacturing stock that fits after
             // meals. Credit that same inventory exactly once when pricing and
             // staffing plant-feedstock routes; only the remaining deficit has
@@ -299,7 +306,12 @@ namespace Anthropocene.Simulation
             // Clothing is one service with capability-gated routes. Compare
             // complete feasible bundles against the actual typed envelope after
             // meals; a newly learned recipe with no usable feedstock is inert.
-            bool fixedCapital = site.FixedHousing > Epsilon || farmers > 0;
+            // Shelter strategy follows retained physical settlement capital.
+            // A Farmer assignment can be a small or incidental bridge field;
+            // it is not by itself authority to replace a mobile camp with a
+            // fixed-housing policy.
+            bool fixedCapital = site.FixedHousing > Epsilon || c.IsVillage ||
+                d.RetainedFieldCapital;
             bool plantTextileCapital = farmers > 0 ||
                 c.Inventory.Cloth > Epsilon;
             bool portableCapital = c.Inventory.LightHousingUnits > Epsilon ||
@@ -477,8 +489,17 @@ namespace Anthropocene.Simulation
             ShelterRequest("portable shelter replacement", ServiceClass.Continuity,
                 CraftGood.LightHousing, lightReplacementPeople);
             gapPeople -= lightReplacementPeople;
+            // Demonstrated tenure describes the current physical operating
+            // policy; no capability, first breakthrough or lifetime movement
+            // flag does. A recently relocated camp has zero current-site
+            // tenure in its planning view and therefore keeps its portable
+            // route. Once the same site has been retained for the existing
+            // settlement-expectation horizon, fixed shelter becomes the
+            // preferred deficit route even if this society moved in the past.
+            bool demonstratedFixedTenure = c.StationaryYears + Epsilon >=
+                n.RudimentaryExpectationRampYears;
             bool mobilePolicy = !fixedCapital && portableCapital &&
-                (c.StationaryTurns == 0 || c.Moves > 0);
+                !demonstratedFixedTenure;
             ShelterRequest("shelter deficit", ServiceClass.Recovery,
                 mobilePolicy ? CraftGood.LightHousing : CraftGood.Housing,
                 gapPeople);
@@ -566,10 +587,14 @@ namespace Anthropocene.Simulation
             double fieldGapPerYear = years > 0
                 ? (strategicDevelopmentFoodGap + plantFeedstockShortfall) /
                     years : 0;
+            double fieldWorkerYearCap = residents * years * Math.Max(1,
+                CultivationEconomy.FarmToolFieldWorkEfficiency(n));
             var fieldLadder = CultivationEconomy.Enabled(c) &&
                 d.Footprint.Length > 0 && fieldGapPerYear > Epsilon
                 ? CultivationEconomy.ExpansionLadder(w, c, years,
-                    d.Footprint, fieldGapPerYear)
+                    d.Footprint, fieldGapPerYear,
+                    operatingFraction: portfolio.SelectedFieldOperation,
+                    workerYearCap: fieldWorkerYearCap)
                 : Array.Empty<CultivationEconomy.ExpansionStep>();
             // Value only the authoritative next-boundary retained-food change.
             // Multiplying that single-transition gain through the full planning
@@ -577,25 +602,102 @@ namespace Anthropocene.Simulation
             // build work plus one bounded transition of recurring maintenance
             // and harvest work, preserving the resolver's maintenance/harvest
             // overlap.
-            double ComparableFieldReturn(CultivationEconomy.ExpansionStep step)
+            double IncrementalFieldRecurringWork(
+                double annualGain, double maintenancePerYear,
+                double harvestWorkerYears, double priorMaintenance,
+                double priorHarvestWorkerYears)
             {
-                double food = Math.Max(0, step.AnnualGain * years);
-                double annualHarvest = d.HarvestProductivity *
-                    cfg.GatherPerPerson * perYear;
-                double harvestWork = annualHarvest > Epsilon
-                    ? food / annualHarvest : double.PositiveInfinity;
-                double recurringWork = Math.Max(
-                    Math.Max(0, step.MaintenancePerYear * years),
-                    harvestWork);
-                double work = Math.Max(0, step.WorkerYears) + recurringWork;
+                double before = Math.Max(
+                    portfolio.SelectedFutureFieldMaintenance * years +
+                        priorMaintenance * years,
+                    portfolio.SelectedFutureFieldHarvestWork +
+                        priorHarvestWorkerYears);
+                double after = Math.Max(
+                    portfolio.SelectedFutureFieldMaintenance * years +
+                        (priorMaintenance + maintenancePerYear) * years,
+                    portfolio.SelectedFutureFieldHarvestWork +
+                        priorHarvestWorkerYears + harvestWorkerYears);
+                return Math.Max(0, after - before);
+            }
+            double ComparableFieldReturn(double workerYears,
+                double annualGain, double maintenancePerYear,
+                double harvestWorkerYears, double priorMaintenance,
+                double priorHarvestWorkerYears)
+            {
+                double food = Math.Max(0, annualGain * years);
+                double recurringWork = IncrementalFieldRecurringWork(
+                    annualGain, maintenancePerYear, harvestWorkerYears,
+                    priorMaintenance, priorHarvestWorkerYears);
+                double work = Math.Max(0, workerYears) + recurringWork;
                 return work > Epsilon && !double.IsInfinity(work)
                     ? food / work : 0;
             }
-            double nextFieldReturn = fieldLadder
-                .Where(step => step.AnnualGain > 0 && step.WorkerYears > 0)
-                .Select(ComparableFieldReturn)
-                .DefaultIfEmpty(double.PositiveInfinity)
-                .First();
+            // Expansion scores are sampled in population-independent chunks.
+            // Exact ladder boundaries still define the physics, but strategic
+            // alternatives advance by max(10 people, 10% of residents) worth
+            // of labor instead of one resident at a time.
+            var fieldBands = new List<(double WorkerYears, double AnnualGain,
+                double MaintenancePerYear, double HarvestWorkerYears,
+                double RecurringWorkerYears, double Score)>();
+            double fieldBandWork = 0, fieldBandGain = 0,
+                fieldBandMaintenance = 0, fieldBandHarvestWork = 0;
+            double priorFieldMaintenance = 0,
+                priorFieldHarvestWork = 0;
+            double fieldBandYears = portfolio.StrategicLaborStep * years;
+            double annualGatherProductivity = cfg.GatherPerPerson * perYear;
+            for (int index = 0; index < fieldLadder.Length; index++)
+            {
+                var step = fieldLadder[index];
+                if (!(step.AnnualGain > 0) || !(step.WorkerYears > 0))
+                    continue;
+                fieldBandWork += step.WorkerYears;
+                fieldBandGain += step.AnnualGain;
+                fieldBandMaintenance += Math.Max(0,
+                    step.MaintenancePerYear);
+                double stepFood = step.AnnualGain * years;
+                double stepHarvestRate = Math.Max(1,
+                    step.HarvestProductivity) * annualGatherProductivity;
+                fieldBandHarvestWork += stepHarvestRate > Epsilon
+                    ? stepFood / stepHarvestRate
+                    : double.PositiveInfinity;
+                bool settlementKink = step.VillageAverage + Epsilon >=
+                    CultivationEconomy.VillageIntensity &&
+                    (index == 0 || fieldLadder[index - 1].VillageAverage +
+                        Epsilon < CultivationEconomy.VillageIntensity);
+                bool close = fieldBandWork + Epsilon >= fieldBandYears ||
+                    settlementKink || index == fieldLadder.Length - 1;
+                if (!close) continue;
+                double recurring = IncrementalFieldRecurringWork(
+                    fieldBandGain, fieldBandMaintenance,
+                    fieldBandHarvestWork, priorFieldMaintenance,
+                    priorFieldHarvestWork);
+                fieldBands.Add((fieldBandWork, fieldBandGain,
+                    fieldBandMaintenance, fieldBandHarvestWork, recurring,
+                    ComparableFieldReturn(fieldBandWork, fieldBandGain,
+                        fieldBandMaintenance, fieldBandHarvestWork,
+                        priorFieldMaintenance, priorFieldHarvestWork)));
+                priorFieldMaintenance += fieldBandMaintenance;
+                priorFieldHarvestWork += fieldBandHarvestWork;
+                fieldBandWork = fieldBandGain = fieldBandMaintenance =
+                    fieldBandHarvestWork = 0;
+            }
+            if (fieldBandWork > Epsilon)
+            {
+                double recurring = IncrementalFieldRecurringWork(
+                    fieldBandGain, fieldBandMaintenance,
+                    fieldBandHarvestWork, priorFieldMaintenance,
+                    priorFieldHarvestWork);
+                fieldBands.Add((fieldBandWork, fieldBandGain,
+                    fieldBandMaintenance, fieldBandHarvestWork, recurring,
+                    ComparableFieldReturn(fieldBandWork, fieldBandGain,
+                        fieldBandMaintenance, fieldBandHarvestWork,
+                        priorFieldMaintenance, priorFieldHarvestWork)));
+            }
+            double nextFieldReturn = fieldBands.Count > 0
+                ? fieldBands[0].Score : double.NaN;
+            alloc.FieldMarginalReturn = fieldBands
+                .Select(band => band.Score).DefaultIfEmpty(0).Max();
+            alloc.DevelopmentAlternatives += fieldBands.Count;
             double currentFieldReceipts = harvest + farmerPlantService +
                 farmerFoodService;
             double currentFieldReturn = farmers > 0 &&
@@ -604,8 +706,28 @@ namespace Anthropocene.Simulation
                 : double.PositiveInfinity;
             double currentGatherReturn = foodGatherers > 0 && gatheredFood > Epsilon
                 ? gatheredFood / (foodGatherers * years) : double.PositiveInfinity;
-            double alternativeFoodReturn = Math.Min(nextFieldReturn,
-                Math.Min(currentFieldReturn, currentGatherReturn));
+            // Price future recurring work from the camp's demonstrated
+            // marginal human-food route. The configured gather rate is only a
+            // fallback when this boundary did not employ a gatherer; local
+            // finite stocks may make the realized opportunity materially lower.
+            double futureLaborOpportunityReturn =
+                !double.IsInfinity(currentGatherReturn)
+                    ? currentGatherReturn : annualGatherProductivity;
+            alloc.DefaultLaborReturn = futureLaborOpportunityReturn;
+            var demonstratedAlternatives = new List<double>();
+            if (!double.IsNaN(nextFieldReturn) &&
+                !double.IsInfinity(nextFieldReturn))
+                demonstratedAlternatives.Add(nextFieldReturn);
+            if (!double.IsInfinity(currentFieldReturn))
+                demonstratedAlternatives.Add(currentFieldReturn);
+            if (!double.IsInfinity(currentGatherReturn))
+                demonstratedAlternatives.Add(currentGatherReturn);
+            // Substitution displaces the marginal current human-food route,
+            // not the settlement's single best route. Requiring a herd band
+            // to beat the maximum made a high-return first field step shield
+            // every later, weaker field increment from competition.
+            double alternativeFoodReturn = demonstratedAlternatives
+                .DefaultIfEmpty(double.PositiveInfinity).Min();
             double substitutableHumanFood = currentFieldReceipts + gatheredFood;
             if (portfolio.HCurrent > 0 &&
                 integerGrowthCeiling > herdTarget + Epsilon)
@@ -628,6 +750,19 @@ namespace Anthropocene.Simulation
                         (int)Math.Floor(portfolio.HSustainable + Epsilon))),
                     Math.Max(startTarget, Math.Min(endTarget,
                         (int)Math.Ceiling(portfolio.HSustainable - Epsilon))) };
+                int retainedHerders = HerdingTooling.RequiredHerdersFor(w, c,
+                    years, startTarget);
+                for (int workers = retainedHerders +
+                        portfolio.StrategicLaborStep;
+                    workers < residents; workers +=
+                        portfolio.StrategicLaborStep)
+                {
+                    int supported = (int)Math.Floor(Math.Min(endTarget,
+                        HerdingTooling.AnimalsManagedBy(w, c, years,
+                            workers)) + Epsilon);
+                    if (supported > startTarget) edges.Add(supported);
+                    if (supported >= endTarget) break;
+                }
                 int prior = startTarget;
                 foreach (int edge in edges.Where(x => x > startTarget)
                     .OrderBy(x => x))
@@ -650,7 +785,18 @@ namespace Anthropocene.Simulation
                     double score = addedHerdersForBand > 0
                         ? netFood / (addedHerdersForBand * years)
                         : netFood > Epsilon ? double.PositiveInfinity : 0;
-                    int directAnimals = foodPerAnimal > Epsilon
+                    // Future labor is not free merely because this turn has
+                    // spare residents. Growth still needs a real service gap or
+                    // the bounded sustainable-growth policy below, and then
+                    // competes against the finite gathering and field requests
+                    // in the Elder's marginal-return order. Do not price it
+                    // against an imaginary unlimited gathering route after the
+                    // local forage envelope is exhausted.
+                    bool laborCompetitive = addedHerdersForBand == 0
+                        ? netFood > Epsilon
+                        : score > Epsilon;
+                    int directAnimals = laborCompetitive &&
+                        foodPerAnimal > Epsilon
                         ? Math.Min(bandAnimals, Math.Max(0,
                             (int)Math.Ceiling(remainingNeed / foodPerAnimal -
                                 Epsilon))) : 0;
@@ -677,7 +823,8 @@ namespace Anthropocene.Simulation
                     // real staffing bundle; spare labor by itself creates no
                     // request. Beyond that envelope, only direct or genuine
                     // substitution demand authorizes expansion.
-                    int sustainableAnimals = foodPerAnimal > Epsilon
+                    int sustainableAnimals = laborCompetitive &&
+                        foodPerAnimal > Epsilon
                         ? Math.Max(0, Math.Min(edge,
                             (int)Math.Floor(portfolio.HSustainable + Epsilon)) -
                             prior) : 0;
@@ -715,7 +862,11 @@ namespace Anthropocene.Simulation
                             PolicyDevelopmentUnits = sustainableAnimals
                         };
                         herdDevelopment.Add(request);
-                        alloc.Requests.Add(request);
+                        double authorizedScore = request.PriorityScore;
+                        alloc.DevelopmentAlternatives++;
+                        if (double.IsPositiveInfinity(authorizedScore) ||
+                            authorizedScore > alloc.HerdMarginalReturn)
+                            alloc.HerdMarginalReturn = authorizedScore;
                     }
                     prior = edge;
                 }
@@ -725,38 +876,73 @@ namespace Anthropocene.Simulation
             // and receipts cannot cover. Counting the whole textile input on
             // top of d.Supply was the marginal-grassland ratchet: it requested
             // new fields even while the existing plant envelope covered Cloth.
+            var fieldDevelopment = new List<Request>();
+            // Field construction is an investment, not an alternate spelling
+            // for spare labor. When the same finite local envelope still has
+            // an immediately usable gather route, a field band must beat that
+            // demonstrated marginal return before it can become Development.
+            // A depleted envelope supplies no imaginary global gather option;
+            // then any positive physical field return remains eligible.
+            double fieldLaborHurdle = remainingForage > Epsilon
+                ? futureLaborOpportunityReturn : 0;
+            // Current construction labor is the request unit consumed by the
+            // resolver. Strategic comparison also prices the incremental
+            // recurring maintenance/harvest work forecast above. Keep that
+            // future cost beside the request instead of pretending one builder
+            // is one complete unit of field labor in the cross-channel rays.
+            var fieldStrategicPeoplePerUnit = new Dictionary<Request, double>();
             if (CultivationEconomy.Enabled(c) && d.Footprint.Length > 0)
             {
                 if (fieldGapPerYear > Epsilon)
                 {
-                    double gain = 0, buildYears = 0;
-                    double marginalScore = double.PositiveInfinity;
-                    foreach (var step in fieldLadder)
+                    double gain = 0;
+                    foreach (var band in fieldBands)
                     {
                         if (gain >= fieldGapPerYear - Epsilon) break;
-                        if (!(step.AnnualGain > 0) || !(step.WorkerYears > 0)) continue;
-                        gain += step.AnnualGain; buildYears += step.WorkerYears;
-                        marginalScore = Math.Min(marginalScore,
-                            ComparableFieldReturn(step));
-                    }
-                    var fieldDevelopment = LabourRequest("field expansion",
-                        ServiceClass.Development, WorkforceRoles.Farmer,
-                        buildYears / years);
-                    if (fieldDevelopment != null)
-                    {
-                        fieldDevelopment.PriorityScore = double.IsInfinity(marginalScore)
-                            ? 0 : Math.Max(0, marginalScore);
-                        fieldDevelopment.DevelopmentFood = Math.Max(0, gain * years);
-                        fieldDevelopment.DevelopmentFoodPerUnit =
-                            fieldDevelopment.Units > Epsilon
-                                ? fieldDevelopment.DevelopmentFood /
-                                    fieldDevelopment.Units : 0;
-                        fieldDevelopment.TypedDevelopmentNeed =
-                            plantFeedstockShortfall;
-                        fieldDevelopment.DevelopmentPlant = true;
+                        if (!(band.Score > fieldLaborHurdle + Epsilon))
+                            continue;
+                        double fieldPeople = band.WorkerYears / years;
+                        if (!(fieldPeople > Epsilon)) continue;
+                        var fieldBundle = new Bundle();
+                        fieldBundle.RoleYears[WorkforceRoles.Farmer] = years;
+                        var request = new Request
+                        {
+                            Service = "field expansion",
+                            Class = ServiceClass.Development,
+                            Role = WorkforceRoles.Farmer,
+                            Units = fieldPeople,
+                            Bundle = fieldBundle,
+                            PriorityScore = band.Score,
+                            DevelopmentFood = Math.Max(0,
+                                band.AnnualGain * years),
+                            DevelopmentFoodPerUnit = fieldPeople > Epsilon
+                                ? Math.Max(0, band.AnnualGain * years) /
+                                    fieldPeople : 0,
+                            TypedDevelopmentNeed = plantFeedstockShortfall,
+                            DevelopmentPlant = true
+                        };
+                        fieldDevelopment.Add(request);
+                        fieldStrategicPeoplePerUnit[request] =
+                            band.Score > Epsilon && years > Epsilon
+                                ? request.DevelopmentFoodPerUnit /
+                                    (band.Score * years)
+                                : double.PositiveInfinity;
+                        gain += band.AnnualGain;
                     }
                 }
             }
+
+            // Keep every physically authorized coarse band available until the
+            // Elder has reserved Continuity and Recovery.  Only then can the
+            // three Development rays be compared against the same residual
+            // labor and input ledger.  `developmentRayLimits` is filled by that
+            // bounded comparison below; requests outside its selected prefix
+            // remain diagnostic only and receive no grant.
+            foreach (var request in fieldDevelopment)
+                alloc.Requests.Add(request);
+            foreach (var request in herdDevelopment)
+                alloc.Requests.Add(request);
+            var developmentRayLimits = new Dictionary<Request, double>();
 
             // ---- Toolmaking: the route with the least labour per tool output ----
             Bundle toolmaking = null; CraftGood toolGood = CraftGood.HandTools; double outputsPerTool = ToolCoverageBudget.OutputsPerHandTool;
@@ -884,6 +1070,242 @@ namespace Anthropocene.Simulation
                 }
             }
 
+            // Compare equal-work Development forecasts after the retained
+            // services above have claimed their real resources. Strategic
+            // resolution is deliberately coarse: max(10 residents, 10% of the
+            // population), hence at most ten budgets and three rays. Exact
+            // field kinks and whole-animal/herder boundaries remain inside the
+            // cached prefixes. This is O(F + H + 30), not a population scan or
+            // a field x herd Cartesian search.
+            var rayRequests = new HashSet<Request>(fieldDevelopment.Concat(
+                herdDevelopment));
+            Dictionary<Request, double> RayPrefix(double fieldPeople,
+                double herdPeople)
+            {
+                var grants = new Dictionary<Request, double>();
+                double fieldLeft = Math.Max(0, fieldPeople);
+                foreach (var request in fieldDevelopment)
+                {
+                    if (!(fieldLeft > Epsilon)) break;
+                    double units = Math.Min(request.Units, fieldLeft);
+                    if (units > Epsilon) grants[request] = units;
+                    fieldLeft -= units;
+                }
+
+                int additionalHerders = Math.Max(0,
+                    (int)Math.Floor(herdPeople + Epsilon));
+                if (additionalHerders > 0 && herdDevelopment.Count > 0)
+                {
+                    int supportedTarget = (int)Math.Floor(Math.Min(
+                        portfolio.HGrowthCeiling,
+                        HerdingTooling.AnimalsManagedBy(w, c, years,
+                            herders + additionalHerders)) + Epsilon);
+                    int animalsLeft = Math.Max(0, supportedTarget -
+                        (int)Math.Floor(Math.Max(0, herdTarget) + Epsilon));
+                    foreach (var request in herdDevelopment)
+                    {
+                        if (animalsLeft <= 0) break;
+                        int units = Math.Min(
+                            (int)Math.Floor(request.Units + Epsilon),
+                            animalsLeft);
+                        if (units > 0) grants[request] = units;
+                        animalsLeft -= units;
+                    }
+                }
+                return grants;
+            }
+
+            (double Field, double Herd) RayCurrentBudgets(
+                Dictionary<Request, double> grants)
+            {
+                double fieldPeople = fieldDevelopment.Sum(q =>
+                    grants.TryGetValue(q, out double units)
+                        ? units : 0);
+                double animals = herdDevelopment.Sum(q =>
+                    grants.TryGetValue(q, out double units) ? units : 0);
+                int targetHerders = animals > Epsilon
+                    ? HerdingTooling.RequiredHerdersFor(w, c, years,
+                        Math.Min(portfolio.HGrowthCeiling,
+                            herdTarget + animals)) : herders;
+                return (fieldPeople,
+                    Math.Max(0, targetHerders - herders));
+            }
+
+            double RayPricedWork(Dictionary<Request, double> grants)
+            {
+                double fieldPeople = fieldDevelopment.Sum(q =>
+                    grants.TryGetValue(q, out double units)
+                        ? units * fieldStrategicPeoplePerUnit[q] : 0);
+                var current = RayCurrentBudgets(grants);
+                return fieldPeople + current.Herd;
+            }
+
+            double RayUsefulFood(Dictionary<Request, double> grants)
+            {
+                double strategic = strategicDevelopmentFoodGap;
+                double plant = plantFeedstockShortfall;
+                double animal = animalFeedstockShortfall;
+                double substitution = substitutableHumanFood;
+                double useful = 0;
+                foreach (var request in grants.Keys
+                    .OrderByDescending(q => q.PriorityScore)
+                    .ThenBy(q => alloc.Requests.IndexOf(q)))
+                {
+                    double granted = grants[request];
+                    double food = granted * request.DevelopmentFoodPerUnit;
+                    double common = 0;
+                    if (request.DevelopmentPlant)
+                    {
+                        double typed = Math.Min(plant, food);
+                        plant -= typed; food -= typed; common += typed;
+                    }
+                    if (request.DevelopmentAnimal)
+                    {
+                        double typed = Math.Min(animal, food);
+                        animal -= typed; food -= typed; common += typed;
+                    }
+                    double service = Math.Min(strategic, food);
+                    strategic -= service; food -= service; common += service;
+                    double requestSubstitution = request.Units > Epsilon
+                        ? request.SubstitutionFood * granted / request.Units : 0;
+                    double displaced = Math.Min(substitution,
+                        Math.Min(requestSubstitution, food));
+                    substitution -= displaced; common += displaced;
+                    double policy = Math.Min(granted,
+                        request.PolicyDevelopmentUnits) *
+                        request.DevelopmentFoodPerUnit;
+                    // Sustainable natural growth and a shared food/feedstock
+                    // service are alternative authorizations for the same
+                    // output, never additive values for one animal.
+                    useful += Math.Max(common, policy);
+                }
+                return useful;
+            }
+
+            bool RayFeasible(Dictionary<Request, double> grants)
+                => Binding(q => rayRequests.Contains(q)
+                    ? grants.TryGetValue(q, out double units) ? units : 0
+                    : q.Class == ServiceClass.Development ? 0 : q.Granted) == null;
+
+            // Walk one bounded strategic prefix. At each coarse increment the
+            // Elder compares Farmer, Herder and real 50/50 additions from the
+            // same already accepted portfolio. Ranking incremental useful
+            // service over incremental complete work avoids both the former
+            // one-tranche cap and the full-ray average that hid weak marginal
+            // grassland behind productive first fields. With a step of
+            // max(10, 10% of residents), this performs at most ten rounds and
+            // never searches a field x herd Cartesian product.
+            var acceptedRay = new Dictionary<Request, double>();
+            double acceptedFieldBudget = 0, acceptedHerdBudget = 0;
+            double acceptedUseful = 0, acceptedPricedWork = 0;
+            int strategicRounds = residents > 0
+                ? Math.Max(1, (int)Math.Ceiling((double)residents /
+                    portfolio.StrategicLaborStep - Epsilon)) : 0;
+            for (int round = 0; round < strategicRounds; round++)
+            {
+                double remaining = Math.Max(0, residents -
+                    acceptedFieldBudget - acceptedHerdBudget);
+                if (!(remaining > Epsilon)) break;
+                double increment = Math.Min(
+                    portfolio.StrategicLaborStep, remaining);
+                var candidates = new List<(string Ray,
+                    Dictionary<Request, double> Grants, double FieldBudget,
+                    double HerdBudget, double Useful, double PricedWork,
+                    double MarginalReturn)>();
+
+                void ConsiderIncrement(string ray, double addField,
+                    double addHerd)
+                {
+                    double fieldBudget = acceptedFieldBudget + addField;
+                    double herdBudget = acceptedHerdBudget + addHerd;
+                    var grants = RayPrefix(fieldBudget, herdBudget);
+                    bool changed = grants.Any(pair =>
+                        !acceptedRay.TryGetValue(pair.Key, out double prior) ||
+                        pair.Value > prior + Epsilon);
+                    if (!changed) return;
+                    if (!RayFeasible(grants))
+                    {
+                        Dictionary<Request, double> Interpolate(double share)
+                        {
+                            var clipped = new Dictionary<Request, double>();
+                            foreach (var pair in grants)
+                            {
+                                acceptedRay.TryGetValue(pair.Key,
+                                    out double prior);
+                                double units = prior +
+                                    (pair.Value - prior) * share;
+                                if (pair.Key.WholeUnits)
+                                    units = Math.Floor(units + Epsilon);
+                                if (units > Epsilon)
+                                    clipped[pair.Key] = units;
+                            }
+                            return clipped;
+                        }
+                        double low = 0, high = 1;
+                        for (int iteration = 0; iteration < 16; iteration++)
+                        {
+                            double middle = (low + high) * .5;
+                            var clipped = Interpolate(middle);
+                            if (RayFeasible(clipped)) low = middle;
+                            else high = middle;
+                        }
+                        grants = Interpolate(low);
+                        changed = grants.Any(pair =>
+                            !acceptedRay.TryGetValue(pair.Key,
+                                out double prior) ||
+                            pair.Value > prior + Epsilon);
+                        if (!changed || !RayFeasible(grants)) return;
+                    }
+                    var currentBudgets = RayCurrentBudgets(grants);
+                    fieldBudget = currentBudgets.Field;
+                    herdBudget = currentBudgets.Herd;
+                    double useful = RayUsefulFood(grants);
+                    double pricedWork = RayPricedWork(grants);
+                    double addedUseful = useful - acceptedUseful;
+                    double addedWork = pricedWork - acceptedPricedWork;
+                    if (!(addedUseful > Epsilon) || addedWork < -Epsilon)
+                        return;
+                    double value = addedWork > Epsilon
+                        ? addedUseful / (addedWork * years)
+                        : double.PositiveInfinity;
+                    alloc.DevelopmentAlternatives++;
+                    if (ray == "farmers")
+                        alloc.FarmerRayReturn = Math.Max(
+                            alloc.FarmerRayReturn, value);
+                    else if (ray == "herders")
+                        alloc.HerderRayReturn = Math.Max(
+                            alloc.HerderRayReturn, value);
+                    else
+                        alloc.BalancedMarginalReturn = Math.Max(
+                            alloc.BalancedMarginalReturn, value);
+                    candidates.Add((ray, grants, fieldBudget, herdBudget,
+                        useful, pricedWork, value));
+                }
+
+                ConsiderIncrement("farmers", increment, 0);
+                ConsiderIncrement("herders", 0, increment);
+                ConsiderIncrement("balanced", increment * .5,
+                    increment * .5);
+                var selected = candidates
+                    .OrderByDescending(candidate =>
+                        candidate.MarginalReturn)
+                    .ThenByDescending(candidate =>
+                        candidate.Useful - acceptedUseful)
+                    .ThenBy(candidate => candidate.PricedWork -
+                        acceptedPricedWork)
+                    .ThenBy(candidate => candidate.Ray,
+                        StringComparer.Ordinal)
+                    .FirstOrDefault();
+                if (selected.Grants == null) break;
+                acceptedRay = selected.Grants;
+                acceptedFieldBudget = selected.FieldBudget;
+                acceptedHerdBudget = selected.HerdBudget;
+                acceptedUseful = selected.Useful;
+                acceptedPricedWork = selected.PricedWork;
+            }
+            foreach (var pair in acceptedRay)
+                developmentRayLimits[pair.Key] = pair.Value;
+
             string UnmetCause(string binding)
                 => binding == "labor" ? "labor rationing"
                     : binding == "equipment" ? "equipment shortage"
@@ -942,6 +1364,16 @@ namespace Anthropocene.Simulation
                 .ThenBy(q => alloc.Requests.IndexOf(q)).ToList();
             foreach (var request in development)
             {
+                if (rayRequests.Contains(request))
+                {
+                    if (!developmentRayLimits.TryGetValue(request,
+                            out double rayLimit) || !(rayLimit > Epsilon))
+                    {
+                        request.Unmet = "lower-return ray";
+                        continue;
+                    }
+                    request.Units = Math.Min(request.Units, rayLimit);
+                }
                 double typedNeed = request.DevelopmentPlant
                     ? remainingPlantDevelopment : request.DevelopmentAnimal
                         ? remainingAnimalDevelopment : 0;
@@ -1159,6 +1591,13 @@ namespace Anthropocene.Simulation
                     if (excess <= 0) break;
                 }
             }
+            bool grantedFieldDevelopment = fieldDevelopment.Any(q =>
+                q.Granted > Epsilon);
+            bool grantedHerdDevelopment = herdDevelopment.Any(q =>
+                q.Granted > Epsilon);
+            alloc.SelectedDevelopmentRay = grantedFieldDevelopment &&
+                grantedHerdDevelopment ? "balanced" : grantedFieldDevelopment
+                    ? "farmers" : grantedHerdDevelopment ? "herders" : "none";
 
             // ---- Compile the intent ----
             var intent = e;

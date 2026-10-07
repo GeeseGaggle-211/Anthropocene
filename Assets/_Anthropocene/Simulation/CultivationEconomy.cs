@@ -227,7 +227,17 @@ namespace Anthropocene.Simulation
                     average = land.Sum(id => w.Tiles[id].CultivationOperator == camp.Id
                         ? Intensity(w.Config, w.Tiles[id].CultivationCapital) : 0) / land.Length;
             }
-            bool agriculturalQualification = agriculture && average + 1e-10 >= VillageIntensity;
+            int farmers = camp.Workforce?.Assignments?
+                .Where(a => a.Role == WorkforceRoles.Farmer)
+                .Sum(a => a.Population) ?? 0;
+            // Gatherers may create cultivation capital incidentally up to the
+            // bridge ceiling while performing an already demanded food job.
+            // That physical side effect is not a supervisor decision to adopt
+            // fixed settlement capital.  A new agricultural village therefore
+            // needs both the footprint threshold and actual Farmer operation;
+            // an existing village remains persistent below.
+            bool agriculturalQualification = agriculture && farmers > 0 &&
+                average + 1e-10 >= VillageIntensity;
             bool fishingQualification = fishing && fishingMaturity + 1e-10 >= .5 && fishingMealSupport + 1e-10 >= .5;
             if (!agriculturalQualification && !fishingQualification)
             {
@@ -492,7 +502,8 @@ namespace Anthropocene.Simulation
         internal struct ExpansionStep
         {
             public int Tile;
-            public double Score, WorkerYears, AnnualGain, MaintenancePerYear;
+            public double Score, WorkerYears, AnnualGain, MaintenancePerYear,
+                HarvestProductivity;
             // Village-footprint average field intensity after this step (the quantity UpdateVillageAtBoundary compares with
             // VillageIntensity). Recorded only for the planner's ladder; 0 elsewhere.
             public double VillageAverage;
@@ -508,12 +519,15 @@ namespace Anthropocene.Simulation
         // are ignored (the ladder is the plain-farmer marginal-product curve).
         // annualGainCap stops recording once the cumulative annual food reaches it (the
         // step that crosses it is kept): the valuation never reads beyond the total food gap.
+        // workerYearCap likewise keeps the crossing step and omits work that no
+        // physically available workforce could execute in the planned turn.
         // Pure: reads the projected ecology only.
         // cache (optional, one plan only) memoizes the pure opening projections
         // and marginal investments; it never changes a returned step.
         [ThreadStatic] private static List<ExpansionStep> ladderRecord;
         internal static ExpansionStep[] ExpansionLadder(WorldState w, Camp camp, double years, int[] cachedFootprint = null, double annualGainCap = double.PositiveInfinity, double? operatingFraction = null,
-            PlanningKernelCache cache = null)
+            PlanningKernelCache cache = null,
+            double workerYearCap = double.PositiveInfinity)
         {
             if (!(years > 0) || double.IsInfinity(years)) return Array.Empty<ExpansionStep>();
             if (ResolutionMetrics.CaptureDetailedCounters) Interlocked.Increment(ref TurnDiagnostics.For(w).ExpansionLadderBuilds);
@@ -525,7 +539,9 @@ namespace Anthropocene.Simulation
             // returned array is the ladder's own. Sized to the greedy loop's pass guard.
             var record = ladderRecord ?? (ladderRecord = new List<ExpansionStep>()); record.Clear();
             if (record.Capacity < candidates.Length * 35) record.Capacity = candidates.Length * 35;
-            AllocateHorizonEffort(w, camp, candidates, double.PositiveInfinity, false, years, record, annualGainCap, cache);
+            AllocateHorizonEffort(w, camp, candidates,
+                double.PositiveInfinity, false, years, record,
+                annualGainCap, cache, workerYearCap);
             return record.ToArray();
         }
 
@@ -629,7 +645,8 @@ namespace Anthropocene.Simulation
         // finite effort are the resolver's allocation, unchanged.
         private static double AllocateHorizonEffort(WorldState w, Camp camp, HorizonCandidate[] candidates,
             double effectiveWorkerYears, bool bridge, double years, List<ExpansionStep> record = null, double annualGainCap = double.PositiveInfinity,
-            PlanningKernelCache cache = null)
+            PlanningKernelCache cache = null,
+            double workerYearCap = double.PositiveInfinity)
         {
             if (effectiveWorkerYears <= 1e-10 || candidates.Length == 0) return Math.Max(0, effectiveWorkerYears);
             var c = w.Config; var n = c.Neolithic;
@@ -641,8 +658,9 @@ namespace Anthropocene.Simulation
             var steps = new double[candidates.Length];
             var costsPerEffort = new double[candidates.Length];
             var gains = new double[candidates.Length];
+            var harvestProductivities = new double[candidates.Length];
             bool unbounded = double.IsPositiveInfinity(effectiveWorkerYears);
-            double recordedGain = 0;
+            double recordedGain = 0, recordedWork = 0;
             // Ladder mode also tracks the village-footprint average: fields the camp operates at the start or has stepped.
             int villageLand = record != null ? w.Map.Radius(camp.Tile, 1).Count(id => w.Tiles[id].TraversableLand) : 0;
             var touched = record != null ? new bool[candidates.Length] : null;
@@ -657,7 +675,9 @@ namespace Anthropocene.Simulation
                     if (!cached[i])
                     {
                         cached[i] = true;
-                        NextStep(w, field, bridge, years, out scores[i], out steps[i], out costsPerEffort[i], out gains[i], cache);
+                        NextStep(w, field, bridge, years, out scores[i],
+                            out steps[i], out costsPerEffort[i], out gains[i],
+                            out harvestProductivities[i], cache);
                     }
                     double score = scores[i];
                     bool focused = field.Tile == camp.CultivationFocusTile;
@@ -685,10 +705,13 @@ namespace Anthropocene.Simulation
                     double upkeep = MaintenanceMultiplier(c, w.Tiles[candidates[best].Tile], candidates[best].Ecology.CurrentVegetation);
                     record.Add(new ExpansionStep { Tile = candidates[best].Tile, Score = bestScore, WorkerYears = chargedEffort * bestCostPerEffort, AnnualGain = bestGain,
                         MaintenancePerYear = chargedEffort * n.MaintenanceWorkersPerTileE(c.MaintenanceCoefficient) * upkeep,
+                        HarvestProductivity = harvestProductivities[best],
                         VillageAverage = villageLand > 0 ? sum / villageLand : 0 });
+                    recordedWork += chargedEffort * bestCostPerEffort;
                 }
                 cached[best] = false;
-                if (record != null && (recordedGain += bestGain) >= annualGainCap) break;
+                if (record != null && ((recordedGain += bestGain) >=
+                    annualGainCap || recordedWork >= workerYearCap)) break;
             }
             return remaining;
         }
@@ -699,9 +722,12 @@ namespace Anthropocene.Simulation
         // expansion ladder share. score is 0 when the field cannot step;
         // annualGain is the step's annualised retained food (for that score).
         private static void NextStep(WorldState w, HorizonCandidate field, bool bridge, double years,
-            out double score, out double step, out double costPerEffort, out double annualGain, PlanningKernelCache cache = null)
+            out double score, out double step, out double costPerEffort,
+            out double annualGain, out double harvestProductivity,
+            PlanningKernelCache cache = null)
         {
             score = 0; step = 0; costPerEffort = 0; annualGain = 0;
+            harvestProductivity = 1;
             var c = w.Config; var n = c.Neolithic;
             double ceiling = Math.Pow((bridge ? c.GathererBridgeCeiling : 1) / c.ReferenceIntensity, 2);
             double bridgeCeiling = Math.Pow(c.GathererBridgeCeiling / c.ReferenceIntensity, 2);
@@ -724,6 +750,22 @@ namespace Anthropocene.Simulation
             var investment = HorizonMarginalInvestment(w, tile, field.Ecology, e, de, years, cost, maintenance);
             score = Math.Max(0, investment.AnnualizedFoodPerWorkerYear);
             step = de; costPerEffort = cost; annualGain = investment.AnnualizedRetainedFoodGain;
+            if (!c.CropHarvestingOnly || c.FarmerProductivity <= 1)
+                harvestProductivity = Math.Max(1, c.FarmerProductivity);
+            else
+            {
+                var after = field.Ecology;
+                after.CultivationCapital = e + de;
+                int season = (int)Math.Floor((field.Ecology.Days +
+                    years * c.DaysPerYear) / c.BaseDays) % 4;
+                var capacity = new EcologyCapacity(w, tile, after, season);
+                double crop = Math.Max(0,
+                    capacity.Food - capacity.WildFood);
+                double cropShare = capacity.Food > 0
+                    ? crop / capacity.Food : 0;
+                harvestProductivity = 1 / Math.Max(1e-12,
+                    1 - cropShare + cropShare / c.FarmerProductivity);
+            }
         }
 
         internal static double HorizonMarginalScore(WorldState w, Tile tile, EcologyView opening,

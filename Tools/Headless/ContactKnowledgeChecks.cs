@@ -255,17 +255,17 @@ internal static class ContactKnowledgeChecks
         // DTO round trip at the current schema.
         var dto = ObservationContract.Deserialize(ObservationContract.Serialize(o3, own.People.Mandate));
         Check(dto.Schema == AgentObservation.SchemaVersion &&
-            AgentObservation.SchemaVersion == 21 &&
+            AgentObservation.SchemaVersion == 22 &&
             dto.RememberedTiles.Length == o3.RememberedTiles.Count &&
             dto.KnownSettlements.Single().Camp == stranger.Id &&
             dto.KnownSettlements.Single().Source == ContactSource.Sighting,
             "the serialized observation carries remembered tiles and known settlements");
-        Check(json.Contains("\"Schema\":21") &&
+        Check(json.Contains("\"Schema\":22") &&
             json.Contains("RememberedTiles") &&
             json.Contains("KnownSettlements") &&
             json.Contains("FishingGrounds") &&
             json.Contains("FishingEnabled"),
-            "schema 21 names remembered contacts and filtered Fishing observation blocks");
+            "the current schema names remembered contacts and filtered Fishing observation blocks");
         // Another Society's knowledge is never visible: the Paleolithic fixture player sees none.
         var p = World(new[] { 5, 9 }, 1); Step(p);
         Check(new AgentObservationBuilder().Build(p, 0).RememberedTiles.Count == 0, "a Society's knowledge is private to it");

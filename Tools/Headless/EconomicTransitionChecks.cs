@@ -86,10 +86,10 @@ internal static class EconomicTransitionChecks
         int startingResidents = camp.Population;
         var observation = new AgentObservationBuilder().Build(world, camp.Player);
         var dto = ObservationContract.Deserialize(ObservationContract.Serialize(observation, camp.Mandate));
-        Check(AgentObservation.SchemaVersion == 21 && dto.Schema == 21 &&
+        Check(AgentObservation.SchemaVersion == 22 && dto.Schema == 22 &&
             dto.Hunters.Single(h => h.Id == hunter.Id).EconomicTransitionRecall &&
             dto.Hunters.Single(h => h.Id == hunter.Id).EconomicTransitionWaypoint == camp.Tile,
-            "schema 21 exposes the owned detachment's marker and only its currently visible route endpoint");
+            "the current schema exposes the owned detachment's marker and only its currently visible route endpoint");
 
         var decision = new HeuristicTribePolicy().Decide(observation, camp.Mandate);
         var campOrder = decision.Orders.Single(order => order.Entity == camp.Id);
@@ -288,9 +288,9 @@ internal static class EconomicTransitionChecks
         camp.People.Progression.Era = Era.Neolithic;
         var decision = new HeuristicTribePolicy().Decide(
             new AgentObservationBuilder().Build(world, camp.Player), camp.Mandate);
-        Check(decision.Orders.Single(order => order.Entity == camp.Id).Kind != OrderKind.Dispatch &&
+        Check(decision.Orders.Single(order => order.Entity == camp.Id).Kind == OrderKind.Dispatch &&
             decision.Orders.Single(order => order.Entity == camp.Id).RequestAutomaticEconomy,
-            "feature-enabled Fishing is a resident economy and no longer dispatches opening hunters");
+            "unused Fishing capability requests resident economic preparation without suppressing an otherwise valid dispatch");
 
         var serializer = new DataContractSerializer(typeof(Hunter));
         string xml;

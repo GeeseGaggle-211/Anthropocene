@@ -279,9 +279,9 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 21;
+        public const int SchemaVersion = 22;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
-        public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
+        public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, HerdGrowth, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
         public readonly bool Watercraft, FishingEnabled;
         public readonly IReadOnlyDictionary<int, TileObservation> Tiles;
@@ -346,9 +346,20 @@ namespace Anthropocene.Simulation
             Herds = Array.AsReadOnly(index.VisibleHerds(visible).Select(h => new HerdObservation(h, w.Config, h.DomesticCamp < 0 ? -1 : index.Camps[h.DomesticCamp].Player, Player)).ToArray());
             var forecastScope = PhaseProfile.Scope("Forecasts");
             var herdProfile = HerdConsumptionProfile.Owned(w, camp);
+            var movementHerd = herdProfile;
+            if (includeCandidateForecasts && herdProfile.Exists)
+                movementHerd = HerdConsumptionProfile.BiologicalGrowth(w, camp,
+                    camp.ManagedBreedingIntensity,
+                    w.Config.TurnDays / w.Config.DaysPerYear);
+            HerdGrowth = herdProfile.Exists
+                ? Math.Round(Numbers.Clamp(movementHerd.Animals /
+                    herdProfile.Animals, 1, 3) * 20,
+                    MidpointRounding.AwayFromZero) / 20
+                : 0;
             SiteCoverage = Array.AsReadOnly(includeCandidateForecasts && CultivationEconomy.EconomyEnabled(camp)
                 ? w.Map.Radius(camp.Tile, CampMovement).Where(visible.Contains).OrderBy(id => id)
-                    .Select(id => Coverage(w, camp, index, visible, id, Hunters, herdProfile)).ToArray()
+                    .Select(id => Coverage(w, camp, index, visible, id, Hunters,
+                        herdProfile, movementHerd)).ToArray()
                 : Array.Empty<SiteCoverageObservation>());
             bool retainedFields = CultivationEconomy.Enabled(camp) &&
                 w.Map.Radius(camp.Tile, 1).Any(id => visible.Contains(id) &&
@@ -411,17 +422,21 @@ namespace Anthropocene.Simulation
             return last > 0 ? hunter.EconomicTransitionRoute[last - 1] : -1;
         }
         private static SiteCoverageObservation Coverage(WorldState world, Camp camp, PlanningIndex index, HashSet<int> visible, int site,
-            IReadOnlyList<UnitObservation> ownHunters, HerdConsumptionProfile herd)
+            IReadOnlyList<UnitObservation> ownHunters, HerdConsumptionProfile herd,
+            HerdConsumptionProfile movementHerd)
         {
             int people = camp.Population + ownHunters.Where(h => h.SourceCamp == camp.Id &&
                 world.Map.Distance(site, h.Tile) <= world.Config.SupplyRange).Sum(h => h.Population);
-            return LocalCoverage(world, camp, index, visible, site, people, herd);
+            return LocalCoverage(world, camp, index, visible, site, people,
+                herd, movementHerd);
         }
         internal static SiteCoverageObservation LocalCoverage(WorldState world, Camp camp, PlanningIndex index,
-            HashSet<int> visible, int site, int people, HerdConsumptionProfile herd)
+            HashSet<int> visible, int site, int people, HerdConsumptionProfile herd,
+            HerdConsumptionProfile movementHerd = default)
         {
+            if (!movementHerd.Exists) movementHerd = herd;
             var siteEvaluation = SettlementSiteEvaluation.Evaluate(world, camp,
-                site, people, herd, index.Ecology, visible);
+                site, people, movementHerd, index.Ecology, visible);
             double humanNeed = Math.Max(1, people * world.Config.Consumption * world.Config.GenerationIntervals);
             double Quantize(double ratio) => Math.Round(Numbers.Clamp(ratio, 0, 3) * 20, MidpointRounding.AwayFromZero) / 20;
             double fixedPeople = siteEvaluation.FixedHousing *
@@ -671,9 +686,14 @@ namespace Anthropocene.Simulation
             agricultural.TryGetValue(o.CampTile, out var currentFields);
             double ownedAnimals = o.Herds.Where(h => h.OwnedDomestic && h.DomesticCamp == o.CampId)
                 .Sum(h => (double)h.Count.Representative);
+            bool retainedFishingCapital = economicCamp != null &&
+                (economicCamp.FisherPopulation > 0 ||
+                 economicCamp.FishingTools > 1e-9 ||
+                 economicCamp.FishingVillageMaturity > 0);
             bool retainedEconomicCapital = economicCamp != null &&
                 (ownedAnimals > 0 || economicCamp.FixedHousing > 1e-9 ||
                  economicCamp.LightHousing > 1e-9 || economicCamp.IsVillage ||
+                 retainedFishingCapital ||
                  currentFields != null && currentFields.RetainedFields > 0);
             if (retainedEconomicCapital && o.SiteCoverage.Count > 0)
             {
@@ -682,9 +702,11 @@ namespace Anthropocene.Simulation
                 // which terms exist; they never select a movement policy.
                 var stay = o.SiteCoverage.First(s => s.Tile == o.CampTile);
                 double sustainableStayHerd = ownedAnimals > 0
-                    ? Math.Min(1, Math.Min(stay.HerdForage, stay.HerdWater)) : 0;
+                    ? Math.Min(o.HerdGrowth,
+                        Math.Min(stay.HerdForage, stay.HerdWater)) : 0;
                 double absoluteStayHerd = ownedAnimals > 0
-                    ? Math.Min(1, Math.Min(stay.HerdAbsolute, stay.HerdWater)) : 0;
+                    ? Math.Min(o.HerdGrowth,
+                        Math.Min(stay.HerdAbsolute, stay.HerdWater)) : 0;
                 double sustainableStayValue = stay.HumanFood +
                     sustainableStayHerd - stay.RecurringLabor;
                 double absoluteStayValue = stay.HumanFoodAfterHerd +
@@ -703,9 +725,11 @@ namespace Anthropocene.Simulation
                     }
                     agricultural.TryGetValue(n, out var candidateFields);
                     double sustainableMoveHerd = ownedAnimals > 0
-                        ? Math.Min(1, Math.Min(site.HerdForage, site.HerdWater)) : 0;
+                        ? Math.Min(o.HerdGrowth,
+                            Math.Min(site.HerdForage, site.HerdWater)) : 0;
                     double absoluteMoveHerd = ownedAnimals > 0
-                        ? Math.Min(1, Math.Min(site.HerdAbsolute, site.HerdWater)) : 0;
+                        ? Math.Min(o.HerdGrowth,
+                            Math.Min(site.HerdAbsolute, site.HerdWater)) : 0;
                     // Each site gets the same two physical alternatives. The
                     // absolute option pays both its human-food displacement and
                     // its own management work. Comparing the best portfolio on
@@ -770,7 +794,6 @@ namespace Anthropocene.Simulation
             int dispatchable = Math.Min(o.GathererPopulation, o.CampPopulation - o.MinimumCamp - (huntingFocus ? 0 : 4));
             int allocation = Math.Min(8, Math.Min(Math.Max(0, desiredHunters - assignedHunters), dispatchable));
             if (!retainedEconomicCapital &&
-                !(economicCamp?.FishingEnabled ?? false) &&
                 (campChoice.Kind == OrderKind.NoOp || huntingFocus ||
                     fishingFocus && fishingOpportunity) &&
                 allocation >= 4 && opportunity && o.DeficitTurns == 0 &&

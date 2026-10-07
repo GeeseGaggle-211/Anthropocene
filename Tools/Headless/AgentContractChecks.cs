@@ -27,7 +27,7 @@ internal static class AgentContractChecks
         var replayObservation = builder.Build(replay, c.Player);
         var replayDto = ObservationContract.Deserialize(ObservationContract.Serialize(replayObservation, c.Mandate));
         Check(replay.Tiles[c.Tile].RidgeMask == ridgeMask && replayObservation.Tiles[c.Tile].RidgeMask == ridgeMask && replayDto.Tiles.Single(t => t.Id == c.Tile).RidgeMask == ridgeMask && SaveCodec.Fingerprint(replay) == fingerprint, "ridge mask survives save/load replay through source, observation and DTO");
-        Check(dto.Schema == AgentObservation.SchemaVersion && dto.Tiles.Length == o.Tiles.Count && dto.Hunters.Single().SourceCamp == c.Id && dto.Experience.SequenceEqual(c.Experience), "serializable observation retains the filtered policy inputs and source settlement");
+        Check(dto.Schema == AgentObservation.SchemaVersion && dto.Tiles.Length == o.Tiles.Count && dto.Hunters.Single().SourceCamp == c.Id && dto.Experience.SequenceEqual(c.Experience) && dto.HerdGrowth == o.HerdGrowth, "serializable observation retains the filtered policy inputs and source settlement");
         Check(dto.TechnologyStatuses.Length == 3 && dto.TechnologyStatuses.All(s => s.Threshold == w.Config.ExperienceThreshold && !s.Acquired) &&
             dto.TechnologyStatuses.Select(s => s.Progress).SequenceEqual(o.TechnologyStatuses.Select(s => s.Progress)),
             "owned technology progress, threshold and acquisition state survive filtered serialization");
@@ -57,10 +57,46 @@ internal static class AgentContractChecks
         Check(indexed.Tiles[c.Tile].RidgeMask == ridgeMask, "shared spatial snapshot retains the exact ridge mask");
         var preferences = Enumerable.Range(1, 200).Select(seed => PolicyState.Seeded(seed)).ToArray();
         Check(preferences.Any(p => p.HuntingInclination > p.GatheringInclination) && preferences.Any(p => p.FishingInclination > p.GatheringInclination) && preferences.Any(p => p.GatheringInclination > Math.Max(p.HuntingInclination, p.FishingInclination)), "seeded policy state supports all three preferences without player-ID cohorts");
+        TechnologyOnlyFishing();
         HusbandryMovement();
         AgriculturalMovement();
         ValidationView();
         Console.WriteLine("PASS: " + count + " agent-contract assertions"); return count;
+    }
+
+    private static void TechnologyOnlyFishing()
+    {
+        var control = NeolithicChecks.Fixture(false);
+        control.Config.NeolithicFishingEnabled = true;
+        control.Config.CorrectedAquaticSeasonalPressureEnabled = true;
+        control.Config.EconomicAllocation =
+            EconomicAllocationStrategy.DemandControl;
+        var camp = control.Camps[0];
+        camp.Population = 100; camp.PlantFood = 100000;
+        camp.FoodNeedsMetRatio = camp.WaterNeedsMetRatio = 1;
+        camp.DeficitTurns = 0;
+        camp.Mandate.Hunting = 10; camp.Mandate.Gathering = .1;
+        camp.Mandate.Fishing = .1;
+        control.Herds.Add(new Herd { Id = control.NextId++, Animals = 40,
+            Tile = camp.Tile, DomesticCamp = -1 });
+        var treatment = SaveCodec.Load(SaveCodec.Save(control));
+        var treatmentCamp = treatment.Camps.Single(c => c.Id == camp.Id);
+        treatmentCamp.Technologies[(int)Technology.Watercraft] = true;
+
+        var policy = new HeuristicTribePolicy();
+        var controlOrder = policy.Decide(
+            new AgentObservationBuilder().Build(control, camp.Player),
+            camp.Mandate).Orders.Single(o => o.Entity == camp.Id);
+        var treatmentOrder = policy.Decide(
+            new AgentObservationBuilder().Build(treatment,
+                treatmentCamp.Player), treatmentCamp.Mandate)
+            .Orders.Single(o => o.Entity == treatmentCamp.Id);
+        Check(controlOrder.Kind == OrderKind.Dispatch,
+            "the technology-only dispatch fixture has a real hunting opportunity");
+        Check(treatmentOrder.Kind == controlOrder.Kind &&
+            treatmentOrder.Population == controlOrder.Population &&
+            treatmentOrder.Destination == controlOrder.Destination,
+            "a Watercraft flag without fishers, fishing tools or fishing capital does not suppress or redirect dispatch");
     }
 
     private static void HusbandryMovement()

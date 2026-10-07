@@ -255,6 +255,7 @@ namespace Anthropocene.Simulation
     internal sealed class CampProductionDemand
     {
         public bool CultivationEnabled, HusbandryEnabled, Established;
+        internal bool RetainedFieldCapital;
         public int[] Footprint, Operated, Eligible;
         public double Upkeep, ForageSupply, PlantSupply, ForageAfterHerds, TerrestrialAfterHerds, Supply, Biological, NextPopulation;
         public int ReservedHerders, Consumers;
@@ -432,7 +433,34 @@ namespace Anthropocene.Simulation
             if (!footprint.Contains(e.Focus)) e.Focus = -1;
             var operated = d.Operated = footprint.Where(id => w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == c.Id).ToArray();
             d.Upkeep = d.CultivationEnabled ? CultivationEconomy.MaintenanceFarmersForPlanning(w, c, years) : 0;
-            d.Established = d.CultivationEnabled && operated.Any(id => LazyEcology.ProjectEcology(w, id, w.Days).CultivationCapital > 0);
+            d.Established = d.CultivationEnabled && operated.Any(id =>
+                LazyEcology.ProjectEcology(w, id, w.Days)
+                    .CultivationCapital > 0);
+            int assignedFarmers = c.Workforce?.Assignments?
+                .Where(a => a.Role == WorkforceRoles.Farmer)
+                .Sum(a => a.Population) ?? 0;
+            double bridgeCapital = Math.Pow(cfg.GathererBridgeCeiling /
+                cfg.ReferenceIntensity, 2);
+            var deliberatelySeededFields = w.Improvements
+                .Where(improvement =>
+                    improvement.Kind == ImprovementKind.CultivationSeed &&
+                    improvement.Settlement == c.Id)
+                .Select(improvement => improvement.Tile)
+                .ToHashSet();
+            // Gatherer work may leave incidental capital up to the bridge
+            // ceiling. It becomes retained field capital when a saved Farmer
+            // assignment demonstrates operation, when the tile is an existing
+            // physical cultivation improvement, or when capital has crossed
+            // beyond what bridge work can create. Fixed housing and village
+            // status are deliberately not evidence of an Agriculture policy:
+            // a fishing or herding settlement may acquire Cultivation too.
+            d.RetainedFieldCapital = d.CultivationEnabled && operated.Any(id =>
+            {
+                var view = LazyEcology.ProjectEcology(w, id, w.Days);
+                return view.CultivationCapital > 0 && (assignedFarmers > 0 ||
+                    deliberatelySeededFields.Contains(id) ||
+                    view.CultivationCapital > bridgeCapital + 1e-9);
+            });
             d.HarvestProductivity = d.CultivationEnabled ? CultivationEconomy.HarvestProductivity(w, c, footprint) : 1;
             d.FutureHarvestProductivity = d.HarvestProductivity;
             d.Eligible = w.Map.Radius(c.Tile, cfg.GatherRadius).Where(id => PassiveGathering.Eligible(w, c, id)).OrderBy(id => id).ToArray();

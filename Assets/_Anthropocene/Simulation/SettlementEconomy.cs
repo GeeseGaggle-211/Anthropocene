@@ -63,6 +63,35 @@ namespace Anthropocene.Simulation
                 ? new HerdConsumptionProfile(forecast.Animals,
                     forecast.FoodConsumption, forecast.WaterConsumption)
                 : new HerdConsumptionProfile(0, 0, 0);
+
+        // Pure biological ceiling for the next turn under the retained
+        // breeding policy. Ecology, water and management remain separate
+        // bounds in SettlementSiteEvaluation and the allocator; keeping them
+        // out of this calculation prevents the current site from suppressing
+        // the opportunity represented by a materially better candidate site.
+        public static HerdConsumptionProfile BiologicalGrowth(WorldState world,
+            Camp camp, double breeding, double years)
+        {
+            double animals = 0, food = 0, water = 0;
+            double policy = Numbers.Clamp(breeding, 0, 1);
+            foreach (var herd in world.Herds.Where(h =>
+                    h.DomesticCamp == camp.Id && h.Animals > 0)
+                .OrderBy(h => h.Id))
+            {
+                var species = world.Config.GetSpecies(herd.Species);
+                double target = (herd.Animals +
+                    Math.Max(0, herd.GrowthRemainder)) * Math.Exp(
+                        species.GrowthRate * policy * Math.Max(0, years));
+                double grown = Math.Max(herd.Animals, Math.Floor(target));
+                animals += grown;
+                food += grown * Math.Max(0, species.FoodConsumption);
+                water += grown * Math.Max(0, species.FreshwaterConsumption);
+            }
+            return animals > 0
+                ? new HerdConsumptionProfile(animals, food / animals,
+                    water / animals)
+                : new HerdConsumptionProfile(0, 0, 0);
+        }
     }
 
     internal readonly struct LocalHerdSite
@@ -277,10 +306,49 @@ namespace Anthropocene.Simulation
         public double HCurrent, HSustainable, HAbsolute, HGrown, HRetained,
             HGrowthCeiling, RetainedFoodSupply, ManagedFoodPerAnimal,
             SlaughterFood, SelectedFieldOperation, SelectedPortfolioValue,
-            SelectedPortfolioUnmet;
+            SelectedPortfolioUnmet, SelectedFutureFieldMaintenance,
+            SelectedFutureFieldHarvestWork;
         public int AlternativesEvaluated;
+        public int StrategicLaborStep;
         public ManagedFoodForecast GrownForecast;
         public SettlementSiteEvaluation Site;
+    }
+
+    // One pure definition of the food services that may justify productive
+    // capital at the next boundary. Consumption and maximum-growth food recur;
+    // reserve refill is a one-time current service and only the retained stock
+    // target receives terminal risk value. Future receipts never satisfy the
+    // current buckets exposed separately here.
+    internal readonly struct SettlementContinuationDemand
+    {
+        internal readonly double ConsumptionIncome, ReserveTarget, ReserveFill,
+            GrowthFood, RecurringFoodTarget, TerminalFoodTarget;
+
+        private SettlementContinuationDemand(double consumptionIncome,
+            double reserveTarget, double reserveFill, double growthFood,
+            double recurringFoodTarget, double terminalFoodTarget)
+        {
+            ConsumptionIncome = consumptionIncome;
+            ReserveTarget = reserveTarget;
+            ReserveFill = reserveFill;
+            GrowthFood = growthFood;
+            RecurringFoodTarget = recurringFoodTarget;
+            TerminalFoodTarget = terminalFoodTarget;
+        }
+
+        internal static SettlementContinuationDemand For(WorldState world,
+            Camp camp, CampProductionDemand demand)
+        {
+            double years = world.Config.TurnDays / world.Config.DaysPerYear;
+            TurnResolver.FoodBucketTargets(world, camp,
+                world.Config.GenerationIntervals, years, demand.Meals,
+                camp.Food, out double consumption, out double reserveTarget,
+                out double reserveFill, out double growthFood);
+            double recurring = Math.Max(0, demand.Meals + growthFood);
+            return new SettlementContinuationDemand(consumption, reserveTarget,
+                reserveFill, growthFood, recurring,
+                recurring + Math.Max(0, reserveTarget));
+        }
     }
 
     // The settlement-level supervisor selects the retained capital portfolio;
@@ -336,25 +404,38 @@ namespace Anthropocene.Simulation
             double years = cfg.TurnDays / cfg.DaysPerYear;
             double intervals = cfg.GenerationIntervals;
             int residents = Math.Max(0, camp.Population);
+            int strategicLaborStep = Math.Max(10,
+                (int)Math.Ceiling(residents * .10));
+            int assignedFarmers = camp.Workforce?.Assignments?
+                .Where(a => a.Role == WorkforceRoles.Farmer)
+                .Sum(a => a.Population) ?? 0;
+            int assignedHerders = camp.Workforce?.Assignments?
+                .Where(a => a.Role == WorkforceRoles.Herder)
+                .Sum(a => a.Population) ?? 0;
             double farmRate = demand.HarvestProductivity * cfg.GatherPerPerson * intervals;
             double gatherRate = cfg.GatherPerPerson * intervals;
             double annualGatherRate = cfg.GatherPerPerson * cfg.DaysPerYear /
                 cfg.BaseDays;
-            TurnResolver.FoodBucketTargets(world, camp, intervals, years,
-                demand.Meals, camp.Food, out double survivalFood, out _,
-                out _, out _);
+            var continuation = SettlementContinuationDemand.For(world, camp,
+                demand);
+            double survivalFood = continuation.ConsumptionIncome;
 
             var profile = HerdConsumptionProfile.Owned(world, camp);
             var grown = profile.Exists
                 ? TurnResolver.ForecastGrownManagedAnimalFood(world, camp,
                     settings.ManagedBreedingIntensity, intervals, years, camp.Tile)
                 : new ManagedFoodForecast();
+            var biologicalGrowth = profile.Exists
+                ? HerdConsumptionProfile.BiologicalGrowth(world, camp,
+                    settings.ManagedBreedingIntensity, years)
+                : profile;
             var result = new RetainedSettlementPortfolio
             {
                 HCurrent = profile.Animals,
                 HAbsolute = profile.Exists ? site.Herd.AbsoluteCapacity : 0,
-                HGrown = grown.Animals > 0 ? grown.Animals : profile.Animals,
-                GrownForecast = grown,
+                HGrown = biologicalGrowth.Exists
+                    ? biologicalGrowth.Animals : profile.Animals,
+                GrownForecast = grown, StrategicLaborStep = strategicLaborStep,
                 Site = site
             };
 
@@ -378,7 +459,7 @@ namespace Anthropocene.Simulation
 
             // Actual field-operation fractions use the uncapped maintenance
             // requirement and the same finite Farm Tool coverage as resolution.
-            double rawMaintenance = demand.Established
+            double rawMaintenance = demand.RetainedFieldCapital
                 ? CultivationEconomy.MaintenanceWorkerRequirement(world, camp) : 0;
             double toolWorkers = years > 0 ? Math.Max(0,
                 camp.Inventory.FarmTools) * cfg.Neolithic.FarmToolFarmerYearsPerUnit /
@@ -403,10 +484,8 @@ namespace Anthropocene.Simulation
             var farmerBreaks = new SortedSet<int> { 0, maximumFarmers };
             if (maximumFarmers > 0)
             {
-                int assigned = camp.Workforce?.Assignments?
-                    .Where(a => a.Role == WorkforceRoles.Farmer)
-                    .Sum(a => a.Population) ?? 0;
-                farmerBreaks.Add(Math.Min(maximumFarmers, Math.Max(0, assigned)));
+                farmerBreaks.Add(Math.Min(maximumFarmers,
+                    Math.Max(0, assignedFarmers)));
                 // Field-operation alternatives depend only on physical land,
                 // tools and food service.  A recipe exposed by a secondary
                 // capability must not move this breakpoint when it has no
@@ -420,13 +499,24 @@ namespace Anthropocene.Simulation
                     (int)Math.Floor(toolKink + Epsilon)));
                 farmerBreaks.Add(beforeKink);
                 farmerBreaks.Add(Math.Min(maximumFarmers, beforeKink + 1));
+                for (int workers = strategicLaborStep;
+                    workers < maximumFarmers; workers += strategicLaborStep)
+                    farmerBreaks.Add(workers);
             }
 
             var herderBreaks = new SortedSet<int> { 0, residents };
             void AddRequirement(double animals)
-                => herderBreaks.Add(Math.Min(residents,
+            {
+                int requirement = Math.Min(residents,
                     HerdingTooling.RequiredHerdersFor(world, camp, years,
-                        Math.Max(0, animals))));
+                        Math.Max(0, animals)));
+                herderBreaks.Add(requirement);
+                // A requirement is a discontinuity in the animal target. Its
+                // immediate lower neighbour is a distinct liquidation/growth
+                // portfolio and costs one bounded candidate, independent of
+                // population. Coarse strategic steps must not erase it.
+                if (requirement > 0) herderBreaks.Add(requirement - 1);
+            }
             if (profile.Exists)
             {
                 AddRequirement(profile.Animals);
@@ -439,8 +529,11 @@ namespace Anthropocene.Simulation
                 cfg.Neolithic.HerdingToolCoverageYearsPerUnit / Math.Max(1e-12, years));
             herderBreaks.Add(toolBreak);
             herderBreaks.Add(Math.Min(residents, toolBreak + 1));
-            for (int band = 1; band < 16; band++)
-                herderBreaks.Add((int)Math.Ceiling(residents * band / 16.0));
+            herderBreaks.Add(Math.Min(residents,
+                Math.Max(0, assignedHerders)));
+            for (int workers = strategicLaborStep;
+                workers < residents; workers += strategicLaborStep)
+                herderBreaks.Add(workers);
 
             // Cache opening projections and the operation-independent local
             // land forecasts once.  Every field alternative uses the same
@@ -584,7 +677,8 @@ namespace Anthropocene.Simulation
                     Math.Max(Epsilon, annualGatherRate);
                 option.UncreditedContinuationValue = futureLife *
                     (annualFutureLand - futureWorkers * annualGatherRate) +
-                    terminalDiscount * Math.Min(residual, demand.Meals);
+                    terminalDiscount * Math.Min(residual,
+                        continuation.TerminalFoodTarget);
                 fields.Add(option);
             }
 
@@ -658,6 +752,44 @@ namespace Anthropocene.Simulation
                 else break;
             }
             double aquatic = Math.Max(0, demand.ForageSupply - demand.PlantSupply);
+            double ContinuationValue(FieldOption field, HerdOption herd)
+            {
+                double futureDisplaced = Math.Max(0, herd.Target *
+                    profile.FoodPerAnimal * intervals - site.Survey.NonhumanFood);
+                double futureLand = Math.Max(0,
+                    field.FutureLand - futureDisplaced);
+                double futureHuman = futureLand + aquatic;
+                double futureAnimal = herd.Target * managedFoodPerAnimal;
+                double futureNeed = Math.Max(0,
+                    continuation.RecurringFoodTarget - futureAnimal);
+                double futureHarvest = Math.Min(futureNeed,
+                    Math.Min(futureLand, field.FutureMaintenance *
+                        annualGatherRate * Math.Max(1,
+                            field.FutureHarvestProductivity) * years));
+                double futureGather = Math.Min(Math.Max(0,
+                    futureHuman - futureHarvest), Math.Max(0,
+                        futureNeed - futureHarvest));
+                double futureGatherers = futureGather /
+                    Math.Max(Epsilon, gatherRate);
+                double futureUseful = Math.Min(
+                    continuation.RecurringFoodTarget,
+                    futureAnimal + futureHarvest + futureGather);
+                double futureWorkers = field.FutureMaintenance + herd.Herders +
+                    futureGatherers;
+                // Retained food stock is bounded by the continuation service;
+                // the herd's liquidation value is productive-capital option
+                // value, analogous to the separately priced avoided field
+                // rebuild. Folding it into the food-stock cap makes an
+                // established herd worthless as soon as fields fill that cap
+                // and creates an agricultural tie-break by construction.
+                double terminalUseful = Math.Min(
+                    continuation.TerminalFoodTarget, field.Residual) +
+                    herd.ResidualFood;
+                return futureLife * (futureUseful /
+                        Math.Max(Epsilon, years) -
+                    futureWorkers * annualGatherRate) +
+                    terminalDiscount * terminalUseful;
+            }
             Candidate Evaluate(FieldOption field, HerdOption herd)
             {
                 if (field.Farmers + herd.Herders > residents)
@@ -682,36 +814,13 @@ namespace Anthropocene.Simulation
                 double food = herd.CurrentFood + herd.SlaughterFood + harvest +
                     gathered;
 
-                double futureDisplaced = Math.Max(0, herd.Target *
-                    profile.FoodPerAnimal * intervals - site.Survey.NonhumanFood);
-                double futureLand = Math.Max(0,
-                    field.FutureLand - futureDisplaced);
-                double futureHuman = futureLand + aquatic;
-                double futureAnimal = herd.Target * managedFoodPerAnimal;
-                double futureNeed = Math.Max(0, demand.Meals - futureAnimal);
-                double futureHarvest = Math.Min(futureNeed,
-                    Math.Min(futureLand, field.FutureMaintenance *
-                        annualGatherRate * Math.Max(1,
-                            field.FutureHarvestProductivity) * years));
-                double futureGather = Math.Min(Math.Max(0,
-                    futureHuman - futureHarvest), Math.Max(0,
-                        futureNeed - futureHarvest));
-                double futureGatherers = futureGather /
-                    Math.Max(Epsilon, gatherRate);
-                double futureUseful = Math.Min(demand.Meals,
-                    futureAnimal + futureHarvest + futureGather);
-                double futureWorkers = field.FutureMaintenance + herd.Herders +
-                    futureGatherers;
                 double currentUseful = Math.Min(survivalFood, food);
                 // Current work has no invented shadow price here: after Survival
                 // is feasible, the Elder may have no competing current service.
                 // Recurring future work still pays the gathering opportunity
                 // cost over the common finite horizon.
-                double value = currentUseful +
-                    futureLife * (futureUseful / Math.Max(Epsilon, years) -
-                        futureWorkers * annualGatherRate) +
-                    terminalDiscount * (Math.Min(field.Residual, demand.Meals) +
-                        herd.ResidualFood) + field.RetainedCapitalValue;
+                double value = currentUseful + ContinuationValue(field, herd) +
+                    field.RetainedCapitalValue;
                 double retention = field.Operation + (profile.Animals > 0
                     ? herd.Target / profile.Animals : 0);
                 return new Candidate(field, herd, gatherers, food,
@@ -729,31 +838,96 @@ namespace Anthropocene.Simulation
                 if (candidate.Retention < incumbent.Retention - Epsilon) return false;
                 if (candidate.Labor != incumbent.Labor)
                     return candidate.Labor < incumbent.Labor;
+                int candidateChange = Math.Abs(candidate.Field.Farmers -
+                        assignedFarmers) +
+                    Math.Abs(candidate.Herd.Herders - assignedHerders);
+                int incumbentChange = Math.Abs(incumbent.Field.Farmers -
+                        assignedFarmers) +
+                    Math.Abs(incumbent.Herd.Herders - assignedHerders);
+                if (candidateChange != incumbentChange)
+                    return candidateChange < incumbentChange;
+                // An exact economic tie preserves the less committed physical
+                // portfolio.  The former Farmers-first tie-break made a newly
+                // exposed cultivation recipe a strategic preference even when
+                // its measured return was identical.
                 if (candidate.Field.Farmers != incumbent.Field.Farmers)
-                    return candidate.Field.Farmers > incumbent.Field.Farmers;
-                return candidate.Herd.Target > incumbent.Herd.Target + Epsilon;
+                    return candidate.Field.Farmers < incumbent.Field.Farmers;
+                return candidate.Herd.Target < incumbent.Herd.Target - Epsilon;
             }
 
-            // Merge the two prefix chains by their next finite-horizon marginal
-            // return.  This visits F + H states, not F x H combinations.
-            int fi = 0, hi = 0;
-            result.AlternativesEvaluated = 1;
-            while (fi + 1 < fields.Count || hi + 1 < herdOptions.Count)
+            // Compare the next marginal Farmer and Herder portfolio increments
+            // from one accepted prefix, and also sample pure and equal-work
+            // 50/50 rays. The prefix admits asymmetric mixed economies (for
+            // example, a small complementary herd beside substantial retained
+            // fields) that three origin-only rays cannot represent. Coarse
+            // budgets are max(10 people, 10% of residents), while exact tool,
+            // maintenance, herd, water and forage kinks remain in the option
+            // chains. This is O(F + H + 10), never an F x H search.
+            var evaluated = new HashSet<(int field, int herd)>();
+            result.AlternativesEvaluated = 0;
+            void Consider(int fieldIndex, int herdIndex)
             {
-                double fieldMarginal = fi + 1 < fields.Count
-                    ? (fields[fi + 1].MergeValue - fields[fi].MergeValue) /
-                        Math.Max(Epsilon, fields[fi + 1].Farmers -
-                            fields[fi].Farmers) : double.NegativeInfinity;
-                double herdMarginal = hi + 1 < herdOptions.Count
-                    ? (herdOptions[hi + 1].MergeValue -
-                        herdOptions[hi].MergeValue) /
-                        Math.Max(Epsilon, herdOptions[hi + 1].Herders -
-                            herdOptions[hi].Herders) : double.NegativeInfinity;
-                if (fieldMarginal >= herdMarginal) fi++; else hi++;
-                var candidate = Evaluate(fields[fi], herdOptions[hi]);
+                fieldIndex = Math.Max(0, Math.Min(fields.Count - 1, fieldIndex));
+                herdIndex = Math.Max(0,
+                    Math.Min(herdOptions.Count - 1, herdIndex));
+                if (!evaluated.Add((fieldIndex, herdIndex))) return;
+                var candidate = Evaluate(fields[fieldIndex],
+                    herdOptions[herdIndex]);
                 result.AlternativesEvaluated++;
                 if (Better(candidate, best)) best = candidate;
             }
+            int marginalField = 0, marginalHerd = 0;
+            Consider(marginalField, marginalHerd);
+            while (marginalField + 1 < fields.Count ||
+                marginalHerd + 1 < herdOptions.Count)
+            {
+                double fieldMarginal = marginalField + 1 < fields.Count
+                    ? (fields[marginalField + 1].MergeValue -
+                        fields[marginalField].MergeValue) /
+                      Math.Max(Epsilon,
+                          fields[marginalField + 1].Farmers -
+                          fields[marginalField].Farmers)
+                    : double.NegativeInfinity;
+                double herdMarginal = marginalHerd + 1 < herdOptions.Count
+                    ? (herdOptions[marginalHerd + 1].MergeValue -
+                        herdOptions[marginalHerd].MergeValue) /
+                      Math.Max(Epsilon,
+                          herdOptions[marginalHerd + 1].Herders -
+                          herdOptions[marginalHerd].Herders)
+                    : double.NegativeInfinity;
+                if (fieldMarginal >= herdMarginal) marginalField++;
+                else marginalHerd++;
+                Consider(marginalField, marginalHerd);
+            }
+            for (int index = 0; index < fields.Count; index++)
+                Consider(index, 0);
+            for (int index = 0; index < herdOptions.Count; index++)
+                Consider(0, index);
+            for (int total = strategicLaborStep; total < residents;
+                total += strategicLaborStep)
+            {
+                int channelBudget = total / 2;
+                int fieldIndex = fields.FindLastIndex(f =>
+                    f.Farmers <= channelBudget);
+                int herdIndex = herdOptions.FindLastIndex(h =>
+                    h.Herders <= channelBudget);
+                Consider(fieldIndex, herdIndex);
+            }
+            if (residents > 0)
+            {
+                int channelBudget = residents / 2;
+                Consider(fields.FindLastIndex(f => f.Farmers <= channelBudget),
+                    herdOptions.FindLastIndex(h =>
+                        h.Herders <= channelBudget));
+            }
+
+            // Always price the nearest persisted workforce mix.  This is an
+            // inertia point, not a technology identity, and keeps an exact tie
+            // from manufacturing a switch between productive channels.
+            Consider(fields.FindLastIndex(f =>
+                    f.Farmers <= Math.Max(0, assignedFarmers)),
+                herdOptions.FindLastIndex(h =>
+                    h.Herders <= Math.Max(0, assignedHerders)));
 
             // Existing field capital whose own finite continuation is
             // non-negative is a retained-capital portfolio, not a fresh
@@ -763,12 +937,8 @@ namespace Anthropocene.Simulation
             // order and does not form a field x herd search.
             if (retainedField > 0)
             {
-                foreach (var herd in herdOptions)
-                {
-                    var candidate = Evaluate(fields[retainedField], herd);
-                    result.AlternativesEvaluated++;
-                    if (Better(candidate, best)) best = candidate;
-                }
+                for (int index = 0; index < herdOptions.Count; index++)
+                    Consider(retainedField, index);
             }
 
             // H_sustainable is still the zero-displacement ceiling under the
@@ -780,7 +950,16 @@ namespace Anthropocene.Simulation
                 double bestCapacity = 0;
                 int maximumHerders = Math.Max(0,
                     residents - field.Farmers);
-                foreach (int herders in herderBreaks.Where(h => h >= 0 &&
+                // Strategic breakpoints are deliberately coarse, but this
+                // method exports a physical/labour ceiling. Always include the
+                // exact residual-labour endpoint (and its integer neighbour),
+                // otherwise a step of ten can turn eight genuinely available
+                // herders into a hard four-herder growth cap.
+                var capacityBreaks = new SortedSet<int>(herderBreaks)
+                    { maximumHerders };
+                if (maximumHerders > 0)
+                    capacityBreaks.Add(maximumHerders - 1);
+                foreach (int herders in capacityBreaks.Where(h => h >= 0 &&
                     h <= maximumHerders))
                 {
                     double capacity = Math.Min(ecologicalCapacity,
@@ -827,8 +1006,20 @@ namespace Anthropocene.Simulation
                     .OrderByDescending(h => h.Target)
                     .ThenBy(h => h.Herders).First();
                 var retainedCandidate = Evaluate(best.Field, retainedHerd);
-                result.AlternativesEvaluated++;
-                if (retainedCandidate.Unmet <= best.Unmet + Epsilon)
+                int retainedFieldIndex = fields.IndexOf(best.Field);
+                int retainedHerdIndex = herdOptions.IndexOf(retainedHerd);
+                if (evaluated.Add((retainedFieldIndex, retainedHerdIndex)))
+                    result.AlternativesEvaluated++;
+                // This continuity preference may promote a complementary herd
+                // up to the zero-displacement envelope, but it must never
+                // replace a joint optimum that already retained more animals
+                // profitably inside the absolute physical envelope. Doing so
+                // silently turned the sustainable target into a hard pastoral
+                // cap, forced liquidation, and erased the subsequent
+                // Development comparison by setting its growth ceiling to the
+                // reduced target.
+                if (retainedHerd.Target > best.Herd.Target + Epsilon &&
+                    retainedCandidate.Unmet <= best.Unmet + Epsilon)
                     best = retainedCandidate;
             }
 
@@ -837,6 +1028,23 @@ namespace Anthropocene.Simulation
             result.SelectedFieldOperation = best.Field.Operation;
             result.SelectedPortfolioValue = best.Value;
             result.SelectedPortfolioUnmet = best.Unmet;
+            result.SelectedFutureFieldMaintenance =
+                best.Field.FutureMaintenance;
+            double selectedFutureDisplaced = Math.Max(0, best.Herd.Target *
+                profile.FoodPerAnimal * intervals - site.Survey.NonhumanFood);
+            double selectedFutureLand = Math.Max(0,
+                best.Field.FutureLand - selectedFutureDisplaced);
+            double selectedFutureAnimal = best.Herd.Target *
+                managedFoodPerAnimal;
+            double selectedFutureNeed = Math.Max(0,
+                continuation.RecurringFoodTarget - selectedFutureAnimal);
+            double selectedFutureHarvest = Math.Min(selectedFutureNeed,
+                Math.Min(selectedFutureLand,
+                    best.Field.FutureMaintenance * annualGatherRate *
+                    Math.Max(1, best.Field.FutureHarvestProductivity) * years));
+            result.SelectedFutureFieldHarvestWork = selectedFutureHarvest /
+                Math.Max(Epsilon, annualGatherRate *
+                    Math.Max(1, best.Field.FutureHarvestProductivity));
             result.HSustainable = profile.Exists
                 ? LaborCapacity(best.Field,
                     site.Herd.ZeroDisplacementCapacity, false) : 0;

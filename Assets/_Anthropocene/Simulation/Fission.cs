@@ -170,10 +170,11 @@ namespace Anthropocene.Simulation
         //   Built: FissionDaughterBuilderShare of her people work as Builders (the planner staffs shelter with a handful of Builders
         //   because a Builder-turn makes several units; the share bounds that staffing), at the production rates and tool waterfall the
         //   resolver uses (Specialist when the Society holds Construction, else GeneralistTaskEfficiency; equipment limits and grade
-        //   multipliers from ToolCoverageBudget on her carried tools). The Builders first assemble fixed Housing (needs Agriculture or
-        //   feature-enabled Fishing; one
-        //   carried Housing Material or one Wood/Clay unit each, material-making labour included), then sew Light Housing from carried
-        //   Animal Fabric (needs Husbandry), each only up to the people still unsheltered. Nothing is gathered at the site, so a daughter
+        //   multipliers from ToolCoverageBudget on her carried tools). The parent's retained physical shelter/operating capital chooses
+        //   the first route: fixed Housing when fixed settlement capital exists, portable Light Housing when portable/herd capital exists.
+        //   Capabilities only make those recipes feasible, and the other route remains a bounded fallback. Fixed Housing consumes one
+        //   carried Housing Material or one Wood/Clay unit each (material-making labour included); Light Housing consumes carried Animal
+        //   Fabric. Each route builds only up to the people still unsheltered. Nothing is gathered at the site, so a daughter
         //   with no carried materials, tools or Builders keeps exactly her tents. Ignores decay of carried tents within the turn.
         // Returns people sheltered: Fixed (assembled Housing) and Light (carried plus sewn tents) in people, for HousingShare/Coverage.
         public static NeolithicProduction.ShelterCapacity DaughterShelter(WorldState w, Camp parent, int daughter)
@@ -191,8 +192,21 @@ namespace Anthropocene.Simulation
                 : baseRate * n.GeneralistTaskEfficiency;
             double copper = parent.People.HasTech(NeolithicTech.CopperWorking) ? Math.Max(0, inv.CopperTools) * f * intervals / n.ToolCoveragePerWorker : 0;
             var tools = new ToolCoverageBudget(n, Math.Max(0, inv.HandTools) * f, Math.Max(0, inv.Tools) * f * ToolCoverageBudget.OutputsPerTool, copper);
-            if (CultivationEconomy.Enabled(parent) || NeolithicCapabilities.FeatureFishingEnabled(w, parent))
+            bool fixedFeasible = CultivationEconomy.Enabled(parent) ||
+                NeolithicCapabilities.FeatureFishingEnabled(w, parent);
+            bool lightFeasible = CultivationEconomy.HusbandryEnabled(parent);
+            bool fixedCapital = parent.IsVillage ||
+                NeolithicProduction.FixedHousingAt(w, parent, w.Days) > 1e-9 ||
+                (parent.Workforce?.Assignments?.Any(a =>
+                    a.Role == WorkforceRoles.Farmer && a.Population > 0) ?? false);
+            bool portableCapital = Math.Max(0, inv.LightHousingUnits) > 1e-9 ||
+                (parent.Workforce?.Assignments?.Any(a =>
+                    a.Role == WorkforceRoles.Herder && a.Population > 0) ?? false) ||
+                w.Herds.Any(h => h.DomesticCamp == parent.Id && h.Animals > 0);
+
+            void BuildFixed()
             {
+                if (!fixedFeasible || need <= 1e-9 || !(labor > 0)) return;
                 // Housing Material and its assembly share the Builder pool and the same step rate (2x the single-step rate), as in the resolver.
                 double step = 2 * Rate(n.BuilderHousingOutputPerBaseDays), stock = Math.Max(0, inv.HousingMaterial) * f;
                 double raw = (Math.Max(0, inv.Wood) + Math.Max(0, inv.Clay)) * f / Math.Max(1e-12, n.HousingMaterialUnitsPerHousing);
@@ -211,13 +225,29 @@ namespace Anthropocene.Simulation
                     fixedPeople = built * n.HousingPeoplePerUnit; need -= fixedPeople;
                 }
             }
-            if (CultivationEconomy.HusbandryEnabled(parent) && need > 1e-9 && labor > 0)
+
+            void BuildLight()
             {
+                if (!lightFeasible || need <= 1e-9 || !(labor > 0)) return;
                 double lightRate = Rate(n.LightHousingBuilderOutputPerBaseDays);
                 double sewn = Math.Min(need / n.LightHousingPeoplePerUnit, Math.Max(0, inv.AnimalFabric) * f / n.AnimalFabricPerLightHousing);
                 sewn = Math.Min(sewn, tools.Capacity(CraftGood.LightHousing, lightRate, labor));
-                if (sewn > 0) lightPeople += sewn * n.LightHousingPeoplePerUnit;
+                if (sewn > 0)
+                {
+                    labor -= tools.Time(CraftGood.LightHousing, lightRate, sewn);
+                    tools.Spend(CraftGood.LightHousing, lightRate, sewn);
+                    double sheltered = sewn * n.LightHousingPeoplePerUnit;
+                    lightPeople += sheltered; need -= sheltered;
+                }
             }
+
+            // In the absence of either retained form, fixed is the neutral
+            // route when feasible. That preserves the old single-capability
+            // behavior without allowing a newly acquired capability to flip an
+            // already portable or fixed operating policy.
+            bool preferFixed = fixedCapital || !portableCapital;
+            if (preferFixed) { BuildFixed(); BuildLight(); }
+            else { BuildLight(); BuildFixed(); }
             return new NeolithicProduction.ShelterCapacity(fixedPeople, lightPeople);
         }
 

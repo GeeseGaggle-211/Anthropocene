@@ -513,7 +513,16 @@ namespace Anthropocene.Simulation
             copy.GrowthRemainder = camp.GrowthRemainder; copy.Moves = camp.Moves;
             copy.StationaryTurns = camp.StationaryTurns; copy.StationaryYears = camp.StationaryYears;
             copy.IsVillage = camp.IsVillage;
-            if (tile != camp.Tile && camp.IsVillage) copy.IsVillage = false;
+            if (tile != camp.Tile)
+            {
+                // Automatic allocation runs against the accepted destination
+                // before movement is committed.  Give that pure planning view
+                // the destination's physical tenure, so shelter routing sees a
+                // relocation rather than the years spent at the old site.
+                copy.StationaryTurns = 0;
+                copy.StationaryYears = 0;
+                if (camp.IsVillage) copy.IsVillage = false;
+            }
             return copy;
         }
     }
