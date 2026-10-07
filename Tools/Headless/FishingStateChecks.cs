@@ -139,7 +139,11 @@ internal static class FishingStateChecks
 
     private static void ConfigGates()
     {
-        var missingCorrection = new SimulationConfig { NeolithicFishingEnabled = true };
+        var defaults = new SimulationConfig();
+        Check(defaults.NeolithicFishingEnabled && defaults.CorrectedAquaticSeasonalPressureEnabled &&
+            defaults.EconomicAllocation == EconomicAllocationStrategy.DemandControl,
+            "new worlds enable resident Fishing on the corrected aquatic-pressure/DemandControl path");
+        var missingCorrection = new SimulationConfig { NeolithicFishingEnabled = true, CorrectedAquaticSeasonalPressureEnabled = false };
         ThrowsArgument(() => missingCorrection.Validate(), "Fishing requires corrected aquatic seasonal pressure");
         var wrongPlanner = new SimulationConfig { NeolithicFishingEnabled = true, CorrectedAquaticSeasonalPressureEnabled = true, EconomicAllocation = EconomicAllocationStrategy.Legacy };
         ThrowsArgument(() => wrongPlanner.Validate(), "Fishing requires DemandControl allocation");
