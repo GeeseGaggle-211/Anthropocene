@@ -18,15 +18,15 @@ namespace Anthropocene.Simulation
     // take the pot space the food operating reserve needs (reserve guard, §7 O1). Pure: reads the camp, writes nothing.
     internal sealed class GoodsStorage
     {
-        internal const int Cloth = 0, AnimalFabric = 1, HousingMaterial = 2, LightHousing = 3, HandTools = 4, Tools = 5, FarmTools = 6, HerdingTools = 7, Ceramics = 8, Count = 9;
+        internal const int Cloth = 0, AnimalFabric = 1, HousingMaterial = 2, LightHousing = 3, HandTools = 4, Tools = 5, FarmTools = 6, HerdingTools = 7, Ceramics = 8, FishingTools = 9, Count = 10;
         private readonly double space, baseUnits, naturalFood, reserveFood, potFood;
-        private readonly double clothing, housingMaterial, tents, toolOutputs, farmTools, herdingTools;
+        private readonly double clothing, housingMaterial, tents, toolOutputs, farmTools, herdingTools, fishingTools;
 
         private GoodsStorage(double space, double baseUnits, double naturalFood, double reserveFood, double potFood,
-            double clothing, double housingMaterial, double tents, double toolOutputs, double farmTools, double herdingTools)
+            double clothing, double housingMaterial, double tents, double toolOutputs, double farmTools, double herdingTools, double fishingTools)
         {
             this.space = space; this.baseUnits = baseUnits; this.naturalFood = naturalFood; this.reserveFood = reserveFood; this.potFood = potFood;
-            this.clothing = clothing; this.housingMaterial = housingMaterial; this.tents = tents; this.toolOutputs = toolOutputs; this.farmTools = farmTools; this.herdingTools = herdingTools;
+            this.clothing = clothing; this.housingMaterial = housingMaterial; this.tents = tents; this.toolOutputs = toolOutputs; this.farmTools = farmTools; this.herdingTools = herdingTools; this.fishingTools = fishingTools;
         }
 
         public static bool Enabled(SimulationConfig cfg) => cfg != null && cfg.GoodsStorageEnabled;
@@ -46,9 +46,13 @@ namespace Anthropocene.Simulation
             double herders = 0; foreach (var a in c.Workforce.Assignments) if (a.Role == WorkforceRoles.Herder) herders += Math.Max(0, a.Population);
             double animals = HerdingTooling.DomesticAnimals(w, c);
             double herding = animals > 0 ? Math.Min(herders, animals / Math.Max(1e-12, n.StoneHerdingToolAnimalsPerHerder)) * Math.Max(0, years) / n.HerdingToolCoverageYearsPerUnit : 0;
+            double fishers = CultivationEconomy.Workers(c, WorkforceRoles.Fisher);
+            double fishingTools = !endOfTurn && FishingEconomy.CanFish(w, c)
+                ? Math.Min(Math.Max(0, c.Inventory.FishingTools), Math.Max(0, fishers) * Math.Max(0, years) / n.FishingToolFisherYearsPerUnit)
+                : 0;
             return new GoodsStorage(cfg.GoodsStorageSpacePerUnit, cfg.GoodsBaseStoragePerResident * residents,
                 NeolithicProduction.NaturalStorageCapacity(w, c, 0), NeolithicProduction.DesiredReserveFood(w, NeolithicProduction.ReservePopulation(w, c)), n.PotStorageFoodPerUnit,
-                clothing, material, tents, endOfTurn ? 0 : Math.Max(0, equipmentOutputs), farm, herding);
+                clothing, material, tents, endOfTurn ? 0 : Math.Max(0, equipmentOutputs), farm, herding, fishingTools);
         }
 
         // The counted stock vector (goods index; uncounted goods have index -1).
@@ -59,6 +63,7 @@ namespace Anthropocene.Simulation
                 case CraftGood.Cloth: return Cloth; case CraftGood.AnimalFabric: return AnimalFabric; case CraftGood.HousingMaterial: return HousingMaterial;
                 case CraftGood.LightHousing: return LightHousing; case CraftGood.HandTools: return HandTools; case CraftGood.Tools: return Tools;
                 case CraftGood.FarmTools: return FarmTools; case CraftGood.HerdingTools: return HerdingTools;
+                case CraftGood.FishingTools: return FishingTools;
                 default: return -1;
             }
         }
@@ -66,7 +71,7 @@ namespace Anthropocene.Simulation
         {
             var i = c.Inventory;
             return new[] { Math.Max(0, i.Cloth), Math.Max(0, i.AnimalFabric), Math.Max(0, i.HousingMaterial), Math.Max(0, i.LightHousingUnits),
-                Math.Max(0, i.HandTools), Math.Max(0, i.Tools), Math.Max(0, i.FarmTools), Math.Max(0, i.HerdingTools), Math.Max(0, i.ImprovedCeramics) };
+                Math.Max(0, i.HandTools), Math.Max(0, i.Tools), Math.Max(0, i.FarmTools), Math.Max(0, i.HerdingTools), Math.Max(0, i.ImprovedCeramics), Math.Max(0, i.FishingTools) };
         }
 
         // Space the stock occupies beyond what is in use this turn.
@@ -75,7 +80,7 @@ namespace Anthropocene.Simulation
             double exemptHand = Math.Min(s[HandTools], toolOutputs);
             double exemptTools = Math.Min(s[Tools], Math.Max(0, toolOutputs - exemptHand) / ToolCoverageBudget.OutputsPerTool);
             double units = Math.Max(0, s[Cloth] + s[AnimalFabric] - clothing) + Math.Max(0, s[HousingMaterial] - housingMaterial) + Math.Max(0, s[LightHousing] - tents)
-                + (s[HandTools] - exemptHand) + (s[Tools] - exemptTools) + Math.Max(0, s[FarmTools] - farmTools) + Math.Max(0, s[HerdingTools] - herdingTools) + s[Ceramics];
+                + (s[HandTools] - exemptHand) + (s[Tools] - exemptTools) + Math.Max(0, s[FarmTools] - farmTools) + Math.Max(0, s[HerdingTools] - herdingTools) + s[Ceramics] + Math.Max(0, s[FishingTools] - fishingTools);
             return space * units;
         }
         // Pot space the food holds back: the larger of the stored food and the operating reserve, above natural storage.

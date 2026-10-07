@@ -302,6 +302,12 @@ namespace Anthropocene.Simulation
         public int LadderSteps;
         public double LadderWorkerYearsUntruncated;
         public double Meals, OperatingReserve, SparePlant, PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope, HousingMultiplier, HarvestProductivity;
+        // Food captured by the shared coastal-gathering path is kept separate by type. Aquatic food can satisfy meals,
+        // but is never a CraftRecipe feedstock. Resident Fishing's selected grounds and catch envelope are separate
+        // so overlapping passive and resident claims are not added twice by the planner.
+        public double AquaticSupply, AquaticAfterHerds, SelectedFishingPassiveSupply;
+        public FishingAccessPlan FishingAccess;
+        public bool FishingEnabled;
         // Harvest productivity of the field state the future work terms assume.
         // Defaults to the committed productivity; the shared allocation sets it
         // per field-operation portfolio.
@@ -363,6 +369,12 @@ namespace Anthropocene.Simulation
                 : new ManagedFoodForecast();
             ForageAfterHerds = Math.Max(0, ForageSupply - ManagedFood.HumanFoodDisplaced);
             TerrestrialAfterHerds = Math.Max(0, PlantSupply - ManagedFood.HumanFoodDisplaced);
+            double displacementPastPlants = Math.Max(0,
+                ManagedFood.HumanFoodDisplaced - PlantSupply);
+            AquaticAfterHerds = Math.Max(0,
+                AquaticSupply - displacementPastPlants);
+            SelectedFishingPassiveSupply = Math.Min(
+                SelectedFishingPassiveSupply, AquaticAfterHerds);
             Supply = ForageAfterHerds + ManagedFood.AnimalFood;
             SetFoodEnvelopes(w, c, ManagedFood.AnimalFood);
         }
@@ -397,13 +409,23 @@ namespace Anthropocene.Simulation
         // derives shelter demand without fictitious staffing.
         internal static CampProductionDemand BuildPhysical(WorldState w, Camp c,
             EconomicIntent e, bool legacyProbes, bool herdCapital = true,
-            int reservedHerdersOverride = -1)
+            int reservedHerdersOverride = -1,
+            FishingAccessPlan fishingAccess = null)
         {
             var d = new CampProductionDemand { world = w };
             var cfg = w.Config; var n = cfg.Neolithic;
             double intervals = cfg.GenerationIntervals, years = cfg.TurnDays / cfg.DaysPerYear;
             d.CultivationEnabled = CultivationEconomy.Enabled(c);
             d.HusbandryEnabled = CultivationEconomy.HusbandryEnabled(c);
+            d.FishingEnabled = FishingEconomy.FeatureEnabled(w, c);
+            if (d.FishingEnabled)
+            {
+                // TurnPlanning's transient access plan is reusable only for the exact accepted destination and horizon.
+                if (fishingAccess != null && (fishingAccess.CampId != c.Id || fishingAccess.CampTile != c.Tile ||
+                    fishingAccess.Residents != c.Population || fishingAccess.StartDays != w.Days || fishingAccess.HorizonDays != cfg.TurnDays))
+                    fishingAccess = null;
+                d.FishingAccess = fishingAccess ?? FishingEconomy.BuildAccess(w, c, c.Tile, c.Population, w.Days, cfg.TurnDays);
+            }
             // The configured one-tile work radius lies wholly inside the owner's
             // two-tile vision. No global own-group visibility scan is needed here.
             var footprint = d.Footprint = d.CultivationEnabled ? CultivationEconomy.Footprint(w, c).ToArray() : Array.Empty<int>();
@@ -428,7 +450,25 @@ namespace Anthropocene.Simulation
                     new[] { claim }, null, null, operated.Contains(id) ? 1 : (double?)null)
                     .HumanFoodReceipts;
             }
-            d.ForageSupply = d.Eligible.Sum(FoodAvailability); d.PlantSupply = d.Eligible.Where(id => w.Tiles[id].Land).Sum(FoodAvailability);
+            if (d.FishingAccess == null)
+            {
+                // Keep the feature-off calculation path byte-for-byte equivalent to the established planner.
+                d.ForageSupply = d.Eligible.Sum(FoodAvailability);
+                d.PlantSupply = d.Eligible.Where(id => w.Tiles[id].Land).Sum(FoodAvailability);
+                d.AquaticSupply = Math.Max(0, d.ForageSupply - d.PlantSupply);
+            }
+            else
+            {
+                var selectedGrounds = new HashSet<int>(d.FishingAccess.GroundIds);
+                foreach (int id in d.Eligible)
+                {
+                    double available = FoodAvailability(id);
+                    d.ForageSupply += available;
+                    if (w.Tiles[id].Land) d.PlantSupply += available;
+                    else d.AquaticSupply += available;
+                    if (selectedGrounds.Contains(id)) d.SelectedFishingPassiveSupply += available;
+                }
+            }
             d.ReservedHerders = d.HusbandryEnabled
                 ? reservedHerdersOverride >= 0
                     ? Math.Min(c.Population, reservedHerdersOverride)
@@ -450,6 +490,9 @@ namespace Anthropocene.Simulation
             }
             d.ForageAfterHerds = Math.Max(0, d.ForageSupply - d.ManagedFood.HumanFoodDisplaced);
             d.TerrestrialAfterHerds = Math.Max(0, d.PlantSupply - d.ManagedFood.HumanFoodDisplaced);
+            double displacementPastPlants = Math.Max(0, d.ManagedFood.HumanFoodDisplaced - d.PlantSupply);
+            d.AquaticAfterHerds = Math.Max(0, d.AquaticSupply - displacementPastPlants);
+            d.SelectedFishingPassiveSupply = Math.Min(d.SelectedFishingPassiveSupply, d.AquaticAfterHerds);
             d.Supply = d.ForageAfterHerds + d.ManagedFood.AnimalFood;
             d.Biological = TurnResolver.PlanningFoodDemand(w, c);
             // This plan belongs to the population present at the interturn boundary.
@@ -469,7 +512,8 @@ namespace Anthropocene.Simulation
                 previewIntent.Assignments.Add(new PopulationAssignment { Role = c.People.HasTech(NeolithicTech.Construction) ? WorkforceRoles.Builder : WorkforceRoles.Craftsperson, Population = 1 });
             var preview = d.Preview = EconomicPlanner.Preview(c, previewIntent, d.NextPopulation);
             NeolithicProduction.DepreciateHousing(w, preview, years);
-            d.Goods = d.Recipes.Where(r => r.Good != CraftGood.HandTools && r.Good != CraftGood.Tools && r.Good != CraftGood.HousingMaterial && (!r.HusbandryOnly || d.HusbandryEnabled)).ToArray();
+            d.Goods = d.Recipes.Where(r => r.Good != CraftGood.HandTools && r.Good != CraftGood.Tools && r.Good != CraftGood.HousingMaterial &&
+                NeolithicProduction.RecipeAvailable(w, c, r)).ToArray();
             var goals = d.Goals = d.Goods.ToDictionary(r => r.Good, r => NeolithicProduction.Priority(preview, r.Good) > 0 ? NeolithicProduction.Demand(w, preview, r.Good, years, -1, false, false, sources) : 0);
             // FarmTools are sized only after a proposal has a bounded field
             // workforce. The empty preview cannot answer that question without

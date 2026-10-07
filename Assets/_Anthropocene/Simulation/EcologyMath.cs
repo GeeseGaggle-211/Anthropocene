@@ -80,6 +80,101 @@ namespace Anthropocene.Simulation
             => Math.Max(0, config.CultivationRegenFlux) * Numbers.Clamp(cultivationIntensity, 0, 1) * Math.Max(0, biomass) * Math.Max(0, biomassRecoveryPerDay) * Numbers.Clamp(operatingFraction, 0, 1) * CropSuitability(config, soilMoisture);
         public static double SustainableHarvestRate(double biomass, double biomassRecoveryPerDay, double sustainableProductionFraction, double managedFlow)
             => Math.Max(0, biomass) * Math.Max(0, biomassRecoveryPerDay) * Math.Max(0, sustainableProductionFraction) + Math.Max(0, managedFlow);
+
+        // Allocates a fixed realized amount over a small set of exposure
+        // profiles. Each profile receives one common pressure rate, capped by
+        // its finite realizable rate. This is a bounded analytical reduction;
+        // the number of profiles, not elapsed time or timestep count, controls
+        // its cost.
+        public static double[] AllocateCappedSeasonalRates(double realizedAmount,
+            double[] exposureDays, double[] finiteRateCeilings)
+        {
+            if (exposureDays == null) throw new ArgumentNullException(nameof(exposureDays));
+            if (finiteRateCeilings == null) throw new ArgumentNullException(nameof(finiteRateCeilings));
+            if (exposureDays.Length != finiteRateCeilings.Length)
+                throw new ArgumentException("Exposure and rate-ceiling arrays must have equal length.");
+            if (double.IsNaN(realizedAmount) || double.IsInfinity(realizedAmount) || realizedAmount < 0)
+                throw new ArgumentOutOfRangeException(nameof(realizedAmount));
+
+            double maximumAmount = 0, maximumRate = 0;
+            for (int i = 0; i < exposureDays.Length; i++)
+            {
+                double days = exposureDays[i], ceiling = finiteRateCeilings[i];
+                if (double.IsNaN(days) || double.IsInfinity(days) || days < 0)
+                    throw new ArgumentOutOfRangeException(nameof(exposureDays));
+                if (double.IsNaN(ceiling) || double.IsInfinity(ceiling) || ceiling < 0)
+                    throw new ArgumentOutOfRangeException(nameof(finiteRateCeilings));
+                maximumAmount += days * ceiling;
+                if (days > 0) maximumRate = Math.Max(maximumRate, ceiling);
+            }
+
+            double tolerance = 1e-10 * Math.Max(1, realizedAmount);
+            if (realizedAmount > maximumAmount + tolerance)
+                throw new InvalidOperationException("Realized harvest exceeds the combined finite seasonal ceilings.");
+
+            var rates = new double[exposureDays.Length];
+            if (realizedAmount <= 0 || maximumRate <= 0) return rates;
+
+            // Fixed-count bisection gives deterministic O(profile-count)
+            // work, independent of turn duration and seasonal repetition.
+            double low = 0, high = maximumRate;
+            for (int iteration = 0; iteration < 80; iteration++)
+            {
+                double lambda = low + (high - low) * 0.5;
+                double amount = 0;
+                for (int i = 0; i < exposureDays.Length; i++)
+                    amount += exposureDays[i] * Math.Min(lambda, finiteRateCeilings[i]);
+                if (amount < realizedAmount) low = lambda;
+                else high = lambda;
+            }
+
+            double pressureRate = low + (high - low) * 0.5;
+            double allocated = 0;
+            for (int i = 0; i < exposureDays.Length; i++)
+            {
+                rates[i] = exposureDays[i] > 0
+                    ? Math.Min(pressureRate, finiteRateCeilings[i]) : 0;
+                allocated += exposureDays[i] * rates[i];
+            }
+
+            // Remove the final floating-point residual in canonical profile
+            // order while respecting the same finite ceilings.
+            double residual = realizedAmount - allocated;
+            if (residual > 0)
+            {
+                for (int i = 0; i < exposureDays.Length && residual > 0; i++)
+                {
+                    if (exposureDays[i] <= 0) continue;
+                    double headroom = exposureDays[i] * (finiteRateCeilings[i] - rates[i]);
+                    double add = Math.Min(residual, Math.Max(0, headroom));
+                    rates[i] += add / exposureDays[i];
+                    residual -= add;
+                }
+            }
+            else if (residual < 0)
+            {
+                double remove = -residual;
+                for (int i = 0; i < exposureDays.Length && remove > 0; i++)
+                {
+                    if (exposureDays[i] <= 0 || rates[i] <= 0) continue;
+                    double available = exposureDays[i] * rates[i];
+                    double take = Math.Min(remove, available);
+                    rates[i] -= take / exposureDays[i];
+                    remove -= take;
+                }
+            }
+
+            double conserved = 0;
+            for (int i = 0; i < exposureDays.Length; i++)
+            {
+                if (rates[i] < 0 || rates[i] > finiteRateCeilings[i] + 1e-12 * Math.Max(1, finiteRateCeilings[i]))
+                    throw new InvalidOperationException("Seasonal pressure allocation exceeded a finite profile ceiling.");
+                conserved += exposureDays[i] * rates[i];
+            }
+            if (Math.Abs(conserved - realizedAmount) > tolerance)
+                throw new InvalidOperationException("Seasonal pressure allocation did not conserve realized harvest.");
+            return rates;
+        }
         public static double EffectiveWoodCapacity(double ecologicalCapacity, double cultivationIntensity, SimulationConfig config)
             => Math.Max(0, ecologicalCapacity) * CultivationVegetationRetention(config, cultivationIntensity);
 

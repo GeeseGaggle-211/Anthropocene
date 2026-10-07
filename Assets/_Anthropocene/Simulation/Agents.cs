@@ -42,7 +42,9 @@ namespace Anthropocene.Simulation
         {
         }
         internal TileObservation(WorldState world, Tile tile, IReadOnlyList<RiverEdge> rivers, EcologyView projected)
-            : this(tile, tile.Seasons[world.Season], world.Config, rivers, projected, new EcologyCapacity(world, tile, projected, world.Season))
+            : this(tile, tile.Seasons[world.Season], world.Config, rivers, projected,
+                new EcologyCapacity(world, tile, projected, world.Season,
+                    aquaticOverlay: LazyEcology.ProjectAquaticOverlay(world, tile.Id, world.Days, 0)))
         {
         }
         private TileObservation(Tile tile, SeasonData ecology, SimulationConfig config, IReadOnlyList<RiverEdge> rivers, EcologyView? projected, EcologyCapacity? projectedCapacity)
@@ -104,10 +106,18 @@ namespace Anthropocene.Simulation
     }
     public sealed class UnitObservation
     {
-        public readonly int Id, Tile, Population, Player, SourceCamp;
-        public readonly bool InSupply;
+        public readonly int Id, Tile, Population, Player, SourceCamp, EconomicTransitionWaypoint;
+        public readonly bool InSupply, EconomicTransitionRecall;
         public readonly int Provisions, DeficitTurns;
-        public UnitObservation(int id, int tile, int population, int player, bool inSupply = false, int provisions = 0, int deficitTurns = 0, int sourceCamp = -1) { SourceCamp = sourceCamp; Id = id; Tile = tile; Population = population; Player = player; InSupply = inSupply; Provisions = provisions; DeficitTurns = deficitTurns; }
+        public UnitObservation(int id, int tile, int population, int player, bool inSupply = false,
+            int provisions = 0, int deficitTurns = 0, int sourceCamp = -1,
+            bool economicTransitionRecall = false, int economicTransitionWaypoint = -1)
+        {
+            SourceCamp = sourceCamp; Id = id; Tile = tile; Population = population;
+            Player = player; InSupply = inSupply; Provisions = provisions;
+            DeficitTurns = deficitTurns; EconomicTransitionRecall = economicTransitionRecall;
+            EconomicTransitionWaypoint = economicTransitionWaypoint;
+        }
     }
     // A deliberately coarse, local estimate for a prospective camp site.
     // Ratios are rounded to twentieths and capped; policies never receive
@@ -162,13 +172,118 @@ namespace Anthropocene.Simulation
             Size = Count.Representative < config.HerdSmallCountThreshold ? 1 : Count.Representative <= 20 ? 2 : 3;
         }
     }
+    // Coarse ground knowledge for one society's policy/UI view. Ecology and
+    // fishery state are banded before leaving the observation builder; raw
+    // live aquatic stocks on hidden tiles are never represented here.
+    public sealed class FishingGroundObservation
+    {
+        public readonly int Tile, AccessibleFood, Biomass, Condition, Productivity;
+        public readonly int CapitalIntensity, Operation, OperatorCamp;
+        public readonly EnvironmentKind WaterEnvironment;
+        public readonly bool Visible, Visited, Selected, SitePresent, OperatorKnown, OwnOperator, HasOperation;
+        public readonly IReadOnlyList<int> SeasonalProductivity;
+        internal FishingGroundObservation(int tile, EnvironmentKind waterEnvironment, int accessibleFood, int biomass,
+            int condition, int productivity, int capitalIntensity, int operation, int operatorCamp, bool visible,
+            bool visited, bool selected, bool sitePresent, bool operatorKnown, bool ownOperator, bool hasOperation,
+            int[] seasonalProductivity)
+        {
+            Tile = tile; WaterEnvironment = waterEnvironment; AccessibleFood = accessibleFood; Biomass = biomass;
+            Condition = condition; Productivity = productivity; CapitalIntensity = capitalIntensity; Operation = operation;
+            OperatorCamp = operatorCamp; Visible = visible; Visited = visited; Selected = selected; SitePresent = sitePresent;
+            OperatorKnown = operatorKnown; OwnOperator = ownOperator; HasOperation = hasOperation;
+            SeasonalProductivity = Array.AsReadOnly(seasonalProductivity ?? Array.Empty<int>());
+        }
+        internal static IReadOnlyList<FishingGroundObservation> Build(WorldState world, Camp camp, PlanningIndex index,
+            HashSet<int> visible, IReadOnlyDictionary<int, TileObservation> observedTiles, bool forValidation)
+        {
+            if (forValidation || camp?.People == null || !FishingEconomy.FeatureEnabled(world, camp)) return Array.Empty<FishingGroundObservation>();
+            bool IsFisheryWater(EnvironmentKind environment) => environment == EnvironmentKind.Shallows || environment == EnvironmentKind.Lake;
+            bool InObservationRange(int tile) => tile >= 0 && tile < world.Tiles.Length &&
+                world.Map.Distance(camp.Tile, tile) <= FishingEconomy.GroundRange + 1;
+            var environmentByTile = new Dictionary<int, EnvironmentKind>();
+            foreach (var tile in observedTiles.Values.Where(t => t.Aquatic && InObservationRange(t.Id)).OrderBy(t => t.Id)) environmentByTile[tile.Id] = tile.Environment;
+            foreach (var tile in index.Remembered(camp.People, camp.Player).Where(t => t.Aquatic && IsFisheryWater(t.Environment) && InObservationRange(t.Id)).OrderBy(t => t.Id))
+                if (!environmentByTile.ContainsKey(tile.Id)) environmentByTile[tile.Id] = tile.Environment;
+            var snapshots = (camp.People.FishingGroundKnowledge ?? new List<FishingGroundSnapshot>()).OrderBy(s => s.TileId).ToDictionary(s => s.TileId);
+            foreach (int tile in (camp.LastSelectedFishingGrounds ?? new List<int>()).Where(InObservationRange))
+                if (!environmentByTile.ContainsKey(tile) && tile >= 0 && tile < world.Tiles.Length && IsFisheryWater(world.Tiles[tile].Environment))
+                    environmentByTile[tile] = world.Tiles[tile].Environment;
+            foreach (int tile in snapshots.Keys.Where(InObservationRange))
+                if (!environmentByTile.ContainsKey(tile) && tile >= 0 && tile < world.Tiles.Length && IsFisheryWater(world.Tiles[tile].Environment))
+                    environmentByTile[tile] = world.Tiles[tile].Environment;
+
+            var selected = new HashSet<int>(camp.LastSelectedFishingGrounds ?? new List<int>());
+            var ownCampIds = new HashSet<int>(world.Camps.Where(c => c.SocietyId == camp.SocietyId).Select(c => c.Id));
+            var result = new List<FishingGroundObservation>(environmentByTile.Count);
+            foreach (var pair in environmentByTile.OrderBy(p => p.Key))
+            {
+                int tileId = pair.Key;
+                TileObservation observation = null;
+                bool live = visible.Contains(tileId) && observedTiles.TryGetValue(tileId, out observation);
+                snapshots.TryGetValue(tileId, out var snapshot);
+                bool visited = snapshot != null;
+                int accessible, biomass, condition, productivity;
+                int capitalBand = 0, operationBand = 0, operatorCamp = -1;
+                bool sitePresent = false, operatorKnown = false, ownOperator = false, hasOperation = false;
+                int[] seasonal = Array.Empty<int>();
+                if (live)
+                {
+                    accessible = observation.Food; biomass = observation.PotentialFood; condition = observation.Condition; productivity = observation.Productivity;
+                    if (index.TryFisherySite(tileId, out var site))
+                    {
+                        double capital = FishingEconomy.ProjectedCapital(world, site, world.Days);
+                        capitalBand = Knowledge.Band(FishingEconomy.Intensity(world.Config, capital), 1, world.Config);
+                        sitePresent = capital > 1e-9 || site.OperatorCampId >= 0;
+                        operatorKnown = true; ownOperator = ownCampIds.Contains(site.OperatorCampId);
+                        if (ownOperator) operatorCamp = site.OperatorCampId;
+                    }
+                    if (visited)
+                    {
+                        operationBand = Knowledge.Band(snapshot.OperationFraction, 1, world.Config);
+                        hasOperation = true;
+                        if (!operatorKnown)
+                        {
+                            operatorKnown = true; ownOperator = ownCampIds.Contains(snapshot.OperatorCampId);
+                            if (ownOperator) operatorCamp = snapshot.OperatorCampId;
+                        }
+                    }
+                }
+                else if (visited)
+                {
+                    accessible = Knowledge.Band(snapshot.AccessibleFood, 70, world.Config);
+                    biomass = Knowledge.Band(snapshot.Biomass, 700, world.Config);
+                    condition = Knowledge.Band(snapshot.Condition, 1, world.Config);
+                    double projectedCapital = FishingEconomy.ProjectedCapital(world,
+                        new FisherySite { TileId = tileId, Capital = snapshot.Capital, LastUpdatedDays = snapshot.ObservedDays }, world.Days);
+                    capitalBand = Knowledge.Band(FishingEconomy.Intensity(world.Config, projectedCapital), 1, world.Config);
+                    var profile = snapshot.ProductiveProfile ?? Array.Empty<double>();
+                    productivity = Knowledge.Band(profile.Length == 0 ? 0 : profile.Average() * world.Config.BaseDays, 30, world.Config);
+                    seasonal = profile.Select(rate => Knowledge.Band(rate * world.Config.BaseDays, 30, world.Config)).ToArray();
+                    operationBand = Knowledge.Band(snapshot.OperationFraction, 1, world.Config); hasOperation = true;
+                    sitePresent = projectedCapital > 1e-9 || snapshot.OperatorCampId >= 0;
+                    operatorKnown = true; ownOperator = ownCampIds.Contains(snapshot.OperatorCampId);
+                    if (ownOperator) operatorCamp = snapshot.OperatorCampId;
+                }
+                else
+                {
+                    // Remembered geometry without an economic survey has the
+                    // approved conservative prior: no opening yield/capital.
+                    accessible = biomass = condition = productivity = 0;
+                }
+                result.Add(new FishingGroundObservation(tileId, pair.Value, accessible, biomass, condition,
+                    productivity, capitalBand, operationBand, operatorCamp, live, visited, selected.Contains(tileId),
+                    sitePresent, operatorKnown, ownOperator, hasOperation, seasonal));
+            }
+            return Array.AsReadOnly(result.ToArray());
+        }
+    }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 20;
+        public const int SchemaVersion = 21;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
-        public readonly bool Watercraft;
+        public readonly bool Watercraft, FishingEnabled;
         public readonly IReadOnlyDictionary<int, TileObservation> Tiles;
         // Remembered knowledge (explored static geography outside current vision, and known-settlement snapshots). Never live data.
         public readonly IReadOnlyDictionary<int, RememberedTileObservation> RememberedTiles;
@@ -182,6 +297,7 @@ namespace Anthropocene.Simulation
         public readonly IReadOnlyList<HerdObservation> Herds;
         public readonly IReadOnlyList<SiteCoverageObservation> SiteCoverage;
         public readonly IReadOnlyList<AgriculturalSiteObservation> AgriculturalSites;
+        public readonly IReadOnlyList<FishingGroundObservation> FishingGrounds;
         public readonly IReadOnlyDictionary<int, int> LikelyHerdDestinations;
         public readonly IReadOnlyList<double> Experience;
         public readonly IReadOnlyList<TechnologyStatus> TechnologyStatuses;
@@ -206,10 +322,12 @@ namespace Anthropocene.Simulation
             FoodCondition = Knowledge.Band(camp.Food, Math.Max(1, LinkedPopulation * w.Config.Consumption * w.Config.GenerationIntervals), w.Config);
             DeficitTurns = camp.DeficitTurns; Turn = w.Turn; PolicySeed = camp.People.PolicySeed;
             Watercraft = camp.Technologies[(int)Technology.Watercraft]; Map = w.Map;
+            FishingEnabled = w.Config.NeolithicFishingEnabled && Watercraft;
             WaterMovementCost = Math.Max(1, w.Config.HunterMovement / w.Config.WaterMovement); MinimumCamp = w.Config.MinimumCamp; MinimumCampSpacing = w.Config.MinimumCampSpacing; HunterMovement = w.Config.HunterMovement; CampMovement = w.Config.CampMovement; Inertia = w.Config.RelocationInertia;
             SupplyRange = w.Config.SupplyRange; SustainableHuntPopulation = w.Config.SustainableHuntPopulation;
             using (PhaseProfile.Scope("Tiles"))
                 Tiles = new ReadOnlyDictionary<int, TileObservation>(visible.OrderBy(n => n).ToDictionary(n => n, n => new TileObservation(w, w.Tiles[n], w.Rivers, index.Ecology(n))));
+            FishingGrounds = FishingGroundObservation.Build(w, camp, index, visible, Tiles, forValidation);
             using (PhaseProfile.Scope("Knowledge"))
             {
                 RememberedTiles = new ReadOnlyDictionary<int, RememberedTileObservation>(forValidation ? new Dictionary<int, RememberedTileObservation>()
@@ -218,7 +336,11 @@ namespace Anthropocene.Simulation
             }
             ParentSociety = camp.People.ParentSociety; KinAffinity = camp.People.KinAffinity;
             KinRelations = Array.AsReadOnly(forValidation ? Array.Empty<KinObservation>() : Kinship.Relations(camp.People, index));
-            Hunters = Array.AsReadOnly(index.OwnHunters(Player).Select(h => new UnitObservation(h.Id, h.Tile, h.Population, h.Player, Supply.Connected(w, h), Knowledge.Band(h.CarriedFood, Supply.Capacity(w, h), w.Config), h.DeficitTurns, h.SourceCamp)).ToArray());
+            Hunters = Array.AsReadOnly(index.OwnHunters(Player).Select(h => new UnitObservation(h.Id,
+                h.Tile, h.Population, h.Player, Supply.Connected(w, h),
+                Knowledge.Band(h.CarriedFood, Supply.Capacity(w, h), w.Config),
+                h.DeficitTurns, h.SourceCamp, h.EconomicTransitionRecall,
+                EconomicTransitionWaypoint(w, h, index, visible))).ToArray());
             Rivals = Array.AsReadOnly(index.VisibleCamps(visible).Where(c => c.Player != Player).Select(c => new UnitObservation(c.Id, c.Tile, 0, c.Player)).ToArray());
             ForeignHunters = Array.AsReadOnly(index.VisibleHunters(visible).Where(h => h.Player != Player).Select(h => new UnitObservation(h.Id, h.Tile, 0, h.Player)).ToArray());
             Herds = Array.AsReadOnly(index.VisibleHerds(visible).Select(h => new HerdObservation(h, w.Config, h.DomesticCamp < 0 ? -1 : index.Camps[h.DomesticCamp].Player, Player)).ToArray());
@@ -251,6 +373,42 @@ namespace Anthropocene.Simulation
             if (recent != null) ownIds.UnionWith(recent.Logistics.Where(l => l.Camp == CampId).Select(l => l.Hunter));
             RecentOwnExtraction = new ReadOnlyDictionary<int, double>(index.Extraction(ownIds).Where(t => visible.Contains(t.Tile)).GroupBy(t => t.Tile).ToDictionary(g => g.Key, g => g.Sum(t => t.Food)));
             TechnologyStatuses = Array.AsReadOnly(TechnologyDiscovery.Statuses(w, camp.People));
+        }
+        private static int EconomicTransitionWaypoint(WorldState world, Hunter hunter,
+            PlanningIndex index, HashSet<int> visible)
+        {
+            if (!hunter.EconomicTransitionRecall || hunter.EconomicTransitionRoute == null ||
+                hunter.EconomicTransitionRoute.Count == 0 || hunter.EconomicTransitionVisited == null)
+                return -1;
+            if (!index.Camps.TryGetValue(hunter.SourceCamp, out var source) ||
+                hunter.Tile == source.Tile) return -1;
+            int budget = world.Config.HunterMovement;
+            int waterCost = Math.Max(1, budget / world.Config.WaterMovement);
+            bool Enter(int tile) => visible.Contains(tile) && world.CanEnter(tile, true, source);
+            int Cost(int tile) => world.Tiles[tile].Terrain == Terrain.Shallows ? waterCost : 1;
+
+            // Take the full movement-bounded hop once the held camp is
+            // connected through currently visible terrain.
+            if (world.Map.Reachable(hunter.Tile, source.Tile, budget, Enter, Cost))
+                return source.Tile;
+
+            // Otherwise perform one deterministic depth-first discovery step.
+            // Only visible neighbors are inspected; hidden terrain cannot
+            // influence either the endpoint or its ordering.
+            int next = world.Map.Neighbors(hunter.Tile)
+                .Where(tile => Enter(tile) && Cost(tile) <= budget &&
+                    !hunter.EconomicTransitionVisited.Contains(tile))
+                .OrderBy(tile => world.Map.Distance(tile, source.Tile))
+                .ThenByDescending(tile => world.Map.Neighbors(tile)
+                    .Count(neighbor => visible.Contains(neighbor) && !world.CanEnter(neighbor, true, source)))
+                .ThenBy(tile => tile)
+                .DefaultIfEmpty(-1).First();
+            if (next >= 0) return next;
+
+            // A dead end backtracks along the saved visible path. Exhaustion
+            // at the root yields NoOp, which resolution treats as cancellation.
+            int last = hunter.EconomicTransitionRoute.Count - 1;
+            return last > 0 ? hunter.EconomicTransitionRoute[last - 1] : -1;
         }
         private static SiteCoverageObservation Coverage(WorldState world, Camp camp, PlanningIndex index, HashSet<int> visible, int site,
             IReadOnlyList<UnitObservation> ownHunters, HerdConsumptionProfile herd)
@@ -490,7 +648,7 @@ namespace Anthropocene.Simulation
         private static double HerdSupport(AgentObservation o, int tile) => o.Herds.Where(h => !h.Domestic).Select(h => h.Size * .9 + Math.Max(0, 4 - o.Map.Distance(tile, h.Tile)) * .65).DefaultIfEmpty(0).Max();
         private static double FishingSupport(AgentObservation o, int tile) => o.Map.Radius(tile, 1).Where(n => o.Tiles.TryGetValue(n, out var observed) && observed.Aquatic).Select(n => o.Tiles[n].Food * .8 + o.Tiles[n].Productivity * .2 + o.Tiles[n].Condition * .1).DefaultIfEmpty(0).Max();
         private static bool Enter(AgentObservation o, int tile, bool hunter) => o.Tiles.TryGetValue(tile, out var t) && t.ElevationLevel < 10 && (t.Land || hunter && o.Watercraft && t.Terrain == Terrain.Shallows);
-        private static bool Reach(AgentObservation o, int start, int target, bool hunter) => o.Map.Reachable(start, target, hunter ? o.HunterMovement : o.CampMovement, n => Enter(o, n, hunter), n => o.Tiles[n].Aquatic ? 2 : 1);
+        private static bool Reach(AgentObservation o, int start, int target, bool hunter) => o.Map.Reachable(start, target, hunter ? o.HunterMovement : o.CampMovement, n => Enter(o, n, hunter), n => hunter && o.Tiles[n].Aquatic ? o.WaterMovementCost : 1);
         private static double Practice(AgentObservation o, Domain domain, Mandate m) => o.Experience[(int)domain] / Math.Max(1, o.Experience.Sum()) * m.Persistence;
         public PolicyDecision Decide(AgentObservation o, Mandate m)
         {
@@ -503,7 +661,10 @@ namespace Anthropocene.Simulation
             bool huntingFocus = huntPreference > Math.Max(gatherPreference, fishPreference);
             bool fishingFocus = fishPreference > Math.Max(huntPreference, gatherPreference);
             double need = 1 + o.DeficitTurns * .5 + (o.FoodCondition <= 1 ? .5 : 0);
-            var economicCamp = o.Settlements.FirstOrDefault(c => c.Id == o.CampId && (c.Agriculture || c.Husbandry));
+            var economicCamp = o.Settlements.FirstOrDefault(c => c.Id == o.CampId &&
+                (c.Agriculture || c.Husbandry || c.FishingEnabled));
+            bool recallPending = economicCamp != null && o.Hunters.Any(h =>
+                h.SourceCamp == economicCamp.Id && h.EconomicTransitionRecall);
             var campCandidates = new List<Candidate>();
             double current = Gathering(o, o.CampTile);
             var agricultural = o.AgriculturalSites.ToDictionary(s => s.Tile);
@@ -590,7 +751,15 @@ namespace Anthropocene.Simulation
                     campCandidates.Add(new Candidate { Order = n == o.CampTile ? new Order(OrderKind.NoOp, o.CampId) : new Order(OrderKind.Move, o.CampId, destination: n), Score = food + continuity + herdSupport + fishingSupport, Components = "GatheringOpportunity + HerdSupport + FishingSupport + SurvivalNeed + RelocationInertia" });
                 }
             }
-            var campChoice = Select(o, campCandidates, result.Trace);
+            Order campChoice;
+            if (recallPending)
+            {
+                campChoice = new Order(OrderKind.NoOp, o.CampId);
+                result.Trace.Candidates.Add(new CandidateTrace { Plan = campChoice.ToString(),
+                    Components = "EconomicTransitionRecall: hold the source camp while its pre-transition detachments return",
+                    Score = 1, Selected = true });
+            }
+            else campChoice = Select(o, campCandidates, result.Trace);
             int plannedCamp = campChoice.Destination >= 0 ? campChoice.Destination : o.CampTile;
             bool huntOpportunity = o.Herds.Any(h => !h.Domestic && o.Map.Distance(o.CampTile, h.Tile) <= 2);
             bool fishingOpportunity = o.Map.Radius(o.CampTile, 2).Any(n => o.Tiles.TryGetValue(n, out var t) && t.Aquatic && t.Food >= 1);
@@ -600,7 +769,12 @@ namespace Anthropocene.Simulation
             int desiredHunters = opportunity ? Math.Max(8, (int)Math.Round(o.LinkedPopulation * hunterShare)) : 0;
             int dispatchable = Math.Min(o.GathererPopulation, o.CampPopulation - o.MinimumCamp - (huntingFocus ? 0 : 4));
             int allocation = Math.Min(8, Math.Min(Math.Max(0, desiredHunters - assignedHunters), dispatchable));
-            if (!retainedEconomicCapital && (campChoice.Kind == OrderKind.NoOp || huntingFocus || fishingFocus && fishingOpportunity) && allocation >= 4 && opportunity && o.DeficitTurns == 0 && o.FoodCondition >= 1)
+            if (!retainedEconomicCapital &&
+                !(economicCamp?.FishingEnabled ?? false) &&
+                (campChoice.Kind == OrderKind.NoOp || huntingFocus ||
+                    fishingFocus && fishingOpportunity) &&
+                allocation >= 4 && opportunity && o.DeficitTurns == 0 &&
+                o.FoodCondition >= 1)
             { campChoice = new Order(OrderKind.Dispatch, o.CampId, population: allocation); result.Trace.Candidates.Add(new CandidateTrace { Plan = campChoice.ToString(), Components = "Growing population and visible subsistence opportunity; hunter share expands while preserving the camp reserve", Score = 1, Selected = true }); }
             // AI economic preparation is a distinct pass, even when its camp
             // movement is the submitted action. The persisted automation-Off
@@ -613,6 +787,25 @@ namespace Anthropocene.Simulation
             int hunterIndex = 0;
             foreach (var hunter in o.Hunters)
             {
+                if (hunter.EconomicTransitionRecall)
+                {
+                    var source = o.Settlements.FirstOrDefault(c => c.Id == hunter.SourceCamp);
+                    Order recall;
+                    if (source != null && hunter.Tile == source.Tile)
+                        recall = new Order(OrderKind.Reintegrate, hunter.Id, source.Id);
+                    else if (source != null && hunter.EconomicTransitionWaypoint >= 0 &&
+                        Reach(o, hunter.Tile, hunter.EconomicTransitionWaypoint, true))
+                    {
+                        recall = new Order(OrderKind.Move, hunter.Id,
+                            destination: hunter.EconomicTransitionWaypoint);
+                    }
+                    else recall = new Order(OrderKind.NoOp, hunter.Id);
+                    result.Trace.Candidates.Add(new CandidateTrace { Plan = recall.ToString(),
+                        Components = "EconomicTransitionRecall: return the pre-transition detachment to its source camp",
+                        Score = 1, Selected = true });
+                    result.Orders.Add(recall);
+                    continue;
+                }
                 int distributedHerd = wildHerds.Length == 0 ? -1 : wildHerds[hunterIndex++ % wildHerds.Length].Id;
                 double logisticsUrgency = !hunter.InSupply ? hunter.Provisions <= 1 || hunter.DeficitTurns > 0 ? 4 : hunter.Provisions >= 3 ? 2.5 : .8 : 0;
                 var candidates = new List<Candidate> { new Candidate { Order = new Order(OrderKind.NoOp, hunter.Id), Score = -.5, Components = "Wait" } };

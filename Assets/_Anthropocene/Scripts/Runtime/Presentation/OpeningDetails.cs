@@ -58,7 +58,7 @@ namespace Anthropocene.Presentation
                 "\nLake gathering: " + summary.LakeFood.ToString("F0") + " · Active fishing: " + summary.FishFood.ToString("F0") + " · Hunting: " + summary.HuntFood.ToString("F0") +
                 "\nRemote hunter forage: " + summary.ForageFood.ToString("F0") + " · Fractional growth: " + summary.FractionalProgress.ToString("F2");
             var camp = world.Camps.FirstOrDefault(c => c.Id == observation.CampId);
-            if (camp != null && CultivationEconomy.EconomyEnabled(camp))
+            if (camp != null && CultivationEconomy.EconomyEnabled(world, camp))
             {
                 var inv = camp.Inventory;
                 double housingSupply = NeolithicProduction.HousingSupply(world, camp, world.Days);
@@ -69,6 +69,8 @@ namespace Anthropocene.Presentation
                          "\nRaw Stockpile: Stone " + inv.Stone.ToString("F0") + " · Clay " + inv.Clay.ToString("F0") + " · Wood " + inv.Wood.ToString("F0") +
                          "\nHousing Material: " + inv.HousingMaterial.ToString("F2") + " portable (assembled into fixed Housing on site)" +
                          "\nEconomy automation: " + (camp.EconomyAutomationTurns == 0 ? "Off" : camp.EconomyAutomationTurns < 0 ? "Until disabled" : camp.EconomyAutomationTurns + " turns remaining") + "\n[Double-click village tile to manage]";
+                if (FishingEconomy.FeatureEnabled(world, camp))
+                    value += "\nResident Fishing: " + camp.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Fisher).Sum(a => a.Population) + " Fishers · Fishing Tools " + inv.FishingTools.ToString("F2") + " · selected grounds " + (camp.LastSelectedFishingGrounds == null || camp.LastSelectedFishingGrounds.Count == 0 ? "none" : string.Join(", ", camp.LastSelectedFishingGrounds.OrderBy(tile => tile))) + " · " + (FishingEconomy.HasLegalSource(world, camp) ? "legal nearby source" : "no legal nearby source");
                 if (CultivationEconomy.HusbandryEnabled(camp))
                 {
                     double fixedHousing = NeolithicProduction.FixedHousingAt(world, camp.Id, camp.Tile, world.Days);

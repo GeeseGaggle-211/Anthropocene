@@ -14,6 +14,17 @@ proposed ranges has changed the shipped configuration.
 
 Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Serialized defaults must match the C# defaults. [EcologyFoundation.md](EcologyFoundation.md) describes the equations and [Validation.md](Validation.md) records the tests. The prototype uses abstract food/water quantities, not kilograms or litres.
 
+Resident Fishing remains opt-in: `NeolithicFishingEnabled` and
+`CorrectedAquaticSeasonalPressureEnabled` are both false in the general
+opening and in legacy saves where either field is absent. Fishing-enabled
+worlds require both gates and DemandControl. Feature-enabled Watercraft opens
+the shared goods economy; a legal Shallows/Lake source is separately required
+for resident fishing preparation. Fishing Tools cover 20 harvest-Fisher-years
+per unit and apply a 1.5x multiplier to covered catch only. The Fishing Tools
+production priority defaults to 0.10. See
+[NeolithicFishingImplementationPlan.md](NeolithicFishingImplementationPlan.md)
+for the full feature boundary and validation gates.
+
 | Fields | Meaning and units |
 |---|---|
 | `BaseDays` (91.25) | Days in one climate/profile interval; four ordered seasons per cycle. Also the reference duration for legacy consumption/production tuning. |
@@ -30,6 +41,7 @@ Current contract: `SimulationConfig` and `OpeningConfig.json` version 7. Seriali
 | `LandBiomassMultiplier` (63), `LandSafeUseRatio` (0.5) | One generated-land stock multiplier applied before deriving total biomass and initial `G`/`B`, and a retained land pressure diagnostic threshold. The multiplier does not alter each habitat's natural human-accessible fraction. Current land use does not write `LandCondition`. |
 | `Neolithic.CultivationMarginalEffortMultiplierPerTenth` (16) | Multiplies marginal field-building and maintenance effort above the soft `q=0.4` Neolithic threshold. It increases cost without imposing a hard intensity cap; existing saves retain their stored setting. |
 | `CultivationRegenFlux` (0.65) | Dimensionless multiplier for operated managed food recovery, proportional to field intensity `q`, total biomass, the stored biomass daily rate and operating fraction. Potential input can overflow the bounded tile; it is not guaranteed realized food. |
+| `FishingToolFisherYearsPerUnit` (20), `FishingToolHarvestMultiplier` (1.5) | Harvest-Fisher-years of tool service per unit and the covered-catch multiplier. Tools affect resident harvest only, not maintenance, biology or ecology; saves missing these values load the defaults. |
 | `CropMoistureReference` (0.50), `CropMoistureExponent` (2) | Branch crop suitability is `s = min(1, (local soil Moisture / reference)^exponent)`. It multiplies the cultivated accessibility increment and managed renewal, preserving biomass, natural food and wet-site capacity/renewal. Reference zero disables the response; saves lacking these fields load reference zero and exponent two. Validate reference in [0,1] and finite positive exponent. |
 | `CropHarvestingOnly` (true for new worlds) | Branch farmer productivity applies only to the inferred crop share of the current finite food pool; wild gathering retains its base rate. Uses a stock-weighted harmonic work rate shared by planning, forecasts and claims. Also selects fission support without unbuilt daughter fields. Saves lacking the field load false, preserving the flat farmer bonus and legacy fission estimate. See [CropHerdBalanceValidation.md](CropHerdBalanceValidation.md). |
 

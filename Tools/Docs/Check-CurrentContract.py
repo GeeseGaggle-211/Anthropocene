@@ -22,6 +22,8 @@ END = "<!-- CURRENT_CONFIG_TABLE:END -->"
 # it catches prose drift for current values that have historically conflicted.
 FIELDS = [
     ("SharedCropHerdAllocationEnabled", "boolean: joint food ledger, field-operation and bounded herd portfolio under the Value rule", "plan of record since 5 October 2026: true for new worlds; saves without the field load false"),
+    ("NeolithicFishingEnabled", "boolean: resident Watercraft Fishing and its shared goods-economy capability", "compatibility gate: false in the general opening and in saves missing the field"),
+    ("CorrectedAquaticSeasonalPressureEnabled", "boolean: capped seasonal-pressure allocation for aquatic claims", "separate compatibility gate: false in the general opening and in saves missing the field; required by resident Fishing"),
     ("ReferenceTurnYears", "years per Neolithic reference turn", "reference scale"),
     ("MinimumCampSpacing", "hexes between resolved camp destinations", "shipped placement rule (saves without the field load 3)"),
     ("ContactExpiryTurns", "turns before an unrefreshed settlement contact is forgotten", "shipped contact-knowledge rule (saves without the field load 5)"),
@@ -84,6 +86,8 @@ FIELDS = [
     ("PrimitiveAgricultureSupportedIntensity", "q", "shipped primitive intensity anchor"),
     ("StoneFarmToolsSupportedIntensity", "q", "shipped Stone Farm Tool tier"),
     ("FarmToolFarmerYearsPerUnit", "Farmer-years per tool", "shipped consumption calibration"),
+    ("FishingToolFisherYearsPerUnit", "harvest-Fisher-years covered per Fishing Tool unit", "Fishing Tool service; coverage affects harvest only; absent saves receive 20"),
+    ("FishingToolHarvestMultiplier", "catch multiplier for tool-covered harvest work", "Fishing Tool benefit; covered catch is 1.5x and tool service has no biology effect"),
     ("PotStorageFoodPerUnit", "food units per Pot", "shipped storage calibration"),
     ("PotDecayPerReferenceTurn", "fraction per 20-year reference turn", "shipped decay calibration"),
     ("CultivationRegenFlux", "managed recovery coefficient", "shipped cultivation calibration"),
@@ -101,6 +105,10 @@ FIELDS = [
 ]
 
 TESTS = [
+    ("Tools/Headless/AquaticSeasonalPressureChecks.cs", "--aquatic-pressure-only"),
+    ("Tools/Headless/FishingObservationChecks.cs", "--fishing-observation-only"),
+    ("Tools/Headless/FishingLongRunChecks.cs", "--fishing-50-no-movement"),
+    ("Tools/Headless/FishingLongRunChecks.cs", "--fishing-50-all-features"),
     ("Tools/Headless/Issue26ForecastChecks.cs", "--issue26-forecast-only"),
     ("Tools/Headless/Issue28FoodTimebaseChecks.cs", "--issue28-food-timebase-only"),
     ("Tools/Headless/Issue27EcologyChecks.cs", "--issue27-ecology-only"),
@@ -141,6 +149,12 @@ def render_table(config: dict) -> str:
                "MaximumStorageYears": "MaximumStorageGenerations"}
     def default_value(name):
         match = re.search(rf"\b{re.escape(name)}\s*=\s*(true|false|\.\d+|\d+(?:\.\d*)?)(?:[dDfF])?\b", declarations)
+        if match:
+            literal = match.group(1)
+            return literal == "true" if literal in ("true", "false") else float(literal)
+        # Some additive compatibility gates have their default in the
+        # SimulationConfig constructor rather than in the field declaration.
+        match = re.search(rf"\b{re.escape(name)}\s*=\s*(true|false|\.\d+|\d+(?:\.\d*)?)(?:[dDfF])?\b", model_text)
         if match:
             literal = match.group(1)
             return literal == "true" if literal in ("true", "false") else float(literal)

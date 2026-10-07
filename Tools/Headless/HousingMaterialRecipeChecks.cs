@@ -54,13 +54,16 @@ internal static class HousingMaterialRecipeChecks
     {
         var w = NeolithicChecks.Fixture(); var n = w.Config.Neolithic;
         var material = Recipe(w, CraftGood.HousingMaterial); var housing = Recipe(w, CraftGood.Housing);
-        Check((int)CraftGood.HousingMaterial == Enum.GetValues(typeof(CraftGood)).Length - 1 && (int)CraftGood.HerdingTools == 8 && (int)CraftGood.Housing == 4, "new good is appended and existing ordinals are unchanged");
+        Check((int)CraftGood.HousingMaterial == 9 && (int)CraftGood.FishingTools == Enum.GetValues(typeof(CraftGood)).Length - 1 &&
+            (int)CraftGood.HerdingTools == 8 && (int)CraftGood.Housing == 4,
+            "Fishing Tools is appended and existing ordinals are unchanged");
         Near(material.Rate, 2 * n.BuilderHousingOutputPerBaseDays, "material step runs at twice today's Housing rate");
         Near(housing.Rate, 2 * n.BuilderHousingOutputPerBaseDays, "assembly step runs at twice today's Housing rate");
         Near(material.ConstructionMaterial, n.HousingMaterialUnitsPerHousing, "material takes over the flexible Wood/Clay input");
         Near(housing.ConstructionMaterial, 0, "assembly takes no Wood/Clay directly"); Near(housing.HousingMaterial, 1, "assembly consumes one Housing Material");
         Check(!material.Equipment && housing.Equipment, "tool wear belongs to the assembly only");
-        Check(material.AgricultureOnly && housing.AgricultureOnly && material.Specialist == WorkforceRoles.Builder && material.Track == NeolithicTech.Construction, "Builder Construction, agriculture only");
+        Check(material.AgricultureOrFishing && housing.AgricultureOrFishing && material.Specialist == WorkforceRoles.Builder && material.Track == NeolithicTech.Construction,
+            "Builder Construction is available to Agriculture or feature-enabled Fishing");
         var c = w.Camps[0]; c.CraftingPriorities = new CraftingPriorities { Housing = .37 }; c.Inventory.HousingMaterial = 1.5;
         Near(NeolithicProduction.Priority(c, CraftGood.HousingMaterial), .37, "material shares Housing's priority"); Near(NeolithicProduction.Stock(c, CraftGood.HousingMaterial), 1.5, "stock reads the new inventory");
         Check(NeolithicProduction.ScheduleKey(CraftGood.HousingMaterial) < NeolithicProduction.ScheduleKey(CraftGood.Housing) && NeolithicProduction.ScheduleKey(CraftGood.HousingMaterial) > NeolithicProduction.ScheduleKey(CraftGood.FarmTools), "schedule places material immediately before assembly");
@@ -251,7 +254,7 @@ internal static class HousingMaterialRecipeChecks
         var observed = new AgentObservationBuilder().Build(w, own.Player);
         string json = ObservationContract.Serialize(observed, own.People.Mandate);
         var dto = ObservationContract.Deserialize(json);
-        Check(AgentObservation.SchemaVersion == 20 && dto.Schema == 20, "observation schema is 20");
+        Check(AgentObservation.SchemaVersion == 21 && dto.Schema == 21, "observation schema is 21");
         Near(dto.Settlements.Single(s => s.Id == own.Id).HousingMaterial, 2.75, "owned Housing Material stock is exposed");
         Check(dto.Settlements.All(s => s.Id != rival.Id) && !json.Contains("6543.5"), "foreign Housing Material stays private");
         Near(observed.Settlements.Single(s => s.Id == own.Id).HousingMaterial, 2.75, "the in-process observation exposes the same stock");

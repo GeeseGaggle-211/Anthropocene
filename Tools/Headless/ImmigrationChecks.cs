@@ -408,7 +408,7 @@ internal static class ImmigrationChecks
     {
         var w = WorldAt(4, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2, i - 1)); var s = w.Camps[0];
         foreach (var c in w.Camps) { MakeNomadic(c); c.Workforce.Assign(WorkforceRoles.Herder, 7, c.Population); }
-        s.Population = 300; s.Workforce.Assign(WorkforceRoles.Farmer, 40, 300); s.PlantFood = 9000.5; s.AnimalFood = 2345.25; s.AquaticFood = 777.125;
+        s.Population = 300; s.Workforce.Assign(WorkforceRoles.Farmer, 40, 300); s.PlantFood = 9000.5; s.AnimalFood = 2345.25; s.AquaticFood = 777.125; s.Inventory.FishingTools = 88.25;
         s.FoodNeedsMetRatio = .3; w.Camps[1].FoodNeedsMetRatio = 1; w.Camps[2].FoodNeedsMetRatio = .3; w.Camps[3].FoodNeedsMetRatio = .3;
         var herd = new Herd { Id = w.NextId++, Tile = s.Tile, Animals = 50, Capacity = 100, DomesticCamp = s.Id, OwnerSociety = s.SocietyId, Species = "goat" }; w.Herds.Add(herd);
         double Sum(Func<Camp, double> f) => w.Camps.Sum(f);
@@ -431,7 +431,9 @@ internal static class ImmigrationChecks
         Near(Sum(c => c.PlantFood), p0, "plant food is conserved"); Near(Sum(c => c.AnimalFood), a0, "animal food is conserved"); Near(Sum(c => c.AquaticFood), q0, "aquatic food is conserved");
         double f = m / 300.0;
         Near(f0.Plant, 9000.5 * f, "migrants carry their per-capita plant food"); Near(f0.Animal, 2345.25 * f, "migrants carry their per-capita animal food"); Near(f0.Aquatic, 777.125 * f, "migrants carry their per-capita aquatic food");
-        Check(w.Camps.All(c => inv.Select(x => (double)x.GetValue(c.Inventory)).SequenceEqual(snapshot[c.Id].Inv)), "no tools, housing, fabric or other goods move");
+        Check(w.Camps.All(c => inv.Select(x => (double)x.GetValue(c.Inventory)).SequenceEqual(snapshot[c.Id].Inv)), "no Fishing Tools, other tools, housing, fabric or other goods move");
+        int fishingToolsIndex = Array.FindIndex(inv, field => field.Name == nameof(CampInventory.FishingTools));
+        Check(fishingToolsIndex >= 0 && s.Inventory.FishingTools == 88.25 && w.Camps.Where(c => c.Id != s.Id).All(c => c.Inventory.FishingTools == snapshot[c.Id].Inv[fishingToolsIndex]), "immigration excludes Fishing Tools from both source and destination inventories");
         Check(herd.Animals == 50 && herd.DomesticCamp == s.Id && w.Herds.Count == 1, "no herds move");
         Check(w.Camps.All(c => c.GrowthRemainder == snapshot[c.Id].GrowthRemainder && c.DeathRemainder == snapshot[c.Id].DeathRemainder), "fractional demographic progress stays with its camp");
         Check(w.Camps.All(c => c.Workforce.Assigned <= c.Population && c.Workforce.Assignments.All(a => a.Population >= 0)), "workforce ledgers stay within residents");

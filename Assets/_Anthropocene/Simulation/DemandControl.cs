@@ -12,8 +12,13 @@ namespace Anthropocene.Simulation
         public static bool IsKnown(string name) => name == Legacy || name == DemandControl;
         public static bool IsDemandControl(SimulationConfig cfg) => cfg != null && cfg.EconomicAllocation == DemandControl;
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, out ProductionOrder production)
+            => Plan(w, c, settings, null, out production);
+
+        // TurnPlanning may supply the access plan it already built for this accepted destination. The normal path keeps
+        // the same single physical-demand pass, which creates the access plan only when no reusable one was supplied.
+        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, FishingAccessPlan fishingAccess, out ProductionOrder production)
         {
-            if (IsDemandControl(w.Config)) return DemandController.Plan(w, c, settings, out production, out _);
+            if (IsDemandControl(w.Config)) return DemandController.Plan(w, c, settings, fishingAccess, out production, out _);
             return EconomicPlanner.Plan(w, c, settings, EconomicPlanner.ConfiguredRule(w.Config), out _, out production);
         }
     }
@@ -22,9 +27,10 @@ namespace Anthropocene.Simulation
     //
     // Pure and per camp: it reads the committed camp (a planning view) and returns a legal EconomicIntent plus a production
     // order whose ceilings the forecast and resolver honour. Single-service controllers make requests:
-    //   Survival     food for the prepared cohort (using the supervisor's retained field/herd portfolio);
+    //   Survival     food for the prepared cohort through the supervisor's retained field/herd portfolio and a shared
+    //                gatherer/Fisher frontier;
     //   Continuity   this turn's clothing consumption, retained shelter replacement, and the field/herd/equipment work
-    //                authorized by that portfolio;
+    //                authorized by that portfolio, including Fishing Tools for staffed Fishers;
     //   Recovery     the clothing reserve, the shelter deficit, Pots for the storage gap.
     // Development covers explicitly authorized field and herd increments. Each request is a complete bundle:
     // craft time, made intermediates (Animal Fabric for tents, Housing Material for Housing), raw extraction beyond stock,
@@ -74,7 +80,9 @@ namespace Anthropocene.Simulation
         {
             public readonly List<Request> Requests = new List<Request>();
             public readonly Dictionary<string, int> Staff = new Dictionary<string, int>();
-            public int Herders, Farmers, FoodGatherers; public double FeedstockGatherers, MaterialGatherers, ToolsMade;
+            public int Herders, Farmers, Fishers, FoodGatherers;
+            public double FishingFood, FeedstockGatherers,
+                MaterialGatherers, ToolsMade;
             public double HCurrent, HSustainable, HAbsolute, HGrown, HRetained;
             public double RetainedFoodSupply, DevelopmentFoodGap;
             public double RetainedFarmerPlantService,
@@ -87,10 +95,14 @@ namespace Anthropocene.Simulation
         }
 
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, out ProductionOrder production, out Allocation allocation)
+            => Plan(w, c, settings, null, out production, out allocation);
+
+        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, FishingAccessPlan fishingAccess,
+            out ProductionOrder production, out Allocation allocation)
         {
             production = null; var alloc = new Allocation(); allocation = alloc;
             var e = settings.Copy(); e.Assignments.Clear(); e.Labor = null;
-            if (c.Population <= 0 || !CultivationEconomy.EconomyEnabled(c)) { e.AutomationTurns = 0; return e; }
+            if (c.Population <= 0 || !CultivationEconomy.EconomyEnabled(w, c)) { e.AutomationTurns = 0; return e; }
             var cfg = w.Config; var n = cfg.Neolithic;
             double years = cfg.TurnDays / cfg.DaysPerYear, intervals = cfg.GenerationIntervals, perYear = cfg.DaysPerYear / cfg.BaseDays;
             int residents = c.Population;
@@ -98,7 +110,8 @@ namespace Anthropocene.Simulation
             // settlement supervisor selects a retained physical portfolio from
             // fields, local support and bounded labour; only then is the herd
             // forecast applied to the shared food ledger.
-            var d = CampProductionDemand.BuildPhysical(w, c, e, false, true, 0);
+            var d = CampProductionDemand.BuildPhysical(w, c, e, false, true,
+                0, fishingAccess);
             var herdProfile = HerdConsumptionProfile.Owned(w, c);
             var site = SettlementSiteEvaluation.Evaluate(w, c, c.Tile,
                 residents, herdProfile);
@@ -133,34 +146,111 @@ namespace Anthropocene.Simulation
                 portfolio.SlaughterFood;
             double animalEnvelope = Math.Max(d.AnimalEnvelope,
                 d.AnimalEnvelopeClothing) + portfolio.SlaughterFood;
-            double foodTarget = Math.Min(d.ForageAfterHerds,
-                Math.Max(0, survivalFood - animalReceipts));
-            double terrestrial = Math.Min(d.TerrestrialAfterHerds, foodTarget);
+            double foodNeed = Math.Max(0, survivalFood - animalReceipts);
+            double terrestrial = Math.Min(d.TerrestrialAfterHerds, foodNeed);
             double farmRate = d.HarvestProductivity * cfg.GatherPerPerson * intervals;
             // Operating farmers keep the fields up (and harvest while they do); the rest of the food is gathered. Gathering on
             // the footprint also builds field capital through the resolver's gatherer bridge (up to GathererBridgeCeiling),
             // which harvesting farmers do not, so food beyond the upkeep crew is staffed as gathering (slice 2).
             double harvest = Math.Min(terrestrial, farmers * farmRate);
-            int wantedGatherers = gatherRate > 0 ? (int)Math.Ceiling(Math.Max(0, foodTarget - harvest) / gatherRate - Epsilon) : 0;
-            int foodGatherers = Math.Min(Math.Max(0, residents - herders - farmers), wantedGatherers);
-            if (foodGatherers < wantedGatherers) alloc.FoodUnmet = "labor rationing";
-            alloc.Herders = herders; alloc.Farmers = farmers; alloc.FoodGatherers = foodGatherers;
-            double gatheredFood = Math.Min(Math.Max(0,
-                d.ForageAfterHerds - harvest), foodGatherers * gatherRate);
-            double budget = Math.Max(0, residents - herders - farmers - foodGatherers);   // persons left for goods
+            int foodLabor = Math.Max(0, residents - herders - farmers);
+            double selectedPassive = Math.Min(d.SelectedFishingPassiveSupply, d.AquaticAfterHerds);
+            double fishingTools = Math.Max(0, c.Inventory.FishingTools);
+            double Catch(int fishers) => d.FishingEnabled && d.FishingAccess != null && fishers > 0
+                ? d.FishingAccess.CatchEnvelope(fishers, fishingTools) : 0;
+            double marginalAt(int fishers) => d.FishingEnabled && d.FishingAccess != null && fishers > 0
+                ? d.FishingAccess.MarginalCatchPerFisher(fishers, fishingTools) : 0;
+            (int Fishers, int Gatherers, int WantedGatherers, double Catch, double Target, double Food) bestFood = default;
+            bool hasBestFood = false;
+            void ConsiderFoodStaffing(int fishers)
+            {
+                fishers = Math.Max(0, Math.Min(foodLabor, fishers));
+                double catchFood = Catch(fishers);
+                // Selected coastal tiles are already in the passive-gathering envelope. Fishing only adds food beyond
+                // that overlapping stock; the same fish cannot satisfy both channels in the physical-demand forecast.
+                double target = Math.Min(foodNeed, d.ForageAfterHerds + Math.Max(0, catchFood - selectedPassive));
+                int wanted = gatherRate > 0
+                    ? (int)Math.Ceiling(Math.Max(0, target - harvest - catchFood) / gatherRate - Epsilon) : 0;
+                int gatherers = Math.Min(Math.Max(0, foodLabor - fishers), wanted);
+                double gatherable = Math.Max(0, d.ForageAfterHerds - Math.Min(catchFood, selectedPassive) - harvest);
+                double food = Math.Min(target, harvest + catchFood + Math.Min(gatherers * gatherRate, gatherable));
+                if (!hasBestFood || food > bestFood.Food + Epsilon ||
+                    Math.Abs(food - bestFood.Food) <= Epsilon && (fishers + gatherers < bestFood.Fishers + bestFood.Gatherers ||
+                        fishers + gatherers == bestFood.Fishers + bestFood.Gatherers && fishers < bestFood.Fishers))
+                {
+                    bestFood = (fishers, gatherers, wanted, catchFood, target, food);
+                    hasBestFood = true;
+                }
+            }
+            ConsiderFoodStaffing(0);
+            if (d.FishingEnabled && d.FishingAccess != null && d.FishingAccess.Grounds.Length > 0 && foodLabor > 0)
+            {
+                // The survival frontier has diminishing catch. Its optimum against the flat gatherer rate is at the
+                // Fisher count where marginal catch crosses one gatherer's turn yield, at the food-cap crossing, or an
+                // endpoint. Search those bounded breakpoints instead of scanning the resident population.
+                var counts = new SortedSet<int> { 0, foodLabor };
+                int lo = 0, hi = foodLabor;
+                while (lo < hi)
+                {
+                    int mid = lo + (int)(((long)hi - lo + 1) / 2);
+                    if (marginalAt(mid) >= gatherRate - Epsilon) lo = mid; else hi = mid - 1;
+                }
+                void Around(int value)
+                {
+                    for (int delta = -2; delta <= 2; delta++)
+                    {
+                        long count = (long)value + delta;
+                        if (count >= 0 && count <= foodLabor) counts.Add((int)count);
+                    }
+                }
+                Around(lo); Around(Math.Min(foodLabor, lo + 1));
+                void AroundCatch(double targetCatch)
+                {
+                    if (!(targetCatch > 0) || Catch(foodLabor) < targetCatch - Epsilon) return;
+                    lo = 0; hi = foodLabor;
+                    for (int i = 0; i < 32 && lo < hi; i++)
+                    {
+                        int mid = lo + (hi - lo) / 2;
+                        if (Catch(mid) >= targetCatch - Epsilon) hi = mid; else lo = mid + 1;
+                    }
+                    Around(lo);
+                }
+                // Catch changes both the mixed foraging envelope and the direct
+                // meal receipts. Search both discontinuities: filling the
+                // envelope and meeting the meal target after farm harvest.
+                AroundCatch(selectedPassive + Math.Max(0, foodNeed - d.ForageAfterHerds));
+                AroundCatch(Math.Max(0, foodNeed - harvest));
+                foreach (int count in counts) if (count > 0) ConsiderFoodStaffing(count);
+            }
+            int fishers = bestFood.Fishers, foodGatherers = bestFood.Gatherers;
+            double fishingFood = bestFood.Catch;
+            double gatheredFood = Math.Min(foodGatherers * gatherRate,
+                Math.Max(0, d.ForageAfterHerds -
+                    Math.Min(fishingFood, selectedPassive) - harvest));
+            if (foodGatherers < bestFood.WantedGatherers ||
+                bestFood.Food + Epsilon < bestFood.Target)
+                alloc.FoodUnmet = "labor rationing";
+            alloc.Herders = herders; alloc.Farmers = farmers; alloc.Fishers = fishers;
+            alloc.FoodGatherers = foodGatherers; alloc.FishingFood = fishingFood;
+            d.Supply = d.ForageAfterHerds +
+                Math.Max(0, fishingFood - selectedPassive) +
+                d.ManagedFood.AnimalFood;
+            double budget = Math.Max(0, residents - herders - farmers - fishers - foodGatherers);   // persons left for goods
 
             // The resolver-shaped candidate the tool demands read (herders and farmers staffed).
             var staffed = e.Copy();
             if (herders > 0) staffed.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = herders });
             if (farmers > 0) staffed.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = farmers });
+            if (fishers > 0) staffed.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Fisher, Population = fishers });
             var candidate = EconomicPlanner.Preview(c, staffed, residents);
             NeolithicProduction.DepreciateHousing(w, candidate, years);
 
             // ---- Bundles ----
             string Role(CraftRecipe r) => c.People.HasTech(r.Track) ? r.Specialist : WorkforceRoles.Craftsperson;
             bool Usable(CraftRecipe r)
-                => r != null && !(r.SpecialistOnly && !c.People.HasTech(r.Track)) && !(r.AgricultureOnly && !CultivationEconomy.Enabled(c))
-                   && !(r.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) && SpecialistProductivity.CraftRate(w, c, r, Role(r)) > 0;
+                => r != null && NeolithicProduction.RecipeAvailable(w, c, r)
+                   && !(r.SpecialistOnly && !c.People.HasTech(r.Track))
+                   && SpecialistProductivity.CraftRate(w, c, r, Role(r)) > 0;
             double craftMultiplier = d.HousingMultiplier;
             Bundle Craft(CraftGood good)
             {
@@ -296,11 +386,11 @@ namespace Anthropocene.Simulation
                 farmerSpareCapacity - farmerPlantService);
             double farmerFoodService = Math.Min(farmerBiologicalCapacity,
                 Math.Max(0, survivalFood + reserveFood + growthFood -
-                    animalReceipts - harvest - gatheredFood));
+                    animalReceipts - harvest - fishingFood - gatheredFood));
             alloc.RetainedFarmerPlantService = farmerPlantService;
             alloc.RetainedFarmerFoodService = farmerFoodService;
-            double retainedFoodSupply = animalReceipts + harvest + gatheredFood +
-                farmerFoodService;
+            double retainedFoodSupply = animalReceipts + harvest + fishingFood +
+                gatheredFood + farmerFoodService;
             alloc.RetainedFoodSupply = retainedFoodSupply;
             double retainedSurplus = Math.Max(0,
                 retainedFoodSupply - survivalFood);
@@ -310,8 +400,9 @@ namespace Anthropocene.Simulation
             retainedSurplus = Math.Max(0, retainedSurplus - reserveFood);
             double growthFoodGap = Math.Max(0, growthFood - retainedSurplus);
             double remainingForage = Math.Max(0,
-                d.ForageAfterHerds - harvest - gatheredFood -
-                farmerFoodService - plannedPlantFromLand);
+                d.ForageAfterHerds - Math.Min(fishingFood, selectedPassive) -
+                harvest - gatheredFood - farmerFoodService -
+                plannedPlantFromLand);
             double reserveGatherFood = Math.Min(reserveFoodGap,
                 remainingForage);
             double growthGatherFood = Math.Min(growthFoodGap,
@@ -331,7 +422,7 @@ namespace Anthropocene.Simulation
             // fallback. Husbandry only exposes the portable recipe.
             double endDays = w.Days + years * cfg.DaysPerYear;
             double gapPeople = NeolithicProduction.HousingGapPeople(w, candidate, residents, endDays);
-            bool fixedPossible = CultivationEconomy.Enabled(c) && Usable(byGood[CraftGood.Housing]) && NeolithicProduction.Priority(candidate, CraftGood.Housing) > 0;
+            bool fixedPossible = Usable(byGood[CraftGood.Housing]) && NeolithicProduction.Priority(candidate, CraftGood.Housing) > 0;
             bool tentsPossible = CultivationEconomy.HusbandryEnabled(c) && Usable(byGood[CraftGood.LightHousing]) && NeolithicProduction.Priority(candidate, CraftGood.LightHousing) > 0;
             double PerUnit(CraftGood g) => g == CraftGood.Housing ? n.HousingPeoplePerUnit : n.LightHousingPeoplePerUnit;
             bool RouteFeasible(CraftGood good, double people)
@@ -394,6 +485,9 @@ namespace Anthropocene.Simulation
             // Field and herd equipment for the work staffed (continuity of retained assets).
             Request("farm tools", ServiceClass.Continuity, CraftGood.FarmTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.FarmTools, years, residents, false, false, d.Sources)));
             Request("herding tools", ServiceClass.Continuity, CraftGood.HerdingTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.HerdingTools, years, residents, false, false, d.Sources)));
+            // Fishing Tools continuity is sized only after the shared survival frontier fixes Fisher staffing.
+            Request("fishing tools", ServiceClass.Continuity, CraftGood.FishingTools,
+                fishers > 0 ? Math.Max(0, NeolithicProduction.FishingToolDemand(w, candidate, years)) : 0);
             // Storage: the Pots the food reserve needs beyond natural storage.
             Request("storage", ServiceClass.Recovery, CraftGood.Pots, Math.Max(0, NeolithicProduction.PotDemand(w, c, years, residents)));
             Request LabourRequest(string service, ServiceClass cls, string role, double persons)
@@ -1071,6 +1165,7 @@ namespace Anthropocene.Simulation
             intent.Labor = new EconomicLaborPlan();
             if (herders > 0) intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = herders });
             if (farmers > 0) intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = farmers });
+            if (fishers > 0) intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Fisher, Population = fishers });
             foreach (var p in alloc.Staff.OrderBy(p => p.Key, StringComparer.Ordinal))
             {
                 var existing = intent.Assignments.FirstOrDefault(a => a.Role == p.Key);

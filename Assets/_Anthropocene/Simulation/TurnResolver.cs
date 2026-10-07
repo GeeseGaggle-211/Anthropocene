@@ -47,6 +47,8 @@ namespace Anthropocene.Simulation
     {
         // This resolution's trade settlement (Docs/Trade.md): opening legs settled, after-production legs pending.
         private TradeSettlement trade;
+        private IReadOnlyDictionary<int, double> resolvedFisheryOperations =
+            new Dictionary<int, double>();
         private readonly PhaseExecution execution;
         public ResolutionMetrics LastMetrics { get; private set; } = new ResolutionMetrics();
         public TurnResolver(PhaseExecution execution = null) { this.execution = execution ?? new PhaseExecution(); }
@@ -63,6 +65,7 @@ namespace Anthropocene.Simulation
                 throw new InvalidOperationException("Prepared turn does not match the current world boundary.");
             using var profile = PhaseProfile.Scope("Resolve");
             var resolutionTimer = System.Diagnostics.Stopwatch.StartNew(); LastMetrics = new ResolutionMetrics(); trade = null;
+            resolvedFisheryOperations = new Dictionary<int, double>();
             Ownership.Bind(w);
             if (w.Camps.All(c => w.LinkedPopulation(c) <= 0)) throw new InvalidOperationException("All tribes have perished.");
             w.Config.Validate();
@@ -128,12 +131,14 @@ namespace Anthropocene.Simulation
             using (PhaseProfile.Scope("Movement"))
             {
                 Supply.ProvisionDepartures(w, locked, record, prepared.Placement);
-                Move(w, locked, herdMoves, prepared.Placement, prepared.AbandoningVillages, record);
+                Move(w, locked, herdMoves, prepared.Placement, prepared.AbandoningVillages,
+                    planning, record);
                 Supply.DepositReturns(w, record);
             }
             var touched = new Dictionary<int, TileChange>();
             Action<int> touch = id => { if (!touched.ContainsKey(id)) touched[id] = new TileChange { Tile = id, BeforeFood = w.Tiles[id].Food, BeforePotentialFood = w.Tiles[id].PotentialFood, BeforeFreshwater = w.Tiles[id].Freshwater, BeforeLandCondition = w.Tiles[id].LandCondition, BeforeAquaticCondition = w.Tiles[id].AquaticCondition }; };
-            using (PhaseProfile.Scope("Economy")) ResolveEcology(w, locked, establishedHunters, record, touch, prepared.Needs, prepared.AbandoningVillages);
+            using (PhaseProfile.Scope("Economy")) ResolveEcology(w, locked, establishedHunters, record, touch,
+                prepared.Needs, prepared.AbandoningVillages, prepared.FishingPlans);
             Trade.Finish(w, trade, record); LastMetrics.TradesSettled = record.Trades.Count; trade = null;
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Reintegrate).OrderBy(o => o.Entity))
             {
@@ -165,7 +170,12 @@ namespace Anthropocene.Simulation
                 .Select(g => new Transfer { Tile = g.Key.Tile, Entity = g.Key.Entity, Kind = g.Key.Kind,
                     Food = g.Sum(t => t.Food), PotentialFood = g.Sum(t => t.PotentialFood), Freshwater = g.Sum(t => t.Freshwater) }).ToList();
             // Remembered contact knowledge: end-of-turn, after movement and placement, from the post-turn vision.
-            phaseTimer.Restart(); using (PhaseProfile.Scope("ContactKnowledge")) ContactKnowledge.EndTurn(w, execution); LastMetrics.KnowledgeMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
+            phaseTimer.Restart(); using (PhaseProfile.Scope("ContactKnowledge"))
+            {
+                ContactKnowledge.EndTurn(w, execution);
+                UpdateFishingGroundKnowledge(w, prepared.FishingPlans, record, resolvedFisheryOperations);
+            }
+            LastMetrics.KnowledgeMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
             w.History.Add(record); w.Turn++;
             var diagnostics = w.Diagnostics;
             if (diagnostics != null && diagnostics.Turn == prepared.Turn)
@@ -216,8 +226,107 @@ namespace Anthropocene.Simulation
                     EcologyMath.CultivationVegetationRetention(w.Config, CultivationEconomy.Intensity(w.Config, index.Ecology(n).CultivationCapital))) * species.MovementHabitatWeight)
                 .ThenBy(n => n == herd.Tile ? 0 : 1).ThenBy(n => n).First();
         }
+
+        // Fishing snapshots are owner memory, not a map-wide public cache.
+        // Only end-boundary visible grounds and grounds actually worked this
+        // turn may refresh them; unseen live stocks never enter policy memory.
+        internal static void UpdateFishingGroundKnowledge(WorldState world,
+            IReadOnlyDictionary<int, FishingPlan> fishingPlans, TurnRecord record,
+            IReadOnlyDictionary<int, double> resolvedOperations = null)
+        {
+            if (!world.Config.NeolithicFishingEnabled) return;
+            fishingPlans ??= new Dictionary<int, FishingPlan>();
+            var visibleByPlayer = new Dictionary<int, HashSet<int>>();
+            var observedBySociety = new Dictionary<int, HashSet<int>>();
+            var plansByCamp = fishingPlans;
+            var operationByTile = new Dictionary<int, double>();
+            if (resolvedOperations != null)
+                foreach (var pair in resolvedOperations.OrderBy(pair => pair.Key))
+                    operationByTile[pair.Key] = Numbers.Clamp(pair.Value, 0, 1);
+            foreach (var plan in plansByCamp.Values.OrderBy(p => p.CampId))
+                foreach (var ground in plan.Grounds.OrderBy(g => g.TileId))
+                    if (!operationByTile.ContainsKey(ground.TileId) &&
+                        FisherySiteAt(world, ground.TileId)?.OperatorCampId == plan.CampId)
+                        operationByTile[ground.TileId] = Numbers.Clamp(ground.OperationFraction, 0, 1);
+
+            var accessCache = new FishingAccessCache(world);
+            foreach (var camp in world.Camps.OrderBy(c => c.Id))
+            {
+                if (!FishingEconomy.FeatureEnabled(world, camp)) continue;
+                if (!observedBySociety.TryGetValue(camp.SocietyId, out var observed))
+                    observedBySociety[camp.SocietyId] = observed = new HashSet<int>();
+
+                if (camp.Population > 0)
+                {
+                    if (!visibleByPlayer.TryGetValue(camp.Player, out var visible))
+                        visibleByPlayer[camp.Player] = visible = accessCache.Visible(camp.Player);
+                    // Closing knowledge needs only reachable visible geometry.
+                    // Do not rebuild stock, capital, rivalry, yield and ranking
+                    // forecasts that were used by the opening planner.
+                    var remembered = accessCache.Remembered(camp.People);
+                    foreach (var route in new[] { FishingRoute.Shallows, FishingRoute.Lake })
+                        foreach (int tile in accessCache.Distances(camp, camp.Tile, route, visible, remembered).Keys)
+                            if (visible.Contains(tile)) observed.Add(tile);
+                }
+                if (plansByCamp.TryGetValue(camp.Id, out var plan) && !plan.Departing)
+                    foreach (var ground in plan.Grounds)
+                        if (ground.AssignedFisherYears > 1e-12) observed.Add(ground.TileId);
+                foreach (var receipt in record.Transfers.Where(t => t.Entity == camp.Id && t.Kind == "FisheryHarvest"))
+                    observed.Add(receipt.Tile);
+            }
+
+            foreach (var society in world.Societies.OrderBy(s => s.Id))
+            {
+                if (!observedBySociety.TryGetValue(society.Id, out var observed))
+                    observed = new HashSet<int>();
+                var snapshots = (society.FishingGroundKnowledge ?? new List<FishingGroundSnapshot>())
+                    .ToDictionary(s => s.TileId, s => s.Copy());
+                var explored = society.Memory?.Explored;
+                if (explored == null)
+                {
+                    society.FishingGroundKnowledge = new List<FishingGroundSnapshot>();
+                    continue;
+                }
+                foreach (int tileId in observed.OrderBy(id => id))
+                {
+                    var tile = world.Tiles[tileId];
+                    var view = LazyEcology.ProjectEcology(world, tileId, world.Days);
+                    var site = FisherySiteAt(world, tileId);
+                    double capital = site == null ? 0 : FishingEconomy.ProjectedCapital(world, site, world.Days);
+                    double operation = operationByTile.TryGetValue(tileId, out double fraction) ? fraction : 0;
+                    var overlay = new AquaticEcologyOverlay(capital, capital, capital, operation);
+                    var profile = new double[4];
+                    for (int season = 0; season < 4; season++)
+                    {
+                        var capacity = new EcologyCapacity(world, tile, view, season,
+                            aquaticOverlay: overlay);
+                        double accessibleRatio = capacity.Biomass > 1e-12
+                            ? Numbers.Clamp(capacity.Food / capacity.Biomass, 0, 1) : 0;
+                        double safe = EcologyMath.SustainableHarvestRate(capacity.Biomass,
+                            capacity.BiomassRate, world.Config.SustainableProductionFraction,
+                            capacity.ManagedFlow);
+                        profile[season] = Math.Max(0, safe * accessibleRatio);
+                    }
+                    snapshots[tileId] = new FishingGroundSnapshot
+                    {
+                        TileId = tileId, AccessibleFood = Math.Max(0, view.Food),
+                        Biomass = Math.Max(0, view.PotentialFood),
+                        Condition = Numbers.Clamp(view.AquaticCondition, 0, 1),
+                        Capital = Math.Max(0, capital),
+                        OperatorCampId = site?.OperatorCampId ?? -1,
+                        ObservedDays = world.Days, OperationFraction = operation,
+                        ProductiveProfile = profile
+                    };
+                }
+
+                society.FishingGroundKnowledge = snapshots.Values
+                    .Where(snapshot => observed.Contains(snapshot.TileId) || explored.Contains(snapshot.TileId))
+                    .OrderBy(snapshot => snapshot.TileId).ToList();
+            }
+        }
+
         private static void Move(WorldState w, List<Order> orders, Dictionary<int, int> herds, CampPlacement placement,
-            IReadOnlyCollection<int> abandoningVillages, TurnRecord record)
+            IReadOnlyCollection<int> abandoningVillages, PlanningIndex planning, TurnRecord record)
         {
             foreach (int id in placement.Blocked.OrderBy(id => id))
                 record.Log("Camp " + id + " movement blocked by another camp.");
@@ -230,6 +339,8 @@ namespace Anthropocene.Simulation
                 NeolithicProduction.MigrateLegacyFixedHousing(w, camp);
                 if (target != camp.Tile)
                 {
+                    foreach (var hunter in planning.CampHunters(camp.Id).Where(h =>
+                        h.EconomicTransitionRecall)) EconomicTransition.Cancel(hunter);
                     bool abandoning = abandoningVillages.Contains(camp.Id);
                     if (abandoning)
                     {
@@ -246,6 +357,17 @@ namespace Anthropocene.Simulation
                         camp.VillageTurns = 0;
                         record.Log("Village " + camp.Id + " abandoned its fields and became a camp.");
                     }
+                    // Fishery capital remains at its physical site, but an
+                    // accepted move immediately releases the departing owner.
+                    if (w.Config.NeolithicFishingEnabled)
+                    {
+                        foreach (int tile in camp.LastSelectedFishingGrounds ?? new List<int>())
+                        {
+                            var site = FisherySiteAt(w, tile);
+                            if (site?.OperatorCampId == camp.Id) site.OperatorCampId = -1;
+                        }
+                        camp.LastSelectedFishingGrounds?.Clear();
+                    }
                     camp.Moves++; camp.StationaryTurns = 0;
                     // Settled expectations survive abandonment, so fixed
                     // housing left behind hurts QoL under the same formula.
@@ -258,7 +380,21 @@ namespace Anthropocene.Simulation
             foreach (var hunter in w.Hunters.OrderBy(h => h.Id))
             {
                 var order = orders.FirstOrDefault(o => o.Entity == hunter.Id);
-                if (order != null && order.Destination >= 0) { record.Log("Hunters " + hunter.Id + " moved to " + order.Destination + "."); hunter.Tile = order.Destination; }
+                if (order != null && order.Destination >= 0)
+                {
+                    if (hunter.EconomicTransitionRecall)
+                    {
+                        planning.Camps.TryGetValue(hunter.SourceCamp, out var source);
+                        if (order.Kind == OrderKind.Move)
+                            EconomicTransition.Advance(w, hunter, source, order.Destination);
+                        else EconomicTransition.Cancel(hunter);
+                    }
+                    record.Log("Hunters " + hunter.Id + " moved to " + order.Destination + ".");
+                    hunter.Tile = order.Destination;
+                }
+                else if (hunter.EconomicTransitionRecall && order != null &&
+                    order.Kind != OrderKind.Reintegrate)
+                    EconomicTransition.Cancel(hunter);
             }
             foreach (var herd in w.Herds.OrderBy(h => h.Id))
             {
@@ -351,6 +487,7 @@ namespace Anthropocene.Simulation
                 bool threshold = camp.Experience[best] >= w.Config.ExperienceThreshold;
                 bool majority = (elapsed >= progression.MajorityEligibilityDays && elapsed < progression.ForcedTransitionDays) && camp.Experience[best] > total * .5;
                 if (!threshold && !majority && elapsed < progression.ForcedTransitionDays) return;
+                bool economyBefore = EconomicTransition.Enabled(w, camp.People);
                 camp.ForcedTransition = elapsed >= progression.ForcedTransitionDays && !threshold && !majority;
                 camp.Technology = (Technology)(best + 1); camp.TransitionTurn = w.Turn;
                 if (camp.ForcedTransition)
@@ -360,7 +497,11 @@ namespace Anthropocene.Simulation
                     // Keep accumulated experience intact; carryover is stored as progress separately at transition display/save.
                 }
                 progression.Era = Era.Neolithic; progression.CompletionDays = w.Days; progression.CompletionTurn = w.Turn; progression.CompletionRule = threshold ? "Mastery" : majority ? "Maturity" : "Forced";
-                OpeningTransitions.Apply(w, camp, camp.Technology); record.Log("Tribe " + camp.Player + " discovered " + camp.Technology + " and entered the Neolithic.");
+                OpeningTransitions.Apply(w, camp, camp.Technology);
+                if (!economyBefore && EconomicTransition.Enabled(w, camp.People))
+                    EconomicTransition.Begin(w, camp.People);
+                TechnologyDiscovery.QueueEligible(w, camp.People);
+                record.Log("Tribe " + camp.Player + " discovered " + camp.Technology + " and entered the Neolithic.");
             }
         }
         public static double NeolithicProgress(WorldState w, Camp camp, Domain domain)
@@ -386,14 +527,22 @@ namespace Anthropocene.Simulation
             foreach (var tile in ecologyScope ?? w.Tiles)
             {
                 if (double.IsNaN(tile.CultivationCapital) || double.IsInfinity(tile.CultivationCapital) || tile.CultivationCapital < 0 || tile.CultivationCapital > 1 / (w.Config.ReferenceIntensity * w.Config.ReferenceIntensity) + 1e-8 || tile.CultivationOperator < -1) throw new InvalidOperationException("Invalid cultivation capital or operator.");
+                var aquaticOverlay = LazyEcology.ProjectAquaticOverlay(w, tile.Id, w.Days, 0);
                 var projected = LazyEcology.ProjectEcology(w, tile.Id, w.Days);
                 var ecology = w.Ecology(tile.Id); double multiplier = OpeningTransitions.FoodMultiplier(w, tile);
-                var capacity = new EcologyCapacity(w, tile, projected, w.Season);
+                var capacity = new EcologyCapacity(w, tile, projected, w.Season,
+                    aquaticOverlay: aquaticOverlay);
                 if (tile.WaterBody == WaterKind.Saltwater && (tile.Freshwater > 0 || ecology.MaxFreshwater > 0 || tile.FreshwaterSource != FreshwaterSource.None)) throw new InvalidOperationException("Seawater is not drinkable.");
                 if (tile.Saltwater < 0 || tile.Saltwater > ecology.MaxSaltwater + 1e-6 || tile.FreshwaterSource == FreshwaterSource.None && tile.Freshwater > 1e-8) throw new InvalidOperationException("Water stock lacks a valid source or capacity.");
                 if (double.IsNaN(projected.LandCondition) || double.IsNaN(projected.AquaticCondition) || projected.LandCondition < -1e-8 || projected.LandCondition > 1 + 1e-8 || projected.AquaticCondition < -1e-8 || projected.AquaticCondition > 1 + 1e-8 || double.IsNaN(projected.Food) || double.IsInfinity(projected.Food) || projected.Food < -1e-8 || double.IsNaN(projected.PotentialFood) || double.IsInfinity(projected.PotentialFood) || projected.PotentialFood + 1e-8 < projected.Food || projected.PotentialFood > ecology.MaxPotentialFood * multiplier + 1e-5 || projected.PotentialFood > capacity.Biomass + 1e-6 || projected.Freshwater < -1e-8 || double.IsNaN(projected.Freshwater) ||
                     projected.Food > capacity.Food + 1e-6 || projected.Freshwater > ecology.MaxFreshwater + 1e-6)
-                    throw new InvalidOperationException("Invalid ecology or capacity overflow.");
+                    throw new InvalidOperationException("Invalid ecology or capacity overflow at tile " + tile.Id +
+                        ": food=" + projected.Food.ToString("R") + "/" + capacity.Food.ToString("R") +
+                        ", biomass=" + projected.PotentialFood.ToString("R") + "/" + capacity.Biomass.ToString("R") +
+                        ", freshwater=" + projected.Freshwater.ToString("R") + "/" + ecology.MaxFreshwater.ToString("R") +
+                        ", landCondition=" + projected.LandCondition.ToString("R") +
+                        ", aquaticCondition=" + projected.AquaticCondition.ToString("R") +
+                        ", overlay=" + aquaticOverlay.HasValue + ".");
             }
         }
     }

@@ -191,7 +191,8 @@ namespace Anthropocene.Simulation
                 * Math.Pow(Numbers.Clamp(management, 0, 1), w.Config.AnimalManagementExponent));
 
         private void ResolveEcology(WorldState w, List<Order> orders, HashSet<int> establishedHunters, TurnRecord record, Action<int> touch,
-            Dictionary<int, TurnNeeds> needs, IReadOnlyCollection<int> abandoningVillages)
+            Dictionary<int, TurnNeeds> needs, IReadOnlyCollection<int> abandoningVillages,
+            IReadOnlyDictionary<int, FishingPlan> fishingPlans)
         {
             var phaseClock = System.Diagnostics.Stopwatch.StartNew();
             var horizon = TurnHorizon.For(w, record);
@@ -244,6 +245,22 @@ namespace Anthropocene.Simulation
                     }
                 }
             }
+            // Resident fishing claims join ordinary gathering, Hunter fishing,
+            // and crop harvest before the one shared tile integration.
+            if (fishingPlans != null)
+                foreach (var plan in fishingPlans.Values.OrderBy(p => p.CampId))
+                    if (campClaims.TryGetValue(plan.CampId, out var residentClaims))
+                    {
+                        var camp = w.Camps.FirstOrDefault(c => c.Id == plan.CampId);
+                        foreach (var ground in plan.Grounds.OrderBy(g => g.TileId))
+                            if (ground.RequestedCatch > 0)
+                                residentClaims.Add(new Demand
+                                {
+                                    Tile = ground.TileId, Entity = plan.CampId, Kind = "FisheryHarvest",
+                                    ImpactMultiplier = camp == null ? 1 : PracticeEffects.FishingImpact(w.Config, camp),
+                                    Food = ground.RequestedCatch
+                                });
+                    }
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 var labor = agriculturalLabor[camp.Id];
@@ -257,9 +274,17 @@ namespace Anthropocene.Simulation
                     continue;
                 }
                 if (gatherers <= 0) continue;
+                var residentFishingReservations = campClaims[camp.Id]
+                    .Where(d => d.Kind == "FisheryHarvest" && d.Food > 0)
+                    .GroupBy(d => d.Tile).ToDictionary(g => g.Key, g => g.Sum(d => d.Food));
+                double PassiveAvailable(int tile)
+                {
+                    double reserved = residentFishingReservations.TryGetValue(tile, out double fish) ? fish : 0;
+                    return Math.Max(0, Resource(tile).AvailableFood - reserved);
+                }
                 AddPassiveCampClaims(w, camp, gatherers, record.StartDays,
                     record.Duration, intervals, abandoningVillages.Contains(camp.Id),
-                    id => Resource(id).AvailableFood, campClaims[camp.Id]);
+                    PassiveAvailable, campClaims[camp.Id]);
             }
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
@@ -298,7 +323,8 @@ namespace Anthropocene.Simulation
 
             LastMetrics.SetupEconomyMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
             phaseClock.Restart();
-            var gatheredFoodForMaterials = CommitHorizonResources(w, demands, record, touch, foraged, horizon, agriculturalLabor, needs, abandoningVillages);
+            var gatheredFoodForMaterials = CommitHorizonResources(w, demands, record, touch, foraged,
+                horizon, agriculturalLabor, needs, abandoningVillages, fishingPlans);
             phaseClock.Restart();
             ResolveManagedHerds(w, record, horizon, needs);
             LastMetrics.ManagedHerdMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
@@ -1030,7 +1056,7 @@ namespace Anthropocene.Simulation
                 var camp = index.Camps[summary.Camp];
                 var harvest = index.Harvest[camp.Id].ToArray();
                 summary.TerrestrialFood = harvest.Where(t => t.Kind == "Gathering" || t.Kind == "Cultivation").Sum(t => t.Food); summary.MarineFood = harvest.Where(t => t.Kind == "Marine gathering").Sum(t => t.Food); summary.LakeFood = harvest.Where(t => t.Kind == "Aquatic gathering").Sum(t => t.Food);
-                summary.HuntFood = harvest.Where(t => t.Kind == "Hunting").Sum(t => t.Food); summary.FishFood = harvest.Where(t => t.Kind == "Fishing").Sum(t => t.Food); double forage = harvest.Where(t => t.Kind == "Foraging").Sum(t => t.Food); summary.ForageFood = forage;
+                summary.HuntFood = harvest.Where(t => t.Kind == "Hunting").Sum(t => t.Food); summary.FishFood = harvest.Where(t => t.Kind == "Fishing" || t.Kind == "FisheryHarvest").Sum(t => t.Food); double forage = harvest.Where(t => t.Kind == "Foraging").Sum(t => t.Food); summary.ForageFood = forage;
                 summary.AnimalFood = harvest.Where(t => t.Kind == "Animal Product").Sum(t => t.Food);
                 summary.SlaughterFood = harvest.Where(t => t.Kind == "Slaughter").Sum(t => t.Food);
                 summary.Slaughtered = record.ManagedHerds.Where(m => m.Camp == camp.Id).Sum(m => m.Slaughtered);
@@ -1058,7 +1084,9 @@ namespace Anthropocene.Simulation
                 double hunting = index.Harvest[camp.Id].Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Hunting").Sum(t => t.Food);
                 double passiveAquatic = index.Harvest[camp.Id].Where(t => t.Entity == camp.Id && (t.Kind == "Marine gathering" || t.Kind == "Aquatic gathering")).Sum(t => t.Food);
                 double gathering = index.Harvest[camp.Id].Where(t => (t.Entity == camp.Id && t.Kind == "Gathering") || hunterIds.Contains(t.Entity) && t.Kind == "Foraging").Sum(t => t.Food) + passiveAquatic * (1 - w.Config.PassiveAquaticFishingPracticeShare);
-                double fishing = index.Harvest[camp.Id].Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Fishing").Sum(t => t.Food) * w.Config.ActiveFishingPracticeMultiplier + passiveAquatic * w.Config.PassiveAquaticFishingPracticeShare;
+                double fishing = (index.Harvest[camp.Id].Where(t => hunterIds.Contains(t.Entity) && t.Kind == "Fishing").Sum(t => t.Food)
+                    + index.Harvest[camp.Id].Where(t => t.Entity == camp.Id && t.Kind == "FisheryHarvest").Sum(t => t.Food))
+                    * w.Config.ActiveFishingPracticeMultiplier + passiveAquatic * w.Config.PassiveAquaticFishingPracticeShare;
                 foreach (var logistics in index.Logistics[camp.Id].Where(l => l.HarvestOverflow > 0))
                 {
                     double overflow = logistics.HarvestOverflow;
@@ -1080,9 +1108,9 @@ namespace Anthropocene.Simulation
                 }
                 double total = hunting + gathering + fishing; if (total <= 1e-9) continue;
                 double budget = summary.StartingPopulation * generationScale;
-                TechnologyDiscovery.AddPractice(camp.People, Domain.Hunting, budget * hunting / total * w.Config.HuntingPracticeMultiplier, PracticeSource.Hunting);
-                TechnologyDiscovery.AddPractice(camp.People, Domain.Gathering, budget * gathering / total, PracticeSource.Gathering);
-                TechnologyDiscovery.AddPractice(camp.People, Domain.Fishing, budget * fishing / total, PracticeSource.Fishing);
+                TechnologyDiscovery.AddPractice(w, camp.People, Domain.Hunting, budget * hunting / total * w.Config.HuntingPracticeMultiplier, PracticeSource.Hunting);
+                TechnologyDiscovery.AddPractice(w, camp.People, Domain.Gathering, budget * gathering / total, PracticeSource.Gathering);
+                TechnologyDiscovery.AddPractice(w, camp.People, Domain.Fishing, budget * fishing / total, PracticeSource.Fishing);
             }
         }
     }

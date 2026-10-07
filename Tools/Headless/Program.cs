@@ -251,6 +251,15 @@ internal static class Program
         if (tradeResolve != null) { var parts = tradeResolve.Substring("--trade-resolve=".Length).Split(','); TradeChecks.ResolveProbe(parts[0], int.Parse(parts[1])); return 0; }
         if (tradeProbe != null) { TradeChecks.Probe(tradeProbe.Substring("--trade-probe=".Length)); return 0; }
         if (args.Contains("--issue32-capability-only")) { Issue32CapabilityChecks.Run(); return 0; }
+        if (args.Contains("--economic-transition-only")) { EconomicTransitionChecks.Run(); return 0; }
+        if (args.Contains("--aquatic-pressure-only")) { AquaticSeasonalPressureChecks.Run(); return 0; }
+        if (args.Contains("--fishing-observation-only")) { FishingObservationChecks.Run(); return 0; }
+        if (args.Contains("--fishing-economy-only")) { FishingEconomyChecks.Run(); return 0; }
+        if (args.Contains("--fishing-resource-only")) { FishingResourceChecks.Run(); return 0; }
+        if (args.Contains("--fishing-state-only")) { FishingStateChecks.Run(); return 0; }
+        if (args.Contains("--fishing-warm-calibration")) { FishingWarmCalibrationChecks.Run(); return 0; }
+        if (args.Contains("--fishing-50-no-movement")) { FishingLongRunChecks.RunNoMovement(); return 0; }
+        if (args.Contains("--fishing-50-all-features")) { FishingLongRunChecks.RunAllFeatures(); return 0; }
         if (args.Contains("--cultivation-cache-only")) { CultivationCacheChecks.Run(); return 0; }
         if (args.Contains("--horizon-only")) { HorizonEcologyChecks.Run(); HorizonCultivationChecks.Run(); HorizonExecutionChecks.Run(); return 0; }
         if (args.Contains("--land-food-only")) { AquaticChecks.Run(); HorizonEcologyChecks.Run(); Issue27EcologyChecks.Run(); return 0; }
@@ -284,10 +293,17 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "ArchipelagoChecks", Cost = 10, Run = () => ArchipelagoChecks.Run() },
                 new ParallelChecks.Entry { Name = "GeologyGenerationChecks", Cost = 7, Run = () => GeologyGenerationChecks.Run() },
                 new ParallelChecks.Entry { Name = "AquaticChecks", Run = () => AquaticChecks.Run() },
+                new ParallelChecks.Entry { Name = "AquaticSeasonalPressureChecks", Run = () => AquaticSeasonalPressureChecks.Run() },
+                new ParallelChecks.Entry { Name = "FishingObservationChecks", Run = () => FishingObservationChecks.Run() },
+                new ParallelChecks.Entry { Name = "FishingEconomyChecks", Run = () => FishingEconomyChecks.Run() },
+                new ParallelChecks.Entry { Name = "FishingResourceChecks", Run = () => FishingResourceChecks.Run() },
+                new ParallelChecks.Entry { Name = "FishingStateChecks", Run = () => FishingStateChecks.Run() },
+                new ParallelChecks.Entry { Name = "FishingWarmCalibrationChecks", Cost = 7, Run = () => FishingWarmCalibrationChecks.Run() },
                 new ParallelChecks.Entry { Name = "StartViabilityChecks", Run = () => StartViabilityChecks.Run() },
                 new ParallelChecks.Entry { Name = "ScenarioChecks", Cost = 32, Run = () => ScenarioChecks.Run() },
                 new ParallelChecks.Entry { Name = "EcologyChecks", Run = () => EcologyChecks.Run() },
                 new ParallelChecks.Entry { Name = "AgentContractChecks", Run = () => AgentContractChecks.Run() },
+                new ParallelChecks.Entry { Name = "EconomicTransitionChecks", Run = () => EconomicTransitionChecks.Run() },
                 new ParallelChecks.Entry { Name = "ExecutionChecks", Cost = 5, Run = () => ExecutionChecks.Run() },
                 new ParallelChecks.Entry { Name = "PlanningDraftChecks", Cost = 5, Run = () => PlanningDraftChecks.Run() },
                 new ParallelChecks.Entry { Name = "CampSpacingChecks", Run = () => CampSpacingChecks.Run() },

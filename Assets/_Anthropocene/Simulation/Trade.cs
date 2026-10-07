@@ -648,7 +648,7 @@ namespace Anthropocene.Simulation
 
         internal static bool Eligible(WorldState w, Camp c)
             => w.Config.TradeEnabled && c.Population > 0 && c.Player != 0
-               && CultivationEconomy.EconomyEnabled(c) && c.People?.Memory != null;
+               && CultivationEconomy.EconomyEnabled(w, c) && c.People?.Memory != null;
 
         // Last turn's committed food production per camp, the lagged income forecast of the food envelope.
         internal static Dictionary<int, double> LastProduction(WorldState w)
@@ -747,7 +747,7 @@ namespace Anthropocene.Simulation
                 int i = (int)g.Id;
                 if (!v.Active[i] || !g.Recipe.HasValue) continue;
                 var recipe = recipes.FirstOrDefault(r => r.Good == g.Recipe.Value);
-                if (recipe == null || recipe.AgricultureOnly && !CultivationEconomy.Enabled(c) || recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) continue;
+                if (!NeolithicProduction.RecipeAvailable(w, c, recipe)) continue;
                 if (NeolithicProduction.Priority(c, recipe.Good) <= 0) continue;
                 double labour = ClaimValuation.LabourPerUnit(w, c, recipe, recipes, multiplier);
                 if (!(labour > 0) || double.IsInfinity(labour)) continue;
@@ -1165,7 +1165,7 @@ namespace Anthropocene.Simulation
                     var d = Descriptor(good); double total = amounts.Sum();
                     if (!(total > 0) || !(gain > 0)) return;
                     for (int i = 0; i < amounts.Length; i++)
-                        if (d.Parts[i].Practice.HasValue) TechnologyDiscovery.RecordTradePractice(w.Config, receiver.People, d.Parts[i].Practice.Value, gain * scale * amounts[i] / total);
+                        if (d.Parts[i].Practice.HasValue) TechnologyDiscovery.RecordTradePractice(w, receiver.People, d.Parts[i].Practice.Value, gain * scale * amounts[i] / total);
                 }
                 Learn(r, a.Want, WithMade(a.WantParts, a.WantMade), a.RequesterGain, want); Learn(p, a.Give, WithMade(a.GiveParts, a.GiveMade), a.ResponderGain, give);
             }

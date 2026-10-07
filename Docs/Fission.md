@@ -215,12 +215,16 @@ No assumption needed a redesign, so the work proceeded.
 
 ## Observations and actions
 
-`AgentObservation.SchemaVersion` is 18. Owner only: each `SettlementObservation`
+`AgentObservation.SchemaVersion` is 20. Owner only: each `SettlementObservation`
 carries `FissionPolicy` and `FissionDestination` (tile or -1); the observation carries
 `ParentSociety`, `KinAffinity` and `KinRelations` (parent, daughters, siblings: society,
 player, relation, affinity; no location, stores or population). A foreign daughter
 appears only through ordinary vision and contacts. `OrderRules`, `EntityActionMask` and
-`LegalActions` know `OrderKind.FissionPolicy` (three actions per settlement).
+`LegalActions` know `OrderKind.FissionPolicy` (three actions per settlement). Schema 19
+added compatibility-gated resident-Fishing capability and coarse owner-only
+Fishing-ground observations; schema 21 adds the owned hunter transition-recall
+marker and next owner-visible return endpoint. Hidden live aquatic stocks remain
+unavailable.
 
 ## Recalibration (WP10c)
 

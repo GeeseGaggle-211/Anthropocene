@@ -13,10 +13,11 @@ namespace Anthropocene.Presentation
         private void DrawVillageDetailedInspector()
         {
             var camp = world.Camps.FirstOrDefault(c => c.Id == villageInspectorCampId && c.Player == 0);
-            if (camp == null || !CultivationEconomy.EconomyEnabled(camp)) { villageInspectorOpen = false; return; }
+            if (camp == null || !CultivationEconomy.EconomyEnabled(world, camp)) { villageInspectorOpen = false; return; }
             var draft = planned.TryGetValue(camp.Id, out var pending) && pending.Kind == OrderKind.Economy ? pending.Economy.Copy() : EconomicIntent.From(camp);
             string before = draft.Stamp;
             bool husbandry = CultivationEconomy.HusbandryEnabled(camp);
+            bool fishing = FishingEconomy.FeatureEnabled(world, camp);
             float width = Mathf.Min(1040, Screen.width - 32), height = Mathf.Min(820, Screen.height - 32);
             Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(.02f, .03f, .03f, .88f));
             var panel = new Rect((Screen.width - width) / 2, (Screen.height - height) / 2, width, height);
@@ -34,7 +35,8 @@ namespace Anthropocene.Presentation
                 $"Herding Tools {camp.Inventory.HerdingTools:F2}: 1 Wood + 1 Stone each; {world.Config.Neolithic.HerdingToolCoverageYearsPerUnit:F0} Herder-years per tool. Plan capacity {management.Capacity:F1} / {management.Animals:F0} animals ({management.Fulfillment:P0}); primitive {world.Config.AnimalsPerHerder:F2}, equipped {world.Config.Neolithic.StoneHerdingToolAnimalsPerHerder:F2} animals per Herder.";
             float pastoralDescriptionHeight = husbandry ? small.CalcHeight(new GUIContent(pastoralDescription), col - 8) + 8 : 0;
             float livestockRows = husbandry ? ownedLivestock.Length * 54 : 0;
-            float contentHeight = Mathf.Max(1210 + livestockRows, 880 + livestockRows + pastoralDescriptionHeight);
+            float fishingRows = fishing ? observation.FishingGrounds.Count(g => world.Map.Distance(camp.Tile, g.Tile) <= FishingEconomy.GroundRange + 1) * 24 : 0;
+            float contentHeight = Mathf.Max(1370 + livestockRows + fishingRows, 940 + livestockRows + pastoralDescriptionHeight + fishingRows);
             villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, scrollContentWidth, contentHeight));
             float y = 4;
             var inventory = camp.Inventory;
@@ -77,7 +79,7 @@ namespace Anthropocene.Presentation
                 int count = draft.Assignments.Where(a => a.Role == role).Sum(a => a.Population);
                 int free = camp.Population - draft.Assignments.Sum(a => a.Population);
                 string tech = EconomicIntents.RequiredTechnology(role);
-                bool available = role == WorkforceRoles.Farmer ? CultivationEconomy.Enabled(camp) : role == WorkforceRoles.Herder ? CultivationEconomy.HusbandryEnabled(camp) : tech == null || camp.People.HasTech(tech);
+                bool available = role == WorkforceRoles.Farmer ? CultivationEconomy.Enabled(camp) : role == WorkforceRoles.Herder ? husbandry : role == WorkforceRoles.Fisher ? fishing : tech == null || camp.People.HasTech(tech);
                 GUI.Label(new Rect(x, wy, col - 78, 24), WorkforceRoles.Label(role) + ": " + count + (available ? "" : " (locked)"), small);
                 if (Button(new Rect(x + col - 74, wy, 32, 22), "−") && count > 0)
                 {
@@ -119,14 +121,23 @@ namespace Anthropocene.Presentation
                 DrawEconomicValue("Light housing", ref draft.Priorities.LightHousing, x, ref cy, col, .05);
                 DrawEconomicValue("Herding tools", ref draft.Priorities.HerdingTools, x, ref cy, col, .05);
             }
+            if (fishing)
+                DrawEconomicValue("Fishing tools", ref draft.Priorities.FishingTools, x, ref cy, col, .05);
             cy += 12;
             GUI.Label(new Rect(x, cy, col - 8, 22), "Pots target (reserve: " + world.Config.GrowthReserveYears.ToString("F0") + " years): " + NeolithicProduction.TargetPots(world, camp, potYears).ToString("F2"), small); cy += 28;
             double farmToolForecast = CultivationEconomy.ForecastFarmToolWorkerYears(world, camp, potYears) / world.Config.Neolithic.FarmToolFarmerYearsPerUnit;
             GUI.Label(new Rect(x, cy, col - 8, 22), "Farm tools forecast: " + farmToolForecast.ToString("F2"), small); cy += 28;
+            if (fishing)
+            {
+                int fishers = draft.Assignments.Where(a => a.Role == WorkforceRoles.Fisher).Sum(a => a.Population);
+                double coverage = Math.Min(fishers * potYears,
+                    Math.Max(0, camp.Inventory.FishingTools) * world.Config.Neolithic.FishingToolFisherYearsPerUnit);
+                GUI.Label(new Rect(x, cy, col - 8, 50), $"Fishing tools {camp.Inventory.FishingTools:F2}: 1 Wood + 1 Stone each; {world.Config.Neolithic.FishingToolFisherYearsPerUnit:F0} harvest-Fisher-years per unit, {world.Config.Neolithic.FishingToolHarvestMultiplier:F2}× covered catch only. Current-turn coverage {coverage:F2} Fisher-years.", small); cy += 56;
+            }
             double storageIntervals = world.Config.TurnDays / world.Config.BaseDays;
             double potStorage = camp.Inventory.Pots * world.Config.Neolithic.PotStorageFoodPerUnit;
             double storageCapacity = NeolithicProduction.StorageCapacity(world, camp, storageIntervals);
-            GUI.Label(new Rect(x, cy, col - 8, 132), $"Stone {inventory.Stone:F2}\nClay {inventory.Clay:F2}\nWood {inventory.Wood:F2}\nPots {inventory.Pots:F2} (+{potStorage:F2} storage)\nFarm tools {inventory.FarmTools:F2}\nStorage capacity {storageCapacity:F2}\nHand tools {inventory.HandTools:F2}\nImproved tools {inventory.Tools:F2}", small); cy += 144;
+            GUI.Label(new Rect(x, cy, col - 8, fishing ? 154 : 132), $"Stone {inventory.Stone:F2}\nClay {inventory.Clay:F2}\nWood {inventory.Wood:F2}\nPots {inventory.Pots:F2} (+{potStorage:F2} storage)\nFarm tools {inventory.FarmTools:F2}\n{(fishing ? "Fishing tools " + inventory.FishingTools.ToString("F2") + "\n" : "")}Storage capacity {storageCapacity:F2}\nHand tools {inventory.HandTools:F2}\nImproved tools {inventory.Tools:F2}", small); cy += fishing ? 166 : 144;
             GUI.Label(new Rect(x, cy, col - 8, 100), $"Crafting consumes tools with useful output. Pots add {world.Config.Neolithic.PotStorageFoodPerUnit:F0} food storage each and retain {100 * (1 - world.Config.Neolithic.PotDecayPerReferenceTurn):F0}% per {world.Config.Neolithic.ReferenceTurnYears:F0}-year reference turn. Stone Farm Tools reduce maintenance and expansion labor for covered field work; they do not multiply harvest or ecology.", small);
             cy += 108;
             if (husbandry)
@@ -141,6 +152,20 @@ namespace Anthropocene.Presentation
                 GUI.Label(new Rect(x, fy, col - 90, 22), $"Tile {t.Id}: q {t.Cultivation:F3}", small);
                 if (Button(new Rect(x + col - 86, fy, 78, 22), draft.Focus == t.Id ? "Focused" : "Focus")) draft.Focus = draft.Focus == t.Id ? -1 : t.Id;
                 fy += 28;
+            }
+            if (fishing)
+            {
+                var ownSettlement = observation.Settlements.First(s => s.Id == camp.Id);
+                GUI.Label(new Rect(x, fy, col - 8, 48), $"Fishing village support: maturity {Knowledge.Bands[Math.Max(0, Math.Min(4, ownSettlement.FishingVillageMaturity))]}, managed meal support {Knowledge.Bands[Math.Max(0, Math.Min(4, ownSettlement.FishingVillageMealSupport))]}. These are committed prior-turn bands.", small); fy += 54;
+                GUI.Label(new Rect(x, fy, col - 8, 36), "Known Shallows/Lake grounds (live visible state, owner snapshot, or conservative unsurveyed prior):", small); fy += 40;
+                foreach (var ground in observation.FishingGrounds.Where(g => world.Map.Distance(camp.Tile, g.Tile) <= FishingEconomy.GroundRange + 1).OrderBy(g => g.Tile))
+                {
+                    string source = ground.Visible ? "visible" : ground.Visited ? "visited" : "unsurveyed prior";
+                    string selected = ground.Selected ? " · selected" : "";
+                    string capital = Knowledge.Bands[Math.Max(0, Math.Min(4, ground.CapitalIntensity))];
+                    string operation = ground.HasOperation ? Knowledge.Bands[Math.Max(0, Math.Min(4, ground.Operation))] : "unknown";
+                    GUI.Label(new Rect(x, fy, col - 8, 22), $"Tile {ground.Tile} {ground.WaterEnvironment}: {source}{selected} · accessible food {Knowledge.Bands[Math.Max(0, Math.Min(4, ground.AccessibleFood))]} · capital {capital} · operation {operation}", small); fy += 24;
+                }
             }
             fy += 12;
             DrawEconomicValue("Stone priority", ref draft.StonePriority, x, ref fy, col, .1);

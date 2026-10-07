@@ -111,6 +111,7 @@ internal static class FoundationChecks
         TechnologyDiscovery.Resolve(w, new TurnRecord());
         Check(!camp.Technologies[(int)Technology.Cultivation], "Paleolithic practice counts toward the first breakthrough only: it grants no secondary technology");
         camp.People.NeolithicExperience[(int)Domain.Gathering] = 225;
+        TechnologyDiscovery.QueueEligible(w, camp.People);
         TechnologyDiscovery.Resolve(w, new TurnRecord());
         Check(camp.Technologies[(int)Technology.Cultivation] && camp.Technology == Technology.AnimalHusbandry && camp.People.TransitionSeeds.Count == seeds && w.Herds.Count == herds && w.Improvements.Count == improvements, "eligible secondary domain unlocks without opening grants");
         TechnologyDiscovery.Resolve(w, new TurnRecord());
@@ -146,6 +147,8 @@ internal static class FoundationChecks
         var reversed = SaveCodec.Load(SaveCodec.Save(simultaneous));
         reversed.Camps.Reverse(); reversed.Societies.Reverse(); Ownership.Bind(reversed);
         var discoveries = new TurnRecord(); var reorderedDiscoveries = new TurnRecord();
+        foreach (var society in simultaneous.Societies) TechnologyDiscovery.QueueEligible(simultaneous, society);
+        foreach (var society in reversed.Societies) TechnologyDiscovery.QueueEligible(reversed, society);
         TechnologyDiscovery.Resolve(simultaneous, discoveries);
         TechnologyDiscovery.Resolve(reversed, reorderedDiscoveries);
         Check(firstOwner.Technologies[(int)Technology.Cultivation] && firstOwner.Technologies[(int)Technology.Watercraft] &&
@@ -179,6 +182,7 @@ internal static class FoundationChecks
             turn.Events.Count(e => e.Contains("entered the Neolithic")) == 1 && turn.Events.Count(e => e.Contains("discovered Cultivation through")) == 0,
             "the breakthrough Close grants no secondary technology from Paleolithic practice");
         first.People.NeolithicExperience[(int)Domain.Gathering] = first.People.Experience[(int)Domain.Gathering];
+        TechnologyDiscovery.QueueEligible(natural, first.People);
         var later = new TurnRecord(); TechnologyDiscovery.Resolve(natural, later);
         Check(first.Technologies[(int)Technology.Cultivation] && later.Events.Count(e => e.Contains("discovered Cultivation through")) == 1,
             "a secondary technology is earned from Neolithic practice with a distinct event");
@@ -212,6 +216,7 @@ internal static class FoundationChecks
         TechnologyDiscovery.Resolve(w, new TurnRecord());
         Check(!camp.Technologies[(int)Technology.Watercraft], "lifetime practice alone no longer unlocks a secondary technology");
         camp.People.NeolithicExperience[(int)Domain.Fishing] = 225;
+        TechnologyDiscovery.QueueEligible(w, camp.People);
         TechnologyDiscovery.Resolve(w, new TurnRecord());
         Check(camp.Technologies[(int)Technology.Watercraft] && w.Improvements.Count == 0 && w.Herds.Count == 0, "fishing practice unlocks Watercraft without a fishery or herd");
     }

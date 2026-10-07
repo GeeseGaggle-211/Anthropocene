@@ -50,6 +50,9 @@ namespace Anthropocene.Simulation
 #pragma warning restore SYSLIB0050
         // Remembered explored geography and settlement contacts (WP6). Null before the first breakthrough and in older saves.
         [System.Runtime.Serialization.OptionalField] public ContactMemory Memory;
+        // Owner-only visited Fishing-ground economics, stored sparsely by tile.
+        // Absent in old saves: an empty memory list is installed by save migration.
+        [System.Runtime.Serialization.OptionalField] public List<FishingGroundSnapshot> FishingGroundKnowledge = new List<FishingGroundSnapshot>();
         // Lineage (WP10a): the parent Society (0 = none) and the affinity fixed by the parent camp's fission policy at fission. Inert afterwards.
         [System.Runtime.Serialization.OptionalField] public int ParentSociety;
         [System.Runtime.Serialization.OptionalField] public double KinAffinity;
@@ -121,6 +124,9 @@ namespace Anthropocene.Simulation
                 w.Herds.Add(new Herd { Id = w.NextId++, Tile = camp.Tile, DomesticCamp = camp.Id, OwnerSociety = society.Id, OpeningCompatibility = true, Species = species, Animals = w.Config.InitialDomesticAnimals });
             else
             {
+                // Resident Fishing develops sparse fishery capital through work;
+                // retain the historical opening FisherySeed only in feature-off worlds.
+                if (technology == Technology.Watercraft && w.Config.NeolithicFishingEnabled) return;
                 int tile = w.Map.Radius(camp.Tile, 1).Where(n => technology == Technology.Cultivation ? w.Tiles[n].TraversableLand && w.Ecology(n).Moisture >= w.Config.CultivationMoisture : w.Tiles[n].Terrain == Terrain.Shallows)
                     .OrderByDescending(n => w.Ecology(n).MaxFood).ThenBy(n => n).DefaultIfEmpty(-1).First();
                 if (tile < 0) return;
@@ -129,6 +135,85 @@ namespace Anthropocene.Simulation
             }
         }
         public static double FoodMultiplier(WorldState w, Tile tile) => w.Config.OpeningCompatibilityEffects && tile.Fishery ? w.Config.OpeningFoodMultiplier : 1;
+    }
+
+    // Event-driven handoff from the mobile opening to resident production.
+    // Technologies are permanent, so unlock boundaries are the only place
+    // that needs to identify the already-existing detachments to recall.
+    public static class EconomicTransition
+    {
+        public static bool Enabled(WorldState world, Society society)
+        {
+            if (world == null || society == null) return false;
+            bool Has(Technology technology) => society.Technology == technology ||
+                society.Technologies != null && society.Technologies.Length > (int)technology &&
+                society.Technologies[(int)technology];
+            return Has(Technology.Cultivation) || Has(Technology.AnimalHusbandry) ||
+                world.Config.NeolithicFishingEnabled && Has(Technology.Watercraft);
+        }
+
+        public static int Begin(WorldState world, Society society)
+        {
+            var sourceCamps = world.Camps
+                .Where(camp => camp.SocietyId == society.Id)
+                .Select(camp => camp.Id).ToHashSet();
+            int marked = 0;
+            foreach (var hunter in world.Hunters)
+            {
+                if (hunter.Population <= 0 || !sourceCamps.Contains(hunter.SourceCamp) ||
+                    hunter.EconomicTransitionRecall) continue;
+                hunter.EconomicTransitionRecall = true;
+                hunter.EconomicTransitionRoute = new List<int> { hunter.Tile };
+                hunter.EconomicTransitionVisited = new HashSet<int> { hunter.Tile };
+                marked++;
+            }
+            return marked;
+        }
+
+        // Apply one visible-search step. The normal path is a stack, so both
+        // discovery and backtracking are O(1). A movement-bounded final hop to
+        // the source camp may cover more than one adjacent tile.
+        internal static void Advance(WorldState world, Hunter hunter, Camp source, int destination)
+        {
+            var route = hunter.EconomicTransitionRoute;
+            var visited = hunter.EconomicTransitionVisited;
+            if (source == null || source.Id != hunter.SourceCamp || route == null || route.Count == 0 ||
+                route[route.Count - 1] != hunter.Tile || visited == null)
+            {
+                Cancel(hunter);
+                return;
+            }
+            if (destination == source.Tile)
+            {
+                visited.Add(destination);
+                route.Add(destination);
+                return;
+            }
+            if (world.Map.Distance(hunter.Tile, destination) != 1)
+            {
+                Cancel(hunter);
+                return;
+            }
+            int last = route.Count - 1;
+            if (last > 0 && route[last - 1] == destination)
+            {
+                route.RemoveAt(last);
+                return;
+            }
+            if (!visited.Add(destination))
+            {
+                Cancel(hunter);
+                return;
+            }
+            route.Add(destination);
+        }
+
+        internal static void Cancel(Hunter hunter)
+        {
+            hunter.EconomicTransitionRecall = false;
+            hunter.EconomicTransitionRoute = null;
+            hunter.EconomicTransitionVisited = null;
+        }
     }
 
     // A pure, owned-society view shared by player presentation and AI observations.
@@ -147,10 +232,10 @@ namespace Anthropocene.Simulation
 
     public static class TechnologyDiscovery
     {
-        // The single entry point for domain practice. Lifetime Experience always accrues (it drives the first breakthrough and the
+        // Lifetime Experience always accrues (it drives the first breakthrough and the
         // practice bonuses); after the Society leaves the Paleolithic the same credit also accrues to NeolithicExperience, which alone
         // earns secondary technologies. Pure arithmetic on the owning Society; callers fix the amount and the canonical order.
-        public static void AddPractice(Society society, Domain domain, double amount, PracticeSource source)
+        private static void AccruePractice(Society society, Domain domain, double amount)
         {
             if (amount == 0 || double.IsNaN(amount) || double.IsInfinity(amount)) return;
             society.Experience[(int)domain] += amount;
@@ -159,15 +244,27 @@ namespace Anthropocene.Simulation
             society.NeolithicExperience[(int)domain] += amount;
         }
 
+        // Authoritative simulation entry point. Practice mutates only its owner,
+        // then publishes a threshold crossing to the world's sparse Close queue.
+        // Permanent planner capabilities therefore change only on an unlock
+        // event; Close never scans every Society and technology combination.
+        public static void AddPractice(WorldState world, Society society, Domain domain,
+            double amount, PracticeSource source)
+        {
+            AccruePractice(society, domain, amount);
+            if (world != null && amount != 0 && !double.IsNaN(amount) && !double.IsInfinity(amount))
+                QueueEligible(world, society, domain);
+        }
+
         // Trade hook (inert until trade exists, TradePracticePerValue = 0). A receiving Society learns from what it imports: the caller
         // passes the goods' value (the same value units the exchange used) and the domain the good belongs to, for example imported
         // grain to Gathering (Cultivation), herd products to Hunting (Husbandry) and fish to Fishing (Watercraft). The credit is
         // goodsValue * TradePracticePerValue and flows through AddPractice like any other practice. Returns the points credited.
-        public static double RecordTradePractice(SimulationConfig config, Society receiver, Domain domain, double goodsValue)
+        public static double RecordTradePractice(WorldState world, Society receiver, Domain domain, double goodsValue)
         {
-            double amount = goodsValue * config.TradePracticePerValue;
+            double amount = goodsValue * world.Config.TradePracticePerValue;
             if (!(amount > 0)) return 0;
-            AddPractice(receiver, domain, amount, PracticeSource.Trade);
+            AddPractice(world, receiver, domain, amount, PracticeSource.Trade);
             return amount;
         }
 
@@ -214,23 +311,52 @@ namespace Anthropocene.Simulation
 
         public static TechnologyStatus[] Statuses(WorldState world, Society society) => Statuses(world.Config, society);
 
+        // Explicit bridge for first breakthroughs, migrations/tests, and other
+        // boundary code that installs progress without a practice receipt.
+        public static void QueueEligible(WorldState world, Society society)
+        {
+            if (world == null || society == null) return;
+            for (int i = 0; i < 3; i++) QueueEligible(world, society, (Domain)i);
+        }
+
+        public static void QueueEligible(WorldState world, Society society, Domain domain)
+        {
+            if (world == null || society == null || society.Progression.Era != Era.Neolithic) return;
+            int i = (int)domain;
+            if (i < 0 || i >= 3) return;
+            var technology = (Technology)(i + 1);
+            if (society.Technologies[(int)technology] || society.Technology == technology ||
+                EffectiveProgress(society, domain, world.Config) < world.Config.SecondaryTechnologyThreshold) return;
+            world.PendingTechnologyUnlocks ??= new Dictionary<int, int>();
+            world.PendingTechnologyUnlocks.TryGetValue(society.Id, out int pending);
+            world.PendingTechnologyUnlocks[society.Id] = pending | 1 << i;
+        }
+
         // Called only at Close, after all realized food/practice receipts have been credited.
         public static void Resolve(WorldState world, TurnRecord record)
         {
-            var hunterSources = new HashSet<int>(world.Hunters.Where(h => h.Population > 0).Select(h => h.SourceCamp));
-            var active = new HashSet<int>(world.Camps.Where(c => c.Population > 0 || hunterSources.Contains(c.Id)).Select(c => c.SocietyId));
-            // Ownership.Bind sorted societies at the resolution boundary.
-            foreach (var society in world.Societies)
+            var pending = world.PendingTechnologyUnlocks;
+            if (pending == null || pending.Count == 0) return;
+            var societies = world.Societies.ToDictionary(society => society.Id);
+            foreach (var entry in pending.OrderBy(pair => pair.Key))
             {
-                if (!active.Contains(society.Id) || society.Progression.Era != Era.Neolithic) continue;
+                if (!societies.TryGetValue(entry.Key, out var society) || society.Progression.Era != Era.Neolithic) continue;
+                bool active = world.Camps.Any(camp => camp.SocietyId == society.Id &&
+                    (camp.Population > 0 || world.Hunters.Any(hunter => hunter.SourceCamp == camp.Id && hunter.Population > 0)));
+                if (!active) continue;
                 for (int i = 0; i < 3; i++)
                 {
+                    if ((entry.Value & 1 << i) == 0) continue;
                     var technology = (Technology)(i + 1);
                     if (society.Technologies[(int)technology] || society.Technology == technology || EffectiveProgress(society, (Domain)i, world.Config) < world.Config.SecondaryTechnologyThreshold) continue;
+                    bool economyBefore = EconomicTransition.Enabled(world, society);
                     society.Technologies[(int)technology] = true;
+                    if (!economyBefore && EconomicTransition.Enabled(world, society))
+                        EconomicTransition.Begin(world, society);
                     record.Log("Society " + society.Id + " discovered " + technology + " through " + (Domain)i + " practice.");
                 }
             }
+            pending.Clear();
         }
     }
 }

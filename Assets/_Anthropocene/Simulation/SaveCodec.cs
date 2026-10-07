@@ -19,6 +19,7 @@ namespace Anthropocene.Simulation
         private static DataContractSerializer Serializer(Type type) => new DataContractSerializer(type, new DataContractSerializerSettings { MaxItemsInObjectGraph = int.MaxValue });
         public static byte[] Save(WorldState world)
         {
+            FisheryState.Normalize(world);
             RequireBoundOwnership(world);
             using (var output = new MemoryStream())
             {
@@ -141,6 +142,7 @@ namespace Anthropocene.Simulation
                 }
                 world.Resources = magic == Magic || magic == LegacyMagic10 ? (reader.ReadBoolean() ? ResourceCodec.Read(reader, count) : null) : (magic == LegacyMagic9 ? ResourceCodec.Read(reader, count) : null);
                 NeolithicProduction.NormalizeFixedHousing(world);
+                FisheryState.Normalize(world);
                 foreach (var edge in world.Rivers)
                 {
                     if (world.Tiles[edge.TileA].RiverEdges == null) world.Tiles[edge.TileA].RiverEdges = Enumerable.Repeat(-1, 6).ToArray();
@@ -179,11 +181,13 @@ namespace Anthropocene.Simulation
             var config = world.Config;
             world.MaterialSources = world.MaterialSources ?? new System.Collections.Generic.List<MaterialSourceState>();
             world.MaterialKnowledge = world.MaterialKnowledge ?? new System.Collections.Generic.List<MaterialKnowledge>();
+            world.FisherySites = world.FisherySites ?? new System.Collections.Generic.List<FisherySite>();
             foreach (var camp in world.Camps)
             {
                 if (camp.Inventory == null) camp.Inventory = new CampInventory();
                 if (camp.Workforce == null) camp.Workforce = new PopulationLedger();
                 if (camp.CraftingPriorities == null) camp.CraftingPriorities = new CraftingPriorities();
+                camp.LastSelectedFishingGrounds = camp.LastSelectedFishingGrounds ?? new System.Collections.Generic.List<int>();
             }
             foreach (var soc in world.Societies)
             {
@@ -200,6 +204,7 @@ namespace Anthropocene.Simulation
                 if (soc.CraftExperience == null) soc.CraftExperience = new System.Collections.Generic.Dictionary<string, double>();
                 if (soc.UnlockedSpecialists == null) soc.UnlockedSpecialists = new System.Collections.Generic.List<string>();
                 if (soc.NeolithicTechnologies == null) soc.NeolithicTechnologies = new System.Collections.Generic.List<string>();
+                soc.FishingGroundKnowledge = soc.FishingGroundKnowledge ?? new System.Collections.Generic.List<FishingGroundSnapshot>();
             }
             bool legacyGenerationalConfig = config.StartingReserveGenerations <= 0 && config.HunterCarryGenerations <= 0 && config.MinimumStorageGenerations <= 0 && config.MaximumStorageGenerations <= 0;
             if (config.StartingReserveGenerations <= 0) config.StartingReserveGenerations = 1;
@@ -243,7 +248,7 @@ namespace Anthropocene.Simulation
                 foreach (var herd in world.Herds.Where(h => h.DomesticCamp < 0 && h.Capacity == 32)) herd.Capacity = config.GetSpecies(herd.Species).MaximumHerdSize;
             }
         }
-        private static WorldState CopyWithoutTiles(WorldState w) => new WorldState { MaterialSources = w.MaterialSources, MaterialKnowledge = w.MaterialKnowledge, FixedHousing = w.FixedHousing?.OrderBy(s => s.CampId).ThenBy(s => s.Tile).ToList(), Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, PlayerCount = w.PlayerCount, Days = w.Days, Config = w.Config, Camps = w.Camps, Societies = w.Societies, Improvements = w.Improvements, Hunters = w.Hunters, Herds = w.Herds, Rivers = w.Rivers, History = w.History, Generation = w.Generation, Tiles = null };
+        private static WorldState CopyWithoutTiles(WorldState w) => new WorldState { MaterialSources = w.MaterialSources, MaterialKnowledge = w.MaterialKnowledge, FixedHousing = w.FixedHousing?.OrderBy(s => s.CampId).ThenBy(s => s.Tile).ToList(), FisherySites = w.FisherySites?.OrderBy(s => s.TileId).ToList(), Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, PlayerCount = w.PlayerCount, Days = w.Days, Config = w.Config, Camps = w.Camps, Societies = w.Societies, Improvements = w.Improvements, Hunters = w.Hunters, Herds = w.Herds, Rivers = w.Rivers, History = w.History, Generation = w.Generation, Tiles = null };
         public static string ConfigurationHash(SimulationConfig config)
         {
             using (var output = new MemoryStream())
@@ -255,7 +260,8 @@ namespace Anthropocene.Simulation
         public static string Fingerprint(WorldState w)
         {
             // Exclude wall-clock generation timings and memory warnings from authoritative state hashing.
-            var copy = new WorldState { MaterialSources = w.MaterialSources, MaterialKnowledge = w.MaterialKnowledge, FixedHousing = w.FixedHousing?.OrderBy(s => s.CampId).ThenBy(s => s.Tile).ToList(), Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, PlayerCount = w.PlayerCount, Days = w.Days, Config = w.Config, Tiles = w.Tiles, Camps = w.Camps.OrderBy(c => c.Id).ToList(), Societies = w.Societies.OrderBy(s => s.Id).ToList(), Improvements = w.Improvements.OrderBy(i => i.Id).ToList(), Hunters = w.Hunters.OrderBy(h => h.Id).ToList(), Herds = w.Herds.OrderBy(h => h.Id).ToList(), Rivers = w.Rivers, History = w.History, Generation = null, Resources = w.Resources };
+            FisheryState.Normalize(w);
+            var copy = new WorldState { MaterialSources = w.MaterialSources, MaterialKnowledge = w.MaterialKnowledge, FixedHousing = w.FixedHousing?.OrderBy(s => s.CampId).ThenBy(s => s.Tile).ToList(), FisherySites = w.FisherySites?.OrderBy(s => s.TileId).ToList(), Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, PlayerCount = w.PlayerCount, Days = w.Days, Config = w.Config, Tiles = w.Tiles, Camps = w.Camps.OrderBy(c => c.Id).ToList(), Societies = w.Societies.OrderBy(s => s.Id).ToList(), Improvements = w.Improvements.OrderBy(i => i.Id).ToList(), Hunters = w.Hunters.OrderBy(h => h.Id).ToList(), Herds = w.Herds.OrderBy(h => h.Id).ToList(), Rivers = w.Rivers, History = w.History, Generation = null, Resources = w.Resources };
             RequireBoundOwnership(copy);
             using (var hash = SHA256.Create())
             {
