@@ -407,7 +407,7 @@ namespace Anthropocene.Simulation
             }
         }
         private static void Hunt(WorldState w, List<Order> orders, HashSet<int> establishedHunters, IReadOnlyDictionary<int, int> startingHerdPopulation, TurnRecord record, double time, double years,
-            IReadOnlyDictionary<int, TurnNeeds> needs)
+            IReadOnlyDictionary<int, TurnNeeds> needs, List<HusbandryAcquisition.Opportunity> taming)
         {
             double practiceTime = time * w.Config.BaseDays / w.Config.PracticeDays;
             var requests = new List<Tuple<Hunter, Herd, int>>();
@@ -470,11 +470,12 @@ namespace Anthropocene.Simulation
                 int realizedKills = kills.Sum();
                 herd.Animals -= realizedKills;
                 if (realizedKills < total) record.Log("Herd " + herd.Id + " retained " + herd.Animals + " breeding animals after the generation's harvest.");
-                // Taming is a physical transfer from this interacted wild herd.
-                // Canonical camp order makes simultaneous claims deterministic.
-                foreach (var camp in sorted.Select(x => w.Camps.First(c => c.Id == x.Item1.SourceCamp))
-                    .GroupBy(c => c.Id).Select(g => g.First()).OrderBy(c => c.Id))
-                    HusbandryAcquisition.TryTame(w, camp, herd, record);
+                // Interacting hunters establish a boundary-time taming
+                // opportunity. Animals remain wild through this turn's
+                // ecological claims and cannot produce managed goods retroactively.
+                if (taming != null)
+                    foreach (int campId in sorted.Select(x => x.Item1.SourceCamp).Distinct().OrderBy(id => id))
+                        taming.Add(new HusbandryAcquisition.Opportunity(campId, herd.Id));
                 if (huntingPopulation <= w.Config.SustainableHuntPopulation && herd.Animals > startingHerdPopulation[herd.Id]) record.Log("Limited hunting pressure allowed herd " + herd.Id + " to keep growing.");
             }
             // Managed herds retain legitimate zero state for persistence and later
