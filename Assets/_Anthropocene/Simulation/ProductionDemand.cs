@@ -548,7 +548,7 @@ namespace Anthropocene.Simulation
             // inventing labor, so the normal FarmTools demand helper is called
             // on the resolver-shaped candidate.
             if (goals.ContainsKey(CraftGood.FarmTools)) goals[CraftGood.FarmTools] = 0;
-            int consumers = d.Consumers = c.Population + w.Hunters.Where(h => h.SourceCamp == c.Id && Simulation.Supply.InRange(w, c, h.Tile)).Sum(h => h.Population);
+            int consumers = d.Consumers = c.Population + c.PendingDispatchConsumers + w.Hunters.Where(h => h.SourceCamp == c.Id && Simulation.Supply.InRange(w, c, h.Tile)).Sum(h => h.Population);
             d.Meals = consumers * cfg.Consumption * intervals;
             d.OperatingReserve = NeolithicProduction.DesiredReserveFood(w, consumers);
             d.SetFoodEnvelopes(w, c, d.ManagedFood.AnimalFood);

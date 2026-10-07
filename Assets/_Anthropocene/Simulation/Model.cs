@@ -529,6 +529,9 @@ namespace Anthropocene.Simulation
         // Compatibility accessors for one-camp callers; society owns and serializes the data.
         public double[] Experience { get => People.Experience; set => People.Experience = value; }
         public List<SpeciesPractice> SpeciesExperience { get => People.SpeciesExperience; set => People.SpeciesExperience = value; }
+        // Transient planning preview only: dispatched residents still need food
+        // before their new detachment exists in WorldState.Hunters.
+        [NonSerialized] internal int PendingDispatchConsumers;
         public double GrowthRemainder, DeathRemainder, StepFoodIncome;
         public Technology Technology { get => People.Technology; set => People.Technology = value; }
         public int TransitionTurn { get => People.TransitionTurn; set => People.TransitionTurn = value; }
