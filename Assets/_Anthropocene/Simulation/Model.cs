@@ -47,6 +47,9 @@ namespace Anthropocene.Simulation
             SecondaryTechnologyThreshold = defaults.SecondaryTechnologyThreshold; TradePracticePerValue = 0; SettledHerdGrowthPenalty = defaults.SettledHerdGrowthPenalty;
             FissionEnabled = false; FissionGainThreshold = defaults.FissionGainThreshold; FissionGainDiscourage = defaults.FissionGainDiscourage; FissionGainEncourage = defaults.FissionGainEncourage;
             FissionSearchFraction = defaults.FissionSearchFraction; FissionDaughterMargin = defaults.FissionDaughterMargin; FissionHousingRelief = defaults.FissionHousingRelief; FissionDaughterBuilderShare = defaults.FissionDaughterBuilderShare; FissionRadius = defaults.FissionRadius; FissionMinimumDaughter = defaults.FissionMinimumDaughter;
+            FissionPressureRule = defaults.FissionPressureRule; FissionLegacyQoL = defaults.FissionLegacyQoL; FissionLegacyQoLWidth = defaults.FissionLegacyQoLWidth;
+            FissionLegacyThreshold = defaults.FissionLegacyThreshold; FissionLegacySearchPush = defaults.FissionLegacySearchPush;
+            FissionExitThreshold = defaults.FissionExitThreshold; FissionExitSearchFraction = defaults.FissionExitSearchFraction;
             ImmigrationEnabled = false; ImmigrationRadius = defaults.ImmigrationRadius; ImmigrationQualityWeight = defaults.ImmigrationQualityWeight; ImmigrationDistanceCost = defaults.ImmigrationDistanceCost;
             ImmigrationAttachmentCost = defaults.ImmigrationAttachmentCost; ImmigrationToSedentaryCost = defaults.ImmigrationToSedentaryCost; ImmigrationToNomadicCost = defaults.ImmigrationToNomadicCost;
             ImmigrationDeadband = defaults.ImmigrationDeadband; ImmigrationMaxFraction = defaults.ImmigrationMaxFraction; ImmigrationMinimumGroup = defaults.ImmigrationMinimumGroup; ImmigrationSourceFloor = defaults.ImmigrationSourceFloor;
@@ -123,6 +126,13 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int FissionRadius = 4, FissionMinimumDaughter = 12;
         // Share of a daughter's people the estimate counts as Builders for first-turn shelter (Fission.DaughterShelter); 0 credits carried shelter only. Absent in older saves: default.
         [System.Runtime.Serialization.OptionalField] public double FissionDaughterBuilderShare = .05;
+        // Experimental comparison of social-pressure laws against one shared modern destination/viability implementation.
+        // Current is production behavior; the other modes exist only to run controlled fission/RL-environment experiments.
+        [System.Runtime.Serialization.OptionalField] public FissionPressureRule FissionPressureRule = FissionPressureRule.CurrentPlusExitOpportunity;
+        // Exact WP10a pressure constants, applied only when FissionPressureRule == LegacyQoL.
+        [System.Runtime.Serialization.OptionalField] public double FissionLegacyQoL = .75, FissionLegacyQoLWidth = .10, FissionLegacyThreshold = .20, FissionLegacySearchPush = .20;
+        // CurrentPlusExitOpportunity adds (1-Q_home) * max(0, Q_daughter-Q_home) as an independent escape channel.
+        [System.Runtime.Serialization.OptionalField] public double FissionExitThreshold = .05, FissionExitSearchFraction = .8;
         // Immigration between known settlements (WP10b, QoLFissionTradeDesign 4). Saves that predate these fields load with immigration disabled.
         // dU = w_Q (Q_j - Q_i) - distance*d - attachment - lifestyle; a source emigrates to its best known camp within the radius when dU exceeds the deadband.
         // WP10b-2: forward-looking utility and return hysteresis. A flow back to a camp that sent people within the cooldown pays a penalty decaying linearly to zero.
@@ -250,7 +260,15 @@ namespace Anthropocene.Simulation
             if (HinterlandReferencePopulation < 1 || HinterlandRingsPerTurn < 0 || HinterlandRingsPerTurn > 8 || HinterlandMaxRadius < VisionRadius || HinterlandMaxRadius > 8 || ExploredMemoryTurns < 1) throw new ArgumentException("Invalid hinterland or explored-memory configuration.");
             if (new[] { SecondaryTechnologyThreshold, TradePracticePerValue, SettledHerdGrowthPenalty }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || SecondaryTechnologyThreshold <= 0 || SettledHerdGrowthPenalty > 1)
                 throw new ArgumentException("Invalid secondary technology, trade practice or settling configuration.");
-            if (new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief, FissionDaughterBuilderShare }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionGainThreshold < 0 || FissionGainThreshold > 5 || FissionGainDiscourage < 0 || FissionGainDiscourage > 5 || FissionGainEncourage < 0 || FissionGainEncourage > 5 || FissionSearchFraction < 0 || FissionSearchFraction > 1 || FissionDaughterMargin < 0 || FissionDaughterMargin > 1 || FissionHousingRelief < 0 || FissionHousingRelief > 1 || FissionDaughterBuilderShare < 0 || FissionDaughterBuilderShare > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1)
+            if (!Enum.IsDefined(typeof(FissionPressureRule), FissionPressureRule)
+                || new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief, FissionDaughterBuilderShare,
+                    FissionLegacyQoL, FissionLegacyQoLWidth, FissionLegacyThreshold, FissionLegacySearchPush, FissionExitThreshold, FissionExitSearchFraction }.Any(v => double.IsNaN(v) || double.IsInfinity(v))
+                || FissionGainThreshold < 0 || FissionGainThreshold > 5 || FissionGainDiscourage < 0 || FissionGainDiscourage > 5 || FissionGainEncourage < 0 || FissionGainEncourage > 5
+                || FissionSearchFraction < 0 || FissionSearchFraction > 1 || FissionDaughterMargin < 0 || FissionDaughterMargin > 1 || FissionHousingRelief < 0 || FissionHousingRelief > 1
+                || FissionDaughterBuilderShare < 0 || FissionDaughterBuilderShare > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1
+                || FissionLegacyQoL < 0 || FissionLegacyQoL > 1 || FissionLegacyQoLWidth <= 0 || FissionLegacyQoLWidth > 1
+                || FissionLegacyThreshold < 0 || FissionLegacyThreshold > 1 || FissionLegacySearchPush < 0 || FissionLegacySearchPush > 1
+                || FissionExitThreshold <= 0 || FissionExitThreshold > 1 || FissionExitSearchFraction < 0 || FissionExitSearchFraction > 1)
                 throw new ArgumentException("Invalid fission configuration.");
             if (new[] { ImmigrationQualityWeight, ImmigrationDistanceCost, ImmigrationAttachmentCost, ImmigrationToSedentaryCost, ImmigrationToNomadicCost, ImmigrationDeadband, ImmigrationMaxFraction }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || ImmigrationQualityWeight < 0 || ImmigrationQualityWeight > 10 || ImmigrationDistanceCost < 0 || ImmigrationDistanceCost > 5 || ImmigrationAttachmentCost < 0 || ImmigrationAttachmentCost > 5 || ImmigrationToSedentaryCost < 0 || ImmigrationToSedentaryCost > 5 || ImmigrationToNomadicCost < 0 || ImmigrationToNomadicCost > 5 || ImmigrationDeadband <= 0 || ImmigrationDeadband > 5 || ImmigrationMaxFraction < 0 || ImmigrationMaxFraction > .5 || ImmigrationRadius < 1 || ImmigrationRadius > 5 || ImmigrationReturnCooldownTurns < 0 || ImmigrationReturnCooldownTurns > 20 || double.IsNaN(ImmigrationReturnPenalty) || double.IsInfinity(ImmigrationReturnPenalty) || ImmigrationReturnPenalty < 0 || ImmigrationReturnPenalty > 5 || ImmigrationMinimumGroup < 1 || ImmigrationSourceFloor < 1
                 || TradeRange < 1 || TradeRange > 20 || TradeRequisitionsPerCamp < 1 || TradeRequisitionsPerCamp > 10 || TradeListLength < 1 || TradeListLength > 10 || double.IsNaN(TradeMargin) || double.IsInfinity(TradeMargin) || TradeMargin < 0 || TradeMargin > 5 || double.IsNaN(TradeDistanceCostPerHex) || double.IsInfinity(TradeDistanceCostPerHex) || TradeDistanceCostPerHex < 0 || TradeDistanceCostPerHex > 1 || double.IsNaN(TradeExportLabourShare) || TradeExportLabourShare < 0 || TradeExportLabourShare > 1

@@ -23,7 +23,7 @@ internal static class FissionChecks
     private static WorldState World(bool neolithic, params int[][] sites) => World(24, 16, neolithic, sites);
     private static WorldState World(int width, int height, bool neolithic, params int[][] sites)
     {
-        var cfg = SimulationConfig.Small(1); cfg.FissionEnabled = true; cfg.FissionHousingRelief = 1; /* mechanism fixtures exercise the full relief; the shipped default is 0 */ cfg.FissionDaughterMargin = 1; cfg.FissionRadius = 3; /* fixtures are written for the distance-3 ring; the shipped default is 4 */ cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;
+        var cfg = SimulationConfig.Small(1); cfg.FissionEnabled = true; cfg.FissionPressureRule = FissionPressureRule.Current; /* legacy mechanism fixtures isolate the existing crowding/distress path */ cfg.FissionHousingRelief = 1; /* mechanism fixtures exercise the full relief; the shipped default is 0 */ cfg.FissionDaughterMargin = 1; cfg.FissionRadius = 3; /* fixtures are written for the distance-3 ring; the shipped default is 4 */ cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;
         var w = new WorldState { Seed = 101, Config = cfg, Generation = new GenerationReport(), Tiles = new Tile[cfg.Width * cfg.Height] };
         for (int i = 0; i < w.Tiles.Length; i++)
         {
@@ -74,7 +74,7 @@ internal static class FissionChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); UnbuiltCrops(); Relative(); Funnel(); Spacing(); Bounded(); WiderRadius(); Policy(); Distress(); Observations(); Persistence(); Replay();
+        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); UnbuiltCrops(); Relative(); Funnel(); Spacing(); Bounded(); WiderRadius(); ExperimentalPressureRules(); Policy(); Distress(); Observations(); Persistence(); Replay();
         Console.WriteLine("PASS: " + checks + " fission assertions"); return checks;
     }
 
@@ -195,8 +195,13 @@ internal static class FissionChecks
     private static void Config()
     {
         var c = new SimulationConfig();
-        Check(c.FissionEnabled && c.FissionGainThreshold == .113 && c.FissionGainDiscourage == .080 && c.FissionGainEncourage == .0955 && c.FissionSearchFraction == .8 && c.FissionDaughterMargin == .05 && c.FissionHousingRelief == 0 && c.FissionDaughterBuilderShare == .05 && c.FissionRadius == 4 && c.FissionMinimumDaughter == 12, "fission is on by default (plan of record) and the levers match the calibration");
-        foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.FissionGainThreshold = -.1, x => x.FissionGainDiscourage = 6, x => x.FissionGainEncourage = double.NaN, x => x.FissionRadius = 0, x => x.FissionRadius = 6, x => x.FissionMinimumDaughter = 0, x => x.FissionSearchFraction = 1.5, x => x.FissionSearchFraction = -.1, x => x.FissionDaughterMargin = -.01, x => x.FissionDaughterMargin = 2, x => x.FissionHousingRelief = -.1, x => x.FissionHousingRelief = 1.5, x => x.FissionDaughterBuilderShare = -.1, x => x.FissionDaughterBuilderShare = 1.5 })
+        Check(c.FissionEnabled && c.FissionGainThreshold == .113 && c.FissionGainDiscourage == .080 && c.FissionGainEncourage == .0955 && c.FissionSearchFraction == .8 && c.FissionDaughterMargin == .05 && c.FissionHousingRelief == 0 && c.FissionDaughterBuilderShare == .05 && c.FissionRadius == 4 && c.FissionMinimumDaughter == 12
+            && c.FissionPressureRule == FissionPressureRule.CurrentPlusExitOpportunity && c.FissionLegacyQoL == .75 && c.FissionLegacyQoLWidth == .10 && c.FissionLegacyThreshold == .20 && c.FissionLegacySearchPush == .20
+            && c.FissionExitThreshold == .05 && c.FissionExitSearchFraction == .8,
+            "fission is on by default, production uses the current-plus-exit baseline, and experimental comparison constants are stable");
+        foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.FissionGainThreshold = -.1, x => x.FissionGainDiscourage = 6, x => x.FissionGainEncourage = double.NaN, x => x.FissionRadius = 0, x => x.FissionRadius = 6, x => x.FissionMinimumDaughter = 0, x => x.FissionSearchFraction = 1.5, x => x.FissionSearchFraction = -.1, x => x.FissionDaughterMargin = -.01, x => x.FissionDaughterMargin = 2, x => x.FissionHousingRelief = -.1, x => x.FissionHousingRelief = 1.5, x => x.FissionDaughterBuilderShare = -.1, x => x.FissionDaughterBuilderShare = 1.5,
+            x => x.FissionPressureRule = (FissionPressureRule)99, x => x.FissionLegacyQoL = 1.1, x => x.FissionLegacyQoLWidth = 0, x => x.FissionLegacyThreshold = -1, x => x.FissionLegacySearchPush = 2,
+            x => x.FissionExitThreshold = 0, x => x.FissionExitSearchFraction = 2 })
         {
             var x = new SimulationConfig(); bad(x); bool rejected = false; try { x.Validate(); } catch (ArgumentException) { rejected = true; }
             Check(rejected, "an invalid fission lever is rejected");
@@ -209,7 +214,10 @@ internal static class FissionChecks
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy)))
         {
             var old = (SimulationConfig)serializer.ReadObject(stream);
-            Check(!old.FissionEnabled && old.FissionGainThreshold == .113 && old.FissionGainDiscourage == .080 && old.FissionGainEncourage == .0955 && old.FissionSearchFraction == .8 && old.FissionDaughterMargin == .05 && old.FissionHousingRelief == 0 && old.FissionDaughterBuilderShare == .05 && old.FissionRadius == 4 && old.FissionMinimumDaughter == 12, "older saves load with fission disabled and default levers");
+            Check(!old.FissionEnabled && old.FissionGainThreshold == .113 && old.FissionGainDiscourage == .080 && old.FissionGainEncourage == .0955 && old.FissionSearchFraction == .8 && old.FissionDaughterMargin == .05 && old.FissionHousingRelief == 0 && old.FissionDaughterBuilderShare == .05 && old.FissionRadius == 4 && old.FissionMinimumDaughter == 12
+                && old.FissionPressureRule == FissionPressureRule.CurrentPlusExitOpportunity && old.FissionLegacyQoL == .75 && old.FissionLegacyQoLWidth == .10 && old.FissionLegacyThreshold == .20 && old.FissionLegacySearchPush == .20
+                && old.FissionExitThreshold == .05 && old.FissionExitSearchFraction == .8,
+                "older saves load with fission disabled, the production exit-opportunity baseline, and stable experiment defaults");
         }
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) { var back = (SimulationConfig)serializer.ReadObject(stream); Check(back.FissionRadius == 4 && back.FissionDaughterBuilderShare == .2, "saved levers round trip"); }
         string json = File.ReadAllText(FindConfig());
@@ -991,6 +999,94 @@ internal static class FissionChecks
         Check(near3 != null && near5 != null && near3.Tile == near5.Tile && u5.Map.Distance(u5.Camps[0].Tile, near5.Tile) == 3, "radius 5 keeps the nearest tied site, so daughters stay close when sites exist");
         // Deterministic: the same fixture twice gives the same destination.
         var d1 = Lean(5); var d2 = Lean(5); Check(Pass(d1, out _).Tile == Pass(d2, out _).Tile, "the wider search is deterministic");
+    }
+
+    private static void ExperimentalPressureRules()
+    {
+        // The historical WP10a pressure constants are replayed against today's radius/spacing/search and daughter veto.
+        // This is intentionally not a rollback of the old destination algorithm.
+        WorldState Rich(FissionPressureRule rule)
+        {
+            var w = World(true, new[] { 12, 8 }); var c = w.Camps[0];
+            w.Config.FissionPressureRule = rule; w.Config.FissionRadius = 4; w.Config.FissionDaughterMargin = .05;
+            Explore(w, c, 6);
+            c.Population = 100; c.ClothPerCapita = 1; c.FoodNeedsMetRatio = 1; c.WaterNeedsMetRatio = 1;
+            c.Inventory.LightHousingUnits = c.Population / w.Config.Neolithic.LightHousingPeoplePerUnit;
+            return w;
+        }
+
+        // Exact old trigger arithmetic, independent of the site machinery.
+        var legacy = Rich(FissionPressureRule.LegacyQoL); var lc = legacy.Camps[0];
+        lc.QoL = .75; Check(Pass(legacy, out var atBar) == null && atBar.FissionSearches == 0, "legacy trigger has zero push at Q=0.75");
+        legacy = Rich(FissionPressureRule.LegacyQoL); lc = legacy.Camps[0]; lc.QoL = .70;
+        var legacyReport = Pass(legacy, out var legacyMetrics);
+        Check(legacyReport != null && legacyReport.Trigger == FissionTrigger.LegacyQoL && legacyMetrics.FissionSearches == 1,
+            "legacy Q=0.70 pressure can found through the modern destination/veto path");
+
+        // Radius-4 is part of the modern path. Expose one known distance-3 site and one
+        // non-adjacent distance-4 site, then make the distance-3 footprint barren.
+        var far = Rich(FissionPressureRule.LegacyQoL); var fc = far.Camps[0]; fc.QoL = .50;
+        int ring3 = far.Map.Radius(fc.Tile, 3).Where(t => far.Map.Distance(fc.Tile, t) == 3).OrderBy(t => t).First();
+        int ring4 = far.Map.Radius(fc.Tile, 4).Where(t => far.Map.Distance(fc.Tile, t) == 4 && far.Map.Distance(ring3, t) > 1).OrderBy(t => t).First();
+        fc.People.Memory = new ContactMemory(far.Config.Width); fc.People.Memory.Explored.Add(ring3); fc.People.Memory.Explored.Add(ring4);
+        foreach (int tile in far.Map.Radius(ring3, 1))
+        {
+            var t = far.Tiles[tile]; t.Food = 0; t.PotentialFood = 0;
+            for (int season = 0; season < 4; season++) { t.Seasons[season].MaxFood = 0; t.Seasons[season].MaxPotentialFood = 0; }
+        }
+        var farReport = Pass(far, out var farMetrics);
+        Check(farReport != null && farReport.Tile == ring4 && far.Map.Distance(fc.Tile, farReport.Tile) == 4 && farMetrics.FissionCandidatesScored == 2,
+            "legacy pressure uses the modern radius-4 bounded search when its known distance-3 alternative is unviable");
+
+        // The critical historical pathology: once a legal 12-person daughter exists, low stored QoL alone
+        // can still split a 40-person parent even though the destination and daughter checks are modern.
+        var legacyMinimum = Rich(FissionPressureRule.LegacyQoL); var lmc = legacyMinimum.Camps[0];
+        lmc.Population = 40; lmc.QoL = .50;
+        var legacyMinimumReport = Pass(legacyMinimum, out _);
+        Check(legacyMinimumReport != null && legacyMinimumReport.Daughter == 12 && legacyMinimumReport.Trigger == FissionTrigger.LegacyQoL,
+            "the historical low-QoL trigger still permits minimum-size 40-to-28/12 fragmentation under modern site constraints");
+
+        // The generalized exit channel should not inherit that minimum-size pathology merely because home QoL is low:
+        // at small N the daughter has little structural advantage, so the opportunity product stays below threshold.
+        var exitMinimum = Rich(FissionPressureRule.CurrentPlusExitOpportunity); var emc = exitMinimum.Camps[0]; Pressure(exitMinimum, 5);
+        emc.Population = 40; emc.ClothPerCapita = 0; emc.Inventory.LightHousingUnits = 0;
+        Check(Pass(exitMinimum, out var exitMinimumMetrics) == null && exitMinimumMetrics.FissionCommits == 0,
+            "exit opportunity does not automatically fragment the minimum legal parent when the daughter offers only a marginal welfare gain");
+
+        // Current production rule remains the exact default and a high threshold can silence crowding/distress.
+        var current = Rich(FissionPressureRule.Current); Pressure(current, 5);
+        Check(Pass(current, out var currentMetrics) == null && currentMetrics.FissionSearches == 0,
+            "current rule remains independently selectable and quiet under a high gain threshold");
+
+        // Generalized exit pressure is additive to the current rule. Suppress current crowding, keep survival met,
+        // then lower rudimentary QoL so only a credible better daughter can create pressure.
+        var exit = Rich(FissionPressureRule.CurrentPlusExitOpportunity); var ec = exit.Camps[0]; Pressure(exit, 5);
+        ec.Population = 120; ec.ClothPerCapita = 0; ec.Inventory.LightHousingUnits = 0; ec.PlantFood = 12000;
+        var before = Fission.EstimateSplit(exit, ec, FissionPolicy.Neutral);
+        Check(before.QNow < 1 && Fission.ExitOpportunityPressure(.4, .75) > Fission.ExitOpportunityPressure(.85, .90),
+            "exit pressure rises with both home dissatisfaction and daughter improvement");
+        var exitReport = Pass(exit, out var exitMetrics);
+        Check(exitReport != null && exitReport.Trigger == FissionTrigger.ExitOpportunity && exitMetrics.FissionDistressProposals == 0 && exitMetrics.FissionCrowdingProposals == 0,
+            "a fed low-welfare camp can split through exit opportunity without masquerading as food/water distress or crowding");
+
+        // A high-welfare parent should not fragment for a merely marginal alternative.
+        var content = Rich(FissionPressureRule.CurrentPlusExitOpportunity); var cc = content.Camps[0]; Pressure(content, 5);
+        cc.Inventory.LightHousingUnits = cc.Population / content.Config.Neolithic.LightHousingPeoplePerUnit;
+        cc.ClothPerCapita = 1;
+        Check(Pass(content, out var contentMetrics) == null && contentMetrics.FissionCommits == 0,
+            "the exit channel does not fragment a well-served parent merely because another viable site exists");
+
+        // A miserable camp with no habitable alternative still cannot manufacture an escape.
+        var trapped = Rich(FissionPressureRule.CurrentPlusExitOpportunity); var tc = trapped.Camps[0]; Pressure(trapped, 5);
+        tc.Population = 120; tc.ClothPerCapita = 0; tc.Inventory.LightHousingUnits = 0;
+        foreach (var t in trapped.Tiles)
+        {
+            if (t.Id == tc.Tile) continue;
+            t.Food = 0; t.PotentialFood = 0;
+            for (int season = 0; season < 4; season++) { t.Seasons[season].MaxFood = 0; t.Seasons[season].MaxPotentialFood = 0; }
+        }
+        Check(Pass(trapped, out var trappedMetrics) == null && trappedMetrics.FissionSearches == 1 && trappedMetrics.FissionCommits == 0 && trapped.Camps.Count == 1,
+            "exit opportunity searches under real pressure but still requires a genuinely habitable known destination");
     }
 
     private static void Policy()

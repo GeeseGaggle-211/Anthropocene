@@ -8,10 +8,13 @@ namespace Anthropocene.Simulation
 {
     // Per-camp fission policy (QoLFissionTradeDesign 3.6). The enum's zero is Neutral so that an absent saved field means Neutral.
     public enum FissionPolicy { Neutral = 0, Discourage = 1, Encourage = 2 }
+    // Experimental selector used only to compare fission pressure laws against the same modern
+    // destination search, daughter estimate and settlement constraints. Zero preserves current saves/behavior.
+    public enum FissionPressureRule { Current = 0, LegacyQoL = 1, CurrentPlusExitOpportunity = 2 }
     public enum FissionRegime { Paleolithic = 0, Nomadic = 1, Agricultural = 2 }
     public enum KinRelation { Parent, Daughter, Sibling }
-    // What moved a split past its threshold. Zero is Crowding so an absent saved field means Crowding (every pre-distress split was one).
-    public enum FissionTrigger { Crowding = 0, Distress = 1 }
+    // Append-only: saved reports store numeric enum values.
+    public enum FissionTrigger { Crowding = 0, Distress = 1, LegacyQoL = 2, ExitOpportunity = 3 }
 
     // The cached potential fission destination of one camp. Saved, optional, null when none.
     [Serializable]
@@ -367,7 +370,9 @@ namespace Anthropocene.Simulation
                 if (e.BelowThreshold) metrics.FissionBelowThreshold++;
                 if (e.StayersBlocked) metrics.FissionStayersBlocked++;
                 if (!e.Propose) continue;
-                metrics.FissionProposals++; if (e.Trigger == FissionTrigger.Distress) metrics.FissionDistressProposals++; else metrics.FissionCrowdingProposals++;
+                metrics.FissionProposals++;
+                if (e.Trigger == FissionTrigger.Distress) metrics.FissionDistressProposals++;
+                else if (e.Trigger == FissionTrigger.Crowding) metrics.FissionCrowdingProposals++;
                 if (committed.Any(t => w.Map.Distance(t, e.Tile) < spacing)) { metrics.FissionDropped++; continue; }
                 if (knowledge == null)
                 {
@@ -377,7 +382,9 @@ namespace Anthropocene.Simulation
                     foreach (var d in record.Demographics) demographics[d.Camp] = d;
                 }
                 Found(w, e, record, knowledge, demographics);
-                committed.Add(e.Tile); metrics.FissionCommits++; if (e.Trigger == FissionTrigger.Distress) { metrics.FissionDistressCommits++; metrics.FissionDistressDaughters += e.Daughter; } else metrics.FissionCrowdingCommits++;
+                committed.Add(e.Tile); metrics.FissionCommits++;
+                if (e.Trigger == FissionTrigger.Distress) { metrics.FissionDistressCommits++; metrics.FissionDistressDaughters += e.Daughter; }
+                else if (e.Trigger == FissionTrigger.Crowding) metrics.FissionCrowdingCommits++;
             }
             metrics.FissionMilliseconds = timer.Elapsed.TotalMilliseconds;
         }
@@ -391,9 +398,25 @@ namespace Anthropocene.Simulation
         // n < N - n and N - n >= MinimumCamp). The destination search and validation use n1 whenever the distress screen passes (it is the
         // larger, harder-to-support group), n0 otherwise. If the distress branch passes the split uses n1, else a passing crowding branch uses n0.
         // The trigger is Distress exactly when the distress branch (n_short > 0) was the one used.
+        private static double LegacyQoLShift(FissionPolicy policy)
+            => policy == FissionPolicy.Discourage ? -.05 : policy == FissionPolicy.Encourage ? .05 : 0;
+
+        private static double LegacyPush(SimulationConfig cfg, Camp camp, FissionPolicy policy)
+            => Numbers.Clamp((cfg.FissionLegacyQoL + LegacyQoLShift(policy) - camp.QoL) /
+                Math.Max(1e-12, cfg.FissionLegacyQoLWidth), 0, 1);
+
+        // Generalized escape pressure: bad home conditions matter, but only when the daughter's
+        // credible outcome is materially better. This is additive to the current crowding/distress rule.
+        internal static double ExitOpportunityPressure(double qHome, double qDaughter)
+            => Math.Max(0, 1 - Numbers.Clamp(qHome, 0, 1)) *
+               Math.Max(0, Numbers.Clamp(qDaughter, 0, 1) - Numbers.Clamp(qHome, 0, 1));
+
         private static Evaluation Evaluate(Context context, Camp camp)
         {
-            var w = context.World; var cfg = w.Config; var e = new Evaluation { Camp = camp };
+            var w = context.World; var cfg = w.Config;
+            if (cfg.FissionPressureRule == FissionPressureRule.LegacyQoL)
+                return EvaluateLegacyQoL(context, camp);
+            var e = new Evaluation { Camp = camp };
             var regime = RegimeOf(w, camp); var policy = camp.FissionPolicy; var cached = camp.FissionDestination;
             // A change of subsistence regime invalidates the cached destination regardless of the push.
             if (cached != null && cached.Regime != (int)regime) { e.ClearTarget = true; e.Invalidations++; cached = null; }
@@ -412,9 +435,19 @@ namespace Anthropocene.Simulation
             // Optimistic screen (F_d = W_d = 1): gates the search exactly like the crowding screen; identical to the crowding estimate for a fed camp.
             Estimate optimistic = !distressLegal ? default : n1 == n0 && crowdLegal ? crowd : EstimateSplit(w, camp, n1, 1, 1);
             bool crowdScreen = crowdLegal && crowd.Gain >= screen, distressScreen = distressLegal && optimistic.DaughterGain >= screen;
+            bool exitEnabled = cfg.FissionPressureRule == FissionPressureRule.CurrentPlusExitOpportunity;
+            // Before a site is known, q_d = 1 is the optimistic bound. If even that cannot
+            // clear the search screen, there is no reason to search for an exit destination.
+            double qHomeForExit = crowdLegal ? crowd.QNow : optimistic.QNow;
+            double exitScreenValue = exitEnabled && crowdLegal ? ExitOpportunityPressure(qHomeForExit, 1) : 0;
+            bool exitScreen = exitEnabled && crowdLegal &&
+                exitScreenValue >= cfg.FissionExitSearchFraction * cfg.FissionExitThreshold;
             var shown = crowdLegal ? crowd : optimistic;
-            e.Gain = shown.Gain; e.DaughterQoL = shown.DaughterQoL; e.DaughterGain = shown.DaughterGain; e.Push = Push(crowdLegal ? crowd.Gain : optimistic.DaughterGain, threshold);
-            if (!crowdScreen && !distressScreen) return e;
+            e.Gain = shown.Gain; e.DaughterQoL = shown.DaughterQoL; e.DaughterGain = shown.DaughterGain;
+            e.Push = exitScreen && !crowdScreen && !distressScreen
+                ? Push(exitScreenValue, cfg.FissionExitThreshold)
+                : Push(crowdLegal ? crowd.Gain : optimistic.DaughterGain, threshold);
+            if (!crowdScreen && !distressScreen && !exitScreen) return e;
             e.Screened = true;
             int size = distressScreen ? n1 : n0;
             var projections = new Dictionary<int, double>(); double siteRatio = 0, siteHuman = 0, siteHerd = double.PositiveInfinity;
@@ -465,11 +498,99 @@ namespace Anthropocene.Simulation
                 if (distress.DaughterGain >= threshold) { chosen = distress; use = true; e.Trigger = FissionTrigger.Distress; }
             }
             if (!use && crowdLegal && crowd.Gain >= threshold) { chosen = EstimateSplit(w, camp, n0, foodD, 1, vetoFood); use = true; e.Trigger = FissionTrigger.Crowding; }
+            if (!use && exitEnabled && crowdLegal)
+            {
+                var exit = EstimateSplit(w, camp, n0, foodD, 1, vetoFood);
+                // Like the distress pull, compare at the parent's expectation on both sides.
+                // The daughter's post-move expectation reset remains part of the viability veto,
+                // but cannot itself manufacture exit pressure.
+                double exitPressure = ExitOpportunityPressure(exit.QNow, exit.DaughterExpected);
+                if (exitPressure >= cfg.FissionExitThreshold)
+                {
+                    chosen = exit; use = true; e.Trigger = FissionTrigger.ExitOpportunity;
+                }
+            }
             if (!use) { e.BelowThreshold = true; return e; }
             e.Daughter = chosen.Daughter; e.Gain = chosen.Gain; e.DaughterQoL = chosen.DaughterQoL; e.DaughterGain = chosen.DaughterGain;
-            e.Push = Push(e.Trigger == FissionTrigger.Distress ? chosen.DaughterGain : chosen.Gain, threshold); e.Score = e.Push * e.Desirability;
+            double selectedPressure = e.Trigger == FissionTrigger.Distress ? chosen.DaughterGain
+                : e.Trigger == FissionTrigger.ExitOpportunity ? ExitOpportunityPressure(chosen.QNow, chosen.DaughterExpected)
+                : chosen.Gain;
+            double selectedThreshold = e.Trigger == FissionTrigger.ExitOpportunity ? cfg.FissionExitThreshold : threshold;
+            e.Push = Push(selectedPressure, selectedThreshold); e.Score = e.Push * e.Desirability;
             // "Would part of this population be better off": the daughter's estimated QoL must not fall more than the margin below the parent's,
             // and the stayers must not be worse off (true by construction: fewer mouths and no housing taken).
+            e.DaughterTested = true; e.DaughterBlocked = !chosen.DaughterAcceptable(cfg.FissionDaughterMargin);
+            e.Propose = !e.DaughterBlocked && chosen.StayersAcceptable(cfg.FissionDaughterMargin);
+            e.StayersBlocked = !e.DaughterBlocked && !e.Propose;
+            return e;
+        }
+
+        // WP10a trigger replayed against the current destination machinery. This intentionally
+        // restores only the historical pressure law; radius/spacing, current ecology projection,
+        // richer-site ordering, carried resources and daughter/stayer vetoes remain modern.
+        private static Evaluation EvaluateLegacyQoL(Context context, Camp camp)
+        {
+            var w = context.World; var cfg = w.Config; var e = new Evaluation { Camp = camp };
+            var regime = RegimeOf(w, camp); var policy = camp.FissionPolicy; var cached = camp.FissionDestination;
+            if (cached != null && cached.Regime != (int)regime) { e.ClearTarget = true; e.Invalidations++; cached = null; }
+
+            int residents = camp.Population, daughter = Kinship.DaughterSize(residents, policy), minimum = cfg.FissionMinimumDaughter;
+            e.Daughter = daughter; e.Push = LegacyPush(cfg, camp, policy);
+            bool legal = daughter >= minimum && daughter < residents - daughter && residents - daughter >= cfg.MinimumCamp;
+            if (!(e.Push > 0) || !legal) return e;
+
+            var projections = new Dictionary<int, double>(); double siteRatio = 0, siteHuman = 0, siteHerd = double.PositiveInfinity;
+            if (cached != null)
+            {
+                e.Validations++;
+                double d = 0, ratio = 0; siteHuman = 0; siteHerd = double.PositiveInfinity;
+                if (!context.Blocked(cached.Tile) && w.Tiles[cached.Tile].TraversableLand)
+                {
+                    d = Desirability(context, camp, cached.Tile, daughter, regime, projections, e, out ratio);
+                    siteHuman = e.SiteHuman; siteHerd = e.SiteHerd;
+                }
+                if (!(ratio > 0)) { e.ClearTarget = true; e.Invalidations++; cached = null; }
+                else { e.Desirability = d; siteRatio = ratio; }
+            }
+
+            if (cached == null && e.Push > cfg.FissionLegacySearchPush)
+            {
+                e.Screened = true; e.Searches++;
+                var known = new Known(context, camp);
+                int best = -1, bestDistance = 0; double bestScore = -1, bestRatio = -1, bestHuman = 0, bestHerd = double.PositiveInfinity;
+                foreach (int tile in w.Map.Radius(camp.Tile, cfg.FissionRadius).OrderBy(n => n))
+                {
+                    if (!w.Tiles[tile].TraversableLand || !known.Contains(tile) || context.Blocked(tile)) continue;
+                    e.Candidates++;
+                    double d = Desirability(context, camp, tile, daughter, regime, projections, e, out double ratio);
+                    int distance = w.Map.Distance(camp.Tile, tile);
+                    if (best < 0 || d > bestScore || d == bestScore && (ratio > bestRatio || ratio == bestRatio && distance < bestDistance))
+                    {
+                        best = tile; bestScore = d; bestRatio = ratio; bestDistance = distance;
+                        bestHuman = e.SiteHuman; bestHerd = e.SiteHerd;
+                    }
+                }
+                if (best >= 0 && bestScore > 0 && bestRatio > 0)
+                {
+                    e.NewTarget = new FissionTarget { Tile = best, Regime = (int)regime, Turn = w.Turn };
+                    e.Desirability = bestScore; siteRatio = bestRatio; siteHuman = bestHuman; siteHerd = bestHerd;
+                    cached = e.NewTarget;
+                }
+            }
+
+            if (cached == null)
+            {
+                if (e.Searches > 0) { if (e.Candidates == 0) e.NoCandidates = true; else e.NoViable = true; }
+                return e;
+            }
+
+            e.WithDestination = true; e.Tile = cached.Tile;
+            double foodD = Numbers.Clamp(siteRatio, 0, 1);
+            double vetoFood = Math.Min(1, Math.Min(siteHerd, Math.Max(0, siteHuman) + Immigration.CarriedPerPerson(cfg, camp)));
+            var chosen = EstimateSplit(w, camp, daughter, foodD, 1, vetoFood);
+            e.Trigger = FissionTrigger.LegacyQoL; e.Gain = chosen.Gain; e.DaughterQoL = chosen.DaughterQoL; e.DaughterGain = chosen.DaughterGain;
+            e.Score = e.Push * e.Desirability;
+            if (!(e.Score > cfg.FissionLegacyThreshold)) { e.BelowThreshold = true; return e; }
             e.DaughterTested = true; e.DaughterBlocked = !chosen.DaughterAcceptable(cfg.FissionDaughterMargin);
             e.Propose = !e.DaughterBlocked && chosen.StayersAcceptable(cfg.FissionDaughterMargin);
             e.StayersBlocked = !e.DaughterBlocked && !e.Propose;
