@@ -520,8 +520,24 @@ namespace Anthropocene.Simulation
             var ids = w.Camps.Select(c => c.Id).Concat(w.Hunters.Select(h => h.Id)).Concat(w.Herds.Select(h => h.Id)).ToArray();
             if (ids.Distinct().Count() != ids.Length || ids.Any(i => i >= w.NextId)) throw new InvalidOperationException("Invalid stable IDs.");
             if (expectedPeople >= 0 && w.Camps.Sum(w.LinkedPopulation) != expectedPeople) throw new InvalidOperationException("Unexplained population change.");
-            if (w.Camps.Any(c => c.Population < 0 || c.Food < -1e-8 || c.DemographicGrowthMultiplier <= 0 || double.IsNaN(c.DemographicGrowthMultiplier) || c.Workforce == null || c.Workforce.Assignments.Any(a => a == null || string.IsNullOrWhiteSpace(a.Role) || a.Population <= 0) || c.Workforce.Assignments.GroupBy(a => a.Role, StringComparer.Ordinal).Any(g => g.Count() != 1) || c.Workforce.Assigned > c.Population || !w.CanEnter(c.Tile, false)) || w.Hunters.Any(h => h.Population < 0 || !w.CanEnter(h.Tile, true, w.Camps.First(c => c.Id == h.SourceCamp))))
-                throw new InvalidOperationException("Invalid people state or location.");
+            var invalidCamp = w.Camps.FirstOrDefault(c => c.Population < 0 || c.Food < -1e-8 || c.DemographicGrowthMultiplier <= 0 || double.IsNaN(c.DemographicGrowthMultiplier) || c.Workforce == null || c.Workforce.Assignments.Any(a => a == null || string.IsNullOrWhiteSpace(a.Role) || a.Population <= 0) || c.Workforce.Assignments.GroupBy(a => a.Role, StringComparer.Ordinal).Any(g => g.Count() != 1) || c.Workforce.Assigned > c.Population || !w.CanEnter(c.Tile, false));
+            if (invalidCamp != null)
+                throw new InvalidOperationException("Invalid people state or location: camp=" + invalidCamp.Id +
+                    " pop=" + invalidCamp.Population + " assigned=" + (invalidCamp.Workforce?.Assigned ?? -1) +
+                    " food=" + invalidCamp.Food.ToString("R") + " tile=" + invalidCamp.Tile +
+                    " canEnter=" + w.CanEnter(invalidCamp.Tile, false) + ".");
+            var invalidHunter = w.Hunters.FirstOrDefault(h =>
+            {
+                var source = w.Camps.FirstOrDefault(c => c.Id == h.SourceCamp);
+                return h.Population < 0 || source == null || !w.CanEnter(h.Tile, true, source);
+            });
+            if (invalidHunter != null)
+            {
+                var source = w.Camps.FirstOrDefault(c => c.Id == invalidHunter.SourceCamp);
+                throw new InvalidOperationException("Invalid people state or location: hunter=" + invalidHunter.Id +
+                    " pop=" + invalidHunter.Population + " tile=" + invalidHunter.Tile + " source=" + invalidHunter.SourceCamp +
+                    " sourceExists=" + (source != null) + " canEnter=" + (source != null && w.CanEnter(invalidHunter.Tile, true, source)) + ".");
+            }
             if (w.Hunters.Any(h => h.CarriedFood < -1e-8 || h.CarriedFood > Supply.Capacity(w, h) + 1e-8) || w.Camps.Any(c => c.GrowthRemainder < 0 || c.GrowthRemainder >= 1)) throw new InvalidOperationException("Invalid carried provisions or demographic remainder.");
             if (w.Herds.Any(h => !w.Tiles[h.Tile].TraversableLand || h.Animals < 0)) throw new InvalidOperationException("Invalid herd population or peak/aquatic location.");
             foreach (var tile in ecologyScope ?? w.Tiles)
