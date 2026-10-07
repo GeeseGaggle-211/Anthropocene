@@ -75,14 +75,14 @@ internal static class ProductionOrderChecks
         Near(order.Key(CraftGood.HousingMaterial), order.Key(CraftGood.Housing), "Housing Material takes the Housing key");
         Near(order.Key(CraftGood.HandTools), 1 * 100 * disc, "Hand Tools: one output per tool times the best equipment need key, discounted one turn");
         Near(order.Key(CraftGood.Tools), 4 * 100 * disc, "Regular Tools: four outputs per tool");
-        Check(double.IsNaN(order.Key(CraftGood.Pots)) && double.IsNaN(order.Key(CraftGood.FarmTools)) && double.IsNaN(order.Key(CraftGood.HerdingTools)), "Pots and Farm/Herding Tools carry no value key");
+        Check(double.IsNaN(order.Key(CraftGood.Pots)) && double.IsNaN(order.Key(CraftGood.FarmTools)) && double.IsNaN(order.Key(CraftGood.HerdingTools)) && double.IsNaN(order.Key(CraftGood.FishingTools)), "Pots and Farm/Herding/Fishing Tools carry no value key");
         Check(order.Goods[0] == CraftGood.Tools, "Regular Tools (4 x 0.82 x best key) lead");
         Check(order.Outranks(CraftGood.AnimalFabric, CraftGood.LightHousing) && order.Key(CraftGood.AnimalFabric) < order.Key(CraftGood.LightHousing), "Animal Fabric is moved ahead of the Light Housing that consumes it despite a lower key");
         Check(order.Rank(CraftGood.HousingMaterial) + 1 == order.Rank(CraftGood.Housing), "Housing Material immediately precedes its assembly");
         Check(order.Outranks(CraftGood.AnimalFabric, CraftGood.Cloth), "the precedence move also puts Animal Fabric ahead of the equal-key Cloth");
         int lastPriced = new[] { CraftGood.Tools, CraftGood.HandTools, CraftGood.Cloth, CraftGood.AnimalFabric, CraftGood.LightHousing, CraftGood.Housing, CraftGood.HousingMaterial }.Max(order.Rank);
-        Check(new[] { CraftGood.Pots, CraftGood.FarmTools, CraftGood.HerdingTools }.All(g => order.Rank(g) > lastPriced), "unpriced goods follow every priced good and coverage producer");
-        Check(order.Goods.Skip(lastPriced + 1).SequenceEqual(new[] { CraftGood.FarmTools, CraftGood.Pots, CraftGood.HerdingTools }), "unpriced goods keep crafting-priority order, ties by schedule key");
+        Check(new[] { CraftGood.Pots, CraftGood.FarmTools, CraftGood.HerdingTools, CraftGood.FishingTools }.All(g => order.Rank(g) > lastPriced), "unpriced goods follow every priced good and coverage producer");
+        Check(order.Goods.Skip(lastPriced + 1).SequenceEqual(new[] { CraftGood.FarmTools, CraftGood.Pots, CraftGood.HerdingTools, CraftGood.FishingTools }), "unpriced goods keep crafting-priority order, ties by schedule key");
         // Equal keys tie by schedule key.
         var tie = ProductionOrder.Build(cfg, new List<ProductionClaim> { Claim(CraftGood.Cloth, 7, 0, 10, 10), Claim(CraftGood.LightHousing, 7, 0, 10, 10) }, recipes, Priority);
         Check(tie.Outranks(CraftGood.Cloth, CraftGood.LightHousing), "equal keys tie by ScheduleKey");
