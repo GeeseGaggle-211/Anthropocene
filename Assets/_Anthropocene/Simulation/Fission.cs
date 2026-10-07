@@ -501,7 +501,10 @@ namespace Anthropocene.Simulation
             if (!use && exitEnabled && crowdLegal)
             {
                 var exit = EstimateSplit(w, camp, n0, foodD, 1, vetoFood);
-                double exitPressure = ExitOpportunityPressure(exit.QNow, exit.DaughterQoL);
+                // Like the distress pull, compare at the parent's expectation on both sides.
+                // The daughter's post-move expectation reset remains part of the viability veto,
+                // but cannot itself manufacture exit pressure.
+                double exitPressure = ExitOpportunityPressure(exit.QNow, exit.DaughterExpected);
                 if (exitPressure >= cfg.FissionExitThreshold)
                 {
                     chosen = exit; use = true; e.Trigger = FissionTrigger.ExitOpportunity;
@@ -510,7 +513,7 @@ namespace Anthropocene.Simulation
             if (!use) { e.BelowThreshold = true; return e; }
             e.Daughter = chosen.Daughter; e.Gain = chosen.Gain; e.DaughterQoL = chosen.DaughterQoL; e.DaughterGain = chosen.DaughterGain;
             double selectedPressure = e.Trigger == FissionTrigger.Distress ? chosen.DaughterGain
-                : e.Trigger == FissionTrigger.ExitOpportunity ? ExitOpportunityPressure(chosen.QNow, chosen.DaughterQoL)
+                : e.Trigger == FissionTrigger.ExitOpportunity ? ExitOpportunityPressure(chosen.QNow, chosen.DaughterExpected)
                 : chosen.Gain;
             double selectedThreshold = e.Trigger == FissionTrigger.ExitOpportunity ? cfg.FissionExitThreshold : threshold;
             e.Push = Push(selectedPressure, selectedThreshold); e.Score = e.Push * e.Desirability;
