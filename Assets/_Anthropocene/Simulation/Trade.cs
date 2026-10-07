@@ -1159,15 +1159,14 @@ namespace Anthropocene.Simulation
                     WantMadeToOrder = a.WantMade > 1e-12, GiveMadeToOrder = a.GiveMade > 1e-12 });
                 ContactKnowledge.RecordTrade(w, r.People, p);
                 ContactKnowledge.RecordTrade(w, p.People, r);
-                // A receiver learns the practice that produced what it imports (inert while TradePracticePerValue = 0).
-                void Learn(Camp receiver, TradeGood good, double[] amounts, double gain, double scale)
-                {
-                    var d = Descriptor(good); double total = amounts.Sum();
-                    if (!(total > 0) || !(gain > 0)) return;
-                    for (int i = 0; i < amounts.Length; i++)
-                        if (d.Parts[i].Practice.HasValue) TechnologyDiscovery.RecordTradePractice(w, receiver.People, d.Parts[i].Practice.Value, gain * scale * amounts[i] / total);
-                }
-                Learn(r, a.Want, WithMade(a.WantParts, a.WantMade), a.RequesterGain, want); Learn(p, a.Give, WithMade(a.GiveParts, a.GiveMade), a.ResponderGain, give);
+                // Trade is bilateral contact, not one-way imitation of a
+                // commodity tag. Each receiver can learn opening technologies
+                // held by the counterparty, scaled by the realized value of the
+                // leg it actually received.
+                TechnologyDiscovery.RecordTradeContactPractice(w, r.People, p.People,
+                    Math.Max(0, a.RequesterGain * want));
+                TechnologyDiscovery.RecordTradeContactPractice(w, p.People, r.People,
+                    Math.Max(0, a.ResponderGain * give));
             }
         }
     }
