@@ -46,7 +46,16 @@ internal static class SettlingChecks
     {
         var w = NeolithicChecks.Fixture(false); var society = w.Camps[0].People; var cfg = w.Config;
         Check(ref checks, cfg.SecondaryTechnologyThreshold == cfg.ExperienceThreshold || cfg.ExperienceThreshold != 225 && cfg.SecondaryTechnologyThreshold == 225, "the secondary threshold defaults to the 225-point experience threshold");
-        Check(ref checks, new SimulationConfig().SecondaryTechnologyThreshold == new SimulationConfig().ExperienceThreshold && new SimulationConfig().TradePracticePerValue == 0 && new SimulationConfig().SettledHerdGrowthPenalty == .35, "new configuration defaults");
+        var defaults = new SimulationConfig();
+        Check(ref checks, defaults.SecondaryTechnologyThreshold == defaults.ExperienceThreshold &&
+            Near(defaults.TradePracticePerValue, .1) &&
+            Near(defaults.HusbandryProximityPracticePerYear, 2.5) &&
+            Near(defaults.HusbandryProximityReferenceAnimals, 20) &&
+            Near(defaults.HusbandryDomesticExposureMultiplier, 2) &&
+            Near(defaults.TamingSpeciesPracticeThreshold, 50) &&
+            defaults.HusbandryTamingEnabled && defaults.NeolithicFishingEnabled &&
+            defaults.CorrectedAquaticSeasonalPressureEnabled &&
+            Near(defaults.SettledHerdGrowthPenalty, .35), "new configuration defaults");
         // Paleolithic credits accrue to lifetime practice only.
         TechnologyDiscovery.AddPractice(w, society, Domain.Gathering, 40, PracticeSource.Gathering);
         TechnologyDiscovery.AddPractice(w, society, Domain.Hunting, 7.5, PracticeSource.Hunting);
@@ -111,40 +120,65 @@ internal static class SettlingChecks
         Check(ref checks, !gc.ForcedTransition && !gc.Technologies[(int)Technology.Cultivation], "a non-forced transition gets no carryover grant");
 
         // Saves: Neolithic practice round-trips; a save without the field loads zeros; the new configuration defaults for older saves.
-        var sv = NeolithicChecks.Fixture(false); sv.Camps[0].People.Progression.Era = Era.Neolithic; sv.Camps[0].People.NeolithicExperience = new[] { 1.5, 2.5, 3.5 };
-        sv.Config.SecondaryTechnologyThreshold = 77; sv.Config.TradePracticePerValue = .25; sv.Config.SettledHerdGrowthPenalty = .5;
+        var sv = NeolithicChecks.Fixture(false); sv.Camps[0].People.Progression.Era = Era.Neolithic; sv.Camps[0].People.NeolithicExperience = new[] { 1.5, 2.5, 3.5 }; sv.Camps[0].People.TechnologyExposure = new[] { 4.5, 5.5, 6.5 };
+        sv.Config.SecondaryTechnologyThreshold = 77; sv.Config.TradePracticePerValue = .25; sv.Config.HusbandryProximityPracticePerYear = 3; sv.Config.TamingSpeciesPracticeThreshold = 60; sv.Config.HusbandryTamingEnabled = true; sv.Config.SettledHerdGrowthPenalty = .5;
         var back = SaveCodec.Load(SaveCodec.Save(sv));
-        Check(ref checks, back.Camps[0].People.NeolithicExperience.SequenceEqual(new[] { 1.5, 2.5, 3.5 }) && back.Config.SecondaryTechnologyThreshold == 77 && back.Config.TradePracticePerValue == .25 && back.Config.SettledHerdGrowthPenalty == .5, "Neolithic practice and the new configuration round-trip");
+        Check(ref checks, back.Camps[0].People.NeolithicExperience.SequenceEqual(new[] { 1.5, 2.5, 3.5 }) && back.Camps[0].People.TechnologyExposure.SequenceEqual(new[] { 4.5, 5.5, 6.5 }) &&
+            back.Config.SecondaryTechnologyThreshold == 77 && back.Config.TradePracticePerValue == .25 && back.Config.HusbandryProximityPracticePerYear == 3 &&
+            back.Config.TamingSpeciesPracticeThreshold == 60 && back.Config.HusbandryTamingEnabled && back.Config.SettledHerdGrowthPenalty == .5,
+            "Neolithic practice, social exposure and diffusion configuration round-trip");
         Check(ref checks, SaveCodec.Fingerprint(sv) == SaveCodec.Fingerprint(back), "the round trip preserves the authoritative fingerprint");
-        sv.Camps[0].People.NeolithicExperience = null;
+        sv.Camps[0].People.NeolithicExperience = null; sv.Camps[0].People.TechnologyExposure = null;
         var legacy = SaveCodec.Load(SaveCodec.Save(sv));
-        Check(ref checks, legacy.Camps[0].People.NeolithicExperience != null && legacy.Camps[0].People.NeolithicExperience.Length == 3 && legacy.Camps[0].People.NeolithicExperience.All(x => x == 0), "an older save without Neolithic practice loads zeros");
+        Check(ref checks, legacy.Camps[0].People.NeolithicExperience != null && legacy.Camps[0].People.NeolithicExperience.Length == 3 && legacy.Camps[0].People.NeolithicExperience.All(x => x == 0) &&
+            legacy.Camps[0].People.TechnologyExposure != null && legacy.Camps[0].People.TechnologyExposure.Length == 3 && legacy.Camps[0].People.TechnologyExposure.All(x => x == 0),
+            "an older save without Neolithic practice or social exposure loads zeros");
         var serializer = new System.Runtime.Serialization.DataContractSerializer(typeof(SimulationConfig)); string xml;
-        using (var stream = new System.IO.MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { SecondaryTechnologyThreshold = 91, TradePracticePerValue = 3, SettledHerdGrowthPenalty = .6 }); xml = System.Text.Encoding.UTF8.GetString(stream.ToArray()); }
-        string old = xml.Replace("<SecondaryTechnologyThreshold>91</SecondaryTechnologyThreshold>", "").Replace("<TradePracticePerValue>3</TradePracticePerValue>", "").Replace("<SettledHerdGrowthPenalty>0.6</SettledHerdGrowthPenalty>", "");
-        Check(ref checks, old.Length < xml.Length - 60, "the legacy configuration fixture omits the three fields");
+        using (var stream = new System.IO.MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { SecondaryTechnologyThreshold = 91, TradePracticePerValue = 3, HusbandryProximityPracticePerYear = 4, HusbandryProximityReferenceAnimals = 30, HusbandryDomesticExposureMultiplier = 3, TamingSpeciesPracticeThreshold = 70, HusbandryTamingEnabled = true, SettledHerdGrowthPenalty = .6 }); xml = System.Text.Encoding.UTF8.GetString(stream.ToArray()); }
+        string old = xml.Replace("<SecondaryTechnologyThreshold>91</SecondaryTechnologyThreshold>", "").Replace("<TradePracticePerValue>3</TradePracticePerValue>", "")
+            .Replace("<HusbandryProximityPracticePerYear>4</HusbandryProximityPracticePerYear>", "").Replace("<HusbandryProximityReferenceAnimals>30</HusbandryProximityReferenceAnimals>", "")
+            .Replace("<HusbandryDomesticExposureMultiplier>3</HusbandryDomesticExposureMultiplier>", "").Replace("<TamingSpeciesPracticeThreshold>70</TamingSpeciesPracticeThreshold>", "")
+            .Replace("<HusbandryTamingEnabled>true</HusbandryTamingEnabled>", "").Replace("<SettledHerdGrowthPenalty>0.6</SettledHerdGrowthPenalty>", "");
+        Check(ref checks, old.Length < xml.Length - 120, "the legacy configuration fixture omits the diffusion fields");
         using (var stream = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(old)))
-        { var loaded = (SimulationConfig)serializer.ReadObject(stream); Check(ref checks, loaded.SecondaryTechnologyThreshold == 225 && loaded.TradePracticePerValue == 0 && Near(loaded.SettledHerdGrowthPenalty, .35), "older saves load the defaults (225, inert trade, 0.35)"); }
-        foreach (var bad in new Action<SimulationConfig>[] { c => c.SecondaryTechnologyThreshold = 0, c => c.TradePracticePerValue = -1, c => c.SettledHerdGrowthPenalty = 1.5, c => c.SettledHerdGrowthPenalty = double.NaN })
+        { var loaded = (SimulationConfig)serializer.ReadObject(stream); Check(ref checks, loaded.SecondaryTechnologyThreshold == 225 && loaded.TradePracticePerValue == 0 &&
+            loaded.HusbandryProximityPracticePerYear == 0 && !loaded.HusbandryTamingEnabled && Near(loaded.SettledHerdGrowthPenalty, .35),
+            "older saves keep social diffusion and taming inert"); }
+        foreach (var bad in new Action<SimulationConfig>[] { c => c.SecondaryTechnologyThreshold = 0, c => c.TradePracticePerValue = -1, c => c.HusbandryProximityPracticePerYear = -1,
+            c => c.HusbandryProximityReferenceAnimals = 0, c => c.HusbandryDomesticExposureMultiplier = .5, c => c.TamingSpeciesPracticeThreshold = 0,
+            c => c.SettledHerdGrowthPenalty = 1.5, c => c.SettledHerdGrowthPenalty = double.NaN })
         { var cfgBad = new SimulationConfig(); bad(cfgBad); bool rejected = false; try { cfgBad.Validate(); } catch (ArgumentException) { rejected = true; } Check(ref checks, rejected, "invalid secondary, trade or settling configuration is rejected"); }
-        var json = System.Text.RegularExpressions.Regex.Match(System.IO.File.ReadAllText(FindConfig()), "\"SecondaryTechnologyThreshold\":\\s*225,\\s*\"TradePracticePerValue\":\\s*0,\\s*\"SettledHerdGrowthPenalty\":\\s*0\\.35");
-        Check(ref checks, json.Success, "OpeningConfig.json carries the three defaults");
+        string opening = System.IO.File.ReadAllText(FindConfig());
+        Check(ref checks,
+            System.Text.RegularExpressions.Regex.IsMatch(opening, "\"SecondaryTechnologyThreshold\":\\s*225") &&
+            System.Text.RegularExpressions.Regex.IsMatch(opening, "\"TradePracticePerValue\":\\s*0\\.1") &&
+            System.Text.RegularExpressions.Regex.IsMatch(opening, "\"HusbandryProximityPracticePerYear\":\\s*2\\.5") &&
+            System.Text.RegularExpressions.Regex.IsMatch(opening, "\"TamingSpeciesPracticeThreshold\":\\s*50") &&
+            System.Text.RegularExpressions.Regex.IsMatch(opening, "\"HusbandryTamingEnabled\":\\s*true") &&
+            System.Text.RegularExpressions.Regex.IsMatch(opening, "\"NeolithicFishingEnabled\":\\s*true") &&
+            System.Text.RegularExpressions.Regex.IsMatch(opening, "\"CorrectedAquaticSeasonalPressureEnabled\":\\s*true"),
+            "OpeningConfig.json carries the active fishing/diffusion defaults");
 
-        // Trade hook: inert at weight 0, credits goods value x weight through the same API otherwise.
+        // Trade knowledge: weight zero is inert; active trade exposure affects
+        // discovery only and never performance practice.
         var tw = NeolithicChecks.Fixture(false); var tr = tw.Camps[0].People; tr.Progression.Era = Era.Neolithic;
-        Check(ref checks, TechnologyDiscovery.RecordTradePractice(tw, tr, Domain.Gathering, 500) == 0 && tr.Experience.All(x => x == 0) && tr.NeolithicExperience.All(x => x == 0), "trade practice is inert at weight 0");
+        tw.Config.TradePracticePerValue = 0;
+        Check(ref checks, TechnologyDiscovery.RecordTradePractice(tw, tr, Domain.Gathering, 500) == 0 && tr.TechnologyExposure.All(x => x == 0), "trade knowledge is inert at weight 0");
         tw.Config.TradePracticePerValue = .1;
         double credited = TechnologyDiscovery.RecordTradePractice(tw, tr, Domain.Gathering, 500);
-        Check(ref checks, Near(credited, 50) && Near(tr.Experience[(int)Domain.Gathering], 50) && Near(tr.NeolithicExperience[(int)Domain.Gathering], 50) && tr.Experience[(int)Domain.Hunting] == 0, "trade practice credits goods value x weight to the receiver's domain");
+        Check(ref checks, Near(credited, 50) && Near(tr.TechnologyExposure[(int)Domain.Gathering], 50) &&
+            tr.Experience.All(x => x == 0) && tr.NeolithicExperience.All(x => x == 0),
+            "trade knowledge credits exposure without changing proficiency practice");
         TechnologyDiscovery.RecordTradePractice(tw, tr, Domain.Fishing, -10); TechnologyDiscovery.RecordTradePractice(tw, tr, Domain.Fishing, 0);
-        Check(ref checks, tr.Experience[(int)Domain.Fishing] == 0, "no goods, no practice");
+        Check(ref checks, tr.TechnologyExposure[(int)Domain.Fishing] == 0, "no trade value, no exposure");
         tw.Config.TradePracticePerValue = 1; TechnologyDiscovery.RecordTradePractice(tw, tr, Domain.Fishing, tw.Config.SecondaryTechnologyThreshold);
         tr.Technology = Technology.AnimalHusbandry; tr.Technologies[(int)Technology.AnimalHusbandry] = true;
         TechnologyDiscovery.Resolve(tw, new TurnRecord());
-        Check(ref checks, tr.Technologies[(int)Technology.Watercraft], "imported practice can earn a secondary technology");
+        Check(ref checks, tr.Technologies[(int)Technology.Watercraft], "trade exposure can earn a secondary technology");
         var pw = NeolithicChecks.Fixture(false); pw.Config.TradePracticePerValue = 1;
         TechnologyDiscovery.RecordTradePractice(pw, pw.Camps[0].People, Domain.Hunting, 10);
-        Check(ref checks, pw.Camps[0].People.Experience[(int)Domain.Hunting] == 10 && pw.Camps[0].People.NeolithicExperience[(int)Domain.Hunting] == 0, "before the breakthrough trade practice counts toward it like any practice");
+        Check(ref checks, pw.Camps[0].People.Experience[(int)Domain.Hunting] == 0 && pw.Camps[0].People.TechnologyExposure[(int)Domain.Hunting] == 0,
+            "pre-Neolithic trade does not replace activity for the first breakthrough");
     }
     private static string FindConfig()
     {

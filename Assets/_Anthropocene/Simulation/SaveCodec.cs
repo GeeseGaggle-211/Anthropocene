@@ -201,6 +201,7 @@ namespace Anthropocene.Simulation
                 if (soc.Progression.Era == Era.Neolithic && soc.Technology != Technology.None)
                     soc.Technologies[(int)soc.Technology] = true;
                 if (soc.NeolithicExperience == null || soc.NeolithicExperience.Length != 3) soc.NeolithicExperience = new double[3];
+                if (soc.TechnologyExposure == null || soc.TechnologyExposure.Length != 3) soc.TechnologyExposure = new double[3];
                 if (soc.CraftExperience == null) soc.CraftExperience = new System.Collections.Generic.Dictionary<string, double>();
                 if (soc.UnlockedSpecialists == null) soc.UnlockedSpecialists = new System.Collections.Generic.List<string>();
                 if (soc.NeolithicTechnologies == null) soc.NeolithicTechnologies = new System.Collections.Generic.List<string>();

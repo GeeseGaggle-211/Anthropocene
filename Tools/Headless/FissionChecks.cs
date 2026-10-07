@@ -481,7 +481,7 @@ internal static class FissionChecks
     {
         // Every field of the Society that the opening logic reads is copied; only identity, the keyed seed, lineage and memory differ.
         var w = World(false, new[] { 8, 8 }); var parent = w.Camps[0]; Explore(w, parent); var ps = parent.People;
-        ps.Experience[0] = 41; ps.NeolithicExperience[1] = 17; ps.Progression.EraStartDays = 123; ps.Progression.MajorityEligibilityDays = 7777; ps.Progression.ForcedTransitionDays = 8888; ps.ForcedTransition = true; ps.SecondaryDomain = 2; ps.TransitionTurn = 4;
+        ps.Experience[0] = 41; ps.NeolithicExperience[1] = 17; ps.TechnologyExposure[2] = 23; ps.Progression.EraStartDays = 123; ps.Progression.MajorityEligibilityDays = 7777; ps.Progression.ForcedTransitionDays = 8888; ps.ForcedTransition = true; ps.SecondaryDomain = 2; ps.TransitionTurn = 4;
         ps.TransitionSeeds.Add(new TransitionSeed { Technology = Technology.Cultivation, Settlement = parent.Id, Tile = parent.Tile, Days = 99 });
         int outpost = w.Map.Radius(parent.Tile, 2).Where(n => w.Map.Distance(parent.Tile, n) == 2).OrderBy(n => n).First();
         w.Hunters.Add(new Hunter { Id = w.NextId++, SourceCamp = parent.Id, SocietyId = parent.SocietyId, Player = parent.Player, Tile = outpost, Population = 6, CarriedFood = 10 });
@@ -495,6 +495,7 @@ internal static class FissionChecks
             Check(same, "a daughter inherits Society." + f.Name);
         }
         Check(ds.NeolithicExperience.SequenceEqual(ps.NeolithicExperience) && ds.NeolithicExperience[1] == 17 && !ReferenceEquals(ds.NeolithicExperience, ps.NeolithicExperience), "a daughter copies the parent's Neolithic practice (its own array)");
+        Check(ds.TechnologyExposure.SequenceEqual(ps.TechnologyExposure) && ds.TechnologyExposure[2] == 23 && !ReferenceEquals(ds.TechnologyExposure, ps.TechnologyExposure), "a daughter copies the parent's social technology exposure (its own array)");
         Check(ds.Progression.Era == Era.Paleolithic && ds.Technology == Technology.None && ds.ForcedTransition == ps.ForcedTransition, "a Paleolithic parent's daughter is Paleolithic");
         // Finished: only founding Societies decide it.
         var f1 = World(true, new[] { 8, 8 }, new[] { 18, 8 }); var p1 = f1.Camps[0]; Explore(f1, p1); Check(f1.Finished, "two Neolithic founders have finished the opening");

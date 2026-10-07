@@ -42,9 +42,11 @@ namespace Anthropocene.Simulation
             MinimumCampSpacing = defaults.MinimumCampSpacing;
             ContactExpiryTurns = defaults.ContactExpiryTurns;
             HinterlandReferencePopulation = defaults.HinterlandReferencePopulation; HinterlandRingsPerTurn = defaults.HinterlandRingsPerTurn; HinterlandMaxRadius = defaults.HinterlandMaxRadius; ExploredMemoryTurns = defaults.ExploredMemoryTurns;
-            // Absent in older saves: secondary technologies use the established threshold, trade credits no practice, and the
-            // settling cost of a husbandry-primary camp keeps its default.
+            // Absent in older saves: preserve the historical inert diffusion/taming behavior.
             SecondaryTechnologyThreshold = defaults.SecondaryTechnologyThreshold; TradePracticePerValue = 0; SettledHerdGrowthPenalty = defaults.SettledHerdGrowthPenalty;
+            HusbandryProximityPracticePerYear = 0; HusbandryProximityReferenceAnimals = defaults.HusbandryProximityReferenceAnimals;
+            HusbandryDomesticExposureMultiplier = defaults.HusbandryDomesticExposureMultiplier; TamingSpeciesPracticeThreshold = defaults.TamingSpeciesPracticeThreshold;
+            HusbandryTamingEnabled = false;
             FissionEnabled = false; FissionGainThreshold = defaults.FissionGainThreshold; FissionGainDiscourage = defaults.FissionGainDiscourage; FissionGainEncourage = defaults.FissionGainEncourage;
             FissionSearchFraction = defaults.FissionSearchFraction; FissionDaughterMargin = defaults.FissionDaughterMargin; FissionHousingRelief = defaults.FissionHousingRelief; FissionDaughterBuilderShare = defaults.FissionDaughterBuilderShare; FissionRadius = defaults.FissionRadius; FissionMinimumDaughter = defaults.FissionMinimumDaughter;
             FissionPressureRule = defaults.FissionPressureRule; FissionLegacyQoL = defaults.FissionLegacyQoL; FissionLegacyQoLWidth = defaults.FissionLegacyQoLWidth;
@@ -173,8 +175,8 @@ namespace Anthropocene.Simulation
         // Opt-in; absent in legacy saves means the measured corrected control.
         [System.Runtime.Serialization.OptionalField] public bool SharedCropHerdAllocationEnabled = true;
         [System.Runtime.Serialization.OptionalField] public int MinimumHerdHerders = 1;
-        [System.Runtime.Serialization.OptionalField] public bool NeolithicFishingEnabled;
-        [System.Runtime.Serialization.OptionalField] public bool CorrectedAquaticSeasonalPressureEnabled;
+        [System.Runtime.Serialization.OptionalField] public bool NeolithicFishingEnabled = true;
+        [System.Runtime.Serialization.OptionalField] public bool CorrectedAquaticSeasonalPressureEnabled = true;
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
         public double GatherFraction = .22, GatherPerPerson = 1.8, PopulationScale = 24;
@@ -189,8 +191,15 @@ namespace Anthropocene.Simulation
         // Practice points of post-breakthrough (Neolithic) practice that grant a secondary technology. Paleolithic practice counts
         // toward the first breakthrough only (TechnologyDiscovery.AddPractice). Default equals ExperienceThreshold.
         [System.Runtime.Serialization.OptionalField] public double SecondaryTechnologyThreshold = 225;
-        // Practice points credited per unit of traded goods value (TechnologyDiscovery.RecordTradePractice). 0 keeps the hook inert until trade exists.
-        [System.Runtime.Serialization.OptionalField] public double TradePracticePerValue = 0;
+        // Practice points credited per unit of realized bilateral trade value. Each party learns from technologies held by its counterparty.
+        [System.Runtime.Serialization.OptionalField] public double TradePracticePerValue = .1;
+        // Nearby domesticable animals create Husbandry exposure in physical time. Foreign managed animals are stronger demonstrations
+        // than wild herds. Species exposure is also remembered for later physical taming.
+        [System.Runtime.Serialization.OptionalField] public double HusbandryProximityPracticePerYear = 2.5;
+        [System.Runtime.Serialization.OptionalField] public double HusbandryProximityReferenceAnimals = 20;
+        [System.Runtime.Serialization.OptionalField] public double HusbandryDomesticExposureMultiplier = 2;
+        [System.Runtime.Serialization.OptionalField] public double TamingSpeciesPracticeThreshold = 50;
+        [System.Runtime.Serialization.OptionalField] public bool HusbandryTamingEnabled = true;
         // Fraction of a husbandry-primary camp's expected herd-growth value forfeited when field expansion would make it a village
         // (measured stationary herds support about 1/1.6 of the animals of mobile herds; see Docs/HusbandrySettling.md).
         [System.Runtime.Serialization.OptionalField] public double SettledHerdGrowthPenalty = .35;
@@ -258,8 +267,12 @@ namespace Anthropocene.Simulation
             if (ContactExpiryTurns < 1) throw new ArgumentException("Contact expiry must be at least one turn.");
             // The hinterland marks at most 3 r^2 + 3 r + 1 tiles per camp per turn; r <= 8 bounds that at 217.
             if (HinterlandReferencePopulation < 1 || HinterlandRingsPerTurn < 0 || HinterlandRingsPerTurn > 8 || HinterlandMaxRadius < VisionRadius || HinterlandMaxRadius > 8 || ExploredMemoryTurns < 1) throw new ArgumentException("Invalid hinterland or explored-memory configuration.");
-            if (new[] { SecondaryTechnologyThreshold, TradePracticePerValue, SettledHerdGrowthPenalty }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || SecondaryTechnologyThreshold <= 0 || SettledHerdGrowthPenalty > 1)
-                throw new ArgumentException("Invalid secondary technology, trade practice or settling configuration.");
+            if (new[] { SecondaryTechnologyThreshold, TradePracticePerValue, HusbandryProximityPracticePerYear,
+                    HusbandryProximityReferenceAnimals, HusbandryDomesticExposureMultiplier, TamingSpeciesPracticeThreshold,
+                    SettledHerdGrowthPenalty }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0)
+                || SecondaryTechnologyThreshold <= 0 || HusbandryProximityReferenceAnimals <= 0
+                || HusbandryDomesticExposureMultiplier < 1 || TamingSpeciesPracticeThreshold <= 0 || SettledHerdGrowthPenalty > 1)
+                throw new ArgumentException("Invalid secondary technology, knowledge diffusion, taming or settling configuration.");
             if (!Enum.IsDefined(typeof(FissionPressureRule), FissionPressureRule)
                 || new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief, FissionDaughterBuilderShare,
                     FissionLegacyQoL, FissionLegacyQoLWidth, FissionLegacyThreshold, FissionLegacySearchPush, FissionExitThreshold, FissionExitSearchFraction }.Any(v => double.IsNaN(v) || double.IsInfinity(v))
@@ -516,6 +529,9 @@ namespace Anthropocene.Simulation
         // Compatibility accessors for one-camp callers; society owns and serializes the data.
         public double[] Experience { get => People.Experience; set => People.Experience = value; }
         public List<SpeciesPractice> SpeciesExperience { get => People.SpeciesExperience; set => People.SpeciesExperience = value; }
+        // Transient planning preview only: dispatched residents still need food
+        // before their new detachment exists in WorldState.Hunters.
+        [NonSerialized] internal int PendingDispatchConsumers;
         public double GrowthRemainder, DeathRemainder, StepFoodIncome;
         public Technology Technology { get => People.Technology; set => People.Technology = value; }
         public int TransitionTurn { get => People.TransitionTurn; set => People.TransitionTurn = value; }

@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="../../Assets/_Anthropocene/Simulation/*.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="DispatchCohortChecks.cs" />
     <Compile Include="ParallelChecks.cs" />
     <Compile Include="Milestone2Checks.cs" />
     <Compile Include="Milestone3Checks.cs" />
@@ -61,6 +62,8 @@
   <Compile Include="HorizonEcologyChecks.cs" />
   <Compile Include="HorizonExecutionChecks.cs" />
   <Compile Include="HusbandryChecks.cs" />
+  <Compile Include="HusbandryDiffusionChecks.cs" />
+  <Compile Include="MixedSettlementAcquisitionChecks.cs" />
   <Compile Include="HousingMaterialChecks.cs" />
   <Compile Include="HousingMaterialRecipeChecks.cs" />
     <Compile Include="WoodEcologyChecks.cs" />

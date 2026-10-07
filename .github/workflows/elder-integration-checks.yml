@@ -1,0 +1,43 @@
+name: Elder integration checks
+on:
+  pull_request:
+    branches: [feature/elder-rl-scaffold]
+  push:
+    branches: [integration/mixed-subsistence-validated, feature/elder-rl-scaffold]
+permissions:
+  contents: read
+concurrency:
+  group: elder-integration-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  fixed-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Check authoritative documentation and reporting syntax
+        run: |
+          python3 Tools/Docs/Check-CurrentContract.py
+          python3 -m py_compile Tools/PerformanceAudit/Summarize-MixedSubsistence.py
+      - name: Run registered fixed simulation regressions
+        shell: bash
+        run: |
+          ONLY=$(python3 - <<'PY'
+          import re
+          names=re.findall(r'new ParallelChecks\.Entry \{ Name = "([^"]+)"', open('Tools/Headless/Program.cs').read())
+          assert len(names)>60
+          print(','.join(names))
+          PY
+          )
+          set -o pipefail
+          mkdir -p TestResults/ElderIntegration
+          bash Tools/Test-Headless.sh --only="$ONLY" --jobs=3 --check-timings 2>&1 | tee TestResults/ElderIntegration/checks.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: elder-integration-checks
+          path: TestResults/ElderIntegration
+          retention-days: 14

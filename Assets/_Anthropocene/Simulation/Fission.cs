@@ -706,7 +706,7 @@ namespace Anthropocene.Simulation
             var society = new Society
             {
                 Id = societyId, Player = w.AllocatePlayer(), PolicySeed = (int)Numbers.Hash(w.Seed, PolicySeedStream, parent.Id, w.Turn),
-                Experience = (double[])ps.Experience.Clone(), NeolithicExperience = ps.NeolithicExperience == null ? new double[3] : (double[])ps.NeolithicExperience.Clone(), SpeciesExperience = ps.SpeciesExperience.Select(p => new SpeciesPractice { Species = p.Species, Experience = p.Experience }).ToList(),
+                Experience = (double[])ps.Experience.Clone(), NeolithicExperience = ps.NeolithicExperience == null ? new double[3] : (double[])ps.NeolithicExperience.Clone(), TechnologyExposure = ps.TechnologyExposure == null ? new double[3] : (double[])ps.TechnologyExposure.Clone(), SpeciesExperience = ps.SpeciesExperience.Select(p => new SpeciesPractice { Species = p.Species, Experience = p.Experience }).ToList(),
                 Technology = ps.Technology, Technologies = (bool[])ps.Technologies.Clone(), TransitionTurn = ps.TransitionTurn, SecondaryDomain = ps.SecondaryDomain, ForcedTransition = ps.ForcedTransition,
                 Mandate = new Mandate { Risk = ps.Mandate.Risk, Mobility = ps.Mandate.Mobility, Exploration = ps.Mandate.Exploration, Reserve = ps.Mandate.Reserve, Hunting = ps.Mandate.Hunting, Gathering = ps.Mandate.Gathering, Fishing = ps.Mandate.Fishing, Persistence = ps.Mandate.Persistence },
                 Policy = new PolicyState { HuntingInclination = ps.Policy.HuntingInclination, GatheringInclination = ps.Policy.GatheringInclination, FishingInclination = ps.Policy.FishingInclination },
