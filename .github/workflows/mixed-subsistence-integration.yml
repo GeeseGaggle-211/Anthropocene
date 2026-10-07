@@ -3,7 +3,7 @@ name: Mixed subsistence integration checks
 on:
   push:
     branches:
-      - feature/mixed-subsistence-diffusion-v4
+      - 'feature/mixed-subsistence-diffusion-*'
   workflow_dispatch:
 
 jobs:
