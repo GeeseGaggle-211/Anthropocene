@@ -80,6 +80,7 @@ internal static class TradeChecks
         var c = new SimulationConfig();
         Check(c.TradeFoodEnabled && !c.TradeFoodSafeOnly, "food is in the tradeable set by default with welfare-valued growth food");
         Check(c.TradeExportLabourShare == 0, "trade is stock-only by default (nothing made to order)");
+        Check(Math.Abs(c.TradePracticePerValue - .1) < 1e-12, "bilateral trade knowledge is active at the calibrated default");
         Check(c.TradeEnabled && c.TradeRange == 6 && c.TradeRequisitionsPerCamp == 3 && c.TradeMargin == .10 && c.TradeDistanceCostPerHex == .01, "trade is on by default (plan of record) with the specified levers");
         foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.TradeRange = 0, x => x.TradeRange = 21, x => x.TradeRequisitionsPerCamp = 0, x => x.TradeRequisitionsPerCamp = 11,
             x => x.TradeMargin = -.1, x => x.TradeMargin = double.NaN, x => x.TradeDistanceCostPerHex = -.01, x => x.TradeDistanceCostPerHex = 1.5 })
@@ -100,7 +101,7 @@ internal static class TradeChecks
             old.Validate(); checks++;
         }
         string json = File.ReadAllText(FindConfig());
-        foreach (var pair in new[] { ("TradeEnabled", "true"), ("TradeRange", "6"), ("TradeRequisitionsPerCamp", "3"), ("TradeMargin", "0.1"), ("TradeDistanceCostPerHex", "0.01"), ("TradeFoodEnabled", "true"), ("TradeFoodSafeOnly", "false"), ("TradeExportLabourShare", "0"), ("TradeListLength", "3") })
+        foreach (var pair in new[] { ("TradeEnabled", "true"), ("TradeRange", "6"), ("TradeRequisitionsPerCamp", "3"), ("TradeMargin", "0.1"), ("TradeDistanceCostPerHex", "0.01"), ("TradeFoodEnabled", "true"), ("TradeFoodSafeOnly", "false"), ("TradeExportLabourShare", "0"), ("TradeListLength", "3"), ("TradePracticePerValue", "0.1") })
         {
             var m = Regex.Match(json, "\"" + pair.Item1 + "\":\\s*([0-9.a-z]+)");
             Check(m.Success && m.Groups[1].Value == pair.Item2, "OpeningConfig.json carries " + pair.Item1);
@@ -258,6 +259,11 @@ internal static class TradeChecks
     {
         // Settlement moves exactly the agreed quantities, conserves each good and records canonically.
         var w = Complementary(); var plan = Trade.Plan(w); var record = new TurnRecord { Turn = w.Turn };
+        var trader1 = CampOf(w, 1); var trader2 = CampOf(w, 2);
+        trader1.Technologies[(int)Technology.AnimalHusbandry] = true;
+        trader2.Technologies[(int)Technology.Watercraft] = true;
+        double huntingPractice1 = trader1.Experience[(int)Domain.Hunting];
+        double fishingPractice2 = trader2.Experience[(int)Domain.Fishing];
         double cloth = w.Camps.Sum(c => c.Inventory.Cloth), material = w.Camps.Sum(c => c.Inventory.HousingMaterial);
         double Flow(Camp c, TradeGood g) => plan.Agreements.Sum(a => (a.Requester == c.Id && a.Want == g ? a.WantQuantity : 0) - (a.Responder == c.Id && a.Want == g ? a.WantQuantity : 0) + (a.Responder == c.Id && a.Give == g ? a.GiveQuantity : 0) - (a.Requester == c.Id && a.Give == g ? a.GiveQuantity : 0));
         var expected = w.Camps.ToDictionary(c => c.Id, c => (c.Inventory.Cloth + Flow(c, TradeGood.Cloth), c.Inventory.HousingMaterial + Flow(c, TradeGood.HousingMaterial)));
@@ -266,6 +272,10 @@ internal static class TradeChecks
         foreach (var c in w.Camps) { Near(c.Inventory.Cloth, expected[c.Id].Item1, "camp " + c.Id + " receives its planned cloth"); Near(c.Inventory.HousingMaterial, expected[c.Id].Item2, "camp " + c.Id + " receives its planned material"); }
         Check(record.Trades.Count == plan.Agreements.Count && record.Trades.All(t => t.Delivered == 1) && record.TradeActivity == plan.Summary, "every agreement is recorded as fully delivered");
         Check(record.Trades.Select((t, i) => t.Requester == plan.Agreements[i].Requester && t.Responder == plan.Agreements[i].Responder).All(x => x), "records follow agreement order");
+        Check(trader1.TechnologyExposure[(int)Domain.Fishing] > 0 && trader2.TechnologyExposure[(int)Domain.Hunting] > 0,
+            "a settled barter carries counterparty technology knowledge in both directions");
+        Check(trader1.Experience[(int)Domain.Hunting] == huntingPractice1 && trader2.Experience[(int)Domain.Fishing] == fishingPractice2,
+            "bilateral trade knowledge does not alter hunting or fishing proficiency practice");
         // Each party now remembers the other as a trade contact at its current tile.
         foreach (var t in record.Trades)
         {
