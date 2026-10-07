@@ -1023,17 +1023,20 @@ internal static class FissionChecks
         Check(legacyReport != null && legacyReport.Trigger == FissionTrigger.LegacyQoL && legacyMetrics.FissionSearches == 1,
             "legacy Q=0.70 pressure can found through the modern destination/veto path");
 
-        // Radius-4 is part of the modern path: starve the distance-3 ring, leave distance-4 rich.
+        // Radius-4 is part of the modern path. Expose one known distance-3 site and one
+        // non-adjacent distance-4 site, then make the distance-3 footprint barren.
         var far = Rich(FissionPressureRule.LegacyQoL); var fc = far.Camps[0]; fc.QoL = .50;
-        foreach (int tile in far.Map.Radius(fc.Tile, 3))
+        int ring3 = far.Map.Radius(fc.Tile, 3).Where(t => far.Map.Distance(fc.Tile, t) == 3).OrderBy(t => t).First();
+        int ring4 = far.Map.Radius(fc.Tile, 4).Where(t => far.Map.Distance(fc.Tile, t) == 4 && far.Map.Distance(ring3, t) > 1).OrderBy(t => t).First();
+        fc.People.Memory = new ContactMemory(far.Config.Width); fc.People.Memory.Explored.Add(ring3); fc.People.Memory.Explored.Add(ring4);
+        foreach (int tile in far.Map.Radius(ring3, 1))
         {
-            if (far.Map.Distance(fc.Tile, tile) != 3) continue;
             var t = far.Tiles[tile]; t.Food = 0; t.PotentialFood = 0;
             for (int season = 0; season < 4; season++) { t.Seasons[season].MaxFood = 0; t.Seasons[season].MaxPotentialFood = 0; }
         }
         var farReport = Pass(far, out var farMetrics);
-        Check(farReport != null && far.Map.Distance(fc.Tile, farReport.Tile) == 4 && farMetrics.FissionCandidatesScored > 18,
-            "legacy pressure uses the modern radius-4 bounded search when the distance-3 ring is unviable");
+        Check(farReport != null && farReport.Tile == ring4 && far.Map.Distance(fc.Tile, farReport.Tile) == 4 && farMetrics.FissionCandidatesScored == 2,
+            "legacy pressure uses the modern radius-4 bounded search when its known distance-3 alternative is unviable");
 
         // Current production rule remains the exact default and a high threshold can silence crowding/distress.
         var current = Rich(FissionPressureRule.Current); Pressure(current, 5);
