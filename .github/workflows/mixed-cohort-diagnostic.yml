@@ -1,0 +1,72 @@
+name: Mixed cohort boundary diagnostic
+on:
+  push:
+    branches: [feature/mixed-subsistence-diffusion-v5]
+    paths: ['.github/workflows/mixed-cohort-diagnostic.yml']
+permissions:
+  contents: read
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Instrument only the diagnostic working copy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('Assets/_Anthropocene/Simulation/TurnResolver.cs'); s=p.read_text()
+          a='            int peopleBefore = w.Camps.Sum(w.LinkedPopulation);'
+          assert s.count(a)==1
+          s=s.replace(a,a+'''
+                      void CohortTrace(string phase)
+                      {
+                          foreach (var c in w.Camps.Where(c => c.Id == 2336 || c.Workforce.Assigned > c.Population))
+                              Console.WriteLine("COHORT_TRACE turn=" + w.Turn + " phase=" + phase + " camp=" + c.Id + " pop=" + c.Population + " assigned=" + c.Workforce.Assigned + " roles=" + string.Join(",", c.Workforce.Assignments.Select(a => a.Role + ":" + a.Population)) + " orders=" + string.Join(";", prepared.Orders.Where(o => o.Entity == c.Id).Select(o => o.ToString())));
+                      }
+                      CohortTrace("prepared");
+          ''')
+          for a,label in [
+              ('            // Goods storage (Docs/PlannerTradeStorageDesign.md', 'economy_applied'),
+              ('            using (PhaseProfile.Scope("Movement"))', 'dispatch_completed'),
+              ('            Trade.Finish(w, trade, record);', 'ecology_completed'),
+              ('            using (PhaseProfile.Scope("Fission"))', 'immigration_completed'),
+              ('            foreach (var change in touched.Values.OrderBy(t => t.Tile))', 'fission_completed')]:
+              assert s.count(a)==1, a
+              s=s.replace(a,'            CohortTrace("'+label+'");\n'+a)
+          p.write_text(s)
+          PY
+      - name: Replay the failing seed
+        shell: bash
+        run: |
+          mkdir -p TestResults/Diagnostic
+          set +e
+          dotnet run -c Release --project Tools/PerformanceAudit/Anthropocene.PerformanceAudit.csproj -- --players=80 --seed=11 --shape=Continents --production-config=1 --turns=12 --post-opening-turns=1 --workers=4 --partition-size=64 --warmup=0 --details=1 --metrics=1 --fingerprints=0 --output=TestResults/Diagnostic/world.json > TestResults/Diagnostic/trace.log 2>&1
+          STATUS=$?
+          set -e
+          echo "simulation_exit_code=$STATUS"
+          grep -E 'COHORT_TRACE|Invalid people|Unhandled|error CS|AUDIT turn=' TestResults/Diagnostic/trace.log || true
+      - name: Bundle toolchain for local follow-up and clean source
+        run: |
+          git restore Assets/_Anthropocene/Simulation/TurnResolver.cs
+          git rev-parse HEAD > TestResults/Diagnostic/source-sha.txt
+          tar -czf TestResults/Diagnostic/source.tgz AGENTS.md Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources Tools Docs
+          python3 - <<'PY'
+          import glob,os,tarfile
+          root='/usr/share/dotnet'
+          paths=['dotnet']
+          for pattern in ['host/fxr/*','shared/Microsoft.NETCore.App/8.*','sdk/8.*/Roslyn/bincore','packs/Microsoft.NETCore.App.Ref/8.*']:
+              paths += [os.path.relpath(p,root) for p in glob.glob(root+'/'+pattern)]
+          assert any(p.startswith('sdk/') for p in paths)
+          with tarfile.open('TestResults/Diagnostic/compiler-runtime.tgz','w:gz') as t:
+              for p in paths: t.add(root+'/'+p,arcname=p)
+          print('Toolchain components:',paths)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mixed-exact-cohort-diagnostic
+          path: TestResults/Diagnostic/
+          retention-days: 3
