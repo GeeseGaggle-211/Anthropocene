@@ -48,7 +48,7 @@ P_exit = (1 - Q_home) * max(0, Q_daughter_expected - Q_home)
 
 The daughter comparison is **expectation-neutral**: `Q_daughter_expected` uses the parent's expectation on both sides, so moving cannot create pressure merely by resetting material expectations. The actual post-move daughter QoL remains a separate viability veto.
 
-Provisional experiment defaults:
+Initial sweep defaults (0.05 was subsequently promoted to the working baseline):
 
 - `FissionExitThreshold = 0.05`;
 - `FissionExitSearchFraction = 0.8`.
@@ -59,7 +59,7 @@ These are sweep parameters, not proposed gameplay calibration.
 
 `Tools/Headless/FissionChecks.cs` now asserts that:
 
-1. production defaults remain `Current`;
+1. the production baseline is now `CurrentPlusExitOpportunity` with `FissionExitThreshold = 0.05`; `Current` remains the pre-exit comparator;
 2. experimental constants serialize/validate without changing OpeningConfig;
 3. the legacy trigger has zero pressure at Q=0.75 and can split below it;
 4. `LegacyQoL` uses the current radius-4 search when the distance-3 ring is unviable;
