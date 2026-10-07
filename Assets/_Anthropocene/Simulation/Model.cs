@@ -128,7 +128,7 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double FissionDaughterBuilderShare = .05;
         // Experimental comparison of social-pressure laws against one shared modern destination/viability implementation.
         // Current is production behavior; the other modes exist only to run controlled fission/RL-environment experiments.
-        [System.Runtime.Serialization.OptionalField] public FissionPressureRule FissionPressureRule = FissionPressureRule.Current;
+        [System.Runtime.Serialization.OptionalField] public FissionPressureRule FissionPressureRule = FissionPressureRule.CurrentPlusExitOpportunity;
         // Exact WP10a pressure constants, applied only when FissionPressureRule == LegacyQoL.
         [System.Runtime.Serialization.OptionalField] public double FissionLegacyQoL = .75, FissionLegacyQoLWidth = .10, FissionLegacyThreshold = .20, FissionLegacySearchPush = .20;
         // CurrentPlusExitOpportunity adds (1-Q_home) * max(0, Q_daughter-Q_home) as an independent escape channel.
