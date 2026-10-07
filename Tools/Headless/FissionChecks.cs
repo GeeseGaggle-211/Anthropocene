@@ -23,7 +23,7 @@ internal static class FissionChecks
     private static WorldState World(bool neolithic, params int[][] sites) => World(24, 16, neolithic, sites);
     private static WorldState World(int width, int height, bool neolithic, params int[][] sites)
     {
-        var cfg = SimulationConfig.Small(1); cfg.FissionEnabled = true; cfg.FissionHousingRelief = 1; /* mechanism fixtures exercise the full relief; the shipped default is 0 */ cfg.FissionDaughterMargin = 1; cfg.FissionRadius = 3; /* fixtures are written for the distance-3 ring; the shipped default is 4 */ cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;
+        var cfg = SimulationConfig.Small(1); cfg.FissionEnabled = true; cfg.FissionPressureRule = FissionPressureRule.Current; /* legacy mechanism fixtures isolate the existing crowding/distress path */ cfg.FissionHousingRelief = 1; /* mechanism fixtures exercise the full relief; the shipped default is 0 */ cfg.FissionDaughterMargin = 1; cfg.FissionRadius = 3; /* fixtures are written for the distance-3 ring; the shipped default is 4 */ cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;
         var w = new WorldState { Seed = 101, Config = cfg, Generation = new GenerationReport(), Tiles = new Tile[cfg.Width * cfg.Height] };
         for (int i = 0; i < w.Tiles.Length; i++)
         {
