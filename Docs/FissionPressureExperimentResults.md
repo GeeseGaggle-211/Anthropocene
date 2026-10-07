@@ -15,7 +15,7 @@ Compare three social-pressure laws while holding the modern destination machiner
 3. `CurrentPlusExitOpportunity`: Current plus
    `(1 - Q_home) * max(0, Q_daughter_expected - Q_home)`, with the daughter comparison made at the parent's expectation.
 
-The production default remains `Current`. None of these results changes the plan of record.
+At the time of this first matched run the production default remained `Current`; the subsequent threshold sweeps below promoted `CurrentPlusExitOpportunity @ 0.05` to the working baseline.
 
 ## Focused mechanism result
 
@@ -63,7 +63,7 @@ Trigger counts over the full runs:
 
 The exit channel changes later trajectories; its 388 exits do not simply add on top of the same 799 current fissions.
 
-### What the provisional exit channel is actually doing
+### What the exit channel is actually doing
 
 Post-opening ExitOpportunity events: 381.
 
@@ -73,7 +73,7 @@ Post-opening ExitOpportunity events: 381.
 - Median reported committed QoL after the turn was about 0.851. This is **not** the decision's `Q_home`: fission evaluates its pure QoL formula at the post-demography headcount, while the stored camp QoL is the already committed prior-cohort outcome. Do not use that stored value to calibrate the exit threshold.
 - Food, water and clothing were fully met at the median ExitOpportunity event. The new channel is therefore mostly acting as an early decentralization/escape pressure through the welfare advantage of a smaller daughter, not as a second starvation trigger.
 
-This means the first `0.05` exit threshold is a **research setting**, not a recommended production calibration. It has not yet demonstrated the desired future case of an established fixed village under taxes, requisitions or deliberate service suppression.
+This first result did not yet justify production calibration by itself; the subsequent coarse and fine sweeps below established `0.05` as the working baseline. It still has not demonstrated the future case of an established fixed village under taxes, requisitions or deliberate service suppression.
 
 ## LegacyQoL result
 
@@ -158,7 +158,7 @@ The P25 improves, but the median and P75 fall by about 9.8%. This is a real stru
 
 ### Interpretation
 
-For the stated non-regression gate, the provisional exit rule passes at the **world/Husbandry-track level**: no P25, median or P75 regression in total population, weighted QoL, Husbandry population, Husbandry QoL or total Husbandry animals.
+For the stated non-regression gate, the exit rule passes at the **world/Husbandry-track level**: no P25, median or P75 regression in total population, weighted QoL, Husbandry population, Husbandry QoL or total Husbandry animals.
 
 It does **not** pass a hypothetical requirement that each individual Husbandry settlement or pastoral household maintain at least the same herd size/intensity. The experiment currently trades some local herd concentration for more independent settlements, higher local QoL and greater total Husbandry carrying capacity.
 
