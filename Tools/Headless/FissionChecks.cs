@@ -1038,6 +1038,21 @@ internal static class FissionChecks
         Check(farReport != null && farReport.Tile == ring4 && far.Map.Distance(fc.Tile, farReport.Tile) == 4 && farMetrics.FissionCandidatesScored == 2,
             "legacy pressure uses the modern radius-4 bounded search when its known distance-3 alternative is unviable");
 
+        // The critical historical pathology: once a legal 12-person daughter exists, low stored QoL alone
+        // can still split a 40-person parent even though the destination and daughter checks are modern.
+        var legacyMinimum = Rich(FissionPressureRule.LegacyQoL); var lmc = legacyMinimum.Camps[0];
+        lmc.Population = 40; lmc.QoL = .50;
+        var legacyMinimumReport = Pass(legacyMinimum, out _);
+        Check(legacyMinimumReport != null && legacyMinimumReport.Daughter == 12 && legacyMinimumReport.Trigger == FissionTrigger.LegacyQoL,
+            "the historical low-QoL trigger still permits minimum-size 40-to-28/12 fragmentation under modern site constraints");
+
+        // The generalized exit channel should not inherit that minimum-size pathology merely because home QoL is low:
+        // at small N the daughter has little structural advantage, so the opportunity product stays below threshold.
+        var exitMinimum = Rich(FissionPressureRule.CurrentPlusExitOpportunity); var emc = exitMinimum.Camps[0]; Pressure(exitMinimum, 5);
+        emc.Population = 40; emc.ClothPerCapita = 0; emc.Inventory.LightHousingUnits = 0;
+        Check(Pass(exitMinimum, out var exitMinimumMetrics) == null && exitMinimumMetrics.FissionCommits == 0,
+            "exit opportunity does not automatically fragment the minimum legal parent when the daughter offers only a marginal welfare gain");
+
         // Current production rule remains the exact default and a high threshold can silence crowding/distress.
         var current = Rich(FissionPressureRule.Current); Pressure(current, 5);
         Check(Pass(current, out var currentMetrics) == null && currentMetrics.FissionSearches == 0,
