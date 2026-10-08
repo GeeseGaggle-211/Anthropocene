@@ -225,6 +225,31 @@ in `ConfigurationUnits.md` and the save-format contract.
 | `FoodRiskWeight` | 0.1 | 0.1 | fraction of food-security value (rho) | risk placeholder (reserve-refill food in the expansion valuation; Pots in WP4a); Value rule only, calibration target once disasters exist |
 <!-- CURRENT_CONFIG_TABLE:END -->
 
+## Native Elder policy boundary (issue #43)
+
+The `feature/elder-rl-scaffold` lineage exposes a framework-neutral,
+persistent `Reset`/`Step` boundary over real production turns. The Elder may
+request retained-field operation, retained-herd fraction, a shared Development
+budget, its field/herd split, and one masked movement candidate. The native
+compiler and resolver retain authority over legality, placement, integer labour,
+resources, recipes, trade, fishing, ecology, immigration, and fission. The
+ordinary heuristic path remains the Option A comparator; causal and parity
+checks prevent the learned seam from becoming a second economy.
+
+Observation schema v1 is a checked-in 512-float layout built from own state and
+the permission-filtered `AgentObservation`. Raw identities and live foreign
+stocks are excluded from policy features. Reset and replay bind simulator,
+configuration, build, observation/action/environment schemas, the authoritative
+initial snapshot, background orders, accepted actions, interventions, events,
+and state fingerprints. The scalar is normalized fixed-cohort local welfare;
+the corresponding raw `prior population * realized QoL * elapsed years` terms
+and non-weighted diagnostics are retained for audit.
+
+This boundary contains no PPO, Gymnasium, PyTorch, trainer, or learned weights.
+The commands, schema table, chronology, replay contract, benchmark, and adapter
+handoff are documented in
+[`Tools/ElderRL/README.md`](../Tools/ElderRL/README.md).
+
 ## Consistency check
 
 Run `python Tools/Docs/Check-CurrentContract.py`. It checks the generated values

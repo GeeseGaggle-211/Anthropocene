@@ -22,6 +22,15 @@ jobs:
         run: |
           python3 Tools/Docs/Check-CurrentContract.py
           python3 -m py_compile Tools/PerformanceAudit/Summarize-MixedSubsistence.py
+      - name: Build and smoke-test the native Elder boundary
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p TestResults/ElderIntegration
+          dotnet build Tools/ElderRL/Anthropocene.ElderRL.csproj -c Release 2>&1 | tee TestResults/ElderIntegration/elder-build.log
+          for command in schema reset-smoke step-smoke replay-smoke; do
+            dotnet run --project Tools/ElderRL/Anthropocene.ElderRL.csproj -c Release --no-build -- "$command" 2>&1 | tee "TestResults/ElderIntegration/elder-$command.log"
+          done
       - name: Run registered fixed simulation regressions
         shell: bash
         run: |

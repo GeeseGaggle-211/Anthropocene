@@ -316,6 +316,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "GoodsStorageChecks", Cost = 2, Run = () => GoodsStorageChecks.Run() },
                 new ParallelChecks.Entry { Name = "DemandControlChecks", Cost = 2, Run = () => DemandControlChecks.Run() },
                 new ParallelChecks.Entry { Name = "EconomicSettlementChecks", Cost = 2, Run = () => EconomicSettlementChecks.Run() },
+                new ParallelChecks.Entry { Name = "ElderRLChecks", Cost = 3, Run = () => ElderRLChecks.Run() },
                 new ParallelChecks.Entry { Name = "ClothingFeedstockChecks", Run = () => ClothingFeedstockChecks.Run() },
                 new ParallelChecks.Entry { Name = "NeolithicChecks", Run = () => NeolithicChecks.Run() },
                 new ParallelChecks.Entry { Name = "ToolConsumptionChecks", Run = () => ToolConsumptionChecks.Run() },

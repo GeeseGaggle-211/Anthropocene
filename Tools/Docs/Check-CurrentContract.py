@@ -130,6 +130,7 @@ TESTS = [
     ("Tools/Headless/ImmigrationChecks.cs", "ImmigrationChecks.Run"),
     ("Tools/Headless/SettlingChecks.cs", "SettlingChecks.Run"),
     ("Tools/Headless/SharedAllocationChecks.cs", "SharedAllocationChecks.Run"),
+    ("Tools/Headless/ElderRLChecks.cs", "ElderRLChecks.Run"),
 ]
 API_ONLY_FIELDS = {"CultivationRegenFlux"}
 

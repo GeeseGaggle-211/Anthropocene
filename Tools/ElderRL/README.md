@@ -1,108 +1,124 @@
-# Elder RL scaffold
+# Native Elder RL boundary
 
 Branch: `feature/elder-rl-scaffold`
 
-Base: `fix/economic-pastoral-emergence@dddac82c8d3a98ab6f5f39dffabbff3014b92b5c`
+Issue [#43](https://github.com/GeeseGaggle-211/Anthropocene/issues/43)
+adds the model-neutral boundary needed to attach a later PPO/Gymnasium adapter.
+It deliberately contains no trainer, Python bridge, ML runtime, or learned
+weights.
 
-This directory is the first model-neutral scaffolding for the Village Elder learned-supervisor experiment. It does **not** train a model and it does **not** change production economic behavior yet.
+## Authority boundary
 
-## Locked boundary
+The policy chooses five bounded strategic controls:
 
-The learned Elder chooses only strategic targets. The deterministic simulation remains authoritative for:
+1. operation of retained fields;
+2. retention of the existing managed herd;
+3. a common Development labour budget;
+4. the field/herd split of that budget; and
+5. one categorical movement candidate, including explicit `stay`.
 
-- legal actions and masks;
-- settlement placement/conflict resolution;
-- workforce compilation and integer staffing;
-- recipes, materials, tools and production ceilings;
-- trade matching and settlement;
-- immigration and fission mechanics;
-- ecology, herd grazing/water, fishing and physical resolution;
-- save/fingerprint/replay state.
+These are targets, not worker counts or recipes. `NativeElderDirectiveCompiler`
+maps them through the production DemandControl planner. The simulation retains
+authority over legality, placement conflicts, integer staffing, inputs, tools,
+recipes, trade, fishing access, ecology, immigration, fission, and turn
+resolution. A rejected or physically repaired target is reported as an
+`ElderIntervention`; an invalid categorical action never silently clamps to a
+different destination.
 
-The current Option A supervisor remains a comparator. It must not be used as an unquestioned profitability mask when the learned policy is active.
+The turn sequence is the ordinary WEGO sequence:
 
-## Schema v1 actions
+```text
+directive -> ordinary movement order -> placement resolution
+          -> committed-state trade -> destination-aware fishing access
+          -> compile the same directive at the accepted tile
+          -> production and needs -> immigration/fission
+          -> next observation and reward
+```
 
-`ElderDirective` currently exposes:
+## Versioned contracts
 
-1. retained existing-field operation ratio;
-2. retained existing-herd ratio;
-3. discretionary Development budget fraction;
-4. field share of that Development budget (the v1 remainder is herd development);
-5. a masked local movement candidate (`-1` means stay).
+`ElderResetRequest` requires exactly one authoritative snapshot or registered
+fixture. It also carries the seed/random-stream configuration, controlled settlement,
+background policy, episode horizon, movement/shock gates, and expected
+simulation/configuration/schema versions. Reset returns the first observation,
+all schema versions, build/configuration hashes, initial state fingerprint, and
+controlled/scenario metadata.
 
-These values are not worker counts.
+Native v1 accepts random stream `0` only: keyed simulation randomness belongs
+to the authoritative snapshot's world seed. Any other stream is rejected
+instead of being accepted as an inert label. `CaptureSnapshot` captures world
+state for a new Reset; it is not an in-episode checkpoint and therefore starts
+a new episode horizon, reward normalizer, and previous-action history.
 
-## Observations
+Observation schema v1 has a checked-in 512-float layout:
 
-`ElderObservation` is semantic and versioned rather than a fixed ML tensor. It has named blocks for:
+| Block | Offset | Shape |
+| --- | ---: | ---: |
+| own settlement/core/history/capabilities | 0 | 128 |
+| local site candidates | 128 | 7 x 12 |
+| fishing candidates | 212 | 3 x 12 |
+| owned herd groups | 248 | 8 x 8 |
+| own commodity summaries | 312 | 11 x 8 |
+| remembered contacts | 400 | 8 x 8 |
+| presence/overflow and masks | 464 | 37 |
+| reserved migration space | 501 | 11 |
 
-- core welfare/demographics;
-- existing field capital/service;
-- herd/support state;
-- bounded local site candidates;
-- bounded fishing summaries;
-- capabilities/technology;
-- commodities;
-- economically relevant contacts;
-- future obligations (taxes, tribute, requisitions, etc.);
-- optional v2 shock state;
-- legal action masks.
+The registry records source, units, missing-value behavior, and permission for
+each range. Raw camp, society, player, herd, and tile identifiers are not policy
+features. Movement tile IDs exist only in the trusted metadata sidecar used by
+the compiler. Foreign live inventories and unseen terrain never enter the
+observation; contacts come from the existing permission-filtered game-knowledge
+view. Every bounded collection reports presence and overflow.
 
-A Python/framework adapter may flatten schema v1 for a small MLP experiment. Later set/token encoders should reuse the same semantic records rather than require the C# simulation to adopt ML-library data structures.
+## Reward and replay
 
-## Fission environment baseline
+The invariant welfare flow is:
 
-The RL branch uses `CurrentPlusExitOpportunity` as the default fission methodology:
+```text
+raw = prior_population * realized_local_QoL * elapsed_years
+scalar = raw / (initial_population * elapsed_years)
+```
 
-- `FissionExitThreshold = 0.05`
-- `FissionExitSearchFraction = 0.8`
-- existing crowding/stayer-gain remains active;
-- existing food/water distress remains active;
-- the relative exit channel uses `(1 - Q_home) * max(0, Q_daughter_expected - Q_home)`;
-- daughter opportunity is expectation-neutral for pressure, while actual post-move daughter QoL remains a viability veto.
+The raw terms and normalized scalar are both reported, alongside diagnostic
+food, water, service, continuity, ecology, settlement, capital, and catastrophic
+loss channels. Those diagnostics are not tunable reward weights. The prior
+cohort is fixed before resolution, so fission does not assign the parent a
+daughter settlement's later welfare.
 
-Fission is an environment/social process, not a direct Village Elder action in the first learned-supervisor experiment. A locally optimizing Elder therefore experiences population loss or redistribution when a subgroup has a credible better alternative. Newly founded daughters may initially run the conservative heuristic supervisor; later they can instantiate the same shared learned Elder policy with their own local observation and reward.
+Replay records the authoritative initial snapshot, build/configuration/schema
+identity, requested and accepted actions, interventions, frozen background
+orders, exogenous events, and every post-step state fingerprint. Verification
+replays recorded background orders and rejects build, configuration, schema,
+accepted-action, or state divergence. A seed by itself is not replay evidence.
 
-The rejected absolute low-QoL trigger remains available only as an experimental comparator. It reproduced minimum-size fragmentation under the modern radius/spacing/daughter-viability machinery and is not the baseline.
+## CLI checks
 
-## v1 / v2 curriculum
-
-**v1**: ordinary settlement strategy using the real simulation systems.
-
-**v2**: seeded, semi-random surprise shocks in the sandbox. Synthetic shocks may damage food/biomass, water, housing/capital, stored goods, herds or fishing support. They remain explicitly training-only until matching production disaster mechanics exist.
-
-Shock events must be replayable and may reveal only information the deployed Elder could legitimately know. v2 mixes shock and no-shock episodes.
-
-## Deliberately unresolved
-
-These are configuration/research choices, not hidden defaults:
-
-- reward scalarisation weights;
-- final disaster families/frequencies/severities;
-- exact episode horizon (initial suggested range 20-50 decisions; smoke default 32);
-- whether the first smoke test enables movement or holds location fixed;
-- PPO/framework choice and hybrid action adapter;
-- recurrent policy versus bounded explicit history;
-- privileged critic experiments.
-
-## Next implementation work
-
-1. Implement an `ElderObservationBuilder` using filtered game knowledge and the settlement envelopes already present on the base branch.
-2. Extract a production `IElderDirectiveCompiler` seam from `SettlementPortfolioSupervisor` / `DemandControl`.
-3. Prove every enabled action head actuates a real compiled quantity when physically feasible.
-4. Ensure the compiler reports physical/legal clipping instead of silently restoring the old heuristic optimum.
-5. Implement persistent `IElderEnvironment.Reset/Step` against the real headless turn pipeline.
-6. Add deterministic action-driven replay and state fingerprints.
-7. Benchmark 1/4/8/16/32 environment workers before choosing cloud CPU/GPU resources.
-8. Only then attach a Python Gymnasium/RL training adapter.
-
-## Smoke command
-
-The project currently exposes only the versioned schema, intentionally:
+With .NET 8 installed:
 
 ```bash
 dotnet run --project Tools/ElderRL/Anthropocene.ElderRL.csproj -c Release -- schema
+dotnet run --project Tools/ElderRL/Anthropocene.ElderRL.csproj -c Release -- reset-smoke
+dotnet run --project Tools/ElderRL/Anthropocene.ElderRL.csproj -c Release -- step-smoke
+dotnet run --project Tools/ElderRL/Anthropocene.ElderRL.csproj -c Release -- replay-smoke
+dotnet run --project Tools/ElderRL/Anthropocene.ElderRL.csproj -c Release -- benchmark --steps=2
 ```
 
-If a command attempts to step the environment before the native Reset/Step implementation exists, the tool fails rather than falling back to a mock economy.
+The benchmark reports 1/4/8/16/32-environment throughput. Fixed headless checks
+cover schema accounting, permission boundaries, all five causal action heads,
+explicit intervention reporting, Option A parity, scalar/parallel determinism,
+save continuation, movement, Reset/Step, and action-driven replay.
+
+## PPO handoff boundary
+
+The native side is ready for a separately reviewed adapter to:
+
+- encode `ElderObservationSchema` into a Gymnasium observation;
+- expose the four continuous controls and masked movement categorical;
+- batch persistent `Reset`/`Step` environments; and
+- train/evaluate PPO while retaining native replay artifacts.
+
+That adapter must preserve schema versions and action masks and must not move
+simulation authority into Python. Synthetic shocks remain an explicitly rejected
+v2 option until production disaster mechanics exist. The first native episode
+limit defaults to 32 real turns; training cadence and PPO hyperparameters remain
+adapter-level research choices.
