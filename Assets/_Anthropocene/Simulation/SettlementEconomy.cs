@@ -398,7 +398,8 @@ namespace Anthropocene.Simulation
 
         internal static RetainedSettlementPortfolio Select(WorldState world,
             Camp camp, CampProductionDemand demand, EconomicIntent settings,
-            SettlementSiteEvaluation site)
+            SettlementSiteEvaluation site, ElderDirective directive = null,
+            List<ElderIntervention> interventions = null)
         {
             var cfg = world.Config;
             double years = cfg.TurnDays / cfg.DaysPerYear;
@@ -502,6 +503,19 @@ namespace Anthropocene.Simulation
                 for (int workers = strategicLaborStep;
                     workers < maximumFarmers; workers += strategicLaborStep)
                     farmerBreaks.Add(workers);
+                if (directive != null)
+                {
+                    // The learned target is not quantized to Option A's coarse
+                    // strategic search grid. Add both adjacent integer staffing
+                    // points and choose the physically nearest operation.
+                    double requestedWorkers = WorkersFor(
+                        ElderRLContract.Unit(
+                            directive.RetainedFieldOperation));
+                    farmerBreaks.Add(Math.Min(maximumFarmers, Math.Max(0,
+                        (int)Math.Floor(requestedWorkers + Epsilon))));
+                    farmerBreaks.Add(Math.Min(maximumFarmers, Math.Max(0,
+                        (int)Math.Ceiling(requestedWorkers - Epsilon))));
+                }
             }
 
             var herderBreaks = new SortedSet<int> { 0, residents };
@@ -523,6 +537,9 @@ namespace Anthropocene.Simulation
                 AddRequirement(site.Herd.ZeroDisplacementCapacity);
                 AddRequirement(site.Herd.AbsoluteCapacity);
                 AddRequirement(result.HGrown);
+                if (directive != null)
+                    AddRequirement(profile.Animals * ElderRLContract.Unit(
+                        directive.RetainedHerdFraction));
             }
             int toolBreak = (int)Math.Min(residents,
                 Math.Max(0, camp.Inventory.HerdingTools) *
@@ -703,18 +720,14 @@ namespace Anthropocene.Simulation
                 ownedHerds.Select(h => h.Animals).ToArray(),
                 ownedHerds.Select(h => HerdLabour.CarcassFood(world, h)).ToArray());
             var herdOptions = new List<HerdOption>();
-            foreach (int proposed in herderBreaks.Where(h => h >= 0 &&
-                h <= residents).OrderBy(h => h))
+            HerdOption BuildHerdOption(double target)
             {
-                double target = profile.Exists ? Math.Min(profile.Animals,
-                    Math.Min(site.Herd.AbsoluteCapacity,
-                        HerdingTooling.AnimalsManagedBy(world, camp, years,
-                            proposed))) : 0;
+                target = profile.Exists ? Math.Max(0, Math.Min(
+                    profile.Animals, Math.Min(site.Herd.AbsoluteCapacity,
+                        target))) : 0;
                 int herders = profile.Exists
                     ? HerdingTooling.RequiredHerdersFor(world, camp, years,
                         target) : 0;
-                if (herdOptions.Count > 0 && herders == herdOptions.Last().Herders &&
-                    Math.Abs(target - herdOptions.Last().Target) <= Epsilon) continue;
                 double fulfillment = profile.Exists
                     ? HerdingTooling.Plan(world, camp, years, herders,
                         profile.Animals).Fulfillment : 1;
@@ -725,8 +738,10 @@ namespace Anthropocene.Simulation
                     target + Epsilon));
                 double slaughter = liquidation.Food(killed);
                 double displacement = Math.Max(0, target *
-                    profile.FoodPerAnimal * intervals - site.Survey.NonhumanFood);
-                double futureNet = target * managedFoodPerAnimal - displacement;
+                    profile.FoodPerAnimal * intervals -
+                    site.Survey.NonhumanFood);
+                double futureNet = target * managedFoodPerAnimal -
+                    displacement;
                 double residualFood = liquidation.Food((int)Math.Floor(target +
                     Epsilon));
                 var option = new HerdOption
@@ -739,7 +754,40 @@ namespace Anthropocene.Simulation
                     (futureNet / Math.Max(Epsilon, years) -
                      herders * annualGatherRate) +
                     terminalDiscount * residualFood;
+                return option;
+            }
+            foreach (int proposed in herderBreaks.Where(h => h >= 0 &&
+                h <= residents).OrderBy(h => h))
+            {
+                double target = profile.Exists ? Math.Min(profile.Animals,
+                    Math.Min(site.Herd.AbsoluteCapacity,
+                        HerdingTooling.AnimalsManagedBy(world, camp, years,
+                            proposed))) : 0;
+                var option = BuildHerdOption(target);
+                if (herdOptions.Count > 0 &&
+                    option.Herders == herdOptions.Last().Herders &&
+                    Math.Abs(target - herdOptions.Last().Target) <= Epsilon) continue;
                 herdOptions.Add(option);
+            }
+            if (directive != null && profile.Exists)
+            {
+                int requestedTarget = (int)Math.Round(Math.Min(
+                    site.Herd.AbsoluteCapacity, profile.Animals *
+                    ElderRLContract.Unit(directive.RetainedHerdFraction)),
+                    MidpointRounding.AwayFromZero);
+                requestedTarget = Math.Min(requestedTarget,
+                    (int)Math.Floor(HerdingTooling.AnimalsManagedBy(world,
+                        camp, years, residents) + Epsilon));
+                var exact = BuildHerdOption(requestedTarget);
+                if (!herdOptions.Any(option =>
+                        Math.Abs(option.Target - exact.Target) <= Epsilon))
+                    herdOptions.Add(exact);
+                herdOptions.Sort((left, right) =>
+                {
+                    int order = left.Target.CompareTo(right.Target);
+                    return order != 0 ? order :
+                        left.Herders.CompareTo(right.Herders);
+                });
             }
             if (herdOptions.Count == 0) herdOptions.Add(new HerdOption());
 
@@ -876,69 +924,141 @@ namespace Anthropocene.Simulation
                 result.AlternativesEvaluated++;
                 if (Better(candidate, best)) best = candidate;
             }
-            int marginalField = 0, marginalHerd = 0;
-            Consider(marginalField, marginalHerd);
-            while (marginalField + 1 < fields.Count ||
-                marginalHerd + 1 < herdOptions.Count)
+            if (directive == null)
             {
-                double fieldMarginal = marginalField + 1 < fields.Count
-                    ? (fields[marginalField + 1].MergeValue -
-                        fields[marginalField].MergeValue) /
-                      Math.Max(Epsilon,
-                          fields[marginalField + 1].Farmers -
-                          fields[marginalField].Farmers)
-                    : double.NegativeInfinity;
-                double herdMarginal = marginalHerd + 1 < herdOptions.Count
-                    ? (herdOptions[marginalHerd + 1].MergeValue -
-                        herdOptions[marginalHerd].MergeValue) /
-                      Math.Max(Epsilon,
-                          herdOptions[marginalHerd + 1].Herders -
-                          herdOptions[marginalHerd].Herders)
-                    : double.NegativeInfinity;
-                if (fieldMarginal >= herdMarginal) marginalField++;
-                else marginalHerd++;
+                int marginalField = 0, marginalHerd = 0;
                 Consider(marginalField, marginalHerd);
-            }
-            for (int index = 0; index < fields.Count; index++)
-                Consider(index, 0);
-            for (int index = 0; index < herdOptions.Count; index++)
-                Consider(0, index);
-            for (int total = strategicLaborStep; total < residents;
-                total += strategicLaborStep)
-            {
-                int channelBudget = total / 2;
-                int fieldIndex = fields.FindLastIndex(f =>
-                    f.Farmers <= channelBudget);
-                int herdIndex = herdOptions.FindLastIndex(h =>
-                    h.Herders <= channelBudget);
-                Consider(fieldIndex, herdIndex);
-            }
-            if (residents > 0)
-            {
-                int channelBudget = residents / 2;
-                Consider(fields.FindLastIndex(f => f.Farmers <= channelBudget),
-                    herdOptions.FindLastIndex(h =>
-                        h.Herders <= channelBudget));
-            }
-
-            // Always price the nearest persisted workforce mix.  This is an
-            // inertia point, not a technology identity, and keeps an exact tie
-            // from manufacturing a switch between productive channels.
-            Consider(fields.FindLastIndex(f =>
-                    f.Farmers <= Math.Max(0, assignedFarmers)),
-                herdOptions.FindLastIndex(h =>
-                    h.Herders <= Math.Max(0, assignedHerders)));
-
-            // Existing field capital whose own finite continuation is
-            // non-negative is a retained-capital portfolio, not a fresh
-            // Agriculture commitment.  Give that physical portfolio a bounded
-            // one-dimensional herd scan; distress can still beat it through the
-            // hard Survival comparison.  This is independent of technology
-            // order and does not form a field x herd search.
-            if (retainedField > 0)
-            {
+                while (marginalField + 1 < fields.Count ||
+                    marginalHerd + 1 < herdOptions.Count)
+                {
+                    double fieldMarginal = marginalField + 1 < fields.Count
+                        ? (fields[marginalField + 1].MergeValue -
+                            fields[marginalField].MergeValue) /
+                          Math.Max(Epsilon,
+                              fields[marginalField + 1].Farmers -
+                              fields[marginalField].Farmers)
+                        : double.NegativeInfinity;
+                    double herdMarginal = marginalHerd + 1 < herdOptions.Count
+                        ? (herdOptions[marginalHerd + 1].MergeValue -
+                            herdOptions[marginalHerd].MergeValue) /
+                          Math.Max(Epsilon,
+                              herdOptions[marginalHerd + 1].Herders -
+                              herdOptions[marginalHerd].Herders)
+                        : double.NegativeInfinity;
+                    if (fieldMarginal >= herdMarginal) marginalField++;
+                    else marginalHerd++;
+                    Consider(marginalField, marginalHerd);
+                }
+                for (int index = 0; index < fields.Count; index++)
+                    Consider(index, 0);
                 for (int index = 0; index < herdOptions.Count; index++)
-                    Consider(retainedField, index);
+                    Consider(0, index);
+                for (int total = strategicLaborStep; total < residents;
+                    total += strategicLaborStep)
+                {
+                    int channelBudget = total / 2;
+                    int fieldIndex = fields.FindLastIndex(f =>
+                        f.Farmers <= channelBudget);
+                    int herdIndex = herdOptions.FindLastIndex(h =>
+                        h.Herders <= channelBudget);
+                    Consider(fieldIndex, herdIndex);
+                }
+                if (residents > 0)
+                {
+                    int channelBudget = residents / 2;
+                    Consider(fields.FindLastIndex(f =>
+                            f.Farmers <= channelBudget),
+                        herdOptions.FindLastIndex(h =>
+                            h.Herders <= channelBudget));
+                }
+
+                // Always price the nearest persisted workforce mix. This is an
+                // inertia point, not a technology identity.
+                Consider(fields.FindLastIndex(f =>
+                        f.Farmers <= Math.Max(0, assignedFarmers)),
+                    herdOptions.FindLastIndex(h =>
+                        h.Herders <= Math.Max(0, assignedHerders)));
+
+                if (retainedField > 0)
+                    for (int index = 0; index < herdOptions.Count; index++)
+                        Consider(retainedField, index);
+            }
+            else
+            {
+                // The directive selects only from the physical option ladders.
+                // Profitability and Option A scores do not veto or replace it.
+                double requestedField = ElderRLContract.Unit(
+                    directive.RetainedFieldOperation);
+                double requestedAnimals = profile.Animals *
+                    ElderRLContract.Unit(directive.RetainedHerdFraction);
+                int fieldIndex = Enumerable.Range(0, fields.Count)
+                    .OrderBy(index => Math.Abs(fields[index].Operation -
+                        requestedField))
+                    .ThenBy(index => fields[index].Operation > requestedField
+                        ? 1 : 0).First();
+                int herdIndex = Enumerable.Range(0, herdOptions.Count)
+                    .OrderBy(index => Math.Abs(herdOptions[index].Target -
+                        requestedAnimals))
+                    .ThenBy(index => herdOptions[index].Target >
+                        requestedAnimals ? 1 : 0).First();
+
+                // If both independently legal targets exceed the common labor
+                // budget, walk down one ladder at a time. The smallest target
+                // loss per resident released wins; ties release herd labor
+                // first. Work remains O(F + H).
+                while (fields[fieldIndex].Farmers +
+                    herdOptions[herdIndex].Herders > residents)
+                {
+                    double fieldCost = double.PositiveInfinity;
+                    if (fieldIndex > 0)
+                    {
+                        int released = Math.Max(1, fields[fieldIndex].Farmers -
+                            fields[fieldIndex - 1].Farmers);
+                        fieldCost = (fields[fieldIndex].Operation -
+                            fields[fieldIndex - 1].Operation) / released;
+                    }
+                    double herdCost = double.PositiveInfinity;
+                    if (herdIndex > 0)
+                    {
+                        int released = Math.Max(1,
+                            herdOptions[herdIndex].Herders -
+                            herdOptions[herdIndex - 1].Herders);
+                        herdCost = profile.Animals > Epsilon
+                            ? (herdOptions[herdIndex].Target -
+                                herdOptions[herdIndex - 1].Target) /
+                              profile.Animals / released : 0;
+                    }
+                    if (double.IsPositiveInfinity(fieldCost) &&
+                        double.IsPositiveInfinity(herdCost)) break;
+                    if (herdCost <= fieldCost) herdIndex--;
+                    else fieldIndex--;
+                }
+                best = Evaluate(fields[fieldIndex], herdOptions[herdIndex]);
+                evaluated.Add((fieldIndex, herdIndex));
+                result.AlternativesEvaluated = 1;
+                double acceptedHerd = profile.Animals > Epsilon
+                    ? best.Herd.Target / profile.Animals : 0;
+                if (Math.Abs(best.Field.Operation - requestedField) > Epsilon)
+                    interventions?.Add(new ElderIntervention
+                    {
+                        Kind = ElderInterventionKind.PhysicalConstraint,
+                        Control = "retained-field-operation",
+                        Reason = "nearest feasible field-operation option",
+                        Requested = requestedField,
+                        Accepted = best.Field.Operation
+                    });
+                if (Math.Abs(acceptedHerd -
+                        ElderRLContract.Unit(directive.RetainedHerdFraction)) >
+                    Epsilon)
+                    interventions?.Add(new ElderIntervention
+                    {
+                        Kind = ElderInterventionKind.PhysicalConstraint,
+                        Control = "retained-herd-fraction",
+                        Reason = "whole-animal, ecology and shared-labor limit",
+                        Requested = ElderRLContract.Unit(
+                            directive.RetainedHerdFraction),
+                        Accepted = acceptedHerd
+                    });
             }
 
             // H_sustainable is still the zero-displacement ceiling under the
@@ -998,7 +1118,7 @@ namespace Anthropocene.Simulation
             // Survival never replaces the joint optimum.  This happens before
             // compilation, so food, labor, slaughter and target all describe
             // the same evaluated field/herd pair.
-            if (profile.Exists && sustainable > Epsilon)
+            if (directive == null && profile.Exists && sustainable > Epsilon)
             {
                 double retainedTarget = Math.Min(profile.Animals, sustainable);
                 var retainedHerd = herdOptions

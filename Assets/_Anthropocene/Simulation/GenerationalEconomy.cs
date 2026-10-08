@@ -511,7 +511,7 @@ namespace Anthropocene.Simulation
             Allocate(null, Math.Min(gatherCapacity - gatheredInput, biological - farm), false, false);
         }
 
-        private static void ResolveManagedHerds(WorldState w, TurnRecord record, TurnHorizon horizon, Dictionary<int, TurnNeeds> needs)
+        private void ResolveManagedHerds(WorldState w, TurnRecord record, TurnHorizon horizon, Dictionary<int, TurnNeeds> needs)
         {
             double intervals = horizon.ReferenceIntervals;
             double years = horizon.Years;
@@ -522,6 +522,17 @@ namespace Anthropocene.Simulation
             {
                 var plan = HerdingTooling.Plan(w, camp, horizon);
                 managementPlans[camp.Id] = plan;
+                if (activeElderDecisions.TryGetValue(camp.Id,
+                        out var elderDecision))
+                {
+                    int totalHerders = camp.Workforce.Assignments
+                        .Where(assignment => assignment.Role ==
+                            WorkforceRoles.Herder)
+                        .Sum(assignment => assignment.Population);
+                    elderDecision.ResolvedHerdDevelopmentPeople = Math.Max(0,
+                        totalHerders -
+                            elderDecision.AcceptedRetainedHerdPeople);
+                }
                 foreach (var herd in w.Herds.Where(h => h.DomesticCamp == camp.Id && h.Animals > 0).OrderBy(h => h.Id))
                     managementByHerd[herd.Id] = plan.Fulfillment;
             }

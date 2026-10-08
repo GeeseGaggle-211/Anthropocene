@@ -210,6 +210,17 @@ namespace Anthropocene.Simulation
                 var labor = CultivationEconomy.PrepareHorizon(w, camp, horizon.StartDays,
                     horizon.Years, budget, campScratch.Footprint);
                 agriculturalLabor[camp.Id] = labor;
+                if (activeElderDecisions.TryGetValue(camp.Id,
+                        out var elderDecision))
+                {
+                    elderDecision.ResolvedRetainedFieldOperation =
+                        labor.RequiredMaintenance > 0
+                            ? Numbers.Clamp(labor.EffectiveMaintenanceFarmers /
+                                labor.RequiredMaintenance, 0, 1)
+                            : labor.EffectiveMaintenanceFarmers > 0 ? 1 : 0;
+                    elderDecision.ResolvedFieldDevelopmentPeople =
+                        Math.Max(0, labor.ExpansionFarmers);
+                }
                 CampFieldWorkDiagnostic fieldWork = null;
                 if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
                 {

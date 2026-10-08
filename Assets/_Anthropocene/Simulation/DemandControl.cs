@@ -190,7 +190,9 @@ namespace Anthropocene.Simulation
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, FishingAccessPlan fishingAccess,
             out ProductionOrder production, out Allocation allocation,
             DevelopmentSearch developmentSearch = null,
-            DevelopmentDiagnostics diagnostics = null)
+            DevelopmentDiagnostics diagnostics = null,
+            ElderDirective elderDirective = null,
+            List<ElderIntervention> elderInterventions = null)
         {
             production = null; var alloc = new Allocation(); allocation = alloc;
             bool captureInvestmentTrace = diagnostics?
@@ -209,7 +211,8 @@ namespace Anthropocene.Simulation
             var herdProfile = HerdConsumptionProfile.Owned(w, c);
             var site = SettlementSiteEvaluation.Evaluate(w, c, c.Tile,
                 residents, herdProfile);
-            var portfolio = SettlementPortfolioSupervisor.Select(w, c, d, e, site);
+            var portfolio = SettlementPortfolioSupervisor.Select(w, c, d, e,
+                site, elderDirective, elderInterventions);
             d.ApplyManagedHerd(w, c, portfolio.HerdHerders);
             alloc.HCurrent = portfolio.HCurrent;
             alloc.HSustainable = portfolio.HSustainable;
@@ -675,15 +678,18 @@ namespace Anthropocene.Simulation
             // is not itself a current receipt and spare labor alone creates no
             // such signal.
             double strategicDevelopmentFoodGap = currentDevelopmentFoodGap;
+            bool elderPhysicalDevelopment = elderDirective != null;
             double fieldGapPerYear = years > 0
                 ? (strategicDevelopmentFoodGap + plantFeedstockShortfall) /
                     years : 0;
             double fieldWorkerYearCap = residents * years * Math.Max(1,
                 CultivationEconomy.FarmToolFieldWorkEfficiency(n));
             var fieldLadder = CultivationEconomy.Enabled(c) &&
-                d.Footprint.Length > 0 && fieldGapPerYear > Epsilon
+                d.Footprint.Length > 0 && (elderPhysicalDevelopment ||
+                    fieldGapPerYear > Epsilon)
                 ? CultivationEconomy.ExpansionLadder(w, c, years,
-                    d.Footprint, fieldGapPerYear,
+                    d.Footprint, elderPhysicalDevelopment
+                        ? double.PositiveInfinity : fieldGapPerYear,
                     operatingFraction: portfolio.SelectedFieldOperation,
                     workerYearCap: fieldWorkerYearCap)
                 : Array.Empty<CultivationEconomy.ExpansionStep>();
@@ -755,7 +761,8 @@ namespace Anthropocene.Simulation
                     CultivationEconomy.VillageIntensity &&
                     (index == 0 || fieldLadder[index - 1].VillageAverage +
                         Epsilon < CultivationEconomy.VillageIntensity);
-                bool close = fieldBandWork + Epsilon >= fieldBandYears ||
+                bool close = elderPhysicalDevelopment ||
+                    fieldBandWork + Epsilon >= fieldBandYears ||
                     settlementKink || index == fieldLadder.Length - 1;
                 if (!close) continue;
                 double recurring = IncrementalFieldRecurringWork(
@@ -924,8 +931,9 @@ namespace Anthropocene.Simulation
                         ? Math.Max(0, Math.Min(edge,
                             (int)Math.Floor(portfolio.HSustainable + Epsilon)) -
                             prior) : 0;
-                    int usefulAnimals = Math.Max(sustainableAnimals,
-                        directAnimals + substitutionAnimals);
+                    int usefulAnimals = elderPhysicalDevelopment
+                        ? bandAnimals : Math.Max(sustainableAnimals,
+                            directAnimals + substitutionAnimals);
                     InvestmentTrace trace = null;
                     if (captureInvestmentTrace)
                     {
@@ -1034,7 +1042,7 @@ namespace Anthropocene.Simulation
                 diagnostics?.ExposePhysicalFieldBands != true;
             if (CultivationEconomy.Enabled(c) && d.Footprint.Length > 0)
             {
-                if (fieldGapPerYear > Epsilon)
+                if (elderPhysicalDevelopment || fieldGapPerYear > Epsilon)
                 {
                     double gain = 0;
                     double finiteAlternativeRemaining = remainingForage;
@@ -1042,7 +1050,8 @@ namespace Anthropocene.Simulation
                     foreach (var band in fieldBands)
                     {
                         fieldBand++;
-                        if (gain >= fieldGapPerYear - Epsilon) break;
+                        if (!elderPhysicalDevelopment &&
+                            gain >= fieldGapPerYear - Epsilon) break;
                         double fieldPeople = band.WorkerYears / years;
                         double pricedWorkerYears = band.WorkerYears +
                             band.RecurringWorkerYears;
@@ -1067,9 +1076,10 @@ namespace Anthropocene.Simulation
                             futureLaborOpportunityReturn > Epsilon
                                 ? finiteAlternativeFood /
                                     futureLaborOpportunityReturn : 0;
-                        bool admitted = physical && (defaultAdmitted ||
-                            diagnostics?.ExposePhysicalFieldBands == true ||
-                            finiteFieldOpportunityPolicy);
+                        bool admitted = physical &&
+                            (elderPhysicalDevelopment || defaultAdmitted ||
+                             diagnostics?.ExposePhysicalFieldBands == true ||
+                             finiteFieldOpportunityPolicy);
                         InvestmentTrace trace = null;
                         if (captureInvestmentTrace)
                         {
@@ -1490,7 +1500,37 @@ namespace Anthropocene.Simulation
             var acceptedRay = new Dictionary<Request, double>();
             double acceptedFieldBudget = 0, acceptedHerdBudget = 0;
             double acceptedUseful = 0, acceptedPricedWork = 0;
-            if (developmentSearch != null)
+            if (elderDirective != null)
+            {
+                // This is the strategic policy seam, separate from the
+                // headless-only DevelopmentSearch diagnostic hook. The
+                // requested budget selects a physical prefix; Binding and the
+                // ordinary compiler retain sole authority over feasibility.
+                double requestedPeople = ElderRLContract.Unit(
+                    elderDirective.DevelopmentBudget) * residents;
+                double fieldShare = ElderRLContract.Unit(
+                    elderDirective.FieldDevelopmentShare);
+                var selected = EvaluateAbsolute(requestedPeople * fieldShare,
+                    requestedPeople * (1 - fieldShare));
+                var budgets = RayCurrentBudgets(selected.Grants);
+                acceptedRay = new Dictionary<Request, double>(selected.Grants);
+                acceptedFieldBudget = budgets.Field;
+                acceptedHerdBudget = budgets.Herd;
+                acceptedUseful = RayUsefulFood(acceptedRay);
+                acceptedPricedWork = RayPricedWork(acceptedRay);
+                double acceptedPeople = acceptedFieldBudget +
+                    acceptedHerdBudget;
+                if (Math.Abs(acceptedPeople - requestedPeople) > Epsilon)
+                    elderInterventions?.Add(new ElderIntervention
+                    {
+                        Kind = ElderInterventionKind.ResourceConstraint,
+                        Control = "development-budget",
+                        Reason = "physical option, resource or integer-workforce limit",
+                        Requested = requestedPeople,
+                        Accepted = acceptedPeople
+                    });
+            }
+            else if (developmentSearch != null)
             {
                 var context = new DevelopmentSearchContext(residents,
                     portfolio.StrategicLaborStep,
@@ -1689,10 +1729,20 @@ namespace Anthropocene.Simulation
             double remainingSubstitutionFood = substitutableHumanFood;
             var development = alloc.Requests
                 .Where(q => q.Class == ServiceClass.Development && q.Bundle != null)
-                .OrderByDescending(q => q.PriorityScore)
+                // A learned directive has already selected a jointly feasible
+                // physical field/herd prefix. Reserve that prefix before the
+                // ordinary food-for-growth request consumes residual labour;
+                // otherwise Option A's return ranking would silently override
+                // the action after compilation.
+                .OrderBy(q => elderPhysicalDevelopment &&
+                    !rayRequests.Contains(q) ? 1 : 0)
+                .ThenByDescending(q => elderPhysicalDevelopment ? 0 :
+                    q.PriorityScore)
                 .ThenBy(q => alloc.Requests.IndexOf(q)).ToList();
             foreach (var request in development)
             {
+                bool elderRayRequest = elderPhysicalDevelopment &&
+                    rayRequests.Contains(request);
                 if (rayRequests.Contains(request))
                 {
                     if (!developmentRayLimits.TryGetValue(request,
@@ -1709,21 +1759,23 @@ namespace Anthropocene.Simulation
                 double substitutionNeed = Math.Min(remainingSubstitutionFood,
                     request.SubstitutionFood);
                 bool currentFoodService = request.Bundle.FoodService > Epsilon;
-                double usefulFood = (currentFoodService
-                        ? remainingCurrentDevelopmentFood
-                        : remainingStrategicDevelopmentFood) + typedNeed +
-                    substitutionNeed;
                 double wanted = request.Units;
-                if (request.DevelopmentFoodPerUnit > Epsilon)
+                if (!elderRayRequest &&
+                    request.DevelopmentFoodPerUnit > Epsilon)
                 {
+                    double usefulFood = (currentFoodService
+                            ? remainingCurrentDevelopmentFood
+                            : remainingStrategicDevelopmentFood) + typedNeed +
+                        substitutionNeed;
                     double usefulUnits = usefulFood /
                         request.DevelopmentFoodPerUnit;
                     wanted = request.WholeUnits
                         ? Math.Ceiling(usefulUnits - Epsilon) : usefulUnits;
                     wanted = Math.Min(request.Units, Math.Max(0, wanted));
                 }
-                wanted = Math.Max(wanted, Math.Min(request.Units,
-                    request.PolicyDevelopmentUnits));
+                if (!elderRayRequest)
+                    wanted = Math.Max(wanted, Math.Min(request.Units,
+                        request.PolicyDevelopmentUnits));
                 request.Granted = MaximumDevelopmentGrant(request, wanted,
                     out string binding);
                 double food = request.Granted *
@@ -1781,7 +1833,8 @@ namespace Anthropocene.Simulation
                     portfolio.HGrowthCeiling) + Epsilon);
                 int remaining = Math.Max(0, authorizedTarget - retainedTarget);
                 foreach (var request in herdDevelopment
-                    .OrderByDescending(q => q.PriorityScore)
+                    .OrderByDescending(q => elderPhysicalDevelopment ? 0 :
+                        q.PriorityScore)
                     .ThenBy(q => alloc.Requests.IndexOf(q)))
                 {
                     double kept = Math.Min(Math.Floor(request.Granted + Epsilon),
@@ -1868,7 +1921,12 @@ namespace Anthropocene.Simulation
                 {
                     var group = alloc.Requests.Where(q => q.Class == cls &&
                         !q.Frozen && q.Bundle != null && q.Granted > Epsilon)
-                        .OrderBy(q => cls == ServiceClass.Development
+                        .OrderBy(q => cls == ServiceClass.Development &&
+                                elderPhysicalDevelopment &&
+                                rayRequests.Contains(q)
+                            ? 1 : 0)
+                        .ThenBy(q => cls == ServiceClass.Development &&
+                                !elderPhysicalDevelopment
                             ? q.PriorityScore : 0)
                         .ThenByDescending(q => alloc.Requests.IndexOf(q)).ToList();
                     foreach (var q in group)
@@ -1920,15 +1978,15 @@ namespace Anthropocene.Simulation
                     if (excess <= 0) break;
                 }
             }
+            var finalRay = rayRequests.Where(q => q.Granted > Epsilon)
+                .ToDictionary(q => q, q => q.Granted);
+            var finalBudgets = RayCurrentBudgets(finalRay);
+            alloc.FinalDevelopmentUseful = RayUsefulFood(finalRay);
+            alloc.FinalDevelopmentWork = RayPricedWork(finalRay);
+            alloc.FinalFieldBudget = finalBudgets.Field;
+            alloc.FinalHerdBudget = finalBudgets.Herd;
             if (captureInvestmentTrace)
             {
-                var finalRay = rayRequests.Where(q => q.Granted > Epsilon)
-                    .ToDictionary(q => q, q => q.Granted);
-                var finalBudgets = RayCurrentBudgets(finalRay);
-                alloc.FinalDevelopmentUseful = RayUsefulFood(finalRay);
-                alloc.FinalDevelopmentWork = RayPricedWork(finalRay);
-                alloc.FinalFieldBudget = finalBudgets.Field;
-                alloc.FinalHerdBudget = finalBudgets.Herd;
                 foreach (var pair in investmentByRequest)
                     pair.Value.GrantedUnits = pair.Key.Granted;
             }

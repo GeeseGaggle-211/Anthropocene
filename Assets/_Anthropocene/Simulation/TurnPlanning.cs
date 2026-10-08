@@ -25,6 +25,10 @@ namespace Anthropocene.Simulation
         // Value-rule production order per automated camp (WP3b). Transient: never saved,
         // observed or fingerprinted; absent for manual camps and under the Uniform rule.
         internal readonly Dictionary<int, ProductionOrder> ProductionOrders = new Dictionary<int, ProductionOrder>();
+        // Transient Elder sidecar. Decisions are diagnostics/replay data and
+        // never enter WorldState or a policy observation directly.
+        internal readonly Dictionary<int, ElderCompiledDecision> ElderDecisions =
+            new Dictionary<int, ElderCompiledDecision>();
         internal CampPlacement Placement;
         // The same-turn trade handshake (WP8): agreed from the committed boundary,
         // settled at the opening of the economy phase. Transient: never saved.
@@ -160,6 +164,7 @@ namespace Anthropocene.Simulation
         public Order Order;
         public ProductionOrder Production;
         public FishingAccessPlan FishingAccess;
+        public ElderCompiledDecision Elder;
     }
 
     // Planning done while the human player thinks. Never saved, never part of
@@ -192,7 +197,7 @@ namespace Anthropocene.Simulation
         public static PreparedTurn Prepare(WorldState world, IReadOnlyDictionary<int, List<Order>> submitted,
             IEnumerable<DecisionTrace> traces, PhaseExecution execution, PlanningDraft draft)
             => PrepareCore(world, submitted, traces, execution, draft, null,
-                null);
+                null, null, null, null);
 
         // Headless strategy audit seam. The supplied selector replaces only
         // DemandControl's bounded Development-ray choice; all placement,
@@ -205,7 +210,7 @@ namespace Anthropocene.Simulation
             PhaseExecution execution = null)
             => PrepareCore(world, submitted, null, execution, null,
                 developmentSearch ?? throw new ArgumentNullException(
-                    nameof(developmentSearch)), null);
+                    nameof(developmentSearch)), null, null, null, null);
 
         // Headless causal-audit seam. This changes only which physically
         // forecast field bands reach DemandControl's ordinary arbitration; AI
@@ -218,14 +223,37 @@ namespace Anthropocene.Simulation
             PhaseExecution execution = null)
             => PrepareCore(world, submitted, traces, execution, null, null,
                 diagnostics ?? throw new ArgumentNullException(
-                    nameof(diagnostics)));
+                    nameof(diagnostics)), null, null, null);
+
+        // Production Village-Elder seam. Movement is submitted as an ordinary
+        // WEGO order; after placement, the same directive is compiled at the
+        // accepted tile with committed-state trade and destination-aware fishing.
+        internal static PreparedTurn PrepareWithElderDirectives(
+            WorldState world,
+            IReadOnlyDictionary<int, List<Order>> submitted,
+            IReadOnlyDictionary<int, ElderDirective> directives,
+            IReadOnlyDictionary<int, ElderObservation> observations,
+            IElderDirectiveCompiler compiler,
+            IEnumerable<DecisionTrace> traces = null,
+            PhaseExecution execution = null)
+        {
+            if (directives == null || observations == null || compiler == null)
+                throw new ArgumentNullException(directives == null
+                    ? nameof(directives) : observations == null
+                        ? nameof(observations) : nameof(compiler));
+            return PrepareCore(world, submitted, traces, execution, null, null,
+                null, directives, observations, compiler);
+        }
 
         private static PreparedTurn PrepareCore(WorldState world,
             IReadOnlyDictionary<int, List<Order>> submitted,
             IEnumerable<DecisionTrace> traces, PhaseExecution execution,
             PlanningDraft draft,
             DemandController.DevelopmentSearch developmentSearch,
-            DemandController.DevelopmentDiagnostics developmentDiagnostics)
+            DemandController.DevelopmentDiagnostics developmentDiagnostics,
+            IReadOnlyDictionary<int, ElderDirective> elderDirectives,
+            IReadOnlyDictionary<int, ElderObservation> elderObservations,
+            IElderDirectiveCompiler elderCompiler)
         {
             if (world == null || submitted == null) throw new ArgumentNullException(world == null ? nameof(world) : nameof(submitted));
             using var profile = PhaseProfile.Scope("Prepare");
@@ -265,7 +293,8 @@ namespace Anthropocene.Simulation
             var acceptedActions = prepared.Orders.Where(o => o.Kind != OrderKind.Economy && o.Kind != OrderKind.FissionPolicy).ToDictionary(o => o.Entity);
             var acceptedEconomy = prepared.Orders.Where(o => o.Kind == OrderKind.Economy).ToDictionary(o => o.Entity);
             var automated = world.Camps.Where(c => c.Population > 0 &&
-                (c.EconomyAutomationTurns != 0 || aiEconomicRequests.Contains(c.Id)) &&
+                (c.EconomyAutomationTurns != 0 || aiEconomicRequests.Contains(c.Id) ||
+                 elderDirectives != null && elderDirectives.ContainsKey(c.Id)) &&
                 CultivationEconomy.EconomyEnabled(world, c) && !acceptedEconomy.ContainsKey(c.Id))
                 .OrderBy(c => c.Id).ToArray();
             // Each forecast owns a private camp preview and reads only the
@@ -296,15 +325,46 @@ namespace Anthropocene.Simulation
                 }
                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
                 fishingAccess.TryGetValue(camp.Id, out var access);
+                ElderDirective elderDirective = null;
+                ElderObservation elderObservation = null;
+                if (elderDirectives != null)
+                    elderDirectives.TryGetValue(camp.Id, out elderDirective);
+                if (elderObservations != null)
+                    elderObservations.TryGetValue(camp.Id, out elderObservation);
                 return AutomaticIntent(world, camp, effectiveTile, abandoning, residents,
                     index, trade, access, developmentSearch,
-                    developmentDiagnostics);
+                    developmentDiagnostics, elderDirective, elderObservation,
+                    elderCompiler);
             });
             intentsScope.Dispose();
             for (int i = 0; i < automated.Length; i++)
             {
                 var camp = automated[i]; var order = automaticOrders[i].Order;
                 if (automaticOrders[i].Production != null) prepared.ProductionOrders[camp.Id] = automaticOrders[i].Production;
+                if (automaticOrders[i].Elder != null)
+                {
+                    var decision = automaticOrders[i].Elder;
+                    if (prepared.Placement.Blocked.Contains(camp.Id) &&
+                        decision.Requested.MovementCandidate != -1)
+                    {
+                        var additions = new List<ElderIntervention>(
+                            decision.Interventions ?? Array.Empty<ElderIntervention>())
+                        {
+                            new ElderIntervention
+                            {
+                                Kind = ElderInterventionKind.PlacementConflict,
+                                Control = "movement-candidate",
+                                Reason = "WEGO placement conflict; stay",
+                                Requested = decision.Requested.MovementCandidate,
+                                Accepted = -1
+                            }
+                        };
+                        decision.Accepted.MovementCandidate = -1;
+                        decision.Realized.MovementCandidate = -1;
+                        decision.Interventions = additions.ToArray();
+                    }
+                    prepared.ElderDecisions[camp.Id] = decision;
+                }
                 prepared.Orders.Add(order); prepared.AutomatedCamps.Add(camp.Id);
                 acceptedEconomy.Add(camp.Id, order);
                 prepared.OrderReceipts.Add(camp.Player + ":automation:" + order + ":accepted");
@@ -347,7 +407,9 @@ namespace Anthropocene.Simulation
             PlanningIndex index, TradePlan trade, FishingAccessPlan fishingAccess,
             DemandController.DevelopmentSearch developmentSearch = null,
             DemandController.DevelopmentDiagnostics developmentDiagnostics =
-                null)
+                null, ElderDirective elderDirective = null,
+            ElderObservation elderObservation = null,
+            IElderDirectiveCompiler elderCompiler = null)
         {
             using var profile = PhaseProfile.Scope("Intent");
             var planningCamp = PlanningCampAt(camp, effectiveTile, trade);
@@ -368,8 +430,17 @@ namespace Anthropocene.Simulation
             // manual assignments remain the player's responsibility.
             ProductionOrder production = null;
             EconomicIntent intent;
-            using (PhaseProfile.Scope("Allocator")) intent = abandoning
-                ? settings.Copy()
+            ElderCompiledDecision elder = null;
+            using (PhaseProfile.Scope("Allocator")) intent = elderDirective != null
+                ? (elder = (elderCompiler ??
+                    throw new InvalidOperationException(
+                        "An Elder directive requires the native compiler."))
+                    .Compile(new ElderCompilationContext(world, camp,
+                        planningCamp, fishingAccess, elderObservation ??
+                        throw new InvalidOperationException(
+                            "An Elder directive requires its policy observation."),
+                        effectiveTile, settings), elderDirective)).Intent
+                : abandoning ? settings.Copy()
                 : (developmentSearch != null ||
                     developmentDiagnostics != null) &&
                     EconomicAllocationStrategy.IsDemandControl(world.Config)
@@ -378,7 +449,8 @@ namespace Anthropocene.Simulation
                         developmentDiagnostics)
                     : EconomicAllocationStrategy.Plan(world, planningCamp,
                         settings, fishingAccess, out production);
-            if (abandoning)
+            if (elder != null) production = elder.Production;
+            if (abandoning && elder == null)
             {
                 intent.Assignments.Clear();
                 intent.Labor = null;
@@ -394,7 +466,8 @@ namespace Anthropocene.Simulation
             string error = EconomicIntents.Validate(constraints, intent);
             if (error != null) throw new InvalidOperationException("Invalid automatic economic plan: " + error);
             return new AutomaticPlan { Order = new Order(OrderKind.Economy, camp.Id) { Economy = intent },
-                Production = production, FishingAccess = fishingAccess };
+                Production = production, FishingAccess = fishingAccess,
+                Elder = elder };
         }
 
         private static int ResidentCountAfterActions(Camp camp, IReadOnlyDictionary<int, Order> actions)

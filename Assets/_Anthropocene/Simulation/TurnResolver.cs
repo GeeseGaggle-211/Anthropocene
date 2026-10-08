@@ -49,6 +49,9 @@ namespace Anthropocene.Simulation
         private TradeSettlement trade;
         private IReadOnlyDictionary<int, double> resolvedFisheryOperations =
             new Dictionary<int, double>();
+        private IReadOnlyDictionary<int, ElderCompiledDecision>
+            activeElderDecisions =
+                new Dictionary<int, ElderCompiledDecision>();
         private readonly PhaseExecution execution;
         public ResolutionMetrics LastMetrics { get; private set; } = new ResolutionMetrics();
         public TurnResolver(PhaseExecution execution = null) { this.execution = execution ?? new PhaseExecution(); }
@@ -66,6 +69,7 @@ namespace Anthropocene.Simulation
             using var profile = PhaseProfile.Scope("Resolve");
             var resolutionTimer = System.Diagnostics.Stopwatch.StartNew(); LastMetrics = new ResolutionMetrics(); trade = null;
             resolvedFisheryOperations = new Dictionary<int, double>();
+            activeElderDecisions = prepared.ElderDecisions;
             Ownership.Bind(w);
             if (w.Camps.All(c => w.LinkedPopulation(c) <= 0)) throw new InvalidOperationException("All tribes have perished.");
             w.Config.Validate();
@@ -155,6 +159,14 @@ namespace Anthropocene.Simulation
             TechnologyDiscovery.RecordHusbandryProximity(w);
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) BreakthroughBound(w, camp, record);
             using (PhaseProfile.Scope("Technology")) TechnologyDiscovery.Resolve(w, record);
+            // Reconcile compiled Elder targets against the authoritative
+            // post-economy state. Do this before immigration/fission so those
+            // social processes remain observed outcomes, not action repairs.
+            foreach (var decision in prepared.ElderDecisions
+                .OrderBy(pair => pair.Key).Select(pair => pair.Value))
+                ElderDecisionRealization.Reconcile(w, decision);
+            activeElderDecisions =
+                new Dictionary<int, ElderCompiledDecision>();
             // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
             // Immigration between known settlements precedes fission (QoLFissionTradeDesign 4, 9); its sources and arrivals sit out fission this turn.
             HashSet<int> mobile; using (PhaseProfile.Scope("Immigration")) mobile = Immigration.Resolve(w, record, execution, LastMetrics);

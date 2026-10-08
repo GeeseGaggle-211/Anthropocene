@@ -1,0 +1,490 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Anthropocene.Simulation
+{
+    internal sealed class ElderObservationEnvelope
+    {
+        internal ElderObservation Observation;
+        internal ElderObservationMetadata Metadata;
+    }
+
+    // Builds only from the actor's own state and AgentObservation, the existing
+    // permission-filtered game-knowledge boundary. Raw identities are retained
+    // in the sidecar solely to compile movement and diagnose replay.
+    public sealed class ElderObservationBuilder
+    {
+        public ElderObservation Build(WorldState world, int controlledCampId,
+            bool movementEnabled, ElderCompiledDecision previous = null)
+            => BuildEnvelope(world, controlledCampId, movementEnabled, previous)
+                .Observation;
+
+        public ElderObservation Build(WorldState world, int controlledCampId,
+            bool movementEnabled, out ElderObservationMetadata metadata,
+            ElderCompiledDecision previous = null)
+        {
+            var envelope = BuildEnvelope(world, controlledCampId,
+                movementEnabled, previous);
+            metadata = envelope.Metadata;
+            return envelope.Observation;
+        }
+
+        internal ElderObservationEnvelope BuildEnvelope(WorldState world,
+            int controlledCampId, bool movementEnabled,
+            ElderCompiledDecision previous = null)
+        {
+            if (world == null) throw new ArgumentNullException(nameof(world));
+            var camp = world.Camps.FirstOrDefault(item => item.Id == controlledCampId)
+                ?? throw new ArgumentException("Controlled camp is not present.",
+                    nameof(controlledCampId));
+            var index = new PlanningIndex(world);
+            var game = new AgentObservationBuilder().Build(world, camp.Player,
+                index, false, true);
+            var own = game.Settlements.FirstOrDefault(item => item.Id == camp.Id)
+                ?? throw new InvalidOperationException("Controlled camp is absent from its own observation.");
+            double years = world.Config.TurnDays / world.Config.DaysPerYear;
+            var result = new ElderObservation();
+            var metadata = new ElderObservationMetadata
+            {
+                ControlledCampId = camp.Id,
+                ControlledPlayer = camp.Player
+            };
+
+            BuildCore(world, camp, own, years, result.Core);
+            BuildSites(world, camp, game, movementEnabled, result, metadata);
+            BuildFishing(world, camp, game, result, metadata);
+            BuildFields(world, camp, game, years, result.Fields);
+            BuildHerd(world, camp, game, years, result);
+            BuildCapabilities(world, camp, game, result);
+            BuildCommodities(world, camp, years, result);
+            BuildContacts(world, camp, game, result);
+            BuildFission(world, camp, result.Fission);
+            BuildPrevious(previous, result.Previous);
+            return new ElderObservationEnvelope
+            {
+                Observation = result,
+                Metadata = metadata
+            };
+        }
+
+        private static void BuildCore(WorldState world, Camp camp,
+            SettlementObservation own, double years, ElderCoreObservation core)
+        {
+            core.Population = Math.Max(0, camp.Population);
+            core.ConnectedConsumers = Math.Max(0, own.LinkedPopulation);
+            core.DeficitTurns = Math.Max(0, camp.DeficitTurns);
+            core.ElapsedDays = Math.Max(0, world.Days);
+            core.HorizonYears = Math.Max(0, years);
+            core.QoL = ElderRLContract.Unit(camp.QoL);
+            core.FoodNeedsMet = ElderRLContract.Unit(camp.FoodNeedsMetRatio);
+            core.WaterNeedsMet = ElderRLContract.Unit(camp.WaterNeedsMetRatio);
+            core.ClothingCoverage = ElderRLContract.Unit(camp.ClothPerCapita);
+            core.HousingCoverage = ElderRLContract.Unit(camp.HousingPerCapita);
+            double annualNeed = Math.Max(1e-12,
+                Math.Max(1, camp.Population) * world.Config.Consumption *
+                world.Config.DaysPerYear / world.Config.BaseDays);
+            core.FoodReserveYears = Math.Max(0, camp.Food) / annualNeed;
+            core.IsVillage = camp.IsVillage;
+            core.RecentlyMoved = own.RecentlyMoved;
+
+            var reports = world.History.SelectMany(record =>
+                    record.Demographics ?? new List<DemographicReport>())
+                .Where(report => report.Camp == camp.Id).TakeLast(4).ToArray();
+            if (reports.Length > 0)
+            {
+                var first = reports[0]; var last = reports[reports.Length - 1];
+                core.PopulationTrend = (last.EndingPopulation -
+                    first.StartingPopulation) / (double)Math.Max(1,
+                    first.StartingPopulation);
+                core.QoLTrend = camp.QoL - last.QoL;
+                core.NetMigrationTrend = reports.Sum(report =>
+                    report.Immigrated - report.Emigrated - report.SplitOff) /
+                    (double)Math.Max(1, reports.Sum(report =>
+                        report.StartingPopulation));
+            }
+        }
+
+        private static void BuildSites(WorldState world, Camp camp,
+            AgentObservation game, bool movementEnabled, ElderObservation result,
+            ElderObservationMetadata metadata)
+        {
+            var agricultural = game.AgriculturalSites.ToDictionary(site =>
+                site.Tile);
+            var all = game.SiteCoverage.OrderBy(site => site.Tile == camp.Tile ? 0 : 1)
+                .ThenBy(site => site.Tile).ToArray();
+            var selected = all.Take(ElderRLContract.MaxLocalSites).ToArray();
+            result.Sites = selected.Select((site, candidate) =>
+            {
+                agricultural.TryGetValue(site.Tile, out var fields);
+                return new ElderSiteObservation
+                {
+                    Candidate = candidate,
+                    Current = site.Tile == camp.Tile,
+                    Known = true,
+                    HumanFood = site.HumanFood,
+                    HumanFoodAfterHerd = site.HumanFoodAfterHerd,
+                    HerdZeroDisplacement = site.HerdForage,
+                    HerdAbsolute = site.HerdAbsolute,
+                    HerdWater = site.HerdWater,
+                    FixedShelter = site.FixedShelter,
+                    RecurringLabor = site.RecurringLabor,
+                    AbsoluteRecurringLabor = site.AbsoluteRecurringLabor,
+                    RetainedFieldService = fields?.ManagedRecoveryCoverage ?? 0,
+                    LostRebuildBurden = fields?.LostRebuildBurden ?? 0
+                };
+            }).ToArray();
+            metadata.SiteTiles = selected.Select(site => site.Tile).ToArray();
+            result.Presence.Sites.Present = selected.Length;
+            result.Presence.Sites.Omitted = Math.Max(0, all.Length - selected.Length);
+
+            var legal = new List<int> { -1 };
+            if (movementEnabled)
+                for (int candidate = 0; candidate < selected.Length; candidate++)
+                {
+                    int tile = selected[candidate].Tile;
+                    if (tile == camp.Tile) continue;
+                    var move = new Order(OrderKind.Move, camp.Id,
+                        destination: tile);
+                    if (OrderRules.Validate(game, move) == null) legal.Add(candidate);
+                }
+            result.Mask.Movement = movementEnabled && legal.Count > 1;
+            result.Mask.LegalMovementCandidates = legal.ToArray();
+        }
+
+        private static void BuildFishing(WorldState world, Camp camp,
+            AgentObservation game, ElderObservation result,
+            ElderObservationMetadata metadata)
+        {
+            var all = game.FishingGrounds
+                .OrderByDescending(ground => ground.Selected)
+                .ThenByDescending(ground => ground.Productivity)
+                .ThenBy(ground => ground.Tile).ToArray();
+            var selected = all.Take(ElderRLContract.MaxFishingGrounds).ToArray();
+            result.Fishing = selected.Select((ground, candidate) =>
+                new ElderFishingObservation
+                {
+                    Candidate = candidate,
+                    Distance = world.Map.Distance(camp.Tile, ground.Tile),
+                    Incumbent = ground.Selected,
+                    Known = ground.Visible || ground.Visited,
+                    YieldPerFisherYear = ground.Productivity,
+                    FoodPotential = ground.AccessibleFood,
+                    Biomass = ground.Biomass,
+                    Condition = ground.Condition,
+                    OpeningCapital = ground.CapitalIntensity,
+                    OperationFraction = ground.HasOperation ? ground.Operation : 0,
+                    MaintenanceWorkerYears = 0,
+                    BuildWorkerYears = 0
+                }).ToArray();
+            metadata.FishingTiles = selected.Select(ground => ground.Tile).ToArray();
+            result.Presence.Fishing.Present = selected.Length;
+            result.Presence.Fishing.Omitted = Math.Max(0, all.Length - selected.Length);
+        }
+
+        private static void BuildFields(WorldState world, Camp camp,
+            AgentObservation game, double years, ElderFieldObservation fields)
+        {
+            var owned = world.Map.Radius(camp.Tile, 1)
+                .Where(tile => game.Tiles.ContainsKey(tile) &&
+                    world.Tiles[tile].CultivationOperator == camp.Id &&
+                    world.Tiles[tile].TraversableLand)
+                .OrderBy(tile => tile).ToArray();
+            fields.RetainedTiles = owned.Count(tile =>
+                LazyEcology.ProjectEcology(world, tile, world.Days)
+                    .CultivationCapital > 1e-9);
+            double maintenance = CultivationEconomy.MaintenanceFarmersForPlanning(
+                world, camp, years);
+            int farmers = camp.Workforce.Assignments.Where(assignment =>
+                assignment.Role == WorkforceRoles.Farmer).Sum(assignment =>
+                    assignment.Population);
+            fields.MaintenanceWorkerYears = maintenance * years;
+            fields.CurrentOperation = maintenance > 1e-9
+                ? Numbers.Clamp(farmers / maintenance, 0, 1) : 0;
+            var current = game.AgriculturalSites.FirstOrDefault(site =>
+                site.Tile == camp.Tile);
+            if (current != null)
+            {
+                fields.CurrentFoodSupport = current.ManagedRecoveryCoverage;
+                fields.FutureFoodSupport = current.ManagedRecoveryCoverage;
+                fields.RebuildBurden = current.LostRebuildBurden;
+                fields.RetainedCapitalService = current.ManagedRecoveryCoverage;
+            }
+        }
+
+        private static void BuildHerd(WorldState world, Camp camp,
+            AgentObservation game, double years, ElderObservation result)
+        {
+            var all = game.Herds.Where(herd => herd.OwnedDomestic &&
+                    herd.DomesticCamp == camp.Id)
+                .OrderByDescending(herd => herd.Count.Representative)
+                .ThenByDescending(herd => herd.Nutrition)
+                .ThenByDescending(herd => herd.ManagementFulfillment)
+                .ThenBy(herd => world.Config.GetSpecies(herd.Species)
+                    .FoodConsumption)
+                .ThenBy(herd => world.Config.GetSpecies(herd.Species)
+                    .FreshwaterConsumption)
+                .ThenBy(herd => herd.StartingAnimals > 0
+                    ? herd.NewbornAnimals / (double)herd.StartingAnimals : 0)
+                .ThenBy(herd => herd.StartingAnimals > 0
+                    ? herd.StarvationDeaths /
+                        (double)herd.StartingAnimals : 0)
+                // The final tie-break is invisible only among rows with the
+                // same encoded physiology/count, so entity identity cannot
+                // become a policy feature.
+                .ThenBy(herd => herd.Id).ToArray();
+            var selected = all.Take(ElderRLContract.MaxHerdGroups).ToArray();
+            result.HerdGroups = selected.Select(herd =>
+            {
+                var species = world.Config.GetSpecies(herd.Species);
+                int starting = Math.Max(0, herd.StartingAnimals);
+                return new ElderHerdGroupObservation
+                {
+                    Animals = Math.Max(0, herd.Count.Representative),
+                    Nutrition = ElderRLContract.Unit(herd.Nutrition),
+                    ManagementFulfilment = ElderRLContract.Unit(
+                        herd.ManagementFulfillment),
+                    FoodPerAnimal = species.FoodConsumption,
+                    WaterPerAnimal = species.FreshwaterConsumption,
+                    AnimalFoodPerAnimal = world.Config.AnimalFoodPerManagedAnimal,
+                    BirthRate = starting > 0 ? herd.NewbornAnimals /
+                        (double)starting : 0,
+                    MortalityRate = starting > 0 ? herd.StarvationDeaths /
+                        (double)starting : 0
+                };
+            }).ToArray();
+            result.Presence.Herds.Present = selected.Length;
+            result.Presence.Herds.Omitted = Math.Max(0, all.Length - selected.Length);
+
+            var herd = result.Herd;
+            herd.Groups = all.Length;
+            herd.Animals = all.Sum(group => Math.Max(0,
+                group.Count.Representative));
+            double animals = Math.Max(1, herd.Animals);
+            herd.Nutrition = all.Length == 0 ? 1 : all.Sum(group =>
+                group.Nutrition * Math.Max(0, group.Count.Representative)) / animals;
+            herd.ManagementFulfilment = all.Length == 0 ? 1 : all.Sum(group =>
+                group.ManagementFulfillment * Math.Max(0,
+                    group.Count.Representative)) / animals;
+            var current = game.SiteCoverage.FirstOrDefault(site =>
+                site.Tile == camp.Tile);
+            if (current != null)
+            {
+                herd.ZeroDisplacementCapacity = current.HerdForage * herd.Animals;
+                herd.AbsoluteCapacity = current.HerdAbsolute * herd.Animals;
+                herd.WaterCapacity = current.HerdWater * herd.Animals;
+            }
+            int herders = camp.Workforce.Assignments.Where(assignment =>
+                assignment.Role == WorkforceRoles.Herder).Sum(assignment =>
+                    assignment.Population);
+            herd.CurrentManagementWorkerYears = herders * years;
+            herd.CurrentAnimalFood = all.Sum(group => group.AcceptedFood);
+            herd.HumanFoodDisplaced = Math.Max(0, all.Sum(group =>
+                group.PotentialFood - group.AcceptedFood));
+            int startingAnimals = all.Sum(group => Math.Max(0,
+                group.StartingAnimals));
+            if (startingAnimals > 0)
+            {
+                herd.BirthTrend = all.Sum(group => group.NewbornAnimals) /
+                    (double)startingAnimals;
+                herd.MortalityTrend = all.Sum(group => group.StarvationDeaths) /
+                    (double)startingAnimals;
+                herd.SlaughterTrend = (world.History.LastOrDefault()?.ManagedHerds ??
+                    new List<ManagedHerdReport>()).Where(report =>
+                        report.Camp == camp.Id).Sum(report => report.Slaughtered) /
+                    (double)startingAnimals;
+            }
+        }
+
+        private static void BuildCapabilities(WorldState world, Camp camp,
+            AgentObservation game, ElderObservation result)
+        {
+            var statuses = game.TechnologyStatuses.ToDictionary(status =>
+                status.Domain);
+            double Progress(Domain domain) => statuses.TryGetValue(domain,
+                out var status) && status.Threshold > 0
+                    ? Numbers.Clamp(status.Progress / status.Threshold, 0, 1) : 0;
+            result.Capabilities = new[]
+            {
+                new ElderCapabilityObservation { Key = "field-retention",
+                    Available = CultivationEconomy.Enabled(camp),
+                    Experience = camp.Experience[(int)Domain.Gathering],
+                    Progress = Progress(Domain.Gathering) },
+                new ElderCapabilityObservation { Key = "herd-management",
+                    Available = CultivationEconomy.HusbandryEnabled(camp),
+                    Experience = camp.Experience[(int)Domain.Hunting],
+                    Progress = Progress(Domain.Hunting) },
+                new ElderCapabilityObservation { Key = "resident-fishing",
+                    Available = NeolithicCapabilities.ResidentFishingEnabled(
+                        world, camp),
+                    Experience = camp.Experience[(int)Domain.Fishing],
+                    Progress = Progress(Domain.Fishing) },
+                new ElderCapabilityObservation { Key = "fixed-construction",
+                    Available = camp.People.HasTech(NeolithicTech.Construction) },
+                new ElderCapabilityObservation { Key = "local-trade",
+                    Available = world.Config.TradeEnabled }
+            };
+        }
+
+        private static void BuildCommodities(WorldState world, Camp camp,
+            double years, ElderObservation result)
+        {
+            var recipes = NeolithicProduction.Recipes(world.Config)
+                .ToDictionary(recipe => recipe.Good);
+            var recent = world.History.LastOrDefault();
+            var all = Enum.GetValues(typeof(CraftGood)).Cast<CraftGood>()
+                .OrderBy(good => (int)good).Select(good =>
+                {
+                    recipes.TryGetValue(good, out var recipe);
+                    Trade.GoodDescriptor traded = Trade.Registry.FirstOrDefault(
+                        item => item.Recipe == good);
+                    double demand = NeolithicProduction.Demand(world, camp,
+                        good, years);
+                    double imports = 0, exports = 0, opportunity = 0;
+                    foreach (var trade in recent?.Trades ?? new List<TradeRecord>())
+                    {
+                        bool want = traded != null && trade.Want == traded.Id;
+                        bool give = traded != null && trade.Give == traded.Id;
+                        if (!want && !give) continue;
+                        if (trade.Requester == camp.Id)
+                        {
+                            if (want) imports += trade.WantQuantity *
+                                trade.Delivered;
+                            if (give) exports += trade.GiveQuantity *
+                                trade.GiveDelivered;
+                            opportunity += Math.Max(0, trade.RequesterGain);
+                        }
+                        else if (trade.Responder == camp.Id)
+                        {
+                            if (give) imports += trade.GiveQuantity *
+                                trade.GiveDelivered;
+                            if (want) exports += trade.WantQuantity *
+                                trade.Delivered;
+                            opportunity += Math.Max(0, trade.ResponderGain);
+                        }
+                    }
+                    return new ElderCommodityObservation
+                    {
+                        Key = good.ToString(),
+                        Stock = Math.Max(0, NeolithicProduction.Stock(camp, good)),
+                        LocalNeed = Math.Max(0, demand),
+                        ProtectedFloor = Math.Max(0, demand),
+                        ProductionCapacity = recipe == null ? 0 :
+                            Math.Max(0, recipe.Rate * years),
+                        MarginalValue = Math.Max(0,
+                            NeolithicProduction.Priority(camp, good)),
+                        RecentImport = imports,
+                        RecentExport = exports,
+                        ExternalOpportunity = opportunity,
+                        CanProduce = recipe != null &&
+                            NeolithicProduction.RecipeAvailable(world, camp, recipe),
+                        CanTrade = world.Config.TradeEnabled
+                    };
+                }).ToArray();
+            result.Commodities = all.Take(ElderRLContract.MaxCommoditySlots)
+                .ToArray();
+            result.Presence.Commodities.Present = result.Commodities.Length;
+            result.Presence.Commodities.Omitted = Math.Max(0,
+                all.Length - result.Commodities.Length);
+        }
+
+        private static void BuildContacts(WorldState world, Camp camp,
+            AgentObservation game, ElderObservation result)
+        {
+            var kin = game.KinRelations.ToDictionary(relation =>
+                relation.Society);
+            var visibleTiles = new HashSet<int>(game.Rivals.Select(rival =>
+                rival.Tile));
+            var all = game.KnownSettlements.Where(contact => !contact.Moved &&
+                    contact.Tile >= 0)
+                .OrderBy(contact => world.Map.Distance(camp.Tile, contact.Tile))
+                .ThenBy(contact => contact.Turn).ToArray();
+            var selected = all.Take(ElderRLContract.MaxKnownContacts).ToArray();
+            result.Contacts = selected.Select(contact =>
+            {
+                kin.TryGetValue(contact.Owner, out var relation);
+                double migration = (world.History.LastOrDefault()?.Migrations ??
+                    new List<MigrationReport>()).Where(report =>
+                        report.SourceCamp == camp.Id &&
+                            report.DestinationCamp == contact.Camp ||
+                        report.DestinationCamp == camp.Id &&
+                            report.SourceCamp == contact.Camp).Sum(report =>
+                            report.DestinationCamp == camp.Id ? report.Migrants :
+                            -report.Migrants);
+                double trade = (world.History.LastOrDefault()?.Trades ??
+                    new List<TradeRecord>()).Where(record =>
+                        record.Requester == camp.Id &&
+                            record.Responder == contact.Camp ||
+                        record.Responder == camp.Id &&
+                            record.Requester == contact.Camp)
+                    .Sum(record => record.WantQuantity * record.Delivered +
+                        record.GiveQuantity * record.GiveDelivered);
+                return new ElderContactObservation
+                {
+                    Distance = world.Map.Distance(camp.Tile, contact.Tile),
+                    AgeTurns = Math.Max(0, world.Turn - contact.Turn),
+                    Affinity = relation?.Affinity ?? 0,
+                    RelativeAttractiveness = 0,
+                    RecentTradeValue = trade,
+                    RecentMigration = migration,
+                    Kin = relation != null,
+                    CurrentlyVisible = visibleTiles.Contains(contact.Tile)
+                };
+            }).ToArray();
+            result.Presence.Contacts.Present = selected.Length;
+            result.Presence.Contacts.Omitted = Math.Max(0,
+                all.Length - selected.Length);
+        }
+
+        private static void BuildFission(WorldState world, Camp camp,
+            ElderFissionObservation fission)
+        {
+            fission.CandidatePresent = camp.FissionDestination != null;
+            var recent = (world.History.LastOrDefault()?.Fissions ??
+                new List<FissionReport>()).LastOrDefault(report =>
+                    report.ParentCamp == camp.Id);
+            if (recent == null) return;
+            fission.RecentSplit = true;
+            fission.RecentDaughterPopulation = recent.Daughter;
+            fission.ExpectedStayerGain = recent.Gain;
+            fission.ExpectedDaughterQoL = recent.DaughterQoL;
+            fission.ExitOpportunity = recent.DaughterGain;
+            fission.Pressure = recent.Push;
+        }
+
+        private static void BuildPrevious(ElderCompiledDecision decision,
+            ElderPreviousDecisionObservation previous)
+        {
+            if (decision?.Requested == null || decision.Accepted == null) return;
+            previous.Present = true;
+            previous.RequestedFieldRetention =
+                decision.Requested.RetainedFieldOperation;
+            previous.AcceptedFieldRetention =
+                decision.Accepted.RetainedFieldOperation;
+            previous.RequestedHerdRetention =
+                decision.Requested.RetainedHerdFraction;
+            previous.AcceptedHerdRetention =
+                decision.Accepted.RetainedHerdFraction;
+            previous.RequestedDevelopmentBudget =
+                decision.Requested.DevelopmentBudget;
+            previous.AcceptedDevelopmentBudget =
+                decision.Accepted.DevelopmentBudget;
+            previous.RequestedFieldShare =
+                decision.Requested.FieldDevelopmentShare;
+            previous.AcceptedFieldShare =
+                decision.Accepted.FieldDevelopmentShare;
+            previous.MovementAccepted = decision.Accepted.MovementCandidate ==
+                decision.Requested.MovementCandidate;
+            previous.InterventionCount = decision.Interventions?.Length ?? 0;
+            if (decision.Realized == null) return;
+            previous.RealizedFieldOperation =
+                decision.Realized.RetainedFieldOperation;
+            previous.RealizedHerdRetention =
+                decision.Realized.RetainedHerdFraction;
+            previous.RealizedDevelopmentBudget =
+                decision.Realized.DevelopmentBudget;
+            previous.RealizedFieldShare =
+                decision.Realized.FieldDevelopmentShare;
+        }
+    }
+}
