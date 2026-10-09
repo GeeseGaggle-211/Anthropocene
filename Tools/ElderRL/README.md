@@ -122,3 +122,18 @@ simulation authority into Python. Synthetic shocks remain an explicitly rejected
 v2 option until production disaster mechanics exist. The first native episode
 limit defaults to 32 real turns; training cadence and PPO hyperparameters remain
 adapter-level research choices.
+
+## External training harness
+
+Python training, evaluation, dataset and export work lives in the separate
+private repository
+[`GeeseGaggle-211/Anthropocene-RL`](https://github.com/GeeseGaggle-211/Anthropocene-RL).
+`training-repository.json` pins the exact training skeleton commit expected by
+this branch. The training repository independently pins this simulator commit
+and schema set in `configs/simulator/elder-v1.yaml`.
+
+This is a manifest relationship, not a Git submodule. Gymnasium, PyTorch,
+RLlib, checkpoints and training datasets do not enter the Unity/C# repository.
+Any change to simulator physics, reward meaning, observation permissions or the
+action contract requires updating both manifests and rerunning the native parity
+and regression gates before a new training campaign.
