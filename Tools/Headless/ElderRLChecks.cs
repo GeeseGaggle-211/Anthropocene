@@ -437,12 +437,14 @@ internal static class ElderRLChecks
         var sailing = builder.Build(world, camp.Id, false,
             out fishingMetadata);
         row = Array.IndexOf(fishingMetadata.FishingTiles, ground);
-        Check(sailing.Fishing[row].MaintenanceWorkerYears <
-                fishingHigh.Fishing[row].MaintenanceWorkerYears,
-            "a local fishing-frontier improvement lowers current maintenance");
+        // Placeholder until a production fishing q_k is calibrated: Sailing
+        // is a legal capability seam, but its shipped frontier remains .40.
+        Near(sailing.Fishing[row].MaintenanceWorkerYears,
+            fishingHigh.Fishing[row].MaintenanceWorkerYears,
+            "uncalibrated Sailing does not invent a fishing maintenance improvement");
         Near(world.FisherySites.Single(site => site.TileId == ground).Capital,
             storedFishE,
-            "a fishing-frontier change leaves stored physical capital unchanged");
+            "an uncalibrated fishing capability change leaves stored physical capital unchanged");
 
         Check(typeof(ElderFishingObservation).GetField("BuildWorkerYears") ==
                 null &&
