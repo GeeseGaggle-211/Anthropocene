@@ -89,6 +89,8 @@ FIELDS = [
     ("MaximumStorageYears", "years", "shipped physical storage ceiling"),
     ("DecayHalfLifeYears", "years", "shipped cultivation capital half-life"),
     ("CultivationMarginalEffortMultiplierPerTenth", "multiplier per 0.1 q above baseline", "shipped new-world calibration"),
+    ("CultivationMarginalEffortKneeQ", "q", "experimental counterfactual seam; shipped 0.4 preserves the production field-effort curve"),
+    ("FishingMarginalEffortKneeQ", "q", "experimental counterfactual seam; shipped 0.4 preserves the production fishery-effort curve"),
     ("PrimitiveAgricultureSupportedIntensity", "q", "shipped primitive intensity anchor"),
     ("StoneFarmToolsSupportedIntensity", "q", "shipped Stone Farm Tool tier"),
     ("FarmToolFarmerYearsPerUnit", "Farmer-years per tool", "shipped consumption calibration"),

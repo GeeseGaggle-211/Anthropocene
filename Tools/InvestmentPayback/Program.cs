@@ -156,6 +156,8 @@ internal static class Program
 
     private static int Main(string[] args)
     {
+        if (args.Contains("--technology-stress"))
+            return TechnologyStress.Run(args);
         try
         {
             CultureInfo.CurrentCulture = Inv;

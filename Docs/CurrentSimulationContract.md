@@ -204,6 +204,8 @@ in `ConfigurationUnits.md` and the save-format contract.
 | `MaximumStorageYears` | 80 | 80 | years | shipped physical storage ceiling |
 | `DecayHalfLifeYears` | 80 | 80 | years | shipped cultivation capital half-life |
 | `CultivationMarginalEffortMultiplierPerTenth` | 16 | 16 | multiplier per 0.1 q above baseline | shipped new-world calibration |
+| `CultivationMarginalEffortKneeQ` | 0.4 | 0.4 | q | experimental counterfactual seam; shipped 0.4 preserves the production field-effort curve |
+| `FishingMarginalEffortKneeQ` | 0.4 | 0.4 | q | experimental counterfactual seam; shipped 0.4 preserves the production fishery-effort curve |
 | `PrimitiveAgricultureSupportedIntensity` | 0.4 | 0.4 | q | shipped primitive intensity anchor |
 | `StoneFarmToolsSupportedIntensity` | 0.45 | 0.45 | q | shipped Stone Farm Tool tier |
 | `FarmToolFarmerYearsPerUnit` | 20 | 20 | Farmer-years per tool | shipped consumption calibration |

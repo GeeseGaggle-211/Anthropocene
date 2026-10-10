@@ -213,6 +213,86 @@ internal static class HorizonCultivationChecks
             "bounded horizon allocation debits nonlinear build effort exactly", 1e-5);
     }
 
+    private static void ConfigurableEffortKneesPreservePhysicalCapital()
+    {
+        var world = Fixture();
+        var config = world.Config;
+        config.Neolithic.CultivationMarginalEffortMultiplierPerTenth = 16;
+        double reference = config.ReferenceIntensity;
+        double Capital(double q) => Math.Pow(q / reference, 2);
+        double Legacy(double q)
+        {
+            double rate = Math.Log(16) / .1;
+            return q <= reference ? Capital(q) : 1 +
+                2 / (reference * rate) *
+                (Math.Exp(rate * (q - reference)) - 1);
+        }
+
+        config.Neolithic.CultivationMarginalEffortKneeQ = .4;
+        foreach (double q in new[] { .1, .4, .5, .6, .8, 1.0 })
+        {
+            double actual = CultivationEconomy.EffortForCapital(config,
+                Capital(q));
+            Near(CultivationEconomy.EffortForCapital(config, Capital(q)),
+                Legacy(q), "q_k=.4 preserves the shipped effort curve at q=" + q,
+                1e-10);
+            Check(BitConverter.DoubleToInt64Bits(actual) ==
+                BitConverter.DoubleToInt64Bits(Legacy(q)),
+                "q_k=.4 is bit-exact with the shipped effort curve at q=" + q);
+        }
+
+        foreach (double knee in new[] { .4, .5, .8 })
+        {
+            config.Neolithic.CultivationMarginalEffortKneeQ = knee;
+            double join = Capital(knee);
+            Near(CultivationEconomy.EffortForCapital(config, join), join,
+                "effort is continuous at q_k=" + knee, 1e-12);
+            double h = 1e-7;
+            double center = CultivationEconomy.EffortForCapital(config, join);
+            double left = (center - CultivationEconomy.EffortForCapital(
+                config, join - h)) / h;
+            double right = (CultivationEconomy.EffortForCapital(
+                config, join + h) - center) / h;
+            Near(left, 1, "left derivative matches physical E at q_k=" + knee,
+                2e-5);
+            Near(right, 1, "right derivative matches physical E at q_k=" + knee,
+                2e-5);
+            foreach (double q in new[] { .1, .4, .5, .65, .8, 1.0 })
+            {
+                double capital = Capital(q);
+                Near(CultivationEconomy.CapitalForEffort(config,
+                    CultivationEconomy.EffortForCapital(config, capital)),
+                    capital, "generalized effort inverse at q_k=" + knee +
+                    " q=" + q, 1e-7);
+            }
+            Near(CultivationEconomy.EffortForCapital(config, Capital(.4)), 1,
+                "technology knee leaves q=.4 effort unchanged", 1e-12);
+        }
+
+        double stored = Capital(.7);
+        double physicalQ = CultivationEconomy.Intensity(config, stored);
+        config.Neolithic.CultivationMarginalEffortKneeQ = .4;
+        double oldFieldEffort = CultivationEconomy.EffortForCapital(config,
+            stored);
+        config.Neolithic.CultivationMarginalEffortKneeQ = .8;
+        Check(CultivationEconomy.EffortForCapital(config, stored) <
+            oldFieldEffort, "a later knee lowers future field labor cost");
+        Near(stored, Capital(.7),
+            "changing q_k does not rewrite stored physical capital", 0);
+        Near(CultivationEconomy.Intensity(config, stored), physicalQ,
+            "changing q_k does not change q(E)", 0);
+
+        config.Neolithic.CultivationMarginalEffortKneeQ = .8;
+        config.Neolithic.FishingMarginalEffortKneeQ = .4;
+        double fishLegacy = FishingEconomy.EffortForCapital(config, stored);
+        Check(CultivationEconomy.EffortForCapital(config, stored) < fishLegacy,
+            "cultivation-only knee leaves fishing on its old curve");
+        config.Neolithic.FishingMarginalEffortKneeQ = .8;
+        Near(FishingEconomy.EffortForCapital(config, stored),
+            CultivationEconomy.EffortForCapital(config, stored),
+            "shared knee applies the same generalized curve", 1e-12);
+    }
+
     private static void VillageCheckpointUsesOwnedFootprint()
     {
         var world = Fixture();
@@ -426,6 +506,7 @@ internal static class HorizonCultivationChecks
         ZeroDurationDoesNoFieldWork();
         BridgeReconciliationAndOneToolDebit();
         SoftEffortChargesBuildAndMaintenance();
+        ConfigurableEffortKneesPreservePhysicalCapital();
         VillageCheckpointUsesOwnedFootprint();
         VillageDepartureLosesFieldsAndHousing();
         AdjacentCampsShareFieldTile();

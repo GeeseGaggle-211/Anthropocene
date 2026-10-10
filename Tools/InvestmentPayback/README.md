@@ -84,3 +84,37 @@ weight(t0,t1;H) = H * (exp(-t0/H) - exp(-t1/H))
 `H = infinity` reduces to `t1 - t0`. This is exact for the simulator's current
 per-turn reward representation; it is not a claim that within-turn population
 or QoL histories are available.
+
+## Technology-dependent effort stress test
+
+The additional 1,600-year experiment uses the same project and production
+sources, but has a separate runner and output directory:
+
+```bash
+bash Tools/InvestmentPayback/Run-Technology-Stress.sh \
+  TestResults/InvestmentPaybackTechnologyStress --verify --jobs 4
+```
+
+A bounded smoke run is:
+
+```bash
+bash Tools/InvestmentPayback/Run-Technology-Stress.sh \
+  /tmp/investment-payback-technology-smoke \
+  --quick --turns 6 --verify --jobs 4
+```
+
+This mode starts matched states at `q=0.38`, `0.50`, and `0.65`, issues ten
+consecutive 20-year Development directives through the production Elder
+observation/compiler seam, and compares investing immediately with investing
+after a year-400 or year-800 counterfactual effort-knee unlock. Static and
+scheduled `q_k=0.4/0.5/0.8` regimes are separated into cultivation-only,
+fishing-only, and shared cases. Fishing has no added action: it remains the
+ordinary deterministic response to compiled staffing and environmental state.
+
+The runner writes `technology_states.csv`, `technology_scenarios.csv`,
+`technology_trajectories.csv`, `technology_payoffs.csv`,
+`technology_timing.csv`, `manifest.json`, `verification.txt`, and `plots/`.
+Discounting, payback durations, timing choices, and long-run regret are
+computed in C#; `PlotTechnologyStress.py` only groups and visualizes those
+emitted values and physical paths. Read
+`Docs/InvestmentPaybackTechnologyStress.md` for the audit and conclusions.

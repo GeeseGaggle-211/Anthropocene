@@ -22,6 +22,8 @@
     "SpecialistScalePopulation": 400,
     "MaterialReserveHorizonYears": 20,
     "CultivationMarginalEffortMultiplierPerTenth": 16,
+    "CultivationMarginalEffortKneeQ": 0.4,
+    "FishingMarginalEffortKneeQ": 0.4,
     "PrimitiveAgricultureSupportedIntensity": 0.4,
     "StoneFarmToolsSupportedIntensity": 0.45,
     "PloughSupportedIntensity": 0.52,

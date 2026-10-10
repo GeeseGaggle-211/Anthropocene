@@ -87,35 +87,69 @@ namespace Anthropocene.Simulation
             => Math.Min(1, config.ReferenceIntensity * Math.Sqrt(Math.Max(0, capital)));
 
         public static double EffortForCapital(SimulationConfig config, double capital)
+            => EffortForCapital(config, capital,
+                config.Neolithic.CultivationMarginalEffortKneeQ);
+
+        public static double EffortForCapital(SimulationConfig config,
+            double capital, double kneeQ)
         {
             double e = Math.Max(0, capital);
             double factor = config.Neolithic.CultivationMarginalEffortMultiplierPerTenth;
-            if (factor <= 1 || e <= 1) return e;
+            double reference = config.ReferenceIntensity;
+            double knee = Numbers.Clamp(kneeQ, 1e-12, 1);
+            double kneeCapital = Math.Pow(knee / reference, 2);
+            if (factor <= 1 || e <= kneeCapital) return e;
             double rate = Math.Log(factor) / .1;
             double q = Intensity(config, e);
-            return 1 + 2 / (config.ReferenceIntensity * rate) *
-                (Math.Exp(rate * (q - config.ReferenceIntensity)) - 1);
+            // Preserve the shipped q_k=ReferenceIntensity evaluation order so
+            // default worlds and existing regression fingerprints do not drift.
+            if (knee == reference)
+                return 1 + 2 / (reference * rate) *
+                    (Math.Exp(rate * (q - reference)) - 1);
+            return kneeCapital + 2 * knee /
+                (reference * reference * rate) *
+                (Math.Exp(rate * (q - knee)) - 1);
         }
 
         public static double AdditionalEffort(SimulationConfig config,
             double fromCapital, double toCapital)
+            => AdditionalEffort(config, fromCapital, toCapital,
+                config.Neolithic.CultivationMarginalEffortKneeQ);
+
+        public static double AdditionalEffort(SimulationConfig config,
+            double fromCapital, double toCapital, double kneeQ)
         {
             if (toCapital <= fromCapital) return 0;
             if (config.Neolithic.CultivationMarginalEffortMultiplierPerTenth <= 1)
                 return toCapital - fromCapital;
-            return Math.Max(0, EffortForCapital(config, toCapital) -
-                EffortForCapital(config, fromCapital));
+            return Math.Max(0, EffortForCapital(config, toCapital, kneeQ) -
+                EffortForCapital(config, fromCapital, kneeQ));
         }
 
         public static double CapitalForEffort(SimulationConfig config, double effort)
+            => CapitalForEffort(config, effort,
+                config.Neolithic.CultivationMarginalEffortKneeQ);
+
+        public static double CapitalForEffort(SimulationConfig config,
+            double effort, double kneeQ)
         {
             double weight = Math.Max(0, effort);
             double factor = config.Neolithic.CultivationMarginalEffortMultiplierPerTenth;
-            if (factor <= 1 || weight <= 1) return weight;
+            double reference = config.ReferenceIntensity;
+            double knee = Numbers.Clamp(kneeQ, 1e-12, 1);
+            double kneeCapital = Math.Pow(knee / reference, 2);
+            if (factor <= 1 || weight <= kneeCapital) return weight;
             double rate = Math.Log(factor) / .1;
-            double q = config.ReferenceIntensity + Math.Log(1 +
-                (weight - 1) * config.ReferenceIntensity * rate / 2) / rate;
-            return Math.Pow(Math.Min(1, q) / config.ReferenceIntensity, 2);
+            if (knee == reference)
+            {
+                double legacyQ = reference + Math.Log(1 +
+                    (weight - 1) * reference * rate / 2) / rate;
+                return Math.Pow(Math.Min(1, legacyQ) / reference, 2);
+            }
+            double q = knee + Math.Log(1 +
+                (weight - kneeCapital) * reference * reference * rate /
+                (2 * knee)) / rate;
+            return Math.Pow(Math.Min(1, q) / reference, 2);
         }
 
         public static double Decay(SimulationConfig config, double capital,

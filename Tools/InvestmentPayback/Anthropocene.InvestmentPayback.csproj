@@ -11,5 +11,6 @@
   <ItemGroup>
     <Compile Include="$(SimulationSource)/*.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="TechnologyStress.cs" />
   </ItemGroup>
 </Project>

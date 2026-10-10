@@ -25,6 +25,13 @@ namespace Anthropocene.Simulation
         // One preserves the historical quadratic worker cost. Values above one
         // multiply marginal build and maintenance effort per additional .1 q.
         [System.Runtime.Serialization.OptionalField] public double CultivationMarginalEffortMultiplierPerTenth = 16;
+        // Experimental labor-cost junctions. These do not change physical
+        // capital E or q(E); they only select where nonlinear marginal build
+        // and maintenance effort begins. The shipped .40 values preserve the
+        // historical curve exactly. Field and fishery knees are independent so
+        // counterfactual efficiency changes need not invent a technology tree.
+        [System.Runtime.Serialization.OptionalField] public double CultivationMarginalEffortKneeQ = .40;
+        [System.Runtime.Serialization.OptionalField] public double FishingMarginalEffortKneeQ = .40;
         [System.Runtime.Serialization.OptionalField] public double PloughSupportedIntensity = .52, CopperFarmToolsSupportedIntensity = .62, IronFarmToolsSupportedIntensity = .78, PoweredFarmToolsSupportedIntensity = 1.0;
         [System.Runtime.Serialization.OptionalField] public double FarmToolFarmerYearsPerUnit = 20;
         [System.Runtime.Serialization.OptionalField] public double StoneHerdingToolAnimalsPerHerder = 2.69;
@@ -92,6 +99,8 @@ namespace Anthropocene.Simulation
             SpecialistScalePopulation = 400;
             PrimitiveAgricultureSupportedIntensity = .40;
             CultivationMarginalEffortMultiplierPerTenth = 1;
+            CultivationMarginalEffortKneeQ = .40;
+            FishingMarginalEffortKneeQ = .40;
             StoneFarmToolsSupportedIntensity = .45;
             PloughSupportedIntensity = .52;
             CopperFarmToolsSupportedIntensity = .62;
@@ -146,6 +155,11 @@ namespace Anthropocene.Simulation
             if (!(FoodRiskWeight >= 0) || double.IsInfinity(FoodRiskWeight)) throw new ArgumentException("Invalid food risk weight.");
             if (CultivationMarginalEffortMultiplierPerTenth < 1 || CultivationMarginalEffortMultiplierPerTenth > 32)
                 throw new ArgumentException("Invalid cultivation effort multiplier.");
+            if (!(CultivationMarginalEffortKneeQ > 0) ||
+                CultivationMarginalEffortKneeQ > 1 ||
+                !(FishingMarginalEffortKneeQ > 0) ||
+                FishingMarginalEffortKneeQ > 1)
+                throw new ArgumentException("Invalid capital-effort knee.");
             if (new[] { OpenBuild, WoodlandBuild, ForestBuild, WeaverFabricOutputPerBaseDays, BuilderHousingOutputPerBaseDays, LightHousingBuilderOutputPerBaseDays, AnimalFabricPerLightHousing, GeneralistTaskEfficiency, SpecialistScalePopulation, FishingToolFisherYearsPerUnit, FishingToolHarvestMultiplier }.Any(v => v <= 0)) throw new ArgumentException("Neolithic construction and allocation rates must be positive.");
             var values = GetType().GetFields().Where(f => f.FieldType == typeof(double)).Select(f => (double)f.GetValue(this));
             if (values.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || ReferencePopulation <= 0 || ReferenceFootprintTiles != 7 || ReferenceTurnYears <= 0 || IntensificationTurns <= 0 || AllocationStepE <= 0 || DecayHalfLifeYears <= 0 || HousingPeoplePerUnit <= 0 || LightHousingPeoplePerUnit <= 0 || CohesionBandScale <= 0 || SocialCohesionExponent <= 0 || LightHousingPermanence > 1 || HousingDecayPerTurn >= 1 || LightHousingDecayPerReferenceTurn >= 1 || PotStorageFoodPerUnit <= 0 || PotDecayPerReferenceTurn >= 1 || ToolCoveragePerWorker <= 0 || FarmToolFarmerYearsPerUnit <= 0 || StoneHerdingToolAnimalsPerHerder < 2 || EarlyAdvancedHerdingAnimalsPerHerder < StoneHerdingToolAnimalsPerHerder || CopperHerdingAnimalsPerHerder < EarlyAdvancedHerdingAnimalsPerHerder || IronHerdingAnimalsPerHerder < CopperHerdingAnimalsPerHerder || PoweredHerdingAnimalsPerHerder < IronHerdingAnimalsPerHerder || HerdingToolCoverageYearsPerUnit <= 0 || PrimitiveAgricultureSupportedIntensity <= 0 || StoneFarmToolsSupportedIntensity < PrimitiveAgricultureSupportedIntensity || PloughSupportedIntensity < StoneFarmToolsSupportedIntensity || CopperFarmToolsSupportedIntensity < PloughSupportedIntensity || IronFarmToolsSupportedIntensity < CopperFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity < IronFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity > 1 || RudimentaryExpectationRampYears <= 0 || RudimentaryExpectationFloor > 1 || Math.Abs(RudimentaryWeightClothing + RudimentaryWeightHousing - 1) > 1e-10 || GeneralistTaskEfficiency > 1 || SpecialistScaleMaxBonus > 1 || CraftMasteryThreshold <= 0 || CohesionHousingGain < 0)
