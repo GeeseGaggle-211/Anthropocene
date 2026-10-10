@@ -58,16 +58,18 @@ namespace Anthropocene.Simulation
                 return new ProductionFrontierResolution(
                     n.FishingMarginalEffortKneeQ, Experimental, true);
 
-            double knee = n.PrimitiveAgricultureSupportedIntensity;
+            double knee = n.PrimitiveFishingSupportedIntensity;
             string identity = Primitive;
-            if (camp.People.HasTech(NeolithicTech.Sailing))
+            if (camp.People.HasTech(NeolithicTech.Sailing) &&
+                n.SailingFishingSupportedIntensity > knee + 1e-12)
             {
-                knee = Math.Max(knee, n.PloughSupportedIntensity);
+                knee = n.SailingFishingSupportedIntensity;
                 identity = Sailing;
             }
-            if (camp.People.HasTech(NeolithicTech.CopperWorking))
+            if (camp.People.HasTech(NeolithicTech.CopperWorking) &&
+                n.CopperFishingSupportedIntensity > knee + 1e-12)
             {
-                knee = Math.Max(knee, n.CopperFarmToolsSupportedIntensity);
+                knee = n.CopperFishingSupportedIntensity;
                 identity = Copper;
             }
             return new ProductionFrontierResolution(

@@ -69,6 +69,7 @@ namespace Anthropocene.Simulation
             BuildFission(camp, recent, result.Fission);
             BuildPrevious(previous, memory, result.Previous);
             BuildMemory(world, memory, result.Memory);
+            BuildActionMask(world, camp, result.Mask);
             return new ElderObservationEnvelope
             {
                 Observation = result,
@@ -515,6 +516,25 @@ namespace Anthropocene.Simulation
             fission.ExitOpportunityPressure = Numbers.Clamp(
                 recent.ExitOpportunityPressure, 0, 1);
             fission.Pressure = recent.Push;
+        }
+
+        private static void BuildActionMask(WorldState world, Camp camp,
+            ElderActionMask mask)
+        {
+            bool cultivation = CultivationEconomy.Enabled(camp);
+            bool husbandry = CultivationEconomy.HusbandryEnabled(camp);
+            bool retainedField = cultivation &&
+                CultivationEconomy.Footprint(world, camp).Any(tile =>
+                    world.Tiles[tile].CultivationOperator == camp.Id &&
+                    LazyEcology.ProjectEcology(world, tile, world.Days)
+                        .CultivationCapital > 1e-9);
+            bool retainedHerd = husbandry && world.Herds.Any(herd =>
+                herd.DomesticCamp == camp.Id && herd.Animals > 0);
+
+            mask.FieldRetention = retainedField;
+            mask.HerdRetention = retainedHerd;
+            mask.FieldDevelopment = cultivation;
+            mask.HerdDevelopment = retainedHerd;
         }
 
         private static void BuildPrevious(ElderCompiledDecision decision,

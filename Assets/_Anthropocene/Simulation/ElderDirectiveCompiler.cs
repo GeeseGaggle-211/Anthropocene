@@ -54,6 +54,63 @@ namespace Anthropocene.Simulation
             Unit("field-development-share", fallback.FieldDevelopmentShare,
                 value => fallback.FieldDevelopmentShare = value);
 
+            void ForceInactive(string control, double forced,
+                Func<double> read, Action<double> assign, string reason)
+            {
+                double before = read();
+                if (Math.Abs(before - forced) <= 1e-12)
+                {
+                    assign(forced);
+                    return;
+                }
+                assign(forced);
+                interventions.Add(new ElderIntervention
+                {
+                    Kind = ElderInterventionKind.LegalConstraint,
+                    Control = control, Reason = reason,
+                    Requested = before, Accepted = forced
+                });
+            }
+
+            var mask = observation?.Mask;
+            if (mask != null)
+            {
+                if (!mask.FieldRetention)
+                    ForceInactive("retained-field-operation", 0,
+                        () => fallback.RetainedFieldOperation,
+                        value => fallback.RetainedFieldOperation = value,
+                        "field-retention channel is structurally unavailable");
+                if (!mask.HerdRetention)
+                    ForceInactive("retained-herd-fraction", 0,
+                        () => fallback.RetainedHerdFraction,
+                        value => fallback.RetainedHerdFraction = value,
+                        "herd-retention channel is structurally unavailable");
+
+                bool field = mask.FieldDevelopment;
+                bool herd = mask.HerdDevelopment;
+                if (!field && !herd)
+                {
+                    ForceInactive("development-budget", 0,
+                        () => fallback.DevelopmentBudget,
+                        value => fallback.DevelopmentBudget = value,
+                        "no Development channel is structurally available");
+                    ForceInactive("field-development-share", .5,
+                        () => fallback.FieldDevelopmentShare,
+                        value => fallback.FieldDevelopmentShare = value,
+                        "Development split is inactive with no available channel");
+                }
+                else if (field && !herd)
+                    ForceInactive("field-development-share", 1,
+                        () => fallback.FieldDevelopmentShare,
+                        value => fallback.FieldDevelopmentShare = value,
+                        "only field Development is structurally available");
+                else if (!field && herd)
+                    ForceInactive("field-development-share", 0,
+                        () => fallback.FieldDevelopmentShare,
+                        value => fallback.FieldDevelopmentShare = value,
+                        "only herd Development is structurally available");
+            }
+
             if (observation?.Mask == null ||
                 !observation.Mask.AllowsMovement(fallback.MovementCandidate))
             {

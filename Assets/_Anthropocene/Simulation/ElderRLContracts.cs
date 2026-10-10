@@ -211,11 +211,19 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class ElderActionMask
     {
-        public bool FieldRetention = true;
-        public bool HerdRetention = true;
-        public bool Development = true;
-        public bool DevelopmentSplit = true;
+        // Primitive structural availability only. Temporary labor/resource
+        // scarcity remains an environment consequence handled by the compiler.
+        public bool FieldRetention;
+        public bool HerdRetention;
+        public bool FieldDevelopment;
+        public bool HerdDevelopment;
         public bool Movement;
+
+        public bool AllowsDevelopment()
+            => FieldDevelopment || HerdDevelopment;
+
+        public bool AllowsDevelopmentSplit()
+            => FieldDevelopment && HerdDevelopment;
         // -1 is stay. Other values are exact indexes into Observation.Sites.
         public int[] LegalMovementCandidates = new[] { -1 };
 

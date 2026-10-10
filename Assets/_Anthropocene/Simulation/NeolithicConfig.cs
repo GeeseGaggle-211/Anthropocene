@@ -32,6 +32,11 @@ namespace Anthropocene.Simulation
         // counterfactual efficiency changes need not invent a technology tree.
         [System.Runtime.Serialization.OptionalField] public double CultivationMarginalEffortKneeQ = .40;
         [System.Runtime.Serialization.OptionalField] public double FishingMarginalEffortKneeQ = .40;
+        // Fishing progression is calibrated independently of agricultural
+        // tool tiers. Defaults preserve the primitive frontier until measured.
+        [System.Runtime.Serialization.OptionalField] public double PrimitiveFishingSupportedIntensity = .40,
+            SailingFishingSupportedIntensity = .40,
+            CopperFishingSupportedIntensity = .40;
         // Explicit experiment gates. Production play resolves q_k from each
         // settlement's legal capabilities unless the corresponding gate is on.
         // Keeping the values separate from the gates lets controlled sweeps
@@ -107,6 +112,9 @@ namespace Anthropocene.Simulation
             CultivationMarginalEffortMultiplierPerTenth = 1;
             CultivationMarginalEffortKneeQ = .40;
             FishingMarginalEffortKneeQ = .40;
+            PrimitiveFishingSupportedIntensity = .40;
+            SailingFishingSupportedIntensity = .40;
+            CopperFishingSupportedIntensity = .40;
             ExperimentalCultivationEffortKneeOverride = false;
             ExperimentalFishingEffortKneeOverride = false;
             StoneFarmToolsSupportedIntensity = .45;
@@ -168,6 +176,13 @@ namespace Anthropocene.Simulation
                 !(FishingMarginalEffortKneeQ > 0) ||
                 FishingMarginalEffortKneeQ > 1)
                 throw new ArgumentException("Invalid capital-effort knee.");
+            if (!(PrimitiveFishingSupportedIntensity > 0) ||
+                SailingFishingSupportedIntensity <
+                    PrimitiveFishingSupportedIntensity ||
+                CopperFishingSupportedIntensity <
+                    SailingFishingSupportedIntensity ||
+                CopperFishingSupportedIntensity > 1)
+                throw new ArgumentException("Invalid fishing technology frontier.");
             if (new[] { OpenBuild, WoodlandBuild, ForestBuild, WeaverFabricOutputPerBaseDays, BuilderHousingOutputPerBaseDays, LightHousingBuilderOutputPerBaseDays, AnimalFabricPerLightHousing, GeneralistTaskEfficiency, SpecialistScalePopulation, FishingToolFisherYearsPerUnit, FishingToolHarvestMultiplier }.Any(v => v <= 0)) throw new ArgumentException("Neolithic construction and allocation rates must be positive.");
             var values = GetType().GetFields().Where(f => f.FieldType == typeof(double)).Select(f => (double)f.GetValue(this));
             if (values.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || ReferencePopulation <= 0 || ReferenceFootprintTiles != 7 || ReferenceTurnYears <= 0 || IntensificationTurns <= 0 || AllocationStepE <= 0 || DecayHalfLifeYears <= 0 || HousingPeoplePerUnit <= 0 || LightHousingPeoplePerUnit <= 0 || CohesionBandScale <= 0 || SocialCohesionExponent <= 0 || LightHousingPermanence > 1 || HousingDecayPerTurn >= 1 || LightHousingDecayPerReferenceTurn >= 1 || PotStorageFoodPerUnit <= 0 || PotDecayPerReferenceTurn >= 1 || ToolCoveragePerWorker <= 0 || FarmToolFarmerYearsPerUnit <= 0 || StoneHerdingToolAnimalsPerHerder < 2 || EarlyAdvancedHerdingAnimalsPerHerder < StoneHerdingToolAnimalsPerHerder || CopperHerdingAnimalsPerHerder < EarlyAdvancedHerdingAnimalsPerHerder || IronHerdingAnimalsPerHerder < CopperHerdingAnimalsPerHerder || PoweredHerdingAnimalsPerHerder < IronHerdingAnimalsPerHerder || HerdingToolCoverageYearsPerUnit <= 0 || PrimitiveAgricultureSupportedIntensity <= 0 || StoneFarmToolsSupportedIntensity < PrimitiveAgricultureSupportedIntensity || PloughSupportedIntensity < StoneFarmToolsSupportedIntensity || CopperFarmToolsSupportedIntensity < PloughSupportedIntensity || IronFarmToolsSupportedIntensity < CopperFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity < IronFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity > 1 || RudimentaryExpectationRampYears <= 0 || RudimentaryExpectationFloor > 1 || Math.Abs(RudimentaryWeightClothing + RudimentaryWeightHousing - 1) > 1e-10 || GeneralistTaskEfficiency > 1 || SpecialistScaleMaxBonus > 1 || CraftMasteryThreshold <= 0 || CohesionHousingGain < 0)

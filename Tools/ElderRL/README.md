@@ -25,7 +25,13 @@ The policy retains exactly five strategic controls:
 5. one masked local movement candidate, including explicit `stay`.
 
 These are targets, not worker counts or recipes. `NativeElderDirectiveCompiler`
-maps them through the production planner. The simulator remains authoritative
+maps them through the production planner. Continuous masks represent structural
+causal availability: field retention, herd retention, field Development, and
+herd Development. A learner must not sample or score an inactive continuous
+head. Field-only Development canonically uses share 1, herd-only share 0, and
+no available Development channel forces budget 0. Temporary scarcity remains
+a simulator consequence rather than an action mask.
+The simulator remains authoritative
 for legality, placement, integer staffing, tools, inputs, production, trade,
 fishing, ecology, demography, immigration, and fission. Fishing remains a
 deterministic economic service response and has no Elder action head.
@@ -46,7 +52,7 @@ The checked-in tensor remains 512 floats plus 512 presence bits. Its blocks are:
 | 24–39 | herd aggregate plus three reserved slots |
 | 40–55 | prior requested/accepted/realized directive and elapsed years |
 | 56–63 | recent fission evidence plus one reserved slot |
-| 64–83 | semantic capabilities, one reserved slot, and four continuous-action masks |
+| 64–83 | semantic capabilities, one reserved slot, and four structural continuous-action masks |
 | 84–116 | 11 persisted institutional traces at 20/60/180-year time constants |
 | 117–127 | three trace-maturity values plus eight reserved slots |
 | 128–211 | seven local site rows |
@@ -70,7 +76,10 @@ operation, current maintenance, security, realized flows, and persisted traces.
 
 Stored `E`, `q(E)`, decay, and historical construction labour are unchanged.
 `SettlementProductionFrontier` resolves cultivation and fishing effort knees
-from each settlement's current legal capability state. Planner forecasts,
+from each settlement's current legal capability state. Fishing uses independent
+primitive/Sailing/Copper calibration fields, all defaulting to 0.4 until its
+technology-efficiency curve is measured; it does not borrow agricultural
+Plough/Copper intensities. Planner forecasts,
 maintenance, build debits, and resolver inverses all use the same resolved
 frontier. One settlement's capability cannot change another settlement's
 frontier.

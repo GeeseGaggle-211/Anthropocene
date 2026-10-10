@@ -58,7 +58,7 @@ namespace Anthropocene.Simulation
             Reserved("core-reserved-63", 63, 1),
             Block("capabilities", 64, 3, 5, "permission-filtered capability rows in checked-in semantic order", "available flag, experience and progress ratio"),
             Reserved("core-reserved-79", 79, 1),
-            Block("continuous-action-mask", 80, 4, 1, "native action legality", "flags"),
+            Block("continuous-action-mask", 80, 4, 1, "structural availability: field retention, herd retention, field Development, herd Development", "flags"),
             Block("institutional-memory-traces", 84, 3, 11, "persisted settlement-local exact-lazy EMA bank", "signal-specific values at tau 20/60/180 years"),
             Block("institutional-memory-maturity", 117, 3, 1, "persisted trace initialization age", "one-minus-exp(-age/tau)"),
             Reserved("core-reserved-120", 120, 8),
@@ -189,8 +189,8 @@ namespace Anthropocene.Simulation
             }
             Put(80, observation.Mask.FieldRetention ? 1 : 0);
             Put(81, observation.Mask.HerdRetention ? 1 : 0);
-            Put(82, observation.Mask.Development ? 1 : 0);
-            Put(83, observation.Mask.DevelopmentSplit ? 1 : 0);
+            Put(82, observation.Mask.FieldDevelopment ? 1 : 0);
+            Put(83, observation.Mask.HerdDevelopment ? 1 : 0);
 
             if (observation.Memory?.Present == true)
             {

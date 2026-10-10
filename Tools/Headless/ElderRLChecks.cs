@@ -28,7 +28,8 @@ internal static class ElderRLChecks
     {
         checks = 0;
         Schema(); TechnologyFrontier(); ObservationBoundary();
-        ObservationV2Semantics(); MemoryAndPhysicalTime(); RewardContract();
+        ObservationV2Semantics(); ActionMaskSemantics();
+        MemoryAndPhysicalTime(); RewardContract();
         DirectiveCausality(); OptionAParity(); EnvironmentAndReplay();
         Console.WriteLine("PASS: " + checks + " Elder RL assertions");
         return checks;
@@ -179,14 +180,19 @@ internal static class ElderRLChecks
         Near(world.FisherySites?.Sum(site => site.Capital) ?? 0, fishE,
             "frontier resolution does not mutate stored fishery E");
 
+        world.Config.Neolithic.SailingFishingSupportedIntensity = .55;
+        world.Config.Neolithic.CopperFishingSupportedIntensity = .65;
         first.People.NeolithicTechnologies.Add(NeolithicTech.Sailing);
         Near(SettlementProductionFrontier
-                .EffectiveFishingEffortKnee(world, first),
-            world.Config.Neolithic.PloughSupportedIntensity,
-            "fishing capability resolves independently from cultivation");
+                .EffectiveFishingEffortKnee(world, first), .55,
+            "Sailing uses the independent fishing calibration seam");
         Near(SettlementProductionFrontier
                 .EffectiveFishingEffortKnee(world, second), .4,
             "fishing frontiers remain settlement-local");
+        first.People.NeolithicTechnologies.Add(NeolithicTech.CopperWorking);
+        Near(SettlementProductionFrontier
+                .EffectiveFishingEffortKnee(world, first), .65,
+            "Copper fishing efficacy does not borrow agricultural calibration");
 
         world.Config.Neolithic.CultivationMarginalEffortKneeQ = .8;
         world.Config.Neolithic.FishingMarginalEffortKneeQ = .8;
@@ -512,6 +518,93 @@ internal static class ElderRLChecks
             "contact migration is signed and normalized by physical time");
         Near(approved.Contacts[0].RecentTradeUtilityPerCapitaYear, 7 / scale,
             "contact trade utility is the actual settled common-unit flow");
+    }
+
+    private static void ActionMaskSemantics()
+    {
+        var fieldWorld = Fixture();
+        var fieldCamp = fieldWorld.Camps[0];
+        fieldCamp.Technology = Technology.Cultivation;
+        fieldCamp.Technologies[(int)Technology.Cultivation] = true;
+        fieldCamp.Technologies[(int)Technology.AnimalHusbandry] = false;
+        fieldWorld.Herds.RemoveAll(herd => herd.DomesticCamp == fieldCamp.Id);
+        var builder = new ElderObservationBuilder();
+        var fieldOnly = builder.Build(fieldWorld, fieldCamp.Id, false);
+        Check(fieldOnly.Mask.FieldDevelopment &&
+            !fieldOnly.Mask.HerdDevelopment &&
+            fieldOnly.Mask.AllowsDevelopment() &&
+            !fieldOnly.Mask.AllowsDevelopmentSplit(),
+            "a cultivation-only settlement exposes field but not herd Development");
+        var fieldTensor = ElderObservationSchema.Encode(fieldOnly);
+        Check(fieldTensor.Values[82] == 1 && fieldTensor.Values[83] == 0,
+            "tensor masks encode primitive field/herd Development availability");
+        var fieldDecision = Compile(fieldWorld, new ElderDirective
+        {
+            RetainedFieldOperation = 1,
+            RetainedHerdFraction = 1,
+            DevelopmentBudget = .6,
+            FieldDevelopmentShare = 0,
+            MovementCandidate = -1
+        });
+        Near(fieldDecision.Accepted.RetainedHerdFraction, 0,
+            "unavailable herd retention is canonically zero");
+        Near(fieldDecision.Accepted.FieldDevelopmentShare, 1,
+            "cultivation-only Development is canonically field-directed");
+        Check(fieldDecision.Interventions.Any(item =>
+                item.Control == "field-development-share"),
+            "native compilation records structural split canonicalization");
+
+        var herdWorld = Fixture();
+        var herdCamp = herdWorld.Camps[0];
+        herdCamp.Technology = Technology.AnimalHusbandry;
+        herdCamp.Technologies[(int)Technology.Cultivation] = false;
+        herdCamp.Technologies[(int)Technology.AnimalHusbandry] = true;
+        foreach (int tile in CultivationEconomy.Footprint(herdWorld, herdCamp))
+        {
+            if (herdWorld.Tiles[tile].CultivationOperator == herdCamp.Id)
+            {
+                herdWorld.Tiles[tile].CultivationCapital = 0;
+                herdWorld.Tiles[tile].CultivationOperator = -1;
+            }
+        }
+        var herdOnly = builder.Build(herdWorld, herdCamp.Id, false);
+        Check(!herdOnly.Mask.FieldDevelopment &&
+            herdOnly.Mask.HerdDevelopment &&
+            herdOnly.Mask.AllowsDevelopment() &&
+            !herdOnly.Mask.AllowsDevelopmentSplit(),
+            "a herd-only settlement exposes herd but not field Development");
+        var herdDecision = Compile(herdWorld, new ElderDirective
+        {
+            RetainedFieldOperation = 1,
+            RetainedHerdFraction = 1,
+            DevelopmentBudget = .6,
+            FieldDevelopmentShare = 1,
+            MovementCandidate = -1
+        });
+        Near(herdDecision.Accepted.RetainedFieldOperation, 0,
+            "unavailable field retention is canonically zero");
+        Near(herdDecision.Accepted.FieldDevelopmentShare, 0,
+            "herd-only Development is canonically herd-directed");
+
+        var neitherWorld = Fixture();
+        var neitherCamp = neitherWorld.Camps[0];
+        neitherCamp.Technology = Technology.None;
+        neitherCamp.Technologies[(int)Technology.Cultivation] = false;
+        neitherCamp.Technologies[(int)Technology.AnimalHusbandry] = false;
+        neitherWorld.Herds.RemoveAll(herd => herd.DomesticCamp == neitherCamp.Id);
+        var neither = builder.Build(neitherWorld, neitherCamp.Id, false);
+        Check(!neither.Mask.AllowsDevelopment(),
+            "a settlement with neither capability has no Development channel");
+        var neitherDecision = Compile(neitherWorld, new ElderDirective
+        {
+            DevelopmentBudget = .8,
+            FieldDevelopmentShare = 1,
+            MovementCandidate = -1
+        });
+        Near(neitherDecision.Accepted.DevelopmentBudget, 0,
+            "Development budget is canonically zero when no channel exists");
+        Near(neitherDecision.Accepted.FieldDevelopmentShare, .5,
+            "inactive Development split uses a deterministic neutral value");
     }
 
     private static void MemoryAndPhysicalTime()

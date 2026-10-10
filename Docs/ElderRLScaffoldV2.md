@@ -35,7 +35,7 @@ and the native boundary in
 | 63 | 1 | reserved |
 | 64 | 5 x 3 | explicit semantic capability rows |
 | 79 | 1 | reserved |
-| 80 | 4 | continuous-action masks |
+| 80 | 4 | structural availability: field retention, herd retention, field Development, herd Development |
 | 84 | 11 x 3 | persisted EMA traces at 20/60/180 years |
 | 117 | 3 | trace maturity |
 | 120 | 8 | reserved |
@@ -55,15 +55,25 @@ Every value has a parallel presence bit. `q_k`, absolute world age, raw turn
 counts, planner Priority, forward migration attractiveness, and raw identities
 are absent.
 
+The four continuous mask bits describe structural causal availability, not
+temporary affordability. The learner derives Development availability as
+field-or-herd and split activity as field-and-herd. A field-only settlement
+canonically uses field share 1; herd-only uses 0; neither forces Development
+budget 0. Inactive heads should contribute no learner log-probability or
+entropy. Temporary labor, material, reserve, or ecological constraints remain
+simulator consequences.
+
 ## Settlement-local production frontier
 
 [`SettlementProductionFrontier.cs`](../Assets/_Anthropocene/Simulation/SettlementProductionFrontier.cs)
 is the single resolver for cultivation and fishing labor technology. It reads
 the settlement's existing legal capability/technology state and returns a
-neutral knee and identity. Existing Plough/Copper capability can improve the
-cultivation frontier; existing Sailing/Copper capability can improve the
-fishing frontier. This is a seam for later progression, not a new technology
-tree.
+neutral knee and identity. Existing Plough/Copper capability can improve the cultivation frontier.
+Fishing progression uses separate
+`PrimitiveFishingSupportedIntensity`/`SailingFishingSupportedIntensity`/
+`CopperFishingSupportedIntensity` calibration fields. They default to 0.4,
+so Sailing/Copper do not inherit agricultural numbers until fishing efficacy
+is measured. This is a seam for later progression, not a new technology tree.
 
 `CultivationEconomy` and `FishingEconomy` retain generic
 `EffortForCapital`, `AdditionalEffort`, and `CapitalForEffort` primitives.
