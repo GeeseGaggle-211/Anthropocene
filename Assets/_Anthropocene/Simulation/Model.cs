@@ -504,6 +504,9 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public FissionTarget FissionDestination;
         // Immigration hysteresis (WP10b-2): sparse, pruned at commit; null when empty and absent in older saves.
         [System.Runtime.Serialization.OptionalField] public List<MigrationMemory> RecentMigration;
+        // Opt-in, settlement-local Elder institution state. Null settlements
+        // incur no trace update cost in ordinary gameplay.
+        [System.Runtime.Serialization.OptionalField] public ElderInstitutionMemory ElderMemory;
         [NonSerialized] private Society people = new Society();
         public Society People => people ?? (people = new Society());
         internal void Bind(Society owner) { people = owner; SocietyId = owner.Id; Player = owner.Player; }

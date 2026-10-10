@@ -106,7 +106,10 @@ namespace Anthropocene.Simulation
                     var site = SiteAt(tile);
                     double opening = site == null ? 0
                         : FishingEconomy.ProjectedCapital(world, site, horizon.StartDays);
-                    var capital = FishingEconomy.AllocateCapital(world, opening,
+                    int managerId = state.Operators[tile];
+                    var manager = camps[managerId];
+                    var capital = FishingEconomy.AllocateCapital(world, manager,
+                        opening,
                         ground.CapitalWorkerYears, horizon.Years);
                     state.Overlays[tile] = new AquaticEcologyOverlay(capital.OpeningCapital,
                         capital.AverageCapital, capital.EndingCapital, capital.OperationFraction);

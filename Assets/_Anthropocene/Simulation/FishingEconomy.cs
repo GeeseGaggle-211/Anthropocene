@@ -349,13 +349,26 @@ namespace Anthropocene.Simulation
         public static double EffortForCapital(SimulationConfig config, double capital)
             => NeolithicCapital.EffortForCapital(config, capital,
                 config.Neolithic.FishingMarginalEffortKneeQ);
+        public static double EffortForCapital(WorldState world, Camp camp,
+            double capital) => NeolithicCapital.EffortForCapital(world.Config,
+                capital, SettlementProductionFrontier
+                    .EffectiveFishingEffortKnee(world, camp));
         public static double AdditionalEffort(SimulationConfig config,
             double fromCapital, double toCapital)
             => NeolithicCapital.AdditionalEffort(config, fromCapital,
                 toCapital, config.Neolithic.FishingMarginalEffortKneeQ);
+        public static double AdditionalEffort(WorldState world, Camp camp,
+            double fromCapital, double toCapital)
+            => NeolithicCapital.AdditionalEffort(world.Config, fromCapital,
+                toCapital, SettlementProductionFrontier
+                    .EffectiveFishingEffortKnee(world, camp));
         public static double CapitalForEffort(SimulationConfig config, double effort)
             => NeolithicCapital.CapitalForEffort(config, effort,
                 config.Neolithic.FishingMarginalEffortKneeQ);
+        public static double CapitalForEffort(WorldState world, Camp camp,
+            double effort) => NeolithicCapital.CapitalForEffort(world.Config,
+                effort, SettlementProductionFrontier
+                    .EffectiveFishingEffortKnee(world, camp));
         public static double Decay(SimulationConfig config, double capital, double operationFraction, double years) => NeolithicCapital.Decay(config, capital, operationFraction, years);
         public static double MeanDecayedCapital(SimulationConfig config, double capital, double operationFraction, double years) => NeolithicCapital.MeanDecayedCapital(config, capital, operationFraction, years);
 
@@ -370,14 +383,15 @@ namespace Anthropocene.Simulation
         // can reapply that immutable work to the authoritative physical site.
         // Keeping the equations here makes planning and reconciliation identical.
         internal static FishingCapitalAllocation AllocateCapital(WorldState world,
-            double openingCapital, double effectiveWork, double years)
+            Camp camp, double openingCapital, double effectiveWork, double years)
         {
             if (world == null) throw new ArgumentNullException(nameof(world));
+            if (camp == null) throw new ArgumentNullException(nameof(camp));
             openingCapital = Math.Max(0, openingCapital);
             effectiveWork = Math.Max(0, effectiveWork);
             years = Math.Max(0, years);
             double requiredMaintenance = world.Config.Neolithic.MaintenanceWorkersPerTileE(world.Config.MaintenanceCoefficient)
-                * EffortForCapital(world.Config, openingCapital) * years;
+                * EffortForCapital(world, camp, openingCapital) * years;
             double maintenanceWork = Math.Min(effectiveWork, requiredMaintenance);
             double operation = requiredMaintenance > Epsilon
                 ? Numbers.Clamp(maintenanceWork / requiredMaintenance, 0, 1)
@@ -386,8 +400,8 @@ namespace Anthropocene.Simulation
             double buildWork = Math.Max(0, effectiveWork - maintenanceWork);
             double addedEffort = world.Config.Neolithic.BuildWorkerYearsPerTileE > 0
                 ? buildWork / world.Config.Neolithic.BuildWorkerYearsPerTileE : 0;
-            double endingCapital = CapitalForEffort(world.Config,
-                EffortForCapital(world.Config, decayed) + addedEffort);
+            double endingCapital = CapitalForEffort(world, camp,
+                EffortForCapital(world, camp, decayed) + addedEffort);
             double meanCapital = NeolithicCapital.MeanDecayedCapital(world.Config, openingCapital, operation, years)
                 + .5 * Math.Max(0, endingCapital - decayed);
             return new FishingCapitalAllocation(openingCapital, meanCapital, endingCapital,
@@ -572,7 +586,8 @@ namespace Anthropocene.Simulation
                     fisherYears = 0; // Unknown geometry never becomes a hidden-stock claim.
                 double effectiveWork = departing ? 0 : fisherYears * ground.DistanceFactor;
                 double effectiveToolWork = Math.Min(fisherYears, covered[i]);
-                var capital = AllocateCapital(world, ground.OpeningCapital, effectiveWork, years);
+                var capital = AllocateCapital(world, camp,
+                    ground.OpeningCapital, effectiveWork, years);
                 double baseCatch = fisherYears * ground.YieldPerFisherYear;
                 double toolBonus = harvestEffort[i] > Epsilon
                     ? baseCatch * (toolMultiplier - 1)

@@ -24,6 +24,8 @@
     "CultivationMarginalEffortMultiplierPerTenth": 16,
     "CultivationMarginalEffortKneeQ": 0.4,
     "FishingMarginalEffortKneeQ": 0.4,
+    "ExperimentalCultivationEffortKneeOverride": false,
+    "ExperimentalFishingEffortKneeOverride": false,
     "PrimitiveAgricultureSupportedIntensity": 0.4,
     "StoneFarmToolsSupportedIntensity": 0.45,
     "PloughSupportedIntensity": 0.52,

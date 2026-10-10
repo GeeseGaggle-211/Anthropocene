@@ -293,7 +293,7 @@ internal static class FishingResourceChecks
             "the immutable hidden plan retains its knowledge-safe capital estimate");
         Check(ground.CapitalWorkerYears > 0,
             "the stale-snapshot ground wins positive management work");
-        var expected = FishingEconomy.AllocateCapital(world, 2,
+        var expected = FishingEconomy.AllocateCapital(world, camp, 2,
             ground.CapitalWorkerYears, prepared.Horizon.Years);
 
         new TurnResolver().Resolve(world, prepared);

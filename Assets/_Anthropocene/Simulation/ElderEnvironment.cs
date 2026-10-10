@@ -15,9 +15,8 @@ namespace Anthropocene.Simulation
         private ElderEnvironmentOptions options;
         private ElderObservation observation;
         private ElderObservationMetadata observationMetadata;
-        private ElderCompiledDecision previous;
         private int controlledCampId = -1, controlledPlayer = -1;
-        private int episodeStep, initialPopulation;
+        private int episodeStep;
         private bool ended;
         private Dictionary<int, List<Order>> replayBackgroundOverride;
 
@@ -57,17 +56,19 @@ namespace Anthropocene.Simulation
                 EnvironmentSchemaVersion = requestedOptions.EnvironmentSchemaVersion,
                 EpisodeDecisionLimit = requestedOptions.EpisodeDecisionLimit,
                 MovementEnabled = requestedOptions.MovementEnabled,
-                SyntheticShocksEnabled = requestedOptions.SyntheticShocksEnabled
+                SyntheticShocksEnabled = requestedOptions.SyntheticShocksEnabled,
+                IncludeTrainingCriticSidecar =
+                    requestedOptions.IncludeTrainingCriticSidecar
             };
             ValidateVersions(request);
             if (request.RandomStream != 0)
                 throw new NotSupportedException(
-                    "Native Elder v1 supports only RandomStream 0; snapshot state owns keyed simulation randomness.");
+                    "Native Elder v2 supports only RandomStream 0; snapshot state owns keyed simulation randomness.");
             if (options.EpisodeDecisionLimit < 1)
                 throw new ArgumentException("EpisodeDecisionLimit must be positive.",
                     nameof(request));
             if (options.SyntheticShocksEnabled)
-                throw new NotSupportedException("Synthetic shocks are a gated v2 curriculum and are not active in native v1.");
+                throw new NotSupportedException("Synthetic shocks remain a separately gated curriculum and are not active in native v2.");
             if (request.BackgroundPolicy != ElderBackgroundPolicy.FrozenHeuristic)
                 throw new NotSupportedException("Unsupported background policy.");
             bool hasSnapshot = request.Snapshot != null &&
@@ -103,11 +104,14 @@ namespace Anthropocene.Simulation
                 throw new InvalidOperationException("The controlled camp has no resident Elder economy.");
             controlledCampId = controlled.Id;
             controlledPlayer = controlled.Player;
-            initialPopulation = Math.Max(1, controlled.Population);
-            episodeStep = 0; previous = null; ended = false;
+            episodeStep = 0; ended = false;
             replayBackgroundOverride = null;
+            ElderInstitutionMemorySystem.EnsureInitialized(world, controlled);
             observation = observationBuilder.Build(world, controlledCampId,
                 options.MovementEnabled, out observationMetadata);
+            var critic = options.IncludeTrainingCriticSidecar
+                ? ElderTrainingCriticSidecarBuilder.Build(world, controlled)
+                : null;
             ElderObservationSchema.Validate();
             string initialFingerprint = SaveCodec.Fingerprint(world);
             byte[] initialSnapshot = SaveCodec.Save(world);
@@ -123,6 +127,7 @@ namespace Anthropocene.Simulation
                 BuildHash = BuildHash,
                 ConfigurationHash = configurationHash,
                 InitialStateFingerprint = initialFingerprint,
+                InitialTrainingCriticSidecar = critic?.Copy(),
                 ObservationSchemaVersion = ElderRLContract.ObservationSchemaVersion,
                 ActionSchemaVersion = ElderRLContract.ActionSchemaVersion,
                 EnvironmentSchemaVersion = ElderRLContract.EnvironmentSchemaVersion
@@ -142,7 +147,8 @@ namespace Anthropocene.Simulation
                 ControlledPlayer = controlledPlayer,
                 FixtureIdentity = request.FixtureIdentity,
                 Seed = world.Seed,
-                RandomStream = request.RandomStream
+                RandomStream = request.RandomStream,
+                TrainingCriticSidecar = critic?.Copy()
             };
         }
 
@@ -202,7 +208,6 @@ namespace Anthropocene.Simulation
                 {
                     [controlledCampId] = observation
                 }, compiler, traces, execution);
-            var record = new TurnResolver(execution).Resolve(world, prepared);
             if (!prepared.ElderDecisions.TryGetValue(controlledCampId,
                     out var decision))
                 throw new InvalidOperationException("The Elder directive was not compiled.");
@@ -211,6 +216,7 @@ namespace Anthropocene.Simulation
                 decision.Interventions = validationInterventions.Concat(
                     decision.Interventions ?? Array.Empty<ElderIntervention>())
                     .ToArray();
+            var record = new TurnResolver(execution).Resolve(world, prepared);
             controlled = world.Camps.FirstOrDefault(camp =>
                 camp.Id == controlledCampId);
             double years = record.Duration / world.Config.DaysPerYear;
@@ -233,6 +239,9 @@ namespace Anthropocene.Simulation
                 };
             }
             string fingerprint = SaveCodec.Fingerprint(world);
+            var critic = options.IncludeTrainingCriticSidecar && controlled != null
+                ? ElderTrainingCriticSidecarBuilder.Build(world, controlled)
+                : null;
             var replayBackground = CopyOrders(background);
             replayBackground.Remove(controlledPlayer);
             ReplayLog.Steps.Add(new ElderReplayStep
@@ -240,25 +249,28 @@ namespace Anthropocene.Simulation
                 EpisodeStep = episodeStep,
                 Requested = decision.Requested?.Copy(),
                 Accepted = decision.Accepted?.Copy(),
+                Realized = decision.Realized?.Copy(),
+                ElapsedYears = years,
                 Interventions = decision.Interventions?.Select(Copy).ToArray()
                     ?? Array.Empty<ElderIntervention>(),
                 BackgroundOrders = replayBackground,
                 ExogenousEvents = Array.Empty<ElderShockEvent>(),
-                StateFingerprint = fingerprint
+                PostStepFingerprint = fingerprint,
+                TrainingCriticSidecar = critic?.Copy()
             });
-            previous = decision;
             return new ElderStepResult
             {
                 Observation = observation,
                 ObservationMetadata = observationMetadata,
                 Reward = reward,
-                ScalarReward = reward.NormalizedWelfare,
+                ScalarReward = reward.UndiscountedIntervalWelfare,
                 ElapsedYears = years,
                 Terminated = terminated,
                 Truncated = truncated,
                 Decision = decision,
                 ExogenousEvents = Array.Empty<ElderShockEvent>(),
                 StateFingerprint = fingerprint,
+                TrainingCriticSidecar = critic?.Copy(),
                 Events = record.Events.ToArray()
             };
         }
@@ -290,18 +302,43 @@ namespace Anthropocene.Simulation
             if (!string.Equals(reset.ConfigurationHash,
                     replay.ConfigurationHash, StringComparison.Ordinal))
                 throw new InvalidOperationException("Replay configuration hash mismatch.");
+            if (!SameCritic(reset.TrainingCriticSidecar,
+                    replay.InitialTrainingCriticSidecar))
+                throw new InvalidOperationException(
+                    "Replay initial training-only critic sidecar mismatch.");
             foreach (var expected in replay.Steps.OrderBy(step =>
                 step.EpisodeStep))
             {
                 environment.replayBackgroundOverride =
                     CopyOrders(expected.BackgroundOrders);
                 var actual = environment.Step(expected.Requested);
+                if (!SameDirective(actual.Decision.Requested,
+                        expected.Requested))
+                    throw new InvalidOperationException("Replay requested action diverged at Elder step " +
+                        expected.EpisodeStep + ".");
                 if (!SameDirective(actual.Decision.Accepted,
                         expected.Accepted))
                     throw new InvalidOperationException("Replay accepted action diverged at Elder step " +
                         expected.EpisodeStep + ".");
+                if (!SameDirective(actual.Decision.Realized,
+                        expected.Realized))
+                    throw new InvalidOperationException("Replay realized action diverged at Elder step " +
+                        expected.EpisodeStep + ".");
+                if (!SameInterventions(actual.Decision.Interventions,
+                        expected.Interventions))
+                    throw new InvalidOperationException("Replay intervention evidence diverged at Elder step " +
+                        expected.EpisodeStep + ".");
+                if (Math.Abs(actual.ElapsedYears - expected.ElapsedYears) >
+                        1e-12 * Math.Max(1, Math.Abs(expected.ElapsedYears)))
+                    throw new InvalidOperationException("Replay elapsed physical interval diverged at Elder step " +
+                        expected.EpisodeStep + ".");
+                if (!SameCritic(actual.TrainingCriticSidecar,
+                        expected.TrainingCriticSidecar))
+                    throw new InvalidOperationException("Replay training-only critic sidecar diverged at Elder step " +
+                        expected.EpisodeStep + ".");
                 if (!string.Equals(actual.StateFingerprint,
-                        expected.StateFingerprint, StringComparison.Ordinal))
+                        expected.PostStepFingerprint,
+                        StringComparison.Ordinal))
                     throw new InvalidOperationException("Replay diverged at Elder step " +
                         expected.EpisodeStep + ".");
             }
@@ -312,10 +349,65 @@ namespace Anthropocene.Simulation
             => left != null && right != null &&
                 left.SchemaVersion == right.SchemaVersion &&
                 left.MovementCandidate == right.MovementCandidate &&
-                left.RetainedFieldOperation == right.RetainedFieldOperation &&
-                left.RetainedHerdFraction == right.RetainedHerdFraction &&
-                left.DevelopmentBudget == right.DevelopmentBudget &&
-                left.FieldDevelopmentShare == right.FieldDevelopmentShare;
+                SameNumber(left.RetainedFieldOperation,
+                    right.RetainedFieldOperation) &&
+                SameNumber(left.RetainedHerdFraction,
+                    right.RetainedHerdFraction) &&
+                SameNumber(left.DevelopmentBudget,
+                    right.DevelopmentBudget) &&
+                SameNumber(left.FieldDevelopmentShare,
+                    right.FieldDevelopmentShare);
+
+        private static bool SameNumber(double left, double right)
+            => left == right || double.IsNaN(left) && double.IsNaN(right);
+
+        private static bool SameCritic(ElderTrainingCriticSidecar left,
+            ElderTrainingCriticSidecar right)
+        {
+            if (left == null || right == null) return left == right;
+            return left.SchemaVersion == right.SchemaVersion &&
+                SameNumber(left.EffectiveCultivationEffortKneeQ,
+                    right.EffectiveCultivationEffortKneeQ) &&
+                SameNumber(left.EffectiveFishingEffortKneeQ,
+                    right.EffectiveFishingEffortKneeQ) &&
+                string.Equals(left.CultivationFrontierIdentity,
+                    right.CultivationFrontierIdentity,
+                    StringComparison.Ordinal) &&
+                string.Equals(left.FishingFrontierIdentity,
+                    right.FishingFrontierIdentity,
+                    StringComparison.Ordinal) &&
+                left.CultivationRegimeChanged ==
+                    right.CultivationRegimeChanged &&
+                left.FishingRegimeChanged == right.FishingRegimeChanged &&
+                left.HasCultivationRegimeChange ==
+                    right.HasCultivationRegimeChange &&
+                left.HasFishingRegimeChange ==
+                    right.HasFishingRegimeChange &&
+                SameNumber(left.CultivationRegimeChangeDays,
+                    right.CultivationRegimeChangeDays) &&
+                SameNumber(left.FishingRegimeChangeDays,
+                    right.FishingRegimeChangeDays);
+        }
+
+        private static bool SameInterventions(ElderIntervention[] left,
+            ElderIntervention[] right)
+        {
+            left ??= Array.Empty<ElderIntervention>();
+            right ??= Array.Empty<ElderIntervention>();
+            if (left.Length != right.Length) return false;
+            for (int i = 0; i < left.Length; i++)
+                if (left[i]?.Kind != right[i]?.Kind ||
+                    !string.Equals(left[i]?.Control, right[i]?.Control,
+                        StringComparison.Ordinal) ||
+                    !string.Equals(left[i]?.Reason, right[i]?.Reason,
+                        StringComparison.Ordinal) ||
+                    !SameNumber(left[i]?.Requested ?? double.NaN,
+                        right[i]?.Requested ?? double.NaN) ||
+                    !SameNumber(left[i]?.Accepted ?? double.NaN,
+                        right[i]?.Accepted ?? double.NaN))
+                    return false;
+            return true;
+        }
 
         private ElderRewardVector Reward(Camp controlled,
             ElderCompiledDecision decision, int priorPopulation,
@@ -323,38 +415,29 @@ namespace Anthropocene.Simulation
         {
             double quality = controlled == null ? 0 :
                 ElderRLContract.Unit(controlled.QoL);
-            double raw = priorPopulation * quality *
-                Math.Max(0, elapsedYears);
-            double normalizer = Math.Max(1e-12, initialPopulation *
-                Math.Max(0, elapsedYears));
+            var reward = ElderRewardContract.Physical(priorPopulation,
+                quality, elapsedYears);
             double continuity = controlled == null || priorPopulation <= 0
                 ? 0 : Numbers.Clamp(controlled.Population /
                     (double)priorPopulation, 0, 2);
-            return new ElderRewardVector
-            {
-                PriorPopulation = priorPopulation,
-                RealizedQoL = quality,
-                ElapsedYears = Math.Max(0, elapsedYears),
-                RawWelfareFlow = raw,
-                NormalizedWelfare = raw / normalizer,
-                FoodSecurity = controlled == null ? 0 :
-                    ElderRLContract.Unit(controlled.FoodNeedsMetRatio),
-                WaterSecurity = controlled == null ? 0 :
-                    ElderRLContract.Unit(controlled.WaterNeedsMetRatio),
-                ServiceReliability = controlled == null ? 0 :
-                    Math.Min(ElderRLContract.Unit(controlled.ClothPerCapita),
-                        ElderRLContract.Unit(controlled.HousingPerCapita)),
-                PopulationContinuity = continuity,
-                EcologicalViability = controlled == null ? 0 :
-                    1 - ElderRLContract.Unit(controlled.DeficitSeverity),
-                SettlementViability = controlled != null &&
-                    controlled.Population > 0 ? 1 : 0,
-                CapitalContinuity = decision?.Realized == null ? 0 :
-                    .5 * (decision.Realized.RetainedFieldOperation +
-                        decision.Realized.RetainedHerdFraction),
-                CatastrophicLoss = controlled == null ||
-                    controlled.Population <= 0 ? 1 : 0
-            };
+            reward.FoodSecurity = controlled == null ? 0 :
+                ElderRLContract.Unit(controlled.FoodNeedsMetRatio);
+            reward.WaterSecurity = controlled == null ? 0 :
+                ElderRLContract.Unit(controlled.WaterNeedsMetRatio);
+            reward.ServiceReliability = controlled == null ? 0 :
+                Math.Min(ElderRLContract.Unit(controlled.ClothPerCapita),
+                    ElderRLContract.Unit(controlled.HousingPerCapita));
+            reward.PopulationContinuity = continuity;
+            reward.EcologicalViability = controlled == null ? 0 :
+                1 - ElderRLContract.Unit(controlled.DeficitSeverity);
+            reward.SettlementViability = controlled != null &&
+                controlled.Population > 0 ? 1 : 0;
+            reward.CapitalContinuity = decision?.Realized == null ? 0 :
+                .5 * (decision.Realized.RetainedFieldOperation +
+                    decision.Realized.RetainedHerdFraction);
+            reward.CatastrophicLoss = controlled == null ||
+                controlled.Population <= 0 ? 1 : 0;
+            return reward;
         }
 
         private static Camp SelectControlledCamp(WorldState state,
@@ -416,7 +499,9 @@ namespace Anthropocene.Simulation
                         .EpisodeDecisionLimit ?? 32,
                     MovementEnabled = source.Options?.MovementEnabled ?? false,
                     SyntheticShocksEnabled = source.Options?
-                        .SyntheticShocksEnabled ?? false
+                        .SyntheticShocksEnabled ?? false,
+                    IncludeTrainingCriticSidecar = source.Options?
+                        .IncludeTrainingCriticSidecar ?? false
                 },
                 ExpectedSimulatorVersion = source.ExpectedSimulatorVersion,
                 ExpectedConfigurationHash = source.ExpectedConfigurationHash,

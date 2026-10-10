@@ -1,95 +1,139 @@
-# Native Elder RL boundary
+# Native Elder RL boundary — scaffold v2
 
-Branch: `feature/elder-rl-scaffold`
+This directory exposes the frozen pre-PPO native simulator contract. It contains
+no trainer, Python bridge, ML runtime, learned weights, PPO implementation,
+GRU, or Transformer.
 
-Issue [#43](https://github.com/GeeseGaggle-211/Anthropocene/issues/43)
-adds the model-neutral boundary needed to attach a later PPO/Gymnasium adapter.
-It deliberately contains no trainer, Python bridge, ML runtime, or learned
-weights.
+The version tuple is:
 
-## Authority boundary
+- observation schema **v2**;
+- environment/replay schema **v2**;
+- action schema **v1** (unchanged); and
+- optional training-only critic sidecar schema **v1**.
 
-The policy chooses five bounded strategic controls:
+A v1 observation or environment payload is rejected. It is never interpreted
+using v2 meanings.
 
-1. operation of retained fields;
-2. retention of the existing managed herd;
+## Authority and action boundary
+
+The policy retains exactly five strategic controls:
+
+1. retained-field operation;
+2. retained-herd fraction;
 3. a common Development labour budget;
-4. the field/herd split of that budget; and
-5. one categorical movement candidate, including explicit `stay`.
+4. the field share of Development; and
+5. one masked local movement candidate, including explicit `stay`.
 
 These are targets, not worker counts or recipes. `NativeElderDirectiveCompiler`
-maps them through the production DemandControl planner. The simulation retains
-authority over legality, placement conflicts, integer staffing, inputs, tools,
-recipes, trade, fishing access, ecology, immigration, fission, and turn
-resolution. A rejected or physically repaired target is reported as an
-`ElderIntervention`; an invalid categorical action never silently clamps to a
-different destination.
+maps them through the production planner. The simulator remains authoritative
+for legality, placement, integer staffing, tools, inputs, production, trade,
+fishing, ecology, demography, immigration, and fission. Fishing remains a
+deterministic economic service response and has no Elder action head.
 
-The turn sequence is the ordinary WEGO sequence:
+For each decision, the compiler/resolver exposes requested, accepted, and
+physically realized directives, field/herd Development split, interventions,
+and elapsed physical years. Raw compiler internals and entity IDs stay out of
+the actor tensor.
+
+## Observation v2
+
+The checked-in tensor remains 512 floats plus 512 presence bits. Its blocks are:
+
+| Slots | Meaning |
+| --- | --- |
+| 0–15 | own settlement, physical interval/event ages, security, reserves, realized migration/trade |
+| 16–23 | retained fields; slot 23 is mean current retained-field `q` |
+| 24–39 | herd aggregate plus three reserved slots |
+| 40–55 | prior requested/accepted/realized directive and elapsed years |
+| 56–63 | recent fission evidence plus one reserved slot |
+| 64–83 | semantic capabilities, one reserved slot, and four continuous-action masks |
+| 84–116 | 11 persisted institutional traces at 20/60/180-year time constants |
+| 117–127 | three trace-maturity values plus eight reserved slots |
+| 128–211 | seven local site rows |
+| 212–247 | three fishing rows with current `E`, `q`, operation, and maintenance; one reserved slot per row |
+| 248–311 | eight owned-herd rows |
+| 312–399 | eleven explicitly keyed commodity rows |
+| 400–463 | eight permission-safe contact rows with physical ages and realized flows |
+| 464–511 | presence/overflow, action masks, and reserved migration space |
+
+The exact registry, row keys, sources, units, permissions, and missing-value
+rules are emitted by the `schema` command. Commodity rows use an explicit
+checked-in semantic list rather than enum order. Planner priority and future
+attractiveness/build forecasts are not actor features.
+
+The actor does not observe absolute world age, raw turn counts, `q_k`, a
+marginal cost derivative, future technology schedules, or a prospective
+response curve. It observes consequences: current physical capital/intensity,
+operation, current maintenance, security, realized flows, and persisted traces.
+
+## Local production frontiers
+
+Stored `E`, `q(E)`, decay, and historical construction labour are unchanged.
+`SettlementProductionFrontier` resolves cultivation and fishing effort knees
+from each settlement's current legal capability state. Planner forecasts,
+maintenance, build debits, and resolver inverses all use the same resolved
+frontier. One settlement's capability cannot change another settlement's
+frontier.
+
+The investment-payback harness has explicit independent cultivation/fishing
+override gates for controlled `q_k=0.4/0.5/0.8` counterfactuals. Those gates are
+experiment configuration, not gameplay technology and not actor information.
+A capability change alters future physical/economic consequences; it does not
+prescribe strategy or grant/refund capital.
+
+## Institutional memory and physical time
+
+`Camp.ElderMemory` is optional, serializable settlement/institution state. It is
+initialized for a controlled Elder settlement and updated only at physical
+event boundaries. It never scans full `World.History`.
+
+For a piecewise-constant signal, every trace uses the exact lazy update
 
 ```text
-directive -> ordinary movement order -> placement resolution
-          -> committed-state trade -> destination-aware fishing access
-          -> compile the same directive at the accepted tile
-          -> production and needs -> immigration/fission
-          -> next observation and reward
+a = exp(-dt / tau)
+m(t + dt) = a m(t) + (1 - a) x
 ```
 
-## Versioned contracts
+at `tau = 20, 60, 180` years. The 11 traces are QoL, food security, water
+security, food reserves, population pressure, signed realized migration, field
+pressure, herd pressure, fishing pressure, realized trade utility, and realized
+Development. Per-horizon maturity is `1-exp(-age/tau)` and initialization/event
+timestamps are persisted.
 
-`ElderResetRequest` requires exactly one authoritative snapshot or registered
-fixture. It also carries the seed/random-stream configuration, controlled settlement,
-background policy, episode horizon, movement/shock gates, and expected
-simulation/configuration/schema versions. Reset returns the first observation,
-all schema versions, build/configuration hashes, initial state fingerprint, and
-controlled/scenario metadata.
+Actor-visible time consists of known physical durations: previous and next
+interval years, deficit/movement/fission age with explicit presence, contact
+age, and prior-action elapsed years. For legacy saves, missing contact days are
+migrated from the old turn stamp and the then-current configured turn duration;
+that reconstruction is an explicit approximation. A deficit already active at
+first Elder initialization is dated to first institutional observation because
+older state has no physical onset timestamp.
 
-Native v1 accepts random stream `0` only: keyed simulation randomness belongs
-to the authoritative snapshot's world seed. Any other stream is rejected
-instead of being accepted as an inert label. `CaptureSnapshot` captures world
-state for a new Reset; it is not an in-episode checkpoint and therefore starts
-a new episode horizon, reward normalizer, and previous-action history.
+## Reward, replay, and critic-only data
 
-Observation schema v1 has a checked-in 512-float layout:
-
-| Block | Offset | Shape |
-| --- | ---: | ---: |
-| own settlement/core/history/capabilities | 0 | 128 |
-| local site candidates | 128 | 7 x 12 |
-| fishing candidates | 212 | 3 x 12 |
-| owned herd groups | 248 | 8 x 8 |
-| own commodity summaries | 312 | 11 x 8 |
-| remembered contacts | 400 | 8 x 8 |
-| presence/overflow and masks | 464 | 37 |
-| reserved migration space | 501 | 11 |
-
-The registry records source, units, missing-value behavior, and permission for
-each range. Raw camp, society, player, herd, and tile identifiers are not policy
-features. Movement tile IDs exist only in the trusted metadata sidecar used by
-the compiler. Foreign live inventories and unseen terrain never enter the
-observation; contacts come from the existing permission-filtered game-knowledge
-view. Every bounded collection reports presence and overflow.
-
-## Reward and replay
-
-The invariant welfare flow is:
+The native boundary reports:
 
 ```text
-raw = prior_population * realized_local_QoL * elapsed_years
-scalar = raw / (initial_population * elapsed_years)
+welfare_rate = prior_population * realized_QoL
+undiscounted_interval_welfare = welfare_rate * elapsed_years
+scalar_reward = undiscounted_interval_welfare
 ```
 
-The raw terms and normalized scalar are both reported, alongside diagnostic
-food, water, service, continuity, ecology, settlement, capital, and catastrophic
-loss channels. Those diagnostics are not tunable reward weights. The prior
-cohort is fixed before resolution, so fission does not assign the parent a
-daughter settlement's later welfare.
+There is no episode-initial-population normalizer. Food, water, continuity,
+ecology, settlement, capital, and catastrophic-loss fields are diagnostic
+sidecars and do not alter the scalar objective. The external learner owns
+campaign `N_ref`, physical-time discount `rho`, and the eventual GAE convention.
 
-Replay records the authoritative initial snapshot, build/configuration/schema
-identity, requested and accepted actions, interventions, frozen background
-orders, exogenous events, and every post-step state fingerprint. Verification
-replays recorded background orders and rejects build, configuration, schema,
-accepted-action, or state divergence. A seed by itself is not replay evidence.
+Replay v2 records requested, accepted, and realized directives; intervention
+evidence; elapsed years; frozen background orders; optional critic sidecars;
+and deterministic post-step fingerprints. Verification rejects build,
+configuration, schema, action-evidence, physical-time, sidecar, or fingerprint
+divergence.
+
+`ElderTrainingCriticSidecar` is returned only when explicitly requested. It is
+a separate type and is unreachable from `ElderObservation` and its encoder. It
+contains effective cultivation/fishing knees, neutral frontier identities, and
+regime-change indicators/timestamps for training-only asymmetric-critic
+ablations. Runtime actors and ordinary game knowledge never receive it.
 
 ## CLI checks
 
@@ -101,39 +145,24 @@ dotnet run --project Tools/ElderRL/Anthropocene.ElderRL.csproj -c Release -- res
 dotnet run --project Tools/ElderRL/Anthropocene.ElderRL.csproj -c Release -- step-smoke
 dotnet run --project Tools/ElderRL/Anthropocene.ElderRL.csproj -c Release -- replay-smoke
 dotnet run --project Tools/ElderRL/Anthropocene.ElderRL.csproj -c Release -- benchmark --steps=2
+dotnet run --project Tools/Headless/Anthropocene.Headless.csproj -c Release -- --elder-rl-only
 ```
 
-The benchmark reports 1/4/8/16/32-environment throughput. Fixed headless checks
-cover schema accounting, permission boundaries, all five causal action heads,
-explicit intervention reporting, Option A parity, scalar/parallel determinism,
-save continuation, movement, Reset/Step, and action-driven replay.
+The focused suite covers schema accounting and rejection, local-frontier
+isolation, causal field/fishing observations, physical-time EMA semigroup and
+save persistence, O(1)-history construction, reward additivity, all five action
+heads, Option A parity, scalar/parallel determinism, continuation, and replay.
 
-## PPO handoff boundary
+## Learner handoff
 
-The native side is ready for a separately reviewed adapter to:
+The separately reviewed adapter may encode v2 for Gymnasium, batch native
+environments, and later test MLP/PPO. It must retain native replay artifacts and
+must not move economics into Python. Synthetic shocks and a sparse global event
+scheduler remain deferred. GRU and Transformer are deferred learner-side
+experiments, not missing native simulator work.
 
-- encode `ElderObservationSchema` into a Gymnasium observation;
-- expose the four continuous controls and masked movement categorical;
-- batch persistent `Reset`/`Step` environments; and
-- train/evaluate PPO while retaining native replay artifacts.
-
-That adapter must preserve schema versions and action masks and must not move
-simulation authority into Python. Synthetic shocks remain an explicitly rejected
-v2 option until production disaster mechanics exist. The first native episode
-limit defaults to 32 real turns; training cadence and PPO hyperparameters remain
-adapter-level research choices.
-
-## External training harness
-
-Python training, evaluation, dataset and export work lives in the separate
-private repository
-[`GeeseGaggle-211/Anthropocene-RL`](https://github.com/GeeseGaggle-211/Anthropocene-RL).
-`training-repository.json` pins the exact training skeleton commit expected by
-this branch. The training repository independently pins this simulator commit
-and schema set in `configs/simulator/elder-v1.yaml`.
-
-This is a manifest relationship, not a Git submodule. Gymnasium, PyTorch,
-RLlib, checkpoints and training datasets do not enter the Unity/C# repository.
-Any change to simulator physics, reward meaning, observation permissions or the
-action contract requires updating both manifests and rerunning the native parity
-and regression gates before a new training campaign.
+Python training work remains in the separate private
+[`GeeseGaggle-211/Anthropocene-RL`](https://github.com/GeeseGaggle-211/Anthropocene-RL)
+repository. `training-repository.json` records the schema-v2 compatibility
+boundary; the downstream repository must pin the exact candidate commit before
+training.

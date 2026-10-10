@@ -164,7 +164,11 @@ namespace Anthropocene.Simulation
             // social processes remain observed outcomes, not action repairs.
             foreach (var decision in prepared.ElderDecisions
                 .OrderBy(pair => pair.Key).Select(pair => pair.Value))
+            {
                 ElderDecisionRealization.Reconcile(w, decision);
+                ElderInstitutionMemorySystem.RecordDecision(w, decision,
+                    horizon.StartDays);
+            }
             activeElderDecisions =
                 new Dictionary<int, ElderCompiledDecision>();
             // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
@@ -192,7 +196,11 @@ namespace Anthropocene.Simulation
                 UpdateFishingGroundKnowledge(w, prepared.FishingPlans, record, resolvedFisheryOperations);
             }
             LastMetrics.KnowledgeMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
-            w.History.Add(record); w.Turn++;
+            w.History.Add(record);
+            foreach (var camp in w.Camps.Where(camp =>
+                camp.ElderMemory != null).OrderBy(camp => camp.Id))
+                ElderInstitutionMemorySystem.ObserveBoundary(w, camp, record);
+            w.Turn++;
             var diagnostics = w.Diagnostics;
             if (diagnostics != null && diagnostics.Turn == prepared.Turn)
             {

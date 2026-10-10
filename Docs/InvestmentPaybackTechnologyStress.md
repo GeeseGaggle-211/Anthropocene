@@ -49,6 +49,16 @@ changed knee applies a new method to **future** build and maintenance work on
 the existing physical asset. It does not create capital, recompute `q`, or
 refund historical construction labor.
 
+Scaffold v2 makes ordinary production resolution settlement-local through
+`SettlementProductionFrontier`: current legal Plough/Copper capability affects
+cultivation labor and Sailing/Copper capability affects fishing labor. The
+stress harness explicitly enables independent global cultivation/fishing
+override gates in every matched arm, including the `q_k=0.4` control. Thus the
+published sweep remains a controlled counterfactual and cannot be contaminated
+by capability acquisition during a run. Effective `q_k` remains absent from the
+actor tensor; an optional separately typed training-only critic sidecar may
+record it for ablation.
+
 ## Capital-effort model audit
 
 The physical capital map remains

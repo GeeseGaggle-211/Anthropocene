@@ -9,9 +9,10 @@ namespace Anthropocene.Simulation
     // records for an ML framework but must preserve all schema versions.
     public static class ElderRLContract
     {
-        public const int ObservationSchemaVersion = 1;
+        public const int ObservationSchemaVersion = 2;
         public const int ActionSchemaVersion = 1;
-        public const int EnvironmentSchemaVersion = 1;
+        public const int EnvironmentSchemaVersion = 2;
+        public const int CriticSidecarSchemaVersion = 1;
         public const int SchemaVersion = ObservationSchemaVersion;
         public const int TensorFeatureCount = 512;
         public const int MaxLocalSites = 7;
@@ -42,6 +43,7 @@ namespace Anthropocene.Simulation
         public ElderCapabilityObservation[] Capabilities = Array.Empty<ElderCapabilityObservation>();
         public ElderCommodityObservation[] Commodities = Array.Empty<ElderCommodityObservation>();
         public ElderContactObservation[] Contacts = Array.Empty<ElderContactObservation>();
+        public ElderMemoryObservation Memory = new ElderMemoryObservation();
         public ElderPresenceObservation Presence = new ElderPresenceObservation();
         public ElderActionMask Mask = new ElderActionMask();
     }
@@ -51,12 +53,16 @@ namespace Anthropocene.Simulation
     {
         // Raw camp/player IDs are intentionally absent. They live only in
         // ElderObservationMetadata and are not part of the policy tensor.
-        public int Population, ConnectedConsumers, DeficitTurns;
-        public double ElapsedDays, HorizonYears;
+        public int Population, ConnectedConsumers;
+        public double PreviousIntervalYears, NextIntervalYears;
+        public bool HasPreviousInterval, HasDeficitAge, HasMovementAge,
+            HasFissionAge;
+        public double DeficitAgeYears, MovementAgeYears, FissionAgeYears;
         public double QoL, FoodNeedsMet, WaterNeedsMet, ClothingCoverage,
             HousingCoverage, FoodReserveYears;
-        public double PopulationTrend, QoLTrend, NetMigrationTrend;
-        public bool IsVillage, RecentlyMoved;
+        public double RealizedMigrationPerCapitaYear,
+            RealizedTradeUtilityPerCapitaYear;
+        public bool IsVillage;
     }
 
     [Serializable]
@@ -65,7 +71,7 @@ namespace Anthropocene.Simulation
         public int RetainedTiles;
         public double CurrentOperation, MaintenanceWorkerYears;
         public double CurrentFoodSupport, FutureFoodSupport, RebuildBurden,
-            RetainedCapitalService;
+            RetainedCapitalService, CurrentIntensity;
     }
 
     [Serializable]
@@ -94,7 +100,7 @@ namespace Anthropocene.Simulation
     {
         public bool CandidatePresent, RecentSplit;
         public double Pressure, ExpectedStayerGain, ExpectedDaughterQoL,
-            ExitOpportunity;
+            ExitOpportunityPressure;
         public int RecentDaughterPopulation;
     }
 
@@ -111,6 +117,7 @@ namespace Anthropocene.Simulation
         public double RequestedFieldShare, AcceptedFieldShare,
             RealizedFieldShare;
         public int InterventionCount;
+        public double ElapsedYears;
     }
 
     [Serializable]
@@ -132,8 +139,9 @@ namespace Anthropocene.Simulation
         public int Candidate, Distance;
         public bool Incumbent, Known;
         public double YieldPerFisherYear, FoodPotential, Biomass, Condition;
-        public double OpeningCapital, OperationFraction;
-        public double MaintenanceWorkerYears, BuildWorkerYears;
+        public double CurrentCapital, CurrentIntensity, OperationFraction;
+        public double MaintenanceWorkerYears;
+        public bool MaintenancePresent;
     }
 
     [Serializable]
@@ -150,8 +158,8 @@ namespace Anthropocene.Simulation
     {
         public string Key;
         public double Stock, LocalNeed, ProtectedFloor;
-        public double ProductionCapacity, MarginalValue;
-        public double RecentImport, RecentExport, ExternalOpportunity;
+        public double ProductionCapacity;
+        public double RecentImport, RecentExport;
         public bool CanProduce, CanTrade;
     }
 
@@ -159,10 +167,28 @@ namespace Anthropocene.Simulation
     public sealed class ElderContactObservation
     {
         // Raw foreign IDs and live foreign stores are deliberately absent.
-        public int Distance, AgeTurns;
-        public double Affinity, RelativeAttractiveness;
-        public double RecentTradeValue, RecentMigration;
+        public int Distance;
+        public double AgeYears, Affinity;
+        public double RecentTradeUtilityPerCapitaYear,
+            RecentTradeFlowPerCapitaYear,
+            RecentMigrationPerCapitaYear;
         public bool Kin, CurrentlyVisible;
+    }
+
+    [Serializable]
+    public sealed class ElderMemoryObservation
+    {
+        public bool Present;
+        public ElderMemoryTraceObservation[] Traces =
+            Array.Empty<ElderMemoryTraceObservation>();
+        public double[] Maturity = new double[3];
+    }
+
+    [Serializable]
+    public sealed class ElderMemoryTraceObservation
+    {
+        public string Key;
+        public double Short, Medium, Long;
     }
 
     [Serializable]
@@ -229,8 +255,8 @@ namespace Anthropocene.Simulation
     {
         // Scalar reward is fixed by contract, not a weighted sum of diagnostics.
         public int PriorPopulation;
-        public double RealizedQoL, ElapsedYears, RawWelfareFlow,
-            NormalizedWelfare;
+        public double RealizedQoL, ElapsedYears, WelfareRate,
+            UndiscountedIntervalWelfare;
         public double FoodSecurity, WaterSecurity, ServiceReliability;
         public double PopulationContinuity, EcologicalViability,
             SettlementViability, CapitalContinuity;
@@ -301,6 +327,7 @@ namespace Anthropocene.Simulation
         public ElderCompiledDecision Decision;
         public ElderShockEvent[] ExogenousEvents = Array.Empty<ElderShockEvent>();
         public string StateFingerprint;
+        public ElderTrainingCriticSidecar TrainingCriticSidecar;
         public string[] Events = Array.Empty<string>();
     }
 
@@ -325,9 +352,12 @@ namespace Anthropocene.Simulation
         public int EnvironmentSchemaVersion = ElderRLContract.EnvironmentSchemaVersion;
         public int EpisodeDecisionLimit = 32;
         public bool MovementEnabled;
-        // Reserved for separately gated v2. Native v1 rejects true rather than
+        // Reserved for a separately gated curriculum. Native v2 rejects true rather than
         // silently enabling a mock disaster system.
         public bool SyntheticShocksEnabled;
+        // Explicit adapter request. The result is separate from
+        // ElderObservation and cannot be tensor-encoded.
+        public bool IncludeTrainingCriticSidecar;
     }
 
     [Serializable]
@@ -359,18 +389,42 @@ namespace Anthropocene.Simulation
         public int ControlledCampId, ControlledPlayer;
         public string FixtureIdentity;
         public int Seed, RandomStream;
+        public ElderTrainingCriticSidecar TrainingCriticSidecar;
     }
 
     [Serializable]
     public sealed class ElderReplayStep
     {
         public int EpisodeStep;
-        public ElderDirective Requested, Accepted;
+        public ElderDirective Requested, Accepted, Realized;
+        public double ElapsedYears;
         public ElderIntervention[] Interventions = Array.Empty<ElderIntervention>();
         public Dictionary<int, List<Order>> BackgroundOrders =
             new Dictionary<int, List<Order>>();
         public ElderShockEvent[] ExogenousEvents = Array.Empty<ElderShockEvent>();
-        public string StateFingerprint;
+        public string PostStepFingerprint;
+        public ElderTrainingCriticSidecar TrainingCriticSidecar;
+    }
+
+    // Training-only ground truth for optional asymmetric-critic ablations.
+    // It is intentionally not reachable from ElderObservation or its encoder.
+    [Serializable]
+    public sealed class ElderTrainingCriticSidecar
+    {
+        public int SchemaVersion = ElderRLContract.CriticSidecarSchemaVersion;
+        public double EffectiveCultivationEffortKneeQ,
+            EffectiveFishingEffortKneeQ;
+        public string CultivationFrontierIdentity,
+            FishingFrontierIdentity;
+        public bool CultivationRegimeChanged,
+            FishingRegimeChanged;
+        public bool HasCultivationRegimeChange,
+            HasFishingRegimeChange;
+        public double CultivationRegimeChangeDays,
+            FishingRegimeChangeDays;
+
+        public ElderTrainingCriticSidecar Copy()
+            => (ElderTrainingCriticSidecar)MemberwiseClone();
     }
 
     [Serializable]
@@ -379,6 +433,7 @@ namespace Anthropocene.Simulation
         public byte[] InitialSnapshot;
         public ElderResetRequest Reset;
         public string BuildHash, ConfigurationHash, InitialStateFingerprint;
+        public ElderTrainingCriticSidecar InitialTrainingCriticSidecar;
         public int ObservationSchemaVersion, ActionSchemaVersion,
             EnvironmentSchemaVersion;
         public List<ElderReplayStep> Steps = new List<ElderReplayStep>();

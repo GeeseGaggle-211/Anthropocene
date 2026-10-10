@@ -14,8 +14,12 @@ namespace Anthropocene.Simulation
     public sealed class SettlementContact
     {
         public int Camp, Owner, Tile, Turn;
+        [OptionalField] public double ObservedDays;
         public ContactSource Source;
         public bool Moved;
+        [OnDeserializing]
+        private void Defaults(StreamingContext context)
+            => ObservedDays = double.NaN;
         public SettlementContact Copy() => (SettlementContact)MemberwiseClone();
     }
 
@@ -135,12 +139,16 @@ namespace Anthropocene.Simulation
             while (lo <= hi) { int mid = (lo + hi) >> 1, c = Contacts[mid].Camp.CompareTo(camp); if (c == 0) return mid; if (c < 0) lo = mid + 1; else hi = mid - 1; }
             return ~lo;
         }
-        internal void Upsert(int camp, int owner, int tile, int turn, ContactSource source)
+        internal void Upsert(int camp, int owner, int tile, int turn,
+            double observedDays, ContactSource source)
         {
             int at = Index(camp);
-            if (at >= 0) { var c = Contacts[at]; c.Owner = owner; c.Tile = tile; c.Turn = turn; c.Source = source; c.Moved = false; }
-            else Contacts.Insert(~at, new SettlementContact { Camp = camp, Owner = owner, Tile = tile, Turn = turn, Source = source });
+            if (at >= 0) { var c = Contacts[at]; c.Owner = owner; c.Tile = tile; c.Turn = turn; c.ObservedDays = observedDays; c.Source = source; c.Moved = false; }
+            else Contacts.Insert(~at, new SettlementContact { Camp = camp, Owner = owner, Tile = tile, Turn = turn, ObservedDays = observedDays, Source = source });
         }
+        internal void Upsert(int camp, int owner, int tile, int turn,
+            ContactSource source)
+            => Upsert(camp, owner, tile, turn, double.NaN, source);
     }
 
     // A remembered tile: static geography only. It deliberately has no
@@ -167,9 +175,10 @@ namespace Anthropocene.Simulation
     public sealed class SettlementContactObservation
     {
         public readonly int Camp, Owner, Tile, Turn;
+        public readonly double ObservedDays;
         public readonly ContactSource Source;
         public readonly bool Moved;
-        internal SettlementContactObservation(SettlementContact c) { Camp = c.Camp; Owner = c.Owner; Tile = c.Moved ? -1 : c.Tile; Turn = c.Turn; Source = c.Source; Moved = c.Moved; }
+        internal SettlementContactObservation(SettlementContact c) { Camp = c.Camp; Owner = c.Owner; Tile = c.Moved ? -1 : c.Tile; Turn = c.Turn; ObservedDays = c.ObservedDays; Source = c.Source; Moved = c.Moved; }
     }
 
     // Remembered knowledge: explored static geography and known-settlement
@@ -240,7 +249,8 @@ namespace Anthropocene.Simulation
                 // Blocks stamped at the load turn (saves that predate decay) first, then this turn's marks, then forgetting.
                 memory.Explored.StampUnstamped(turn);
                 foreach (int tile in u.Tiles) memory.Explored.Add(tile, turn);
-                foreach (var s in u.Seen) memory.Upsert(s.Camp, s.Owner, s.Tile, turn, ContactSource.Sighting);
+                foreach (var s in u.Seen) memory.Upsert(s.Camp, s.Owner,
+                    s.Tile, turn, w.Days, ContactSource.Sighting);
                 // A recorded tile now in view without its camp means the camp moved away.
                 foreach (var c in memory.Contacts)
                     if (c.Turn != turn && !c.Moved && u.Vision.Contains(c.Tile)) { c.Moved = true; c.Tile = -1; }
@@ -254,7 +264,8 @@ namespace Anthropocene.Simulation
         public static void RecordTrade(WorldState w, Society society, Camp partner)
         {
             if (!Remembers(society) || partner.SocietyId == society.Id) return;
-            MemoryOf(w, society).Upsert(partner.Id, partner.Player, partner.Tile, w.Turn, ContactSource.Trade);
+            MemoryOf(w, society).Upsert(partner.Id, partner.Player,
+                partner.Tile, w.Turn, w.Days, ContactSource.Trade);
         }
 
         // Migration hook (WP10b): people moved between two known settlements, so each Society learns the other camp's
@@ -262,7 +273,8 @@ namespace Anthropocene.Simulation
         public static void RecordMigration(WorldState w, Society society, Camp other)
         {
             if (!Remembers(society) || other.SocietyId == society.Id) return;
-            MemoryOf(w, society).Upsert(other.Id, other.Player, other.Tile, w.Turn, ContactSource.Migration);
+            MemoryOf(w, society).Upsert(other.Id, other.Player, other.Tile,
+                w.Turn, w.Days, ContactSource.Migration);
         }
 
         // Kin hook (called by later fission work). The daughter receives a plain copy of
@@ -281,9 +293,12 @@ namespace Anthropocene.Simulation
                     copy.Contacts.RemoveAll(c => c.Camp == daughterCamp.Id || c.Camp == parentCamp.Id);
                     daughter.Memory = copy;
                 }
-                parentMemory.Upsert(daughterCamp.Id, daughterCamp.Player, daughterCamp.Tile, w.Turn, ContactSource.Kin);
+                parentMemory.Upsert(daughterCamp.Id, daughterCamp.Player,
+                    daughterCamp.Tile, w.Turn, w.Days, ContactSource.Kin);
             }
-            if (Remembers(daughter)) MemoryOf(w, daughter).Upsert(parentCamp.Id, parentCamp.Player, parentCamp.Tile, w.Turn, ContactSource.Kin);
+            if (Remembers(daughter)) MemoryOf(w, daughter).Upsert(
+                parentCamp.Id, parentCamp.Player, parentCamp.Tile, w.Turn,
+                w.Days, ContactSource.Kin);
         }
 
         // Read side for observations: remembered static geography outside current

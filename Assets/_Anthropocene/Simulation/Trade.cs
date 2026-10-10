@@ -31,6 +31,11 @@ namespace Anthropocene.Simulation
         // Delivered is the want leg's delivered fraction, GiveDelivered the give leg's (absent in older records: 1).
         // Ordered is the part of each leg the seller agreed to make to order rather than give from stock.
         [System.Runtime.Serialization.OptionalField] public double GiveDelivered = 1;
+        // Actual nonlinear local utility of the quantities that physically
+        // settled, in the same person-QoL-year units as the opening value
+        // curves. These are not planned gain multiplied by a delivery fraction.
+        [System.Runtime.Serialization.OptionalField]
+        public double RequesterRealizedUtility, ResponderRealizedUtility;
         [System.Runtime.Serialization.OptionalField] public bool WantMadeToOrder, GiveMadeToOrder;
         [System.Runtime.Serialization.OnDeserializing] private void Defaults(System.Runtime.Serialization.StreamingContext context) { GiveDelivered = 1; }
     }
@@ -112,8 +117,56 @@ namespace Anthropocene.Simulation
         // (a made good has one part). The quantities are their sums.
         public double[] WantParts, GiveParts;
         public double WantMade, GiveMade;
+        public TradeUtilitySnapshot Utility;
         // No made part: both legs come from opening stock and the agreement settles at the opening.
         public bool AllStock => !(WantMade > 1e-12) && !(GiveMade > 1e-12);
+    }
+
+    internal sealed class TradeUtilitySnapshot
+    {
+        private ValueCurve.Segment[] requesterWant, requesterGive,
+            responderGive, responderWant;
+        private double requesterWantPosition, requesterGivePosition,
+            responderGivePosition, responderWantPosition, transport;
+
+        public static TradeUtilitySnapshot Capture(Trade.Valuation requester,
+            Trade.Valuation responder, TradeAgreement agreement,
+            SimulationConfig config)
+        {
+            return new TradeUtilitySnapshot
+            {
+                requesterWant = (ValueCurve.Segment[])requester.W(
+                    agreement.Want).Clone(),
+                requesterGive = (ValueCurve.Segment[])requester.W(
+                    agreement.Give).Clone(),
+                responderGive = (ValueCurve.Segment[])responder.W(
+                    agreement.Give).Clone(),
+                responderWant = (ValueCurve.Segment[])responder.W(
+                    agreement.Want).Clone(),
+                requesterWantPosition = requester.Position(agreement.Want),
+                requesterGivePosition = requester.Position(agreement.Give),
+                responderGivePosition = responder.Position(agreement.Give),
+                responderWantPosition = responder.Position(agreement.Want),
+                transport = Math.Min(1, config.TradeDistanceCostPerHex *
+                    agreement.Distance)
+            };
+        }
+
+        public double Requester(double wantQuantity, double giveQuantity)
+            => ValueCurve.Integral(requesterWant, requesterWantPosition,
+                    requesterWantPosition + Math.Max(0, wantQuantity)) *
+                    (1 - transport) -
+                ValueCurve.Integral(requesterGive,
+                    requesterGivePosition - Math.Max(0, giveQuantity),
+                    requesterGivePosition);
+
+        public double Responder(double wantQuantity, double giveQuantity)
+            => ValueCurve.Integral(responderGive, responderGivePosition,
+                    responderGivePosition + Math.Max(0, giveQuantity)) *
+                    (1 - transport) -
+                ValueCurve.Integral(responderWant,
+                    responderWantPosition - Math.Max(0, wantQuantity),
+                    responderWantPosition);
     }
 
     // Marginal local-use value of one good (person-QoL-years per unit, as the planner's claims). Decreasing in x.
@@ -969,6 +1022,8 @@ namespace Anthropocene.Simulation
                         || !flows.Contains((r.Camp, p.Camp, Descriptor(scored.Want).Curve)) && !flows.Contains((p.Camp, r.Camp, Descriptor(scored.Give).Curve)));
                     var agreement = unchanged ? scored : Respond(r, p, x, cfg, flows);
                     if (agreement == null) { plan.Summary.Ignored++; continue; }
+                    agreement.Utility = TradeUtilitySnapshot.Capture(r, p,
+                        agreement, cfg);
                     plan.Agreements.Add(agreement);
                     flows.Add((p.Camp, r.Camp, Descriptor(agreement.Want).Curve)); flows.Add((r.Camp, p.Camp, Descriptor(agreement.Give).Curve));
                     // Each leg splits into the giver's stock part (its committed proportions) and its made-to-order part.
@@ -1153,10 +1208,18 @@ namespace Anthropocene.Simulation
                 var a = s.Plan.Agreements[k];
                 if (!camps.TryGetValue(a.Requester, out var r) || !camps.TryGetValue(a.Responder, out var p)) continue;
                 double want = double.IsNaN(s.WantScale[k]) ? 0 : s.WantScale[k], give = double.IsNaN(s.GiveScale[k]) ? 0 : s.GiveScale[k];
+                double wantQuantity = a.WantQuantity * want;
+                double giveQuantity = a.GiveQuantity * give;
+                double requesterUtility = a.Utility?.Requester(wantQuantity,
+                    giveQuantity) ?? 0;
+                double responderUtility = a.Utility?.Responder(wantQuantity,
+                    giveQuantity) ?? 0;
                 record.Trades.Add(new TradeRecord { Turn = w.Turn, Requester = r.Id, Responder = p.Id, RequesterSociety = r.SocietyId, ResponderSociety = p.SocietyId,
-                    Distance = a.Distance, Want = a.Want, Give = a.Give, WantQuantity = a.WantQuantity * want, GiveQuantity = a.GiveQuantity * give,
+                    Distance = a.Distance, Want = a.Want, Give = a.Give, WantQuantity = wantQuantity, GiveQuantity = giveQuantity,
                     Ratio = a.Ratio, Affinity = a.Affinity, Countered = a.Countered, RequesterGain = a.RequesterGain, ResponderGain = a.ResponderGain, Delivered = want, GiveDelivered = give,
-                    WantMadeToOrder = a.WantMade > 1e-12, GiveMadeToOrder = a.GiveMade > 1e-12 });
+                    WantMadeToOrder = a.WantMade > 1e-12, GiveMadeToOrder = a.GiveMade > 1e-12,
+                    RequesterRealizedUtility = requesterUtility,
+                    ResponderRealizedUtility = responderUtility });
                 ContactKnowledge.RecordTrade(w, r.People, p);
                 ContactKnowledge.RecordTrade(w, p.People, r);
                 // Trade is bilateral contact, not one-way imitation of a

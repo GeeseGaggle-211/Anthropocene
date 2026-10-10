@@ -262,6 +262,7 @@ internal static class Program
         if (args.Contains("--fishing-50-no-movement")) { FishingLongRunChecks.RunNoMovement(); return 0; }
         if (args.Contains("--fishing-50-all-features")) { FishingLongRunChecks.RunAllFeatures(); return 0; }
         if (args.Contains("--cultivation-cache-only")) { CultivationCacheChecks.Run(); return 0; }
+        if (args.Contains("--elder-rl-only")) { ElderRLChecks.Run(); return 0; }
         if (args.Contains("--horizon-only")) { HorizonEcologyChecks.Run(); HorizonCultivationChecks.Run(); HorizonExecutionChecks.Run(); return 0; }
         if (args.Contains("--land-food-only")) { AquaticChecks.Run(); HorizonEcologyChecks.Run(); Issue27EcologyChecks.Run(); return 0; }
         if (args.Contains("--neolithic-only")) { NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); FarmPlannerChecks.Run(); FarmFoodPhaseChecks.Run(); CultivationCacheChecks.Run(); HorizonCultivationChecks.Run(); HorizonEcologyChecks.Run(); HorizonExecutionChecks.Run(); HusbandryChecks.Run(); PastoralCraftChecks.Run(); Issue25EcologyChecks.Run(args); Issue27EcologyChecks.Run(); Issue26ForecastChecks.Run(); Issue28FoodTimebaseChecks.Run(); Issue32CapabilityChecks.Run(); return 0; }

@@ -180,10 +180,23 @@ namespace Anthropocene.Simulation
         // first derivative agree with the legacy quadratic curve at qt.
         public static double EffortForCapital(SimulationConfig c, double capital)
             => NeolithicCapital.EffortForCapital(c, capital);
+        public static double EffortForCapital(WorldState w, Camp camp,
+            double capital) => NeolithicCapital.EffortForCapital(w.Config,
+                capital, SettlementProductionFrontier
+                    .EffectiveCultivationEffortKnee(w, camp));
         public static double AdditionalEffort(SimulationConfig c, double fromCapital, double toCapital)
             => NeolithicCapital.AdditionalEffort(c, fromCapital, toCapital);
+        public static double AdditionalEffort(WorldState w, Camp camp,
+            double fromCapital, double toCapital)
+            => NeolithicCapital.AdditionalEffort(w.Config, fromCapital,
+                toCapital, SettlementProductionFrontier
+                    .EffectiveCultivationEffortKnee(w, camp));
         public static double CapitalForEffort(SimulationConfig c, double effort)
             => NeolithicCapital.CapitalForEffort(c, effort);
+        public static double CapitalForEffort(WorldState w, Camp camp,
+            double effort) => NeolithicCapital.CapitalForEffort(w.Config,
+                effort, SettlementProductionFrontier
+                    .EffectiveCultivationEffortKnee(w, camp));
         public static double Decay(SimulationConfig c, double capital, double operatingFraction, double years)
             => NeolithicCapital.Decay(c, capital, operatingFraction, years);
         public static double MeanDecayedCapital(SimulationConfig c, double capital,
@@ -353,7 +366,7 @@ namespace Anthropocene.Simulation
                 var t = w.Tiles[id];
                 if (t.CultivationOperator != camp.Id) continue;
                 Factors(w.Config, t, out _, out double maint);
-                required += w.Config.Neolithic.MaintenanceWorkersPerTileE(w.Config.MaintenanceCoefficient) * maint * EffortForCapital(w.Config, t.CultivationCapital);
+                required += w.Config.Neolithic.MaintenanceWorkersPerTileE(w.Config.MaintenanceCoefficient) * maint * EffortForCapital(w, camp, t.CultivationCapital);
             }
             plan.RequiredMaintenance = required;
             double farmers = Workers(camp, WorkforceRoles.Farmer);
@@ -405,7 +418,7 @@ namespace Anthropocene.Simulation
                 if (t.CultivationOperator >= 0 && t.CultivationOperator != camp.Id) continue;
                 var projected = LazyEcology.ProjectEcology(w, id, Math.Max(w.Days, t.LastEcologyUpdateDays));
                 double maintenance = MaintenanceMultiplier(w.Config, t, projected.CurrentVegetation);
-                required += w.Config.Neolithic.MaintenanceWorkersPerTileE(w.Config.MaintenanceCoefficient) * maintenance * EffortForCapital(w.Config, projected.CultivationCapital);
+                required += w.Config.Neolithic.MaintenanceWorkersPerTileE(w.Config.MaintenanceCoefficient) * maintenance * EffortForCapital(w, camp, projected.CultivationCapital);
             }
             return required;
         }
@@ -426,8 +439,8 @@ namespace Anthropocene.Simulation
                 double e = Math.Max(0, projected.CultivationCapital);
                 if (e >= ceiling - 1e-12) continue;
                 double bridgeCeiling = Math.Min(ceiling, Math.Pow(w.Config.GathererBridgeCeiling / w.Config.ReferenceIntensity, 2));
-                double openRoom = AdditionalEffort(w.Config, e, Math.Max(e, bridgeCeiling));
-                double woodedRoom = AdditionalEffort(w.Config, Math.Max(e, bridgeCeiling), ceiling);
+                double openRoom = AdditionalEffort(w, camp, e, Math.Max(e, bridgeCeiling));
+                double woodedRoom = AdditionalEffort(w, camp, Math.Max(e, bridgeCeiling), ceiling);
                 total += w.Config.Neolithic.BuildWorkerYearsPerTileE *
                     (openRoom * w.Config.Neolithic.OpenBuild + woodedRoom * BuildMultiplier(w.Config, t, projected.CurrentVegetation));
             }
@@ -684,6 +697,8 @@ namespace Anthropocene.Simulation
         {
             if (effectiveWorkerYears <= 1e-10 || candidates.Length == 0) return Math.Max(0, effectiveWorkerYears);
             var c = w.Config; var n = c.Neolithic;
+            double kneeQ = SettlementProductionFrontier
+                .EffectiveCultivationEffortKnee(w, camp);
             double ceiling = Math.Pow((bridge ? c.GathererBridgeCeiling : 1) / c.ReferenceIntensity, 2);
             double bridgeCeiling = Math.Pow(c.GathererBridgeCeiling / c.ReferenceIntensity, 2);
             double remaining = effectiveWorkerYears;
@@ -709,7 +724,7 @@ namespace Anthropocene.Simulation
                     if (!cached[i])
                     {
                         cached[i] = true;
-                        NextStep(w, field, bridge, years, out scores[i],
+                        NextStep(w, field, bridge, years, kneeQ, out scores[i],
                             out steps[i], out costsPerEffort[i], out gains[i],
                             out harvestProductivities[i], cache);
                     }
@@ -724,12 +739,16 @@ namespace Anthropocene.Simulation
                 double usedE = unbounded ? bestStep
                     : c.Neolithic.CultivationMarginalEffortMultiplierPerTenth <= 1
                     ? Math.Min(bestStep, remaining / bestCostPerEffort)
-                    : Math.Min(bestStep, Math.Max(0, CapitalForEffort(c,
-                        EffortForCapital(c, currentE) + remaining / bestCostPerEffort) - currentE));
+                    : Math.Min(bestStep, Math.Max(0,
+                        NeolithicCapital.CapitalForEffort(c,
+                            NeolithicCapital.EffortForCapital(c, currentE,
+                                kneeQ) + remaining / bestCostPerEffort,
+                            kneeQ) - currentE));
                 if (usedE <= 1e-12) break;
                 candidates[best].Capital = Math.Min(ceiling, currentE + usedE);
                 double chargedEffort = c.Neolithic.CultivationMarginalEffortMultiplierPerTenth <= 1
-                    ? usedE : AdditionalEffort(c, currentE, candidates[best].Capital);
+                    ? usedE : NeolithicCapital.AdditionalEffort(c, currentE,
+                        candidates[best].Capital, kneeQ);
                 remaining = Math.Max(0, remaining - chargedEffort * bestCostPerEffort);
                 if (record != null)
                 {
@@ -756,6 +775,7 @@ namespace Anthropocene.Simulation
         // expansion ladder share. score is 0 when the field cannot step;
         // annualGain is the step's annualised retained food (for that score).
         private static void NextStep(WorldState w, HorizonCandidate field, bool bridge, double years,
+            double kneeQ,
             out double score, out double step, out double costPerEffort,
             out double annualGain, out double harvestProductivity,
             PlanningKernelCache cache = null)
@@ -781,7 +801,8 @@ namespace Anthropocene.Simulation
             if (cost <= 0) return;
             double maintenance = MaintenanceMultiplier(c, tile, field.Ecology.CurrentVegetation);
             if (cache != null) cache.Investments++;
-            var investment = HorizonMarginalInvestment(w, tile, field.Ecology, e, de, years, cost, maintenance);
+            var investment = HorizonMarginalInvestment(w, tile, field.Ecology,
+                e, de, years, cost, maintenance, kneeQ);
             score = Math.Max(0, investment.AnnualizedFoodPerWorkerYear);
             step = de; costPerEffort = cost; annualGain = investment.AnnualizedRetainedFoodGain;
             if (!c.CropHarvestingOnly || c.FarmerProductivity <= 1)
@@ -807,7 +828,8 @@ namespace Anthropocene.Simulation
             => Math.Max(0, HorizonMarginalInvestment(w, tile, opening, capital, step, years, costPerEffort, maintenance).AnnualizedFoodPerWorkerYear);
 
         internal static FoodInvestmentForecast HorizonMarginalInvestment(WorldState w, Tile tile, EcologyView opening,
-            double capital, double step, double years, double costPerEffort, double maintenance)
+            double capital, double step, double years, double costPerEffort,
+            double maintenance, double? effortKneeQ = null)
         {
             var c = w.Config; var n = c.Neolithic;
             // Field investment is spread across the horizon for efficacy, while
@@ -815,7 +837,9 @@ namespace Anthropocene.Simulation
             // Compare actual retained next-boundary food from the shared kernel;
             // gross managed flow that overfills the same pool has zero value.
             double chargedEffort = n.CultivationMarginalEffortMultiplierPerTenth <= 1
-                ? step : AdditionalEffort(c, capital, capital + step);
+                ? step : NeolithicCapital.AdditionalEffort(c, capital,
+                    capital + step, effortKneeQ ??
+                        n.CultivationMarginalEffortKneeQ);
             return FoodHorizonForecast.Investment(w, tile.Id, opening.Days,
                 years * c.DaysPerYear, capital, capital + .5 * step,
                 capital + step, 1, chargedEffort * costPerEffort,
@@ -918,6 +942,8 @@ namespace Anthropocene.Simulation
         {
             if (!Enabled(camp) || camp.Population <= 0 || workerYears <= 0 || bridge && w.Config.GathererBridgeEfficiency <= 0) return 0;
             var c = w.Config; var n = c.Neolithic;
+            double kneeQ = SettlementProductionFrontier
+                .EffectiveCultivationEffortKnee(w, camp);
             double coveredWorkerYears = !bridge && toolBudget != null ? Math.Min(workerYears, toolBudget.RemainingTools * n.FarmToolFarmerYearsPerUnit) : 0;
             double efficiency = !bridge ? FarmToolFieldWorkEfficiency(n) : 1;
             double remaining = bridge ? workerYears * c.GathererBridgeEfficiency : workerYears - coveredWorkerYears + coveredWorkerYears * efficiency;
@@ -944,8 +970,10 @@ namespace Anthropocene.Simulation
                     if (bridge || Intensity(c, e) < c.GathererBridgeCeiling) vb = n.OpenBuild;
                     double affordableE = n.CultivationMarginalEffortMultiplierPerTenth <= 1
                         ? remaining / (n.BuildWorkerYearsPerTileE * vb)
-                        : Math.Max(0, CapitalForEffort(c, EffortForCapital(c, e) +
-                            remaining / (n.BuildWorkerYearsPerTileE * vb)) - e);
+                        : Math.Max(0, NeolithicCapital.CapitalForEffort(c,
+                            NeolithicCapital.EffortForCapital(c, e, kneeQ) +
+                            remaining / (n.BuildWorkerYearsPerTileE * vb),
+                            kneeQ) - e);
                     double de = Math.Min(n.AllocationStepE, Math.Min(ceiling - e, affordableE));
                     if (!bridge && Intensity(c, e) < c.GathererBridgeCeiling) de = Math.Min(de, Math.Pow(c.GathererBridgeCeiling / c.ReferenceIntensity, 2) - e);
                     if (de <= 1e-12) continue;
@@ -973,7 +1001,8 @@ namespace Anthropocene.Simulation
                             gain += (afterFlow - beforeFlow) * c.DaysPerYear / 4;
                         }
                         double addedEffort = n.CultivationMarginalEffortMultiplierPerTenth <= 1
-                            ? de : AdditionalEffort(c, e, e + de);
+                            ? de : NeolithicCapital.AdditionalEffort(c, e,
+                                e + de, kneeQ);
                         double buildCost = addedEffort * n.BuildWorkerYearsPerTileE * vb;
                         score = gain / Math.Max(1e-12, buildCost + n.PlanningHorizonYears * n.MaintenanceWorkersPerTileE(c.MaintenanceCoefficient) * vm * addedEffort);
                         cache.Capital = e;
@@ -984,7 +1013,8 @@ namespace Anthropocene.Simulation
                         cache.HasScore = true;
                     }
                     double candidateEffort = n.CultivationMarginalEffortMultiplierPerTenth <= 1
-                        ? de : AdditionalEffort(c, e, e + de);
+                        ? de : NeolithicCapital.AdditionalEffort(c, e,
+                            e + de, kneeQ);
                     double candidateCost = candidateEffort * n.BuildWorkerYearsPerTileE * vb;
                     bool focused = id == camp.CultivationFocusTile;
                     if (score > 0 && (best < 0 || focused || best != camp.CultivationFocusTile && score > bestScore)) { best = id; bestIndex = candidateIndex; bestScore = score; step = de; cost = candidateCost; }

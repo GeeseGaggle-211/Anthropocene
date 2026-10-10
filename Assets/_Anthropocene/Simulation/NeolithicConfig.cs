@@ -32,6 +32,12 @@ namespace Anthropocene.Simulation
         // counterfactual efficiency changes need not invent a technology tree.
         [System.Runtime.Serialization.OptionalField] public double CultivationMarginalEffortKneeQ = .40;
         [System.Runtime.Serialization.OptionalField] public double FishingMarginalEffortKneeQ = .40;
+        // Explicit experiment gates. Production play resolves q_k from each
+        // settlement's legal capabilities unless the corresponding gate is on.
+        // Keeping the values separate from the gates lets controlled sweeps
+        // force the shipped .40 regime as well as counterfactual .50/.80 regimes.
+        [System.Runtime.Serialization.OptionalField] public bool ExperimentalCultivationEffortKneeOverride;
+        [System.Runtime.Serialization.OptionalField] public bool ExperimentalFishingEffortKneeOverride;
         [System.Runtime.Serialization.OptionalField] public double PloughSupportedIntensity = .52, CopperFarmToolsSupportedIntensity = .62, IronFarmToolsSupportedIntensity = .78, PoweredFarmToolsSupportedIntensity = 1.0;
         [System.Runtime.Serialization.OptionalField] public double FarmToolFarmerYearsPerUnit = 20;
         [System.Runtime.Serialization.OptionalField] public double StoneHerdingToolAnimalsPerHerder = 2.69;
@@ -101,6 +107,8 @@ namespace Anthropocene.Simulation
             CultivationMarginalEffortMultiplierPerTenth = 1;
             CultivationMarginalEffortKneeQ = .40;
             FishingMarginalEffortKneeQ = .40;
+            ExperimentalCultivationEffortKneeOverride = false;
+            ExperimentalFishingEffortKneeOverride = false;
             StoneFarmToolsSupportedIntensity = .45;
             PloughSupportedIntensity = .52;
             CopperFarmToolsSupportedIntensity = .62;

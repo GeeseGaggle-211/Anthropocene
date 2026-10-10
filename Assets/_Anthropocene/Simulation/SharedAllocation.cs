@@ -193,7 +193,7 @@ namespace Anthropocene.Simulation
                     {
                         CultivationEconomy.Factors(cfg, tile, out _, out double maintenance);
                         futureMaintenance += n.MaintenanceWorkersPerTileE(cfg.MaintenanceCoefficient) * maintenance * op
-                            * .5 * (CultivationEconomy.EffortForCapital(cfg, start) + CultivationEconomy.EffortForCapital(cfg, terminalCapital));
+                            * .5 * (CultivationEconomy.EffortForCapital(world, camp, start) + CultivationEconomy.EffortForCapital(world, camp, terminalCapital));
                     }
                 }
                 double aquatic = Math.Max(0, demand.ForageSupply - demand.PlantSupply);

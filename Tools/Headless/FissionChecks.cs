@@ -911,10 +911,10 @@ internal static class FissionChecks
         Check(Key(saved) == Key(hungry[0]) && saved.History.SelectMany(h => h.Fissions).Count(f => f.Trigger == FissionTrigger.Distress) == distressed && saved.History.SelectMany(h => h.Fissions).Where(f => f.Trigger == FissionTrigger.Distress).All(f => f.DaughterGain > 0), "the trigger and daughter gain round trip in the saved history");
         // Older saves carry neither field: they read as Crowding with zero daughter gain.
         var serializer = new DataContractSerializer(typeof(FissionReport)); string xml;
-        using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new FissionReport { Trigger = FissionTrigger.Distress, DaughterGain = 1.5, Gain = .5 }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
-        string old = Regex.Replace(xml, "<(Trigger|DaughterGain)>[^<]*</\\1>", "");
+        using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new FissionReport { Trigger = FissionTrigger.Distress, DaughterGain = 1.5, ExitOpportunityPressure = .25, Gain = .5 }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
+        string old = Regex.Replace(xml, "<(Trigger|DaughterGain|ExitOpportunityPressure)>[^<]*</\\1>", "");
         Check(xml.Contains("<Trigger>") && old != xml && !old.Contains("Trigger"), "the report serializes the new fields and the legacy fixture omits them");
-        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(old))) { var f = (FissionReport)serializer.ReadObject(stream); Check(f.Trigger == FissionTrigger.Crowding && f.DaughterGain == 0 && f.Gain == .5, "an older report loads as Crowding with no daughter gain"); }
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(old))) { var f = (FissionReport)serializer.ReadObject(stream); Check(f.Trigger == FissionTrigger.Crowding && f.DaughterGain == 0 && f.ExitOpportunityPressure == 0 && f.Gain == .5, "an older report loads as Crowding with no invented daughter or exit-opportunity pressure"); }
         Check(people > 0, "fixture sanity");
     }
     // Starving camps under the real resolver: little stored food, no growth, G* at its default so only the distress pull and crowding relief act.
@@ -1069,6 +1069,9 @@ internal static class FissionChecks
         var exitReport = Pass(exit, out var exitMetrics);
         Check(exitReport != null && exitReport.Trigger == FissionTrigger.ExitOpportunity && exitMetrics.FissionDistressProposals == 0 && exitMetrics.FissionCrowdingProposals == 0,
             "a fed low-welfare camp can split through exit opportunity without masquerading as food/water distress or crowding");
+        Check(exitReport.ExitOpportunityPressure > 0 &&
+                exitReport.ExitOpportunityPressure <= 1,
+            "the report persists a bounded current exit-opportunity pressure instead of a DaughterGain sentinel");
 
         // A high-welfare parent should not fragment for a merely marginal alternative.
         var content = Rich(FissionPressureRule.CurrentPlusExitOpportunity); var cc = content.Camps[0]; Pressure(content, 5);

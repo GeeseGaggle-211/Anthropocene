@@ -330,6 +330,8 @@ internal static class TechnologyStress
         config.Players = 1;
         config.Neolithic.CultivationMarginalEffortKneeQ = DefaultKnee;
         config.Neolithic.FishingMarginalEffortKneeQ = DefaultKnee;
+        config.Neolithic.ExperimentalCultivationEffortKneeOverride = true;
+        config.Neolithic.ExperimentalFishingEffortKneeOverride = true;
         config.Validate();
         return config;
     }
@@ -851,6 +853,10 @@ internal static class TechnologyStress
         config.Neolithic.FishingMarginalEffortKneeQ =
             scenario.Scope == "fishing" || scenario.Scope == "shared"
                 ? knee : DefaultKnee;
+        // Every arm is forced, including the q_k=.4 control, so later local
+        // capability acquisition cannot contaminate a matched counterfactual.
+        config.Neolithic.ExperimentalCultivationEffortKneeOverride = true;
+        config.Neolithic.ExperimentalFishingEffortKneeOverride = true;
         config.Validate();
     }
 

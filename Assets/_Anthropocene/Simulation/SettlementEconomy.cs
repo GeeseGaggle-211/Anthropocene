@@ -653,8 +653,8 @@ namespace Anthropocene.Simulation
                         futureMaintenance += cfg.Neolithic
                             .MaintenanceWorkersPerTileE(cfg.MaintenanceCoefficient) *
                             maintenance * op * .5 *
-                            (CultivationEconomy.EffortForCapital(cfg, start) +
-                             CultivationEconomy.EffortForCapital(cfg, terminal));
+                            (CultivationEconomy.EffortForCapital(world, camp, start) +
+                             CultivationEconomy.EffortForCapital(world, camp, terminal));
                         // Retained field capital is a real option: if it is
                         // allowed to decay, recreating the difference later
                         // consumes the same clearing/build effort charged by
@@ -667,8 +667,8 @@ namespace Anthropocene.Simulation
                                 cfg.Neolithic.PlanningHorizonYears));
                         retainedCapitalWork += cfg.Neolithic
                             .BuildWorkerYearsPerTileE * build *
-                            CultivationEconomy.AdditionalEffort(cfg, abandoned,
-                                terminal);
+                            CultivationEconomy.AdditionalEffort(world, camp,
+                                abandoned, terminal);
                     }
                 }
                 double futureProductivity = !demand.CultivationEnabled ? 1 :

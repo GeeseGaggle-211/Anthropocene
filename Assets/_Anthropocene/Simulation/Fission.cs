@@ -37,6 +37,9 @@ namespace Anthropocene.Simulation
         // (Docs/Fission.md, Distress fission); absent in older saves, which read as Crowding and zero.
         [OptionalField] public FissionTrigger Trigger;
         [OptionalField] public double DaughterGain;
+        // Bounded realized pressure for an ExitOpportunity trigger. This is the
+        // actor-safe quantity; DaughterGain remains a historical diagnostic.
+        [OptionalField] public double ExitOpportunityPressure;
 #pragma warning restore SYSLIB0050
     }
 
@@ -334,7 +337,8 @@ namespace Anthropocene.Simulation
         private sealed class Evaluation
         {
             public Camp Camp;
-            public double Push, Desirability, Score, Gain, DaughterQoL, DaughterGain;
+            public double Push, Desirability, Score, Gain, DaughterQoL,
+                DaughterGain, ExitOpportunityPressure;
             public FissionTrigger Trigger;
             public int Daughter, Tile = -1;
             public bool ClearTarget, Propose, DaughterTested, DaughterBlocked, Screened, NoCandidates, NoViable, WithDestination, BelowThreshold, StayersBlocked;
@@ -507,11 +511,18 @@ namespace Anthropocene.Simulation
                 double exitPressure = ExitOpportunityPressure(exit.QNow, exit.DaughterExpected);
                 if (exitPressure >= cfg.FissionExitThreshold)
                 {
-                    chosen = exit; use = true; e.Trigger = FissionTrigger.ExitOpportunity;
+                    chosen = exit; use = true;
+                    e.Trigger = FissionTrigger.ExitOpportunity;
+                    e.ExitOpportunityPressure = exitPressure;
                 }
             }
             if (!use) { e.BelowThreshold = true; return e; }
             e.Daughter = chosen.Daughter; e.Gain = chosen.Gain; e.DaughterQoL = chosen.DaughterQoL; e.DaughterGain = chosen.DaughterGain;
+            // Record the same bounded current opportunity quantity regardless
+            // of which legal pressure rule actually selected the split. This
+            // is observation evidence only; it does not alter the trigger.
+            e.ExitOpportunityPressure = ExitOpportunityPressure(chosen.QNow,
+                chosen.DaughterExpected);
             double selectedPressure = e.Trigger == FissionTrigger.Distress ? chosen.DaughterGain
                 : e.Trigger == FissionTrigger.ExitOpportunity ? ExitOpportunityPressure(chosen.QNow, chosen.DaughterExpected)
                 : chosen.Gain;
@@ -770,7 +781,8 @@ namespace Anthropocene.Simulation
             record.Fissions.Add(new FissionReport
             {
                 Turn = w.Turn, ParentCamp = parent.Id, DaughterCamp = camp.Id, ParentSociety = ps.Id, DaughterSociety = society.Id, DaughterPlayer = society.Player, Tile = camp.Tile, ParentBefore = before, Daughter = n, Regime = (int)RegimeOf(w, parent),
-                AnimalsMoved = animals, Policy = parent.FissionPolicy, Push = e.Push, Desirability = e.Desirability, Score = e.Score, Affinity = society.KinAffinity, Gain = e.Gain, DaughterQoL = e.DaughterQoL, Trigger = e.Trigger, DaughterGain = e.DaughterGain
+                AnimalsMoved = animals, Policy = parent.FissionPolicy, Push = e.Push, Desirability = e.Desirability, Score = e.Score, Affinity = society.KinAffinity, Gain = e.Gain, DaughterQoL = e.DaughterQoL, Trigger = e.Trigger, DaughterGain = e.DaughterGain,
+                ExitOpportunityPressure = e.ExitOpportunityPressure
             });
             record.Log("Camp " + parent.Id + " (tribe " + parent.Player + ") split: " + n + " of " + before + " people founded camp " + camp.Id + " (tribe " + society.Player + ") at tile " + camp.Tile + ".");
         }

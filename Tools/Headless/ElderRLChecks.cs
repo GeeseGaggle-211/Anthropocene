@@ -27,8 +27,9 @@ internal static class ElderRLChecks
     public static int Run()
     {
         checks = 0;
-        Schema(); ObservationBoundary(); DirectiveCausality(); OptionAParity();
-        EnvironmentAndReplay();
+        Schema(); TechnologyFrontier(); ObservationBoundary();
+        ObservationV2Semantics(); MemoryAndPhysicalTime(); RewardContract();
+        DirectiveCausality(); OptionAParity(); EnvironmentAndReplay();
         Console.WriteLine("PASS: " + checks + " Elder RL assertions");
         return checks;
     }
@@ -99,6 +100,156 @@ internal static class ElderRLChecks
         Check(encoded.Values[318] == 1 && encoded.Values[319] == 0 &&
             encoded.Values[326] == 0 && encoded.Values[327] == 1,
             "commodity rows expose exact production and trade capabilities");
+        Check(ElderRLContract.ObservationSchemaVersion == 2 &&
+            ElderRLContract.EnvironmentSchemaVersion == 2 &&
+            ElderRLContract.ActionSchemaVersion == 1,
+            "v2 observation/environment and v1 action versions are explicit");
+        bool rejectedV1 = false;
+        var stale = new ElderObservation { SchemaVersion = 1 };
+        try { ElderObservationSchema.Encode(stale); }
+        catch (ArgumentException) { rejectedV1 = true; }
+        Check(rejectedV1,
+            "the v2 encoder rejects a schema-v1 tensor instead of reinterpreting it");
+        Check(ElderObservationSchema.CommodityRows.SequenceEqual(new[]
+            {
+                "HandTools", "Pots", "Cloth", "FarmTools", "Housing",
+                "Tools", "AnimalFabric", "LightHousing", "HerdingTools",
+                "HousingMaterial", "FishingTools"
+            }),
+            "commodity rows use a checked-in semantic key list, not enum order");
+        Check(ElderObservationSchema.MemoryRows.Length ==
+                ElderInstitutionMemory.SignalCount &&
+            ElderObservationSchema.Registry.Any(item => item.Offset == 84 &&
+                item.Width == 3 && item.Rows == 11),
+            "the reserved core range carries the compact 11x3 trace bank");
+    }
+
+    private static void TechnologyFrontier()
+    {
+        var world = Fixture();
+        var first = world.Camps[0];
+        first.People.NeolithicTechnologies.RemoveAll(tech =>
+            tech == NeolithicTech.Plough ||
+            tech == NeolithicTech.Sailing ||
+            tech == NeolithicTech.CopperWorking);
+        world.Config.Neolithic.CultivationMarginalEffortKneeQ = .4;
+        world.Config.Neolithic.FishingMarginalEffortKneeQ = .4;
+        world.Config.Neolithic.ExperimentalCultivationEffortKneeOverride = false;
+        world.Config.Neolithic.ExperimentalFishingEffortKneeOverride = false;
+
+        var second = new Camp
+        {
+            Id = world.NextId++, Player = 1,
+            Tile = world.Map.Neighbors(first.Tile).First(), Population = 80,
+            PlantFood = 1000, WaterNeedsMetRatio = 1,
+            FoodNeedsMetRatio = 1, QoL = 1
+        };
+        world.Camps.Add(second); Ownership.Bind(world);
+        second.Technology = Technology.Cultivation;
+        second.Technologies[(int)Technology.Cultivation] = true;
+        second.Technologies[(int)Technology.Watercraft] = true;
+        first.Technologies[(int)Technology.Watercraft] = true;
+        second.People.NeolithicTechnologies.RemoveAll(tech =>
+            tech == NeolithicTech.Plough ||
+            tech == NeolithicTech.Sailing ||
+            tech == NeolithicTech.CopperWorking);
+
+        double firstE = world.Tiles.Where(tile =>
+            tile.CultivationOperator == first.Id).Sum(tile =>
+                tile.CultivationCapital);
+        double fishE = world.FisherySites?.Sum(site => site.Capital) ?? 0;
+        Near(SettlementProductionFrontier
+                .EffectiveCultivationEffortKnee(world, first), .4,
+            "primitive cultivation frontier begins at q=.4");
+        Near(SettlementProductionFrontier
+                .EffectiveCultivationEffortKnee(world, second), .4,
+            "a second settlement independently begins at q=.4");
+
+        first.People.NeolithicTechnologies.Add(NeolithicTech.Plough);
+        Near(SettlementProductionFrontier
+                .EffectiveCultivationEffortKnee(world, first),
+            world.Config.Neolithic.PloughSupportedIntensity,
+            "Plough raises only the capable settlement's cultivation frontier");
+        Near(SettlementProductionFrontier
+                .EffectiveCultivationEffortKnee(world, second), .4,
+            "one settlement's capability does not alter another settlement");
+        Near(world.Tiles.Where(tile => tile.CultivationOperator == first.Id)
+                .Sum(tile => tile.CultivationCapital), firstE,
+            "frontier resolution does not mutate stored field E");
+        Near(world.FisherySites?.Sum(site => site.Capital) ?? 0, fishE,
+            "frontier resolution does not mutate stored fishery E");
+
+        first.People.NeolithicTechnologies.Add(NeolithicTech.Sailing);
+        Near(SettlementProductionFrontier
+                .EffectiveFishingEffortKnee(world, first),
+            world.Config.Neolithic.PloughSupportedIntensity,
+            "fishing capability resolves independently from cultivation");
+        Near(SettlementProductionFrontier
+                .EffectiveFishingEffortKnee(world, second), .4,
+            "fishing frontiers remain settlement-local");
+
+        world.Config.Neolithic.CultivationMarginalEffortKneeQ = .8;
+        world.Config.Neolithic.FishingMarginalEffortKneeQ = .8;
+        Near(SettlementProductionFrontier
+                .EffectiveCultivationEffortKnee(world, first),
+            world.Config.Neolithic.PloughSupportedIntensity,
+            "an ungated experimental value cannot silently become the production frontier");
+        Near(SettlementProductionFrontier
+                .EffectiveFishingEffortKnee(world, second), .4,
+            "ordinary fishing production remains local while its override gate is off");
+        world.Config.Neolithic.ExperimentalCultivationEffortKneeOverride = true;
+        world.Config.Neolithic.ExperimentalFishingEffortKneeOverride = true;
+        Near(SettlementProductionFrontier
+                .EffectiveCultivationEffortKnee(world, first), .8,
+            "the controlled-sweep cultivation override remains available");
+        Near(SettlementProductionFrontier
+                .EffectiveCultivationEffortKnee(world, second), .8,
+            "the controlled-sweep override can force a matched global regime");
+        Near(SettlementProductionFrontier
+                .EffectiveFishingEffortKnee(world, second), .8,
+            "the fishing override is independently forceable");
+
+        world.Config.Neolithic.ExperimentalCultivationEffortKneeOverride = false;
+        world.Config.Neolithic.ExperimentalFishingEffortKneeOverride = false;
+        world.Config.Neolithic.CultivationMarginalEffortKneeQ = .4;
+        world.Config.Neolithic.FishingMarginalEffortKneeQ = .4;
+        foreach (int tile in CultivationEconomy.Footprint(world, first))
+        {
+            world.Tiles[tile].CultivationOperator = first.Id;
+            world.Tiles[tile].CultivationCapital = 4;
+        }
+        first.Inventory.FarmTools = 0;
+        double required = CultivationEconomy.MaintenanceWorkerRequirement(
+            world, first);
+        var labor = CultivationEconomy.CalculateLabor(world, first,
+            CultivationEconomy.Footprint(world, first), null,
+            world.Config.TurnDays / world.Config.DaysPerYear);
+        Near(labor.RequiredMaintenance, required,
+            "resolver labor and planner maintenance use the identical local frontier");
+
+        var transition = Fixture(); var transitioning = transition.Camps[0];
+        transitioning.People.NeolithicTechnologies.RemoveAll(tech =>
+            tech == NeolithicTech.Plough ||
+            tech == NeolithicTech.CopperWorking);
+        transition.Config.Neolithic.ExperimentalCultivationEffortKneeOverride =
+            false;
+        ElderInstitutionMemorySystem.EnsureInitialized(transition,
+            transitioning);
+        transitioning.People.NeolithicTechnologies.Add(NeolithicTech.Plough);
+        double startDays = transition.Days;
+        transition.Days += transition.Config.TurnDays;
+        ElderInstitutionMemorySystem.ObserveBoundary(transition,
+            transitioning, new TurnRecord
+            {
+                StartDays = startDays,
+                Duration = transition.Config.TurnDays
+            });
+        var sidecar = ElderTrainingCriticSidecarBuilder.Build(transition,
+            transitioning);
+        Check(sidecar.CultivationRegimeChanged &&
+            sidecar.HasCultivationRegimeChange &&
+            sidecar.CultivationRegimeChangeDays == transition.Days,
+            "the training-only sidecar records a physical-time local regime transition");
     }
 
     private static void ObservationBoundary()
@@ -176,6 +327,301 @@ internal static class ElderRLChecks
             orderedA.Present.Skip(248).Take(64).SequenceEqual(
                 orderedB.Present.Skip(248).Take(64)),
             "owned-herd tensor ordering is invariant to raw entity-ID reassignment");
+    }
+
+    private static void ObservationV2Semantics()
+    {
+        var world = Fixture();
+        var camp = world.Camps[0];
+        var builder = new ElderObservationBuilder();
+        camp.People.NeolithicTechnologies.RemoveAll(tech =>
+            tech == NeolithicTech.Plough || tech == NeolithicTech.Sailing ||
+            tech == NeolithicTech.CopperWorking);
+        world.Config.Neolithic.CultivationMarginalEffortKneeQ = .4;
+        world.Config.Neolithic.FishingMarginalEffortKneeQ = .4;
+        world.Config.Neolithic.ExperimentalCultivationEffortKneeOverride = false;
+        world.Config.Neolithic.ExperimentalFishingEffortKneeOverride = false;
+        // Keep the observation's maintenance requirement below the resident
+        // workforce cap so this test measures the effort curve itself.
+        camp.Population = 10000;
+        camp.Inventory.FarmTools = 0;
+
+        var retained = CultivationEconomy.Footprint(world, camp)
+            .Where(tile => world.Tiles[tile].TraversableLand).ToArray();
+        foreach (int tile in retained)
+        {
+            world.Tiles[tile].CultivationOperator = camp.Id;
+            world.Tiles[tile].CultivationCapital = .25;
+        }
+        var low = builder.Build(world, camp.Id, false);
+        foreach (int tile in retained)
+            world.Tiles[tile].CultivationCapital = Math.Pow(.45 /
+                world.Config.ReferenceIntensity, 2);
+        var high = builder.Build(world, camp.Id, false);
+        Check(high.Fields.CurrentIntensity > low.Fields.CurrentIntensity + .2,
+            "a physical field-capital change appears as current cultivation intensity in the next observation");
+        var highTensor = ElderObservationSchema.Encode(high);
+        Near(highTensor.Values[23], high.Fields.CurrentIntensity,
+            "slot 23 carries deterministic mean retained-field q", 1e-6);
+        double storedFieldE = retained.Sum(tile =>
+            world.Tiles[tile].CultivationCapital);
+        double primitiveMaintenance = high.Fields.MaintenanceWorkerYears;
+        camp.People.NeolithicTechnologies.Add(NeolithicTech.Plough);
+        var plough = builder.Build(world, camp.Id, false);
+        Check(plough.Fields.MaintenanceWorkerYears < primitiveMaintenance,
+            "an applicable local frontier improvement lowers observed current field maintenance (" +
+                primitiveMaintenance + " -> " +
+                plough.Fields.MaintenanceWorkerYears + ", qk=" +
+                SettlementProductionFrontier
+                    .EffectiveCultivationEffortKnee(world, camp) + ")");
+        Near(retained.Sum(tile => world.Tiles[tile].CultivationCapital),
+            storedFieldE,
+            "observing a frontier change neither grants nor refunds field capital");
+
+        int ground = world.Map.Neighbors(camp.Tile).OrderBy(tile => tile)
+            .First();
+        world.Tiles[ground].Terrain = Terrain.Shallows;
+        world.Config.NeolithicFishingEnabled = true;
+        camp.Technologies[(int)Technology.Watercraft] = true;
+        camp.LastSelectedFishingGrounds.Clear();
+        camp.LastSelectedFishingGrounds.Add(ground);
+        world.FisherySites.RemoveAll(site => site.TileId == ground);
+        world.FisherySites.Add(new FisherySite
+        {
+            TileId = ground, OperatorCampId = camp.Id,
+            Capital = 1, LastUpdatedDays = world.Days
+        });
+        camp.People.FishingGroundKnowledge.RemoveAll(snapshot =>
+            snapshot.TileId == ground);
+        camp.People.FishingGroundKnowledge.Add(new FishingGroundSnapshot
+        {
+            TileId = ground, OperatorCampId = camp.Id,
+            AccessibleFood = 100, Biomass = 200, Condition = .8,
+            Capital = 1, ObservedDays = world.Days,
+            OperationFraction = .6,
+            ProductiveProfile = new[] { 1.0, 1.0, 1.0, 1.0 }
+        });
+        var fishingLow = builder.Build(world, camp.Id, false,
+            out var fishingMetadata);
+        int row = Array.IndexOf(fishingMetadata.FishingTiles, ground);
+        Check(row >= 0 && fishingLow.Fishing[row].MaintenancePresent &&
+            fishingLow.Fishing[row].MaintenanceWorkerYears > 0,
+            "current own-fishery maintenance is non-placeholder and present");
+        Near(fishingLow.Fishing[row].OperationFraction, .6,
+            "the own-fishery row exposes realized retained operation rather than a forecast or coarse band");
+        double expectedFishingMaintenance =
+            world.Config.Neolithic.MaintenanceWorkersPerTileE(
+                world.Config.MaintenanceCoefficient) *
+            FishingEconomy.EffortForCapital(world, camp, 1) *
+            world.Config.TurnDays / world.Config.DaysPerYear;
+        Near(fishingLow.Fishing[row].MaintenanceWorkerYears,
+            expectedFishingMaintenance,
+            "fishing observation and production use the same local maintenance equation");
+        world.FisherySites.Single(site => site.TileId == ground).Capital = 4;
+        var fishingHigh = builder.Build(world, camp.Id, false,
+            out fishingMetadata);
+        row = Array.IndexOf(fishingMetadata.FishingTiles, ground);
+        Check(fishingHigh.Fishing[row].MaintenanceWorkerYears >
+                fishingLow.Fishing[row].MaintenanceWorkerYears,
+            "observed fishing maintenance responds causally to current stored E");
+        double storedFishE = world.FisherySites.Single(site =>
+            site.TileId == ground).Capital;
+        camp.People.NeolithicTechnologies.Add(NeolithicTech.Sailing);
+        var sailing = builder.Build(world, camp.Id, false,
+            out fishingMetadata);
+        row = Array.IndexOf(fishingMetadata.FishingTiles, ground);
+        Check(sailing.Fishing[row].MaintenanceWorkerYears <
+                fishingHigh.Fishing[row].MaintenanceWorkerYears,
+            "a local fishing-frontier improvement lowers current maintenance");
+        Near(world.FisherySites.Single(site => site.TileId == ground).Capital,
+            storedFishE,
+            "a fishing-frontier change leaves stored physical capital unchanged");
+
+        Check(typeof(ElderFishingObservation).GetField("BuildWorkerYears") ==
+                null &&
+            typeof(ElderCommodityObservation).GetField("MarginalValue") ==
+                null &&
+            typeof(ElderCommodityObservation).GetField(
+                "ExternalOpportunity") == null,
+            "v2 omits predecision build forecasts and planner strategic scores");
+        var actorTypes = new[]
+        {
+            typeof(ElderObservation), typeof(ElderCoreObservation),
+            typeof(ElderFieldObservation), typeof(ElderFishingObservation),
+            typeof(ElderMemoryObservation)
+        };
+        Check(actorTypes.SelectMany(type => type.GetFields()).All(field =>
+                field.Name.IndexOf("Knee", StringComparison.OrdinalIgnoreCase) < 0 &&
+                field.FieldType != typeof(ElderTrainingCriticSidecar)) &&
+            ElderObservationSchema.Registry.All(block =>
+                block.Key.IndexOf("knee", StringComparison.OrdinalIgnoreCase) < 0),
+            "q_k and the training-only critic sidecar are structurally absent from the actor observation");
+
+        var semantic = Fixture(); var semanticCamp = semantic.Camps[0];
+        int otherCamp = semantic.NextId++;
+        int otherTile = semantic.Map.Neighbors(semanticCamp.Tile)
+            .OrderBy(tile => tile).First();
+        var society = semantic.Societies.Single(item =>
+            item.Id == semanticCamp.SocietyId);
+        ContactKnowledge.MemoryOf(semantic, society).Upsert(otherCamp, 99,
+            otherTile, semantic.Turn, semantic.Days -
+                4 * semantic.Config.DaysPerYear, ContactSource.Trade);
+        double duration = 2 * semantic.Config.DaysPerYear;
+        var record = new TurnRecord
+        {
+            Turn = semantic.Turn, StartDays = semantic.Days - duration,
+            Duration = duration
+        };
+        record.Demographics.Add(new DemographicReport
+        {
+            Camp = semanticCamp.Id,
+            StartingPopulation = semanticCamp.Population
+        });
+        record.Migrations.Add(new MigrationReport
+        {
+            SourceCamp = semanticCamp.Id, DestinationCamp = otherCamp,
+            Migrants = 5
+        });
+        record.Trades.Add(new TradeRecord
+        {
+            Requester = semanticCamp.Id, Responder = otherCamp,
+            WantQuantity = 3, GiveQuantity = 2,
+            RequesterGain = 999, Delivered = .01,
+            RequesterRealizedUtility = 7
+        });
+        record.Fissions.Add(new FissionReport
+        {
+            ParentCamp = semanticCamp.Id, Daughter = 12,
+            Push = .6, DaughterGain = 1e9,
+            ExitOpportunityPressure = .35
+        });
+        semantic.History.Add(record);
+        var approved = builder.Build(semantic, semanticCamp.Id, false);
+        double scale = Math.Max(1, semanticCamp.Population) * 2.0;
+        Near(approved.Core.RealizedMigrationPerCapitaYear, -5 / scale,
+            "migration is signed realized flow per population-year");
+        Near(approved.Core.RealizedTradeUtilityPerCapitaYear, 7 / scale,
+            "trade uses physically realized local utility, not planned gain times delivery");
+        Near(approved.Fission.ExitOpportunityPressure, .35,
+            "fission exposes bounded realized exit-opportunity pressure rather than DaughterGain sentinel semantics");
+        Check(approved.Contacts.Length == 1,
+            "a permission-safe remembered contact is encoded");
+        Near(approved.Contacts[0].AgeYears, 4,
+            "contact age is a physical duration");
+        Near(approved.Contacts[0].RecentMigrationPerCapitaYear, -5 / scale,
+            "contact migration is signed and normalized by physical time");
+        Near(approved.Contacts[0].RecentTradeUtilityPerCapitaYear, 7 / scale,
+            "contact trade utility is the actual settled common-unit flow");
+    }
+
+    private static void MemoryAndPhysicalTime()
+    {
+        double daysPerYear = 360;
+        double[] zero = Enumerable.Repeat(0.0,
+            ElderInstitutionMemory.SignalCount).ToArray();
+        double[] one = Enumerable.Repeat(1.0,
+            ElderInstitutionMemory.SignalCount).ToArray();
+        var oneStep = new ElderInstitutionMemory();
+        oneStep.Observe(0, daysPerYear, zero);
+        oneStep.Observe(0, daysPerYear, one);
+        oneStep.AdvanceTo(20 * daysPerYear, daysPerYear);
+        var monthly = new ElderInstitutionMemory();
+        monthly.Observe(0, daysPerYear, zero);
+        monthly.Observe(0, daysPerYear, one);
+        for (int month = 1; month <= 240; month++)
+            monthly.AdvanceTo(month * daysPerYear / 12.0, daysPerYear);
+        for (int horizon = 0; horizon < 3; horizon++)
+            Near(monthly.Mean(ElderMemorySignal.QoL, horizon),
+                oneStep.Mean(ElderMemorySignal.QoL, horizon),
+                "one 20-year EMA integration equals 240 monthly integrations",
+                2e-12);
+
+        var pulseCoarse = new ElderInstitutionMemory();
+        pulseCoarse.Observe(0, daysPerYear, zero);
+        pulseCoarse.Observe(0, daysPerYear, one);
+        pulseCoarse.Observe(7 * daysPerYear, daysPerYear, zero);
+        pulseCoarse.AdvanceTo(20 * daysPerYear, daysPerYear);
+        var pulseFine = new ElderInstitutionMemory();
+        pulseFine.Observe(0, daysPerYear, zero);
+        pulseFine.Observe(0, daysPerYear, one);
+        for (int month = 1; month <= 84; month++)
+            pulseFine.AdvanceTo(month * daysPerYear / 12.0, daysPerYear);
+        pulseFine.Observe(7 * daysPerYear, daysPerYear, zero);
+        for (int month = 85; month <= 240; month++)
+            pulseFine.AdvanceTo(month * daysPerYear / 12.0, daysPerYear);
+        for (int horizon = 0; horizon < 3; horizon++)
+            Near(pulseFine.Mean(ElderMemorySignal.QoL, horizon),
+                pulseCoarse.Mean(ElderMemorySignal.QoL, horizon),
+                "event-separated pulse integration obeys the EMA semigroup",
+                2e-12);
+
+        var world = Fixture(); var camp = world.Camps[0];
+        var memory = ElderInstitutionMemorySystem.EnsureInitialized(world,
+            camp);
+        double initialized = memory.InitializedDays;
+        world.Days += 10 * world.Config.DaysPerYear;
+        memory.AdvanceTo(world.Days, world.Config.DaysPerYear);
+        memory.HasLastDecision = true;
+        memory.LastRequested = new ElderDirective
+        {
+            DevelopmentBudget = .7, FieldDevelopmentShare = .2
+        };
+        memory.LastAccepted = memory.LastRequested.Copy();
+        memory.LastRealized = memory.LastRequested.Copy();
+        memory.LastDecisionElapsedYears = 10;
+        double maturity = memory.Maturity(1, world.Days,
+            world.Config.DaysPerYear);
+        string memoryFingerprint = SaveCodec.Fingerprint(world);
+        var loaded = SaveCodec.Load(SaveCodec.Save(world));
+        var loadedMemory = loaded.Camps.Single(item => item.Id == camp.Id)
+            .ElderMemory;
+        Check(loadedMemory != null && loadedMemory.Initialized &&
+            loadedMemory.HasLastDecision,
+            "institutional memory and prior-action evidence survive SaveCodec roundtrip");
+        Near(loadedMemory.InitializedDays, initialized,
+            "the memory physical initialization timestamp survives snapshots");
+        Near(loadedMemory.Maturity(1, loaded.Days,
+                loaded.Config.DaysPerYear), maturity,
+            "trace maturity survives snapshots");
+        Near(loadedMemory.Mean(ElderMemorySignal.QoL, 0),
+            memory.Mean(ElderMemorySignal.QoL, 0),
+            "EMA state survives snapshots");
+        Check(SaveCodec.Fingerprint(loaded) == memoryFingerprint,
+            "institutional memory survives a fingerprint-identical SaveCodec roundtrip");
+
+        for (int i = 0; i < 2000; i++)
+            loaded.History.Insert(0, new TurnRecord());
+        var builder = new ElderObservationBuilder();
+        builder.Build(loaded, camp.Id, false);
+        Check(builder.HistoryRecordsInspected <= 1,
+            "observation construction reads at most the latest history record regardless of total history length");
+    }
+
+    private static void RewardContract()
+    {
+        var ten = ElderRewardContract.Physical(100, .8, 10);
+        var twenty = ElderRewardContract.Physical(100, .8, 20);
+        Near(ten.WelfareRate, 80,
+            "physical reward exposes prior-population QoL welfare rate");
+        Near(twenty.UndiscountedIntervalWelfare,
+            2 * ten.UndiscountedIntervalWelfare,
+            "interval welfare scales with physical dt");
+        var firstHalf = ElderRewardContract.Physical(100, .8, 10);
+        var secondHalf = ElderRewardContract.Physical(100, .8, 10);
+        Near(firstHalf.UndiscountedIntervalWelfare +
+                secondHalf.UndiscountedIntervalWelfare,
+            twenty.UndiscountedIntervalWelfare,
+            "splitting a constant 20-year interval into two 10-year intervals preserves undiscounted welfare");
+        double objective = twenty.UndiscountedIntervalWelfare;
+        twenty.FoodSecurity = 0; twenty.WaterSecurity = 1;
+        twenty.CapitalContinuity = .123; twenty.CatastrophicLoss = 1;
+        Near(twenty.UndiscountedIntervalWelfare, objective,
+            "diagnostic sidecars cannot change the scalar welfare objective");
+        Check(typeof(ElderRewardContract).GetMethods().Where(method =>
+                method.Name == nameof(ElderRewardContract.Physical))
+            .All(method => method.GetParameters().All(parameter =>
+                parameter.Name.IndexOf("initial", StringComparison.OrdinalIgnoreCase) < 0)),
+            "the reward contract has no episode-initial-population input");
     }
 
     private static void DirectiveCausality()
@@ -402,7 +848,8 @@ internal static class ElderRLChecks
     }
 
     private static ElderResetRequest Request(byte[] snapshot,
-        int camp, bool movement = false, int limit = 4)
+        int camp, bool movement = false, int limit = 4,
+        bool critic = false)
         => new ElderResetRequest
         {
             Snapshot = snapshot,
@@ -410,7 +857,8 @@ internal static class ElderRLChecks
             Options = new ElderEnvironmentOptions
             {
                 EpisodeDecisionLimit = limit,
-                MovementEnabled = movement
+                MovementEnabled = movement,
+                IncludeTrainingCriticSidecar = critic
             },
             ExpectedSimulatorVersion = NativeElderEnvironment.SimulatorVersion
         };
@@ -423,12 +871,21 @@ internal static class ElderRLChecks
             new PhaseExecution());
         var parallel = new NativeElderEnvironment(execution:
             new PhaseExecution(4, 2, true, 1));
-        var a0 = scalar.Reset(Request(snapshot, campId));
-        var b0 = parallel.Reset(Request(snapshot, campId));
+        var a0 = scalar.Reset(Request(snapshot, campId, critic: true));
+        var b0 = parallel.Reset(Request(snapshot, campId, critic: true));
         Check(a0.InitialStateFingerprint == b0.InitialStateFingerprint &&
             JsonSerializer.Serialize(a0.Observation, Json) ==
                 JsonSerializer.Serialize(b0.Observation, Json),
             "scalar and parallel Reset produce the same first observation");
+        var actorOnlyEnvironment = new NativeElderEnvironment();
+        var actorOnly = actorOnlyEnvironment.Reset(Request(snapshot, campId));
+        Check(actorOnly.TrainingCriticSidecar == null &&
+            a0.TrainingCriticSidecar != null &&
+            a0.TrainingCriticSidecar.SchemaVersion ==
+                ElderRLContract.CriticSidecarSchemaVersion &&
+            JsonSerializer.Serialize(actorOnly.Observation, Json) ==
+                JsonSerializer.Serialize(a0.Observation, Json),
+            "requesting privileged critic ground truth cannot alter or enter the actor observation");
         var action = new ElderDirective
         {
             RetainedFieldOperation = .75,
@@ -439,14 +896,20 @@ internal static class ElderRLChecks
         var a1 = scalar.Step(action); var b1 = parallel.Step(action);
         Check(a1.StateFingerprint == b1.StateFingerprint,
             "scalar and reversed parallel Step resolve identically");
-        Near(a1.Reward.RawWelfareFlow,
+        Check(a1.TrainingCriticSidecar != null &&
+            a1.TrainingCriticSidecar.CultivationFrontierIdentity != null &&
+            a1.TrainingCriticSidecar.FishingFrontierIdentity != null,
+            "the optional training-only sidecar reports replayable local frontier ground truth");
+        Near(a1.Reward.UndiscountedIntervalWelfare,
             a1.Reward.PriorPopulation * a1.Reward.RealizedQoL *
                 a1.Reward.ElapsedYears,
             "scalar reward diagnostics reconcile to realized local welfare flow");
-        Near(a1.ScalarReward, a1.Reward.RawWelfareFlow /
-            (Math.Max(1, source.Camps[0].Population) *
-             Math.Max(1e-12, a1.ElapsedYears)),
-            "normalized scalar uses the fixed initial-cohort scale");
+        Near(a1.ScalarReward, a1.Reward.UndiscountedIntervalWelfare,
+            "scalar reward is undiscounted prior-cohort interval welfare");
+        Check(a1.Observation.Core.HasPreviousInterval,
+            "the post-step actor observation marks the previous physical interval present");
+        Near(a1.Observation.Core.PreviousIntervalYears, a1.ElapsedYears,
+            "the actor's previous interval is the realized physical duration");
         Check(a1.Decision.Intent != null &&
             a1.Decision.Interventions != null &&
             a1.Observation.Previous.Present,
@@ -470,6 +933,14 @@ internal static class ElderRLChecks
         NativeElderEnvironment.VerifyReplay(scalar.ReplayLog,
             new PhaseExecution(4, 2, true, 1));
         checks++;
+        var replayStep = scalar.ReplayLog.Steps[0];
+        Check(replayStep.Requested != null && replayStep.Accepted != null &&
+            replayStep.Realized != null &&
+            replayStep.Interventions != null &&
+            replayStep.TrainingCriticSidecar != null &&
+            replayStep.ElapsedYears == a1.ElapsedYears &&
+            replayStep.PostStepFingerprint == a1.StateFingerprint,
+            "replay v2 preserves requested, accepted and realized directives, intervention evidence, elapsed years, critic sidecar and post-step fingerprint");
         double recordedAcceptance = scalar.ReplayLog.Steps[0].Accepted
             .DevelopmentBudget;
         scalar.ReplayLog.Steps[0].Accepted.DevelopmentBudget =
@@ -487,6 +958,29 @@ internal static class ElderRLChecks
             recordedAcceptance;
         Check(rejectedTamper,
             "replay verification rejects a changed recorded accepted action");
+        double recordedElapsed = scalar.ReplayLog.Steps[0].ElapsedYears;
+        scalar.ReplayLog.Steps[0].ElapsedYears = recordedElapsed + 1;
+        bool rejectedElapsed = false;
+        try { NativeElderEnvironment.VerifyReplay(scalar.ReplayLog); }
+        catch (InvalidOperationException error)
+        {
+            rejectedElapsed = error.Message.Contains("elapsed physical interval");
+        }
+        scalar.ReplayLog.Steps[0].ElapsedYears = recordedElapsed;
+        Check(rejectedElapsed,
+            "replay verification rejects changed elapsed physical time");
+        int recordedEnvironmentSchema = scalar.ReplayLog
+            .EnvironmentSchemaVersion;
+        scalar.ReplayLog.EnvironmentSchemaVersion = 1;
+        bool rejectedReplaySchema = false;
+        try { NativeElderEnvironment.VerifyReplay(scalar.ReplayLog); }
+        catch (InvalidOperationException error)
+        {
+            rejectedReplaySchema = error.Message.Contains("schema version");
+        }
+        scalar.ReplayLog.EnvironmentSchemaVersion = recordedEnvironmentSchema;
+        Check(rejectedReplaySchema,
+            "replay v1 metadata is rejected instead of being interpreted as v2");
         var continuedSnapshot = scalar.CaptureSnapshot();
         var restored = new NativeElderEnvironment();
         restored.Reset(Request(continuedSnapshot, campId, limit: 3));
@@ -518,13 +1012,16 @@ internal static class ElderRLChecks
         invalid.Reset(Request(snapshot, campId, movement: true, limit: 1));
         var rejected = invalid.Step(new ElderDirective
         {
-            MovementCandidate = int.MaxValue
+            MovementCandidate = int.MaxValue,
+            RetainedFieldOperation = double.NaN
         });
         Check(rejected.Decision.Accepted.MovementCandidate == -1 &&
             rejected.Decision.Interventions.Any(intervention =>
                 intervention.Kind ==
                     ElderInterventionKind.InvalidActionFallback),
             "Step logs categorical rejection instead of clamping to another site");
+        NativeElderEnvironment.VerifyReplay(invalid.ReplayLog);
+        checks++;
 
         var badStream = Request(snapshot, campId); badStream.RandomStream = 1;
         bool streamRejected = false;

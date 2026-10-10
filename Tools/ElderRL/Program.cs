@@ -47,6 +47,9 @@ namespace Anthropocene.Tools.ElderRL
                 observationSchemaVersion = ElderRLContract.ObservationSchemaVersion,
                 actionSchemaVersion = ElderRLContract.ActionSchemaVersion,
                 environmentSchemaVersion = ElderRLContract.EnvironmentSchemaVersion,
+                criticSidecarSchemaVersion = ElderRLContract.CriticSidecarSchemaVersion,
+                institutionalMemoryStorageSchemaVersion =
+                    ElderInstitutionMemory.StorageSchemaVersion,
                 simulatorVersion = NativeElderEnvironment.SimulatorVersion,
                 buildHash = NativeElderEnvironment.BuildHash,
                 tensorFeatureCount = ElderRLContract.TensorFeatureCount,
@@ -62,7 +65,10 @@ namespace Anthropocene.Tools.ElderRL
                 rowKeys = new
                 {
                     capabilities = ElderObservationSchema.CapabilityRows,
-                    commodities = ElderObservationSchema.CommodityRows
+                    commodities = ElderObservationSchema.CommodityRows,
+                    memory = ElderObservationSchema.MemoryRows,
+                    memoryTimeConstantsYears =
+                        ElderInstitutionMemory.TimeConstantsYears
                 },
                 defaultEnvironment = new ElderEnvironmentOptions(),
                 defaultDirective = new ElderDirective()
@@ -82,6 +88,7 @@ namespace Anthropocene.Tools.ElderRL
                 reset.BuildHash, reset.ConfigurationHash,
                 reset.InitialStateFingerprint, reset.ControlledCampId,
                 reset.ControlledPlayer,
+                trainingCriticSidecar = reset.TrainingCriticSidecar,
                 observation = Summary(reset.Observation)
             }, Json));
         }
@@ -103,6 +110,7 @@ namespace Anthropocene.Tools.ElderRL
                 accepted = result.Decision.Accepted,
                 realized = result.Decision.Realized,
                 interventions = result.Decision.Interventions,
+                trainingCriticSidecar = result.TrainingCriticSidecar,
                 observation = Summary(result.Observation)
             }, Json));
         }
@@ -189,7 +197,12 @@ namespace Anthropocene.Tools.ElderRL
                 observation.SchemaVersion,
                 population = observation.Core.Population,
                 connectedConsumers = observation.Core.ConnectedConsumers,
+                previousIntervalYears = observation.Core.PreviousIntervalYears,
+                nextIntervalYears = observation.Core.NextIntervalYears,
                 qol = observation.Core.QoL,
+                fieldIntensity = observation.Fields.CurrentIntensity,
+                memoryPresent = observation.Memory.Present,
+                memoryMaturity = observation.Memory.Maturity,
                 herdAnimals = observation.Herd.Animals,
                 sites = observation.Sites.Length,
                 fishing = observation.Fishing.Length,
@@ -211,7 +224,8 @@ namespace Anthropocene.Tools.ElderRL
             Options = new ElderEnvironmentOptions
             {
                 EpisodeDecisionLimit = limit,
-                MovementEnabled = false
+                MovementEnabled = false,
+                IncludeTrainingCriticSidecar = true
             },
             ExpectedSimulatorVersion = NativeElderEnvironment.SimulatorVersion
         };

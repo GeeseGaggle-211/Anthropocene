@@ -1,16 +1,21 @@
 {
-  "schema": 1,
+  "schema": 2,
   "trainingRepository": "GeeseGaggle-211/Anthropocene-RL",
   "trainingRepositoryUrl": "https://github.com/GeeseGaggle-211/Anthropocene-RL",
-  "trainingRepositoryCommit": "796a6785558585cd74225c833a87a4a364a77e42",
+  "trainingRepositoryLastKnownV1Commit": "796a6785558585cd74225c833a87a4a364a77e42",
+  "trainingRepositoryUpdateRequired": true,
   "simulatorRepository": "GeeseGaggle-211/Anthropocene",
-  "simulatorBranch": "feature/elder-rl-scaffold",
-  "simulatorCommit": "81bae49d71b23c32d956991601546d3cb2064ad7",
-  "observationSchemaVersion": 1,
+  "simulatorBranch": "investment-payback-sweep",
+  "simulatorBaseCommit": "74b443d6125d53a5b0adc74f1cca287de7c52384",
+  "simulatorCommitResolution": "pin the exact scaffold-v2 candidate SHA reported by the native repository handoff",
+  "observationSchemaVersion": 2,
   "actionSchemaVersion": 1,
-  "environmentSchemaVersion": 1,
+  "environmentSchemaVersion": 2,
+  "criticSidecarSchemaVersion": 1,
+  "institutionalMemoryStorageSchemaVersion": 1,
   "tensorFeatureCount": 512,
   "relationship": "manifest-pin-not-submodule",
   "pythonDependenciesInGameRepository": false,
-  "status": "training-skeleton"
+  "status": "native-scaffold-v2-pre-ppo-candidate",
+  "compatibility": "the external learner must update its simulator pin and reject schema-v1 observations before use"
 }

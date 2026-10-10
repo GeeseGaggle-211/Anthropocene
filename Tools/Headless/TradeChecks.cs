@@ -266,6 +266,15 @@ internal static class TradeChecks
         foreach (var c in w.Camps) { Near(c.Inventory.Cloth, expected[c.Id].Item1, "camp " + c.Id + " receives its planned cloth"); Near(c.Inventory.HousingMaterial, expected[c.Id].Item2, "camp " + c.Id + " receives its planned material"); }
         Check(record.Trades.Count == plan.Agreements.Count && record.Trades.All(t => t.Delivered == 1) && record.TradeActivity == plan.Summary, "every agreement is recorded as fully delivered");
         Check(record.Trades.Select((t, i) => t.Requester == plan.Agreements[i].Requester && t.Responder == plan.Agreements[i].Responder).All(x => x), "records follow agreement order");
+        for (int i = 0; i < record.Trades.Count; i++)
+        {
+            Near(record.Trades[i].RequesterRealizedUtility,
+                plan.Agreements[i].RequesterGain,
+                "full settlement records requester's actual nonlinear local utility");
+            Near(record.Trades[i].ResponderRealizedUtility,
+                plan.Agreements[i].ResponderGain,
+                "full settlement records responder's actual nonlinear local utility");
+        }
         // Each party now remembers the other as a trade contact at its current tile.
         foreach (var t in record.Trades)
         {
@@ -280,6 +289,14 @@ internal static class TradeChecks
         var sr = new TurnRecord(); double sc = s.Camps.Sum(c => c.Inventory.Cloth), sm = s.Camps.Sum(c => c.Inventory.HousingMaterial);
         SettleAll(s, sp, sr);
         Near(sr.Trades[0].Delivered, .5, "a half-short responder delivers half"); Near(sr.Trades[0].GiveQuantity, first.GiveQuantity / 2, "the requester pays half");
+        Near(sr.Trades[0].RequesterRealizedUtility,
+            first.Utility.Requester(sr.Trades[0].WantQuantity,
+                sr.Trades[0].GiveQuantity),
+            "short settlement revalues physically delivered quantities on the nonlinear opening curve");
+        Near(sr.Trades[0].ResponderRealizedUtility,
+            first.Utility.Responder(sr.Trades[0].WantQuantity,
+                sr.Trades[0].GiveQuantity),
+            "short settlement records responder utility from actual quantities");
         Near(s.Camps.Sum(c => c.Inventory.Cloth), sc, "short settlement conserves cloth"); Near(s.Camps.Sum(c => c.Inventory.HousingMaterial), sm, "short settlement conserves material");
         Check(s.Camps.All(c => c.Inventory.Cloth >= -1e-12 && c.Inventory.HousingMaterial >= -1e-12), "no stock goes negative");
         // A whole resolved turn: the trades settle, the turn record carries them and the resolver invariants hold.
@@ -643,8 +660,8 @@ internal static class TradeChecks
         // Older trade records load with both legs fully delivered and nothing made to order.
         var tr = new DataContractSerializer(typeof(TradeRecord)); string xml;
         using (var stream = new MemoryStream()) { tr.WriteObject(stream, new TradeRecord { Requester = 1, GiveDelivered = .5, WantMadeToOrder = true }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
-        string legacy = Regex.Replace(xml, "<(GiveDelivered|WantMadeToOrder|GiveMadeToOrder)>[^<]*</\\1>", "");
-        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy))) { var back = (TradeRecord)tr.ReadObject(stream); Check(back.GiveDelivered == 1 && !back.WantMadeToOrder && !back.GiveMadeToOrder && back.Requester == 1, "an older trade record loads with the give leg delivered"); }
+        string legacy = Regex.Replace(xml, "<(GiveDelivered|RequesterRealizedUtility|ResponderRealizedUtility|WantMadeToOrder|GiveMadeToOrder)>[^<]*</\\1>", "");
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy))) { var back = (TradeRecord)tr.ReadObject(stream); Check(back.GiveDelivered == 1 && back.RequesterRealizedUtility == 0 && back.ResponderRealizedUtility == 0 && !back.WantMadeToOrder && !back.GiveMadeToOrder && back.Requester == 1, "an older trade record loads with the give leg delivered and no invented realized utility"); }
     }
 
     // Pots on the planner's food-security claim (phase V replaces the provisional ~90-food band, as approved in

@@ -20,7 +20,7 @@ namespace Anthropocene.Simulation
         public bool[] Present = new bool[ElderRLContract.TensorFeatureCount];
     }
 
-    // Checked-in v1 tensor registry. Caps are encoding bounds, never simulation
+    // Checked-in v2 tensor registry. Caps are encoding bounds, never simulation
     // limits. Raw IDs are explicitly excluded and stay in replay metadata.
     public static class ElderObservationSchema
     {
@@ -30,32 +30,48 @@ namespace Anthropocene.Simulation
             "fixed-construction", "local-trade"
         };
 
-        public static readonly string[] CommodityRows =
-            Enum.GetValues(typeof(CraftGood)).Cast<CraftGood>()
-                .OrderBy(good => (int)good).Take(
-                    ElderRLContract.MaxCommoditySlots)
-                .Select(good => good.ToString()).ToArray();
+        // Actor semantics never depend on enum ordinal or declaration order.
+        public static readonly CraftGood[] CommodityGoods =
+        {
+            CraftGood.HandTools, CraftGood.Pots, CraftGood.Cloth,
+            CraftGood.FarmTools, CraftGood.Housing, CraftGood.Tools,
+            CraftGood.AnimalFabric, CraftGood.LightHousing,
+            CraftGood.HerdingTools, CraftGood.HousingMaterial,
+            CraftGood.FishingTools
+        };
+        public static readonly string[] CommodityRows = CommodityGoods
+            .Select(good => good.ToString()).ToArray();
+
+        public static readonly string[] MemoryRows =
+            Enum.GetValues(typeof(ElderMemorySignal))
+                .Cast<ElderMemorySignal>().OrderBy(value => (int)value)
+                .Select(value => value.ToString()).ToArray();
 
         public static readonly ElderFeatureDefinition[] Registry =
         {
-            Block("core", 0, 16, 1, "own committed settlement and bounded history", "mixed semantic scalars"),
-            Block("fields", 16, 7, 1, "own retained cultivation capital", "tiles, ratios, food and worker-years"),
-            Reserved("core-reserved-23", 23, 1),
+            Block("core", 0, 16, 1, "own committed settlement, physical durations and last realized flows", "mixed semantic scalars"),
+            Block("fields", 16, 8, 1, "own retained cultivation capital", "tiles, q, ratios, food and worker-years"),
             Block("herd-summary", 24, 13, 1, "owned domestic herd aggregate", "animals, ratios, food, water and worker-years"),
             Reserved("core-reserved-37", 37, 3),
-            Block("previous-decision", 40, 14, 1, "previous requested, accepted and compiled outcome", "flags, action fractions and counts"),
-            Reserved("core-reserved-54", 54, 2),
+            Block("previous-decision", 40, 16, 1, "previous requested, accepted and physically realized directive", "flags, action fractions, counts and elapsed years"),
             Block("fission-history", 56, 7, 1, "own candidate and resolved fission history", "flags, people and welfare ratios"),
             Reserved("core-reserved-63", 63, 1),
             Block("capabilities", 64, 3, 5, "permission-filtered capability rows in checked-in semantic order", "available flag, experience and progress ratio"),
             Reserved("core-reserved-79", 79, 1),
             Block("continuous-action-mask", 80, 4, 1, "native action legality", "flags"),
-            Reserved("core-reserved-84", 84, 44),
+            Block("institutional-memory-traces", 84, 3, 11, "persisted settlement-local exact-lazy EMA bank", "signal-specific values at tau 20/60/180 years"),
+            Block("institutional-memory-maturity", 117, 3, 1, "persisted trace initialization age", "one-minus-exp(-age/tau)"),
+            Reserved("core-reserved-120", 120, 8),
             Block("sites", 128, 12, 7, "permission-filtered SiteCoverage/AgriculturalSites", "normalized local ratios"),
-            Block("fishing", 212, 12, 3, "permission-filtered FishingGrounds", "normalized local ratios"),
+            Block("fishing-row-0", 212, 11, 1, "permission-filtered current FishingGround state", "distance, food, E, q, operation and worker-years"),
+            Reserved("fishing-row-0-reserved", 223, 1),
+            Block("fishing-row-1", 224, 11, 1, "permission-filtered current FishingGround state", "distance, food, E, q, operation and worker-years"),
+            Reserved("fishing-row-1-reserved", 235, 1),
+            Block("fishing-row-2", 236, 11, 1, "permission-filtered current FishingGround state", "distance, food, E, q, operation and worker-years"),
+            Reserved("fishing-row-2-reserved", 247, 1),
             Block("herd-groups", 248, 8, 8, "owned domestic herd observations", "animals and physical ratios"),
-            Block("commodities", 312, 8, 11, "own inventory, needs and legal recipes", "stock, need, capacity, value, trade flow and capability flags"),
-            Block("contacts", 400, 8, 8, "remembered/visible contact knowledge", "distance, age and normalized ratios"),
+            Block("commodities", 312, 8, 11, "own inventory, physical needs, legal recipes and realized flows in explicit semantic order", "stock, need, capacity, flow and capability flags"),
+            Block("contacts", 400, 8, 8, "remembered/visible contact knowledge and realized bilateral flows", "distance, physical years, utility and per-capita-year flows"),
             Block("presence-overflow", 464, 3, 5, "encoder presence and overflow summaries", "present/omitted counts and overflow flag"),
             Reserved("presence-reserved-479", 479, 1),
             Block("movement-action-mask", 480, 2, 1, "native movement legality", "enabled flag and legal-candidate count"),
@@ -114,17 +130,23 @@ namespace Anthropocene.Simulation
             }
             var c = observation.Core;
             Put(0, c.Population); Put(1, c.ConnectedConsumers);
-            Put(2, c.DeficitTurns); Put(3, c.ElapsedDays); Put(4, c.HorizonYears);
+            Put(2, c.PreviousIntervalYears, c.HasPreviousInterval);
+            Put(3, c.NextIntervalYears);
+            Put(4, c.DeficitAgeYears, c.HasDeficitAge);
             Put(5, c.QoL); Put(6, c.FoodNeedsMet); Put(7, c.WaterNeedsMet);
             Put(8, c.ClothingCoverage); Put(9, c.HousingCoverage);
-            Put(10, c.FoodReserveYears); Put(11, c.PopulationTrend);
-            Put(12, c.QoLTrend); Put(13, c.NetMigrationTrend);
-            Put(14, c.IsVillage ? 1 : 0); Put(15, c.RecentlyMoved ? 1 : 0);
+            Put(10, c.FoodReserveYears);
+            Put(11, c.MovementAgeYears, c.HasMovementAge);
+            Put(12, c.FissionAgeYears, c.HasFissionAge);
+            Put(13, c.RealizedMigrationPerCapitaYear);
+            Put(14, c.IsVillage ? 1 : 0);
+            Put(15, c.RealizedTradeUtilityPerCapitaYear);
             var f = observation.Fields;
             Put(16, f.RetainedTiles); Put(17, f.CurrentOperation);
             Put(18, f.MaintenanceWorkerYears); Put(19, f.CurrentFoodSupport);
             Put(20, f.FutureFoodSupport); Put(21, f.RebuildBurden);
             Put(22, f.RetainedCapitalService);
+            Put(23, f.CurrentIntensity);
             var h = observation.Herd;
             Put(24, h.Animals); Put(25, h.Groups); Put(26, h.Nutrition);
             Put(27, h.ManagementFulfilment); Put(28, h.ZeroDisplacementCapacity);
@@ -147,12 +169,14 @@ namespace Anthropocene.Simulation
             Put(51, previous.AcceptedFieldShare, previous.Present);
             Put(52, previous.RealizedFieldShare, previous.Present);
             Put(53, previous.InterventionCount, previous.Present);
+            Put(54, previous.ElapsedYears, previous.Present);
+            Put(55, previous.MovementAccepted ? 1 : 0, previous.Present);
             var fission = observation.Fission;
             Put(56, fission.CandidatePresent ? 1 : 0); Put(57, fission.RecentSplit ? 1 : 0);
             Put(58, fission.Pressure, fission.RecentSplit);
             Put(59, fission.ExpectedStayerGain, fission.RecentSplit);
             Put(60, fission.ExpectedDaughterQoL, fission.RecentSplit);
-            Put(61, fission.ExitOpportunity, fission.RecentSplit);
+            Put(61, fission.ExitOpportunityPressure, fission.RecentSplit);
             Put(62, fission.RecentDaughterPopulation, fission.RecentSplit);
             for (int row = 0; row < Math.Min(5,
                     observation.Capabilities.Length); row++)
@@ -167,6 +191,22 @@ namespace Anthropocene.Simulation
             Put(81, observation.Mask.HerdRetention ? 1 : 0);
             Put(82, observation.Mask.Development ? 1 : 0);
             Put(83, observation.Mask.DevelopmentSplit ? 1 : 0);
+
+            if (observation.Memory?.Present == true)
+            {
+                for (int signal = 0; signal < Math.Min(11,
+                    observation.Memory.Traces?.Length ?? 0); signal++)
+                {
+                    var trace = observation.Memory.Traces[signal];
+                    int o = 84 + signal * 3;
+                    Put(o, trace.Short); Put(o + 1, trace.Medium);
+                    Put(o + 2, trace.Long);
+                }
+                for (int horizon = 0; horizon < Math.Min(3,
+                    observation.Memory.Maturity?.Length ?? 0); horizon++)
+                    Put(117 + horizon,
+                        observation.Memory.Maturity[horizon]);
+            }
 
             for (int row = 0; row < Math.Min(7, observation.Sites.Length); row++)
             {
@@ -184,9 +224,11 @@ namespace Anthropocene.Simulation
                 Put(o, g.Distance); Put(o + 1, g.Incumbent ? 1 : 0);
                 Put(o + 2, g.Known ? 1 : 0); Put(o + 3, g.YieldPerFisherYear);
                 Put(o + 4, g.FoodPotential); Put(o + 5, g.Biomass);
-                Put(o + 6, g.Condition); Put(o + 7, g.OpeningCapital);
-                Put(o + 8, g.OperationFraction); Put(o + 9, g.MaintenanceWorkerYears);
-                Put(o + 10, g.BuildWorkerYears);
+                Put(o + 6, g.Condition); Put(o + 7, g.CurrentCapital);
+                Put(o + 8, g.CurrentIntensity);
+                Put(o + 9, g.OperationFraction);
+                Put(o + 10, g.MaintenanceWorkerYears,
+                    g.MaintenancePresent);
             }
             for (int row = 0; row < Math.Min(8, observation.HerdGroups.Length); row++)
             {
@@ -201,7 +243,7 @@ namespace Anthropocene.Simulation
                 var g = observation.Commodities[row]; int o = 312 + row * 8;
                 Put(o, g.Stock); Put(o + 1, g.LocalNeed);
                 Put(o + 2, g.ProductionCapacity);
-                Put(o + 3, g.MarginalValue);
+                Put(o + 3, g.ProtectedFloor);
                 Put(o + 4, g.RecentImport); Put(o + 5, g.RecentExport);
                 Put(o + 6, g.CanProduce ? 1 : 0);
                 Put(o + 7, g.CanTrade ? 1 : 0);
@@ -209,9 +251,12 @@ namespace Anthropocene.Simulation
             for (int row = 0; row < Math.Min(8, observation.Contacts.Length); row++)
             {
                 var g = observation.Contacts[row]; int o = 400 + row * 8;
-                Put(o, g.Distance); Put(o + 1, g.AgeTurns); Put(o + 2, g.Affinity);
-                Put(o + 3, g.RelativeAttractiveness); Put(o + 4, g.RecentTradeValue);
-                Put(o + 5, g.RecentMigration); Put(o + 6, g.Kin ? 1 : 0);
+                Put(o, g.Distance); Put(o + 1, g.AgeYears);
+                Put(o + 2, g.Affinity);
+                Put(o + 3, g.RecentTradeUtilityPerCapitaYear);
+                Put(o + 4, g.RecentTradeFlowPerCapitaYear);
+                Put(o + 5, g.RecentMigrationPerCapitaYear);
+                Put(o + 6, g.Kin ? 1 : 0);
                 Put(o + 7, g.CurrentlyVisible ? 1 : 0);
             }
             var blocks = new[] { observation.Presence.Sites, observation.Presence.Fishing,

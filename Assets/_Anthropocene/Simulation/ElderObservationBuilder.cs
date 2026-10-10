@@ -15,6 +15,7 @@ namespace Anthropocene.Simulation
     // in the sidecar solely to compile movement and diagnose replay.
     public sealed class ElderObservationBuilder
     {
+        public int HistoryRecordsInspected { get; private set; }
         public ElderObservation Build(WorldState world, int controlledCampId,
             bool movementEnabled, ElderCompiledDecision previous = null)
             => BuildEnvelope(world, controlledCampId, movementEnabled, previous)
@@ -44,6 +45,12 @@ namespace Anthropocene.Simulation
             var own = game.Settlements.FirstOrDefault(item => item.Id == camp.Id)
                 ?? throw new InvalidOperationException("Controlled camp is absent from its own observation.");
             double years = world.Config.TurnDays / world.Config.DaysPerYear;
+            HistoryRecordsInspected = world.History.Count > 0 ? 1 : 0;
+            var recent = world.History.LastOrDefault();
+            var memory = camp.ElderMemory;
+            if (memory == null)
+                memory = ElderInstitutionMemorySystem.TransientView(world,
+                    camp, recent);
             var result = new ElderObservation();
             var metadata = new ElderObservationMetadata
             {
@@ -51,16 +58,17 @@ namespace Anthropocene.Simulation
                 ControlledPlayer = camp.Player
             };
 
-            BuildCore(world, camp, own, years, result.Core);
+            BuildCore(world, camp, own, years, recent, memory, result.Core);
             BuildSites(world, camp, game, movementEnabled, result, metadata);
-            BuildFishing(world, camp, game, result, metadata);
+            BuildFishing(world, camp, game, years, result, metadata);
             BuildFields(world, camp, game, years, result.Fields);
-            BuildHerd(world, camp, game, years, result);
+            BuildHerd(world, camp, game, years, recent, result);
             BuildCapabilities(world, camp, game, result);
-            BuildCommodities(world, camp, years, result);
-            BuildContacts(world, camp, game, result);
-            BuildFission(world, camp, result.Fission);
-            BuildPrevious(previous, result.Previous);
+            BuildCommodities(world, camp, years, recent, result);
+            BuildContacts(world, camp, game, recent, result);
+            BuildFission(camp, recent, result.Fission);
+            BuildPrevious(previous, memory, result.Previous);
+            BuildMemory(world, memory, result.Memory);
             return new ElderObservationEnvelope
             {
                 Observation = result,
@@ -69,13 +77,28 @@ namespace Anthropocene.Simulation
         }
 
         private static void BuildCore(WorldState world, Camp camp,
-            SettlementObservation own, double years, ElderCoreObservation core)
+            SettlementObservation own, double years, TurnRecord recent,
+            ElderInstitutionMemory memory, ElderCoreObservation core)
         {
             core.Population = Math.Max(0, camp.Population);
             core.ConnectedConsumers = Math.Max(0, own.LinkedPopulation);
-            core.DeficitTurns = Math.Max(0, camp.DeficitTurns);
-            core.ElapsedDays = Math.Max(0, world.Days);
-            core.HorizonYears = Math.Max(0, years);
+            core.HasPreviousInterval = recent != null && recent.Duration > 0;
+            core.PreviousIntervalYears = core.HasPreviousInterval
+                ? Math.Max(0, recent.Duration) /
+                    Math.Max(1e-12, world.Config.DaysPerYear) : 0;
+            core.NextIntervalYears = Math.Max(0, years);
+            core.HasDeficitAge = memory.HasDeficitStart;
+            core.DeficitAgeYears = memory.HasDeficitStart ? Math.Max(0,
+                world.Days - memory.DeficitStartDays) /
+                Math.Max(1e-12, world.Config.DaysPerYear) : 0;
+            core.HasMovementAge = memory.HasLastMovement;
+            core.MovementAgeYears = memory.HasLastMovement ? Math.Max(0,
+                world.Days - memory.LastMovementDays) /
+                Math.Max(1e-12, world.Config.DaysPerYear) : 0;
+            core.HasFissionAge = memory.HasLastFission;
+            core.FissionAgeYears = memory.HasLastFission ? Math.Max(0,
+                world.Days - memory.LastFissionDays) /
+                Math.Max(1e-12, world.Config.DaysPerYear) : 0;
             core.QoL = ElderRLContract.Unit(camp.QoL);
             core.FoodNeedsMet = ElderRLContract.Unit(camp.FoodNeedsMetRatio);
             core.WaterNeedsMet = ElderRLContract.Unit(camp.WaterNeedsMetRatio);
@@ -86,23 +109,10 @@ namespace Anthropocene.Simulation
                 world.Config.DaysPerYear / world.Config.BaseDays);
             core.FoodReserveYears = Math.Max(0, camp.Food) / annualNeed;
             core.IsVillage = camp.IsVillage;
-            core.RecentlyMoved = own.RecentlyMoved;
-
-            var reports = world.History.SelectMany(record =>
-                    record.Demographics ?? new List<DemographicReport>())
-                .Where(report => report.Camp == camp.Id).TakeLast(4).ToArray();
-            if (reports.Length > 0)
-            {
-                var first = reports[0]; var last = reports[reports.Length - 1];
-                core.PopulationTrend = (last.EndingPopulation -
-                    first.StartingPopulation) / (double)Math.Max(1,
-                    first.StartingPopulation);
-                core.QoLTrend = camp.QoL - last.QoL;
-                core.NetMigrationTrend = reports.Sum(report =>
-                    report.Immigrated - report.Emigrated - report.SplitOff) /
-                    (double)Math.Max(1, reports.Sum(report =>
-                        report.StartingPopulation));
-            }
+            core.RealizedMigrationPerCapitaYear = memory.CurrentSignals[
+                (int)ElderMemorySignal.RealizedMigration];
+            core.RealizedTradeUtilityPerCapitaYear = memory.CurrentSignals[
+                (int)ElderMemorySignal.RealizedTradeUtility];
         }
 
         private static void BuildSites(WorldState world, Camp camp,
@@ -153,7 +163,7 @@ namespace Anthropocene.Simulation
         }
 
         private static void BuildFishing(WorldState world, Camp camp,
-            AgentObservation game, ElderObservation result,
+            AgentObservation game, double years, ElderObservation result,
             ElderObservationMetadata metadata)
         {
             var all = game.FishingGrounds
@@ -162,7 +172,37 @@ namespace Anthropocene.Simulation
                 .ThenBy(ground => ground.Tile).ToArray();
             var selected = all.Take(ElderRLContract.MaxFishingGrounds).ToArray();
             result.Fishing = selected.Select((ground, candidate) =>
-                new ElderFishingObservation
+            {
+                double q = BandRepresentative(ground.CapitalIntensity,
+                    world.Config);
+                double capital = Math.Pow(q /
+                    world.Config.ReferenceIntensity, 2);
+                if (!ground.SitePresent)
+                    q = capital = 0;
+                var site = ground.OwnOperator
+                    ? world.FisherySites?.FirstOrDefault(item =>
+                        item.TileId == ground.Tile &&
+                        item.OperatorCampId == camp.Id) : null;
+                if (site != null)
+                {
+                    capital = FishingEconomy.ProjectedCapital(world, site,
+                        world.Days);
+                    q = FishingEconomy.Intensity(world.Config, capital);
+                }
+                var ownSnapshot = ground.OwnOperator
+                    ? camp.People.FishingGroundKnowledge?.FirstOrDefault(
+                        snapshot => snapshot.TileId == ground.Tile) : null;
+                double operation = ownSnapshot != null
+                    ? ElderRLContract.Unit(ownSnapshot.OperationFraction)
+                    : ground.HasOperation
+                        ? BandRepresentative(ground.Operation, world.Config) : 0;
+                bool maintenancePresent = ground.OwnOperator && site != null;
+                double maintenance = maintenancePresent
+                    ? world.Config.Neolithic.MaintenanceWorkersPerTileE(
+                            world.Config.MaintenanceCoefficient) *
+                        FishingEconomy.EffortForCapital(world, camp, capital) *
+                        years : 0;
+                return new ElderFishingObservation
                 {
                     Candidate = candidate,
                     Distance = world.Map.Distance(camp.Tile, ground.Tile),
@@ -172,11 +212,13 @@ namespace Anthropocene.Simulation
                     FoodPotential = ground.AccessibleFood,
                     Biomass = ground.Biomass,
                     Condition = ground.Condition,
-                    OpeningCapital = ground.CapitalIntensity,
-                    OperationFraction = ground.HasOperation ? ground.Operation : 0,
-                    MaintenanceWorkerYears = 0,
-                    BuildWorkerYears = 0
-                }).ToArray();
+                    CurrentCapital = capital,
+                    CurrentIntensity = q,
+                    OperationFraction = operation,
+                    MaintenanceWorkerYears = maintenance,
+                    MaintenancePresent = maintenancePresent
+                };
+            }).ToArray();
             metadata.FishingTiles = selected.Select(ground => ground.Tile).ToArray();
             result.Presence.Fishing.Present = selected.Length;
             result.Presence.Fishing.Omitted = Math.Max(0, all.Length - selected.Length);
@@ -193,6 +235,16 @@ namespace Anthropocene.Simulation
             fields.RetainedTiles = owned.Count(tile =>
                 LazyEcology.ProjectEcology(world, tile, world.Days)
                     .CultivationCapital > 1e-9);
+            var intensities = owned.Select(tile =>
+                    LazyEcology.ProjectEcology(world, tile, world.Days)
+                        .CultivationCapital)
+                .Where(capital => capital > 1e-9)
+                .Select(capital => CultivationEconomy.Intensity(world.Config,
+                    capital)).ToArray();
+            // Deterministic arithmetic mean over current retained, positive-E
+            // fields. Empty footprints report zero.
+            fields.CurrentIntensity = intensities.Length == 0 ? 0 :
+                intensities.Average();
             double maintenance = CultivationEconomy.MaintenanceFarmersForPlanning(
                 world, camp, years);
             int farmers = camp.Workforce.Assignments.Where(assignment =>
@@ -213,7 +265,8 @@ namespace Anthropocene.Simulation
         }
 
         private static void BuildHerd(WorldState world, Camp camp,
-            AgentObservation game, double years, ElderObservation result)
+            AgentObservation game, double years, TurnRecord recent,
+            ElderObservation result)
         {
             var all = game.Herds.Where(herd => herd.OwnedDomestic &&
                     herd.DomesticCamp == camp.Id)
@@ -289,7 +342,7 @@ namespace Anthropocene.Simulation
                     (double)startingAnimals;
                 herd.MortalityTrend = all.Sum(group => group.StarvationDeaths) /
                     (double)startingAnimals;
-                herd.SlaughterTrend = (world.History.LastOrDefault()?.ManagedHerds ??
+                herd.SlaughterTrend = (recent?.ManagedHerds ??
                     new List<ManagedHerdReport>()).Where(report =>
                         report.Camp == camp.Id).Sum(report => report.Slaughtered) /
                     (double)startingAnimals;
@@ -327,20 +380,18 @@ namespace Anthropocene.Simulation
         }
 
         private static void BuildCommodities(WorldState world, Camp camp,
-            double years, ElderObservation result)
+            double years, TurnRecord recent, ElderObservation result)
         {
             var recipes = NeolithicProduction.Recipes(world.Config)
                 .ToDictionary(recipe => recipe.Good);
-            var recent = world.History.LastOrDefault();
-            var all = Enum.GetValues(typeof(CraftGood)).Cast<CraftGood>()
-                .OrderBy(good => (int)good).Select(good =>
+            var all = ElderObservationSchema.CommodityGoods.Select(good =>
                 {
                     recipes.TryGetValue(good, out var recipe);
                     Trade.GoodDescriptor traded = Trade.Registry.FirstOrDefault(
                         item => item.Recipe == good);
                     double demand = NeolithicProduction.Demand(world, camp,
                         good, years);
-                    double imports = 0, exports = 0, opportunity = 0;
+                    double imports = 0, exports = 0;
                     foreach (var trade in recent?.Trades ?? new List<TradeRecord>())
                     {
                         bool want = traded != null && trade.Want == traded.Id;
@@ -348,19 +399,13 @@ namespace Anthropocene.Simulation
                         if (!want && !give) continue;
                         if (trade.Requester == camp.Id)
                         {
-                            if (want) imports += trade.WantQuantity *
-                                trade.Delivered;
-                            if (give) exports += trade.GiveQuantity *
-                                trade.GiveDelivered;
-                            opportunity += Math.Max(0, trade.RequesterGain);
+                            if (want) imports += trade.WantQuantity;
+                            if (give) exports += trade.GiveQuantity;
                         }
                         else if (trade.Responder == camp.Id)
                         {
-                            if (give) imports += trade.GiveQuantity *
-                                trade.GiveDelivered;
-                            if (want) exports += trade.WantQuantity *
-                                trade.Delivered;
-                            opportunity += Math.Max(0, trade.ResponderGain);
+                            if (give) imports += trade.GiveQuantity;
+                            if (want) exports += trade.WantQuantity;
                         }
                     }
                     return new ElderCommodityObservation
@@ -371,11 +416,8 @@ namespace Anthropocene.Simulation
                         ProtectedFloor = Math.Max(0, demand),
                         ProductionCapacity = recipe == null ? 0 :
                             Math.Max(0, recipe.Rate * years),
-                        MarginalValue = Math.Max(0,
-                            NeolithicProduction.Priority(camp, good)),
                         RecentImport = imports,
                         RecentExport = exports,
-                        ExternalOpportunity = opportunity,
                         CanProduce = recipe != null &&
                             NeolithicProduction.RecipeAvailable(world, camp, recipe),
                         CanTrade = world.Config.TradeEnabled
@@ -389,21 +431,24 @@ namespace Anthropocene.Simulation
         }
 
         private static void BuildContacts(WorldState world, Camp camp,
-            AgentObservation game, ElderObservation result)
+            AgentObservation game, TurnRecord recent,
+            ElderObservation result)
         {
-            var kin = game.KinRelations.ToDictionary(relation =>
-                relation.Society);
             var visibleTiles = new HashSet<int>(game.Rivals.Select(rival =>
                 rival.Tile));
             var all = game.KnownSettlements.Where(contact => !contact.Moved &&
                     contact.Tile >= 0)
                 .OrderBy(contact => world.Map.Distance(camp.Tile, contact.Tile))
-                .ThenBy(contact => contact.Turn).ToArray();
+                .ThenByDescending(contact => ElderRLContract.Finite(
+                    contact.ObservedDays) ? contact.ObservedDays :
+                    Math.Min(world.Days, Math.Max(0, contact.Turn) *
+                        world.Config.TurnDays)).ToArray();
             var selected = all.Take(ElderRLContract.MaxKnownContacts).ToArray();
             result.Contacts = selected.Select(contact =>
             {
-                kin.TryGetValue(contact.Owner, out var relation);
-                double migration = (world.History.LastOrDefault()?.Migrations ??
+                var relation = game.KinRelations.FirstOrDefault(item =>
+                    item.Player == contact.Owner);
+                double migration = (recent?.Migrations ??
                     new List<MigrationReport>()).Where(report =>
                         report.SourceCamp == camp.Id &&
                             report.DestinationCamp == contact.Camp ||
@@ -411,22 +456,41 @@ namespace Anthropocene.Simulation
                             report.SourceCamp == contact.Camp).Sum(report =>
                             report.DestinationCamp == camp.Id ? report.Migrants :
                             -report.Migrants);
-                double trade = (world.History.LastOrDefault()?.Trades ??
+                var trades = (recent?.Trades ??
                     new List<TradeRecord>()).Where(record =>
                         record.Requester == camp.Id &&
                             record.Responder == contact.Camp ||
                         record.Responder == camp.Id &&
-                            record.Requester == contact.Camp)
-                    .Sum(record => record.WantQuantity * record.Delivered +
-                        record.GiveQuantity * record.GiveDelivered);
+                            record.Requester == contact.Camp).ToArray();
+                double tradeFlow = trades.Sum(record =>
+                    record.WantQuantity + record.GiveQuantity);
+                double tradeUtility = trades.Sum(record =>
+                    record.Requester == camp.Id
+                        ? record.RequesterRealizedUtility
+                        : record.ResponderRealizedUtility);
+                double intervalYears = Math.Max(0, recent?.Duration ?? 0) /
+                    Math.Max(1e-12, world.Config.DaysPerYear);
+                int priorPopulation = recent?.Demographics?.FirstOrDefault(
+                    report => report.Camp == camp.Id)?.StartingPopulation ??
+                    Math.Max(1, camp.Population);
+                double scale = Math.Max(1e-12,
+                    Math.Max(1, priorPopulation) * intervalYears);
+                double observedDays = ElderRLContract.Finite(
+                    contact.ObservedDays) ? contact.ObservedDays :
+                    Math.Min(world.Days, Math.Max(0, contact.Turn) *
+                        world.Config.TurnDays);
                 return new ElderContactObservation
                 {
                     Distance = world.Map.Distance(camp.Tile, contact.Tile),
-                    AgeTurns = Math.Max(0, world.Turn - contact.Turn),
+                    AgeYears = Math.Max(0, world.Days - observedDays) /
+                        Math.Max(1e-12, world.Config.DaysPerYear),
                     Affinity = relation?.Affinity ?? 0,
-                    RelativeAttractiveness = 0,
-                    RecentTradeValue = trade,
-                    RecentMigration = migration,
+                    RecentTradeUtilityPerCapitaYear = intervalYears > 0
+                        ? tradeUtility / scale : 0,
+                    RecentTradeFlowPerCapitaYear = intervalYears > 0
+                        ? tradeFlow / scale : 0,
+                    RecentMigrationPerCapitaYear = intervalYears > 0
+                        ? migration / scale : 0,
                     Kin = relation != null,
                     CurrentlyVisible = visibleTiles.Contains(contact.Tile)
                 };
@@ -436,11 +500,11 @@ namespace Anthropocene.Simulation
                 all.Length - selected.Length);
         }
 
-        private static void BuildFission(WorldState world, Camp camp,
+        private static void BuildFission(Camp camp, TurnRecord recentRecord,
             ElderFissionObservation fission)
         {
             fission.CandidatePresent = camp.FissionDestination != null;
-            var recent = (world.History.LastOrDefault()?.Fissions ??
+            var recent = (recentRecord?.Fissions ??
                 new List<FissionReport>()).LastOrDefault(report =>
                     report.ParentCamp == camp.Id);
             if (recent == null) return;
@@ -448,43 +512,85 @@ namespace Anthropocene.Simulation
             fission.RecentDaughterPopulation = recent.Daughter;
             fission.ExpectedStayerGain = recent.Gain;
             fission.ExpectedDaughterQoL = recent.DaughterQoL;
-            fission.ExitOpportunity = recent.DaughterGain;
+            fission.ExitOpportunityPressure = Numbers.Clamp(
+                recent.ExitOpportunityPressure, 0, 1);
             fission.Pressure = recent.Push;
         }
 
         private static void BuildPrevious(ElderCompiledDecision decision,
+            ElderInstitutionMemory memory,
             ElderPreviousDecisionObservation previous)
         {
-            if (decision?.Requested == null || decision.Accepted == null) return;
+            ElderDirective requested = decision?.Requested ??
+                memory.LastRequested;
+            ElderDirective accepted = decision?.Accepted ??
+                memory.LastAccepted;
+            ElderDirective realized = decision?.Realized ??
+                memory.LastRealized;
+            if (requested == null || accepted == null ||
+                !(decision != null || memory.HasLastDecision)) return;
             previous.Present = true;
             previous.RequestedFieldRetention =
-                decision.Requested.RetainedFieldOperation;
+                requested.RetainedFieldOperation;
             previous.AcceptedFieldRetention =
-                decision.Accepted.RetainedFieldOperation;
+                accepted.RetainedFieldOperation;
             previous.RequestedHerdRetention =
-                decision.Requested.RetainedHerdFraction;
+                requested.RetainedHerdFraction;
             previous.AcceptedHerdRetention =
-                decision.Accepted.RetainedHerdFraction;
+                accepted.RetainedHerdFraction;
             previous.RequestedDevelopmentBudget =
-                decision.Requested.DevelopmentBudget;
+                requested.DevelopmentBudget;
             previous.AcceptedDevelopmentBudget =
-                decision.Accepted.DevelopmentBudget;
+                accepted.DevelopmentBudget;
             previous.RequestedFieldShare =
-                decision.Requested.FieldDevelopmentShare;
+                requested.FieldDevelopmentShare;
             previous.AcceptedFieldShare =
-                decision.Accepted.FieldDevelopmentShare;
-            previous.MovementAccepted = decision.Accepted.MovementCandidate ==
-                decision.Requested.MovementCandidate;
-            previous.InterventionCount = decision.Interventions?.Length ?? 0;
-            if (decision.Realized == null) return;
+                accepted.FieldDevelopmentShare;
+            previous.MovementAccepted = accepted.MovementCandidate ==
+                requested.MovementCandidate;
+            previous.InterventionCount = decision?.Interventions?.Length ??
+                memory.LastInterventionCount;
+            previous.ElapsedYears = memory.LastDecisionElapsedYears;
+            if (realized == null) return;
             previous.RealizedFieldOperation =
-                decision.Realized.RetainedFieldOperation;
+                realized.RetainedFieldOperation;
             previous.RealizedHerdRetention =
-                decision.Realized.RetainedHerdFraction;
+                realized.RetainedHerdFraction;
             previous.RealizedDevelopmentBudget =
-                decision.Realized.DevelopmentBudget;
+                realized.DevelopmentBudget;
             previous.RealizedFieldShare =
-                decision.Realized.FieldDevelopmentShare;
+                realized.FieldDevelopmentShare;
+        }
+
+        private static void BuildMemory(WorldState world,
+            ElderInstitutionMemory memory, ElderMemoryObservation observation)
+        {
+            observation.Present = memory?.Initialized == true;
+            if (!observation.Present) return;
+            observation.Traces = ElderObservationSchema.MemoryRows.Select(
+                (key, signal) => new ElderMemoryTraceObservation
+                {
+                    Key = key,
+                    Short = memory.Mean((ElderMemorySignal)signal, 0),
+                    Medium = memory.Mean((ElderMemorySignal)signal, 1),
+                    Long = memory.Mean((ElderMemorySignal)signal, 2)
+                }).ToArray();
+            observation.Maturity = Enumerable.Range(0, 3).Select(horizon =>
+                memory.Maturity(horizon, world.Days,
+                    world.Config.DaysPerYear)).ToArray();
+        }
+
+        private static double BandRepresentative(int band,
+            SimulationConfig config)
+        {
+            var thresholds = config.BandThresholds ?? Array.Empty<double>();
+            int bounded = Math.Max(0, Math.Min(4, band));
+            if (thresholds.Length == 0) return bounded / 4.0;
+            double low = bounded == 0 ? 0 :
+                thresholds[Math.Min(thresholds.Length - 1, bounded - 1)];
+            double high = bounded < thresholds.Length
+                ? thresholds[bounded] : 1;
+            return Numbers.Clamp(.5 * (low + high), 0, 1);
         }
     }
 }

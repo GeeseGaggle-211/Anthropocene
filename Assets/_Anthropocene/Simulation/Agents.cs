@@ -510,9 +510,9 @@ namespace Anthropocene.Simulation
                 double maintained = CultivationEconomy.Decay(config, capital, operating, horizonYears);
                 double abandoned = CultivationEconomy.Decay(config, capital, 0, horizonYears);
                 double bridgeCapital = Math.Pow(config.GathererBridgeCeiling / config.ReferenceIntensity, 2);
-                double openEffort = CultivationEconomy.AdditionalEffort(config,
+                double openEffort = CultivationEconomy.AdditionalEffort(world, camp,
                     Math.Min(abandoned, bridgeCapital), Math.Min(maintained, bridgeCapital));
-                double woodedEffort = CultivationEconomy.AdditionalEffort(config,
+                double woodedEffort = CultivationEconomy.AdditionalEffort(world, camp,
                     Math.Max(abandoned, bridgeCapital), Math.Max(maintained, bridgeCapital));
                 bool wooded = view.CurrentVegetation >= VegetationTier.Medium &&
                     (tile.Environment == EnvironmentKind.Temperate || tile.Environment == EnvironmentKind.Tropical || tile.Environment == EnvironmentKind.Cold);

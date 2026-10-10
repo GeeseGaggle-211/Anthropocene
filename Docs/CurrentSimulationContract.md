@@ -229,8 +229,8 @@ in `ConfigurationUnits.md` and the save-format contract.
 
 ## Native Elder policy boundary (issue #43)
 
-The `feature/elder-rl-scaffold` lineage exposes a framework-neutral,
-persistent `Reset`/`Step` boundary over real production turns. The Elder may
+The scaffold-v2 lineage exposes a framework-neutral, persistent `Reset`/`Step`
+boundary over real production turns. The Elder may
 request retained-field operation, retained-herd fraction, a shared Development
 budget, its field/herd split, and one masked movement candidate. The native
 compiler and resolver retain authority over legality, placement, integer labour,
@@ -238,19 +238,28 @@ resources, recipes, trade, fishing, ecology, immigration, and fission. The
 ordinary heuristic path remains the Option A comparator; causal and parity
 checks prevent the learned seam from becoming a second economy.
 
-Observation schema v1 is a checked-in 512-float layout built from own state and
-the permission-filtered `AgentObservation`. Raw identities and live foreign
-stocks are excluded from policy features. Reset and replay bind simulator,
-configuration, build, observation/action/environment schemas, the authoritative
-initial snapshot, background orders, accepted actions, interventions, events,
-and state fingerprints. The scalar is normalized fixed-cohort local welfare;
-the corresponding raw `prior population * realized QoL * elapsed years` terms
-and non-weighted diagnostics are retained for audit.
+Observation and environment schemas are v2; the five-head action schema remains
+v1. The checked-in 512-float actor layout uses local physical durations,
+realized flows, current cultivation/fishing consequences, and a persisted
+settlement-level 20/60/180-year institutional trace bank. Raw identities, live
+foreign stocks, planner Priority, absolute world time, raw turns, and `q_k` are
+excluded. Local legal technological capability changes future physical/economic
+costs without prescribing strategy, granting capital, or refunding past labor.
+
+Reset and replay bind simulator, configuration, build, schema versions, the
+authoritative initial snapshot, requested/accepted/realized actions, elapsed
+years, intervention evidence, background orders, optional training-only critic
+data, and post-step fingerprints. Native reward is unnormalized fixed-prior-
+cohort interval welfare `N_prior * realized QoL * elapsed years`; learner-side
+`N_ref`, `rho`, and GAE remain unfrozen. The critic sidecar is a separate type
+that cannot enter the actor encoder. GRU/Transformer remain deferred
+learner-side experiments.
 
 This boundary contains no PPO, Gymnasium, PyTorch, trainer, or learned weights.
 The commands, schema table, chronology, replay contract, benchmark, and adapter
 handoff are documented in
-[`Tools/ElderRL/README.md`](../Tools/ElderRL/README.md).
+[`Tools/ElderRL/README.md`](../Tools/ElderRL/README.md) and
+[`ElderRLScaffoldV2.md`](ElderRLScaffoldV2.md).
 
 ## Consistency check
 
