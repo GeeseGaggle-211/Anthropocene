@@ -41,6 +41,7 @@ Desktop.ini
 # Local tools and headless output
 .tools/
 **/bin/
+**/__pycache__/
 TestResults/
 !Tools/Headless/Anthropocene.Headless.csproj
 !Tools/ResourceAccess/Anthropocene.ResourceAccess.csproj
@@ -51,3 +52,4 @@ TestResults/
 !Tools/NeolithicCraftValidation/Anthropocene.NeolithicCraftValidation.csproj
 !Tools/PerformanceAudit/HerdEcologyProbe.csproj
 !Tools/PerformanceAudit/PastoralPlannerProbe.csproj
+!Tools/InvestmentPayback/Anthropocene.InvestmentPayback.csproj
