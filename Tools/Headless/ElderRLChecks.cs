@@ -193,6 +193,7 @@ internal static class ElderRLChecks
         Near(SettlementProductionFrontier
                 .EffectiveFishingEffortKnee(world, first), .65,
             "Copper fishing efficacy does not borrow agricultural calibration");
+        first.People.NeolithicTechnologies.Remove(NeolithicTech.CopperWorking);
 
         world.Config.Neolithic.CultivationMarginalEffortKneeQ = .8;
         world.Config.Neolithic.FishingMarginalEffortKneeQ = .8;
