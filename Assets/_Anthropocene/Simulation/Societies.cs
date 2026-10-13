@@ -436,12 +436,43 @@ namespace Anthropocene.Simulation
             world.PendingTechnologyUnlocks[society.Id] = pending | 1 << i;
         }
 
+        // Realized production credits practice immediately, but no later recipe or
+        // camp in this turn may observe a newly earned capability.
+        internal static void RecordCraftPractice(WorldState world, Society society, string track, double work)
+        {
+            society.CraftExperience.TryGetValue(track, out double experience);
+            society.CraftExperience[track] = experience + work;
+            if (experience + work < world.Config.Neolithic.CraftMasteryThreshold || society.HasTech(track)) return;
+            world.PendingCraftUnlocks ??= new Dictionary<int, HashSet<string>>();
+            if (!world.PendingCraftUnlocks.TryGetValue(society.Id, out var tracks))
+                world.PendingCraftUnlocks.Add(society.Id, tracks = new HashSet<string>(StringComparer.Ordinal));
+            tracks.Add(track);
+        }
+
         // Called only at Close, after all realized food/practice receipts have been credited.
         public static void Resolve(WorldState world, TurnRecord record)
         {
             var pending = world.PendingTechnologyUnlocks;
-            if (pending == null || pending.Count == 0) return;
+            var crafts = world.PendingCraftUnlocks;
+            if ((pending == null || pending.Count == 0) && (crafts == null || crafts.Count == 0)) return;
             var societies = world.Societies.ToDictionary(society => society.Id);
+            if (crafts != null)
+            {
+                foreach (var entry in crafts.OrderBy(pair => pair.Key))
+                {
+                    if (!societies.TryGetValue(entry.Key, out var society)) continue;
+                    foreach (string track in entry.Value.OrderBy(value => value, StringComparer.Ordinal))
+                    {
+                        if (society.HasTech(track) || !society.CraftExperience.TryGetValue(track, out double practice) ||
+                            practice < world.Config.Neolithic.CraftMasteryThreshold) continue;
+                        society.NeolithicTechnologies.Add(track);
+                        foreach (string role in WorkforceRoles.All.Where(role => EconomicIntents.RequiredTechnology(role) == track))
+                            if (!society.UnlockedSpecialists.Contains(role)) society.UnlockedSpecialists.Add(role);
+                    }
+                }
+                crafts.Clear();
+            }
+            if (pending == null || pending.Count == 0) return;
             foreach (var entry in pending.OrderBy(pair => pair.Key))
             {
                 if (!societies.TryGetValue(entry.Key, out var society) || society.Progression.Era != Era.Neolithic) continue;

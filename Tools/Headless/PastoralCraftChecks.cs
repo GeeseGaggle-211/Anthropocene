@@ -75,6 +75,7 @@ internal static class PastoralCraftChecks
         MixedModeClothingDemandDoesNotManufactureDuplicateFabric();
         PortableHousingMovesAndPersists();
         MixedHousingDecayFundsOnlyTheActualShortfall();
+        CraftMasteryWaitsForClose();
         HusbandryEconomyUnlocksSharedWeaving();
         PastoralObservationContractIsFilteredAndPure();
         PastoralIntentCopiesStampsAndRejectsInvalidValues();
@@ -305,6 +306,45 @@ internal static class PastoralCraftChecks
         Near(housingOutput, (8 - (.9 * 4 + .9 * w.Config.Neolithic.LightHousingPeoplePerUnit)) / 4, "fixed and portable stocks jointly fund housing demand after one depreciation each: 8 people less 3.6 fixed and 0.9 t tent people, in four-person houses");
         Near(w.FixedHousing.Single().Units - housingOutput, .9, "fixed shelter receives one 20-year depreciation before new Housing is added");
         Near(c.Inventory.LightHousingUnits, .9, "portable shelter receives one 20-year depreciation");
+    }
+
+    private static void CraftMasteryWaitsForClose()
+    {
+        var w = HusbandryWorld(); var c = w.Camps[0];
+        w.Config.Neolithic.CraftMasteryThreshold = .5;
+        c.AnimalFood = 10000; c.Inventory.HandTools = 10000;
+        var first = Produce(w, c, CraftGood.AnimalFabric, WorkforceRoles.Craftsperson, 10, 10);
+        Check(first != null && first.Output > 0, "craft mastery fixture realizes useful production");
+        Check(c.People.CraftExperience[NeolithicTech.Weaving] >= .5, "practice is credited during production");
+        Check(!c.People.HasTech(NeolithicTech.Weaving) && !c.People.UnlockedSpecialists.Contains(WorkforceRoles.Weaver),
+            "crossing craft mastery does not unlock capabilities during the economy");
+        Check(Produce(w, c, CraftGood.AnimalFabric, WorkforceRoles.Weaver, 10, 10) == null,
+            "a later recipe cannot use the newly earned specialist in the same turn");
+        var sibling = new Camp { Id = w.NextId++, Tile = c.Tile + 1, Population = 4, AnimalFood = 10000 };
+        sibling.Bind(c.People); sibling.Inventory.HandTools = 10000; w.Camps.Add(sibling);
+        Check(Produce(w, sibling, CraftGood.AnimalFabric, WorkforceRoles.Weaver, 10, 10) == null,
+            "a later camp of the same society cannot use the pending capability");
+        Produce(w, sibling, CraftGood.AnimalFabric, WorkforceRoles.Craftsperson, 10, 10);
+        Check(w.PendingCraftUnlocks[c.SocietyId].Count == 1, "repeated practice queues each society/track once");
+        TechnologyDiscovery.Resolve(w, new TurnRecord());
+        Check(c.People.HasTech(NeolithicTech.Weaving) && c.People.UnlockedSpecialists.Contains(WorkforceRoles.Weaver),
+            "Close grants craft mastery even without pending subsistence discoveries");
+        Check(w.PendingCraftUnlocks.Count == 0, "Close consumes the craft queue");
+        TechnologyDiscovery.Resolve(w, new TurnRecord());
+        Check(c.People.NeolithicTechnologies.Count(t => t == NeolithicTech.Weaving) == 1 &&
+            c.People.UnlockedSpecialists.Count(t => t == WorkforceRoles.Weaver) == 1, "repeated Close cannot duplicate unlocks");
+        var loaded = SaveCodec.Load(SaveCodec.Save(w));
+        Check(loaded.Camps[0].People.HasTech(NeolithicTech.Weaving), "end-boundary save preserves the unlock");
+        Check(Produce(loaded, loaded.Camps[0], CraftGood.AnimalFabric, WorkforceRoles.Weaver, 10, 10)?.Output > 0,
+            "production after the committed boundary can use the specialist");
+
+        var empty = HusbandryWorld(); var ec = empty.Camps[0];
+        empty.Config.Neolithic.CraftMasteryThreshold = .5;
+        ec.AnimalFood = 0;
+        Check(Produce(empty, ec, CraftGood.AnimalFabric, WorkforceRoles.Craftsperson, 10, 10) == null,
+            "blocked production produces no practice receipt");
+        TechnologyDiscovery.Resolve(empty, new TurnRecord());
+        Check(!ec.People.HasTech(NeolithicTech.Weaving), "Close cannot unlock craft mastery without realized practice");
     }
 
     private static void HusbandryEconomyUnlocksSharedWeaving()

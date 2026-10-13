@@ -753,6 +753,8 @@ namespace Anthropocene.Simulation
         // whose threshold was crossed during this turn, grouped by Society ID;
         // the Close boundary consumes the sparse queue in canonical order.
         [NonSerialized] internal Dictionary<int, int> PendingTechnologyUnlocks = new Dictionary<int, int>();
+        // Craft practice is realized during production; capabilities change only at Close.
+        [NonSerialized] internal Dictionary<int, HashSet<string>> PendingCraftUnlocks = new Dictionary<int, HashSet<string>>();
         [System.Runtime.Serialization.OptionalField] public List<MaterialKnowledge> MaterialKnowledge = new List<MaterialKnowledge>();
         [System.Runtime.Serialization.OptionalField] public List<FixedHousingStock> FixedHousing = new List<FixedHousingStock>();
         [System.Runtime.Serialization.OptionalField] public List<FisherySite> FisherySites = new List<FisherySite>();
