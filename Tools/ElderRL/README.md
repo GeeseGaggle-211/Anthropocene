@@ -170,6 +170,16 @@ must not move economics into Python. Synthetic shocks and a sparse global event
 scheduler remain deferred. GRU and Transformer are deferred learner-side
 experiments, not missing native simulator work.
 
+The autonomous model4 integration has a separately confirmed history gap:
+scenario resets clear ElderMemory, autonomous initialization does not restore
+it, and compilation supplies no current autonomous decision/outcome receipt.
+Its nominal EMA channels therefore repeat current-state signals, unlike the
+persistent scaffold path described above. See
+[`AutonomousHorizonResultsV5.md`](../../Docs/AutonomousHorizonResultsV5.md) and
+[`autonomous-model-v4-manifest.json`](autonomous-model-v4-manifest.json).
+The frozen mechanical experiment passes; further training promotion/scale-out
+is NO-GO until versioned history repair. GRU comparison eligibility is not reached.
+
 Python training work remains in the separate private
 [`GeeseGaggle-211/Anthropocene-RL`](https://github.com/GeeseGaggle-211/Anthropocene-RL)
 repository. `training-repository.json` records the schema-v2 compatibility

@@ -325,3 +325,11 @@ The default allocation strategy and frozen five-head Elder contract are unchange
 Historical v3 contracts/results remain in
 [AutonomousElderEconomy-v1.md](AutonomousElderEconomy-v1.md) and
 [AutonomousElderValidation.md](AutonomousElderValidation.md).
+
+The completed learner model4 critic/H100/H400 gate and promotion verdict are in
+[AutonomousHorizonResultsV5.md](AutonomousHorizonResultsV5.md). Independent
+Astra/high review passes the frozen mechanical experiment but gives NO-GO for
+further training promotion/scale-out: the autonomous observation path lacks
+persistent institutional history and actual autonomous action/outcome receipts.
+The intended history-equipped MLP and GRU comparison gate are therefore not yet
+validated. Older scaffold memory tests do not cover this integration gap.
