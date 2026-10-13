@@ -1,0 +1,7 @@
+run,samples,meanUtilization,maxUtilization,peakDeviceMemoryMiB
+trajectory-cpu-cache-1-gpu,212,20.84433962264151,25.0,363.0
+trajectory-gpu-coeff-1-gpu,220,20.85909090909091,33.0,474.0
+trajectory-gpu-coeff-2-gpu,226,24.256637168141594,32.0,474.0
+trajectory-gpu-fused-1-gpu,234,17.32051282051282,44.0,474.0
+trajectory-gpu-split-1-gpu,234,18.72222222222222,45.0,474.0
+trajectory-off-1-gpu,208,25.697115384615383,37.0,356.0

@@ -1,0 +1,118 @@
+ANTHROPOCENE — NATIVE SHARED-STATE / PASS-FUSION RESULTS
+
+Recommendation: keep as a research branch. No tested GPU variant improves whole-turn time on this machine. Do not integrate or expand to population intrinsic state on this evidence.
+
+Provenance
+Branch: spike/gpu-ecology-equivalence; no merge or push.
+Implementation commit: 46747b4 (measurement assembly is unchanged across runs).
+Report snapshot commit: 46747b403e4f8216501f26e96320303149e7fd8c
+Authoritative pilot base: 5559961164d6f9da8e6d20c1dc563ecec3eb04b7. Main was verified at 86cba712dfd76673bd9637052543bde85f810e0b; it is not the exact pilot pin. The separate approved Close-time technology change is 55d4642 and is present in every CPU/GPU comparison.
+Native Windows, Unity-bundled .NET 8.0.318, ILGPU 1.5.3 CUDA, GTX 1650 4 GiB. Original dirty checkout preserved; this is the isolated native continuation after WSL became inaccessible.
+
+Whole-turn measurement
+Each row averages ALL turns in its inclusive window: 20–50 = 31 turns; 40–50 = 11 turns. Seed 11, four CPU workers. Standard = 1024x512 / 80 initial tribes; Huge = 2048x1024 / 240 benchmark override. The simulator expands far beyond its starting camp count.
+Timing includes prefetch, Draft, Prepare, Resolve and observation Refresh. Initialization/compilation, explicit pre-turn GC, fingerprinting and saving are outside the timer. This is turn execution, not UI/render/save latency. One trajectory per candidate plus an independent second coefficient run; no confidence intervals or multi-seed generalization.
+GPU trajectories drift slightly from the CPU state. These ratios compare observed end-to-end runs, not perfectly matched-state isolated backend overhead. Sub-percent split/fused differences are not evidence of a speedup from one trajectory each.
+
+Mean ms/turn, run 1 (lower is better)
+Variant                    Standard20–50 Standard40–50 Huge20–50 Huge40–50
+off                               131.20        157.52        684.19        993.83
+cpu-cache                         148.36        169.45        760.89       1078.76
+gpu-split                         254.55        292.26       1105.42       1412.97
+gpu-fused                         256.88        290.45       1098.81       1408.63
+gpu-coeff                         198.62        223.87        885.86       1193.25
+gpu-coeff repeat                  196.68        223.16        913.22       1242.50
+
+CPU phase breakdown, Huge (ms/turn; non-overlapping rows)
+Phase                       Turns20–50 Turns40–50
+Draft                           228.17     386.20
+Prepare                          61.77      93.36
+HerdIntent                       65.27      68.31
+Ecology                         112.68     148.06
+SetupEconomy                     52.36      56.40
+ManagedHerd                      29.71      47.40
+Production                       30.12      50.45
+Knowledge                         6.82      13.77
+Fission                          19.58      30.33
+Immigration                       6.71       8.90
+GrowthPlan                        1.26       1.71
+Sustain                           4.31       7.16
+TradeSettle                       0.62       0.55
+ResolverOther                    57.05      72.47
+Refresh                           7.76       8.76
+Prefetch                          0.00       0.00
+
+Nested inside Ecology above (do NOT add again):
+HorizonPreparation               59.31      78.70
+FullTurnIntegration              25.95      29.95
+HorizonCommit                    24.63      35.69
+
+Which passes share state, and what was actually tested
+Draft observation/forecast reads, Prepare reads, and Resolve herd/resource reads repeatedly invoke LazyEcology.ProjectEcology. Their intrinsic land projection is the tested common read model. Seasonal profiles remain on GPU across turns; capital transition, seasonal recovery and endpoint clamp share a lane. Split uses three kernels; fused uses one; coefficient-fused additionally retains annual affine maps for eligible natural land and uses integer exponentiation. CPU decisions and ordered writes remain unchanged.
+The CPU-cache control uses identical sharing without a GPU. Every one of its 100 whole-world fingerprints matches the authoritative CPU. It is slower, showing that shared lookup/bookkeeping has a cost before transfers are considered.
+The profiler identifies the allocator as the largest Draft hotspot. At Huge turn 50 its scalar instrumented scope is about 935 ms inclusive and 831 ms exclusive of nested hooks. These are diagnostic one-worker timings, NOT the four-worker window averages above. Most allocator cost is not the current-time ecology projection: hypothetical recovery, forecast/portfolio evaluation, dictionary/object traversal and CPU decisions remain. RecoverLandAfterHarvest on hypothetical views cannot reuse a projection keyed only by the current authoritative tile.
+Resource preparation first materializes stocks, chooses/reconciles field ownership and budgets, then fixes claims. Tile integration can be independent only after these CPU outputs exist. Ordered receipt/stock commits feed subsequent economy. Fusing all these phases would require a new resident data model and APIs spanning the CPU decision barriers, not just joining kernels.
+This study therefore ran a real shared-state subset across consumers; it did not port the entire planner, herd intention pass or resource preparation/commit to GPU.
+
+GPU cost decomposition, turns 40–50 (ms/turn)
+Host remainder is a residual: total prefetch minus upload/kernel/readback. It includes host work plus launch, synchronization and API overhead outside CUDA-event time; it is not isolated pure host compute.
+World / variant             Prefetch   Host remainder   Upload   Kernel   Readback  Transfer/device
+Standard80 / gpu-split         120.99          32.31     2.02    84.05     2.61     5.23%
+Standard80 / gpu-fused         122.24          32.48     1.88    85.41     2.48     4.86%
+Standard80 / gpu-coeff          58.45          31.62     4.62    17.02     5.19    36.55%
+Huge240 / gpu-split            384.22         122.17     9.08   250.44     2.53     4.43%
+Huge240 / gpu-fused            389.89         119.93     7.89   259.99     2.08     3.69%
+Huge240 / gpu-coeff            174.43         120.97     9.23    36.02     8.21    32.61%
+
+Coverage is projections, not tile commits (coefficient run 1, turns40–50):
+Standard80: 52,211 predicted unique tile projections/turn; 92,664 eligible-horizon queries; 87,677 GPU-backed cache reads (94.6% of counted queries); 3,807 actual resource-integrated tiles/turn; 8.79 MiB transfer/turn.
+Huge240: 131,072 predicted unique tile projections/turn; 393,637 eligible-horizon queries; 235,095 GPU-backed cache reads (59.7% of counted queries); 15,250 actual resource-integrated tiles/turn; 22.00 MiB transfer/turn.
+The predictor is a union of earlier queried tile IDs, so it overfetches. Huge reaches the 131,072-slot cap, and further queries fall back to CPU. This does not represent 80–90% land coverage. Static profiles and coefficients are resident; changing dynamic stocks still travel out and back each turn. Host packing, sorting, dictionary/cache construction and guards remain material costs.
+
+Validation and determinism
+Total direct CPU/GPU projection comparisons: 1,053,822. Largest absolute error: 8.04902811069e-11.
+Days and vegetation outputs must match exactly. Floating channels must be finite and satisfy abs error <= 1e-8 + 1e-10*max(abs(CPU),abs(GPU)). Validation uses real openings at turns25/40/50; it is not a 1000-step dense stress replay. The following max/mean/RMS errors combine the three GPU variants once per checkpoint (raw validation counters are cumulative).
+World / checkpoint             Compared       Max error      Mean error       RMS error
+Standard80 / 25                  72,894    2.56932e-11    1.35953e-13    8.99299e-13
+Standard80 / 40                  73,188    2.56932e-11    1.32614e-13    8.87831e-13
+Standard80 / 50                  75,024    2.56932e-11    1.32267e-13    8.84299e-13
+Huge240 / 25                    278,304    8.04903e-11    1.45104e-13    9.52071e-13
+Huge240 / 40                    272,136    6.63931e-11    1.39625e-13    9.34319e-13
+Huge240 / 50                    282,276    3.50155e-11    1.38711e-13    9.26567e-13
+gpu-coeff: independent fresh processes, same assembly/hardware: 100 checkpoints, 0 fingerprint mismatches.
+Split and literal fused trajectories were not repeated in separate processes; no exact-repeatability claim is made for those slower variants. The coefficient variant was selected for the fresh-process gate. CPU and GPU whole-world fingerprints differ once GPU values are consumed.
+gpu-split/Standard80: turn50 population 66,951 (CPU delta +4); camps 205 (delta +0); max absolute population/camp drift over50turns 4/0.
+gpu-split/Huge240: turn50 population 333,189 (CPU delta +377); camps 974 (delta +5); max absolute population/camp drift over50turns 377/5.
+gpu-fused/Standard80: turn50 population 66,951 (CPU delta +4); camps 205 (delta +0); max absolute population/camp drift over50turns 4/0.
+gpu-fused/Huge240: turn50 population 333,189 (CPU delta +377); camps 974 (delta +5); max absolute population/camp drift over50turns 377/5.
+gpu-coeff/Standard80: turn50 population 66,951 (CPU delta +4); camps 205 (delta +0); max absolute population/camp drift over50turns 4/0.
+gpu-coeff/Huge240: turn50 population 333,189 (CPU delta +377); camps 974 (delta +5); max absolute population/camp drift over50turns 377/5.
+Small local floating errors can change later discrete outcomes. The measured population and camp totals do not exhaust state drift, and same-machine repeatability does not establish portability.
+
+Device-wide telemetry (whole process, 1 Hz; includes desktop and idle/save gaps)
+trajectory-cpu-cache-1-gpu: mean GPU utilization 20.8%, peak 25%, peak device memory 363 MiB; 212 samples.
+trajectory-gpu-coeff-1-gpu: mean GPU utilization 20.9%, peak 33%, peak device memory 474 MiB; 220 samples.
+trajectory-gpu-coeff-2-gpu: mean GPU utilization 24.3%, peak 32%, peak device memory 474 MiB; 226 samples.
+trajectory-gpu-fused-1-gpu: mean GPU utilization 17.3%, peak 44%, peak device memory 474 MiB; 234 samples.
+trajectory-gpu-split-1-gpu: mean GPU utilization 18.7%, peak 45%, peak device memory 474 MiB; 234 samples.
+trajectory-off-1-gpu: mean GPU utilization 25.7%, peak 37%, peak device memory 356 MiB; 208 samples.
+No per-kernel occupancy or process-specific GPU utilization was measured. Telemetry is not aligned to the requested late windows; CUDA-event kernel times above are the applicable window-level device timing. Allocated research buffers total about52MiB, excluding CUDA context and driver overhead.
+
+Cold setup (separate from turn timers)
+cpu-cache-1-setup: 8.50 ms
+gpu-coeff-1-setup: 957.59 ms
+gpu-coeff-2-setup: 933.83 ms
+gpu-fused-1-setup: 917.79 ms
+gpu-split-1-setup: 922.46 ms
+off-1-setup: 8.32 ms
+
+Interpretation and next candidate
+Coefficient reuse makes the GPU arithmetic much cheaper than a literal fused translation, but no whole-turn crossover occurs for either tested map. Kernel fusion does not remove host-side prediction/packing or the CPU consumers waiting on results. The CPU-cache control also loses, so merely reusing results via a concurrent dictionary is not a demonstrated optimization.
+The most plausible next GPU research boundary is batched numerical forecast evaluation over a compact shared tile/camp read model, with CPU selection between batches. It targets the larger allocator/forecast workload and can reuse static profiles across many alternatives. That new boundary is not implemented or claimed faster here. It requires an explicit dependency/ordering contract; porting the allocator wholesale or reordering shared budgets is not justified.
+Population growth arithmetic remains a small phase; moving it alone is unlikely to affect the late-turn total. Prioritize profiling/flattening the CPU planner and host data path before a broader heterogeneous simulator. Retain this branch as reproducible negative evidence; do not ship its backend.
+
+Changed code: Tools/GpuEcology/{ResidentKernel.cs,ResidentBridge.cs,ResidentStudy.cs,Run-Resident.ps1,summarize-resident.py,NativeProgram.cs,WholeTurnProbe.cs,TurnProbe/build-candidate-hooks.py}. Detailed contract/methodology: RESIDENT_PASS_FUSION.md. No authoritative Assets source edits in this pass.
+Checks: Release builds of research and CPU harnesses; direct projection oracle; exact CPU-cache/full CPU trajectories; repeated coefficient trajectory fingerprints; current-contract documentation check; git diff --check.
+Independent adherence review: PASS WITH LIMITATIONS. The reviewer independently reproduced all five window comparisons, confirmed both CPU variants match100/100 authoritative states, coefficient fresh processes match100/100 checkpoints, error accounting is correct, and no authoritative Assets/main changes occurred in this extension. Review refinements about diverged timing states and the host residual are incorporated above.
+
+Companion CSV files contain all requested window means/sums/medians, non-overlapping CPU phases, nested subphases, per-scope scalar profiles, validation, repeatability and telemetry. Raw per-turn JSON and metadata are committed under Tools/GpuEcology/resident-results.

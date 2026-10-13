@@ -1,0 +1,10 @@
+{
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "runId": "2",
+  "backend": "gpu-coeff",
+  "mode": "trajectory",
+  "gcHeapHardLimit": "0x180000000",
+  "startedUtc": "2026-10-13T08:53:09.6414428Z",
+  "assemblySha256": "488DF5511AC8F3C33F277A1781364D294E16D777A1F290FBBD625F8767ECBE6E",
+  "tieredCompilation": "1"
+}

@@ -1,0 +1,3896 @@
+[
+  {
+    "world": "Standard80",
+    "turn": 25,
+    "workers": 1,
+    "measurement": {
+      "TotalMs": 735.5712,
+      "PrefetchMs": 0.9031,
+      "DraftMs": 367.5645,
+      "PrepareMs": 56.9341,
+      "ResolveMs": 308.1003,
+      "RefreshMs": 2.0692,
+      "Resolution": {
+        "CraftFieldWork": null,
+        "CraftFoodFlow": null,
+        "HerdIntentMilliseconds": 80.3843,
+        "EcologyMilliseconds": 66.8164,
+        "SetupEconomyMilliseconds": 38.3825,
+        "ManagedHerdMilliseconds": 6.1648,
+        "GrowthPlanMilliseconds": 0.2796,
+        "SustainMilliseconds": 2.3824,
+        "ProductionMilliseconds": 16.0243,
+        "KnowledgeMilliseconds": 12.6263,
+        "TotalMilliseconds": 305.2952,
+        "FullTurnIntegrationMilliseconds": 22.8667,
+        "SeasonalPreparationMilliseconds": 0,
+        "SeasonalIntegrationMilliseconds": 0,
+        "SeasonalCommitMilliseconds": 0,
+        "SeasonalExpansionMilliseconds": 0,
+        "HorizonPreparationMilliseconds": 31.3972,
+        "HorizonCommitMilliseconds": 11.67,
+        "ActiveTiles": 3396,
+        "TileIntegrations": 3396,
+        "SeasonalTiles": 0,
+        "FullTurnTiles": 3396,
+        "FissionCampsEvaluated": 95,
+        "FissionValidations": 18,
+        "FissionSearches": 1,
+        "FissionCandidatesScored": 2,
+        "FissionTileProjections": 136,
+        "FissionCacheInvalidations": 0,
+        "FissionProposals": 1,
+        "FissionCommits": 1,
+        "FissionDropped": 0,
+        "FissionDaughterChecks": 3,
+        "FissionDaughterBlocked": 2,
+        "FissionCrowdingProposals": 0,
+        "FissionDistressProposals": 0,
+        "FissionCrowdingCommits": 0,
+        "FissionDistressCommits": 0,
+        "FissionDistressDaughters": 0,
+        "FissionScreened": 19,
+        "FissionSearchesNoCandidates": 0,
+        "FissionSearchesNoViable": 0,
+        "FissionWithDestination": 19,
+        "FissionBelowThreshold": 16,
+        "FissionStayersBlocked": 0,
+        "FissionMilliseconds": 13.8528,
+        "ImmigrationCampsEvaluated": 93,
+        "ImmigrationCandidatesScored": 3,
+        "ImmigrationIntents": 0,
+        "ImmigrationAccepted": 0,
+        "ImmigrationPartial": 0,
+        "ImmigrationRejected": 0,
+        "ImmigrationMigrants": 0,
+        "ImmigrationMilliseconds": 6.6628,
+        "TradeEligible": 94,
+        "TradeRequisitions": 0,
+        "TradeHonoured": 0,
+        "TradeCountered": 0,
+        "TradeIgnored": 0,
+        "TradesSettled": 0,
+        "TradePlanMilliseconds": 0.0005,
+        "TradeSettleMilliseconds": 0.1851,
+        "PlanCalls": 0,
+        "ForecastCalls": 95,
+        "LocalSourceQueries": 378,
+        "SourceLookups": 0,
+        "DepositEdges": 9882,
+        "BodyScans": 1802,
+        "ClaimsAllocated": 4880,
+        "ProductionReceipts": 463,
+        "FisherySiteLookups": 18,
+        "FoodForecastQueries": 0,
+        "FoodInvestmentComparisons": 0,
+        "SharedAllocations": 0,
+        "SharedOperationChoices": 0,
+        "SharedHerdChoices": 0,
+        "ExpansionLadderBuilds": 0,
+        "HerdLadderBuilds": 0,
+        "PastureScans": 0,
+        "PlannerTileProjections": 0,
+        "PlannerEvaluations": 0,
+        "SharedSelections": 0,
+        "KernelCacheHits": 0,
+        "SharedAllocationMilliseconds": 0,
+        "PlanMilliseconds": 0,
+        "SeasonalCampBoundaries": 0,
+        "OperatingRegimeChanges": 0,
+        "FieldWorkSteps": 0,
+        "FieldChoiceSwitches": 0,
+        "TargetCompletions": 0,
+        "ToolExhaustions": 0,
+        "StockDepletions": 0,
+        "ManagedRenewalInput": 3039479.866669124,
+        "OperatingFractionSum": 301,
+        "OperatingFieldTiles": 301
+      },
+      "Fingerprint": "E000D04BDDBAF271D9000AA72535664ABC26096FADBC24A5981D4ACDACBC7F6D",
+      "Camps": 96,
+      "Herds": 1906,
+      "ProductionReceipts": 463,
+      "ManagedHerdReceipts": 21
+    },
+    "scopes": [
+      {
+        "Path": "Draft",
+        "InclusiveMs": 364.863,
+        "ExclusiveMs": 23.340300000000003,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Decide",
+        "InclusiveMs": 124.3391,
+        "ExclusiveMs": 48.997800000000005,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Decide/Observation",
+        "InclusiveMs": 75.3413,
+        "ExclusiveMs": 21.2562,
+        "Calls": 94
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts",
+        "InclusiveMs": 26.4216,
+        "ExclusiveMs": 25.6243,
+        "Calls": 94
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Ecology.Project",
+        "InclusiveMs": 0.1622,
+        "ExclusiveMs": 0.1622,
+        "Calls": 1055
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Housing.FixedAt",
+        "InclusiveMs": 0.6351,
+        "ExclusiveMs": 0.6351,
+        "Calls": 651
+      },
+      {
+        "Path": "Draft/Decide/Observation/Knowledge",
+        "InclusiveMs": 7.163600000000001,
+        "ExclusiveMs": 7.163600000000001,
+        "Calls": 94
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements",
+        "InclusiveMs": 9.1983,
+        "ExclusiveMs": 8.1538,
+        "Calls": 94
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Ecology.Project",
+        "InclusiveMs": 0.1549,
+        "ExclusiveMs": 0.1549,
+        "Calls": 650
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Housing.FixedAt",
+        "InclusiveMs": 0.8896000000000001,
+        "ExclusiveMs": 0.8896000000000001,
+        "Calls": 94
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles",
+        "InclusiveMs": 11.3016,
+        "ExclusiveMs": 9.3985,
+        "Calls": 94
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 1.9031,
+        "ExclusiveMs": 1.0378,
+        "Calls": 1828
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.8653000000000001,
+        "ExclusiveMs": 0.8653000000000001,
+        "Calls": 1062
+      },
+      {
+        "Path": "Draft/Ecology.Project",
+        "InclusiveMs": 1.0614000000000001,
+        "ExclusiveMs": 1.0614000000000001,
+        "Calls": 22
+      },
+      {
+        "Path": "Draft/Intents",
+        "InclusiveMs": 182.4787,
+        "ExclusiveMs": 0.7922,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Intents/Intent",
+        "InclusiveMs": 181.6865,
+        "ExclusiveMs": 7.1953000000000005,
+        "Calls": 94
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator",
+        "InclusiveMs": 174.4274,
+        "ExclusiveMs": 166.43,
+        "Calls": 94
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.Project",
+        "InclusiveMs": 2.5323,
+        "ExclusiveMs": 2.5265,
+        "Calls": 13070
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0058000000000000005,
+        "ExclusiveMs": 0.0058000000000000005,
+        "Calls": 8
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.RecoverLand",
+        "InclusiveMs": 5.004700000000001,
+        "ExclusiveMs": 5.004700000000001,
+        "Calls": 6979
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Housing.FixedAt",
+        "InclusiveMs": 0.46040000000000003,
+        "ExclusiveMs": 0.46040000000000003,
+        "Calls": 1405
+      },
+      {
+        "Path": "Draft/Intents/Intent/Ecology.Project",
+        "InclusiveMs": 0.043300000000000005,
+        "ExclusiveMs": 0.043300000000000005,
+        "Calls": 206
+      },
+      {
+        "Path": "Draft/Intents/Intent/Housing.FixedAt",
+        "InclusiveMs": 0.0205,
+        "ExclusiveMs": 0.0205,
+        "Calls": 15
+      },
+      {
+        "Path": "Draft/Placement",
+        "InclusiveMs": 0.6833,
+        "ExclusiveMs": 0.6833,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan",
+        "InclusiveMs": 32.9602,
+        "ExclusiveMs": 9.0001,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Requisitions",
+        "InclusiveMs": 9.285,
+        "ExclusiveMs": 9.285,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Responses",
+        "InclusiveMs": 0.24480000000000002,
+        "ExclusiveMs": 0.24480000000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Valuation",
+        "InclusiveMs": 14.4303,
+        "ExclusiveMs": 14.407,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Valuation/Housing.FixedAt",
+        "InclusiveMs": 0.0233,
+        "ExclusiveMs": 0.0233,
+        "Calls": 50
+      },
+      {
+        "Path": "Prepare",
+        "InclusiveMs": 54.6173,
+        "ExclusiveMs": 7.0852,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Intents",
+        "InclusiveMs": 0.3084,
+        "ExclusiveMs": 0.3084,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs",
+        "InclusiveMs": 33.3913,
+        "ExclusiveMs": 0.7968000000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs/Camp",
+        "InclusiveMs": 32.594500000000004,
+        "ExclusiveMs": 31.645000000000003,
+        "Calls": 95
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Ecology.Project",
+        "InclusiveMs": 0.6834,
+        "ExclusiveMs": 0.6776,
+        "Calls": 4531
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0058000000000000005,
+        "ExclusiveMs": 0.0058000000000000005,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Housing.FixedAt",
+        "InclusiveMs": 0.2661,
+        "ExclusiveMs": 0.2661,
+        "Calls": 889
+      },
+      {
+        "Path": "Prepare/Placement",
+        "InclusiveMs": 0.26430000000000003,
+        "ExclusiveMs": 0.26430000000000003,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Validate",
+        "InclusiveMs": 13.568100000000001,
+        "ExclusiveMs": 1.3758000000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Validate/Observation",
+        "InclusiveMs": 12.192300000000001,
+        "ExclusiveMs": 2.2948,
+        "Calls": 95
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Forecasts",
+        "InclusiveMs": 1.2501,
+        "ExclusiveMs": 1.2501,
+        "Calls": 95
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Knowledge",
+        "InclusiveMs": 0.0235,
+        "ExclusiveMs": 0.0235,
+        "Calls": 95
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Settlements",
+        "InclusiveMs": 0.4823,
+        "ExclusiveMs": 0.4823,
+        "Calls": 95
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles",
+        "InclusiveMs": 8.1416,
+        "ExclusiveMs": 6.194,
+        "Calls": 95
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 1.9476,
+        "ExclusiveMs": 1.114,
+        "Calls": 1847
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.8336,
+        "ExclusiveMs": 0.8336,
+        "Calls": 1073
+      },
+      {
+        "Path": "Refresh",
+        "InclusiveMs": 2.0541,
+        "ExclusiveMs": 1.5557,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation",
+        "InclusiveMs": 0.4984,
+        "ExclusiveMs": 0.1174,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts",
+        "InclusiveMs": 0.1552,
+        "ExclusiveMs": 0.15030000000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts/Ecology.Project",
+        "InclusiveMs": 0.001,
+        "ExclusiveMs": 0.001,
+        "Calls": 8
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts/Housing.FixedAt",
+        "InclusiveMs": 0.0039000000000000003,
+        "ExclusiveMs": 0.0039000000000000003,
+        "Calls": 7
+      },
+      {
+        "Path": "Refresh/Observation/Knowledge",
+        "InclusiveMs": 0.0131,
+        "ExclusiveMs": 0.0131,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Settlements",
+        "InclusiveMs": 0.1447,
+        "ExclusiveMs": 0.1384,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Settlements/Ecology.Project",
+        "InclusiveMs": 0.0021000000000000003,
+        "ExclusiveMs": 0.0021000000000000003,
+        "Calls": 7
+      },
+      {
+        "Path": "Refresh/Observation/Settlements/Housing.FixedAt",
+        "InclusiveMs": 0.004200000000000001,
+        "ExclusiveMs": 0.004200000000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Tiles",
+        "InclusiveMs": 0.068,
+        "ExclusiveMs": 0.046900000000000004,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 0.0211,
+        "ExclusiveMs": 0.011300000000000001,
+        "Calls": 19
+      },
+      {
+        "Path": "Refresh/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0098,
+        "ExclusiveMs": 0.0098,
+        "Calls": 12
+      },
+      {
+        "Path": "Resolve",
+        "InclusiveMs": 305.2957,
+        "ExclusiveMs": 16.4734,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/ContactKnowledge",
+        "InclusiveMs": 12.6141,
+        "ExclusiveMs": 12.601,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/ContactKnowledge/Ecology.Project",
+        "InclusiveMs": 0.0131,
+        "ExclusiveMs": 0.0131,
+        "Calls": 11
+      },
+      {
+        "Path": "Resolve/Economy",
+        "InclusiveMs": 164.6773,
+        "ExclusiveMs": 140.28740000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.Project",
+        "InclusiveMs": 20.4187,
+        "ExclusiveMs": 13.649600000000001,
+        "Calls": 24773
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 6.7691,
+        "ExclusiveMs": 6.7691,
+        "Calls": 10763
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.RecoverLand",
+        "InclusiveMs": 3.8286000000000002,
+        "ExclusiveMs": 3.8286000000000002,
+        "Calls": 6007
+      },
+      {
+        "Path": "Resolve/Economy/Housing.FixedAt",
+        "InclusiveMs": 0.1426,
+        "ExclusiveMs": 0.1426,
+        "Calls": 285
+      },
+      {
+        "Path": "Resolve/Fission",
+        "InclusiveMs": 14.5257,
+        "ExclusiveMs": 14.2337,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.Project",
+        "InclusiveMs": 0.1845,
+        "ExclusiveMs": 0.0936,
+        "Calls": 136
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.09090000000000001,
+        "ExclusiveMs": 0.09090000000000001,
+        "Calls": 131
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.RecoverLand",
+        "InclusiveMs": 0.058300000000000005,
+        "ExclusiveMs": 0.058300000000000005,
+        "Calls": 136
+      },
+      {
+        "Path": "Resolve/Fission/Housing.FixedAt",
+        "InclusiveMs": 0.0492,
+        "ExclusiveMs": 0.0492,
+        "Calls": 174
+      },
+      {
+        "Path": "Resolve/HerdIntents",
+        "InclusiveMs": 79.3887,
+        "ExclusiveMs": 51.133900000000004,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/HerdIntents/Ecology.Project",
+        "InclusiveMs": 28.254800000000003,
+        "ExclusiveMs": 15.782,
+        "Calls": 23253
+      },
+      {
+        "Path": "Resolve/HerdIntents/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 12.472800000000001,
+        "ExclusiveMs": 12.472800000000001,
+        "Calls": 19923
+      },
+      {
+        "Path": "Resolve/Immigration",
+        "InclusiveMs": 8.1659,
+        "ExclusiveMs": 8.138200000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Immigration/Housing.FixedAt",
+        "InclusiveMs": 0.027700000000000002,
+        "ExclusiveMs": 0.027700000000000002,
+        "Calls": 95
+      },
+      {
+        "Path": "Resolve/Invariants",
+        "InclusiveMs": 4.5743,
+        "ExclusiveMs": 3.9592,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Invariants/Ecology.Project",
+        "InclusiveMs": 0.6151,
+        "ExclusiveMs": 0.6151,
+        "Calls": 3396
+      },
+      {
+        "Path": "Resolve/Movement",
+        "InclusiveMs": 3.4728000000000003,
+        "ExclusiveMs": 3.4728000000000003,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Technology",
+        "InclusiveMs": 1.2458,
+        "ExclusiveMs": 1.2458,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Trade.Settle",
+        "InclusiveMs": 0.1577,
+        "ExclusiveMs": 0.1577,
+        "Calls": 1
+      }
+    ],
+    "counters": [
+      {
+        "Key": "Housing.IndexBuilds",
+        "Value": 5
+      },
+      {
+        "Key": "Housing.Lookups",
+        "Value": 3666
+      },
+      {
+        "Key": "Housing.RecordsRead",
+        "Value": 2558
+      },
+      {
+        "Key": "Housing.RecordsScanned",
+        "Value": 440
+      },
+      {
+        "Key": "Placement.PairsChecked",
+        "Value": 0
+      },
+      {
+        "Key": "Placement.Passes",
+        "Value": 2
+      },
+      {
+        "Key": "Trade.Eligible",
+        "Value": 94
+      },
+      {
+        "Key": "Trade.Participants",
+        "Value": 0
+      },
+      {
+        "Key": "Trade.Valued",
+        "Value": 8
+      }
+    ]
+  },
+  {
+    "world": "Standard80",
+    "turn": 40,
+    "workers": 1,
+    "measurement": {
+      "TotalMs": 537.5479,
+      "PrefetchMs": 0.0018,
+      "DraftMs": 257.9525,
+      "PrepareMs": 46.2948,
+      "ResolveMs": 231.7423,
+      "RefreshMs": 1.5565,
+      "Resolution": {
+        "CraftFieldWork": null,
+        "CraftFoodFlow": null,
+        "HerdIntentMilliseconds": 74.4956,
+        "EcologyMilliseconds": 65.2388,
+        "SetupEconomyMilliseconds": 25.1839,
+        "ManagedHerdMilliseconds": 5.852,
+        "GrowthPlanMilliseconds": 0.3114,
+        "SustainMilliseconds": 1.2788,
+        "ProductionMilliseconds": 16.6527,
+        "KnowledgeMilliseconds": 7.2128,
+        "TotalMilliseconds": 231.7393,
+        "FullTurnIntegrationMilliseconds": 19.6377,
+        "SeasonalPreparationMilliseconds": 0,
+        "SeasonalIntegrationMilliseconds": 0,
+        "SeasonalCommitMilliseconds": 0,
+        "SeasonalExpansionMilliseconds": 0,
+        "HorizonPreparationMilliseconds": 29.6893,
+        "HorizonCommitMilliseconds": 15.2038,
+        "ActiveTiles": 3625,
+        "TileIntegrations": 3625,
+        "SeasonalTiles": 0,
+        "FullTurnTiles": 3625,
+        "FissionCampsEvaluated": 140,
+        "FissionValidations": 28,
+        "FissionSearches": 14,
+        "FissionCandidatesScored": 146,
+        "FissionTileProjections": 532,
+        "FissionCacheInvalidations": 1,
+        "FissionProposals": 5,
+        "FissionCommits": 5,
+        "FissionDropped": 0,
+        "FissionDaughterChecks": 13,
+        "FissionDaughterBlocked": 8,
+        "FissionCrowdingProposals": 2,
+        "FissionDistressProposals": 1,
+        "FissionCrowdingCommits": 2,
+        "FissionDistressCommits": 1,
+        "FissionDistressDaughters": 82,
+        "FissionScreened": 41,
+        "FissionSearchesNoCandidates": 4,
+        "FissionSearchesNoViable": 0,
+        "FissionWithDestination": 37,
+        "FissionBelowThreshold": 24,
+        "FissionStayersBlocked": 0,
+        "FissionMilliseconds": 7.809,
+        "ImmigrationCampsEvaluated": 136,
+        "ImmigrationCandidatesScored": 74,
+        "ImmigrationIntents": 0,
+        "ImmigrationAccepted": 0,
+        "ImmigrationPartial": 0,
+        "ImmigrationRejected": 0,
+        "ImmigrationMigrants": 0,
+        "ImmigrationMilliseconds": 2.4019,
+        "TradeEligible": 139,
+        "TradeRequisitions": 2,
+        "TradeHonoured": 0,
+        "TradeCountered": 1,
+        "TradeIgnored": 1,
+        "TradesSettled": 1,
+        "TradePlanMilliseconds": 0.0006,
+        "TradeSettleMilliseconds": 2.5924,
+        "PlanCalls": 0,
+        "ForecastCalls": 140,
+        "LocalSourceQueries": 558,
+        "SourceLookups": 0,
+        "DepositEdges": 15111,
+        "BodyScans": 1802,
+        "ClaimsAllocated": 5555,
+        "ProductionReceipts": 702,
+        "FisherySiteLookups": 36,
+        "FoodForecastQueries": 0,
+        "FoodInvestmentComparisons": 0,
+        "SharedAllocations": 0,
+        "SharedOperationChoices": 0,
+        "SharedHerdChoices": 0,
+        "ExpansionLadderBuilds": 0,
+        "HerdLadderBuilds": 0,
+        "PastureScans": 0,
+        "PlannerTileProjections": 0,
+        "PlannerEvaluations": 0,
+        "SharedSelections": 0,
+        "KernelCacheHits": 0,
+        "SharedAllocationMilliseconds": 0,
+        "PlanMilliseconds": 0,
+        "SeasonalCampBoundaries": 0,
+        "OperatingRegimeChanges": 0,
+        "FieldWorkSteps": 0,
+        "FieldChoiceSwitches": 0,
+        "TargetCompletions": 0,
+        "ToolExhaustions": 0,
+        "StockDepletions": 0,
+        "ManagedRenewalInput": 5787920.991685677,
+        "OperatingFractionSum": 424.3261599378605,
+        "OperatingFieldTiles": 426
+      },
+      "Fingerprint": "AF629AFB0C7A1A834B8B4EAA0C808992F52DF6777E2A5FCB578F7463D2833C50",
+      "Camps": 145,
+      "Herds": 1940,
+      "ProductionReceipts": 702,
+      "ManagedHerdReceipts": 55
+    },
+    "scopes": [
+      {
+        "Path": "Draft",
+        "InclusiveMs": 257.9364,
+        "ExclusiveMs": 1.8456000000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Decide",
+        "InclusiveMs": 76.9567,
+        "ExclusiveMs": 22.4749,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Decide/Observation",
+        "InclusiveMs": 54.4818,
+        "ExclusiveMs": 8.6303,
+        "Calls": 139
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts",
+        "InclusiveMs": 22.2083,
+        "ExclusiveMs": 19.4971,
+        "Calls": 139
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Ecology.Project",
+        "InclusiveMs": 0.2771,
+        "ExclusiveMs": 0.2536,
+        "Calls": 1648
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0235,
+        "ExclusiveMs": 0.0235,
+        "Calls": 42
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Housing.FixedAt",
+        "InclusiveMs": 2.4341,
+        "ExclusiveMs": 2.4341,
+        "Calls": 973
+      },
+      {
+        "Path": "Draft/Decide/Observation/Knowledge",
+        "InclusiveMs": 9.9601,
+        "ExclusiveMs": 9.9601,
+        "Calls": 139
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements",
+        "InclusiveMs": 5.4457,
+        "ExclusiveMs": 5.0683,
+        "Calls": 139
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Ecology.Project",
+        "InclusiveMs": 0.264,
+        "ExclusiveMs": 0.2348,
+        "Calls": 952
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0292,
+        "ExclusiveMs": 0.0292,
+        "Calls": 42
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Housing.FixedAt",
+        "InclusiveMs": 0.1134,
+        "ExclusiveMs": 0.1134,
+        "Calls": 139
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles",
+        "InclusiveMs": 8.237400000000001,
+        "ExclusiveMs": 6.0274,
+        "Calls": 139
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 2.21,
+        "ExclusiveMs": 1.2629000000000001,
+        "Calls": 2401
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.9471,
+        "ExclusiveMs": 0.9471,
+        "Calls": 1338
+      },
+      {
+        "Path": "Draft/Ecology.Project",
+        "InclusiveMs": 0.0692,
+        "ExclusiveMs": 0.0692,
+        "Calls": 50
+      },
+      {
+        "Path": "Draft/Intents",
+        "InclusiveMs": 162.3358,
+        "ExclusiveMs": 0.3457,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Intents/Intent",
+        "InclusiveMs": 161.9901,
+        "ExclusiveMs": 6.3821,
+        "Calls": 139
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator",
+        "InclusiveMs": 155.2405,
+        "ExclusiveMs": 142.5531,
+        "Calls": 139
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.Project",
+        "InclusiveMs": 3.9315,
+        "ExclusiveMs": 3.2699000000000003,
+        "Calls": 21137
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.6616000000000001,
+        "ExclusiveMs": 0.6616000000000001,
+        "Calls": 1220
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.RecoverLand",
+        "InclusiveMs": 8.104800000000001,
+        "ExclusiveMs": 8.104800000000001,
+        "Calls": 11438
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Housing.FixedAt",
+        "InclusiveMs": 0.6511,
+        "ExclusiveMs": 0.6511,
+        "Calls": 2190
+      },
+      {
+        "Path": "Draft/Intents/Intent/Ecology.Project",
+        "InclusiveMs": 0.21980000000000002,
+        "ExclusiveMs": 0.16,
+        "Calls": 637
+      },
+      {
+        "Path": "Draft/Intents/Intent/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.059800000000000006,
+        "ExclusiveMs": 0.059800000000000006,
+        "Calls": 70
+      },
+      {
+        "Path": "Draft/Intents/Intent/Housing.FixedAt",
+        "InclusiveMs": 0.1477,
+        "ExclusiveMs": 0.1477,
+        "Calls": 46
+      },
+      {
+        "Path": "Draft/Placement",
+        "InclusiveMs": 6.7712,
+        "ExclusiveMs": 6.7712,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan",
+        "InclusiveMs": 9.9579,
+        "ExclusiveMs": 1.1123,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Requisitions",
+        "InclusiveMs": 0.42150000000000004,
+        "ExclusiveMs": 0.42150000000000004,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Responses",
+        "InclusiveMs": 7.0478000000000005,
+        "ExclusiveMs": 7.0478000000000005,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Valuation",
+        "InclusiveMs": 1.3763,
+        "ExclusiveMs": 1.3148,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Valuation/Housing.FixedAt",
+        "InclusiveMs": 0.061500000000000006,
+        "ExclusiveMs": 0.061500000000000006,
+        "Calls": 401
+      },
+      {
+        "Path": "Prepare",
+        "InclusiveMs": 46.2819,
+        "ExclusiveMs": 2.2451000000000003,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Intents",
+        "InclusiveMs": 0.1522,
+        "ExclusiveMs": 0.1522,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs",
+        "InclusiveMs": 28.6354,
+        "ExclusiveMs": 0.1477,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs/Camp",
+        "InclusiveMs": 28.4877,
+        "ExclusiveMs": 26.962600000000002,
+        "Calls": 140
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Ecology.Project",
+        "InclusiveMs": 1.2323,
+        "ExclusiveMs": 1.0395,
+        "Calls": 6685
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.1928,
+        "ExclusiveMs": 0.1928,
+        "Calls": 317
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Housing.FixedAt",
+        "InclusiveMs": 0.2928,
+        "ExclusiveMs": 0.2928,
+        "Calls": 1502
+      },
+      {
+        "Path": "Prepare/Placement",
+        "InclusiveMs": 0.3044,
+        "ExclusiveMs": 0.3044,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Validate",
+        "InclusiveMs": 14.9448,
+        "ExclusiveMs": 1.0133,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Validate/Observation",
+        "InclusiveMs": 13.931500000000002,
+        "ExclusiveMs": 2.6565000000000003,
+        "Calls": 140
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Forecasts",
+        "InclusiveMs": 2.0205,
+        "ExclusiveMs": 2.0205,
+        "Calls": 140
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Knowledge",
+        "InclusiveMs": 0.0397,
+        "ExclusiveMs": 0.0397,
+        "Calls": 140
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Settlements",
+        "InclusiveMs": 0.49910000000000004,
+        "ExclusiveMs": 0.49910000000000004,
+        "Calls": 140
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles",
+        "InclusiveMs": 8.7157,
+        "ExclusiveMs": 6.485600000000001,
+        "Calls": 140
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 2.2301,
+        "ExclusiveMs": 1.3224,
+        "Calls": 2420
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.9077000000000001,
+        "ExclusiveMs": 0.9077000000000001,
+        "Calls": 1350
+      },
+      {
+        "Path": "Refresh",
+        "InclusiveMs": 1.5542,
+        "ExclusiveMs": 1.097,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation",
+        "InclusiveMs": 0.4572,
+        "ExclusiveMs": 0.08420000000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts",
+        "InclusiveMs": 0.14550000000000002,
+        "ExclusiveMs": 0.1406,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts/Ecology.Project",
+        "InclusiveMs": 0.0009000000000000001,
+        "ExclusiveMs": 0.0009000000000000001,
+        "Calls": 8
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts/Housing.FixedAt",
+        "InclusiveMs": 0.004,
+        "ExclusiveMs": 0.004,
+        "Calls": 7
+      },
+      {
+        "Path": "Refresh/Observation/Knowledge",
+        "InclusiveMs": 0.0108,
+        "ExclusiveMs": 0.0108,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Settlements",
+        "InclusiveMs": 0.1579,
+        "ExclusiveMs": 0.15380000000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Settlements/Ecology.Project",
+        "InclusiveMs": 0.0016,
+        "ExclusiveMs": 0.0016,
+        "Calls": 7
+      },
+      {
+        "Path": "Refresh/Observation/Settlements/Housing.FixedAt",
+        "InclusiveMs": 0.0025,
+        "ExclusiveMs": 0.0025,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Tiles",
+        "InclusiveMs": 0.058800000000000005,
+        "ExclusiveMs": 0.0402,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 0.018600000000000002,
+        "ExclusiveMs": 0.010400000000000001,
+        "Calls": 19
+      },
+      {
+        "Path": "Refresh/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0082,
+        "ExclusiveMs": 0.0082,
+        "Calls": 11
+      },
+      {
+        "Path": "Resolve",
+        "InclusiveMs": 231.7397,
+        "ExclusiveMs": 6.111000000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/ContactKnowledge",
+        "InclusiveMs": 7.2041,
+        "ExclusiveMs": 7.1836,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/ContactKnowledge/Ecology.Project",
+        "InclusiveMs": 0.0205,
+        "ExclusiveMs": 0.0205,
+        "Calls": 25
+      },
+      {
+        "Path": "Resolve/Economy",
+        "InclusiveMs": 121.24470000000001,
+        "ExclusiveMs": 93.9058,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.Project",
+        "InclusiveMs": 22.5314,
+        "ExclusiveMs": 16.3349,
+        "Calls": 27684
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 6.1965,
+        "ExclusiveMs": 6.1965,
+        "Calls": 10799
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.RecoverLand",
+        "InclusiveMs": 4.6317,
+        "ExclusiveMs": 4.6317,
+        "Calls": 7294
+      },
+      {
+        "Path": "Resolve/Economy/Housing.FixedAt",
+        "InclusiveMs": 0.1758,
+        "ExclusiveMs": 0.1758,
+        "Calls": 420
+      },
+      {
+        "Path": "Resolve/Fission",
+        "InclusiveMs": 7.8102,
+        "ExclusiveMs": 6.9305,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.Project",
+        "InclusiveMs": 0.5856,
+        "ExclusiveMs": 0.30610000000000004,
+        "Calls": 485
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.2795,
+        "ExclusiveMs": 0.2795,
+        "Calls": 470
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.RecoverLand",
+        "InclusiveMs": 0.23920000000000002,
+        "ExclusiveMs": 0.23920000000000002,
+        "Calls": 532
+      },
+      {
+        "Path": "Resolve/Fission/Housing.FixedAt",
+        "InclusiveMs": 0.054900000000000004,
+        "ExclusiveMs": 0.054900000000000004,
+        "Calls": 256
+      },
+      {
+        "Path": "Resolve/HerdIntents",
+        "InclusiveMs": 74.1911,
+        "ExclusiveMs": 48.0003,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/HerdIntents/Ecology.Project",
+        "InclusiveMs": 26.190800000000003,
+        "ExclusiveMs": 15.1659,
+        "Calls": 22878
+      },
+      {
+        "Path": "Resolve/HerdIntents/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 11.0249,
+        "ExclusiveMs": 11.0249,
+        "Calls": 19571
+      },
+      {
+        "Path": "Resolve/Immigration",
+        "InclusiveMs": 2.4044000000000003,
+        "ExclusiveMs": 2.3772,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Immigration/Housing.FixedAt",
+        "InclusiveMs": 0.027200000000000002,
+        "ExclusiveMs": 0.027200000000000002,
+        "Calls": 140
+      },
+      {
+        "Path": "Resolve/Invariants",
+        "InclusiveMs": 8.9536,
+        "ExclusiveMs": 8.2776,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Invariants/Ecology.Project",
+        "InclusiveMs": 0.676,
+        "ExclusiveMs": 0.676,
+        "Calls": 3625
+      },
+      {
+        "Path": "Resolve/Movement",
+        "InclusiveMs": 0.866,
+        "ExclusiveMs": 0.866,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Technology",
+        "InclusiveMs": 0.36660000000000004,
+        "ExclusiveMs": 0.36660000000000004,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Trade.Settle",
+        "InclusiveMs": 2.588,
+        "ExclusiveMs": 2.588,
+        "Calls": 1
+      }
+    ],
+    "counters": [
+      {
+        "Key": "Housing.IndexBuilds",
+        "Value": 5
+      },
+      {
+        "Key": "Housing.Lookups",
+        "Value": 6075
+      },
+      {
+        "Key": "Housing.RecordsRead",
+        "Value": 3478
+      },
+      {
+        "Key": "Housing.RecordsScanned",
+        "Value": 640
+      },
+      {
+        "Key": "Placement.PairsChecked",
+        "Value": 10
+      },
+      {
+        "Key": "Placement.Passes",
+        "Value": 4
+      },
+      {
+        "Key": "Trade.Eligible",
+        "Value": 139
+      },
+      {
+        "Key": "Trade.Participants",
+        "Value": 4
+      },
+      {
+        "Key": "Trade.Valued",
+        "Value": 52
+      }
+    ]
+  },
+  {
+    "world": "Standard80",
+    "turn": 50,
+    "workers": 1,
+    "measurement": {
+      "TotalMs": 812.9770000000001,
+      "PrefetchMs": 0.0015,
+      "DraftMs": 426.6092,
+      "PrepareMs": 68.5661,
+      "ResolveMs": 315.6727,
+      "RefreshMs": 2.1275,
+      "Resolution": {
+        "CraftFieldWork": null,
+        "CraftFoodFlow": null,
+        "HerdIntentMilliseconds": 65.6945,
+        "EcologyMilliseconds": 96.3305,
+        "SetupEconomyMilliseconds": 23.124,
+        "ManagedHerdMilliseconds": 20.0514,
+        "GrowthPlanMilliseconds": 3.3369,
+        "SustainMilliseconds": 1.0291,
+        "ProductionMilliseconds": 19.2754,
+        "KnowledgeMilliseconds": 5.4616,
+        "TotalMilliseconds": 315.6676,
+        "FullTurnIntegrationMilliseconds": 31.197,
+        "SeasonalPreparationMilliseconds": 0,
+        "SeasonalIntegrationMilliseconds": 0,
+        "SeasonalCommitMilliseconds": 0,
+        "SeasonalExpansionMilliseconds": 0,
+        "HorizonPreparationMilliseconds": 49.5099,
+        "HorizonCommitMilliseconds": 14.6701,
+        "ActiveTiles": 4006,
+        "TileIntegrations": 4006,
+        "SeasonalTiles": 0,
+        "FullTurnTiles": 4006,
+        "FissionCampsEvaluated": 193,
+        "FissionValidations": 41,
+        "FissionSearches": 30,
+        "FissionCandidatesScored": 188,
+        "FissionTileProjections": 730,
+        "FissionCacheInvalidations": 2,
+        "FissionProposals": 10,
+        "FissionCommits": 10,
+        "FissionDropped": 0,
+        "FissionDaughterChecks": 25,
+        "FissionDaughterBlocked": 15,
+        "FissionCrowdingProposals": 5,
+        "FissionDistressProposals": 0,
+        "FissionCrowdingCommits": 5,
+        "FissionDistressCommits": 0,
+        "FissionDistressDaughters": 0,
+        "FissionScreened": 69,
+        "FissionSearchesNoCandidates": 20,
+        "FissionSearchesNoViable": 0,
+        "FissionWithDestination": 49,
+        "FissionBelowThreshold": 24,
+        "FissionStayersBlocked": 0,
+        "FissionMilliseconds": 23.7232,
+        "ImmigrationCampsEvaluated": 190,
+        "ImmigrationCandidatesScored": 72,
+        "ImmigrationIntents": 1,
+        "ImmigrationAccepted": 1,
+        "ImmigrationPartial": 0,
+        "ImmigrationRejected": 0,
+        "ImmigrationMigrants": 12,
+        "ImmigrationMilliseconds": 3.7524,
+        "TradeEligible": 194,
+        "TradeRequisitions": 7,
+        "TradeHonoured": 3,
+        "TradeCountered": 1,
+        "TradeIgnored": 3,
+        "TradesSettled": 4,
+        "TradePlanMilliseconds": 0.0006,
+        "TradeSettleMilliseconds": 0.3296,
+        "PlanCalls": 0,
+        "ForecastCalls": 195,
+        "LocalSourceQueries": 778,
+        "SourceLookups": 0,
+        "DepositEdges": 21369,
+        "BodyScans": 1802,
+        "ClaimsAllocated": 6576,
+        "ProductionReceipts": 1049,
+        "FisherySiteLookups": 43,
+        "FoodForecastQueries": 0,
+        "FoodInvestmentComparisons": 0,
+        "SharedAllocations": 0,
+        "SharedOperationChoices": 0,
+        "SharedHerdChoices": 0,
+        "ExpansionLadderBuilds": 0,
+        "HerdLadderBuilds": 0,
+        "PastureScans": 0,
+        "PlannerTileProjections": 0,
+        "PlannerEvaluations": 0,
+        "SharedSelections": 0,
+        "KernelCacheHits": 0,
+        "SharedAllocationMilliseconds": 0,
+        "PlanMilliseconds": 0,
+        "SeasonalCampBoundaries": 0,
+        "OperatingRegimeChanges": 0,
+        "FieldWorkSteps": 0,
+        "FieldChoiceSwitches": 0,
+        "TargetCompletions": 0,
+        "ToolExhaustions": 0,
+        "StockDepletions": 0,
+        "ManagedRenewalInput": 9133936.480667656,
+        "OperatingFractionSum": 590.1780284344308,
+        "OperatingFieldTiles": 592
+      },
+      "Fingerprint": "F2EA3A8A7BD32BBA5BEC246049D56BA351739DE98820FAAF0A917C5F9336483F",
+      "Camps": 205,
+      "Herds": 1975,
+      "ProductionReceipts": 1049,
+      "ManagedHerdReceipts": 91
+    },
+    "scopes": [
+      {
+        "Path": "Draft",
+        "InclusiveMs": 426.4022,
+        "ExclusiveMs": 4.1257,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Decide",
+        "InclusiveMs": 143.5137,
+        "ExclusiveMs": 44.057900000000004,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Decide/Observation",
+        "InclusiveMs": 99.45580000000001,
+        "ExclusiveMs": 10.6128,
+        "Calls": 194
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts",
+        "InclusiveMs": 43.0906,
+        "ExclusiveMs": 41.1223,
+        "Calls": 194
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Ecology.Project",
+        "InclusiveMs": 0.40390000000000004,
+        "ExclusiveMs": 0.3753,
+        "Calls": 2349
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0286,
+        "ExclusiveMs": 0.0286,
+        "Calls": 49
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Housing.FixedAt",
+        "InclusiveMs": 1.5644,
+        "ExclusiveMs": 1.5644,
+        "Calls": 1358
+      },
+      {
+        "Path": "Draft/Decide/Observation/Knowledge",
+        "InclusiveMs": 19.608,
+        "ExclusiveMs": 19.608,
+        "Calls": 194
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements",
+        "InclusiveMs": 7.7857,
+        "ExclusiveMs": 7.2412,
+        "Calls": 194
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Ecology.Project",
+        "InclusiveMs": 0.3528,
+        "ExclusiveMs": 0.31520000000000004,
+        "Calls": 1337
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0376,
+        "ExclusiveMs": 0.0376,
+        "Calls": 49
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Housing.FixedAt",
+        "InclusiveMs": 0.1917,
+        "ExclusiveMs": 0.1917,
+        "Calls": 194
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles",
+        "InclusiveMs": 18.358700000000002,
+        "ExclusiveMs": 15.3876,
+        "Calls": 194
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 2.9711000000000003,
+        "ExclusiveMs": 1.7199,
+        "Calls": 3173
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 1.2512,
+        "ExclusiveMs": 1.2512,
+        "Calls": 1718
+      },
+      {
+        "Path": "Draft/Ecology.Project",
+        "InclusiveMs": 0.1131,
+        "ExclusiveMs": 0.1131,
+        "Calls": 64
+      },
+      {
+        "Path": "Draft/Intents",
+        "InclusiveMs": 274.6408,
+        "ExclusiveMs": 0.6276,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Intents/Intent",
+        "InclusiveMs": 274.01320000000004,
+        "ExclusiveMs": 11.5256,
+        "Calls": 194
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator",
+        "InclusiveMs": 262.0811,
+        "ExclusiveMs": 243.7372,
+        "Calls": 194
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.Project",
+        "InclusiveMs": 5.467700000000001,
+        "ExclusiveMs": 4.6967,
+        "Calls": 30607
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.771,
+        "ExclusiveMs": 0.771,
+        "Calls": 1436
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.RecoverLand",
+        "InclusiveMs": 11.9745,
+        "ExclusiveMs": 11.9745,
+        "Calls": 17028
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Housing.FixedAt",
+        "InclusiveMs": 0.9017000000000001,
+        "ExclusiveMs": 0.9017000000000001,
+        "Calls": 3153
+      },
+      {
+        "Path": "Draft/Intents/Intent/Ecology.Project",
+        "InclusiveMs": 0.2959,
+        "ExclusiveMs": 0.2456,
+        "Calls": 1076
+      },
+      {
+        "Path": "Draft/Intents/Intent/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.050300000000000004,
+        "ExclusiveMs": 0.050300000000000004,
+        "Calls": 73
+      },
+      {
+        "Path": "Draft/Intents/Intent/Housing.FixedAt",
+        "InclusiveMs": 0.1106,
+        "ExclusiveMs": 0.1106,
+        "Calls": 78
+      },
+      {
+        "Path": "Draft/Placement",
+        "InclusiveMs": 0.5312,
+        "ExclusiveMs": 0.5312,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan",
+        "InclusiveMs": 3.4777,
+        "ExclusiveMs": 0.6884,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Requisitions",
+        "InclusiveMs": 0.5358,
+        "ExclusiveMs": 0.5358,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Responses",
+        "InclusiveMs": 0.44680000000000003,
+        "ExclusiveMs": 0.44680000000000003,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Valuation",
+        "InclusiveMs": 1.8067000000000002,
+        "ExclusiveMs": 1.7187000000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Valuation/Housing.FixedAt",
+        "InclusiveMs": 0.08800000000000001,
+        "ExclusiveMs": 0.08800000000000001,
+        "Calls": 469
+      },
+      {
+        "Path": "Prepare",
+        "InclusiveMs": 68.55290000000001,
+        "ExclusiveMs": 2.5704000000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Intents",
+        "InclusiveMs": 0.24860000000000002,
+        "ExclusiveMs": 0.24860000000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs",
+        "InclusiveMs": 36.3706,
+        "ExclusiveMs": 0.17250000000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs/Camp",
+        "InclusiveMs": 36.198100000000004,
+        "ExclusiveMs": 34.2042,
+        "Calls": 195
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Ecology.Project",
+        "InclusiveMs": 1.54,
+        "ExclusiveMs": 1.3249,
+        "Calls": 9380
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.2151,
+        "ExclusiveMs": 0.2151,
+        "Calls": 387
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Housing.FixedAt",
+        "InclusiveMs": 0.4539,
+        "ExclusiveMs": 0.4539,
+        "Calls": 2247
+      },
+      {
+        "Path": "Prepare/Placement",
+        "InclusiveMs": 0.3513,
+        "ExclusiveMs": 0.3513,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Validate",
+        "InclusiveMs": 29.012,
+        "ExclusiveMs": 1.4637,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Validate/Observation",
+        "InclusiveMs": 27.5483,
+        "ExclusiveMs": 3.7782,
+        "Calls": 195
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Forecasts",
+        "InclusiveMs": 7.6508,
+        "ExclusiveMs": 7.6508,
+        "Calls": 195
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Knowledge",
+        "InclusiveMs": 0.0342,
+        "ExclusiveMs": 0.0342,
+        "Calls": 195
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Settlements",
+        "InclusiveMs": 0.6568,
+        "ExclusiveMs": 0.6568,
+        "Calls": 195
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles",
+        "InclusiveMs": 15.4283,
+        "ExclusiveMs": 11.555900000000001,
+        "Calls": 195
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 3.8724000000000003,
+        "ExclusiveMs": 1.7574,
+        "Calls": 3192
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 2.115,
+        "ExclusiveMs": 2.115,
+        "Calls": 1729
+      },
+      {
+        "Path": "Refresh",
+        "InclusiveMs": 2.1248,
+        "ExclusiveMs": 1.4816,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation",
+        "InclusiveMs": 0.6432,
+        "ExclusiveMs": 0.0952,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts",
+        "InclusiveMs": 0.2571,
+        "ExclusiveMs": 0.25070000000000003,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts/Ecology.Project",
+        "InclusiveMs": 0.0021000000000000003,
+        "ExclusiveMs": 0.0021000000000000003,
+        "Calls": 8
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts/Housing.FixedAt",
+        "InclusiveMs": 0.0043,
+        "ExclusiveMs": 0.0043,
+        "Calls": 7
+      },
+      {
+        "Path": "Refresh/Observation/Knowledge",
+        "InclusiveMs": 0.032,
+        "ExclusiveMs": 0.032,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Settlements",
+        "InclusiveMs": 0.1912,
+        "ExclusiveMs": 0.1872,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Settlements/Ecology.Project",
+        "InclusiveMs": 0.0021000000000000003,
+        "ExclusiveMs": 0.0021000000000000003,
+        "Calls": 7
+      },
+      {
+        "Path": "Refresh/Observation/Settlements/Housing.FixedAt",
+        "InclusiveMs": 0.0019,
+        "ExclusiveMs": 0.0019,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Tiles",
+        "InclusiveMs": 0.06770000000000001,
+        "ExclusiveMs": 0.0393,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 0.0284,
+        "ExclusiveMs": 0.0158,
+        "Calls": 19
+      },
+      {
+        "Path": "Refresh/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0126,
+        "ExclusiveMs": 0.0126,
+        "Calls": 11
+      },
+      {
+        "Path": "Resolve",
+        "InclusiveMs": 315.6683,
+        "ExclusiveMs": 31.048000000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/ContactKnowledge",
+        "InclusiveMs": 5.4476,
+        "ExclusiveMs": 5.4123,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/ContactKnowledge/Ecology.Project",
+        "InclusiveMs": 0.035300000000000005,
+        "ExclusiveMs": 0.035300000000000005,
+        "Calls": 40
+      },
+      {
+        "Path": "Resolve/Economy",
+        "InclusiveMs": 179.7973,
+        "ExclusiveMs": 154.9163,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.Project",
+        "InclusiveMs": 17.5842,
+        "ExclusiveMs": 11.5425,
+        "Calls": 31449
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 6.0417000000000005,
+        "ExclusiveMs": 6.0417000000000005,
+        "Calls": 10816
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.RecoverLand",
+        "InclusiveMs": 7.0368,
+        "ExclusiveMs": 7.0368,
+        "Calls": 8920
+      },
+      {
+        "Path": "Resolve/Economy/Housing.FixedAt",
+        "InclusiveMs": 0.26,
+        "ExclusiveMs": 0.26,
+        "Calls": 585
+      },
+      {
+        "Path": "Resolve/Fission",
+        "InclusiveMs": 23.7273,
+        "ExclusiveMs": 20.7388,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.Project",
+        "InclusiveMs": 1.5913000000000002,
+        "ExclusiveMs": 0.8268000000000001,
+        "Calls": 725
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.7645000000000001,
+        "ExclusiveMs": 0.7645000000000001,
+        "Calls": 703
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.RecoverLand",
+        "InclusiveMs": 0.5806,
+        "ExclusiveMs": 0.5806,
+        "Calls": 730
+      },
+      {
+        "Path": "Resolve/Fission/Housing.FixedAt",
+        "InclusiveMs": 0.8166,
+        "ExclusiveMs": 0.8166,
+        "Calls": 354
+      },
+      {
+        "Path": "Resolve/HerdIntents",
+        "InclusiveMs": 62.0769,
+        "ExclusiveMs": 36.1978,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/HerdIntents/Ecology.Project",
+        "InclusiveMs": 25.8791,
+        "ExclusiveMs": 14.702300000000001,
+        "Calls": 22813
+      },
+      {
+        "Path": "Resolve/HerdIntents/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 11.1768,
+        "ExclusiveMs": 11.1768,
+        "Calls": 19510
+      },
+      {
+        "Path": "Resolve/Immigration",
+        "InclusiveMs": 3.7562,
+        "ExclusiveMs": 3.7268000000000003,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Immigration/Housing.FixedAt",
+        "InclusiveMs": 0.029400000000000003,
+        "ExclusiveMs": 0.029400000000000003,
+        "Calls": 195
+      },
+      {
+        "Path": "Resolve/Invariants",
+        "InclusiveMs": 8.894,
+        "ExclusiveMs": 7.6559,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Invariants/Ecology.Project",
+        "InclusiveMs": 1.2381,
+        "ExclusiveMs": 1.2381,
+        "Calls": 4006
+      },
+      {
+        "Path": "Resolve/Movement",
+        "InclusiveMs": 0.5545,
+        "ExclusiveMs": 0.5545,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Technology",
+        "InclusiveMs": 0.039900000000000005,
+        "ExclusiveMs": 0.039900000000000005,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Trade.Settle",
+        "InclusiveMs": 0.3266,
+        "ExclusiveMs": 0.3266,
+        "Calls": 1
+      }
+    ],
+    "counters": [
+      {
+        "Key": "Housing.IndexBuilds",
+        "Value": 7
+      },
+      {
+        "Key": "Housing.Lookups",
+        "Value": 8641
+      },
+      {
+        "Key": "Housing.RecordsRead",
+        "Value": 5955
+      },
+      {
+        "Key": "Housing.RecordsScanned",
+        "Value": 1351
+      },
+      {
+        "Key": "Placement.PairsChecked",
+        "Value": 12
+      },
+      {
+        "Key": "Placement.Passes",
+        "Value": 4
+      },
+      {
+        "Key": "Trade.Eligible",
+        "Value": 194
+      },
+      {
+        "Key": "Trade.Participants",
+        "Value": 11
+      },
+      {
+        "Key": "Trade.Valued",
+        "Value": 61
+      }
+    ]
+  },
+  {
+    "world": "Huge240",
+    "turn": 25,
+    "workers": 1,
+    "measurement": {
+      "TotalMs": 958.1143000000001,
+      "PrefetchMs": 0.0009,
+      "DraftMs": 291.8792,
+      "PrepareMs": 64.2999,
+      "ResolveMs": 594.1568,
+      "RefreshMs": 7.7775,
+      "Resolution": {
+        "CraftFieldWork": null,
+        "CraftFoodFlow": null,
+        "HerdIntentMilliseconds": 212.8015,
+        "EcologyMilliseconds": 137.7849,
+        "SetupEconomyMilliseconds": 101.6308,
+        "ManagedHerdMilliseconds": 16.1593,
+        "GrowthPlanMilliseconds": 0.385,
+        "SustainMilliseconds": 2.3567,
+        "ProductionMilliseconds": 25.0008,
+        "KnowledgeMilliseconds": 2.7658,
+        "TotalMilliseconds": 594.1539,
+        "FullTurnIntegrationMilliseconds": 50.3372,
+        "SeasonalPreparationMilliseconds": 0,
+        "SeasonalIntegrationMilliseconds": 0,
+        "SeasonalCommitMilliseconds": 0,
+        "SeasonalExpansionMilliseconds": 0,
+        "HorizonPreparationMilliseconds": 66.9244,
+        "HorizonCommitMilliseconds": 18.2169,
+        "ActiveTiles": 12977,
+        "TileIntegrations": 12977,
+        "SeasonalTiles": 0,
+        "FullTurnTiles": 12977,
+        "FissionCampsEvaluated": 283,
+        "FissionValidations": 37,
+        "FissionSearches": 3,
+        "FissionCandidatesScored": 56,
+        "FissionTileProjections": 402,
+        "FissionCacheInvalidations": 0,
+        "FissionProposals": 1,
+        "FissionCommits": 1,
+        "FissionDropped": 0,
+        "FissionDaughterChecks": 2,
+        "FissionDaughterBlocked": 1,
+        "FissionCrowdingProposals": 1,
+        "FissionDistressProposals": 0,
+        "FissionCrowdingCommits": 1,
+        "FissionDistressCommits": 0,
+        "FissionDistressDaughters": 0,
+        "FissionScreened": 40,
+        "FissionSearchesNoCandidates": 0,
+        "FissionSearchesNoViable": 1,
+        "FissionWithDestination": 39,
+        "FissionBelowThreshold": 37,
+        "FissionStayersBlocked": 0,
+        "FissionMilliseconds": 25.2358,
+        "ImmigrationCampsEvaluated": 277,
+        "ImmigrationCandidatesScored": 18,
+        "ImmigrationIntents": 0,
+        "ImmigrationAccepted": 0,
+        "ImmigrationPartial": 0,
+        "ImmigrationRejected": 0,
+        "ImmigrationMigrants": 0,
+        "ImmigrationMilliseconds": 3.5355,
+        "TradeEligible": 282,
+        "TradeRequisitions": 5,
+        "TradeHonoured": 1,
+        "TradeCountered": 0,
+        "TradeIgnored": 4,
+        "TradesSettled": 1,
+        "TradePlanMilliseconds": 0.0005,
+        "TradeSettleMilliseconds": 0.4392,
+        "PlanCalls": 0,
+        "ForecastCalls": 283,
+        "LocalSourceQueries": 1130,
+        "SourceLookups": 0,
+        "DepositEdges": 29364,
+        "BodyScans": 1774,
+        "ClaimsAllocated": 17573,
+        "ProductionReceipts": 1450,
+        "FisherySiteLookups": 45,
+        "FoodForecastQueries": 0,
+        "FoodInvestmentComparisons": 0,
+        "SharedAllocations": 0,
+        "SharedOperationChoices": 0,
+        "SharedHerdChoices": 0,
+        "ExpansionLadderBuilds": 0,
+        "HerdLadderBuilds": 0,
+        "PastureScans": 0,
+        "PlannerTileProjections": 0,
+        "PlannerEvaluations": 0,
+        "SharedSelections": 0,
+        "KernelCacheHits": 0,
+        "SharedAllocationMilliseconds": 0,
+        "PlanMilliseconds": 0,
+        "SeasonalCampBoundaries": 0,
+        "OperatingRegimeChanges": 0,
+        "FieldWorkSteps": 0,
+        "FieldChoiceSwitches": 0,
+        "TargetCompletions": 0,
+        "ToolExhaustions": 0,
+        "StockDepletions": 0,
+        "ManagedRenewalInput": 9379931.559105175,
+        "OperatingFractionSum": 869.7153384247595,
+        "OperatingFieldTiles": 871
+      },
+      "Fingerprint": "A5CB999D14344B946D5500F2F959935B70647D3951B69CDB1EBC32CACA335C5D",
+      "Camps": 284,
+      "Herds": 7486,
+      "ProductionReceipts": 1450,
+      "ManagedHerdReceipts": 101
+    },
+    "scopes": [
+      {
+        "Path": "Draft",
+        "InclusiveMs": 291.87,
+        "ExclusiveMs": 4.9459,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Decide",
+        "InclusiveMs": 86.7209,
+        "ExclusiveMs": 28.842200000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Decide/Observation",
+        "InclusiveMs": 57.8787,
+        "ExclusiveMs": 6.1246,
+        "Calls": 282
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts",
+        "InclusiveMs": 25.2265,
+        "ExclusiveMs": 22.7434,
+        "Calls": 282
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Ecology.Project",
+        "InclusiveMs": 0.433,
+        "ExclusiveMs": 0.4277,
+        "Calls": 3199
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0053,
+        "ExclusiveMs": 0.0053,
+        "Calls": 7
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Housing.FixedAt",
+        "InclusiveMs": 2.0501,
+        "ExclusiveMs": 2.0501,
+        "Calls": 1967
+      },
+      {
+        "Path": "Draft/Decide/Observation/Knowledge",
+        "InclusiveMs": 8.107800000000001,
+        "ExclusiveMs": 8.107800000000001,
+        "Calls": 282
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements",
+        "InclusiveMs": 6.8462000000000005,
+        "ExclusiveMs": 6.2576,
+        "Calls": 282
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Ecology.Project",
+        "InclusiveMs": 0.4751,
+        "ExclusiveMs": 0.46890000000000004,
+        "Calls": 1961
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.006200000000000001,
+        "ExclusiveMs": 0.006200000000000001,
+        "Calls": 7
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Housing.FixedAt",
+        "InclusiveMs": 0.1135,
+        "ExclusiveMs": 0.1135,
+        "Calls": 282
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles",
+        "InclusiveMs": 11.5736,
+        "ExclusiveMs": 6.4672,
+        "Calls": 282
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 5.1064,
+        "ExclusiveMs": 2.7008,
+        "Calls": 5517
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 2.4056,
+        "ExclusiveMs": 2.4056,
+        "Calls": 3373
+      },
+      {
+        "Path": "Draft/Ecology.Project",
+        "InclusiveMs": 0.0782,
+        "ExclusiveMs": 0.0782,
+        "Calls": 78
+      },
+      {
+        "Path": "Draft/Intents",
+        "InclusiveMs": 199.0437,
+        "ExclusiveMs": 0.4616,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Intents/Intent",
+        "InclusiveMs": 198.5821,
+        "ExclusiveMs": 6.9897,
+        "Calls": 282
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator",
+        "InclusiveMs": 191.2777,
+        "ExclusiveMs": 169.1996,
+        "Calls": 282
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.Project",
+        "InclusiveMs": 5.6122000000000005,
+        "ExclusiveMs": 5.3122,
+        "Calls": 42267
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.3,
+        "ExclusiveMs": 0.3,
+        "Calls": 474
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.RecoverLand",
+        "InclusiveMs": 15.8992,
+        "ExclusiveMs": 15.8992,
+        "Calls": 23528
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Housing.FixedAt",
+        "InclusiveMs": 0.5667,
+        "ExclusiveMs": 0.5667,
+        "Calls": 4363
+      },
+      {
+        "Path": "Draft/Intents/Intent/Ecology.Project",
+        "InclusiveMs": 0.2571,
+        "ExclusiveMs": 0.24430000000000002,
+        "Calls": 1116
+      },
+      {
+        "Path": "Draft/Intents/Intent/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0128,
+        "ExclusiveMs": 0.0128,
+        "Calls": 14
+      },
+      {
+        "Path": "Draft/Intents/Intent/Housing.FixedAt",
+        "InclusiveMs": 0.057600000000000005,
+        "ExclusiveMs": 0.057600000000000005,
+        "Calls": 80
+      },
+      {
+        "Path": "Draft/Placement",
+        "InclusiveMs": 0.2489,
+        "ExclusiveMs": 0.2489,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan",
+        "InclusiveMs": 0.8324,
+        "ExclusiveMs": 0.2858,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Requisitions",
+        "InclusiveMs": 0.08460000000000001,
+        "ExclusiveMs": 0.08460000000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Responses",
+        "InclusiveMs": 0.0352,
+        "ExclusiveMs": 0.0352,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Valuation",
+        "InclusiveMs": 0.4268,
+        "ExclusiveMs": 0.4068,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Valuation/Housing.FixedAt",
+        "InclusiveMs": 0.02,
+        "ExclusiveMs": 0.02,
+        "Calls": 228
+      },
+      {
+        "Path": "Prepare",
+        "InclusiveMs": 64.28620000000001,
+        "ExclusiveMs": 3.5855,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Intents",
+        "InclusiveMs": 0.24980000000000002,
+        "ExclusiveMs": 0.24980000000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs",
+        "InclusiveMs": 33.954,
+        "ExclusiveMs": 0.21710000000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs/Camp",
+        "InclusiveMs": 33.7369,
+        "ExclusiveMs": 31.543200000000002,
+        "Calls": 283
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Ecology.Project",
+        "InclusiveMs": 1.9133,
+        "ExclusiveMs": 1.8132000000000001,
+        "Calls": 13674
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.10010000000000001,
+        "ExclusiveMs": 0.10010000000000001,
+        "Calls": 149
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Housing.FixedAt",
+        "InclusiveMs": 0.28040000000000004,
+        "ExclusiveMs": 0.28040000000000004,
+        "Calls": 2905
+      },
+      {
+        "Path": "Prepare/Placement",
+        "InclusiveMs": 0.2353,
+        "ExclusiveMs": 0.2353,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Validate",
+        "InclusiveMs": 26.2616,
+        "ExclusiveMs": 1.5234,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Validate/Observation",
+        "InclusiveMs": 24.738200000000003,
+        "ExclusiveMs": 5.2423,
+        "Calls": 283
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Forecasts",
+        "InclusiveMs": 6.7437000000000005,
+        "ExclusiveMs": 6.7437000000000005,
+        "Calls": 283
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Knowledge",
+        "InclusiveMs": 0.030500000000000003,
+        "ExclusiveMs": 0.030500000000000003,
+        "Calls": 283
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Settlements",
+        "InclusiveMs": 0.5850000000000001,
+        "ExclusiveMs": 0.5850000000000001,
+        "Calls": 283
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles",
+        "InclusiveMs": 12.136700000000001,
+        "ExclusiveMs": 6.8818,
+        "Calls": 283
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 5.2549,
+        "ExclusiveMs": 2.8671,
+        "Calls": 5536
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 2.3878,
+        "ExclusiveMs": 2.3878,
+        "Calls": 3384
+      },
+      {
+        "Path": "Refresh",
+        "InclusiveMs": 7.7761000000000005,
+        "ExclusiveMs": 7.3745,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation",
+        "InclusiveMs": 0.4016,
+        "ExclusiveMs": 0.0485,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts",
+        "InclusiveMs": 0.1774,
+        "ExclusiveMs": 0.17350000000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts/Ecology.Project",
+        "InclusiveMs": 0.0019,
+        "ExclusiveMs": 0.0019,
+        "Calls": 9
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts/Housing.FixedAt",
+        "InclusiveMs": 0.002,
+        "ExclusiveMs": 0.002,
+        "Calls": 7
+      },
+      {
+        "Path": "Refresh/Observation/Knowledge",
+        "InclusiveMs": 0.0194,
+        "ExclusiveMs": 0.0194,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Settlements",
+        "InclusiveMs": 0.10600000000000001,
+        "ExclusiveMs": 0.1003,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Settlements/Ecology.Project",
+        "InclusiveMs": 0.0034000000000000002,
+        "ExclusiveMs": 0.0034000000000000002,
+        "Calls": 7
+      },
+      {
+        "Path": "Refresh/Observation/Settlements/Housing.FixedAt",
+        "InclusiveMs": 0.0023,
+        "ExclusiveMs": 0.0023,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Tiles",
+        "InclusiveMs": 0.050300000000000004,
+        "ExclusiveMs": 0.0303,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 0.02,
+        "ExclusiveMs": 0.009000000000000001,
+        "Calls": 19
+      },
+      {
+        "Path": "Refresh/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.011000000000000001,
+        "ExclusiveMs": 0.011000000000000001,
+        "Calls": 11
+      },
+      {
+        "Path": "Resolve",
+        "InclusiveMs": 594.1547,
+        "ExclusiveMs": 28.908,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/ContactKnowledge",
+        "InclusiveMs": 2.7565,
+        "ExclusiveMs": 2.7315,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/ContactKnowledge/Ecology.Project",
+        "InclusiveMs": 0.025,
+        "ExclusiveMs": 0.025,
+        "Calls": 39
+      },
+      {
+        "Path": "Resolve/Economy",
+        "InclusiveMs": 297.5528,
+        "ExclusiveMs": 212.3581,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.Project",
+        "InclusiveMs": 67.2316,
+        "ExclusiveMs": 38.003,
+        "Calls": 92303
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 29.2286,
+        "ExclusiveMs": 29.2286,
+        "Calls": 42788
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.RecoverLand",
+        "InclusiveMs": 17.7483,
+        "ExclusiveMs": 17.7483,
+        "Calls": 21112
+      },
+      {
+        "Path": "Resolve/Economy/Housing.FixedAt",
+        "InclusiveMs": 0.21480000000000002,
+        "ExclusiveMs": 0.21480000000000002,
+        "Calls": 849
+      },
+      {
+        "Path": "Resolve/Fission",
+        "InclusiveMs": 25.2374,
+        "ExclusiveMs": 24.4264,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.Project",
+        "InclusiveMs": 0.5108,
+        "ExclusiveMs": 0.22710000000000002,
+        "Calls": 370
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.2837,
+        "ExclusiveMs": 0.2837,
+        "Calls": 361
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.RecoverLand",
+        "InclusiveMs": 0.2058,
+        "ExclusiveMs": 0.2058,
+        "Calls": 402
+      },
+      {
+        "Path": "Resolve/Fission/Housing.FixedAt",
+        "InclusiveMs": 0.0944,
+        "ExclusiveMs": 0.0944,
+        "Calls": 498
+      },
+      {
+        "Path": "Resolve/HerdIntents",
+        "InclusiveMs": 211.9796,
+        "ExclusiveMs": 112.7496,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/HerdIntents/Ecology.Project",
+        "InclusiveMs": 99.23,
+        "ExclusiveMs": 53.275800000000004,
+        "Calls": 89234
+      },
+      {
+        "Path": "Resolve/HerdIntents/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 45.9542,
+        "ExclusiveMs": 45.9542,
+        "Calls": 76704
+      },
+      {
+        "Path": "Resolve/Immigration",
+        "InclusiveMs": 3.5376000000000003,
+        "ExclusiveMs": 3.5065,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Immigration/Housing.FixedAt",
+        "InclusiveMs": 0.031100000000000003,
+        "ExclusiveMs": 0.031100000000000003,
+        "Calls": 283
+      },
+      {
+        "Path": "Resolve/Invariants",
+        "InclusiveMs": 15.5114,
+        "ExclusiveMs": 12.8664,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Invariants/Ecology.Project",
+        "InclusiveMs": 2.645,
+        "ExclusiveMs": 2.645,
+        "Calls": 12977
+      },
+      {
+        "Path": "Resolve/Movement",
+        "InclusiveMs": 8.1278,
+        "ExclusiveMs": 8.1278,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Technology",
+        "InclusiveMs": 0.1119,
+        "ExclusiveMs": 0.1119,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Trade.Settle",
+        "InclusiveMs": 0.43170000000000003,
+        "ExclusiveMs": 0.43170000000000003,
+        "Calls": 1
+      }
+    ],
+    "counters": [
+      {
+        "Key": "Housing.IndexBuilds",
+        "Value": 5
+      },
+      {
+        "Key": "Housing.Lookups",
+        "Value": 11463
+      },
+      {
+        "Key": "Housing.RecordsRead",
+        "Value": 8321
+      },
+      {
+        "Key": "Housing.RecordsScanned",
+        "Value": 1300
+      },
+      {
+        "Key": "Placement.PairsChecked",
+        "Value": 0
+      },
+      {
+        "Key": "Placement.Passes",
+        "Value": 2
+      },
+      {
+        "Key": "Trade.Eligible",
+        "Value": 282
+      },
+      {
+        "Key": "Trade.Participants",
+        "Value": 8
+      },
+      {
+        "Key": "Trade.Valued",
+        "Value": 33
+      }
+    ]
+  },
+  {
+    "world": "Huge240",
+    "turn": 40,
+    "workers": 1,
+    "measurement": {
+      "TotalMs": 1417.1256,
+      "PrefetchMs": 0.001,
+      "DraftMs": 613.891,
+      "PrepareMs": 115.6307,
+      "ResolveMs": 682.8958,
+      "RefreshMs": 4.7071,
+      "Resolution": {
+        "CraftFieldWork": null,
+        "CraftFoodFlow": null,
+        "HerdIntentMilliseconds": 198.2458,
+        "EcologyMilliseconds": 177.5077,
+        "SetupEconomyMilliseconds": 94.91,
+        "ManagedHerdMilliseconds": 37.9052,
+        "GrowthPlanMilliseconds": 0.7194,
+        "SustainMilliseconds": 3.8567,
+        "ProductionMilliseconds": 34.3401,
+        "KnowledgeMilliseconds": 12.3843,
+        "TotalMilliseconds": 682.892,
+        "FullTurnIntegrationMilliseconds": 65.473,
+        "SeasonalPreparationMilliseconds": 0,
+        "SeasonalIntegrationMilliseconds": 0,
+        "SeasonalCommitMilliseconds": 0,
+        "SeasonalExpansionMilliseconds": 0,
+        "HorizonPreparationMilliseconds": 81.246,
+        "HorizonCommitMilliseconds": 27.4097,
+        "ActiveTiles": 13884,
+        "TileIntegrations": 13884,
+        "SeasonalTiles": 0,
+        "FullTurnTiles": 13884,
+        "FissionCampsEvaluated": 506,
+        "FissionValidations": 75,
+        "FissionSearches": 91,
+        "FissionCandidatesScored": 1098,
+        "FissionTileProjections": 3281,
+        "FissionCacheInvalidations": 7,
+        "FissionProposals": 45,
+        "FissionCommits": 43,
+        "FissionDropped": 2,
+        "FissionDaughterChecks": 64,
+        "FissionDaughterBlocked": 19,
+        "FissionCrowdingProposals": 26,
+        "FissionDistressProposals": 0,
+        "FissionCrowdingCommits": 25,
+        "FissionDistressCommits": 0,
+        "FissionDistressDaughters": 0,
+        "FissionScreened": 159,
+        "FissionSearchesNoCandidates": 22,
+        "FissionSearchesNoViable": 22,
+        "FissionWithDestination": 115,
+        "FissionBelowThreshold": 51,
+        "FissionStayersBlocked": 0,
+        "FissionMilliseconds": 45.0436,
+        "ImmigrationCampsEvaluated": 498,
+        "ImmigrationCandidatesScored": 346,
+        "ImmigrationIntents": 0,
+        "ImmigrationAccepted": 0,
+        "ImmigrationPartial": 0,
+        "ImmigrationRejected": 0,
+        "ImmigrationMigrants": 0,
+        "ImmigrationMilliseconds": 8.3819,
+        "TradeEligible": 505,
+        "TradeRequisitions": 42,
+        "TradeHonoured": 20,
+        "TradeCountered": 3,
+        "TradeIgnored": 19,
+        "TradesSettled": 23,
+        "TradePlanMilliseconds": 0.0008,
+        "TradeSettleMilliseconds": 0.4517,
+        "PlanCalls": 0,
+        "ForecastCalls": 506,
+        "LocalSourceQueries": 2022,
+        "SourceLookups": 0,
+        "DepositEdges": 56952,
+        "BodyScans": 1774,
+        "ClaimsAllocated": 21360,
+        "ProductionReceipts": 2760,
+        "FisherySiteLookups": 54,
+        "FoodForecastQueries": 0,
+        "FoodInvestmentComparisons": 0,
+        "SharedAllocations": 0,
+        "SharedOperationChoices": 0,
+        "SharedHerdChoices": 0,
+        "ExpansionLadderBuilds": 0,
+        "HerdLadderBuilds": 0,
+        "PastureScans": 0,
+        "PlannerTileProjections": 0,
+        "PlannerEvaluations": 0,
+        "SharedSelections": 0,
+        "KernelCacheHits": 0,
+        "SharedAllocationMilliseconds": 0,
+        "PlanMilliseconds": 0,
+        "SeasonalCampBoundaries": 0,
+        "OperatingRegimeChanges": 0,
+        "FieldWorkSteps": 0,
+        "FieldChoiceSwitches": 0,
+        "TargetCompletions": 0,
+        "ToolExhaustions": 0,
+        "StockDepletions": 0,
+        "ManagedRenewalInput": 17087790.779942844,
+        "OperatingFractionSum": 1252,
+        "OperatingFieldTiles": 1252
+      },
+      "Fingerprint": "A77B23ACD438E93D411F099ECA5610BC0A118A1C790FDC1D1863177188ED98D7",
+      "Camps": 549,
+      "Herds": 7717,
+      "ProductionReceipts": 2760,
+      "ManagedHerdReceipts": 298
+    },
+    "scopes": [
+      {
+        "Path": "Draft",
+        "InclusiveMs": 613.8770000000001,
+        "ExclusiveMs": 11.251900000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Decide",
+        "InclusiveMs": 169.95600000000002,
+        "ExclusiveMs": 38.3937,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Decide/Observation",
+        "InclusiveMs": 131.5623,
+        "ExclusiveMs": 12.3126,
+        "Calls": 505
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts",
+        "InclusiveMs": 55.448600000000006,
+        "ExclusiveMs": 48.2021,
+        "Calls": 505
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Ecology.Project",
+        "InclusiveMs": 1.0435,
+        "ExclusiveMs": 0.925,
+        "Calls": 5914
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.11850000000000001,
+        "ExclusiveMs": 0.11850000000000001,
+        "Calls": 189
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Housing.FixedAt",
+        "InclusiveMs": 6.203,
+        "ExclusiveMs": 6.203,
+        "Calls": 3535
+      },
+      {
+        "Path": "Draft/Decide/Observation/Knowledge",
+        "InclusiveMs": 20.088,
+        "ExclusiveMs": 20.088,
+        "Calls": 505
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements",
+        "InclusiveMs": 14.530800000000001,
+        "ExclusiveMs": 13.3071,
+        "Calls": 505
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Ecology.Project",
+        "InclusiveMs": 1.0341,
+        "ExclusiveMs": 0.888,
+        "Calls": 3522
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.1461,
+        "ExclusiveMs": 0.1461,
+        "Calls": 189
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Housing.FixedAt",
+        "InclusiveMs": 0.18960000000000002,
+        "ExclusiveMs": 0.18960000000000002,
+        "Calls": 505
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles",
+        "InclusiveMs": 29.1823,
+        "ExclusiveMs": 22.146700000000003,
+        "Calls": 505
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 7.0356000000000005,
+        "ExclusiveMs": 3.8108,
+        "Calls": 8385
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 3.2248,
+        "ExclusiveMs": 3.2248,
+        "Calls": 4784
+      },
+      {
+        "Path": "Draft/Ecology.Project",
+        "InclusiveMs": 0.08170000000000001,
+        "ExclusiveMs": 0.08170000000000001,
+        "Calls": 100
+      },
+      {
+        "Path": "Draft/Intents",
+        "InclusiveMs": 426.83660000000003,
+        "ExclusiveMs": 0.8124,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Intents/Intent",
+        "InclusiveMs": 426.0242,
+        "ExclusiveMs": 19.8384,
+        "Calls": 505
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator",
+        "InclusiveMs": 404.35880000000003,
+        "ExclusiveMs": 354.9019,
+        "Calls": 505
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.Project",
+        "InclusiveMs": 16.4129,
+        "ExclusiveMs": 13.360100000000001,
+        "Calls": 84940
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 3.0528,
+        "ExclusiveMs": 3.0528,
+        "Calls": 5640
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.RecoverLand",
+        "InclusiveMs": 31.648400000000002,
+        "ExclusiveMs": 31.648400000000002,
+        "Calls": 45819
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Housing.FixedAt",
+        "InclusiveMs": 1.3956000000000002,
+        "ExclusiveMs": 1.3956000000000002,
+        "Calls": 8292
+      },
+      {
+        "Path": "Draft/Intents/Intent/Ecology.Project",
+        "InclusiveMs": 1.2076,
+        "ExclusiveMs": 0.9580000000000001,
+        "Calls": 3755
+      },
+      {
+        "Path": "Draft/Intents/Intent/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.24960000000000002,
+        "ExclusiveMs": 0.24960000000000002,
+        "Calls": 343
+      },
+      {
+        "Path": "Draft/Intents/Intent/Housing.FixedAt",
+        "InclusiveMs": 0.6194000000000001,
+        "ExclusiveMs": 0.6194000000000001,
+        "Calls": 269
+      },
+      {
+        "Path": "Draft/Placement",
+        "InclusiveMs": 0.9746,
+        "ExclusiveMs": 0.9746,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan",
+        "InclusiveMs": 4.7762,
+        "ExclusiveMs": 0.6571,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Requisitions",
+        "InclusiveMs": 0.4496,
+        "ExclusiveMs": 0.4496,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Responses",
+        "InclusiveMs": 0.5479,
+        "ExclusiveMs": 0.5479,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Valuation",
+        "InclusiveMs": 3.1216,
+        "ExclusiveMs": 2.9703,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Valuation/Housing.FixedAt",
+        "InclusiveMs": 0.15130000000000002,
+        "ExclusiveMs": 0.15130000000000002,
+        "Calls": 1923
+      },
+      {
+        "Path": "Prepare",
+        "InclusiveMs": 115.6098,
+        "ExclusiveMs": 7.8725000000000005,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Intents",
+        "InclusiveMs": 0.42600000000000005,
+        "ExclusiveMs": 0.42600000000000005,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs",
+        "InclusiveMs": 62.063900000000004,
+        "ExclusiveMs": 0.3754,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs/Camp",
+        "InclusiveMs": 61.688500000000005,
+        "ExclusiveMs": 56.5703,
+        "Calls": 506
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Ecology.Project",
+        "InclusiveMs": 4.6083,
+        "ExclusiveMs": 3.8173000000000004,
+        "Calls": 24689
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.791,
+        "ExclusiveMs": 0.791,
+        "Calls": 1435
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Housing.FixedAt",
+        "InclusiveMs": 0.5099,
+        "ExclusiveMs": 0.5099,
+        "Calls": 6007
+      },
+      {
+        "Path": "Prepare/Placement",
+        "InclusiveMs": 5.9652,
+        "ExclusiveMs": 5.9652,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Validate",
+        "InclusiveMs": 39.2822,
+        "ExclusiveMs": 2.2754000000000003,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Validate/Observation",
+        "InclusiveMs": 37.0068,
+        "ExclusiveMs": 4.8273,
+        "Calls": 506
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Forecasts",
+        "InclusiveMs": 12.1676,
+        "ExclusiveMs": 12.1676,
+        "Calls": 506
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Knowledge",
+        "InclusiveMs": 0.0392,
+        "ExclusiveMs": 0.0392,
+        "Calls": 506
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Settlements",
+        "InclusiveMs": 0.9604,
+        "ExclusiveMs": 0.9604,
+        "Calls": 506
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles",
+        "InclusiveMs": 19.0123,
+        "ExclusiveMs": 11.8393,
+        "Calls": 506
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 7.173,
+        "ExclusiveMs": 4.0496,
+        "Calls": 8404
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 3.1234,
+        "ExclusiveMs": 3.1234,
+        "Calls": 4794
+      },
+      {
+        "Path": "Refresh",
+        "InclusiveMs": 4.7058,
+        "ExclusiveMs": 4.1605,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation",
+        "InclusiveMs": 0.5453,
+        "ExclusiveMs": 0.0521,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts",
+        "InclusiveMs": 0.16740000000000002,
+        "ExclusiveMs": 0.1637,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts/Ecology.Project",
+        "InclusiveMs": 0.0013000000000000002,
+        "ExclusiveMs": 0.0013000000000000002,
+        "Calls": 9
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts/Housing.FixedAt",
+        "InclusiveMs": 0.0024000000000000002,
+        "ExclusiveMs": 0.0024000000000000002,
+        "Calls": 7
+      },
+      {
+        "Path": "Refresh/Observation/Knowledge",
+        "InclusiveMs": 0.0264,
+        "ExclusiveMs": 0.0264,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Settlements",
+        "InclusiveMs": 0.2363,
+        "ExclusiveMs": 0.23090000000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Settlements/Ecology.Project",
+        "InclusiveMs": 0.0036000000000000003,
+        "ExclusiveMs": 0.0036000000000000003,
+        "Calls": 7
+      },
+      {
+        "Path": "Refresh/Observation/Settlements/Housing.FixedAt",
+        "InclusiveMs": 0.0018000000000000002,
+        "ExclusiveMs": 0.0018000000000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Tiles",
+        "InclusiveMs": 0.0631,
+        "ExclusiveMs": 0.040400000000000005,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 0.0227,
+        "ExclusiveMs": 0.0099,
+        "Calls": 19
+      },
+      {
+        "Path": "Refresh/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0128,
+        "ExclusiveMs": 0.0128,
+        "Calls": 11
+      },
+      {
+        "Path": "Resolve",
+        "InclusiveMs": 682.8925,
+        "ExclusiveMs": 25.147100000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/ContactKnowledge",
+        "InclusiveMs": 12.3789,
+        "ExclusiveMs": 12.341700000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/ContactKnowledge/Ecology.Project",
+        "InclusiveMs": 0.037200000000000004,
+        "ExclusiveMs": 0.037200000000000004,
+        "Calls": 50
+      },
+      {
+        "Path": "Resolve/Economy",
+        "InclusiveMs": 374.6335,
+        "ExclusiveMs": 280.57,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.Project",
+        "InclusiveMs": 70.485,
+        "ExclusiveMs": 40.6727,
+        "Calls": 106834
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 29.8123,
+        "ExclusiveMs": 29.8123,
+        "Calls": 42259
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.RecoverLand",
+        "InclusiveMs": 22.620800000000003,
+        "ExclusiveMs": 22.620800000000003,
+        "Calls": 28205
+      },
+      {
+        "Path": "Resolve/Economy/Housing.FixedAt",
+        "InclusiveMs": 0.9577,
+        "ExclusiveMs": 0.9577,
+        "Calls": 1518
+      },
+      {
+        "Path": "Resolve/Fission",
+        "InclusiveMs": 45.045500000000004,
+        "ExclusiveMs": 40.221900000000005,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.Project",
+        "InclusiveMs": 3.2351,
+        "ExclusiveMs": 1.6457000000000002,
+        "Calls": 2824
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 1.5894000000000001,
+        "ExclusiveMs": 1.5894000000000001,
+        "Calls": 2747
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.RecoverLand",
+        "InclusiveMs": 1.4511,
+        "ExclusiveMs": 1.4511,
+        "Calls": 3281
+      },
+      {
+        "Path": "Resolve/Fission/Housing.FixedAt",
+        "InclusiveMs": 0.1374,
+        "ExclusiveMs": 0.1374,
+        "Calls": 967
+      },
+      {
+        "Path": "Resolve/HerdIntents",
+        "InclusiveMs": 197.6789,
+        "ExclusiveMs": 99.1404,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/HerdIntents/Ecology.Project",
+        "InclusiveMs": 98.5385,
+        "ExclusiveMs": 59.4421,
+        "Calls": 85016
+      },
+      {
+        "Path": "Resolve/HerdIntents/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 39.0964,
+        "ExclusiveMs": 39.0964,
+        "Calls": 72564
+      },
+      {
+        "Path": "Resolve/Immigration",
+        "InclusiveMs": 8.385,
+        "ExclusiveMs": 8.333,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Immigration/Housing.FixedAt",
+        "InclusiveMs": 0.052000000000000005,
+        "ExclusiveMs": 0.052000000000000005,
+        "Calls": 506
+      },
+      {
+        "Path": "Resolve/Invariants",
+        "InclusiveMs": 16.8707,
+        "ExclusiveMs": 12.1028,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Invariants/Ecology.Project",
+        "InclusiveMs": 4.7679,
+        "ExclusiveMs": 4.7679,
+        "Calls": 13884
+      },
+      {
+        "Path": "Resolve/Movement",
+        "InclusiveMs": 2.1996,
+        "ExclusiveMs": 2.1996,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Technology",
+        "InclusiveMs": 0.112,
+        "ExclusiveMs": 0.112,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Trade.Settle",
+        "InclusiveMs": 0.4413,
+        "ExclusiveMs": 0.4413,
+        "Calls": 1
+      }
+    ],
+    "counters": [
+      {
+        "Key": "Housing.IndexBuilds",
+        "Value": 21
+      },
+      {
+        "Key": "Housing.Lookups",
+        "Value": 23530
+      },
+      {
+        "Key": "Housing.RecordsRead",
+        "Value": 12356
+      },
+      {
+        "Key": "Housing.RecordsScanned",
+        "Value": 8211
+      },
+      {
+        "Key": "Placement.PairsChecked",
+        "Value": 46
+      },
+      {
+        "Key": "Placement.Passes",
+        "Value": 6
+      },
+      {
+        "Key": "Trade.Eligible",
+        "Value": 505
+      },
+      {
+        "Key": "Trade.Participants",
+        "Value": 45
+      },
+      {
+        "Key": "Trade.Valued",
+        "Value": 245
+      }
+    ]
+  },
+  {
+    "world": "Huge240",
+    "turn": 50,
+    "workers": 1,
+    "measurement": {
+      "TotalMs": 2536.7445000000002,
+      "PrefetchMs": 0.0008,
+      "DraftMs": 1382.3721,
+      "PrepareMs": 219.4031,
+      "ResolveMs": 923.6702,
+      "RefreshMs": 11.2983,
+      "Resolution": {
+        "CraftFieldWork": null,
+        "CraftFoodFlow": null,
+        "HerdIntentMilliseconds": 194.1188,
+        "EcologyMilliseconds": 253.7698,
+        "SetupEconomyMilliseconds": 98.6395,
+        "ManagedHerdMilliseconds": 63.8305,
+        "GrowthPlanMilliseconds": 3.263,
+        "SustainMilliseconds": 13.904,
+        "ProductionMilliseconds": 82.5501,
+        "KnowledgeMilliseconds": 19.9843,
+        "TotalMilliseconds": 923.6673,
+        "FullTurnIntegrationMilliseconds": 75.9526,
+        "SeasonalPreparationMilliseconds": 0,
+        "SeasonalIntegrationMilliseconds": 0,
+        "SeasonalCommitMilliseconds": 0,
+        "SeasonalExpansionMilliseconds": 0,
+        "HorizonPreparationMilliseconds": 124.2324,
+        "HorizonCommitMilliseconds": 49.2215,
+        "ActiveTiles": 16691,
+        "TileIntegrations": 16691,
+        "SeasonalTiles": 0,
+        "FullTurnTiles": 16691,
+        "FissionCampsEvaluated": 922,
+        "FissionValidations": 150,
+        "FissionSearches": 252,
+        "FissionCandidatesScored": 1967,
+        "FissionTileProjections": 6172,
+        "FissionCacheInvalidations": 17,
+        "FissionProposals": 48,
+        "FissionCommits": 47,
+        "FissionDropped": 1,
+        "FissionDaughterChecks": 91,
+        "FissionDaughterBlocked": 43,
+        "FissionCrowdingProposals": 31,
+        "FissionDistressProposals": 0,
+        "FissionCrowdingCommits": 30,
+        "FissionDistressCommits": 0,
+        "FissionDistressDaughters": 0,
+        "FissionScreened": 385,
+        "FissionSearchesNoCandidates": 100,
+        "FissionSearchesNoViable": 61,
+        "FissionWithDestination": 224,
+        "FissionBelowThreshold": 133,
+        "FissionStayersBlocked": 0,
+        "FissionMilliseconds": 72.5685,
+        "ImmigrationCampsEvaluated": 912,
+        "ImmigrationCandidatesScored": 564,
+        "ImmigrationIntents": 0,
+        "ImmigrationAccepted": 0,
+        "ImmigrationPartial": 0,
+        "ImmigrationRejected": 0,
+        "ImmigrationMigrants": 0,
+        "ImmigrationMilliseconds": 15.9714,
+        "TradeEligible": 921,
+        "TradeRequisitions": 69,
+        "TradeHonoured": 21,
+        "TradeCountered": 6,
+        "TradeIgnored": 42,
+        "TradesSettled": 27,
+        "TradePlanMilliseconds": 0.0003,
+        "TradeSettleMilliseconds": 0.7995,
+        "PlanCalls": 0,
+        "ForecastCalls": 922,
+        "LocalSourceQueries": 3686,
+        "SourceLookups": 0,
+        "DepositEdges": 101808,
+        "BodyScans": 1774,
+        "ClaimsAllocated": 28807,
+        "ProductionReceipts": 5552,
+        "FisherySiteLookups": 54,
+        "FoodForecastQueries": 0,
+        "FoodInvestmentComparisons": 0,
+        "SharedAllocations": 0,
+        "SharedOperationChoices": 0,
+        "SharedHerdChoices": 0,
+        "ExpansionLadderBuilds": 0,
+        "HerdLadderBuilds": 0,
+        "PastureScans": 0,
+        "PlannerTileProjections": 0,
+        "PlannerEvaluations": 0,
+        "SharedSelections": 0,
+        "KernelCacheHits": 0,
+        "SharedAllocationMilliseconds": 0,
+        "PlanMilliseconds": 0,
+        "SeasonalCampBoundaries": 0,
+        "OperatingRegimeChanges": 0,
+        "FieldWorkSteps": 0,
+        "FieldChoiceSwitches": 0,
+        "TargetCompletions": 0,
+        "ToolExhaustions": 0,
+        "StockDepletions": 0,
+        "ManagedRenewalInput": 25928364.411495972,
+        "OperatingFractionSum": 1615.133257850429,
+        "OperatingFieldTiles": 1619
+      },
+      "Fingerprint": "82EA0044C04967737B0FC315E1EBC253B1BBD4D984C95D4A3BC6523C99921269",
+      "Camps": 969,
+      "Herds": 8105,
+      "ProductionReceipts": 5552,
+      "ManagedHerdReceipts": 690
+    },
+    "scopes": [
+      {
+        "Path": "Draft",
+        "InclusiveMs": 1382.3627000000001,
+        "ExclusiveMs": 8.82,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Decide",
+        "InclusiveMs": 325.38530000000003,
+        "ExclusiveMs": 41.0824,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Decide/Observation",
+        "InclusiveMs": 284.3029,
+        "ExclusiveMs": 26.3624,
+        "Calls": 921
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts",
+        "InclusiveMs": 120.46950000000001,
+        "ExclusiveMs": 99.4782,
+        "Calls": 921
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Ecology.Project",
+        "InclusiveMs": 1.7465000000000002,
+        "ExclusiveMs": 1.5581,
+        "Calls": 10576
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.1884,
+        "ExclusiveMs": 0.1884,
+        "Calls": 311
+      },
+      {
+        "Path": "Draft/Decide/Observation/Forecasts/Housing.FixedAt",
+        "InclusiveMs": 19.2448,
+        "ExclusiveMs": 19.2448,
+        "Calls": 6447
+      },
+      {
+        "Path": "Draft/Decide/Observation/Knowledge",
+        "InclusiveMs": 48.266200000000005,
+        "ExclusiveMs": 48.266200000000005,
+        "Calls": 921
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements",
+        "InclusiveMs": 35.6096,
+        "ExclusiveMs": 33.4039,
+        "Calls": 921
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Ecology.Project",
+        "InclusiveMs": 1.8118,
+        "ExclusiveMs": 1.586,
+        "Calls": 6417
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.2258,
+        "ExclusiveMs": 0.2258,
+        "Calls": 311
+      },
+      {
+        "Path": "Draft/Decide/Observation/Settlements/Housing.FixedAt",
+        "InclusiveMs": 0.39390000000000003,
+        "ExclusiveMs": 0.39390000000000003,
+        "Calls": 921
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles",
+        "InclusiveMs": 53.595200000000006,
+        "ExclusiveMs": 43.0522,
+        "Calls": 921
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 10.543000000000001,
+        "ExclusiveMs": 5.8937,
+        "Calls": 13474
+      },
+      {
+        "Path": "Draft/Decide/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 4.6493,
+        "ExclusiveMs": 4.6493,
+        "Calls": 6981
+      },
+      {
+        "Path": "Draft/Ecology.Project",
+        "InclusiveMs": 0.15080000000000002,
+        "ExclusiveMs": 0.15080000000000002,
+        "Calls": 100
+      },
+      {
+        "Path": "Draft/Intents",
+        "InclusiveMs": 991.8610000000001,
+        "ExclusiveMs": 2.0893,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Intents/Intent",
+        "InclusiveMs": 989.7717,
+        "ExclusiveMs": 50.6963,
+        "Calls": 921
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator",
+        "InclusiveMs": 934.5753000000001,
+        "ExclusiveMs": 831.3961,
+        "Calls": 921
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.Project",
+        "InclusiveMs": 32.5704,
+        "ExclusiveMs": 28.1767,
+        "Calls": 165080
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 4.3937,
+        "ExclusiveMs": 4.3937,
+        "Calls": 8682
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Ecology.RecoverLand",
+        "InclusiveMs": 67.1002,
+        "ExclusiveMs": 67.1002,
+        "Calls": 83064
+      },
+      {
+        "Path": "Draft/Intents/Intent/Allocator/Housing.FixedAt",
+        "InclusiveMs": 3.5086000000000004,
+        "ExclusiveMs": 3.5086000000000004,
+        "Calls": 15704
+      },
+      {
+        "Path": "Draft/Intents/Intent/Ecology.Project",
+        "InclusiveMs": 2.6958,
+        "ExclusiveMs": 2.3521,
+        "Calls": 9046
+      },
+      {
+        "Path": "Draft/Intents/Intent/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.3437,
+        "ExclusiveMs": 0.3437,
+        "Calls": 536
+      },
+      {
+        "Path": "Draft/Intents/Intent/Housing.FixedAt",
+        "InclusiveMs": 1.8043,
+        "ExclusiveMs": 1.8043,
+        "Calls": 649
+      },
+      {
+        "Path": "Draft/Placement",
+        "InclusiveMs": 1.2675,
+        "ExclusiveMs": 1.2675,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan",
+        "InclusiveMs": 54.8781,
+        "ExclusiveMs": 3.2696,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Requisitions",
+        "InclusiveMs": 1.4132,
+        "ExclusiveMs": 1.4132,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Responses",
+        "InclusiveMs": 0.6434000000000001,
+        "ExclusiveMs": 0.6434000000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Valuation",
+        "InclusiveMs": 49.5519,
+        "ExclusiveMs": 48.9837,
+        "Calls": 1
+      },
+      {
+        "Path": "Draft/Trade.Plan/Valuation/Housing.FixedAt",
+        "InclusiveMs": 0.5682,
+        "ExclusiveMs": 0.5682,
+        "Calls": 3504
+      },
+      {
+        "Path": "Prepare",
+        "InclusiveMs": 219.3708,
+        "ExclusiveMs": 8.2589,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Intents",
+        "InclusiveMs": 0.7477,
+        "ExclusiveMs": 0.7477,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs",
+        "InclusiveMs": 125.7425,
+        "ExclusiveMs": 0.684,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Needs/Camp",
+        "InclusiveMs": 125.05850000000001,
+        "ExclusiveMs": 116.0373,
+        "Calls": 922
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Ecology.Project",
+        "InclusiveMs": 7.942200000000001,
+        "ExclusiveMs": 6.7813,
+        "Calls": 44968
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 1.1609,
+        "ExclusiveMs": 1.1609,
+        "Calls": 2219
+      },
+      {
+        "Path": "Prepare/Needs/Camp/Housing.FixedAt",
+        "InclusiveMs": 1.079,
+        "ExclusiveMs": 1.079,
+        "Calls": 12096
+      },
+      {
+        "Path": "Prepare/Placement",
+        "InclusiveMs": 3.1052,
+        "ExclusiveMs": 3.1052,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Validate",
+        "InclusiveMs": 81.51650000000001,
+        "ExclusiveMs": 4.0801,
+        "Calls": 1
+      },
+      {
+        "Path": "Prepare/Validate/Observation",
+        "InclusiveMs": 77.4364,
+        "ExclusiveMs": 9.2849,
+        "Calls": 922
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Forecasts",
+        "InclusiveMs": 25.660800000000002,
+        "ExclusiveMs": 25.660800000000002,
+        "Calls": 922
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Knowledge",
+        "InclusiveMs": 0.0716,
+        "ExclusiveMs": 0.0716,
+        "Calls": 922
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Settlements",
+        "InclusiveMs": 2.063,
+        "ExclusiveMs": 2.063,
+        "Calls": 922
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles",
+        "InclusiveMs": 40.356100000000005,
+        "ExclusiveMs": 29.547900000000002,
+        "Calls": 922
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 10.808200000000001,
+        "ExclusiveMs": 6.3133,
+        "Calls": 13493
+      },
+      {
+        "Path": "Prepare/Validate/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 4.4949,
+        "ExclusiveMs": 4.4949,
+        "Calls": 6992
+      },
+      {
+        "Path": "Refresh",
+        "InclusiveMs": 11.2964,
+        "ExclusiveMs": 10.6476,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation",
+        "InclusiveMs": 0.6488,
+        "ExclusiveMs": 0.0539,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts",
+        "InclusiveMs": 0.1474,
+        "ExclusiveMs": 0.14300000000000002,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts/Ecology.Project",
+        "InclusiveMs": 0.0013000000000000002,
+        "ExclusiveMs": 0.0013000000000000002,
+        "Calls": 9
+      },
+      {
+        "Path": "Refresh/Observation/Forecasts/Housing.FixedAt",
+        "InclusiveMs": 0.0031000000000000003,
+        "ExclusiveMs": 0.0031000000000000003,
+        "Calls": 7
+      },
+      {
+        "Path": "Refresh/Observation/Knowledge",
+        "InclusiveMs": 0.0196,
+        "ExclusiveMs": 0.0196,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Settlements",
+        "InclusiveMs": 0.3753,
+        "ExclusiveMs": 0.3672,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Settlements/Ecology.Project",
+        "InclusiveMs": 0.004200000000000001,
+        "ExclusiveMs": 0.004200000000000001,
+        "Calls": 7
+      },
+      {
+        "Path": "Refresh/Observation/Settlements/Housing.FixedAt",
+        "InclusiveMs": 0.0039000000000000003,
+        "ExclusiveMs": 0.0039000000000000003,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Tiles",
+        "InclusiveMs": 0.0526,
+        "ExclusiveMs": 0.0324,
+        "Calls": 1
+      },
+      {
+        "Path": "Refresh/Observation/Tiles/Ecology.Project",
+        "InclusiveMs": 0.020200000000000003,
+        "ExclusiveMs": 0.0111,
+        "Calls": 19
+      },
+      {
+        "Path": "Refresh/Observation/Tiles/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 0.0091,
+        "ExclusiveMs": 0.0091,
+        "Calls": 11
+      },
+      {
+        "Path": "Resolve",
+        "InclusiveMs": 923.6677000000001,
+        "ExclusiveMs": 25.0109,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/ContactKnowledge",
+        "InclusiveMs": 19.9759,
+        "ExclusiveMs": 19.9499,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/ContactKnowledge/Ecology.Project",
+        "InclusiveMs": 0.026000000000000002,
+        "ExclusiveMs": 0.026000000000000002,
+        "Calls": 50
+      },
+      {
+        "Path": "Resolve/Economy",
+        "InclusiveMs": 565.9044,
+        "ExclusiveMs": 464.6354,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.Project",
+        "InclusiveMs": 68.3495,
+        "ExclusiveMs": 44.4788,
+        "Calls": 135995
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 23.870700000000003,
+        "ExclusiveMs": 23.870700000000003,
+        "Calls": 42465
+      },
+      {
+        "Path": "Resolve/Economy/Ecology.RecoverLand",
+        "InclusiveMs": 29.352800000000002,
+        "ExclusiveMs": 29.352800000000002,
+        "Calls": 43359
+      },
+      {
+        "Path": "Resolve/Economy/Housing.FixedAt",
+        "InclusiveMs": 3.5667,
+        "ExclusiveMs": 3.5667,
+        "Calls": 2766
+      },
+      {
+        "Path": "Resolve/Fission",
+        "InclusiveMs": 72.5809,
+        "ExclusiveMs": 64.3118,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.Project",
+        "InclusiveMs": 5.3506,
+        "ExclusiveMs": 2.7709,
+        "Calls": 4895
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 2.5797000000000003,
+        "ExclusiveMs": 2.5797000000000003,
+        "Calls": 4810
+      },
+      {
+        "Path": "Resolve/Fission/Ecology.RecoverLand",
+        "InclusiveMs": 2.6514,
+        "ExclusiveMs": 2.6514,
+        "Calls": 6172
+      },
+      {
+        "Path": "Resolve/Fission/Housing.FixedAt",
+        "InclusiveMs": 0.2671,
+        "ExclusiveMs": 0.2671,
+        "Calls": 1936
+      },
+      {
+        "Path": "Resolve/HerdIntents",
+        "InclusiveMs": 193.532,
+        "ExclusiveMs": 105.2535,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/HerdIntents/Ecology.Project",
+        "InclusiveMs": 88.27850000000001,
+        "ExclusiveMs": 49.8751,
+        "Calls": 83937
+      },
+      {
+        "Path": "Resolve/HerdIntents/Ecology.Project/Ecology.RecoverLand",
+        "InclusiveMs": 38.403400000000005,
+        "ExclusiveMs": 38.403400000000005,
+        "Calls": 71470
+      },
+      {
+        "Path": "Resolve/Immigration",
+        "InclusiveMs": 15.9753,
+        "ExclusiveMs": 15.883000000000001,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Immigration/Housing.FixedAt",
+        "InclusiveMs": 0.09230000000000001,
+        "ExclusiveMs": 0.09230000000000001,
+        "Calls": 922
+      },
+      {
+        "Path": "Resolve/Invariants",
+        "InclusiveMs": 25.1321,
+        "ExclusiveMs": 22.1418,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Invariants/Ecology.Project",
+        "InclusiveMs": 2.9903,
+        "ExclusiveMs": 2.9903,
+        "Calls": 16691
+      },
+      {
+        "Path": "Resolve/Movement",
+        "InclusiveMs": 4.711,
+        "ExclusiveMs": 4.711,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Technology",
+        "InclusiveMs": 0.055200000000000006,
+        "ExclusiveMs": 0.055200000000000006,
+        "Calls": 1
+      },
+      {
+        "Path": "Resolve/Trade.Settle",
+        "InclusiveMs": 0.79,
+        "ExclusiveMs": 0.79,
+        "Calls": 1
+      }
+    ],
+    "counters": [
+      {
+        "Key": "Housing.IndexBuilds",
+        "Value": 40
+      },
+      {
+        "Key": "Housing.Lookups",
+        "Value": 44953
+      },
+      {
+        "Key": "Housing.RecordsRead",
+        "Value": 26442
+      },
+      {
+        "Key": "Housing.RecordsScanned",
+        "Value": 29140
+      },
+      {
+        "Key": "Placement.PairsChecked",
+        "Value": 98
+      },
+      {
+        "Key": "Placement.Passes",
+        "Value": 4
+      },
+      {
+        "Key": "Trade.Eligible",
+        "Value": 921
+      },
+      {
+        "Key": "Trade.Participants",
+        "Value": 82
+      },
+      {
+        "Key": "Trade.Valued",
+        "Value": 446
+      }
+    ]
+  }
+]

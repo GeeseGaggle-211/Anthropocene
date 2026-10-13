@@ -124,6 +124,14 @@ host clocks measure upload/readback including synchronization. Device-wide 1 Hz
 telemetry includes desktop activity and idle/serialization gaps; it is not
 process-specific utilization or measured kernel occupancy.
 
+The reported host remainder is total prefetch minus upload/kernel/readback, so
+it also includes launch, synchronization and API overhead outside CUDA-event
+time; it is not an isolated host-compute measurement. GPU trajectories can drift
+from the CPU state. Whole-window ratios compare observed end-to-end trajectories,
+not perfectly matched-state measurements of backend overhead. Small timing
+differences between split and fused runs cannot establish a speedup from this
+single-run comparison.
+
 These are one-world trajectories, one seed, on one build/device; no claim about
 RL multi-world crossover or dense 80–90% land coverage follows from them. The
 131,072-slot experiment cannot cover 80–90% of a Huge world's land. Earlier dense

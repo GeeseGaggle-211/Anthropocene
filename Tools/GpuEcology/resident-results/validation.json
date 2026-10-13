@@ -1,0 +1,506 @@
+[
+  {
+    "world": "Standard80",
+    "turn": 25,
+    "mode": "gpu-split",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 69834,
+      "Hits": 67583,
+      "GpuHits": 66680,
+      "Misses": 1358,
+      "Prefetched": 24298,
+      "NewProfiles": 24298,
+      "PrefetchMs": 165.5142,
+      "uploadMs": 10.369,
+      "kernelMs": 84.896,
+      "downloadMs": 2.7098,
+      "bytes": 10496736,
+      "stageHits": {
+        "Resolve": 44614,
+        "Prepare": 6286,
+        "Draft": 16683
+      },
+      "Checked": 24298,
+      "MaxError": 2.5693225325085223E-11,
+      "meanError": 1.3647197553225321E-13,
+      "rmsError": 9.018197885584643E-13
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 25,
+    "mode": "gpu-fused",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 69834,
+      "Hits": 67583,
+      "GpuHits": 66680,
+      "Misses": 1358,
+      "Prefetched": 24298,
+      "NewProfiles": 24298,
+      "PrefetchMs": 160.4508,
+      "uploadMs": 5.8037,
+      "kernelMs": 90.3789,
+      "downloadMs": 1.4991,
+      "bytes": 10496736,
+      "stageHits": {
+        "Resolve": 44614,
+        "Prepare": 6286,
+        "Draft": 16683
+      },
+      "Checked": 48596,
+      "MaxError": 2.5693225325085223E-11,
+      "meanError": 1.3647197553225321E-13,
+      "rmsError": 9.018197885584642E-13
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 25,
+    "mode": "gpu-coeff",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 69834,
+      "Hits": 67583,
+      "GpuHits": 66680,
+      "Misses": 1358,
+      "Prefetched": 24298,
+      "NewProfiles": 24298,
+      "PrefetchMs": 107.9602,
+      "uploadMs": 5.7174,
+      "kernelMs": 46.011,
+      "downloadMs": 1.5076,
+      "bytes": 10496736,
+      "stageHits": {
+        "Resolve": 44614,
+        "Prepare": 6286,
+        "Draft": 16683
+      },
+      "Checked": 72894,
+      "MaxError": 2.5693225325085223E-11,
+      "meanError": 1.3595281018238033E-13,
+      "rmsError": 8.992988666864941E-13
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 40,
+    "mode": "gpu-split",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 84385,
+      "Hits": 81863,
+      "GpuHits": 80364,
+      "Misses": 1461,
+      "Prefetched": 24396,
+      "NewProfiles": 24396,
+      "PrefetchMs": 148.2556,
+      "uploadMs": 5.7629,
+      "kernelMs": 93.1125,
+      "downloadMs": 1.4904,
+      "bytes": 10539072,
+      "stageHits": {
+        "Resolve": 46297,
+        "Prepare": 8980,
+        "Draft": 26586
+      },
+      "Checked": 24396,
+      "MaxError": 2.5693225325085223E-11,
+      "meanError": 1.3275405133453377E-13,
+      "rmsError": 8.883926038444385E-13
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 40,
+    "mode": "gpu-fused",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 84385,
+      "Hits": 81863,
+      "GpuHits": 80364,
+      "Misses": 1461,
+      "Prefetched": 24396,
+      "NewProfiles": 24396,
+      "PrefetchMs": 156.0837,
+      "uploadMs": 5.5229,
+      "kernelMs": 98.109,
+      "downloadMs": 1.604,
+      "bytes": 10539072,
+      "stageHits": {
+        "Resolve": 46297,
+        "Prepare": 8980,
+        "Draft": 26586
+      },
+      "Checked": 48792,
+      "MaxError": 2.5693225325085223E-11,
+      "meanError": 1.3275405133453377E-13,
+      "rmsError": 8.883926038444383E-13
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 40,
+    "mode": "gpu-coeff",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 84385,
+      "Hits": 81863,
+      "GpuHits": 80364,
+      "Misses": 1461,
+      "Prefetched": 24396,
+      "NewProfiles": 24396,
+      "PrefetchMs": 112.6858,
+      "uploadMs": 5.4662,
+      "kernelMs": 48.3531,
+      "downloadMs": 1.6963,
+      "bytes": 10539072,
+      "stageHits": {
+        "Resolve": 46297,
+        "Prepare": 8980,
+        "Draft": 26586
+      },
+      "Checked": 73188,
+      "MaxError": 2.5693225325085223E-11,
+      "meanError": 1.3261406505663405E-13,
+      "rmsError": 8.878311646575396E-13
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 50,
+    "mode": "gpu-split",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 102478,
+      "Hits": 99761,
+      "GpuHits": 97710,
+      "Misses": 1642,
+      "Prefetched": 25008,
+      "NewProfiles": 25008,
+      "PrefetchMs": 162.4857,
+      "uploadMs": 5.6383,
+      "kernelMs": 98.6036,
+      "downloadMs": 1.4949,
+      "bytes": 10803456,
+      "stageHits": {
+        "Resolve": 48968,
+        "Prepare": 12444,
+        "Draft": 38349
+      },
+      "Checked": 25008,
+      "MaxError": 2.5693225325085223E-11,
+      "meanError": 1.3243671980244338E-13,
+      "rmsError": 8.852440746765053E-13
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 50,
+    "mode": "gpu-fused",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 102477,
+      "Hits": 99760,
+      "GpuHits": 97709,
+      "Misses": 1642,
+      "Prefetched": 25008,
+      "NewProfiles": 25008,
+      "PrefetchMs": 169.5995,
+      "uploadMs": 5.6626,
+      "kernelMs": 105.2393,
+      "downloadMs": 1.9564,
+      "bytes": 10803456,
+      "stageHits": {
+        "Resolve": 48968,
+        "Prepare": 12444,
+        "Draft": 38348
+      },
+      "Checked": 50016,
+      "MaxError": 2.5693225325085223E-11,
+      "meanError": 1.3243671980244338E-13,
+      "rmsError": 8.852440746765051E-13
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 50,
+    "mode": "gpu-coeff",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 102477,
+      "Hits": 99760,
+      "GpuHits": 97709,
+      "Misses": 1642,
+      "Prefetched": 25008,
+      "NewProfiles": 25008,
+      "PrefetchMs": 112.6357,
+      "uploadMs": 5.651,
+      "kernelMs": 49.1352,
+      "downloadMs": 2.1589,
+      "bytes": 10803456,
+      "stageHits": {
+        "Resolve": 48968,
+        "Prepare": 12444,
+        "Draft": 38348
+      },
+      "Checked": 75024,
+      "MaxError": 2.5693225325085223E-11,
+      "meanError": 1.3226738060278207E-13,
+      "rmsError": 8.842985062410334E-13
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 25,
+    "mode": "gpu-split",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 250674,
+      "Hits": 243326,
+      "GpuHits": 240612,
+      "Misses": 5473,
+      "Prefetched": 92768,
+      "NewProfiles": 92768,
+      "PrefetchMs": 393.1274,
+      "uploadMs": 24.0269,
+      "kernelMs": 183.5394,
+      "downloadMs": 1.5613,
+      "bytes": 40075776,
+      "stageHits": {
+        "Resolve": 170260,
+        "Prepare": 19128,
+        "Draft": 53938
+      },
+      "Checked": 92768,
+      "MaxError": 8.049028110690415E-11,
+      "meanError": 1.4557482382242617E-13,
+      "rmsError": 9.541867088147853E-13
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 25,
+    "mode": "gpu-fused",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 250674,
+      "Hits": 243326,
+      "GpuHits": 240612,
+      "Misses": 5473,
+      "Prefetched": 92768,
+      "NewProfiles": 92768,
+      "PrefetchMs": 952.7764,
+      "uploadMs": 19.6703,
+      "kernelMs": 242.7939,
+      "downloadMs": 7.7359,
+      "bytes": 40075776,
+      "stageHits": {
+        "Resolve": 170260,
+        "Prepare": 19128,
+        "Draft": 53938
+      },
+      "Checked": 185536,
+      "MaxError": 8.049028110690415E-11,
+      "meanError": 1.4557482382242617E-13,
+      "rmsError": 9.541867088147849E-13
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 25,
+    "mode": "gpu-coeff",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 250674,
+      "Hits": 243326,
+      "GpuHits": 240612,
+      "Misses": 5473,
+      "Prefetched": 92768,
+      "NewProfiles": 92768,
+      "PrefetchMs": 383.5166,
+      "uploadMs": 21.5063,
+      "kernelMs": 166.5056,
+      "downloadMs": 7.5981,
+      "bytes": 40075776,
+      "stageHits": {
+        "Resolve": 170260,
+        "Prepare": 19128,
+        "Draft": 53938
+      },
+      "Checked": 278304,
+      "MaxError": 8.049028110690415E-11,
+      "meanError": 1.4510435452886461E-13,
+      "rmsError": 9.520707404596119E-13
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 40,
+    "mode": "gpu-split",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 323830,
+      "Hits": 316275,
+      "GpuHits": 311498,
+      "Misses": 5424,
+      "Prefetched": 90712,
+      "NewProfiles": 90712,
+      "PrefetchMs": 404.0148,
+      "uploadMs": 25.2077,
+      "kernelMs": 191.6709,
+      "downloadMs": 3.7063,
+      "bytes": 39187584,
+      "stageHits": {
+        "Resolve": 176940,
+        "Prepare": 32976,
+        "Draft": 106359
+      },
+      "Checked": 90712,
+      "MaxError": 6.639311322942376E-11,
+      "meanError": 1.4000831304603847E-13,
+      "rmsError": 9.377159998125877E-13
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 40,
+    "mode": "gpu-fused",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 323826,
+      "Hits": 316271,
+      "GpuHits": 311494,
+      "Misses": 5424,
+      "Prefetched": 90712,
+      "NewProfiles": 90712,
+      "PrefetchMs": 416.982,
+      "uploadMs": 28.3982,
+      "kernelMs": 207.7162,
+      "downloadMs": 1.4503,
+      "bytes": 39187584,
+      "stageHits": {
+        "Resolve": 176936,
+        "Prepare": 32976,
+        "Draft": 106359
+      },
+      "Checked": 181424,
+      "MaxError": 6.639311322942376E-11,
+      "meanError": 1.4000831304603847E-13,
+      "rmsError": 9.377159998125871E-13
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 40,
+    "mode": "gpu-coeff",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 323826,
+      "Hits": 316271,
+      "GpuHits": 311494,
+      "Misses": 5424,
+      "Prefetched": 90712,
+      "NewProfiles": 90712,
+      "PrefetchMs": 628.4868,
+      "uploadMs": 37.8613,
+      "kernelMs": 150.953,
+      "downloadMs": 1.4212,
+      "bytes": 39187584,
+      "stageHits": {
+        "Resolve": 176936,
+        "Prepare": 32976,
+        "Draft": 106359
+      },
+      "Checked": 272136,
+      "MaxError": 6.639311322942376E-11,
+      "meanError": 1.3962512764845263E-13,
+      "rmsError": 9.34319144885354E-13
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 50,
+    "mode": "gpu-split",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 468995,
+      "Hits": 460759,
+      "GpuHits": 454316,
+      "Misses": 5876,
+      "Prefetched": 94092,
+      "NewProfiles": 94092,
+      "PrefetchMs": 815.2201,
+      "uploadMs": 29.3658,
+      "kernelMs": 257.936,
+      "downloadMs": 1.5939,
+      "bytes": 40647744,
+      "stageHits": {
+        "Resolve": 198173,
+        "Prepare": 58262,
+        "Draft": 204324
+      },
+      "Checked": 94092,
+      "MaxError": 3.2741809263825417E-11,
+      "meanError": 1.3899757241501106E-13,
+      "rmsError": 9.282070341377235E-13
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 50,
+    "mode": "gpu-fused",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 468995,
+      "Hits": 460759,
+      "GpuHits": 454316,
+      "Misses": 5876,
+      "Prefetched": 94092,
+      "NewProfiles": 94092,
+      "PrefetchMs": 470.3489,
+      "uploadMs": 19.7216,
+      "kernelMs": 270.7478,
+      "downloadMs": 1.4309,
+      "bytes": 40647744,
+      "stageHits": {
+        "Resolve": 198173,
+        "Prepare": 58262,
+        "Draft": 204324
+      },
+      "Checked": 188184,
+      "MaxError": 3.2741809263825417E-11,
+      "meanError": 1.3899757241501106E-13,
+      "rmsError": 9.28207034137723E-13
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 50,
+    "mode": "gpu-coeff",
+    "cpuFingerprintEqual": false,
+    "counters": {
+      "Queries": 468995,
+      "Hits": 460759,
+      "GpuHits": 454316,
+      "Misses": 5876,
+      "Prefetched": 94092,
+      "NewProfiles": 94092,
+      "PrefetchMs": 364.1643,
+      "uploadMs": 29.004,
+      "kernelMs": 145.5128,
+      "downloadMs": 5.2186,
+      "bytes": 40647744,
+      "stageHits": {
+        "Resolve": 198173,
+        "Prepare": 58262,
+        "Draft": 204324
+      },
+      "Checked": 282276,
+      "MaxError": 3.501554601825774E-11,
+      "meanError": 1.3871136019475807E-13,
+      "rmsError": 9.265673767419673E-13
+    }
+  }
+]
