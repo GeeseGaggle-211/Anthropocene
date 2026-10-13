@@ -373,7 +373,7 @@ namespace Anthropocene.Simulation
             // The shared portfolio may deliberately let existing fields decay
             // while building a more productive local field. Its explicit build
             // work cannot first be spent maintaining the abandoned capital.
-            double buildFarmers = w.Config.SharedCropHerdAllocationEnabled
+            double buildFarmers = (w.Config.SharedCropHerdAllocationEnabled || camp.EconomicLabor?.PolicyAuthority == true)
                 ? Math.Min(farmers, Math.Max(0, camp.EconomicLabor?.ExpansionFarmers ?? 0)) : 0;
             double upkeepFarmers = farmers - buildFarmers;
             double years = segmentYears > 0 ? segmentYears : w.Config.TurnDays / w.Config.DaysPerYear;
@@ -392,7 +392,7 @@ namespace Anthropocene.Simulation
             {
                 // Maintenance is a minimum, not a ceiling on harvesting employment.
                 // Explicit expansion time cannot simultaneously harvest or do upkeep.
-                plan.ExpansionFarmers = w.Config.SharedCropHerdAllocationEnabled ? buildFarmers
+                plan.ExpansionFarmers = (w.Config.SharedCropHerdAllocationEnabled || camp.EconomicLabor.PolicyAuthority) ? buildFarmers
                     : Math.Min(plan.ExpansionFarmers, camp.EconomicLabor.ExpansionFarmers);
                 plan.OperatingFarmers = established ? farmers - plan.ExpansionFarmers : 0;
             }

@@ -29,6 +29,7 @@
     <Compile Include="DemandControlChecks.cs" />
     <Compile Include="EconomicSettlementChecks.cs" />
     <Compile Include="ElderRLChecks.cs" />
+    <Compile Include="AutonomousElderChecks.cs" />
     <Compile Include="EconomicAllocationOracleChecks.cs" />
     <Compile Include="ClothingFeedstockChecks.cs" />
     <Compile Include="AgentContractChecks.cs" />

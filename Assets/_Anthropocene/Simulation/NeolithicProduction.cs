@@ -891,9 +891,9 @@ namespace Anthropocene.Simulation
             double labor = workerIntervals;
             // Housing Material shares its Builder pool with the assembly that will
             // consume it, so it never takes labour the assembly needs this turn.
-            double amount = recipe.Good == CraftGood.HousingMaterial
+            double amount = recipe.Good == CraftGood.HousingMaterial && order?.PolicySurplus != true
                 ? ExportedHousingMaterialLimit(coverage, rate, labor, usefulDemand, c.Inventory.HousingMaterial - c.TradeHeldForExport(CraftGood.HousingMaterial), c.TradeOutstanding(CraftGood.HousingMaterial))
-                : Math.Min(usefulDemand, recipe.Equipment ? coverage.Capacity(recipe.Good, rate, labor) : labor * rate);
+                : Math.Min(usefulDemand, recipe.Equipment || recipe.Good == CraftGood.HousingMaterial ? coverage.Capacity(recipe.Good, rate, labor) : labor * rate);
             var inv = c.Inventory;
             if (recipe.Stone > 0) amount = Math.Min(amount, inv.Stone / recipe.Stone);
             if (recipe.Clay > 0) amount = Math.Min(amount, inv.Clay / recipe.Clay);
@@ -1019,7 +1019,7 @@ namespace Anthropocene.Simulation
                         if (toolInput != (balanceLayer == 0)) continue;
                         if (!RecipeAvailable(w, c, recipe)) continue;
                         if (Priority(c, recipe.Good) <= 0) continue;
-                        double labor = laborByRole[role];
+                        double labor = order?.ActivityLabor(role, recipe.Good, intervals, laborByRole[role]) ?? laborByRole[role];
                         double target = needs?.Production != null
                             ? Math.Max(0, needs.Production[recipe.Good] - (produced.TryGetValue(recipe.Good, out double made) ? made : 0))
                             : Demand(w, c, recipe.Good, years, -1, true, true, null, order);

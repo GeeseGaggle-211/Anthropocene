@@ -566,6 +566,22 @@ namespace Anthropocene.Simulation
 
         public static HousingMaterialPlan Gather(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double generalistIntervals, ref double equipment, TurnRecord record, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, TurnNeeds needs = null)
         {
+            if (needs?.Order?.PolicySurplus == true)
+            {
+                var available = KnownSources(w, c, record.StartDays + record.Duration);
+                foreach (string role in ExtractionRoles)
+                    foreach (var material in Materials)
+                    {
+                        double remaining = needs.Order.MaterialWorkers(role, material) * intervals;
+                        foreach (var source in available.Where(x => x.Material == material).OrderBy(x => x.Distance).ThenBy(x => x.Id, StringComparer.Ordinal))
+                        {
+                            if (remaining <= 1e-10) break;
+                            double requested = remaining * SpecialistProductivity.ExtractionRate(w, c, material, role);
+                            remaining -= Extract(w, c, source, role, remaining, requested, record.StartDays + record.Duration, record);
+                        }
+                    }
+                return needs.Housing;
+            }
             double days = record.StartDays + record.Duration;
             double housingForecast = 0;
             var forecast = new Dictionary<MaterialId, double> { [MaterialId.Stone] = 0, [MaterialId.Clay] = 0, [MaterialId.Wood] = 0 };
@@ -712,7 +728,7 @@ namespace Anthropocene.Simulation
                 if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) return;
                 double rate = SpecialistProductivity.CraftRate(w, c, recipe, role);
                 if (rate <= 0) return;
-                double labor = laborByRole[role];
+                double labor = order?.ActivityLabor(role, recipe.Good, intervals, laborByRole[role]) ?? laborByRole[role];
                 double useful;
                 if (recipe.Good != CraftGood.Cloth && recipe.Good != CraftGood.AnimalFabric) useful = UsefulDemand(recipe.Good);
                 else
@@ -733,13 +749,14 @@ namespace Anthropocene.Simulation
                         ? Math.Max(remainingClothing, Math.Max(0, -virtualCloth))
                         : Math.Max(remainingClothing + remainingShelter, Math.Max(0, -virtualAnimalFabric));
                 }
+                if (order?.PolicySurplus == true) useful = double.PositiveInfinity;
                 bool sharedFabricNeed = recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric;
                 double wanted = exportOnly ? Outstanding(recipe.Good) : sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]);
                 // DemandControl ceilings: no ordinary step makes more than the allocated output (exports keep their claim).
                 if (!exportOnly && order != null && order.HasCeilings) wanted = Math.Min(wanted, Math.Max(0, order.Ceiling(recipe.Good) - planned[recipe.Good]));
-                double amount = Math.Min(wanted, recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
+                double amount = Math.Min(wanted, recipe.Equipment || recipe.Good == CraftGood.HousingMaterial ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
                 // Housing Material and its assembly draw on one Builder pool.
-                if (recipe.Good == CraftGood.HousingMaterial)
+                if (recipe.Good == CraftGood.HousingMaterial && order?.PolicySurplus != true)
                     amount = NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor, exportOnly ? Outstanding(recipe.Good) : Math.Max(0, useful - planned[recipe.Good]), housingMaterial - HeldForExport(CraftGood.HousingMaterial), Outstanding(CraftGood.HousingMaterial));
                 if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, housingMaterial - HeldForExport(CraftGood.HousingMaterial)) / recipe.HousingMaterial);
                 if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);

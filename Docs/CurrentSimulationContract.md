@@ -312,3 +312,12 @@ evidence but remains open on GitHub at this review. Remaining design choices:
 [#13](https://github.com/GeeseGaggle-211/Anthropocene/issues/13) logistics and
 [#15](https://github.com/GeeseGaggle-211/Anthropocene/issues/15) daughter societies.
 Ticket state is workflow metadata, not an override of the current user contract.
+
+## Experimental autonomous Elder economy
+
+`feature/elder-autonomous-economy` adds the opt-in action-2 / observation-3 /
+environment-3 / replay-3 surface described in
+[AutonomousElderEconomy-v1.md](AutonomousElderEconomy-v1.md). It does not change
+the default allocation strategy or the frozen five-head Elder contract.
+[AutonomousElderValidation.md](AutonomousElderValidation.md) records physical,
+replay, learner and performance evidence and the remaining training gates.

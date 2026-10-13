@@ -950,13 +950,13 @@ namespace Anthropocene.Simulation
         // The bounded same-turn handshake: O(camps (goods log W + contacts)) pure per-camp work, then
         // O(camps K W^2) canonical responses (responder ID, then the responder's own best gain, then requester
         // ID), updating both sides' positions so no camp is promised the same stock or capacity twice.
-        internal static TradePlan Plan(WorldState w, PhaseExecution execution = null)
+        internal static TradePlan Plan(WorldState w, PhaseExecution execution = null, ISet<int> excluded = null)
         {
             var cfg = w.Config;
             if (!cfg.TradeEnabled) return TradePlan.Empty;
             using var profile = PhaseProfile.Scope("Trade.Plan");
             var plan = new TradePlan();
-            var eligible = w.Camps.Where(c => Eligible(w, c)).OrderBy(c => c.Id).ToArray();
+            var eligible = w.Camps.Where(c => Eligible(w, c) && (excluded == null || !excluded.Contains(c.Id))).OrderBy(c => c.Id).ToArray();
             PhaseProfile.Count("Trade.Eligible", eligible.Length);
             plan.Summary.Eligible = eligible.Length;
             if (eligible.Length < 2) return plan;

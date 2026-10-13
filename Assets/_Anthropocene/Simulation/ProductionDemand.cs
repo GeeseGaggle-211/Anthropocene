@@ -1015,6 +1015,34 @@ namespace Anthropocene.Simulation
     // Housing Material always precedes Housing, whatever their keys.
     public sealed class ProductionOrder
     {
+        internal bool PolicySurplus;
+        private Dictionary<string, double[]> activityWorkers;
+        internal double ActivityLabor(string role, CraftGood good, double intervals, double fallback)
+            => PolicySurplus ? activityWorkers[role][4 + (int)good] * intervals : fallback;
+        internal double MaterialWorkers(string role, MaterialId material)
+        {
+            if (!PolicySurplus) return 0;
+            int col = material == MaterialId.Stone ? 1 : material == MaterialId.Clay ? 2 : 3;
+            return activityWorkers[role][col];
+        }
+        internal static ProductionOrder Autonomous(AutonomousElderAction action, int[] counts)
+        {
+            var goods = ((CraftGood[])Enum.GetValues(typeof(CraftGood))).OrderBy(NeolithicProduction.ScheduleKey).ToList();
+            MoveBefore(goods, CraftGood.AnimalFabric, CraftGood.LightHousing);
+            MoveBefore(goods, CraftGood.HousingMaterial, CraftGood.Housing);
+            var order = new ProductionOrder(goods.ToArray(), new Dictionary<CraftGood, double>()) { PolicySurplus = true,
+                activityWorkers = new Dictionary<string, double[]>() };
+            for (int r = 0; r < counts.Length; r++)
+            {
+                var row = action.Activities[r].Select(x => x * counts[r]).ToArray();
+                string role = WorkforceRoles.All[r];
+                if (role == WorkforceRoles.Stonecutter) row[1] = counts[r];
+                if (role == WorkforceRoles.ClayMiner) row[2] = counts[r];
+                if (role == WorkforceRoles.Woodcutter) row[3] = counts[r];
+                order.activityWorkers[role] = row;
+            }
+            return order;
+        }
         public static readonly string[] Roles = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToArray();
         private readonly Dictionary<CraftGood, int> rank = new Dictionary<CraftGood, int>();
         private readonly Dictionary<CraftGood, double> keys = new Dictionary<CraftGood, double>();

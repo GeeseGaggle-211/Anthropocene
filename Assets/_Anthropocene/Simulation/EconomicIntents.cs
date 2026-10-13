@@ -9,6 +9,8 @@ namespace Anthropocene.Simulation
     public sealed class EconomicLaborPlan
     {
         public double MaterialGatherers, ExpansionFarmers, EquipmentTarget;
+        // Turn-local compiler authority, cleared before the next committed boundary.
+        [NonSerialized] public bool PolicyAuthority;
         // Shared-allocation planner (Docs/SharedAllocationValidation.md, warm start):
         // the fulfilment-path position the last plan chose. Absent in older saves
         // and outside the shared planner (unset); not part of the intent stamp.

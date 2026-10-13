@@ -245,6 +245,13 @@ namespace Anthropocene.Simulation
                 null, directives, observations, compiler);
         }
 
+        internal static PreparedTurn PrepareAutonomous(WorldState world,
+            IReadOnlyDictionary<int, List<Order>> submitted,
+            IReadOnlyDictionary<int, AutonomousElderAction> actions,
+            IReadOnlyDictionary<int, AutonomousElderObservation> observations,
+            PhaseExecution execution = null)
+            => PrepareCore(world, submitted, null, execution, null, null, null, null, null, null, actions, observations);
+
         private static PreparedTurn PrepareCore(WorldState world,
             IReadOnlyDictionary<int, List<Order>> submitted,
             IEnumerable<DecisionTrace> traces, PhaseExecution execution,
@@ -253,7 +260,9 @@ namespace Anthropocene.Simulation
             DemandController.DevelopmentDiagnostics developmentDiagnostics,
             IReadOnlyDictionary<int, ElderDirective> elderDirectives,
             IReadOnlyDictionary<int, ElderObservation> elderObservations,
-            IElderDirectiveCompiler elderCompiler)
+            IElderDirectiveCompiler elderCompiler,
+            IReadOnlyDictionary<int, AutonomousElderAction> autonomous = null,
+            IReadOnlyDictionary<int, AutonomousElderObservation> autonomousObservations = null)
         {
             if (world == null || submitted == null) throw new ArgumentNullException(world == null ? nameof(world) : nameof(submitted));
             using var profile = PhaseProfile.Scope("Prepare");
@@ -294,7 +303,8 @@ namespace Anthropocene.Simulation
             var acceptedEconomy = prepared.Orders.Where(o => o.Kind == OrderKind.Economy).ToDictionary(o => o.Entity);
             var automated = world.Camps.Where(c => c.Population > 0 &&
                 (c.EconomyAutomationTurns != 0 || aiEconomicRequests.Contains(c.Id) ||
-                 elderDirectives != null && elderDirectives.ContainsKey(c.Id)) &&
+                 elderDirectives != null && elderDirectives.ContainsKey(c.Id) ||
+                 autonomous != null && autonomous.ContainsKey(c.Id)) &&
                 CultivationEconomy.EconomyEnabled(world, c) && !acceptedEconomy.ContainsKey(c.Id))
                 .OrderBy(c => c.Id).ToArray();
             // Each forecast owns a private camp preview and reads only the
@@ -305,7 +315,8 @@ namespace Anthropocene.Simulation
             // The handshake reads only the committed world (never orders), so a
             // matching draft's plan is the plan Prepare would compute.
             var tradeTimer = System.Diagnostics.Stopwatch.StartNew();
-            prepared.Trade = useDraft ? draft.Trade : Trade.Plan(world, execution);
+            prepared.Trade = autonomous != null ? AutonomousElderTrade.Plan(world, autonomous, autonomousObservations, execution)
+                : useDraft ? draft.Trade : Trade.Plan(world, execution);
             prepared.TradeMilliseconds = tradeTimer.Elapsed.TotalMilliseconds;
             var trade = prepared.Trade;
             var fishingAccess = BuildFishingAccessPlans(world, world.Camps, prepared.Placement,
@@ -316,6 +327,8 @@ namespace Anthropocene.Simulation
                 int effectiveTile = prepared.Placement.Destinations[camp.Id];
                 int residents = ResidentCountAfterActions(camp, acceptedActions);
                 bool abandoning = prepared.AbandoningVillages.Contains(camp.Id);
+                if (autonomous != null && autonomous.TryGetValue(camp.Id, out var autonomousAction))
+                    return AutonomousElderCompiler.Compile(world, PlanningCampAt(camp, effectiveTile, trade), autonomousAction);
                 if (useDraft && draft.Intents.TryGetValue(camp.Id, out var cached) &&
                     cached.Tile == effectiveTile && cached.Abandoning == abandoning && cached.Residents == residents)
                 {

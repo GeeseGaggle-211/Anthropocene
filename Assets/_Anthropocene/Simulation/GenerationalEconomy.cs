@@ -265,7 +265,8 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 var labor = agriculturalLabor[camp.Id];
-                double gatherers = labor.Gatherers;
+                double gatherers = camp.EconomicLabor?.PolicyAuthority == true
+                    ? Math.Max(0, labor.Gatherers - camp.EconomicLabor.MaterialGatherers) : labor.Gatherers;
                 if (CultivationEconomy.Enabled(camp) && !abandoningVillages.Contains(camp.Id))
                 {
                     // Field and nearby gathering tiles receive one turn-horizon

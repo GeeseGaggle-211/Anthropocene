@@ -53,3 +53,4 @@ TestResults/
 !Tools/PerformanceAudit/HerdEcologyProbe.csproj
 !Tools/PerformanceAudit/PastoralPlannerProbe.csproj
 !Tools/InvestmentPayback/Anthropocene.InvestmentPayback.csproj
+!Tools/ElderRL/AutonomousRegressionProbe.csproj
