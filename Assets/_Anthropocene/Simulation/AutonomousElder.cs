@@ -7,7 +7,7 @@ namespace Anthropocene.Simulation
     // Separate versioned surface: never reinterpret the original five-head directive.
     public static class AutonomousElderContract
     {
-        public const int ActionVersion = 2, ObservationVersion = 3, EnvironmentVersion = 3, ReplayVersion = 3;
+        public const int ActionVersion = 3, ObservationVersion = 4, EnvironmentVersion = 4, ReplayVersion = 4;
         public const int Roles = 13, Activities = 15, Contacts = 8;
         public const double QuoteMinimum = .000001, QuoteLimit = 1000000;
         public static readonly string[] ActivityNames = new[] { "Food", "Stone", "Clay", "Wood" }
@@ -30,12 +30,13 @@ namespace Anthropocene.Simulation
             .Select(_ => new double[AutonomousElderContract.Activities]).ToArray();
         public double FieldExpansionFraction, RetainedHerdFraction, Breeding;
         public ElderStockQuote Quote;
+        public int Movement; // 0 stay; 1..7 knowledge-limited site rows + 1
         public AutonomousElderAction Copy() => new AutonomousElderAction
         {
             SchemaVersion = SchemaVersion, Workforce = (double[])Workforce.Clone(),
             Activities = Activities.Select(row => (double[])row.Clone()).ToArray(),
             FieldExpansionFraction = FieldExpansionFraction, RetainedHerdFraction = RetainedHerdFraction,
-            Breeding = Breeding, Quote = Quote?.Copy()
+            Breeding = Breeding, Quote = Quote?.Copy(), Movement = Movement
         };
     }
 
@@ -48,6 +49,8 @@ namespace Anthropocene.Simulation
         public bool[] ControlMask;
         public bool[] CounterpartyMask = new bool[AutonomousElderContract.Contacts];
         public bool[] GoodMask;
+        public bool[] MovementMask = new bool[8];
+        internal int[] SiteTiles = Array.Empty<int>();
         public double[] Stocks;
         // Address tokens are server-only and are not serialized into actor observations.
         internal int[] CounterpartyIds = Array.Empty<int>();
@@ -58,11 +61,13 @@ namespace Anthropocene.Simulation
     {
         public static AutonomousElderObservation Observe(WorldState w, Camp c)
         {
-            var context = new ElderObservationBuilder().Build(w, c.Id, false);
+            var context = new ElderObservationBuilder().Build(w, c.Id, true, out var metadata);
             // Full owner knowledge is required for remembered contact slots.
             var game = new AgentObservationBuilder().Build(w, c.Player);
             var result = new AutonomousElderObservation
             {
+                SiteTiles = metadata.SiteTiles,
+                MovementMask = Enumerable.Range(0, 8).Select(i => context.Mask.AllowsMovement(i - 1)).ToArray(),
                 Context = ElderObservationSchema.Encode(context).Values.Select(x => (double)x).ToArray(),
                 WorkforceMask = WorkforceRoles.All.Select(role =>
                     (EconomicIntents.RequiredTechnology(role) == null || c.People.HasTech(EconomicIntents.RequiredTechnology(role))) &&
@@ -102,6 +107,7 @@ namespace Anthropocene.Simulation
         public static void Validate(AutonomousElderAction a, AutonomousElderObservation o)
         {
             if (a == null || a.SchemaVersion != AutonomousElderContract.ActionVersion) throw new ArgumentException("Unsupported autonomous action schema.");
+            if (a.Movement < 0 || a.Movement >= o.MovementMask.Length || !o.MovementMask[a.Movement]) throw new ArgumentException("Illegal movement ordinal.");
             Simplex(a.Workforce, o.WorkforceMask);
             if (a.Activities == null || a.Activities.Length != AutonomousElderContract.Roles) throw new ArgumentException("Activity row count.");
             for (int i = 0; i < a.Activities.Length; i++) Simplex(a.Activities[i], o.ActivityMask[i]);

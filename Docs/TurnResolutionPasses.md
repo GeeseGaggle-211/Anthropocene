@@ -184,7 +184,9 @@ calibrated and reported rather than hidden by old partition-equality tests.
 ### Experimental autonomous Elder boundary
 
 The opt-in `AutonomousElderEnvironment` requires all living controlled camps'
-action-2 submissions before preparing one turn. Its pure compiler replaces the
+action-3 submissions before preparing one turn. Movement uses knowledge-limited
+site tokens; placement accepts or rejects moves before destination economic
+previews. Opening-stock trade still settles before movement. Its pure compiler replaces the
 automatic intent for those camps only. Policy activity budgets and surplus
 permission travel in transient `ProductionOrder`s through the same forecasts
 and resolver; unused labor is idle. The transient labor authority marker is
@@ -194,4 +196,4 @@ Reciprocal, bounded stock quotes replace heuristic trade for controlled camps.
 The native trade plan carries their opening-stock legs and settles through the
 same escrow before dispatch. No made-to-order claim or utility test is created.
 All existing production, needs, demography, immigration, fission and knowledge
-barriers still run. See [AutonomousElderEconomy-v1.md](AutonomousElderEconomy-v1.md).
+barriers still run. See [AutonomousElderPPOGate-v1.md](AutonomousElderPPOGate-v1.md).

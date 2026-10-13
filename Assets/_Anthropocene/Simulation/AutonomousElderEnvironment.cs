@@ -23,11 +23,18 @@ namespace Anthropocene.Simulation
         public int DecisionLimit;
         public List<AutonomousElderReplayStep> Steps = new List<AutonomousElderReplayStep>();
     }
+    public sealed class AutonomousElderTelemetry
+    {
+        public Dictionary<int, int> Population, Moved, SettledTrades, DaughterSettlements, Immigrated, Emigrated;
+        public Dictionary<int, double> FoodMet, Quality;
+        public int Trades, Fissions, Migrants;
+    }
     public sealed class AutonomousElderStep
     {
         public Dictionary<int, AutonomousElderObservation> Observations;
         public Dictionary<int, double> Rewards;
         public Dictionary<int, int[]> Staffing;
+        public AutonomousElderTelemetry Telemetry;
         public double ElapsedYears;
         public bool Terminated, Truncated;
         public string Fingerprint;
@@ -66,6 +73,7 @@ namespace Anthropocene.Simulation
         private Dictionary<int, AutonomousElderObservation> CopyObservations()
             => observations.ToDictionary(x => x.Key, x => new AutonomousElderObservation
             {
+                MovementMask = (bool[])x.Value.MovementMask.Clone(),
                 Context = (double[])x.Value.Context.Clone(), WorkforceMask = (bool[])x.Value.WorkforceMask.Clone(),
                 ActivityMask = x.Value.ActivityMask.Select(row => (bool[])row.Clone()).ToArray(),
                 ControlMask = (bool[])x.Value.ControlMask.Clone(), CounterpartyMask = (bool[])x.Value.CounterpartyMask.Clone(),
@@ -83,11 +91,14 @@ namespace Anthropocene.Simulation
             // Keep hunter/other-camp decisions, replacing only controlled camp orders.
             var orders = background.ToDictionary(x => x.Key, x => x.Value.Where(o => !controlled.Contains(o.Entity)).Select(o => o.Copy()).ToList());
             var prior = world.Camps.Where(c => actions.ContainsKey(c.Id)).ToDictionary(c => c.Id, c => c.Population);
+            var priorTiles = world.Camps.Where(c => actions.ContainsKey(c.Id)).ToDictionary(c => c.Id, c => c.Tile);
             var staffing = actions.ToDictionary(x => x.Key, x => AutonomousElderCompiler.Apportion(x.Value.Workforce, prior[x.Key]));
             foreach (var c in world.Camps.Where(c => actions.ContainsKey(c.Id)))
             {
                 if (!orders.ContainsKey(c.Player)) orders[c.Player] = new List<Order>();
-                orders[c.Player].Add(new Order(OrderKind.NoOp, c.Id));
+                int movement = actions[c.Id].Movement;
+                orders[c.Player].Add(movement == 0 ? new Order(OrderKind.NoOp, c.Id) :
+                    new Order(OrderKind.Move, c.Id, destination: observations[c.Id].SiteTiles[movement - 1]));
             }
             var savedBackground = orders.ToDictionary(x => x.Key, x => x.Value.Select(o => o.Copy()).ToList());
             var prepared = TurnPlanner.PrepareAutonomous(world, orders, actions, observations, execution);
@@ -101,6 +112,17 @@ namespace Anthropocene.Simulation
             double years = record.Duration / world.Config.DaysPerYear;
             var camps = world.Camps.ToDictionary(c => c.Id);
             return new AutonomousElderStep { Observations = CopyObservations(), Staffing = staffing, ElapsedYears = years,
+                Telemetry = new AutonomousElderTelemetry {
+                    Population = prior.ToDictionary(x => x.Key, x => camps.TryGetValue(x.Key, out var c) ? c.Population : 0),
+                    Moved = priorTiles.ToDictionary(x => x.Key, x => camps.TryGetValue(x.Key, out var c) && c.Tile != x.Value ? 1 : 0),
+                    FoodMet = prior.ToDictionary(x => x.Key, x => camps.TryGetValue(x.Key, out var c) ? c.FoodNeedsMetRatio : 0),
+                    Quality = prior.ToDictionary(x => x.Key, x => camps.TryGetValue(x.Key, out var c) ? c.QoL : 0),
+                    SettledTrades = prior.ToDictionary(x => x.Key, x => record.Trades.Count(t => t.Requester == x.Key || t.Responder == x.Key)),
+                    DaughterSettlements = prior.ToDictionary(x => x.Key, x => record.Fissions.Count(f => f.ParentCamp == x.Key)),
+                    Immigrated = prior.ToDictionary(x => x.Key, x => record.Migrations.Where(m => m.DestinationCamp == x.Key).Sum(m => m.Migrants)),
+                    Emigrated = prior.ToDictionary(x => x.Key, x => record.Migrations.Where(m => m.SourceCamp == x.Key).Sum(m => m.Migrants)),
+                    Trades = record.Trades.Count, Fissions = record.Fissions.Count, Migrants = record.Migrations.Sum(x => x.Migrants)
+                },
                 Rewards = prior.ToDictionary(x => x.Key, x => ElderRewardContract.Physical(x.Value, camps.TryGetValue(x.Key, out var c) ? ElderRLContract.Unit(c.QoL) : 0, years).UndiscountedIntervalWelfare),
                 Terminated = terminated, Truncated = truncated, Fingerprint = fingerprint };
         }

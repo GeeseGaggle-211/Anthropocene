@@ -85,12 +85,38 @@ internal static class AutonomousElderChecks
         Check(Output(cloth.world, CraftGood.Cloth) > 0 && Output(cloth.world, CraftGood.AnimalFabric) == 0, "conditional recipe allocation");
         AutonomousElderEnvironment.VerifyReplay(pots.env.Replay, new PhaseExecution(2, 1, true, 1)); checks++;
         Check(SaveCodec.Fingerprint(SaveCodec.Load(pots.env.CaptureSnapshot())) == pots.step.Fingerprint, "exact save/load endpoint");
+        MovementAndEscrow();
         MaterialsAndDependencies();
         TradeAndWego();
         RandomizedLaborAndReplay();
         Console.WriteLine("PASS: " + checks + " autonomous Elder assertions");
         Console.WriteLine(JsonSerializer.Serialize(new { potsOutput = Output(pots.world, CraftGood.Pots), idlePotsOutput = Output(idle.world, CraftGood.Pots), clothOutput = Output(cloth.world, CraftGood.Cloth), hungryFoodRatio = starvation.Camps[0].FoodNeedsMetRatio }));
         return checks;
+    }
+    private static void MovementAndEscrow()
+    {
+        var w = Fixture(true); var ids = w.Camps.Select(c => c.Id).ToArray();
+        foreach (var c in w.Camps) foreach (int tile in w.Map.Radius(c.Tile, w.Config.VisionRadius)) c.People.Memory.Explored.Add(tile, w.Turn);
+        var env = new AutonomousElderEnvironment(); var obs = env.Reset(SaveCodec.Save(w), ids);
+        int movement = Enumerable.Range(1, 7).First(i => obs[ids[0]].MovementMask[i]);
+        var a = Policy(obs[ids[0]], WorkforceRoles.Farmer); var b = Policy(obs[ids[1]], WorkforceRoles.Farmer);
+        a.Movement = movement;
+        a.Quote = new ElderStockQuote { Counterparty = 0, Give = TradeGood.Wood, Want = TradeGood.Clay, GiveQuantity = 10, WantQuantity = 20 };
+        b.Quote = new ElderStockQuote { Counterparty = 0, Give = TradeGood.Clay, Want = TradeGood.Wood, GiveQuantity = 20, WantQuantity = 10 };
+        var result = env.Step(new Dictionary<int, AutonomousElderAction> { [ids[1]] = b, [ids[0]] = a });
+        var end = SaveCodec.Load(env.CaptureSnapshot());
+        Check(end.Camps.Single(c => c.Id == ids[0]).Tile != w.Camps[0].Tile, "masked movement reaches native placement");
+        Check(result.Telemetry.Moved[ids[0]] == 1, "movement telemetry matches physical movement");
+        Check(result.Telemetry.SettledTrades[ids[0]] == 1, "opening-stock quote settles with simultaneous movement");
+        Check(end.History.Last().Trades.Count == 1, "native settlement receipt remains authoritative");
+        Near(end.Camps.Sum(c => c.Inventory.Wood), w.Camps.Sum(c => c.Inventory.Wood), "moving trade conserves wood");
+        Near(end.Camps.Sum(c => c.Inventory.Clay), w.Camps.Sum(c => c.Inventory.Clay), "moving trade conserves clay");
+        AutonomousElderEnvironment.VerifyReplay(env.Replay, new PhaseExecution(2, 1, true, 1)); checks++;
+        a.Movement = 8; bool invalid = false;
+        try { AutonomousElderCompiler.Validate(a, obs[ids[0]]); } catch (ArgumentException) { invalid = true; }
+        Check(invalid, "out-of-range movement rejected");
+        var copy = obs[ids[0]].MovementMask.ToArray(); obs[ids[0]].MovementMask[0] = false;
+        Check(copy[0], "stay is always legal");
     }
     private static void MaterialsAndDependencies()
     {

@@ -315,9 +315,13 @@ Ticket state is workflow metadata, not an override of the current user contract.
 
 ## Experimental autonomous Elder economy
 
-`feature/elder-autonomous-economy` adds the opt-in action-2 / observation-3 /
-environment-3 / replay-3 surface described in
-[AutonomousElderEconomy-v1.md](AutonomousElderEconomy-v1.md). It does not change
-the default allocation strategy or the frozen five-head Elder contract.
-[AutonomousElderValidation.md](AutonomousElderValidation.md) records physical,
-replay, learner and performance evidence and the remaining training gates.
+`feature/elder-autonomous-economy` now exposes opt-in action-3 / observation-4 /
+environment-4 / replay-4, adding masked native movement and complete PPO heads to
+the autonomous workforce/surplus/stock-quote economy. The shared contract is
+[AutonomousElderPPOGate-v1.md](AutonomousElderPPOGate-v1.md); implementation,
+bounded CPU training and performance evidence are in
+[AutonomousElderPPOGateResults-v1.md](AutonomousElderPPOGateResults-v1.md).
+The default allocation strategy and frozen five-head Elder contract are unchanged.
+Historical v3 contracts/results remain in
+[AutonomousElderEconomy-v1.md](AutonomousElderEconomy-v1.md) and
+[AutonomousElderValidation.md](AutonomousElderValidation.md).
