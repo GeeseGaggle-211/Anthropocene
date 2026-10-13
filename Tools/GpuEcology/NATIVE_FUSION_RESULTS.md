@@ -89,6 +89,9 @@ Two independent compact-GPU processes, each running both worlds for 50 turns,
 match exactly at **100/100 world/turn checkpoints**. They also match the changed
 CPU baseline at 100/100 checkpoints; population, camp, technology-count and
 production drift are all zero. This includes 1-, 10- and 50-step evolution.
+Whole-world equality means authoritative persisted-state fingerprints; captured
+production states and receipts were checked separately. Transient object fields
+outside those checks are not claimed to have been exhaustively compared.
 No new 100/1000-turn production-fusion evolution is claimed. Cross-hardware or
 cross-build determinism was not tested.
 
@@ -176,7 +179,7 @@ The 1-Hz whole-device telemetry during phase benchmarking averaged 28.6%
 utilization, peaked at 49%, and reached 730 MiB used VRAM. Compact whole-turn
 comparison averaged 20.0%, peaked at 43%, and reached 459 MiB. These include the
 desktop, loading, setup and validation intervals; they are not kernel occupancy.
-Chronology process working sets peaked at 1.66 GiB Standard / 4.11 GiB Huge.
+CPU chronology process working sets peaked at 1.66 GiB Standard / 4.11 GiB Huge.
 Phase device/setup time was 912 ms, excluded from steady-state results.
 
 ## Review, limitations and next direction
