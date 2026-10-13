@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <DefineConstants>$(DefineConstants);RESEARCH_HOOKS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../Assets/_Anthropocene/Simulation/*.cs" Exclude="../../../Assets/_Anthropocene/Simulation/GenerationalEconomy.cs;../../../Assets/_Anthropocene/Simulation/NeolithicProduction.cs;../../../Assets/_Anthropocene/Simulation/FishingEconomy.cs;../../../Assets/_Anthropocene/Simulation/LazyEcology.cs" />
+    <Compile Include="../*.cs" />
+    <Compile Include="generated/GenerationalEconomy.cs;generated/NeolithicProduction.cs;generated/FishingEconomy.cs;generated/LazyEcology.cs" />
+    <Compile Include="generated/CandidateSourceReference.cs" />
+    <PackageReference Include="ILGPU" Version="1.5.3" /><PackageReference Include="ILGPU.Algorithms" Version="1.5.3" />
+  </ItemGroup>
+  <Target Name="GenerateResearchCopies" BeforeTargets="BeforeCompile">
+    <Exec Command="python &quot;$(MSBuildProjectDirectory)/build-candidate-hooks.py&quot;" />
+  </Target>
+</Project>
