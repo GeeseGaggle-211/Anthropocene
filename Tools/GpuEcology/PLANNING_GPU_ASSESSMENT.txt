@@ -1,0 +1,120 @@
+Planning, observation and forecast GPU assessment — 13 October 2026
+
+Conclusion: a direct GPU port of planning or observation is a poor near-term
+candidate. Fixed-plan numerical forecasts are a conditional research candidate,
+but the current implementation does not expose a large independent batch. No
+new GPU forecast implementation or speedup is claimed by this assessment.
+The previous suggestion to investigate batched forecasts was a hypothesis, not
+evidence that offloading the whole planning phase would help.
+
+Evidence and method
+Added research-only nested scopes through generated source copies. Replayed
+the real Standard80 and Huge240 CPU openings at turns 25, 40 and 50 with one
+worker. All six resulting whole-world fingerprints matched the stored CPU
+oracle exactly. Original Assets source is untouched. The Release build passed.
+These single-worker, instrumented checkpoint timings locate costs; they are NOT
+averages over turns 20–50 or 40–50 and cannot be substituted for the existing
+four-worker whole-turn window results. Early/JIT effects and scope overhead
+also prevent treating these numbers as precise port speedup predictions.
+
+Huge allocator                              Turn25   Turn40   Turn50
+Total instrumented allocator time, ms       207.3    441.0    858.7
+All nested FoodHorizonForecast.Tile, ms      53.4     88.2    146.7
+Tile forecast calls                        20,760   36,471   60,499
+Tile forecast share                         25.8%    20.0%    17.1%
+
+Even this forecast share includes object construction, claim handling, result
+arrays, capacity evaluation and arithmetic. It is not a measured pure numerical
+kernel share. The remaining allocator time is likewise not classified wholesale
+as non-numerical: it includes uninstrumented helpers as well as control flow.
+At turn50 the average forecast call is about 2.4 microseconds including its
+instrumentation. Dispatching each call separately would not be a sensible GPU
+boundary; calls must be reorganized into substantial batches.
+
+Huge Draft observation forecasting, turn50 (scalar diagnostic milliseconds)
+Total Draft observation                        287.6
+Forecast subtree within observation             125.4
+  Owned herd profile                             24.3
+  Biological-growth profile                      13.5
+  Site coverage evaluation                       50.6
+  Agricultural candidate evaluation              27.7
+  Remaining forecast-subtree work                 9.3
+
+The children are nested within the forecast subtree; do not add both parent
+and children to total Draft observation. These are specifically the
+Draft/Decide/Observation scopes. Prepare/Validate observation adds77.45ms and
+Refresh observation0.63ms outside this table. Other observation work includes knowledge,
+settlement views, visible tile views and collection construction. Standard's
+allocator tile-forecast share was about15–20% at the same checkpoints.
+
+Planning
+DemandController.Plan builds physical demand and retained portfolios, then
+chooses bounded staffing/development prefixes. Binding sums requested bundles,
+recomputes exact herd staffing, checks material and tool constraints, and rounds
+role staffing. Search steps depend on earlier feasibility results; accepted
+choices change the budget used by later choices. Dictionary/string-keyed bundles,
+callbacks, sorted breakpoints and variable candidate counts do not map directly
+to flat GPU buffers. A port would need compact request/role arrays and a staged
+batch evaluator, while CPU retains canonical decisions and tie-breaking. CPU
+camp parallelism already exists. Offloading the whole policy/Elder planner would
+also exceed the retained scope constraint.
+
+Observation
+AgentObservation builds owner-visible/remembered views: hash membership, sorting,
+entity filtering, indexed lookups, immutable wrappers and arrays. GPU computation
+cannot eliminate the need to assemble the current CPU object-based observations.
+Knowledge/visibility boundaries must also stay exact: a GPU gather must not expose
+hidden current world state where the observation requires remembered snapshots.
+Simple normalization/quantization arithmetic is only a part of this work. A
+different story is possible if observations become fixed numeric tensors consumed
+directly by a GPU policy across many worlds, but that is a separate RL data path,
+not the present observation API or a measured outcome here.
+
+Forecasts
+FoodHorizonForecast.Tile wraps the authoritative EcologicalPressure.Integrate
+and then constructs forecast outputs. Numerical inputs can conceptually be
+packed per (world,camp,candidate,tile), with seasonal/static data reused and
+fixed-order sums. However SettlementPortfolioSupervisor.Select's current/refill
+pair feeds current.ClosingBiomass/ClosingFood into the refill opening. Those two
+steps must run sequentially within a lane or in ordered phases. Candidate
+generation and subsequent selection also remain CPU dependencies. Reusing one
+authoritative current-time tile projection cannot replace forecasts of different
+hypothetical capital, pressure, operating fraction and opening stocks.
+
+Observation agricultural forecasts have a fixed three-turn comparison that is
+more regular, but its measured scope is only27.7ms in the Huge scalar turn50
+diagnostic, including CPU preparation and result assembly. The prior resident
+projection study already found substantial host/batch cost and no whole-turn
+win. Its timings do not prove a future forecast kernel would lose; they make
+launching another narrow per-call arithmetic kernel an unpromising next step.
+
+Concrete CPU-first candidates found in source
+HerdConsumptionProfile.Owned and BiologicalGrowth repeatedly filter the whole
+world.Herds list by DomesticCamp, then order owned herds. Building/reusing a
+camp-to-herds index at the immutable planning boundary could replace repeated
+global scans with owned-herd reads. Its invalidation and ordering need explicit
+handling. Other candidates are compact role/material bundles for Binding,
+shared immutable planning read models, and removal of redundant site/forecast
+construction with keys covering all hypothetical inputs. None of these CPU
+optimizations is implemented or claimed faster in this assessment.
+
+Recommendation
+Keep planning and current observation construction on CPU. First investigate
+indexing, packing and CPU parallel efficiency at late-game scale. Consider GPU
+forecast evaluation only after exposing a sufficiently large batch and compare
+against the same packed CPU path, charging all packing, transfers and CPU waits.
+If pursued, use independent inputs or explicitly fused current/refill pairs;
+preserve stable output ordering and same-build/hardware repeatability, and report
+CPU drift separately. The larger RL multi-world case remains open.
+
+Reproduction
+Build Tools/GpuEcology/TurnProbe/TurnProbe.csproj in Release. With the same native
+SDK and 6GiB heap limit, run TurnProbe.dll --resident-study profile <new-output>.
+Do not overwrite resident-results (historical benchmark assembly). The new
+planning-profile-results/profile.json includes every scope, call count,
+measurement and full-world fingerprint; assembly.json records its assembly hash.
+The generated planning-manifest records original/generated source hashes locally.
+
+Independent review passed after clarifying the Draft-only observation labels.
+It independently verified the six exact fingerprints, forecast share/call count,
+source dependencies, research-only hooks and conditional conclusions.

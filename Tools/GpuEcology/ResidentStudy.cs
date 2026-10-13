@@ -11,6 +11,7 @@ static class ResidentStudy
         if(args[0]=="trajectory"){Trajectory(output,args[2],args[3]);return;}
         if(args[0]=="validate"){Validate(output);return;}
         if(args[0]!="profile")throw new ArgumentException("Unknown resident study mode");
+        using var profileBaseline=JsonDocument.Parse(File.ReadAllText("Tools/GpuEcology/fusion-results/native-cpu-50-turns.json"));
         var rows=new List<object>();
         foreach(string name in new[]{"Standard80","Huge240"})foreach(int turn in new[]{25,40,50})
         {
@@ -19,6 +20,8 @@ static class ResidentStudy
             WholeTurnProbe.Measurement m;
             try{m=WholeTurnProbe.Step(w,1,false);}finally{PhaseProfile.Enabled=false;}
             m.Fingerprint=SaveCodec.Fingerprint(w);
+            string expected=profileBaseline.RootElement.EnumerateArray().Single(x=>x.GetProperty("world").GetString()==name&&x.GetProperty("turn").GetInt32()==turn).GetProperty("measurement").GetProperty("Fingerprint").GetString();
+            if(m.Fingerprint!=expected)throw new Exception("Profile replay changed authoritative CPU state");
             rows.Add(new{world=name,turn,workers=1,measurement=m,scopes=PhaseProfile.Rows(),counters=PhaseProfile.Counters()});
             File.WriteAllText(Path.Combine(output,"profile.json"),JsonSerializer.Serialize(rows,Json));
             Console.WriteLine($"PROFILE {name}/{turn} {m.TotalMs:F2}ms");w=null;GC.Collect();

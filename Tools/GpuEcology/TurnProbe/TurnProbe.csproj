@@ -7,13 +7,15 @@
     <DefineConstants>$(DefineConstants);RESEARCH_HOOKS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../../Assets/_Anthropocene/Simulation/*.cs" Exclude="../../../Assets/_Anthropocene/Simulation/GenerationalEconomy.cs;../../../Assets/_Anthropocene/Simulation/NeolithicProduction.cs;../../../Assets/_Anthropocene/Simulation/FishingEconomy.cs;../../../Assets/_Anthropocene/Simulation/LazyEcology.cs" />
+    <Compile Include="../../../Assets/_Anthropocene/Simulation/*.cs" Exclude="../../../Assets/_Anthropocene/Simulation/GenerationalEconomy.cs;../../../Assets/_Anthropocene/Simulation/NeolithicProduction.cs;../../../Assets/_Anthropocene/Simulation/FishingEconomy.cs;../../../Assets/_Anthropocene/Simulation/LazyEcology.cs;../../../Assets/_Anthropocene/Simulation/Agents.cs;../../../Assets/_Anthropocene/Simulation/SettlementEconomy.cs;../../../Assets/_Anthropocene/Simulation/ProductionDemand.cs;../../../Assets/_Anthropocene/Simulation/DemandControl.cs;../../../Assets/_Anthropocene/Simulation/FoodHorizonForecast.cs" />
     <Compile Include="../*.cs" />
     <Compile Include="generated/GenerationalEconomy.cs;generated/NeolithicProduction.cs;generated/FishingEconomy.cs;generated/LazyEcology.cs" />
     <Compile Include="generated/CandidateSourceReference.cs" />
+    <Compile Include="generated/Agents.cs;generated/SettlementEconomy.cs;generated/ProductionDemand.cs;generated/DemandControl.cs;generated/FoodHorizonForecast.cs" />
     <PackageReference Include="ILGPU" Version="1.5.3" /><PackageReference Include="ILGPU.Algorithms" Version="1.5.3" />
   </ItemGroup>
   <Target Name="GenerateResearchCopies" BeforeTargets="BeforeCompile">
     <Exec Command="python &quot;$(MSBuildProjectDirectory)/build-candidate-hooks.py&quot;" />
+    <Exec Command="python &quot;$(MSBuildProjectDirectory)/build-planning-hooks.py&quot;" />
   </Target>
 </Project>
