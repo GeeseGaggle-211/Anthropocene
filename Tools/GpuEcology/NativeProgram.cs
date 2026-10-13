@@ -11,6 +11,7 @@ static class Program
     {
         if(args.Length<2)throw new ArgumentException("baseline <output> | --fusion-study <mode> <output> [backend run]");
 #if RESEARCH_HOOKS
+        if(args[0]=="--resident-study"){ResidentStudy.Run(args.Skip(1).ToArray());return;}
         if(args[0]=="--fusion-study"){FusionStudy.Run(args.Skip(1).ToArray());return;}
 #endif
         if(args[0]!="baseline")throw new ArgumentException("Unknown native command");

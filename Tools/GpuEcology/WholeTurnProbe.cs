@@ -7,8 +7,8 @@ static class WholeTurnProbe
     internal static readonly JsonSerializerOptions Json=new(){IncludeFields=true,WriteIndented=true};
     internal sealed class Measurement
     {
-        public double DraftMs,PrepareMs,ResolveMs,RefreshMs;
-        public double TotalMs=>DraftMs+PrepareMs+ResolveMs+RefreshMs;
+        public double PrefetchMs,DraftMs,PrepareMs,ResolveMs,RefreshMs;
+        public double TotalMs=>PrefetchMs+DraftMs+PrepareMs+ResolveMs+RefreshMs;
         public ResolutionMetrics Resolution;
         public string Fingerprint;
         public int Camps,Herds,ProductionReceipts,ManagedHerdReceipts;
@@ -17,7 +17,13 @@ static class WholeTurnProbe
     {
         var execution=new PhaseExecution(workers);var resolver=new TurnResolver(execution);
         var result=new Measurement();var clock=Stopwatch.StartNew();
+        #if RESEARCH_HOOKS
+        ResidentBridge.Begin(world);result.PrefetchMs=clock.Elapsed.TotalMilliseconds;clock.Restart();ResidentBridge.Stage="Draft";
+        #endif
         var draft=TurnPlanner.Draft(world,0,execution);result.DraftMs=clock.Elapsed.TotalMilliseconds;clock.Restart();
+        #if RESEARCH_HOOKS
+        ResidentBridge.Stage="Prepare";
+        #endif
         var ai=new PlanningResult{Traces=new List<DecisionTrace>(draft.Ai.Traces)};
         foreach(var pair in draft.Ai.Orders)ai.Orders[pair.Key]=pair.Value;
         ai.Orders[0]=new List<Order>();
@@ -25,10 +31,12 @@ static class WholeTurnProbe
         result.PrepareMs=clock.Elapsed.TotalMilliseconds;clock.Restart();
         #if RESEARCH_HOOKS
         CandidateBridge.InResolution=true;
+        ResidentBridge.Stage="Resolve";
         #endif
         var record=resolver.Resolve(world,prepared);
         #if RESEARCH_HOOKS
         CandidateBridge.InResolution=false;
+        ResidentBridge.Stage="Refresh";
         #endif
         result.ResolveMs=clock.Elapsed.TotalMilliseconds;clock.Restart();
         using(PhaseProfile.Scope("Refresh"))new AgentObservationBuilder().Build(world,0);

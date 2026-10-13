@@ -51,6 +51,28 @@ for name in ['GenerationalEconomy.cs','NeolithicProduction.cs','FishingEconomy.c
         a='return NeolithicCapital.Decay(world.Config, site.Capital, operationFraction, elapsedYears);'
         s=replace(s,a,'return global::CandidateBridge.FisheryCapital(world, site, elapsedYears, operationFraction);')
     if name=='LazyEcology.cs':
+        signature='''        internal static EcologyView ProjectEcology(WorldState w, int tile, double queryDays,
+            bool composeCycles, Action<EcologyView, EcologyView, double> recovered,
+            AquaticEcologyOverlay? aquaticOverlay = null)
+        {'''
+        wrapper=signature+'''
+            using var projectProfile = PhaseProfile.Scope("Ecology.Project");
+            if (global::ResidentBridge.Mode == "off" || aquaticOverlay.HasValue)
+                return ProjectEcologyReference(w, tile, queryDays, composeCycles, recovered, aquaticOverlay);
+            var before = new EcologyView(w.Tiles[tile]);
+            if (global::ResidentBridge.Try(w, tile, queryDays, out var cached))
+            {
+                double elapsed = Math.Max(0, queryDays - before.Days);
+                if (elapsed > 0) recovered?.Invoke(before, cached, elapsed);
+                return cached;
+            }
+            var projected = ProjectEcologyReference(w, tile, queryDays, composeCycles, recovered, aquaticOverlay);
+            global::ResidentBridge.Record(w, tile, queryDays, before, projected);
+            return projected;
+        }
+'''+signature.replace('ProjectEcology(', 'ProjectEcologyReference(')
+        s=replace(s,signature,wrapper)
+        s=replace(s,'            double previousCapital = view.CultivationCapital;', '            using var recoveryProfile = PhaseProfile.Scope("Ecology.RecoverLand");\n            double previousCapital = view.CultivationCapital;')
         s=replace(s,'EcologyMath.Stock(', 'global::CandidateBridge.AquaticStock(',6)
         s=replace(s,'EcologyMath.ManagedStock(', 'global::CandidateBridge.AquaticManagedStock(',1)
     (out/name).write_text(s)
