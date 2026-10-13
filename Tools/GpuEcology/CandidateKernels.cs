@@ -81,4 +81,3 @@ static class CandidateKernels
     public static void CapitalKernel(Index1D i,ArrayView<CandidateInput> input,ArrayView<CandidateOutput> output)=>output[i]=Capital(input[i]);
     public static void StockKernel(Index1D i,ArrayView<CandidateInput> input,ArrayView<CandidateOutput> output)=>output[i]=Stock(input[i]);
 }
-

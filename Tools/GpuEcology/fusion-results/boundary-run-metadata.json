@@ -1,0 +1,10 @@
+{
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "runId": "1",
+  "assemblySha256": "553D745670288FB7908D54ED3EA824017E4F91DFC198E1A57D4C4C78B4B4EBB4",
+  "backend": "fused",
+  "startedUtc": "2026-10-13T07:39:38.8835145Z",
+  "tieredCompilation": "1",
+  "gcHeapHardLimit": "0x180000000",
+  "mode": "boundary"
+}

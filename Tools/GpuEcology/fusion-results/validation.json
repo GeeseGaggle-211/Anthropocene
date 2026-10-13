@@ -1,0 +1,506 @@
+[
+  {
+    "world": "Standard80",
+    "turn": 25,
+    "mode": "packed-cpu",
+    "cases": 95,
+    "counts": {
+      "attempts": 95,
+      "eligible": 95,
+      "commands": 1508,
+      "captured": 95
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 28796,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 25,
+    "mode": "resident",
+    "cases": 95,
+    "counts": {
+      "attempts": 95,
+      "eligible": 95,
+      "commands": 1508,
+      "captured": 95
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 28796,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 25,
+    "mode": "fused",
+    "cases": 95,
+    "counts": {
+      "attempts": 95,
+      "eligible": 95,
+      "commands": 1508,
+      "captured": 95
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 28796,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 25,
+    "mode": "fused-compact",
+    "cases": 95,
+    "counts": {
+      "attempts": 95,
+      "eligible": 95,
+      "commands": 1508,
+      "captured": 95
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 28796,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 40,
+    "mode": "packed-cpu",
+    "cases": 140,
+    "counts": {
+      "attempts": 140,
+      "eligible": 140,
+      "commands": 2372,
+      "captured": 140
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 43484,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 40,
+    "mode": "resident",
+    "cases": 140,
+    "counts": {
+      "attempts": 140,
+      "eligible": 140,
+      "commands": 2372,
+      "captured": 140
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 43484,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 40,
+    "mode": "fused",
+    "cases": 140,
+    "counts": {
+      "attempts": 140,
+      "eligible": 140,
+      "commands": 2372,
+      "captured": 140
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 43484,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 40,
+    "mode": "fused-compact",
+    "cases": 140,
+    "counts": {
+      "attempts": 140,
+      "eligible": 140,
+      "commands": 2372,
+      "captured": 140
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 43484,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 50,
+    "mode": "packed-cpu",
+    "cases": 195,
+    "counts": {
+      "attempts": 195,
+      "eligible": 195,
+      "commands": 3432,
+      "captured": 195
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 61464,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 50,
+    "mode": "resident",
+    "cases": 195,
+    "counts": {
+      "attempts": 195,
+      "eligible": 195,
+      "commands": 3432,
+      "captured": 195
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 61464,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 50,
+    "mode": "fused",
+    "cases": 195,
+    "counts": {
+      "attempts": 195,
+      "eligible": 195,
+      "commands": 3432,
+      "captured": 195
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 61464,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Standard80",
+    "turn": 50,
+    "mode": "fused-compact",
+    "cases": 195,
+    "counts": {
+      "attempts": 195,
+      "eligible": 195,
+      "commands": 3432,
+      "captured": 195
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 61464,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 25,
+    "mode": "packed-cpu",
+    "cases": 283,
+    "counts": {
+      "attempts": 283,
+      "eligible": 283,
+      "commands": 4630,
+      "captured": 283
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 86746,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 25,
+    "mode": "resident",
+    "cases": 283,
+    "counts": {
+      "attempts": 283,
+      "eligible": 283,
+      "commands": 4630,
+      "captured": 283
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 86746,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 25,
+    "mode": "fused",
+    "cases": 283,
+    "counts": {
+      "attempts": 283,
+      "eligible": 283,
+      "commands": 4630,
+      "captured": 283
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 86746,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 25,
+    "mode": "fused-compact",
+    "cases": 283,
+    "counts": {
+      "attempts": 283,
+      "eligible": 283,
+      "commands": 4630,
+      "captured": 283
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 86746,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 40,
+    "mode": "packed-cpu",
+    "cases": 506,
+    "counts": {
+      "attempts": 506,
+      "eligible": 506,
+      "commands": 8966,
+      "captured": 506
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 159914,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 40,
+    "mode": "resident",
+    "cases": 506,
+    "counts": {
+      "attempts": 506,
+      "eligible": 506,
+      "commands": 8966,
+      "captured": 506
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 159914,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 40,
+    "mode": "fused",
+    "cases": 506,
+    "counts": {
+      "attempts": 506,
+      "eligible": 506,
+      "commands": 8966,
+      "captured": 506
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 159914,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 40,
+    "mode": "fused-compact",
+    "cases": 506,
+    "counts": {
+      "attempts": 506,
+      "eligible": 506,
+      "commands": 8966,
+      "captured": 506
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 159914,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 50,
+    "mode": "packed-cpu",
+    "cases": 922,
+    "counts": {
+      "attempts": 922,
+      "eligible": 922,
+      "commands": 17172,
+      "captured": 922
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 297228,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 50,
+    "mode": "resident",
+    "cases": 922,
+    "counts": {
+      "attempts": 922,
+      "eligible": 922,
+      "commands": 17172,
+      "captured": 922
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 297228,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 50,
+    "mode": "fused",
+    "cases": 922,
+    "counts": {
+      "attempts": 922,
+      "eligible": 922,
+      "commands": 17172,
+      "captured": 922
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 297228,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  },
+  {
+    "world": "Huge240",
+    "turn": 50,
+    "mode": "fused-compact",
+    "cases": 922,
+    "counts": {
+      "attempts": 922,
+      "eligible": 922,
+      "commands": 17172,
+      "captured": 922
+    },
+    "errors": {
+      "Mean": 0,
+      "Rms": 0,
+      "Count": 297228,
+      "Max": 0,
+      "Sum": 0,
+      "Squares": 0,
+      "DiscreteMismatches": 0
+    }
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "startedUtc": "2026-10-13T07:29:28.4443456Z",
+  "mode": "trajectory",
+  "runId": "2",
+  "assemblySha256": "518C7BEFB4E2F02CC5CCC939CF13E5E7575C289E7CEC99364819E17BA814D5DD",
+  "backend": "fused-compact",
+  "tieredCompilation": "1",
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "gcHeapHardLimit": "0x180000000"
+}
