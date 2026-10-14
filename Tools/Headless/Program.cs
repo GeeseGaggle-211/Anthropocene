@@ -263,6 +263,8 @@ internal static class Program
         if (args.Contains("--fishing-50-all-features")) { FishingLongRunChecks.RunAllFeatures(); return 0; }
         if (args.Contains("--cultivation-cache-only")) { CultivationCacheChecks.Run(); return 0; }
         if (args.Contains("--autonomous-elder-only")) { AutonomousElderChecks.Run(); return 0; }
+        if (args.Contains("--autonomous-history-only")) { AutonomousElderHistoryChecks.Run(); return 0; }
+        if (args.Contains("--autonomous-history-benchmark")) { AutonomousElderHistoryChecks.Benchmark(); return 0; }
         if (args.Contains("--autonomous-elder-benchmark")) { AutonomousElderChecks.Benchmark(); return 0; }
         if (args.Contains("--autonomous-elder-fixture")) { System.IO.File.WriteAllBytes(args[Array.IndexOf(args, "--autonomous-elder-fixture") + 1], SaveCodec.Save(AutonomousElderChecks.Fixture(true))); return 0; }
         if (args.Contains("--elder-rl-only")) { ElderRLChecks.Run(); return 0; }
@@ -288,6 +290,7 @@ internal static class Program
             var fixedChecks = new[]
             {
                 new ParallelChecks.Entry { Name = "AutonomousElderChecks", Run = () => AutonomousElderChecks.Run() },
+                new ParallelChecks.Entry { Name = "AutonomousElderHistoryChecks", Run = () => AutonomousElderHistoryChecks.Run() },
                 new ParallelChecks.Entry { Name = "Program.Tests", Run = () => Tests() },
                 new ParallelChecks.Entry { Name = "Milestone2Checks", Run = () => Milestone2Checks.Run() },
                 new ParallelChecks.Entry { Name = "Milestone3Checks", Run = () => Milestone3Checks.Run() },

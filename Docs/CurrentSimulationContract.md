@@ -1,5 +1,18 @@
 # Current simulation contract index
 
+## Experimental autonomous Elder history (14 October 2026)
+
+On `feature/elder-autonomous-economy`, economic action3 now has an explicitly
+versioned observation/environment/replay5 path with persistent institutional
+memory and native requested-action/actual-outcome receipts. Opted-in worlds use
+Save12; worlds without receipts retain Save11 and frozen old-mode fingerprints.
+See [AutonomousHistoryRepairContractV6.md](AutonomousHistoryRepairContractV6.md),
+[AutonomousHistoryResultsV6.md](AutonomousHistoryResultsV6.md) and
+[the model5 manifest](../Tools/ElderRL/autonomous-model-v5-manifest.json).
+Astra/high passes correctness and audited core curriculum readiness; economic
+scale-out and GRU comparison remain NO-GO. No main merge or new retained native
+PPO campaign occurred. Earlier model4 experiment reports remain historical.
+
 ## Mixed integration status (7 October 2026)
 
 The current mixed integration/RL lineage enables resident Fishing, bilateral trade knowledge, local Husbandry exposure and resident taming for new worlds. See [MixedSubsistenceDiffusion.md](MixedSubsistenceDiffusion.md) and [MixedSubsistenceDiffusionValidation.md](MixedSubsistenceDiffusionValidation.md). Earlier audit rows remain historical evidence, not current feature flags. CurrentPlusExitOpportunity at threshold 0.05 and search fraction 0.8 remains the fission baseline. Accepted Dispatch changes the resident workforce before automation but does not erase departing consumers. This is functional integration, not a claim of uniformly improved strategic outcomes.

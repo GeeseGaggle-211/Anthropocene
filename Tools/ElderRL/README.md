@@ -170,7 +170,7 @@ must not move economics into Python. Synthetic shocks and a sparse global event
 scheduler remain deferred. GRU and Transformer are deferred learner-side
 experiments, not missing native simulator work.
 
-The autonomous model4 integration has a separately confirmed history gap:
+The preserved autonomous model4 integration has a separately confirmed history gap:
 scenario resets clear ElderMemory, autonomous initialization does not restore
 it, and compilation supplies no current autonomous decision/outcome receipt.
 Its nominal EMA channels therefore repeat current-state signals, unlike the
@@ -179,6 +179,16 @@ persistent scaffold path described above. See
 [`autonomous-model-v4-manifest.json`](autonomous-model-v4-manifest.json).
 The frozen mechanical experiment passes; further training promotion/scale-out
 is NO-GO until versioned history repair. GRU comparison eligibility is not reached.
+
+The new observation/environment/replay5 path implements that repair, with real
+autonomous receipts and persistent 20/60/180-year institutional memory in Save12.
+Model5 adds300 history inputs while preserving inherited model4 computation and
+state at entry. See [AutonomousHistoryResultsV6.md](../../Docs/AutonomousHistoryResultsV6.md)
+and [autonomous-model-v5-manifest.json](autonomous-model-v5-manifest.json).
+The independent Astra/high correctness and core-bank audit pass. Economic
+scale-out/GRU remain NO-GO pending bounded learning comparisons; the new local
+bank has511 snapshots, including196 audited TRAIN core states. Old-mode Save11
+and all earlier contracts/builds/checkpoints remain available.
 
 Python training work remains in the separate private
 [`GeeseGaggle-211/Anthropocene-RL`](https://github.com/GeeseGaggle-211/Anthropocene-RL)

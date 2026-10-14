@@ -227,7 +227,7 @@ internal static class AutonomousElderChecks
             AutonomousElderEnvironment.VerifyReplay(env.Replay); checks++;
         }
     }
-    private static WorldState BenchmarkWorld(int count)
+    internal static WorldState BenchmarkWorld(int count)
     {
         if (count <= 2) return Fixture(count == 2);
         var w = Fixture(); var template = w.Tiles[0];

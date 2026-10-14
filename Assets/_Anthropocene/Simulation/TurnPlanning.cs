@@ -29,6 +29,7 @@ namespace Anthropocene.Simulation
         // never enter WorldState or a policy observation directly.
         internal readonly Dictionary<int, ElderCompiledDecision> ElderDecisions =
             new Dictionary<int, ElderCompiledDecision>();
+        internal Dictionary<int, AutonomousElderReceipt> AutonomousDecisions;
         internal CampPlacement Placement;
         // The same-turn trade handshake (WP8): agreed from the committed boundary,
         // settled at the opening of the economy phase. Transient: never saved.
@@ -250,7 +251,27 @@ namespace Anthropocene.Simulation
             IReadOnlyDictionary<int, AutonomousElderAction> actions,
             IReadOnlyDictionary<int, AutonomousElderObservation> observations,
             PhaseExecution execution = null)
-            => PrepareCore(world, submitted, null, execution, null, null, null, null, null, null, actions, observations);
+        {
+            if (actions == null || observations == null ||
+                actions.Keys.Any(id => !observations.ContainsKey(id)))
+                throw new ArgumentException("Autonomous actions require their boundary observations.");
+            var controlled = new HashSet<int>(actions.Keys);
+            if (actions.Keys.Any(id => !world.Camps.Any(c => c.Id == id && c.Population > 0 &&
+                    CultivationEconomy.EconomyEnabled(world, c))) ||
+                (submitted ?? new Dictionary<int, List<Order>>()).Values.SelectMany(list => list)
+                    .Any(o => controlled.Contains(o.Entity) && o.Kind != OrderKind.NoOp && o.Kind != OrderKind.Move))
+                throw new ArgumentException("Autonomous camps must be living economies with only movement/no-op orders.");
+            // Validate the complete WEGO submission before any preparation.
+            foreach (var pair in actions.OrderBy(pair => pair.Key))
+                AutonomousElderCompiler.Validate(pair.Value, observations[pair.Key]);
+            var prepared = PrepareCore(world, submitted, null, execution, null, null,
+                null, null, null, null, actions, observations);
+            if (actions.Keys.Any(id => !prepared.ProductionOrders.TryGetValue(id, out var p) || !p.PolicySurplus))
+                throw new ArgumentException("Every autonomous action must compile to its authoritative economic plan.");
+            prepared.AutonomousDecisions = AutonomousElderHistory.PrepareReceipts(
+                world, actions, observations);
+            return prepared;
+        }
 
         private static PreparedTurn PrepareCore(WorldState world,
             IReadOnlyDictionary<int, List<Order>> submitted,

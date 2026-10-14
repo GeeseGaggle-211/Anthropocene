@@ -40,7 +40,7 @@ namespace Anthropocene.Simulation
         };
     }
 
-    public sealed class AutonomousElderObservation
+    public class AutonomousElderObservation
     {
         public int SchemaVersion = AutonomousElderContract.ObservationVersion;
         public double[] Context;

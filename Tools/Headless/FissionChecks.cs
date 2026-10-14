@@ -21,6 +21,8 @@ internal static class FissionChecks
     // A rich uniform 24x16 fixture: every fully food-supported footprint, freshwater everywhere. Camps at (column, row), one player each.
     // `neolithic` camps are cultivators; the others are Paleolithic. Fission pressure is the expected gain against G*: fixtures are pressured by default (G* = 0) and use Quiet/Ratio to shape it.
     private static WorldState World(bool neolithic, params int[][] sites) => World(24, 16, neolithic, sites);
+    internal static WorldState HistoryFixture()
+    { var w = World(true, new[] { 8, 8 }); Explore(w, w.Camps[0]); w.Camps[0].FissionPolicy = FissionPolicy.Encourage; return w; }
     private static WorldState World(int width, int height, bool neolithic, params int[][] sites)
     {
         var cfg = SimulationConfig.Small(1); cfg.FissionEnabled = true; cfg.FissionPressureRule = FissionPressureRule.Current; /* legacy mechanism fixtures isolate the existing crowding/distress path */ cfg.FissionHousingRelief = 1; /* mechanism fixtures exercise the full relief; the shipped default is 0 */ cfg.FissionDaughterMargin = 1; cfg.FissionRadius = 3; /* fixtures are written for the distance-3 ring; the shipped default is 4 */ cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;

@@ -199,6 +199,7 @@ namespace Anthropocene.Simulation
             }
             LastMetrics.KnowledgeMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
             w.History.Add(record);
+            AutonomousElderHistory.CloseBoundary(w, prepared.AutonomousDecisions, record);
             foreach (var camp in w.Camps.Where(camp =>
                 camp.ElderMemory != null).OrderBy(camp => camp.Id))
                 ElderInstitutionMemorySystem.ObserveBoundary(w, camp, record);

@@ -156,7 +156,7 @@ namespace Anthropocene.Simulation
     public static class ElderInstitutionMemorySystem
     {
         public static ElderInstitutionMemory EnsureInitialized(
-            WorldState world, Camp camp)
+            WorldState world, Camp camp, bool includeLatestInterval = true)
         {
             if (world == null) throw new ArgumentNullException(nameof(world));
             if (camp == null) throw new ArgumentNullException(nameof(camp));
@@ -169,7 +169,7 @@ namespace Anthropocene.Simulation
                 UpdateFrontiers(world, camp, memory, false);
                 memory.Observe(world.Days, world.Config.DaysPerYear,
                     CaptureSignals(world, camp,
-                        world.History.LastOrDefault(), memory));
+                        includeLatestInterval ? world.History.LastOrDefault() : null, memory));
             }
             return memory;
         }

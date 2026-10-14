@@ -749,6 +749,9 @@ namespace Anthropocene.Simulation
         [NonSerialized] internal MaterialAccessIndex MaterialIndex;
         [NonSerialized] internal FixedHousingIndex HousingIndex;
         [NonSerialized] internal TurnDiagnostics Diagnostics;
+        // Saved only in the explicit envelope-12 extension, never the legacy
+        // binary-XML header. Null leaves envelope-11 bytes unchanged.
+        [NonSerialized] public Dictionary<int, AutonomousElderReceipt> AutonomousReceipts;
         // Secondary technology discovery is receipt-driven. Bits are Domains
         // whose threshold was crossed during this turn, grouped by Society ID;
         // the Close boundary consumes the sparse queue in canonical order.

@@ -13,6 +13,8 @@ namespace Anthropocene.Simulation
     public static class SaveCodec
     {
         private const string Magic = "ANTHROPOCENE-11", LegacyMagic10 = "ANTHROPOCENE-10", LegacyMagic9 = "ANTHROPOCENE-9", LegacyMagic8 = "ANTHROPOCENE-8";
+        private const string HistoryMagic = "ANTHROPOCENE-12";
+        private static bool Modern(string magic) => magic == Magic || magic == HistoryMagic;
         // Benchmark-only 320-tribe openings can retain more than 128 MiB of
         // legitimate turn receipts in the binary XML header. Keep a finite cap.
         private const int MaximumMetadataBytes = 512 * 1024 * 1024;
@@ -40,7 +42,8 @@ namespace Anthropocene.Simulation
             using (var buffered = new BufferedStream(destination, 65536))
             using (var writer = new BinaryWriter(buffered))
             {
-                writer.Write(Magic);
+                bool history = world.AutonomousReceipts != null && world.AutonomousReceipts.Count > 0;
+                writer.Write(history ? HistoryMagic : Magic);
                 // Geography dominates the save. Fixed primitive records avoid reflection and repeated XML member names for every tile.
                 var metadata = CopyWithoutTiles(world);
                 using (var header = new MemoryStream())
@@ -72,6 +75,22 @@ namespace Anthropocene.Simulation
                 }
                 writer.Write(world.Resources != null);
                 if (world.Resources != null) ResourceCodec.Write(writer, world.Resources);
+                if (history)
+                {
+                    foreach (var pair in world.AutonomousReceipts)
+                    {
+                        if (pair.Value == null || pair.Key != pair.Value.Camp)
+                            throw new InvalidDataException("Invalid autonomous receipt key.");
+                        pair.Value.Validate(world);
+                    }
+                    var state = new AutonomousElderHistorySave { Receipts = world.AutonomousReceipts
+                        .OrderBy(p => p.Key).Select(p => p.Value).ToList() };
+                    using var extension = new MemoryStream();
+                    using (var xml = XmlDictionaryWriter.CreateBinaryWriter(extension, null, null, false))
+                        Serializer(typeof(AutonomousElderHistorySave)).WriteObject(xml, state);
+                    if (extension.Length > 16 * 1024 * 1024) throw new InvalidDataException("Autonomous history extension is too large.");
+                    writer.Write(checked((int)extension.Length)); extension.Position = 0; extension.CopyTo(buffered);
+                }
             }
         }
         public static WorldState Load(byte[] bytes)
@@ -82,10 +101,12 @@ namespace Anthropocene.Simulation
             using (var reader = new BinaryReader(buffered))
             {
                 string magic = reader.ReadString();
-                if (magic != Magic && magic != LegacyMagic10 && magic != LegacyMagic9 && magic != LegacyMagic8) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
+                if (!Modern(magic) && magic != LegacyMagic10 && magic != LegacyMagic9 && magic != LegacyMagic8) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
                 int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > MaximumMetadataBytes) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
+                if (magic == HistoryMagic)
+                    foreach (var camp in world.Camps) AutonomousElderHistory.ValidateMemory(world, camp, false);
                 // Generators 8-11 change profiles already stored in this format. Preserve old
                 // profiles and generator metadata; aquatic condition uses its original rules
                 // for pre-11 saves. No implicit geography or plankton regeneration.
@@ -94,7 +115,7 @@ namespace Anthropocene.Simulation
                 MigrateGenerationalDefaults(world);
                 world.Config.MigrateMissingPhysicalFoodHorizons();
                 world.Config.Neolithic.MigrateLegacyMaterialReserveDuration(world.Config.TurnDays / world.Config.DaysPerYear);
-                if (magic != Magic)
+                if (!Modern(magic))
                 {
                     foreach (var camp in world.Camps)
                     {
@@ -115,7 +136,7 @@ namespace Anthropocene.Simulation
                 world.Config.Validate();
                 int count = reader.ReadInt32(); if (count != world.Config.Width * world.Config.Height) throw new InvalidDataException("Invalid tile count.");
                 world.Tiles = new Tile[count];
-                bool hasCultivation = magic == Magic || magic == LegacyMagic10;
+                bool hasCultivation = Modern(magic) || magic == LegacyMagic10;
                 var record = new byte[TileRecordBytes(magic)];
                 for (int i = 0; i < count; i++)
                 {
@@ -132,8 +153,8 @@ namespace Anthropocene.Simulation
                     tile.DepressionDepth = GetFloat(record, ref o); tile.OasisInfluence = GetFloat(record, ref o); tile.Saltwater = GetDouble(record, ref o); tile.LandCondition = GetDouble(record, ref o); tile.AquaticCondition = GetDouble(record, ref o);
                     tile.Elevation = GetFloat(record, ref o); tile.Volcanism = GetFloat(record, ref o); tile.Flow = GetFloat(record, ref o); tile.Food = GetDouble(record, ref o); tile.PotentialFood = GetDouble(record, ref o); tile.Freshwater = GetDouble(record, ref o);
                     tile.Cultivation = hasCultivation ? GetFloat(record, ref o) : 0;
-                    tile.CultivationCapital = magic == Magic ? GetDouble(record, ref o) : Math.Pow(tile.Cultivation / world.Config.ReferenceIntensity, 2);
-                    tile.CultivationOperator = magic == Magic ? GetInt(record, ref o) : -1;
+                    tile.CultivationCapital = Modern(magic) ? GetDouble(record, ref o) : Math.Pow(tile.Cultivation / world.Config.ReferenceIntensity, 2);
+                    tile.CultivationOperator = Modern(magic) ? GetInt(record, ref o) : -1;
                     for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData
                     {
                         Temperature = GetFloat(record, ref o), Rain = GetFloat(record, ref o), Snow = GetFloat(record, ref o), WindX = GetFloat(record, ref o), Runoff = GetFloat(record, ref o), RegionalMoisture = GetFloat(record, ref o), Moisture = GetFloat(record, ref o),
@@ -141,7 +162,22 @@ namespace Anthropocene.Simulation
                     };
                     world.Tiles[i] = tile;
                 }
-                world.Resources = magic == Magic || magic == LegacyMagic10 ? (reader.ReadBoolean() ? ResourceCodec.Read(reader, count) : null) : (magic == LegacyMagic9 ? ResourceCodec.Read(reader, count) : null);
+                world.Resources = Modern(magic) || magic == LegacyMagic10 ? (reader.ReadBoolean() ? ResourceCodec.Read(reader, count) : null) : (magic == LegacyMagic9 ? ResourceCodec.Read(reader, count) : null);
+                if (magic == HistoryMagic)
+                {
+                    int length = reader.ReadInt32();
+                    if (length < 1 || length > 16 * 1024 * 1024) throw new InvalidDataException("Invalid autonomous history extension length.");
+                    var data = reader.ReadBytes(length);
+                    if (data.Length != length) throw new EndOfStreamException("Truncated autonomous history extension.");
+                    AutonomousElderHistorySave state;
+                    using (var xml = XmlDictionaryReader.CreateBinaryReader(data, XmlDictionaryReaderQuotas.Max))
+                        state = (AutonomousElderHistorySave)Serializer(typeof(AutonomousElderHistorySave)).ReadObject(xml);
+                    if (state?.SchemaVersion != 1 || state.Receipts == null || state.Receipts.Count == 0 ||
+                        state.Receipts.Any(r => r == null) || state.Receipts.Select(r => r.Camp).Distinct().Count() != state.Receipts.Count)
+                        throw new InvalidDataException("Invalid autonomous history extension schema/identities.");
+                    world.AutonomousReceipts = state.Receipts.ToDictionary(r => r.Camp);
+                    foreach (var receipt in state.Receipts) receipt.Validate(world);
+                }
                 NeolithicProduction.NormalizeFixedHousing(world);
                 FisheryState.Normalize(world);
                 foreach (var edge in world.Rivers)
@@ -161,7 +197,7 @@ namespace Anthropocene.Simulation
         // Fixed tile record: 109 bytes of tile fields plus four 16-float season profiles.
         // Envelopes 8/9 lack Cultivation; envelope 10 lacks capital and operator.
         private static int TileRecordBytes(string magic) => 93 + 4 * 16 * 4
-            + (magic == Magic || magic == LegacyMagic10 ? 4 : 0) + (magic == Magic ? 12 : 0);
+            + (Modern(magic) || magic == LegacyMagic10 ? 4 : 0) + (Modern(magic) ? 12 : 0);
         private static void ReadRecord(BinaryReader reader, byte[] record)
         {
             for (int read = 0; read < record.Length;)
@@ -289,6 +325,7 @@ namespace Anthropocene.Simulation
             NormalizePhysicalContactTimes(w);
             var copy = new WorldState { MaterialSources = w.MaterialSources, MaterialKnowledge = w.MaterialKnowledge, FixedHousing = w.FixedHousing?.OrderBy(s => s.CampId).ThenBy(s => s.Tile).ToList(), FisherySites = w.FisherySites?.OrderBy(s => s.TileId).ToList(), Version = w.Version, Seed = w.Seed, Turn = w.Turn, NextId = w.NextId, PlayerCount = w.PlayerCount, Days = w.Days, Config = w.Config, Tiles = w.Tiles, Camps = w.Camps.OrderBy(c => c.Id).ToList(), Societies = w.Societies.OrderBy(s => s.Id).ToList(), Improvements = w.Improvements.OrderBy(i => i.Id).ToList(), Hunters = w.Hunters.OrderBy(h => h.Id).ToList(), Herds = w.Herds.OrderBy(h => h.Id).ToList(), Rivers = w.Rivers, History = w.History, Generation = null, Resources = w.Resources };
             RequireBoundOwnership(copy);
+            copy.AutonomousReceipts = w.AutonomousReceipts;
             using (var hash = SHA256.Create())
             {
                 using (var hashing = new CryptoStream(Stream.Null, hash, CryptoStreamMode.Write)) WritePayload(hashing, copy);

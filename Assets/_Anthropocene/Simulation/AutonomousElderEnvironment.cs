@@ -47,9 +47,13 @@ namespace Anthropocene.Simulation
         private int limit, steps;
         private bool ended;
         private readonly PhaseExecution execution;
+        private readonly Action<WorldState, int[]> initializeHistory;
+        internal WorldState State => world;
         private Dictionary<int, AutonomousElderObservation> observations;
         public AutonomousElderReplay Replay { get; private set; }
         public AutonomousElderEnvironment(PhaseExecution execution = null) { this.execution = execution ?? new PhaseExecution(); }
+        internal AutonomousElderEnvironment(PhaseExecution execution, Action<WorldState, int[]> initializeHistory)
+        { this.execution = execution ?? new PhaseExecution(); this.initializeHistory = initializeHistory; }
         public byte[] CaptureSnapshot() => world == null ? throw new InvalidOperationException("Reset required.") : SaveCodec.Save(world);
         public Dictionary<int, AutonomousElderObservation> Reset(byte[] snapshot, int[] controlledCamps, int decisionLimit = 32)
         {
@@ -61,6 +65,9 @@ namespace Anthropocene.Simulation
                 var c = candidate.Camps.FirstOrDefault(x => x.Id == id);
                 if (c == null || c.Population <= 0 || !CultivationEconomy.EconomyEnabled(candidate, c)) throw new ArgumentException("Controlled camp lacks active economy.");
             }
+            if (candidate.AutonomousReceipts != null && initializeHistory == null)
+                throw new ArgumentException("An autonomous history snapshot requires environment5.");
+            initializeHistory?.Invoke(candidate, controlledCamps);
             world = candidate; controlled = controlledCamps.OrderBy(x => x).ToArray(); limit = decisionLimit; steps = 0; ended = false;
             observations = Observe();
             Replay = new AutonomousElderReplay { Snapshot = SaveCodec.Save(world), Controlled = (int[])controlled.Clone(), DecisionLimit = limit,
@@ -81,6 +88,8 @@ namespace Anthropocene.Simulation
             });
         public AutonomousElderStep Step(IReadOnlyDictionary<int, AutonomousElderAction> submitted)
             => StepCore(submitted, null);
+        internal AutonomousElderStep StepWithBackground(IReadOnlyDictionary<int, AutonomousElderAction> submitted,
+            Dictionary<int, List<Order>> background) => StepCore(submitted, background);
         private AutonomousElderStep StepCore(IReadOnlyDictionary<int, AutonomousElderAction> submitted, Dictionary<int, List<Order>> replayBackground)
         {
             if (world == null || ended) throw new InvalidOperationException("Reset required.");
