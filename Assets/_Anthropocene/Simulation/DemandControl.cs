@@ -468,6 +468,14 @@ namespace Anthropocene.Simulation
                     candidate, clothingRoute, years, residents, false, false,
                     d.Sources));
             double clothingNow = Math.Min(clothingUseful, Math.Max(0, d.ClothingNeedUnits));
+            if (n.SubsistenceNeedsCovered)
+            {
+                clothingUseful = Math.Min(clothingUseful, NeolithicProduction.Demand(w, candidate,
+                    clothingRoute, years, residents, false, false, d.Sources));
+                double need = NeolithicProduction.ClothingNeedUnits(n, SubsistenceNeeds.GoodsResidents(w, candidate, residents), years,
+                    candidate.Inventory.Cloth - candidate.TradeExport(CraftGood.Cloth), candidate.Inventory.AnimalFabric - candidate.TradeExport(CraftGood.AnimalFabric));
+                clothingNow = Math.Min(clothingUseful, need);
+            }
             Request("clothing", ServiceClass.Continuity, clothingRoute, clothingNow);
             Request("clothing reserve", ServiceClass.Recovery, clothingRoute, Math.Max(0, clothingUseful - clothingNow));
             double plantFeedstock = clothingRoute == CraftGood.Cloth

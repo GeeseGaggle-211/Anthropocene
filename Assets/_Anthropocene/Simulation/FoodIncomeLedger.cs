@@ -34,7 +34,7 @@ namespace Anthropocene.Simulation
             housingInput = Math.Min(animalInput, Math.Max(0, housing?.Quantity ?? 0));
             plantValue = n.PlantFoodPerFabricUnit > 0 ? Price(cloth) / n.PlantFoodPerFabricUnit : 0;
             animalValue = Price(fabric); housingValue = Price(housing);
-            var clothing = NeolithicProduction.ClothingNeedFeedstock(n, camp.Population, years,
+            var clothing = NeolithicProduction.ClothingNeedFeedstock(n, SubsistenceNeeds.GoodsResidents(world, camp, camp.Population), years,
                 camp.Inventory.Cloth - camp.TradeExport(CraftGood.Cloth), camp.Inventory.AnimalFabric - camp.TradeExport(CraftGood.AnimalFabric), plantInput, animalInput);
             clothingPlant = clothing.Plant; clothingAnimal = clothing.Animal;
             foodValue = ExpansionValuation.FoodValue(world.Config, camp);

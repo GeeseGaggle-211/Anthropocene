@@ -140,7 +140,17 @@ namespace Anthropocene.Simulation
             var shelter = NeolithicProduction.HousingCapacity(w, camp, w.Days); double fixedPeople = shelter.Fixed, portable = shelter.Light;
             double Housing(double people, double capacity) => people > 0 ? Math.Min(1, capacity / people) : 1;
             double Share(double people, double fixedCapacity, double portableCapacity) => NeolithicProduction.HousingShare(n, new NeolithicProduction.ShelterCapacity(fixedCapacity, portableCapacity), people);
-            double Coverage(double expectation, double housing) => n.RudimentaryWeightClothing * (1 - expectation * (1 - camp.ClothPerCapita)) + n.RudimentaryWeightHousing * (1 - expectation * (1 - housing));
+            double Coverage(double expectation, double housing, double cloth, int people, double automatic, double physicalCloth, double physicalHousing)
+            {
+                double clothingQuality = 1 - expectation * (1 - cloth), housingQuality = 1 - expectation * (1 - housing);
+                if (n.SubsistenceNeedsCovered)
+                {
+                    double eligible = automatic / SubsistenceNeeds.GearBaseline;
+                    clothingQuality = SubsistenceNeeds.GearQuality(people, eligible, physicalCloth, cloth, expectation);
+                    housingQuality = SubsistenceNeeds.GearQuality(people, eligible, physicalHousing, housing, expectation);
+                }
+                return n.RudimentaryWeightClothing * clothingQuality + n.RudimentaryWeightHousing * housingQuality;
+            }
             double Ratio(double a, double b) => b > 0 ? a / b : (a > 0 ? 1e9 : 0);
             double b0 = camp.FoodNeedsMetRatio * camp.WaterNeedsMetRatio;
             double stayFood = QoLModel.FoodAt(camp.FoodNeedsMetRatio, residents, 0, stay) * QoLModel.WaterAt(camp.WaterNeedsMetRatio, residents, stay);
@@ -149,12 +159,27 @@ namespace Anthropocene.Simulation
             // stayers' H is exactly the present H, so only the headcount changes S (Docs/SocialCohesion.md).
             double relief = cfg.FissionHousingRelief;
             double housingNow = Housing(residents, fixedPeople + portable), housingRelieved = Housing(stay, fixedPeople + portable * (1 - f));
+            double clothNow = camp.ClothPerCapita, clothAfter = camp.ClothPerCapita, clothD = camp.ClothPerCapita;
+            double automaticNow = 0, automaticAfter = 0, automaticD = 0, physicalClothing = 0;
+            if (n.SubsistenceNeedsCovered)
+            {
+                automaticNow = SubsistenceNeeds.ProjectCovered(w, camp, residents);
+                automaticAfter = SubsistenceNeeds.ProjectCovered(w, camp, stay);
+                automaticD = SubsistenceNeeds.ProjectCovered(w, camp, nd, true);
+                double physical = SubsistenceNeeds.PhysicalClothingFraction(camp);
+                physicalClothing = physical;
+                clothNow = SubsistenceNeeds.Coverage(residents, automaticNow, physical * residents);
+                clothAfter = SubsistenceNeeds.Coverage(stay, automaticAfter, physical * stay);
+                clothD = SubsistenceNeeds.Coverage(nd, automaticD, physical * nd);
+                housingNow = SubsistenceNeeds.Coverage(residents, automaticNow, fixedPeople + portable);
+                housingRelieved = SubsistenceNeeds.Coverage(stay, automaticAfter, fixedPeople + portable * (1 - f));
+            }
             double housingAfter = housingNow + relief * (housingRelieved - housingNow);
             double shareNow = Share(residents, fixedPeople, portable), shareRelieved = Share(stay, fixedPeople, portable * (1 - f));
             double shareAfter = shareNow + relief * (shareRelieved - shareNow);
             double sNow = NeolithicProduction.SocialCohesion(n, shareNow, residents), sAfter = NeolithicProduction.SocialCohesion(n, shareAfter, stay);
-            double qNow = b0 * Coverage(e, housingNow) * sNow;
-            double qAfter = stayFood * Coverage(e, housingAfter) * sAfter;
+            double qNow = b0 * Coverage(e, housingNow, clothNow, residents, automaticNow, physicalClothing * residents, fixedPeople + portable) * sNow;
+            double qAfter = stayFood * Coverage(e, housingAfter, clothAfter, stay, automaticAfter, physicalClothing * stay, fixedPeople + portable * (1 - f)) * sAfter;
             // Q_now = 0 (no food or no coverage at all) leaves a relative gain undefined: the fallback is the cohesion gain S_after / S_now - 1,
             // the QoL a unit-coverage camp would gain, so a destitute crowded camp still feels its crowding.
             double gain = qNow > 1e-9 ? qAfter / qNow - 1 : Ratio(sAfter, sNow) - 1;
@@ -164,8 +189,9 @@ namespace Anthropocene.Simulation
             double ed = floor + (1 - floor) * Numbers.Clamp(years / n.RudimentaryExpectationRampYears, 0, 1);
             var own = DaughterShelter(w, camp, nd);
             double housingD = Housing(nd, own.Total), cohesionD = NeolithicProduction.SocialCohesion(n, Share(nd, own.Fixed, own.Light), nd);
-            double qd = Numbers.Clamp(vetoFood, 0, 1) * Coverage(ed, housingD) * cohesionD;
-            double qdExpected = Numbers.Clamp(daughterFood, 0, 1) * Numbers.Clamp(daughterWater, 0, 1) * Coverage(e, housingD) * cohesionD;
+            if (n.SubsistenceNeedsCovered) housingD = SubsistenceNeeds.Coverage(nd, automaticD, own.Total);
+            double qd = Numbers.Clamp(vetoFood, 0, 1) * Coverage(ed, housingD, clothD, nd, automaticD, physicalClothing * nd, own.Total) * cohesionD;
+            double qdExpected = Numbers.Clamp(daughterFood, 0, 1) * Numbers.Clamp(daughterWater, 0, 1) * Coverage(e, housingD, clothD, nd, automaticD, physicalClothing * nd, own.Total) * cohesionD;
             double daughterGain = qNow > 1e-9 ? qdExpected / qNow - 1 : (qdExpected > 1e-9 ? 1e9 : -1);
             return new Estimate { Residents = residents, Daughter = nd, QNow = qNow, QAfter = qAfter, Gain = gain, DaughterQoL = qd, StayFood = stayFood, DaughterExpected = qdExpected, DaughterGain = daughterGain };
         }
@@ -262,11 +288,11 @@ namespace Anthropocene.Simulation
         // social cohesion S evaluated at the new headcount. At(Residents) equals EstimateSplit(...).QNow.
         public readonly struct QoLModel
         {
-            private readonly NeolithicConfig n; private readonly Camp camp; private readonly double b0, expectation; private readonly NeolithicProduction.ShelterCapacity shelter;
+            private readonly NeolithicConfig n; private readonly WorldState world; private readonly Camp camp; private readonly double b0, expectation; private readonly NeolithicProduction.ShelterCapacity shelter;
             public readonly int Residents;
             internal QoLModel(WorldState w, Camp camp)
             {
-                n = w.Config.Neolithic; this.camp = camp; Residents = camp.Population;
+                n = w.Config.Neolithic; world = w; this.camp = camp; Residents = camp.Population;
                 double floor = n.RudimentaryExpectationFloor;
                 expectation = camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : floor + (1 - floor) * Numbers.Clamp(camp.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
                 shelter = NeolithicProduction.HousingCapacity(w, camp, w.Days);
@@ -277,7 +303,17 @@ namespace Anthropocene.Simulation
             private double Shape(int people)
             {
                 double cloth = Math.Min(1, camp.ClothPerCapita * Residents / people), housing = NeolithicProduction.HousingCoverage(shelter, people);
-                double coverage = n.RudimentaryWeightClothing * (1 - expectation * (1 - cloth)) + n.RudimentaryWeightHousing * (1 - expectation * (1 - housing));
+                double clothQuality = 1 - expectation * (1 - cloth), housingQuality = 1 - expectation * (1 - housing);
+                if (n.SubsistenceNeedsCovered)
+                {
+                    double covered = SubsistenceNeeds.ProjectCovered(world, camp, people);
+                    cloth = SubsistenceNeeds.Coverage(people, covered, SubsistenceNeeds.PhysicalClothingFraction(camp) * Residents);
+                    housing = SubsistenceNeeds.Coverage(people, covered, shelter.Total);
+                    double eligible = covered / SubsistenceNeeds.GearBaseline;
+                    clothQuality = SubsistenceNeeds.GearQuality(people, eligible, SubsistenceNeeds.PhysicalClothingFraction(camp) * Residents, cloth, expectation);
+                    housingQuality = SubsistenceNeeds.GearQuality(people, eligible, shelter.Total, housing, expectation);
+                }
+                double coverage = n.RudimentaryWeightClothing * clothQuality + n.RudimentaryWeightHousing * housingQuality;
                 // Housing stays with the camp: arrivals dilute H (they have to be housed) and leavers raise it (they leave housing behind).
                 return coverage * NeolithicProduction.SocialCohesion(n, NeolithicProduction.HousingShare(n, shelter, people), people);
             }
@@ -747,6 +783,13 @@ namespace Anthropocene.Simulation
             camp.GrowthRemainder = growth; parent.GrowthRemainder -= growth; camp.DeathRemainder = death; parent.DeathRemainder -= death;
             SplitWorkforce(parent, camp, before, n);
             parent.Population = before - n;
+            if (w.Config.Neolithic.SubsistenceNeedsCovered)
+            {
+                camp.PhysicalClothingPerCapita = SubsistenceNeeds.PhysicalClothingFraction(parent);
+                double covered = SubsistenceNeeds.CoveredResidents(w, camp, n);
+                camp.ClothPerCapita = SubsistenceNeeds.Coverage(n, covered, camp.PhysicalClothingPerCapita.Value * n);
+                camp.HousingPerCapita = SubsistenceNeeds.Coverage(n, covered, NeolithicProduction.HousingCapacity(w, camp, w.Days).Total);
+            }
             // Same economic settings; automation continuous so the AI economy runs. Fission policy Neutral, no destination.
             camp.CraftingPriorities = new CraftingPriorities { HandTools = parent.CraftingPriorities.HandTools, Pots = parent.CraftingPriorities.Pots, Cloth = parent.CraftingPriorities.Cloth, FarmTools = parent.CraftingPriorities.FarmTools, Housing = parent.CraftingPriorities.Housing, Tools = parent.CraftingPriorities.Tools, AnimalFabric = parent.CraftingPriorities.AnimalFabric, LightHousing = parent.CraftingPriorities.LightHousing, HerdingTools = parent.CraftingPriorities.HerdingTools, FishingTools = parent.CraftingPriorities.FishingTools };
             camp.StonePriority = parent.StonePriority; camp.ClayPriority = parent.ClayPriority; camp.WoodPriority = parent.WoodPriority;

@@ -542,7 +542,10 @@ namespace Anthropocene.Simulation
             NeolithicProduction.DepreciateHousing(w, preview, years);
             d.Goods = d.Recipes.Where(r => r.Good != CraftGood.HandTools && r.Good != CraftGood.Tools && r.Good != CraftGood.HousingMaterial &&
                 NeolithicProduction.RecipeAvailable(w, c, r)).ToArray();
-            var goals = d.Goals = d.Goods.ToDictionary(r => r.Good, r => NeolithicProduction.Priority(preview, r.Good) > 0 ? NeolithicProduction.Demand(w, preview, r.Good, years, -1, false, false, sources) : 0);
+            // Search envelope precedes staffing; an empty preview cannot waive
+            // the needs of future specialists. Actual candidate forecasts still
+            // apply the job-specific requirements.
+            var goals = d.Goals = d.Goods.ToDictionary(r => r.Good, r => NeolithicProduction.Priority(preview, r.Good) > 0 ? NeolithicProduction.Demand(w, preview, r.Good, years, -1, false, false, sources, needGoalEnvelope: n.SubsistenceNeedsCovered) : 0);
             // FarmTools are sized only after a proposal has a bounded field
             // workforce. The empty preview cannot answer that question without
             // inventing labor, so the normal FarmTools demand helper is called
@@ -859,6 +862,15 @@ namespace Anthropocene.Simulation
             double dilution = population > 0 ? Math.Min(1, n0 / population) : 1;
             double clothing = 1 - e * (1 - Math.Min(1, c.ClothPerCapita * dilution));
             double housing = 1 - e * (1 - Math.Min(1, c.HousingPerCapita * dilution));
+            if (n.SubsistenceNeedsCovered)
+            {
+                double covered = SubsistenceNeeds.CoveredResidents(w, c, population);
+                double eligible = SubsistenceNeeds.EligibleResidents(c, population);
+                double clothPeople = SubsistenceNeeds.PhysicalClothingFraction(c) * Math.Min(n0, population);
+                double housingPeople = NeolithicProduction.HousingCapacity(w, c, w.Days).Total;
+                clothing = SubsistenceNeeds.GearQuality(population, eligible, clothPeople, SubsistenceNeeds.Coverage(population, covered, clothPeople), e);
+                housing = SubsistenceNeeds.GearQuality(population, eligible, housingPeople, SubsistenceNeeds.Coverage(population, covered, housingPeople), e);
+            }
             double q = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * NeolithicProduction.SocialCohesion(w, c, population)
                 * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing);
             return population * q;

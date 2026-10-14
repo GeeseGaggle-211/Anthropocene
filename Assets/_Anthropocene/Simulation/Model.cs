@@ -483,6 +483,8 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public CraftingPriorities CraftingPriorities = new CraftingPriorities();
         [System.Runtime.Serialization.OptionalField] public int CultivationFocusTile = -1;
         [System.Runtime.Serialization.OptionalField] public double QoL = 1.0, FoodNeedsMetRatio = 1.0, ClothPerCapita = 1.0, HousingPerCapita = 1.0;
+        // Save14 separates actual clothing coverage from job-based coverage.
+        [NonSerialized] public double? PhysicalClothingPerCapita;
         [System.Runtime.Serialization.OptionalField] public double StationaryYears, RudimentaryExpectation, WaterNeedsMetRatio = 1;
         [System.Runtime.Serialization.OptionalField] public double FabricConsumed, HousingDemand, HousingReplacementDemand, HousingGrowthDemand;
         [System.Runtime.Serialization.OptionalField] public double StonePriority = 1, ClayPriority = 1, WoodPriority = 1;

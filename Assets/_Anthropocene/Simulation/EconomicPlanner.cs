@@ -552,7 +552,7 @@ namespace Anthropocene.Simulation
                     forecastPlantFeedstock = Math.Min(forecastPlantFeedstock, typedFeedstock.PlantFood);
                     forecastAnimalFeedstock = Math.Min(forecastAnimalFeedstock, typedFeedstock.AnimalFood);
                 }
-                var clothingFeedstock = NeolithicProduction.ClothingNeedFeedstock(n, preview.Population, years,
+                var clothingFeedstock = NeolithicProduction.ClothingNeedFeedstock(n, SubsistenceNeeds.GoodsResidents(w, candidate, preview.Population), years,
                     c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth), c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric), forecastPlantFeedstock, forecastAnimalFeedstock);
                 double feedstockReserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, consumers, intervals), NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, intervals, years));
                 NeolithicProduction.FeedstockGaps(c.Food, c.PlantFood, husbandryEnabled ? c.AnimalFood : 0, demand.Meals, feedstockReserve,

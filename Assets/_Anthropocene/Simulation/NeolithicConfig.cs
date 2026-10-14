@@ -84,6 +84,9 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double LightHousingDecayPerReferenceTurn = .10;
         [System.Runtime.Serialization.OptionalField] public double PotStorageFoodPerUnit = 80, PotDecayPerReferenceTurn = .10;
         public double RudimentaryWeightClothing = .5, RudimentaryWeightHousing = .5, RudimentaryExpectationFloor = .25, RudimentaryExpectationRampYears = 100;
+        // Explicit experimental profile; persisted only by Save14 so old payloads
+        // and fingerprints remain exact. Historical worlds stay false.
+        [NonSerialized] public bool SubsistenceNeedsCovered;
         public double BuildWorkerYearsPerTileE => ReferencePopulation * ReferenceTurnYears * IntensificationTurns / ReferenceFootprintTiles;
         public double MaintenanceWorkersPerTileE(double coefficient) => ReferencePopulation * coefficient / ReferenceFootprintTiles;
         [System.Runtime.Serialization.OnDeserializing]

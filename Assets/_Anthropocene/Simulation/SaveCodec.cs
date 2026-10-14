@@ -15,8 +15,9 @@ namespace Anthropocene.Simulation
         private const string Magic = "ANTHROPOCENE-11", LegacyMagic10 = "ANTHROPOCENE-10", LegacyMagic9 = "ANTHROPOCENE-9", LegacyMagic8 = "ANTHROPOCENE-8";
         private const string HistoryMagic = "ANTHROPOCENE-12";
         private const string GrowthHistoryMagic = "ANTHROPOCENE-13";
+        private const string SubsistenceMagic = "ANTHROPOCENE-14";
         private static bool History(string magic) => magic == HistoryMagic || magic == GrowthHistoryMagic;
-        private static bool Modern(string magic) => magic == Magic || History(magic);
+        private static bool Modern(string magic) => magic == Magic || History(magic) || magic == SubsistenceMagic;
         // Benchmark-only 320-tribe openings can retain more than 128 MiB of
         // legitimate turn receipts in the binary XML header. Keep a finite cap.
         private const int MaximumMetadataBytes = 512 * 1024 * 1024;
@@ -46,7 +47,9 @@ namespace Anthropocene.Simulation
             {
                 bool history = world.AutonomousReceipts != null && world.AutonomousReceipts.Count > 0;
                 bool growth = history && world.AutonomousReceipts.Values.Any(r => r?.SchemaVersion == 2);
-                writer.Write(history ? (growth ? GrowthHistoryMagic : HistoryMagic) : Magic);
+                bool subsistence = world.Config.Neolithic.SubsistenceNeedsCovered;
+                writer.Write(subsistence ? SubsistenceMagic : history ? (growth ? GrowthHistoryMagic : HistoryMagic) : Magic);
+                if (subsistence) writer.Write((byte)((history ? 1 : 0) | (growth ? 2 : 0)));
                 // Geography dominates the save. Fixed primitive records avoid reflection and repeated XML member names for every tile.
                 var metadata = CopyWithoutTiles(world);
                 using (var header = new MemoryStream())
@@ -94,6 +97,21 @@ namespace Anthropocene.Simulation
                     if (extension.Length > 16 * 1024 * 1024) throw new InvalidDataException("Autonomous history extension is too large.");
                     writer.Write(checked((int)extension.Length)); extension.Position = 0; extension.CopyTo(buffered);
                 }
+                if (subsistence)
+                {
+                    writer.Write(world.Camps.Count);
+                    foreach (var camp in world.Camps.OrderBy(c => c.Id))
+                    {
+                        writer.Write(camp.Id); writer.Write(camp.PhysicalClothingPerCapita.HasValue);
+                        if (camp.PhysicalClothingPerCapita.HasValue)
+                        {
+                            double value = camp.PhysicalClothingPerCapita.Value;
+                            if (double.IsNaN(value) || double.IsInfinity(value) || value < 0 || value > 1)
+                                throw new InvalidDataException("Invalid physical clothing coverage.");
+                            writer.Write(value);
+                        }
+                    }
+                }
             }
         }
         public static WorldState Load(byte[] bytes)
@@ -105,10 +123,16 @@ namespace Anthropocene.Simulation
             {
                 string magic = reader.ReadString();
                 if (!Modern(magic) && magic != LegacyMagic10 && magic != LegacyMagic9 && magic != LegacyMagic8) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
+                byte extensionFlags = magic == SubsistenceMagic ? reader.ReadByte() : (byte)0;
+                if ((extensionFlags & ~3) != 0 || (extensionFlags & 2) != 0 && (extensionFlags & 1) == 0)
+                    throw new InvalidDataException("Invalid Save14 extension flags.");
+                bool history = History(magic) || (extensionFlags & 1) != 0;
+                bool growth = magic == GrowthHistoryMagic || (extensionFlags & 2) != 0;
                 int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > MaximumMetadataBytes) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
-                if (History(magic))
+                world.Config.Neolithic.SubsistenceNeedsCovered = magic == SubsistenceMagic;
+                if (history)
                     foreach (var camp in world.Camps) AutonomousElderHistory.ValidateMemory(world, camp, false);
                 // Generators 8-11 change profiles already stored in this format. Preserve old
                 // profiles and generator metadata; aquatic condition uses its original rules
@@ -166,7 +190,7 @@ namespace Anthropocene.Simulation
                     world.Tiles[i] = tile;
                 }
                 world.Resources = Modern(magic) || magic == LegacyMagic10 ? (reader.ReadBoolean() ? ResourceCodec.Read(reader, count) : null) : (magic == LegacyMagic9 ? ResourceCodec.Read(reader, count) : null);
-                if (History(magic))
+                if (history)
                 {
                     int length = reader.ReadInt32();
                     if (length < 1 || length > 16 * 1024 * 1024) throw new InvalidDataException("Invalid autonomous history extension length.");
@@ -175,13 +199,26 @@ namespace Anthropocene.Simulation
                     AutonomousElderHistorySave state;
                     using (var xml = XmlDictionaryReader.CreateBinaryReader(data, XmlDictionaryReaderQuotas.Max))
                         state = (AutonomousElderHistorySave)Serializer(typeof(AutonomousElderHistorySave)).ReadObject(xml);
-                    if (state?.SchemaVersion != (magic == GrowthHistoryMagic ? 2 : 1) || state.Receipts == null || state.Receipts.Count == 0 ||
+                    if (state?.SchemaVersion != (growth ? 2 : 1) || state.Receipts == null || state.Receipts.Count == 0 ||
                         state.Receipts.Any(r => r == null) || state.Receipts.Select(r => r.Camp).Distinct().Count() != state.Receipts.Count)
                         throw new InvalidDataException("Invalid autonomous history extension schema/identities.");
-                    if ((magic == GrowthHistoryMagic) != state.Receipts.Any(r => r.SchemaVersion == 2))
+                    if (growth != state.Receipts.Any(r => r.SchemaVersion == 2))
                         throw new InvalidDataException("Save envelope and action authority disagree.");
                     world.AutonomousReceipts = state.Receipts.ToDictionary(r => r.Camp);
                     foreach (var receipt in state.Receipts) receipt.Validate(world);
+                }
+                if (magic == SubsistenceMagic)
+                {
+                    if (reader.ReadInt32() != world.Camps.Count) throw new InvalidDataException("Invalid Save14 camp count.");
+                    foreach (var camp in world.Camps.OrderBy(c => c.Id))
+                    {
+                        if (reader.ReadInt32() != camp.Id) throw new InvalidDataException("Invalid Save14 camp identity.");
+                        if (!reader.ReadBoolean()) continue;
+                        double value = reader.ReadDouble();
+                        if (double.IsNaN(value) || double.IsInfinity(value) || value < 0 || value > 1)
+                            throw new InvalidDataException("Invalid Save14 physical clothing coverage.");
+                        camp.PhysicalClothingPerCapita = value;
+                    }
                 }
                 NeolithicProduction.NormalizeFixedHousing(world);
                 FisheryState.Normalize(world);
@@ -320,6 +357,11 @@ namespace Anthropocene.Simulation
             using (var output = new MemoryStream())
             {
                 using (var writer = XmlDictionaryWriter.CreateBinaryWriter(output, null, null, false)) Serializer(typeof(SimulationConfig)).WriteObject(writer, config);
+                if (config.Neolithic.SubsistenceNeedsCovered)
+                {
+                    var discriminator = Encoding.UTF8.GetBytes("\0subsistence-needs-v13:gear-baseline=0.80");
+                    output.Write(discriminator, 0, discriminator.Length);
+                }
                 using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(output.ToArray())).Replace("-", "");
             }
         }

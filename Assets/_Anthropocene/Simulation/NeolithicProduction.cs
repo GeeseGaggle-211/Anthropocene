@@ -415,7 +415,7 @@ namespace Anthropocene.Simulation
             => people > 0 ? Math.Min(1, (capacity.Fixed + n.LightHousingPermanence * capacity.Light) / people) : (capacity.Total > 0 ? 1 : 0);
         // People still to be sheltered at a clock time, never negative.
         public static double HousingGapPeople(WorldState w, Camp c, double residents, double days)
-            => Math.Max(0, residents - HousingCapacity(w, c, days).Total);
+            => Math.Max(0, SubsistenceNeeds.GoodsResidents(w, c, residents) - HousingCapacity(w, c, days).Total);
         public static void MigrateLegacyFixedHousing(WorldState w, Camp c)
         {
             w.FixedHousing ??= new List<FixedHousingStock>();
@@ -455,16 +455,16 @@ namespace Anthropocene.Simulation
         // Agreed exports (Docs/Trade.md): the made-to-order part of a good owed after production is added to its
         // demand (Cloth, Animal Fabric and Housing Material net it against stock below, Hand Tools in
         // ToolReplacementDemands); stock delivered from escrow has already left the camp's stock.
-        public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources = null, ProductionOrder order = null)
-            => OwnDemand(w, c, good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order) + AddedExport(c, good);
+        public static double Demand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources = null, ProductionOrder order = null, bool needGoalEnvelope = false)
+            => OwnDemand(w, c, good, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order, needGoalEnvelope) + AddedExport(c, good);
         private static double AddedExport(Camp c, CraftGood good) => good == CraftGood.LightHousing || good == CraftGood.Pots || good == CraftGood.FarmTools ? c.TradeExport(good) : 0;
-        private static double OwnDemand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources, ProductionOrder order)
+        private static double OwnDemand(WorldState w, Camp c, CraftGood good, double years, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, KnownMaterialSource[] knownSources, ProductionOrder order, bool needGoalEnvelope)
         {
             var n = w.Config.Neolithic;
             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
             // Housing Material is made only against the Housing gap, never stockpiled beyond it.
             if (good == CraftGood.HousingMaterial)
-                return Math.Max(0, Demand(w, c, CraftGood.Housing, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order) - (Math.Max(0, c.Inventory.HousingMaterial) - c.TradeExport(CraftGood.HousingMaterial)));
+                return Math.Max(0, Demand(w, c, CraftGood.Housing, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order, needGoalEnvelope) - (Math.Max(0, c.Inventory.HousingMaterial) - c.TradeExport(CraftGood.HousingMaterial)));
             if (good == CraftGood.HandTools || good == CraftGood.Tools)
             {
                 var tools = ToolReplacementDemands(w, c, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order);
@@ -472,11 +472,13 @@ namespace Anthropocene.Simulation
             }
             if (good == CraftGood.Pots)
                 return potsAlreadyDecayed ? PotDemandFromCurrentStock(w, c, years, residents) : PotDemand(w, c, years, residents);
-            double clothingTarget = residents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
+            double goodsResidents = needGoalEnvelope ? residents : SubsistenceNeeds.GoodsResidents(w, c, residents);
+            double clothingTarget = goodsResidents * n.FabricConsumptionPerPersonTurn * ((years + n.UsefulFinishedGoodsReserveYears) / n.ReferenceTurnYears);
             // Stock net of agreed exports: the other clothing good counts only what is left, a good's own netting carries its deficit.
             double cloth = Math.Max(0, c.Inventory.Cloth) - c.TradeExport(CraftGood.Cloth), fabric = Math.Max(0, c.Inventory.AnimalFabric) - c.TradeExport(CraftGood.AnimalFabric);
             double clothGap = Math.Max(0, clothingTarget - Math.Max(0, cloth) - Math.Max(0, fabric));
-            double housingGapPeople = HousingGapPeople(w, c, residents, w.Days + years * w.Config.DaysPerYear);
+            double housingGapPeople = needGoalEnvelope ? Math.Max(0, residents - HousingCapacity(w, c, w.Days + years * w.Config.DaysPerYear).Total)
+                : HousingGapPeople(w, c, residents, w.Days + years * w.Config.DaysPerYear);
             double lightHousingTarget = housingGapPeople / n.LightHousingPeoplePerUnit;
             bool lightHousingUseful = Priority(c, CraftGood.LightHousing) > 0 && CultivationEconomy.Workers(c, WorkforceRoles.Builder) + CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0;
             double target;
@@ -863,7 +865,7 @@ namespace Anthropocene.Simulation
             c.Inventory.LightHousingUnits = Math.Max(0, c.Inventory.LightHousingUnits) * Math.Pow(1 - n.LightHousingDecayPerReferenceTurn, Math.Max(0, years) / n.ReferenceTurnYears);
             double after = HousingCapacity(w, c, endDays).Total;
             // Demand ledger in fixed-housing-unit equivalents of the unsheltered (and decayed) people.
-            c.HousingDemand = Math.Max(0, (residents < 0 ? c.Population : residents) - after) / n.HousingPeoplePerUnit;
+            c.HousingDemand = Math.Max(0, SubsistenceNeeds.GoodsResidents(w, c, residents < 0 ? c.Population : residents) - after) / n.HousingPeoplePerUnit;
             c.HousingReplacementDemand = Math.Min(Math.Max(0, before - after) / n.HousingPeoplePerUnit, c.HousingDemand);
             c.HousingGrowthDemand = Math.Max(0, c.HousingDemand - c.HousingReplacementDemand);
         }
@@ -1054,18 +1056,29 @@ namespace Anthropocene.Simulation
         {
             var n = w.Config.Neolithic;
             int cohort = residents < 0 ? c.Population : residents;
-            double required = cohort * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
+            double covered = SubsistenceNeeds.CoveredResidents(w, c, cohort);
+            double perPerson = n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
+            double required = n.SubsistenceNeedsCovered ? Math.Max(0, cohort - covered) * perPerson
+                : cohort * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
             double cloth = Math.Min(required, c.Inventory.Cloth); c.Inventory.Cloth -= cloth;
             double animal = Math.Min(Math.Max(0, required - cloth), c.Inventory.AnimalFabric); c.Inventory.AnimalFabric -= animal;
             c.FabricConsumed = cloth + animal;
-            c.ClothPerCapita = required > 0 ? c.FabricConsumed / required : 1;
+            double physicalPeople = perPerson > 0 ? c.FabricConsumed / perPerson : Math.Max(0, cohort - covered);
+            if (n.SubsistenceNeedsCovered) c.PhysicalClothingPerCapita = cohort > 0 ? physicalPeople / cohort : 1;
+            c.ClothPerCapita = n.SubsistenceNeedsCovered ? SubsistenceNeeds.Coverage(cohort, covered, physicalPeople) : required > 0 ? c.FabricConsumed / required : 1;
             // The resolver calls this after DepreciateHousing has already aged
             // existing fixed and portable shelter through the generation.
             var shelter = HousingCapacity(w, c, w.Days);
-            c.HousingPerCapita = HousingCoverage(shelter, cohort);
+            c.HousingPerCapita = n.SubsistenceNeedsCovered ? SubsistenceNeeds.Coverage(cohort, covered, shelter.Total) : HousingCoverage(shelter, cohort);
             c.StationaryYears += years;
             c.RudimentaryExpectation = n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
             double clothing = 1 - c.RudimentaryExpectation * (1 - c.ClothPerCapita), housing = 1 - c.RudimentaryExpectation * (1 - c.HousingPerCapita);
+            if (n.SubsistenceNeedsCovered)
+            {
+                double eligible = SubsistenceNeeds.EligibleResidents(c, cohort);
+                clothing = SubsistenceNeeds.GearQuality(cohort, eligible, physicalPeople, c.ClothPerCapita, c.RudimentaryExpectation);
+                housing = SubsistenceNeeds.GearQuality(cohort, eligible, shelter.Total, c.HousingPerCapita, c.RudimentaryExpectation);
+            }
             c.QoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing) * SocialCohesion(n, HousingShare(n, shelter, cohort), cohort);
         }
     }

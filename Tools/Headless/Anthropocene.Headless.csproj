@@ -33,6 +33,7 @@
     <Compile Include="AutonomousElderHistoryChecks.cs" />
     <Compile Include="AutonomousGrowthChecks.cs" />
     <Compile Include="AutonomousOpportunityChecks.cs" />
+    <Compile Include="SubsistenceNeedsChecks.cs" />
     <Compile Include="EconomicAllocationOracleChecks.cs" />
     <Compile Include="ClothingFeedstockChecks.cs" />
     <Compile Include="AgentContractChecks.cs" />

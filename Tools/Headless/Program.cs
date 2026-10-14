@@ -266,6 +266,9 @@ internal static class Program
         if (args.Contains("--autonomous-history-only")) { AutonomousElderHistoryChecks.Run(); return 0; }
         if (args.Contains("--autonomous-growth-only")) { AutonomousGrowthChecks.Run(); return 0; }
         if (args.Contains("--autonomous-opportunity-only")) { AutonomousOpportunityChecks.Run(); return 0; }
+        if (args.Contains("--subsistence-needs-only")) { SubsistenceNeedsChecks.Run(); return 0; }
+        if (args.Contains("--subsistence-needs-benchmark")) { SubsistenceNeedsChecks.Benchmark(); return 0; }
+        if (args.Contains("--subsistence-needs-benchmark")) { AutonomousElderHistoryChecks.Benchmark(true, true); return 0; }
         if (args.Contains("--autonomous-growth-benchmark")) { AutonomousElderHistoryChecks.Benchmark(true); return 0; }
         if (args.Contains("--autonomous-growth-heuristic-panel")) { int at = Array.IndexOf(args, "--autonomous-growth-heuristic-panel");
             AutonomousGrowthChecks.HeuristicPanel(args[at + 1], args.Skip(at + 2).ToArray()); return 0; }
@@ -294,6 +297,7 @@ internal static class Program
             int jobs = jobsArgument != null ? int.Parse(jobsArgument.Substring(7)) : ParallelChecks.DefaultJobs;
             var fixedChecks = new[]
             {
+                new ParallelChecks.Entry { Name = "SubsistenceNeedsChecks", Run = () => SubsistenceNeedsChecks.Run() },
                 new ParallelChecks.Entry { Name = "AutonomousElderChecks", Run = () => AutonomousElderChecks.Run() },
                 new ParallelChecks.Entry { Name = "AutonomousElderHistoryChecks", Run = () => AutonomousElderHistoryChecks.Run() },
                 new ParallelChecks.Entry { Name = "Program.Tests", Run = () => Tests() },

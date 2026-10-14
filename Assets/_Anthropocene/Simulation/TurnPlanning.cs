@@ -655,7 +655,7 @@ namespace Anthropocene.Simulation
                 // Clothing-need feedstock is paid after this cohort's consumption
                 // and ahead of the reserve refill; other feedstock can only
                 // substitute inventory above consumption, clothing and reserve.
-                var clothing = NeolithicProduction.ClothingNeedFeedstock(world.Config.Neolithic, residents, years,
+                var clothing = NeolithicProduction.ClothingNeedFeedstock(world.Config.Neolithic, SubsistenceNeeds.GoodsResidents(world, snapshot, residents), years,
                     planningCamp.Inventory.Cloth - planningCamp.TradeExport(CraftGood.Cloth), planningCamp.Inventory.AnimalFabric - planningCamp.TradeExport(CraftGood.AnimalFabric), needs.PlantFeedstock, needs.AnimalFeedstock);
                 needs.PlantClothingFeedstock = clothing.Plant; needs.AnimalClothingFeedstock = clothing.Animal;
                 NeolithicProduction.FeedstockGaps(planningCamp.Food, planningCamp.PlantFood, planningCamp.AnimalFood, needs.ConsumptionRequired, needs.ReserveTarget,

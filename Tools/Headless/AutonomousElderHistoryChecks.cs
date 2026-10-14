@@ -189,7 +189,7 @@ internal static class AutonomousElderHistoryChecks
             Reject(() => SaveCodec.Load(CorruptExtension(snapshot, change)), "corrupt extension rejected on load");
     }
 
-    public static void Benchmark(bool growth = false)
+    public static void Benchmark(bool growth = false, bool subsistence = false)
     {
         var samples = new List<object>(); int resolves = 0;
         foreach (int n in growth ? new[] { 1, 80 } : new[] { 1, 8, 80 }) foreach (string mode in growth ? new[] { "heuristic", "history6" } : new[] { "heuristic", "autonomous4", "history5" })
@@ -197,7 +197,8 @@ internal static class AutonomousElderHistoryChecks
             var times = new List<double>(); var allocated = new List<long>(); var observations = new List<double>();
             for (int run = 0; run < 4; run++)
             {
-                var w = AutonomousElderChecks.BenchmarkWorld(n); var snapshot = SaveCodec.Save(w); var ids = w.Camps.Select(c => c.Id).ToArray();
+                var w = AutonomousElderChecks.BenchmarkWorld(n); w.Config.Neolithic.SubsistenceNeedsCovered = subsistence;
+                var snapshot = SaveCodec.Save(w); var ids = w.Camps.Select(c => c.Id).ToArray();
                 var legacy = new AutonomousElderEnvironment(); var history = new AutonomousElderHistoryEnvironment(growthAuthority: growth);
                 Dictionary<int, AutonomousElderAction> actions;
                 if (mode == "history5" || mode == "history6") actions = history.Reset(snapshot, ids).ToDictionary(p => p.Key, p => Policy(p.Value));
