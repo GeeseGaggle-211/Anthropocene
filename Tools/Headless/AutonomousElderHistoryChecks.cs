@@ -189,29 +189,31 @@ internal static class AutonomousElderHistoryChecks
             Reject(() => SaveCodec.Load(CorruptExtension(snapshot, change)), "corrupt extension rejected on load");
     }
 
-    public static void Benchmark()
+    public static void Benchmark(bool growth = false)
     {
         var samples = new List<object>(); int resolves = 0;
-        foreach (int n in new[] { 1, 8, 80 }) foreach (string mode in new[] { "heuristic", "autonomous4", "history5" })
+        foreach (int n in growth ? new[] { 1, 80 } : new[] { 1, 8, 80 }) foreach (string mode in growth ? new[] { "heuristic", "history6" } : new[] { "heuristic", "autonomous4", "history5" })
         {
             var times = new List<double>(); var allocated = new List<long>(); var observations = new List<double>();
             for (int run = 0; run < 4; run++)
             {
                 var w = AutonomousElderChecks.BenchmarkWorld(n); var snapshot = SaveCodec.Save(w); var ids = w.Camps.Select(c => c.Id).ToArray();
-                var legacy = new AutonomousElderEnvironment(); var history = new AutonomousElderHistoryEnvironment();
+                var legacy = new AutonomousElderEnvironment(); var history = new AutonomousElderHistoryEnvironment(growthAuthority: growth);
                 Dictionary<int, AutonomousElderAction> actions;
-                if (mode == "history5") actions = history.Reset(snapshot, ids).ToDictionary(p => p.Key, p => Policy(p.Value));
+                if (mode == "history5" || mode == "history6") actions = history.Reset(snapshot, ids).ToDictionary(p => p.Key, p => Policy(p.Value));
                 else actions = legacy.Reset(snapshot, ids).ToDictionary(p => p.Key, p => Policy(p.Value));
                 long start = GC.GetTotalAllocatedBytes(true); var timer = Stopwatch.StartNew();
-                if (mode == "history5") history.Step(actions);
+                if (mode == "history5" || mode == "history6") history.Step(actions);
                 else if (mode == "autonomous4") legacy.Step(actions);
                 else { var orders = AiPlanning.Decide(w).Orders; new TurnResolver().Resolve(w, TurnPlanner.Prepare(w, orders));
                     foreach (var c in w.Camps) AutonomousElderCompiler.Observe(w, c); SaveCodec.Fingerprint(w); }
                 timer.Stop(); resolves++; long bytes = GC.GetTotalAllocatedBytes(false) - start;
-                var state = mode == "history5" ? SaveCodec.Load(history.CaptureSnapshot()) : mode == "autonomous4" ? SaveCodec.Load(legacy.CaptureSnapshot()) : w;
+                var state = mode == "history5" || mode == "history6" ? SaveCodec.Load(history.CaptureSnapshot()) : mode == "autonomous4" ? SaveCodec.Load(legacy.CaptureSnapshot()) : w;
                 var obsTimer = Stopwatch.StartNew();
                 foreach (var c in state.Camps.Where(c => ids.Contains(c.Id) && c.Population > 0))
-                { if (mode == "history5") AutonomousElderHistoryEnvironment.Observe(state, c.Id); else AutonomousElderCompiler.Observe(state, c); }
+                { if (mode == "history6") { var source = AutonomousElderCompiler.Observe(state, c); source.SchemaVersion = 6;
+                    AutonomousElderHistoryEnvironment.Observe(state, c.Id, source); }
+                    else if (mode == "history5") AutonomousElderHistoryEnvironment.Observe(state, c.Id); else AutonomousElderCompiler.Observe(state, c); }
                 obsTimer.Stop();
                 if (run > 0) { times.Add(timer.Elapsed.TotalMilliseconds); allocated.Add(bytes); observations.Add(obsTimer.Elapsed.TotalMilliseconds); }
             }

@@ -48,12 +48,15 @@ namespace Anthropocene.Simulation
         private bool ended;
         private readonly PhaseExecution execution;
         private readonly Action<WorldState, int[]> initializeHistory;
+        private readonly int actionVersion = 3;
         internal WorldState State => world;
         private Dictionary<int, AutonomousElderObservation> observations;
         public AutonomousElderReplay Replay { get; private set; }
         public AutonomousElderEnvironment(PhaseExecution execution = null) { this.execution = execution ?? new PhaseExecution(); }
-        internal AutonomousElderEnvironment(PhaseExecution execution, Action<WorldState, int[]> initializeHistory)
-        { this.execution = execution ?? new PhaseExecution(); this.initializeHistory = initializeHistory; }
+        internal AutonomousElderEnvironment(PhaseExecution execution, Action<WorldState, int[]> initializeHistory, int actionVersion = 3)
+        { this.execution = execution ?? new PhaseExecution(); this.initializeHistory = initializeHistory;
+            if (actionVersion != 3 && actionVersion != 4) throw new ArgumentException("Unsupported authority version.");
+            this.actionVersion = actionVersion; }
         public byte[] CaptureSnapshot() => world == null ? throw new InvalidOperationException("Reset required.") : SaveCodec.Save(world);
         public Dictionary<int, AutonomousElderObservation> Reset(byte[] snapshot, int[] controlledCamps, int decisionLimit = 32)
         {
@@ -67,6 +70,8 @@ namespace Anthropocene.Simulation
             }
             if (candidate.AutonomousReceipts != null && initializeHistory == null)
                 throw new ArgumentException("An autonomous history snapshot requires environment5.");
+            if (actionVersion == 3 && candidate.AutonomousReceipts?.Values.Any(r => r.SchemaVersion == 2) == true)
+                throw new ArgumentException("Action4 history cannot be downgraded to action3.");
             initializeHistory?.Invoke(candidate, controlledCamps);
             world = candidate; controlled = controlledCamps.OrderBy(x => x).ToArray(); limit = decisionLimit; steps = 0; ended = false;
             observations = Observe();
@@ -76,10 +81,12 @@ namespace Anthropocene.Simulation
         }
         private Dictionary<int, AutonomousElderObservation> Observe()
             => world.Camps.Where(c => controlled.Contains(c.Id) && c.Population > 0).OrderBy(c => c.Id)
-                .ToDictionary(c => c.Id, c => AutonomousElderCompiler.Observe(world, c));
+                .ToDictionary(c => c.Id, c => { var o = AutonomousElderCompiler.Observe(world, c);
+                    if (actionVersion == 4) o.SchemaVersion = 6; return o; });
         private Dictionary<int, AutonomousElderObservation> CopyObservations()
             => observations.ToDictionary(x => x.Key, x => new AutonomousElderObservation
             {
+                SchemaVersion = x.Value.SchemaVersion,
                 MovementMask = (bool[])x.Value.MovementMask.Clone(),
                 Context = (double[])x.Value.Context.Clone(), WorkforceMask = (bool[])x.Value.WorkforceMask.Clone(),
                 ActivityMask = x.Value.ActivityMask.Select(row => (bool[])row.Clone()).ToArray(),

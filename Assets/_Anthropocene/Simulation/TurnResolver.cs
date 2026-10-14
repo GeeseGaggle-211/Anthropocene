@@ -172,7 +172,12 @@ namespace Anthropocene.Simulation
             activeElderDecisions =
                 new Dictionary<int, ElderCompiledDecision>();
             foreach (var camp in w.Camps)
-                if (camp.EconomicLabor != null) camp.EconomicLabor.PolicyAuthority = false;
+                if (camp.EconomicLabor != null)
+                {
+                    camp.EconomicLabor.PolicyAuthority = false;
+                    camp.EconomicLabor.PostGrowthHerdRetentionSet = false;
+                    camp.EconomicLabor.PostGrowthHerdRetention = 0;
+                }
             // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
             // Immigration between known settlements precedes fission (QoLFissionTradeDesign 4, 9); its sources and arrivals sit out fission this turn.
             HashSet<int> mobile; using (PhaseProfile.Scope("Immigration")) mobile = Immigration.Resolve(w, record, execution, LastMetrics);

@@ -566,10 +566,12 @@ namespace Anthropocene.Simulation
         // Credits the carcass food to the camp's Animal Food store as a realized flow (no ecology pressure) and records it.
         public static void Slaughter(WorldState w, Camp camp, IReadOnlyList<Herd> herds, IDictionary<int, ManagedHerdReport> reports, TurnRecord record)
         {
-            if (!(w.Config.HerdLabourEnabled || w.Config.SharedCropHerdAllocationEnabled) || !camp.HerdTargetSet || herds.Count == 0) return;
+            bool postGrowth = camp.EconomicLabor?.PolicyAuthority == true && camp.EconomicLabor.PostGrowthHerdRetentionSet;
+            if (!(w.Config.HerdLabourEnabled || w.Config.SharedCropHerdAllocationEnabled) || (!camp.HerdTargetSet && !postGrowth) || herds.Count == 0) return;
             var counts = herds.Select(h => h.Animals).ToArray();
             long total = counts.Sum(x => (long)x);
-            int excess = (int)Math.Max(0, Math.Min(int.MaxValue, total - Math.Max(0, camp.HerdTarget)));
+            double target = postGrowth ? Math.Floor(total * camp.EconomicLabor.PostGrowthHerdRetention) : Math.Max(0, camp.HerdTarget);
+            int excess = (int)Math.Max(0, Math.Min(int.MaxValue, total - target));
             if (excess <= 0) return;
             var kills = Split(excess, counts);
             for (int i = 0; i < herds.Count; i++)

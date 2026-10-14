@@ -14,7 +14,9 @@ namespace Anthropocene.Simulation
     {
         private const string Magic = "ANTHROPOCENE-11", LegacyMagic10 = "ANTHROPOCENE-10", LegacyMagic9 = "ANTHROPOCENE-9", LegacyMagic8 = "ANTHROPOCENE-8";
         private const string HistoryMagic = "ANTHROPOCENE-12";
-        private static bool Modern(string magic) => magic == Magic || magic == HistoryMagic;
+        private const string GrowthHistoryMagic = "ANTHROPOCENE-13";
+        private static bool History(string magic) => magic == HistoryMagic || magic == GrowthHistoryMagic;
+        private static bool Modern(string magic) => magic == Magic || History(magic);
         // Benchmark-only 320-tribe openings can retain more than 128 MiB of
         // legitimate turn receipts in the binary XML header. Keep a finite cap.
         private const int MaximumMetadataBytes = 512 * 1024 * 1024;
@@ -43,7 +45,8 @@ namespace Anthropocene.Simulation
             using (var writer = new BinaryWriter(buffered))
             {
                 bool history = world.AutonomousReceipts != null && world.AutonomousReceipts.Count > 0;
-                writer.Write(history ? HistoryMagic : Magic);
+                bool growth = history && world.AutonomousReceipts.Values.Any(r => r?.SchemaVersion == 2);
+                writer.Write(history ? (growth ? GrowthHistoryMagic : HistoryMagic) : Magic);
                 // Geography dominates the save. Fixed primitive records avoid reflection and repeated XML member names for every tile.
                 var metadata = CopyWithoutTiles(world);
                 using (var header = new MemoryStream())
@@ -83,7 +86,7 @@ namespace Anthropocene.Simulation
                             throw new InvalidDataException("Invalid autonomous receipt key.");
                         pair.Value.Validate(world);
                     }
-                    var state = new AutonomousElderHistorySave { Receipts = world.AutonomousReceipts
+                    var state = new AutonomousElderHistorySave { SchemaVersion = growth ? 2 : 1, Receipts = world.AutonomousReceipts
                         .OrderBy(p => p.Key).Select(p => p.Value).ToList() };
                     using var extension = new MemoryStream();
                     using (var xml = XmlDictionaryWriter.CreateBinaryWriter(extension, null, null, false))
@@ -105,7 +108,7 @@ namespace Anthropocene.Simulation
                 int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > MaximumMetadataBytes) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
-                if (magic == HistoryMagic)
+                if (History(magic))
                     foreach (var camp in world.Camps) AutonomousElderHistory.ValidateMemory(world, camp, false);
                 // Generators 8-11 change profiles already stored in this format. Preserve old
                 // profiles and generator metadata; aquatic condition uses its original rules
@@ -163,7 +166,7 @@ namespace Anthropocene.Simulation
                     world.Tiles[i] = tile;
                 }
                 world.Resources = Modern(magic) || magic == LegacyMagic10 ? (reader.ReadBoolean() ? ResourceCodec.Read(reader, count) : null) : (magic == LegacyMagic9 ? ResourceCodec.Read(reader, count) : null);
-                if (magic == HistoryMagic)
+                if (History(magic))
                 {
                     int length = reader.ReadInt32();
                     if (length < 1 || length > 16 * 1024 * 1024) throw new InvalidDataException("Invalid autonomous history extension length.");
@@ -172,9 +175,11 @@ namespace Anthropocene.Simulation
                     AutonomousElderHistorySave state;
                     using (var xml = XmlDictionaryReader.CreateBinaryReader(data, XmlDictionaryReaderQuotas.Max))
                         state = (AutonomousElderHistorySave)Serializer(typeof(AutonomousElderHistorySave)).ReadObject(xml);
-                    if (state?.SchemaVersion != 1 || state.Receipts == null || state.Receipts.Count == 0 ||
+                    if (state?.SchemaVersion != (magic == GrowthHistoryMagic ? 2 : 1) || state.Receipts == null || state.Receipts.Count == 0 ||
                         state.Receipts.Any(r => r == null) || state.Receipts.Select(r => r.Camp).Distinct().Count() != state.Receipts.Count)
                         throw new InvalidDataException("Invalid autonomous history extension schema/identities.");
+                    if ((magic == GrowthHistoryMagic) != state.Receipts.Any(r => r.SchemaVersion == 2))
+                        throw new InvalidDataException("Save envelope and action authority disagree.");
                     world.AutonomousReceipts = state.Receipts.ToDictionary(r => r.Camp);
                     foreach (var receipt in state.Receipts) receipt.Validate(world);
                 }

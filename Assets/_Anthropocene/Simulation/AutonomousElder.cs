@@ -106,7 +106,8 @@ namespace Anthropocene.Simulation
 
         public static void Validate(AutonomousElderAction a, AutonomousElderObservation o)
         {
-            if (a == null || a.SchemaVersion != AutonomousElderContract.ActionVersion) throw new ArgumentException("Unsupported autonomous action schema.");
+            int expected = o?.SchemaVersion == 6 ? 4 : AutonomousElderContract.ActionVersion;
+            if (a == null || a.SchemaVersion != expected) throw new ArgumentException("Unsupported autonomous action schema.");
             if (a.Movement < 0 || a.Movement >= o.MovementMask.Length || !o.MovementMask[a.Movement]) throw new ArgumentException("Illegal movement ordinal.");
             Simplex(a.Workforce, o.WorkforceMask);
             if (a.Activities == null || a.Activities.Length != AutonomousElderContract.Roles) throw new ArgumentException("Activity row count.");
@@ -148,9 +149,12 @@ namespace Anthropocene.Simulation
         {
             var counts = Apportion(a.Workforce, c.Population);
             var intent = new EconomicIntent { AutomationTurns = 0, ManagedBreedingIntensity = a.Breeding,
-                HerdTargetSet = CultivationEconomy.HusbandryEnabled(c),
+                HerdTargetSet = a.SchemaVersion == 3 && CultivationEconomy.HusbandryEnabled(c),
                 HerdTarget = (int)Math.Floor(HerdingTooling.DomesticAnimals(w, c) * a.RetainedHerdFraction),
-                Labor = new EconomicLaborPlan { PolicyAuthority = true, MaterialGatherers = counts[0] * (1 - a.Activities[0][0]), ExpansionFarmers = counts[1] * a.FieldExpansionFraction } };
+                Labor = new EconomicLaborPlan { PolicyAuthority = true,
+                    PostGrowthHerdRetentionSet = a.SchemaVersion == 4 && CultivationEconomy.HusbandryEnabled(c),
+                    PostGrowthHerdRetention = a.RetainedHerdFraction,
+                    MaterialGatherers = counts[0] * (1 - a.Activities[0][0]), ExpansionFarmers = counts[1] * a.FieldExpansionFraction } };
             for (int r = 0; r < counts.Length; r++)
                 if (counts[r] > 0) intent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.All[r], Population = counts[r] });
             var production = ProductionOrder.Autonomous(a, counts);
@@ -160,7 +164,8 @@ namespace Anthropocene.Simulation
         public static AutonomousElderAction Uniform(AutonomousElderObservation o)
         {
             double[] Shares(bool[] mask) { int n = mask.Count(x => x); return mask.Select(x => x ? 1d / n : 0).ToArray(); }
-            return new AutonomousElderAction { Workforce = Shares(o.WorkforceMask), Activities = o.ActivityMask.Select(Shares).ToArray(), RetainedHerdFraction = o.ControlMask[1] ? 1 : 0 };
+            return new AutonomousElderAction { SchemaVersion = o.SchemaVersion == 6 ? 4 : 3,
+                Workforce = Shares(o.WorkforceMask), Activities = o.ActivityMask.Select(Shares).ToArray(), RetainedHerdFraction = o.ControlMask[1] ? 1 : 0 };
         }
     }
 }

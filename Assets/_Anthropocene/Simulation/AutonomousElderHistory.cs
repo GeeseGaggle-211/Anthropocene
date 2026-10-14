@@ -50,7 +50,8 @@ namespace Anthropocene.Simulation
             var camp = world.Camps.FirstOrDefault(c => c.Id == Camp);
             bool deadRecorded = HasDecision && EndingPopulation == 0 && world.History.Any(r =>
                 Math.Abs(r.StartDays - DecisionDays) < 1e-8 && r.Demographics.Any(d => d.Camp == Camp));
-            if (SchemaVersion != 1 || Camp < 0 || (camp == null && !deadRecorded) ||
+            if ((SchemaVersion != 1 && SchemaVersion != 2) ||
+                SchemaVersion != (HasDecision && Requested?.SchemaVersion == 4 ? 2 : 1) || Camp < 0 || (camp == null && !deadRecorded) ||
                 !world.Societies.Any(s => s.Id == Society) || camp != null && camp.SocietyId != Society ||
                 !Finite(InstitutionInitializedDays) || InstitutionInitializedDays > world.Days + 1e-8)
                 throw new InvalidDataException("Invalid autonomous institution identity/version/time.");
@@ -88,7 +89,7 @@ namespace Anthropocene.Simulation
                 CompiledStaffing.Sum(x => (long)x) != OpeningPopulation)
                 throw new InvalidDataException("Invalid autonomous decision/outcome receipt.");
             var m = HistoricalMasks;
-            if (m == null || m.SchemaVersion != 4 || m.WorkforceMask?.Length != 13 || m.ActivityMask?.Length != 13 ||
+            if (m == null || m.SchemaVersion != (SchemaVersion == 2 ? 6 : 4) || m.WorkforceMask?.Length != 13 || m.ActivityMask?.Length != 13 ||
                 m.ActivityMask.Any(row => row?.Length != 15) || m.ControlMask?.Length != 3 ||
                 m.MovementMask?.Length != 8 || m.CounterpartyMask?.Length != 8 || m.GoodMask?.Length != 11)
                 throw new InvalidDataException("Invalid historical autonomous legality masks.");
@@ -156,7 +157,8 @@ namespace Anthropocene.Simulation
             {
                 if (!w.AutonomousReceipts.ContainsKey(pair.Key)) continue;
                 var c = camps[pair.Key]; var a = pair.Value.Copy(); var o = observations[pair.Key];
-                result[c.Id] = new AutonomousElderReceipt { Camp = c.Id, Society = c.SocietyId,
+                result[c.Id] = new AutonomousElderReceipt { SchemaVersion = a.SchemaVersion == 4 ? 2 : 1,
+                    Camp = c.Id, Society = c.SocietyId,
                     DecisionDays = w.Days, InstitutionInitializedDays = c.ElderMemory.InitializedDays,
                     OpeningTile = c.Tile, OpeningPopulation = c.Population, Requested = a,
                     HistoricalMasks = CopyMasks(o), CompiledStaffing = AutonomousElderCompiler.Apportion(a.Workforce, c.Population),
@@ -168,7 +170,8 @@ namespace Anthropocene.Simulation
         }
 
         internal static AutonomousElderObservation CopyMasks(AutonomousElderObservation o)
-            => new AutonomousElderObservation { WorkforceMask = (bool[])o.WorkforceMask.Clone(),
+            => new AutonomousElderObservation { SchemaVersion = o.SchemaVersion == 6 ? 6 : 4,
+                WorkforceMask = (bool[])o.WorkforceMask.Clone(),
                 ActivityMask = o.ActivityMask.Select(row => (bool[])row.Clone()).ToArray(),
                 ControlMask = (bool[])o.ControlMask.Clone(), MovementMask = (bool[])o.MovementMask.Clone(),
                 CounterpartyMask = (bool[])o.CounterpartyMask.Clone(), GoodMask = (bool[])o.GoodMask.Clone() };

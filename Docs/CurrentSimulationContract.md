@@ -1,5 +1,19 @@
 # Current simulation contract index
 
+## Experimental autonomous direct controls (14 October 2026)
+
+The latest experimental path is action4 / observation-environment-replay6 /
+Save13. Herd retention applies after nutrition and births; action3 preserves its
+opening-target semantics. The model6 causal gate passed simulator correctness,
+two learned Elders with exact saved/replayed inference, and bounded trainability.
+Astra/high keeps broad economic scale-out and a GRU diagnosis NO-GO. The short
+campaign retained9600 PPO transitions; no main merge or GPU ecology work occurred.
+See [AutonomousDirectControlContractV8.md](AutonomousDirectControlContractV8.md),
+[AutonomousCausalResultsV8.md](AutonomousCausalResultsV8.md),
+[the native6 manifest](../Tools/ElderRL/autonomous-model-v6-manifest.json), and
+[the independent review](../Tools/ElderRL/evidence/autonomous-causal-v8/independent-final-review.md).
+All older contracts, checkpoints and datasets remain available.
+
 ## Experimental autonomous Elder history (14 October 2026)
 
 On `feature/elder-autonomous-economy`, economic action3 now has an explicitly
@@ -10,8 +24,8 @@ See [AutonomousHistoryRepairContractV6.md](AutonomousHistoryRepairContractV6.md)
 [AutonomousHistoryResultsV6.md](AutonomousHistoryResultsV6.md) and
 [the model5 manifest](../Tools/ElderRL/autonomous-model-v5-manifest.json).
 Astra/high passes correctness and audited core curriculum readiness; economic
-scale-out and GRU comparison remain NO-GO. No main merge or new retained native
-PPO campaign occurred. Earlier model4 experiment reports remain historical.
+scale-out and GRU comparison remain NO-GO. At that model5 checkpoint no main merge
+or new retained native PPO campaign occurred. Earlier model4 reports remain historical.
 
 ## Mixed integration status (7 October 2026)
 

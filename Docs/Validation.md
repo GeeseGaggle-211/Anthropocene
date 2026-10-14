@@ -1,5 +1,20 @@
 # Validation - September 25, 2026
 
+## Experimental autonomous Elder direct-control gate — 14 October 2026
+
+The separate action4/native6/model6 path repairs post-growth herd retention and
+passes63 focused assertions, including0/22/49 births under breeding0/.5/1,
+nutrition, Save13/legacy receipts, replay and daughter isolation. Existing
+471 autonomous,143 five-head and77 history assertions pass; eight old-mode
+fingerprints match validated5559961. The learner passes203 tests with5 skips.
+The bounded matrix retained9600 transitions across24 cells; all48 updates
+changed actor/live-critic parameters and24 workforce reversal probes passed.
+Two learned Elders also passed exact native save/replay and sampler restoration.
+Astra/high gives correctness/plug/trainability GO, broad scale-out and GRU NO-GO.
+Complete results, physical trade checks, welfare decomposition and bounded native
+performance measurements are in [AutonomousCausalResultsV8.md](AutonomousCausalResultsV8.md).
+Default heuristic and legacy action semantics remain unchanged.
+
 > Current-contract annotation (27 September 2026): Scope note: historical assertion counts, gameplay populations and test dispositions below apply to their named revision/configuration/cohort. They do not establish the new #33 25-post-discovery craft-chain requirement. Current accepted ordering locks all prior-cohort needs and uses one analytical horizon; historical post-growth Fabric, seasonal-economic and land-damage rules are superseded. See [CurrentSimulationContract.md](CurrentSimulationContract.md).
 
 The current analytical turn-horizon validation and its known ecological

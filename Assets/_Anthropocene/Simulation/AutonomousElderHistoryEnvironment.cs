@@ -46,9 +46,11 @@ namespace Anthropocene.Simulation
     public sealed class AutonomousElderHistoryEnvironment
     {
         private readonly AutonomousElderEnvironment inner;
+        private readonly int version;
         public AutonomousElderHistoryReplay Replay { get; private set; }
-        public AutonomousElderHistoryEnvironment(PhaseExecution execution = null)
-        { inner = new AutonomousElderEnvironment(execution, AutonomousElderHistory.Initialize); }
+        public AutonomousElderHistoryEnvironment(PhaseExecution execution = null, bool growthAuthority = false)
+        { version = growthAuthority ? 6 : 5;
+            inner = new AutonomousElderEnvironment(execution, AutonomousElderHistory.Initialize, growthAuthority ? 4 : 3); }
         public byte[] CaptureSnapshot() => inner.CaptureSnapshot();
 
         public Dictionary<int, AutonomousElderHistoryObservation> Reset(byte[] snapshot, int[] controlled, int decisionLimit = 32)
@@ -56,6 +58,8 @@ namespace Anthropocene.Simulation
             var observations = inner.Reset(snapshot, controlled, decisionLimit);
             var original = inner.Replay;
             Replay = new AutonomousElderHistoryReplay { Snapshot = (byte[])original.Snapshot.Clone(),
+                SchemaVersion = version, ActionVersion = version == 6 ? 4 : 3,
+                ObservationVersion = version, EnvironmentVersion = version, HistoryWidth = version == 6 ? 301 : 300,
                 Controlled = (int[])original.Controlled.Clone(), DecisionLimit = original.DecisionLimit,
                 BuildHash = original.BuildHash, ConfigurationHash = original.ConfigurationHash,
                 InitialFingerprint = original.InitialFingerprint };
@@ -72,8 +76,11 @@ namespace Anthropocene.Simulation
                 c.ElderMemory?.Initialized != true)
                 throw new InvalidOperationException("Initialize autonomous institutional history before observing it.");
             var o = source ?? AutonomousElderCompiler.Observe(world, c);
-            var x = new AutonomousElderHistoryObservation { SchemaVersion = 5,
-                Context = (double[])o.Context.Clone(), History = AutonomousElderHistory.Encode(world, receipt),
+            bool growth = o.SchemaVersion == 6;
+            var h = AutonomousElderHistory.Encode(world, receipt);
+            if (growth) h = h.Concat(new[] { receipt.HasDecision ? (double)receipt.Requested.SchemaVersion : 0 }).ToArray();
+            var x = new AutonomousElderHistoryObservation { SchemaVersion = growth ? 6 : 5,
+                Context = (double[])o.Context.Clone(), History = h,
                 WorkforceMask = (bool[])o.WorkforceMask.Clone(), ActivityMask = o.ActivityMask.Select(row => (bool[])row.Clone()).ToArray(),
                 ControlMask = (bool[])o.ControlMask.Clone(), MovementMask = (bool[])o.MovementMask.Clone(),
                 CounterpartyMask = (bool[])o.CounterpartyMask.Clone(), GoodMask = (bool[])o.GoodMask.Clone(), Stocks = (double[])o.Stocks.Clone(),
@@ -89,8 +96,9 @@ namespace Anthropocene.Simulation
         {
             var result = inner.StepWithBackground(submitted, background);
             var old = inner.Replay.Steps.Last();
-            var history = old.Actions.Keys.OrderBy(id => id).ToDictionary(id => id,
-                id => AutonomousElderHistory.Encode(inner.State, inner.State.AutonomousReceipts[id]));
+            var history = old.Actions.Keys.OrderBy(id => id).ToDictionary(id => id, id =>
+            { var r = inner.State.AutonomousReceipts[id]; var h = AutonomousElderHistory.Encode(inner.State, r);
+                return version == 6 ? h.Concat(new[] { r.HasDecision ? (double)r.Requested.SchemaVersion : 0 }).ToArray() : h; });
             Replay.Steps.Add(new AutonomousElderHistoryReplayStep {
                 Actions = old.Actions.ToDictionary(p => p.Key, p => p.Value.Copy()),
                 Background = old.Background.ToDictionary(p => p.Key, p => p.Value.Select(o => o.Copy()).ToList()),
@@ -106,10 +114,11 @@ namespace Anthropocene.Simulation
 
         public static void VerifyReplay(AutonomousElderHistoryReplay replay, PhaseExecution execution = null)
         {
-            if (replay == null || replay.SchemaVersion != 5 || replay.ActionVersion != 3 || replay.ObservationVersion != 5 ||
-                replay.EnvironmentVersion != 5 || replay.HistoryWidth != 300 || replay.BuildHash != NativeElderEnvironment.BuildHash)
+            if (replay == null || (replay.SchemaVersion != 5 && replay.SchemaVersion != 6) ||
+                replay.ActionVersion != (replay.SchemaVersion == 6 ? 4 : 3) || replay.ObservationVersion != replay.SchemaVersion ||
+                replay.EnvironmentVersion != replay.SchemaVersion || replay.HistoryWidth != (replay.SchemaVersion == 6 ? 301 : 300) || replay.BuildHash != NativeElderEnvironment.BuildHash)
                 throw new InvalidOperationException("Autonomous history replay version/build mismatch.");
-            var env = new AutonomousElderHistoryEnvironment(execution);
+            var env = new AutonomousElderHistoryEnvironment(execution, replay.SchemaVersion == 6);
             env.Reset(replay.Snapshot, replay.Controlled, replay.DecisionLimit);
             if (env.Replay.InitialFingerprint != replay.InitialFingerprint || env.Replay.ConfigurationHash != replay.ConfigurationHash)
                 throw new InvalidOperationException("Autonomous history replay snapshot/configuration mismatch.");

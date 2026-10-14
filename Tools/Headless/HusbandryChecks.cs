@@ -9,7 +9,7 @@ internal static class HusbandryChecks
     private static void Check(bool ok, string message) { checks++; if (!ok) throw new Exception("Husbandry: " + message); }
     private static void Near(double actual, double expected, string message, double tolerance = 1e-6) => Check(Math.Abs(actual - expected) <= tolerance, message + " actual=" + actual + " expected=" + expected);
 
-    private static WorldState Fixture(int animals = 100, int herders = 50)
+    internal static WorldState Fixture(int animals = 100, int herders = 50)
     {
         var w = NeolithicChecks.Fixture(false); var c = w.Camps[0];
         c.Technology = Technology.AnimalHusbandry; c.Technologies[(int)Technology.AnimalHusbandry] = true; c.People.Progression.Era = Era.Neolithic;
