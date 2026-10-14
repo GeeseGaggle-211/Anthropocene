@@ -1,5 +1,26 @@
 # Current simulation contract index
 
+## Experimental model7 opportunity/critic gate (14 October 2026)
+
+Native action4 / observation-environment-replay6 / Save13 stays unchanged.
+Model7 adds explicit workforce/activity concentration floors and fixed TRAIN
+affine value coordinates;256×256 actor/live critic retain their LayerNorm.
+Optional owner-only known-customer routing and closed-turn demographic queries
+are pure reporting/protocol metadata, not new actor inputs or physical rules.
+The separate188-snapshot bank includes validated husbandry/fishing states;
+the old511-snapshot bank's quarantine and84 HELDOUT entries remain untouched.
+All six400-transition canaries are durable. Low actor LR.00003 permits150/168
+minibatches, but all six DEV welfare results worsen. Two learned model7 Elders
+pass exact common-boundary save/RNG/replay. The fixed signed-switch test remains
+NO-GO_REVERSAL (one of three passes); no until-pass extension occurred.
+Astra/high clears simulator/plug/optimizer responsiveness, keeps broad/economic
+promotion NO-GO, and supports a separately frozen modest continuation proposal.
+See [AutonomousOpportunityResultsV9.md](AutonomousOpportunityResultsV9.md),
+[AutonomousPostflightAddendumV9_7.md](AutonomousPostflightAddendumV9_7.md),
+[the model7 native manifest](../Tools/ElderRL/autonomous-model-v7-manifest.json),
+and [the proposed next gate](../Tools/ElderRL/autonomous-learning-readiness-v10-plan.json).
+No new GRU, native physics/reward change, main merge or GPU ecology work occurred.
+
 ## Experimental autonomous direct controls (14 October 2026)
 
 The latest experimental path is action4 / observation-environment-replay6 /

@@ -83,6 +83,16 @@ namespace Anthropocene.Simulation
             => world.Camps.Where(c => controlled.Contains(c.Id) && c.Population > 0).OrderBy(c => c.Id)
                 .ToDictionary(c => c.Id, c => { var o = AutonomousElderCompiler.Observe(world, c);
                     if (actionVersion == 4) o.SchemaVersion = 6; return o; });
+
+        // Server address metadata: only the observer's committed legal known
+        // contacts. Never query the target's current state or submitted action.
+        internal int KnownCounterpartyOrdinal(int observer, int target)
+        {
+            if (observations == null || !observations.TryGetValue(observer, out var own))
+                throw new ArgumentException("A living controlled observer is required.");
+            int ordinal = Array.IndexOf(own.CounterpartyIds, target);
+            return ordinal >= 0 && own.CounterpartyMask[ordinal] ? ordinal : -1;
+        }
         private Dictionary<int, AutonomousElderObservation> CopyObservations()
             => observations.ToDictionary(x => x.Key, x => new AutonomousElderObservation
             {

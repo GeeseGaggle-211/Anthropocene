@@ -53,6 +53,16 @@ namespace Anthropocene.Simulation
             inner = new AutonomousElderEnvironment(execution, AutonomousElderHistory.Initialize, growthAuthority ? 4 : 3); }
         public byte[] CaptureSnapshot() => inner.CaptureSnapshot();
 
+        public int KnownCounterpartyOrdinal(int observer, int target)
+            => inner.KnownCounterpartyOrdinal(observer, target);
+
+        public AutonomousElderOutcomeDiagnostics ClosedOutcomeDiagnostics(int controlled)
+        {
+            if (Replay == null || !Replay.Controlled.Contains(controlled))
+                throw new ArgumentException("Controlled owner required.");
+            return AutonomousElderOutcomeDiagnostics.Capture(inner.State, controlled);
+        }
+
         public Dictionary<int, AutonomousElderHistoryObservation> Reset(byte[] snapshot, int[] controlled, int decisionLimit = 32)
         {
             var observations = inner.Reset(snapshot, controlled, decisionLimit);

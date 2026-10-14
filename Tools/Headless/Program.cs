@@ -265,6 +265,7 @@ internal static class Program
         if (args.Contains("--autonomous-elder-only")) { AutonomousElderChecks.Run(); return 0; }
         if (args.Contains("--autonomous-history-only")) { AutonomousElderHistoryChecks.Run(); return 0; }
         if (args.Contains("--autonomous-growth-only")) { AutonomousGrowthChecks.Run(); return 0; }
+        if (args.Contains("--autonomous-opportunity-only")) { AutonomousOpportunityChecks.Run(); return 0; }
         if (args.Contains("--autonomous-growth-benchmark")) { AutonomousElderHistoryChecks.Benchmark(true); return 0; }
         if (args.Contains("--autonomous-growth-heuristic-panel")) { int at = Array.IndexOf(args, "--autonomous-growth-heuristic-panel");
             AutonomousGrowthChecks.HeuristicPanel(args[at + 1], args.Skip(at + 2).ToArray()); return 0; }
