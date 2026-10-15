@@ -230,6 +230,19 @@ internal static class ImmigrationChecks
         var serializer = new DataContractSerializer(typeof(SimulationConfig)); string xml;
         using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { ImmigrationRadius = 5, ImmigrationEnabled = true }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
         Check(xml.Contains("<ImmigrationRadius>5</ImmigrationRadius>") && xml.Contains("<ImmigrationEnabled>true</ImmigrationEnabled>"), "immigration levers are serialized");
+        using (var stream = new MemoryStream())
+        {
+            serializer.WriteObject(stream, new SimulationConfig { ImmigrationReturnPenalty = .20 }); stream.Position = 0;
+            Check(((SimulationConfig)serializer.ReadObject(stream)).ImmigrationReturnPenalty == .20,
+                "a save carrying an alternate return penalty retains its explicit calibration");
+        }
+        string missingPenalty = Regex.Replace(xml, "<ImmigrationReturnPenalty>[^<]*</ImmigrationReturnPenalty>", "");
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(missingPenalty)))
+        {
+            var oldActive = (SimulationConfig)serializer.ReadObject(stream);
+            Check(oldActive.ImmigrationEnabled && oldActive.ImmigrationRadius == 5 && oldActive.ImmigrationReturnPenalty == .10,
+                "an immigration-enabled save predating the return penalty keeps the historical 0.10 fallback");
+        }
         string legacy = Regex.Replace(xml, "<Immigration[A-Za-z]*>[^<]*</Immigration[A-Za-z]*>", "");
         Check(legacy != xml && !legacy.Contains("<Immigration"), "legacy fixture omits every immigration field");
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy)))
@@ -246,7 +259,7 @@ internal static class ImmigrationChecks
             var m = Regex.Match(json, "\"" + pair.Item1 + "\":\\s*([0-9.a-z]+)");
             Check(m.Success && m.Groups[1].Value == pair.Item2, "OpeningConfig.json carries " + pair.Item1);
         }
-        // Disabled by default: the pass neither runs nor reports, whatever the populations.
+        // With the switch disabled, the pass neither runs nor reports, whatever the populations.
         var w = World(new[] { 8, 8 }, new[] { 8, 10 }); w.Config.ImmigrationEnabled = false; Tune(w, w.Camps[0], w.Camps[1], .3);
         Check(Pass(w) == null && lastRecord.Migrations.Count == 0 && lastMetrics.ImmigrationCampsEvaluated == 0 && w.Camps.All(x => x.Population == 100), "a disabled pass changes nothing");
     }
@@ -473,9 +486,24 @@ internal static class ImmigrationChecks
         Check(record.Fissions.Count == 1 && record.Fissions[0].ParentCamp == w.Camps[2].Id, "only the uninvolved camp fissions: the source emits no fission intent and arrivals cannot fission");
         Check(w.Camps.Count == 4, "no settlement was founded by the source or the destination");
         // Through the real resolver: immigration precedes fission in the same Close phase.
-        var real = Make(true); new TurnResolver().Resolve(real, new Dictionary<int, List<Order>>());
+        var real = Make(true);
+        var beforeClose = real.Camps.ToDictionary(c => c.Id, real.LinkedPopulation);
+        new TurnResolver().Resolve(real, new Dictionary<int, List<Order>>());
         var h = real.History.Last();
         Check(h.Migrations.Count >= 1 && h.Fissions.All(f => f.ParentCamp != h.Migrations[0].SourceCamp && f.ParentCamp != h.Migrations[0].DestinationCamp), "the resolver runs immigration before fission and excludes its participants");
+        foreach (int campId in h.Migrations.SelectMany(m => new[] { m.SourceCamp, m.DestinationCamp }).Distinct())
+        {
+            var demographic = h.Demographics.Single(d => d.Camp == campId);
+            var camp = real.Camps.Single(c => c.Id == campId);
+            Check(demographic.StartingPopulation == beforeClose[campId]
+                && real.LinkedPopulation(camp) == demographic.EndingPopulation - demographic.Emigrated + demographic.Immigrated,
+                "immigration changes the Close boundary, not the current turn's demographic calculation for camp " + campId);
+        }
+        var nextTurnStart = real.Camps.ToDictionary(c => c.Id, real.LinkedPopulation);
+        new TurnResolver().Resolve(real, new Dictionary<int, List<Order>>());
+        var next = real.History.Last();
+        Check(nextTurnStart.All(pair => next.Demographics.Single(d => d.Camp == pair.Key).StartingPopulation == pair.Value),
+            "the post-immigration population first becomes the authoritative demographic input on the following turn");
         // Fission alone and immigration alone each run without the other.
         var only = Make(true); only.Config.FissionEnabled = false; new TurnResolver().Resolve(only, new Dictionary<int, List<Order>>());
         Check(only.History.Last().Migrations.Count >= 1 && only.History.Last().Fissions.Count == 0, "immigration runs with fission disabled");

@@ -132,10 +132,10 @@ when empty. Cooldown 0 or penalty 0 disables the term.
 | `ImmigrationMinimumGroup` | 4 | | smallest migrating group |
 | `ImmigrationSourceFloor` | 12 | | residents a source always keeps |
 | `ImmigrationReturnCooldownTurns` | 3 | | turns a reversal is penalised (0 disables), validated 0 to 20 |
-| `ImmigrationReturnPenalty` | 0.10 | | the penalty at age 1, validated 0 to 5 |
+| `ImmigrationReturnPenalty` | 0.10 | 0 / 0.10 / 0.15 / 0.20 / 0.25 / 0.30 | the penalty at age 1, validated 0 to 5; 0.20 is an exploratory reversal-suppression candidate, not the shipped setting |
 
-`ImmigrationEnabled` (false) is the switch. The group-size levers and the two hysteresis levers are not in the design
-table; they are uncalibrated placeholders (the hysteresis pair has not been swept).
+`ImmigrationEnabled` (true for new worlds; false when absent from an older save) is the switch. The group-size levers remain uncalibrated. The cooldown and return penalty
+were swept on identical saved physical-v1.1 boundaries; the shipped cooldown 3 and penalty 0.10 remain unchanged pending counterfactual and held-out evidence.
 
 **One intent per source.** Among the valid known destinations the source compares `dU` evaluated at its largest group
 `M_max = min(floor(N * ImmigrationMaxFraction), N - ImmigrationSourceFloor)` (the source needs `M_max >=
@@ -194,7 +194,7 @@ one journal line. Observations carry nothing new beyond what an owner sees of it
 
 ## Validation
 
-`ImmigrationChecks.cs` (registered in `Anthropocene.Headless.csproj` and the fixed-suite list, 352 assertions, own
+`ImmigrationChecks.cs` (registered in `Anthropocene.Headless.csproj` and the fixed-suite list, 357 assertions, own
 worlds): defaults, validation (including the cooldown and penalty), serialization and old-config loading,
 `OpeningConfig.json` keys; the closed-form present-state utility for every barrier; the size formula exhaustively over
 N = 0 to 400 and `dU` = 0 to 0.40 and its floors; estimator equality with `EstimateSplit` and monotonicity;
@@ -214,10 +214,11 @@ fixtures** (two camps with alternating harvests: the previous rule reimplemented
 and 29 reversals in 30 turns; the forward rule alone still swings, because next season's harvest is unknowable; with the
 return penalty reversals and people moved fall by more than half; a mild swing (130 / 80) that the previous rule
 swaps every turn moves nobody under the forward rule; a stable gap still moves people one way and never back);
-immigration precedes fission and excludes sources and arrivals; no multi-hop (A to B while B to C); exact conservation of
+immigration precedes fission and excludes sources and arrivals; its Close-phase population changes are excluded from the
+current demographic result and become the following turn's starting population; no multi-hop (A to B while B to C); exact conservation of
 people and each typed food per camp, no goods or herds move; physical gross-event/deficit ledgers transfer without
-creation; higher-QoL/worse-mortality attraction remains possible when physical net growth is nonnegative, while a
-negative-net receiving settlement blocks the otherwise unchanged group; demographic lines, journal, contacts in both
+creation; higher-QoL/worse-mortality attraction remains possible when physical net growth is nonnegative, and a
+negative-net receiving settlement does not block the otherwise unchanged QoL-selected group; demographic lines, journal, contacts in both
 directions; scalar versus reversed four-worker replay with reordered collections over five turns of an eight-camp world
 and over a generated world with both switches on (the fingerprint includes the memory); save continuation through a
 migration with memory, the memory round trip, an older camp and an older report loading without the new fields.
@@ -307,7 +308,7 @@ Findings:
   unchanged by design; growth, goods and food change them by the next turn): across 3,858 flows the destination's QoL
   on the next turn was a median +0.014 (P25 -0.198, P75 +0.071) from the post-inflow estimate, so the estimator is
   unbiased at the median but a quarter of the destinations end up more than 0.2 worse than estimated. Candidate
-  levers, none applied (they need their own calibration): a wider deadband (design sweep 0.10), a per-pair cooldown
+  levers, none applied in that historical audit (they needed their own calibration): a wider deadband (design sweep 0.10), a per-pair cooldown
   or direction memory, or diluting F with the headcount where the destination is food-limited.
 - **Fission is reduced slightly** (1,545 versus 1,619, -4.6%; Continents -25, -28, -21, Pangaea -20, Archipelagos
   +20): sources that emit an intent and camps that receive arrivals sit out fission that turn, and moving people
@@ -432,14 +433,16 @@ Findings:
   candidate (the `QoLModel` per camp is built once per turn and shared by the reconcile), one memory scan per candidate
   (lists of at most a few records) and an O(camps) prune; no allocation beyond the per-camp lists.
 
-Not measured: a hysteresis or deadband sweep (cooldown, penalty, theta stay at their placeholders), other seeds, 320
-tribes, and anything past turn 62.
+Not measured by that historical WP10b-2 audit: a hysteresis or deadband sweep, other seeds, 320 tribes, and anything
+past turn 62. The v1.1 matched-boundary follow-up now sweeps hysteresis, deadband and group-size controls without
+changing the shipped calibration; see [DemographyQoLValidation-v1.1.md](DemographyQoLValidation-v1.1.md).
 
 ## Deliberate limits and remaining work
 
-- Opt-in and uncalibrated: the design sweeps (deadband 0.05 to 0.10, lifestyle barriers, radius 3 to 5, cooldown, penalty) have
-  not been run. The forward rule with hysteresis (WP10b-2) removed the previous rule's oscillation and QoL loss in the five
-  measured worlds; the estimator's tail error remains.
+- The matched v1.1 sweep covers disabled hysteresis, penalty 0.10 to 0.30, cooldown 3 versus 5, deadband 0.075 versus
+  0.10 and max fraction 0.10 versus 0.075. The shipped 3 / 0.10 hysteresis already mitigates pair returns. A 0.20
+  candidate suppresses more fitted-sample returns but is not promoted without individual-flow counterfactual and held-out
+  evidence. Lifestyle barriers and radius remain at their design baselines, and the estimator's next-turn tail error remains.
 - The forward estimator has no knowledge of next turn's harvest: alternating good and bad seasons still swing flows, and
   only the return penalty damps the swing (fixture). A source's food estimate assumes the committed F is representative.
 - Destination acceptance is checked against the forward estimate (food and water diluted with headcount, plus the carried

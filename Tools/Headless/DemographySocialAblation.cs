@@ -10,10 +10,27 @@ using Anthropocene.Simulation;
 // on/on. The tool changes no production calibration or authoritative state.
 internal static class DemographySocialAblation
 {
+    private const int RapidReversalWindow = 3;
+
     private sealed class Variant
     {
         public string Name;
         public bool Fission, Immigration;
+    }
+
+    private sealed class Calibration
+    {
+        public string Name;
+        public double Deadband, MaxFraction, ReturnPenalty;
+        public int ReturnCooldown;
+
+        public void Apply(SimulationConfig config)
+        {
+            config.ImmigrationDeadband = Deadband;
+            config.ImmigrationMaxFraction = MaxFraction;
+            config.ImmigrationReturnCooldownTurns = ReturnCooldown;
+            config.ImmigrationReturnPenalty = ReturnPenalty;
+        }
     }
 
     private sealed class Snapshot
@@ -22,7 +39,8 @@ internal static class DemographySocialAblation
         public int Population, LinkedPopulation, Workforce;
         public double Food, Clothing, Housing, QoL, Expectation, DeficitYears, BirthRate, DeathRate, NetRate;
 
-        public bool Healthy => Exists && Food >= .8 && Clothing >= .8 && Housing >= .8;
+        public bool Alive => Exists && LinkedPopulation > 0;
+        public bool Healthy => Alive && Food >= .8 && Clothing >= .8 && Housing >= .8;
     }
 
     private sealed class Follow
@@ -74,7 +92,8 @@ internal static class DemographySocialAblation
     {
         public int Seed, Turns, StartCamps, EndCamps, StartPopulation, EndPopulation, Survivors;
         public string Variant;
-        public int Births, Deaths, Migrations, Migrants, Fissions, SplitPopulation, Reversals;
+        public int Births, Deaths, Migrations, Migrants, PenalizedMigrations, Fissions, SplitPopulation, Reversals;
+        public int ReversalsAt1, ReversalsAt2, ReversalsAt3;
         public int NegativeNetDestinations, NegativeNetDaughters, HigherQolWorseMortality;
         public int YoungDaughterMigrations, YoungDaughterReversals, Viable, Target, MinPopulation, MedianPopulation, MaxPopulation;
         public int CrossLineageMigrants, TransferAffectedSettlementTurns;
@@ -93,7 +112,8 @@ internal static class DemographySocialAblation
     {
         public string Variant;
         public int Seeds, Turns, StartCamps, EndCamps, StartPopulation, EndPopulation, Survivors;
-        public int Births, Deaths, Migrations, Migrants, Fissions, SplitPopulation, Reversals;
+        public int Births, Deaths, Migrations, Migrants, PenalizedMigrations, Fissions, SplitPopulation, Reversals;
+        public int ReversalsAt1, ReversalsAt2, ReversalsAt3;
         public int NegativeNetDestinations, NegativeNetDaughters, HigherQolWorseMortality;
         public int YoungDaughterMigrations, YoungDaughterReversals, Viable, Target;
         public int CrossLineageMigrants, TransferAffectedSettlementTurns;
@@ -114,6 +134,24 @@ internal static class DemographySocialAblation
         new Variant { Name = "both", Fission = true, Immigration = true }
     };
 
+    // Hysteresis-only candidates leave the authoritative QoL welfare projection, deadband, group size,
+    // fission thresholds and every physical-demography parameter untouched. The deadband and
+    // group-size rows are controls that tell us whether a broad flow reduction merely hides the
+    // same reversal problem.
+    private static readonly Calibration[] Calibrations =
+    {
+        new Calibration { Name = "hysteresis-off", Deadband = .075, MaxFraction = .10, ReturnCooldown = 0, ReturnPenalty = 0 },
+        new Calibration { Name = "current-default-0.10", Deadband = .075, MaxFraction = .10, ReturnCooldown = 3, ReturnPenalty = .10 },
+        new Calibration { Name = "penalty-0.15", Deadband = .075, MaxFraction = .10, ReturnCooldown = 3, ReturnPenalty = .15 },
+        new Calibration { Name = "candidate-0.20", Deadband = .075, MaxFraction = .10, ReturnCooldown = 3, ReturnPenalty = .20 },
+        new Calibration { Name = "penalty-0.25", Deadband = .075, MaxFraction = .10, ReturnCooldown = 3, ReturnPenalty = .25 },
+        new Calibration { Name = "penalty-0.30", Deadband = .075, MaxFraction = .10, ReturnCooldown = 3, ReturnPenalty = .30 },
+        new Calibration { Name = "cooldown-5-penalty-0.15", Deadband = .075, MaxFraction = .10, ReturnCooldown = 5, ReturnPenalty = .15 },
+        new Calibration { Name = "cooldown-5-penalty-0.20", Deadband = .075, MaxFraction = .10, ReturnCooldown = 5, ReturnPenalty = .20 },
+        new Calibration { Name = "deadband-0.10-control", Deadband = .10, MaxFraction = .10, ReturnCooldown = 3, ReturnPenalty = .10 },
+        new Calibration { Name = "maxfraction-0.075-control", Deadband = .075, MaxFraction = .075, ReturnCooldown = 3, ReturnPenalty = .10 }
+    };
+
     private static int assertions;
     private static void Check(bool condition, string message)
     {
@@ -126,6 +164,7 @@ internal static class DemographySocialAblation
         if (continuations < 25 || continuations > 50)
             throw new ArgumentOutOfRangeException(nameof(continuations), "The v1.1 social ablation requires 25-50 continuation decisions.");
         assertions = 0;
+        CheckSnapshotClassification();
         var outcomes = new List<Outcome>();
         foreach (int seed in new[] { 17, 53, 991 })
         {
@@ -167,6 +206,67 @@ internal static class DemographySocialAblation
         return assertions;
     }
 
+    public static int RunCalibrationSweep(int continuations = 30)
+    {
+        if (continuations < 25 || continuations > 50)
+            throw new ArgumentOutOfRangeException(nameof(continuations), "The immigration calibration sweep requires 25-50 continuation decisions.");
+        assertions = 0;
+        CheckSnapshotClassification();
+        var outcomes = new List<Outcome>();
+        foreach (int seed in new[] { 17, 53, 991 })
+        {
+            byte[] boundary = OpeningBoundary(seed, out int openingTurns, out string fingerprint,
+                out int boundaryCamps, out int boundaryPopulation);
+            Console.WriteLine("DEMOGRAPHY_IMMIGRATION_BOUNDARY seed=" + seed + " openingTurns=" + openingTurns
+                + " camps=" + boundaryCamps + " population=" + boundaryPopulation
+                + " fingerprint=" + fingerprint);
+            foreach (Calibration calibration in Calibrations)
+            {
+                WorldState probe = SaveCodec.Load(boundary);
+                Check(SaveCodec.Fingerprint(probe) == fingerprint,
+                    "seed " + seed + " calibration " + calibration.Name + " loads the identical boundary save");
+                Check(probe.Camps.Count == boundaryCamps && probe.Camps.Sum(probe.LinkedPopulation) == boundaryPopulation,
+                    "seed " + seed + " calibration " + calibration.Name + " starts with identical people and camps");
+                outcomes.Add(RunVariant(probe, seed, new Variant
+                {
+                    Name = calibration.Name,
+                    Fission = true,
+                    Immigration = true
+                }, continuations, calibration));
+            }
+        }
+
+        var totals = Calibrations.Select(c => AggregateOf(c.Name, outcomes.Where(o => o.Variant == c.Name)))
+            .ToDictionary(a => a.Variant);
+        foreach (Calibration calibration in Calibrations) PrintCalibration(calibration, totals[calibration.Name]);
+
+        Aggregate off = totals["hysteresis-off"], current = totals["current-default-0.10"], candidate = totals["candidate-0.20"];
+        Check(off.Migrations > 0 && off.Reversals > 0, "the no-hysteresis control exercises migration and rapid reversals");
+        Check(current.Reversals < off.Reversals,
+            "the shipped return hysteresis reduces rapid reversals against its matched disabled control");
+        Check(current.ReceiverFollow.ExtinctAt1 == 0 && current.ReceiverFollow.ExtinctAt3 == 0,
+            "the shipped run has no receiving-settlement extinction through the three-turn follow-up");
+        Check(candidate.Reversals < current.Reversals && candidate.ReversalsAt1 == 0,
+            "the exploratory stronger penalty reduces observed pair returns and eliminates one-turn returns");
+        Console.WriteLine("DEMOGRAPHY_IMMIGRATION_ASSESSMENT shipped=current-default-0.10 candidate=candidate-0.20 status=EXPERIMENTAL_NOT_PROMOTED"
+            + " rapidReversals=" + current.Reversals + "->" + candidate.Reversals
+            + " reversalAges=" + current.ReversalsAt1 + "/" + current.ReversalsAt2 + "/" + current.ReversalsAt3
+            + "->" + candidate.ReversalsAt1 + "/" + candidate.ReversalsAt2 + "/" + candidate.ReversalsAt3
+            + " migrations=" + current.Migrations + "->" + candidate.Migrations
+            + " migrants=" + current.Migrants + "->" + candidate.Migrants
+            + " fissions=" + current.Fissions + "->" + candidate.Fissions
+            + " receiverNegativeNet3=" + current.ReceiverFollow.NegativeNet3 + "->" + candidate.ReceiverFollow.NegativeNet3
+            + " receiverExtinct3=" + current.ReceiverFollow.ExtinctAt3 + "->" + candidate.ReceiverFollow.ExtinctAt3
+            + " reason=pair-return-reduction-without-demonstrated-receiver-welfare-benefit-or-held-out-replay");
+        Console.WriteLine("DEMOGRAPHY_IMMIGRATION_HYSTERESIS off=" + off.Reversals
+            + " shipped=" + current.Reversals + " candidate=" + candidate.Reversals
+            + " shippedPer100=" + F(100.0 * current.Reversals / Math.Max(1, current.Migrations))
+            + " candidatePer100=" + F(100.0 * candidate.Reversals / Math.Max(1, candidate.Migrations))
+            + " result=" + (current.Reversals < off.Reversals ? "SHIPPED_HYSTERESIS_MITIGATES" : "NO_MEASURED_REDUCTION"));
+        Console.WriteLine("PASS: " + assertions + " immigration calibration-sweep assertions");
+        return assertions;
+    }
+
     private static byte[] OpeningBoundary(int seed, out int openingTurns, out string fingerprint,
         out int camps, out int population)
     {
@@ -198,10 +298,12 @@ internal static class DemographySocialAblation
         return bytes;
     }
 
-    private static Outcome RunVariant(WorldState world, int seed, Variant variant, int continuations)
+    private static Outcome RunVariant(WorldState world, int seed, Variant variant, int continuations,
+        Calibration calibration = null)
     {
         world.Config.FissionEnabled = variant.Fission;
         world.Config.ImmigrationEnabled = variant.Immigration;
+        calibration?.Apply(world.Config);
         world.Config.Validate();
         var result = new Outcome
         {
@@ -211,6 +313,7 @@ internal static class DemographySocialAblation
         var resolver = new TurnResolver();
         var lastFlow = new Dictionary<(int Source, int Destination), Flow>();
         var daughterTurns = new Dictionary<int, int>();
+        var expectedStartingPopulation = world.Camps.ToDictionary(c => c.Id, world.LinkedPopulation);
         var timer = System.Diagnostics.Stopwatch.StartNew();
         TurnRecord lastRecord = null;
         for (int i = 0; i < continuations; i++)
@@ -225,6 +328,17 @@ internal static class DemographySocialAblation
             Check(record.Demographics.Sum(d => d.GrossBirths) == record.Growth
                 && record.Demographics.Sum(d => d.GrossDeaths) == record.Deaths,
                 "seed " + seed + " variant " + variant.Name + " turn " + record.Turn + " closes integer demographic ledgers");
+            foreach (DemographicReport demographic in record.Demographics)
+            {
+                Check(expectedStartingPopulation.TryGetValue(demographic.Camp, out int expected)
+                    && demographic.StartingPopulation == expected,
+                    "seed " + seed + " variant " + variant.Name + " turn " + record.Turn
+                    + " starts demography from the preceding Close boundary");
+                Check(demographic.EndingPopulation == demographic.StartingPopulation
+                    + demographic.GrossBirths - demographic.GrossDeaths,
+                    "seed " + seed + " variant " + variant.Name + " turn " + record.Turn
+                    + " ends demography before social transfers");
+            }
 
             var snapshots = Snapshots(world);
             foreach (Follow follow in result.Follows) follow.Observe(record.Turn, snapshots);
@@ -241,14 +355,18 @@ internal static class DemographySocialAblation
                 flow.Follow = follow; result.Follows.Add(follow);
                 var reverse = (migration.DestinationCamp, migration.SourceCamp);
                 if (lastFlow.TryGetValue(reverse, out Flow previous)
-                    && record.Turn - previous.Report.Turn <= world.Config.ImmigrationReturnCooldownTurns)
+                    && record.Turn - previous.Report.Turn <= RapidReversalWindow)
                 {
+                    int gap = record.Turn - previous.Report.Turn;
                     int age = YoungestDaughterAge(daughterTurns, record.Turn, migration.SourceCamp, migration.DestinationCamp);
                     var reversal = new Reversal
                     {
                         First = previous, Return = flow, InvolvesDaughter = age >= 0, YoungestDaughterAge = age
                     };
                     result.ReversalDetails.Add(reversal); result.Reversals++;
+                    if (gap == 1) result.ReversalsAt1++;
+                    else if (gap == 2) result.ReversalsAt2++;
+                    else if (gap == 3) result.ReversalsAt3++;
                     if (reversal.InvolvesDaughter) result.YoungDaughterReversals++;
                 }
                 lastFlow[(migration.SourceCamp, migration.DestinationCamp)] = flow;
@@ -257,6 +375,17 @@ internal static class DemographySocialAblation
                 if (!migration.DestinationNetNonnegative) result.NegativeNetDestinations++;
                 if (migration.HigherQoLWorseMortality) result.HigherQolWorseMortality++;
                 if (migration.Kin) result.KinMigrations++;
+                if (migration.Penalty > 1e-12) result.PenalizedMigrations++;
+            }
+
+            foreach (int campId in record.Migrations.SelectMany(m => new[] { m.SourceCamp, m.DestinationCamp }).Distinct())
+            {
+                DemographicReport demographic = record.Demographics.Single(d => d.Camp == campId);
+                Camp camp = world.Camps.Single(c => c.Id == campId);
+                Check(world.LinkedPopulation(camp) == demographic.EndingPopulation
+                    - demographic.Emigrated + demographic.Immigrated,
+                    "seed " + seed + " variant " + variant.Name + " turn " + record.Turn
+                    + " applies immigration only after the current demographic result");
             }
 
             foreach (FissionReport fission in record.Fissions)
@@ -308,6 +437,7 @@ internal static class DemographySocialAblation
             result.ImmigrationRejected += resolver.LastMetrics.ImmigrationRejected;
             result.CampTurns += world.Camps.Count; result.PopulationTurns += after;
             result.Turns++;
+            expectedStartingPopulation = world.Camps.ToDictionary(c => c.Id, world.LinkedPopulation);
         }
         timer.Stop(); result.Milliseconds = timer.Elapsed.TotalMilliseconds;
 
@@ -355,6 +485,27 @@ internal static class DemographySocialAblation
     private static Snapshot Get(Dictionary<int, Snapshot> snapshots, int camp)
         => snapshots.TryGetValue(camp, out Snapshot value) ? value : new Snapshot();
 
+    private static void CheckSnapshotClassification()
+    {
+        var snapshots = new Dictionary<int, Snapshot>
+        {
+            [1] = new Snapshot { Exists = true, LinkedPopulation = 0, Food = 1, Clothing = 1, Housing = 1 },
+            [2] = new Snapshot { Exists = true, LinkedPopulation = 1, Food = 1, Clothing = 1, Housing = 1 }
+        };
+        Check(Get(snapshots, 1).Exists && !Get(snapshots, 1).Alive && !Get(snapshots, 1).Healthy,
+            "a retained zero-population camp is extinct, not healthy");
+        Check(!Get(snapshots, 99).Exists && !Get(snapshots, 99).Alive,
+            "an absent camp is extinct");
+        Check(Get(snapshots, 2).Alive && Get(snapshots, 2).Healthy,
+            "a populated fully served camp is alive and healthy");
+        var summary = Summarize(new[]
+        {
+            new Follow { Kind = "fixture", Target0 = snapshots[2], Target1 = snapshots[1], Target3 = Get(snapshots, 99) }
+        }, "fixture");
+        Check(summary.ExtinctAt1 == 1 && summary.ExtinctAt3 == 1,
+            "follow-up counts retained-zero and absent camps as extinct");
+    }
+
     private static Flow CaptureFlow(TurnRecord record, MigrationReport report, Dictionary<int, Snapshot> snapshots)
     {
         SettlementWelfareReport source = record.SettlementWelfare.FirstOrDefault(w => w.Camp == report.SourceCamp);
@@ -388,7 +539,7 @@ internal static class DemographySocialAblation
             if (follow.Target1 != null)
             {
                 result.ObservedAt1++;
-                if (!follow.Target1.Exists) result.ExtinctAt1++;
+                if (!follow.Target1.Alive) result.ExtinctAt1++;
                 else
                 {
                     if (follow.Target1.NetRate < 0) result.NegativeNet1++;
@@ -401,7 +552,7 @@ internal static class DemographySocialAblation
             }
             if (follow.Target3 == null) continue;
             result.ObservedAt3++;
-            if (!follow.Target3.Exists) { result.ExtinctAt3++; continue; }
+            if (!follow.Target3.Alive) { result.ExtinctAt3++; continue; }
             if (follow.Target3.Healthy) result.Healthy3++;
             if (!follow.Target0.Healthy && follow.Target3.Healthy) result.Recovered3++;
             if (follow.Target3.NetRate < 0) result.NegativeNet3++;
@@ -425,7 +576,9 @@ internal static class DemographySocialAblation
             result.Seeds++; result.Turns += o.Turns; result.StartCamps += o.StartCamps; result.EndCamps += o.EndCamps;
             result.StartPopulation += o.StartPopulation; result.EndPopulation += o.EndPopulation; result.Survivors += o.Survivors;
             result.Births += o.Births; result.Deaths += o.Deaths; result.Migrations += o.Migrations; result.Migrants += o.Migrants;
+            result.PenalizedMigrations += o.PenalizedMigrations;
             result.Fissions += o.Fissions; result.SplitPopulation += o.SplitPopulation; result.Reversals += o.Reversals;
+            result.ReversalsAt1 += o.ReversalsAt1; result.ReversalsAt2 += o.ReversalsAt2; result.ReversalsAt3 += o.ReversalsAt3;
             result.NegativeNetDestinations += o.NegativeNetDestinations; result.NegativeNetDaughters += o.NegativeNetDaughters;
             result.HigherQolWorseMortality += o.HigherQolWorseMortality;
             result.YoungDaughterMigrations += o.YoungDaughterMigrations; result.YoungDaughterReversals += o.YoungDaughterReversals;
@@ -455,8 +608,10 @@ internal static class DemographySocialAblation
             + " population=" + o.StartPopulation + "->" + o.EndPopulation + " survivors=" + o.Survivors
             + " populationMinMedianMax=" + o.MinPopulation + "/" + o.MedianPopulation + "/" + o.MaxPopulation
             + " births=" + o.Births + " deaths=" + o.Deaths + " migrations=" + o.Migrations
-            + " migrants=" + o.Migrants + " fissions=" + o.Fissions + " splitPopulation=" + o.SplitPopulation
-            + " reversals=" + o.Reversals + " youngDaughterMigrations=" + o.YoungDaughterMigrations
+            + " migrants=" + o.Migrants + " penalizedMigrations=" + o.PenalizedMigrations
+            + " fissions=" + o.Fissions + " splitPopulation=" + o.SplitPopulation
+            + " reversals=" + o.Reversals + " reversalAges=" + o.ReversalsAt1 + "/" + o.ReversalsAt2 + "/" + o.ReversalsAt3
+            + " youngDaughterMigrations=" + o.YoungDaughterMigrations
             + " youngDaughterReversals=" + o.YoungDaughterReversals
             + " viable=" + o.Viable + " target=" + o.Target
             + " FCH=" + F(o.MeanFood) + "/" + F(o.MeanClothing) + "/" + F(o.MeanHousing)
@@ -500,7 +655,9 @@ internal static class DemographySocialAblation
         Console.WriteLine("DEMOGRAPHY_SOCIAL_TOTAL variant=" + a.Variant + " seeds=" + a.Seeds + " turns=" + a.Turns
             + " camps=" + a.StartCamps + "->" + a.EndCamps + " population=" + a.StartPopulation + "->" + a.EndPopulation
             + " births=" + a.Births + " deaths=" + a.Deaths + " migrations=" + a.Migrations + " migrants=" + a.Migrants
+            + " penalizedMigrations=" + a.PenalizedMigrations
             + " fissions=" + a.Fissions + " splitPopulation=" + a.SplitPopulation + " reversals=" + a.Reversals
+            + " reversalAges=" + a.ReversalsAt1 + "/" + a.ReversalsAt2 + "/" + a.ReversalsAt3
             + " reversalsPer100Migrations=" + F(100.0 * a.Reversals / Math.Max(1, a.Migrations))
             + " fissionsPer1000CampTurns=" + F(1000.0 * a.Fissions / Math.Max(1, a.CampTurns))
             + " migrantsPer1000PersonTurns=" + F(1000.0 * a.Migrants / Math.Max(1, a.PopulationTurns))
@@ -519,6 +676,40 @@ internal static class DemographySocialAblation
             + " elapsedMs=" + a.Milliseconds.ToString("F1", CultureInfo.InvariantCulture));
         PrintFollow(a.Variant, "daughter", a.DaughterFollow);
         PrintFollow(a.Variant, "receiver", a.ReceiverFollow);
+    }
+
+    private static void PrintCalibration(Calibration calibration, Aggregate a)
+    {
+        FollowSummary receiver = a.ReceiverFollow;
+        int observed1 = receiver.ObservedAt1 - receiver.ExtinctAt1;
+        int observed3 = receiver.ObservedAt3 - receiver.ExtinctAt3;
+        int n1 = Math.Max(1, observed1);
+        int n3 = Math.Max(1, observed3);
+        double camps = Math.Max(1, a.Survivors), people = Math.Max(1, a.EndPopulation);
+        Console.WriteLine("DEMOGRAPHY_IMMIGRATION_SWEEP candidate=" + calibration.Name
+            + " deadband=" + F(calibration.Deadband) + " maxFraction=" + F(calibration.MaxFraction)
+            + " cooldown=" + calibration.ReturnCooldown + " returnPenalty=" + F(calibration.ReturnPenalty)
+            + " migrations=" + a.Migrations + " migrants=" + a.Migrants
+            + " penalizedMigrations=" + a.PenalizedMigrations
+            + " rapidReversals=" + a.Reversals
+            + " reversalAges=" + a.ReversalsAt1 + "/" + a.ReversalsAt2 + "/" + a.ReversalsAt3
+            + " reversalsPer100=" + F(100.0 * a.Reversals / Math.Max(1, a.Migrations))
+            + " fissions=" + a.Fissions + " camps=" + a.StartCamps + "->" + a.EndCamps
+            + " population=" + a.StartPopulation + "->" + a.EndPopulation
+            + " viable=" + a.Viable + " target=" + a.Target
+            + " FCH=" + F(a.FoodWeighted / camps) + "/" + F(a.ClothingWeighted / camps) + "/" + F(a.HousingWeighted / camps)
+            + " localQoL=" + F(a.LocalQoLWeighted / people)
+            + " receiverFollowEvents=" + receiver.Events
+            + " receiverObservedNonExtinct1/3=" + observed1 + "/" + observed3
+            + " receiverExtinct1/3=" + receiver.ExtinctAt1 + "/" + receiver.ExtinctAt3
+            + " receiverNegativeNet0/1/3=" + receiver.NegativeNet0 + "/" + receiver.NegativeNet1 + "/" + receiver.NegativeNet3
+            + " receiverExpectedQoLError1=" + F(receiver.ExpectedQoLError1 / n1)
+            + " receiverDeltaFCH1=" + F(receiver.FoodDelta1 / n1) + "/" + F(receiver.ClothingDelta1 / n1) + "/" + F(receiver.HousingDelta1 / n1)
+            + " receiverDeltaDeficit1=" + F(receiver.DeficitDelta1 / n1)
+            + " receiverDeltaFCH3=" + F(receiver.FoodDelta3 / n3) + "/" + F(receiver.ClothingDelta3 / n3) + "/" + F(receiver.HousingDelta3 / n3)
+            + " receiverDeltaQoL3=" + F(receiver.QoLDelta3 / n3)
+            + " receiverDeltaDeficit3=" + F(receiver.DeficitDelta3 / n3)
+            + " conservation=" + a.WorstConservation.ToString("G6", CultureInfo.InvariantCulture));
     }
 
     private static void PrintFollow(string variant, string kind, FollowSummary f)
@@ -561,13 +752,13 @@ internal static class DemographySocialAblation
             + (immigration.EndPopulation - none.EndPopulation) + "/" + (both.EndPopulation - none.EndPopulation)
             + " diagnosis=" + diagnosis);
         Console.WriteLine("DEMOGRAPHY_SOCIAL_GATE samePhysics=PASS identicalBoundary=PASS conservation=PASS"
-            + " socialFlowAttribution=MEASURED calibrationChanged=NO nativePromotion=REVIEW");
+            + " socialFlowAttribution=MEASURED immigrationReturnPenalty=0.10 nativePromotion=REVIEW");
     }
 
     private static string FollowText(Snapshot snapshot)
-        => snapshot == null ? "NA" : !snapshot.Exists ? "EXTINCT" : snapshot.LinkedPopulation + ":" + Triple(snapshot) + ":" + F(snapshot.NetRate);
+        => snapshot == null ? "NA" : !snapshot.Alive ? "EXTINCT" : snapshot.LinkedPopulation + ":" + Triple(snapshot) + ":" + F(snapshot.NetRate);
     private static string Triple(Snapshot snapshot)
-        => snapshot == null || !snapshot.Exists ? "NA" : F(snapshot.Food) + "/" + F(snapshot.Clothing) + "/" + F(snapshot.Housing);
+        => snapshot == null || !snapshot.Alive ? "NA" : F(snapshot.Food) + "/" + F(snapshot.Clothing) + "/" + F(snapshot.Housing);
     private static string F(double value) => value.ToString("F3", CultureInfo.InvariantCulture);
     private static int Percentile(IReadOnlyList<int> sorted, double fraction)
         => sorted.Count == 0 ? 0 : sorted[(int)Math.Round((sorted.Count - 1) * fraction)];

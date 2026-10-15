@@ -252,6 +252,12 @@ internal static class Program
             int continuations = demographySocial.Contains("=") ? int.Parse(demographySocial.Substring(demographySocial.IndexOf('=') + 1)) : 30;
             DemographySocialAblation.Run(continuations); return 0;
         }
+        var demographyImmigrationSweep = args.FirstOrDefault(a => a.StartsWith("--demography-immigration-sweep", StringComparison.Ordinal));
+        if (demographyImmigrationSweep != null)
+        {
+            int continuations = demographyImmigrationSweep.Contains("=") ? int.Parse(demographyImmigrationSweep.Substring(demographyImmigrationSweep.IndexOf('=') + 1)) : 30;
+            DemographySocialAblation.RunCalibrationSweep(continuations); return 0;
+        }
         var demographyBenchmark = args.FirstOrDefault(a => a.StartsWith("--demography-benchmark", StringComparison.Ordinal));
         if (demographyBenchmark != null)
         {

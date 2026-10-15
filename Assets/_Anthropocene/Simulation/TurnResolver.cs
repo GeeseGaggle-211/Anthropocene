@@ -186,6 +186,7 @@ namespace Anthropocene.Simulation
             using (PhaseProfile.Scope("Technology")) TechnologyDiscovery.Resolve(w, record);
             // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
             // Immigration between known settlements precedes fission (QoLFissionTradeDesign 4, 9); its sources and arrivals sit out fission this turn.
+            // The commit is after economy/demography, so its population boundary first enters economy/demography next turn.
             HashSet<int> mobile; using (PhaseProfile.Scope("Immigration")) mobile = Immigration.Resolve(w, record, execution, LastMetrics);
             using (PhaseProfile.Scope("Fission")) Fission.Resolve(w, record, execution, LastMetrics, mobile);
             WelfareDiagnostics.Capture(w, record);

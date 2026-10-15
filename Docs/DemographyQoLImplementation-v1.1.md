@@ -220,6 +220,7 @@ an explicit coupled forecast contract.
 - `Tools/Headless/DemographyLiveAudit.cs`: three-seed native/social GO audit.
 - `Tools/Headless/DemographySocialAblation.cs`: identical-save physical-law
   fission/immigration 2x2 attribution, reversal export and three-turn
-  daughter/receiver follow-up.
+  daughter/receiver follow-up; matched hysteresis/deadband/group-size sweep
+  with explicit current-Close/next-turn population-boundary assertions.
 - `Tools/Headless/DemographyBenchmark.cs`: scalar comparator and heterogeneous
   coupled stress benchmark.
