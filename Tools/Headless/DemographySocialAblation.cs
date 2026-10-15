@@ -106,6 +106,16 @@ internal static class DemographySocialAblation
         public double Milliseconds;
         public readonly List<Follow> Follows = new List<Follow>();
         public readonly List<Reversal> ReversalDetails = new List<Reversal>();
+        public readonly List<SourceOpportunity> SourceOpportunities = new List<SourceOpportunity>();
+        public readonly HashSet<int> TerminalNewDaughters = new HashSet<int>();
+        public readonly HashSet<int> TerminalSocialTransfers = new HashSet<int>();
+    }
+
+    private sealed class SourceOpportunity
+    {
+        public int Population, Migrants;
+        public bool IsVillage;
+        public double QoL, Food, Clothing, Housing;
     }
 
     private sealed class Aggregate
@@ -267,6 +277,68 @@ internal static class DemographySocialAblation
         return assertions;
     }
 
+    public static int RunQoLHistogram(int continuations = 30)
+    {
+        if (continuations < 25 || continuations > 50)
+            throw new ArgumentOutOfRangeException(nameof(continuations), "The terminal QoL histogram requires 25-50 continuation decisions.");
+        assertions = 0;
+        CheckSnapshotClassification();
+        CheckSourceEligibility();
+        Console.WriteLine("DEMOGRAPHY_QOL_META continuations=" + continuations);
+        var opportunities = new List<SourceOpportunity>();
+        foreach (int seed in new[] { 17, 53, 991 })
+        {
+            byte[] boundary = OpeningBoundary(seed, out int openingTurns, out string fingerprint,
+                out int boundaryCamps, out int boundaryPopulation);
+            Console.WriteLine("DEMOGRAPHY_QOL_BOUNDARY seed=" + seed + " openingTurns=" + openingTurns
+                + " camps=" + boundaryCamps + " population=" + boundaryPopulation
+                + " fingerprint=" + fingerprint);
+            WorldState world = SaveCodec.Load(boundary);
+            Check(SaveCodec.Fingerprint(world) == fingerprint,
+                "seed " + seed + " QoL histogram loads the identical boundary save");
+            Outcome outcome = RunVariant(world, seed, new Variant
+            {
+                Name = "both", Fission = true, Immigration = true
+            }, continuations, captureSourceOpportunities: true);
+            Check(outcome.SourceOpportunities.Count(o => o.Migrants > 0) == outcome.Migrations,
+                "seed " + seed + " QoL source rows contain every committed immigration flow");
+            Check(outcome.SourceOpportunities.Sum(o => o.Migrants) == outcome.Migrants,
+                "seed " + seed + " QoL source rows contain every committed migrant");
+            opportunities.AddRange(outcome.SourceOpportunities);
+            foreach (Camp camp in world.Camps.Where(c => world.LinkedPopulation(c) > 0).OrderBy(c => c.Id))
+            {
+                int population = world.LinkedPopulation(camp);
+                double cohesion = NeolithicProduction.SocialCohesion(world, camp, population);
+                Console.WriteLine("DEMOGRAPHY_QOL_TERMINAL seed=" + seed + " camp=" + camp.Id
+                    + " village=" + (camp.IsVillage ? 1 : 0)
+                    + " freshDaughter=" + (outcome.TerminalNewDaughters.Contains(camp.Id) ? 1 : 0)
+                    + " socialTransfer=" + (outcome.TerminalSocialTransfers.Contains(camp.Id) ? 1 : 0)
+                    + " population=" + population
+                    + " qol=" + D(camp.QoL) + " popQol=" + D(population * camp.QoL)
+                    + " food=" + D(camp.FoodNeedsMetRatio)
+                    + " clothing=" + D(camp.ClothPerCapita)
+                    + " housing=" + D(camp.HousingPerCapita)
+                    + " expectation=" + D(camp.RudimentaryExpectation)
+                    + " cohesion=" + D(cohesion));
+            }
+        }
+
+        foreach (bool village in new[] { false, true })
+        foreach (string band in new[] { "adequate", "clothing-gap", "housing-gap", "both-gaps" })
+        {
+            SourceOpportunity[] group = opportunities.Where(o => o.IsVillage == village
+                && ProtectionBand(o.Clothing, o.Housing) == band).ToArray();
+            Console.WriteLine("DEMOGRAPHY_QOL_SOURCE_RATE village=" + (village ? 1 : 0)
+                + " condition=" + band + " sourceCapableCampTurns=" + group.Length
+                + " flows=" + group.Count(o => o.Migrants > 0)
+                + " migrants=" + group.Sum(o => o.Migrants)
+                + " meanQoL=" + D(group.Length == 0 ? 0 : group.Average(o => o.QoL))
+                + " meanPopulation=" + D(group.Length == 0 ? 0 : group.Average(o => o.Population)));
+        }
+        Console.WriteLine("PASS: " + assertions + " terminal QoL-histogram assertions");
+        return assertions;
+    }
+
     private static byte[] OpeningBoundary(int seed, out int openingTurns, out string fingerprint,
         out int camps, out int population)
     {
@@ -299,7 +371,7 @@ internal static class DemographySocialAblation
     }
 
     private static Outcome RunVariant(WorldState world, int seed, Variant variant, int continuations,
-        Calibration calibration = null)
+        Calibration calibration = null, bool captureSourceOpportunities = false)
     {
         world.Config.FissionEnabled = variant.Fission;
         world.Config.ImmigrationEnabled = variant.Immigration;
@@ -404,6 +476,32 @@ internal static class DemographySocialAblation
                 if (!fission.DaughterNetNonnegative) result.NegativeNetDaughters++;
             }
 
+            if (captureSourceOpportunities)
+            {
+                var migrationsBySource = record.Migrations.ToDictionary(m => m.SourceCamp);
+                foreach (DemographicReport demographic in record.Demographics)
+                {
+                    Camp camp = world.Camps.Single(c => c.Id == demographic.Camp);
+                    // Immigration evaluates resident camp population at the frozen post-demography boundary, not
+                    // linked expeditions. Reconstruct it after Close by reversing this turn's social transfers.
+                    int residents = PreTransferResidents(camp, demographic);
+                    Check(residents >= 0, "seed " + seed + " variant " + variant.Name
+                        + " turn " + record.Turn + " reconstructs a nonnegative pre-transfer resident population");
+                    if (!ImmigrationSourceEligible(world.Config, residents)) continue;
+                    migrationsBySource.TryGetValue(camp.Id, out MigrationReport migration);
+                    Check(migration == null || migration.SourceBefore == residents,
+                        "seed " + seed + " variant " + variant.Name + " turn " + record.Turn
+                        + " reconstructs an accepted source's exact pre-transfer residents");
+                    result.SourceOpportunities.Add(new SourceOpportunity
+                    {
+                        Population = residents,
+                        Migrants = migration?.Migrants ?? 0, IsVillage = camp.IsVillage,
+                        QoL = camp.QoL, Food = camp.FoodNeedsMetRatio,
+                        Clothing = camp.ClothPerCapita, Housing = camp.HousingPerCapita
+                    });
+                }
+            }
+
             foreach (DemographicReport d in record.Demographics)
             {
                 double causes = d.ExposureDeaths + d.CrowdingDeaths + d.DiseaseDeaths
@@ -440,6 +538,20 @@ internal static class DemographySocialAblation
             expectedStartingPopulation = world.Camps.ToDictionary(c => c.Id, world.LinkedPopulation);
         }
         timer.Stop(); result.Milliseconds = timer.Elapsed.TotalMilliseconds;
+        if (lastRecord != null)
+        {
+            foreach (FissionReport fission in lastRecord.Fissions)
+            {
+                result.TerminalNewDaughters.Add(fission.DaughterCamp);
+                result.TerminalSocialTransfers.Add(fission.ParentCamp);
+                result.TerminalSocialTransfers.Add(fission.DaughterCamp);
+            }
+            foreach (MigrationReport migration in lastRecord.Migrations)
+            {
+                result.TerminalSocialTransfers.Add(migration.SourceCamp);
+                result.TerminalSocialTransfers.Add(migration.DestinationCamp);
+            }
+        }
 
         Camp[] living = world.Camps.Where(c => world.LinkedPopulation(c) > 0).OrderBy(c => c.Id).ToArray();
         int[] populations = living.Select(world.LinkedPopulation).OrderBy(n => n).ToArray();
@@ -759,6 +871,30 @@ internal static class DemographySocialAblation
         => snapshot == null ? "NA" : !snapshot.Alive ? "EXTINCT" : snapshot.LinkedPopulation + ":" + Triple(snapshot) + ":" + F(snapshot.NetRate);
     private static string Triple(Snapshot snapshot)
         => snapshot == null || !snapshot.Alive ? "NA" : F(snapshot.Food) + "/" + F(snapshot.Clothing) + "/" + F(snapshot.Housing);
+    private static string ProtectionBand(double clothing, double housing)
+        => clothing >= .8 ? housing >= .8 ? "adequate" : "housing-gap"
+            : housing >= .8 ? "clothing-gap" : "both-gaps";
+    private static int PreTransferResidents(Camp camp, DemographicReport demographic)
+        => checked(camp.Population + demographic.Emigrated - demographic.Immigrated + demographic.SplitOff);
+    private static bool ImmigrationSourceEligible(SimulationConfig config, int residents)
+        => residents >= config.ImmigrationSourceFloor + config.ImmigrationMinimumGroup
+            && Immigration.MaxGroup(config, residents) >= config.ImmigrationMinimumGroup;
+    private static void CheckSourceEligibility()
+    {
+        var config = SimulationConfig.Small(8);
+        Check(!ImmigrationSourceEligible(config, 16), "a 16-resident camp cannot send the four-person minimum at the ten-percent cap");
+        Check(!ImmigrationSourceEligible(config, 39), "a 39-resident camp remains below the four-person capped group");
+        Check(ImmigrationSourceEligible(config, 40), "a 40-resident camp can send the four-person minimum");
+        var camp = new Camp { Population = 39 };
+        var linked = new DemographicReport { EndingPopulation = 139 };
+        Check(PreTransferResidents(camp, linked) == 39 && !ImmigrationSourceEligible(config, PreTransferResidents(camp, linked)),
+            "linked expedition population cannot make an ineligible resident camp an immigration source");
+        camp.Population = 36;
+        var transferred = new DemographicReport { Emigrated = 4, EndingPopulation = 90 };
+        Check(PreTransferResidents(camp, transferred) == 40 && ImmigrationSourceEligible(config, PreTransferResidents(camp, transferred)),
+            "post-Close reconstruction restores the exact pre-transfer source population");
+    }
+    private static string D(double value) => value.ToString("F6", CultureInfo.InvariantCulture);
     private static string F(double value) => value.ToString("F3", CultureInfo.InvariantCulture);
     private static int Percentile(IReadOnlyList<int> sorted, double fraction)
         => sorted.Count == 0 ? 0 : sorted[(int)Math.Round((sorted.Count - 1) * fraction)];

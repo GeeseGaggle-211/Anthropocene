@@ -316,6 +316,55 @@ social-flow blocker is to causally separate accepted-flow effects from the
 underlying next-turn real economy, especially clothing and food-deficit
 history—not a death loop and not evidence for a mortality veto.
 
+### Terminal welfare distribution and immigration origins
+
+`--demography-qol-histogram=30` reuses the identical three saved physical
+boundaries and current social defaults. It emits one row per terminal camp for
+population, population × QoL and QoL, plus source-capable camp-turn emission
+rates grouped by formal village status and observed clothing/housing coverage. The 0.8
+coverage cut is a descriptive plot band, not a simulation threshold. The run
+passes **25,560 assertions**.
+
+The 297 terminal committed-state rows contain 76,581 people and 14,099.085
+population-QoL (population-weighted QoL 0.184), matching the end-of-Close
+`WelfareDiagnostics` convention. Median settlement population is 212, median
+population-QoL is 3.212, and median QoL is 0.020. Only 8 settlements have both
+clothing and housing coverage at least 0.8; 49 have a clothing-only gap, 49 a
+housing-only gap, and 191 have both gaps. The both-gap group contains 41.3
+percent of terminal people but only 9.6 percent of terminal population-QoL.
+
+This histogram is an endpoint proxy, not a claim that every field describes
+one contemporaneously experienced service interval. At the final Close
+boundary, 52 rows are affected by a migration or fission transfer. Seven are
+new daughters whose committed `Camp.QoL` is the fission estimate and whose
+coverage fields are inherited until their first economy turn. Other transfer
+participants combine Close-boundary population with the committed QoL/service
+state on which the social decision was made. These rows remain relevant to the
+authoritative end-of-turn welfare diagnostic, but must not be read as newly
+resolved daughter or receiver experience.
+
+The source-camp-turn denominator includes every resident camp that passes both
+the source-floor and maximum-group tests needed to send the minimum group,
+whether or not it has a known destination. It excludes linked expeditions. Of
+393 flows and 4,296 migrants, **388 flows (98.7 percent) and 4,199 people (97.7
+percent)** originate in the both-gap band. Both-gap non-villages emit 379 flows
+from 3,107 source-capable camp-turns (12.2 per 100); both-gap formal villages emit 9
+from 298 (3.0 per 100). Formal villages account for only 11 flows and 273
+migrants overall. The supported descriptive conclusion is that observed
+immigration overwhelmingly originates in settlements classified with both
+protection gaps, while formal `Camp.IsVillage` sources do not dominate it.
+
+This association does not establish that the retained QoL formula is defective
+or exonerate immigration mechanics. The formula and weights were not changed;
+most terminal camps were created by fission; and destination opportunities,
+settlement age, population, lineage/contact topology and destination protection
+are uncontrolled. The next causal test should capture the frozen pre-immigration
+candidate set and decompose exact source/destination utility into food/water,
+expectation-adjusted clothing/housing and housing-conditioned cohesion, then
+counterfactually rescore the same pairs without changing behavior. Matched
+accepted-flow/no-flow replay remains necessary to separate the pre-existing
+material-service collapse from effects caused by a transfer.
+
 ## Native solver and turn-performance evidence
 
 Command:
@@ -469,6 +518,7 @@ dotnet run -c Release --no-build --project Tools/Headless/Anthropocene.Headless.
 dotnet run -c Release --no-build --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-live=30
 dotnet run -c Release --no-build --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-social-ablation=30
 dotnet run -c Release --no-build --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-immigration-sweep=30
+dotnet run -c Release --no-build --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-qol-histogram=30
 dotnet run -c Release --no-build --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-benchmark=5
 dotnet run -c Release --no-build --project Tools/Headless/Anthropocene.Headless.csproj -- 0 --jobs=3 --check-timings
 ```
