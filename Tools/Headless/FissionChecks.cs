@@ -66,8 +66,22 @@ internal static class FissionChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); UnbuiltCrops(); Relative(); Funnel(); Spacing(); Bounded(); WiderRadius(); Policy(); Distress(); Observations(); Persistence(); Replay(); PhysicalDiagnostics();
+        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); UnbuiltCrops(); Relative(); Funnel(); Spacing(); Bounded(); WiderRadius(); Policy(); Distress(); Observations(); Persistence(); Replay(); LegacyCompatibility(); PhysicalDiagnostics();
         Console.WriteLine("PASS: " + checks + " fission assertions"); return checks;
+    }
+
+    private static void LegacyCompatibility()
+    {
+        var w = World(true, new[] { 8, 8 }); var parent = w.Camps[0]; Explore(w, parent); Pressure(w, 0);
+        parent.StationaryYears = 60; parent.RudimentaryExpectation = .7;
+        parent.FoodDeficitYears = 37; parent.DeficitTurns = 2; parent.DeficitSeverity = .4;
+        Check(Pass(w, out _) != null, "legacy compatibility fixture founds a daughter");
+        var daughter = Daughter(w, parent);
+        Near(daughter.StationaryYears, 0, "legacy fission preserves the pre-v1.1 stationary-years reset");
+        Near(daughter.RudimentaryExpectation, 0, "legacy fission preserves the pre-v1.1 expectation initialization");
+        Near(daughter.FoodDeficitYears, 0, "legacy fission preserves the pre-v1.1 deficit-years initialization");
+        Check(daughter.DeficitTurns == 0 && daughter.DeficitSeverity == 0,
+            "legacy fission does not inherit physical-only deficit history");
     }
 
     private static void PhysicalDiagnostics()
@@ -85,14 +99,30 @@ internal static class FissionChecks
         Check(inheritedExpectation.DaughterQoL < relaxedExpectation.DaughterQoL - 1e-9,
             "the founding estimate retains the parent's expectation instead of manufacturing welfare through a reset");
         double birthProgress = parent.GrowthRemainder, deathProgress = parent.DeathRemainder;
-        var report = Pass(w, out _); var daughter = Daughter(w, parent);
+        var report = Pass(w, out var physicalMetrics); var daughter = Daughter(w, parent);
         Check(report != null && report.ParentMortalityBefore > 0 && report.ParentMortalityAfter > 0 && report.DaughterMortality > 0,
             "physical fission reports parent and daughter mortality without changing the QoL threshold");
-        Check(report.DaughterPhysicallyViable == (report.DaughterNetRate >= 0), "daughter viability is an explicit physical-law diagnostic");
+        Check(report.DaughterNetNonnegative && report.DaughterNetRate >= 0
+            && physicalMetrics.FissionPhysicalDaughterNegativeNet == 0,
+            "a QoL-approved daughter with nonnegative projected net growth remains eligible without threshold retuning");
+        var daughterRates = PhysicalDemography.Rates(w.Config, daughter.Population, report.DaughterNutrition,
+            report.DaughterClothingCoverage, report.DaughterHousingCoverage * daughter.Population,
+            report.DaughterNutrition < 1 - 1e-12 && daughter.FoodDeficitYears >= PhysicalDemography.StarvationGraceYears(w.Config));
+        Near(report.DaughterNetRate, daughterRates.Net,
+            "daughter risk diagnostics use explicit projected food, clothing, shelter and inherited hunger history");
         Near(parent.GrowthRemainder + daughter.GrowthRemainder, birthProgress, "fission conserves gross-birth progress under the physical model");
         Near(parent.DeathRemainder + daughter.DeathRemainder, deathProgress, "fission conserves gross-death progress under the physical model");
         Near(daughter.FoodDeficitYears, 37, "fission does not reset accumulated food-deficit years");
         Near(daughter.StationaryYears, parent.StationaryYears, "fission does not manufacture welfare through an expectation reset");
+
+        var dense = World(true, new[] { 8, 8 }); dense.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        var crowded = dense.Camps[0]; Explore(dense, crowded); Pressure(dense, 0); crowded.Population = 4000;
+        crowded.FoodNeedsMetRatio = crowded.ClothPerCapita = 1; crowded.Inventory.LightHousingUnits = 1e9;
+        var declining = Pass(dense, out var decliningMetrics);
+        Check(declining != null && dense.Camps.Count == 2 && !declining.DaughterNetNonnegative
+            && declining.DaughterNetRate < 0 && decliningMetrics.FissionPhysicalDaughterNegativeNet == 1
+            && decliningMetrics.FissionDaughterBlocked == 0 && decliningMetrics.FissionProposals == 1,
+            "a QoL-approved above-equilibrium daughter may decline toward its positive root without a new social veto");
     }
 
     // B1: the daughter's own shelter at the end of her first turn (Fission.DaughterShelter): her proportional share of carried tents
@@ -143,9 +173,8 @@ internal static class FissionChecks
         var e = Fixture(.1, 1000, 1000, construction: true); var ec = e.Camps[0]; e.FixedHousing.Add(new FixedHousingStock { CampId = ec.Id, Tile = ec.Tile, Units = 25, LastUpdatedDays = e.Days });
         var ee = Fission.EstimateSplit(e, ec, FissionPolicy.Neutral); var bare = Fixture(0, 0, 0); bare.FixedHousing.Add(new FixedHousingStock { CampId = bare.Camps[0].Id, Tile = bare.Camps[0].Tile, Units = 25, LastUpdatedDays = bare.Days });
         var be = Fission.EstimateSplit(bare, bare.Camps[0], FissionPolicy.Neutral);
-        double floor = n0.RudimentaryExpectationFloor;
         Near(ee.DaughterQoL, Cohesion(e, 1, 30), "a fully sheltered daughter has coverage 1 and H = 1", 1e-9);
-        Near(be.DaughterQoL, (.5 + .5 * (1 - floor)) * Cohesion(bare, 0, 30), "an unhoused daughter is evaluated at the parent's retained expectation");
+        Near(be.DaughterQoL, (.5 + .5 * (1 - LegacyDaughterExpectation(bare))) * Cohesion(bare, 0, 30), "an unhoused legacy daughter is evaluated at the historical post-move expectation");
         Check(!be.DaughterAcceptable(.05) && ee.DaughterAcceptable(.05) && ee.DaughterQoL > be.DaughterQoL, "the check binds the unsupplied split and passes the well supplied one");
         // In the pass: the same counters as before, fewer blocks for the supplied camp.
         foreach (var w in new[] { e, bare }) { w.Config.FissionDaughterMargin = .05; Explore(w, w.Camps[0]); Ratio(w, w.Camps[0], 1.5); }
@@ -237,6 +266,12 @@ internal static class FissionChecks
         var n = w.Config.Neolithic; double cap = NeolithicProduction.FixedHousingAt(w, c.Id, c.Tile, w.Days) * n.HousingPeoplePerUnit + n.LightHousingPermanence * c.Inventory.LightHousingUnits * n.LightHousingPeoplePerUnit;
         return Cohesion(w, Math.Min(1, cap / population), population);
     }
+    private static double LegacyDaughterExpectation(WorldState w)
+    {
+        var n = w.Config.Neolithic;
+        return n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor)
+            * Math.Min(1, (w.Config.TurnDays / w.Config.DaysPerYear) / n.RudimentaryExpectationRampYears);
+    }
     private static void Crowding()
     {
         // Closed form with full goods coverage: G = (F_hat W_hat / F W) S(N - N_d) / S(N) - 1, with S ratio exp((N^2 - (N - N_d)^2) / N_s^2) (beta = 2); the relief factor is 1 for F = W = 1.
@@ -294,11 +329,12 @@ internal static class FissionChecks
         var portable = World(true, new[] { 8, 8 }); var pc = portable.Camps[0]; pc.ClothPerCapita = 1; pc.Population = 100; pc.Inventory.LightHousingUnits = 10;
         var pe = Fission.EstimateSplit(portable, pc, FissionPolicy.Neutral);
         Near(pe.QAfter / pe.QNow, Cohesion(portable, .21 * 10 * portable.Config.Neolithic.LightHousingPeoplePerUnit / 100, 70) / Cohesion(portable, .21 * 10 * portable.Config.Neolithic.LightHousingPeoplePerUnit / 100, 100), "portable Light Housing splits in proportion and brings no relief: H is unchanged, only the headcount");
-        // Daughter check: F = W = 1 at the site, clothing unchanged, housing from its portable share only, and the parent's expectation retained.
+        // Legacy daughter check: F = W = 1 at the site, clothing unchanged, housing from its portable share only,
+        // and the historical one-turn post-move expectation is used for the veto.
         var dw = World(true, new[] { 8, 8 }); var dc = dw.Camps[0]; dc.ClothPerCapita = 1; dc.Population = 100; dw.FixedHousing.Add(new FixedHousingStock { CampId = dc.Id, Tile = dc.Tile, Units = 25, LastUpdatedDays = dw.Days });
         var de = Fission.EstimateSplit(dw, dc, FissionPolicy.Neutral);
         Near(de.QNow, Cohesion(dw, dc, 100), "a fully housed parent has Q = S(N)");
-        Near(de.DaughterQoL, (.5 + .5 * (1 - floor)) * Cohesion(dw, 0, 30), "the daughter has no housing (H = 0, N_s = N_band), retains the parent's expectation and has F = W = 1");
+        Near(de.DaughterQoL, (.5 + .5 * (1 - LegacyDaughterExpectation(dw))) * Cohesion(dw, 0, 30), "the legacy daughter has no housing (H = 0, N_s = N_band), uses the historical post-move expectation and has F = W = 1");
         Check(!de.DaughterAcceptable(.05) && de.DaughterAcceptable(.25) && de.DaughterAcceptable(de.QNow - de.DaughterQoL + 1e-12) && !de.DaughterAcceptable(de.QNow - de.DaughterQoL - 1e-6), "the margin test is daughter >= Q_now - margin");
         // The test binds in the pass: the tight margin blocks and counts; a wide margin founds.
         Explore(dw, dc); Ratio(dw, dc, 1.5); dw.Config.FissionDaughterMargin = .05;
@@ -737,7 +773,7 @@ internal static class FissionChecks
             Check(m.FissionScreened == m.FissionSearchesNoCandidates + m.FissionSearchesNoViable + m.FissionWithDestination, "world " + index + ": screened = empty searches + non-viable searches + camps with a destination");
             Check(m.FissionWithDestination == m.FissionBelowThreshold + m.FissionDaughterBlocked + m.FissionStayersBlocked + m.FissionProposals, "world " + index + ": destinations = below threshold + daughter veto + stayers veto + proposals");
             Check(m.FissionProposals == m.FissionDropped + m.FissionCommits && m.FissionScreened <= m.FissionCampsEvaluated, "world " + index + ": proposals = dropped + committed");
-            total.FissionScreened += m.FissionScreened; total.FissionSearchesNoCandidates += m.FissionSearchesNoCandidates; total.FissionSearchesNoViable += m.FissionSearchesNoViable; total.FissionBelowThreshold += m.FissionBelowThreshold; total.FissionDaughterBlocked += m.FissionDaughterBlocked; total.FissionDropped += m.FissionDropped; total.FissionCommits += m.FissionCommits;
+            total.FissionScreened += m.FissionScreened; total.FissionSearchesNoCandidates += m.FissionSearchesNoCandidates; total.FissionSearchesNoViable += m.FissionSearchesNoViable; total.FissionBelowThreshold += m.FissionBelowThreshold; total.FissionDaughterBlocked += m.FissionDaughterBlocked; total.FissionPhysicalDaughterNegativeNet += m.FissionPhysicalDaughterNegativeNet; total.FissionDropped += m.FissionDropped; total.FissionCommits += m.FissionCommits;
         }
         Check(total.FissionSearchesNoCandidates >= 1 && total.FissionSearchesNoViable >= 1 && total.FissionBelowThreshold >= 1 && total.FissionDaughterBlocked >= 1 && total.FissionDropped >= 1 && total.FissionCommits >= 1, "the fixtures exercise every funnel stage");
         // Determinism: scalar and reversed 4-worker passes report the same funnel.
@@ -792,15 +828,17 @@ internal static class FissionChecks
         // The same camp fed: no split, and neither gain reaches G*.
         var fed = Famine(80, 1, 1); var fe = Fission.EstimateSplit(fed, fed.Camps[0], FissionPolicy.Neutral);
         Check(Pass(fed, out var fm) == null && fe.Gain < gstar && fe.DaughterGain < gstar && fm.FissionSearches == 0 && fed.Camps.Count == 1, "with F = W = 1 the uncrowded camp does not split (gain " + fe.Gain.ToString("F3") + ", daughter " + fe.DaughterGain.ToString("F3") + " < G*)");
-        // A transfer cannot create a gain by resetting expectation: both the trigger and the veto/founding value use the parent's expectation.
+        // Legacy compatibility: the distress trigger compares like-for-like with the parent's expectation, while the
+        // historical veto/founding value uses the one-turn post-move expectation.
         WorldState RetainedExpectation(double threshold)
         {
             var w = Famine(80, .99, 1, threshold); var c = w.Camps[0]; c.ClothPerCapita = 0; c.RudimentaryExpectation = .6; w.FixedHousing.Clear(); return w;
         }
         var probe = RetainedExpectation(.113); var pe = Fission.EstimateSplit(probe, probe.Camps[0], Kinship.DaughterSize(80, FissionPolicy.Neutral), 1, 1);
-        Near(pe.DaughterQoL, pe.DaughterExpected, "the fully supported veto and distress estimates use the same retained expectation");
+        Check(pe.DaughterQoL > pe.DaughterExpected,
+            "the legacy veto retains its historical post-move expectation while distress utility retains the parent's expectation");
         Near(pe.DaughterGain, pe.DaughterExpected / pe.QNow - 1, "the trigger gain compares the parent's expectation on both sides");
-        var above = RetainedExpectation(Math.Max(pe.Gain, pe.DaughterGain) * 1.01); Check(Pass(above, out _) == null && above.Camps.Count == 1, "retained expectation does not create an extra founding gain");
+        var above = RetainedExpectation(Math.Max(pe.Gain, pe.DaughterGain) * 1.01); Check(Pass(above, out _) == null && above.Camps.Count == 1, "like-for-like trigger utility does not create an extra founding gain");
         var below = RetainedExpectation(Math.Max(pe.Gain, pe.DaughterGain) * .99); Check(Pass(below, out _) != null, "the same camp splits once its threshold is below the like-for-like gain");
         // No viable destination within reach: a waterless landscape, then a landscape too poor for the leaving group.
         var dry = Famine(80, .4, 1); foreach (var t in dry.Tiles) for (int s = 0; s < 4; s++) dry.Tiles[t.Id].Seasons[s].MaxFreshwater = 0;

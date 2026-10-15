@@ -118,7 +118,7 @@ internal static class ImmigrationChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Closed(); Known(); Choice(); Deadband(); Reconcile(); Ordering(); MultiHop(); Conservation(); Records(); Replay(); Persistence(); Forward(); Oscillation(); Hysteresis(); PhysicalDiagnostics();
+        checks = 0; Config(); Closed(); Known(); Choice(); Deadband(); Reconcile(); Ordering(); MultiHop(); Conservation(); Records(); Replay(); Persistence(); Forward(); Oscillation(); Hysteresis(); PhysicalDiagnostics(); MultipleArrivalDeficitProjection();
         Console.WriteLine("PASS: " + checks + " immigration assertions"); return checks;
     }
 
@@ -135,10 +135,84 @@ internal static class ImmigrationChecks
         Remember(w, source, destination); Pass(w);
         var flow = Flow(lastRecord, source.Id);
         Check(flow != null && flow.HigherQoLWorseMortality && flow.DestinationQoL > flow.SourceQoL && flow.MortalityGap > 0,
-            "a higher-QoL destination with worse projected physical mortality can attract migrants and is flagged without changing utility");
+            "a higher-QoL destination with worse projected mortality can still attract migrants");
+        Check(flow.DestinationNetNonnegative && flow.DestinationNetRateAfter >= 0
+            && double.IsFinite(flow.SourceNetRateAfter) && double.IsFinite(flow.DestinationNetRateAfter),
+            "receiving-settlement physical net growth is reported without entering migration utility");
         Check(lastMetrics.ImmigrationHigherQoLWorseMortality == 1, "the migration audit counter records the QoL/survival inversion");
+        Check(lastMetrics.ImmigrationPhysicalDestinationNegativeNet == 0,
+            "the worse-mortality destination's nonnegative projected net rate is diagnosed");
         Near(source.GrowthRemainder + destination.GrowthRemainder, births, "physical migration conserves gross-birth progress");
         Near(source.DeathRemainder + destination.DeathRemainder, deaths, "physical migration conserves gross-death progress");
+
+        var failing = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2));
+        failing.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        var fs = failing.Camps[0]; var fd = failing.Camps[1]; MakeNomadic(fs); MakeNomadic(fd);
+        fs.FoodNeedsMetRatio = .05; fs.ClothPerCapita = 0; fs.Inventory.LightHousingUnits = 0;
+        fs.PlantFood = fs.AnimalFood = fs.AquaticFood = 0;
+        fd.FoodNeedsMetRatio = .5; fd.ClothPerCapita = 0; fd.Inventory.LightHousingUnits = 0;
+        fd.RudimentaryExpectation = 1e-6;
+        fs.FoodDeficitYears = PhysicalDemography.StarvationGraceYears(failing.Config) + 1;
+        fd.FoodDeficitYears = 0;
+        Remember(failing, fs, fd); int beforeSource = fs.Population, beforeDestination = fd.Population;
+        Pass(failing);
+        var decliningFlow = Flow(lastRecord, fs.Id);
+        Check(decliningFlow != null && fs.Population < beforeSource && fd.Population > beforeDestination
+            && lastMetrics.ImmigrationIntents == 1 && lastMetrics.ImmigrationPhysicalDestinationNegativeNet == 1,
+            "a QoL-selected group is not suppressed solely because its receiver has a negative instantaneous net rate");
+        Check(!decliningFlow.DestinationNetNonnegative && decliningFlow.SourceNetRateAfter < 0
+            && decliningFlow.DestinationNetRateAfter < 0
+            && decliningFlow.DestinationNetRateAfter > decliningFlow.SourceNetRateAfter,
+            "people may move from a worse declining source to a safer still-declining receiver under baseline QoL utility"
+            + " (source=" + decliningFlow.SourceNetRateAfter.ToString("G17")
+            + ", destination=" + decliningFlow.DestinationNetRateAfter.ToString("G17") + ")");
+    }
+
+    private static void MultipleArrivalDeficitProjection()
+    {
+        var w = WorldAt(3, (x, i) => i == 2 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2, i));
+        w.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        var oldSource = w.Camps[0]; var freshSource = w.Camps[1]; var destination = w.Camps[2];
+        foreach (var c in w.Camps) MakeNomadic(c);
+        foreach (var source in new[] { oldSource, freshSource })
+        {
+            source.FoodNeedsMetRatio = .05; source.PlantFood = source.AnimalFood = source.AquaticFood = 0;
+            source.ClothPerCapita = 0; Remember(w, source, destination);
+        }
+        double grace = PhysicalDemography.StarvationGraceYears(w.Config);
+        destination.FoodNeedsMetRatio = destination.ClothPerCapita = 1;
+        destination.FoodDeficitYears = grace - .5;
+        oldSource.FoodDeficitYears = grace + 20;
+        freshSource.FoodDeficitYears = 0;
+        int destinationResidents = destination.Population;
+        double destinationDeficit = destination.FoodDeficitYears;
+        Pass(w);
+        var flows = lastRecord.Migrations.Where(m => m.DestinationCamp == destination.Id)
+            .OrderBy(m => m.SourceCamp).ToArray();
+        Check(flows.Length == 2 && flows.All(f => f.Migrants == 10),
+            "the multiple-arrival diagnostic accepts two canonical ten-person inflows");
+
+        int cumulative = 0; double deficitExposure = destinationDeficit * destinationResidents;
+        for (int i = 0; i < flows.Length; i++)
+        {
+            var flow = flows[i]; var source = flow.SourceCamp == oldSource.Id ? oldSource : freshSource;
+            cumulative += flow.Migrants; deficitExposure += source.FoodDeficitYears * flow.Migrants;
+            int residents = destinationResidents + cumulative;
+            double deficit = deficitExposure / residents;
+            double food = (double)destinationResidents / residents;
+            double clothing = (double)destinationResidents / residents;
+            var expected = PhysicalDemography.ProjectedSettlementRates(w, destination, residents, food, clothing, deficit);
+            Near(flow.DestinationMortalityAfter, expected.Death,
+                "arrival " + i + " projects mortality from the cumulative population-weighted deficit age", 1e-10);
+            Near(flow.DestinationNetRateAfter, expected.Net,
+                "arrival " + i + " reports the matching cumulative physical net rate", 1e-10);
+            if (i == 0) Check(expected.LegacyStarvation > 0,
+                "the older first arrival carries cumulative destination exposure across the grace threshold");
+            else Check(expected.LegacyStarvation == 0,
+                "the fresh second arrival can move the documented aggregate deficit convention back below grace");
+        }
+        Near(destination.FoodDeficitYears, deficitExposure / (destinationResidents + cumulative),
+            "committed multiple arrivals preserve the same aggregate deficit-age convention", 1e-12);
     }
 
     private static void Config()

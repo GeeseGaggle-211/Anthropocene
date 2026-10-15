@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using Anthropocene.Simulation;
@@ -8,6 +9,7 @@ using Anthropocene.Simulation;
 internal static class DemographyBenchmark
 {
     private sealed class Case { public double N, Years, Food, Clothing, Housing, DeficitYears; }
+    private sealed class CoupledCase { public DemographicServicePoolInput[] Pools; public double Years; }
     private sealed class Sample { public double Milliseconds; public long Bytes; }
     private sealed class AdaptiveResult
     {
@@ -28,7 +30,11 @@ internal static class DemographyBenchmark
         if (samples < 5) throw new ArgumentOutOfRangeException(nameof(samples), "At least five samples are needed for p50/p95 reporting.");
         var cfg = new SimulationConfig { DemographicModel = DemographicModel.PhysicalMortalityV1, QoLMortalityEnabled = false };
         cfg.Validate();
-        foreach (int settlements in new[] { 80, 320, 1094 }) BenchmarkScale(cfg, settlements, samples);
+        foreach (int settlements in new[] { 80, 320, 1094 })
+        {
+            BenchmarkScale(cfg, settlements, samples);
+            BenchmarkCoupledScale(cfg, settlements, samples);
+        }
     }
 
     private static void BenchmarkScale(SimulationConfig cfg, int settlements, int samples)
@@ -70,10 +76,14 @@ internal static class DemographyBenchmark
         Console.WriteLine("DEMOGRAPHY_BENCHMARK settlements=" + settlements + " profile=accounting-diagnostics samples=" + samples
             + " analytic_p50_ms=" + P(native.Select(x => x.Milliseconds).ToArray(), .5).ToString("F4")
             + " analytic_p95_ms=" + P(native.Select(x => x.Milliseconds).ToArray(), .95).ToString("F4")
+            + " analytic_p99_ms=" + P(native.Select(x => x.Milliseconds).ToArray(), .99).ToString("F4")
             + " midpoint_p50_ms=" + P(adaptive.Select(x => x.Milliseconds).ToArray(), .5).ToString("F4")
             + " midpoint_p95_ms=" + P(adaptive.Select(x => x.Milliseconds).ToArray(), .95).ToString("F4")
+            + " midpoint_p99_ms=" + P(adaptive.Select(x => x.Milliseconds).ToArray(), .99).ToString("F4")
             + " analytic_alloc_p50=" + P(native.Select(x => (double)x.Bytes).ToArray(), .5).ToString("F0")
-            + " midpoint_alloc_p50=" + P(adaptive.Select(x => (double)x.Bytes).ToArray(), .5).ToString("F0"));
+            + " analytic_alloc_p95=" + P(native.Select(x => (double)x.Bytes).ToArray(), .95).ToString("F0")
+            + " midpoint_alloc_p50=" + P(adaptive.Select(x => (double)x.Bytes).ToArray(), .5).ToString("F0")
+            + " midpoint_alloc_p95=" + P(adaptive.Select(x => (double)x.Bytes).ToArray(), .95).ToString("F0"));
         Console.WriteLine("DEMOGRAPHY_BENCHMARK_COUNTERS settlements=" + settlements
             + " rootEvaluations=" + roots + " bands=" + bands + " hazardEvaluations=" + hazards
             + " quadratureEvaluations=" + quadrature + " serviceEvaluations=" + service
@@ -84,6 +94,42 @@ internal static class DemographyBenchmark
             + " endpointMedian=" + P(endpoint, .5).ToString("G6") + " endpointMax=" + endpoint[^1].ToString("G6")
             + " personYearsMedian=" + P(personYears, .5).ToString("G6") + " personYearsMax=" + personYears[^1].ToString("G6")
             + " maxConservation=" + maxConservation.ToString("G6"));
+    }
+
+    private static void BenchmarkCoupledScale(SimulationConfig cfg, int settlements, int samples)
+    {
+        CoupledCase[] cases = CoupledCases(cfg, settlements);
+        RunCoupled(cfg, cases);
+        var measured = new Sample[samples];
+        for (int i = 0; i < samples; i++) measured[i] = Measure(() => RunCoupled(cfg, cases));
+        CoupledDemographicResult[] results = RunCoupled(cfg, cases);
+        long pools = 0, cohorts = 0, rates = 0, accepted = 0, rejected = 0, services = 0, scalar = 0;
+        int worstCohorts = 0, worstPools = 0, worstRates = 0, worstAccepted = 0, worstRejected = 0;
+        double maxConservation = 0;
+        foreach (CoupledDemographicResult result in results)
+        {
+            pools += result.PoolCount; cohorts += result.CohortCount; rates += result.RateEvaluations;
+            accepted += result.AcceptedSteps; rejected += result.RejectedSteps; services += result.ServiceEvaluations;
+            if (result.UsedExactScalarReduction) scalar++;
+            worstCohorts = Math.Max(worstCohorts, result.CohortCount); worstPools = Math.Max(worstPools, result.PoolCount);
+            worstRates = Math.Max(worstRates, result.RateEvaluations); worstAccepted = Math.Max(worstAccepted, result.AcceptedSteps);
+            worstRejected = Math.Max(worstRejected, result.RejectedSteps);
+            maxConservation = Math.Max(maxConservation, Math.Abs(result.Total.ConservationError));
+        }
+        if (maxConservation > 1e-7)
+            throw new Exception("Coupled demographic benchmark exceeded its conservation gate.");
+        Console.WriteLine("DEMOGRAPHY_COUPLED_BENCHMARK settlements=" + settlements + " samples=" + samples
+            + " p50_ms=" + P(measured.Select(x => x.Milliseconds).ToArray(), .5).ToString("F4")
+            + " p95_ms=" + P(measured.Select(x => x.Milliseconds).ToArray(), .95).ToString("F4")
+            + " p99_ms=" + P(measured.Select(x => x.Milliseconds).ToArray(), .99).ToString("F4")
+            + " alloc_p50=" + P(measured.Select(x => (double)x.Bytes).ToArray(), .5).ToString("F0")
+            + " alloc_p95=" + P(measured.Select(x => (double)x.Bytes).ToArray(), .95).ToString("F0"));
+        Console.WriteLine("DEMOGRAPHY_COUPLED_COUNTERS settlements=" + settlements
+            + " pools=" + pools + " cohorts=" + cohorts + " scalarReductions=" + scalar
+            + " rateEvaluations=" + rates + " accepted=" + accepted + " rejected=" + rejected
+            + " serviceEvaluations=" + services + " worstPools=" + worstPools + " worstCohorts=" + worstCohorts
+            + " worstRateEvaluations=" + worstRates + " worstAccepted=" + worstAccepted
+            + " worstRejected=" + worstRejected + " maxConservation=" + maxConservation.ToString("G6"));
     }
 
     private static Sample Measure(Action action)
@@ -116,6 +162,50 @@ internal static class DemographyBenchmark
         return result;
     }
 
+    private static CoupledCase[] CoupledCases(SimulationConfig cfg, int count)
+    {
+        Case[] scalar = Cases(cfg, count);
+        var result = new CoupledCase[count];
+        for (int i = 0; i < count; i++)
+        {
+            Case c = scalar[i];
+            if (i % 4 == 0)
+            {
+                result[i] = new CoupledCase
+                {
+                    Years = c.Years,
+                    Pools = new[] { new DemographicServicePoolInput(
+                        new[] { new DemographicCohortInput(c.N, c.DeficitYears) }, c.Food, c.Clothing, c.Housing) }
+                };
+                continue;
+            }
+            double resident = c.N * .7, detached = c.N - resident;
+            var residentMembers = i % 3 == 0
+                ? new[]
+                {
+                    new DemographicCohortInput(resident * .75, c.DeficitYears),
+                    new DemographicCohortInput(resident * .25, c.DeficitYears + cfg.Neolithic.ReferenceTurnYears)
+                }
+                : new[] { new DemographicCohortInput(resident, c.DeficitYears) };
+            var pools = new List<DemographicServicePoolInput>
+            {
+                new DemographicServicePoolInput(residentMembers, c.Food * .72, c.Clothing, c.Housing),
+                new DemographicServicePoolInput(new[] { new DemographicCohortInput(detached, c.DeficitYears) },
+                    c.Food * .28, 0, 0)
+            };
+            if (i % 5 == 0)
+            {
+                double moved = detached * .35;
+                pools[1] = new DemographicServicePoolInput(
+                    new[] { new DemographicCohortInput(detached - moved, c.DeficitYears) }, c.Food * .18, 0, 0);
+                pools.Add(new DemographicServicePoolInput(
+                    new[] { new DemographicCohortInput(moved, c.DeficitYears + 2) }, c.Food * .10, 0, 0));
+            }
+            result[i] = new CoupledCase { Years = c.Years, Pools = pools.ToArray() };
+        }
+        return result;
+    }
+
     private static DemographicResult[] RunNative(SimulationConfig cfg, Case[] cases)
     {
         var results = new DemographicResult[cases.Length];
@@ -124,6 +214,14 @@ internal static class DemographyBenchmark
             Case c = cases[i];
             results[i] = PhysicalDemography.AdvanceBudget(cfg, c.N, c.Years, c.Food, c.Clothing, c.Housing, c.DeficitYears, true);
         }
+        return results;
+    }
+
+    private static CoupledDemographicResult[] RunCoupled(SimulationConfig cfg, CoupledCase[] cases)
+    {
+        var results = new CoupledDemographicResult[cases.Length];
+        for (int i = 0; i < cases.Length; i++)
+            results[i] = PhysicalDemography.AdvanceCoupledBudget(cfg, cases[i].Pools, cases[i].Years);
         return results;
     }
 

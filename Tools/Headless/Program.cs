@@ -237,7 +237,15 @@ internal static class Program
     {
         if (args.Contains("--issue31-microbench")) { Issue31Microbench(); return 0; }
         if (args.Contains("--demography-only")) { DemographyChecks.Run(); return 0; }
+        if (args.Contains("--fission-only")) { FissionChecks.Run(); return 0; }
+        if (args.Contains("--immigration-only")) { ImmigrationChecks.Run(); return 0; }
         if (args.Contains("--demography-regression")) { DemographyRegressionChecks.Run(); return 0; }
+        var demographyLive = args.FirstOrDefault(a => a.StartsWith("--demography-live", StringComparison.Ordinal));
+        if (demographyLive != null)
+        {
+            int continuations = demographyLive.Contains("=") ? int.Parse(demographyLive.Substring(demographyLive.IndexOf('=') + 1)) : 30;
+            DemographyLiveAudit.Run(continuations); return 0;
+        }
         var demographyBenchmark = args.FirstOrDefault(a => a.StartsWith("--demography-benchmark", StringComparison.Ordinal));
         if (demographyBenchmark != null)
         {

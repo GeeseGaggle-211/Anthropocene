@@ -148,7 +148,11 @@ No assumption needed a redesign, so the work proceeded.
   while the cache is valid.
   It is invalidated when the regime changes (even with no push), when a camp now stands
   on it or within spacing of it, or when it stops being habitable (support ratio 0: the freshwater
-  gate fails or nothing is harvestable). There is no absolute viability bar (see Relative destinations).
+  gate fails or nothing is harvestable). There is no absolute ecological-support
+  or QoL bar beyond the existing relative test (see Relative destinations).
+  `PhysicalMortalityV1` separately projects the QoL-approved daughter's physical
+  mortality and net rate for diagnostics; those projections do not change cache
+  ordering or add a social veto.
 - **Desirability.** `D = clamp(SiteSupport(daughter) / TargetSupport, 0, 1)`, with
   `TargetSupport` the daughter's own annual-generation need so `D = 1` when fully
   supported. Support uses the start-viability footprint evaluation
@@ -174,8 +178,14 @@ No assumption needed a redesign, so the work proceeded.
   ceiling. These are planning estimates from projected ecology, not forecasts of
   realized harvest. The regime is `Fission.RegimeOf`; it selects only this destination-site scoring (cultivable
   land vs pasture vs gathering) and no longer affects cohesion, which is derived from housing.
-- **Proposal.** `G >= G*(policy)`, a valid cached destination (`D >= StartViability / 100`), the daughter check and
-  the size rules above.
+- **Proposal.** `G >= G*(policy)`, a valid cached destination, the existing
+  daughter/stayer QoL checks and the size rules above. Under
+  `PhysicalMortalityV1`, destination food, carried clothing, projected shelter,
+  population and inherited deficit age produce an explicit physical mortality
+  and net-rate diagnostic. `FissionPhysicalDaughterNegativeNet` counts proposals
+  with negative instantaneous net growth, but does not block, weight or rerank
+  them: above-equilibrium decline and recoverable distress are not physical
+  nonviability.
 - **Reconcile and commit.** Canonical camp-ID order. A proposal whose tile is the same
   as, or within spacing of, an earlier commit is dropped this turn and keeps its cache
   for revalidation next turn (there is no rerouting). Commit creates, in this order:
@@ -576,14 +586,18 @@ camp had `G ~ 0` and never split. The daughter's QoL (`F = W = 1`) was only a ve
 3. *Decision.* Propose when a viable destination is cached AND (`G_stay >= G*` at the policy size, **or** `G_d >= G*` at the
    distress size) AND the daughter veto passes AND the stayers are not worse off (`Q_after >= Q_now - FissionDaughterMargin`,
    true by construction). Same policy thresholds, no new QoL cutoff: the effective "QoL below which people leave" is
-   `Q_now < Q_d / (1 + G*)`, set by the land within reach.
+   `Q_now < Q_d / (1 + G*)`, set by the land within reach. In physical mode, explicit mortality and net growth are
+   projected from food, clothing, shelter, headcount and inherited deficit age—never composite QoL—and reported without
+   changing the decision.
 4. *Who leaves under distress.* When the camp cannot feed itself the leaving group is the people local subsistence cannot
    carry: `n_short = ceil(N (1 - F W))`, `n_d = clamp(max(policy size, n_short), FissionMinimumDaughter, largest n with n < N - n and
    N - n >= MinimumCamp)`. If the distress branch passes the split uses this size; otherwise a passing crowding branch uses
    the policy size. The destination search and validation use the distress size whenever the distress screen passes (the larger,
    harder-to-support group). One split per camp per turn, no chaining.
 5. *Report and metrics.* `FissionReport.Trigger` is Distress when the distress branch was the one used, `DaughterGain` the
-   daughter's relative gain at the chosen destination; `ResolutionMetrics` counts proposals and commits per trigger
+   daughter's relative gain at the chosen destination; it also carries projected daughter nutrition, clothing, housing,
+   mortality, net rate and whether that instantaneous net rate is nonnegative. `ResolutionMetrics` counts negative-net
+   proposals plus proposals and commits per trigger
    (`FissionCrowdingProposals`, `FissionDistressProposals`, `...Commits`, `FissionDistressDaughters`). The report is history only
    (not in observations; schema unchanged).
 
@@ -698,10 +712,14 @@ covers (`Immigration.CarriedPerPerson`, the same term immigration uses). For a h
 not feed animals). `EstimateSplit` takes it as the optional `vetoFood` argument (default 1: unchanged callers). The distress and crowding triggers
 and their gain terms are unchanged (the distress gain still uses the site's support ratio alone); only the veto sees the carried food. A parent
 that is well off (high `Q_now`) therefore blocks a thin site that a parent that is short of food, or one carrying food, accepts.
+Under `PhysicalMortalityV1`, a site that passes this relative welfare test can
+still be rejected after the QoL decision if the daughter would begin with a
+negative explicit physical net rate. This does not invalidate or reorder the
+cached site; it prevents that turn's proposal and is counted separately.
 
 **Funnel counters** (`ResolutionMetrics`, transient, in the audit JSON as `fissionScreened` ...): every camp past the gain screen ends in exactly one
 outcome. `screened = searches with no legal candidate + searches with candidates but no destination + camps with a destination`; `with destination =
-below threshold + daughter veto + stayers veto + proposals`; `proposals = dropped (spacing conflict) + committed`. `Tools/PerformanceAudit/Summarize-Hinterland.py`
+below threshold + daughter veto + stayers veto + physical daughter veto + proposals`; `proposals = dropped (spacing conflict) + committed`. `Tools/PerformanceAudit/Summarize-Hinterland.py`
 tabulates them. Checks: `FissionChecks.Funnel` (identities over eight fixtures, scalar versus reversed 4-worker) and `FissionChecks.Relative`.
 
 ### Measurements (hinterland and relative destinations)

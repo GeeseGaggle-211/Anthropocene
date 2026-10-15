@@ -13,9 +13,11 @@ namespace Anthropocene.Simulation
         public double SourceQoL, DestinationQoL, Utility, PostInflowQoL, Plant, Animal, Aquatic;
         // WP10b-2: the return penalty inside Utility and the person-equivalents of food need the migrants carried (absent in older saves).
         [System.Runtime.Serialization.OptionalField] public double Penalty, Carried;
-        // Diagnostic only; utility remains ForwardUtility(QoL). These annual physical death rates reveal attractive
-        // destinations whose welfare is higher while survival risk is worse.
+        // Utility remains ForwardUtility(QoL). These annual physical rates reveal attractive destinations whose
+        // welfare is higher while survival risk is worse, without turning instantaneous net growth into a social veto.
         [System.Runtime.Serialization.OptionalField] public double SourceMortalityBefore, DestinationMortalityBefore, SourceMortalityAfter, DestinationMortalityAfter, MortalityGap;
+        [System.Runtime.Serialization.OptionalField] public double SourceNetRateAfter, DestinationNetRateAfter;
+        [System.Runtime.Serialization.OptionalField] public bool DestinationNetNonnegative;
         [System.Runtime.Serialization.OptionalField] public bool HigherQoLWorseMortality;
     }
 
@@ -102,6 +104,7 @@ namespace Anthropocene.Simulation
             public double Plant, Animal, Aquatic;   // frozen source stores: migrants carry their per-capita share of these
             public double GrowthProgress, DeathProgress, FoodDeficitYears, DeficitSeverity;
             public double SourceMortalityBefore, DestinationMortalityBefore, SourceMortalityAfter, DestinationMortalityAfter;
+            public double SourceNetRateAfter, DestinationNetRateAfter;
             public int Accepted; public double PostInflowQuality;
         }
 
@@ -141,34 +144,52 @@ namespace Anthropocene.Simulation
             }
             var taken = new HashSet<int>(intents.Select(i => i.Source.Id));
             // Canonical reconcile: destination camp ID, then source camp ID. A destination accepts while its estimated post-inflow QoL stays
-            // at least Q_i + theta for each source in order; the excess stays home and is never rerouted.
+            // at least Q_i + theta for each source in order. Physical rates are diagnosed after the unchanged QoL decision; they do not add a
+            // new threshold. The excess stays home and is never rerouted.
             var inflow = new Dictionary<int, int>(); var carriedIn = new Dictionary<int, double>();
+            var deficitExposureIn = new Dictionary<int, double>();
             var ordered = intents.OrderBy(i => i.Destination.Id).ThenBy(i => i.Source.Id).ToArray();
             foreach (var intent in ordered)
             {
                 var destination = intent.Destination; var destinationModel = context.Models[destination.Id]; var sourceModel = context.Models[intent.Source.Id];
                 inflow.TryGetValue(destination.Id, out int already); carriedIn.TryGetValue(destination.Id, out double carriedAlready);
+                deficitExposureIn.TryGetValue(destination.Id, out double deficitExposureAlready);
                 double theta = cfg.ImmigrationDeadband;
                 // Forward utility at the group size m (with the inflow already accepted): the largest acceptable m is found by bisection.
                 bool Accept(int m) => ForwardUtility(cfg, sourceModel, destinationModel, m, already, carriedAlready + m * intent.CarriedPerPerson, intent.Distance, intent.Source, destination, intent.Penalty) > theta;
                 int lo = 0, hi = intent.Size;
                 while (lo < hi) { int mid = (lo + hi + 1) >> 1; if (Accept(mid)) lo = mid; else hi = mid - 1; }
+                DemographicRates DestinationRates(int m)
+                {
+                    int residents = Math.Max(1, intent.DestinationResidents + already + m);
+                    double food = Fission.QoLModel.FoodAt(intent.Destination.FoodNeedsMetRatio,
+                        intent.DestinationResidents, carriedAlready + m * intent.CarriedPerPerson, residents);
+                    double clothing = Math.Min(1, intent.Destination.ClothPerCapita
+                        * intent.DestinationResidents / (double)residents);
+                    double deficit = (destination.FoodDeficitYears * intent.DestinationResidents
+                        + deficitExposureAlready + intent.Source.FoodDeficitYears * m) / residents;
+                    return PhysicalDemography.ProjectedSettlementRates(w, destination, residents, food, clothing, deficit);
+                }
                 intent.Accepted = lo; intent.PostInflowQuality = destinationModel.ForwardAt(destination.Population + already + lo, carriedAlready + lo * intent.CarriedPerPerson);
                 if (lo > 0) intent.Utility = ForwardUtility(cfg, sourceModel, destinationModel, lo, already, carriedAlready + lo * intent.CarriedPerPerson, intent.Distance, intent.Source, destination, intent.Penalty);
                 if (PhysicalDemography.Enabled(cfg))
                 {
-                    int sourceAfter = Math.Max(1, intent.Residents - lo), destinationAfter = Math.Max(1, intent.DestinationResidents + already + lo);
-                    double destinationFoodAfter = Fission.QoLModel.FoodAt(intent.Destination.FoodNeedsMetRatio, intent.DestinationResidents, carriedAlready + lo * intent.CarriedPerPerson, destinationAfter);
+                    int sourceAfter = Math.Max(1, intent.Residents - lo);
                     double sourceClothingAfter = Math.Min(1, intent.Source.ClothPerCapita * intent.Residents / (double)sourceAfter);
-                    double destinationClothingAfter = Math.Min(1, intent.Destination.ClothPerCapita * intent.DestinationResidents / (double)destinationAfter);
                     intent.SourceMortalityBefore = PhysicalDemography.ProjectedSettlementRates(w, intent.Source, intent.Residents, intent.Source.FoodNeedsMetRatio, intent.Source.ClothPerCapita).Death;
                     intent.DestinationMortalityBefore = PhysicalDemography.ProjectedSettlementRates(w, destination, intent.DestinationResidents, destination.FoodNeedsMetRatio, destination.ClothPerCapita).Death;
                     // Food leaves proportionally, while the existing transfer baseline moves no clothing stock: source
                     // coverage improves with fewer people and destination coverage is diluted, matching QoLModel.Shape.
-                    intent.SourceMortalityAfter = PhysicalDemography.ProjectedSettlementRates(w, intent.Source, sourceAfter, intent.Source.FoodNeedsMetRatio, sourceClothingAfter).Death;
-                    intent.DestinationMortalityAfter = PhysicalDemography.ProjectedSettlementRates(w, destination, destinationAfter, destinationFoodAfter, destinationClothingAfter).Death;
+                    var sourceRatesAfter = PhysicalDemography.ProjectedSettlementRates(w, intent.Source, sourceAfter,
+                        intent.Source.FoodNeedsMetRatio, sourceClothingAfter);
+                    var destinationRatesAfter = DestinationRates(lo);
+                    intent.SourceMortalityAfter = sourceRatesAfter.Death; intent.SourceNetRateAfter = sourceRatesAfter.Net;
+                    intent.DestinationMortalityAfter = destinationRatesAfter.Death; intent.DestinationNetRateAfter = destinationRatesAfter.Net;
+                    if (lo > 0 && destinationRatesAfter.Net < 0)
+                        metrics.ImmigrationPhysicalDestinationNegativeNet++;
                 }
                 inflow[destination.Id] = already + lo; carriedIn[destination.Id] = carriedAlready + lo * intent.CarriedPerPerson;
+                deficitExposureIn[destination.Id] = deficitExposureAlready + intent.Source.FoodDeficitYears * lo;
                 if (lo == 0) metrics.ImmigrationRejected++; else { metrics.ImmigrationAccepted++; if (lo < intent.Size) metrics.ImmigrationPartial++; }
             }
             var participants = new HashSet<int>(taken);
@@ -220,6 +241,8 @@ namespace Anthropocene.Simulation
                         Plant = intent.Plant * f, Animal = intent.Animal * f, Aquatic = intent.Aquatic * f, Penalty = intent.Penalty, Carried = m * intent.CarriedPerPerson,
                         SourceMortalityBefore = intent.SourceMortalityBefore, DestinationMortalityBefore = intent.DestinationMortalityBefore,
                         SourceMortalityAfter = intent.SourceMortalityAfter, DestinationMortalityAfter = intent.DestinationMortalityAfter,
+                        SourceNetRateAfter = intent.SourceNetRateAfter, DestinationNetRateAfter = intent.DestinationNetRateAfter,
+                        DestinationNetNonnegative = !PhysicalDemography.Enabled(w.Config) || intent.DestinationNetRateAfter >= 0,
                         MortalityGap = intent.DestinationMortalityAfter - intent.SourceMortalityAfter,
                         HigherQoLWorseMortality = intent.PostInflowQuality > intent.QualitySource && intent.DestinationMortalityAfter > intent.SourceMortalityAfter + 1e-12
                     });

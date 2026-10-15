@@ -469,6 +469,9 @@ namespace Anthropocene.Simulation
         // Turn-local provenance of FabricConsumed. Physical demography may reconcile the finite textile envelope after
         // needs resolve; these values are never authoritative save state.
         [NonSerialized] internal double ResolvedClothConsumed, ResolvedAnimalFabricConsumed;
+        // Turn-local continuous cohort mass used only when a connected expedition reintegrates after the demographic
+        // solve. It keeps hunger-history merging independent of which integer entity received a rounded birth.
+        [NonSerialized] internal double DemographicDeficitMergeWeight;
         [System.Runtime.Serialization.OptionalField] public double StonePriority = 1, ClayPriority = 1, WoodPriority = 1;
         [System.Runtime.Serialization.OptionalField] public double PotsTarget, FarmToolsTarget;
         // 0 = manual, -1 = continuous, positive = remaining automated resolutions.
@@ -535,6 +538,7 @@ namespace Anthropocene.Simulation
         public int Id, Player, SocietyId, SourceCamp, Tile, Population;
         public double CarriedFood, LastConsumed, FoodDeficit, DeficitSeverity, DeathRemainder;
         [System.Runtime.Serialization.OptionalField] public double GrowthRemainder, FoodDeficitYears;
+        [NonSerialized] internal double DemographicDeficitMergeWeight;
         public int DeficitTurns;
     }
     [Serializable]

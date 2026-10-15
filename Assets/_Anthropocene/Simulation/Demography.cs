@@ -51,10 +51,10 @@ namespace Anthropocene.Simulation
     // Temporal abstraction: one arbitrary physical interval. Mathematical log-population bands are not simulation timesteps.
     // Scaling: O(root evaluations + crossed/refined log-population bands + fixed-order quadrature), plus a bounded local
     // person-year closure when finite food/textile budgets are supplied. It never advances ecology, production, policy or world state.
-    public static class PhysicalDemography
+    public static partial class PhysicalDemography
     {
-        private const double MinimumPopulation = 1e-13;
         private const double SlopeEpsilon = 1e-14;
+        private static readonly double LogSmallestPositivePopulation = Math.Log(double.Epsilon);
         private static readonly double[] GaussNodes =
         {
             -.8611363115940525752, -.3399810435848562648,
@@ -77,10 +77,14 @@ namespace Anthropocene.Simulation
         // Read-only settlement projection used only by migration/fission diagnostics. It consumes explicit physical
         // coverage and headcount; composite QoL is intentionally not accepted by this API.
         public static DemographicRates ProjectedSettlementRates(WorldState world, Camp camp, double population,
-            double nutrition, double clothingCoverage)
-            => Rates(world.Config, population, nutrition, clothingCoverage,
-                NeolithicProduction.HousingCapacity(world, camp, world.Days).Total, false, 0,
+            double nutrition, double clothingCoverage, double? deficitYears = null)
+        {
+            double deficit = Math.Max(0, deficitYears ?? camp.FoodDeficitYears);
+            bool starvationActive = nutrition < 1 - 1e-12 && deficit >= StarvationGraceYears(world.Config) - 1e-12;
+            return Rates(world.Config, population, nutrition, clothingCoverage,
+                NeolithicProduction.HousingCapacity(world, camp, world.Days).Total, starvationActive, 0,
                 CrowdingMitigation(world, camp), DiseaseMitigation(world, camp), FertilityFactor(world, camp), AdditionalMortality(world, camp));
+        }
 
         public static double FoodPerPersonYear(SimulationConfig config)
             => config.Consumption * config.DaysPerYear / config.BaseDays;
@@ -96,9 +100,23 @@ namespace Anthropocene.Simulation
         {
             if (!(population >= 0) || !Finite(population) || !(densityPopulationOffset >= 0) || !Finite(densityPopulationOffset))
                 throw new DemographicNumericalException("Population and density offset must be finite and nonnegative.");
-            double f = Numbers.Clamp(nutrition, 0, 1), c = Numbers.Clamp(clothingCoverage, 0, 1);
             double h = population > 0 ? Math.Min(1, Math.Max(0, housingCapacity) / population) : housingCapacity > 0 ? 1 : 0;
-            double density = population + densityPopulationOffset;
+            return RatesAtDensityCoverage(config, population + densityPopulationOffset, nutrition,
+                clothingCoverage, h, legacyStarvationActive, crowdingMitigation, diseaseMitigation,
+                fertilityFactor, additionalMortality);
+        }
+
+        // The coupled expedition propagator supplies one shared physical density while each service pool retains its
+        // own clothing/housing coverage. This is the same v1.1 hazard law as Rates; only the state decomposition differs.
+        internal static DemographicRates RatesAtDensityCoverage(SimulationConfig config, double density,
+            double nutrition, double clothingCoverage, double housingCoverage, bool legacyStarvationActive = false,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
+            double additionalMortality = 0)
+        {
+            if (!(density >= 0) || !Finite(density))
+                throw new DemographicNumericalException("Demographic density must be finite and nonnegative.");
+            double f = Numbers.Clamp(nutrition, 0, 1), c = Numbers.Clamp(clothingCoverage, 0, 1);
+            double h = Numbers.Clamp(housingCoverage, 0, 1);
             double exposure = config.ExposureMortalityRate * Math.Max(0, 1 - config.ExposureClothingReduction * c - config.ExposureHousingReduction * h);
             double crowding = config.CrowdingMortalityRateAt1000 * ExponentialExcess(density, config.CrowdingExponent) * crowdingMitigation;
             double disease = config.DiseaseMortalityRateAt1000 * ExponentialExcess(density, config.DiseaseExponent) * diseaseMitigation;
@@ -158,12 +176,14 @@ namespace Anthropocene.Simulation
                 return new DemographicResult { InitialPopulation = population, FinalPopulation = population, Nutrition = 1, ClothingCoverage = 1 };
             double foodRate = FoodPerPersonYear(config), clothingRate = ClothingPerPersonYear(config);
             double maximumPersonYears = BirthOnlyPersonYears(population, config.BaseBirthRate, years);
-            bool fullFood = foodBudget + 1e-10 >= foodRate * maximumPersonYears;
-            bool fullClothing = clothingBudget + 1e-10 >= clothingRate * maximumPersonYears;
+            // Funding is physical stock, so an absolute epsilon must not turn a microscopic zero budget into
+            // free full service. Exact equality is sufficient for the birth-only upper envelope shortcut.
+            bool fullFood = foodBudget >= foodRate * maximumPersonYears;
+            bool fullClothing = clothingBudget >= clothingRate * maximumPersonYears;
             int allRoot = 0, allBands = 0, allHazards = 0, allQuadrature = 0, evaluations = 0;
             DemographicResult Evaluate(double personYears)
             {
-                double denominator = Math.Max(MinimumPopulation, personYears);
+                double denominator = personYears > 0 ? personYears : double.Epsilon;
                 double food = fullFood ? 1 : Numbers.Clamp(foodBudget / (foodRate * denominator), 0, 1);
                 double clothing = fullClothing ? 1 : Numbers.Clamp(clothingBudget / (clothingRate * denominator), 0, 1);
                 var value = AdvanceFixed(config, population, years, food, clothing, housingCapacity,
@@ -176,7 +196,7 @@ namespace Anthropocene.Simulation
             if (fullFood && fullClothing) result = Evaluate(maximumPersonYears);
             else
             {
-                double low = 0, high = Math.Max(MinimumPopulation, maximumPersonYears);
+                double low = 0, high = Math.Max(double.Epsilon, maximumPersonYears);
                 result = Evaluate(high);
                 if (result.PersonYears > high * (1 + 1e-10))
                     throw new DemographicNumericalException("Finite-service closure exceeded the birth-only person-year bracket.");
@@ -220,7 +240,9 @@ namespace Anthropocene.Simulation
             {
                 rootEvaluations++;
                 if (x > Math.Log(double.MaxValue)) throw new DemographicNumericalException("Log-population exceeds the finite double domain.");
-                double n = x < -745 ? 0 : Math.Exp(x);
+                if (x < LogSmallestPositivePopulation)
+                    throw new DemographicNumericalException("Continuous population underflowed the finite positive double domain.");
+                double n = Math.Exp(x);
                 return ratesAtPopulation(n).Net;
             }
 
@@ -228,7 +250,7 @@ namespace Anthropocene.Simulation
             double lowLimit = ratesAtPopulation(0).Net; rootEvaluations++;
             if (lowLimit > 0)
             {
-                double lo = Math.Log(MinimumPopulation), hi = Math.Log(Math.Max(1, population));
+                double lo = LogSmallestPositivePopulation, hi = Math.Log(Math.Max(1, population));
                 double rhi = RateAtLog(hi);
                 int bracket = 0;
                 while (rhi > 0 && bracket++ < config.DemographicMaxRootIterations)
@@ -257,7 +279,7 @@ namespace Anthropocene.Simulation
             }
             else result.DeclineToExtinction = true;
 
-            double x = Math.Log(Math.Max(MinimumPopulation, population)), remaining = years;
+            double x = Math.Log(population), remaining = years;
             int segments = 0;
             while (remaining > 1e-13)
             {
@@ -298,7 +320,7 @@ namespace Anthropocene.Simulation
                     x = LocalLogPopulation(x, r0, m, h); remaining = 0;
                 }
             }
-            if (x < Math.Log(double.Epsilon))
+            if (x < LogSmallestPositivePopulation)
                 throw new DemographicNumericalException("Continuous population underflowed the finite positive double domain.");
             result.FinalPopulation = Math.Exp(x);
             result.RootEvaluations = rootEvaluations;

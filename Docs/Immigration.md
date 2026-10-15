@@ -157,11 +157,19 @@ group `m <= M` such that `dU(m)` evaluated with the destination's headcount `N_j
 arriving from earlier sources (their `carried`) and this source's `m * s`, stays above `theta` (return penalty included),
 found by bisection (monotone because dilution and cohesion dominate; the closed form and a linear scan agree in the
 fixtures). The excess of a partly accepted source, and all of a fully rejected one, stays home; nobody is rerouted. A
-partly accepted group is not subject to the minimum group (only the intent is).
+partly accepted group is not subject to the minimum group (only the intent is). Under `PhysicalMortalityV1`, the
+unchanged QoL-selected/reconciled group also receives explicit physical mortality and net-rate diagnostics. The
+projection uses destination population, diluted clothing, carried food and the population-weighted deficit ages of
+prior arrivals; it never uses composite QoL as mortality. A negative instantaneous net rate is recorded by
+`ImmigrationPhysicalDestinationNegativeNet` but does not block, shrink or reroute the group: above-equilibrium decline
+and recoverable distress are not physical nonviability. The utility, ranking, deadband, size ramp and hysteresis remain
+unchanged.
 
 **Commit, simultaneously and canonically.** All departures from the frozen residents and stores first, then all
 arrivals. The migrants of a flow carry their per-capita share (`m / N_i` of the frozen stock) of the source's typed
-Plant, Animal and Aquatic food and nothing else: no herds, tools, housing, fabric or fractional demographic progress.
+Plant, Animal and Aquatic food and no material goods: no herds, tools, housing or fabric. In physical mode they also
+carry their proportional gross-birth/death progress and their deficit age/severity; the receiver combines deficit
+history by population. Legacy mode retains the historical initialization semantics.
 The source's workforce ledger loses the emigrants across its roles in proportion (`PopulationLedger.ApplyCasualties`,
 largest remainder); arrivals join the destination as gatherers (the ledger assigns the remainder to gathering).
 Migrants join the destination's Society (there is no separate migrant record). Every people and food ledger is
@@ -180,12 +188,13 @@ population changed, every other camp is evaluated on its unchanged snapshot. QoL
 **Journal and observations.** `TurnRecord.Migrations` holds one `MigrationReport` per committed flow (turn, source
 and destination camp and Society, residents before, intended and migrated people, distance, kin flag, `Q_i`, `Q_j`,
 the forward `dU` at the committed group, the destination's forward post-inflow QoL, the typed food carried, the return
-penalty paid and the person-equivalents carried), in destination then source order, plus
+penalty paid and the person-equivalents carried, plus projected source/destination mortality, net rates, receiver
+net-rate sign and the higher-QoL/worse-mortality flag), in destination then source order, plus
 one journal line. Observations carry nothing new beyond what an owner sees of its own camps. No Unity change.
 
 ## Validation
 
-`ImmigrationChecks.cs` (registered in `Anthropocene.Headless.csproj` and the fixed-suite list, 334 assertions, own
+`ImmigrationChecks.cs` (registered in `Anthropocene.Headless.csproj` and the fixed-suite list, 352 assertions, own
 worlds): defaults, validation (including the cooldown and penalty), serialization and old-config loading,
 `OpeningConfig.json` keys; the closed-form present-state utility for every barrier; the size formula exhaustively over
 N = 0 to 400 and `dU` = 0 to 0.40 and its floors; estimator equality with `EstimateSplit` and monotonicity;
@@ -206,7 +215,9 @@ and 29 reversals in 30 turns; the forward rule alone still swings, because next 
 return penalty reversals and people moved fall by more than half; a mild swing (130 / 80) that the previous rule
 swaps every turn moves nobody under the forward rule; a stable gap still moves people one way and never back);
 immigration precedes fission and excludes sources and arrivals; no multi-hop (A to B while B to C); exact conservation of
-people and each typed food per camp, no goods, herds or remainders move; demographic lines, journal, contacts in both
+people and each typed food per camp, no goods or herds move; physical gross-event/deficit ledgers transfer without
+creation; higher-QoL/worse-mortality attraction remains possible when physical net growth is nonnegative, while a
+negative-net receiving settlement blocks the otherwise unchanged group; demographic lines, journal, contacts in both
 directions; scalar versus reversed four-worker replay with reordered collections over five turns of an eight-camp world
 and over a generated world with both switches on (the fingerprint includes the memory); save continuation through a
 migration with memory, the memory round trip, an older camp and an older report loading without the new fields.

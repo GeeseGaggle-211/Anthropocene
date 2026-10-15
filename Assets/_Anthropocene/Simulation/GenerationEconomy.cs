@@ -52,6 +52,10 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double IntegerExtinctionResidual;
         [System.Runtime.Serialization.OptionalField] public bool IntegerExtinction;
         [System.Runtime.Serialization.OptionalField] public int RootEvaluations, BandsCrossed, HazardEvaluations, QuadratureEvaluations, ServiceIterations;
+        // Joint expedition-density extension diagnostics. Exact scalar reductions retain the selected v1.1 analytical
+        // propagator; heterogeneous service/history cohorts use a bounded adaptive log-vector solve.
+        [System.Runtime.Serialization.OptionalField] public int CoupledPools, CoupledCohorts, CoupledRateEvaluations;
+        [System.Runtime.Serialization.OptionalField] public int CoupledAcceptedSteps, CoupledRejectedSteps, CoupledServiceEvaluations, CoupledScalarReductions;
         [System.Runtime.Serialization.OptionalField] public bool HasPositiveEquilibrium, DeclineToExtinction;
         // Net food paid to (+) or by (-) this camp through trade after production (Docs/Trade.md: food is paid on delivery,
         // refunds included). Absent in older saves: zero.

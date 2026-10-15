@@ -417,9 +417,12 @@ namespace Anthropocene.Simulation
             // Physical service and goods settle against the locked cohort. Gross natural events become authoritative
             // only after storage, so newborns cannot create same-turn capacity and deaths cannot erase it.
             foreach (var pending in pendingPhysicalCamps)
-                ReconcilePhysicalEvents(pending.Camp, pending.Linked, pending.Result, record);
+                ReconcilePhysicalEvents(pending.Camp, pending.Linked, pending.Cohorts, record);
             foreach (var pending in pendingPhysicalHunters)
                 ReconcilePhysicalEvents(pending.Hunter, pending.Result, record);
+            // Physical deaths can reduce a detached cohort after its last food settlement. Re-cap provisions at the
+            // authoritative endpoint and attribute any population-dependent carrying overflow to the food ledger.
+            if (PhysicalDemography.Enabled(w.Config)) Supply.Finish(w, record);
 
             if (w.Config.WildHerdFissionEnabled) SplitHerds(w, record);
             // Demographic losses are applied after this cohort has completed
@@ -708,6 +711,14 @@ namespace Anthropocene.Simulation
                 ? Math.Min(Math.Max(0, netIncome - priorityIncome - clothing), Math.Max(0, projectedFood - populationBase - clothing - needs.ReserveTarget))
                 : 0;
             double maximumRate = QoLMortality.MaximumRate(w, camp);
+            bool physical = PhysicalDemography.Enabled(w.Config);
+            double maximumGrowthFood = GrowthFood(populationBase, maximumRate, years);
+            // Physical births are funded from every real edible unit left after current meals and the clothing feedstock.
+            // A partially filled policy reserve remains a finite stock, but cannot act as the retired all-or-nothing
+            // fertility switch. Legacy planning keeps its exact reserve-first growth allocation through `available`.
+            double demographicAvailable = physical
+                ? Math.Max(0, PhysicalDemographicFoodBudget(projectedFood, populationBase, maximumGrowthFood, clothing) - populationBase)
+                : available;
             GrowthPlan ForRate(double rate)
             {
                 double growthFood = GrowthFood(populationBase, rate, years);
@@ -728,13 +739,14 @@ namespace Anthropocene.Simulation
             // combined cost instead of iterating residents, which can ping-pong at a
             // birth threshold when one extra set of clothes removes one birth.
             double low = 0, high = maximumRate;
-            if (maximumRate > 1e-12 && available > 1e-12)
+            if (maximumRate > 1e-12 && demographicAvailable > 1e-12)
             {
                 for (int iteration = 0; iteration < 64; iteration++)
                 {
                     double rate = (low + high) * .5;
                     var plan = ForRate(rate);
-                    if (plan.GrowthFood + plan.ManufacturingInput - clothing <= available + 1e-8) low = rate; else high = rate;
+                    double cost = physical ? plan.GrowthFood : plan.GrowthFood + plan.ManufacturingInput - clothing;
+                    if (cost <= demographicAvailable + 1e-8) low = rate; else high = rate;
                 }
             }
             var result = ForRate(low);
@@ -745,7 +757,7 @@ namespace Anthropocene.Simulation
             result.PlantManufacturingInput = clothingPlant + Math.Max(0, otherPlant);
             result.AnimalManufacturingInput = clothingAnimal + Math.Max(0, otherAnimal);
             result.ManufacturingInput = result.PlantManufacturingInput + result.AnimalManufacturingInput;
-            if (PhysicalDemography.Enabled(w.Config))
+            if (physical)
             {
                 // Parallel preparation can differ by a few ulps in economic forecasts. The mortality kernel must receive
                 // one canonical physical service envelope, independent of worker partitioning or collection order.
@@ -765,10 +777,9 @@ namespace Anthropocene.Simulation
         internal static void FoodBucketBasis(WorldState w, Camp camp, double intervals, double years, double populationBase, out double reserveTarget, out double maximumGrowthFood)
         {
             double maximumRate = QoLMortality.MaximumRate(w, camp);
-            // The reserve bucket belongs to the people who exist when this turn resolves.
-            // Refill their complete configured operating reserve, bounded by what local
-            // storage can retain, before funding births. Newborns happen afterward and
-            // neither consume nor acquire reserves retroactively.
+            // The reserve bucket belongs to the people who exist when this turn resolves and remains bounded by local
+            // storage. Legacy growth allocation refills it before births; PhysicalMortalityV1 uses the same target for
+            // economic demand but PhysicalDemographicFoodBudget prevents it from becoming a fertility gate.
             double desiredReserve = NeolithicProduction.DesiredReserveFood(w, populationBase / Math.Max(1e-12, w.Config.Consumption * intervals), intervals);
             // Pots depreciate later in ResolveCampNeolithic.  Reserve and growth
             // projection must use their post-depreciation capacity now so every
@@ -794,6 +805,13 @@ namespace Anthropocene.Simulation
             return populationBase * ((Math.Exp(x) - 1) / x - 1);
         }
 
+        // One physical allocation rule shared by prediction and resolution. `protectedFood` is a validated, typed
+        // non-meal debit (currently clothing feedstock in resolution); operating-reserve targets never gate this budget.
+        internal static double PhysicalDemographicFoodBudget(double totalFood, double currentNeed,
+            double maximumGrowthFood, double protectedFood)
+            => Math.Min(Math.Max(0, currentNeed) + Math.Max(0, maximumGrowthFood),
+                Math.Max(0, totalFood - Math.Max(0, protectedFood)));
+
         private static double GrowthRateForFood(double populationBase, double maximumRate, double years, double availableGrowthFood)
         {
             if (maximumRate <= 1e-12 || years <= 0 || availableGrowthFood <= 1e-12) return 0;
@@ -807,9 +825,9 @@ namespace Anthropocene.Simulation
             return low;
         }
 
-        // Human acceptance is ordered: current-population consumption, complete refill of
-        // the configured operating reserve, then the food budget for maximum growth.
-        // Already-realized connected hunting consumes this budget.
+        // Economic demand still asks for current consumption, the configured reserve and maximum newborn service.
+        // Physical allocation uses PhysicalDemographicFoodBudget so reserve completion is not a fertility gate.
+        // Already-realized connected hunting consumes this demand.
         public static double UsefulCampFoodDemand(WorldState w, Camp camp, double intervals, double years)
             => BiologicalFoodDemand(w, camp, intervals, years) + FabricFeedstockShortfall(w, camp, intervals, years, camp.Population);
         // Turn-start planning uses the very same consumption/reserve/growth buckets,
@@ -847,15 +865,11 @@ namespace Anthropocene.Simulation
             FoodBucketTargets(w, camp, intervals, years, populationBase, initialFood, out double consumption, out _, out double reserve, out double growth);
             if (PhysicalDemography.Enabled(w.Config))
             {
-                // Reconstruct the same priority buckets without converting QoL into a survival proxy: opening food pays
-                // the part of current meals not represented by ConsumptionIncome, then income pays meals, reserve and
-                // finally the birth-only service envelope. Current textile stock and shelter are explicit finite inputs.
-                double inventoryMeals = Math.Max(0, populationBase - consumption);
-                double paidMeals = Math.Min(consumption, Math.Max(0, biologicalIncome));
-                double afterMeals = Math.Max(0, biologicalIncome - paidMeals);
-                double paidReserve = Math.Min(reserve, afterMeals);
-                double paidGrowth = Math.Min(growth, Math.Max(0, afterMeals - paidReserve));
-                double foodBudget = Math.Min(populationBase, inventoryMeals + paidMeals) + paidGrowth;
+                // This narrow pure projection shares the resolver's reserve-independent newborn-service rule. It receives
+                // untyped biological food and sees only existing textiles; callers that model production/imports must
+                // account for typed clothing feedstock and future textile receipts in their own economic forecast.
+                double projectedFood = Math.Max(0, initialFood) + Math.Max(0, biologicalIncome);
+                double foodBudget = PhysicalDemographicFoodBudget(projectedFood, populationBase, growth, 0);
                 double clothingBudget = Math.Max(0, camp.Inventory.Cloth) + Math.Max(0, camp.Inventory.AnimalFabric);
                 double housing = NeolithicProduction.HousingCapacity(w, camp, w.Days).Total;
                 double hunterRemainders = w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.InRange(w, camp, h.Tile))
@@ -964,7 +978,7 @@ namespace Anthropocene.Simulation
             public double Total => Stored + Local;
         }
 
-        private sealed class PhysicalCampEvents { public Camp Camp; public Hunter[] Linked; public DemographicResult Result; }
+        private sealed class PhysicalCampEvents { public Camp Camp; public Hunter[] Linked; public DemographicResult[] Cohorts; }
         private sealed class PhysicalHunterEvents { public Hunter Hunter; public DemographicResult Result; }
 
         private static void SustainGeneration(WorldState w, TurnRecord record, double intervals, double years, double generationScale, Dictionary<int, TurnNeeds> needs, Dictionary<int, GrowthPlan> plans, Dictionary<int, double> foraged, HashSet<int> recovering, Dictionary<int, GrowthPlan> pendingBirths,
@@ -1064,14 +1078,30 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 var linked = w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.Connected(w, h)).OrderBy(h => h.Id).ToArray();
+                var detached = w.Hunters.Where(h => h.SourceCamp == camp.Id && !Supply.Connected(w, h)).OrderBy(h => h.Id).ToArray();
                 if (!campFood.TryGetValue(camp.Id, out var food)) food = new PhysicalFoodEnvelope();
                 double initialCloth = Math.Max(0, camp.Inventory.Cloth + camp.ResolvedClothConsumed);
                 double initialAnimalFabric = Math.Max(0, camp.Inventory.AnimalFabric + camp.ResolvedAnimalFabricConsumed);
                 double clothingBudget = initialCloth + initialAnimalFabric;
-                double initial = EffectivePopulation(camp, linked);
                 double housing = NeolithicProduction.HousingCapacity(w, camp, w.Days).Total;
-                var result = PhysicalDemography.AdvanceBudget(w.Config, initial, years, food.Total, clothingBudget,
-                    housing, camp.FoodDeficitYears, true);
+                var residentCohorts = new[]
+                {
+                    new DemographicCohortInput(Math.Max(0, camp.Population + camp.GrowthRemainder - camp.DeathRemainder), camp.FoodDeficitYears)
+                }.Concat(linked.Select(h => new DemographicCohortInput(EffectivePopulation(h), h.FoodDeficitYears))).ToArray();
+                var pools = new List<DemographicServicePoolInput>
+                {
+                    new DemographicServicePoolInput(residentCohorts, food.Total, clothingBudget, housing)
+                };
+                var detachedFood = new PhysicalFoodEnvelope[detached.Length];
+                for (int i = 0; i < detached.Length; i++)
+                {
+                    if (!hunterFood.TryGetValue(detached[i].Id, out detachedFood[i])) detachedFood[i] = new PhysicalFoodEnvelope();
+                    pools.Add(new DemographicServicePoolInput(
+                        new[] { new DemographicCohortInput(EffectivePopulation(detached[i]), detached[i].FoodDeficitYears) },
+                        detachedFood[i].Total, 0, 0));
+                }
+                CoupledDemographicResult coupled = PhysicalDemography.AdvanceCoupledBudget(w.Config, pools, years);
+                DemographicResult result = coupled.Pools[0];
 
                 // Reconstruct textile stocks from their pre-needs provenance, then debit exactly the closed budget.
                 double clothUsed = Math.Min(initialCloth, result.ClothingConsumed);
@@ -1084,37 +1114,43 @@ namespace Anthropocene.Simulation
                 RefundCampFood(camp, food, Math.Max(0, food.Total - result.FoodConsumed));
                 camp.LastConsumed = result.FoodConsumed;
                 camp.FoodDeficit = Math.Max(0, PhysicalDemography.FoodPerPersonYear(w.Config) * result.PersonYears - result.FoodConsumed);
+                camp.FoodNeedsMetRatio = result.Nutrition;
                 UpdateDeficitState(camp, result.Nutrition, years, w.Config.Neolithic.ReferenceTurnYears);
-                foreach (var h in linked)
+                camp.DemographicDeficitMergeWeight = coupled.Cohorts[0][0].FinalPopulation;
+                for (int i = 0; i < linked.Length; i++)
                 {
-                    h.LastConsumed = result.FoodConsumed * h.Population / Math.Max(1, camp.Population + linked.Sum(x => x.Population));
-                    h.FoodDeficit = camp.FoodDeficit * h.Population / Math.Max(1, camp.Population + linked.Sum(x => x.Population));
-                    h.FoodDeficitYears = camp.FoodDeficitYears; h.DeficitTurns = camp.DeficitTurns; h.DeficitSeverity = camp.DeficitSeverity;
+                    Hunter h = linked[i];
+                    DemographicResult member = coupled.Cohorts[0][i + 1];
+                    h.LastConsumed = member.FoodConsumed;
+                    h.FoodDeficit = Math.Max(0, PhysicalDemography.FoodPerPersonYear(w.Config) * member.PersonYears - member.FoodConsumed);
+                    UpdateDeficitState(h, result.Nutrition, years, w.Config.Neolithic.ReferenceTurnYears);
+                    h.DemographicDeficitMergeWeight = member.FinalPopulation;
                 }
 
-                pendingCamps.Add(new PhysicalCampEvents { Camp = camp, Linked = linked, Result = result });
+                pendingCamps.Add(new PhysicalCampEvents { Camp = camp, Linked = linked, Cohorts = coupled.Cohorts[0] });
                 double experiencedPopulation = years > 0 ? result.PersonYears / years : result.FinalPopulation;
                 NeolithicProduction.CommitExperiencedWelfare(w, camp, experiencedPopulation, result.Nutrition,
                     result.ClothingCoverage, result.AverageHousingCoverage);
                 CommitLocalRates(camp, result);
-                AddPhysicalDiagnostics(record.Demographics.First(d => d.Camp == camp.Id), result);
-            }
-
-            foreach (var hunter in w.Hunters.Where(h => !Supply.Connected(w, h)).OrderBy(h => h.Id).ToArray())
-            {
-                if (!hunterFood.TryGetValue(hunter.Id, out var food)) food = new PhysicalFoodEnvelope();
-                var result = PhysicalDemography.AdvanceBudget(w.Config, EffectivePopulation(hunter), years,
-                    food.Total, 0, 0, hunter.FoodDeficitYears, true);
-                double actualLocal = Math.Min(food.Local, result.FoodConsumed);
-                double actualCarried = Math.Min(food.Carried, Math.Max(0, result.FoodConsumed - actualLocal));
-                hunter.CarriedFood += food.Carried - actualCarried;
-                hunter.LastConsumed = actualLocal + actualCarried;
-                hunter.FoodDeficit = Math.Max(0, PhysicalDemography.FoodPerPersonYear(w.Config) * result.PersonYears - result.FoodConsumed);
-                UpdateDeficitState(hunter, result.Nutrition, years, w.Config.Neolithic.ReferenceTurnYears);
-                pendingHunters.Add(new PhysicalHunterEvents { Hunter = hunter, Result = result });
-                var summary = record.Demographics.First(d => d.Camp == hunter.SourceCamp);
-                summary.DiscardedInventory += Math.Max(0, food.Local - actualLocal);
+                var summary = record.Demographics.First(d => d.Camp == camp.Id);
                 AddPhysicalDiagnostics(summary, result);
+                for (int i = 0; i < detached.Length; i++)
+                {
+                    Hunter hunter = detached[i];
+                    PhysicalFoodEnvelope hunterEnvelope = detachedFood[i];
+                    DemographicResult hunterResult = coupled.Pools[i + 1];
+                    double actualLocal = Math.Min(hunterEnvelope.Local, hunterResult.FoodConsumed);
+                    double actualCarried = Math.Min(hunterEnvelope.Carried, Math.Max(0, hunterResult.FoodConsumed - actualLocal));
+                    hunter.CarriedFood += hunterEnvelope.Carried - actualCarried;
+                    hunter.LastConsumed = actualLocal + actualCarried;
+                    hunter.FoodDeficit = Math.Max(0, PhysicalDemography.FoodPerPersonYear(w.Config) * hunterResult.PersonYears - hunterResult.FoodConsumed);
+                    UpdateDeficitState(hunter, hunterResult.Nutrition, years, w.Config.Neolithic.ReferenceTurnYears);
+                    hunter.DemographicDeficitMergeWeight = coupled.Cohorts[i + 1][0].FinalPopulation;
+                    pendingHunters.Add(new PhysicalHunterEvents { Hunter = hunter, Result = hunterResult });
+                    summary.DiscardedInventory += Math.Max(0, hunterEnvelope.Local - actualLocal);
+                    AddPhysicalDiagnostics(summary, hunterResult);
+                }
+                AddCoupledDiagnostics(summary, coupled);
             }
 
             foreach (var summary in record.Demographics)
@@ -1169,19 +1205,73 @@ namespace Anthropocene.Simulation
             }
         }
 
-        private static void ReconcilePhysicalEvents(Camp camp, Hunter[] linked, DemographicResult result, TurnRecord record)
+        private static void ReconcilePhysicalEvents(Camp camp, Hunter[] linked,
+            DemographicResult[] cohorts, TurnRecord record)
         {
-            double birthProgress = camp.GrowthRemainder + linked.Sum(h => h.GrowthRemainder) + result.Births;
-            double deathProgress = camp.DeathRemainder + linked.Sum(h => h.DeathRemainder) + result.Deaths;
-            int residents = camp.Population + linked.Sum(h => h.Population);
-            ReconcileWholeEvents(residents, result.FinalPopulation, birthProgress, deathProgress,
-                out int births, out int deaths, out double birthRemainder, out double deathRemainder, out double extinctionResidual);
-            camp.GrowthRemainder = birthRemainder; camp.DeathRemainder = deathRemainder;
-            foreach (var h in linked) { h.GrowthRemainder = 0; h.DeathRemainder = 0; }
-            ApplyNetPhysicalChange(camp, linked, births - deaths, record);
-            var summary = record.Demographics.First(d => d.Camp == camp.Id);
-            RecordGrossEvents(record, summary, births, deaths);
-            RecordIntegerExtinction(record, summary, camp.Id, result, extinctionResidual);
+            if (cohorts == null || cohorts.Length != linked.Length + 1)
+                throw new DemographicNumericalException("Connected demographic cohort reconciliation is incomplete.");
+            int count = cohorts.Length;
+            int[] residents = new[] { camp.Population }.Concat(linked.Select(h => h.Population)).ToArray();
+            double[] birthProgress = new[] { camp.GrowthRemainder + cohorts[0].Births }
+                .Concat(linked.Select((h, i) => h.GrowthRemainder + cohorts[i + 1].Births)).ToArray();
+            double[] deathProgress = new[] { camp.DeathRemainder + cohorts[0].Deaths }
+                .Concat(linked.Select((h, i) => h.DeathRemainder + cohorts[i + 1].Deaths)).ToArray();
+            ReconcileWholeEvents(residents.Sum(), cohorts.Sum(r => r.FinalPopulation),
+                birthProgress.Sum(), deathProgress.Sum(), out int totalBirths, out int totalDeaths,
+                out double birthRemainder, out double deathRemainder, out double extinctionResidual);
+
+            // Connected cohorts share one rounding ledger so a reversible dispatch cannot manufacture or erase a
+            // whole event. Within that conserved total, completed births and deaths follow each cohort's own
+            // continuous event burden. The half-person convention applies once to the settlement total, not once per
+            // temporary partition: otherwise three viable fractional singleton cohorts could create a population floor.
+            int[] births = AllocateWholeEvents(birthProgress, totalBirths, null);
+            int[] deathCapacity = Enumerable.Range(0, count)
+                .Select(i => residents[i] + births[i]).ToArray();
+            int[] deaths = AllocateWholeEvents(deathProgress, totalDeaths, deathCapacity);
+            camp.GrowthRemainder = camp.DeathRemainder = 0;
+            foreach (Hunter hunter in linked) { hunter.GrowthRemainder = 0; hunter.DeathRemainder = 0; }
+
+            // Keep the shared fractional ledger on a surviving authoritative entity. Usually that is the camp; when
+            // burden-based attribution rounds the last camp resident away, a surviving expedition carries both gross
+            // remainders so their signed combination is not clipped or lost on the next continuation.
+            int ledgerOwner = -1;
+            for (int i = 0; i < count; i++)
+                if (residents[i] + births[i] - deaths[i] > 0) { ledgerOwner = i; break; }
+            if (ledgerOwner >= 0)
+            {
+                if (ledgerOwner == 0)
+                {
+                    camp.GrowthRemainder = birthRemainder;
+                    camp.DeathRemainder = deathRemainder;
+                }
+                else
+                {
+                    linked[ledgerOwner - 1].GrowthRemainder = birthRemainder;
+                    linked[ledgerOwner - 1].DeathRemainder = deathRemainder;
+                }
+            }
+            else if (birthRemainder > 1e-10 || deathRemainder > 1e-10)
+                throw new DemographicNumericalException("An extinct connected settlement retained fractional demographic progress.");
+
+            ApplyCampPhysicalEvents(camp, births[0], deaths[0], cohorts[0], record);
+            for (int i = 0; i < linked.Length; i++)
+                ApplyHunterPhysicalEvents(linked[i], births[i + 1], deaths[i + 1], cohorts[i + 1], record, 0);
+
+            // Integer extinction is a settlement-level rounding decision for connected cohorts. A cohort that
+            // rounds to zero while another connected entity carries the shared fractional ledger has not gone
+            // extinct independently. Attribute only the residual actually discarded by ReconcileWholeEvents, once.
+            if (extinctionResidual > 0)
+            {
+                var aggregate = new DemographicResult
+                {
+                    ExposureDeaths = cohorts.Sum(r => r.ExposureDeaths),
+                    CrowdingDeaths = cohorts.Sum(r => r.CrowdingDeaths),
+                    DiseaseDeaths = cohorts.Sum(r => r.DiseaseDeaths),
+                    LegacyStarvationDeaths = cohorts.Sum(r => r.LegacyStarvationDeaths)
+                };
+                RecordIntegerExtinction(record, record.Demographics.First(d => d.Camp == camp.Id),
+                    camp.Id, aggregate, extinctionResidual);
+            }
         }
 
         private static void ReconcilePhysicalEvents(Hunter hunter, DemographicResult result, TurnRecord record)
@@ -1189,13 +1279,86 @@ namespace Anthropocene.Simulation
             double birthProgress = hunter.GrowthRemainder + result.Births, deathProgress = hunter.DeathRemainder + result.Deaths;
             ReconcileWholeEvents(hunter.Population, result.FinalPopulation, birthProgress, deathProgress,
                 out int births, out int deaths, out hunter.GrowthRemainder, out hunter.DeathRemainder, out double extinctionResidual);
+            ApplyHunterPhysicalEvents(hunter, births, deaths, result, record, extinctionResidual);
+        }
+
+        private static int[] AllocateWholeEvents(double[] progress, int total, int[] capacity)
+        {
+            var result = new int[progress.Length];
+            for (int i = 0; i < progress.Length; i++)
+            {
+                int cap = capacity == null ? int.MaxValue : Math.Max(0, capacity[i]);
+                result[i] = Math.Min(cap, CheckedWholeEvents(progress[i], "cohort"));
+            }
+            int assigned = result.Sum();
+            if (assigned < total)
+            {
+                foreach (int i in Enumerable.Range(0, progress.Length)
+                    .OrderByDescending(i => progress[i] - Math.Floor(progress[i]))
+                    .ThenByDescending(i => progress[i]).ThenBy(i => i))
+                {
+                    int cap = capacity == null ? int.MaxValue : Math.Max(0, capacity[i]);
+                    if (assigned >= total) break;
+                    if (result[i] < cap) { result[i]++; assigned++; }
+                }
+                if (assigned < total)
+                {
+                    foreach (int i in Enumerable.Range(0, progress.Length)
+                        .OrderByDescending(i => progress[i]).ThenBy(i => i))
+                    {
+                        int cap = capacity == null ? int.MaxValue : Math.Max(0, capacity[i]);
+                        int add = Math.Min(total - assigned, cap - result[i]);
+                        if (add > 0) { result[i] += add; assigned += add; }
+                        if (assigned >= total) break;
+                    }
+                }
+            }
+            else if (assigned > total)
+            {
+                foreach (int i in Enumerable.Range(0, progress.Length)
+                    .OrderBy(i => progress[i] - Math.Floor(progress[i]))
+                    .ThenBy(i => progress[i]).ThenByDescending(i => i))
+                {
+                    int remove = Math.Min(assigned - total, result[i]);
+                    if (remove > 0) { result[i] -= remove; assigned -= remove; }
+                    if (assigned <= total) break;
+                }
+            }
+            if (assigned != total)
+                throw new DemographicNumericalException("Per-cohort event allocation could not preserve the settlement total.");
+            return result;
+        }
+
+        private static void ApplyCampPhysicalEvents(Camp camp, int births, int deaths,
+            DemographicResult result, TurnRecord record)
+        {
             int net = births - deaths;
-            if (hunter.Population + net < 0) throw new DemographicNumericalException("Gross event rounding exceeded an expedition's population.");
-            hunter.Population += net;
-            if (net != 0) record.PopulationChanges.Add(new PopulationChange { Camp = hunter.SourceCamp, Entity = hunter.Id, Kind = "Physical demography (net)", Count = net });
-            var summary = record.Demographics.First(d => d.Camp == hunter.SourceCamp);
+            if (camp.Population + net < 0)
+                throw new DemographicNumericalException("Gross event rounding exceeded a camp cohort's population.");
+            if (net < 0) camp.Workforce.ApplyCasualties(camp.Population, -net);
+            camp.Population += net; camp.Workforce.Normalize(camp.Population);
+            if (net != 0)
+                record.PopulationChanges.Add(new PopulationChange
+                { Camp = camp.Id, Entity = camp.Id, Kind = "Physical demography (net)", Count = net });
+            DemographicReport summary = record.Demographics.First(d => d.Camp == camp.Id);
             RecordGrossEvents(record, summary, births, deaths);
-            RecordIntegerExtinction(record, summary, hunter.Id, result, extinctionResidual);
+        }
+
+        private static void ApplyHunterPhysicalEvents(Hunter hunter, int births, int deaths,
+            DemographicResult result, TurnRecord record, double extinctionResidual = -1)
+        {
+            int net = births - deaths;
+            if (hunter.Population + net < 0)
+                throw new DemographicNumericalException("Gross event rounding exceeded an expedition's population.");
+            hunter.Population += net;
+            if (net != 0)
+                record.PopulationChanges.Add(new PopulationChange
+                { Camp = hunter.SourceCamp, Entity = hunter.Id, Kind = "Physical demography (net)", Count = net });
+            DemographicReport summary = record.Demographics.First(d => d.Camp == hunter.SourceCamp);
+            RecordGrossEvents(record, summary, births, deaths);
+            double residual = extinctionResidual >= 0 ? extinctionResidual
+                : hunter.Population == 0 && result.FinalPopulation < .5 ? result.FinalPopulation : 0;
+            RecordIntegerExtinction(record, summary, hunter.Id, result, residual);
         }
 
         // Gross floors normally define the unique exact integer/remainder representation. At the last resident they can
@@ -1254,30 +1417,6 @@ namespace Anthropocene.Simulation
             return (int)Math.Floor(Math.Max(0, progress));
         }
 
-        private static void ApplyNetPhysicalChange(Camp camp, Hunter[] linked, int net, TurnRecord record)
-        {
-            if (net >= 0)
-            {
-                camp.Population += net;
-                if (net > 0) record.PopulationChanges.Add(new PopulationChange { Camp = camp.Id, Entity = camp.Id, Kind = "Physical demography (net)", Count = net });
-                return;
-            }
-            int losses = -net, total = camp.Population + linked.Sum(h => h.Population);
-            if (losses > total) throw new DemographicNumericalException("Gross event rounding exceeded a settlement's population.");
-            int[] counts = new[] { camp.Population }.Concat(linked.Select(h => h.Population)).ToArray();
-            int[] deaths = counts.Select(n => total == 0 ? 0 : (int)((long)n * losses / total)).ToArray();
-            int remainder = losses - deaths.Sum();
-            foreach (int i in Enumerable.Range(0, counts.Length).OrderByDescending(i => total == 0 ? 0 : (long)counts[i] * losses % total).ThenBy(i => i))
-                if (remainder > 0 && deaths[i] < counts[i]) { deaths[i]++; remainder--; }
-            camp.Workforce.ApplyCasualties(camp.Population, deaths[0]); camp.Population -= deaths[0]; camp.Workforce.Normalize(camp.Population);
-            if (deaths[0] > 0) record.PopulationChanges.Add(new PopulationChange { Camp = camp.Id, Entity = camp.Id, Kind = "Physical demography (net)", Count = -deaths[0] });
-            for (int i = 0; i < linked.Length; i++)
-            {
-                linked[i].Population -= deaths[i + 1];
-                if (deaths[i + 1] > 0) record.PopulationChanges.Add(new PopulationChange { Camp = camp.Id, Entity = linked[i].Id, Kind = "Physical demography (net)", Count = -deaths[i + 1] });
-            }
-        }
-
         private static void RecordGrossEvents(TurnRecord record, DemographicReport summary, int births, int deaths)
         {
             record.Growth += births; record.Deaths += deaths;
@@ -1320,6 +1459,17 @@ namespace Anthropocene.Simulation
             summary.HazardEvaluations += result.HazardEvaluations; summary.QuadratureEvaluations += result.QuadratureEvaluations;
             summary.ServiceIterations += result.ServiceIterations;
             if (result.Nutrition < 1 - 1e-12) summary.DeficitSteps++;
+        }
+
+        private static void AddCoupledDiagnostics(DemographicReport summary, CoupledDemographicResult result)
+        {
+            summary.CoupledPools += result.PoolCount;
+            summary.CoupledCohorts += result.CohortCount;
+            summary.CoupledRateEvaluations += result.RateEvaluations;
+            summary.CoupledAcceptedSteps += result.AcceptedSteps;
+            summary.CoupledRejectedSteps += result.RejectedSteps;
+            summary.CoupledServiceEvaluations += result.ServiceEvaluations;
+            if (result.UsedExactScalarReduction) summary.CoupledScalarReductions++;
         }
 
         private static void ApplySharedDeaths(Camp camp, Hunter[] linked, int losses, TurnRecord record)

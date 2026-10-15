@@ -23,6 +23,7 @@ internal static class DemographyRegressionChecks
         Check(protectiveRecovery, "temporary clothing/housing loss resumes positive physical growth after restoration");
         Check(foodRecovery, "temporary food shortage resumes positive physical growth after restoration");
         Check(infeasible, "repeated infeasible shocks decline for explicit exposure/starvation causes");
+        Check(economyRecovery, "the native Elder endogenously rebuilds and sustains food, clothing and housing service");
         Console.WriteLine("RL_MATCH policy=native status=MEASURED policy=learned status=UNAVAILABLE reason=no_learned_policy_runtime_or_model_artifact_in_repository");
         Console.WriteLine("DEMOGRAPHY_GATE NO_GO"
             + " nativeConservation=PASS recoverableKernel=PASS endogenousEconomy=" + (economyRecovery ? "RECOVERED" : "NOT_RECOVERED")
@@ -156,32 +157,66 @@ internal static class DemographyRegressionChecks
         foreach (string role in WorkforceRoles.Specialists) if (!camp.People.UnlockedSpecialists.Contains(role)) camp.People.UnlockedSpecialists.Add(role);
         camp.Inventory.HandTools = camp.Inventory.Tools = 300; camp.Inventory.Wood = camp.Inventory.Clay = camp.Inventory.Stone = 500;
         camp.Inventory.Cloth = 120; camp.Inventory.HousingMaterial = 30; camp.EconomyAutomationTurns = -1;
+        // This is an established q_k=0.4 cultivation economy before the protective-goods shock. Its food-producing
+        // capital remains real saved state; only clothing, shelter and the relevant specialist assignments are removed.
+        double fieldCapital = Math.Pow(.4 / world.Config.ReferenceIntensity, 2);
+        foreach (int id in CultivationEconomy.Footprint(world, camp))
+        {
+            var tile = world.Tiles[id];
+            tile.CultivationCapital = fieldCapital; tile.Cultivation = (float)CultivationEconomy.Intensity(world.Config, fieldCapital);
+            tile.CultivationOperator = camp.Id; tile.CultivationOperatingFraction = 1; tile.Cultivated = true;
+        }
+        // Select fertile but finite geography for the recovery case. The native ecology still owns, depletes and
+        // regenerates these stocks; the harness does not replenish food or goods after the shock.
+        foreach (int id in world.Map.Radius(camp.Tile, world.Config.GatherRadius).Where(id => world.Tiles[id].TraversableLand))
+        {
+            var tile = world.Tiles[id]; tile.Food *= 4; tile.PotentialFood *= 4;
+            for (int season = 0; season < tile.Seasons.Length; season++)
+            {
+                var profile = tile.Seasons[season]; profile.MaxFood *= 4; profile.MaxPotentialFood *= 4;
+                tile.Seasons[season] = profile;
+            }
+        }
         world.FixedHousing.Add(new FixedHousingStock { CampId = camp.Id, Tile = camp.Tile, Units = 30, LastUpdatedDays = world.Days });
         NeolithicProduction.FixedHousingChanged(world);
 
         // Controlled shock: remove protective finished goods and the specialist assignments, but leave real people,
         // food, tools and raw resources. Recovery therefore has to pass through the ordinary planner and recipes.
+        camp.Workforce.Assign(WorkforceRoles.Weaver, 3, camp.Population);
+        camp.Workforce.Assign(WorkforceRoles.Builder, 3, camp.Population);
+        camp.Workforce.Assign(WorkforceRoles.Craftsperson, 2, camp.Population);
         camp.Inventory.Cloth = camp.Inventory.AnimalFabric = camp.Inventory.LightHousingUnits = 0;
         world.FixedHousing.RemoveAll(h => h.CampId == camp.Id); NeolithicProduction.FixedHousingChanged(world);
+        int removedSpecialists = camp.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Weaver
+            || a.Role == WorkforceRoles.Builder || a.Role == WorkforceRoles.Craftsperson).Sum(a => a.Population);
         camp.Workforce.Assignments.RemoveAll(a => a.Role == WorkforceRoles.Weaver || a.Role == WorkforceRoles.Builder || a.Role == WorkforceRoles.Craftsperson);
+        Check(removedSpecialists == 8 && camp.Workforce.Assigned == 0,
+            "the endogenous fixture applies a real specialist-workforce shock before native replanning");
         int initial = camp.Population, minimum = initial, recovery = -1, stableTurns = 0; bool specialistsRebuilt = false;
         var resolver = new TurnResolver();
-        for (int turn = 0; turn < 8 && world.LinkedPopulation(camp) > 0; turn++)
+        for (int turn = 0; turn < 12 && world.LinkedPopulation(camp) > 0; turn++)
         {
             var plan = AiPlanning.Decide(world); var record = resolver.Resolve(world, plan.Orders, plan.Traces);
             var d = record.Demographics.Single(r => r.Camp == camp.Id);
             int population = world.LinkedPopulation(camp); minimum = Math.Min(minimum, population);
             int workforce = camp.Workforce.Assigned;
             int specialists = camp.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Weaver || a.Role == WorkforceRoles.Builder || a.Role == WorkforceRoles.Craftsperson).Sum(a => a.Population);
+            double clothMade = record.Production.Where(p => p.Camp == camp.Id && p.Good == CraftGood.Cloth).Sum(p => p.Output);
+            double housingMade = record.Production.Where(p => p.Camp == camp.Id && (p.Good == CraftGood.Housing || p.Good == CraftGood.LightHousing)).Sum(p => p.Output);
+            string roles = string.Join(",", camp.Workforce.Assignments.Where(a => a.Population > 0)
+                .OrderBy(a => a.Role).Select(a => a.Role + ":" + a.Population));
             specialistsRebuilt |= specialists > 0;
             if (camp.ClothPerCapita >= .8 && camp.HousingPerCapita >= .8 && camp.FoodNeedsMetRatio >= .8) stableTurns++; else stableTurns = 0;
-            if (recovery < 0 && turn > 0 && stableTurns >= 2) recovery = turn;
+            if (recovery < 0 && turn > 0 && stableTurns >= 3) recovery = turn;
             Console.WriteLine("TRAJECTORY case=endogenous-real-economy policy=native turn=" + turn
                 + " grossBirths=" + d.GrossBirths + " deaths=" + d.GrossDeaths
                 + " exposure=" + d.ExposureDeaths.ToString("F4") + " crowding=" + d.CrowdingDeaths.ToString("F4")
                 + " disease=" + d.DiseaseDeaths.ToString("F4") + " starvation=" + d.StarvationDeaths.ToString("F4")
                 + " nutrition=" + d.Nutrition.ToString("F4") + " population=" + population + " workforce=" + workforce + " specialists=" + specialists
                 + " clothing=" + d.ClothingCoverage.ToString("F4") + " housing=" + d.HousingCoverage.ToString("F4")
+                + " clothMade=" + clothMade.ToString("F4") + " housingMade=" + housingMade.ToString("F4")
+                + " clothStock=" + camp.Inventory.Cloth.ToString("F4") + " fabricUsed=" + camp.FabricConsumed.ToString("F4")
+                + " plantFood=" + camp.PlantFood.ToString("F4") + " roles=" + roles
                 + " migration=" + record.Migrations.Sum(m => m.Migrants) + " fission=" + record.Fissions.Sum(f => f.Daughter)
                 + " qol=" + camp.QoL.ToString("F4") + " recovery=" + recovery);
             Check(d.StartingPopulation + d.GrossBirths - d.GrossDeaths == d.EndingPopulation,
@@ -190,9 +225,9 @@ internal static class DemographyRegressionChecks
             Check(d.ContinuousDeaths > 0 && d.ExposureDeaths + d.CrowdingDeaths + d.DiseaseDeaths + d.StarvationDeaths > 0,
                 "native real-economy decline/growth has physical death causes at turn " + turn);
         }
-        bool sustained = stableTurns >= 2 && specialistsRebuilt;
+        bool sustained = stableTurns >= 3 && specialistsRebuilt;
         Console.WriteLine("RECOVERY case=endogenous-real-economy initial=" + initial + " minimum=" + minimum + " final=" + world.LinkedPopulation(camp)
-            + " firstTwoTurnRecovery=" + recovery + " sustainedAtEnd=" + sustained + " specialistsRebuilt=" + specialistsRebuilt);
+            + " firstSustainedRecovery=" + recovery + " sustainedAtEnd=" + sustained + " specialistsRebuilt=" + specialistsRebuilt);
         return sustained;
     }
 }

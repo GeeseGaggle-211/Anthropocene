@@ -119,20 +119,30 @@ namespace Anthropocene.Simulation
             int[] destinations; using (PhaseProfile.Scope("HerdIntents")) destinations = execution.Map(herdInputs, h => HerdDestination(w, h, planning));
             var herdMoves = herdInputs.Select((h, i) => new { h.Id, Destination = destinations[i] }).ToDictionary(x => x.Id, x => x.Destination);
             LastMetrics.HerdIntentMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
+            bool physicalDemography = PhysicalDemography.Enabled(w.Config);
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Dispatch).OrderBy(o => o.Entity))
             {
                 var camp = w.Camps.First(c => c.Id == order.Entity); int before = camp.Population;
-                double share = before > 0 ? order.Population / (double)before : 0;
                 var hunter = new Hunter
                 {
                     Id = w.NextId++, SourceCamp = camp.Id, SocietyId = camp.SocietyId, Player = camp.Player,
-                    Population = order.Population, Tile = camp.Tile,
-                    GrowthRemainder = camp.GrowthRemainder * share, DeathRemainder = camp.DeathRemainder * share,
-                    FoodDeficitYears = camp.FoodDeficitYears, DeficitTurns = camp.DeficitTurns,
-                    DeficitSeverity = camp.DeficitSeverity, FoodDeficit = camp.FoodDeficit * share,
-                    LastConsumed = camp.LastConsumed * share
+                    Population = order.Population, Tile = camp.Tile
                 };
-                camp.GrowthRemainder -= hunter.GrowthRemainder; camp.DeathRemainder -= hunter.DeathRemainder;
+                // The pre-v1.1 legacy model owns fractional growth at the camp and never reads hunter progress.
+                // Only physical demography partitions its gross-event and deficit ledgers across cohorts.
+                if (physicalDemography)
+                {
+                    double share = before > 0 ? order.Population / (double)before : 0;
+                    hunter.GrowthRemainder = camp.GrowthRemainder * share;
+                    hunter.DeathRemainder = camp.DeathRemainder * share;
+                    hunter.FoodDeficitYears = camp.FoodDeficitYears;
+                    hunter.DeficitTurns = camp.DeficitTurns;
+                    hunter.DeficitSeverity = camp.DeficitSeverity;
+                    hunter.FoodDeficit = camp.FoodDeficit * share;
+                    hunter.LastConsumed = camp.LastConsumed * share;
+                    camp.GrowthRemainder -= hunter.GrowthRemainder;
+                    camp.DeathRemainder -= hunter.DeathRemainder;
+                }
                 camp.Population -= order.Population;
                 w.Hunters.Add(hunter); record.Log("Tribe " + camp.Player + " dispatched " + hunter.Population + " hunters [" + hunter.Id + "].");
             }
@@ -151,14 +161,23 @@ namespace Anthropocene.Simulation
                 var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity); if (hunter == null) continue;
                 var camp = w.Camps.First(c => c.Id == hunter.SourceCamp);
                 if (hunter.Tile != camp.Tile) { record.Log("Reintegration deferred: camp moved away from " + hunter.Id + "."); continue; }
-                int combined = camp.Population + hunter.Population;
-                if (combined > 0)
+                if (physicalDemography)
                 {
-                    camp.FoodDeficitYears = (camp.FoodDeficitYears * camp.Population + hunter.FoodDeficitYears * hunter.Population) / combined;
-                    camp.DeficitSeverity = (camp.DeficitSeverity * camp.Population + hunter.DeficitSeverity * hunter.Population) / combined;
-                    camp.DeficitTurns = Math.Max(camp.DeficitTurns, hunter.DeficitTurns);
+                    double campWeight = camp.DemographicDeficitMergeWeight > 0
+                        ? camp.DemographicDeficitMergeWeight : camp.Population;
+                    double hunterWeight = hunter.DemographicDeficitMergeWeight > 0
+                        ? hunter.DemographicDeficitMergeWeight : hunter.Population;
+                    double combinedWeight = campWeight + hunterWeight;
+                    if (combinedWeight > 0)
+                    {
+                        camp.FoodDeficitYears = (camp.FoodDeficitYears * campWeight + hunter.FoodDeficitYears * hunterWeight) / combinedWeight;
+                        camp.DeficitSeverity = (camp.DeficitSeverity * campWeight + hunter.DeficitSeverity * hunterWeight) / combinedWeight;
+                        camp.DeficitTurns = Math.Max(camp.DeficitTurns, hunter.DeficitTurns);
+                    }
+                    camp.DemographicDeficitMergeWeight = combinedWeight;
+                    camp.GrowthRemainder += hunter.GrowthRemainder;
+                    camp.DeathRemainder += hunter.DeathRemainder;
                 }
-                camp.GrowthRemainder += hunter.GrowthRemainder; camp.DeathRemainder += hunter.DeathRemainder;
                 camp.Population += hunter.Population; w.Hunters.Remove(hunter); record.Log("Hunters " + hunter.Id + " rejoined their camp.");
             }
             w.Hunters.RemoveAll(h => h.Population <= 0);
