@@ -1,25 +1,64 @@
 # Fission (WP10a, push recalibrated in WP10c)
 
-Design: [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) 3.1-3.6, 6.4, 9;
-order of work: [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md) WP10.
-Source: `Assets/_Anthropocene/Simulation/Fission.cs`. Checks:
-`Tools/Headless/FissionChecks.cs`. Immigration is WP10b and lives in
-[Immigration.md](Immigration.md) (it runs before this pass and excludes its sources and arrivals from it). Pass contract: [TurnResolutionPasses.md](TurnResolutionPasses.md), Close row.
+Current design: [UnifiedSocialRelocationContract-v0.2.md](UnifiedSocialRelocationContract-v0.2.md).
+Source: `Assets/_Anthropocene/Simulation/Fission.cs` and
+`Assets/_Anthropocene/Simulation/SocialRelocation.cs`. Checks:
+`Tools/Headless/FissionChecks.cs`, `SocialRelocationChecks.cs` and
+`SocialRelocationNativeChecks.cs`. Immigration runs before this pass and excludes
+its sources and arrivals. Pass contract:
+[TurnResolutionPasses.md](TurnResolutionPasses.md), Close row.
 
-**Status: opt-in.** `FissionEnabled` is false by default and in `OpeningConfig.json`.
-WP10a's push (`clamp((Q_fiss - Q) / DeltaQ)`) fired whenever total QoL was low, so camps split at any size
-(agricultural parents at a median of 143 residents against a design size near 600, Paleolithic 40-53 against
-about 101, population about 7x). WP10c replaces it with **crowding plus expected gain**: a camp splits only if
-the stayers' QoL would rise by at least a per-policy threshold once the daughter leaves, and the daughter
-would not be much worse off. The thresholds are calibrated analytically to the design onset sizes (table
-below). The measured result is mixed and is the main finding of WP10c: with the specified rule the stayers'
-housing relief dominates the gain, so agricultural camps still split at a median of 141 residents; counting
-cohesion and clothing only (`FissionHousingRelief = 0`) reproduces the design onset (median 906). See
-"Measurements (WP10c)". **User decision (30 September 2026): `FissionHousingRelief = 0` is the default; fission stays opt-in (`FissionEnabled = false`) until immigration (WP10b) and a performance review.** Fission is also a product of QoL, not of crowding alone: see "Distress fission" below (a camp short of food or water also splits for better ground; the stayers' estimate includes food and water relief).
+**Current Physical-v1 status:** the unified architecture is implemented; native
+balance and MLP-training promotion are not certified. New-world plan-of-record
+flags enable immigration and fission independently. Saves whose demographic
+selector is absent retain `LegacyQoLNetGrowth` and its exact former fission law.
 
-A camp whose split would raise its stayers' QoL enough may send a coherent kin group to a viable empty
-site. The group founds a new Society in a new AI player slot. The parent keeps its site, fields, fixed Housing
-and controller; the player keeps the original camp and never controls a daughter.
+## Unified Physical-v1 rule (v0.2)
+
+Crowding and distress now select only the recorded source circumstance. Both use
+the same `SocialRelocationEvaluator` as immigration: mover advantage,
+population-weighted aggregate welfare, bounded source harm and (for immigration)
+bounded receiver-incumbent harm. Forecast experienced QoL remains a welfare term;
+mortality risk comes from physical food, clothing, shelter, density, disease and
+deficit history. There is no instantaneous-net-growth veto or special distress
+bonus.
+
+The existing policy daughter fractions and thresholds, minimum population, known
+site/radius search, spacing, deterministic ordering and conflict resolution remain
+unchanged. A daughter begins with no people or fixed infrastructure. The source
+keeps site-bound housing and fields; the daughter receives proportional typed food,
+portable inventory and shelter, tools, herds, workforce roles, demographic
+remainders, histories, expectation and knowledge. Daughter farmers become
+gatherers because fields do not move. Nothing is manufactured for free, and the
+real economy/demography first processes the daughter on the following turn.
+
+Before a physical site scan, a permissive common-envelope bound checks every
+supported daughter size. It uses the exact source forecast and an optimistic
+daughter with full F/C/H/W, zero linked-settlement density and the lowest physical
+mortality possible at that headcount. It rejects only when every size must fail the
+shared mover threshold or exact source-harm tolerance. Historical satisfaction and
+historical coverage is not an input. `FissionSearchFraction` lowers only this
+physically valid upper-bound threshold, preserving early cache searches without
+screening any candidate that could meet the final mover gate. The bound never
+accepts a split, and it adds no independent positive-source-relief condition.
+
+The committed `Camp.QoL` formula, Elder reward and observation schema are
+unchanged. Current same-boundary evidence shows 126 fissions with fission alone and
+113 with both systems over 75 continuation turns; only 2 of 137 combined endpoints
+have both clothing and housing coverage at least 0.8. The success/distress
+calibration is therefore not promotion-ready. See
+[UnifiedSocialRelocationValidation-v0.2.md](UnifiedSocialRelocationValidation-v0.2.md).
+
+## Legacy WP10a/WP10c path and historical evidence
+
+The remaining text documents `LegacyQoLNetGrowth` compatibility and the historical
+WP10 calibration. References below to “current” mean current within that legacy
+series; they do not supersede the unified Physical-v1 rule above.
+
+A camp whose split would raise its stayers' QoL enough may send a coherent kin
+group to a viable empty site. The group founds a new Society in a new AI player
+slot. The parent keeps its site, fields, fixed Housing and controller; the player
+keeps the original camp and never controls a daughter.
 
 ## Doctrine summary
 

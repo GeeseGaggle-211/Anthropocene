@@ -236,9 +236,22 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.Contains("--issue31-microbench")) { Issue31Microbench(); return 0; }
+        var socialScale = args.FirstOrDefault(a => a.StartsWith("--social-scale=", StringComparison.Ordinal));
+        if (socialScale != null)
+        {
+            string[] values = socialScale.Substring("--social-scale=".Length).Split(',');
+            SocialScaleBenchmark.Run(int.Parse(values[0]), values.Length > 1 ? int.Parse(values[1]) : 0); return 0;
+        }
         if (args.Contains("--demography-only")) { DemographyChecks.Run(); return 0; }
         if (args.Contains("--fission-only")) { FissionChecks.Run(); return 0; }
         if (args.Contains("--immigration-only")) { ImmigrationChecks.Run(); return 0; }
+        if (args.Contains("--social-relocation-only")) { SocialRelocationChecks.Run(); return 0; }
+        var socialNative = args.FirstOrDefault(a => a.StartsWith("--social-relocation-native", StringComparison.Ordinal));
+        if (socialNative != null)
+        {
+            int turns = socialNative.Contains("=") ? int.Parse(socialNative.Substring(socialNative.IndexOf('=') + 1)) : 3;
+            SocialRelocationNativeChecks.Run(turns); return 0;
+        }
         if (args.Contains("--demography-regression")) { DemographyRegressionChecks.Run(); return 0; }
         var demographyLive = args.FirstOrDefault(a => a.StartsWith("--demography-live", StringComparison.Ordinal));
         if (demographyLive != null)
@@ -327,6 +340,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "ContactKnowledgeChecks", Run = () => ContactKnowledgeChecks.Run() },
                 new ParallelChecks.Entry { Name = "FissionChecks", Cost = 3, Run = () => FissionChecks.Run() },
                 new ParallelChecks.Entry { Name = "ImmigrationChecks", Cost = 2, Run = () => ImmigrationChecks.Run() },
+                new ParallelChecks.Entry { Name = "SocialRelocationChecks", Cost = 2, Run = () => SocialRelocationChecks.Run() },
                 new ParallelChecks.Entry { Name = "TradeChecks", Cost = 2, Run = () => TradeChecks.Run() },
                 new ParallelChecks.Entry { Name = "GoodsStorageChecks", Cost = 2, Run = () => GoodsStorageChecks.Run() },
                 new ParallelChecks.Entry { Name = "DemandControlChecks", Cost = 2, Run = () => DemandControlChecks.Run() },
@@ -502,13 +516,19 @@ internal static class Program
                     Console.WriteLine("NOMAD_GAME seed=" + seed + " husbandry=" + nomads + "/" + w.Camps.Count);
 
                 }
+                var fissionStarts = w.History.SelectMany(record => record.Fissions)
+                    .GroupBy(report => report.DaughterCamp)
+                    .ToDictionary(group => group.Key, group => group.First().Daughter);
                 foreach (var camp in w.Camps)
                 {
                     total++; if (w.LinkedPopulation(camp) > 0) survivors++; technologies[(int)camp.Technology]++;
                     endingPopulations.Add(w.LinkedPopulation(camp));
-                    string habitat = startingHabitats[camp.Id];
+                    bool foundingCamp = startingHabitats.TryGetValue(camp.Id, out string habitat);
+                    if (!foundingCamp) habitat = "Fission daughter";
+                    double startingPopulation = foundingCamp ? startingPopulations[camp.Id]
+                        : fissionStarts.TryGetValue(camp.Id, out int daughter) ? daughter : 0;
                     if (!habitatPaths.TryGetValue(habitat, out var path)) habitatPaths[habitat] = path = new HabitatPathStats();
-                    path.Tribes++; path.StartingPopulation += startingPopulations[camp.Id]; path.EndingPopulation += w.LinkedPopulation(camp);
+                    path.Tribes++; path.StartingPopulation += startingPopulation; path.EndingPopulation += w.LinkedPopulation(camp);
                     if (w.LinkedPopulation(camp) > 0) path.Survivors++;
                     if (camp.Technology == Technology.AnimalHusbandry) path.Husbandry++;
                     foreach (var demographic in w.History.SelectMany(record => record.Demographics).Where(report => report.Camp == camp.Id))

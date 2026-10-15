@@ -10,6 +10,17 @@ using Anthropocene.Simulation;
 
 internal static class ExecutionChecks
 {
+    private static long MetricLong(ResolutionMetrics metrics, string name)
+    {
+        var field = typeof(ResolutionMetrics).GetField(name, BindingFlags.Public | BindingFlags.Instance);
+        return field == null ? 0 : Convert.ToInt64(field.GetValue(metrics));
+    }
+    private static double Percentile(IReadOnlyList<double> source, double fraction)
+    {
+        if (source.Count == 0) return 0;
+        var sorted = source.OrderBy(value => value).ToArray();
+        return sorted[(int)Math.Round((sorted.Length - 1) * fraction)];
+    }
     private static string FirstDifference(object left, object right, string path = "world")
     {
         if (ReferenceEquals(left, right)) return null;
@@ -114,30 +125,76 @@ internal static class ExecutionChecks
         timer.Restart(); var bytes = SaveCodec.Save(world); double initialSaveMs = timer.Elapsed.TotalMilliseconds;
         timer.Restart(); var replay = SaveCodec.Load(bytes); double initialLoadMs = timer.Elapsed.TotalMilliseconds;
         var execution = new PhaseExecution(4, 64); var resolver = new TurnResolver(execution); var oracle = new TurnResolver();
-        var samples = new List<object>(); int turns = 0; double totalAi = 0, totalResolve = 0, totalEcology = 0, totalHerds = 0, totalReference = 0;
+        var samples = new List<object>(); var turnMs = new List<double>(); var allocatedBytes = new List<double>();
+        int turns = 0; double totalAi = 0, totalResolve = 0, totalEcology = 0, totalHerds = 0, totalReference = 0, totalSocial = 0;
+        long totalSocialForecasts = 0, totalSocialBuilds = 0, totalSocialHits = 0, totalSocialCandidates = 0;
         while (!world.Finished && turns < 12)
         {
+            long allocatedBefore = GC.GetTotalAllocatedBytes(false);
+            var wholeTurn = Stopwatch.StartNew();
             var plan = AiPlanning.Decide(world, execution);
             var preparationTimer = Stopwatch.StartNew();
             var prepared = TurnPlanner.Prepare(world, plan.Orders, plan.Traces, execution);
             double preparationMs = preparationTimer.Elapsed.TotalMilliseconds;
             resolver.Resolve(world, prepared);
             var metrics = resolver.LastMetrics;
+            wholeTurn.Stop();
+            long allocated = Math.Max(0, GC.GetTotalAllocatedBytes(false) - allocatedBefore);
+            double socialMs = metrics.ImmigrationMilliseconds + metrics.FissionMilliseconds;
+            long socialForecasts = MetricLong(metrics, "SocialForecasts");
+            long socialBuilds = MetricLong(metrics, "SocialForecastCacheBuilds");
+            long socialHits = MetricLong(metrics, "SocialForecastCacheHits");
+            long socialCandidates = MetricLong(metrics, "SocialCandidatesEvaluated");
             var referenceOrders = plan.Orders.ToDictionary(p => p.Key, p => p.Value.AsEnumerable().Reverse().ToList());
             oracle.Resolve(replay, TurnPlanner.Prepare(replay, referenceOrders, plan.Traces));
             if (SaveCodec.Fingerprint(world) != SaveCodec.Fingerprint(replay)) throw new Exception("Scale replay diverged at turn " + world.Turn);
             peakManaged = Math.Max(peakManaged, GC.GetTotalMemory(false));
             totalAi += plan.Milliseconds + preparationMs; totalResolve += metrics.TotalMilliseconds; totalEcology += metrics.EcologyMilliseconds; totalHerds += metrics.HerdIntentMilliseconds; totalReference += oracle.LastMetrics.TotalMilliseconds;
-            samples.Add(new { turn = world.Turn - 1, aiMs = plan.Milliseconds + preparationMs, prepareMs = preparationMs, resolveMs = metrics.TotalMilliseconds, ecologyMs = metrics.EcologyMilliseconds, setupEconomyMs = metrics.SetupEconomyMilliseconds, managedHerdMs = metrics.ManagedHerdMilliseconds, growthPlanMs = metrics.GrowthPlanMilliseconds, sustainMs = metrics.SustainMilliseconds, productionMs = metrics.ProductionMilliseconds, herdIntentMs = metrics.HerdIntentMilliseconds, activeTiles = metrics.ActiveTiles, tileIntegrations = metrics.TileIntegrations, seasonalTiles = metrics.SeasonalTiles, fullTurnTiles = metrics.FullTurnTiles, referenceResolveMs = oracle.LastMetrics.TotalMilliseconds }); turns++;
-            Console.WriteLine("SCALE_PROGRESS tribes=" + players + " turn=" + turns + " aiMs=" + (plan.Milliseconds + preparationMs).ToString("F1") + " resolveMs=" + metrics.TotalMilliseconds.ToString("F1") + " active=" + metrics.ActiveTiles + " integrations=" + metrics.TileIntegrations);
+            totalSocial += socialMs; totalSocialForecasts += socialForecasts; totalSocialBuilds += socialBuilds;
+            totalSocialHits += socialHits; totalSocialCandidates += socialCandidates;
+            turnMs.Add(wholeTurn.Elapsed.TotalMilliseconds); allocatedBytes.Add(allocated);
+            samples.Add(new { turn = world.Turn - 1, turnMs = wholeTurn.Elapsed.TotalMilliseconds, allocatedBytes = allocated,
+                aiMs = plan.Milliseconds + preparationMs, prepareMs = preparationMs, resolveMs = metrics.TotalMilliseconds,
+                socialMs, socialForecasts, socialBuilds, socialHits, socialCandidates,
+                immigrationMs = metrics.ImmigrationMilliseconds, fissionMs = metrics.FissionMilliseconds,
+                ecologyMs = metrics.EcologyMilliseconds, setupEconomyMs = metrics.SetupEconomyMilliseconds,
+                managedHerdMs = metrics.ManagedHerdMilliseconds, growthPlanMs = metrics.GrowthPlanMilliseconds,
+                sustainMs = metrics.SustainMilliseconds, productionMs = metrics.ProductionMilliseconds,
+                herdIntentMs = metrics.HerdIntentMilliseconds, activeTiles = metrics.ActiveTiles,
+                tileIntegrations = metrics.TileIntegrations, seasonalTiles = metrics.SeasonalTiles,
+                fullTurnTiles = metrics.FullTurnTiles, referenceResolveMs = oracle.LastMetrics.TotalMilliseconds }); turns++;
+            Console.WriteLine("SCALE_PROGRESS tribes=" + players + " turn=" + turns
+                + " turnMs=" + wholeTurn.Elapsed.TotalMilliseconds.ToString("F1")
+                + " aiMs=" + (plan.Milliseconds + preparationMs).ToString("F1")
+                + " resolveMs=" + metrics.TotalMilliseconds.ToString("F1") + " socialMs=" + socialMs.ToString("F1")
+                + " allocatedMiB=" + (allocated / 1048576.0).ToString("F2")
+                + " active=" + metrics.ActiveTiles + " integrations=" + metrics.TileIntegrations);
         }
         timer.Restart(); bytes = SaveCodec.Save(world); double finalSaveMs = timer.Elapsed.TotalMilliseconds;
         replay = null; GC.Collect(); timer.Restart(); var restored = SaveCodec.Load(bytes); double finalLoadMs = timer.Elapsed.TotalMilliseconds;
         if (SaveCodec.Fingerprint(world) != SaveCodec.Fingerprint(restored)) throw new Exception("Final scale save/load differs.");
         process.Refresh(); long finalManaged = GC.GetTotalMemory(false); peakManaged = Math.Max(peakManaged, finalManaged);
-        var report = new { seed = 1729, shape = "Continents", config.Width, config.Height, players, config.BenchmarkScale, turns, generationMs, totalAiMs = totalAi, totalResolveMs = totalResolve, totalEcologyMs = totalEcology, totalHerdIntentMs = totalHerds, totalReferenceResolveMs = totalReference, initialSaveMs, initialLoadMs, finalSaveMs, finalLoadMs, saveBytes = bytes.Length, peakWorkingSetBytes = process.PeakWorkingSet64, managedAfterGenerationBytes = managedAfterGeneration, peakSampledManagedBytes = peakManaged, managedBytes = finalManaged, camps = world.Camps.Count, hunterGroups = world.Hunters.Count, herds = world.Herds.Count, workers = 4, replay = "identical every turn and after save/load", samples };
+        var report = new { seed = 1729, shape = "Continents", config.Width, config.Height, players, config.BenchmarkScale, turns,
+            turnP50Ms = Percentile(turnMs, .5), turnP95Ms = Percentile(turnMs, .95),
+            allocationP50Bytes = Percentile(allocatedBytes, .5), allocationP95Bytes = Percentile(allocatedBytes, .95),
+            generationMs, totalAiMs = totalAi, totalResolveMs = totalResolve, totalSocialMs = totalSocial,
+            totalSocialForecasts, totalSocialBuilds, totalSocialHits, totalSocialCandidates,
+            socialCacheHitRate = totalSocialHits / (double)Math.Max(1, totalSocialBuilds + totalSocialHits),
+            totalEcologyMs = totalEcology, totalHerdIntentMs = totalHerds, totalReferenceResolveMs = totalReference,
+            initialSaveMs, initialLoadMs, finalSaveMs, finalLoadMs, saveBytes = bytes.Length,
+            peakWorkingSetBytes = process.PeakWorkingSet64, managedAfterGenerationBytes = managedAfterGeneration,
+            peakSampledManagedBytes = peakManaged, managedBytes = finalManaged, camps = world.Camps.Count,
+            hunterGroups = world.Hunters.Count, herds = world.Herds.Count, workers = 4,
+            replay = "identical every turn and after save/load", samples };
         Directory.CreateDirectory("TestResults"); string path = "TestResults/EcologyScale-" + players + ".json";
         File.WriteAllText(path, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
-        Console.WriteLine("SCALE_COMPLETE tribes=" + players + " turns=" + turns + " generationMs=" + generationMs.ToString("F1") + " totalAiMs=" + totalAi.ToString("F1") + " totalResolveMs=" + totalResolve.ToString("F1") + " peakMB=" + (process.PeakWorkingSet64 / 1048576) + " report=" + path);
+        Console.WriteLine("SCALE_COMPLETE tribes=" + players + " turns=" + turns
+            + " turnP50/P95Ms=" + Percentile(turnMs, .5).ToString("F1") + "/" + Percentile(turnMs, .95).ToString("F1")
+            + " allocP50/P95MiB=" + (Percentile(allocatedBytes, .5) / 1048576).ToString("F2") + "/" + (Percentile(allocatedBytes, .95) / 1048576).ToString("F2")
+            + " generationMs=" + generationMs.ToString("F1") + " totalAiMs=" + totalAi.ToString("F1")
+            + " totalResolveMs=" + totalResolve.ToString("F1") + " totalSocialMs=" + totalSocial.ToString("F1")
+            + " socialForecast/build/hit/candidates=" + totalSocialForecasts + "/" + totalSocialBuilds + "/" + totalSocialHits + "/" + totalSocialCandidates
+            + " socialCacheHitRate=" + (totalSocialHits / (double)Math.Max(1, totalSocialBuilds + totalSocialHits)).ToString("F3")
+            + " peakMB=" + (process.PeakWorkingSet64 / 1048576) + " report=" + path);
     }
 }

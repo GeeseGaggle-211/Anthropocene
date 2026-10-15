@@ -19,7 +19,7 @@ coefficients. They do not create seasonal or annual world states.
 | Turn setup | Post-movement entities, fixed needs and starting ecology | Establish field ownership and a fixed operating/workforce plan, reproduce herds, hunt, and construct all camp, hunter and herd claims for the whole horizon. These are computational pass writes, not subturn timestamps. | Every claim and average field efficacy is fixed before tile integration. |
 | Resource resolution | Start ecological stocks, fixed claims, four-profile forcing, aggregate field efficacy and duration | Integrate each active tile once for the horizon. Land claims debit opening `G` and `B`; only after receipts are fixed does the tile recover for the next turn. Domestic herds claim eligible radius-one land forage and radius-one freshwater through the same finite tile ledgers as other claimants. Operated field intensity raises the human-accessible ceiling and managed recovery without adding food to current receipts. A departing village does no field work this turn and its gatherers can access at most bridge-level `q=0.25` food on former fields. Commit endpoint food, biomass, freshwater and Wood, then receipts and balances, in tile order. Reconcile field endpoint capital once from realized terrestrial gathering, without changing claims already evaluated. After all fields are committed, a cultivation camp whose own radius-one land footprint averages at least `q=0.25` becomes a village. | Only realized receipts reduce the fixed food/feedstock ledger. No claim or workforce is revised. |
 | Needs and demographics | Realized resource and herd flows, fixed `TurnNeeds`, assigned prior cohort | Resolve managed herds and escrow the finite food budget, then resolve production, goods and physical needs. When trade has goods legs, every camp produces first, the goods settle in agreement order, escrowed food pays the delivered share and every camp resolves needs; otherwise production and needs remain one pass. Under `PhysicalMortalityV1`, close the paid food/textile person-years with dynamic shelter, recompute QoL only as experienced welfare, return unused typed provisions, and record pending gross births and cause-specific deaths. Apply storage to the locked cohort, then commit the single net resident/workforce change. The legacy model retains its old growth/starvation path. | Newborn needs and labor begin at the next preparation boundary. |
-| Close | Completed endpoint and realized practice receipts | Reintegrate eligible hunters, bind ownership, resolve the once-only first breakthrough, then acquire any independently qualified subsistence domains for each society. Then the **immigration pass** (when `ImmigrationEnabled`; [Immigration.md](Immigration.md)): freeze the post-demography snapshot; per camp on bounded workers (pure over the snapshot) score the known camps within `ImmigrationRadius` (own camps, current vision, and after the first breakthrough unexpired unmoved contacts) by `dU = w_Q (Q_j - Q_i) - K_distance d - K_attachment - K_lifestyle` at each camp's committed QoL terms at present residents and emit at most one sized intent per source; reconcile once in destination-then-source camp-ID order (a destination accepts the largest group that keeps its estimated post-inflow QoL at least `Q_i + theta`; the excess stays home, never rerouted); commit all departures from the frozen residents and stores, then all arrivals, carrying only per-capita typed food plus proportional physical-demography ledgers and deficit history, and record the contact both ways. Its sources and arrivals then sit out fission. Then the **fission pass** (when `FissionEnabled`): freeze the post-demography snapshot; per camp on bounded workers (`PhaseExecution.Map`, pure over the snapshot) compute the stayers' expected QoL gain from the committed camp terms (crowding plus expected gain, WP10c), validate or lazily search the cached destination and form at most one proposal; reconcile in camp-ID order (a proposal conflicting with an earlier commit is dropped this turn and keeps its cache); commit canonically the new Society, AI player slot, camp, moved people, stores, demographic ledgers, deficit/expectation state, herds and copied knowledge. A daughter cannot act in the turn it is founded, and QoL recomputes next turn. Then capture settlement/lineage welfare diagnostics, end-of-turn contact knowledge, conservation and invariants, canonical history, and increment turn. Newly acquired capabilities and daughters are available only at the next preparation boundary. | The committed endpoint becomes the next decision boundary. |
+| Close | Completed endpoint and realized practice receipts | Reintegrate eligible hunters, bind ownership, resolve the first breakthrough and acquire independently qualified domains. Construct one transient, on-demand `SocialRelocationForecastCache` from the post-demography endpoint. Under `PhysicalMortalityV1`, immigration then fission use the same bounded physical-service counterfactual and mover/source/incumbent/aggregate constraints; under `LegacyQoLNetGrowth`, each retains its exact former QoL law. Immigration considers only known local camps and a deterministic bounded size shortlist, canonically includes pending receiver resources/reservations, then revalidates every remaining flow against the exact joint endpoint (including each camp's frozen-resident departure); endpoint-indexed caches invalidate and retry only incident dependencies after a failed batch. Commit all departures before arrivals, and never let arrivals re-emigrate in the same Close. Immigration participants sit out fission. Before its known-site search, Physical-v1 fission may reject only through a permissive common-envelope upper bound (exact source plus optimistic full-service daughter); historical coverage is not an input, and `FissionSearchFraction` only lowers the valid upper-bound request threshold. Only the common finite-capacity evaluator may accept crowding or distress fission. Both passes conserve transferred workforce and physical state. They do not rerun the economy or demography: arrivals and daughters enter real production, needs, births and deaths next turn. Then capture settlement/lineage welfare diagnostics, contact knowledge, conservation, history and increment the turn. | The committed endpoint becomes the next decision boundary. |
 
 ## Rules protecting the pass order
 
@@ -32,15 +32,18 @@ coefficients. They do not create seasonal or annual world states.
   pays on delivery. No step plans or revises any claim: a short delivery is scaled,
   never re-negotiated.
 
-- The fission pass ([Fission.md](Fission.md)) runs once per resolution, after
+- The social-relocation passes ([Immigration.md](Immigration.md),
+  [Fission.md](Fission.md)) run once per resolution, after
   `BreakthroughBound` and `TechnologyDiscovery.Resolve` and before
-  `ContactKnowledge.EndTurn`. Its parallel phase never writes; all writes (cache
+  `ContactKnowledge.EndTurn`. Their shared forecast cache and parallel phases never
+  write authoritative state; all writes (cache
   updates, new entities, moved ledgers) happen in the canonical serial commit. A fission
   policy order is applied with the economy intents at the start of resolution, so it is
   in force for that turn's pass. No same-turn multi-hop, no rerouting of a dropped
-  proposal, no QoL recomputation after a split. The expected gain (the stayers' crowding gain with food and water relief, and for a camp
-  short of food or water the leaving group's distress gain) is a pure estimate from
-  the committed terms, never the result of a trial split.
+  proposal, no QoL recomputation after a transfer. In physical mode, both passes use
+  the same pure realizable-service estimate and explicit mortality hazards; crowding
+  and distress identify the fission source condition but do not select another law.
+  Legacy mode retains the former committed-QoL estimates.
 
 - `EconomicPlanner.Plan` is an interturn read-only policy. AI chooses movement
   from filtered observations; `TurnPlanner.Prepare` uses the planner once for
@@ -70,8 +73,11 @@ coefficients. They do not create seasonal or annual world states.
   birth/death ledgers reconcile once after storage, so equilibrium turnover does
   not erase specialists and newborns cannot fund or store their own goods. The
   committed QoL remains the existing food/water/expectation/material/cohesion
-  welfare signal used by economics, immigration and fission. See
-  [DemographyQoLContract-v1.1.md](DemographyQoLContract-v1.1.md).
+  experienced-welfare signal used by economics, the Elder reward and the welfare
+  component of social counterfactuals. Social survival risk is forecast from the
+  physical inputs and hazards, never from composite QoL. See
+  [DemographyQoLContract-v1.1.md](DemographyQoLContract-v1.1.md) and
+  [UnifiedSocialRelocationContract-v0.2.md](UnifiedSocialRelocationContract-v0.2.md).
 - `LegacyQoLNetGrowth` preserves the former preparation rule: committed QoL may
   reduce the net-growth ceiling, `DeficitTurns > 0` may prohibit growth and
   starvation is the old discrete loss. This path exists for unmigrated saves and

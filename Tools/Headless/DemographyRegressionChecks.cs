@@ -77,15 +77,29 @@ internal static class DemographyRegressionChecks
     private static void FlowAttribution()
     {
         var migration = UniformWorld(2); migration.Config.ImmigrationEnabled = true; migration.Config.FissionEnabled = false;
+        migration.Config.Neolithic.CohesionBandScale = 2000;
         var source = migration.Camps[0]; var destination = migration.Camps[1];
         source.Tile = migration.Map.At(10, 8); destination.Tile = migration.Map.Radius(source.Tile, 2).First(t => migration.Map.Distance(source.Tile, t) == 2);
         foreach (var c in migration.Camps)
         {
             c.Technology = Technology.AnimalHusbandry; c.Technologies[(int)Technology.AnimalHusbandry] = true; c.People.Progression.Era = Era.Neolithic;
-            c.Inventory.LightHousingUnits = 1e9; c.Inventory.Cloth = 77; c.Inventory.AnimalFabric = 11;
+            c.Inventory.LightHousingUnits = 1e9; c.Inventory.Cloth = 1000; c.Inventory.AnimalFabric = 11;
         }
+        // Physical-v1 relocation deliberately ignores the historical coverage
+        // fields below.  The source's low observed water service depresses
+        // forecast welfare, while the well-provisioned but dense receiver has
+        // higher welfare and a larger crowding hazard.
         source.FoodNeedsMetRatio = .4; source.ClothPerCapita = 1; source.RudimentaryExpectation = .5;
-        destination.FoodNeedsMetRatio = 1; destination.ClothPerCapita = 0; destination.RudimentaryExpectation = 1e-6; destination.Inventory.LightHousingUnits = 0;
+        source.WaterNeedsMetRatio = .1;
+        // Pin a migration event for the attribution check with ample real food at
+        // both ends.  The focused immigration suite owns acceptance calibration;
+        // this trajectory owns only the accounting distinction between a death
+        // and a conserved social transfer.
+        destination.Population = 900; source.PlantFood = destination.PlantFood = 1e9;
+        source.AnimalFood = source.AquaticFood = destination.AnimalFood = destination.AquaticFood = 0;
+        destination.Inventory.Cloth = 3000; destination.Inventory.LightHousingUnits = 1e9;
+        destination.FoodNeedsMetRatio = 1; destination.ClothPerCapita = 0;
+        destination.RudimentaryExpectation = .5;
         ContactKnowledge.MemoryOf(migration, source.People).Upsert(destination.Id, destination.Player, destination.Tile, migration.Turn, ContactSource.Sighting);
         var migrationRecord = BlankRecord(migration); int migrationTotal = migration.Camps.Sum(c => c.Population), sourceBefore = source.Population;
         Immigration.Resolve(migration, migrationRecord, new PhaseExecution(), new ResolutionMetrics());

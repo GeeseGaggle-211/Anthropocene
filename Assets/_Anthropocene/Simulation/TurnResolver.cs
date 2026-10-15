@@ -187,8 +187,17 @@ namespace Anthropocene.Simulation
             // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
             // Immigration between known settlements precedes fission (QoLFissionTradeDesign 4, 9); its sources and arrivals sit out fission this turn.
             // The commit is after economy/demography, so its population boundary first enters economy/demography next turn.
-            HashSet<int> mobile; using (PhaseProfile.Scope("Immigration")) mobile = Immigration.Resolve(w, record, execution, LastMetrics);
-            using (PhaseProfile.Scope("Fission")) Fission.Resolve(w, record, execution, LastMetrics, mobile);
+            SocialRelocationForecastCache socialForecasts = PhysicalDemography.Enabled(w.Config)
+                && (w.Config.ImmigrationEnabled || w.Config.FissionEnabled)
+                ? new SocialRelocationForecastCache(w, w.Camps) : null;
+            HashSet<int> mobile; using (PhaseProfile.Scope("Immigration")) mobile = Immigration.Resolve(w, record, execution, LastMetrics, null, socialForecasts);
+            using (PhaseProfile.Scope("Fission")) Fission.Resolve(w, record, execution, LastMetrics, mobile, null, socialForecasts);
+            if (socialForecasts != null)
+            {
+                LastMetrics.SocialForecasts = socialForecasts.Forecasts;
+                LastMetrics.SocialForecastCacheBuilds = socialForecasts.Builds;
+                LastMetrics.SocialForecastCacheHits = socialForecasts.CacheHits;
+            }
             WelfareDiagnostics.Capture(w, record);
             foreach (var change in touched.Values.OrderBy(t => t.Tile))
             { change.AfterFood = w.Tiles[change.Tile].Food; change.AfterPotentialFood = w.Tiles[change.Tile].PotentialFood; change.AfterFreshwater = w.Tiles[change.Tile].Freshwater; change.AfterLandCondition = w.Tiles[change.Tile].LandCondition; change.AfterAquaticCondition = w.Tiles[change.Tile].AquaticCondition; record.Changes.Add(change); }

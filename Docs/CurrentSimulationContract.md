@@ -10,6 +10,38 @@ Implementation evidence is not itself a new design approval. The index is a navi
 and conflict-resolution aid. The linked normative documents and accepted issue
 contracts remain the rule sources.
 
+## Unified social relocation candidate (15 October 2026)
+
+The feature branch rooted at demographic revision `bcf7f214` implements the
+[v0.2 unified social-relocation contract](UnifiedSocialRelocationContract-v0.2.md).
+For `PhysicalMortalityV1`, immigration, crowding fission and distress fission now
+share one cached physical-service counterfactual. It forecasts realizable food,
+clothing and shelter from retained workforce, stocks, infrastructure, trade and
+the existing physical hazards; last-turn food/clothing satisfaction is not future
+production capacity. The common admission rule checks movers, source stayers,
+receiver incumbents and population-weighted experienced welfare. There is no
+instantaneous net-growth veto. The neutral future-employment provider has zero
+weight and creates no world state, reward or observation field.
+
+QoL itself is unchanged and remains the experienced-welfare/economic/RL signal.
+It does not determine births or deaths. Close-phase transfers conserve typed food,
+workforce, demographic ledgers, histories, portable goods and herds; receiving
+population enters the real economy and physical demography on the following turn.
+Final immigration revalidation indexes population, provisions, workforce and
+opportunities by endpoint, caches marginal forecasts and retries only flows
+incident to a rejected batch. Physical-v1 fission's pre-site bound uses an exact
+source envelope plus an optimistic full-service daughter; it does not read
+historical coverage, and `FissionSearchFraction` only lowers that valid upper-
+bound request threshold.
+Old saves selecting `LegacyQoLNetGrowth` retain the exact former QoL-only social
+law. Existing saves already selecting `PhysicalMortalityV1` use this feature
+branch's unified social law; no second persisted selector provides old physical
+decision parity. Where the older WP10a/WP10b summaries below conflict, they
+describe the legacy path, not the Physical-v1 decision authority. Implementation
+and current NO-GO evidence are in
+[UnifiedSocialRelocationImplementation-v0.2.md](UnifiedSocialRelocationImplementation-v0.2.md)
+and [UnifiedSocialRelocationValidation-v0.2.md](UnifiedSocialRelocationValidation-v0.2.md).
+
 The follow-on [HV1/HV2 candidate](HerdValuationValidation.md) replaces the
 opt-in herd ladder's one-turn yield/established-farmer shortcut with annualized
 keep-minus-slaughter capital value and local marginal alternatives. Defaults
@@ -142,7 +174,7 @@ in `ConfigurationUnits.md` and the save-format contract.
 | `FissionGainThreshold` | 0.113 | 0.113 | expected-gain threshold G*(Neutral): the relative rise of the stayers' QoL a split must deliver (WP10c) | shipped fission lever, analytically calibrated to the design onset sizes (Docs/Fission.md); saves without it load with fission disabled; `FissionEnabled` (plan of record: true by default and in OpeningConfig; saves without it load false) is a boolean, not listed |
 | `FissionGainDiscourage` | 0.08 | 0.08 | expected-gain threshold G*(Discourage) | shipped fission lever, calibrated with the 15 percent daughter; not monotone in policy because the policy also sets the daughter fraction |
 | `FissionGainEncourage` | 0.0955 | 0.0955 | expected-gain threshold G*(Encourage) | shipped fission lever, calibrated with the 40 percent daughter |
-| `FissionSearchFraction` | 0.8 | 0.8 | fraction of G* at which a camp without a valid cached destination searches | shipped fission lever |
+| `FissionSearchFraction` | 0.8 | 0.8 | fraction of G* at which a camp without a valid cached destination searches | retained fission lever; Physical-v1 applies it only to a valid optimistic upper-bound request, never as a separate acceptance gate |
 | `FissionDaughterMargin` | 0.05 | 0.05 | QoL the daughter may fall below the parent's before the split is blocked | shipped fission lever |
 | `FissionHousingRelief` | 0 | 0 | weight of the stayers' housing relief in the expected gain (1 = all, 0 = cohesion and clothing only) | shipped fission lever; 0 by user decision (onset near the design sizes), 1 counts all housing relief and splits housing-short villages at a median of 141 (Docs/Fission.md) |
 | `FissionDaughterBuilderShare` | 0.05 | 0.05 | share of a daughter's people counted as Builders when estimating the shelter she assembles in her first turn (Fission.DaughterShelter) | shipped fission lever; 0.05 is a heavy but realistic crew against the measured planner Builder share (P90 4.5 percent; Docs/Fission.md); 0 credits carried shelter only; saves without it load the default |

@@ -1,23 +1,68 @@
 # Immigration between known settlements (WP10b, forward-looking utility and hysteresis WP10b-2)
 
-Design: [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) sections 4 and 9 (normative ordering and forbidden
-architectures); order of work: [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md) WP10.
-Source: `Assets/_Anthropocene/Simulation/Immigration.cs` (pass, utility, size, reconcile, commit) and the
-`Fission.QoLModel` estimator in `Fission.cs`. Checks: `Tools/Headless/ImmigrationChecks.cs`. Companion:
-[Fission.md](Fission.md). Pass contract: [TurnResolutionPasses.md](TurnResolutionPasses.md), Close row.
+Current design: [UnifiedSocialRelocationContract-v0.2.md](UnifiedSocialRelocationContract-v0.2.md).
+Source: `Assets/_Anthropocene/Simulation/Immigration.cs` and
+`Assets/_Anthropocene/Simulation/SocialRelocation.cs`. Checks:
+`Tools/Headless/ImmigrationChecks.cs`, `SocialRelocationChecks.cs` and
+`SocialRelocationNativeChecks.cs`. Companion: [Fission.md](Fission.md). Pass
+contract: [TurnResolutionPasses.md](TurnResolutionPasses.md), Close row.
 
-**Status: opt-in.** `ImmigrationEnabled` is false by default and in `OpeningConfig.json`; saves that predate the
-fields load with it false and the default levers. Immigration and fission are independent switches (either can run
-alone); when both run, immigration goes first.
+**Current Physical-v1 status:** the unified architecture is implemented; native
+balance and MLP-training promotion are not certified. New-world plan-of-record
+flags enable immigration and fission independently, with immigration first. Saves
+whose demographic selector is absent retain `LegacyQoLNetGrowth` and its exact
+former social law.
 
-**WP10b-2 changed the decision rule** (utility and acceptance, below) after the WP10b measurements showed a proportional
-controller on present states: 24% of flows reversed within two turns and QoL fell. The measurements of the original rule
-are kept below as "previous rule"; the current rule's are in the WP10b-2 section.
+## Unified Physical-v1 rule (v0.2)
 
-A camp whose neighbour is a clearly better place to live may send a small group of its residents there. This is a
-resolver population process like births, not an AI decision: no order, no player control, no observation. The owner
-sees the result in the camp's demographic explanation ("... then moved to other settlements" / "... more arrived
-from other settlements") and in the turn journal.
+The physical path no longer admits a move from `ForwardUtility` or
+`Fission.QoLModel.ForwardAt`. It uses `SocialRelocationEvaluator` for the moving
+cohort, source stayers, destination incumbents and population-weighted aggregate
+welfare. Forecast experienced QoL remains in utility, while cumulative mortality
+risk comes directly from forecast food, clothing, shelter, density, disease and
+deficit history. There is no instantaneous-net-growth veto. The optional future
+employment provider is neutral and job weight is zero.
+
+Known contacts, radius, distance/attachment/lifestyle costs, return hysteresis,
+source floor and the 10% maximum remain. Each receiver is checked at a bounded,
+deterministic shortlist containing the minimum, 2.5/5/7.5/10% source fractions,
+the configured maximum and the legacy preferred size where distinct. This replaces
+monotone admission bisection because future credible job matching can be
+nonmonotone. It does not enlarge the cap.
+
+Canonical reconciliation revalidates later cohorts against the receiver including
+already accepted population, typed food, workforce, deficit exposure and reserved
+opportunities. A final bounded pass then checks every flow against the exact joint
+simultaneous state, including a receiver's own frozen-resident departure, and
+removes all failures in deterministic batches. Flows are indexed by endpoint;
+final and marginal endpoint forecasts are cached, and a failure invalidates only
+its endpoints and incident dependencies. Chain, eight-source fan-in and rejection-
+cascade counters guard against the former repeated global flow scan. Departures
+commit before arrivals;
+arrivals cannot re-emigrate in the same Close. Workforce roles, provisions and
+physical-demography ledgers move conservatively; arrivals are not casualties or
+newly trained specialists. Because Close follows the real economy and demography,
+the increased receiver population first affects production, needs, births and
+deaths on the next turn. It is visible only to same-Close revalidation and endpoint
+diagnostics in the current turn.
+
+The committed `Camp.QoL` formula, Elder reward, observation schema and hysteresis
+calibration are unchanged. The matched accepted/suppressed/forced native flow has
+a positive three-endpoint `population × QoL` proxy, but that is not an integrated
+person-year welfare measure and it is only one zero-stability case. It does not
+certify the receiver population. See
+[UnifiedSocialRelocationValidation-v0.2.md](UnifiedSocialRelocationValidation-v0.2.md).
+
+## Legacy WP10b/WP10b-2 path and historical evidence
+
+The remaining WP10b text documents `LegacyQoLNetGrowth` compatibility and the
+historical calibration. References below to “current” mean current within that
+legacy series; they do not supersede the unified Physical-v1 rule above.
+
+A camp whose neighbour is a clearly better place to live may send a small group of
+its residents there. This is a resolver population process like births, not an AI
+decision: no order, no player control, no observation. The owner sees the result
+in the demographic explanation and turn journal.
 
 ## Doctrine summary
 
@@ -189,12 +234,14 @@ population changed, every other camp is evaluated on its unchanged snapshot. QoL
 and destination camp and Society, residents before, intended and migrated people, distance, kin flag, `Q_i`, `Q_j`,
 the forward `dU` at the committed group, the destination's forward post-inflow QoL, the typed food carried, the return
 penalty paid and the person-equivalents carried, plus projected source/destination mortality, net rates, receiver
-net-rate sign and the higher-QoL/worse-mortality flag), in destination then source order, plus
+net-rate sign and the higher-QoL/worse-mortality flag). In Physical-v1 the latter
+uses destination X1 versus the mover's source X0 for both QoL and mortality rather
+than mixing source endpoints. Reports remain in destination then source order, plus
 one journal line. Observations carry nothing new beyond what an owner sees of its own camps. No Unity change.
 
 ## Validation
 
-`ImmigrationChecks.cs` (registered in `Anthropocene.Headless.csproj` and the fixed-suite list, 357 assertions, own
+`ImmigrationChecks.cs` (registered in `Anthropocene.Headless.csproj` and the fixed-suite list, 379 assertions, own
 worlds): defaults, validation (including the cooldown and penalty), serialization and old-config loading,
 `OpeningConfig.json` keys; the closed-form present-state utility for every barrier; the size formula exhaustively over
 N = 0 to 400 and `dU` = 0 to 0.40 and its floors; estimator equality with `EstimateSplit` and monotonicity;
@@ -215,7 +262,9 @@ and 29 reversals in 30 turns; the forward rule alone still swings, because next 
 return penalty reversals and people moved fall by more than half; a mild swing (130 / 80) that the previous rule
 swaps every turn moves nobody under the forward rule; a stable gap still moves people one way and never back);
 immigration precedes fission and excludes sources and arrivals; its Close-phase population changes are excluded from the
-current demographic result and become the following turn's starting population; no multi-hop (A to B while B to C); exact conservation of
+current demographic result and become the following turn's starting population; no multi-hop (A to B while B to C);
+endpoint-indexed exact joint revalidation over an accepted chain, eight-source fan-in and a specialist-loss rejection
+cascade, with linear endpoint work and only incident retry counters; exact conservation of
 people and each typed food per camp, no goods or herds move; physical gross-event/deficit ledgers transfer without
 creation; higher-QoL/worse-mortality attraction remains possible when physical net growth is nonnegative, and a
 negative-net receiving settlement does not block the otherwise unchanged QoL-selected group; demographic lines, journal, contacts in both

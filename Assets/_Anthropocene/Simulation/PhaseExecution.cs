@@ -118,6 +118,16 @@ namespace Anthropocene.Simulation
         // Immigration pass (WP10b). Transient work counts; never saved, observed or fingerprinted.
         public long ImmigrationCampsEvaluated, ImmigrationCandidatesScored, ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected, ImmigrationMigrants, ImmigrationHigherQoLWorseMortality, ImmigrationPhysicalDestinationNegativeNet;
         public double ImmigrationMilliseconds;
+        // Shared relocation forecast work.  Builds are the expensive local
+        // capacity/source projections; candidate forecasts reuse those envelopes.
+        public long SocialForecasts, SocialForecastCacheBuilds, SocialForecastCacheHits;
+        public long SocialCandidatesEvaluated, SocialMoverRejected, SocialAggregateRejected,
+            SocialSourceRejected, SocialIncumbentRejected, SocialMatchedOpportunities;
+        // Exact simultaneous-immigration reconciliation. Endpoint builds are
+        // cache misses, dependency visits are incident-flow invalidations, and
+        // opportunity matches are recomputed only at a changed destination.
+        public long SocialJointBatches, SocialJointFlowEvaluations, SocialJointEndpointBuilds,
+            SocialJointDependencyVisits, SocialJointOpportunityMatches;
         // Trade handshake (WP8, computed in planning) and settlement. Transient; never saved, observed or fingerprinted.
         public long TradeEligible, TradeRequisitions, TradeHonoured, TradeCountered, TradeIgnored, TradesSettled;
         public double TradePlanMilliseconds, TradeSettleMilliseconds;

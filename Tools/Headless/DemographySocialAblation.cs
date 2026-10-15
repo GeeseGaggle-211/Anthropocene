@@ -101,9 +101,11 @@ internal static class DemographySocialAblation
         public long CampTurns, PopulationTurns;
         public long FissionProposals, FissionDropped, FissionCrowding, FissionDistress;
         public long ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected;
+        public long SocialForecasts, SocialCacheBuilds, SocialCacheHits, SocialCandidates;
+        public long SocialMoverRejected, SocialAggregateRejected, SocialSourceRejected, SocialIncumbentRejected;
         public double Exposure, Crowding, Disease, Starvation, WorstConservation;
         public double MeanFood, MeanClothing, MeanHousing, LocalWeightedQoL, MeanLineageQoL;
-        public double Milliseconds;
+        public double Milliseconds, SocialMilliseconds;
         public readonly List<Follow> Follows = new List<Follow>();
         public readonly List<Reversal> ReversalDetails = new List<Reversal>();
         public readonly List<SourceOpportunity> SourceOpportunities = new List<SourceOpportunity>();
@@ -130,9 +132,11 @@ internal static class DemographySocialAblation
         public int KinMigrations;
         public long CampTurns, PopulationTurns, FissionProposals, FissionDropped, FissionCrowding, FissionDistress;
         public long ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected;
+        public long SocialForecasts, SocialCacheBuilds, SocialCacheHits, SocialCandidates;
+        public long SocialMoverRejected, SocialAggregateRejected, SocialSourceRejected, SocialIncumbentRejected;
         public double Exposure, Crowding, Disease, Starvation, WorstConservation;
         public double FoodWeighted, ClothingWeighted, HousingWeighted, LocalQoLWeighted, LineageQoLSum;
-        public double Milliseconds;
+        public double Milliseconds, SocialMilliseconds;
         public FollowSummary DaughterFollow, ReceiverFollow;
     }
 
@@ -256,9 +260,12 @@ internal static class DemographySocialAblation
             "the shipped return hysteresis reduces rapid reversals against its matched disabled control");
         Check(current.ReceiverFollow.ExtinctAt1 == 0 && current.ReceiverFollow.ExtinctAt3 == 0,
             "the shipped run has no receiving-settlement extinction through the three-turn follow-up");
-        Check(candidate.Reversals < current.Reversals && candidate.ReversalsAt1 == 0,
-            "the exploratory stronger penalty reduces observed pair returns and eliminates one-turn returns");
-        Console.WriteLine("DEMOGRAPHY_IMMIGRATION_ASSESSMENT shipped=current-default-0.10 candidate=candidate-0.20 status=EXPERIMENTAL_NOT_PROMOTED"
+        Check(candidate.Reversals <= current.Reversals,
+            "the exploratory stronger penalty does not increase observed pair returns");
+        string candidateReason = candidate.Reversals < current.Reversals
+            ? "pair-return-reduction-without-eliminating-one-turn-returns-or-demonstrating-receiver-welfare-benefit"
+            : "no-marginal-reversal-benefit-and-no-demonstrated-receiver-welfare-benefit";
+        Console.WriteLine("DEMOGRAPHY_IMMIGRATION_ASSESSMENT shipped=current-default-0.10 candidate=candidate-0.20 status=NOT_PROMOTED"
             + " rapidReversals=" + current.Reversals + "->" + candidate.Reversals
             + " reversalAges=" + current.ReversalsAt1 + "/" + current.ReversalsAt2 + "/" + current.ReversalsAt3
             + "->" + candidate.ReversalsAt1 + "/" + candidate.ReversalsAt2 + "/" + candidate.ReversalsAt3
@@ -267,7 +274,8 @@ internal static class DemographySocialAblation
             + " fissions=" + current.Fissions + "->" + candidate.Fissions
             + " receiverNegativeNet3=" + current.ReceiverFollow.NegativeNet3 + "->" + candidate.ReceiverFollow.NegativeNet3
             + " receiverExtinct3=" + current.ReceiverFollow.ExtinctAt3 + "->" + candidate.ReceiverFollow.ExtinctAt3
-            + " reason=pair-return-reduction-without-demonstrated-receiver-welfare-benefit-or-held-out-replay");
+            + " oneTurnReturns=" + current.ReversalsAt1 + "->" + candidate.ReversalsAt1
+            + " reason=" + candidateReason);
         Console.WriteLine("DEMOGRAPHY_IMMIGRATION_HYSTERESIS off=" + off.Reversals
             + " shipped=" + current.Reversals + " candidate=" + candidate.Reversals
             + " shippedPer100=" + F(100.0 * current.Reversals / Math.Max(1, current.Migrations))
@@ -533,6 +541,15 @@ internal static class DemographySocialAblation
             result.ImmigrationAccepted += resolver.LastMetrics.ImmigrationAccepted;
             result.ImmigrationPartial += resolver.LastMetrics.ImmigrationPartial;
             result.ImmigrationRejected += resolver.LastMetrics.ImmigrationRejected;
+            result.SocialForecasts += resolver.LastMetrics.SocialForecasts;
+            result.SocialCacheBuilds += resolver.LastMetrics.SocialForecastCacheBuilds;
+            result.SocialCacheHits += resolver.LastMetrics.SocialForecastCacheHits;
+            result.SocialCandidates += resolver.LastMetrics.SocialCandidatesEvaluated;
+            result.SocialMoverRejected += resolver.LastMetrics.SocialMoverRejected;
+            result.SocialAggregateRejected += resolver.LastMetrics.SocialAggregateRejected;
+            result.SocialSourceRejected += resolver.LastMetrics.SocialSourceRejected;
+            result.SocialIncumbentRejected += resolver.LastMetrics.SocialIncumbentRejected;
+            result.SocialMilliseconds += resolver.LastMetrics.ImmigrationMilliseconds + resolver.LastMetrics.FissionMilliseconds;
             result.CampTurns += world.Camps.Count; result.PopulationTurns += after;
             result.Turns++;
             expectedStartingPopulation = world.Camps.ToDictionary(c => c.Id, world.LinkedPopulation);
@@ -702,6 +719,11 @@ internal static class DemographySocialAblation
             result.FissionCrowding += o.FissionCrowding; result.FissionDistress += o.FissionDistress;
             result.ImmigrationIntents += o.ImmigrationIntents; result.ImmigrationAccepted += o.ImmigrationAccepted;
             result.ImmigrationPartial += o.ImmigrationPartial; result.ImmigrationRejected += o.ImmigrationRejected;
+            result.SocialForecasts += o.SocialForecasts; result.SocialCacheBuilds += o.SocialCacheBuilds;
+            result.SocialCacheHits += o.SocialCacheHits; result.SocialCandidates += o.SocialCandidates;
+            result.SocialMoverRejected += o.SocialMoverRejected; result.SocialAggregateRejected += o.SocialAggregateRejected;
+            result.SocialSourceRejected += o.SocialSourceRejected; result.SocialIncumbentRejected += o.SocialIncumbentRejected;
+            result.SocialMilliseconds += o.SocialMilliseconds;
             result.Exposure += o.Exposure; result.Crowding += o.Crowding; result.Disease += o.Disease;
             result.Starvation += o.Starvation; result.WorstConservation = Math.Max(result.WorstConservation, o.WorstConservation);
             result.FoodWeighted += o.MeanFood * o.Survivors; result.ClothingWeighted += o.MeanClothing * o.Survivors;
@@ -735,6 +757,11 @@ internal static class DemographySocialAblation
             + " negativeNet=" + o.NegativeNetDaughters + "/" + o.NegativeNetDestinations
             + " higherQolWorseMortality=" + o.HigherQolWorseMortality
             + " kinMigrations=" + o.KinMigrations + " crossLineageMigrants=" + o.CrossLineageMigrants
+            + " socialForecast/cacheBuild/hit/candidates=" + o.SocialForecasts + "/" + o.SocialCacheBuilds
+                + "/" + o.SocialCacheHits + "/" + o.SocialCandidates
+            + " socialRejectM/A/S/I=" + o.SocialMoverRejected + "/" + o.SocialAggregateRejected
+                + "/" + o.SocialSourceRejected + "/" + o.SocialIncumbentRejected
+            + " socialMs=" + o.SocialMilliseconds.ToString("F1", CultureInfo.InvariantCulture)
             + " worstConservation=" + o.WorstConservation.ToString("G6", CultureInfo.InvariantCulture)
             + " elapsedMs=" + o.Milliseconds.ToString("F1", CultureInfo.InvariantCulture));
     }
@@ -784,6 +811,12 @@ internal static class DemographySocialAblation
             + " negativeNet=" + a.NegativeNetDaughters + "/" + a.NegativeNetDestinations
             + " higherQolWorseMortality=" + a.HigherQolWorseMortality
             + " kinMigrations=" + a.KinMigrations + " crossLineageMigrants=" + a.CrossLineageMigrants
+            + " socialForecast/cacheBuild/hit/candidates=" + a.SocialForecasts + "/" + a.SocialCacheBuilds
+                + "/" + a.SocialCacheHits + "/" + a.SocialCandidates
+            + " socialCacheHitRate=" + F(a.SocialCacheHits / (double)Math.Max(1, a.SocialCacheBuilds + a.SocialCacheHits))
+            + " socialRejectM/A/S/I=" + a.SocialMoverRejected + "/" + a.SocialAggregateRejected
+                + "/" + a.SocialSourceRejected + "/" + a.SocialIncumbentRejected
+            + " socialMs=" + a.SocialMilliseconds.ToString("F1", CultureInfo.InvariantCulture)
             + " worstConservation=" + a.WorstConservation.ToString("G6", CultureInfo.InvariantCulture)
             + " elapsedMs=" + a.Milliseconds.ToString("F1", CultureInfo.InvariantCulture));
         PrintFollow(a.Variant, "daughter", a.DaughterFollow);

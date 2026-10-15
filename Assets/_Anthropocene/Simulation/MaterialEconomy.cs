@@ -655,13 +655,20 @@ namespace Anthropocene.Simulation
         public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand = false, double residentPopulation = -1, bool postAgriculturalResolution = false)
             => Forecast(w, c, recipes, intervals, years, equipment, includePlantDemand, residentPopulation, postAgriculturalResolution, postAgriculturalResolution);
 
-        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1, KnownMaterialSource[] knownSources = null, ProductionOrder order = null)
+        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1, KnownMaterialSource[] knownSources = null, ProductionOrder order = null, double stoneBudget = -1, double clayBudget = -1, double woodBudget = -1)
         {
             System.Threading.Interlocked.Increment(ref TurnDiagnostics.For(w).ForecastCalls);
             var planned = recipes.ToDictionary(r => r.Good, r => 0.0);
             var tools = new ToolCoverageBudget(w, c, intervals, equipment);
             double plant = plantFoodBudget >= 0 ? plantFoodBudget : includePlantDemand ? double.PositiveInfinity : c.PlantFood;
             double animalFood = animalFoodBudget >= 0 ? animalFoodBudget : includePlantDemand ? double.PositiveInfinity : c.AnimalFood;
+            // Optional pure-forecast closure. Authoritative production obtains
+            // these inputs in Gather before crafting; social counterfactuals pass
+            // finite opening-stock-plus-attainable-extraction budgets so recipes
+            // cannot manufacture Stone, Clay or Wood.
+            double stone = stoneBudget >= 0 ? stoneBudget : double.PositiveInfinity;
+            double clay = clayBudget >= 0 ? clayBudget : double.PositiveInfinity;
+            double wood = woodBudget >= 0 ? woodBudget : double.PositiveInfinity;
             // Imports arrive after production and are never inputs; goods made for export (Docs/Trade.md: output
             // first fills the made-to-order part owed) are held back from inputs.
             double animalFabric = Math.Max(0, c.Inventory.AnimalFabric) - c.TradeImport(CraftGood.AnimalFabric);
@@ -745,6 +752,11 @@ namespace Anthropocene.Simulation
                 if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                 if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
                 if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, animalFabric - HeldForExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
+                if (recipe.Stone > 0) amount = Math.Min(amount, stone / recipe.Stone);
+                if (recipe.Clay > 0) amount = Math.Min(amount, clay / recipe.Clay);
+                if (recipe.Wood > 0) amount = Math.Min(amount, wood / recipe.Wood);
+                if (recipe.ConstructionMaterial > 0)
+                    amount = Math.Min(amount, (wood + clay) / recipe.ConstructionMaterial);
                 if (storage != null && amount > 0)
                     amount = storage.Limit(stored, storage.Capacity(c.Food, storagePots + planned[CraftGood.Pots]), recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
                 if (amount <= 0) return;
@@ -753,6 +765,13 @@ namespace Anthropocene.Simulation
                 laborByRole[role] = labor;
                 double forExport = Math.Min(amount, Outstanding(recipe.Good));
                 planned[recipe.Good] += amount; plant -= amount * recipe.PlantFood; animalFood -= amount * recipe.AnimalFood;
+                stone -= amount * recipe.Stone; clay -= amount * recipe.Clay; wood -= amount * recipe.Wood;
+                if (recipe.ConstructionMaterial > 0)
+                {
+                    double required = amount * recipe.ConstructionMaterial;
+                    double fromWood = Math.Min(wood, required);
+                    wood -= fromWood; clay -= required - fromWood;
+                }
                 tools.Credit(recipe.Good, amount - forExport);
                 if (recipe.Good == CraftGood.AnimalFabric) animalFabric += amount;
                 animalFabric -= amount * recipe.AnimalFabric;
@@ -778,7 +797,7 @@ namespace Anthropocene.Simulation
             }
             return planned;
         }
-        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, TurnHorizon horizon, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1, KnownMaterialSource[] knownSources = null, ProductionOrder order = null)
-            => Forecast(w, c, recipes, horizon.ReferenceIntervals, horizon.Years, equipment, includePlantDemand, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, plantFoodBudget, animalFoodBudget, knownSources, order);
+        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, TurnHorizon horizon, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1, KnownMaterialSource[] knownSources = null, ProductionOrder order = null, double stoneBudget = -1, double clayBudget = -1, double woodBudget = -1)
+            => Forecast(w, c, recipes, horizon.ReferenceIntervals, horizon.Years, equipment, includePlantDemand, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, plantFoodBudget, animalFoodBudget, knownSources, order, stoneBudget, clayBudget, woodBudget);
     }
 }

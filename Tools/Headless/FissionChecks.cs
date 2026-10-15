@@ -82,10 +82,81 @@ internal static class FissionChecks
         Near(daughter.FoodDeficitYears, 0, "legacy fission preserves the pre-v1.1 deficit-years initialization");
         Check(daughter.DeficitTurns == 0 && daughter.DeficitSeverity == 0,
             "legacy fission does not inherit physical-only deficit history");
+
+        var cacheWorld = World(true, new[] { 8, 8 }); cacheWorld.Config.ImmigrationEnabled = false;
+        Explore(cacheWorld, cacheWorld.Camps[0]); Pressure(cacheWorld, 0);
+        var resolver = new TurnResolver(); resolver.Resolve(cacheWorld, new Dictionary<int, List<Order>>());
+        Check(resolver.LastMetrics.SocialForecasts == 0 && resolver.LastMetrics.SocialForecastCacheBuilds == 0
+            && resolver.LastMetrics.SocialForecastCacheHits == 0,
+            "legacy fission never constructs or evaluates the physical social-forecast cache");
     }
 
     private static void PhysicalDiagnostics()
     {
+        FissionReport PhysicalPass(WorldState fixture, out ResolutionMetrics metrics,
+            out long forecasts, out long builds)
+        {
+            var record = new TurnRecord { Turn = fixture.Turn }; metrics = new ResolutionMetrics();
+            foreach (var camp in fixture.Camps)
+                record.Demographics.Add(new DemographicReport
+                    { Camp = camp.Id, StartingPopulation = camp.Population, EndingPopulation = camp.Population });
+            var cache = new SocialRelocationForecastCache(fixture, fixture.Camps);
+            Fission.Resolve(fixture, record, new PhaseExecution(), metrics, null, null, cache);
+            forecasts = cache.Forecasts; builds = cache.Builds;
+            return record.Fissions.FirstOrDefault();
+        }
+        WorldState ServedPhysical(double observedFood)
+        {
+            var fixture = World(true, new[] { 8, 8 });
+            fixture.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+            var camp = fixture.Camps[0]; Explore(fixture, camp); camp.Population = 40;
+            camp.FoodNeedsMetRatio = observedFood;
+            camp.WaterNeedsMetRatio = camp.ClothPerCapita = camp.HousingPerCapita = 1;
+            camp.Inventory.LightHousingUnits = 1e9;
+            camp.Inventory.Cloth = 1e9;
+            var defaults = new SimulationConfig();
+            fixture.Config.FissionGainThreshold = defaults.FissionGainThreshold;
+            fixture.Config.FissionGainDiscourage = defaults.FissionGainDiscourage;
+            fixture.Config.FissionGainEncourage = defaults.FissionGainEncourage;
+            return fixture;
+        }
+        var quiet = ServedPhysical(1);
+        var quietReport = PhysicalPass(quiet, out var quietMetrics, out long quietForecasts, out long quietBuilds);
+        Check(quietReport == null
+            && quietMetrics.FissionSearches == 0 && quietForecasts == 1 && quietBuilds == 1,
+            "a fully provisioned low-density physical camp is rejected by the conservative common-envelope bound"
+            + " (report=" + (quietReport != null) + ", searches=" + quietMetrics.FissionSearches
+            + ", forecasts=" + quietForecasts + ", builds=" + quietBuilds + ")");
+        var almost = ServedPhysical(.999);
+        var almostReport = PhysicalPass(almost, out var almostMetrics, out long almostForecasts, out _);
+        Check(almostReport == null && almostMetrics.FissionSearches == quietMetrics.FissionSearches
+            && almostForecasts == quietForecasts,
+            "historical nutrition does not create a preselection discontinuity when physical inputs are identical");
+        var staleDistress = ServedPhysical(.5);
+        var staleReport = PhysicalPass(staleDistress, out var staleMetrics, out long staleForecasts, out _);
+        Check(staleReport == null && staleMetrics.FissionSearches == quietMetrics.FissionSearches
+            && staleForecasts == quietForecasts,
+            "historical food satisfaction cannot manufacture distress or suppress the same physical fission opportunity");
+
+        WorldState NewlyDepleted(double observedFood)
+        {
+            var fixture = ServedPhysical(observedFood); var camp = fixture.Camps[0];
+            camp.PlantFood = camp.AnimalFood = camp.AquaticFood = 0;
+            fixture.Config.GatherPerPerson = 0;
+            return fixture;
+        }
+        var previouslyServed = NewlyDepleted(1);
+        var previouslyDistressed = NewlyDepleted(.1);
+        var servedDepletionReport = PhysicalPass(previouslyServed, out var servedDepletionMetrics,
+            out long servedDepletionForecasts, out _);
+        var distressDepletionReport = PhysicalPass(previouslyDistressed, out var distressDepletionMetrics,
+            out long distressDepletionForecasts, out _);
+        Check(servedDepletionMetrics.FissionSearches > 0
+            && servedDepletionMetrics.FissionSearches == distressDepletionMetrics.FissionSearches
+            && servedDepletionForecasts == distressDepletionForecasts
+            && (servedDepletionReport != null) == (distressDepletionReport != null),
+            "new physical depletion reaches the same site search and decision regardless of last-turn food satisfaction");
+
         var w = World(true, new[] { 8, 8 }); w.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
         var parent = w.Camps[0]; Explore(w, parent); Pressure(w, 0);
         parent.FoodNeedsMetRatio = 1; parent.ClothPerCapita = 1; parent.StationaryYears = 60; parent.RudimentaryExpectation = .7;

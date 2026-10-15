@@ -37,6 +37,13 @@ namespace Anthropocene.Simulation
         [OptionalField] public double ParentMortalityBefore, ParentMortalityAfter, DaughterMortality, DaughterNetRate;
         [OptionalField] public double DaughterNutrition, DaughterClothingCoverage, DaughterHousingCoverage;
         [OptionalField] public bool DaughterNetNonnegative, HigherQoLWorseMortality;
+        [OptionalField] public double MoverUtilityChange, SourceUtilityChange, AggregateWelfareChange;
+        [OptionalField] public double ForecastParentQoL, ForecastDaughterQoL;
+        [OptionalField] public double ForecastParentNutrition, ForecastParentClothing, ForecastParentHousing;
+        [OptionalField] public double ForecastDaughterMortalityRisk, ForecastDaughterStability;
+        [OptionalField] public double ForecastParentExposureRate, ForecastParentCrowdingRate, ForecastParentDiseaseRate, ForecastParentStarvationRate;
+        [OptionalField] public double ForecastDaughterExposureRate, ForecastDaughterCrowdingRate, ForecastDaughterDiseaseRate, ForecastDaughterStarvationRate;
+        [OptionalField] public int ForecastConfidence, MatchedOpportunities;
 #pragma warning restore SYSLIB0050
     }
 
@@ -88,12 +95,11 @@ namespace Anthropocene.Simulation
     // Fission pass (QoLFissionTradeDesign 3.1-3.6, 9). Runs once per turn in the Close phase after demography.
     //
     // Authoritative state: Camp.FissionPolicy, Camp.FissionDestination, Society.ParentSociety/KinAffinity, WorldState.PlayerCount.
-    // Temporal abstraction: one evaluation per turn boundary from the frozen post-demography snapshot; QoL is the committed
-    // value of the turn just resolved and recomputes next turn. Nothing is integrated over sub-turn time.
-    // Cost: O(camps) push tests; each camp with push > 0 and a feasible daughter validates its cache (one footprint, at most 7
-    // tile projections); only a camp whose expected gain is at least FissionSearchFraction of its threshold and with no valid cache searches (at most the tiles from
-    // the camp spacing out to FissionRadius, about 3 r^2 of them, each candidate one footprint). The daughter's shelter estimate is O(1) closed forms. Reconcile and commit are proportional to proposals. Nothing scales
-    // with elapsed years, map size or the number of Societies.
+    // Temporal abstraction: one evaluation per turn boundary from the frozen post-demography snapshot. Physical-v1 worlds use
+    // the same SocialRelocationEvaluator as immigration; crowding and distress are classifications of the source state, not
+    // separate QoL or mortality laws. The candidate forecast is bounded and never runs the real economy or demographic integrator.
+    // Site search remains the existing known radius-limited footprint scan, and reconcile/commit remain canonical and proportional
+    // to proposals. Legacy-demography saves retain the prior QoL decision path for save-stable behavior.
     public static class Fission
     {
         public const int PolicySeedStream = 500;
@@ -271,12 +277,42 @@ namespace Anthropocene.Simulation
         {
             public readonly WorldState World;
             public readonly HashSet<int> CampTiles;
+            public readonly SocialRelocationForecastCache Forecasts;
+            public readonly IEmploymentOpportunityProvider Opportunities;
+            private readonly Dictionary<long, SourceProjection> sourceProjections
+                = new Dictionary<long, SourceProjection>();
             private readonly Lazy<PlanningIndex> index;
             public PlanningIndex Index => index.Value;
-            public Context(WorldState w)
+            public Context(WorldState w, IEmploymentOpportunityProvider opportunities, SocialRelocationForecastCache forecasts)
             {
                 World = w; CampTiles = new HashSet<int>(w.Camps.Select(c => c.Tile));
+                Opportunities = opportunities ?? NeutralEmploymentOpportunityProvider.Instance;
+                Forecasts = forecasts ?? (PhysicalDemography.Enabled(w.Config)
+                    ? new SocialRelocationForecastCache(w, w.Camps) : null);
                 index = new Lazy<PlanningIndex>(() => new PlanningIndex(w), System.Threading.LazyThreadSafetyMode.ExecutionAndPublication);
+            }
+            public SocialServiceForecast Baseline(Camp camp) => Forecasts.Baseline(camp);
+            public SourceProjection Source(Camp parent, int daughter)
+            {
+                long key = ((long)parent.Id << 32) ^ (uint)daughter;
+                lock (sourceProjections)
+                {
+                    if (sourceProjections.TryGetValue(key, out var cached)) return cached;
+                    int residents = parent.Population;
+                    double fraction = daughter / (double)residents;
+                    var workforce = WorkforceTransfer.Split(parent.Workforce, residents, daughter, true);
+                    var inventory = SocialRelocationForecastCache.RemainingInventory(parent.Inventory, fraction);
+                    var state = SocialRelocationForecastCache.Existing(parent, residents - daughter,
+                        parent.PlantFood * (1 - fraction), parent.AnimalFood * (1 - fraction),
+                        parent.AquaticFood * (1 - fraction), workforce.Stayers, inventory,
+                        densityPopulationOffset: Forecasts.DensityOffset(parent),
+                        managedAnimalFraction: 1 - fraction);
+                    return sourceProjections[key] = new SourceProjection
+                    {
+                        Workforce = workforce,
+                        Forecast = Forecasts.Forecast(state)
+                    };
+                }
             }
             // Ground truth: a settling group finds a neighbouring camp before it founds a site next to it. Candidate tiles
             // are still restricted to tiles the Society knows, and the owner's observation carries only the chosen tile.
@@ -299,18 +335,34 @@ namespace Anthropocene.Simulation
             public double SiteHuman, SiteHerd;
             public double DaughterNutrition, DaughterClothing, DaughterHousing;
             public DemographicRates DaughterRates;
+            public SocialRelocationEvaluation Decision;
+            public WorkforceTransfer Workforce;
             public int Validations, Searches, Candidates, TileProjections, Invalidations;
+            public int SocialEvaluations, MoverRejected, AggregateRejected, SourceRejected;
+        }
+
+        private sealed class SourceProjection
+        {
+            public WorkforceTransfer Workforce;
+            public SocialServiceForecast Forecast;
         }
 
         // excluded: camps that emitted an immigration intent or received arrivals this turn (WP10b); they emit no fission intent.
-        public static void Resolve(WorldState w, TurnRecord record, PhaseExecution execution, ResolutionMetrics metrics, HashSet<int> excluded = null)
+        public static void Resolve(WorldState w, TurnRecord record, PhaseExecution execution, ResolutionMetrics metrics,
+            HashSet<int> excluded = null, IEmploymentOpportunityProvider opportunities = null)
+            => Resolve(w, record, execution, metrics, excluded, opportunities, null);
+
+        internal static void Resolve(WorldState w, TurnRecord record, PhaseExecution execution, ResolutionMetrics metrics,
+            HashSet<int> excluded, IEmploymentOpportunityProvider opportunities, SocialRelocationForecastCache forecasts)
         {
             if (!w.Config.FissionEnabled) return;
             var timer = System.Diagnostics.Stopwatch.StartNew();
             // Frozen post-demography snapshot: nothing below the parallel map writes to the world.
             var camps = w.Camps.Where(c => c.Population > 0 && (excluded == null || !excluded.Contains(c.Id))).OrderBy(c => c.Id).ToArray();
-            var context = new Context(w);
-            var evaluations = (execution ?? new PhaseExecution()).Map(camps, c => Evaluate(context, c));
+            var context = new Context(w, opportunities, forecasts);
+            bool legacyDecision = !PhysicalDemography.Enabled(w.Config);
+            var evaluations = (execution ?? new PhaseExecution()).Map(camps,
+                c => legacyDecision ? EvaluateLegacy(context, c) : Evaluate(context, c));
             var committed = new List<int>(); int spacing = Math.Max(1, w.Config.MinimumCampSpacing);
             Dictionary<int, List<MaterialKnowledge>> knowledge = null; Dictionary<int, DemographicReport> demographics = null;
             // Canonical reconcile and commit in camp ID order. A conflicting proposal is dropped this turn and keeps its cache.
@@ -329,6 +381,13 @@ namespace Anthropocene.Simulation
                 if (e.WithDestination) metrics.FissionWithDestination++;
                 if (e.BelowThreshold) metrics.FissionBelowThreshold++;
                 if (e.StayersBlocked) metrics.FissionStayersBlocked++;
+                if (PhysicalDemography.Enabled(w.Config))
+                {
+                    metrics.SocialCandidatesEvaluated += e.SocialEvaluations;
+                    metrics.SocialMoverRejected += e.MoverRejected;
+                    metrics.SocialAggregateRejected += e.AggregateRejected;
+                    metrics.SocialSourceRejected += e.SourceRejected;
+                }
                 if (!e.Propose) continue;
                 metrics.FissionProposals++; if (e.Trigger == FissionTrigger.Distress) metrics.FissionDistressProposals++; else metrics.FissionCrowdingProposals++;
                 if (committed.Any(t => w.Map.Distance(t, e.Tile) < spacing)) { metrics.FissionDropped++; continue; }
@@ -340,20 +399,125 @@ namespace Anthropocene.Simulation
                     foreach (var d in record.Demographics) demographics[d.Camp] = d;
                 }
                 Found(w, e, record, knowledge, demographics);
-                committed.Add(e.Tile); metrics.FissionCommits++; if (e.Trigger == FissionTrigger.Distress) { metrics.FissionDistressCommits++; metrics.FissionDistressDaughters += e.Daughter; } else metrics.FissionCrowdingCommits++;
+                committed.Add(e.Tile); metrics.FissionCommits++;
+                if (e.Decision != null) metrics.SocialMatchedOpportunities += e.Decision.Opportunity.Matched;
+                if (e.Trigger == FissionTrigger.Distress) { metrics.FissionDistressCommits++; metrics.FissionDistressDaughters += e.Daughter; } else metrics.FissionCrowdingCommits++;
             }
             metrics.FissionMilliseconds = timer.Elapsed.TotalMilliseconds;
         }
 
-        // Distress fission: a camp splits when the stayers gain from fewer mouths (crowding, now with food and water relief) OR, for a camp that
-        // cannot feed itself (F W < 1), when the leaving group would be better off at a viable destination (the distress pull), both against the
-        // same policy threshold G*. A fed camp (F = W = 1) has no distress branch: a daughter's cohesion advantage over the stayers is crowding,
-        // already measured by the stayers' branch, and counting it again would move the calibrated crowding onset (Docs/Fission.md).
-        // Sizes: the policy size n0 for the crowding test; when the camp cannot feed itself (F W < 1) the leaving group is the people the
-        // local subsistence cannot carry, n_short = ceil(N (1 - F W)), n1 = clamp(max(n0, n_short), FissionMinimumDaughter, the largest n with
-        // n < N - n and N - n >= MinimumCamp). The destination search and validation use n1 whenever the distress screen passes (it is the
-        // larger, harder-to-support group), n0 otherwise. If the distress branch passes the split uses n1, else a passing crowding branch uses n0.
-        // The trigger is Distress exactly when the distress branch (n_short > 0) was the one used.
+        private static SocialRelocationEvaluation RelocationAt(Context context, Camp parent, int tile,
+            int daughter, double siteFoodCoverage, out WorkforceTransfer workforce)
+        {
+            var w = context.World; var cfg = w.Config; int residents = parent.Population;
+            double fraction = daughter / (double)residents;
+            var source = context.Source(parent, daughter);
+            workforce = source.Workforce;
+            var daughterInventory = SocialRelocationForecastCache.ProportionalInventory(parent.Inventory, fraction);
+            double siteFoodCapacity = Numbers.Clamp(siteFoodCoverage, 0, 1) * daughter
+                * cfg.Consumption * cfg.GenerationIntervals;
+            var daughterState = context.Forecasts.Daughter(parent, daughter, tile, daughterInventory,
+                workforce.Movers, parent.PlantFood * fraction, parent.AnimalFood * fraction,
+                parent.AquaticFood * fraction, siteFoodCapacity);
+            var request = new EmploymentOpportunityRequest(parent.Id, daughterState.View.Id, daughter,
+                SocialRelocationDestination.NewDaughter, workforce.MoverComposition);
+            var opportunity = EmploymentOpportunityMatcher.Match(context.Opportunities, request);
+            var daughterAfter = context.Forecasts.Forecast(daughterState, opportunity);
+            var policy = new SocialRelocationPolicy(Kinship.GainThreshold(cfg, parent.FissionPolicy), 0,
+                cfg.FissionDaughterMargin, cfg.FissionDaughterMargin);
+            return SocialRelocationEvaluator.Evaluate(SocialRelocationDestination.NewDaughter,
+                context.Baseline(parent), source.Forecast,
+                SocialServiceForecast.Empty(daughterState.View.Id, cfg.TurnDays / cfg.DaysPerYear),
+                daughterAfter, policy, opportunity);
+        }
+
+        // Save-stable pre-v1.1 social decision.  It is retained only for worlds
+        // whose serialized demographic selector is LegacyQoLNetGrowth.  The
+        // physical model below is the implementation of the v0.2 contract.
+        private static Evaluation EvaluateLegacy(Context context, Camp camp)
+        {
+            var w = context.World; var cfg = w.Config; var e = new Evaluation { Camp = camp };
+            var regime = RegimeOf(camp); var policy = camp.FissionPolicy; var cached = camp.FissionDestination;
+            if (cached != null && cached.Regime != (int)regime) { e.ClearTarget = true; e.Invalidations++; cached = null; }
+            int residents = camp.Population, n0 = Kinship.DaughterSize(residents, policy), minimum = cfg.FissionMinimumDaughter;
+            int largest = Math.Min((residents - 1) / 2, residents - cfg.MinimumCamp);
+            bool crowdLegal = n0 >= minimum && n0 <= largest;
+            double met = camp.FoodNeedsMetRatio * camp.WaterNeedsMetRatio;
+            int short0 = met < 1 - 1e-9 ? (int)Math.Ceiling(residents * (1 - met) - 1e-9) : 0;
+            bool distressLegal = short0 > 0 && largest >= minimum;
+            int n1 = distressLegal ? Math.Max(minimum, Math.Min(largest, Math.Max(n0, short0))) : n0;
+            e.Daughter = crowdLegal ? n0 : n1;
+            if (!crowdLegal && !distressLegal) return e;
+            double threshold = Kinship.GainThreshold(cfg, policy), screen = cfg.FissionSearchFraction * threshold;
+            Estimate crowd = crowdLegal ? EstimateSplit(w, camp, n0, 1, 1) : default;
+            Estimate optimistic = !distressLegal ? default : n1 == n0 && crowdLegal ? crowd : EstimateSplit(w, camp, n1, 1, 1);
+            bool crowdScreen = crowdLegal && crowd.Gain >= screen, distressScreen = distressLegal && optimistic.DaughterGain >= screen;
+            var shown = crowdLegal ? crowd : optimistic;
+            e.Gain = shown.Gain; e.DaughterQoL = shown.DaughterQoL; e.DaughterGain = shown.DaughterGain;
+            e.Push = Push(crowdLegal ? crowd.Gain : optimistic.DaughterGain, threshold);
+            if (!crowdScreen && !distressScreen) return e;
+            e.Screened = true;
+            int size = distressScreen ? n1 : n0;
+            var projections = new Dictionary<int, double>(); double siteRatio = 0, siteHuman = 0, siteHerd = double.PositiveInfinity;
+            if (cached != null)
+            {
+                e.Validations++;
+                double d = 0, ratio = 0; siteHuman = 0; siteHerd = double.PositiveInfinity;
+                if (!context.Blocked(cached.Tile) && w.Tiles[cached.Tile].TraversableLand)
+                { d = Desirability(context, camp, cached.Tile, size, regime, projections, e, out ratio); siteHuman = e.SiteHuman; siteHerd = e.SiteHerd; }
+                if (!(ratio > 0)) { e.ClearTarget = true; e.Invalidations++; cached = null; }
+                else { e.Desirability = d; siteRatio = ratio; }
+            }
+            if (cached == null)
+            {
+                e.Searches++;
+                var known = new Known(context, camp);
+                int best = -1, bestDistance = 0; double bestScore = -1, bestRatio = -1, bestHuman = 0, bestHerd = double.PositiveInfinity;
+                foreach (int tile in w.Map.Radius(camp.Tile, cfg.FissionRadius).OrderBy(n => n))
+                {
+                    if (!w.Tiles[tile].TraversableLand || !known.Contains(tile) || context.Blocked(tile)) continue;
+                    e.Candidates++;
+                    double d = Desirability(context, camp, tile, size, regime, projections, e, out double ratio);
+                    int distance = w.Map.Distance(camp.Tile, tile);
+                    if (best < 0 || d > bestScore || d == bestScore && (ratio > bestRatio || ratio == bestRatio && distance < bestDistance))
+                    { best = tile; bestScore = d; bestRatio = ratio; bestDistance = distance; bestHuman = e.SiteHuman; bestHerd = e.SiteHerd; }
+                }
+                if (best >= 0 && bestScore > 0 && bestRatio > 0)
+                {
+                    e.NewTarget = new FissionTarget { Tile = best, Regime = (int)regime, Turn = w.Turn };
+                    e.ClearTarget = false; e.Desirability = bestScore; siteRatio = bestRatio;
+                    siteHuman = bestHuman; siteHerd = bestHerd; cached = e.NewTarget;
+                }
+            }
+            if (cached == null) { if (e.Candidates == 0) e.NoCandidates = true; else e.NoViable = true; return e; }
+            e.WithDestination = true; e.Tile = cached.Tile;
+            double foodD = Numbers.Clamp(siteRatio, 0, 1);
+            double vetoFood = Math.Min(1, Math.Min(siteHerd,
+                Math.Max(0, siteHuman) + Immigration.CarriedPerPerson(cfg, camp)));
+            Estimate chosen = default; bool use = false;
+            if (distressLegal)
+            {
+                var distress = EstimateSplit(w, camp, n1, foodD, 1, vetoFood);
+                if (distress.DaughterGain >= threshold) { chosen = distress; use = true; e.Trigger = FissionTrigger.Distress; }
+            }
+            if (!use && crowdLegal && crowd.Gain >= threshold)
+            { chosen = EstimateSplit(w, camp, n0, foodD, 1, vetoFood); use = true; e.Trigger = FissionTrigger.Crowding; }
+            if (!use) { e.BelowThreshold = true; return e; }
+            e.Daughter = chosen.Daughter; e.Gain = chosen.Gain; e.DaughterQoL = chosen.DaughterQoL;
+            e.DaughterGain = chosen.DaughterGain;
+            e.Push = Push(e.Trigger == FissionTrigger.Distress ? chosen.DaughterGain : chosen.Gain, threshold);
+            e.Score = e.Push * e.Desirability;
+            e.DaughterTested = true; e.DaughterBlocked = !chosen.DaughterAcceptable(cfg.FissionDaughterMargin);
+            bool stayersAcceptable = chosen.StayersAcceptable(cfg.FissionDaughterMargin);
+            e.StayersBlocked = !e.DaughterBlocked && !stayersAcceptable;
+            e.Propose = !e.DaughterBlocked && stayersAcceptable;
+            return e;
+        }
+
+        // Healthy/crowding and distress fission share the same physical
+        // counterfactual.  The trigger records the parent's forecast circumstance;
+        // it does not select another utility, QoL or mortality equation.  The
+        // current policy daughter and distress shortfall sizes remain unchanged.
         private static Evaluation Evaluate(Context context, Camp camp)
         {
             var w = context.World; var cfg = w.Config; var e = new Evaluation { Camp = camp };
@@ -364,22 +528,54 @@ namespace Anthropocene.Simulation
             int largest = Math.Min((residents - 1) / 2, residents - cfg.MinimumCamp);
             // The daughter is a smaller group than the parent that remains and meets the minimum viable population.
             bool crowdLegal = n0 >= minimum && n0 <= largest;
-            double met = camp.FoodNeedsMetRatio * camp.WaterNeedsMetRatio;
+            if (!crowdLegal && largest < minimum) return e;
+            var baseline = context.Baseline(camp);
+            double met = baseline.Nutrition * baseline.WaterCoverage;
             int short0 = met < 1 - 1e-9 ? (int)Math.Ceiling(residents * (1 - met) - 1e-9) : 0;
             bool distressLegal = short0 > 0 && largest >= minimum;
             int n1 = distressLegal ? Math.Max(minimum, Math.Min(largest, Math.Max(n0, short0))) : n0;
             e.Daughter = crowdLegal ? n0 : n1;
             if (!crowdLegal && !distressLegal) return e;
-            double threshold = Kinship.GainThreshold(cfg, policy), screen = cfg.FissionSearchFraction * threshold;
-            Estimate crowd = crowdLegal ? EstimateSplit(w, camp, n0, 1, 1) : default;
-            // Optimistic screen (F_d = W_d = 1): gates the search exactly like the crowding screen; identical to the crowding estimate for a fed camp.
-            Estimate optimistic = !distressLegal ? default : n1 == n0 && crowdLegal ? crowd : EstimateSplit(w, camp, n1, 1, 1);
-            bool crowdScreen = crowdLegal && crowd.Gain >= screen, distressScreen = distressLegal && optimistic.DaughterGain >= screen;
-            var shown = crowdLegal ? crowd : optimistic;
-            e.Gain = shown.Gain; e.DaughterQoL = shown.DaughterQoL; e.DaughterGain = shown.DaughterGain; e.Push = Push(crowdLegal ? crowd.Gain : optimistic.DaughterGain, threshold);
-            if (!crowdScreen && !distressScreen) return e;
+
+            // Provably permissive preselection against the shared four gates.
+            // Q is bounded by one and physical mortality risk is nonnegative, so
+            // a fully served, risk-free daughter is an upper bound on mover
+            // utility. The source branch is the exact common forecast. We skip a
+            // site search only when every supported daughter size must therefore
+            // fail either the mover gate or the source-harm gate. Last-turn
+            // realized F/C/H/W are not inputs. FissionSearchFraction only lowers
+            // this valid upper-bound threshold to preserve early cache searches;
+            // it cannot screen a candidate that could meet the final mover gate.
+            double threshold = Kinship.GainThreshold(cfg, policy);
+            double searchThreshold = cfg.FissionSearchFraction * threshold;
+            double baselineUtility = baseline.QoL - baseline.MortalityRisk;
+            var candidateSizes = new[] { distressLegal ? n1 : n0, n0 }
+                .Where(n => n >= minimum && n <= largest).Distinct().ToArray();
+            double bestSourceRelief = double.NegativeInfinity;
+            bool candidateCanPass = false;
+            double years = cfg.TurnDays / cfg.DaysPerYear;
+            foreach (int candidateSize in candidateSizes)
+            {
+                // Full F/C/H/W and zero linked-settlement density are the best
+                // physically possible new-site services at this headcount.
+                double daughterQoLUpper = NeolithicProduction.SocialCohesion(cfg.Neolithic, 1, candidateSize);
+                var daughterRatesLower = PhysicalDemography.Rates(cfg, candidateSize, 1, 1,
+                    candidateSize, false);
+                double daughterRiskLower = 1 - Math.Exp(-Math.Max(0, daughterRatesLower.Death) * years);
+                bool moverCanRequestSearch = daughterQoLUpper - daughterRiskLower - baselineUtility
+                    + 1e-12 >= searchThreshold;
+                if (!moverCanRequestSearch) continue;
+                var source = context.Source(camp, candidateSize).Forecast;
+                double relief = (source.QoL - source.MortalityRisk) - baselineUtility;
+                bestSourceRelief = Math.Max(bestSourceRelief, relief);
+                bool sourceCanPass = relief + cfg.FissionDaughterMargin + 1e-12 >= 0;
+                if (sourceCanPass) candidateCanPass = true;
+            }
+            e.Gain = double.IsNegativeInfinity(bestSourceRelief) ? 0 : bestSourceRelief;
+            e.Push = Push(e.Gain, threshold);
+            if (!candidateCanPass) return e;
             e.Screened = true;
-            int size = distressScreen ? n1 : n0;
+            int size = distressLegal ? n1 : n0;
             var projections = new Dictionary<int, double>(); double siteRatio = 0, siteHuman = 0, siteHerd = double.PositiveInfinity;
             if (cached != null)
             {
@@ -415,47 +611,48 @@ namespace Anthropocene.Simulation
             if (cached == null) { if (e.Candidates == 0) e.NoCandidates = true; else e.NoViable = true; return e; }
             e.WithDestination = true;
             e.Tile = cached.Tile;
-            // With the destination known: the leaving group's F_d is the site's support ratio for its cohort (capped at one; for herded nomads
-            // it already includes herd forage and water, so it stands for F_d W_d); W_d = 1 (freshwater is a gate of the footprint).
-            double foodD = Numbers.Clamp(siteRatio, 0, 1);
-            // The veto's F_d: the site's support ratio plus the person-equivalents of the turn's need her share of the stored food covers
-            // (the same carried term as immigration), capped at one. Carried human food does not feed herds, so a herded daughter's herd forage and water coverage caps it. The daughter must be better off there than at home, not at an absolute bar.
-            double vetoFood = Math.Min(1, Math.Min(siteHerd, Math.Max(0, siteHuman) + Immigration.CarriedPerPerson(cfg, camp)));
-            Estimate chosen = default; bool use = false;
-            if (distressLegal)
+            SocialRelocationEvaluation chosenDecision = null; WorkforceTransfer chosenWorkforce = null;
+            int chosenSize = 0; double chosenCoverage = e.Desirability;
+            // Distress keeps its calibrated shortfall cohort.  If that larger
+            // group is not supportable, the ordinary policy cohort may still be
+            // assessed by exactly the same equation at the selected known site.
+            foreach (int candidateSize in new[] { distressLegal ? n1 : n0, n0 }.Where(n => n >= minimum && n <= largest).Distinct())
             {
-                var distress = EstimateSplit(w, camp, n1, foodD, 1, vetoFood);
-                if (distress.DaughterGain >= threshold) { chosen = distress; use = true; e.Trigger = FissionTrigger.Distress; }
+                double coverage = candidateSize == size ? e.Desirability
+                    : Desirability(context, camp, cached.Tile, candidateSize, regime, projections, e, out _);
+                var decision = RelocationAt(context, camp, cached.Tile, candidateSize, coverage, out var transfer);
+                e.SocialEvaluations++;
+                if (!decision.MoverPass) e.MoverRejected++;
+                if (!decision.AggregatePass) e.AggregateRejected++;
+                if (!decision.SourcePass) e.SourceRejected++;
+                if (!decision.Accepted) { if (chosenDecision == null) chosenDecision = decision; continue; }
+                chosenDecision = decision; chosenWorkforce = transfer; chosenSize = candidateSize;
+                chosenCoverage = coverage; break;
             }
-            if (!use && crowdLegal && crowd.Gain >= threshold) { chosen = EstimateSplit(w, camp, n0, foodD, 1, vetoFood); use = true; e.Trigger = FissionTrigger.Crowding; }
-            if (!use) { e.BelowThreshold = true; return e; }
-            e.Daughter = chosen.Daughter; e.Gain = chosen.Gain; e.DaughterQoL = chosen.DaughterQoL; e.DaughterGain = chosen.DaughterGain;
-            e.Push = Push(e.Trigger == FissionTrigger.Distress ? chosen.DaughterGain : chosen.Gain, threshold); e.Score = e.Push * e.Desirability;
-            if (PhysicalDemography.Enabled(cfg))
-            {
-                // Survival is diagnosed from the same physical destination inputs used by the existing fission estimate:
-                // repeatable site support plus carried food, proportional clothing, projected daughter shelter and the
-                // inherited hunger clock. Composite QoL is deliberately absent from the demographic rate call.
-                var daughterShelter = DaughterShelter(w, camp, chosen.Daughter);
-                e.DaughterNutrition = vetoFood;
-                e.DaughterClothing = Numbers.Clamp(camp.ClothPerCapita, 0, 1);
-                e.DaughterHousing = chosen.Daughter > 0 ? Math.Min(1, daughterShelter.Total / chosen.Daughter) : 1;
-                bool starvation = e.DaughterNutrition < 1 - 1e-12
-                    && camp.FoodDeficitYears >= PhysicalDemography.StarvationGraceYears(cfg) - 1e-12;
-                e.DaughterRates = PhysicalDemography.Rates(cfg, chosen.Daughter, e.DaughterNutrition,
-                    e.DaughterClothing, daughterShelter.Total, starvation);
-            }
-            // "Would part of this population be better off": the daughter's estimated QoL must not fall more than the margin below the parent's,
-            // and the stayers must not be worse off (true by construction: fewer mouths and no housing taken).
-            e.DaughterTested = true; e.DaughterBlocked = !chosen.DaughterAcceptable(cfg.FissionDaughterMargin);
-            bool stayersAcceptable = chosen.StayersAcceptable(cfg.FissionDaughterMargin);
-            e.StayersBlocked = !e.DaughterBlocked && !stayersAcceptable;
-            // Record physical decline separately from the unchanged welfare decision. A negative instantaneous net
-            // rate is not a viability veto: a well-served daughter above its positive equilibrium declines safely
-            // toward that root, and recoverable shortages are intentionally allowed by the v1.1 contract.
-            e.PhysicalDaughterNegativeNet = !e.DaughterBlocked && stayersAcceptable
-                && PhysicalDemography.Enabled(cfg) && e.DaughterRates.Net < 0;
-            e.Propose = !e.DaughterBlocked && stayersAcceptable;
+            e.Decision = chosenDecision; e.DaughterTested = chosenDecision != null;
+            if (chosenDecision == null) { e.NoViable = true; return e; }
+            e.Daughter = chosenSize > 0 ? chosenSize : size;
+            if (chosenSize > 0) e.Desirability = chosenCoverage;
+            e.Trigger = distressLegal ? FissionTrigger.Distress : FissionTrigger.Crowding;
+            e.Gain = chosenDecision.SourceUtilityChange; e.DaughterGain = chosenDecision.MoverUtilityChange;
+            e.DaughterQoL = chosenDecision.DestinationAfter.QoL;
+            e.Push = Push(chosenDecision.MoverUtilityChange, threshold); e.Score = e.Push * e.Desirability;
+            e.DaughterNutrition = chosenDecision.DestinationAfter.Nutrition;
+            e.DaughterClothing = chosenDecision.DestinationAfter.ClothingCoverage;
+            e.DaughterHousing = chosenDecision.DestinationAfter.HousingCoverage;
+            double additional = Math.Max(0, chosenDecision.DestinationAfter.MortalityRate
+                - chosenDecision.DestinationAfter.ExposureRate - chosenDecision.DestinationAfter.CrowdingRate
+                - chosenDecision.DestinationAfter.DiseaseRate - chosenDecision.DestinationAfter.StarvationRate);
+            e.DaughterRates = new DemographicRates(chosenDecision.DestinationAfter.BirthRate,
+                chosenDecision.DestinationAfter.ExposureRate, chosenDecision.DestinationAfter.CrowdingRate,
+                chosenDecision.DestinationAfter.DiseaseRate, chosenDecision.DestinationAfter.StarvationRate, additional);
+            e.DaughterBlocked = !chosenDecision.MoverPass || !chosenDecision.AggregatePass;
+            e.StayersBlocked = !e.DaughterBlocked && !chosenDecision.SourcePass;
+            e.BelowThreshold = !chosenDecision.MoverPass || !chosenDecision.AggregatePass;
+            e.PhysicalDaughterNegativeNet = chosenDecision.DestinationAfter.BirthRate
+                - chosenDecision.DestinationAfter.MortalityRate < 0;
+            e.Workforce = chosenWorkforce;
+            e.Propose = chosenDecision.Accepted;
             return e;
         }
 
@@ -565,7 +762,7 @@ namespace Anthropocene.Simulation
         {
             var parent = e.Camp; var ps = parent.People; int before = parent.Population, n = e.Daughter; double f = n / (double)before;
             double parentMortalityBefore = PhysicalDemography.Enabled(w.Config)
-                ? PhysicalDemography.ProjectedSettlementRates(w, parent, before, parent.FoodNeedsMetRatio, parent.ClothPerCapita).Death : 0;
+                ? e.Decision.SourceNoMove.MortalityRate : 0;
             int societyId = w.NextId++;
             var society = new Society
             {
@@ -617,7 +814,11 @@ namespace Anthropocene.Simulation
             }
             double growth = parent.GrowthRemainder * f, death = parent.DeathRemainder * f;
             camp.GrowthRemainder = growth; parent.GrowthRemainder -= growth; camp.DeathRemainder = death; parent.DeathRemainder -= death;
-            SplitWorkforce(parent, camp, before, n);
+            if (PhysicalDemography.Enabled(w.Config))
+            {
+                parent.Workforce = e.Workforce.Stayers; camp.Workforce = e.Workforce.Movers;
+            }
+            else SplitWorkforce(parent, camp, before, n);
             parent.Population = before - n;
             // Same economic settings; automation continuous so the AI economy runs. Fission policy Neutral, no destination.
             camp.CraftingPriorities = new CraftingPriorities { HandTools = parent.CraftingPriorities.HandTools, Pots = parent.CraftingPriorities.Pots, Cloth = parent.CraftingPriorities.Cloth, FarmTools = parent.CraftingPriorities.FarmTools, Housing = parent.CraftingPriorities.Housing, Tools = parent.CraftingPriorities.Tools, AnimalFabric = parent.CraftingPriorities.AnimalFabric, LightHousing = parent.CraftingPriorities.LightHousing, HerdingTools = parent.CraftingPriorities.HerdingTools };
@@ -651,9 +852,13 @@ namespace Anthropocene.Simulation
             ContactKnowledge.RecordKin(w, ps, society, parent, camp);
             if (demographics.TryGetValue(parent.Id, out var report)) report.SplitOff += n;
             var parentRates = PhysicalDemography.Enabled(w.Config)
-                ? PhysicalDemography.ProjectedSettlementRates(w, parent, parent.Population, parent.FoodNeedsMetRatio, parent.ClothPerCapita) : default;
+                ? new DemographicRates(e.Decision.SourceAfter.BirthRate, e.Decision.SourceAfter.ExposureRate,
+                    e.Decision.SourceAfter.CrowdingRate, e.Decision.SourceAfter.DiseaseRate,
+                    e.Decision.SourceAfter.StarvationRate, Math.Max(0, e.Decision.SourceAfter.MortalityRate
+                        - e.Decision.SourceAfter.ExposureRate - e.Decision.SourceAfter.CrowdingRate
+                        - e.Decision.SourceAfter.DiseaseRate - e.Decision.SourceAfter.StarvationRate)) : default;
             var daughterRates = PhysicalDemography.Enabled(w.Config) ? e.DaughterRates : default;
-            record.Fissions.Add(new FissionReport
+            var fission = new FissionReport
             {
                 Turn = w.Turn, ParentCamp = parent.Id, DaughterCamp = camp.Id, ParentSociety = ps.Id, DaughterSociety = society.Id, DaughterPlayer = society.Player, Tile = camp.Tile, ParentBefore = before, Daughter = n, Regime = (int)RegimeOf(parent),
                 AnimalsMoved = animals, Policy = parent.FissionPolicy, Push = e.Push, Desirability = e.Desirability, Score = e.Score, Affinity = society.KinAffinity, Gain = e.Gain, DaughterQoL = e.DaughterQoL, Trigger = e.Trigger, DaughterGain = e.DaughterGain,
@@ -662,29 +867,63 @@ namespace Anthropocene.Simulation
                 DaughterNutrition = e.DaughterNutrition, DaughterClothingCoverage = e.DaughterClothing,
                 DaughterHousingCoverage = e.DaughterHousing,
                 DaughterNetNonnegative = !PhysicalDemography.Enabled(w.Config) || daughterRates.Net >= 0,
-                HigherQoLWorseMortality = PhysicalDemography.Enabled(w.Config) && e.DaughterQoL > parent.QoL && daughterRates.Death > parentMortalityBefore + 1e-12
-            });
+                HigherQoLWorseMortality = PhysicalDemography.Enabled(w.Config)
+                    && e.DaughterQoL > e.Decision.SourceNoMove.QoL
+                    && daughterRates.Death > parentMortalityBefore + 1e-12
+            };
+            if (e.Decision != null)
+            {
+                fission.MoverUtilityChange = e.Decision.MoverUtilityChange;
+                fission.SourceUtilityChange = e.Decision.SourceUtilityChange;
+                fission.AggregateWelfareChange = e.Decision.AggregateWelfareChange;
+                fission.ForecastParentQoL = e.Decision.SourceAfter.QoL;
+                fission.ForecastDaughterQoL = e.Decision.DestinationAfter.QoL;
+                fission.ForecastParentNutrition = e.Decision.SourceAfter.Nutrition;
+                fission.ForecastParentClothing = e.Decision.SourceAfter.ClothingCoverage;
+                fission.ForecastParentHousing = e.Decision.SourceAfter.HousingCoverage;
+                fission.ForecastDaughterMortalityRisk = e.Decision.DestinationAfter.MortalityRisk;
+                fission.ForecastDaughterStability = e.Decision.DestinationAfter.Stability;
+                fission.ForecastParentExposureRate = e.Decision.SourceAfter.ExposureRate;
+                fission.ForecastParentCrowdingRate = e.Decision.SourceAfter.CrowdingRate;
+                fission.ForecastParentDiseaseRate = e.Decision.SourceAfter.DiseaseRate;
+                fission.ForecastParentStarvationRate = e.Decision.SourceAfter.StarvationRate;
+                fission.ForecastDaughterExposureRate = e.Decision.DestinationAfter.ExposureRate;
+                fission.ForecastDaughterCrowdingRate = e.Decision.DestinationAfter.CrowdingRate;
+                fission.ForecastDaughterDiseaseRate = e.Decision.DestinationAfter.DiseaseRate;
+                fission.ForecastDaughterStarvationRate = e.Decision.DestinationAfter.StarvationRate;
+                fission.ForecastConfidence = (int)e.Decision.DestinationAfter.Confidence;
+                fission.MatchedOpportunities = e.Decision.Opportunity.Matched;
+            }
+            record.Fissions.Add(fission);
             record.Log("Camp " + parent.Id + " (tribe " + parent.Player + ") split: " + n + " of " + before + " people founded camp " + camp.Id + " (tribe " + society.Player + ") at tile " + camp.Tile + ".");
         }
 
-        // Largest-remainder split of the residents over gatherers and every assigned role. Farmers stay on the parent's fields
-        // (the daughter has none), so its share of farmers become gatherers.
+        // Exact pre-v1.1 largest-remainder split. Farmers stay with the parent's
+        // fields, so their daughter share becomes unassigned gatherers. This path
+        // is intentionally separate from Physical-v1's conserved role transfer.
         private static void SplitWorkforce(Camp parent, Camp daughter, int residents, int take)
         {
-            var ledger = parent.Workforce; var roles = ledger.Assignments.Where(a => a != null && a.Population > 0).OrderBy(a => a.Role, StringComparer.Ordinal).ToArray();
-            var counts = new[] { ledger.Gatherers(residents) }.Concat(roles.Select(a => a.Population)).ToArray();
+            var ledger = parent.Workforce;
+            var roles = ledger.Assignments.Where(a => a != null && a.Population > 0)
+                .OrderBy(a => a.Role, StringComparer.Ordinal).ToArray();
+            var counts = new[] { ledger.Gatherers(residents) }
+                .Concat(roles.Select(a => a.Population)).ToArray();
             long total = counts.Sum(c => (long)c);
             var share = counts.Select(c => total <= 0 ? 0 : (int)(take * (long)c / total)).ToArray();
             int remainder = take - share.Sum();
-            foreach (int i in Enumerable.Range(0, counts.Length).OrderByDescending(i => total <= 0 ? 0 : take * (long)counts[i] % total).ThenBy(i => i))
+            foreach (int i in Enumerable.Range(0, counts.Length)
+                .OrderByDescending(i => total <= 0 ? 0 : take * (long)counts[i] % total).ThenBy(i => i))
                 if (remainder > 0 && share[i] < counts[i]) { share[i]++; remainder--; }
             daughter.Workforce = new PopulationLedger();
             for (int i = 0; i < roles.Length; i++)
             {
                 roles[i].Population -= share[i + 1];
-                if (share[i + 1] > 0 && roles[i].Role != WorkforceRoles.Farmer) daughter.Workforce.Assignments.Add(new PopulationAssignment { Role = roles[i].Role, Population = share[i + 1] });
+                if (share[i + 1] > 0 && roles[i].Role != WorkforceRoles.Farmer)
+                    daughter.Workforce.Assignments.Add(new PopulationAssignment
+                        { Role = roles[i].Role, Population = share[i + 1] });
             }
             ledger.Normalize(residents - take); daughter.Workforce.Normalize(take);
         }
+
     }
 }
