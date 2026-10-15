@@ -1,0 +1,574 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using Anthropocene.Simulation;
+
+// Opt-in same-physics social-flow attribution. Each seed completes one PhysicalMortalityV1
+// opening with both social transfer systems disabled. Four branches then load that exact save
+// and run the same continuation horizon with fission/immigration off/off, on/off, off/on and
+// on/on. The tool changes no production calibration or authoritative state.
+internal static class DemographySocialAblation
+{
+    private sealed class Variant
+    {
+        public string Name;
+        public bool Fission, Immigration;
+    }
+
+    private sealed class Snapshot
+    {
+        public bool Exists;
+        public int Population, LinkedPopulation, Workforce;
+        public double Food, Clothing, Housing, QoL, Expectation, DeficitYears, BirthRate, DeathRate, NetRate;
+
+        public bool Healthy => Exists && Food >= .8 && Clothing >= .8 && Housing >= .8;
+    }
+
+    private sealed class Follow
+    {
+        public string Kind;
+        public int EventTurn, Source, Target;
+        public bool InitialNegativeNet;
+        public double ExpectedQoL;
+        public Snapshot Target0, Source0, Target1, Source1, Target3, Source3;
+
+        public void Observe(int turn, Dictionary<int, Snapshot> snapshots)
+        {
+            int age = turn - EventTurn;
+            if (age == 1)
+            {
+                Target1 = Get(snapshots, Target); Source1 = Get(snapshots, Source);
+            }
+            else if (age == 3)
+            {
+                Target3 = Get(snapshots, Target); Source3 = Get(snapshots, Source);
+            }
+        }
+    }
+
+    private sealed class Flow
+    {
+        public MigrationReport Report;
+        public Snapshot Source, Destination;
+        public double SourceLineageMean, DestinationLineageMean;
+        public int SourceLineagePopulation, DestinationLineagePopulation;
+        public Follow Follow;
+    }
+
+    private sealed class Reversal
+    {
+        public Flow First, Return;
+        public bool InvolvesDaughter;
+        public int YoungestDaughterAge = -1;
+    }
+
+    private sealed class FollowSummary
+    {
+        public int Events, ObservedAt1, ExtinctAt1, ObservedAt3, ExtinctAt3, Healthy0, Healthy3, Recovered3, NegativeNet0, NegativeNet1, NegativeNet3;
+        public double ExpectedQoLError1, FoodDelta1, ClothingDelta1, HousingDelta1, DeficitDelta1;
+        public double PopulationRatio3, FoodDelta3, ClothingDelta3, HousingDelta3, QoLDelta3, DeficitDelta3;
+    }
+
+    private sealed class Outcome
+    {
+        public int Seed, Turns, StartCamps, EndCamps, StartPopulation, EndPopulation, Survivors;
+        public string Variant;
+        public int Births, Deaths, Migrations, Migrants, Fissions, SplitPopulation, Reversals;
+        public int NegativeNetDestinations, NegativeNetDaughters, HigherQolWorseMortality;
+        public int YoungDaughterMigrations, YoungDaughterReversals, Viable, Target, MinPopulation, MedianPopulation, MaxPopulation;
+        public int CrossLineageMigrants, TransferAffectedSettlementTurns;
+        public int KinMigrations;
+        public long CampTurns, PopulationTurns;
+        public long FissionProposals, FissionDropped, FissionCrowding, FissionDistress;
+        public long ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected;
+        public double Exposure, Crowding, Disease, Starvation, WorstConservation;
+        public double MeanFood, MeanClothing, MeanHousing, LocalWeightedQoL, MeanLineageQoL;
+        public double Milliseconds;
+        public readonly List<Follow> Follows = new List<Follow>();
+        public readonly List<Reversal> ReversalDetails = new List<Reversal>();
+    }
+
+    private sealed class Aggregate
+    {
+        public string Variant;
+        public int Seeds, Turns, StartCamps, EndCamps, StartPopulation, EndPopulation, Survivors;
+        public int Births, Deaths, Migrations, Migrants, Fissions, SplitPopulation, Reversals;
+        public int NegativeNetDestinations, NegativeNetDaughters, HigherQolWorseMortality;
+        public int YoungDaughterMigrations, YoungDaughterReversals, Viable, Target;
+        public int CrossLineageMigrants, TransferAffectedSettlementTurns;
+        public int KinMigrations;
+        public long CampTurns, PopulationTurns, FissionProposals, FissionDropped, FissionCrowding, FissionDistress;
+        public long ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected;
+        public double Exposure, Crowding, Disease, Starvation, WorstConservation;
+        public double FoodWeighted, ClothingWeighted, HousingWeighted, LocalQoLWeighted, LineageQoLSum;
+        public double Milliseconds;
+        public FollowSummary DaughterFollow, ReceiverFollow;
+    }
+
+    private static readonly Variant[] Variants =
+    {
+        new Variant { Name = "off-off", Fission = false, Immigration = false },
+        new Variant { Name = "fission-only", Fission = true, Immigration = false },
+        new Variant { Name = "immigration-only", Fission = false, Immigration = true },
+        new Variant { Name = "both", Fission = true, Immigration = true }
+    };
+
+    private static int assertions;
+    private static void Check(bool condition, string message)
+    {
+        assertions++;
+        if (!condition) throw new Exception("Demography social ablation: " + message);
+    }
+
+    public static int Run(int continuations = 30)
+    {
+        if (continuations < 25 || continuations > 50)
+            throw new ArgumentOutOfRangeException(nameof(continuations), "The v1.1 social ablation requires 25-50 continuation decisions.");
+        assertions = 0;
+        var outcomes = new List<Outcome>();
+        foreach (int seed in new[] { 17, 53, 991 })
+        {
+            byte[] boundary = OpeningBoundary(seed, out int openingTurns, out string fingerprint,
+                out int boundaryCamps, out int boundaryPopulation);
+            Console.WriteLine("DEMOGRAPHY_SOCIAL_BOUNDARY seed=" + seed + " openingTurns=" + openingTurns
+                + " camps=" + boundaryCamps + " population=" + boundaryPopulation
+                + " fingerprint=" + fingerprint);
+            foreach (Variant variant in Variants)
+            {
+                WorldState probe = SaveCodec.Load(boundary);
+                Check(SaveCodec.Fingerprint(probe) == fingerprint,
+                    "seed " + seed + " variant " + variant.Name + " loads the identical boundary save");
+                Check(probe.Camps.Count == boundaryCamps && probe.Camps.Sum(probe.LinkedPopulation) == boundaryPopulation,
+                    "seed " + seed + " variant " + variant.Name + " starts with identical people and camps");
+                outcomes.Add(RunVariant(probe, seed, variant, continuations));
+            }
+        }
+
+        foreach (Outcome outcome in outcomes)
+        {
+            PrintOutcome(outcome);
+            foreach (Reversal reversal in outcome.ReversalDetails) PrintReversal(outcome, reversal);
+        }
+
+        var totals = Variants.Select(v => AggregateOf(v.Name, outcomes.Where(o => o.Variant == v.Name))).ToDictionary(a => a.Variant);
+        foreach (Variant variant in Variants) PrintAggregate(totals[variant.Name]);
+        PrintEffects(totals);
+
+        Check(totals["off-off"].Migrations == 0 && totals["off-off"].Fissions == 0,
+            "off/off control commits no social transfers");
+        Check(totals["fission-only"].Migrations == 0 && totals["fission-only"].Fissions > 0,
+            "fission-only branch isolates fission");
+        Check(totals["immigration-only"].Fissions == 0,
+            "immigration-only branch isolates immigration even when no eligible local contact produces a flow");
+        Check(totals["both"].Fissions > 0 && totals["both"].Migrations > 0,
+            "combined branch exercises both mechanics");
+        Console.WriteLine("PASS: " + assertions + " same-physics social-ablation assertions");
+        return assertions;
+    }
+
+    private static byte[] OpeningBoundary(int seed, out int openingTurns, out string fingerprint,
+        out int camps, out int population)
+    {
+        var cfg = SimulationConfig.Small(8);
+        cfg.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        cfg.QoLMortalityEnabled = false;
+        cfg.FissionEnabled = false; cfg.ImmigrationEnabled = false; cfg.TradeEnabled = true;
+        cfg.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        cfg.Validate();
+        var world = new WorldGenerator().Generate(seed, cfg); var resolver = new TurnResolver();
+        openingTurns = 0;
+        while (!world.Finished && openingTurns < 30)
+        {
+            int before = world.Camps.Sum(world.LinkedPopulation);
+            PlanningResult plan = AiPlanning.Decide(world);
+            TurnRecord record = resolver.Resolve(world, plan.Orders, plan.Traces);
+            Check(world.Camps.Sum(world.LinkedPopulation) == before + record.Growth - record.Deaths,
+                "seed " + seed + " opening turn " + record.Turn + " conserves population");
+            Check(record.Migrations.Count == 0 && record.Fissions.Count == 0,
+                "seed " + seed + " social-free opening has no transfers");
+            openingTurns++;
+        }
+        Check(world.Finished, "seed " + seed + " completes its social-free opening within thirty turns");
+        byte[] bytes = SaveCodec.Save(world);
+        WorldState replay = SaveCodec.Load(bytes);
+        fingerprint = SaveCodec.Fingerprint(world);
+        Check(SaveCodec.Fingerprint(replay) == fingerprint, "seed " + seed + " opening boundary round trips exactly");
+        camps = world.Camps.Count; population = world.Camps.Sum(world.LinkedPopulation);
+        return bytes;
+    }
+
+    private static Outcome RunVariant(WorldState world, int seed, Variant variant, int continuations)
+    {
+        world.Config.FissionEnabled = variant.Fission;
+        world.Config.ImmigrationEnabled = variant.Immigration;
+        world.Config.Validate();
+        var result = new Outcome
+        {
+            Seed = seed, Variant = variant.Name, StartCamps = world.Camps.Count,
+            StartPopulation = world.Camps.Sum(world.LinkedPopulation)
+        };
+        var resolver = new TurnResolver();
+        var lastFlow = new Dictionary<(int Source, int Destination), Flow>();
+        var daughterTurns = new Dictionary<int, int>();
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        TurnRecord lastRecord = null;
+        for (int i = 0; i < continuations; i++)
+        {
+            int before = world.Camps.Sum(world.LinkedPopulation);
+            PlanningResult plan = AiPlanning.Decide(world);
+            TurnRecord record = resolver.Resolve(world, plan.Orders, plan.Traces);
+            lastRecord = record;
+            int after = world.Camps.Sum(world.LinkedPopulation);
+            Check(after == before + record.Growth - record.Deaths,
+                "seed " + seed + " variant " + variant.Name + " turn " + record.Turn + " conserves global population");
+            Check(record.Demographics.Sum(d => d.GrossBirths) == record.Growth
+                && record.Demographics.Sum(d => d.GrossDeaths) == record.Deaths,
+                "seed " + seed + " variant " + variant.Name + " turn " + record.Turn + " closes integer demographic ledgers");
+
+            var snapshots = Snapshots(world);
+            foreach (Follow follow in result.Follows) follow.Observe(record.Turn, snapshots);
+
+            foreach (MigrationReport migration in record.Migrations)
+            {
+                var flow = CaptureFlow(record, migration, snapshots);
+                var follow = new Follow
+                {
+                    Kind = "receiver", EventTurn = record.Turn, Source = migration.SourceCamp,
+                    Target = migration.DestinationCamp, Target0 = flow.Destination, Source0 = flow.Source,
+                    InitialNegativeNet = !migration.DestinationNetNonnegative, ExpectedQoL = migration.PostInflowQoL
+                };
+                flow.Follow = follow; result.Follows.Add(follow);
+                var reverse = (migration.DestinationCamp, migration.SourceCamp);
+                if (lastFlow.TryGetValue(reverse, out Flow previous)
+                    && record.Turn - previous.Report.Turn <= world.Config.ImmigrationReturnCooldownTurns)
+                {
+                    int age = YoungestDaughterAge(daughterTurns, record.Turn, migration.SourceCamp, migration.DestinationCamp);
+                    var reversal = new Reversal
+                    {
+                        First = previous, Return = flow, InvolvesDaughter = age >= 0, YoungestDaughterAge = age
+                    };
+                    result.ReversalDetails.Add(reversal); result.Reversals++;
+                    if (reversal.InvolvesDaughter) result.YoungDaughterReversals++;
+                }
+                lastFlow[(migration.SourceCamp, migration.DestinationCamp)] = flow;
+                int daughterAge = YoungestDaughterAge(daughterTurns, record.Turn, migration.SourceCamp, migration.DestinationCamp);
+                if (daughterAge >= 0) result.YoungDaughterMigrations++;
+                if (!migration.DestinationNetNonnegative) result.NegativeNetDestinations++;
+                if (migration.HigherQoLWorseMortality) result.HigherQolWorseMortality++;
+                if (migration.Kin) result.KinMigrations++;
+            }
+
+            foreach (FissionReport fission in record.Fissions)
+            {
+                daughterTurns[fission.DaughterCamp] = record.Turn;
+                Snapshot daughter = Get(snapshots, fission.DaughterCamp), parent = Get(snapshots, fission.ParentCamp);
+                Check(daughter.Exists && parent.Exists, "seed " + seed + " committed fission camps remain represented at the boundary");
+                Check(Math.Abs(daughter.Expectation - parent.Expectation) <= 1e-9,
+                    "seed " + seed + " fission daughter " + fission.DaughterCamp + " inherits expectation without reset");
+                result.Follows.Add(new Follow
+                {
+                    Kind = "daughter", EventTurn = record.Turn, Source = fission.ParentCamp,
+                    Target = fission.DaughterCamp, Target0 = daughter, Source0 = parent,
+                    InitialNegativeNet = !fission.DaughterNetNonnegative, ExpectedQoL = fission.DaughterQoL
+                });
+                if (!fission.DaughterNetNonnegative) result.NegativeNetDaughters++;
+            }
+
+            foreach (DemographicReport d in record.Demographics)
+            {
+                double causes = d.ExposureDeaths + d.CrowdingDeaths + d.DiseaseDeaths
+                    + d.StarvationDeaths + d.AdditionalDeaths;
+                double error = Math.Abs(d.ContinuousDeaths - causes);
+                Check(error <= 1e-7 * Math.Max(1, d.ContinuousDeaths),
+                    "seed " + seed + " variant " + variant.Name + " turn " + record.Turn + " attributes every death cause");
+                result.WorstConservation = Math.Max(result.WorstConservation, Math.Abs(d.ConservationError));
+                result.Exposure += d.ExposureDeaths; result.Crowding += d.CrowdingDeaths;
+                result.Disease += d.DiseaseDeaths; result.Starvation += d.StarvationDeaths;
+            }
+            Check(result.WorstConservation <= 1e-7,
+                "seed " + seed + " variant " + variant.Name + " continuous demography remains conserved");
+            Check(!variant.Immigration && record.Migrations.Count == 0 || variant.Immigration,
+                "seed " + seed + " variant " + variant.Name + " respects the immigration switch");
+            Check(!variant.Fission && record.Fissions.Count == 0 || variant.Fission,
+                "seed " + seed + " variant " + variant.Name + " respects the fission switch");
+
+            result.Births += record.Growth; result.Deaths += record.Deaths;
+            result.Migrations += record.Migrations.Count; result.Migrants += record.Migrations.Sum(m => m.Migrants);
+            result.Fissions += record.Fissions.Count; result.SplitPopulation += record.Fissions.Sum(f => f.Daughter);
+            result.FissionCrowding += record.Fissions.Count(f => f.Trigger == FissionTrigger.Crowding);
+            result.FissionDistress += record.Fissions.Count(f => f.Trigger == FissionTrigger.Distress);
+            result.CrossLineageMigrants += record.LineageWelfare.Sum(w => w.Emigrated);
+            result.TransferAffectedSettlementTurns += record.SettlementWelfare.Count(w => w.TransferAffected);
+            result.FissionProposals += resolver.LastMetrics.FissionProposals;
+            result.FissionDropped += resolver.LastMetrics.FissionDropped;
+            result.ImmigrationIntents += resolver.LastMetrics.ImmigrationIntents;
+            result.ImmigrationAccepted += resolver.LastMetrics.ImmigrationAccepted;
+            result.ImmigrationPartial += resolver.LastMetrics.ImmigrationPartial;
+            result.ImmigrationRejected += resolver.LastMetrics.ImmigrationRejected;
+            result.CampTurns += world.Camps.Count; result.PopulationTurns += after;
+            result.Turns++;
+        }
+        timer.Stop(); result.Milliseconds = timer.Elapsed.TotalMilliseconds;
+
+        Camp[] living = world.Camps.Where(c => world.LinkedPopulation(c) > 0).OrderBy(c => c.Id).ToArray();
+        int[] populations = living.Select(world.LinkedPopulation).OrderBy(n => n).ToArray();
+        result.EndCamps = world.Camps.Count; result.Survivors = living.Length;
+        result.EndPopulation = populations.Sum();
+        result.MinPopulation = populations.Length == 0 ? 0 : populations[0];
+        result.MedianPopulation = Percentile(populations, .5);
+        result.MaxPopulation = populations.Length == 0 ? 0 : populations[^1];
+        result.MeanFood = living.Length == 0 ? 0 : living.Average(c => c.FoodNeedsMetRatio);
+        result.MeanClothing = living.Length == 0 ? 0 : living.Average(c => c.ClothPerCapita);
+        result.MeanHousing = living.Length == 0 ? 0 : living.Average(c => c.HousingPerCapita);
+        result.Viable = living.Count(c => c.FoodNeedsMetRatio >= .8 && c.ClothPerCapita >= .8 && c.HousingPerCapita >= .8);
+        result.Target = living.Count(c => world.LinkedPopulation(c) >= 600 && world.LinkedPopulation(c) <= 1000
+            && c.FoodNeedsMetRatio >= .8 && c.ClothPerCapita >= .8 && c.HousingPerCapita >= .8);
+        result.LocalWeightedQoL = result.EndPopulation == 0 ? 0
+            : living.Sum(c => world.LinkedPopulation(c) * c.QoL) / result.EndPopulation;
+        result.MeanLineageQoL = lastRecord == null || lastRecord.LineageWelfare.Count == 0 ? 0
+            : lastRecord.LineageWelfare.Average(w => w.MeanQoL);
+        Check(living.All(c => c.Workforce.Assigned <= c.Population),
+            "seed " + seed + " variant " + variant.Name + " terminal workforce remains bounded");
+        return result;
+    }
+
+    private static Dictionary<int, Snapshot> Snapshots(WorldState world)
+    {
+        var result = new Dictionary<int, Snapshot>();
+        foreach (Camp camp in world.Camps)
+        {
+            DemographicRates rates = PhysicalDemography.ProjectedSettlementRates(world, camp, camp.Population,
+                camp.FoodNeedsMetRatio, camp.ClothPerCapita);
+            result[camp.Id] = new Snapshot
+            {
+                Exists = true, Population = camp.Population, LinkedPopulation = world.LinkedPopulation(camp),
+                Workforce = camp.Workforce.Assigned, Food = camp.FoodNeedsMetRatio,
+                Clothing = camp.ClothPerCapita, Housing = camp.HousingPerCapita, QoL = camp.QoL,
+                Expectation = camp.RudimentaryExpectation, DeficitYears = camp.FoodDeficitYears,
+                BirthRate = rates.Birth, DeathRate = rates.Death, NetRate = rates.Net
+            };
+        }
+        return result;
+    }
+
+    private static Snapshot Get(Dictionary<int, Snapshot> snapshots, int camp)
+        => snapshots.TryGetValue(camp, out Snapshot value) ? value : new Snapshot();
+
+    private static Flow CaptureFlow(TurnRecord record, MigrationReport report, Dictionary<int, Snapshot> snapshots)
+    {
+        SettlementWelfareReport source = record.SettlementWelfare.FirstOrDefault(w => w.Camp == report.SourceCamp);
+        SettlementWelfareReport destination = record.SettlementWelfare.FirstOrDefault(w => w.Camp == report.DestinationCamp);
+        LineageWelfareReport sourceLineage = source == null ? null : record.LineageWelfare.FirstOrDefault(w => w.Lineage == source.Lineage);
+        LineageWelfareReport destinationLineage = destination == null ? null : record.LineageWelfare.FirstOrDefault(w => w.Lineage == destination.Lineage);
+        return new Flow
+        {
+            Report = report, Source = Get(snapshots, report.SourceCamp), Destination = Get(snapshots, report.DestinationCamp),
+            SourceLineageMean = sourceLineage?.MeanQoL ?? 0, DestinationLineageMean = destinationLineage?.MeanQoL ?? 0,
+            SourceLineagePopulation = sourceLineage?.Population ?? 0, DestinationLineagePopulation = destinationLineage?.Population ?? 0
+        };
+    }
+
+    private static int YoungestDaughterAge(Dictionary<int, int> daughters, int turn, params int[] camps)
+    {
+        int age = int.MaxValue;
+        foreach (int camp in camps)
+            if (daughters.TryGetValue(camp, out int born)) age = Math.Min(age, turn - born);
+        return age == int.MaxValue || age > 3 ? -1 : age;
+    }
+
+    private static FollowSummary Summarize(IEnumerable<Follow> follows, string kind)
+    {
+        var result = new FollowSummary();
+        foreach (Follow follow in follows.Where(f => f.Kind == kind))
+        {
+            result.Events++;
+            if (follow.Target0?.Healthy == true) result.Healthy0++;
+            if (follow.InitialNegativeNet) result.NegativeNet0++;
+            if (follow.Target1 != null)
+            {
+                result.ObservedAt1++;
+                if (!follow.Target1.Exists) result.ExtinctAt1++;
+                else
+                {
+                    if (follow.Target1.NetRate < 0) result.NegativeNet1++;
+                    result.ExpectedQoLError1 += follow.Target1.QoL - follow.ExpectedQoL;
+                    result.FoodDelta1 += follow.Target1.Food - follow.Target0.Food;
+                    result.ClothingDelta1 += follow.Target1.Clothing - follow.Target0.Clothing;
+                    result.HousingDelta1 += follow.Target1.Housing - follow.Target0.Housing;
+                    result.DeficitDelta1 += follow.Target1.DeficitYears - follow.Target0.DeficitYears;
+                }
+            }
+            if (follow.Target3 == null) continue;
+            result.ObservedAt3++;
+            if (!follow.Target3.Exists) { result.ExtinctAt3++; continue; }
+            if (follow.Target3.Healthy) result.Healthy3++;
+            if (!follow.Target0.Healthy && follow.Target3.Healthy) result.Recovered3++;
+            if (follow.Target3.NetRate < 0) result.NegativeNet3++;
+            result.PopulationRatio3 += follow.Target0.LinkedPopulation > 0
+                ? follow.Target3.LinkedPopulation / (double)follow.Target0.LinkedPopulation : 0;
+            result.FoodDelta3 += follow.Target3.Food - follow.Target0.Food;
+            result.ClothingDelta3 += follow.Target3.Clothing - follow.Target0.Clothing;
+            result.HousingDelta3 += follow.Target3.Housing - follow.Target0.Housing;
+            result.QoLDelta3 += follow.Target3.QoL - follow.Target0.QoL;
+            result.DeficitDelta3 += follow.Target3.DeficitYears - follow.Target0.DeficitYears;
+        }
+        return result;
+    }
+
+    private static Aggregate AggregateOf(string variant, IEnumerable<Outcome> source)
+    {
+        var result = new Aggregate { Variant = variant };
+        var outcomes = source.ToArray();
+        foreach (Outcome o in outcomes)
+        {
+            result.Seeds++; result.Turns += o.Turns; result.StartCamps += o.StartCamps; result.EndCamps += o.EndCamps;
+            result.StartPopulation += o.StartPopulation; result.EndPopulation += o.EndPopulation; result.Survivors += o.Survivors;
+            result.Births += o.Births; result.Deaths += o.Deaths; result.Migrations += o.Migrations; result.Migrants += o.Migrants;
+            result.Fissions += o.Fissions; result.SplitPopulation += o.SplitPopulation; result.Reversals += o.Reversals;
+            result.NegativeNetDestinations += o.NegativeNetDestinations; result.NegativeNetDaughters += o.NegativeNetDaughters;
+            result.HigherQolWorseMortality += o.HigherQolWorseMortality;
+            result.YoungDaughterMigrations += o.YoungDaughterMigrations; result.YoungDaughterReversals += o.YoungDaughterReversals;
+            result.Viable += o.Viable; result.Target += o.Target; result.CrossLineageMigrants += o.CrossLineageMigrants;
+            result.TransferAffectedSettlementTurns += o.TransferAffectedSettlementTurns;
+            result.KinMigrations += o.KinMigrations;
+            result.CampTurns += o.CampTurns; result.PopulationTurns += o.PopulationTurns;
+            result.FissionProposals += o.FissionProposals; result.FissionDropped += o.FissionDropped;
+            result.FissionCrowding += o.FissionCrowding; result.FissionDistress += o.FissionDistress;
+            result.ImmigrationIntents += o.ImmigrationIntents; result.ImmigrationAccepted += o.ImmigrationAccepted;
+            result.ImmigrationPartial += o.ImmigrationPartial; result.ImmigrationRejected += o.ImmigrationRejected;
+            result.Exposure += o.Exposure; result.Crowding += o.Crowding; result.Disease += o.Disease;
+            result.Starvation += o.Starvation; result.WorstConservation = Math.Max(result.WorstConservation, o.WorstConservation);
+            result.FoodWeighted += o.MeanFood * o.Survivors; result.ClothingWeighted += o.MeanClothing * o.Survivors;
+            result.HousingWeighted += o.MeanHousing * o.Survivors; result.LocalQoLWeighted += o.LocalWeightedQoL * o.EndPopulation;
+            result.LineageQoLSum += o.MeanLineageQoL; result.Milliseconds += o.Milliseconds;
+        }
+        result.DaughterFollow = Summarize(outcomes.SelectMany(o => o.Follows), "daughter");
+        result.ReceiverFollow = Summarize(outcomes.SelectMany(o => o.Follows), "receiver");
+        return result;
+    }
+
+    private static void PrintOutcome(Outcome o)
+    {
+        Console.WriteLine("DEMOGRAPHY_SOCIAL_VARIANT seed=" + o.Seed + " variant=" + o.Variant
+            + " turns=" + o.Turns + " camps=" + o.StartCamps + "->" + o.EndCamps
+            + " population=" + o.StartPopulation + "->" + o.EndPopulation + " survivors=" + o.Survivors
+            + " populationMinMedianMax=" + o.MinPopulation + "/" + o.MedianPopulation + "/" + o.MaxPopulation
+            + " births=" + o.Births + " deaths=" + o.Deaths + " migrations=" + o.Migrations
+            + " migrants=" + o.Migrants + " fissions=" + o.Fissions + " splitPopulation=" + o.SplitPopulation
+            + " reversals=" + o.Reversals + " youngDaughterMigrations=" + o.YoungDaughterMigrations
+            + " youngDaughterReversals=" + o.YoungDaughterReversals
+            + " viable=" + o.Viable + " target=" + o.Target
+            + " FCH=" + F(o.MeanFood) + "/" + F(o.MeanClothing) + "/" + F(o.MeanHousing)
+            + " localQoL=" + F(o.LocalWeightedQoL) + " lineageMeanQoL=" + F(o.MeanLineageQoL)
+            + " fissionFunnel=" + o.FissionProposals + "/" + o.Fissions + "/" + o.FissionDropped
+            + " fissionTriggers=" + o.FissionCrowding + "/" + o.FissionDistress
+            + " immigrationFunnel=" + o.ImmigrationIntents + "/" + o.ImmigrationAccepted + "/"
+            + o.ImmigrationPartial + "/" + o.ImmigrationRejected
+            + " negativeNet=" + o.NegativeNetDaughters + "/" + o.NegativeNetDestinations
+            + " higherQolWorseMortality=" + o.HigherQolWorseMortality
+            + " kinMigrations=" + o.KinMigrations + " crossLineageMigrants=" + o.CrossLineageMigrants
+            + " worstConservation=" + o.WorstConservation.ToString("G6", CultureInfo.InvariantCulture)
+            + " elapsedMs=" + o.Milliseconds.ToString("F1", CultureInfo.InvariantCulture));
+    }
+
+    private static void PrintReversal(Outcome outcome, Reversal reversal)
+    {
+        Flow a = reversal.First, b = reversal.Return;
+        Snapshot a3 = a.Follow.Target3, b3 = b.Follow.Target3;
+        Console.WriteLine("DEMOGRAPHY_SOCIAL_REVERSAL seed=" + outcome.Seed + " variant=" + outcome.Variant
+            + " pair=" + a.Report.SourceCamp + ">" + a.Report.DestinationCamp + ">" + b.Report.DestinationCamp
+            + " turns=" + a.Report.Turn + ">" + b.Report.Turn + " gap=" + (b.Report.Turn - a.Report.Turn)
+            + " migrants=" + a.Report.Migrants + "/" + b.Report.Migrants
+            + " utility=" + F(a.Report.Utility) + "/" + F(b.Report.Utility)
+            + " penalty=" + F(a.Report.Penalty) + "/" + F(b.Report.Penalty)
+            + " qolGain=" + F(a.Report.PostInflowQoL - a.Report.SourceQoL) + "/" + F(b.Report.PostInflowQoL - b.Report.SourceQoL)
+            + " mortalityGap=" + F(a.Report.MortalityGap) + "/" + F(b.Report.MortalityGap)
+            + " sourceFCH=" + Triple(b.Source) + " destinationFCH=" + Triple(b.Destination)
+            + " sourceDeficit=" + F(b.Source.DeficitYears) + " destinationDeficit=" + F(b.Destination.DeficitYears)
+            + " sourceNet=" + F(b.Source.NetRate) + " destinationNet=" + F(b.Destination.NetRate)
+            + " sourceExpectation=" + F(b.Source.Expectation) + " destinationExpectation=" + F(b.Destination.Expectation)
+            + " lineageMean=" + F(b.SourceLineageMean) + "/" + F(b.DestinationLineageMean)
+            + " lineagePopulation=" + b.SourceLineagePopulation + "/" + b.DestinationLineagePopulation
+            + " youngDaughter=" + reversal.InvolvesDaughter + " daughterAge=" + reversal.YoungestDaughterAge
+            + " firstReceiver3=" + FollowText(a3) + " returnReceiver3=" + FollowText(b3));
+    }
+
+    private static void PrintAggregate(Aggregate a)
+    {
+        double camps = Math.Max(1, a.Survivors), people = Math.Max(1, a.EndPopulation);
+        Console.WriteLine("DEMOGRAPHY_SOCIAL_TOTAL variant=" + a.Variant + " seeds=" + a.Seeds + " turns=" + a.Turns
+            + " camps=" + a.StartCamps + "->" + a.EndCamps + " population=" + a.StartPopulation + "->" + a.EndPopulation
+            + " births=" + a.Births + " deaths=" + a.Deaths + " migrations=" + a.Migrations + " migrants=" + a.Migrants
+            + " fissions=" + a.Fissions + " splitPopulation=" + a.SplitPopulation + " reversals=" + a.Reversals
+            + " reversalsPer100Migrations=" + F(100.0 * a.Reversals / Math.Max(1, a.Migrations))
+            + " fissionsPer1000CampTurns=" + F(1000.0 * a.Fissions / Math.Max(1, a.CampTurns))
+            + " migrantsPer1000PersonTurns=" + F(1000.0 * a.Migrants / Math.Max(1, a.PopulationTurns))
+            + " youngDaughterMigrations=" + a.YoungDaughterMigrations + " youngDaughterReversals=" + a.YoungDaughterReversals
+            + " viable=" + a.Viable + " target=" + a.Target
+            + " FCH=" + F(a.FoodWeighted / camps) + "/" + F(a.ClothingWeighted / camps) + "/" + F(a.HousingWeighted / camps)
+            + " localQoL=" + F(a.LocalQoLWeighted / people) + " lineageMeanQoL=" + F(a.LineageQoLSum / Math.Max(1, a.Seeds))
+            + " fissionFunnel=" + a.FissionProposals + "/" + a.Fissions + "/" + a.FissionDropped
+            + " fissionTriggers=" + a.FissionCrowding + "/" + a.FissionDistress
+            + " immigrationFunnel=" + a.ImmigrationIntents + "/" + a.ImmigrationAccepted + "/"
+            + a.ImmigrationPartial + "/" + a.ImmigrationRejected
+            + " negativeNet=" + a.NegativeNetDaughters + "/" + a.NegativeNetDestinations
+            + " higherQolWorseMortality=" + a.HigherQolWorseMortality
+            + " kinMigrations=" + a.KinMigrations + " crossLineageMigrants=" + a.CrossLineageMigrants
+            + " worstConservation=" + a.WorstConservation.ToString("G6", CultureInfo.InvariantCulture)
+            + " elapsedMs=" + a.Milliseconds.ToString("F1", CultureInfo.InvariantCulture));
+        PrintFollow(a.Variant, "daughter", a.DaughterFollow);
+        PrintFollow(a.Variant, "receiver", a.ReceiverFollow);
+    }
+
+    private static void PrintFollow(string variant, string kind, FollowSummary f)
+    {
+        int n1 = Math.Max(1, f.ObservedAt1 - f.ExtinctAt1);
+        int n = Math.Max(1, f.ObservedAt3 - f.ExtinctAt3);
+        Console.WriteLine("DEMOGRAPHY_SOCIAL_FOLLOW variant=" + variant + " kind=" + kind
+            + " events=" + f.Events + " observed1=" + f.ObservedAt1 + " extinct1=" + f.ExtinctAt1
+            + " observed3=" + f.ObservedAt3 + " extinct3=" + f.ExtinctAt3
+            + " healthy0=" + f.Healthy0 + " healthy3=" + f.Healthy3 + " recovered3=" + f.Recovered3
+            + " negativeNet0=" + f.NegativeNet0 + " negativeNet1=" + f.NegativeNet1 + " negativeNet3=" + f.NegativeNet3
+            + " expectedQoLError1=" + F(f.ExpectedQoLError1 / n1)
+            + " deltaFCH1=" + F(f.FoodDelta1 / n1) + "/" + F(f.ClothingDelta1 / n1) + "/" + F(f.HousingDelta1 / n1)
+            + " deltaDeficitYears1=" + F(f.DeficitDelta1 / n1)
+            + " meanPopulationRatio3=" + F(f.PopulationRatio3 / n)
+            + " deltaFCH3=" + F(f.FoodDelta3 / n) + "/" + F(f.ClothingDelta3 / n) + "/" + F(f.HousingDelta3 / n)
+            + " deltaQoL3=" + F(f.QoLDelta3 / n) + " deltaDeficitYears3=" + F(f.DeficitDelta3 / n));
+    }
+
+    private static void PrintEffects(Dictionary<string, Aggregate> totals)
+    {
+        Aggregate none = totals["off-off"], fission = totals["fission-only"], immigration = totals["immigration-only"], both = totals["both"];
+        double FissionRate(Aggregate a) => 1000.0 * a.Fissions / Math.Max(1, a.CampTurns);
+        double MigrationRate(Aggregate a) => 1000.0 * a.Migrants / Math.Max(1, a.PopulationTurns);
+        double ReversalRate(Aggregate a) => 100.0 * a.Reversals / Math.Max(1, a.Migrations);
+        double fragmentationInteraction = (both.EndCamps - immigration.EndCamps) - (fission.EndCamps - none.EndCamps);
+        string diagnosis;
+        if (immigration.Reversals == 0 && both.Reversals > 0) diagnosis = "FISSION_IMMIGRATION_INTERACTION";
+        else if (immigration.Reversals > 0 && ReversalRate(both) > ReversalRate(immigration) * 1.25) diagnosis = "IMMIGRATION_WITH_FISSION_AMPLIFICATION";
+        else if (immigration.Reversals > 0) diagnosis = "IMMIGRATION_INTRINSIC";
+        else diagnosis = "NO_RAPID_REVERSAL_SIGNAL";
+        Console.WriteLine("DEMOGRAPHY_SOCIAL_EFFECT fissionRateOnly=" + F(FissionRate(fission))
+            + " fissionRateBoth=" + F(FissionRate(both))
+            + " migrantRateOnly=" + F(MigrationRate(immigration)) + " migrantRateBoth=" + F(MigrationRate(both))
+            + " reversalRateOnly=" + F(ReversalRate(immigration)) + " reversalRateBoth=" + F(ReversalRate(both))
+            + " fissionCampEffect=" + (fission.EndCamps - none.EndCamps)
+            + " fissionCampEffectWithImmigration=" + (both.EndCamps - immigration.EndCamps)
+            + " fragmentationInteraction=" + F(fragmentationInteraction)
+            + " populationEffectsF/I/B=" + (fission.EndPopulation - none.EndPopulation) + "/"
+            + (immigration.EndPopulation - none.EndPopulation) + "/" + (both.EndPopulation - none.EndPopulation)
+            + " diagnosis=" + diagnosis);
+        Console.WriteLine("DEMOGRAPHY_SOCIAL_GATE samePhysics=PASS identicalBoundary=PASS conservation=PASS"
+            + " socialFlowAttribution=MEASURED calibrationChanged=NO nativePromotion=REVIEW");
+    }
+
+    private static string FollowText(Snapshot snapshot)
+        => snapshot == null ? "NA" : !snapshot.Exists ? "EXTINCT" : snapshot.LinkedPopulation + ":" + Triple(snapshot) + ":" + F(snapshot.NetRate);
+    private static string Triple(Snapshot snapshot)
+        => snapshot == null || !snapshot.Exists ? "NA" : F(snapshot.Food) + "/" + F(snapshot.Clothing) + "/" + F(snapshot.Housing);
+    private static string F(double value) => value.ToString("F3", CultureInfo.InvariantCulture);
+    private static int Percentile(IReadOnlyList<int> sorted, double fraction)
+        => sorted.Count == 0 ? 0 : sorted[(int)Math.Round((sorted.Count - 1) * fraction)];
+}

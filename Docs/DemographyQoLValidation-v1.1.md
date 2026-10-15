@@ -27,14 +27,17 @@ injected resources. Three generated seeds conserve population, contain
 Agriculture, Husbandry, Watercraft and mixed technology memberships, and
 contain viable 600-1,000-person settlements; membership is not flow dependence.
 
-The live social-flow gate does not pass yet. Physical-mode runs show 17 rapid
-pair reversals against zero in the matched legacy control, with higher
-normalized fission and migration activity and only 9 of 296 terminal camps
-simultaneously in the 600-1,000 range with at least 0.8 food, clothing and
-housing service. The heterogeneous coupled solver is also materially slower
-and more allocation-heavy than the scalar analytical path at mature stress
-scale. These are diagnosis and performance obligations, not reasons to alter
-the biological coefficients or silently retune social thresholds.
+The live social-flow gate does not pass yet, but its locus is now bounded.
+The same-physical-law 2x2 ablation shows that fission creates the settlement
+topology and nearly all of the camp-count increase; immigration is inert from
+the shared eight-camp boundary until fission creates nearby known lineage
+settlements. Immigration does not amplify the normalized fission rate, but its
+receiver forecast is optimistic relative to the next resolved economy and its
+current hysteresis permits 16 reversals among 393 flows. This is a concrete
+social-mechanics calibration/forecast obligation, not a renewed demographic
+death loop or a reason to alter the biological coefficients. The
+heterogeneous coupled solver is also materially slower and more
+allocation-heavy than the scalar analytical path at mature stress scale.
 
 No population floor, free resource, automatic manufacturing, correction
 bonus, arbitrary survival weight, reward shaping or QoL-to-mortality path was
@@ -187,14 +190,70 @@ migrants, 49 fissions and zero rapid pair reversals. Normalized activity is:
 
 This control is matched operational evidence, not a one-variable causal
 ablation: the demographic laws create different populations and settlement
-counts. The higher activity and reversal count are an unresolved signal, not
-proof that any particular transfer is pathological and not a requirement that
-physical worlds reproduce legacy counts or reach zero reversals. The required
-finding is a same-physics attribution showing no expectation/ledger reset,
-accounting exploit or unjustified feedback, with daughter/receiver follow-up
-service and economic trajectories. Social-cohesion relief plus density
-mortality remains a candidate interaction. Calibration is preserved pending
-that evidence; no threshold has been retuned to make this table pass.
+counts. It motivated the same-physics attribution below, rather than a demand
+that physical worlds reproduce legacy counts or reach zero reversals. No
+threshold was retuned to make either table pass.
+
+### Same-physics fission/immigration ablation
+
+`--demography-social-ablation=30` completes one social-flow-disabled physical
+opening for each seed, saves that boundary, and loads the exact bytes into four
+30-decision branches. The three boundary saves all finish at turn 8; together
+they contain 24 camps and 2,653 people. Every branch therefore has the same
+physical law, calendar, people, economy, geography and saved history before
+the two switches diverge. The run passes **14,312 assertions**, including
+boundary fingerprints, population/cause conservation, expectation inheritance,
+workforce bounds and event follow-up.
+
+| Fission | Immigration | Terminal camps | Terminal population | Fissions | Migrations / people | Rapid reversals | Fully served 600-1,000 camps |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| off | off | 24 | 11,489 | 0 | 0 / 0 | 0 | 2 |
+| on | off | 310 | 84,187 | 286 | 0 / 0 | 0 | 11 |
+| off | on | 24 | 11,489 | 0 | 0 / 0 | 0 | 2 |
+| on | on | 297 | 76,581 | 273 | 393 / 4,296 | 16 | 8 |
+
+The off/off and immigration-only branches are exactly equal in all reported
+outcomes. In these three worlds the founding settlements have no qualifying
+local flow, so immigration becomes active only after fission establishes
+nearby known camps. Fission-only and both-on normalized fission rates are
+respectively 53.790 and 53.508 per 1,000 camp-turns; immigration slightly
+reduces rather than amplifies fragmentation (13 fewer terminal camps). Of the
+286 fission-only commits, 255 are crowding and 31 distress. The settlement
+proliferation is therefore a fission cadence/balance question, not migration
+creating more splits.
+
+All 393 combined-branch immigration intents are accepted in full: there are no
+partial or rejected intents. All flows remain inside the founding lineage and
+383 are between first-degree kin; 118 involve a daughter at most three turns
+old. Six of the 16 reversals involve such a young daughter. The current test
+therefore locates the reversal signal in fission-created lineage clusters, not
+in unrelated settlements choosing one another or in the mortality law.
+
+The event follow-up distinguishes viable colonization from the remaining
+calibration problem:
+
+- no daughter or receiver followed for three turns becomes extinct;
+- fission daughters average 1.926 times their founding population after three
+  turns. Their next-turn QoL is only 0.028 below the fission-only estimate
+  (0.019 with both systems), so no expectation reset or immediate daughter
+  viability defect appears;
+- immigration receivers average 1.158 times their post-flow population after
+  three turns, but their next-turn QoL is 0.056 below the accepted estimate.
+  At that boundary food/clothing/housing coverage changes by
+  `-0.046 / -0.187 / +0.033` and deficit age rises by 10.319 years on average;
+  by three turns clothing is down 0.361, QoL is down 0.136 and deficit age is
+  up 35.691 years;
+- 163 accepted receivers have a negative projected net rate at commit, rising
+  to 213 at the next boundary and 227 among the 329 three-turn observations.
+  Population still grows on average and none expires, so negative net is not a
+  valid veto; it is useful attribution for the material-service overshoot.
+
+Result: the previous broad social-flow concern is now a narrow native NO-GO.
+Keep fission/QoL calibration unchanged while measuring its intended settlement
+cadence. For immigration, replay these exact boundaries through a controlled
+deadband/group-size/hysteresis sweep and select only a change that improves the
+one- and three-turn receiver error and reversal rate without suppressing
+durable beneficial moves. No production threshold was changed by this test.
 
 ## Native solver and turn-performance evidence
 
@@ -291,7 +350,8 @@ repository alone.
 | Native three-seed population conservation and exact replay | PASS |
 | Agriculture, husbandry, fishing and mixed route presence | PRESENT; actual subsistence/material dependence not certified |
 | q around 0.4 and viable 600-1,000 settlements | OBSERVED, not yet a broad balance pass |
-| No reset/accounting exploit or unjustified migration/fission feedback | **NO-GO: activity/reversal signal requires same-physics attribution** |
+| No reset/accounting exploit | PASS: same-boundary 2x2 conservation, expectation inheritance and three-turn survival |
+| Migration/fission calibration | **NO-GO: fission-created lineage flows overshoot receiver services and permit 16/393 reversals** |
 | Mature heterogeneous performance | REVIEW: bounded but expensive |
 | Matched learned-Elder comparison | UNAVAILABLE |
 | External RL observation/history and action plumbing | OPEN |
@@ -299,17 +359,17 @@ repository alone.
 
 Concrete next steps toward the native GO gate are:
 
-1. Run a same-physical-law `fission off/on x immigration off/on` ablation on
-   the same seeds and initial saves. Export each of the 17 reversal pairs,
-   lineage/local welfare, physical rates, deficit histories and QoL decisions,
-   then follow daughter/receiver food, protection, workforce and recovery. The
-   legacy control alone cannot isolate causality, and zero reversals is not a
-   mechanical target.
-2. Attribute the excess activity to the forward QoL estimate, seasonal
-   service changes, social-cohesion relief, density mortality, cached fission
-   destinations or their interaction. Do not change weights, deadbands,
-   hysteresis or fission thresholds unless that controlled evidence identifies
-   a specific defect.
+1. Replay the saved 2x2 boundaries with one immigration lever changed at a
+   time: the documented deadband range, a smaller maximum group, and the
+   currently uncalibrated cooldown/return penalty. Score one- and three-turn
+   receiver QoL error, food/protection coverage, deficit age, durable one-way
+   moves and reversals. Do not add mortality to utility or select a setting
+   merely because it forces reversals to zero.
+2. Measure fission parent populations, crowding gain, daughter site support and
+   refission interval against the intended settlement cadence. The current
+   ablation shows fission drives camp count but its daughters survive and its
+   near-term estimate is close; change its gain/size calibration only if that
+   cadence evidence identifies a defect.
 3. Expand real-economy recovery to matched 6/12/24-person remnants, multiple
    sites and population declines caused separately by deaths, emigration and
    fission. Record whether specialist capacity, food and protective goods can
@@ -345,6 +405,7 @@ From the repository root with the pinned .NET 8 SDK:
 dotnet run -c Release --no-restore --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-only
 dotnet run -c Release --no-build --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-regression
 dotnet run -c Release --no-build --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-live=30
+dotnet run -c Release --no-build --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-social-ablation=30
 dotnet run -c Release --no-build --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-benchmark=5
 dotnet run -c Release --no-build --project Tools/Headless/Anthropocene.Headless.csproj -- 0 --jobs=3 --check-timings
 ```

@@ -23,6 +23,7 @@
     <Compile Include="DemographyRegressionChecks.cs" />
     <Compile Include="DemographyBenchmark.cs" />
     <Compile Include="DemographyLiveAudit.cs" />
+    <Compile Include="DemographySocialAblation.cs" />
     <Compile Include="DemographicStructureChecks.cs" />
     <Compile Include="HerdLabourChecks.cs" />
     <Compile Include="SharedAllocationChecks.cs" />
