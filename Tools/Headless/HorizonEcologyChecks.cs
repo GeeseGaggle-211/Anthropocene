@@ -16,6 +16,7 @@ internal static class HorizonEcologyChecks
     private static WorldState Fixture(bool aquatic = false)
     {
         var config = SimulationConfig.Small(1);
+        config.DemographicModel = DemographicModel.LegacyQoLNetGrowth;
         var tile = new Tile
         {
             Id = 0,

@@ -34,6 +34,8 @@ namespace Anthropocene.Simulation
         // (Docs/Fission.md, Distress fission); absent in older saves, which read as Crowding and zero.
         [OptionalField] public FissionTrigger Trigger;
         [OptionalField] public double DaughterGain;
+        [OptionalField] public double ParentMortalityBefore, ParentMortalityAfter, DaughterMortality, DaughterNetRate;
+        [OptionalField] public bool DaughterPhysicallyViable, HigherQoLWorseMortality;
 #pragma warning restore SYSLIB0050
     }
 
@@ -110,10 +112,10 @@ namespace Anthropocene.Simulation
         // stores, so per-head stores are unchanged). This is the land-limited upper bound: it assumes the local flow does not shrink with the
         // headcount. Q_after = F_hat W_hat * coverage(housing after) * S(N_stay), so a starving camp's stayers feel their relief.
         // Daughter (the distress trigger): Q_d = F_d W_d * coverage * S at the daughter's headcount and shelter (DaughterShelter), with F_d and W_d
-        // the destination's support (1 before a destination is known). DaughterExpected uses the parent's expectation E on both sides
-        // (like with like: the post-move expectation reset is a benefit the parent could get by moving itself and must not by itself cause a
-        // split); DaughterGain = Q_d / Q_now - 1, and 1e9 (satisfied) when Q_now is zero and Q_d is positive. DaughterQoL keeps the
-        // post-move expectation and F = W = 1: the veto and the daughter's founding QoL, as before.
+        // the destination's support (1 before a destination is known). DaughterExpected and DaughterQoL both retain the
+        // parent's expectation E: population transfer cannot manufacture welfare through an expectation reset.
+        // DaughterGain = Q_d / Q_now - 1, and 1e9 (satisfied) when Q_now is zero and Q_d is positive; DaughterQoL uses
+        // F = W = 1 for the veto/founding baseline as before.
         public struct Estimate
         {
             public int Residents, Daughter;
@@ -152,13 +154,12 @@ namespace Anthropocene.Simulation
             // Q_now = 0 (no food or no coverage at all) leaves a relative gain undefined: the fallback is the cohesion gain S_after / S_now - 1,
             // the QoL a unit-coverage camp would gain, so a destitute crowded camp still feels its crowding.
             double gain = qNow > 1e-9 ? qAfter / qNow - 1 : Ratio(sAfter, sNow) - 1;
-            // The daughter at a viable site: clothing coverage unchanged, housing from her carried and built shelter alone, and the
-            // expectation the game applies after a move (stationary years reset, then one turn elapses) for the veto.
-            double years = cfg.TurnDays / cfg.DaysPerYear;
-            double ed = floor + (1 - floor) * Numbers.Clamp(years / n.RudimentaryExpectationRampYears, 0, 1);
+            // The daughter at a viable site: clothing coverage unchanged and housing from her carried and built shelter
+            // alone. A transfer cannot manufacture welfare by resetting expectations; the daughter's estimate and saved
+            // state both retain the parent's current expectation.
             var own = DaughterShelter(w, camp, nd);
             double housingD = Housing(nd, own.Total), cohesionD = NeolithicProduction.SocialCohesion(n, Share(nd, own.Fixed, own.Light), nd);
-            double qd = Numbers.Clamp(vetoFood, 0, 1) * Coverage(ed, housingD) * cohesionD;
+            double qd = Numbers.Clamp(vetoFood, 0, 1) * Coverage(e, housingD) * cohesionD;
             double qdExpected = Numbers.Clamp(daughterFood, 0, 1) * Numbers.Clamp(daughterWater, 0, 1) * Coverage(e, housingD) * cohesionD;
             double daughterGain = qNow > 1e-9 ? qdExpected / qNow - 1 : (qdExpected > 1e-9 ? 1e9 : -1);
             return new Estimate { Residents = residents, Daughter = nd, QNow = qNow, QAfter = qAfter, Gain = gain, DaughterQoL = qd, StayFood = stayFood, DaughterExpected = qdExpected, DaughterGain = daughterGain };
@@ -537,6 +538,8 @@ namespace Anthropocene.Simulation
         private static void Found(WorldState w, Evaluation e, TurnRecord record, Dictionary<int, List<MaterialKnowledge>> knowledge, Dictionary<int, DemographicReport> demographics)
         {
             var parent = e.Camp; var ps = parent.People; int before = parent.Population, n = e.Daughter; double f = n / (double)before;
+            double parentMortalityBefore = PhysicalDemography.Enabled(w.Config)
+                ? PhysicalDemography.ProjectedSettlementRates(w, parent, before, parent.FoodNeedsMetRatio, parent.ClothPerCapita).Death : 0;
             int societyId = w.NextId++;
             var society = new Society
             {
@@ -552,10 +555,23 @@ namespace Anthropocene.Simulation
                 ParentSociety = ps.Id, KinAffinity = Kinship.PolicyAffinity(parent.FissionPolicy)
             };
             w.Societies.Add(society);
-            var camp = new Camp { Id = w.NextId++, Tile = e.Tile, Population = n, DemographicGrowthMultiplier = parent.DemographicGrowthMultiplier };
+            var camp = new Camp
+            {
+                Id = w.NextId++, Tile = e.Tile, Population = n, DemographicGrowthMultiplier = parent.DemographicGrowthMultiplier,
+                // Settlement formation transfers people; it does not reset their welfare expectations or accumulated
+                // food-deficit exposure. This closes the former fission survival/welfare reset without changing utility.
+                StationaryYears = parent.StationaryYears, RudimentaryExpectation = parent.RudimentaryExpectation,
+                FoodDeficitYears = parent.FoodDeficitYears, DeficitTurns = parent.DeficitTurns,
+                DeficitSeverity = parent.DeficitSeverity, FoodNeedsMetRatio = parent.FoodNeedsMetRatio,
+                WaterNeedsMetRatio = parent.WaterNeedsMetRatio, ClothPerCapita = parent.ClothPerCapita,
+                HousingPerCapita = parent.HousingPerCapita,
+                EffectiveFertilityRate = parent.EffectiveFertilityRate, EffectiveMortalityRate = parent.EffectiveMortalityRate,
+                ExposureMortalityRate = parent.ExposureMortalityRate, CrowdingMortalityRate = parent.CrowdingMortalityRate,
+                DiseaseMortalityRate = parent.DiseaseMortalityRate, StarvationMortalityRate = parent.StarvationMortalityRate
+            };
             camp.Bind(society); w.Camps.Add(camp);
-            // A daughter has no resolved needs until her first turn; her committed QoL is the estimate that justified the split (never the unset 1.0),
-            // so QoL mortality and the planner see a real value in that first turn. Fall back to the parent's committed QoL if no usable estimate exists.
+            // A daughter has no newly resolved needs until her first turn; her committed QoL is the estimate that justified the split
+            // (never the unset 1.0). It remains a welfare/planning signal and is not a mortality input.
             camp.QoL = e.DaughterQoL > 0 && e.DaughterQoL <= 1 ? e.DaughterQoL : parent.QoL;
             // Food (typed), portable stores and fractional demographic progress.
             double plant = parent.PlantFood * f, animal = parent.AnimalFood * f, aquatic = parent.AquaticFood * f;
@@ -601,10 +617,18 @@ namespace Anthropocene.Simulation
                 foreach (var k in known.ToArray()) { var copy = new MaterialKnowledge { Society = society.Id, Tile = k.Tile, Source = k.Source }; w.MaterialKnowledge.Add(copy); }
             ContactKnowledge.RecordKin(w, ps, society, parent, camp);
             if (demographics.TryGetValue(parent.Id, out var report)) report.SplitOff += n;
+            var parentRates = PhysicalDemography.Enabled(w.Config)
+                ? PhysicalDemography.ProjectedSettlementRates(w, parent, parent.Population, parent.FoodNeedsMetRatio, parent.ClothPerCapita) : default;
+            var daughterRates = PhysicalDemography.Enabled(w.Config)
+                ? PhysicalDemography.ProjectedSettlementRates(w, camp, camp.Population, camp.FoodNeedsMetRatio, camp.ClothPerCapita) : default;
             record.Fissions.Add(new FissionReport
             {
                 Turn = w.Turn, ParentCamp = parent.Id, DaughterCamp = camp.Id, ParentSociety = ps.Id, DaughterSociety = society.Id, DaughterPlayer = society.Player, Tile = camp.Tile, ParentBefore = before, Daughter = n, Regime = (int)RegimeOf(parent),
-                AnimalsMoved = animals, Policy = parent.FissionPolicy, Push = e.Push, Desirability = e.Desirability, Score = e.Score, Affinity = society.KinAffinity, Gain = e.Gain, DaughterQoL = e.DaughterQoL, Trigger = e.Trigger, DaughterGain = e.DaughterGain
+                AnimalsMoved = animals, Policy = parent.FissionPolicy, Push = e.Push, Desirability = e.Desirability, Score = e.Score, Affinity = society.KinAffinity, Gain = e.Gain, DaughterQoL = e.DaughterQoL, Trigger = e.Trigger, DaughterGain = e.DaughterGain,
+                ParentMortalityBefore = parentMortalityBefore, ParentMortalityAfter = parentRates.Death,
+                DaughterMortality = daughterRates.Death, DaughterNetRate = daughterRates.Net,
+                DaughterPhysicallyViable = !PhysicalDemography.Enabled(w.Config) || daughterRates.Net >= 0,
+                HigherQoLWorseMortality = PhysicalDemography.Enabled(w.Config) && e.DaughterQoL > parent.QoL && daughterRates.Death > parentMortalityBefore + 1e-12
             });
             record.Log("Camp " + parent.Id + " (tribe " + parent.Player + ") split: " + n + " of " + before + " people founded camp " + camp.Id + " (tribe " + society.Player + ") at tile " + camp.Tile + ".");
         }

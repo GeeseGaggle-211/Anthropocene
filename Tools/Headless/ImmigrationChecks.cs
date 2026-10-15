@@ -22,7 +22,7 @@ internal static class ImmigrationChecks
     private static WorldState World(params int[][] sites) => World(24, 16, sites);
     private static WorldState World(int width, int height, params int[][] sites)
     {
-        var cfg = SimulationConfig.Small(1); cfg.ImmigrationEnabled = true; cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0; cfg.ContactExpiryTurns = 50;
+        var cfg = SimulationConfig.Small(1); cfg.DemographicModel = DemographicModel.LegacyQoLNetGrowth; cfg.ImmigrationEnabled = true; cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0; cfg.ContactExpiryTurns = 50;
         cfg.FissionHousingRelief = 1; cfg.FissionDaughterMargin = 1;
         // The mechanism fixtures isolate the flow rules from housing: the scale is 220 for every camp (band 220, housing gain 0) and the ample
         // Light Housing keeps coverage at one. Forward() and the dedicated housing checks restore the shipped gain.
@@ -118,8 +118,27 @@ internal static class ImmigrationChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Closed(); Known(); Choice(); Deadband(); Reconcile(); Ordering(); MultiHop(); Conservation(); Records(); Replay(); Persistence(); Forward(); Oscillation(); Hysteresis();
+        checks = 0; Config(); Closed(); Known(); Choice(); Deadband(); Reconcile(); Ordering(); MultiHop(); Conservation(); Records(); Replay(); Persistence(); Forward(); Oscillation(); Hysteresis(); PhysicalDiagnostics();
         Console.WriteLine("PASS: " + checks + " immigration assertions"); return checks;
+    }
+
+    private static void PhysicalDiagnostics()
+    {
+        var w = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2));
+        w.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        var source = w.Camps[0]; var destination = w.Camps[1]; MakeNomadic(source); MakeNomadic(destination);
+        source.FoodNeedsMetRatio = .4; source.ClothPerCapita = 1; source.RudimentaryExpectation = .5;
+        destination.FoodNeedsMetRatio = 1; destination.ClothPerCapita = 0; destination.RudimentaryExpectation = 1e-6;
+        destination.Inventory.LightHousingUnits = 0;
+        source.GrowthRemainder = .8; source.DeathRemainder = .6; destination.GrowthRemainder = .7; destination.DeathRemainder = .5;
+        double births = source.GrowthRemainder + destination.GrowthRemainder, deaths = source.DeathRemainder + destination.DeathRemainder;
+        Remember(w, source, destination); Pass(w);
+        var flow = Flow(lastRecord, source.Id);
+        Check(flow != null && flow.HigherQoLWorseMortality && flow.DestinationQoL > flow.SourceQoL && flow.MortalityGap > 0,
+            "a higher-QoL destination with worse projected physical mortality can attract migrants and is flagged without changing utility");
+        Check(lastMetrics.ImmigrationHigherQoLWorseMortality == 1, "the migration audit counter records the QoL/survival inversion");
+        Near(source.GrowthRemainder + destination.GrowthRemainder, births, "physical migration conserves gross-birth progress");
+        Near(source.DeathRemainder + destination.DeathRemainder, deaths, "physical migration conserves gross-death progress");
     }
 
     private static void Config()

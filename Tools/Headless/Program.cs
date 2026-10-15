@@ -17,7 +17,7 @@ internal static class Program
     private static void Check(bool condition, string message) { assertions++; if (!condition) throw new Exception(message); }
     private static WorldState Flat(int players = 2)
     {
-        var cfg = SimulationConfig.Small(players); cfg.TurnDays = 90; cfg.BaseDays = 90; cfg.PracticeDays = 90; cfg.AnnualHumanGrowthRate = 0; cfg.Width = 24; cfg.Height = 16; cfg.ExperienceThreshold = 100000;
+        var cfg = SimulationConfig.Small(players); cfg.DemographicModel = DemographicModel.LegacyQoLNetGrowth; cfg.TurnDays = 90; cfg.BaseDays = 90; cfg.PracticeDays = 90; cfg.AnnualHumanGrowthRate = 0; cfg.Width = 24; cfg.Height = 16; cfg.ExperienceThreshold = 100000;
         var w = new WorldState { Config = cfg, Seed = 42, Generation = new GenerationReport(), Tiles = new Tile[cfg.Width * cfg.Height] };
         for (int i = 0; i < w.Tiles.Length; i++)
         {
@@ -236,6 +236,14 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.Contains("--issue31-microbench")) { Issue31Microbench(); return 0; }
+        if (args.Contains("--demography-only")) { DemographyChecks.Run(); return 0; }
+        if (args.Contains("--demography-regression")) { DemographyRegressionChecks.Run(); return 0; }
+        var demographyBenchmark = args.FirstOrDefault(a => a.StartsWith("--demography-benchmark", StringComparison.Ordinal));
+        if (demographyBenchmark != null)
+        {
+            int samples = demographyBenchmark.Contains("=") ? int.Parse(demographyBenchmark.Substring(demographyBenchmark.IndexOf('=') + 1)) : 7;
+            DemographyBenchmark.Run(samples); return 0;
+        }
         if (args.Contains("--foundation-only")) { Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); return 0; }
         if (args.Contains("--issue25-ecology-only")) { Issue25EcologyChecks.Run(args); return 0; }
         if (args.Contains("--issue27-ecology-only")) { Issue27EcologyChecks.Run(); return 0; }
@@ -316,6 +324,8 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "Issue32CapabilityChecks", Run = () => Issue32CapabilityChecks.Run() },
                 new ParallelChecks.Entry { Name = "QoLCohesionChecks", Run = () => QoLCohesionChecks.Run() },
                 new ParallelChecks.Entry { Name = "QoLMortalityChecks", Run = () => QoLMortalityChecks.Run() },
+                new ParallelChecks.Entry { Name = "DemographyChecks", Run = () => DemographyChecks.Run() },
+                new ParallelChecks.Entry { Name = "DemographyRegressionChecks", Cost = 2, Run = () => DemographyRegressionChecks.Run() },
                 new ParallelChecks.Entry { Name = "DemographicStructureChecks", Run = () => DemographicStructureChecks.Run() },
                 new ParallelChecks.Entry { Name = "HerdLabourChecks", Cost = 2, Run = () => HerdLabourChecks.Run() },
                 new ParallelChecks.Entry { Name = "SharedAllocationChecks", Cost = 2, Run = () => SharedAllocationChecks.Run() },

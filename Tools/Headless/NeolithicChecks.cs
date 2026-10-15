@@ -19,6 +19,7 @@ internal static class NeolithicChecks
     {
         cfg.FissionEnabled = false; cfg.ImmigrationEnabled = false; cfg.TradeEnabled = false;
         cfg.EconomicAllocation = EconomicAllocationStrategy.Legacy;
+        cfg.DemographicModel = DemographicModel.LegacyQoLNetGrowth;
         cfg.QoLMortalityEnabled = false; cfg.HerdLabourEnabled = false; cfg.SharedCropHerdAllocationEnabled = false;
         return cfg;
     }

@@ -192,26 +192,26 @@ internal static class QoLMortalityChecks
     private static void Config()
     {
         var c = new SimulationConfig();
-        Check(c.QoLMortalityEnabled && c.BaseBirthRate == .045 && c.QoLMortalityElasticity == 1, "defaults: on (plan of record), a = 1, b0 = 0.045");
+        Check(c.DemographicModel == DemographicModel.PhysicalMortalityV1 && !c.QoLMortalityEnabled && c.BaseBirthRate == .045 && c.QoLMortalityElasticity == 1, "new worlds select physical demography with the legacy QoL path disabled while retaining its calibration");
         Check(c.BaseBirthRate > c.AnnualHumanGrowthRate, "the default birth rate exceeds the growth rate (d0 > 0)");
         foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.BaseBirthRate = x.AnnualHumanGrowthRate, x => x.BaseBirthRate = .001, x => x.BaseBirthRate = double.NaN, x => x.BaseBirthRate = .5, x => x.QoLMortalityElasticity = 0, x => x.QoLMortalityElasticity = -1, x => x.QoLMortalityElasticity = double.PositiveInfinity })
         {
-            var x = new SimulationConfig { QoLMortalityEnabled = true }; bad(x); bool rejected = false; try { x.Validate(); } catch (ArgumentException) { rejected = true; }
+            var x = new SimulationConfig { DemographicModel = DemographicModel.LegacyQoLNetGrowth, QoLMortalityEnabled = true }; bad(x); bool rejected = false; try { x.Validate(); } catch (ArgumentException) { rejected = true; }
             Check(rejected, "an invalid QoL mortality lever is rejected");
         }
-        var legacyBirth = new SimulationConfig { QoLMortalityEnabled = false, BaseBirthRate = .001 }; legacyBirth.Validate(); checks++;
+        var legacyBirth = new SimulationConfig { DemographicModel = DemographicModel.LegacyQoLNetGrowth, QoLMortalityEnabled = false, BaseBirthRate = .001 }; legacyBirth.Validate(); checks++;
         string json = File.ReadAllText(FindConfig());
-        foreach (string key in new[] { "QoLMortalityEnabled", "BaseBirthRate", "QoLMortalityElasticity" })
+        foreach (string key in new[] { "DemographicModel", "QoLMortalityEnabled", "BaseBirthRate", "QoLMortalityElasticity" })
             Check(Regex.IsMatch(json, "\"" + key + "\":\\s*[0-9.a-z]+"), "OpeningConfig.json carries " + key);
         var m = Regex.Match(json, "\"QoLMortalityElasticity\":\\s*([0-9.]+)"); Check(m.Success && double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) == c.QoLMortalityElasticity, "the serialized elasticity equals the code default");
         m = Regex.Match(json, "\"BaseBirthRate\":\\s*([0-9.]+)"); Check(m.Success && double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) == c.BaseBirthRate, "the serialized birth rate equals the code default");
-        Check(Regex.IsMatch(json, "\"QoLMortalityEnabled\":\\s*true"), "the shipped file turns QoL mortality on (plan of record)");
+        Check(Regex.IsMatch(json, "\"DemographicModel\":\\s*1") && Regex.IsMatch(json, "\"QoLMortalityEnabled\":\\s*false"), "the shipped file selects physical demography and disables the legacy QoL death path");
     }
 
     private static void Saves()
     {
         var serializer = new DataContractSerializer(typeof(SimulationConfig)); string xml;
-        using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { QoLMortalityEnabled = true, BaseBirthRate = .05, QoLMortalityElasticity = 2.5 }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
+        using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { DemographicModel = DemographicModel.LegacyQoLNetGrowth, QoLMortalityEnabled = true, BaseBirthRate = .05, QoLMortalityElasticity = 2.5 }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
         Check(xml.Contains("<QoLMortalityEnabled>true</QoLMortalityEnabled>") && xml.Contains("<BaseBirthRate>0.05</BaseBirthRate>"), "the levers are serialized");
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) { var back = (SimulationConfig)serializer.ReadObject(stream); Check(back.QoLMortalityEnabled && back.BaseBirthRate == .05 && back.QoLMortalityElasticity == 2.5, "saved levers round trip"); }
         using (var stream = new MemoryStream())
@@ -222,10 +222,10 @@ internal static class QoLMortalityChecks
             Check(calibratedLegacy.QoLMortalityEnabled && calibratedLegacy.QoLMortalityElasticity == 2,
                 "a save that explicitly carries the former a=2 calibration is not reinterpreted");
         }
-        string legacy = Regex.Replace(xml, "<(QoLMortalityEnabled|BaseBirthRate|QoLMortalityElasticity)>[^<]*</\\1>", "");
-        Check(legacy != xml && !legacy.Contains("QoLMortality") && !legacy.Contains("BaseBirthRate"), "legacy fixture omits every QoL mortality field");
+        string legacy = Regex.Replace(xml, "<(DemographicModel|QoLMortalityEnabled|BaseBirthRate|QoLMortalityElasticity)>[^<]*</\\1>", "");
+        Check(legacy != xml && !legacy.Contains("DemographicModel") && !legacy.Contains("QoLMortality") && !legacy.Contains("BaseBirthRate"), "legacy fixture omits every demographic model and QoL mortality field");
         var defaults = new SimulationConfig();
-        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy))) { var old = (SimulationConfig)serializer.ReadObject(stream); Check(!old.QoLMortalityEnabled && old.BaseBirthRate == defaults.BaseBirthRate && old.QoLMortalityElasticity == defaults.QoLMortalityElasticity, "an older save loads with QoL mortality off and the default levers"); old.Validate(); checks++; }
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy))) { var old = (SimulationConfig)serializer.ReadObject(stream); Check(old.DemographicModel == DemographicModel.LegacyQoLNetGrowth && !old.QoLMortalityEnabled && old.BaseBirthRate == defaults.BaseBirthRate && old.QoLMortalityElasticity == defaults.QoLMortalityElasticity, "an older save loads explicitly in the legacy model with QoL mortality off and the default levers"); old.Validate(); checks++; }
         // A whole world round trips and continues identically; a world saved with the lever off keeps it off.
         var a = Busy(true); var b = SaveCodec.Load(SaveCodec.Save(a)); var r = new TurnResolver();
         Check(b.Config.QoLMortalityEnabled && SaveCodec.Fingerprint(a) == SaveCodec.Fingerprint(b), "an enabled world round trips");

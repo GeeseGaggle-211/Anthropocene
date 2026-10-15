@@ -55,8 +55,16 @@ namespace Anthropocene.Simulation
             TradeFoodEnabled = defaults.TradeFoodEnabled; TradeFoodSafeOnly = defaults.TradeFoodSafeOnly; TradeExportLabourShare = defaults.TradeExportLabourShare;
             EconomicAllocation = EconomicAllocationStrategy.Legacy;
             GoodsStorageEnabled = false; GoodsBaseStoragePerResident = defaults.GoodsBaseStoragePerResident; GoodsStorageSpacePerUnit = defaults.GoodsStorageSpacePerUnit;
-            // Absent in older saves: QoL-dependent mortality is off so a loaded game continues with its original growth ceiling (Docs/QoLMortality.md).
+            // Absent in older saves: retain the exact legacy net-growth model. PhysicalMortalityV1 is selected only by a
+            // newly-created configuration or an explicit, recorded migration (Docs/DemographyQoLContract-v1.1.md).
+            DemographicModel = DemographicModel.LegacyQoLNetGrowth;
             QoLMortalityEnabled = false; BaseBirthRate = defaults.BaseBirthRate; QoLMortalityElasticity = defaults.QoLMortalityElasticity;
+            ExposureMortalityRate = defaults.ExposureMortalityRate; ExposureClothingReduction = defaults.ExposureClothingReduction; ExposureHousingReduction = defaults.ExposureHousingReduction;
+            CrowdingMortalityRateAt1000 = defaults.CrowdingMortalityRateAt1000; CrowdingExponent = defaults.CrowdingExponent;
+            DiseaseMortalityRateAt1000 = defaults.DiseaseMortalityRateAt1000; DiseaseExponent = defaults.DiseaseExponent;
+            DemographicLogBandWidth = defaults.DemographicLogBandWidth; DemographicRootTolerance = defaults.DemographicRootTolerance;
+            DemographicServiceTolerance = defaults.DemographicServiceTolerance; DemographicCauseCorrectionTolerance = defaults.DemographicCauseCorrectionTolerance;
+            DemographicMaxRootIterations = defaults.DemographicMaxRootIterations; DemographicMaxBands = defaults.DemographicMaxBands; DemographicMaxServiceIterations = defaults.DemographicMaxServiceIterations;
             // Absent in older saves: the herd-labour coupling is off, so a loaded game keeps its unconditional herder reservation and never slaughters (Docs/HerdLabour.md).
             HerdLabourEnabled = false; SharedCropHerdAllocationEnabled = false; MinimumHerdHerders = defaults.MinimumHerdHerders;
             LandBiomassMultiplier = 1;
@@ -148,10 +156,22 @@ namespace Anthropocene.Simulation
         // load Legacy.
         [System.Runtime.Serialization.OptionalField] public string EconomicAllocation = EconomicAllocationStrategy.DemandControl;
         [System.Runtime.Serialization.OptionalField] public double GoodsBaseStoragePerResident = 2, GoodsStorageSpacePerUnit = 20;
-        // QoL-dependent mortality (Docs/QoLMortality.md): births stay at BaseBirthRate (times the fertility hook); deaths are d0 Q^-a with d0 = BaseBirthRate - AnnualHumanGrowthRate.
-        // The net annual growth ceiling is max(0, b0 F - d(Q)); food still limits growth below it. Saves that predate these fields load with QoLMortalityEnabled = false.
-        [System.Runtime.Serialization.OptionalField] public bool QoLMortalityEnabled = true;
+        // Versioned human demography. New worlds use the v1.1 physical model. Saves without this field load the legacy
+        // net-growth model in InitializeNeolithic; an explicit migration must record its provenance on WorldState.
+        [System.Runtime.Serialization.OptionalField] public DemographicModel DemographicModel = DemographicModel.PhysicalMortalityV1;
+        // Legacy QoL-dependent mortality (Docs/QoLMortality.md), retained only for legacy saves and controlled comparisons.
+        [System.Runtime.Serialization.OptionalField] public bool QoLMortalityEnabled = false;
         [System.Runtime.Serialization.OptionalField] public double BaseBirthRate = .045, QoLMortalityElasticity = 1;
+        // PhysicalMortalityV1 annual continuous hazards. These values are the selected v1.1 coefficient set; composite
+        // QoL, expectation and social cohesion are deliberately absent. Clothing and housing reductions are additive.
+        [System.Runtime.Serialization.OptionalField] public double ExposureMortalityRate = .03255509888111371;
+        [System.Runtime.Serialization.OptionalField] public double ExposureClothingReduction = .45, ExposureHousingReduction = .45;
+        [System.Runtime.Serialization.OptionalField] public double CrowdingMortalityRateAt1000 = .03130836758391647, CrowdingExponent = .00001;
+        [System.Runtime.Serialization.OptionalField] public double DiseaseMortalityRateAt1000 = .010436122527972156, DiseaseExponent = .000027161883008306556;
+        // Deterministic equilibrium-rooted log-population integration and finite-service closure controls.
+        [System.Runtime.Serialization.OptionalField] public double DemographicLogBandWidth = .05, DemographicRootTolerance = 1e-12;
+        [System.Runtime.Serialization.OptionalField] public double DemographicServiceTolerance = 1e-10, DemographicCauseCorrectionTolerance = .002;
+        [System.Runtime.Serialization.OptionalField] public int DemographicMaxRootIterations = 128, DemographicMaxBands = 8192, DemographicMaxServiceIterations = 64;
         // Herd-labour coupling (Docs/HerdLabour.md): the Value planner staffs herders on the labour-price rule instead of reserving them first, and animals above the
         // camp's HerdTarget are slaughtered after breeding (carcass food = SpeciesDefinition.FoodYield per animal). MinimumHerdHerders is the seed herd the planner always keeps managed.
         // Saves that predate these fields load with HerdLabourEnabled = false.
@@ -253,8 +273,13 @@ namespace Anthropocene.Simulation
                 || double.IsNaN(GoodsStorageSpacePerUnit) || double.IsInfinity(GoodsStorageSpacePerUnit) || GoodsStorageSpacePerUnit <= 0
                 || !EconomicAllocationStrategy.IsKnown(EconomicAllocation))
                 throw new ArgumentException("Invalid immigration or trade configuration.");
-            if (double.IsNaN(BaseBirthRate) || double.IsInfinity(BaseBirthRate) || double.IsNaN(QoLMortalityElasticity) || double.IsInfinity(QoLMortalityElasticity) || BaseBirthRate <= 0 || BaseBirthRate > .2 || QoLMortalityElasticity <= 0 || QoLMortalityElasticity > 20 || QoLMortalityEnabled && BaseBirthRate <= AnnualHumanGrowthRate)
+            if (!Enum.IsDefined(typeof(DemographicModel), DemographicModel))
+                throw new ArgumentException("Unknown demographic model.");
+            if (double.IsNaN(BaseBirthRate) || double.IsInfinity(BaseBirthRate) || double.IsNaN(QoLMortalityElasticity) || double.IsInfinity(QoLMortalityElasticity) || BaseBirthRate <= 0 || BaseBirthRate > .2 || QoLMortalityElasticity <= 0 || QoLMortalityElasticity > 20 || DemographicModel == DemographicModel.LegacyQoLNetGrowth && QoLMortalityEnabled && BaseBirthRate <= AnnualHumanGrowthRate)
                 throw new ArgumentException("Invalid QoL mortality configuration: BaseBirthRate must exceed AnnualHumanGrowthRate and the elasticity must be positive.");
+            var demographicValues = new[] { ExposureMortalityRate, ExposureClothingReduction, ExposureHousingReduction, CrowdingMortalityRateAt1000, CrowdingExponent, DiseaseMortalityRateAt1000, DiseaseExponent, DemographicLogBandWidth, DemographicRootTolerance, DemographicServiceTolerance, DemographicCauseCorrectionTolerance };
+            if (demographicValues.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v <= 0) || ExposureClothingReduction + ExposureHousingReduction > 1 || DemographicModel == DemographicModel.PhysicalMortalityV1 && BaseBirthRate != .045 || DemographicLogBandWidth > .25 || DemographicCauseCorrectionTolerance > .01 || DemographicMaxRootIterations < 16 || DemographicMaxRootIterations > 512 || DemographicMaxBands < 32 || DemographicMaxBands > 100000 || DemographicMaxServiceIterations < 8 || DemographicMaxServiceIterations > 256)
+                throw new ArgumentException("Invalid physical demographic calibration or numerical controls.");
             if (MinimumHerdHerders < 0 || MinimumHerdHerders > 1000)
                 throw new ArgumentException("Invalid herd-labour configuration: MinimumHerdHerders must be between 0 and 1000.");
             if (CampMovement != 1 || HunterMovement != 2 || HerdMovement != 1 || VisionRadius != 2 || GatherRadius != 1)
@@ -441,6 +466,9 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double QoL = 1.0, FoodNeedsMetRatio = 1.0, ClothPerCapita = 1.0, HousingPerCapita = 1.0;
         [System.Runtime.Serialization.OptionalField] public double StationaryYears, RudimentaryExpectation, WaterNeedsMetRatio = 1;
         [System.Runtime.Serialization.OptionalField] public double FabricConsumed, HousingDemand, HousingReplacementDemand, HousingGrowthDemand;
+        // Turn-local provenance of FabricConsumed. Physical demography may reconcile the finite textile envelope after
+        // needs resolve; these values are never authoritative save state.
+        [NonSerialized] internal double ResolvedClothConsumed, ResolvedAnimalFabricConsumed;
         [System.Runtime.Serialization.OptionalField] public double StonePriority = 1, ClayPriority = 1, WoodPriority = 1;
         [System.Runtime.Serialization.OptionalField] public double PotsTarget, FarmToolsTarget;
         // 0 = manual, -1 = continuous, positive = remaining automated resolutions.
@@ -483,7 +511,14 @@ namespace Anthropocene.Simulation
         // Compatibility accessors for one-camp callers; society owns and serializes the data.
         public double[] Experience { get => People.Experience; set => People.Experience = value; }
         public List<SpeciesPractice> SpeciesExperience { get => People.SpeciesExperience; set => People.SpeciesExperience = value; }
+        // In PhysicalMortalityV1, GrowthRemainder and DeathRemainder are respectively the fractional gross-birth and
+        // gross-death ledgers. Their difference is the fractional resident endpoint. Legacy saves retain their old use.
         public double GrowthRemainder, DeathRemainder, StepFoodIncome;
+        [System.Runtime.Serialization.OptionalField] public double FoodDeficitYears;
+        // Last physically reconciled demographic rates, persisted so a save/replay continuation and the owner-only
+        // observation expose the same measured outcome without recomputing hidden state.
+        [System.Runtime.Serialization.OptionalField] public double EffectiveFertilityRate, EffectiveMortalityRate;
+        [System.Runtime.Serialization.OptionalField] public double ExposureMortalityRate, CrowdingMortalityRate, DiseaseMortalityRate, StarvationMortalityRate;
         public Technology Technology { get => People.Technology; set => People.Technology = value; }
         public int TransitionTurn { get => People.TransitionTurn; set => People.TransitionTurn = value; }
         public int SecondaryDomain { get => People.SecondaryDomain; set => People.SecondaryDomain = value; }
@@ -499,6 +534,7 @@ namespace Anthropocene.Simulation
     {
         public int Id, Player, SocietyId, SourceCamp, Tile, Population;
         public double CarriedFood, LastConsumed, FoodDeficit, DeficitSeverity, DeathRemainder;
+        [System.Runtime.Serialization.OptionalField] public double GrowthRemainder, FoodDeficitYears;
         public int DeficitTurns;
     }
     [Serializable]
@@ -586,6 +622,10 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public List<TradeRecord> Trades = new List<TradeRecord>();
         [System.Runtime.Serialization.OptionalField] public TradeSummary TradeActivity;
         [System.Runtime.Serialization.OptionalField] public List<ManagedHerdReport> ManagedHerds = new List<ManagedHerdReport>();
+        // Diagnostic only: the authorized reward is unchanged. These records separate local welfare from lineage-wide
+        // population-weighted welfare and make migration/fission transfer effects explicit.
+        [System.Runtime.Serialization.OptionalField] public List<SettlementWelfareReport> SettlementWelfare = new List<SettlementWelfareReport>();
+        [System.Runtime.Serialization.OptionalField] public List<LineageWelfareReport> LineageWelfare = new List<LineageWelfareReport>();
         public void Log(string message) => Events.Add(message);
     }
     [Serializable]
@@ -593,6 +633,15 @@ namespace Anthropocene.Simulation
     {
         public int CampId, Tile;
         public double Units, LastUpdatedDays;
+    }
+    [Serializable]
+    public sealed class DemographicMigrationRecord
+    {
+        public int Turn;
+        public double Days;
+        public DemographicModel From, To;
+        public string Reason, SourceCommit;
+        public int Camps, Hunters, Population;
     }
     [Serializable]
     public sealed class WorldState
@@ -621,6 +670,8 @@ namespace Anthropocene.Simulation
         [NonSerialized] internal TurnDiagnostics Diagnostics;
         [System.Runtime.Serialization.OptionalField] public List<MaterialKnowledge> MaterialKnowledge = new List<MaterialKnowledge>();
         [System.Runtime.Serialization.OptionalField] public List<FixedHousingStock> FixedHousing = new List<FixedHousingStock>();
+        // Explicit provenance only. Loading an old save never appends this list or changes Config.DemographicModel.
+        [System.Runtime.Serialization.OptionalField] public List<DemographicMigrationRecord> DemographicMigrations = new List<DemographicMigrationRecord>();
         [System.Runtime.Serialization.OnDeserializing]
         private void MarkLegacyFixedHousing(System.Runtime.Serialization.StreamingContext context) { FixedHousing = null; }
         public int LivePlayers

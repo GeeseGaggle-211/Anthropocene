@@ -19,6 +19,9 @@
     <Compile Include="ContactKnowledgeChecks.cs" />
     <Compile Include="FissionChecks.cs" />
     <Compile Include="QoLMortalityChecks.cs" />
+    <Compile Include="DemographyChecks.cs" />
+    <Compile Include="DemographyRegressionChecks.cs" />
+    <Compile Include="DemographyBenchmark.cs" />
     <Compile Include="DemographicStructureChecks.cs" />
     <Compile Include="HerdLabourChecks.cs" />
     <Compile Include="SharedAllocationChecks.cs" />

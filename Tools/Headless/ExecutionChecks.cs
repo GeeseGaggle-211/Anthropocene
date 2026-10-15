@@ -1,13 +1,44 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using Anthropocene.Simulation;
 
 internal static class ExecutionChecks
 {
+    private static string FirstDifference(object left, object right, string path = "world")
+    {
+        if (ReferenceEquals(left, right)) return null;
+        if (left == null || right == null) return path + ": " + (left ?? "null") + " != " + (right ?? "null");
+        var type = left.GetType();
+        if (type != right.GetType()) return path + ": " + type.Name + " != " + right.GetType().Name;
+        if (type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal))
+            return left.Equals(right) ? null : path + ": " + left + " != " + right;
+        if (left is IEnumerable leftItems && right is IEnumerable rightItems)
+        {
+            var a = leftItems.GetEnumerator(); var b = rightItems.GetEnumerator(); int index = 0;
+            while (true)
+            {
+                bool hasA = a.MoveNext(), hasB = b.MoveNext();
+                if (hasA != hasB) return path + ": collection lengths differ at " + index;
+                if (!hasA) return null;
+                string difference = FirstDifference(a.Current, b.Current, path + "[" + index + "]");
+                if (difference != null) return difference;
+                index++;
+            }
+        }
+        foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance).OrderBy(field => field.Name, StringComparer.Ordinal))
+        {
+            if (type == typeof(WorldState) && field.Name == nameof(WorldState.Generation)) continue;
+            string difference = FirstDifference(field.GetValue(left), field.GetValue(right), path + "." + field.Name);
+            if (difference != null) return difference;
+        }
+        return null;
+    }
     public static void Run()
     {
         var reference = new WorldGenerator().Generate(53, SimulationConfig.Small(4));
@@ -38,7 +69,20 @@ internal static class ExecutionChecks
                 var parallel = AiPlanning.Decide(w, workers[i]);
                 if (!plan.Orders.OrderBy(p => p.Key).SelectMany(p => p.Value.Select(o => p.Key + ":" + o)).SequenceEqual(parallel.Orders.OrderBy(p => p.Key).SelectMany(p => p.Value.Select(o => p.Key + ":" + o)))) throw new Exception("Parallel AI differs from reference.");
                 new TurnResolver(workers[i]).Resolve(w, parallel.Orders, parallel.Traces);
-                if (SaveCodec.Fingerprint(reference) != SaveCodec.Fingerprint(w)) throw new Exception("Worker/partition replay differs on turn " + turns);
+                if (SaveCodec.Fingerprint(reference) != SaveCodec.Fingerprint(w))
+                {
+                    var rc = reference.Camps.OrderBy(c => c.Id).First(); var wc = w.Camps.OrderBy(c => c.Id).First();
+                    string difference = FirstDifference(reference.Camps.OrderBy(c => c.Id).ToArray(), w.Camps.OrderBy(c => c.Id).ToArray(), "camps")
+                        ?? FirstDifference(reference.Hunters.OrderBy(h => h.Id).ToArray(), w.Hunters.OrderBy(h => h.Id).ToArray(), "hunters")
+                        ?? FirstDifference(reference.Herds.OrderBy(h => h.Id).ToArray(), w.Herds.OrderBy(h => h.Id).ToArray(), "herds")
+                        ?? FirstDifference(reference.History.ToArray(), w.History.ToArray(), "history")
+                        ?? FirstDifference(reference.Societies.OrderBy(s => s.Id).ToArray(), w.Societies.OrderBy(s => s.Id).ToArray(), "societies")
+                        ?? "unlocated canonical difference";
+                    throw new Exception("Worker/partition replay differs on turn " + turns + ": " + difference
+                        + " firstCamp=" + rc.Id + "/" + wc.Id + " food=" + rc.PlantFood + "," + rc.AnimalFood + "," + rc.AquaticFood
+                        + "/" + wc.PlantFood + "," + wc.AnimalFood + "," + wc.AquaticFood
+                        + " ids=" + string.Join(",", reference.Camps.Select(c => c.Id)) + "/" + string.Join(",", w.Camps.Select(c => c.Id)));
+                }
             }
             if (postOpeningTurns == 12 && !matureSaveRestored)
             {

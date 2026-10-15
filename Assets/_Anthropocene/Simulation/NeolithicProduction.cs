@@ -980,6 +980,7 @@ namespace Anthropocene.Simulation
             double required = cohort * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
             double cloth = Math.Min(required, c.Inventory.Cloth); c.Inventory.Cloth -= cloth;
             double animal = Math.Min(Math.Max(0, required - cloth), c.Inventory.AnimalFabric); c.Inventory.AnimalFabric -= animal;
+            c.ResolvedClothConsumed = cloth; c.ResolvedAnimalFabricConsumed = animal;
             c.FabricConsumed = cloth + animal;
             c.ClothPerCapita = required > 0 ? c.FabricConsumed / required : 1;
             // The resolver calls this after DepreciateHousing has already aged
@@ -990,6 +991,25 @@ namespace Anthropocene.Simulation
             c.RudimentaryExpectation = n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
             double clothing = 1 - c.RudimentaryExpectation * (1 - c.ClothPerCapita), housing = 1 - c.RudimentaryExpectation * (1 - c.HousingPerCapita);
             c.QoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing) * SocialCohesion(n, HousingShare(n, shelter, cohort), cohort);
+        }
+
+        // Reconcile the existing composite experienced-welfare signal with the physical coverage that the demographic
+        // integrator actually realized. This changes no utility weights or reward definition: QoL remains food * water *
+        // expected clothing/housing coverage * social cohesion, and is never read back into birth or death hazards.
+        public static void CommitExperiencedWelfare(WorldState w, Camp c, double experiencedPopulation,
+            double nutrition, double clothingCoverage, double housingCoverage)
+        {
+            var n = w.Config.Neolithic;
+            double people = Math.Max(0, experiencedPopulation);
+            var shelter = HousingCapacity(w, c, w.Days);
+            c.FoodNeedsMetRatio = Numbers.Clamp(nutrition, 0, 1);
+            c.ClothPerCapita = Numbers.Clamp(clothingCoverage, 0, 1);
+            c.HousingPerCapita = Numbers.Clamp(housingCoverage, 0, 1);
+            double clothing = 1 - c.RudimentaryExpectation * (1 - c.ClothPerCapita);
+            double housing = 1 - c.RudimentaryExpectation * (1 - c.HousingPerCapita);
+            c.QoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio
+                * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing)
+                * SocialCohesion(n, HousingShare(n, shelter, people), people);
         }
     }
 }

@@ -116,7 +116,7 @@ namespace Anthropocene.Simulation
         public long FissionScreened, FissionSearchesNoCandidates, FissionSearchesNoViable, FissionWithDestination, FissionBelowThreshold, FissionStayersBlocked;
         public double FissionMilliseconds;
         // Immigration pass (WP10b). Transient work counts; never saved, observed or fingerprinted.
-        public long ImmigrationCampsEvaluated, ImmigrationCandidatesScored, ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected, ImmigrationMigrants;
+        public long ImmigrationCampsEvaluated, ImmigrationCandidatesScored, ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected, ImmigrationMigrants, ImmigrationHigherQoLWorseMortality;
         public double ImmigrationMilliseconds;
         // Trade handshake (WP8, computed in planning) and settlement. Transient; never saved, observed or fingerprinted.
         public long TradeEligible, TradeRequisitions, TradeHonoured, TradeCountered, TradeIgnored, TradesSettled;

@@ -13,6 +13,10 @@ namespace Anthropocene.Simulation
         public double SourceQoL, DestinationQoL, Utility, PostInflowQoL, Plant, Animal, Aquatic;
         // WP10b-2: the return penalty inside Utility and the person-equivalents of food need the migrants carried (absent in older saves).
         [System.Runtime.Serialization.OptionalField] public double Penalty, Carried;
+        // Diagnostic only; utility remains ForwardUtility(QoL). These annual physical death rates reveal attractive
+        // destinations whose welfare is higher while survival risk is worse.
+        [System.Runtime.Serialization.OptionalField] public double SourceMortalityBefore, DestinationMortalityBefore, SourceMortalityAfter, DestinationMortalityAfter, MortalityGap;
+        [System.Runtime.Serialization.OptionalField] public bool HigherQoLWorseMortality;
     }
 
     // One remembered flow at a camp (hysteresis): the other camp, the turn and the direction (+1 this camp sent people, -1 it received them).
@@ -96,6 +100,8 @@ namespace Anthropocene.Simulation
             public Camp Source, Destination;
             public int Residents, DestinationResidents, Distance, Size; public double QualitySource, QualityDestination, Utility, Penalty, CarriedPerPerson;
             public double Plant, Animal, Aquatic;   // frozen source stores: migrants carry their per-capita share of these
+            public double GrowthProgress, DeathProgress, FoodDeficitYears, DeficitSeverity;
+            public double SourceMortalityBefore, DestinationMortalityBefore, SourceMortalityAfter, DestinationMortalityAfter;
             public int Accepted; public double PostInflowQuality;
         }
 
@@ -149,6 +155,19 @@ namespace Anthropocene.Simulation
                 while (lo < hi) { int mid = (lo + hi + 1) >> 1; if (Accept(mid)) lo = mid; else hi = mid - 1; }
                 intent.Accepted = lo; intent.PostInflowQuality = destinationModel.ForwardAt(destination.Population + already + lo, carriedAlready + lo * intent.CarriedPerPerson);
                 if (lo > 0) intent.Utility = ForwardUtility(cfg, sourceModel, destinationModel, lo, already, carriedAlready + lo * intent.CarriedPerPerson, intent.Distance, intent.Source, destination, intent.Penalty);
+                if (PhysicalDemography.Enabled(cfg))
+                {
+                    int sourceAfter = Math.Max(1, intent.Residents - lo), destinationAfter = Math.Max(1, intent.DestinationResidents + already + lo);
+                    double destinationFoodAfter = Fission.QoLModel.FoodAt(intent.Destination.FoodNeedsMetRatio, intent.DestinationResidents, carriedAlready + lo * intent.CarriedPerPerson, destinationAfter);
+                    double sourceClothingAfter = Math.Min(1, intent.Source.ClothPerCapita * intent.Residents / (double)sourceAfter);
+                    double destinationClothingAfter = Math.Min(1, intent.Destination.ClothPerCapita * intent.DestinationResidents / (double)destinationAfter);
+                    intent.SourceMortalityBefore = PhysicalDemography.ProjectedSettlementRates(w, intent.Source, intent.Residents, intent.Source.FoodNeedsMetRatio, intent.Source.ClothPerCapita).Death;
+                    intent.DestinationMortalityBefore = PhysicalDemography.ProjectedSettlementRates(w, destination, intent.DestinationResidents, destination.FoodNeedsMetRatio, destination.ClothPerCapita).Death;
+                    // Food leaves proportionally, while the existing transfer baseline moves no clothing stock: source
+                    // coverage improves with fewer people and destination coverage is diluted, matching QoLModel.Shape.
+                    intent.SourceMortalityAfter = PhysicalDemography.ProjectedSettlementRates(w, intent.Source, sourceAfter, intent.Source.FoodNeedsMetRatio, sourceClothingAfter).Death;
+                    intent.DestinationMortalityAfter = PhysicalDemography.ProjectedSettlementRates(w, destination, destinationAfter, destinationFoodAfter, destinationClothingAfter).Death;
+                }
                 inflow[destination.Id] = already + lo; carriedIn[destination.Id] = carriedAlready + lo * intent.CarriedPerPerson;
                 if (lo == 0) metrics.ImmigrationRejected++; else { metrics.ImmigrationAccepted++; if (lo < intent.Size) metrics.ImmigrationPartial++; }
             }
@@ -166,12 +185,28 @@ namespace Anthropocene.Simulation
                     source.Workforce.ApplyCasualties(intent.Residents, m);
                     source.Population -= m;
                     source.PlantFood -= intent.Plant * f; source.AnimalFood -= intent.Animal * f; source.AquaticFood -= intent.Aquatic * f;
+                    if (PhysicalDemography.Enabled(w.Config))
+                    {
+                        intent.GrowthProgress = source.GrowthRemainder * f; intent.DeathProgress = source.DeathRemainder * f;
+                        source.GrowthRemainder -= intent.GrowthProgress; source.DeathRemainder -= intent.DeathProgress;
+                        intent.FoodDeficitYears = source.FoodDeficitYears; intent.DeficitSeverity = source.DeficitSeverity;
+                    }
                     if (demographics.TryGetValue(source.Id, out var report)) report.Emigrated += m;
                 }
                 foreach (var intent in accepted)
                 {
                     var source = intent.Source; var destination = intent.Destination; int m = intent.Accepted; double f = m / (double)intent.Residents;
+                    int destinationBefore = destination.Population;
+                    if (PhysicalDemography.Enabled(w.Config) && destinationBefore + m > 0)
+                    {
+                        destination.FoodDeficitYears = (destination.FoodDeficitYears * destinationBefore + intent.FoodDeficitYears * m) / (destinationBefore + m);
+                        destination.DeficitSeverity = (destination.DeficitSeverity * destinationBefore + intent.DeficitSeverity * m) / (destinationBefore + m);
+                    }
                     destination.Population += m;
+                    if (PhysicalDemography.Enabled(w.Config))
+                    {
+                        destination.GrowthRemainder += intent.GrowthProgress; destination.DeathRemainder += intent.DeathProgress;
+                    }
                     destination.PlantFood += intent.Plant * f; destination.AnimalFood += intent.Animal * f; destination.AquaticFood += intent.Aquatic * f;
                     if (demographics.TryGetValue(destination.Id, out var report)) report.Immigrated += m;
                     ContactKnowledge.RecordMigration(w, source.People, destination);
@@ -182,8 +217,14 @@ namespace Anthropocene.Simulation
                         Turn = w.Turn, SourceCamp = source.Id, DestinationCamp = destination.Id, SourceSociety = source.SocietyId, DestinationSociety = destination.SocietyId,
                         SourceBefore = intent.Residents, DestinationBefore = intent.DestinationResidents, Intended = intent.Size, Migrants = m, Distance = intent.Distance, Kin = Kinship.Affinity(source.People, destination.People) > 0,
                         SourceQoL = intent.QualitySource, DestinationQoL = intent.QualityDestination, Utility = intent.Utility, PostInflowQoL = intent.PostInflowQuality,
-                        Plant = intent.Plant * f, Animal = intent.Animal * f, Aquatic = intent.Aquatic * f, Penalty = intent.Penalty, Carried = m * intent.CarriedPerPerson
+                        Plant = intent.Plant * f, Animal = intent.Animal * f, Aquatic = intent.Aquatic * f, Penalty = intent.Penalty, Carried = m * intent.CarriedPerPerson,
+                        SourceMortalityBefore = intent.SourceMortalityBefore, DestinationMortalityBefore = intent.DestinationMortalityBefore,
+                        SourceMortalityAfter = intent.SourceMortalityAfter, DestinationMortalityAfter = intent.DestinationMortalityAfter,
+                        MortalityGap = intent.DestinationMortalityAfter - intent.SourceMortalityAfter,
+                        HigherQoLWorseMortality = intent.PostInflowQuality > intent.QualitySource && intent.DestinationMortalityAfter > intent.SourceMortalityAfter + 1e-12
                     });
+                    if (intent.PostInflowQuality > intent.QualitySource && intent.DestinationMortalityAfter > intent.SourceMortalityAfter + 1e-12)
+                        metrics.ImmigrationHigherQoLWorseMortality++;
                     Remember(w, source, destination.Id, +1); Remember(w, destination, source.Id, -1);
                     record.Log("Camp " + source.Id + " (tribe " + source.Player + ") sent " + m + " of " + intent.Residents + " people to camp " + destination.Id + " (tribe " + destination.Player + ").");
                 }

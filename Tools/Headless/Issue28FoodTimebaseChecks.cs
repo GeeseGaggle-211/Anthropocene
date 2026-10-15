@@ -23,6 +23,7 @@ internal static class Issue28FoodTimebaseChecks
     private static WorldState Witness(double turnDays = 7300)
     {
         var config = SimulationConfig.Small(1);
+        config.DemographicModel = DemographicModel.LegacyQoLNetGrowth;
         config.TurnDays = turnDays;
         var tiles = new Tile[config.Width * config.Height];
         for (int id = 0; id < tiles.Length; id++)

@@ -26,7 +26,8 @@ namespace Anthropocene.Simulation
 
         // Camps whose QoL the goods economy resolves. A Paleolithic camp produces no clothing or housing, so its resolved QoL is capped at
         // 1 - E (about 0.75 times food and cohesion) by construction and says nothing about wellbeing: its growth is left unchanged.
-        public static bool Applies(WorldState w, Camp camp) => w.Config.QoLMortalityEnabled && CultivationEconomy.EconomyEnabled(camp);
+        public static bool Applies(WorldState w, Camp camp) => w.Config.DemographicModel == DemographicModel.LegacyQoLNetGrowth
+            && w.Config.QoLMortalityEnabled && CultivationEconomy.EconomyEnabled(camp);
 
         // Annual deaths per head at QoL q for explicit factors.
         public static double DeathRate(SimulationConfig cfg, double qol, double mortalityFactor = 1)
@@ -50,6 +51,11 @@ namespace Anthropocene.Simulation
 
         // The one maximum growth rate every planner, forecast and resolver site uses (deficit rule and multiplier included).
         public static double MaximumRate(WorldState w, Camp camp)
-            => camp.DeficitTurns > 0 ? 0 : AnnualCeiling(w, camp) * camp.DemographicGrowthMultiplier;
+            // PhysicalMortalityV1 budgets against the birth-only upper envelope. Food deficiency and every physical
+            // death hazard are reconciled by PhysicalDemography; neither QoL nor the legacy recovery prohibition may
+            // suppress gross births at planning time.
+            => w.Config.DemographicModel == DemographicModel.PhysicalMortalityV1
+                ? w.Config.BaseBirthRate * PhysicalDemography.FertilityFactor(w, camp)
+                : camp.DeficitTurns > 0 ? 0 : AnnualCeiling(w, camp) * camp.DemographicGrowthMultiplier;
     }
 }
