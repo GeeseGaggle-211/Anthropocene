@@ -109,7 +109,7 @@ No assumption needed a redesign, so the work proceeded.
 - **Daughter check** ("would part of this population be better off"). The daughter's estimated QoL at the
   destination (`F_d = min(1, support ratio + carried food)`, see Relative destinations, `W = 1`, clothing coverage unchanged, housing from what it carries and can build in its first turn
   (`Fission.DaughterShelter`, below), `S(N_d)`, and the
-  expectation the game applies after a move: stationary years reset to zero then one turn elapses) must be at
+  parent's retained expectation) must be at
   least `Q_now - FissionDaughterMargin` (0.05). It is evaluated only for a camp whose gain reaches `G*` and
   that holds a valid destination, and its binding is counted (`FissionDaughterChecks`, `FissionDaughterBlocked`).
 - **Daughter shelter (B1).** The commit splits every double inventory field in the daughter's people fraction
@@ -215,7 +215,8 @@ No assumption needed a redesign, so the work proceeded.
 
 ## Observations and actions
 
-`AgentObservation.SchemaVersion` is 18. Owner only: each `SettlementObservation`
+`AgentObservation.SchemaVersion` is 19 (the fission block was introduced in 18).
+Owner only: each `SettlementObservation`
 carries `FissionPolicy` and `FissionDestination` (tile or -1); the observation carries
 `ParentSociety`, `KinAffinity` and `KinRelations` (parent, daughters, siblings: society,
 player, relation, affinity; no location, stores or population). A foreign daughter
@@ -566,9 +567,9 @@ camp had `G ~ 0` and never split. The daughter's QoL (`F = W = 1`) was only a ve
    the WP10c estimate, so the closed forms in "Recalibration" hold for fed camps.
 2. *The daughter pull.* `Q_d = F_d W_d * coverage(E) * S(n_d)` at her headcount and shelter (`DaughterShelter`);
    `G_d = Q_d / Q_now - 1` (`Q_now <= 1e-9`: satisfied, `G_d = 1e9`, if `Q_d > 0`). **The trigger compares like with
-   like**: the expectation `E` is the parent's on both sides. The post-move expectation reset is a benefit the parent could
-   get by moving itself, and must not by itself cause a split. The existing veto (`DaughterQoL`, `F = W = 1`, post-move
-   expectation, `Q_d >= Q_now - FissionDaughterMargin`) is unchanged. `F_d = min(1, ratio)`, `ratio` the destination's uncapped
+   like**: the expectation `E` is the parent's on both sides. Under the v1.1 demographic/QoL separation, the veto and founding
+   value also retain that expectation (`DaughterQoL`, `F = W = 1`, `Q_d >= Q_now - FissionDaughterMargin`), closing the former
+   one-turn expectation-reset welfare artefact without changing a threshold. `F_d = min(1, ratio)`, `ratio` the destination's uncapped
    support ratio for the daughter cohort that `Desirability` already computes (for herded nomads it already folds in herd forage
    and water, so it stands for `F_d W_d`); `W_d = 1` because freshwater is a gate of the footprint. The screen before a destination is known
    uses `F_d = W_d = 1` and gates the search exactly like the crowding screen (`FissionSearchFraction * G*`).
@@ -596,8 +597,8 @@ at `F W = 0.99` also gets the daughter pull.
 (N = 80, housed, F = 0.4: Distress, daughter clamped to 39 from `n_short` = 48, metrics per trigger, people conserved); size follows the
 shortfall (F = 0.8 Crowding 24 through the stayers' relief, 0.6 Distress 32, 0.5 Distress 39); water distress; a small camp whose policy size is below the minimum
 still sends the people its land cannot carry, one whose largest legal daughter is below the minimum cannot; the same camp fed does not split; the
-expectation reset alone does not (the like-for-like gain is below `G*`, the post-move comparison would not be, and the camp splits as soon as `G*`
-falls below the like-for-like gain); no destination (waterless, no known site) and a thinly supported destination (`F_d < 1`) do not split while the
+daughter trigger and veto use the same retained expectation, and the camp splits only when `G*`
+falls below that like-for-like gain; no destination (waterless, no known site) and a thinly supported destination (`F_d < 1`) do not split while the
 control with rich ground does; a fed crowded camp splits with the Crowding trigger; scalar versus reversed 4-worker replay of a starving six-camp world
 (identical fingerprints, trigger and size sequences, invariants); save round trip of the trigger and gain; an older report without the fields loads as Crowding.
 The WP10c closed-form checks that used `F = 0.63, W = 0.9` and `F = 0.4` now include the stayers' relief factor `F_hat W_hat / (F W)`.

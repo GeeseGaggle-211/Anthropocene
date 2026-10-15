@@ -102,7 +102,7 @@ growth-rate sweep alone cannot resolve this algebraic issue.
 | Time | One analytical turn forecast; quantities converted using the existing turn years/intervals. No time-step, per-season economic loop or per-year loop added. |
 | Scaling | Added valuation work is bounded by local tiles plus field/herder ladder steps, `O(field steps + herder steps + 19)`, apart from the existing own-herd forecast. No new map scan or all-camp scan. |
 | Mature game | Ladder still bounded by resident population; forecasts and metadata are per-plan. No persistent history or new observation expansion. Timing evidence below is diagnostic, not a formal performance acceptance. |
-| RL and privacy | Same owner economy target/action and schema 18. Deterministic committed-state inputs; existing local visibility bounds. No public diagnostic exposes hidden pasture or species knowledge. |
+| RL and privacy | Same owner economy target/action (introduced at schema 18; current schema 19). Deterministic committed-state inputs; existing local visibility bounds. No public diagnostic exposes hidden pasture or species knowledge. |
 | Compatibility | Same optional flag and target/save fields. Defaults off. Uniform and flag-off plans unchanged; old-save and save-round-trip checks retained. |
 
 ## Verification
