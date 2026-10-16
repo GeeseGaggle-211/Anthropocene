@@ -291,6 +291,13 @@ internal static class Program
             DemographySocialAblation.RunDaughterEconomyAudit(continuations); return 0;
         }
         if (args.Contains("--surplus-equilibria")) return DemographySocialAblation.RunSurplusEquilibria();
+        if (args.Contains("--kernel-mixed-checks")) { KernelMixedChecks.Run(); return 0; }
+        var kernelScaling = args.FirstOrDefault(a => a.StartsWith("--kernel-scaling=", StringComparison.Ordinal));
+        if (kernelScaling != null)
+        {
+            var parts = kernelScaling.Substring(kernelScaling.IndexOf('=') + 1).Split(',');
+            return DemographySocialAblation.RunKernelScaling(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 11, parts.Contains("mixed"));
+        }
         var clothingProbe = args.FirstOrDefault(a => a.StartsWith("--clothing-probe=", StringComparison.Ordinal));
         if (clothingProbe != null)
         {
@@ -308,8 +315,13 @@ internal static class Program
             if (lexTol != null) DemandController.KernelLexTolerance = double.Parse(lexTol.Substring(7), System.Globalization.CultureInfo.InvariantCulture);
             Fission.DistressSizeLadderDiagnostic = parts.Contains("distressladder");
             DemandController.KernelShelterOnlyDiagnostic = parts.Contains("shelteronly");
+            DemandController.KernelExactScoringDiagnostic = parts.Contains("kernelexact");
+            DemandController.KernelVerifyDiagnostic = parts.Contains("kernelverify");
+            DemandController.KernelMixedDiagnostic = parts.Contains("kernelmixed");
+            string posture = parts.FirstOrDefault(x => x.StartsWith("posture=", StringComparison.Ordinal));
+            DemandController.KernelPostureMode = posture != null ? int.Parse(posture.Substring(8)) : 0;
             PhysicalDemography.SurplusFundedBirthsDiagnostic = parts.Contains("surplusbirths");
-            string probeTag = (kernelMode >= 0 ? "-" + kernelModes[kernelMode] : "") + string.Concat(parts.Where(x => x.StartsWith("lextol=", StringComparison.Ordinal)).Select(x => "-" + x.Replace('=', '_'))) + (parts.Contains("distressladder") ? "-dladder" : "") + (parts.Contains("shelteronly") ? "-shelteronly" : "") + (parts.Contains("surplusbirths") ? "-surplus" : "") + (seedPart != null ? "-wide" : "")
+            string probeTag = (kernelMode >= 0 ? "-" + kernelModes[kernelMode] : "") + string.Concat(parts.Where(x => x.StartsWith("lextol=", StringComparison.Ordinal)).Select(x => "-" + x.Replace('=', '_'))) + (parts.Contains("distressladder") ? "-dladder" : "") + (parts.Contains("shelteronly") ? "-shelteronly" : "") + (parts.Contains("surplusbirths") ? "-surplus" : "") + (parts.Contains("kernelmixed") ? "-mixed" : "") + string.Concat(parts.Where(x => x.StartsWith("posture=", StringComparison.Ordinal)).Select(x => "-" + x.Replace('=', '_'))) + (seedPart != null ? "-wide" : "")
                 + string.Concat(parts.Where(x => x.StartsWith("intens=", StringComparison.Ordinal) || x.StartsWith("soft=", StringComparison.Ordinal)).Select(x => "-" + x.Replace('=', '_')));
             return DemographySocialAblation.RunClothingProbe(int.Parse(parts[0]), parts[1],
                 !parts.Contains("nofission"), !parts.Contains("noimm"), (parts.Contains("freecloth") ? "-freecloth" : "") + (parts.Contains("freehouse") ? "-freehouse" : "") + probeTag, cfg =>
@@ -320,7 +332,8 @@ internal static class Program
                     string soft = parts.FirstOrDefault(x => x.StartsWith("soft=", StringComparison.Ordinal));
                     if (soft != null) cfg.Neolithic.CultivationMarginalEffortMultiplierPerTenth = double.Parse(soft.Substring(5), System.Globalization.CultureInfo.InvariantCulture);
                 },
-                parts.Contains("freehouse") ? DemographySocialAblation.FreeHousingOracle : (Action<WorldState>)null, probeSeeds);
+                parts.Contains("freehouse") ? DemographySocialAblation.FreeHousingOracle : (Action<WorldState>)null, probeSeeds,
+                int.Parse(parts.FirstOrDefault(x => x.StartsWith("workers=", StringComparison.Ordinal))?.Substring(8) ?? "1"));
         }
         var demographyFissionRecovery = args.FirstOrDefault(a => a.StartsWith("--demography-fission-recovery", StringComparison.Ordinal));
         if (demographyFissionRecovery != null)

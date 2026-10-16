@@ -27,6 +27,72 @@ internal static partial class DemographySocialAblation
 
     internal static int LadderDumpTurn = -1, LadderDumps;
 
+    // --kernel-scaling=<players>,<turns>[,<seed>]: matched-state planning cost of the kernel-scored Elder split
+    // (lexicographic, 5%, surplus-funded births). After a social-free opening, each continuation turn plans the same
+    // committed world three ways (kernel off, fast planning solver, exact authoritative solver; rotated order so cache
+    // warming favours none), then resolves the fast plan with fission and immigration on. Scalar execution.
+    public static int RunKernelScaling(int players, int turns, int seed, bool mixed = false)
+    {
+        DemandController.KernelMixedDiagnostic = mixed;
+        var cfg = players <= 8 ? SimulationConfig.Small(players)
+            : new SimulationConfig { Width = players <= 80 ? 1024 : 2048, Height = players <= 80 ? 512 : 1024, Players = players, BenchmarkScale = players > 80 };
+        cfg.DemographicModel = DemographicModel.PhysicalMortalityV1; cfg.QoLMortalityEnabled = false;
+        cfg.FissionEnabled = false; cfg.ImmigrationEnabled = false; cfg.TradeEnabled = true;
+        cfg.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        cfg.Validate();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var world = new WorldGenerator().Generate(seed, cfg); var resolver = new TurnResolver();
+        int opening = 0;
+        while (!world.Finished && opening < 40) { var p = AiPlanning.Decide(world); resolver.Resolve(world, p.Orders, p.Traces); opening++; }
+        Console.WriteLine("KERNEL_SCALING players=" + players + " seed=" + seed + " openingTurns=" + opening + " setupSeconds=" + clock.Elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture));
+        world.Config.FissionEnabled = true; world.Config.ImmigrationEnabled = true;
+        PhysicalDemography.SurplusFundedBirthsDiagnostic = true;
+        DemandController.KernelSplitObjective = 2; DemandController.KernelLexTolerance = .05;
+        double totalDecide = 0, totalOff = 0, totalFast = 0, totalExact = 0, totalFastKernel = 0, totalExactKernel = 0; long kernelCamps = 0;
+        string I(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+        for (int t = 0; t < turns; t++)
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            PlanningResult plan = AiPlanning.Decide(world);
+            double decide = watch.Elapsed.TotalMilliseconds;
+            // Each variant: the minimum of three timed repetitions after a full collection (rotated order).
+            double off = double.MaxValue, fast = double.MaxValue, exact = double.MaxValue, fastKernel = double.MaxValue, exactKernel = double.MaxValue;
+            PreparedTurn chosen = null; long camps = 0;
+            for (int k = 0; k < 9; k++)
+            {
+                int variant = (k + t) % 3;
+                DemandController.KernelSplitDiagnostic = variant != 0;
+                DemandController.KernelExactScoringDiagnostic = variant == 2;
+                long before = DemandController.KernelSplitCamps, ticks = DemandController.KernelSplitTicks;
+                GC.Collect(); GC.WaitForPendingFinalizers();
+                watch.Restart();
+                var prepared = TurnPlanner.Prepare(world, plan.Orders, plan.Traces);
+                double ms = watch.Elapsed.TotalMilliseconds;
+                double kernelMs = (DemandController.KernelSplitTicks - ticks) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                if (variant == 0) off = Math.Min(off, ms);
+                else if (variant == 1) { fast = Math.Min(fast, ms); fastKernel = Math.Min(fastKernel, kernelMs); chosen = prepared; camps = DemandController.KernelSplitCamps - before; }
+                else { exact = Math.Min(exact, ms); exactKernel = Math.Min(exactKernel, kernelMs); }
+            }
+            DemandController.KernelSplitDiagnostic = true; DemandController.KernelExactScoringDiagnostic = false;
+            totalDecide += decide; totalOff += off; totalFast += fast; totalExact += exact; kernelCamps += camps;
+            totalFastKernel += fastKernel; totalExactKernel += exactKernel;
+            Console.WriteLine("KERNEL_SCALING_TURN players=" + players + " turn=" + world.Turn + " camps=" + world.Camps.Count + " kernelCamps=" + camps
+                + " decideMs=" + I(decide) + " prepareOffMs=" + I(off) + " prepareFastMs=" + I(fast) + " prepareExactMs=" + I(exact)
+                + " kernelFastMs=" + I(fastKernel) + " kernelExactMs=" + I(exactKernel));
+            resolver.Resolve(world, chosen);
+        }
+        double baseline = totalDecide + totalOff;
+        Console.WriteLine("KERNEL_SCALING_SUMMARY players=" + players + " seed=" + seed + " mixed=" + (mixed ? 1 : 0) + " turns=" + turns + " kernelCampTurns=" + kernelCamps
+            + " planningOffMs=" + I(baseline) + " planningFastMs=" + I(totalDecide + totalFast) + " planningExactMs=" + I(totalDecide + totalExact)
+            + " fastRatio=" + I((totalDecide + totalFast) / baseline) + " exactRatio=" + I((totalDecide + totalExact) / baseline)
+            + " fastKernelMsPerCampTurn=" + I(kernelCamps > 0 ? totalFastKernel / kernelCamps : 0)
+            + " exactKernelMsPerCampTurn=" + I(kernelCamps > 0 ? totalExactKernel / kernelCamps : 0)
+            + " offPlanningMsPerCampTurn=" + I(kernelCamps > 0 ? baseline / kernelCamps : 0)
+            + " kernelOverheadFast=" + I(totalFastKernel / baseline) + " kernelOverheadExact=" + I(totalExactKernel / baseline));
+        DemandController.KernelSplitDiagnostic = false; PhysicalDemography.SurplusFundedBirthsDiagnostic = false;
+        return 0;
+    }
+
     // Equilibria of the real kernel for a site whose renewable food feeds K people per turn, under the v1.1 law
     // and the surplus-funded-births prototype. Clothing and housing are funded each turn for coverage x people.
     public static int RunSurplusEquilibria()
@@ -59,8 +125,10 @@ internal static partial class DemographySocialAblation
         return 0;
     }
 
-    public static int RunClothingProbe(int turns, string outputDir, bool fission, bool immigration, string tag = "", Action<SimulationConfig> tweak = null, Action<WorldState> beforeTurn = null, int[] seeds = null)
+    public static int RunClothingProbe(int turns, string outputDir, bool fission, bool immigration, string tag = "", Action<SimulationConfig> tweak = null, Action<WorldState> beforeTurn = null, int[] seeds = null, int workers = 1)
     {
+        // workers > 1: parallel planning and resolution with small reversed partitions (scalar/parallel replay check).
+        var execution = workers > 1 ? new PhaseExecution(workers, 3, true, 1) : null;
         bool prior = ResolutionMetrics.CaptureDemandAllocations;
         ResolutionMetrics.CaptureDemandAllocations = true;
         try
@@ -85,15 +153,15 @@ internal static partial class DemographySocialAblation
                 world.Config.ImmigrationEnabled = immigration;
                 tweak?.Invoke(world.Config);
                 world.Config.Validate();
-                var resolver = new TurnResolver();
+                var resolver = execution != null ? new TurnResolver(execution) : new TurnResolver();
                 var founded = new Dictionary<int, int>();
                 double rate = PhysicalDemography.ClothingPerPersonYear(world.Config);
                 for (int t = 0; t < turns; t++)
                 {
                     beforeTurn?.Invoke(world);
                     planWatch.Start();
-                    PlanningResult plan = AiPlanning.Decide(world);
-                    PreparedTurn prepared = TurnPlanner.Prepare(world, plan.Orders, plan.Traces);
+                    PlanningResult plan = AiPlanning.Decide(world, execution);
+                    PreparedTurn prepared = TurnPlanner.Prepare(world, plan.Orders, plan.Traces, execution);
                     planWatch.Stop(); planTurns++;
                     // Ladder curve from the committed boundary (pure): annual gain reachable with the whole
                     // workforce for one turn, and with 10x that, plus the first step's score.
@@ -204,10 +272,16 @@ internal static partial class DemographySocialAblation
                     }
                     Console.WriteLine("CLOTHING_PROBE seed=" + seed + " turn=" + record.Turn + " camps=" + world.Camps.Count
                         + " pop=" + world.Camps.Sum(world.LinkedPopulation) + " fissions=" + record.Fissions.Count
+                        + (t == turns - 1 ? " fingerprint=" + SaveCodec.Fingerprint(world) : "")
                         + " migrations=" + record.Migrations.Count + " pwQoL=" + I(world.Camps.Sum(c => c.QoL * world.LinkedPopulation(c)) / Math.Max(1, world.Camps.Sum(world.LinkedPopulation))) + " pwC=" + I(world.Camps.Sum(c => c.ClothPerCapita * world.LinkedPopulation(c)) / Math.Max(1, world.Camps.Sum(world.LinkedPopulation))));
                 }
             }
-            Console.WriteLine("CLOTHING_PROBE_PLANNING turns=" + planTurns + " totalMs=" + I(planWatch.Elapsed.TotalMilliseconds) + " kernelCamps=" + DemandController.KernelSplitCamps + " kernelCalls=" + DemandController.KernelSplitCalls + " kernelMs=" + I(DemandController.KernelSplitTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency) + " chosenClothing=" + string.Join("/", DemandController.KernelChosenClothing) + " chosenShelter=" + string.Join("/", DemandController.KernelChosenShelter));
+            Console.WriteLine("CLOTHING_PROBE_PLANNING turns=" + planTurns + " totalMs=" + I(planWatch.Elapsed.TotalMilliseconds) + " kernelCamps=" + DemandController.KernelSplitCamps + " kernelCalls=" + DemandController.KernelSplitCalls + " kernelMs=" + I(DemandController.KernelSplitTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency) + " chosenClothing=" + string.Join("/", DemandController.KernelChosenClothing) + " chosenShelter=" + string.Join("/", DemandController.KernelChosenShelter)
+                + " serviceIterations=" + DemandController.KernelServiceIterations
+                + " mixedCamps=" + DemandController.KernelMixedCamps + " otherClothing=" + DemandController.KernelMixedOtherClothing + " otherShelter=" + DemandController.KernelMixedOtherShelter
+                + " posture(herd/field/none)=" + string.Join("/", DemandController.KernelChosenPosture)
+                + " verify=" + DemandController.KernelVerifyMismatches + "/" + DemandController.KernelVerifyDecisions + " maxPyErr=" + DemandController.KernelVerifyMaxPersonYearsError.ToString("G3", CultureInfo.InvariantCulture) + " maxQoLErr=" + DemandController.KernelVerifyMaxQoLError.ToString("G3", CultureInfo.InvariantCulture) + " worst=" + DemandController.KernelVerifyWorst
+                + " surplusCalls=" + PhysicalDemography.SurplusCalls + " full/shortage/bound=" + PhysicalDemography.SurplusFullCalls + "/" + PhysicalDemography.SurplusShortageCalls + "/" + PhysicalDemography.SurplusBoundCalls);
             Console.WriteLine("CLOTHING_PROBE_CSV " + path);
             return 0;
         }

@@ -26,6 +26,7 @@
     <Compile Include="DemographySocialAblation.cs" />
     <Compile Include="DemographyFissionRecovery.cs" />
     <Compile Include="ClothingProbe.cs" />
+    <Compile Include="KernelMixedChecks.cs" />
     <Compile Include="DemographicStructureChecks.cs" />
     <Compile Include="HerdLabourChecks.cs" />
     <Compile Include="SharedAllocationChecks.cs" />

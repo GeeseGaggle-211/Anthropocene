@@ -130,6 +130,7 @@ internal static class DemographyChecks
         FiniteBudgetReferenceMatrix(cfg);
         MicroscopicDeclineAndNumericalLimits(cfg);
         CoupledDensityAndCohortChecks(cfg);
+        PlanningSolverAgreement(cfg);
 
         ResolutionAndReplay();
         IncompleteReserveDoesNotGateBirthService();
@@ -144,6 +145,43 @@ internal static class DemographyChecks
 
         Console.WriteLine("PASS: " + assertions + " physical demography assertions");
         return assertions;
+    }
+
+    // The Elder's planning solver (PlanningBudget / SurplusBudget fast) agrees with the authoritative kernel on the
+    // quantities the kernel split scores, across fed, food-bound and short budgets, clothing and housing coverage,
+    // starvation history and density offsets. Called with explicit arguments, never through the process-wide flag.
+    private static void PlanningSolverAgreement(SimulationConfig cfg)
+    {
+        double years = 20, foodRate = PhysicalDemography.FoodPerPersonYear(cfg), clothRate = PhysicalDemography.ClothingPerPersonYear(cfg);
+        double worstPy = 0, worstCoverage = 0;
+        foreach (double population in new[] { 12.0, 180, 640, 2400 })
+        foreach (double foodShare in new[] { .55, .9, 1.05, 1.4, 3 })
+        foreach (double clothShare in new[] { 0, .4, 1.2 })
+        foreach (double housingShare in new[] { 0, .8, 1.6 })
+        foreach (double deficit in new[] { 0.0, 60 })
+        foreach (double offset in new[] { 0.0, 300 })
+        {
+            double basis = population * years;
+            double food = foodShare * foodRate * basis, cloth = clothShare * clothRate * basis, housing = housingShare * population;
+            for (int surplus = 0; surplus < 2; surplus++)
+            {
+                var exact = surplus == 1
+                    ? PhysicalDemography.SurplusBudget(cfg, population, years, food, cloth, housing, deficit, true, offset, out double g0)
+                    : PhysicalDemography.AdvanceBudget(cfg, population, years, food, cloth, housing, deficit, true, offset);
+                var fast = surplus == 1
+                    ? PhysicalDemography.SurplusBudget(cfg, population, years, food, cloth, housing, deficit, true, offset, out double g1, true)
+                    : PhysicalDemography.PlanningBudget(cfg, population, years, food, cloth, housing, deficit, true, offset);
+                string at = " (N=" + population + " food=" + foodShare + " cloth=" + clothShare + " housing=" + housingShare + " deficit=" + deficit + " offset=" + offset + " surplus=" + surplus + ")";
+                double py = Math.Abs(fast.PersonYears - exact.PersonYears) / Math.Max(1, exact.PersonYears);
+                double coverage = Math.Max(Math.Abs(fast.Nutrition - exact.Nutrition), Math.Max(Math.Abs(fast.ClothingCoverage - exact.ClothingCoverage), Math.Abs(fast.AverageHousingCoverage - exact.AverageHousingCoverage)));
+                worstPy = Math.Max(worstPy, py); worstCoverage = Math.Max(worstCoverage, coverage);
+                Check(py <= 1e-6, "Planning solver person-years agree" + at + ": " + py.ToString("G3"));
+                Check(coverage <= 1e-6, "Planning solver nutrition/clothing/housing agree" + at + ": " + coverage.ToString("G3"));
+                Check(Math.Abs(fast.FinalPopulation - exact.FinalPopulation) <= 1e-6 * Math.Max(1, exact.FinalPopulation), "Planning solver final population agrees" + at);
+                Check(fast.ServiceIterations <= exact.ServiceIterations, "Planning solver needs no more interval solves" + at);
+            }
+        }
+        Console.WriteLine("PLANNING_SOLVER worstRelativePersonYears=" + worstPy.ToString("G3") + " worstCoverage=" + worstCoverage.ToString("G3"));
     }
 
     private static WorldState PhysicalWorld(double qol)

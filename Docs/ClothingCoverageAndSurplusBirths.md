@@ -1,12 +1,14 @@
 # Clothing coverage, fission and surplus-funded births (16 October 2026)
 
-Status: **diagnosed; recommended direction prototyped behind diagnostic flags.**
+Status: **diagnosed; recommended direction prototyped behind diagnostic flags;
+planning cost reduced (§7); mixed-use routes added (§8).**
 Nothing here changes default behaviour. With every flag off, the 12-seed probe
 trace below and the fixed headless suite (`./Tools/Test-Headless.ps1 -Seeds 0`)
-reproduce exactly. Promotion to defaults needs the performance work and the
-contract amendment listed at the end.
+reproduce exactly. Promotion to defaults needs the contract amendment and the
+configuration/save fields listed in §5.
 
-Branch base: `feature/unified-social-relocation` at `f841284`.
+Branch base: `feature/unified-social-relocation` at `f841284` (§1-§6) and
+`b4450e9` (§7-§8).
 
 ## 1. Question and answer in brief
 
@@ -104,14 +106,13 @@ requirement therefore cannot be expressed by that metric alone.
 
 ## 3. Cost
 
-Each scored candidate is one `AdvanceBudget`: about 0.17 ms under v1.1 and about
-0.34 ms under surplus births (the bound case solves twice and bisects `g`). The
-grid uses about 15 candidates per camp-turn. Planning in the 12-seed sweep takes
-about 27 s for 300 turns, against about 10 s without the kernel: 2.7x. The cost is
-O(camps x candidates) and independent of simulated duration, but it is not
-acceptable at 80/320-tribe scale without pruning (the chosen clothing grid points
-concentrate at 0.75/1.0), warm starts from the previous turn, or a closed-form
-bound case.
+As prototyped, each scored candidate was one authoritative `AdvanceBudget`: about
+0.17 ms under v1.1 and about 0.36 ms under surplus births, about 13.6 candidates per
+camp-turn, so the 12-seed sweep spent 22.1 s of its 27.7 s planning in the kernel
+(3.0x the 9.3 s kernel-off run). Section 7 replaces this with a planner-only solver:
+the same sweep now spends about 1.7 s in the kernel and plans in 8.0-8.3 s, with every chosen
+split identical. The cost remains O(camps x candidates), independent of simulated
+duration.
 
 ## 4. Known limits
 
@@ -122,8 +123,15 @@ bound case.
   camps keep the existing fallback for the remainder.
 - The distress-cohort sizing and daughter-forecast defects in §1 are diagnosed,
   not repaired.
-- Scalar/parallel replay with the flags on is unchecked (the flags are process-wide
-  statics; the decision path is pure).
+- Scalar/parallel replay with the flags on is checked (§7, §8): identical 12-seed
+  fingerprints with one worker and with four workers on small reversed partitions.
+  The flags remain process-wide statics, so fixed-suite checks cannot toggle them.
+- The authoritative surplus solve (`SurplusBudget`) can return its birth fraction
+  up to about 2.5e-5 short in person-years: when its bisection stops on the
+  tolerance test after moving the upper bound, it returns the stale lower bound
+  (worst observed: target 1,402.987 person-years, returned 1,402.952). This affects
+  only the flag-on resolution path. It is left unchanged so the 12-seed outcomes
+  stay reproducible; the planning solver does not have the defect.
 - Village size is now land-capped: typical sites feed about 300-480 people, so the
   600-1,000 band appears only on rich sites. That is a land-calibration question.
 
@@ -134,8 +142,11 @@ bound case.
    new calibration anchors and re-run recovery/shock gates.
 2. Configuration and save fields replacing the static diagnostic flags, with
    old-save defaults.
-3. Performance work (above) and scalar/parallel replay.
-4. Mixed-use (farming + herding) settlements under the same heuristic.
+3. Performance work and scalar/parallel replay: done (§7), pending an agreed
+   budget.
+4. Mixed-use (farming + herding) settlements under the same heuristic: routes done
+   (§8); the herd-versus-field posture needs a longer-horizon value than the
+   one-turn kernel provides.
 5. The heuristic then serves as the teacher/baseline for the renewed Village
    Elder RL agent, whose action is the committed labour/food split.
 
@@ -149,8 +160,180 @@ All commands run from the repository root with `.tools/dotnet/dotnet.exe run -c 
   ladders, and fission/immigration gate outcomes. Options: `kernel`, `kernelwy`,
   `kernellex`, `kernelterm`, `kerneldeaths`, `lextol=<x>`, `surplusbirths`,
   `shelteronly`, `freecloth`, `freehouse`, `nofission`, `noimm`,
-  `distressladder`, `intens=<turns>`, `soft=<multiplier>`, `dumpturn=<t>`.
+  `distressladder`, `intens=<turns>`, `soft=<multiplier>`, `dumpturn=<t>`;
+  `kernelexact` (score with the authoritative solver), `kernelverify` (score with
+  both and count differing decisions), `kernelmixed`, `posture=<0|1|2>`,
+  `workers=<n>` (parallel planning and resolution; the last turn prints each
+  seed's fingerprint). The summary line reports kernel time, calls, interval solves,
+  chosen levels/routes/postures and the surplus case counts.
+- `--kernel-scaling=<players>,<turns>[,<seed>][,mixed]`: matched-state planning
+  cost after a social-free opening (8: Small; 80: 1024x512; 320: 2048x1024
+  benchmark scale). Each continuation turn plans the same world with the kernel
+  off, with the planning solver and with the authoritative solver (minimum of three
+  repetitions after a full collection, rotated order), then resolves the planning
+  solver's plan.
+- `--kernel-mixed-checks`: the standalone mixed-use fixtures (§8).
+- `DemographyChecks` (fixed suite) compares the planning and authoritative solvers
+  over 1,440 budget cases without touching the process-wide flags.
 
 Diagnostic sinks are null or false by default: `Fission.Diagnostic`,
 `Immigration.Diagnostic`, `Fission.DistressSizeLadderDiagnostic`, the
 `DemandController.Kernel*` fields, and `PhysicalDemography.SurplusFundedBirthsDiagnostic`.
+
+## 7. Planning cost of the kernel split (16 October 2026)
+
+**Abstraction.** Authoritative state is unchanged: resolution still advances each
+cohort with `AdvanceBudget`/`SurplusBudget`, and the Elder's scores are transient.
+Candidate scoring now calls `PhysicalDemography.PlanningBudget`: the same law,
+inputs and tolerances (`DemographicServiceTolerance` 1e-10, `DemographicRootTolerance`
+1e-12), solved for planning only. A score differs from the authoritative one only
+inside those tolerances, so a decision can change only at a near-exact tie.
+
+**Measured cause.** The 12-seed sweep scored 61,126 candidates (13.6 per camp-turn).
+Each surplus-births candidate cost about 62 fixed-service interval solves: a
+bisected full-birth closure, a bisected birthless closure and a 48-step bisection
+on the birth fraction `g`. Each interval solve also bisected the equilibrium root
+from log(double.Epsilon), about 55 rate evaluations.
+
+**Changes** (all in `Demography.cs`, planning path only):
+
+1. Person-year closure (`FastClosure`): `f(m) = PY(m) - m` falls with the assumed
+   person-years, so one fixed-point step from the birth-only envelope brackets the
+   root after two solves; Brent's method finishes.
+2. Surplus classification (`FastSurplus`): with `T = food / foodRate`, the birthless
+   closure is fed exactly when `f(0) <= 0` and the full-birth closure exactly when
+   `f(1) <= 0`, where `f(g) = PY(F = 1, C = c(T), g) - T`. The two endpoint solves
+   classify the case that previously took two complete closures, and in the
+   food-bound case they already bracket `g`. A fed camp whose clothing also covers
+   the fully clothed path needs one solve.
+3. Equilibrium root: halving steps from the current population, then Brent.
+4. Exact reuse inside a solve: band edges shared by consecutive bands are evaluated
+   once, the net rate uses hoisted per-interval constants with the same arithmetic,
+   and the crowding/disease normaliser `expm1(1000 k)` is cached per thread (this
+   last one is bitwise-identical and also applies to resolution).
+5. A mixed camp's alternative-route candidate with the same kernel inputs as an
+   earlier one reuses its result (ties keep the earlier candidate).
+
+**Result, 12-seed sweep** (`kernellex,lextol=0.05,surplusbirths`, 300 turns):
+
+| | Kernel | Planning total | Solves per candidate | Chosen splits |
+| --- | ---: | ---: | ---: | --- |
+| Authoritative scoring (b4450e9) | 22.1 s | 27.7 s | 62 | reference |
+| Planning solver | 1.65-1.76 s | 8.0-8.3 s | 6.4 | identical; CSV byte-identical |
+| Kernel off (surplus births only) | 0 | 9.0-9.3 s | - | - |
+
+The kernel-off run has more camps (365 against 221 at turn 25), so its total is not
+a matched comparison; the matched figures are in the scaling table. With
+`kernelverify` every decision was also scored with the authoritative solver: 0 of
+4,499 decisions differ, the largest score difference is 9.4e-7 in QoL, and the
+largest person-year difference (2.5e-5) is the authoritative solver's stale-bound
+return noted in §4, not the planning solver. Across the 1,440-case fixed matrix the
+two solvers agree to 5.5e-9 in person-years and 1.2e-9 in coverage.
+
+**Scaling** (`--kernel-scaling`, seed 11, matched state, minimum of three
+repetitions; planning = AI decisions plus Prepare):
+
+| Tribes | Camp-turns | Kernel off, ms per camp-turn | Planning solver: kernel ms per camp-turn | Planning ratio | Authoritative scoring: kernel ms per camp-turn | Planning ratio |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 (12-seed sweep, same run) | 4,499 | 1.42 | 0.39 | 1.27-1.28x | 4.9 | 4.9x |
+| 80 | 468 | 1.17 | 0.35 | 1.30-1.35x | 4.4-4.5 | 4.8-4.9x |
+| 320 | 1,027 | 1.32-1.33 | 0.38 | 1.31-1.32x | 4.4-4.6 | 4.4-4.6x |
+
+Ranges span the single-route and mixed (mode 0) runs. The harness's own 8-tribe
+sample (109 camp-turns) is too small: the kernel-off time of the same ten turns
+varied from 136 to 190 ms between runs, giving ratios from 1.28x to 1.45x, so the
+8-tribe row uses the 12-seed sweep's kernel share of its own planning. The kernel
+cost per camp-turn is flat in world size (0.35-0.49 ms everywhere measured), as
+O(camps x candidates) predicts; the remaining planner cost also scales with camps.
+
+**Proposed budget:** the kernel split may add at most 35% to matched-state planning
+(planning ratio at most 1.35x) at 8, 80 and 320 tribes, measured as above. It is
+met everywhere. The example budget of 1.3x is met at 8 tribes and reached or
+exceeded by at most 0.05 at 80 and 320 tribes, where planning without the kernel is
+cheaper per camp. What remains is the per-solve cost (about 4-5 microseconds,
+mostly exponentials, per 20-year interval) at about 6.4 solves per candidate, not
+the search.
+
+**Not done, by design.** Warm starts from the previous turn's choice, pruning the
+grid to the levels usually chosen (clothing 0.75/1.0 take 84% of choices,
+shelter 1.0 takes 56%), and coarser log bands would each cut cost further but change
+some chosen splits. None was needed to reach the budget, and each would move the
+heuristic away from the exhaustive teacher an RL agent should be compared with.
+
+**Replay.** Scalar against four workers with reversed three-camp partitions gives
+identical fingerprints for all 12 seeds and a byte-identical CSV, with and without
+`kernelmixed`. Flag-off output is byte-identical to `b4450e9` and the fixed suite
+passes.
+
+## 8. Mixed-use settlements (16 October 2026)
+
+**Question.** Farming and herding camps (61% of camp-turns in the 12-seed sweep)
+had one clothing route (Cloth whenever agriculture allows it), one priced shelter
+route (fixed Housing) and a fixed investment order (herd growth is Continuity,
+field expansion Development).
+
+**Action.** `KernelMixedDiagnostic` (`kernelmixed`) lets the Elder of a camp with
+both capabilities choose among them with the same kernel and lexicographic
+objective. The committed choice is `Allocation.ElderAction`: clothing route and
+grid level (units), shelter route and grid level (people), investment posture,
+and the kernel's person-years and QoL for it. With `CaptureDemandAllocations`,
+`Allocation.KernelCandidates` keeps every scored split as teacher data. This is the
+action shape proposed for the Village Elder agent; the levels are the existing
+grids (5 clothing x 3 shelter) plus two routes and three postures.
+
+**Search.** Stage 1 is the unchanged grid on the default routes. A mixed camp then
+scores the other clothing route at the chosen shelter (4 levels) and the other
+shelter route at the chosen clothing (2 levels). Every candidate of a mixed camp
+must fit the plant and animal food that can exist this turn and the Stone and
+Wood/Clay reachable; other camps keep the unconstrained single-route grid exactly.
+The committed clothing and shelter requests follow the chosen routes; the
+resolver already honours Protected clothing from either textile.
+
+**Labour posture.** Herd growth and field expansion both ask for labour in 24% of
+mixed camp-turns, and in every such case one is rationed (field expansion is
+rationed in 99% of the turns it is requested). Their returns arrive in later turns,
+so a one-turn score cannot compare them. `KernelPostureMode` 1 scores herd-first
+against field-first, and mode 2 also scores no investment, each over this turn plus
+one continuation turn: the population follows the first turn, the investment's
+measured return (grown-herd food; the ladder's accepted field gain) is added to the
+second turn's income, and person-years are summed with person-year-weighted QoL.
+
+**Results** (12 seeds, same settings as §7; single-route reference first):
+
+| Variant | Camps | Population | Median | QoL (final, pop-weighted) | Person-years x QoL | Route / posture choices |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Single route (reference) | 221 | 102,124 | 384 | 0.785 | 20.17M | - |
+| Mixed, routes only (mode 0, default) | 221 | 102,193 | 384 | 0.785 | 20.17M | Light Housing 13 of 2,584 mixed camp-turns; Animal Fabric 0 |
+| Mixed, herd/field (mode 1) | 216 | 97,782 | 368.5 | 0.780 | 19.64M | field-first 380, herd-first 296 |
+| Mixed, herd/field/none (mode 2) | 226 | 95,970 | 327 | 0.792 | 19.69M | none 572, field-first 93, herd-first 91 |
+
+Nutrition stays 0.995-0.996 and clothing coverage 0.887-0.892 (person-year weighted)
+in every variant.
+
+**Findings.**
+
+- Clothing routes tie. Cloth and Animal Fabric have the same weaving labour and one
+  food unit per unit, both count fully as clothing, and food is fungible in the
+  demographic budget, so the two routes give identical scores and the earlier
+  (default) route is kept. Animal Fabric wins only when plant feedstock cannot fund
+  Cloth; that never happened in the sweep but does in the fixture.
+- Fixed Housing dominates tents when its materials exist: about a quarter less
+  builder labour per person and full social cohesion (tents count 0.21). The kernel
+  chose tents in 13 mixed camp-turns, where Wood and Clay could not fund Housing.
+- The two-turn posture score is worse than the existing herd-first rule: mode 1
+  picks field-first in 56% of competing turns and loses 4.3% of population and
+  0.005 QoL; mode 2 mostly stops investing and loses 6% of population for 0.007 QoL.
+  The horizon truncates a herd's compounding growth and a field's persistence, and
+  it omits the slaughter food a held herd yields. Investment choice needs a
+  longer-horizon value than the turn kernel gives; this is a natural target for the
+  learned Elder (a value function), not for a longer hand-built lookahead.
+- Cost: mixed mode (0) adds 3.6% kernel calls and about 1% kernel time on the
+  12-seed sweep after the same-input reuse; modes 1 and 2 added 6-15% before it.
+
+**Fixtures** (`--kernel-mixed-checks`, 13 assertions): with no plant feedstock and
+abundant animal food, the mixed Elder commits Animal Fabric clothing, the Protected
+request follows it, is funded, and clothes more than the single-route Elder, whose
+Cloth lacks feedstock;
+with no Wood or Clay it commits and funds Light Housing; the scored pool records
+both routes; planning is pure and deterministic; a farming-only camp's requests,
+grants, action and ceilings are identical with and without the flag.
