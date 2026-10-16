@@ -84,6 +84,10 @@ namespace Anthropocene.Simulation
         // validation harness opts in; it is transient and never enters a save,
         // observation, or authoritative turn record.
         public static bool CaptureCraftWorkDiagnostics;
+        // Retaining a DemandControl allocation keeps its complete request/bundle
+        // graph alive through Prepare. Ordinary play has no consumer for it; the
+        // opt-in recovery harness uses it to close planned grants against receipts.
+        public static bool CaptureDemandAllocations;
         public Dictionary<int, CampFieldWorkDiagnostic> CraftFieldWork { get; private set; }
         public Dictionary<int, CampFoodFlowDiagnostic> CraftFoodFlow { get; private set; }
         internal CampFieldWorkDiagnostic CraftFieldWorkFor(int camp)
@@ -163,5 +167,13 @@ namespace Anthropocene.Simulation
         public int Camp;
         public double ConsumptionTarget, ReserveTarget, ReserveFillTarget, GrowthFoodTarget;
         public double GrowthFoodUsed;
+        public double ProjectedFood, NetIncome, PriorityIncome, AvailableAfterReserve;
+        public double PlantFoodAvailable, AnimalFoodAvailable;
+        public double ClothingPlantInput, ClothingAnimalInput;
+        public double RequestedPlantInput, RequestedAnimalInput;
+        // Manufacturing inputs admitted by PlanGrowth's food budget. These are
+        // not authoritative inventory debits; production consumption is traced
+        // separately by the recovery harness.
+        public double BudgetedPlantInput, BudgetedAnimalInput;
     }
 }

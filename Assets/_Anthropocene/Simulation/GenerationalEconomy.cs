@@ -25,6 +25,12 @@ namespace Anthropocene.Simulation
     internal sealed class GrowthPlan
     {
         public double Required, ConsumptionRequired, GrowthFood, ReproductivePopulation, FinalPopulation, ManufacturingInput, PlantManufacturingInput, AnimalManufacturingInput;
+        // Transient explanation of the food chronology used by the opt-in
+        // recovery diagnostic. These values never enter authoritative state.
+        public double ProjectedFood, NetIncome, PriorityIncome, AvailableAfterReserve;
+        public double PlantFoodAvailable, AnimalFoodAvailable;
+        public double ClothingPlantInput, ClothingAnimalInput;
+        public double RequestedPlantInput, RequestedAnimalInput;
     }
 
     // A domestic herd uses the camp's immediate land footprint. These are
@@ -358,6 +364,18 @@ namespace Anthropocene.Simulation
                     flow.ReserveTarget = need.ReserveTarget;
                     flow.ReserveFillTarget = need.ReserveFillTarget;
                     flow.GrowthFoodTarget = plans[camp.Id].GrowthFood;
+                    flow.ProjectedFood = plans[camp.Id].ProjectedFood;
+                    flow.NetIncome = plans[camp.Id].NetIncome;
+                    flow.PriorityIncome = plans[camp.Id].PriorityIncome;
+                    flow.AvailableAfterReserve = plans[camp.Id].AvailableAfterReserve;
+                    flow.PlantFoodAvailable = plans[camp.Id].PlantFoodAvailable;
+                    flow.AnimalFoodAvailable = plans[camp.Id].AnimalFoodAvailable;
+                    flow.ClothingPlantInput = plans[camp.Id].ClothingPlantInput;
+                    flow.ClothingAnimalInput = plans[camp.Id].ClothingAnimalInput;
+                    flow.RequestedPlantInput = plans[camp.Id].RequestedPlantInput;
+                    flow.RequestedAnimalInput = plans[camp.Id].RequestedAnimalInput;
+                    flow.BudgetedPlantInput = plans[camp.Id].PlantManufacturingInput;
+                    flow.BudgetedAnimalInput = plans[camp.Id].AnimalManufacturingInput;
                 }
             }
             foreach (var hunter in w.Hunters.Where(h => !Supply.Connected(w, h)).OrderBy(h => h.Id))
@@ -750,6 +768,16 @@ namespace Anthropocene.Simulation
                 }
             }
             var result = ForRate(low);
+            if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+            {
+                result.ProjectedFood = projectedFood; result.NetIncome = netIncome;
+                result.PriorityIncome = priorityIncome; result.AvailableAfterReserve = available;
+                result.PlantFoodAvailable = Math.Max(0, camp.PlantFood);
+                result.AnimalFoodAvailable = Math.Max(0, camp.AnimalFood + incomingAnimalFood);
+                result.ClothingPlantInput = clothingPlant; result.ClothingAnimalInput = clothingAnimal;
+                result.RequestedPlantInput = result.PlantManufacturingInput;
+                result.RequestedAnimalInput = result.AnimalManufacturingInput;
+            }
             double manufacturingBudget = Math.Max(0, available - result.GrowthFood);
             double otherPlant = Math.Min(result.PlantManufacturingInput - clothingPlant, manufacturingBudget);
             manufacturingBudget -= otherPlant;

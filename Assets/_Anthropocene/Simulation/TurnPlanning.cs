@@ -22,6 +22,9 @@ namespace Anthropocene.Simulation
         // Value-rule production order per automated camp (WP3b). Transient: never saved,
         // observed or fingerprinted; absent for manual camps and under the Uniform rule.
         internal readonly Dictionary<int, ProductionOrder> ProductionOrders = new Dictionary<int, ProductionOrder>();
+        // The exact DemandControl allocation used to compile each automatic intent.
+        // Transient diagnostic data only: never saved, observed, or read by resolution.
+        internal readonly Dictionary<int, DemandController.Allocation> DemandAllocations = new Dictionary<int, DemandController.Allocation>();
         internal CampPlacement Placement;
         // The same-turn trade handshake (WP8): agreed from the committed boundary,
         // settled at the opening of the economy phase. Transient: never saved.
@@ -147,6 +150,7 @@ namespace Anthropocene.Simulation
         public bool Abandoning;
         public Order Order;
         public ProductionOrder Production;
+        public DemandController.Allocation DemandAllocation;
     }
 
     // An automatic economic intent with the Value-rule production order that
@@ -155,6 +159,7 @@ namespace Anthropocene.Simulation
     {
         public Order Order;
         public ProductionOrder Production;
+        public DemandController.Allocation DemandAllocation;
     }
 
     // Planning done while the human player thinks. Never saved, never part of
@@ -248,7 +253,8 @@ namespace Anthropocene.Simulation
                     cached.Tile == effectiveTile && cached.Abandoning == abandoning)
                 {
                     Interlocked.Increment(ref diagnostics.DraftIntentsReused);
-                    return new AutomaticPlan { Order = cached.Order.Copy(), Production = cached.Production };
+                    return new AutomaticPlan { Order = cached.Order.Copy(), Production = cached.Production,
+                        DemandAllocation = cached.DemandAllocation };
                 }
                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
                 return AutomaticIntent(world, camp, effectiveTile, abandoning, index, trade);
@@ -258,6 +264,7 @@ namespace Anthropocene.Simulation
             {
                 var camp = automated[i]; var order = automaticOrders[i].Order;
                 if (automaticOrders[i].Production != null) prepared.ProductionOrders[camp.Id] = automaticOrders[i].Production;
+                if (automaticOrders[i].DemandAllocation != null) prepared.DemandAllocations[camp.Id] = automaticOrders[i].DemandAllocation;
                 prepared.Orders.Add(order); prepared.AutomatedCamps.Add(camp.Id);
                 acceptedEconomy.Add(camp.Id, order);
                 prepared.OrderReceipts.Add(camp.Player + ":automation:" + order + ":accepted");
@@ -292,8 +299,10 @@ namespace Anthropocene.Simulation
             // automated intent can use the prior cohort as gatherers;
             // manual assignments remain the player's responsibility.
             ProductionOrder production = null;
+            DemandController.Allocation demandAllocation = null;
             EconomicIntent intent;
-            using (PhaseProfile.Scope("Allocator")) intent = abandoning ? settings.Copy() : EconomicAllocationStrategy.Plan(world, planningCamp, settings, out production);
+            using (PhaseProfile.Scope("Allocator")) intent = abandoning ? settings.Copy()
+                : EconomicAllocationStrategy.Plan(world, planningCamp, settings, out production, out demandAllocation);
             if (abandoning)
             {
                 intent.Assignments.Clear();
@@ -308,7 +317,8 @@ namespace Anthropocene.Simulation
             };
             string error = EconomicIntents.Validate(constraints, intent);
             if (error != null) throw new InvalidOperationException("Invalid automatic economic plan: " + error);
-            return new AutomaticPlan { Order = new Order(OrderKind.Economy, camp.Id) { Economy = intent }, Production = production };
+            return new AutomaticPlan { Order = new Order(OrderKind.Economy, camp.Id) { Economy = intent },
+                Production = production, DemandAllocation = ResolutionMetrics.CaptureDemandAllocations ? demandAllocation : null };
         }
 
         // Touch every lazily created world-attached cache on the calling
@@ -351,7 +361,7 @@ namespace Anthropocene.Simulation
                 int tile = placement.Destinations[camp.Id]; bool abandon = abandoning.Contains(camp.Id);
                 var plan = AutomaticIntent(world, camp, tile, abandon, index, trade);
                 return new DraftIntent { Camp = camp.Id, Tile = tile, Abandoning = abandon,
-                    Order = plan.Order, Production = plan.Production };
+                    Order = plan.Order, Production = plan.Production, DemandAllocation = plan.DemandAllocation };
             });
             intentsScope.Dispose();
             var draft = new PlanningDraft(world, excludedPlayer, ai) { Trade = trade };

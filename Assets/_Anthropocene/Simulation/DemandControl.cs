@@ -12,8 +12,12 @@ namespace Anthropocene.Simulation
         public static bool IsKnown(string name) => name == Legacy || name == DemandControl;
         public static bool IsDemandControl(SimulationConfig cfg) => cfg != null && cfg.EconomicAllocation == DemandControl;
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, out ProductionOrder production)
+            => Plan(w, c, settings, out production, out _);
+        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, out ProductionOrder production,
+            out DemandController.Allocation allocation)
         {
-            if (IsDemandControl(w.Config)) return DemandController.Plan(w, c, settings, out production, out _);
+            allocation = null;
+            if (IsDemandControl(w.Config)) return DemandController.Plan(w, c, settings, out production, out allocation);
             return EconomicPlanner.Plan(w, c, settings, EconomicPlanner.ConfiguredRule(w.Config), out _, out production);
         }
     }
@@ -25,8 +29,10 @@ namespace Anthropocene.Simulation
     //   Survival     herders for the current herd, operating farmers and food gatherers (the existing physical rules);
     //   Continuity   this turn's clothing consumption, shelter replacement (fixed Housing for farming camps, tents for
     //                herding ones), Farm and Herding Tools for the work staffed;
-    //   Recovery     the clothing reserve, the shelter deficit, Pots for the storage gap.
-    // Development (expansion, herd investment) is a fixed directive of none in this slice. Each request is a complete bundle:
+    //   Recovery     the food/clothing reserve, the shelter deficit, Pots for the storage gap;
+    //   Development bounded field expansion for a demonstrated food-security gap.
+    // Maximum-birth food is not a labour reservation: physical births use whatever
+    // food remains after the authorized services. Each request is a complete bundle:
     // craft time, made intermediates (Animal Fabric for tents, Housing Material for Housing), raw extraction beyond stock,
     // feedstock and its gathering, and tool service (toolmaking at the urgency of the work it enables). The Elder grants
     // whole classes in order, within a class an equal fulfilment fraction, freezing requests whose own input saturates; then
@@ -36,6 +42,15 @@ namespace Anthropocene.Simulation
     {
         internal enum ServiceClass { Survival = 1, Continuity = 2, Recovery = 3, Development = 4 }
         private const double Epsilon = 1e-9;
+        // Scalar headless root-cause ablations only. Ordinary planning always
+        // leaves these false; the recovery harness uses the default one-worker
+        // planner and scopes them around matched continuations. Thread-static
+        // values deliberately do not define a parallel simulation mode. The two
+        // food flags are retained only so older diagnostic invocations remain
+        // source-compatible; the contract-correct path is now consumption-first.
+        [ThreadStatic] internal static bool ConsumptionFirstDiagnostic;
+        [ThreadStatic] internal static bool ExcludeGrowthFromSurvivalDiagnostic;
+        [ThreadStatic] internal static bool NoFieldDevelopmentDiagnostic;
 
         // Per-unit requirements of a request's complete bundle.
         internal sealed class Bundle
@@ -56,7 +71,13 @@ namespace Anthropocene.Simulation
         {
             // A goods request names its Good; a labour request (herd growth, field expansion) its Role, in persons.
             public string Service; public ServiceClass Class; public CraftGood? Good; public string Role; public double Units, Granted; public string Unmet = "";
-            internal Bundle Bundle; internal bool Frozen;
+            internal Bundle Bundle;
+            // Opening intermediates represented by this request's per-unit
+            // bundle. They are tentatively reserved while the bundle is built,
+            // then reduced to the amount represented by the actual grant before
+            // a fallback or lower service class may claim the remainder.
+            internal double ReservedFabric, ReservedMaterial;
+            internal bool ReservationSettled;
             public double Fraction => Units > Epsilon ? Granted / Units : 1;
         }
         internal sealed class Allocation
@@ -65,7 +86,19 @@ namespace Anthropocene.Simulation
             public readonly Dictionary<string, int> Staff = new Dictionary<string, int>();
             public int Herders, Farmers, FoodGatherers; public double FeedstockGatherers, MaterialGatherers, ToolsMade;
             public readonly Dictionary<CraftGood, double> Ceilings = new Dictionary<CraftGood, double>();
-            public string FoodUnmet = ""; public int RepairPasses;
+            public string FoodUnmet = ""; public int RepairPasses, TrimPasses;
+            public double ResidentGoodsBudget, FinalCompiledPersons;
+            // Prepared-boundary diagnostics. The normal envelopes preserve the
+            // operating reserve; the Clothing variants stop after current meals.
+            public double ExpectedSupply, Meals, OperatingReserve;
+            public double ConsumptionIncomeTarget, ReserveFillTarget, MaximumGrowthFood;
+            public int ConsumptionOnlyFoodGatherers, ConsumptionReserveFoodGatherers, ConsumptionGrowthFoodGatherers;
+            public int FieldExpansionSteps;
+            public double FieldExpansionGapPerYear, FieldExpansionGainPerYear;
+            public double FieldExpansionWorkerYears, FieldExpansionMinimumScore = double.PositiveInfinity;
+            public bool HusbandryEnabled;
+            public double PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope;
+            public double PlantEnvelopeClothing, AnimalEnvelopeClothing, FoodRoomEnvelopeClothing;
         }
 
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, out ProductionOrder production, out Allocation allocation)
@@ -76,14 +109,52 @@ namespace Anthropocene.Simulation
             var cfg = w.Config; var n = cfg.Neolithic;
             double years = cfg.TurnDays / cfg.DaysPerYear, intervals = cfg.GenerationIntervals, perYear = cfg.DaysPerYear / cfg.BaseDays;
             var d = CampProductionDemand.BuildPhysical(w, c, e, false);
+            // DemandControl closes every normal manufacturing input behind the
+            // same attainable operating-reserve target used by resolution.
+            // CampProductionDemand's compatibility envelopes are also used by
+            // Legacy/Value and remain unchanged.  Correct this strategy's copy
+            // here: otherwise reserve refill and reserve-clothing feedstock can
+            // claim the same finite harvest, and resolution must cut Cloth below
+            // the Elder's ceiling.  Current clothing retains the separate
+            // meals-only envelope built by BuildPhysical.
+            double attainableReserve = Math.Min(NeolithicProduction.DesiredReserveFood(w, d.Consumers, intervals),
+                NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, intervals, years));
+            d.OperatingReserve = attainableReserve;
+            double normalFoodRoom = Math.Max(0, c.Food + d.Supply - d.Meals - attainableReserve);
+            d.SparePlant = Math.Min(c.PlantFood, Math.Max(0, c.Food - d.Meals - attainableReserve));
+            d.PlantEnvelope = Math.Min(d.TerrestrialAfterHerds + d.SparePlant, normalFoodRoom);
+            d.AnimalEnvelope = d.HusbandryEnabled
+                ? Math.Min(Math.Max(0, c.AnimalFood) + d.ManagedFood.AnimalFood,
+                    Math.Max(0, normalFoodRoom - d.SparePlant))
+                : 0;
+            d.FoodRoomEnvelope = d.HusbandryEnabled ? normalFoodRoom : 0;
+            alloc.ExpectedSupply = d.Supply; alloc.Meals = d.Meals; alloc.OperatingReserve = d.OperatingReserve;
+            alloc.HusbandryEnabled = d.HusbandryEnabled;
+            alloc.PlantEnvelope = d.PlantEnvelope; alloc.AnimalEnvelope = d.AnimalEnvelope;
+            alloc.FoodRoomEnvelope = d.FoodRoomEnvelope;
+            alloc.PlantEnvelopeClothing = d.PlantEnvelopeClothing;
+            alloc.AnimalEnvelopeClothing = d.AnimalEnvelopeClothing;
+            alloc.FoodRoomEnvelopeClothing = d.FoodRoomEnvelopeClothing;
             var recipes = d.Recipes; var byGood = recipes.ToDictionary(r => r.Good);
             int residents = c.Population;
             double gatherRate = cfg.GatherPerPerson * intervals;  // food one gatherer brings in over the turn
 
+            // Food is split at the controller boundary. Current consumption is
+            // Survival; reserve refill is Recovery. Maximum-growth food remains
+            // a physical opportunity for whatever gatherers are left after the
+            // authorized services, not an unconditional labor reservation.
+            TurnResolver.FoodBucketTargets(w, c, intervals, years, d.Meals, c.Food,
+                out double consumptionIncomeTarget, out _, out double reserveFillTarget,
+                out double maximumGrowthFood);
+            alloc.ConsumptionIncomeTarget = consumptionIncomeTarget;
+            alloc.ReserveFillTarget = reserveFillTarget;
+            alloc.MaximumGrowthFood = maximumGrowthFood;
+
             // ---- Survival: the current herd, field operation and food gathering (fixed directives: no expansion) ----
             int herders = Math.Min(residents, d.ReservedHerders);
             double animalReceipts = d.ManagedFood.AnimalFood;
-            double foodTarget = Math.Min(d.ForageAfterHerds, Math.Max(0, d.Biological - animalReceipts));
+            double survivalFoodDemand = consumptionIncomeTarget;
+            double foodTarget = Math.Min(d.ForageAfterHerds, Math.Max(0, survivalFoodDemand - animalReceipts));
             double terrestrial = Math.Min(d.TerrestrialAfterHerds, foodTarget);
             double farmRate = d.HarvestProductivity * cfg.GatherPerPerson * intervals;
             // Operating farmers keep the fields up (and harvest while they do); the rest of the food is gathered. Gathering on
@@ -94,9 +165,23 @@ namespace Anthropocene.Simulation
             double harvest = Math.Min(terrestrial, farmers * farmRate);
             int wantedGatherers = gatherRate > 0 ? (int)Math.Ceiling(Math.Max(0, foodTarget - harvest) / gatherRate - Epsilon) : 0;
             int foodGatherers = Math.Min(Math.Max(0, residents - herders - farmers), wantedGatherers);
+            int DiagnosticGatherers(double target)
+            {
+                double boundedTarget = Math.Min(d.ForageAfterHerds, Math.Max(0, target - animalReceipts));
+                double boundedTerrestrial = Math.Min(d.TerrestrialAfterHerds, boundedTarget);
+                double boundedHarvest = Math.Min(boundedTerrestrial, farmers * farmRate);
+                return gatherRate > 0
+                    ? Math.Min(Math.Max(0, residents - herders - farmers),
+                        (int)Math.Ceiling(Math.Max(0, boundedTarget - boundedHarvest) / gatherRate - Epsilon))
+                    : 0;
+            }
+            alloc.ConsumptionOnlyFoodGatherers = DiagnosticGatherers(consumptionIncomeTarget);
+            alloc.ConsumptionReserveFoodGatherers = DiagnosticGatherers(consumptionIncomeTarget + reserveFillTarget);
+            alloc.ConsumptionGrowthFoodGatherers = DiagnosticGatherers(consumptionIncomeTarget + maximumGrowthFood);
             if (farmers < requiredOperating || foodGatherers < wantedGatherers) alloc.FoodUnmet = "labor rationing";
             alloc.Herders = herders; alloc.Farmers = farmers; alloc.FoodGatherers = foodGatherers;
             double budget = Math.Max(0, residents - herders - farmers - foodGatherers);   // persons left for goods
+            alloc.ResidentGoodsBudget = budget;
 
             // The resolver-shaped candidate the tool demands read (herders and farmers staffed).
             var staffed = e.Copy();
@@ -127,8 +212,10 @@ namespace Anthropocene.Simulation
             // Stock of made intermediates credited once, before any is made.
             double freeFabric = Math.Max(0, c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric));
             double freeMaterial = Math.Max(0, c.Inventory.HousingMaterial - c.TradeExport(CraftGood.HousingMaterial));
-            Bundle WithInput(Bundle b, double perUnit, CraftGood input, double units, ref double stock, bool fabric)
+            Bundle WithInput(Bundle b, double perUnit, CraftGood input, double units, ref double stock,
+                bool fabric, out double reserved)
             {
+                reserved = 0;
                 if (b == null || !(perUnit > 0)) return b;
                 double need = units * perUnit, fromStock = Math.Min(stock, need); stock -= fromStock;
                 double madeShare = need > Epsilon ? (need - fromStock) / need : 0;
@@ -136,32 +223,42 @@ namespace Anthropocene.Simulation
                 if (madeShare > Epsilon)
                 {
                     var made = Usable(byGood[input]) ? Craft(input) : null;
-                    if (made == null) return null;
+                    if (made == null) { stock += fromStock; return null; }
                     b.Add(made, perUnit * madeShare);
                 }
+                reserved = fromStock;
                 return b;
             }
 
             // ---- Requests ----
-            void Request(string service, ServiceClass cls, CraftGood good, double units)
+            Request GoodsRequest(string service, ServiceClass cls, CraftGood good, double units)
             {
-                if (!(units > Epsilon) || !byGood.ContainsKey(good)) return;
+                if (!(units > Epsilon) || !byGood.ContainsKey(good)) return null;
                 var r = byGood[good];
                 var req = new Request { Service = service, Class = cls, Good = good, Units = units };
-                if (!Usable(r) || NeolithicProduction.Priority(candidate, good) <= 0) { req.Unmet = "missing capability"; alloc.Requests.Add(req); return; }
+                if (!Usable(r) || NeolithicProduction.Priority(candidate, good) <= 0) { req.Unmet = "missing capability"; alloc.Requests.Add(req); return req; }
                 var b = Craft(good);
-                if (r.AnimalFabric > 0) b = WithInput(b, r.AnimalFabric, CraftGood.AnimalFabric, units, ref freeFabric, true);
-                if (r.HousingMaterial > 0) b = WithInput(b, r.HousingMaterial, CraftGood.HousingMaterial, units, ref freeMaterial, false);
-                if (b == null) { req.Unmet = "missing capability"; alloc.Requests.Add(req); return; }
-                req.Bundle = b; alloc.Requests.Add(req);
+                if (r.AnimalFabric > 0)
+                    b = WithInput(b, r.AnimalFabric, CraftGood.AnimalFabric, units, ref freeFabric, true,
+                        out req.ReservedFabric);
+                if (b != null && r.HousingMaterial > 0)
+                    b = WithInput(b, r.HousingMaterial, CraftGood.HousingMaterial, units, ref freeMaterial, false,
+                        out req.ReservedMaterial);
+                if (b == null)
+                {
+                    freeFabric += req.ReservedFabric; freeMaterial += req.ReservedMaterial;
+                    req.ReservedFabric = req.ReservedMaterial = 0;
+                    req.Unmet = "missing capability"; alloc.Requests.Add(req); return req;
+                }
+                req.Bundle = b; alloc.Requests.Add(req); return req;
             }
             // Clothing: one service, this turn's consumption (continuity) and the useful reserve (recovery). Route: Cloth
             // where agriculture allows it, Animal Fabric for herding camps.
             var clothingRoute = CultivationEconomy.Enabled(c) && Usable(byGood[CraftGood.Cloth]) && NeolithicProduction.Priority(candidate, CraftGood.Cloth) > 0 ? CraftGood.Cloth : CraftGood.AnimalFabric;
             double clothingUseful = Math.Max(0, NeolithicProduction.Demand(w, candidate, clothingRoute, years, residents, false, false, d.Sources));
             double clothingNow = Math.Min(clothingUseful, Math.Max(0, d.ClothingNeedUnits));
-            Request("clothing", ServiceClass.Continuity, clothingRoute, clothingNow);
-            Request("clothing reserve", ServiceClass.Recovery, clothingRoute, Math.Max(0, clothingUseful - clothingNow));
+            GoodsRequest("clothing", ServiceClass.Continuity, clothingRoute, clothingNow);
+            GoodsRequest("clothing reserve", ServiceClass.Recovery, clothingRoute, Math.Max(0, clothingUseful - clothingNow));
             // Fabric this turn's clothing consumption will use (beyond the Cloth held) is not free for tents.
             double consumption = residents * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
             freeFabric = Math.Max(0, freeFabric - Math.Max(0, consumption - Math.Max(0, c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth))));
@@ -177,21 +274,40 @@ namespace Anthropocene.Simulation
             // possible route uses it for both. Each person is claimed by one route only.
             bool fixedPossible = CultivationEconomy.Enabled(c) && Usable(byGood[CraftGood.Housing]) && NeolithicProduction.Priority(candidate, CraftGood.Housing) > 0;
             bool tentsPossible = CultivationEconomy.HusbandryEnabled(c) && Usable(byGood[CraftGood.LightHousing]) && NeolithicProduction.Priority(candidate, CraftGood.LightHousing) > 0;
-            CraftGood durable = fixedPossible ? CraftGood.Housing : CraftGood.LightHousing, quick = tentsPossible ? CraftGood.LightHousing : CraftGood.Housing;
+            CraftGood durable = fixedPossible ? CraftGood.Housing : tentsPossible ? CraftGood.LightHousing : CraftGood.Housing;
+            CraftGood quick = tentsPossible ? CraftGood.LightHousing : fixedPossible ? CraftGood.Housing : CraftGood.LightHousing;
             double PerUnit(CraftGood g) => g == CraftGood.Housing ? n.HousingPeoplePerUnit : n.LightHousingPeoplePerUnit;
-            Request("shelter replacement", ServiceClass.Continuity, durable, replacementPeople / PerUnit(durable));
-            Request("shelter deficit", ServiceClass.Recovery, quick, (gapPeople - replacementPeople) / PerUnit(quick));
+            var shelterFallbacks = new List<(Request Primary, CraftGood Fallback, double PeoplePerUnit)>();
+            Request ShelterRequest(string service, ServiceClass cls, CraftGood primary, CraftGood fallback, double people)
+            {
+                var request = GoodsRequest(service, cls, primary, people / PerUnit(primary));
+                if (request != null && people > Epsilon && primary != fallback)
+                    shelterFallbacks.Add((request, fallback, PerUnit(primary)));
+                return request;
+            }
+            ShelterRequest("shelter replacement", ServiceClass.Continuity, durable, quick, replacementPeople);
+            // Construct the lower-priority deficit bundle only when Recovery is
+            // reached. Otherwise it can reserve opening Fabric/Material before
+            // Continuity has had a chance to form its alternate shelter route.
+            double shelterDeficitPeople = Math.Max(0, gapPeople - replacementPeople);
             // Field and herd equipment for the work staffed (continuity of retained assets).
-            Request("farm tools", ServiceClass.Continuity, CraftGood.FarmTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.FarmTools, years, residents, false, false, d.Sources)));
-            Request("herding tools", ServiceClass.Continuity, CraftGood.HerdingTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.HerdingTools, years, residents, false, false, d.Sources)));
+            GoodsRequest("farm tools", ServiceClass.Continuity, CraftGood.FarmTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.FarmTools, years, residents, false, false, d.Sources)));
+            GoodsRequest("herding tools", ServiceClass.Continuity, CraftGood.HerdingTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.HerdingTools, years, residents, false, false, d.Sources)));
             // Storage: the Pots the food reserve needs beyond natural storage.
-            Request("storage", ServiceClass.Recovery, CraftGood.Pots, Math.Max(0, NeolithicProduction.PotDemand(w, c, years, residents)));
+            GoodsRequest("storage", ServiceClass.Recovery, CraftGood.Pots, Math.Max(0, NeolithicProduction.PotDemand(w, c, years, residents)));
             void LabourRequest(string service, ServiceClass cls, string role, double persons)
             {
                 if (!(persons > Epsilon)) return;
                 var b = new Bundle(); b.RoleYears[role] = years;
                 alloc.Requests.Add(new Request { Service = service, Class = cls, Role = role, Units = persons, Bundle = b });
             }
+            // The extra workers needed to restore the operating food reserve
+            // compete in Recovery with the other deficit-repair services. They
+            // are explicit Gatherer assignments: this reserves resident time
+            // without changing the resolver's total gatherer semantics
+            // (unassigned residents plus explicitly assigned Gatherers).
+            LabourRequest("food reserve", ServiceClass.Recovery, WorkforceRoles.Gatherer,
+                Math.Max(0, alloc.ConsumptionReserveFoodGatherers - foodGatherers));
             // Herd service (slice 2; Addendum A §A4: continuity of a retained asset, so other work cannot displace it). The
             // herd policy grows the herd by one turn of breeding but never beyond the local pasture's forage and water; it
             // requests the herders that herd needs beyond the current herd's (survival). An oversized herd is held at the
@@ -205,21 +321,37 @@ namespace Anthropocene.Simulation
                 herdTarget = Math.Max(0, Math.Min(Math.Max(current, grown.Animals), pasture));
                 LabourRequest("herd growth", ServiceClass.Continuity, WorkforceRoles.Herder, Math.Max(0, HerdingTooling.RequiredHerdersFor(w, c, years, herdTarget) - herders));
             }
-            // Field development (slice 2; v0.1 §13): authorized by a projected food gap, never by spare labour. The food targets
-            // (consumption, reserve, growth, plus Cloth feedstock) beyond the supply are closed by the expansion ladder's
-            // physical steps, best first; their build worker-years are requested as development (class 4).
-            if (CultivationEconomy.Enabled(c) && d.Footprint.Length > 0)
+            // Field development (slice 2; v0.1 §13): authorized by a projected
+            // food-security gap, never by spare labour or by a maximum-birth
+            // target. Consumption, reserve recovery and accepted Cloth feedstock
+            // beyond the current supply are closed by the expansion ladder's
+            // physical steps, best first; build work remains Development.
+            if (!NoFieldDevelopmentDiagnostic && CultivationEconomy.Enabled(c) && d.Footprint.Length > 0)
             {
-                double feedstock = clothingRoute == CraftGood.Cloth ? clothingUseful * n.PlantFoodPerFabricUnit : 0;
-                double gapPerYear = Math.Max(0, d.Biological + feedstock - d.Supply) / years;
+                double feedstock = clothingRoute == CraftGood.Cloth ? clothingNow * n.PlantFoodPerFabricUnit : 0;
+                double gapPerYear = Math.Max(0, consumptionIncomeTarget + reserveFillTarget + feedstock - d.Supply) / years;
                 if (gapPerYear > Epsilon)
                 {
                     double gain = 0, buildYears = 0;
+                    double workerYearBudget = budget * years;
                     foreach (var step in CultivationEconomy.ExpansionLadder(w, c, years, d.Footprint, gapPerYear))
                     {
-                        if (gain >= gapPerYear - Epsilon) break;
+                        if (gain >= gapPerYear - Epsilon || buildYears >= workerYearBudget - Epsilon) break;
                         if (!(step.AnnualGain > 0) || !(step.WorkerYears > 0)) continue;
-                        gain += step.AnnualGain; buildYears += step.WorkerYears;
+                        double acceptedYears = Math.Min(step.WorkerYears, workerYearBudget - buildYears);
+                        double acceptedFraction = acceptedYears / step.WorkerYears;
+                        gain += step.AnnualGain * acceptedFraction; buildYears += acceptedYears;
+                        if (ResolutionMetrics.CaptureDemandAllocations)
+                        {
+                            alloc.FieldExpansionSteps++;
+                            alloc.FieldExpansionMinimumScore = Math.Min(alloc.FieldExpansionMinimumScore, step.Score);
+                        }
+                    }
+                    if (ResolutionMetrics.CaptureDemandAllocations)
+                    {
+                        alloc.FieldExpansionGapPerYear = gapPerYear;
+                        alloc.FieldExpansionGainPerYear = gain;
+                        alloc.FieldExpansionWorkerYears = buildYears;
                     }
                     LabourRequest("field expansion", ServiceClass.Development, WorkforceRoles.Farmer, buildYears / years);
                 }
@@ -251,11 +383,30 @@ namespace Anthropocene.Simulation
                 return rate > 0 ? amount / rate : double.PositiveInfinity;
             }
 
+            double FeedstockGatherers(Bundle total, Bundle currentClothing)
+            {
+                // Credit opening Plant Food once. Current clothing may use the
+                // stock left after meals; every other recipe may use only stock
+                // left after meals and the operating reserve. Any remainder is
+                // an incoming terrestrial claim and therefore reserves gatherer
+                // time.
+                double currentOpeningPlant = Math.Min(currentClothing.Plant, d.SparePlantClothing);
+                double normalPlant = Math.Max(0, total.Plant - currentClothing.Plant);
+                double normalOpeningPlant = Math.Min(normalPlant, Math.Max(0, d.SparePlant - currentOpeningPlant));
+                double incomingPlant = Math.Max(0, currentClothing.Plant - currentOpeningPlant)
+                    + Math.Max(0, normalPlant - normalOpeningPlant);
+                return gatherRate > 0 ? incomingPlant / gatherRate : 0;
+            }
+
             // Totals for a set of grants: role worker-years (extraction and gathering included), and the binding check.
             string Binding(Func<Request, double> grant)
             {
-                var total = new Bundle();
-                foreach (var q in alloc.Requests) if (q.Bundle != null) total.Add(q.Bundle, grant(q));
+                var total = new Bundle(); var currentClothing = new Bundle();
+                foreach (var q in alloc.Requests) if (q.Bundle != null)
+                {
+                    double granted = grant(q); total.Add(q.Bundle, granted);
+                    if (q.Service == "clothing") currentClothing.Add(q.Bundle, granted);
+                }
                 // Tool service beyond start coverage is made, at its own labour and stone/wood.
                 double shortfall = Math.Max(0, total.ToolOutputs - coverage);
                 if (shortfall > Epsilon) { if (toolmaking == null) return "equipment"; total.Add(toolmaking, shortfall / outputsPerTool); }
@@ -275,21 +426,29 @@ namespace Anthropocene.Simulation
                     if (ExtractionRole(m) == WorkforceRoles.Gatherer) gathererYears += y; else persons += Math.Ceiling(y / years - Epsilon);
                 }
                 foreach (var role in total.RoleYears) persons += role.Value / years;
-                // Clothing feedstock is funded before the reserve refill: the larger envelope bounds it.
-                if (total.Plant > Math.Max(d.PlantEnvelope, d.PlantEnvelopeClothing) + Epsilon) return "plant feedstock";
-                if (total.Animal > Math.Max(d.AnimalEnvelope, d.AnimalEnvelopeClothing) + Epsilon) return "animal feedstock";
-                if (d.HusbandryEnabled && total.Plant + total.Animal > Math.Max(d.FoodRoomEnvelope, d.FoodRoomEnvelopeClothing) + Epsilon) return "food room";
+                // Only this cohort's current clothing input may displace the
+                // reserve refill. Recovery clothing and tent feedstock remain
+                // ordinary manufacturing. Using max(normal, clothing) for the
+                // aggregate bundle lets an unrelated input borrow the clothing
+                // exception (notably Animal Food for tents when clothing uses
+                // Plant Food), promising work the resolver cannot fund.
+                double BeforeReserveLimit(double normal, double clothing, double protectedInput)
+                    => Math.Min(clothing, normal + protectedInput);
+                if (total.Plant > BeforeReserveLimit(d.PlantEnvelope, d.PlantEnvelopeClothing, currentClothing.Plant) + Epsilon) return "plant feedstock";
+                if (total.Animal > BeforeReserveLimit(d.AnimalEnvelope, d.AnimalEnvelopeClothing, currentClothing.Animal) + Epsilon) return "animal feedstock";
+                if (d.HusbandryEnabled && total.Plant + total.Animal > BeforeReserveLimit(d.FoodRoomEnvelope,
+                    d.FoodRoomEnvelopeClothing, currentClothing.Plant + currentClothing.Animal) + Epsilon) return "food room";
                 if (total.Fabric > Math.Max(0, c.Inventory.AnimalFabric) + Epsilon) return "fabric";
                 if (total.Material > Math.Max(0, c.Inventory.HousingMaterial) + Epsilon) return "housing material";
-                double feedstockGatherers = gatherRate > 0 ? total.Plant / gatherRate : 0;
+                double feedstockGatherers = FeedstockGatherers(total, currentClothing);
                 persons += gathererYears / years + feedstockGatherers;
                 return persons > budget + Epsilon ? "labor" : null;
             }
 
             // ---- Elder arbitration: classes in order, an equal fraction within a class, freezing saturated inputs ----
-            foreach (ServiceClass cls in new[] { ServiceClass.Continuity, ServiceClass.Recovery, ServiceClass.Development })
+            void Arbitrate(List<Request> active)
             {
-                var active = alloc.Requests.Where(q => q.Class == cls && q.Bundle != null).ToList();
+                if (active.Count == 0) return;
                 for (int pass = 0; pass < 8 && active.Count > 0; pass++)
                 {
                     double Grant(Request q, double f) => active.Contains(q) ? q.Units * f : q.Granted;
@@ -304,6 +463,44 @@ namespace Anthropocene.Simulation
                     if (users.Count == 0) users = active.ToList();
                     foreach (var q in users) { q.Unmet = binding.StartsWith("material") ? "material shortage" : binding; active.Remove(q); }
                 }
+            }
+            void SettleReservation(Request q)
+            {
+                if (q == null || q.ReservationSettled) return;
+                double fraction = q.Units > Epsilon ? Numbers.Clamp(q.Granted / q.Units, 0, 1) : 0;
+                freeFabric += q.ReservedFabric * (1 - fraction);
+                freeMaterial += q.ReservedMaterial * (1 - fraction);
+                q.ReservedFabric *= fraction; q.ReservedMaterial *= fraction;
+                q.ReservationSettled = true;
+            }
+            foreach (ServiceClass cls in new[] { ServiceClass.Continuity, ServiceClass.Recovery, ServiceClass.Development })
+            {
+                if (cls == ServiceClass.Recovery)
+                    ShelterRequest("shelter deficit", ServiceClass.Recovery, quick, durable, shelterDeficitPeople);
+                var primary = alloc.Requests.Where(q => q.Class == cls && q.Bundle != null).ToList();
+                // Arbitration removes input-bound requests from its working set
+                // as each saturated input freezes. Keep the complete class list
+                // so even a zero-granted frozen request returns its tentative
+                // opening-intermediate reservation.
+                Arbitrate(primary.ToList());
+                foreach (var request in primary) SettleReservation(request);
+                // Route fallback is one bounded repair inside the already chosen
+                // shelter service. Move only the primary route's unserved people
+                // to the alternate route, so the two requests never claim the
+                // same person. Existing grants and every higher-priority debit
+                // stay frozen; no forecast or strategy search is rerun.
+                var fallbacks = new List<Request>();
+                foreach (var route in shelterFallbacks.Where(x => x.Primary.Class == cls))
+                {
+                    double unservedPeople = Math.Max(0, route.Primary.Units - route.Primary.Granted) * route.PeoplePerUnit;
+                    if (!(unservedPeople > Epsilon)) continue;
+                    route.Primary.Units = route.Primary.Granted;
+                    var fallback = GoodsRequest(route.Primary.Service, cls, route.Fallback,
+                        unservedPeople / PerUnit(route.Fallback));
+                    if (fallback?.Bundle != null) fallbacks.Add(fallback);
+                }
+                Arbitrate(fallbacks.ToList());
+                foreach (var fallback in fallbacks) SettleReservation(fallback);
             }
 
             // ---- Integer staffing, compiled per role after aggregation; at most one repair pass ----
@@ -331,8 +528,12 @@ namespace Anthropocene.Simulation
                     if (ExtractionRole(m) == WorkforceRoles.Gatherer) materialGatherers += y / years;
                     else { int people = (int)Math.Ceiling(y / years - Epsilon); if (people > 0) staff[ExtractionRole(m)] = (staff.TryGetValue(ExtractionRole(m), out int s) ? s : 0) + people; }
                 }
-                double feedstockGatherers = gatherRate > 0 ? total.Plant / gatherRate : 0;
+                var currentClothing = new Bundle();
+                foreach (var q in alloc.Requests.Where(q => q.Service == "clothing" && q.Bundle != null))
+                    currentClothing.Add(q.Bundle, q.Granted);
+                double feedstockGatherers = FeedstockGatherers(total, currentClothing);
                 double needed = staff.Values.Sum() + materialGatherers + feedstockGatherers;
+                alloc.FinalCompiledPersons = needed;
                 if (needed <= budget + Epsilon || repair == 1)
                 {
                     foreach (var p in staff) alloc.Staff[p.Key] = p.Value;
@@ -340,7 +541,7 @@ namespace Anthropocene.Simulation
                     foreach (var p in total.Outputs) alloc.Ceilings[p.Key] = p.Value;
                     if (toolsMade > 0) alloc.Ceilings[toolGood] = (alloc.Ceilings.TryGetValue(toolGood, out double t) ? t : 0) + toolsMade;
                     // A final over-budget (rounding after the repair) drops the lowest-class work in stable order.
-                    if (needed > budget + Epsilon) TrimToBudget(alloc, budget, needed);
+                    if (needed > budget + Epsilon) { alloc.TrimPasses++; TrimToBudget(alloc, budget, needed); }
                     break;
                 }
                 // Repair: rounding cost `needed - budget` persons; scale the lowest classes down by that share and recompile.
@@ -358,6 +559,15 @@ namespace Anthropocene.Simulation
                 }
             }
 
+            // Integer repair/trim happens after there are no more routes to
+            // construct. Refresh the diagnostic reservation amounts to the
+            // final grants; any resulting slack is simply left in inventory.
+            foreach (var q in alloc.Requests.Where(q => q.Bundle != null && q.ReservationSettled))
+            {
+                q.ReservedFabric = q.Bundle.Fabric * q.Granted;
+                q.ReservedMaterial = q.Bundle.Material * q.Granted;
+            }
+
             // ---- Compile the intent ----
             var intent = e;
             intent.Labor = new EconomicLaborPlan();
@@ -371,7 +581,8 @@ namespace Anthropocene.Simulation
             intent.Assignments = intent.Assignments.Where(a => a.Population > 0).OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
             int nonGatherers = intent.Assignments.Sum(a => a.Population);
             intent.Labor.MaterialGatherers = Math.Min(Math.Max(0, residents - nonGatherers), alloc.MaterialGatherers);
-            intent.Labor.EquipmentTarget = Math.Min(residents, alloc.Staff.Where(p => !WorkforceRoles.Extractors.Contains(p.Key) && p.Key != WorkforceRoles.Herder && p.Key != WorkforceRoles.Farmer).Sum(p => p.Value));
+            intent.Labor.EquipmentTarget = Math.Min(residents, alloc.Staff.Where(p => !WorkforceRoles.Extractors.Contains(p.Key)
+                && p.Key != WorkforceRoles.Gatherer && p.Key != WorkforceRoles.Herder && p.Key != WorkforceRoles.Farmer).Sum(p => p.Value));
             // Build farmers are the field-expansion staff, on top of the operating farmers.
             intent.Labor.ExpansionFarmers = alloc.Staff.TryGetValue(WorkforceRoles.Farmer, out int builders) ? builders : 0;
             // The herd is held at what the staffed herders manage, within the policy's target; breeding is capped to it.

@@ -8,7 +8,7 @@ using Anthropocene.Simulation;
 // opening with both social transfer systems disabled. Four branches then load that exact save
 // and run the same continuation horizon with fission/immigration off/off, on/off, off/on and
 // on/on. The tool changes no production calibration or authoritative state.
-internal static class DemographySocialAblation
+internal static partial class DemographySocialAblation
 {
     private const int RapidReversalWindow = 3;
 

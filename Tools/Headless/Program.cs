@@ -246,6 +246,7 @@ internal static class Program
         if (args.Contains("--fission-only")) { FissionChecks.Run(); return 0; }
         if (args.Contains("--immigration-only")) { ImmigrationChecks.Run(); return 0; }
         if (args.Contains("--social-relocation-only")) { SocialRelocationChecks.Run(); return 0; }
+        if (args.Contains("--demand-control-only")) { DemandControlChecks.Run(); return 0; }
         var socialNative = args.FirstOrDefault(a => a.StartsWith("--social-relocation-native", StringComparison.Ordinal));
         if (socialNative != null)
         {
@@ -288,6 +289,12 @@ internal static class Program
         {
             int continuations = demographyDaughterEconomy.Contains("=") ? int.Parse(demographyDaughterEconomy.Substring(demographyDaughterEconomy.IndexOf('=') + 1)) : 30;
             DemographySocialAblation.RunDaughterEconomyAudit(continuations); return 0;
+        }
+        var demographyFissionRecovery = args.FirstOrDefault(a => a.StartsWith("--demography-fission-recovery", StringComparison.Ordinal));
+        if (demographyFissionRecovery != null)
+        {
+            int continuations = demographyFissionRecovery.Contains("=") ? int.Parse(demographyFissionRecovery.Substring(demographyFissionRecovery.IndexOf('=') + 1)) : 20;
+            DemographySocialAblation.RunFissionRecovery(continuations); return 0;
         }
         var demographyQoLHistogram = args.FirstOrDefault(a => a.StartsWith("--demography-qol-histogram", StringComparison.Ordinal));
         if (demographyQoLHistogram != null)

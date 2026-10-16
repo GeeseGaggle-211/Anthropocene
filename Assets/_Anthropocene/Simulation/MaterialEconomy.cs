@@ -689,6 +689,19 @@ namespace Anthropocene.Simulation
                 if (usefulDemand.TryGetValue(good, out double value)) return value;
                 if (good == CraftGood.HandTools || good == CraftGood.Tools)
                 {
+                    // DemandControl has already priced the complete granted
+                    // bundles, including the exact same-turn tool output needed
+                    // beyond opening coverage.  Re-deriving that input here from
+                    // opening food creates a circular underestimate: gathered
+                    // feedstock is available to the forecasted Cloth work, but
+                    // ToolReplacementDemands cannot see it and therefore asks for
+                    // only enough tools to process opening Plant Food.  The
+                    // allocated ceiling is the authoritative internal input in a
+                    // ceiling-bearing order; exports retain their separate
+                    // claim-first pass below.  Legacy/Value orders keep the
+                    // existing physical replacement-demand calculation.
+                    if (order != null && order.HasCeilings)
+                        return usefulDemand[good] = Math.Max(0, order.Ceiling(good));
                     var tools = NeolithicProduction.ToolReplacementDemands(w, c, years, residentPopulation < 0 ? c.Population : residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order);
                     usefulDemand[CraftGood.HandTools] = tools.HandTools; usefulDemand[CraftGood.Tools] = tools.Tools;
                     return good == CraftGood.HandTools ? tools.HandTools : tools.Tools;
@@ -747,7 +760,9 @@ namespace Anthropocene.Simulation
                 double amount = Math.Min(wanted, recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
                 // Housing Material and its assembly draw on one Builder pool.
                 if (recipe.Good == CraftGood.HousingMaterial)
-                    amount = NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor, exportOnly ? Outstanding(recipe.Good) : Math.Max(0, useful - planned[recipe.Good]), housingMaterial - HeldForExport(CraftGood.HousingMaterial), Outstanding(CraftGood.HousingMaterial));
+                    amount = Math.Min(amount, NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor,
+                        exportOnly ? Outstanding(recipe.Good) : Math.Max(0, useful - planned[recipe.Good]),
+                        housingMaterial - HeldForExport(CraftGood.HousingMaterial), Outstanding(CraftGood.HousingMaterial)));
                 if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, housingMaterial - HeldForExport(CraftGood.HousingMaterial)) / recipe.HousingMaterial);
                 if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                 if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
