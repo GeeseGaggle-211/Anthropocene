@@ -2,18 +2,20 @@
 
 Status: the shared architecture, finite-input accounting, deterministic replay and
 population-transfer conservation pass. The identified DemandControl priority,
-shelter-route, field-bound, same-turn tool-closure and reserve/feedstock double-
-spend defects are repaired and covered by regressions. Native settlements no
-longer exhibit the original forecast-collapse signature, but the matched recovery
-gate still lacks sustained balanced protection. Cross-settlement ecological-
-contention forecasting, learned-policy comparison and promotion of the Physical-v1
-social law remain uncertified. **NO-GO for a fresh MLP training bank.**
+shelter-route, field-bound, same-turn tool-closure, reserve/feedstock double-spend,
+material-reserve scheduling and private rival-herd information defects are
+repaired and covered by regressions. Visible rival contention now uses public
+count bands and a public wild-growth assumption, so it is explicitly an estimate,
+not an oracle. Native settlements no longer exhibit the original forecast-collapse
+signature, but the matched recovery gate still lacks sustained balanced protection
+in daughters. Learned-policy comparison and promotion of the Physical-v1 social
+law remain uncertified. **NO-GO for a fresh MLP training bank.**
 
 **Evidence provenance.** The 25-turn social ablations, cooldown/site sweeps,
 histograms, daughter audit and scale tables below were pinned before the current
 DemandControl repairs. They remain historical evidence about the social
 mechanisms, not current post-repair balance measurements. The section titled
-"Current post-repair recovery result" is the current causal run. The later
+"Current post-repair recovery result" is the current 30-turn causal run. The later
 "pre-repair diagnosis" is retained to show how the repair targets were selected;
 values from the two generations must not be compared as one matched experiment.
 
@@ -157,90 +159,103 @@ neither immigration nor fission initiates the economic imbalance.
 ### Current post-repair recovery result
 
 The current run advances seeds 17, 53 and 991 to the first native fission Close
-boundary and follows the resulting five matched parent/daughter pairs for 20
+boundary and follows the resulting five matched parent/daughter pairs for 30
 turns with later fission and immigration disabled. All ten tracked settlements
-remain alive and grow. Low QoL does not prohibit births: parents end at 3.939x
-their boundary population and daughters at 17.917x. One path of each kind becomes
-fully served briefly, but none remains at `F,C,H >= 0.8` for three turns.
+remain alive and grow. Low QoL does not prohibit births: parents end at 4.349x
+their boundary population and daughters at 23.386x. One parent path sustains
+`F,C,H >= 0.8` for three turns; two daughter paths become fully served briefly,
+but no daughter sustains the threshold for three turns.
 
-| Cohort | Terminal population / boundary | Terminal F/C/H | Terminal QoL | Mean F/C/H, ages 12-20 | Mean QoL |
+| Cohort | Terminal population / boundary | Terminal F/C/H | Terminal QoL | Mean F/C/H, ages 22-30 | Mean QoL |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Parent | 3.939x | 0.919 / 0.186 / 0.637 | 0.539 | 0.871 / 0.101 / 0.646 | 0.497 |
-| Daughter | 17.917x | 0.909 / 0.122 / 0.830 | 0.504 | 0.891 / 0.085 / 0.758 | 0.448 |
+| Parent | 4.349x | 0.917 / 0.189 / 0.655 | 0.470 | 0.902 / 0.167 / 0.652 | 0.453 |
+| Daughter | 23.386x | 0.932 / 0.481 / 0.841 | 0.526 | 0.932 / 0.219 / 0.844 | 0.449 |
 
-Housing is no longer the primary failure. The bounded alternate shelter route
-and Housing Material ceiling repair raise late-window mean housing to 0.646 for
-parents and 0.758 for daughters. The remaining service deficit is clothing, and
-its cause is explicit rather than a QoL gate: current clothing is plant-feedstock
-bound in 40 of 45 parent camp-turns and 41 of 45 daughter camp-turns while mean
-nutrition is 0.871 and 0.891.
+Housing is no longer the primary failure. The remaining service deficit is
+clothing, not a QoL growth gate: mean late-window daughter nutrition and housing
+are 0.932 and 0.844 while clothing is 0.219. The native allocator grants 0.336
+current-clothing units per daughter resident-turn against one unit of current
+need, and no clothing-buffer recovery. Low welfare coexists with rapid positive
+population growth under the physical demographic law.
 
-One allocator-to-resolver defect was a circular same-turn tool estimate.
-For example, one pre-fix camp granted 452 Cloth but forecast and made only 41.801.
-The allocation had budgeted 233.535 Regular Tools, while the forecast requested
-only 3.223 because `ToolReplacementDemands` sized useful textile work from opening
-Plant Food and could not see the feedstock the same plan would gather. A
-ceiling-bearing DemandControl order now uses its already validated tool allocation
-as the forecast's internal tool demand; Legacy/Value orders retain their existing
-replacement calculation. The zero-opening-feedstock regression makes tools first,
-then Cloth, and bounds both by their Elder ceilings.
+The earlier same-turn Tool and food-ledger repairs remain closed. A
+ceiling-bearing DemandControl order uses its already validated Tool allocation as
+the production forecast's internal Tool demand, and normal manufacturing uses the
+same attainable operating reserve as resolution. The shelter fallback settles
+opening Animal Fabric and Housing Material against the actual grant before trying
+an alternate route or lower service class. Compatibility Legacy/Value orders keep
+their established behavior.
 
-The second defect was in the food envelope. DemandControl placed food-reserve
-refill and clothing-buffer work in Recovery, but its normal Plant Food envelope
-subtracted meals and omitted the protected operating reserve. It could therefore
-sell the same finite harvest once to reserve refill and again to reserve-clothing
-feedstock. Resolution correctly paid the reserve first, making less Cloth than the
-Elder promised. DemandControl now closes normal manufacturing behind the same
-attainable reserve target used by resolution; current clothing retains its
-authorized meals-only exception. The compatibility Legacy/Value path is unchanged.
-A focused full-turn fixture starts with exactly meals plus reserve and proves that
-current clothing is made, reserve clothing is rejected as Plant-feedstock-bound,
-and forecast equals authoritative output.
+The latest claim-to-receipt replay rejected the working hypothesis that the four
+remaining Cloth misses were caused by competing human food claims. Every traced
+manufacturing claim was received in full, with no other camp claiming its tiles.
+It instead isolated two exact closure defects:
 
-After the food-ledger and tool-demand repairs, the local Cloth ceilings close to the
-local forecast. Parent Cloth then closes at 1.000 forecast/actual over ages 12-20. Daughter Cloth now
-realizes 0.893 and shelter 0.868. The traced material daughter misses are current-
-clothing claims whose authoritative Plant receipts fall below the camp-local plan,
-consistent with cross-settlement ecological contention after local preparation:
-for example, one plan admits 144.322 Plant Food/Cloth, but only 35.157 remains
-beyond meals in the authoritative shared harvest. A claim-to-receipt replay is
-still required to close that attribution. This is the remaining forecast-
-robustness gap, not missing Weaver labor, a QoL birth veto, a mortality calculation
-or a tool-bootstrap failure.
+- One daughter budgeted 118.921 Wood for current Tool production, with 113,770
+  units still accessible, but the resolver used all generalist material labor to
+  prefill a two-turn Clay reserve first. Tools and then Cloth collapsed despite a
+  physically available current input. Material gathering now makes two bounded
+  passes over the same sources and labor: current admitted production first,
+  configured reserves second. The focused regression has just enough labor for
+  ten current Clay and one current Wood and proves that both are gathered before
+  any reserve.
+- Another daughter shared a finite spring with one visible wild herd. Its own herd
+  received all 60 forage units but only 61.670 of 72 water units after the rival's
+  881.256-unit receipt, so nutrition was 0.857. The old private forecast credited
+  240 Animal Food. The forecast now submits public, count-banded visible rival-herd
+  claims to the same finite tile kernel. It uses the rival's public tile and species,
+  plus a full-intake wild-growth assumption; private exact count, prior deficits,
+  growth remainder, capacity and foreign owner location cannot affect the plan.
+  When the existing starvation grace/remainder law removes an owned animal, output
+  is valued from the survivors. Focused exact-count tests close both shared-source
+  and imminent-starvation forecasts to authoritative output, and a same-observation
+  fixture proves that different hidden rival state cannot change the forecast.
 
-The shelter fallback now also settles opening Animal Fabric and Housing Material
-against the actual grant before constructing an alternate route or entering a lower
-service class. A focused no-new-feedstock fixture proves that a Recovery backlog
-cannot reserve fabric ahead of Continuity replacement; partial-grant fixtures prove
-that unused opening intermediates are released and never counted twice.
+After those repairs, late-window parent and daughter Cloth, shelter and Housing
+Material each realize exactly 1.000 of their prepared forecast. Across the ten
+tracked settlements, the information-safe managed Animal Food estimate is
+448,558.308 forecast versus 448,010.543 actual: actual output is 0.998779 of the
+estimate. This small residual is expected from count bands and the public
+full-intake growth assumption; those estimates are not guaranteed bounds. No
+Cloth/material realization trace remains in the 30-turn replay. QoL, mortality,
+reward, immigration utility and social thresholds were not changed.
 
-More importantly, forecast error is not the cause of the low mean clothing state.
-The local allocator itself grants only 0.118 current-clothing units per daughter
-resident-turn in the late window, of which the resolver realizes 0.106, and grants
-no clothing-buffer recovery; 41 of 45 daughter camp-turns are explicitly Plant-
-feedstock-bound. Expected local supply is 79.722 per resident-turn against 89.184
-meals, so most turns have no plant surplus after current nutrition. A 4x Weaver-
-rate control leaves terminal daughter clothing unchanged within three decimals.
-Production speed is therefore not the binding repair.
+The requested food-to-Cloth calibration was tested as a counterfactual, not
+shipped as a default change. `PlantFoodPerFabricUnit=1` is the current 1:1 rule;
+the alternatives reduce that input per Cloth unit:
 
-Field development is also finite now: requests are capped by the post-Survival
-workforce and take about 3.8 parent and 5.9 daughter ladder steps per camp-turn,
-instead of tens of steps and millions of requested workers per resident. It
-requests/grants 0.403/0.332 parent and 0.467/0.403 daughter workers per resident in
-the late window. Disabling it lowers clothing and terminal population in all three
-seeds, so deleting field investment is falsified as a repair. The next economic
-test must compare its finite marginal
-return with the foregone gatherer return and close the forecast against competing
-ecological claims; it must not add free food or tune recipe multipliers first.
+| Food-to-Cloth yield | Population | Population × QoL | 30-turn summed endpoint population × QoL (proxy) | Pop-weighted QoL | Food / clothing | Healthy endpoints |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **1x (current)** | **5,444** | **3,018.331** | **51,981.402** | **0.554** | **0.945 / 0.500** | **3** |
+| 1.33x | 5,277 | 2,365.671 | 51,298.698 | 0.448 | 0.947 / 0.223 | 1 |
+| 2x | 5,553 | 3,077.717 | 52,481.181 | 0.554 | 0.945 / 0.528 | 3 |
+| 4x | 5,558 | 3,085.945 | 52,453.101 | 0.555 | 0.944 / 0.527 | 3 |
 
-The current conclusion is narrower than a GO: the systems-level death loop is not
-observed, and the repaired local production-closure defects are not observed in
-these native paths. Rapidly growing settlements remain physically food/feedstock
-constrained and do not demonstrate sustained balanced protection. The unresolved
-planner question is how to value finite field development against immediate
-gathering and how to quote supply under shared ecological contention. This is not
-evidence that immigration manufactures the failure, and it is not evidence for a
-global clothing or housing multiplier.
+At turn 30, 2x and 4x improve aggregate `population × QoL` by 59.386 and
+67.614, about 2.0-2.2%. Summing the 30 end-of-turn `population × QoL` observations
+gives gains of only 499.779 and 471.698, about 1.0% and 0.9%; this is a trajectory
+proxy, not exact person-year integration. Neither increases healthy endpoints or
+produces a sustained healthy daughter. The response is also non-monotonic: 1.33x
+loses 682.704 on the same summed proxy, and at turn 20 even 4x remains 22.878 below
+the current rule in terminal aggregate welfare. Late field-capital and
+food/expansion-worker allocations are nearly unchanged across the four variants;
+this rules out a persistent field-capital reduction as the explanation. The
+discontinuity is consistent with the coupled, integer settlement trajectory,
+where small feedstock changes can cross staffing and population boundaries, but
+that boundary has not yet been isolated causally. This is controlled evidence for
+retaining 2x as a calibration candidate, not for changing the default. It does not
+establish that the 1:1 recipe is the root defect or satisfy the contract's recovery
+gate.
+
+The current conclusion remains narrower than a GO. The systems-level death loop
+is not observed, native physical conservation passes, and the known local
+allocator-to-resolver closure defects are no longer present. Rapidly growing
+daughters still do not demonstrate sustained balanced protection. A serious MLP
+restart remains blocked on a matched current social-systems rerun, a robust
+calibration decision rather than a single-horizon recipe win, and an available
+learned-policy artifact for the required native-versus-learned comparison. This
+is not evidence that immigration manufactures the failure, and no free resource,
+population floor, reward shaping or composite-QoL survival term has been added.
 
 ### Isolated recovery and the upstream economic defect (pre-repair diagnosis)
 
@@ -353,16 +368,17 @@ its current disposition are:
    are Development only when explicitly authorized. Births remain the physical
    consequence of actual food and the 0.045 fertility law—there is no QoL gate,
    population floor or demographic bonus.
-2. **Completed for local allocation, reserve accounting and same-turn tool
-   closure; cross-settlement claim competition remains open.** In the same bounded
+2. **Completed for local allocation, reserve accounting, same-turn tool closure
+   and the traced claim-to-receipt failures.** In the same bounded
    forecast/plan, debit one shared finite typed food/feedstock ledger after each
    admitted class instead of granting every class against one no-contention supply
    envelope. Do not rerun ecology, food or production forecasts per class. Assert
    request → grant → integer staff → finite input → intermediate → final output →
-   paid service. The reserve/feedstock regression now closes exactly and native
-   daughter Cloth realizes 89.3% of forecast in the late window; the remaining
-   material misses are consistent with authoritative shared-tile contention that
-   the camp-local quote does not yet include, pending claim-to-receipt closure.
+   paid service. The reserve/feedstock and material-priority regressions close,
+   every traced manufacturing claim is received in full, and current parent and
+   daughter Cloth realize 1.000 of the prepared forecast in the late window.
+   Count-banded rival-herd estimates and joint human/herd edible-stock contention
+   remain robustness work; they are no longer described as exact private forecasts.
 3. **Completed.** Represent shelter as one non-duplicated service with a deterministic primary
    route and one bounded fallback for still-unserved people. Opening intermediates
    follow actual grants, so a Recovery route cannot reserve stock ahead of a
@@ -591,10 +607,10 @@ reuse, not a return to historical QoL coverage.
 | QoL and RL objective preservation | PASS | QoL calculation, reward and observation schema unchanged; local and lineage welfare separate |
 | Shared physical architecture | PASS | One evaluator for immigration/crowding/distress; finite service/material inputs; no mortality-from-QoL or net-rate veto |
 | Future opportunity accountability | PASS in injected fixtures | Neutral parity plus funded/false/filled/wrong-skill/reservation/nonmonotone coverage; no live jobs |
-| Native conservation and recoverable distress | PARTIAL / NO-GO | Same-boundary conservation and cause ledgers pass. All ten current isolated parent/daughter paths survive and grow; one path of each kind becomes healthy briefly, but none sustains balanced protection for three turns |
-| Healthy/saturated/distress social balance | NO-GO | Food classes, reserve accounting, shelter fallback, field bounds and internal tool closure are repaired, but current clothing remains physically Plant-Food-bound and the post-repair full social sweep has not been rerun |
+| Native conservation and recoverable distress | PARTIAL / NO-GO | Same-boundary conservation and cause ledgers pass. All ten current isolated parent/daughter paths survive and grow; one parent sustains balanced protection for three turns, two daughters reach it briefly, and no daughter sustains it |
+| Healthy/saturated/distress social balance | NO-GO | Food classes, reserve accounting, shelter fallback, field bounds, tool closure and traced material realization are repaired. Current clothing remains physically Plant-Food-bound; the repaired full 2×2 social sweep and longer stabilization are still missing |
 | Native causal cases | PARTIAL | One immigration accepted/suppressed/forced case is positive and exact; fission and broader receiver classes missing |
-| Forecast robustness | PARTIAL | Local reserve/feedstock and tool closure pass; two material daughter Cloth misses are consistent with shared-tile ecological contention, pending a claim-to-receipt replay. Herd forage/water are diagnostic only, and pastoral stock competition plus lower-bound admission rescores remain open |
+| Forecast robustness | PARTIAL | Local reserve/feedstock, tool and material claim-to-receipt closure pass. The information-safe managed-food estimate realizes 0.998779 in the current aggregate; uncertain/hidden/moving rivals, joint human/herd edible-stock competition and lower-bound admission rescores remain open |
 | Site selection | NO-GO for promotion | Bounded accepted-site food/aggregate controls create 127 fissions and zero viable endpoints; historical ordering remains default |
 | Oscillation | PASS for current default; calibration open | Existing hysteresis cuts rapid returns 16→6; alternatives lack causal/held-out welfare justification |
 | Performance | NO-GO for MLP | Endpoint-local reconciliation passes work-counter tests, but 320/mature p95 and allocation overhead fail promotion |
@@ -606,48 +622,44 @@ reuse, not a return to historical QoL coverage.
 
 The shortest evidence-driven route to GO is:
 
-1. Close the remaining nominal-versus-realized Plant Food gap against competing
-   ecological claims. Record each admitted current-clothing input through claim,
-   receipt and recipe consumption, then quote a conservative share of the existing
-   shared-tile envelope during preparation; do not rerun ecology or invent supply.
-   Add a tight-storage/export-commitment fixture around the exact tool-ceiling path
-   before declaring that forecast branch universally closed.
+1. Rerun the no-social and full 2×2 whole-world branches from identical saved
+   boundaries, then run a longer isolated-native stabilization. Rebuild the
+   end-state histograms and migration-source table, and require sustained daughter
+   protection rather than survival or rapid population growth alone.
 2. Compare each finite field-development step with the same resident's foregone
    immediate gatherer return. Keep the existing resolver ladder and bridge, but
    admit Development only when its retained physical return justifies that real
    opportunity cost. Validate against the current no-field control, which is worse.
-3. Run a longer isolated-native stabilization test after that closure. Require
-   sustained, not one-turn, balanced protection and report whether equilibrium is
-   reached through physical food capacity, population stabilization, or explicit
-   cause-specific mortality. Do not make low QoL a birth veto.
-4. Rerun the no-social and full 2×2 whole-world branches from identical saved
-   boundaries. Rebuild the end-state histograms and migration-source table from
-   the repaired economy before changing any fission or immigration calibration.
-5. Only if a finite, receipt-closed clothing bundle remains insufficient should an
-   input-efficiency change be considered. A Weaver-rate sweep is already negative:
-   4x speed changes late daughter mean clothing only from 0.082 to 0.089, so a
-   labor-output multiplier is not justified by the current evidence.
-6. Build matched healthy, productively saturated and physically distressed fission
+3. Keep the shipped 1:1 food-to-Cloth recipe while testing the 2x diagnostic
+   candidate on held-out seeds, both shorter and longer horizons, and integrated
+   person-year welfare. The current response is non-monotonic: 1.33x is materially
+   worse, while 2x and 4x gain only about 2% terminal population × QoL and do not
+   improve healthy endpoint count or sustained daughter protection.
+4. Test the public rival-herd estimate with uncertain, hidden and moving rivals,
+   joint human/herd competition for edible biomass, 20%/40% supply reductions and
+   delayed exhaustion. Add a tight-storage/export-commitment fixture around the
+   exact tool-ceiling path before declaring forecast robustness complete.
+5. Build matched healthy, productively saturated and physically distressed fission
    fixtures on saved native boundaries, then sweep only the existing policy
    thresholds/search fraction. The objective is to retain viable saturated and
    distress splits while reducing repeated fragmentation; add no survival bonus or
    QoL-ratio shortcut.
-7. Test the conservative/lower-bound service envelope against positive- and
+6. Test the conservative/lower-bound service envelope against positive- and
    zero-stability accepted immigration and fission cases,
    including delayed finite-input exhaustion and bounded carried-herd receipts and
    competition for land food. Keep `Stability` diagnostic until those causal
    results justify how it enters the existing four comparisons.
-8. Extend accepted/suppressed/forced native continuations to fission daughters and
+7. Extend accepted/suppressed/forced native continuations to fission daughters and
    more receiver classes for at least three turns, reporting production, F/C/H,
    cause deaths, workforce, population × QoL and integrated person-year welfare;
    keep endpoint sums explicitly labelled as proxies.
-9. Keep historical site ordering while the bounded alternatives remain non-viable;
+8. Keep historical site ordering while the bounded alternatives remain non-viable;
    revisit selection only after a daughter can demonstrably rebuild its real goods
    economy. Do not add a numerical food or survival bonus.
-10. Reduce forecast-view/material-summary allocation and safe-baseline cost, then
+9. Reduce forecast-view/material-summary allocation and safe-baseline cost, then
    run warmed repeated identical-boundary 80/320/mature benchmarks plus dense-flow
    rejection cascades. Preserve endpoint-local reconciliation and exact canonical
    results.
-11. Rerun the calibration sweep, daughter audit and full fixed/save-replay suite,
+10. Rerun the calibration sweep, daughter audit and full fixed/save-replay suite,
    then the requested native-versus-learned shocks once a learned policy runtime
    exists. Resolve RL observation/action/training defects independently.

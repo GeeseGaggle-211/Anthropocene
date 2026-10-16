@@ -153,6 +153,44 @@ namespace Anthropocene.Simulation
             {
                 int tile = groups[i].Tile;
                 var result = results[i];
+                if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+                {
+                    // groups[i].Claims is already in the canonical Entity/Kind
+                    // order consumed by Integrate. LINQ's stable ordering also
+                    // retains manufacturing-before-biological order for equal
+                    // keys, so the transient receipt can be paired exactly with
+                    // the claim whose Manufacturing tag is otherwise discarded.
+                    var tileClaims = groups[i].Claims;
+                    int paired = Math.Min(tileClaims.Length, result.Transfers.Count);
+                    double tileRequested = tileClaims.Sum(d => d.Food);
+                    double tileReceived = result.Transfers.Sum(t => t.Food);
+                    var requestedByCamp = tileClaims.GroupBy(FoodCamp)
+                        .ToDictionary(g => g.Key, g => g.Sum(d => d.Food));
+                    var receivedByCamp = new Dictionary<int, double>();
+                    for (int j = 0; j < paired; j++)
+                    {
+                        int owner = FoodCamp(tileClaims[j]);
+                        receivedByCamp[owner] = (receivedByCamp.TryGetValue(owner, out double prior) ? prior : 0)
+                            + result.Transfers[j].Food;
+                    }
+                    for (int j = 0; j < paired; j++)
+                    {
+                        var claim = tileClaims[j];
+                        var receipt = result.Transfers[j];
+                        int owner = FoodCamp(claim);
+                        LastMetrics.CaptureFoodClaim(new FoodClaimDiagnostic
+                        {
+                            Tile = tile, Camp = owner, Entity = claim.Entity,
+                            Kind = claim.Kind, Manufacturing = claim.Manufacturing,
+                            Requested = claim.Food, Received = receipt.Food,
+                            TileRequested = tileRequested, TileReceived = tileReceived,
+                            CompetingRequested = Math.Max(0, tileRequested
+                                - (requestedByCamp.TryGetValue(owner, out double ownRequest) ? ownRequest : 0)),
+                            CompetingReceived = Math.Max(0, tileReceived
+                                - (receivedByCamp.TryGetValue(owner, out double ownReceipt) ? ownReceipt : 0))
+                        });
+                    }
+                }
                 LastMetrics.ManagedRenewalInput += result.ManagedRenewalInput;
                 if (result.OperatingFraction > 0 && w.Tiles[tile].CultivationCapital > 0)
                 {

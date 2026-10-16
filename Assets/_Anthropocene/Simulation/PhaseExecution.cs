@@ -90,6 +90,7 @@ namespace Anthropocene.Simulation
         public static bool CaptureDemandAllocations;
         public Dictionary<int, CampFieldWorkDiagnostic> CraftFieldWork { get; private set; }
         public Dictionary<int, CampFoodFlowDiagnostic> CraftFoodFlow { get; private set; }
+        public List<FoodClaimDiagnostic> FoodClaims { get; private set; }
         internal CampFieldWorkDiagnostic CraftFieldWorkFor(int camp)
         {
             if (!CaptureCraftWorkDiagnostics) return null;
@@ -105,6 +106,12 @@ namespace Anthropocene.Simulation
             if (!CraftFoodFlow.TryGetValue(camp, out var value))
                 CraftFoodFlow[camp] = value = new CampFoodFlowDiagnostic { Camp = camp };
             return value;
+        }
+        internal void CaptureFoodClaim(FoodClaimDiagnostic claim)
+        {
+            if (!CaptureCraftWorkDiagnostics || claim == null) return;
+            if (FoodClaims == null) FoodClaims = new List<FoodClaimDiagnostic>();
+            FoodClaims.Add(claim);
         }
         public double HerdIntentMilliseconds, EcologyMilliseconds, SetupEconomyMilliseconds, ManagedHerdMilliseconds, GrowthPlanMilliseconds, SustainMilliseconds, ProductionMilliseconds, KnowledgeMilliseconds, TotalMilliseconds;
         public double FullTurnIntegrationMilliseconds, SeasonalPreparationMilliseconds, SeasonalIntegrationMilliseconds, SeasonalCommitMilliseconds, SeasonalExpansionMilliseconds;
@@ -175,5 +182,18 @@ namespace Anthropocene.Simulation
         // not authoritative inventory debits; production consumption is traced
         // separately by the recovery harness.
         public double BudgetedPlantInput, BudgetedAnimalInput;
+    }
+
+    // Transient claim-to-receipt attribution for the recovery harness. The
+    // authoritative Transfer remains unchanged: this sidecar preserves the
+    // manufacturing tag that is intentionally absent from saved history.
+    public sealed class FoodClaimDiagnostic
+    {
+        public int Tile, Camp, Entity;
+        public string Kind;
+        public bool Manufacturing;
+        public double Requested, Received;
+        public double TileRequested, TileReceived;
+        public double CompetingRequested, CompetingReceived;
     }
 }

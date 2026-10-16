@@ -180,6 +180,7 @@ namespace Anthropocene.Simulation
             forecast.OwnedHerds = owned;
             var herds = owned.Where(h => visible.Contains(h.Tile)).ToArray();
             if (herds.Length == 0) return forecast;
+            var ownedIds = owned.Select(h => h.Id).ToHashSet();
             double Animals(Herd h) => animalsOf != null && animalsOf.TryGetValue(h.Id, out double a) ? a : h.Animals;
             var claims = new List<Demand>();
             var requestedFood = new Dictionary<int, double>();
@@ -193,16 +194,73 @@ namespace Anthropocene.Simulation
                 ManagedHerdLocalClaims.Append(w, campTile ?? c.Tile, herd.Id, food, water,
                     intervals * w.Config.BaseDays, claims, visible);
             }
+            // Visible rival herds draw from the same finite forage and water
+            // ledgers during resolution. Include only claims on a source this
+            // camp's own herds also use; unrelated rivals cannot affect this
+            // forecast. A rival's private count, deficit, growth remainder,
+            // capacity and owner location are not planner inputs: wild/foreign
+            // counts first pass through the same public observation bands as
+            // policy input. Wild growth uses a public full-intake projection
+            // because its prior nutrition is private; count bands mean this is
+            // an estimate, not a guaranteed upper or lower bound.
+            var ownClaimTiles = claims.Select(d => d.Tile).ToHashSet();
+            double duration = intervals * w.Config.BaseDays;
+            foreach (var rival in w.Herds.Where(h => !ownedIds.Contains(h.Id)
+                && visible.Contains(h.Tile)).OrderBy(h => h.Id))
+            {
+                var rivalClaims = new List<Demand>();
+                var species = w.Config.GetSpecies(rival.Species);
+                double rivalAnimals = HerdCountKnowledge.Observe(rival.Animals, w.Config).Representative;
+                if (rivalAnimals <= 0) continue;
+                bool domestic = rival.DomesticCamp >= 0; // Public HerdObservation.Domestic.
+                if (!domestic)
+                {
+                    rivalAnimals = Math.Max(rivalAnimals, Math.Ceiling(rivalAnimals
+                        * Math.Exp(Math.Max(0, species.GrowthRate) * years)));
+                    int source = FreshwaterAccess.Source(w, rival.Tile);
+                    if (visible.Contains(rival.Tile))
+                        rivalClaims.Add(new Demand
+                        {
+                            Tile = rival.Tile, Entity = rival.Id, Kind = "Herd",
+                            PotentialFood = rivalAnimals * species.FoodConsumption * intervals,
+                            Freshwater = source == rival.Tile
+                                ? rivalAnimals * species.FreshwaterConsumption * intervals : 0
+                        });
+                    if (source != rival.Tile && visible.Contains(source))
+                        rivalClaims.Add(new Demand
+                        {
+                            Tile = source, Entity = rival.Id, Kind = "Herd",
+                            Freshwater = rivalAnimals * species.FreshwaterConsumption * intervals
+                        });
+                }
+                else
+                {
+                    // The owner's camp identity is private for a foreign herd.
+                    // At a committed boundary a domestic herd is located with
+                    // its camp, so its public current tile is the only permitted
+                    // footprint centre. Do not redistribute a hidden share onto
+                    // the visible subset of a partial footprint.
+                    if (w.Map.Radius(rival.Tile, 1).Any(id => !visible.Contains(id)))
+                        continue;
+                    ManagedHerdLocalClaims.Append(w, rival.Tile, rival.Id,
+                        rivalAnimals * species.FoodConsumption * intervals,
+                        rivalAnimals * species.FreshwaterConsumption * intervals,
+                        duration, rivalClaims, visible);
+                }
+                claims.AddRange(rivalClaims.Where(d => ownClaimTiles.Contains(d.Tile)));
+            }
             var transfers = new Dictionary<int, (double food, double water)>();
             foreach (var group in claims.GroupBy(d => d.Tile).OrderBy(g => g.Key))
             {
                 var result = EcologicalPressure.Integrate(w, group.Key, group, w.Days, intervals * w.Config.BaseDays);
                 foreach (var transfer in result.Transfers)
                 {
+                    if (!requestedFood.ContainsKey(transfer.Entity)) continue;
                     transfers.TryGetValue(transfer.Entity, out var prior);
                     transfers[transfer.Entity] = (prior.food + transfer.PotentialFood, prior.water + transfer.Freshwater);
                 }
-                forecast.HumanFoodDisplaced += result.Pressure.Where(p => p.Pool == "Biomass" && p.Kind == "Herd").Sum(p => p.GatherableSpill);
+                forecast.HumanFoodDisplaced += result.Pressure.Where(p => p.Pool == "Biomass"
+                    && p.Kind == "Herd" && ownedIds.Contains(p.Entity)).Sum(p => p.GatherableSpill);
             }
             double management = HerdingTooling.Plan(w, c, years, herders, managedAnimals).Fulfillment;
             forecast.ManagementFulfillment = management;
@@ -219,7 +277,17 @@ namespace Anthropocene.Simulation
                 double waterNutrition = requestedWater[herd.Id] <= 1e-12 ? 1 : Numbers.Clamp(realized.water / requestedWater[herd.Id], 0, 1);
                 double nutrition = Math.Min(foodNutrition, waterNutrition);
                 if (nutritionOut != null) nutritionOut[herd.Id] = nutrition;
-                forecast.AnimalFood += ManagedAnimalFoodYield(w, Animals(herd), nutrition, management, intervals);
+                double producingAnimals = Animals(herd);
+                if (nutrition < 1 - 1e-12 && herd.DeficitTurns + 1 > w.Config.StarvationGraceTurns)
+                {
+                    double deathRemainder = herd.DeathRemainder;
+                    int deaths = StarvationLosses((int)Math.Floor(producingAnimals),
+                        1 - nutrition, w.Config.Mortality,
+                        intervals * w.Config.BaseDays / w.Config.PracticeDays,
+                        ref deathRemainder);
+                    producingAnimals = Math.Max(0, producingAnimals - deaths);
+                }
+                forecast.AnimalFood += ManagedAnimalFoodYield(w, producingAnimals, nutrition, management, intervals);
             }
             double totalAnimals = herds.Sum(Animals);
             if (totalAnimals > 0)

@@ -627,6 +627,7 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public List<MaterialReceipt> MaterialTransfers = new List<MaterialReceipt>();
         [NonSerialized] public List<PressureEntry> Pressure = new List<PressureEntry>();
         [NonSerialized] public List<EcologyBalance> EcologyBalances = new List<EcologyBalance>();
+        [NonSerialized] public List<ProductionLimitDiagnostic> ProductionLimits = new List<ProductionLimitDiagnostic>();
         public List<TileChange> Changes = new List<TileChange>();
         public List<DecisionTrace> Decisions = new List<DecisionTrace>();
         public List<LogisticsRecord> Logistics = new List<LogisticsRecord>();

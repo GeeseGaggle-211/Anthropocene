@@ -20,7 +20,7 @@ internal static partial class DemographySocialAblation
         public bool ConsumptionFirstDiagnostic;
         public bool ExcludeGrowthFromSurvivalDiagnostic;
         public bool NoFieldDevelopmentDiagnostic;
-        public double ClothMultiplier, HousingMultiplier;
+        public double ClothMultiplier, HousingMultiplier, FabricFoodYieldMultiplier = 1;
     }
 
     private sealed class RecoveryPair
@@ -44,10 +44,17 @@ internal static partial class DemographySocialAblation
         public double PreparedClothForecast, PreparedShelterForecastPeople, PreparedHousingMaterialForecast;
         public double PreparedClothMade, PreparedAnimalFabricMade, PreparedFixedHousingMade, PreparedLightHousingMade;
         public double PreparedHandToolsCeiling, PreparedToolsCeiling, PreparedHandToolsForecast, PreparedToolsForecast;
-        public double HandToolsMade, ToolsMade, OpeningHandTools, OpeningTools;
+        public double HandToolsMade, ToolsMade, OpeningHandTools, OpeningTools, OpeningHerdingTools;
+        public double OpeningStone, OpeningClay, OpeningWood;
         public double WeaverIntervalsUsed, BuilderIntervalsUsed, CraftspersonIntervalsUsed, ToolmakerIntervalsUsed;
         public double HousingMaterialIntervalsUsed, FixedHousingIntervalsUsed, LightHousingIntervalsUsed;
         public double StoneExtracted, ClayExtracted, WoodExtracted;
+        public double MaterialExtractionWorkerIntervals;
+        public double OtherLocalStoneExtracted, OtherLocalClayExtracted, OtherLocalWoodExtracted;
+        public double WoodCapacityLostToCultivation;
+        public double PlannedAccessibleStone, PlannedAccessibleClay, PlannedAccessibleWood;
+        public double PlannedStoneExtraction, PlannedClayExtraction, PlannedWoodExtraction;
+        public double EndingAccessibleStone, EndingAccessibleClay, EndingAccessibleWood;
         public double FixedShelter, LightShelter, FabricStock, HousingMaterialStock;
         public int Weavers, Builders, Craftspersons;
         public int PlanningPopulation, SurvivalWorkers, GoodsBudget, PlannerProtectiveWorkers, RepairPasses;
@@ -55,6 +62,7 @@ internal static partial class DemographySocialAblation
         public double FinalCompiledPersons;
         public int OperatingFarmers, FoodGatherers, ExpansionFarmers;
         public int PreparedWeavers, PreparedBuilders, PreparedCraftspersons, PreparedToolmakers;
+        public int PreparedStonecutters, PreparedClayMiners, PreparedWoodcutters, PreparedGatherers;
         public double FeedstockGatherers, MaterialGatherers;
         public double ClothingRequested, ClothingGranted, ShelterRequestedPeople, ShelterGrantedPeople;
         public double ClothingNowRequested, ClothingNowGranted, ClothingReserveRequested, ClothingReserveGranted;
@@ -69,6 +77,13 @@ internal static partial class DemographySocialAblation
         public double StorageRequested, StorageGranted;
         public bool HasPreparedAllocation, HasFoodFlow, HusbandryEnabled;
         public double ExpectedSupply, PlanMeals, PlanReserve;
+        public double ExpectedForageAfterHerds, ExpectedManagedAnimalFood, ActualManagedAnimalFood;
+        public double ActualManagedAnimalPotential, ManagedHerdFoodRequested, ManagedHerdFoodReceived;
+        public double CompetingHerdFoodRequested, CompetingHerdFoodReceived;
+        public double ManagedHerdWaterRequested, ManagedHerdWaterReceived;
+        public double CompetingHerdWaterRequested, CompetingHerdWaterReceived;
+        public double ManagedAnimals, ManagedFoodNutrition, ManagedWaterNutrition, ManagedFulfillment, ManagedCoveredHerderYears;
+        public int PreparedHerders, CompetingHerds, VisibleCompetingHerds, DomesticCompetingHerds;
         public double ConsumptionIncomeTarget, ReserveFillTarget, MaximumGrowthFood;
         public int ConsumptionOnlyFoodGatherers, ConsumptionReserveFoodGatherers, ConsumptionGrowthFoodGatherers;
         public double PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope;
@@ -79,6 +94,11 @@ internal static partial class DemographySocialAblation
         public double FlowPlantAvailable, FlowAnimalAvailable;
         public double FlowRequestedPlantInput, FlowRequestedAnimalInput, FlowBudgetedPlantInput, FlowBudgetedAnimalInput;
         public double ActualPlantInput, ActualAnimalInput;
+        public double ManufacturingPlantClaim, ManufacturingPlantReceipt;
+        public double BiologicalPlantClaim, BiologicalPlantReceipt;
+        public double CompetingPlantClaim, CompetingPlantReceipt;
+        public int PlantClaimTiles, ContestedPlantClaimTiles;
+        public List<ProductionLimitDiagnostic> RelevantProductionLimits;
 
         public bool Alive => Exists && Population > 0;
         public bool Healthy => Alive && Food >= .8 && Clothing >= .8 && Housing >= .8;
@@ -93,12 +113,13 @@ internal static partial class DemographySocialAblation
     private sealed class PreparedDemandPlan
     {
         public int Population;
-        public double OpeningHandTools, OpeningTools;
+        public double OpeningHandTools, OpeningTools, OpeningHerdingTools, OpeningStone, OpeningClay, OpeningWood, OpeningHousingMaterial;
         public DemandController.Allocation Allocation;
         public EconomicIntent Intent;
         public ProductionOrder ProductionOrder;
         public TurnNeeds Needs;
         public CampFoodFlowDiagnostic FoodFlow;
+        public List<FoodClaimDiagnostic> FoodClaims;
     }
 
     private static readonly RecoveryVariant[] RecoveryVariants =
@@ -132,7 +153,13 @@ internal static partial class DemographySocialAblation
         new RecoveryVariant { Name = "isolated-both-2x", FurtherFission = false, ClothMultiplier = 2, HousingMultiplier = 2 },
         new RecoveryVariant { Name = "isolated-cloth-4x", FurtherFission = false, ClothMultiplier = 4, HousingMultiplier = 1 },
         new RecoveryVariant { Name = "isolated-housing-4x", FurtherFission = false, ClothMultiplier = 1, HousingMultiplier = 4 },
-        new RecoveryVariant { Name = "isolated-both-4x", FurtherFission = false, ClothMultiplier = 4, HousingMultiplier = 4 }
+        new RecoveryVariant { Name = "isolated-both-4x", FurtherFission = false, ClothMultiplier = 4, HousingMultiplier = 4 },
+        new RecoveryVariant { Name = "isolated-fabric-food-yield-1.33x", FurtherFission = false,
+            ClothMultiplier = 1, HousingMultiplier = 1, FabricFoodYieldMultiplier = 4.0 / 3.0 },
+        new RecoveryVariant { Name = "isolated-fabric-food-yield-2x", FurtherFission = false,
+            ClothMultiplier = 1, HousingMultiplier = 1, FabricFoodYieldMultiplier = 2 },
+        new RecoveryVariant { Name = "isolated-fabric-food-yield-4x", FurtherFission = false,
+            ClothMultiplier = 1, HousingMultiplier = 1, FabricFoodYieldMultiplier = 4 }
     };
 
     public static int RunFissionRecovery(int followTurns = 20)
@@ -224,6 +251,7 @@ internal static partial class DemographySocialAblation
                 double baseCloth = world.Config.Neolithic.WeaverFabricOutputPerBaseDays;
                 double baseHousing = world.Config.Neolithic.BuilderHousingOutputPerBaseDays;
                 double baseLightHousing = world.Config.Neolithic.LightHousingBuilderOutputPerBaseDays;
+                double basePlantFoodPerFabric = world.Config.Neolithic.PlantFoodPerFabricUnit;
                 world.Config.FissionEnabled = variant.FurtherFission;
                 world.Config.ImmigrationEnabled = false;
                 if (variant.StablePopulationControl)
@@ -254,13 +282,16 @@ internal static partial class DemographySocialAblation
                 world.Config.Neolithic.WeaverFabricOutputPerBaseDays *= variant.ClothMultiplier;
                 world.Config.Neolithic.BuilderHousingOutputPerBaseDays *= variant.HousingMultiplier;
                 world.Config.Neolithic.LightHousingBuilderOutputPerBaseDays *= variant.HousingMultiplier;
+                world.Config.Neolithic.PlantFoodPerFabricUnit /= variant.FabricFoodYieldMultiplier;
                 world.Config.Validate();
                 Check(Math.Abs(world.Config.Neolithic.WeaverFabricOutputPerBaseDays
                         - baseCloth * variant.ClothMultiplier) <= 1e-12
                     && Math.Abs(world.Config.Neolithic.BuilderHousingOutputPerBaseDays
                         - baseHousing * variant.HousingMultiplier) <= 1e-12
                     && Math.Abs(world.Config.Neolithic.LightHousingBuilderOutputPerBaseDays
-                        - baseLightHousing * variant.HousingMultiplier) <= 1e-12,
+                        - baseLightHousing * variant.HousingMultiplier) <= 1e-12
+                    && Math.Abs(world.Config.Neolithic.PlantFoodPerFabricUnit
+                        - basePlantFoodPerFabric / variant.FabricFoodYieldMultiplier) <= 1e-12,
                     "seed " + seed + " variant " + variant.Name + " applies only its declared productivity controls");
                 Check(string.IsNullOrEmpty(variant.EconomicAllocation)
                         || world.Config.EconomicAllocation == variant.EconomicAllocation,
@@ -307,14 +338,41 @@ internal static partial class DemographySocialAblation
                         {
                             Population = tracked.Population, Allocation = allocation, Intent = intent,
                             ProductionOrder = productionOrder, Needs = needs,
-                            OpeningHandTools = tracked.Inventory.HandTools, OpeningTools = tracked.Inventory.Tools
+                            OpeningHandTools = tracked.Inventory.HandTools, OpeningTools = tracked.Inventory.Tools,
+                            OpeningHerdingTools = tracked.Inventory.HerdingTools,
+                            OpeningStone = tracked.Inventory.Stone, OpeningClay = tracked.Inventory.Clay,
+                            OpeningWood = tracked.Inventory.Wood,
+                            OpeningHousingMaterial = tracked.Inventory.HousingMaterial
                         };
                     }
                     TurnRecord record = continuationResolver.Resolve(world, prepared);
+                    foreach (var tileClaims in (continuationResolver.LastMetrics.FoodClaims
+                        ?? new List<FoodClaimDiagnostic>()).GroupBy(c => c.Tile))
+                    {
+                        int tileId = tileClaims.Key;
+                        FoodClaimDiagnostic tile = tileClaims.First();
+                        Check(tile.TileReceived <= tile.TileRequested + 1e-7
+                            && tileClaims.All(c => c.Received >= -1e-9 && c.Received <= c.Requested + 1e-7),
+                            "seed " + seed + " variant " + variant.Name + " age " + age
+                            + " conserves every attributed food claim on tile " + tileId);
+                        foreach (var claim in tileClaims.GroupBy(c => (c.Entity, c.Kind)))
+                        {
+                            double persisted = record.Transfers.Where(t => t.Tile == tileId
+                                && t.Entity == claim.Key.Entity && t.Kind == claim.Key.Kind).Sum(t => t.Food);
+                            Check(Math.Abs(persisted - claim.Sum(c => c.Received))
+                                    <= 1e-7 * Math.Max(1, persisted),
+                                "seed " + seed + " variant " + variant.Name + " age " + age
+                                + " closes attributed claim receipts into the authoritative transfer");
+                        }
+                    }
                     foreach (var item in recoveryPlans)
+                    {
                         if (continuationResolver.LastMetrics.CraftFoodFlow != null
                             && continuationResolver.LastMetrics.CraftFoodFlow.TryGetValue(item.Key, out CampFoodFlowDiagnostic flow))
                             item.Value.FoodFlow = flow;
+                        item.Value.FoodClaims = continuationResolver.LastMetrics.FoodClaims?
+                            .Where(c => c.Camp == item.Key).ToList();
+                    }
                     int after = world.Camps.Sum(world.LinkedPopulation);
                     Check(after == before + record.Growth - record.Deaths,
                         "seed " + seed + " variant " + variant.Name + " age " + age + " conserves population");
@@ -376,6 +434,8 @@ internal static partial class DemographySocialAblation
                     + " noFieldDevelopmentDiagnostic=" + variant.NoFieldDevelopmentDiagnostic
                     + " clothMultiplier=" + F(variant.ClothMultiplier)
                     + " housingMultiplier=" + F(variant.HousingMultiplier)
+                    + " fabricFoodYieldMultiplier=" + F(variant.FabricFoodYieldMultiplier)
+                    + " plantFoodPerFabric=" + F(world.Config.Neolithic.PlantFoodPerFabricUnit)
                     + " population=" + run.StartPopulation + "->" + run.EndPopulation
                     + " births=" + run.Births + " deaths=" + run.Deaths
                     + " furtherFissions=" + run.FurtherFissions + " migrations=" + run.Migrations);
@@ -403,6 +463,7 @@ internal static partial class DemographySocialAblation
         PrintFeedstockRootCause(followTurns, observations);
         PrintEconomicRootCause(followTurns, observations);
         PrintRecoveryEffects(followTurns, observations, runs);
+        PrintFabricFoodYieldSweep(followTurns, observations);
         Check(runs.Where(r => r.Variant != "recursive-native").All(r => r.FurtherFissions == 0 && r.Migrations == 0),
             "every isolated recovery branch remains free of social transfers");
         Check(runs.Where(r => r.Variant == "recursive-native").Sum(r => r.FurtherFissions) > 0,
@@ -456,6 +517,12 @@ internal static partial class DemographySocialAblation
         double AnimalInput() => record?.Production.Where(p => p.Camp == campId).Sum(p => p.AnimalFood) ?? 0;
         double Extracted(MaterialId material) => record?.MaterialTransfers
             .Where(t => t.Camp == campId && t.Material == material).Sum(t => t.Amount) ?? 0;
+        double OtherLocalExtracted(MaterialId material) => record?.MaterialTransfers
+            .Where(t => t.Camp != campId && t.Material == material
+                && world.Map.Distance(camp.Tile, t.Tile) <= 1).Sum(t => t.Amount) ?? 0;
+        var endingSources = MaterialEconomy.KnownSources(world, camp, world.Days);
+        double EndingAccessible(MaterialId material) => endingSources.Where(s => s.Material == material)
+            .GroupBy(s => s.Id).Sum(g => g.Sum(s => s.Available));
         DemandController.Request clothingNow = clothingRequests.FirstOrDefault(q => q.Service == "clothing");
         DemandController.Request clothingReserve = clothingRequests.FirstOrDefault(q => q.Service == "clothing reserve");
         DemandController.Request[] shelterReplacement = shelterRequests.Where(q => q.Service == "shelter replacement").ToArray();
@@ -474,6 +541,27 @@ internal static partial class DemographySocialAblation
             => allocation?.Requests.Where(q => q.Bundle != null && (!priorityClothing || q.Service == "clothing"))
                 .Sum(q => input(q.Bundle) * q.Granted) ?? 0;
         CampFoodFlowDiagnostic flow = plan?.FoodFlow;
+        List<FoodClaimDiagnostic> foodClaims = plan?.FoodClaims ?? new List<FoodClaimDiagnostic>();
+        var claimTiles = foodClaims.Where(c => c.Requested > 1e-12).GroupBy(c => c.Tile).ToArray();
+        var managedHerds = record?.ManagedHerds.Where(h => h.Camp == campId).ToArray()
+            ?? Array.Empty<ManagedHerdReport>();
+        var managedHerdIds = managedHerds.Select(h => h.Herd).ToHashSet();
+        var managedHerdPressure = record?.Pressure.Where(p => p.Kind == "Herd"
+            && p.Pool == "Biomass" && managedHerdIds.Contains(p.Entity)).ToArray()
+            ?? Array.Empty<PressureEntry>();
+        var managedHerdTiles = managedHerdPressure.Select(p => p.Tile).ToHashSet();
+        var competingHerdPressure = record?.Pressure.Where(p => p.Kind == "Herd"
+            && p.Pool == "Biomass" && !managedHerdIds.Contains(p.Entity)
+            && managedHerdTiles.Contains(p.Tile)).ToArray() ?? Array.Empty<PressureEntry>();
+        var managedHerdWaterPressure = record?.Pressure.Where(p => p.Kind == "Herd"
+            && p.Pool == "Freshwater" && managedHerdIds.Contains(p.Entity)).ToArray()
+            ?? Array.Empty<PressureEntry>();
+        var managedHerdWaterTiles = managedHerdWaterPressure.Select(p => p.Tile).ToHashSet();
+        var competingHerdWaterPressure = record?.Pressure.Where(p => p.Kind == "Herd"
+            && p.Pool == "Freshwater" && !managedHerdIds.Contains(p.Entity)
+            && managedHerdWaterTiles.Contains(p.Tile)).ToArray() ?? Array.Empty<PressureEntry>();
+        var competingHerdIds = competingHerdWaterPressure.Select(p => p.Entity).Distinct().ToHashSet();
+        var visibleTiles = Knowledge.Visible(world, camp.Player);
         double fieldCapital = CultivationEconomy.Enabled(camp)
             ? CultivationEconomy.Footprint(world, camp).Sum(tile => Math.Max(0, world.Tiles[tile].CultivationCapital)) : 0;
         return new RecoveryObservation
@@ -516,6 +604,9 @@ internal static partial class DemographySocialAblation
             PreparedHandToolsForecast = Planned(CraftGood.HandTools), PreparedToolsForecast = Planned(CraftGood.Tools),
             HandToolsMade = Produced(CraftGood.HandTools), ToolsMade = Produced(CraftGood.Tools),
             OpeningHandTools = plan?.OpeningHandTools ?? 0, OpeningTools = plan?.OpeningTools ?? 0,
+            OpeningHerdingTools = plan?.OpeningHerdingTools ?? 0,
+            OpeningStone = plan?.OpeningStone ?? 0, OpeningClay = plan?.OpeningClay ?? 0,
+            OpeningWood = plan?.OpeningWood ?? 0,
             WeaverIntervalsUsed = RoleIntervals(WorkforceRoles.Weaver),
             BuilderIntervalsUsed = RoleIntervals(WorkforceRoles.Builder),
             CraftspersonIntervalsUsed = RoleIntervals(WorkforceRoles.Craftsperson),
@@ -525,6 +616,22 @@ internal static partial class DemographySocialAblation
             LightHousingIntervalsUsed = GoodIntervals(CraftGood.LightHousing),
             StoneExtracted = Extracted(MaterialId.Stone), ClayExtracted = Extracted(MaterialId.Clay),
             WoodExtracted = Extracted(MaterialId.Wood),
+            MaterialExtractionWorkerIntervals = record?.MaterialTransfers.Where(t => t.Camp == campId)
+                .Sum(t => t.WorkerIntervals) ?? 0,
+            OtherLocalStoneExtracted = OtherLocalExtracted(MaterialId.Stone),
+            OtherLocalClayExtracted = OtherLocalExtracted(MaterialId.Clay),
+            OtherLocalWoodExtracted = OtherLocalExtracted(MaterialId.Wood),
+            WoodCapacityLostToCultivation = record?.Pressure.Where(p => p.Entity == campId)
+                .Sum(p => p.WoodCapacityLoss) ?? 0,
+            PlannedAccessibleStone = allocation?.AccessibleStone ?? 0,
+            PlannedAccessibleClay = allocation?.AccessibleClay ?? 0,
+            PlannedAccessibleWood = allocation?.AccessibleWood ?? 0,
+            PlannedStoneExtraction = allocation?.PlannedStoneExtraction ?? 0,
+            PlannedClayExtraction = allocation?.PlannedClayExtraction ?? 0,
+            PlannedWoodExtraction = allocation?.PlannedWoodExtraction ?? 0,
+            EndingAccessibleStone = EndingAccessible(MaterialId.Stone),
+            EndingAccessibleClay = EndingAccessible(MaterialId.Clay),
+            EndingAccessibleWood = EndingAccessible(MaterialId.Wood),
             FixedShelter = shelter.Fixed, LightShelter = shelter.Light,
             FabricStock = camp.Inventory.Cloth + camp.Inventory.AnimalFabric,
             HousingMaterialStock = camp.Inventory.HousingMaterial,
@@ -535,6 +642,10 @@ internal static partial class DemographySocialAblation
             PreparedBuilders = Assigned(WorkforceRoles.Builder),
             PreparedCraftspersons = Assigned(WorkforceRoles.Craftsperson),
             PreparedToolmakers = Assigned(WorkforceRoles.Toolmaker),
+            PreparedStonecutters = Assigned(WorkforceRoles.Stonecutter),
+            PreparedClayMiners = Assigned(WorkforceRoles.ClayMiner),
+            PreparedWoodcutters = Assigned(WorkforceRoles.Woodcutter),
+            PreparedGatherers = Assigned(WorkforceRoles.Gatherer),
             PlanningPopulation = plan?.Population ?? 0,
             SurvivalWorkers = survivalWorkers,
             OperatingFarmers = allocation?.Farmers ?? 0, FoodGatherers = allocation?.FoodGatherers ?? 0,
@@ -576,6 +687,35 @@ internal static partial class DemographySocialAblation
             HusbandryEnabled = allocation?.HusbandryEnabled ?? false,
             ExpectedSupply = allocation?.ExpectedSupply ?? 0, PlanMeals = allocation?.Meals ?? 0,
             PlanReserve = allocation?.OperatingReserve ?? 0,
+            ExpectedForageAfterHerds = allocation?.ExpectedForageAfterHerds ?? 0,
+            ExpectedManagedAnimalFood = allocation?.ExpectedManagedAnimalFood ?? 0,
+            ActualManagedAnimalFood = managedHerds.Sum(h => h.AcceptedFood),
+            ActualManagedAnimalPotential = managedHerds.Sum(h => h.PotentialFood),
+            ManagedAnimals = managedHerds.Sum(h => h.StartingAnimals),
+            ManagedFoodNutrition = managedHerds.Sum(h => h.StartingAnimals) > 0
+                ? managedHerds.Sum(h => h.StartingAnimals * h.FoodNutrition)
+                    / managedHerds.Sum(h => h.StartingAnimals) : 1,
+            ManagedWaterNutrition = managedHerds.Sum(h => h.StartingAnimals) > 0
+                ? managedHerds.Sum(h => h.StartingAnimals * h.WaterNutrition)
+                    / managedHerds.Sum(h => h.StartingAnimals) : 1,
+            ManagedFulfillment = managedHerds.Sum(h => h.StartingAnimals) > 0
+                ? managedHerds.Sum(h => h.StartingAnimals * h.ManagementFulfillment)
+                    / managedHerds.Sum(h => h.StartingAnimals) : 1,
+            ManagedCoveredHerderYears = managedHerds.Sum(h => h.CoveredHerderYears),
+            PreparedHerders = Assigned(WorkforceRoles.Herder),
+            ManagedHerdFoodRequested = managedHerdPressure.Sum(p => p.Requested),
+            ManagedHerdFoodReceived = managedHerdPressure.Sum(p => p.Realized),
+            CompetingHerdFoodRequested = competingHerdPressure.Sum(p => p.Requested),
+            CompetingHerdFoodReceived = competingHerdPressure.Sum(p => p.Realized),
+            ManagedHerdWaterRequested = managedHerdWaterPressure.Sum(p => p.Requested),
+            ManagedHerdWaterReceived = managedHerdWaterPressure.Sum(p => p.Realized),
+            CompetingHerdWaterRequested = competingHerdWaterPressure.Sum(p => p.Requested),
+            CompetingHerdWaterReceived = competingHerdWaterPressure.Sum(p => p.Realized),
+            CompetingHerds = competingHerdIds.Count,
+            VisibleCompetingHerds = world.Herds.Count(h => competingHerdIds.Contains(h.Id)
+                && visibleTiles.Contains(h.Tile)),
+            DomesticCompetingHerds = world.Herds.Count(h => competingHerdIds.Contains(h.Id)
+                && h.DomesticCamp >= 0),
             ConsumptionIncomeTarget = allocation?.ConsumptionIncomeTarget ?? 0,
             ReserveFillTarget = allocation?.ReserveFillTarget ?? 0,
             MaximumGrowthFood = allocation?.MaximumGrowthFood ?? 0,
@@ -604,7 +744,18 @@ internal static partial class DemographySocialAblation
             FlowRequestedAnimalInput = flow?.RequestedAnimalInput ?? 0,
             FlowBudgetedPlantInput = flow?.BudgetedPlantInput ?? 0,
             FlowBudgetedAnimalInput = flow?.BudgetedAnimalInput ?? 0,
-            ActualPlantInput = PlantInput(), ActualAnimalInput = AnimalInput()
+            ActualPlantInput = PlantInput(), ActualAnimalInput = AnimalInput(),
+            ManufacturingPlantClaim = foodClaims.Where(c => c.Manufacturing).Sum(c => c.Requested),
+            ManufacturingPlantReceipt = foodClaims.Where(c => c.Manufacturing).Sum(c => c.Received),
+            BiologicalPlantClaim = foodClaims.Where(c => !c.Manufacturing).Sum(c => c.Requested),
+            BiologicalPlantReceipt = foodClaims.Where(c => !c.Manufacturing).Sum(c => c.Received),
+            CompetingPlantClaim = claimTiles.Sum(g => g.First().CompetingRequested),
+            CompetingPlantReceipt = claimTiles.Sum(g => g.First().CompetingReceived),
+            PlantClaimTiles = claimTiles.Length,
+            ContestedPlantClaimTiles = claimTiles.Count(g => g.First().CompetingRequested > 1e-12),
+            RelevantProductionLimits = record?.ProductionLimits?
+                .Where(d => d.Camp == campId && (d.Good == CraftGood.Cloth
+                    || d.Good == CraftGood.HandTools || d.Good == CraftGood.Tools)).ToList()
         };
     }
 
@@ -880,6 +1031,7 @@ internal static partial class DemographySocialAblation
                 > 1e-3 * Math.Max(1, o.PreparedClothForecast))
             .OrderByDescending(o => o.PreparedClothForecast - o.ClothProduced)
             .ThenBy(o => o.Seed).ThenBy(o => o.Camp).ThenBy(o => o.Age).Take(12))
+        {
             Console.WriteLine("DEMOGRAPHY_FISSION_RECOVERY_REALIZATION_TRACE seed=" + o.Seed
                 + " camp=" + o.Camp + " age=" + o.Age + " population=" + o.PlanningPopulation
                 + " ceilingForecastActualCloth=" + F(o.PreparedClothCeiling) + "/" + F(o.PreparedClothForecast) + "/" + F(o.ClothProduced)
@@ -888,8 +1040,57 @@ internal static partial class DemographySocialAblation
                 + " projectedNetPriorityFood=" + F(o.FlowProjectedFood) + "/" + F(o.FlowNetIncome) + "/" + F(o.FlowPriorityIncome)
                 + " mealsReserve=" + F(o.PlanMeals) + "/" + F(o.PlanReserve)
                 + " expectedSupply=" + F(o.ExpectedSupply)
+                + " expectedActualManagedAnimalFood=" + F(o.ExpectedManagedAnimalFood) + "/" + F(o.ActualManagedAnimalFood)
+                + " managedPotential=" + F(o.ActualManagedAnimalPotential)
+                + " managedAnimalsNutritionFulfillment=" + F(o.ManagedAnimals) + "/"
+                    + F(o.ManagedFoodNutrition) + "/" + F(o.ManagedWaterNutrition) + "/" + F(o.ManagedFulfillment)
+                + " preparedHerdersOpeningTools=" + o.PreparedHerders + "/" + F(o.OpeningHerdingTools)
+                + " coveredHerderYears=" + F(o.ManagedCoveredHerderYears)
+                + " herdForageRequestReceipt=" + F(o.ManagedHerdFoodRequested) + "/" + F(o.ManagedHerdFoodReceived)
+                + " competingHerdRequestReceipt=" + F(o.CompetingHerdFoodRequested) + "/" + F(o.CompetingHerdFoodReceived)
+                + " herdWaterRequestReceipt=" + F(o.ManagedHerdWaterRequested) + "/" + F(o.ManagedHerdWaterReceived)
+                + " competingHerdWaterRequestReceipt=" + F(o.CompetingHerdWaterRequested) + "/" + F(o.CompetingHerdWaterReceived)
+                + " competingHerdsVisibleDomestic=" + o.CompetingHerds + "/"
+                    + o.VisibleCompetingHerds + "/" + o.DomesticCompetingHerds
+                + " expectedForageAfterHerds=" + F(o.ExpectedForageAfterHerds)
+                + " fieldExpansionRequestGrantWoodLoss=" + F(o.FieldExpansionRequested) + "/"
+                    + F(o.FieldExpansionGranted) + "/" + F(o.WoodCapacityLostToCultivation)
+                + " accessiblePlannedEndingSCW=" + F(o.PlannedAccessibleStone) + "/"
+                    + F(o.PlannedAccessibleClay) + "/" + F(o.PlannedAccessibleWood) + ":"
+                    + F(o.EndingAccessibleStone) + "/" + F(o.EndingAccessibleClay) + "/"
+                    + F(o.EndingAccessibleWood)
+                + " extractedOwnOtherLocalSCW=" + F(o.StoneExtracted) + "/" + F(o.ClayExtracted)
+                    + "/" + F(o.WoodExtracted) + ":" + F(o.OtherLocalStoneExtracted) + "/"
+                    + F(o.OtherLocalClayExtracted) + "/" + F(o.OtherLocalWoodExtracted)
+                + " openingStockSCW=" + F(o.OpeningStone) + "/" + F(o.OpeningClay) + "/" + F(o.OpeningWood)
+                + " plannedExtractSCW=" + F(o.PlannedStoneExtraction) + "/"
+                    + F(o.PlannedClayExtraction) + "/" + F(o.PlannedWoodExtraction)
+                + " preparedExtractorsSCWG=" + o.PreparedStonecutters + "/" + o.PreparedClayMiners
+                    + "/" + o.PreparedWoodcutters + "/" + o.PreparedGatherers
+                + " auxiliaryFeedstockMaterial=" + F(o.FeedstockGatherers) + "/" + F(o.MaterialGatherers)
+                + " materialWorkerIntervals=" + F(o.MaterialExtractionWorkerIntervals)
+                + " repairTrim=" + o.RepairPasses + "/" + o.TrimPasses
+                + " shelterCeilingForecastActualPeople=" + F(o.PreparedShelterCeilingPeople) + "/"
+                    + F(o.PreparedShelterForecastPeople) + "/" + F(o.ShelterProducedPeople)
+                + " housingMaterialCeilingForecastActual=" + F(o.PreparedHousingMaterialCeiling) + "/"
+                    + F(o.PreparedHousingMaterialForecast) + "/" + F(o.HousingMaterialProduced)
                 + " plantEnvelopeNormalClothing=" + F(o.PlantEnvelope) + "/" + F(o.PlantEnvelopeClothing)
+                + " manufacturingClaimReceipt=" + F(o.ManufacturingPlantClaim) + "/" + F(o.ManufacturingPlantReceipt)
+                + " biologicalClaimReceipt=" + F(o.BiologicalPlantClaim) + "/" + F(o.BiologicalPlantReceipt)
+                + " competingClaimReceipt=" + F(o.CompetingPlantClaim) + "/" + F(o.CompetingPlantReceipt)
+                + " claimTilesContested=" + o.PlantClaimTiles + "/" + o.ContestedPlantClaimTiles
                 + " binding=" + o.ClothingBinding);
+            foreach (ProductionLimitDiagnostic d in o.RelevantProductionLimits ?? new List<ProductionLimitDiagnostic>())
+                Console.WriteLine("DEMOGRAPHY_FISSION_RECOVERY_PRODUCTION_LIMIT seed=" + o.Seed
+                    + " camp=" + o.Camp + " age=" + o.Age + " good=" + d.Good
+                    + " role=" + d.Role.Replace(' ', '_')
+                    + " requestedLaborToolMaterialFoodDependencyStorage=" + F(d.Requested) + "/"
+                        + F(d.LaborToolLimit) + "/" + F(d.MaterialLimit) + "/" + F(d.FoodLimit)
+                        + "/" + F(d.DependencyLimit) + "/" + F(d.StorageLimit)
+                    + " openingPlantAnimal=" + F(d.OpeningPlantFood) + "/" + F(d.OpeningAnimalFood)
+                    + " openingStoneClayWood=" + F(d.OpeningStone) + "/" + F(d.OpeningClay) + "/" + F(d.OpeningWood)
+                    + " storageRoom=" + F(d.StorageRoomUnits));
+        }
     }
 
     private static void PrintEconomicRootCause(int followTurns, List<RecoveryObservation> observations)
@@ -974,5 +1175,67 @@ internal static partial class DemographySocialAblation
             + " births=" + recursive.Sum(r => r.Births) + "->" + isolated.Sum(r => r.Births)
             + " deaths=" + recursive.Sum(r => r.Deaths) + "->" + isolated.Sum(r => r.Deaths)
             + " terminalPopulation=" + recursive.Sum(r => r.EndPopulation) + "->" + isolated.Sum(r => r.EndPopulation));
+    }
+
+    private static void PrintFabricFoodYieldSweep(int followTurns, List<RecoveryObservation> observations)
+    {
+        string[] variants = { "isolated-native", "isolated-fabric-food-yield-1.33x",
+            "isolated-fabric-food-yield-2x", "isolated-fabric-food-yield-4x" };
+        RecoveryObservation[] baseline = observations.Where(o => o.Variant == "isolated-native"
+            && o.Age == followTurns).ToArray();
+        RecoveryObservation[] baselineTrajectory = observations.Where(o => o.Variant == "isolated-native"
+            && o.Age >= 1 && o.Age <= followTurns).ToArray();
+        double baselinePopulation = baseline.Sum(o => Math.Max(0, o.Population));
+        double baselinePopQoL = baseline.Sum(o => Math.Max(0, o.Population) * o.QoL);
+        double baselineTrajectoryPopQoL = baselineTrajectory.Sum(o => Math.Max(0, o.Population) * o.QoL);
+        foreach (string variant in variants)
+        {
+            RecoveryObservation[] terminal = observations.Where(o => o.Variant == variant
+                && o.Age == followTurns).ToArray();
+            RecoveryObservation[] trajectory = observations.Where(o => o.Variant == variant
+                && o.Age >= 1 && o.Age <= followTurns).ToArray();
+            RecoveryObservation[] late = observations.Where(o => o.Variant == variant
+                && o.Age >= Math.Max(1, followTurns - 8) && o.Age <= followTurns).ToArray();
+            Check(terminal.Length == baseline.Length && terminal.Length > 0,
+                variant + " has the matched terminal fabric-food sample");
+            double population = terminal.Sum(o => Math.Max(0, o.Population));
+            double popQoL = terminal.Sum(o => Math.Max(0, o.Population) * o.QoL);
+            double weightedQoL = popQoL / Math.Max(1, population);
+            double trajectoryPopulation = trajectory.Sum(o => Math.Max(0, o.Population));
+            double trajectoryPopQoL = trajectory.Sum(o => Math.Max(0, o.Population) * o.QoL);
+            double clothing = terminal.Sum(o => Math.Max(0, o.Population) * o.Clothing)
+                / Math.Max(1, population);
+            double food = terminal.Sum(o => Math.Max(0, o.Population) * o.Food)
+                / Math.Max(1, population);
+            double latePeople = Math.Max(1, late.Sum(o => Math.Max(0, o.PlanningPopulation)));
+            Console.WriteLine("DEMOGRAPHY_FISSION_RECOVERY_FABRIC_FOOD_SWEEP variant=" + variant
+                + " age=" + followTurns + " camps=" + terminal.Length
+                + " population=" + F(population)
+                + " deltaPopulation=" + F(population - baselinePopulation)
+                + " popQoL=" + F(popQoL)
+                + " deltaPopQoL=" + F(popQoL - baselinePopQoL)
+                + " populationWeightedQoL=" + F(weightedQoL)
+                + " trajectoryPopQoL=" + F(trajectoryPopQoL)
+                + " deltaTrajectoryPopQoL=" + F(trajectoryPopQoL - baselineTrajectoryPopQoL)
+                + " trajectoryPopulationWeightedQoL=" + F(trajectoryPopQoL / Math.Max(1, trajectoryPopulation))
+                + " populationWeightedFoodClothing=" + F(food) + "/" + F(clothing)
+                + " lateClothOutputPerResidentTurn=" + F(late.Sum(o => o.ClothProduced) / latePeople)
+                + " lateCurrentClothingRequestGrantPerResidentTurn="
+                    + F(late.Sum(o => o.ClothingNowRequested) / latePeople) + "/"
+                    + F(late.Sum(o => o.ClothingNowGranted) / latePeople)
+                + " lateCurrentClothingPlantInputPerResidentTurn="
+                    + F(late.Sum(o => o.PriorityClothingPlantInput) / latePeople)
+                + " lateFieldExpansionRequestGrantPerResidentTurn="
+                    + F(late.Sum(o => o.FieldExpansionRequested) / latePeople) + "/"
+                    + F(late.Sum(o => o.FieldExpansionGranted) / latePeople)
+                + " lateFoodExpansionWorkerShare="
+                    + F(late.Sum(o => o.FoodGatherers) / latePeople) + "/"
+                    + F(late.Sum(o => o.ExpansionFarmers) / latePeople)
+                + " lateMeanFieldCapital=" + F(late.Average(o => o.FieldCapital))
+                + " lateWeaverShare=" + F(late.Sum(o => o.PreparedWeavers) / latePeople)
+                + " lateManagedAnimalForecastActual=" + F(late.Sum(o => o.ExpectedManagedAnimalFood))
+                    + "/" + F(late.Sum(o => o.ActualManagedAnimalFood))
+                + " healthy=" + terminal.Count(o => o.Healthy));
+        }
     }
 }

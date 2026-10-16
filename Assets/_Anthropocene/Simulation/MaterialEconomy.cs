@@ -579,9 +579,8 @@ namespace Anthropocene.Simulation
                 forecast[MaterialId.Wood] += amount * recipe.Wood;
                 if (recipe.ConstructionMaterial > 0) housingForecast += amount * recipe.ConstructionMaterial;
             }
-            double Shortfall(MaterialId material)
+            double Shortfall(MaterialId material, double horizon)
             {
-                double horizon = w.Config.Neolithic.MaterialReserveMultiplier(years);
                 double direct = Math.Max(0, forecast[material] * horizon - Inventory(c, material));
                 if (material == MaterialId.Stone) return direct;
                 double share = material == MaterialId.Wood ? housing.WoodShare : housing.ClayShare;
@@ -589,9 +588,19 @@ namespace Anthropocene.Simulation
                 return Math.Max(0, total - Inventory(c, material));
             }
             var localSources = KnownSources(w, c, days);
+            var remainingLabor = ExtractionRoles.ToDictionary(role => role,
+                role => role == WorkforceRoles.Gatherer
+                    ? generalistIntervals : CultivationEconomy.Workers(c, role) * intervals);
+            // Current admitted production must receive its raw inputs before a
+            // configured material reserve is filled. Both passes use the same
+            // finite sources and labor; the second pass can spend only what the
+            // first leaves. This is commitment priority, not free extraction.
+            double reserveHorizon = w.Config.Neolithic.MaterialReserveMultiplier(years);
+            foreach (double horizon in reserveHorizon > 1 + 1e-12
+                ? new[] { 1d, reserveHorizon } : new[] { 1d })
             foreach (string role in ExtractionRoles)
             {
-                double labor = role == WorkforceRoles.Gatherer ? generalistIntervals : CultivationEconomy.Workers(c, role) * intervals;
+                double labor = remainingLabor[role];
                 if (labor <= 1e-10) continue;
                 var roleSources = localSources.Where(s => role == WorkforceRoles.Gatherer || role == Specialist(s.Material)).ToArray();
                 if (roleSources.Length == 0) continue;
@@ -609,7 +618,7 @@ namespace Anthropocene.Simulation
                     {
                         var s = roleSources[i];
                         if (s.Available <= 1e-10 || visited.Contains((s.Id, s.Tile))) continue;
-                        double demand = Shortfall(s.Material);
+                        double demand = Shortfall(s.Material, horizon);
                         double priority = s.Material == MaterialId.Stone ? c.StonePriority : s.Material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
                         double score = demand * priority;
                         if (score <= 1e-10) continue;
@@ -641,6 +650,7 @@ namespace Anthropocene.Simulation
                                 localSources[i].Available = Math.Max(0, state.Remaining * localSources[i].Share);
                     labor -= spent;
                 }
+                remainingLabor[role] = labor;
             }
             return housing;
         }

@@ -91,6 +91,7 @@ namespace Anthropocene.Simulation
             // Prepared-boundary diagnostics. The normal envelopes preserve the
             // operating reserve; the Clothing variants stop after current meals.
             public double ExpectedSupply, Meals, OperatingReserve;
+            public double ExpectedForageAfterHerds, ExpectedManagedAnimalFood;
             public double ConsumptionIncomeTarget, ReserveFillTarget, MaximumGrowthFood;
             public int ConsumptionOnlyFoodGatherers, ConsumptionReserveFoodGatherers, ConsumptionGrowthFoodGatherers;
             public int FieldExpansionSteps;
@@ -99,6 +100,8 @@ namespace Anthropocene.Simulation
             public bool HusbandryEnabled;
             public double PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope;
             public double PlantEnvelopeClothing, AnimalEnvelopeClothing, FoodRoomEnvelopeClothing;
+            public double AccessibleStone, AccessibleClay, AccessibleWood;
+            public double PlannedStoneExtraction, PlannedClayExtraction, PlannedWoodExtraction;
         }
 
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, out ProductionOrder production, out Allocation allocation)
@@ -129,12 +132,17 @@ namespace Anthropocene.Simulation
                 : 0;
             d.FoodRoomEnvelope = d.HusbandryEnabled ? normalFoodRoom : 0;
             alloc.ExpectedSupply = d.Supply; alloc.Meals = d.Meals; alloc.OperatingReserve = d.OperatingReserve;
+            alloc.ExpectedForageAfterHerds = d.ForageAfterHerds;
+            alloc.ExpectedManagedAnimalFood = d.ManagedFood.AnimalFood;
             alloc.HusbandryEnabled = d.HusbandryEnabled;
             alloc.PlantEnvelope = d.PlantEnvelope; alloc.AnimalEnvelope = d.AnimalEnvelope;
             alloc.FoodRoomEnvelope = d.FoodRoomEnvelope;
             alloc.PlantEnvelopeClothing = d.PlantEnvelopeClothing;
             alloc.AnimalEnvelopeClothing = d.AnimalEnvelopeClothing;
             alloc.FoodRoomEnvelopeClothing = d.FoodRoomEnvelopeClothing;
+            alloc.AccessibleStone = d.Accessible.TryGetValue(MaterialId.Stone, out double accessibleStone) ? accessibleStone : 0;
+            alloc.AccessibleClay = d.Accessible.TryGetValue(MaterialId.Clay, out double accessibleClay) ? accessibleClay : 0;
+            alloc.AccessibleWood = d.Accessible.TryGetValue(MaterialId.Wood, out double accessibleWood) ? accessibleWood : 0;
             var recipes = d.Recipes; var byGood = recipes.ToDictionary(r => r.Good);
             int residents = c.Population;
             double gatherRate = cfg.GatherPerPerson * intervals;  // food one gatherer brings in over the turn
@@ -536,6 +544,9 @@ namespace Anthropocene.Simulation
                 alloc.FinalCompiledPersons = needed;
                 if (needed <= budget + Epsilon || repair == 1)
                 {
+                    alloc.PlannedStoneExtraction = Math.Max(0, raw[MaterialId.Stone] - Inventory(MaterialId.Stone));
+                    alloc.PlannedClayExtraction = Math.Max(0, raw[MaterialId.Clay] - Inventory(MaterialId.Clay));
+                    alloc.PlannedWoodExtraction = Math.Max(0, raw[MaterialId.Wood] - Inventory(MaterialId.Wood));
                     foreach (var p in staff) alloc.Staff[p.Key] = p.Value;
                     alloc.MaterialGatherers = materialGatherers; alloc.FeedstockGatherers = feedstockGatherers; alloc.ToolsMade = toolsMade;
                     foreach (var p in total.Outputs) alloc.Ceilings[p.Key] = p.Value;
