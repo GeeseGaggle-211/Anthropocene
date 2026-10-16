@@ -32,6 +32,14 @@ remainders, histories, expectation and knowledge. Daughter farmers become
 gatherers because fields do not move. Nothing is manufactured for free, and the
 real economy/demography first processes the daughter on the following turn.
 
+Physical-v1 daughters also carry a saved absolute `FissionEligibleTurn`. With the
+shipped `FissionDaughterCooldownTurns = 1`, a daughter is excluded from fission at
+the close of her first complete post-founding turn and is first eligible at the
+close of her second. `0` is the exact next-turn control. Existing camps and older
+camp saves have boundary zero, and `LegacyQoLNetGrowth` keeps its former timing.
+`FissionCooldownBlocked` counts the excluded daughter-camp turns without changing
+QoL, mortality, migration, the RL reward or any fission threshold.
+
 Before a physical site scan, a permissive common-envelope bound checks every
 supported daughter size. It uses the exact source forecast and an optimistic
 daughter with full F/C/H/W, zero linked-settlement density and the lowest physical
@@ -48,6 +56,31 @@ unchanged. Current same-boundary evidence shows 126 fissions with fission alone 
 have both clothing and housing coverage at least 0.8. The success/distress
 calibration is therefore not promotion-ready. See
 [UnifiedSocialRelocationValidation-v0.2.md](UnifiedSocialRelocationValidation-v0.2.md).
+
+### Daughter maturity control and forecaster review (16 October 2026)
+
+A matched three-seed, 25-continuation sweep from identical social-free opening
+boundaries compared cooldowns 0 / 1 / 2 with both social systems enabled:
+
+| cooldown | fissions | daughter-parent fissions (age 1/2/3/older) | blocked camp-turns | camps | population | viable F/C/H camps | population-weighted QoL |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 113 | 61 (3/4/3/51) | 0 | 137 | 36,728 | 2 | 0.111 |
+| **1** | **112** | **60 (0/5/3/52)** | **87** | **136** | **36,669** | **2** | **0.110** |
+| 2 | 109 | 57 (0/0/5/52) | 177 | 133 | 36,759 | 1 | 0.113 |
+
+The default removes every observed age-one recursive fission, but only one of 113
+total fissions and no viability deficit. Most recursive fissions occur after age
+three. This is a useful temporal invariant, not the GO-gate calibration fix.
+
+The review also establishes that food priority is already present: cache misses
+rank sites by capped obtainable food `D`, then uncapped support, distance and tile
+ID. The next controlled work is not another arbitrary food weight. The new-site
+forecast currently converts capped `D` back to a one-opening-cohort food capacity,
+loses surplus and aquatic type, and can apply accessibility twice for
+non-cultivators. Correct that representation first; then compare the current
+single-site cache against a bounded shortlist whose candidates all pass the same
+unchanged welfare/physical evaluator. See the validation document for the required
+causal and throughput gates.
 
 ## Legacy WP10a/WP10c path and historical evidence
 
@@ -75,7 +108,9 @@ keeps the original camp and never controls a daughter.
 - **Temporal abstraction.** One evaluation per turn boundary from the frozen
   post-demography snapshot. QoL is the value committed by the turn just resolved and
   recomputes next turn. Nothing is integrated over sub-turn time, and a daughter
-  cannot itself fission in the turn it is founded.
+  cannot itself fission in the turn it is founded. In Physical-v1 the saved maturity
+  boundary also excludes it at the next close by default; it becomes eligible at
+  the close after that.
 - **Scaling law.** `T = O(C + F_v * footprint + F_s * ring * footprint + P)` where `C`
   is camps (one closed-form gain estimate each: a fixed-Housing lookup and a few exponentials), `F_v` camps with `G >= 0.8 G*` and a feasible daughter
   that hold a cache (one footprint validation, at most 7 tile projections), `F_s` camps

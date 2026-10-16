@@ -80,7 +80,7 @@ internal static class FissionChecks
         Near(daughter.StationaryYears, 0, "legacy fission preserves the pre-v1.1 stationary-years reset");
         Near(daughter.RudimentaryExpectation, 0, "legacy fission preserves the pre-v1.1 expectation initialization");
         Near(daughter.FoodDeficitYears, 0, "legacy fission preserves the pre-v1.1 deficit-years initialization");
-        Check(daughter.DeficitTurns == 0 && daughter.DeficitSeverity == 0,
+        Check(daughter.DeficitTurns == 0 && daughter.DeficitSeverity == 0 && daughter.FissionEligibleTurn == 0,
             "legacy fission does not inherit physical-only deficit history");
 
         var cacheWorld = World(true, new[] { 8, 8 }); cacheWorld.Config.ImmigrationEnabled = false;
@@ -170,6 +170,7 @@ internal static class FissionChecks
         Check(inheritedExpectation.DaughterQoL < relaxedExpectation.DaughterQoL - 1e-9,
             "the founding estimate retains the parent's expectation instead of manufacturing welfare through a reset");
         double birthProgress = parent.GrowthRemainder, deathProgress = parent.DeathRemainder;
+        int foundingTurn = w.Turn;
         var report = Pass(w, out var physicalMetrics); var daughter = Daughter(w, parent);
         Check(report != null && report.ParentMortalityBefore > 0 && report.ParentMortalityAfter > 0 && report.DaughterMortality > 0,
             "physical fission reports parent and daughter mortality without changing the QoL threshold");
@@ -185,6 +186,39 @@ internal static class FissionChecks
         Near(parent.DeathRemainder + daughter.DeathRemainder, deathProgress, "fission conserves gross-death progress under the physical model");
         Near(daughter.FoodDeficitYears, 37, "fission does not reset accumulated food-deficit years");
         Near(daughter.StationaryYears, parent.StationaryYears, "fission does not manufacture welfare through an expectation reset");
+        Check(daughter.FissionEligibleTurn == foundingTurn + 2,
+            "the default physical daughter matures through one additional complete post-founding turn");
+
+        // The daughter is absent from the evaluation map at the first post-founding close, including across save/load,
+        // then enters it at the next close. Cooldown zero exactly restores next-turn eligibility.
+        parent.Population = 0; daughter.Population = 100; daughter.PlantFood = 12000; daughter.Inventory.Cloth = 1e9;
+        daughter.Inventory.LightHousingUnits = 1e9; Explore(w, daughter); Pressure(w, 0); w.Turn = foundingTurn + 1;
+        Check(Pass(w, out var coolingMetrics) == null && coolingMetrics.FissionCooldownBlocked == 1
+            && coolingMetrics.FissionCampsEvaluated == 0,
+            "a physical daughter cannot fission at the first post-founding close and the block is diagnosed");
+        var coolingLoaded = SaveCodec.Load(SaveCodec.Save(w));
+        var loadedDaughter = coolingLoaded.Camps.Single(c => c.Id == daughter.Id);
+        Check(loadedDaughter.FissionEligibleTurn == daughter.FissionEligibleTurn && Key(coolingLoaded) == Key(w),
+            "the absolute daughter eligibility boundary survives save/load");
+        coolingLoaded.Turn = foundingTurn + 2;
+        var matureReport = Pass(coolingLoaded, out var matureMetrics);
+        Check(matureMetrics.FissionCooldownBlocked == 0 && matureMetrics.FissionCampsEvaluated == 1
+            && matureReport != null && matureReport.ParentCamp == loadedDaughter.Id,
+            "the daughter can fission at the close of her second complete turn");
+
+        var noCooldown = World(true, new[] { 8, 8 }); noCooldown.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        noCooldown.Config.FissionDaughterCooldownTurns = 0; var noCooldownParent = noCooldown.Camps[0];
+        Explore(noCooldown, noCooldownParent); Pressure(noCooldown, 0); int noCooldownFoundingTurn = noCooldown.Turn;
+        Check(Pass(noCooldown, out _) != null, "the zero-cooldown control founds a physical daughter");
+        var noCooldownDaughter = Daughter(noCooldown, noCooldownParent);
+        noCooldownParent.Population = 0; noCooldownDaughter.Population = 100; noCooldownDaughter.PlantFood = 12000;
+        noCooldownDaughter.Inventory.Cloth = 1e9; noCooldownDaughter.Inventory.LightHousingUnits = 1e9;
+        Explore(noCooldown, noCooldownDaughter); Pressure(noCooldown, 0); noCooldown.Turn = noCooldownFoundingTurn + 1;
+        var controlReport = Pass(noCooldown, out var controlMetrics);
+        Check(noCooldownDaughter.FissionEligibleTurn == noCooldownFoundingTurn + 1
+            && controlMetrics.FissionCooldownBlocked == 0 && controlMetrics.FissionCampsEvaluated == 1
+            && controlReport != null && controlReport.ParentCamp == noCooldownDaughter.Id,
+            "cooldown zero reproduces next-turn recursive-fission eligibility");
 
         var dense = World(true, new[] { 8, 8 }); dense.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
         var crowded = dense.Camps[0]; Explore(dense, crowded); Pressure(dense, 0); crowded.Population = 4000;
@@ -259,25 +293,25 @@ internal static class FissionChecks
     private static void Config()
     {
         var c = new SimulationConfig();
-        Check(c.FissionEnabled && c.FissionGainThreshold == .113 && c.FissionGainDiscourage == .080 && c.FissionGainEncourage == .0955 && c.FissionSearchFraction == .8 && c.FissionDaughterMargin == .05 && c.FissionHousingRelief == 0 && c.FissionDaughterBuilderShare == .05 && c.FissionRadius == 4 && c.FissionMinimumDaughter == 12, "fission is on by default (plan of record) and the levers match the calibration");
-        foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.FissionGainThreshold = -.1, x => x.FissionGainDiscourage = 6, x => x.FissionGainEncourage = double.NaN, x => x.FissionRadius = 0, x => x.FissionRadius = 6, x => x.FissionMinimumDaughter = 0, x => x.FissionSearchFraction = 1.5, x => x.FissionSearchFraction = -.1, x => x.FissionDaughterMargin = -.01, x => x.FissionDaughterMargin = 2, x => x.FissionHousingRelief = -.1, x => x.FissionHousingRelief = 1.5, x => x.FissionDaughterBuilderShare = -.1, x => x.FissionDaughterBuilderShare = 1.5 })
+        Check(c.FissionEnabled && c.FissionGainThreshold == .113 && c.FissionGainDiscourage == .080 && c.FissionGainEncourage == .0955 && c.FissionSearchFraction == .8 && c.FissionDaughterMargin == .05 && c.FissionHousingRelief == 0 && c.FissionDaughterBuilderShare == .05 && c.FissionRadius == 4 && c.FissionMinimumDaughter == 12 && c.FissionDaughterCooldownTurns == 1, "fission is on by default (plan of record) and the levers match the calibration");
+        foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.FissionGainThreshold = -.1, x => x.FissionGainDiscourage = 6, x => x.FissionGainEncourage = double.NaN, x => x.FissionRadius = 0, x => x.FissionRadius = 6, x => x.FissionMinimumDaughter = 0, x => x.FissionDaughterCooldownTurns = -1, x => x.FissionDaughterCooldownTurns = 21, x => x.FissionSearchFraction = 1.5, x => x.FissionSearchFraction = -.1, x => x.FissionDaughterMargin = -.01, x => x.FissionDaughterMargin = 2, x => x.FissionHousingRelief = -.1, x => x.FissionHousingRelief = 1.5, x => x.FissionDaughterBuilderShare = -.1, x => x.FissionDaughterBuilderShare = 1.5 })
         {
             var x = new SimulationConfig(); bad(x); bool rejected = false; try { x.Validate(); } catch (ArgumentException) { rejected = true; }
             Check(rejected, "an invalid fission lever is rejected");
         }
         var serializer = new DataContractSerializer(typeof(SimulationConfig)); string xml;
-        using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { FissionRadius = 4, FissionEnabled = true, FissionDaughterBuilderShare = .2 }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
-        Check(xml.Contains("<FissionRadius>4</FissionRadius>") && xml.Contains("<FissionEnabled>true</FissionEnabled>"), "fission levers are serialized");
+        using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { FissionRadius = 4, FissionEnabled = true, FissionDaughterBuilderShare = .2, FissionDaughterCooldownTurns = 2 }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
+        Check(xml.Contains("<FissionRadius>4</FissionRadius>") && xml.Contains("<FissionEnabled>true</FissionEnabled>") && xml.Contains("<FissionDaughterCooldownTurns>2</FissionDaughterCooldownTurns>"), "fission levers are serialized");
         string legacy = Regex.Replace(xml, "<Fission[A-Za-z]*>[^<]*</Fission[A-Za-z]*>", "");
         Check(legacy != xml && !legacy.Contains("<Fission"), "legacy fixture omits every fission field");
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy)))
         {
             var old = (SimulationConfig)serializer.ReadObject(stream);
-            Check(!old.FissionEnabled && old.FissionGainThreshold == .113 && old.FissionGainDiscourage == .080 && old.FissionGainEncourage == .0955 && old.FissionSearchFraction == .8 && old.FissionDaughterMargin == .05 && old.FissionHousingRelief == 0 && old.FissionDaughterBuilderShare == .05 && old.FissionRadius == 4 && old.FissionMinimumDaughter == 12, "older saves load with fission disabled and default levers");
+            Check(!old.FissionEnabled && old.FissionGainThreshold == .113 && old.FissionGainDiscourage == .080 && old.FissionGainEncourage == .0955 && old.FissionSearchFraction == .8 && old.FissionDaughterMargin == .05 && old.FissionHousingRelief == 0 && old.FissionDaughterBuilderShare == .05 && old.FissionRadius == 4 && old.FissionMinimumDaughter == 12 && old.FissionDaughterCooldownTurns == 1, "older saves load with fission disabled and default levers");
         }
-        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) { var back = (SimulationConfig)serializer.ReadObject(stream); Check(back.FissionRadius == 4 && back.FissionDaughterBuilderShare == .2, "saved levers round trip"); }
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) { var back = (SimulationConfig)serializer.ReadObject(stream); Check(back.FissionRadius == 4 && back.FissionDaughterBuilderShare == .2 && back.FissionDaughterCooldownTurns == 2, "saved levers round trip"); }
         string json = File.ReadAllText(FindConfig());
-        foreach (var pair in new[] { ("FissionEnabled", "true"), ("FissionGainThreshold", "0.113"), ("FissionGainDiscourage", "0.08"), ("FissionGainEncourage", "0.0955"), ("FissionSearchFraction", "0.8"), ("FissionDaughterMargin", "0.05"), ("FissionHousingRelief", "0"), ("FissionDaughterBuilderShare", "0.05"), ("FissionRadius", "4"), ("FissionMinimumDaughter", "12") })
+        foreach (var pair in new[] { ("FissionEnabled", "true"), ("FissionGainThreshold", "0.113"), ("FissionGainDiscourage", "0.08"), ("FissionGainEncourage", "0.0955"), ("FissionSearchFraction", "0.8"), ("FissionDaughterMargin", "0.05"), ("FissionHousingRelief", "0"), ("FissionDaughterBuilderShare", "0.05"), ("FissionRadius", "4"), ("FissionMinimumDaughter", "12"), ("FissionDaughterCooldownTurns", "1") })
         {
             var m = Regex.Match(json, "\"" + pair.Item1 + "\":\\s*([0-9.a-z]+)");
             Check(m.Success && m.Groups[1].Value.TrimEnd('0').TrimEnd('.') == pair.Item2.TrimEnd('0').TrimEnd('.'), "OpeningConfig.json carries " + pair.Item1);
@@ -1127,10 +1161,10 @@ internal static class FissionChecks
         var legacy = Busy(); Check(legacy.PlayerCount == 6, "the legacy fixture starts with six player slots");
         var camp = new DataContractSerializer(typeof(Camp)); string xml;
         using (var stream = new MemoryStream()) { camp.WriteObject(stream, legacy.Camps[0]); xml = Encoding.UTF8.GetString(stream.ToArray()); }
-        Check(xml.Contains("<FissionPolicy>"), "a camp serializes its policy");
-        string old = Regex.Replace(Regex.Replace(xml, "<FissionPolicy>[^<]*</FissionPolicy>", ""), "<FissionDestination[^>]*(/>|>.*?</FissionDestination>)", "", RegexOptions.Singleline);
+        Check(xml.Contains("<FissionPolicy>") && xml.Contains("<FissionEligibleTurn>"), "a camp serializes its policy and eligibility boundary");
+        string old = Regex.Replace(Regex.Replace(xml, "<Fission(?:Policy|EligibleTurn)>[^<]*</Fission(?:Policy|EligibleTurn)>", ""), "<FissionDestination[^>]*(/>|>.*?</FissionDestination>)", "", RegexOptions.Singleline);
         Check(old != xml && !old.Contains("Fission"), "legacy camp fixture omits the fields");
-        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(old))) { var c = (Camp)camp.ReadObject(stream); Check(c.FissionPolicy == FissionPolicy.Neutral && c.FissionDestination == null, "an older camp loads Neutral with no destination"); }
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(old))) { var c = (Camp)camp.ReadObject(stream); Check(c.FissionPolicy == FissionPolicy.Neutral && c.FissionDestination == null && c.FissionEligibleTurn == 0, "an older camp loads Neutral, no destination and immediate eligibility"); }
         var society = new DataContractSerializer(typeof(Society));
         using (var stream = new MemoryStream()) { society.WriteObject(stream, ls); xml = Encoding.UTF8.GetString(stream.ToArray()); }
         string oldSociety = Regex.Replace(xml, "<(ParentSociety|KinAffinity)>[^<]*</\\1>", "");

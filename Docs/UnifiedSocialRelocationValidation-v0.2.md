@@ -53,6 +53,41 @@ viability under the real goods economy, not an immigration-driven death loop and
 not a change to experienced QoL. Immigration still needs broader causal coverage,
 but its current hysteresis already reduces the few measured reversals.
 
+### Daughter maturation control
+
+The new Physical-v1 daughter cooldown is a narrow timing guard. A matched sweep
+from the same three boundaries produced:
+
+| Additional blocked turns | Fissions | Recursive daughter fissions (age 1/2/3/older) | Blocked daughter-camp turns | Camps | Population | Viable settlements | Pop-weighted QoL |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 113 | 61 (3/4/3/51) | 0 | 137 | 36,728 | 2 | 0.111 |
+| **1 (shipped)** | **112** | **60 (0/5/3/52)** | **87** | **136** | **36,669** | **2** | **0.110** |
+| 2 | 109 | 57 (0/0/5/52) | 177 | 133 | 36,759 | 1 | 0.113 |
+
+The default eliminates one-turn daughter recursion exactly, including across
+save/load, but does not materially reduce fragmentation or improve viability. The
+two-turn alternative is not promoted: it has only three fewer fissions than the
+default and one rather than two viable endpoints. No QoL, mortality, reward,
+immigration or fission-threshold calibration changed.
+
+### Forecaster review after the failed balance gate
+
+The requested Astra review found that fission already gives projected food the
+first two lexicographic destination keys: capped obtainable support, then uncapped
+support, before distance and tile ID. Adding another numerical food or survival
+weight would double-count the service and violate the controlled-calibration rule.
+
+The concrete next defect is the new-site food representation. The fission pass
+converts capped support back into at most one opening cohort's food, while the
+common service forecast funds birth-only person-years (about 1.622 opening cohorts
+over 20 years at birth rate 0.045). The new-site capacity also treats all supply as
+terrestrial and the non-cultivator branch can apply accessibility a second time.
+Thus the forecaster loses productive headroom, can mis-type aquatic food as plant
+food, and can cap a stock-free arbitrarily rich site near 0.617 forecast nutrition.
+This is a representation defect to isolate before interpreting a food-ranking
+sweep. It is pessimistic in general, so correcting it could increase fission and
+is not itself presumed beneficial.
+
 ## Scope and reproduction
 
 The branch is based directly on reviewed commit
@@ -68,6 +103,7 @@ dotnet run --no-build -c Release --project Tools/Headless/Anthropocene.Headless.
 dotnet run --no-build -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-regression
 dotnet run --no-build -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-social-ablation=25
 dotnet run --no-build -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-immigration-sweep=25
+dotnet run --no-build -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-fission-cooldown-sweep=25
 dotnet run --no-build -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --demography-qol-histogram=25
 dotnet run --no-build -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --social-scale=8,25
 dotnet run --no-build -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --social-scale=80,0
@@ -77,12 +113,13 @@ dotnet run --no-build -c Release --project Tools/Headless/Anthropocene.Headless.
 Pipe the histogram rows to `Tools/Headless/Plot-DemographyQoLHistogram.py` to
 reproduce both tracked figures.
 
-Focused final counts are 60 shared-relocation, 379 immigration, 646 fission,
+Focused final counts are 60 shared-relocation, 379 immigration, 655 fission,
 37 native matched-continuation and 83 death-spiral assertions. The matched
 three-seed ablation passes 17,439 assertions; the ten-row immigration sweep passes
-64,403; the histogram audit passes 10,175. The final Release rebuild has zero
+64,403; the three-row daughter-cooldown sweep passes 19,412; the histogram audit
+passes 10,175. The final Release rebuild has zero
 errors and the two pre-existing unrelated `CS0649` warnings. The full fixed suite
-passes in 64.3 seconds with 1,912 MiB peak working set on this host.
+passes in 66.6 seconds with 1,914 MiB peak working set on this host.
 
 ## Architecture, finite inputs and compatibility
 
@@ -251,9 +288,9 @@ reuse, not a return to historical QoL coverage.
 | Shared physical architecture | PASS | One evaluator for immigration/crowding/distress; finite service/material inputs; no mortality-from-QoL or net-rate veto |
 | Future opportunity accountability | PASS in injected fixtures | Neutral parity plus funded/false/filled/wrong-skill/reservation/nonmonotone coverage; no live jobs |
 | Native conservation and recoverable distress | PASS | Same-boundary conservation, cause ledgers and endogenous rebuild pass |
-| Healthy/saturated/distress social balance | NO-GO | Fission alone creates 126 camps; terminal protection remains poor; prepared matched fission cases are incomplete |
+| Healthy/saturated/distress social balance | NO-GO | The cooldown removes age-one recursion but changes 113 to only 112 combined fissions; terminal protection remains poor; prepared matched fission cases are incomplete |
 | Native causal cases | PARTIAL | One immigration accepted/suppressed/forced case is positive and exact; fission and broader receiver classes missing |
-| Forecast robustness | INCOMPLETE | Stability is diagnostic only; compound shocks are not lower-bound admission rescores |
+| Forecast robustness | NO-GO | New-site food is capped before the service envelope, loses aquatic type and can receive a second accessibility discount; stability is diagnostic only; compound shocks are not lower-bound admission rescores |
 | Oscillation | PASS for current default; calibration open | Existing hysteresis cuts rapid returns 8→4; 0.20 cuts them to one but lacks causal/held-out welfare justification |
 | Performance | NO-GO for MLP | Endpoint-local reconciliation passes work-counter tests, but 320/mature p95 and allocation overhead fail promotion |
 | Learned-vs-native comparison | NOT AVAILABLE | No learned policy artifact/runtime; RL observation/action/training defects remain separate |
@@ -264,24 +301,35 @@ reuse, not a return to historical QoL coverage.
 
 The shortest evidence-driven route to GO is:
 
-1. Build matched healthy, productively saturated and physically distressed fission
-   fixtures on saved native boundaries, then sweep only the existing policy
+1. Correct the daughter food-envelope representation without changing utility or
+   thresholds: preserve uncapped repeatable land/aquatic supply separately, apply
+   actual transferred workforce and accessibility once, and expose uncapped
+   renewable-food and typed-production diagnostics. Lock rich-site headroom,
+   aquatic non-fungibility, workforce, conservation and deterministic parity in
+   focused tests.
+2. Only after that correction, build matched healthy, productively saturated and
+   physically distressed fission fixtures on saved native boundaries, then sweep only the existing policy
    thresholds/search fraction. The search fraction may affect only the proven
    upper-bound request, never become a separate acceptance condition. The objective
    is to retain viable saturated and distress splits while reducing repeated
    fragmentation; add no survival bonus or QoL-ratio shortcut.
-2. Add a conservative/lower-bound version of the same service envelope and test it
+3. Compare the current one-site cache with a bounded candidate shortlist. Every
+   shortlisted destination must pass the unchanged common evaluator; among accepted
+   sites compare current ordering against uncapped renewable food, mover utility,
+   aggregate welfare, distance and ID. Measure shortlist misses and cache behavior;
+   do not add a numerical food bonus.
+4. Add a conservative/lower-bound version of the same service envelope and test it
    against positive- and zero-stability accepted immigration and fission cases,
    including delayed finite-input exhaustion. Keep `Stability` diagnostic until
    those causal results justify how it enters the existing four comparisons.
-3. Extend accepted/suppressed/forced native continuations to fission daughters and
+5. Extend accepted/suppressed/forced native continuations to fission daughters and
    more receiver classes for at least three turns, reporting production, F/C/H,
    cause deaths, workforce, population × QoL and integrated person-year welfare;
    keep endpoint sums explicitly labelled as proxies.
-4. Reduce forecast-view/material-summary allocation and safe-baseline cost, then
+6. Reduce forecast-view/material-summary allocation and safe-baseline cost, then
    run warmed repeated identical-boundary 80/320/mature benchmarks plus dense-flow
    rejection cascades. Preserve endpoint-local reconciliation and exact canonical
    results.
-5. Rerun the 2×2 ablation, calibration sweep, histograms, full fixed/save-replay
+7. Rerun the 2×2 ablation, calibration sweep, histograms, full fixed/save-replay
    suite and then the requested native-versus-learned shocks once a learned policy
    runtime exists. Resolve RL observation/action/training defects independently.

@@ -357,10 +357,13 @@ namespace Anthropocene.Simulation
         {
             if (!w.Config.FissionEnabled) return;
             var timer = System.Diagnostics.Stopwatch.StartNew();
-            // Frozen post-demography snapshot: nothing below the parallel map writes to the world.
-            var camps = w.Camps.Where(c => c.Population > 0 && (excluded == null || !excluded.Contains(c.Id))).OrderBy(c => c.Id).ToArray();
-            var context = new Context(w, opportunities, forecasts);
             bool legacyDecision = !PhysicalDemography.Enabled(w.Config);
+            // Frozen post-demography snapshot: nothing below the parallel map writes to the world. Physical daughters mature
+            // through the configured number of complete post-founding turns before they can enter this evaluation map.
+            var candidates = w.Camps.Where(c => c.Population > 0 && (excluded == null || !excluded.Contains(c.Id))).OrderBy(c => c.Id).ToArray();
+            if (!legacyDecision) metrics.FissionCooldownBlocked += candidates.LongCount(c => w.Turn < c.FissionEligibleTurn);
+            var camps = legacyDecision ? candidates : candidates.Where(c => w.Turn >= c.FissionEligibleTurn).ToArray();
+            var context = new Context(w, opportunities, forecasts);
             var evaluations = (execution ?? new PhaseExecution()).Map(camps,
                 c => legacyDecision ? EvaluateLegacy(context, c) : Evaluate(context, c));
             var committed = new List<int>(); int spacing = Math.Max(1, w.Config.MinimumCampSpacing);
@@ -798,6 +801,7 @@ namespace Anthropocene.Simulation
                 camp.CrowdingMortalityRate = parent.CrowdingMortalityRate;
                 camp.DiseaseMortalityRate = parent.DiseaseMortalityRate;
                 camp.StarvationMortalityRate = parent.StarvationMortalityRate;
+                camp.FissionEligibleTurn = checked(w.Turn + 1 + w.Config.FissionDaughterCooldownTurns);
             }
             camp.Bind(society); w.Camps.Add(camp);
             // A daughter has no newly resolved needs until her first turn; her committed QoL is the estimate that justified the split

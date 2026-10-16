@@ -135,6 +135,7 @@
   "FissionDaughterBuilderShare": 0.05,
   "FissionRadius": 4,
   "FissionMinimumDaughter": 12,
+  "FissionDaughterCooldownTurns": 1,
   "DemographicModel": 1,
   "QoLMortalityEnabled": false,
   "BaseBirthRate": 0.045,

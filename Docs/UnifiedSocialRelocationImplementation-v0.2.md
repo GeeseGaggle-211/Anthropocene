@@ -141,6 +141,13 @@ it does not select a separate QoL or mortality law. Existing policy daughter siz
 minimum population, known-site radius, site ordering, spacing, portable-stock
 split, domestic-herd split and canonical conflict resolution remain.
 
+Physical-v1 founding assigns the daughter a saved absolute eligibility boundary,
+`founding turn + 1 + FissionDaughterCooldownTurns`. The shipped value `1` blocks
+the first post-founding Close and permits evaluation at the second; `0` restores
+the former next-turn eligibility. The filter is outside the forecast/evaluator,
+has its own transient diagnostic, and is bypassed by the exact legacy-demography
+path. It changes neither candidate utility nor any threshold.
+
 The source keeps site-bound fixed housing. The daughter gets its proportional
 typed food, portable inventory, tools, demographic remainders, deficit history,
 expectation, knowledge and workforce. Farmers in the daughter become gatherers as
