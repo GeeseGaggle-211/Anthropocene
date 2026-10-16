@@ -25,6 +25,8 @@ namespace Anthropocene.Simulation
     internal sealed class GrowthPlan
     {
         public double Required, ConsumptionRequired, GrowthFood, ReproductivePopulation, FinalPopulation, ManufacturingInput, PlantManufacturingInput, AnimalManufacturingInput;
+        // Diagnostic prototype only: clothing feedstock the Elder committed ahead of meals (zero otherwise).
+        public double ProtectedClothingFood;
         // Transient explanation of the food chronology used by the opt-in
         // recovery diagnostic. These values never enter authoritative state.
         public double ProjectedFood, NetIncome, PriorityIncome, AvailableAfterReserve;
@@ -790,8 +792,11 @@ namespace Anthropocene.Simulation
             double clothingPlant = Math.Min(Math.Max(0, needs.PlantClothingFeedstock), Math.Max(0, camp.PlantFood));
             double clothingAnimal = Math.Min(Math.Max(0, needs.AnimalClothingFeedstock), Math.Max(0, camp.AnimalFood + incomingAnimalFood));
             double afterMeals = Math.Max(0, projectedFood - populationBase);
-            clothingPlant = Math.Min(clothingPlant, afterMeals);
-            clothingAnimal = Math.Min(clothingAnimal, Math.Max(0, afterMeals - clothingPlant));
+            // Diagnostic prototype: an Elder-committed clothing split is paid
+            // ahead of meals (bounded by the food actually present).
+            double clothingRoom = needs.ProtectedClothing ? Math.Max(0, projectedFood) : afterMeals;
+            clothingPlant = Math.Min(clothingPlant, clothingRoom);
+            clothingAnimal = Math.Min(clothingAnimal, Math.Max(0, clothingRoom - clothingPlant));
             double clothing = clothingPlant + clothingAnimal;
             double available = netIncome + 1e-8 >= priorityIncome + clothing && projectedFood + 1e-8 >= populationBase + clothing + needs.ReserveTarget
                 ? Math.Min(Math.Max(0, netIncome - priorityIncome - clothing), Math.Max(0, projectedFood - populationBase - clothing - needs.ReserveTarget))
@@ -836,6 +841,7 @@ namespace Anthropocene.Simulation
                 }
             }
             var result = ForRate(low);
+            if (needs.ProtectedClothing) result.ProtectedClothingFood = clothing;
             if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
             {
                 result.ProjectedFood = projectedFood; result.NetIncome = netIncome;
@@ -1092,7 +1098,7 @@ namespace Anthropocene.Simulation
                 if (physical)
                 {
                     double plant = camp.PlantFood, animal = camp.AnimalFood, aquatic = camp.AquaticFood;
-                    ConsumeCampFood(camp, Math.Min(plans[camp.Id].Required, camp.Food), plans[camp.Id].PlantManufacturingInput, plans[camp.Id].AnimalManufacturingInput);
+                    ConsumeCampFood(camp, Math.Min(plans[camp.Id].Required, plans[camp.Id].ProtectedClothingFood > 0 ? Math.Max(0, camp.Food - plans[camp.Id].ProtectedClothingFood) : camp.Food), plans[camp.Id].PlantManufacturingInput, plans[camp.Id].AnimalManufacturingInput);
                     var envelope = new PhysicalFoodEnvelope
                     {
                         Plant = Math.Max(0, plant - camp.PlantFood), Animal = Math.Max(0, animal - camp.AnimalFood),

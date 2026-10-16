@@ -62,6 +62,14 @@ namespace Anthropocene.Simulation
     // stable matching, flows, and recomputing QoL after each transfer.
     public static class Immigration
     {
+        // Diagnostic only: when non-null, Resolve records one row per source camp (Tools/Headless/ClothingProbe.cs).
+        // Never read by the simulation; null in ordinary play.
+        internal sealed class Diag
+        {
+            public string Stage = "";
+            public int Candidates, Evaluations, MoverRejected, AggregateRejected, SourceRejected, IncumbentRejected, MaxGroup, IntentSize, Accepted;
+        }
+        internal static Dictionary<int, Diag> Diagnostic;
         // Lifestyle barrier: nomadic camp -> village costs ImmigrationToSedentaryCost, village -> nomadic camp ImmigrationToNomadicCost.
         public static double LifestyleCost(SimulationConfig config, Camp source, Camp destination)
             => !source.IsVillage && destination.IsVillage ? config.ImmigrationToSedentaryCost : source.IsVillage && !destination.IsVillage ? config.ImmigrationToNomadicCost : 0;
@@ -575,8 +583,19 @@ namespace Anthropocene.Simulation
                 metrics.ImmigrationOutflowCooldownBlocked += camps.LongCount(c => w.Turn < c.FissionEligibleTurn);
             var evaluations = execution.Map(sources, c => legacyDecision ? EvaluateLegacy(context, c) : Evaluate(context, c));
             var intents = new List<Intent>();
+            if (Diagnostic != null)
+                foreach (var c in camps.Except(sources)) Diagnostic[c.Id] = new Diag { Stage = "cooldown" };
             foreach (var e in evaluations)
             {
+                if (Diagnostic != null)
+                    Diagnostic[e.Camp.Id] = new Diag
+                    {
+                        Stage = e.Camp.Population < cfg.ImmigrationSourceFloor + cfg.ImmigrationMinimumGroup ? "below-source-floor"
+                            : e.Candidates == 0 ? "no-known-destination" : e.Intent == null ? "no-accepted-destination" : "intent",
+                        Candidates = e.Candidates, Evaluations = e.SocialEvaluations, MoverRejected = e.MoverRejected,
+                        AggregateRejected = e.AggregateRejected, SourceRejected = e.SourceRejected, IncumbentRejected = e.IncumbentRejected,
+                        MaxGroup = MaxGroup(cfg, e.Camp.Population), IntentSize = e.Intent?.Size ?? 0
+                    };
                 if (e.Camp.Population >= cfg.ImmigrationSourceFloor + cfg.ImmigrationMinimumGroup) metrics.ImmigrationCampsEvaluated++;
                 metrics.ImmigrationCandidatesScored += e.Candidates;
                 metrics.SocialCandidatesEvaluated += e.SocialEvaluations;
@@ -671,6 +690,8 @@ namespace Anthropocene.Simulation
             if (!legacyDecision) RevalidateJointPhysical(context, ordered, metrics);
             foreach (var intent in ordered)
             {
+                if (Diagnostic != null && Diagnostic.TryGetValue(intent.Source.Id, out var diag))
+                { diag.Accepted = intent.Accepted; diag.Stage = intent.Accepted > 0 ? "moved" : "rejected-at-reconcile"; }
                 if (intent.Accepted == 0) metrics.ImmigrationRejected++;
                 else
                 {

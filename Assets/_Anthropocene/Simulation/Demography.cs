@@ -132,7 +132,7 @@ namespace Anthropocene.Simulation
         // legacy-starvation compatibility hazard begins only at its physical grace boundary.
         public static DemographicResult AdvanceFixed(SimulationConfig config, double population, double years,
             double nutrition, double clothingCoverage, double housingCapacity, double deficitYears = 0,
-            bool includeLegacyStarvation = true, double densityPopulationOffset = 0)
+            bool includeLegacyStarvation = true, double densityPopulationOffset = 0, double fertilityFactor = 1)
         {
             ValidateCall(config, population, years);
             var total = new DemographicResult
@@ -148,13 +148,13 @@ namespace Anthropocene.Simulation
             if (unexposed > 0)
             {
                 var part = AdvanceCore(config, current, unexposed, total.Nutrition, total.ClothingCoverage,
-                    housingCapacity, false, densityPopulationOffset);
+                    housingCapacity, false, densityPopulationOffset, fertilityFactor);
                 total.Add(part); current = part.FinalPopulation; remaining -= unexposed;
             }
             if (remaining > 1e-14)
             {
                 var part = AdvanceCore(config, current, remaining, total.Nutrition, total.ClothingCoverage,
-                    housingCapacity, includeLegacyStarvation && deficient, densityPopulationOffset);
+                    housingCapacity, includeLegacyStarvation && deficient, densityPopulationOffset, fertilityFactor);
                 total.Add(part);
             }
             total.FinalPopulation = Math.Max(0, total.FinalPopulation);
@@ -169,6 +169,13 @@ namespace Anthropocene.Simulation
         public static DemographicResult AdvanceBudget(SimulationConfig config, double population, double years,
             double foodBudget, double clothingBudget, double housingCapacity, double deficitYears = 0,
             bool includeLegacyStarvation = true, double densityPopulationOffset = 0)
+            => SurplusFundedBirthsDiagnostic
+                ? SurplusBudget(config, population, years, foodBudget, clothingBudget, housingCapacity, deficitYears, includeLegacyStarvation, densityPopulationOffset, out _)
+                : AdvanceBudgetCore(config, population, years, foodBudget, clothingBudget, housingCapacity, deficitYears, includeLegacyStarvation, densityPopulationOffset, 1);
+
+        private static DemographicResult AdvanceBudgetCore(SimulationConfig config, double population, double years,
+            double foodBudget, double clothingBudget, double housingCapacity, double deficitYears,
+            bool includeLegacyStarvation, double densityPopulationOffset, double fertilityFactor)
         {
             ValidateCall(config, population, years);
             foodBudget = Math.Max(0, foodBudget); clothingBudget = Math.Max(0, clothingBudget);
@@ -187,7 +194,7 @@ namespace Anthropocene.Simulation
                 double food = fullFood ? 1 : Numbers.Clamp(foodBudget / (foodRate * denominator), 0, 1);
                 double clothing = fullClothing ? 1 : Numbers.Clamp(clothingBudget / (clothingRate * denominator), 0, 1);
                 var value = AdvanceFixed(config, population, years, food, clothing, housingCapacity,
-                    deficitYears, includeLegacyStarvation, densityPopulationOffset);
+                    deficitYears, includeLegacyStarvation, densityPopulationOffset, fertilityFactor);
                 evaluations++;
                 allRoot += value.RootEvaluations; allBands += value.BandsCrossed; allHazards += value.HazardEvaluations; allQuadrature += value.QuadratureEvaluations;
                 return value;
@@ -220,6 +227,55 @@ namespace Anthropocene.Simulation
             return result;
         }
 
+        // Diagnostic prototype only (default off; process-wide so parallel resolution sees it). Surplus-funded births:
+        // food pays the resident cohort's meals first; births occur at BaseBirthRate * g, where g in [0,1] is the
+        // largest birth fraction whose newborn person-years the remaining food still feeds in full. When food cannot
+        // feed even a birthless cohort, g = 0 and the ordinary nutrition closure and hunger hazards apply.
+        internal static volatile bool SurplusFundedBirthsDiagnostic;
+        internal static long SurplusCalls, SurplusFullCalls, SurplusShortageCalls, SurplusBoundCalls;
+
+        internal static DemographicResult SurplusBudget(SimulationConfig config, double population, double years,
+            double foodBudget, double clothingBudget, double housingCapacity, double deficitYears,
+            bool includeLegacyStarvation, double densityPopulationOffset, out double fertility)
+        {
+            System.Threading.Interlocked.Increment(ref SurplusCalls);
+            fertility = 1;
+            var full = AdvanceBudgetCore(config, population, years, foodBudget, clothingBudget, housingCapacity,
+                deficitYears, includeLegacyStarvation, densityPopulationOffset, 1);
+            if (years == 0 || population <= 0 || full.Nutrition >= 1 - 1e-12)
+            { System.Threading.Interlocked.Increment(ref SurplusFullCalls); return full; }
+            fertility = 0;
+            var none = AdvanceBudgetCore(config, population, years, foodBudget, clothingBudget, housingCapacity,
+                deficitYears, includeLegacyStarvation, densityPopulationOffset, 0);
+            if (none.Nutrition < 1 - 1e-12)
+            { System.Threading.Interlocked.Increment(ref SurplusShortageCalls); return none; }
+            System.Threading.Interlocked.Increment(ref SurplusBoundCalls);
+            // Food binds between: every resident is fed and the remaining food feeds exactly the newborns, so the
+            // closed person-years are foodBudget / foodRate and clothing coverage follows from the same person-years.
+            double foodRate = FoodPerPersonYear(config), clothingRate = ClothingPerPersonYear(config);
+            double target = Math.Max(0, foodBudget) / foodRate;
+            double c = clothingRate * target > 0 ? Numbers.Clamp(Math.Max(0, clothingBudget) / (clothingRate * target), 0, 1) : 1;
+            double lo = 0, hi = 1; int evaluations = 0;
+            for (int i = 0; i < 48; i++)
+            {
+                double mid = (lo + hi) * .5;
+                var trial = AdvanceFixed(config, population, years, 1, c, housingCapacity, deficitYears,
+                    includeLegacyStarvation, densityPopulationOffset, mid);
+                evaluations++;
+                if (trial.PersonYears > target) hi = mid; else lo = mid;
+                if (hi - lo <= 1e-12 || Math.Abs(trial.PersonYears - target) <= config.DemographicServiceTolerance * Math.Max(1, target)) break;
+            }
+            fertility = lo;
+            var result = AdvanceFixed(config, population, years, 1, c, housingCapacity, deficitYears,
+                includeLegacyStarvation, densityPopulationOffset, lo);
+            result.FoodConsumed = Math.Min(Math.Max(0, foodBudget), foodRate * result.PersonYears);
+            result.ClothingConsumed = Math.Min(Math.Max(0, clothingBudget), clothingRate * result.PersonYears);
+            result.Nutrition = result.PersonYears > 0 ? Numbers.Clamp(result.FoodConsumed / (foodRate * result.PersonYears), 0, 1) : 1;
+            result.ClothingCoverage = result.PersonYears > 0 ? Numbers.Clamp(result.ClothingConsumed / (clothingRate * result.PersonYears), 0, 1) : 1;
+            result.ServiceIterations = full.ServiceIterations + none.ServiceIterations + evaluations + 1;
+            return result;
+        }
+
         public static double BirthOnlyPersonYears(double population, double annualBirthRate, double years)
         {
             if (population <= 0 || years <= 0) return 0;
@@ -230,11 +286,12 @@ namespace Anthropocene.Simulation
         }
 
         private static DemographicResult AdvanceCore(SimulationConfig config, double population, double years,
-            double nutrition, double clothing, double housingCapacity, bool starvationActive, double densityOffset)
+            double nutrition, double clothing, double housingCapacity, bool starvationActive, double densityOffset,
+            double fertilityFactor = 1)
         {
             var result = new DemographicResult { InitialPopulation = population, FinalPopulation = population, Nutrition = nutrition, ClothingCoverage = clothing };
             if (years <= 0 || population <= 0) return result;
-            Func<double, DemographicRates> ratesAtPopulation = n => Rates(config, n, nutrition, clothing, housingCapacity, starvationActive, densityOffset);
+            Func<double, DemographicRates> ratesAtPopulation = n => Rates(config, n, nutrition, clothing, housingCapacity, starvationActive, densityOffset, fertilityFactor: fertilityFactor);
             int rootEvaluations = 0;
             double RateAtLog(double x)
             {

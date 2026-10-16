@@ -290,6 +290,38 @@ internal static class Program
             int continuations = demographyDaughterEconomy.Contains("=") ? int.Parse(demographyDaughterEconomy.Substring(demographyDaughterEconomy.IndexOf('=') + 1)) : 30;
             DemographySocialAblation.RunDaughterEconomyAudit(continuations); return 0;
         }
+        if (args.Contains("--surplus-equilibria")) return DemographySocialAblation.RunSurplusEquilibria();
+        var clothingProbe = args.FirstOrDefault(a => a.StartsWith("--clothing-probe=", StringComparison.Ordinal));
+        if (clothingProbe != null)
+        {
+            var parts = clothingProbe.Substring(clothingProbe.IndexOf('=') + 1).Split(',');
+            string seedPart = parts.FirstOrDefault(x => x.StartsWith("seeds=", StringComparison.Ordinal));
+            int[] probeSeeds = seedPart?.Substring(6).Split(';').Select(int.Parse).ToArray();
+            DemandController.ResetKernelSplitCounters();
+            string dumpPart = parts.FirstOrDefault(x => x.StartsWith("dumpturn=", StringComparison.Ordinal));
+            if (dumpPart != null) DemographySocialAblation.LadderDumpTurn = int.Parse(dumpPart.Substring(9));
+            string[] kernelModes = { "kernel", "kernelwy", "kernellex", "kernelterm", "kerneldeaths" };
+            int kernelMode = Array.FindIndex(kernelModes, k => parts.Contains(k));
+            DemandController.KernelSplitDiagnostic = kernelMode >= 0;
+            DemandController.KernelSplitObjective = Math.Max(0, kernelMode);
+            string lexTol = parts.FirstOrDefault(x => x.StartsWith("lextol=", StringComparison.Ordinal));
+            if (lexTol != null) DemandController.KernelLexTolerance = double.Parse(lexTol.Substring(7), System.Globalization.CultureInfo.InvariantCulture);
+            Fission.DistressSizeLadderDiagnostic = parts.Contains("distressladder");
+            DemandController.KernelShelterOnlyDiagnostic = parts.Contains("shelteronly");
+            PhysicalDemography.SurplusFundedBirthsDiagnostic = parts.Contains("surplusbirths");
+            string probeTag = (kernelMode >= 0 ? "-" + kernelModes[kernelMode] : "") + string.Concat(parts.Where(x => x.StartsWith("lextol=", StringComparison.Ordinal)).Select(x => "-" + x.Replace('=', '_'))) + (parts.Contains("distressladder") ? "-dladder" : "") + (parts.Contains("shelteronly") ? "-shelteronly" : "") + (parts.Contains("surplusbirths") ? "-surplus" : "") + (seedPart != null ? "-wide" : "")
+                + string.Concat(parts.Where(x => x.StartsWith("intens=", StringComparison.Ordinal) || x.StartsWith("soft=", StringComparison.Ordinal)).Select(x => "-" + x.Replace('=', '_')));
+            return DemographySocialAblation.RunClothingProbe(int.Parse(parts[0]), parts[1],
+                !parts.Contains("nofission"), !parts.Contains("noimm"), (parts.Contains("freecloth") ? "-freecloth" : "") + (parts.Contains("freehouse") ? "-freehouse" : "") + probeTag, cfg =>
+                {
+                    if (parts.Contains("freecloth")) cfg.Neolithic.PlantFoodPerFabricUnit = 0;
+                    string intens = parts.FirstOrDefault(x => x.StartsWith("intens=", StringComparison.Ordinal));
+                    if (intens != null) cfg.Neolithic.IntensificationTurns = double.Parse(intens.Substring(7), System.Globalization.CultureInfo.InvariantCulture);
+                    string soft = parts.FirstOrDefault(x => x.StartsWith("soft=", StringComparison.Ordinal));
+                    if (soft != null) cfg.Neolithic.CultivationMarginalEffortMultiplierPerTenth = double.Parse(soft.Substring(5), System.Globalization.CultureInfo.InvariantCulture);
+                },
+                parts.Contains("freehouse") ? DemographySocialAblation.FreeHousingOracle : (Action<WorldState>)null, probeSeeds);
+        }
         var demographyFissionRecovery = args.FirstOrDefault(a => a.StartsWith("--demography-fission-recovery", StringComparison.Ordinal));
         if (demographyFissionRecovery != null)
         {

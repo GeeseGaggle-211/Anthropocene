@@ -50,6 +50,9 @@ namespace Anthropocene.Simulation
         public double PlantFeedstock, PlantFeedstockGap, AnimalFeedstock, AnimalFeedstockGap;
         // The part of the feedstock above that covers this turn's clothing requirement (paid ahead of the reserve refill).
         public double PlantClothingFeedstock, AnimalClothingFeedstock;
+        // Diagnostic prototype only (DemandController.KernelSplitDiagnostic): the
+        // Elder committed this clothing feedstock ahead of meals. False otherwise.
+        internal bool ProtectedClothing;
         internal Dictionary<CraftGood, double> Production;
         internal HousingMaterialPlan Housing;
         // The camp's Value-rule production order, fixed for the turn (WP3b); null otherwise.
@@ -429,6 +432,16 @@ namespace Anthropocene.Simulation
                 // substitute inventory above consumption, clothing and reserve.
                 var clothing = NeolithicProduction.ClothingNeedFeedstock(world.Config.Neolithic, residents, years,
                     planningCamp.Inventory.Cloth - planningCamp.TradeExport(CraftGood.Cloth), planningCamp.Inventory.AnimalFabric - planningCamp.TradeExport(CraftGood.AnimalFabric), needs.PlantFeedstock, needs.AnimalFeedstock);
+                if (order != null && order.ProtectedClothingUnits >= 0)
+                {
+                    // Diagnostic prototype: the Elder's committed clothing units
+                    // (already net of opening textiles), bounded by the forecast.
+                    double perCloth = world.Config.Neolithic.PlantFoodPerFabricUnit;
+                    double clothUnits = Math.Min(order.ProtectedClothingUnits, Math.Max(0, needs.Production[CraftGood.Cloth]));
+                    double fabricUnits = Math.Min(Math.Max(0, order.ProtectedClothingUnits - clothUnits), Math.Max(0, needs.AnimalFeedstock));
+                    clothing = new NeolithicProduction.ClothingFeedstock { Plant = clothUnits * perCloth, Animal = fabricUnits };
+                    needs.ProtectedClothing = true;
+                }
                 needs.PlantClothingFeedstock = clothing.Plant; needs.AnimalClothingFeedstock = clothing.Animal;
                 NeolithicProduction.FeedstockGaps(planningCamp.Food, planningCamp.PlantFood, planningCamp.AnimalFood, needs.ConsumptionRequired, needs.ReserveTarget,
                     needs.PlantFeedstock, needs.AnimalFeedstock, clothing, out double plantGap, out double animalGap);

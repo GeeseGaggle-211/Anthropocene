@@ -328,6 +328,29 @@ namespace Anthropocene.Simulation
             }
         }
 
+        // Diagnostic only: when non-null, Resolve records one row per camp it considered (Tools/Headless/ClothingProbe.cs).
+        // Never read by the simulation; null in ordinary play.
+        internal sealed class Diag
+        {
+            public string Stage = "";
+            public bool DistressLegal, MoverScreen, SourceScreen, MoverPass, AggregatePass, SourcePass;
+            public double BaselineUtility, BaselineNutrition, Threshold, MoverChange, SourceChange, AggregateChange;
+            public double DaughterQoL, DaughterNutrition, DaughterClothing, DaughterHousing, DaughterRisk, DaughterRenewableFood;
+            public double SourceNoMoveQoL, SourceNoMoveRisk;
+            public int Daughter;
+        }
+        internal static Dictionary<int, Diag> Diagnostic;
+        // Diagnostic counterfactual only (default off): a distress camp also offers 3/4, 1/2 and 1/4 of its shortfall cohort.
+        internal static volatile bool DistressSizeLadderDiagnostic;
+        private static int[] DistressSizes(int n1, int n0, int minimum, int largest, bool distressLegal)
+        {
+            var sizes = new List<int> { distressLegal ? n1 : n0 };
+            if (DistressSizeLadderDiagnostic && distressLegal)
+                foreach (double f in new[] { .75, .5, .25 }) sizes.Add((int)Math.Round(n1 * f));
+            sizes.Add(n0);
+            return sizes.Where(n => n >= minimum && n <= largest).Distinct().ToArray();
+        }
+
         private sealed class Evaluation
         {
             public Camp Camp;
@@ -341,6 +364,9 @@ namespace Anthropocene.Simulation
             public DemographicRates DaughterRates;
             public SocialRelocationEvaluation Decision;
             public WorkforceTransfer Workforce;
+            // Diagnostic only (Fission.Diagnostic): screening detail; no decision reads these.
+            public bool LegalChecked, DistressLegal, MoverScreenPassed, SourceScreenPassed;
+            public double BaselineUtility, BaselineNutrition, Threshold;
             public int Validations, Searches, Candidates, TileProjections, Invalidations;
             public int SocialEvaluations, MoverRejected, AggregateRejected, SourceRejected;
             public int Shortlists, ShortlistedSites, ShortlistAcceptedSites,
@@ -385,6 +411,11 @@ namespace Anthropocene.Simulation
             var candidates = w.Camps.Where(c => c.Population > 0 && (excluded == null || !excluded.Contains(c.Id))).OrderBy(c => c.Id).ToArray();
             if (!legacyDecision) metrics.FissionCooldownBlocked += candidates.LongCount(c => w.Turn < c.FissionEligibleTurn);
             var camps = legacyDecision ? candidates : candidates.Where(c => w.Turn >= c.FissionEligibleTurn).ToArray();
+            if (Diagnostic != null)
+            {
+                foreach (var c in w.Camps.Where(c => c.Population > 0 && excluded != null && excluded.Contains(c.Id))) Diagnostic[c.Id] = new Diag { Stage = "excluded-immigration" };
+                foreach (var c in candidates.Except(camps)) Diagnostic[c.Id] = new Diag { Stage = "cooldown" };
+            }
             var context = new Context(w, opportunities, forecasts);
             var evaluations = (execution ?? new PhaseExecution()).Map(camps,
                 c => legacyDecision ? EvaluateLegacy(context, c) : Evaluate(context, c));
@@ -418,7 +449,32 @@ namespace Anthropocene.Simulation
                     metrics.SocialAggregateRejected += e.AggregateRejected;
                     metrics.SocialSourceRejected += e.SourceRejected;
                 }
+                Diag diag = null;
+                if (Diagnostic != null)
+                {
+                    diag = new Diag
+                    {
+                        DistressLegal = e.DistressLegal, MoverScreen = e.MoverScreenPassed, SourceScreen = e.SourceScreenPassed,
+                        BaselineUtility = e.BaselineUtility, BaselineNutrition = e.BaselineNutrition, Threshold = e.Threshold, Daughter = e.Daughter,
+                        Stage = !e.LegalChecked ? "not-legal-size"
+                            : !e.MoverScreenPassed ? "screen-mover-bound" : !e.SourceScreenPassed ? "screen-source-harm"
+                            : e.NoCandidates ? "no-known-site" : e.Decision == null ? "no-viable-site" : "decided"
+                    };
+                    if (e.Decision != null)
+                    {
+                        var dd = e.Decision;
+                        diag.MoverPass = dd.MoverPass; diag.AggregatePass = dd.AggregatePass; diag.SourcePass = dd.SourcePass;
+                        diag.MoverChange = dd.MoverUtilityChange; diag.SourceChange = dd.SourceUtilityChange; diag.AggregateChange = dd.AggregateWelfareChange;
+                        diag.DaughterQoL = dd.DestinationAfter.QoL; diag.DaughterNutrition = dd.DestinationAfter.Nutrition;
+                        diag.DaughterClothing = dd.DestinationAfter.ClothingCoverage; diag.DaughterHousing = dd.DestinationAfter.HousingCoverage;
+                        diag.DaughterRisk = dd.DestinationAfter.MortalityRisk; diag.DaughterRenewableFood = dd.DestinationAfter.RenewableFoodRatio;
+                        diag.SourceNoMoveQoL = dd.SourceNoMove.QoL; diag.SourceNoMoveRisk = dd.SourceNoMove.MortalityRisk;
+                        if (!e.Propose) diag.Stage = !dd.MoverPass ? "reject-mover" : !dd.AggregatePass ? "reject-aggregate" : !dd.SourcePass ? "reject-source" : "not-proposed";
+                    }
+                    Diagnostic[e.Camp.Id] = diag;
+                }
                 if (!e.Propose) continue;
+                if (diag != null) diag.Stage = committed.Any(t => w.Map.Distance(t, e.Tile) < spacing) ? "dropped-spacing" : "committed-" + e.Trigger;
                 metrics.FissionProposals++; if (e.Trigger == FissionTrigger.Distress) metrics.FissionDistressProposals++; else metrics.FissionCrowdingProposals++;
                 if (committed.Any(t => w.Map.Distance(t, e.Tile) < spacing)) { metrics.FissionDropped++; continue; }
                 if (knowledge == null)
@@ -563,7 +619,9 @@ namespace Anthropocene.Simulation
             bool distressLegal = short0 > 0 && largest >= minimum;
             int n1 = distressLegal ? Math.Max(minimum, Math.Min(largest, Math.Max(n0, short0))) : n0;
             e.Daughter = crowdLegal ? n0 : n1;
+            e.DistressLegal = distressLegal; e.BaselineNutrition = met;
             if (!crowdLegal && !distressLegal) return e;
+            e.LegalChecked = true;
 
             // Provably permissive preselection against the shared four gates.
             // Q is bounded by one and physical mortality risk is nonnegative, so
@@ -577,8 +635,7 @@ namespace Anthropocene.Simulation
             double threshold = Kinship.GainThreshold(cfg, policy);
             double searchThreshold = cfg.FissionSearchFraction * threshold;
             double baselineUtility = baseline.QoL - baseline.MortalityRisk;
-            var candidateSizes = new[] { distressLegal ? n1 : n0, n0 }
-                .Where(n => n >= minimum && n <= largest).Distinct().ToArray();
+            var candidateSizes = DistressSizes(n1, n0, minimum, largest, distressLegal);
             double bestSourceRelief = double.NegativeInfinity;
             bool candidateCanPass = false;
             double years = cfg.TurnDays / cfg.DaysPerYear;
@@ -593,12 +650,14 @@ namespace Anthropocene.Simulation
                 bool moverCanRequestSearch = daughterQoLUpper - daughterRiskLower - baselineUtility
                     + 1e-12 >= searchThreshold;
                 if (!moverCanRequestSearch) continue;
+                e.MoverScreenPassed = true;
                 var source = context.Source(camp, candidateSize).Forecast;
                 double relief = (source.QoL - source.MortalityRisk) - baselineUtility;
                 bestSourceRelief = Math.Max(bestSourceRelief, relief);
                 bool sourceCanPass = relief + cfg.FissionDaughterMargin + 1e-12 >= 0;
-                if (sourceCanPass) candidateCanPass = true;
+                if (sourceCanPass) { candidateCanPass = true; e.SourceScreenPassed = true; }
             }
+            e.BaselineUtility = baselineUtility; e.Threshold = threshold;
             e.Gain = double.IsNegativeInfinity(bestSourceRelief) ? 0 : bestSourceRelief;
             e.Push = Push(e.Gain, threshold);
             if (!candidateCanPass) return e;
@@ -665,8 +724,7 @@ namespace Anthropocene.Simulation
             // Distress keeps its calibrated shortfall cohort.  If that larger
             // group is not supportable, the ordinary policy cohort may still be
             // assessed by exactly the same equation at the selected known site.
-            var prioritizedSizes = new[] { distressLegal ? n1 : n0, n0 }
-                .Where(n => n >= minimum && n <= largest).Distinct().ToArray();
+            var prioritizedSizes = DistressSizes(n1, n0, minimum, largest, distressLegal);
             if (shortlist == null)
             {
                 foreach (int candidateSize in prioritizedSizes)

@@ -88,6 +88,24 @@ namespace Anthropocene.Simulation
 
             double foodRate = FoodPerPersonYear(config), clothingRate = ClothingPerPersonYear(config);
             int count = pools.Count;
+            double[] poolFertility = null;
+            if (SurplusFundedBirthsDiagnostic)
+            {
+                // Prototype: each pool's birth fraction from the scalar surplus rule at its aggregate cohort, with the
+                // other pools as density offset; the coupled closure below then runs with those fixed fractions.
+                poolFertility = new double[count];
+                double totalPopulation = layout.PoolPopulation.Sum();
+                for (int p = 0; p < count; p++)
+                {
+                    double population = layout.PoolPopulation[p], deficit = 0; bool include = false;
+                    for (int i = 0; i < layout.Members; i++)
+                        if (layout.PoolOf[i] == p) { deficit += layout.DeficitYears[i] * layout.Population[i]; include |= layout.IncludeStarvation[i]; }
+                    deficit = population > 0 ? deficit / population : 0;
+                    if (population > 0) SurplusBudget(config, population, years, pools[p].FoodBudget, pools[p].ClothingBudget,
+                        pools[p].HousingCapacity, deficit, include, Math.Max(0, totalPopulation - population), out poolFertility[p]);
+                    else poolFertility[p] = 1;
+                }
+            }
             var maximumY = new double[count];
             var guess = new double[count];
             var fullFood = new bool[count];
@@ -113,7 +131,7 @@ namespace Anthropocene.Simulation
                     nutrition[p] = fullFood[p] ? 1 : Numbers.Clamp(pools[p].FoodBudget / (foodRate * denominator), 0, 1);
                     clothing[p] = fullClothing[p] ? 1 : Numbers.Clamp(pools[p].ClothingBudget / (clothingRate * denominator), 0, 1);
                 }
-                CoupledDemographicResult value = AdvanceCoupledFixed(config, pools, layout, years, nutrition, clothing);
+                CoupledDemographicResult value = AdvanceCoupledFixed(config, pools, layout, years, nutrition, clothing, poolFertility);
                 allRates += value.RateEvaluations; allAccepted += value.AcceptedSteps;
                 allRejected += value.RejectedSteps; evaluations++;
                 return value;
@@ -182,7 +200,7 @@ namespace Anthropocene.Simulation
 
         private static CoupledDemographicResult AdvanceCoupledFixed(SimulationConfig config,
             IReadOnlyList<DemographicServicePoolInput> pools, CoupledLayout layout, double years,
-            IReadOnlyList<double> nutrition, IReadOnlyList<double> clothing)
+            IReadOnlyList<double> nutrition, IReadOnlyList<double> clothing, IReadOnlyList<double> fertility = null)
         {
             if (nutrition == null || clothing == null || nutrition.Count != pools.Count || clothing.Count != pools.Count)
                 throw new ArgumentException("Coupled service coverage must have exactly one value per pool.");
@@ -224,11 +242,11 @@ namespace Anthropocene.Simulation
                     throw new DemographicNumericalException("Coupled demographic solver selected a nonpositive step.");
 
                 Rk4Coupled(config, pools, layout, nutrition, clothing, state, step, work.Full, work,
-                    work.StarvationActive, ref rateEvaluations);
+                    work.StarvationActive, ref rateEvaluations, fertility);
                 Rk4Coupled(config, pools, layout, nutrition, clothing, state, step * .5, work.Half, work,
-                    work.StarvationActive, ref rateEvaluations);
+                    work.StarvationActive, ref rateEvaluations, fertility);
                 Rk4Coupled(config, pools, layout, nutrition, clothing, work.Half, step * .5, work.Fine, work,
-                    work.StarvationActive, ref rateEvaluations);
+                    work.StarvationActive, ref rateEvaluations, fertility);
 
                 double errorRatio = 0;
                 for (int j = 0; j < stateSize; j++)
@@ -290,19 +308,19 @@ namespace Anthropocene.Simulation
         private static void Rk4Coupled(SimulationConfig config, IReadOnlyList<DemographicServicePoolInput> pools,
             CoupledLayout layout, IReadOnlyList<double> nutrition, IReadOnlyList<double> clothing,
             double[] state, double step, double[] destination, CoupledWorkspace work,
-            bool[] starvationActive, ref int rateEvaluations)
+            bool[] starvationActive, ref int rateEvaluations, IReadOnlyList<double> fertility = null)
         {
             CoupledDerivative(config, pools, layout, nutrition, clothing, state, work.K1,
-                work.PoolPopulation, starvationActive, ref rateEvaluations);
+                work.PoolPopulation, starvationActive, ref rateEvaluations, fertility);
             for (int j = 0; j < state.Length; j++) work.Temporary[j] = double.IsNaN(state[j]) ? double.NaN : state[j] + step * .5 * work.K1[j];
             CoupledDerivative(config, pools, layout, nutrition, clothing, work.Temporary, work.K2,
-                work.PoolPopulation, starvationActive, ref rateEvaluations);
+                work.PoolPopulation, starvationActive, ref rateEvaluations, fertility);
             for (int j = 0; j < state.Length; j++) work.Temporary[j] = double.IsNaN(state[j]) ? double.NaN : state[j] + step * .5 * work.K2[j];
             CoupledDerivative(config, pools, layout, nutrition, clothing, work.Temporary, work.K3,
-                work.PoolPopulation, starvationActive, ref rateEvaluations);
+                work.PoolPopulation, starvationActive, ref rateEvaluations, fertility);
             for (int j = 0; j < state.Length; j++) work.Temporary[j] = double.IsNaN(state[j]) ? double.NaN : state[j] + step * work.K3[j];
             CoupledDerivative(config, pools, layout, nutrition, clothing, work.Temporary, work.K4,
-                work.PoolPopulation, starvationActive, ref rateEvaluations);
+                work.PoolPopulation, starvationActive, ref rateEvaluations, fertility);
             for (int j = 0; j < state.Length; j++)
                 destination[j] = double.IsNaN(state[j]) ? double.NaN
                     : state[j] + step * (work.K1[j] + 2 * work.K2[j] + 2 * work.K3[j] + work.K4[j]) / 6;
@@ -311,7 +329,8 @@ namespace Anthropocene.Simulation
         private static void CoupledDerivative(SimulationConfig config,
             IReadOnlyList<DemographicServicePoolInput> pools, CoupledLayout layout,
             IReadOnlyList<double> nutrition, IReadOnlyList<double> clothing, double[] state,
-            double[] derivative, double[] poolPopulation, bool[] starvationActive, ref int rateEvaluations)
+            double[] derivative, double[] poolPopulation, bool[] starvationActive, ref int rateEvaluations,
+            IReadOnlyList<double> fertility = null)
         {
             Array.Clear(derivative, 0, derivative.Length);
             Array.Clear(poolPopulation, 0, poolPopulation.Length);
@@ -337,7 +356,7 @@ namespace Anthropocene.Simulation
                 double h = poolPopulation[p] > 0
                     ? Math.Min(1, pools[p].HousingCapacity / poolPopulation[p]) : 1;
                 DemographicRates rates = RatesAtDensityCoverage(config, density, nutrition[p], clothing[p], h,
-                    starvationActive[i]);
+                    starvationActive[i], fertilityFactor: fertility != null ? fertility[p] : 1);
                 derivative[offset + CoupledX] = rates.Net;
                 derivative[offset + CoupledY] = n;
                 derivative[offset + CoupledBirths] = rates.Birth * n;
