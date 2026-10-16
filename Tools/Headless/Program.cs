@@ -277,6 +277,18 @@ internal static class Program
             int continuations = demographyFissionCooldownSweep.Contains("=") ? int.Parse(demographyFissionCooldownSweep.Substring(demographyFissionCooldownSweep.IndexOf('=') + 1)) : 30;
             DemographySocialAblation.RunFissionCooldownSweep(continuations); return 0;
         }
+        var demographyFissionSiteSweep = args.FirstOrDefault(a => a.StartsWith("--demography-fission-site-sweep", StringComparison.Ordinal));
+        if (demographyFissionSiteSweep != null)
+        {
+            int continuations = demographyFissionSiteSweep.Contains("=") ? int.Parse(demographyFissionSiteSweep.Substring(demographyFissionSiteSweep.IndexOf('=') + 1)) : 30;
+            DemographySocialAblation.RunFissionSiteSweep(continuations); return 0;
+        }
+        var demographyDaughterEconomy = args.FirstOrDefault(a => a.StartsWith("--demography-daughter-economy", StringComparison.Ordinal));
+        if (demographyDaughterEconomy != null)
+        {
+            int continuations = demographyDaughterEconomy.Contains("=") ? int.Parse(demographyDaughterEconomy.Substring(demographyDaughterEconomy.IndexOf('=') + 1)) : 30;
+            DemographySocialAblation.RunDaughterEconomyAudit(continuations); return 0;
+        }
         var demographyQoLHistogram = args.FirstOrDefault(a => a.StartsWith("--demography-qol-histogram", StringComparison.Ordinal));
         if (demographyQoLHistogram != null)
         {

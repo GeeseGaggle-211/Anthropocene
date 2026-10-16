@@ -21,6 +21,29 @@ namespace Anthropocene.Simulation
 
     public enum SocialRelocationDestination { ExistingSettlement, NewDaughter }
 
+    // Transient, typed ecological envelope for a prospective founding site.
+    // These are uncapped physical supplies over the turn horizon, before the
+    // daughter's transferred workforce and accessibility limits are applied.
+    // Herd coverage is kept separate from human food so pasture can constrain a
+    // pastoral move without becoming edible plant food.
+    internal readonly struct SocialNewSiteCapacity
+    {
+        internal readonly double RepeatableLandFood, AquaticFood, ManagedLandFood;
+        internal readonly double HerdForageCoverage, HerdWaterCoverage;
+        internal SocialNewSiteCapacity(double repeatableLandFood, double aquaticFood,
+            double managedLandFood = 0, double herdForageCoverage = 1,
+            double herdWaterCoverage = 1)
+        {
+            RepeatableLandFood = Math.Max(0, repeatableLandFood);
+            AquaticFood = Math.Max(0, aquaticFood);
+            ManagedLandFood = Math.Max(0, managedLandFood);
+            HerdForageCoverage = Numbers.Clamp(herdForageCoverage, 0, 1);
+            HerdWaterCoverage = Numbers.Clamp(herdWaterCoverage, 0, 1);
+        }
+        internal double TerrestrialFood => RepeatableLandFood + ManagedLandFood;
+        internal double HumanFood => TerrestrialFood + AquaticFood;
+    }
+
     [Flags]
     public enum SocialForecastConfidence
     {
@@ -194,15 +217,19 @@ namespace Anthropocene.Simulation
         public readonly double QoL, MortalityRisk, PersonYears, EndPopulation;
         public readonly double BirthRate, MortalityRate, ExposureRate, CrowdingRate, DiseaseRate, StarvationRate;
         public readonly double ExposureDeaths, CrowdingDeaths, DiseaseDeaths, StarvationDeaths;
-        public readonly double RenewableFoodCoverage, RenewableClothingCoverage, Stability;
+        public readonly double PlantFoodProduction, AnimalFoodProduction, AquaticFoodProduction;
+        public readonly double RenewableFoodRatio, RenewableFoodCoverage, RenewableClothingCoverage, Stability;
+        public readonly double HerdForageCoverage, HerdWaterCoverage;
         public readonly SocialForecastConfidence Confidence;
         public SocialServiceForecast(int camp, int population, double horizonYears, double foodAvailable, double foodNeed,
             double nutrition, double clothingAvailable, double clothingNeed, double clothingCoverage,
             double shelterCapacity, double housingCoverage, double waterCoverage, double qoL, double mortalityRisk,
             double personYears, double endPopulation, double birthRate, double mortalityRate, double exposureRate,
             double crowdingRate, double diseaseRate, double starvationRate, double exposureDeaths,
-            double crowdingDeaths, double diseaseDeaths, double starvationDeaths, double renewableFoodCoverage,
-            double renewableClothingCoverage, double stability, SocialForecastConfidence confidence)
+            double crowdingDeaths, double diseaseDeaths, double starvationDeaths, double plantFoodProduction,
+            double animalFoodProduction, double aquaticFoodProduction, double renewableFoodRatio,
+            double renewableFoodCoverage, double renewableClothingCoverage, double stability,
+            double herdForageCoverage, double herdWaterCoverage, SocialForecastConfidence confidence)
         {
             Camp = camp; Population = population; HorizonYears = horizonYears; FoodAvailable = foodAvailable;
             FoodNeed = foodNeed; Nutrition = nutrition; ClothingAvailable = clothingAvailable; ClothingNeed = clothingNeed;
@@ -212,13 +239,26 @@ namespace Anthropocene.Simulation
             ExposureRate = exposureRate; CrowdingRate = crowdingRate; DiseaseRate = diseaseRate;
             StarvationRate = starvationRate; ExposureDeaths = exposureDeaths; CrowdingDeaths = crowdingDeaths;
             DiseaseDeaths = diseaseDeaths; StarvationDeaths = starvationDeaths;
+            PlantFoodProduction = plantFoodProduction; AnimalFoodProduction = animalFoodProduction;
+            AquaticFoodProduction = aquaticFoodProduction; RenewableFoodRatio = renewableFoodRatio;
             RenewableFoodCoverage = renewableFoodCoverage; RenewableClothingCoverage = renewableClothingCoverage;
-            Stability = stability; Confidence = confidence;
+            Stability = stability; HerdForageCoverage = herdForageCoverage;
+            HerdWaterCoverage = herdWaterCoverage; Confidence = confidence;
         }
 
         public static SocialServiceForecast Empty(int camp, double years)
-            => new SocialServiceForecast(camp, 0, years, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, SocialForecastConfidence.None);
+            => new SocialServiceForecast(camp: camp, population: 0, horizonYears: years,
+                foodAvailable: 0, foodNeed: 0, nutrition: 1,
+                clothingAvailable: 0, clothingNeed: 0, clothingCoverage: 1,
+                shelterCapacity: 0, housingCoverage: 1, waterCoverage: 1,
+                qoL: 0, mortalityRisk: 0, personYears: 0, endPopulation: 0,
+                birthRate: 0, mortalityRate: 0, exposureRate: 0, crowdingRate: 0,
+                diseaseRate: 0, starvationRate: 0, exposureDeaths: 0, crowdingDeaths: 0,
+                diseaseDeaths: 0, starvationDeaths: 0, plantFoodProduction: 0,
+                animalFoodProduction: 0, aquaticFoodProduction: 0, renewableFoodRatio: 1,
+                renewableFoodCoverage: 1, renewableClothingCoverage: 1, stability: 1,
+                herdForageCoverage: 1, herdWaterCoverage: 1,
+                confidence: SocialForecastConfidence.None);
     }
 
     public sealed class SocialRelocationPolicy
@@ -379,7 +419,7 @@ namespace Anthropocene.Simulation
         internal double DeficitYears, WaterCoverage, DensityPopulationOffset;
         internal double ManagedAnimalFraction = 1;
         internal bool NewSite;
-        internal double SiteFoodCapacity;
+        internal SocialNewSiteCapacity SiteCapacity;
         internal SocialForecastConfidence Confidence;
     }
 
@@ -400,8 +440,10 @@ namespace Anthropocene.Simulation
         private readonly WorldState world;
         private readonly Dictionary<int, Lazy<Capacity>> capacity = new Dictionary<int, Lazy<Capacity>>();
         private readonly Dictionary<int, Lazy<SocialServiceForecast>> baseline = new Dictionary<int, Lazy<SocialServiceForecast>>();
-        private readonly Dictionary<(int Parent, int Tile, int Population, long FoodBits), Capacity> newSiteCapacity
-            = new Dictionary<(int Parent, int Tile, int Population, long FoodBits), Capacity>();
+        private readonly Dictionary<(int Parent, int Tile, int Population, long LandBits, long AquaticBits,
+            long ManagedBits), Capacity> newSiteCapacity
+            = new Dictionary<(int Parent, int Tile, int Population, long LandBits, long AquaticBits,
+                long ManagedBits), Capacity>();
         private readonly Dictionary<int, int> densityOffsets;
         private long forecasts, hits, builds;
         internal long Forecasts => Interlocked.Read(ref forecasts);
@@ -520,7 +562,7 @@ namespace Anthropocene.Simulation
 
         internal SocialSettlementState Daughter(Camp parent, int population, int tile, CampInventory inventory,
             PopulationLedger workforce, double plant, double animal, double aquatic,
-            double siteFoodCapacity)
+            SocialNewSiteCapacity siteCapacity)
         {
             // Negative transient ID guarantees that the daughter cannot borrow the
             // parent's fixed-housing index entry.
@@ -533,7 +575,7 @@ namespace Anthropocene.Simulation
             return new SocialSettlementState
             {
                 Origin = parent, View = view, DeficitYears = Math.Max(0, parent.FoodDeficitYears),
-                WaterCoverage = 1, NewSite = true, SiteFoodCapacity = Math.Max(0, siteFoodCapacity),
+                WaterCoverage = 1, NewSite = true, SiteCapacity = siteCapacity,
                 Confidence = SocialForecastConfidence.WorkforceBound | SocialForecastConfidence.FiniteStocks
                     | SocialForecastConfidence.MaterialInputs | SocialForecastConfidence.NewSiteEstimate
             };
@@ -542,8 +584,11 @@ namespace Anthropocene.Simulation
         private Capacity NewSiteCapacity(SocialSettlementState state)
         {
             var c = state.View;
+            var site = state.SiteCapacity;
             var key = (state.Origin.Id, c.Tile, c.Population,
-                BitConverter.DoubleToInt64Bits(state.SiteFoodCapacity));
+                BitConverter.DoubleToInt64Bits(site.RepeatableLandFood),
+                BitConverter.DoubleToInt64Bits(site.AquaticFood),
+                BitConverter.DoubleToInt64Bits(site.ManagedLandFood));
             lock (newSiteCapacity)
             {
                 if (newSiteCapacity.TryGetValue(key, out var cached)) { Interlocked.Increment(ref hits); return cached; }
@@ -551,8 +596,8 @@ namespace Anthropocene.Simulation
                 return newSiteCapacity[key] = new Capacity
                 {
                     Cultivation = CultivationEconomy.Enabled(c), Husbandry = CultivationEconomy.HusbandryEnabled(c),
-                    ForageSupply = state.SiteFoodCapacity,
-                    TerrestrialSupply = state.SiteFoodCapacity, ManagedHumanFoodDisplaced = 0,
+                    ForageSupply = site.HumanFood,
+                    TerrestrialSupply = site.TerrestrialFood, ManagedHumanFoodDisplaced = 0,
                     ManagedAnimalFood = 0,
                     HarvestProductivity = 1, ReservedHerders = CultivationEconomy.Workers(c, WorkforceRoles.Herder),
                     Sources = MaterialEconomy.KnownSources(world, c, world.Days), Recipes = NeolithicProduction.Recipes(world.Config)
@@ -811,7 +856,8 @@ namespace Anthropocene.Simulation
             double averageStarvation = years > 0 ? (first.LegacyStarvation * firstYears + second.LegacyStarvation * (years - firstYears)) / years : first.LegacyStarvation;
             double mortality = averageExposure + averageCrowding + averageDisease + averageStarvation
                 + (years > 0 ? (first.Additional * firstYears + second.Additional * (years - firstYears)) / years : first.Additional);
-            double renewableFood = foodNeed > 0 ? Math.Min(1, production / foodNeed) : 1;
+            double renewableFoodRatio = foodNeed > 0 ? production / foodNeed : 1;
+            double renewableFood = Math.Min(1, renewableFoodRatio);
             double renewableClothing = clothingNeed > 0
                 ? Math.Min(1, (Produced(CraftGood.Cloth) + Produced(CraftGood.AnimalFabric) + opportunity.Clothing) / clothingNeed) : 1;
             double stability = Math.Min(renewableFood, Math.Min(renewableClothing, housingCoverage));
@@ -819,8 +865,10 @@ namespace Anthropocene.Simulation
                 clothingAvailable, clothingNeed, clothingCoverage, shelter.Total, housingCoverage,
                 state.WaterCoverage, Numbers.Clamp(qoL, 0, 1), mortalityRisk, personYears, population,
                 averageBirth, mortality, averageExposure, averageCrowding, averageDisease, averageStarvation,
-                exposureDeaths, crowdingDeaths, diseaseDeaths, starvationDeaths, renewableFood,
-                renewableClothing, stability, state.Confidence);
+                exposureDeaths, crowdingDeaths, diseaseDeaths, starvationDeaths, plantProduction,
+                animalProduction, aquaticProduction, renewableFoodRatio, renewableFood,
+                renewableClothing, stability, state.NewSite ? state.SiteCapacity.HerdForageCoverage : 1,
+                state.NewSite ? state.SiteCapacity.HerdWaterCoverage : 1, state.Confidence);
         }
     }
 }

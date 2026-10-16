@@ -96,12 +96,18 @@ internal static class DemographySocialAblation
         public int ReversalsAt1, ReversalsAt2, ReversalsAt3;
         public int NegativeNetDestinations, NegativeNetDaughters, HigherQolWorseMortality;
         public int YoungDaughterMigrations, YoungDaughterReversals, Viable, Target, MinPopulation, MedianPopulation, MaxPopulation;
+        public int DaughterOutflowsAt1, DaughterOutflowsAt2, DaughterOutflowsAt3;
+        public int DaughterOutflowPeopleAt1, DaughterOutflowPeopleAt2, DaughterOutflowPeopleAt3;
+        public int DaughterInflowsAt1, DaughterInflowsAt2, DaughterInflowsAt3;
         public int DaughterParentFissions, DaughterParentFissionsAt1, DaughterParentFissionsAt2, DaughterParentFissionsAt3, DaughterParentFissionsOlder;
         public int CrossLineageMigrants, TransferAffectedSettlementTurns;
         public int KinMigrations;
         public long CampTurns, PopulationTurns;
         public long FissionProposals, FissionDropped, FissionCrowding, FissionDistress, FissionCooldownBlocked;
-        public long ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected;
+        public long FissionShortlists, FissionShortlistedSites, FissionShortlistAcceptedSites;
+        public long FissionShortlistAlternativeSelections, FissionShortlistNoAccepted;
+        public long ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected,
+            ImmigrationOutflowCooldownBlocked;
         public long SocialForecasts, SocialCacheBuilds, SocialCacheHits, SocialCandidates;
         public long SocialMoverRejected, SocialAggregateRejected, SocialSourceRejected, SocialIncumbentRejected;
         public double Exposure, Crowding, Disease, Starvation, WorstConservation;
@@ -121,6 +127,38 @@ internal static class DemographySocialAblation
         public double QoL, Food, Clothing, Housing;
     }
 
+    private sealed class DaughterEconomyObservation
+    {
+        public string Variant;
+        public int Seed, Camp, Age, FoundingPopulation, PreSocialPopulation, PostSocialPopulation,
+            PlanningPopulation;
+        public int Gatherers, Farmers, Herders, Manufacturers, Extractors, Fields;
+        public int MigrantsIn, MigrantsOut, FissionOut;
+        public double Nutrition, Clothing, Housing, QoL;
+        public double FoodProduced, FoodRequired, PlantFoodProduced, AnimalFoodProduced, AquaticFoodProduced;
+        public double ClothProduced, AnimalFabricProduced, HousingProduced, LightHousingProduced, HousingMaterialProduced;
+        public double FixedShelter, LightShelter, CultivationCapital;
+        public double FoodStock, ClothStock, AnimalFabricStock, HousingMaterialStock;
+        public double HandToolStock, ToolStock, StoneStock, ClayStock, WoodStock;
+        public double ForecastFoodRatio, ForecastClothing, ForecastHousing;
+        public int SurvivalWorkers, GoodsBudget, RepairPasses;
+        public double FeedstockGatherers, MaterialGatherers;
+        public string FoodUnmet;
+        public readonly List<DaughterRequestObservation> Requests = new List<DaughterRequestObservation>();
+    }
+
+    private sealed class DaughterEconomyPlan
+    {
+        public DemandController.Allocation Allocation;
+        public int Population;
+    }
+
+    private sealed class DaughterRequestObservation
+    {
+        public string Service, Unmet;
+        public double Units, Granted;
+    }
+
     private sealed class Aggregate
     {
         public string Variant;
@@ -129,11 +167,17 @@ internal static class DemographySocialAblation
         public int ReversalsAt1, ReversalsAt2, ReversalsAt3;
         public int NegativeNetDestinations, NegativeNetDaughters, HigherQolWorseMortality;
         public int YoungDaughterMigrations, YoungDaughterReversals, Viable, Target;
+        public int DaughterOutflowsAt1, DaughterOutflowsAt2, DaughterOutflowsAt3;
+        public int DaughterOutflowPeopleAt1, DaughterOutflowPeopleAt2, DaughterOutflowPeopleAt3;
+        public int DaughterInflowsAt1, DaughterInflowsAt2, DaughterInflowsAt3;
         public int DaughterParentFissions, DaughterParentFissionsAt1, DaughterParentFissionsAt2, DaughterParentFissionsAt3, DaughterParentFissionsOlder;
         public int CrossLineageMigrants, TransferAffectedSettlementTurns;
         public int KinMigrations;
         public long CampTurns, PopulationTurns, FissionProposals, FissionDropped, FissionCrowding, FissionDistress, FissionCooldownBlocked;
-        public long ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected;
+        public long FissionShortlists, FissionShortlistedSites, FissionShortlistAcceptedSites;
+        public long FissionShortlistAlternativeSelections, FissionShortlistNoAccepted;
+        public long ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected,
+            ImmigrationOutflowCooldownBlocked;
         public long SocialForecasts, SocialCacheBuilds, SocialCacheHits, SocialCandidates;
         public long SocialMoverRejected, SocialAggregateRejected, SocialSourceRejected, SocialIncumbentRejected;
         public double Exposure, Crowding, Disease, Starvation, WorstConservation;
@@ -331,11 +375,23 @@ internal static class DemographySocialAblation
         Check(current.DaughterParentFissionsAt1 == 0 && longer.DaughterParentFissionsAt1 == 0
             && longer.DaughterParentFissionsAt2 == 0,
             "the observed recursive fissions respect each configured eligibility boundary");
+        Check(control.DaughterOutflowsAt1 > 0 && control.ImmigrationOutflowCooldownBlocked == 0,
+            "the zero-cooldown control reproduces immediate daughter outflow");
+        Check(current.DaughterOutflowsAt1 == 0 && longer.DaughterOutflowsAt1 == 0
+            && longer.DaughterOutflowsAt2 == 0,
+            "daughter immigration outflows respect the same configured maturity boundary as fission");
+        Check(current.ImmigrationOutflowCooldownBlocked > 0
+            && longer.ImmigrationOutflowCooldownBlocked >= current.ImmigrationOutflowCooldownBlocked,
+            "positive cooldowns exercise and extend the shared immigration-source gate");
+        Check(current.DaughterInflowsAt1 > 0 && longer.DaughterInflowsAt1 > 0,
+            "the outflow freeze does not prevent young daughters from receiving immigrants");
 
         Console.WriteLine("DEMOGRAPHY_FISSION_COOLDOWN_ASSESSMENT default=1 control=0 longer=2"
             + " fissions=" + control.Fissions + "/" + current.Fissions + "/" + longer.Fissions
             + " daughterParentFissions=" + control.DaughterParentFissions + "/" + current.DaughterParentFissions + "/" + longer.DaughterParentFissions
             + " age1=" + control.DaughterParentFissionsAt1 + "/" + current.DaughterParentFissionsAt1 + "/" + longer.DaughterParentFissionsAt1
+            + " daughterOutflowAge1=" + control.DaughterOutflowsAt1 + "/" + current.DaughterOutflowsAt1 + "/" + longer.DaughterOutflowsAt1
+            + " daughterOutflowPeopleAge1=" + control.DaughterOutflowPeopleAt1 + "/" + current.DaughterOutflowPeopleAt1 + "/" + longer.DaughterOutflowPeopleAt1
             + " camps=" + control.EndCamps + "/" + current.EndCamps + "/" + longer.EndCamps
             + " population=" + control.EndPopulation + "/" + current.EndPopulation + "/" + longer.EndPopulation
             + " viable=" + control.Viable + "/" + current.Viable + "/" + longer.Viable
@@ -344,6 +400,89 @@ internal static class DemographySocialAblation
                 + F(longer.LocalQoLWeighted / Math.Max(1, longer.EndPopulation))
             + " status=MEASURED_NOT_A_GO_GATE");
         Console.WriteLine("PASS: " + assertions + " fission cooldown-sweep assertions");
+        return assertions;
+    }
+
+    public static int RunFissionSiteSweep(int continuations = 30)
+    {
+        if (continuations < 25 || continuations > 50)
+            throw new ArgumentOutOfRangeException(nameof(continuations), "The fission site-selection sweep requires 25-50 continuation decisions.");
+        assertions = 0;
+        CheckSnapshotClassification();
+        FissionSiteSelection[] selections =
+        {
+            FissionSiteSelection.EcologicalSupport,
+            FissionSiteSelection.AcceptedRenewableFood,
+            FissionSiteSelection.AcceptedAggregateWelfare
+        };
+        string Name(FissionSiteSelection selection) => selection switch
+        {
+            FissionSiteSelection.EcologicalSupport => "ecological-control",
+            FissionSiteSelection.AcceptedRenewableFood => "accepted-food",
+            FissionSiteSelection.AcceptedAggregateWelfare => "accepted-aggregate",
+            _ => throw new ArgumentOutOfRangeException(nameof(selection))
+        };
+
+        var outcomes = new List<Outcome>();
+        foreach (int seed in new[] { 17, 53, 991 })
+        {
+            byte[] boundary = OpeningBoundary(seed, out int openingTurns, out string fingerprint,
+                out int boundaryCamps, out int boundaryPopulation);
+            Console.WriteLine("DEMOGRAPHY_FISSION_SITE_BOUNDARY seed=" + seed + " openingTurns=" + openingTurns
+                + " camps=" + boundaryCamps + " population=" + boundaryPopulation
+                + " fingerprint=" + fingerprint);
+            foreach (FissionSiteSelection selection in selections)
+            {
+                WorldState probe = SaveCodec.Load(boundary);
+                string name = Name(selection);
+                Check(SaveCodec.Fingerprint(probe) == fingerprint,
+                    "seed " + seed + " " + name + " loads the identical boundary save");
+                Check(probe.Camps.Count == boundaryCamps && probe.Camps.Sum(probe.LinkedPopulation) == boundaryPopulation,
+                    "seed " + seed + " " + name + " starts with identical people and camps");
+                outcomes.Add(RunVariant(probe, seed, new Variant
+                {
+                    Name = name, Fission = true, Immigration = true
+                }, continuations, fissionSiteSelection: selection));
+            }
+        }
+
+        var totals = selections.Select(s => AggregateOf(Name(s),
+            outcomes.Where(o => o.Variant == Name(s)))).ToDictionary(a => a.Variant);
+        foreach (FissionSiteSelection selection in selections)
+            PrintFissionSiteSelection(selection, totals[Name(selection)]);
+
+        Aggregate control = totals[Name(FissionSiteSelection.EcologicalSupport)];
+        Aggregate food = totals[Name(FissionSiteSelection.AcceptedRenewableFood)];
+        Aggregate aggregate = totals[Name(FissionSiteSelection.AcceptedAggregateWelfare)];
+        Check(control.Fissions > 0 && food.Fissions > 0 && aggregate.Fissions > 0,
+            "every site-selection branch exercises fission on matched native trajectories");
+        Check(control.FissionShortlists == 0 && control.FissionShortlistedSites == 0,
+            "the historical control performs no additional site forecasts");
+        foreach (Aggregate candidate in new[] { food, aggregate })
+        {
+            Check(candidate.FissionShortlists > 0 && candidate.FissionShortlistedSites > 0,
+                candidate.Variant + " exercises the bounded accepted-site shortlist");
+            Check(candidate.FissionShortlistedSites <= candidate.FissionShortlists * Fission.SiteShortlistLimit,
+                candidate.Variant + " never exceeds the fixed per-search shortlist bound");
+            Check(candidate.FissionShortlistAcceptedSites > 0,
+                candidate.Variant + " observes candidates that pass the unchanged shared evaluator");
+        }
+
+        Console.WriteLine("DEMOGRAPHY_FISSION_SITE_ASSESSMENT default=ecological-control"
+            + " candidates=accepted-food/accepted-aggregate status=NOT_PROMOTED"
+            + " fissions=" + control.Fissions + "/" + food.Fissions + "/" + aggregate.Fissions
+            + " alternatives=" + control.FissionShortlistAlternativeSelections + "/"
+                + food.FissionShortlistAlternativeSelections + "/" + aggregate.FissionShortlistAlternativeSelections
+            + " noAccepted=" + control.FissionShortlistNoAccepted + "/"
+                + food.FissionShortlistNoAccepted + "/" + aggregate.FissionShortlistNoAccepted
+            + " camps=" + control.EndCamps + "/" + food.EndCamps + "/" + aggregate.EndCamps
+            + " population=" + control.EndPopulation + "/" + food.EndPopulation + "/" + aggregate.EndPopulation
+            + " viable=" + control.Viable + "/" + food.Viable + "/" + aggregate.Viable
+            + " localQoL=" + F(control.LocalQoLWeighted / Math.Max(1, control.EndPopulation)) + "/"
+                + F(food.LocalQoLWeighted / Math.Max(1, food.EndPopulation)) + "/"
+                + F(aggregate.LocalQoLWeighted / Math.Max(1, aggregate.EndPopulation))
+            + " reason=bounded-candidates-remain-experimental-pending-recoverability-and-economic-viability-evidence");
+        Console.WriteLine("PASS: " + assertions + " fission site-selection sweep assertions");
         return assertions;
     }
 
@@ -409,6 +548,255 @@ internal static class DemographySocialAblation
         return assertions;
     }
 
+    // Opt-in diagnostic for the real post-fission economy. It deliberately changes no
+    // policy or calibration. Planner requests and staffing are a pure replay from
+    // the committed planning boundary (same allocator, without pending trade);
+    // production/service rows come from the authoritative turn record and post-Close
+    // camp state. Age zero is founding; later ages participated in planning,
+    // production and demography.
+    public static int RunDaughterEconomyAudit(int continuations = 30)
+    {
+        if (continuations < 25 || continuations > 50)
+            throw new ArgumentOutOfRangeException(nameof(continuations), "The daughter-economy audit requires 25-50 continuation decisions.");
+        assertions = 0;
+        var observations = new List<DaughterEconomyObservation>();
+        foreach (Variant variant in new[]
+        {
+            new Variant { Name = "fission-only", Fission = true, Immigration = false },
+            new Variant { Name = "both", Fission = true, Immigration = true }
+        })
+        foreach (int seed in new[] { 17, 53, 991 })
+        {
+            byte[] boundary = OpeningBoundary(seed, out _, out string fingerprint, out _, out _);
+            WorldState world = SaveCodec.Load(boundary);
+            Check(SaveCodec.Fingerprint(world) == fingerprint,
+                "seed " + seed + " daughter-economy " + variant.Name + " loads the identical boundary save");
+            world.Config.FissionEnabled = true;
+            world.Config.ImmigrationEnabled = variant.Immigration;
+            world.Config.Validate();
+            var resolver = new TurnResolver();
+            var founded = new Dictionary<int, (int Turn, int Population)>();
+            for (int i = 0; i < continuations; i++)
+            {
+                int before = world.Camps.Sum(world.LinkedPopulation);
+                var allocations = new Dictionary<int, DaughterEconomyPlan>();
+                foreach (int campId in founded.Keys.OrderBy(id => id))
+                {
+                    Camp daughter = world.Camps.FirstOrDefault(c => c.Id == campId);
+                    if (daughter == null || daughter.Population <= 0 || !CultivationEconomy.EconomyEnabled(daughter)) continue;
+                    DemandController.Plan(world, daughter, EconomicIntent.From(daughter), out _, out DemandController.Allocation allocation);
+                    allocations[campId] = new DaughterEconomyPlan
+                    {
+                        Allocation = allocation, Population = daughter.Population
+                    };
+                }
+                PlanningResult plan = AiPlanning.Decide(world);
+                TurnRecord record = resolver.Resolve(world, plan.Orders, plan.Traces);
+                int after = world.Camps.Sum(world.LinkedPopulation);
+                Check(after == before + record.Growth - record.Deaths,
+                    "seed " + seed + " daughter-economy " + variant.Name + " turn " + record.Turn + " conserves population");
+                Check(variant.Immigration || record.Migrations.Count == 0,
+                    "fission-only daughter-economy branch commits no immigration");
+
+                foreach (var item in founded.OrderBy(p => p.Key).ToArray())
+                {
+                    int age = record.Turn - item.Value.Turn;
+                    if (age < 1 || age > 8) continue;
+                    Camp camp = world.Camps.FirstOrDefault(c => c.Id == item.Key);
+                    DemographicReport demographic = record.Demographics.FirstOrDefault(d => d.Camp == item.Key);
+                    if (camp == null || demographic == null) continue;
+                    allocations.TryGetValue(camp.Id, out var planned);
+                    observations.Add(DaughterEconomyAt(world, record, variant.Name, seed, camp, age,
+                        item.Value.Population, demographic, null, planned));
+                }
+
+                foreach (FissionReport fission in record.Fissions.OrderBy(f => f.DaughterCamp))
+                {
+                    Camp daughter = world.Camps.Single(c => c.Id == fission.DaughterCamp);
+                    founded[daughter.Id] = (record.Turn, fission.Daughter);
+                    DaughterEconomyObservation founding = DaughterEconomyAt(world, record, variant.Name,
+                        seed, daughter, 0, fission.Daughter, null, fission, null);
+                    observations.Add(founding);
+                    Check(founding.FixedShelter <= 1e-9 && founding.Fields == 0 && founding.CultivationCapital <= 1e-9,
+                        "a new daughter receives no fixed housing or site-bound field capital");
+                }
+            }
+        }
+
+        foreach (string variant in new[] { "fission-only", "both" })
+        foreach (int age in Enumerable.Range(0, 9))
+        {
+            DaughterEconomyObservation[] rows = observations.Where(o => o.Variant == variant && o.Age == age).ToArray();
+            if (rows.Length == 0) continue;
+            PrintDaughterEconomy(variant, age, rows);
+            if (age > 0) PrintDaughterBindings(variant, age, rows);
+        }
+
+        foreach (string variant in new[] { "fission-only", "both" })
+        {
+            DaughterEconomyObservation[] founders = observations.Where(o => o.Variant == variant && o.Age == 0).ToArray();
+            DaughterEconomyObservation[] early = observations.Where(o => o.Variant == variant && o.Age >= 1 && o.Age <= 3).ToArray();
+            Check(founders.Length > 0 && early.Length > 0,
+                variant + " audit observes founding and real-economy daughter turns");
+            double foodYield = early.Sum(o => o.FoodRequired) > 0
+                ? early.Sum(o => o.FoodProduced) / early.Sum(o => o.FoodRequired) : 0;
+            double protectiveOutputRate = early.Count(o => o.ClothProduced + o.AnimalFabricProduced
+                + o.HousingProduced + o.LightHousingProduced > 1e-9) / (double)early.Length;
+            Console.WriteLine("DEMOGRAPHY_DAUGHTER_ECONOMY_ASSESSMENT variant=" + variant
+                + " founders=" + founders.Length + " earlyCampTurns=" + early.Length
+                + " foodYieldPerNeed=" + F(foodYield)
+                + " nutrition=" + F(early.Average(o => o.Nutrition))
+                + " clothing=" + F(early.Average(o => o.Clothing))
+                + " housing=" + F(early.Average(o => o.Housing))
+                + " populationRatio=" + F(early.Average(o => o.PreSocialPopulation / (double)Math.Max(1, o.FoundingPopulation)))
+                + " protectiveStaffShare=" + F(early.Average(o => o.Manufacturers / (double)Math.Max(1, o.PlanningPopulation)))
+                + " protectiveOutputCampTurnRate=" + F(protectiveOutputRate)
+                + " fieldsPerCamp=" + F(early.Average(o => (double)o.Fields))
+                + " fixedShelterPerPerson=" + F(early.Average(o => o.FixedShelter / Math.Max(1, o.PostSocialPopulation)))
+                + " migrationOutPeople=" + early.Sum(o => o.MigrantsOut)
+                + " fissionOutPeople=" + early.Sum(o => o.FissionOut));
+        }
+        Console.WriteLine("PASS: " + assertions + " daughter-economy audit assertions");
+        return assertions;
+    }
+
+    private static DaughterEconomyObservation DaughterEconomyAt(WorldState world, TurnRecord record,
+        string variant, int seed, Camp camp, int age, int foundingPopulation,
+        DemographicReport demographic, FissionReport fission, DaughterEconomyPlan plan)
+    {
+        double Produced(CraftGood good) => record.Production.Where(p => p.Camp == camp.Id && p.Good == good).Sum(p => p.Output);
+        int Workers(string role) => CultivationEconomy.Workers(camp, role);
+        int preSocial = demographic?.EndingPopulation ?? camp.Population;
+        int planningPopulation = plan?.Population ?? camp.Population;
+        DemandController.Allocation allocation = plan?.Allocation;
+        int Staff(string role) => allocation != null && allocation.Staff.TryGetValue(role, out int value) ? value : 0;
+        int gatherers = allocation?.FoodGatherers ?? camp.GathererPopulation + Workers(WorkforceRoles.Gatherer);
+        int farmers = allocation != null ? allocation.Farmers + Staff(WorkforceRoles.Farmer)
+            : Workers(WorkforceRoles.Farmer);
+        int herders = allocation?.Herders ?? Workers(WorkforceRoles.Herder);
+        int manufacturers = allocation != null
+            ? Staff(WorkforceRoles.Craftsperson) + WorkforceRoles.Specialists.Sum(Staff)
+            : Workers(WorkforceRoles.Craftsperson) + WorkforceRoles.Specialists.Sum(Workers);
+        int extractors = allocation != null ? WorkforceRoles.Extractors.Sum(Staff)
+            : WorkforceRoles.Extractors.Sum(Workers);
+        int[] fields = CultivationEconomy.Footprint(world, camp)
+            .Where(id => world.Tiles[id].CultivationOperator == camp.Id
+                && world.Tiles[id].CultivationCapital > 1e-9).ToArray();
+        var shelter = NeolithicProduction.HousingCapacity(world, camp, world.Days);
+        var migrationIn = record.Migrations.Where(m => m.DestinationCamp == camp.Id).Sum(m => m.Migrants);
+        var migrationOut = record.Migrations.Where(m => m.SourceCamp == camp.Id).Sum(m => m.Migrants);
+        var fissionOut = record.Fissions.Where(split => split.ParentCamp == camp.Id).Sum(split => split.Daughter);
+        var result = new DaughterEconomyObservation
+        {
+            Variant = variant, Seed = seed, Camp = camp.Id, Age = age,
+            FoundingPopulation = foundingPopulation, PreSocialPopulation = preSocial,
+            PostSocialPopulation = world.LinkedPopulation(camp), PlanningPopulation = planningPopulation,
+            Gatherers = gatherers, Farmers = farmers, Herders = herders,
+            Manufacturers = manufacturers, Extractors = extractors, Fields = fields.Length,
+            MigrantsIn = migrationIn, MigrantsOut = migrationOut, FissionOut = fissionOut,
+            Nutrition = demographic?.Nutrition ?? fission?.DaughterNutrition ?? camp.FoodNeedsMetRatio,
+            Clothing = demographic?.ClothingCoverage ?? fission?.DaughterClothingCoverage ?? camp.ClothPerCapita,
+            Housing = demographic?.HousingCoverage ?? fission?.DaughterHousingCoverage ?? camp.HousingPerCapita,
+            QoL = camp.QoL,
+            FoodProduced = demographic?.FoodProduced ?? 0,
+            FoodRequired = demographic?.FoodRequired ?? 0,
+            PlantFoodProduced = demographic == null ? 0 : demographic.TerrestrialFood + demographic.ForageFood,
+            AnimalFoodProduced = demographic == null ? 0 : demographic.AnimalFood
+                + demographic.HuntFood + demographic.SlaughterFood,
+            AquaticFoodProduced = (demographic?.MarineFood ?? 0) + (demographic?.LakeFood ?? 0) + (demographic?.FishFood ?? 0),
+            ClothProduced = Produced(CraftGood.Cloth), AnimalFabricProduced = Produced(CraftGood.AnimalFabric),
+            HousingProduced = Produced(CraftGood.Housing), LightHousingProduced = Produced(CraftGood.LightHousing),
+            HousingMaterialProduced = Produced(CraftGood.HousingMaterial),
+            FixedShelter = shelter.Fixed, LightShelter = shelter.Light,
+            CultivationCapital = fields.Sum(id => world.Tiles[id].CultivationCapital),
+            FoodStock = camp.Food, ClothStock = camp.Inventory.Cloth,
+            AnimalFabricStock = camp.Inventory.AnimalFabric, HousingMaterialStock = camp.Inventory.HousingMaterial,
+            HandToolStock = camp.Inventory.HandTools, ToolStock = camp.Inventory.Tools,
+            StoneStock = camp.Inventory.Stone, ClayStock = camp.Inventory.Clay, WoodStock = camp.Inventory.Wood,
+            ForecastFoodRatio = fission?.ForecastDaughterRenewableFoodRatio ?? 0,
+            ForecastClothing = fission?.DaughterClothingCoverage ?? 0,
+            ForecastHousing = fission?.DaughterHousingCoverage ?? 0,
+            SurvivalWorkers = allocation == null ? 0 : allocation.Herders + allocation.Farmers + allocation.FoodGatherers,
+            GoodsBudget = allocation == null ? 0 : Math.Max(0, planningPopulation
+                - allocation.Herders - allocation.Farmers - allocation.FoodGatherers),
+            RepairPasses = allocation?.RepairPasses ?? 0,
+            FeedstockGatherers = allocation?.FeedstockGatherers ?? 0,
+            MaterialGatherers = allocation?.MaterialGatherers ?? 0,
+            FoodUnmet = allocation?.FoodUnmet ?? ""
+        };
+        if (allocation != null)
+            foreach (DemandController.Request request in allocation.Requests)
+                result.Requests.Add(new DaughterRequestObservation
+                {
+                    Service = request.Service, Unmet = request.Unmet,
+                    Units = request.Units, Granted = request.Granted
+                });
+        Check(Math.Abs(result.PlantFoodProduced + result.AnimalFoodProduced
+            + result.AquaticFoodProduced - result.FoodProduced) <= 1e-6,
+            "daughter audit typed production closes to authoritative total food production");
+        return result;
+    }
+
+    private static void PrintDaughterEconomy(string variant, int age, DaughterEconomyObservation[] rows)
+    {
+        double required = rows.Sum(o => o.FoodRequired), population = rows.Sum(o => Math.Max(1, o.PreSocialPopulation));
+        double postSocialPopulation = rows.Sum(o => Math.Max(1, o.PostSocialPopulation));
+        double planningPopulation = rows.Sum(o => Math.Max(1, o.PlanningPopulation));
+        double outputCampTurns = rows.Count(o => o.ClothProduced + o.AnimalFabricProduced
+            + o.HousingProduced + o.LightHousingProduced > 1e-9);
+        Console.WriteLine("DEMOGRAPHY_DAUGHTER_ECONOMY variant=" + variant + " age=" + age
+            + " samples=" + rows.Length
+            + " population=" + F(rows.Average(o => (double)o.PreSocialPopulation))
+            + " populationRatio=" + F(rows.Average(o => o.PreSocialPopulation / (double)Math.Max(1, o.FoundingPopulation)))
+            + " postCloseRatio=" + F(rows.Average(o => o.PostSocialPopulation / (double)Math.Max(1, o.FoundingPopulation)))
+            + " FCH=" + F(rows.Average(o => o.Nutrition)) + "/" + F(rows.Average(o => o.Clothing)) + "/" + F(rows.Average(o => o.Housing))
+            + " QoL=" + F(rows.Average(o => o.QoL))
+            + " foodYieldPerNeed=" + F(required > 0 ? rows.Sum(o => o.FoodProduced) / required : 0)
+            + " foodTypePerNeed=" + F(required > 0 ? rows.Sum(o => o.PlantFoodProduced) / required : 0) + "/"
+                + F(required > 0 ? rows.Sum(o => o.AnimalFoodProduced) / required : 0) + "/"
+                + F(required > 0 ? rows.Sum(o => o.AquaticFoodProduced) / required : 0)
+            + " noTradeReplayStaffShares=" + F(rows.Sum(o => o.Gatherers) / planningPopulation) + "/"
+                + F(rows.Sum(o => o.Farmers) / planningPopulation) + "/"
+                + F(rows.Sum(o => o.Herders) / planningPopulation) + "/"
+                + F(rows.Sum(o => o.Manufacturers) / planningPopulation) + "/"
+                + F(rows.Sum(o => o.Extractors) / planningPopulation)
+            + " protectiveOutputRate=" + F(outputCampTurns / rows.Length)
+            + " protectiveOutput=" + F(rows.Average(o => o.ClothProduced + o.AnimalFabricProduced)) + "/"
+                + F(rows.Average(o => o.HousingProduced + o.LightHousingProduced)) + "/"
+                + F(rows.Average(o => o.HousingMaterialProduced))
+            + " postCloseShelterPerPerson=" + F(rows.Sum(o => o.FixedShelter) / postSocialPopulation) + "/"
+                + F(rows.Sum(o => o.LightShelter) / postSocialPopulation)
+            + " fields=" + F(rows.Average(o => (double)o.Fields)) + "/" + F(rows.Average(o => o.CultivationCapital))
+            + " postCloseStocksPerPerson=" + F(rows.Sum(o => o.FoodStock) / postSocialPopulation) + "/"
+                + F(rows.Sum(o => o.ClothStock + o.AnimalFabricStock) / postSocialPopulation) + "/"
+                + F(rows.Sum(o => o.HousingMaterialStock) / postSocialPopulation) + "/"
+                + F(rows.Sum(o => o.HandToolStock + 4 * o.ToolStock) / postSocialPopulation)
+            + " postCloseRawPerPerson=" + F(rows.Sum(o => o.StoneStock) / postSocialPopulation) + "/"
+                + F(rows.Sum(o => o.ClayStock) / postSocialPopulation) + "/" + F(rows.Sum(o => o.WoodStock) / postSocialPopulation)
+            + " survivalGoodsBudget=" + F(rows.Average(o => (double)o.SurvivalWorkers)) + "/"
+                + F(rows.Average(o => (double)o.GoodsBudget))
+            + " feedstockMaterialGatherers=" + F(rows.Average(o => o.FeedstockGatherers)) + "/"
+                + F(rows.Average(o => o.MaterialGatherers))
+            + " foodLaborRationedRate=" + F(rows.Count(o => o.FoodUnmet.Length > 0) / (double)rows.Length)
+            + " repairRate=" + F(rows.Count(o => o.RepairPasses > 0) / (double)rows.Length)
+            + " socialInOutSplit=" + rows.Sum(o => o.MigrantsIn) + "/" + rows.Sum(o => o.MigrantsOut) + "/" + rows.Sum(o => o.FissionOut)
+            + (age == 0 ? " forecastFoodCH=" + F(rows.Average(o => o.ForecastFoodRatio)) + "/"
+                + F(rows.Average(o => o.ForecastClothing)) + "/" + F(rows.Average(o => o.ForecastHousing)) : ""));
+    }
+
+    private static void PrintDaughterBindings(string variant, int age, DaughterEconomyObservation[] rows)
+    {
+        var requests = rows.SelectMany(o => o.Requests).Where(r => r.Units > 1e-9).ToArray();
+        foreach (var group in requests.GroupBy(r => (r.Service, Cause: string.IsNullOrEmpty(r.Unmet) ? "fully-funded" : r.Unmet))
+            .OrderBy(g => g.Key.Service, StringComparer.Ordinal).ThenBy(g => g.Key.Cause, StringComparer.Ordinal))
+        {
+            double units = group.Sum(r => r.Units), granted = group.Sum(r => r.Granted);
+            Console.WriteLine("DEMOGRAPHY_DAUGHTER_BINDING variant=" + variant + " age=" + age
+                + " service=" + group.Key.Service.Replace(' ', '_') + " cause=" + group.Key.Cause.Replace(' ', '_')
+                + " campTurns=" + group.Count() + " fulfilment=" + F(units > 0 ? granted / units : 1));
+        }
+    }
+
     private static byte[] OpeningBoundary(int seed, out int openingTurns, out string fingerprint,
         out int camps, out int population)
     {
@@ -442,13 +830,16 @@ internal static class DemographySocialAblation
 
     private static Outcome RunVariant(WorldState world, int seed, Variant variant, int continuations,
         Calibration calibration = null, bool captureSourceOpportunities = false,
-        int? fissionDaughterCooldownTurns = null)
+        int? fissionDaughterCooldownTurns = null,
+        FissionSiteSelection? fissionSiteSelection = null)
     {
         world.Config.FissionEnabled = variant.Fission;
         world.Config.ImmigrationEnabled = variant.Immigration;
         calibration?.Apply(world.Config);
         if (fissionDaughterCooldownTurns.HasValue)
             world.Config.FissionDaughterCooldownTurns = fissionDaughterCooldownTurns.Value;
+        if (fissionSiteSelection.HasValue)
+            world.Config.FissionSiteSelection = fissionSiteSelection.Value;
         world.Config.Validate();
         var result = new Outcome
         {
@@ -517,6 +908,20 @@ internal static class DemographySocialAblation
                 lastFlow[(migration.SourceCamp, migration.DestinationCamp)] = flow;
                 int daughterAge = YoungestDaughterAge(daughterTurns, record.Turn, migration.SourceCamp, migration.DestinationCamp);
                 if (daughterAge >= 0) result.YoungDaughterMigrations++;
+                if (daughterTurns.TryGetValue(migration.SourceCamp, out int sourceFounded))
+                {
+                    int age = record.Turn - sourceFounded;
+                    if (age == 1) { result.DaughterOutflowsAt1++; result.DaughterOutflowPeopleAt1 += migration.Migrants; }
+                    else if (age == 2) { result.DaughterOutflowsAt2++; result.DaughterOutflowPeopleAt2 += migration.Migrants; }
+                    else if (age == 3) { result.DaughterOutflowsAt3++; result.DaughterOutflowPeopleAt3 += migration.Migrants; }
+                }
+                if (daughterTurns.TryGetValue(migration.DestinationCamp, out int destinationFounded))
+                {
+                    int age = record.Turn - destinationFounded;
+                    if (age == 1) result.DaughterInflowsAt1++;
+                    else if (age == 2) result.DaughterInflowsAt2++;
+                    else if (age == 3) result.DaughterInflowsAt3++;
+                }
                 if (!migration.DestinationNetNonnegative) result.NegativeNetDestinations++;
                 if (migration.HigherQoLWorseMortality) result.HigherQolWorseMortality++;
                 if (migration.Kin) result.KinMigrations++;
@@ -615,10 +1020,16 @@ internal static class DemographySocialAblation
             result.FissionProposals += resolver.LastMetrics.FissionProposals;
             result.FissionDropped += resolver.LastMetrics.FissionDropped;
             result.FissionCooldownBlocked += resolver.LastMetrics.FissionCooldownBlocked;
+            result.FissionShortlists += resolver.LastMetrics.FissionShortlists;
+            result.FissionShortlistedSites += resolver.LastMetrics.FissionShortlistedSites;
+            result.FissionShortlistAcceptedSites += resolver.LastMetrics.FissionShortlistAcceptedSites;
+            result.FissionShortlistAlternativeSelections += resolver.LastMetrics.FissionShortlistAlternativeSelections;
+            result.FissionShortlistNoAccepted += resolver.LastMetrics.FissionShortlistNoAccepted;
             result.ImmigrationIntents += resolver.LastMetrics.ImmigrationIntents;
             result.ImmigrationAccepted += resolver.LastMetrics.ImmigrationAccepted;
             result.ImmigrationPartial += resolver.LastMetrics.ImmigrationPartial;
             result.ImmigrationRejected += resolver.LastMetrics.ImmigrationRejected;
+            result.ImmigrationOutflowCooldownBlocked += resolver.LastMetrics.ImmigrationOutflowCooldownBlocked;
             result.SocialForecasts += resolver.LastMetrics.SocialForecasts;
             result.SocialCacheBuilds += resolver.LastMetrics.SocialForecastCacheBuilds;
             result.SocialCacheHits += resolver.LastMetrics.SocialForecastCacheHits;
@@ -792,6 +1203,12 @@ internal static class DemographySocialAblation
             result.NegativeNetDestinations += o.NegativeNetDestinations; result.NegativeNetDaughters += o.NegativeNetDaughters;
             result.HigherQolWorseMortality += o.HigherQolWorseMortality;
             result.YoungDaughterMigrations += o.YoungDaughterMigrations; result.YoungDaughterReversals += o.YoungDaughterReversals;
+            result.DaughterOutflowsAt1 += o.DaughterOutflowsAt1; result.DaughterOutflowsAt2 += o.DaughterOutflowsAt2;
+            result.DaughterOutflowsAt3 += o.DaughterOutflowsAt3;
+            result.DaughterOutflowPeopleAt1 += o.DaughterOutflowPeopleAt1; result.DaughterOutflowPeopleAt2 += o.DaughterOutflowPeopleAt2;
+            result.DaughterOutflowPeopleAt3 += o.DaughterOutflowPeopleAt3;
+            result.DaughterInflowsAt1 += o.DaughterInflowsAt1; result.DaughterInflowsAt2 += o.DaughterInflowsAt2;
+            result.DaughterInflowsAt3 += o.DaughterInflowsAt3;
             result.DaughterParentFissions += o.DaughterParentFissions;
             result.DaughterParentFissionsAt1 += o.DaughterParentFissionsAt1; result.DaughterParentFissionsAt2 += o.DaughterParentFissionsAt2;
             result.DaughterParentFissionsAt3 += o.DaughterParentFissionsAt3; result.DaughterParentFissionsOlder += o.DaughterParentFissionsOlder;
@@ -802,8 +1219,14 @@ internal static class DemographySocialAblation
             result.FissionProposals += o.FissionProposals; result.FissionDropped += o.FissionDropped;
             result.FissionCrowding += o.FissionCrowding; result.FissionDistress += o.FissionDistress;
             result.FissionCooldownBlocked += o.FissionCooldownBlocked;
+            result.FissionShortlists += o.FissionShortlists;
+            result.FissionShortlistedSites += o.FissionShortlistedSites;
+            result.FissionShortlistAcceptedSites += o.FissionShortlistAcceptedSites;
+            result.FissionShortlistAlternativeSelections += o.FissionShortlistAlternativeSelections;
+            result.FissionShortlistNoAccepted += o.FissionShortlistNoAccepted;
             result.ImmigrationIntents += o.ImmigrationIntents; result.ImmigrationAccepted += o.ImmigrationAccepted;
             result.ImmigrationPartial += o.ImmigrationPartial; result.ImmigrationRejected += o.ImmigrationRejected;
+            result.ImmigrationOutflowCooldownBlocked += o.ImmigrationOutflowCooldownBlocked;
             result.SocialForecasts += o.SocialForecasts; result.SocialCacheBuilds += o.SocialCacheBuilds;
             result.SocialCacheHits += o.SocialCacheHits; result.SocialCandidates += o.SocialCandidates;
             result.SocialMoverRejected += o.SocialMoverRejected; result.SocialAggregateRejected += o.SocialAggregateRejected;
@@ -833,6 +1256,9 @@ internal static class DemographySocialAblation
             + " reversals=" + o.Reversals + " reversalAges=" + o.ReversalsAt1 + "/" + o.ReversalsAt2 + "/" + o.ReversalsAt3
             + " youngDaughterMigrations=" + o.YoungDaughterMigrations
             + " youngDaughterReversals=" + o.YoungDaughterReversals
+            + " daughterOutflowsAges=" + o.DaughterOutflowsAt1 + "/" + o.DaughterOutflowsAt2 + "/" + o.DaughterOutflowsAt3
+            + " daughterOutflowPeople=" + o.DaughterOutflowPeopleAt1 + "/" + o.DaughterOutflowPeopleAt2 + "/" + o.DaughterOutflowPeopleAt3
+            + " daughterInflowsAges=" + o.DaughterInflowsAt1 + "/" + o.DaughterInflowsAt2 + "/" + o.DaughterInflowsAt3
             + " daughterParentFissions=" + o.DaughterParentFissions
             + " daughterParentFissionAges=" + o.DaughterParentFissionsAt1 + "/" + o.DaughterParentFissionsAt2
                 + "/" + o.DaughterParentFissionsAt3 + "/" + o.DaughterParentFissionsOlder
@@ -844,6 +1270,7 @@ internal static class DemographySocialAblation
             + " fissionTriggers=" + o.FissionCrowding + "/" + o.FissionDistress
             + " immigrationFunnel=" + o.ImmigrationIntents + "/" + o.ImmigrationAccepted + "/"
             + o.ImmigrationPartial + "/" + o.ImmigrationRejected
+            + " immigrationOutflowCooldownBlocked=" + o.ImmigrationOutflowCooldownBlocked
             + " negativeNet=" + o.NegativeNetDaughters + "/" + o.NegativeNetDestinations
             + " higherQolWorseMortality=" + o.HigherQolWorseMortality
             + " kinMigrations=" + o.KinMigrations + " crossLineageMigrants=" + o.CrossLineageMigrants
@@ -891,6 +1318,9 @@ internal static class DemographySocialAblation
             + " fissionsPer1000CampTurns=" + F(1000.0 * a.Fissions / Math.Max(1, a.CampTurns))
             + " migrantsPer1000PersonTurns=" + F(1000.0 * a.Migrants / Math.Max(1, a.PopulationTurns))
             + " youngDaughterMigrations=" + a.YoungDaughterMigrations + " youngDaughterReversals=" + a.YoungDaughterReversals
+            + " daughterOutflowsAges=" + a.DaughterOutflowsAt1 + "/" + a.DaughterOutflowsAt2 + "/" + a.DaughterOutflowsAt3
+            + " daughterOutflowPeople=" + a.DaughterOutflowPeopleAt1 + "/" + a.DaughterOutflowPeopleAt2 + "/" + a.DaughterOutflowPeopleAt3
+            + " daughterInflowsAges=" + a.DaughterInflowsAt1 + "/" + a.DaughterInflowsAt2 + "/" + a.DaughterInflowsAt3
             + " daughterParentFissions=" + a.DaughterParentFissions
             + " daughterParentFissionAges=" + a.DaughterParentFissionsAt1 + "/" + a.DaughterParentFissionsAt2
                 + "/" + a.DaughterParentFissionsAt3 + "/" + a.DaughterParentFissionsOlder
@@ -902,6 +1332,7 @@ internal static class DemographySocialAblation
             + " fissionTriggers=" + a.FissionCrowding + "/" + a.FissionDistress
             + " immigrationFunnel=" + a.ImmigrationIntents + "/" + a.ImmigrationAccepted + "/"
             + a.ImmigrationPartial + "/" + a.ImmigrationRejected
+            + " immigrationOutflowCooldownBlocked=" + a.ImmigrationOutflowCooldownBlocked
             + " negativeNet=" + a.NegativeNetDaughters + "/" + a.NegativeNetDestinations
             + " higherQolWorseMortality=" + a.HigherQolWorseMortality
             + " kinMigrations=" + a.KinMigrations + " crossLineageMigrants=" + a.CrossLineageMigrants
@@ -929,6 +1360,10 @@ internal static class DemographySocialAblation
             + " daughterParentFissionAges=" + a.DaughterParentFissionsAt1 + "/" + a.DaughterParentFissionsAt2
                 + "/" + a.DaughterParentFissionsAt3 + "/" + a.DaughterParentFissionsOlder
             + " blockedCampTurns=" + a.FissionCooldownBlocked
+            + " immigrationOutflowCooldownBlocked=" + a.ImmigrationOutflowCooldownBlocked
+            + " daughterOutflowsAges=" + a.DaughterOutflowsAt1 + "/" + a.DaughterOutflowsAt2 + "/" + a.DaughterOutflowsAt3
+            + " daughterOutflowPeople=" + a.DaughterOutflowPeopleAt1 + "/" + a.DaughterOutflowPeopleAt2 + "/" + a.DaughterOutflowPeopleAt3
+            + " daughterInflowsAges=" + a.DaughterInflowsAt1 + "/" + a.DaughterInflowsAt2 + "/" + a.DaughterInflowsAt3
             + " migrations=" + a.Migrations + " migrants=" + a.Migrants + " reversals=" + a.Reversals
             + " camps=" + a.StartCamps + "->" + a.EndCamps + " population=" + a.StartPopulation + "->" + a.EndPopulation
             + " viable=" + a.Viable + " target=" + a.Target
@@ -940,6 +1375,35 @@ internal static class DemographySocialAblation
             + " daughterDeltaQoL3=" + F(daughter.QoLDelta3 / daughter3)
             + " parentDeltaQoL3=" + F(parent.QoLDelta3 / parent3)
             + " negativeNetDaughters=" + a.NegativeNetDaughters
+            + " conservation=" + a.WorstConservation.ToString("G6", CultureInfo.InvariantCulture));
+    }
+
+    private static void PrintFissionSiteSelection(FissionSiteSelection selection, Aggregate a)
+    {
+        double camps = Math.Max(1, a.Survivors), people = Math.Max(1, a.EndPopulation);
+        FollowSummary daughter = a.DaughterFollow, parent = a.DaughterParentFollow;
+        int daughter3 = Math.Max(1, daughter.ObservedAt3 - daughter.ExtinctAt3);
+        int parent3 = Math.Max(1, parent.ObservedAt3 - parent.ExtinctAt3);
+        Console.WriteLine("DEMOGRAPHY_FISSION_SITE selection=" + selection
+            + " fissions=" + a.Fissions + " shortlist=" + a.FissionShortlists + "/"
+                + a.FissionShortlistedSites + "/" + a.FissionShortlistAcceptedSites
+            + " alternativeSelections=" + a.FissionShortlistAlternativeSelections
+            + " noAccepted=" + a.FissionShortlistNoAccepted
+            + " forecasts=" + a.SocialForecasts + " cacheBuilds=" + a.SocialCacheBuilds
+            + " migrations=" + a.Migrations + " migrants=" + a.Migrants + " reversals=" + a.Reversals
+            + " camps=" + a.StartCamps + "->" + a.EndCamps
+            + " population=" + a.StartPopulation + "->" + a.EndPopulation
+            + " viable=" + a.Viable + " target=" + a.Target
+            + " FCH=" + F(a.FoodWeighted / camps) + "/" + F(a.ClothingWeighted / camps) + "/" + F(a.HousingWeighted / camps)
+            + " localQoL=" + F(a.LocalQoLWeighted / people)
+            + " negativeNetDaughters=" + a.NegativeNetDaughters
+            + " daughterExtinct3=" + daughter.ExtinctAt3 + " parentExtinct3=" + parent.ExtinctAt3
+            + " daughterDeltaFCH3=" + F(daughter.FoodDelta3 / daughter3) + "/"
+                + F(daughter.ClothingDelta3 / daughter3) + "/" + F(daughter.HousingDelta3 / daughter3)
+            + " parentDeltaFCH3=" + F(parent.FoodDelta3 / parent3) + "/"
+                + F(parent.ClothingDelta3 / parent3) + "/" + F(parent.HousingDelta3 / parent3)
+            + " socialMs=" + a.SocialMilliseconds.ToString("F1", CultureInfo.InvariantCulture)
+            + " elapsedMs=" + a.Milliseconds.ToString("F1", CultureInfo.InvariantCulture)
             + " conservation=" + a.WorstConservation.ToString("G6", CultureInfo.InvariantCulture));
     }
 

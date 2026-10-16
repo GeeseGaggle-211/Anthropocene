@@ -31,6 +31,8 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double ForecastSourceHousing, ForecastDestinationHousing;
         [System.Runtime.Serialization.OptionalField] public double ForecastSourceMortalityRisk, ForecastDestinationMortalityRisk;
         [System.Runtime.Serialization.OptionalField] public double ForecastDestinationStability;
+        [System.Runtime.Serialization.OptionalField] public double ForecastSourceRenewableFoodRatio, ForecastDestinationRenewableFoodRatio;
+        [System.Runtime.Serialization.OptionalField] public double ForecastDestinationPlantFoodProduction, ForecastDestinationAnimalFoodProduction, ForecastDestinationAquaticFoodProduction;
         [System.Runtime.Serialization.OptionalField] public double ForecastSourceExposureRate, ForecastSourceCrowdingRate, ForecastSourceDiseaseRate, ForecastSourceStarvationRate;
         [System.Runtime.Serialization.OptionalField] public double ForecastDestinationExposureRate, ForecastDestinationCrowdingRate, ForecastDestinationDiseaseRate, ForecastDestinationStarvationRate;
         [System.Runtime.Serialization.OptionalField] public int ForecastConfidence, MatchedOpportunities;
@@ -563,7 +565,15 @@ namespace Anthropocene.Simulation
             var modelsByCamp = execution.Map(camps, c => Fission.QoLModelOf(w, c));
             for (int i = 0; i < camps.Length; i++) { context.Models[camps[i].Id] = modelsByCamp[i]; context.Quality[camps[i].Id] = modelsByCamp[i].At(camps[i].Population); }
             bool legacyDecision = !PhysicalDemography.Enabled(cfg);
-            var evaluations = execution.Map(camps, c => legacyDecision ? EvaluateLegacy(context, c) : Evaluate(context, c));
+            // A Physical-v1 daughter can receive people immediately, but cannot
+            // initiate an outflow before the same saved maturity boundary that
+            // governs recursive fission. Existing camps and legacy saves carry
+            // zero (and the exact legacy decision path intentionally bypasses
+            // the gate), so this adds no independent threshold or save field.
+            var sources = legacyDecision ? camps : camps.Where(c => w.Turn >= c.FissionEligibleTurn).ToArray();
+            if (!legacyDecision)
+                metrics.ImmigrationOutflowCooldownBlocked += camps.LongCount(c => w.Turn < c.FissionEligibleTurn);
+            var evaluations = execution.Map(sources, c => legacyDecision ? EvaluateLegacy(context, c) : Evaluate(context, c));
             var intents = new List<Intent>();
             foreach (var e in evaluations)
             {
@@ -755,6 +765,11 @@ namespace Anthropocene.Simulation
                         migration.ForecastSourceMortalityRisk = intent.Decision.SourceAfter.MortalityRisk;
                         migration.ForecastDestinationMortalityRisk = intent.Decision.DestinationAfter.MortalityRisk;
                         migration.ForecastDestinationStability = intent.Decision.DestinationAfter.Stability;
+                        migration.ForecastSourceRenewableFoodRatio = intent.Decision.SourceAfter.RenewableFoodRatio;
+                        migration.ForecastDestinationRenewableFoodRatio = intent.Decision.DestinationAfter.RenewableFoodRatio;
+                        migration.ForecastDestinationPlantFoodProduction = intent.Decision.DestinationAfter.PlantFoodProduction;
+                        migration.ForecastDestinationAnimalFoodProduction = intent.Decision.DestinationAfter.AnimalFoodProduction;
+                        migration.ForecastDestinationAquaticFoodProduction = intent.Decision.DestinationAfter.AquaticFoodProduction;
                         migration.ForecastSourceExposureRate = intent.Decision.SourceAfter.ExposureRate;
                         migration.ForecastSourceCrowdingRate = intent.Decision.SourceAfter.CrowdingRate;
                         migration.ForecastSourceDiseaseRate = intent.Decision.SourceAfter.DiseaseRate;

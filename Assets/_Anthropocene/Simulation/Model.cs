@@ -13,6 +13,12 @@ namespace Anthropocene.Simulation
     public enum Relief { Lowland, Hills, Highland, Mountain }
     public enum WaterKind { None, Freshwater, Saltwater }
     public enum FreshwaterSource { None, RainPool, Lake, River, Oasis }
+    public enum FissionSiteSelection
+    {
+        EcologicalSupport,
+        AcceptedRenewableFood,
+        AcceptedAggregateWelfare
+    }
 
     [Serializable]
     public sealed class SimulationConfig
@@ -46,7 +52,7 @@ namespace Anthropocene.Simulation
             // settling cost of a husbandry-primary camp keeps its default.
             SecondaryTechnologyThreshold = defaults.SecondaryTechnologyThreshold; TradePracticePerValue = 0; SettledHerdGrowthPenalty = defaults.SettledHerdGrowthPenalty;
             FissionEnabled = false; FissionGainThreshold = defaults.FissionGainThreshold; FissionGainDiscourage = defaults.FissionGainDiscourage; FissionGainEncourage = defaults.FissionGainEncourage;
-            FissionSearchFraction = defaults.FissionSearchFraction; FissionDaughterMargin = defaults.FissionDaughterMargin; FissionHousingRelief = defaults.FissionHousingRelief; FissionDaughterBuilderShare = defaults.FissionDaughterBuilderShare; FissionRadius = defaults.FissionRadius; FissionMinimumDaughter = defaults.FissionMinimumDaughter; FissionDaughterCooldownTurns = defaults.FissionDaughterCooldownTurns;
+            FissionSearchFraction = defaults.FissionSearchFraction; FissionDaughterMargin = defaults.FissionDaughterMargin; FissionHousingRelief = defaults.FissionHousingRelief; FissionDaughterBuilderShare = defaults.FissionDaughterBuilderShare; FissionRadius = defaults.FissionRadius; FissionMinimumDaughter = defaults.FissionMinimumDaughter; FissionDaughterCooldownTurns = defaults.FissionDaughterCooldownTurns; FissionSiteSelection = defaults.FissionSiteSelection;
             ImmigrationEnabled = false; ImmigrationRadius = defaults.ImmigrationRadius; ImmigrationQualityWeight = defaults.ImmigrationQualityWeight; ImmigrationDistanceCost = defaults.ImmigrationDistanceCost;
             ImmigrationAttachmentCost = defaults.ImmigrationAttachmentCost; ImmigrationToSedentaryCost = defaults.ImmigrationToSedentaryCost; ImmigrationToNomadicCost = defaults.ImmigrationToNomadicCost;
             ImmigrationDeadband = defaults.ImmigrationDeadband; ImmigrationMaxFraction = defaults.ImmigrationMaxFraction; ImmigrationMinimumGroup = defaults.ImmigrationMinimumGroup; ImmigrationSourceFloor = defaults.ImmigrationSourceFloor;
@@ -129,6 +135,10 @@ namespace Anthropocene.Simulation
         // Additional complete turns after founding during which a physical-demography daughter cannot fission.
         // A value of one means the daughter is first eligible at the close of her second economic/demographic turn.
         [System.Runtime.Serialization.OptionalField] public int FissionDaughterCooldownTurns = 1;
+        // Experimental cache-miss site policy. The shipped control keeps the
+        // historical ecological ordering; alternatives compare only candidates
+        // that pass the unchanged shared relocation evaluator.
+        [System.Runtime.Serialization.OptionalField] public FissionSiteSelection FissionSiteSelection = FissionSiteSelection.EcologicalSupport;
         // Share of a daughter's people the estimate counts as Builders for first-turn shelter (Fission.DaughterShelter); 0 credits carried shelter only. Absent in older saves: default.
         [System.Runtime.Serialization.OptionalField] public double FissionDaughterBuilderShare = .05;
         // Immigration between known settlements (WP10b, QoLFissionTradeDesign 4). Saves that predate these fields load with immigration disabled.
@@ -268,7 +278,7 @@ namespace Anthropocene.Simulation
             if (HinterlandReferencePopulation < 1 || HinterlandRingsPerTurn < 0 || HinterlandRingsPerTurn > 8 || HinterlandMaxRadius < VisionRadius || HinterlandMaxRadius > 8 || ExploredMemoryTurns < 1) throw new ArgumentException("Invalid hinterland or explored-memory configuration.");
             if (new[] { SecondaryTechnologyThreshold, TradePracticePerValue, SettledHerdGrowthPenalty }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || SecondaryTechnologyThreshold <= 0 || SettledHerdGrowthPenalty > 1)
                 throw new ArgumentException("Invalid secondary technology, trade practice or settling configuration.");
-            if (new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief, FissionDaughterBuilderShare }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionGainThreshold < 0 || FissionGainThreshold > 5 || FissionGainDiscourage < 0 || FissionGainDiscourage > 5 || FissionGainEncourage < 0 || FissionGainEncourage > 5 || FissionSearchFraction < 0 || FissionSearchFraction > 1 || FissionDaughterMargin < 0 || FissionDaughterMargin > 1 || FissionHousingRelief < 0 || FissionHousingRelief > 1 || FissionDaughterBuilderShare < 0 || FissionDaughterBuilderShare > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1 || FissionDaughterCooldownTurns < 0 || FissionDaughterCooldownTurns > 20)
+            if (new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief, FissionDaughterBuilderShare }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionGainThreshold < 0 || FissionGainThreshold > 5 || FissionGainDiscourage < 0 || FissionGainDiscourage > 5 || FissionGainEncourage < 0 || FissionGainEncourage > 5 || FissionSearchFraction < 0 || FissionSearchFraction > 1 || FissionDaughterMargin < 0 || FissionDaughterMargin > 1 || FissionHousingRelief < 0 || FissionHousingRelief > 1 || FissionDaughterBuilderShare < 0 || FissionDaughterBuilderShare > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1 || FissionDaughterCooldownTurns < 0 || FissionDaughterCooldownTurns > 20 || !Enum.IsDefined(typeof(FissionSiteSelection), FissionSiteSelection))
                 throw new ArgumentException("Invalid fission configuration.");
             if (new[] { ImmigrationQualityWeight, ImmigrationDistanceCost, ImmigrationAttachmentCost, ImmigrationToSedentaryCost, ImmigrationToNomadicCost, ImmigrationDeadband, ImmigrationMaxFraction }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || ImmigrationQualityWeight < 0 || ImmigrationQualityWeight > 10 || ImmigrationDistanceCost < 0 || ImmigrationDistanceCost > 5 || ImmigrationAttachmentCost < 0 || ImmigrationAttachmentCost > 5 || ImmigrationToSedentaryCost < 0 || ImmigrationToSedentaryCost > 5 || ImmigrationToNomadicCost < 0 || ImmigrationToNomadicCost > 5 || ImmigrationDeadband <= 0 || ImmigrationDeadband > 5 || ImmigrationMaxFraction < 0 || ImmigrationMaxFraction > .5 || ImmigrationRadius < 1 || ImmigrationRadius > 5 || ImmigrationReturnCooldownTurns < 0 || ImmigrationReturnCooldownTurns > 20 || double.IsNaN(ImmigrationReturnPenalty) || double.IsInfinity(ImmigrationReturnPenalty) || ImmigrationReturnPenalty < 0 || ImmigrationReturnPenalty > 5 || ImmigrationMinimumGroup < 1 || ImmigrationSourceFloor < 1
                 || TradeRange < 1 || TradeRange > 20 || TradeRequisitionsPerCamp < 1 || TradeRequisitionsPerCamp > 10 || TradeListLength < 1 || TradeListLength > 10 || double.IsNaN(TradeMargin) || double.IsInfinity(TradeMargin) || TradeMargin < 0 || TradeMargin > 5 || double.IsNaN(TradeDistanceCostPerHex) || double.IsInfinity(TradeDistanceCostPerHex) || TradeDistanceCostPerHex < 0 || TradeDistanceCostPerHex > 1 || double.IsNaN(TradeExportLabourShare) || TradeExportLabourShare < 0 || TradeExportLabourShare > 1

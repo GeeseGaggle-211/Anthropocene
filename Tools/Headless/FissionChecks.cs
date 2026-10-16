@@ -66,7 +66,7 @@ internal static class FissionChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); UnbuiltCrops(); Relative(); Funnel(); Spacing(); Bounded(); WiderRadius(); Policy(); Distress(); Observations(); Persistence(); Replay(); LegacyCompatibility(); PhysicalDiagnostics();
+        checks = 0; Config(); Levers(); Crowding(); DaughterHousing(); Calibration(); Ordering(); ShortlistSelection(); Opening(); Destination(); Knowledge(); Commit(); Conservation(); Viability(); UnbuiltCrops(); Relative(); Funnel(); Spacing(); Bounded(); WiderRadius(); Policy(); Distress(); Observations(); Persistence(); Replay(); LegacyCompatibility(); PhysicalDiagnostics();
         Console.WriteLine("PASS: " + checks + " fission assertions"); return checks;
     }
 
@@ -293,25 +293,25 @@ internal static class FissionChecks
     private static void Config()
     {
         var c = new SimulationConfig();
-        Check(c.FissionEnabled && c.FissionGainThreshold == .113 && c.FissionGainDiscourage == .080 && c.FissionGainEncourage == .0955 && c.FissionSearchFraction == .8 && c.FissionDaughterMargin == .05 && c.FissionHousingRelief == 0 && c.FissionDaughterBuilderShare == .05 && c.FissionRadius == 4 && c.FissionMinimumDaughter == 12 && c.FissionDaughterCooldownTurns == 1, "fission is on by default (plan of record) and the levers match the calibration");
-        foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.FissionGainThreshold = -.1, x => x.FissionGainDiscourage = 6, x => x.FissionGainEncourage = double.NaN, x => x.FissionRadius = 0, x => x.FissionRadius = 6, x => x.FissionMinimumDaughter = 0, x => x.FissionDaughterCooldownTurns = -1, x => x.FissionDaughterCooldownTurns = 21, x => x.FissionSearchFraction = 1.5, x => x.FissionSearchFraction = -.1, x => x.FissionDaughterMargin = -.01, x => x.FissionDaughterMargin = 2, x => x.FissionHousingRelief = -.1, x => x.FissionHousingRelief = 1.5, x => x.FissionDaughterBuilderShare = -.1, x => x.FissionDaughterBuilderShare = 1.5 })
+        Check(c.FissionEnabled && c.FissionGainThreshold == .113 && c.FissionGainDiscourage == .080 && c.FissionGainEncourage == .0955 && c.FissionSearchFraction == .8 && c.FissionDaughterMargin == .05 && c.FissionHousingRelief == 0 && c.FissionDaughterBuilderShare == .05 && c.FissionRadius == 4 && c.FissionMinimumDaughter == 12 && c.FissionDaughterCooldownTurns == 1 && c.FissionSiteSelection == FissionSiteSelection.EcologicalSupport, "fission is on by default (plan of record) and the levers match the calibration");
+        foreach (Action<SimulationConfig> bad in new Action<SimulationConfig>[] { x => x.FissionGainThreshold = -.1, x => x.FissionGainDiscourage = 6, x => x.FissionGainEncourage = double.NaN, x => x.FissionRadius = 0, x => x.FissionRadius = 6, x => x.FissionMinimumDaughter = 0, x => x.FissionDaughterCooldownTurns = -1, x => x.FissionDaughterCooldownTurns = 21, x => x.FissionSiteSelection = (FissionSiteSelection)99, x => x.FissionSearchFraction = 1.5, x => x.FissionSearchFraction = -.1, x => x.FissionDaughterMargin = -.01, x => x.FissionDaughterMargin = 2, x => x.FissionHousingRelief = -.1, x => x.FissionHousingRelief = 1.5, x => x.FissionDaughterBuilderShare = -.1, x => x.FissionDaughterBuilderShare = 1.5 })
         {
             var x = new SimulationConfig(); bad(x); bool rejected = false; try { x.Validate(); } catch (ArgumentException) { rejected = true; }
             Check(rejected, "an invalid fission lever is rejected");
         }
         var serializer = new DataContractSerializer(typeof(SimulationConfig)); string xml;
-        using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { FissionRadius = 4, FissionEnabled = true, FissionDaughterBuilderShare = .2, FissionDaughterCooldownTurns = 2 }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
-        Check(xml.Contains("<FissionRadius>4</FissionRadius>") && xml.Contains("<FissionEnabled>true</FissionEnabled>") && xml.Contains("<FissionDaughterCooldownTurns>2</FissionDaughterCooldownTurns>"), "fission levers are serialized");
+        using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { FissionRadius = 4, FissionEnabled = true, FissionDaughterBuilderShare = .2, FissionDaughterCooldownTurns = 2, FissionSiteSelection = FissionSiteSelection.AcceptedRenewableFood }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
+        Check(xml.Contains("<FissionRadius>4</FissionRadius>") && xml.Contains("<FissionEnabled>true</FissionEnabled>") && xml.Contains("<FissionDaughterCooldownTurns>2</FissionDaughterCooldownTurns>") && xml.Contains("<FissionSiteSelection>AcceptedRenewableFood</FissionSiteSelection>"), "fission levers are serialized");
         string legacy = Regex.Replace(xml, "<Fission[A-Za-z]*>[^<]*</Fission[A-Za-z]*>", "");
         Check(legacy != xml && !legacy.Contains("<Fission"), "legacy fixture omits every fission field");
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy)))
         {
             var old = (SimulationConfig)serializer.ReadObject(stream);
-            Check(!old.FissionEnabled && old.FissionGainThreshold == .113 && old.FissionGainDiscourage == .080 && old.FissionGainEncourage == .0955 && old.FissionSearchFraction == .8 && old.FissionDaughterMargin == .05 && old.FissionHousingRelief == 0 && old.FissionDaughterBuilderShare == .05 && old.FissionRadius == 4 && old.FissionMinimumDaughter == 12 && old.FissionDaughterCooldownTurns == 1, "older saves load with fission disabled and default levers");
+            Check(!old.FissionEnabled && old.FissionGainThreshold == .113 && old.FissionGainDiscourage == .080 && old.FissionGainEncourage == .0955 && old.FissionSearchFraction == .8 && old.FissionDaughterMargin == .05 && old.FissionHousingRelief == 0 && old.FissionDaughterBuilderShare == .05 && old.FissionRadius == 4 && old.FissionMinimumDaughter == 12 && old.FissionDaughterCooldownTurns == 1 && old.FissionSiteSelection == FissionSiteSelection.EcologicalSupport, "older saves load with fission disabled and default levers");
         }
-        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) { var back = (SimulationConfig)serializer.ReadObject(stream); Check(back.FissionRadius == 4 && back.FissionDaughterBuilderShare == .2 && back.FissionDaughterCooldownTurns == 2, "saved levers round trip"); }
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml))) { var back = (SimulationConfig)serializer.ReadObject(stream); Check(back.FissionRadius == 4 && back.FissionDaughterBuilderShare == .2 && back.FissionDaughterCooldownTurns == 2 && back.FissionSiteSelection == FissionSiteSelection.AcceptedRenewableFood, "saved levers round trip"); }
         string json = File.ReadAllText(FindConfig());
-        foreach (var pair in new[] { ("FissionEnabled", "true"), ("FissionGainThreshold", "0.113"), ("FissionGainDiscourage", "0.08"), ("FissionGainEncourage", "0.0955"), ("FissionSearchFraction", "0.8"), ("FissionDaughterMargin", "0.05"), ("FissionHousingRelief", "0"), ("FissionDaughterBuilderShare", "0.05"), ("FissionRadius", "4"), ("FissionMinimumDaughter", "12"), ("FissionDaughterCooldownTurns", "1") })
+        foreach (var pair in new[] { ("FissionEnabled", "true"), ("FissionGainThreshold", "0.113"), ("FissionGainDiscourage", "0.08"), ("FissionGainEncourage", "0.0955"), ("FissionSearchFraction", "0.8"), ("FissionDaughterMargin", "0.05"), ("FissionHousingRelief", "0"), ("FissionDaughterBuilderShare", "0.05"), ("FissionRadius", "4"), ("FissionMinimumDaughter", "12"), ("FissionDaughterCooldownTurns", "1"), ("FissionSiteSelection", "0") })
         {
             var m = Regex.Match(json, "\"" + pair.Item1 + "\":\\s*([0-9.a-z]+)");
             Check(m.Success && m.Groups[1].Value.TrimEnd('0').TrimEnd('.') == pair.Item2.TrimEnd('0').TrimEnd('.'), "OpeningConfig.json carries " + pair.Item1);
@@ -569,6 +569,121 @@ internal static class FissionChecks
         foreach (int n in v.Map.Radius(lean, 1)) { var t = v.Tiles[n]; t.Food = 20; t.PotentialFood = 20; for (int s = 0; s < 4; s++) { t.Seasons[s].MaxFood = 20; t.Seasons[s].MaxPotentialFood = 20; } }
         var vr = Pass(v, out _);
         Check(vr != null && vr.Tile != lean && Math.Abs(vr.Desirability - 1) < 1e-12, "a site below D = 1 loses to a fully viable site");
+    }
+
+    private static void ShortlistSelection()
+    {
+        WorldState Fixture()
+        {
+            var w = World(true, new[] { 12, 8 }); var parent = w.Camps[0];
+            w.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+            w.Config.FissionRadius = 4; w.Config.FissionDaughterMargin = 1;
+            // The aquatic site's missing plant feedstock leaves its movers just
+            // below this unchanged utility gate; the land alternative clears it.
+            w.Config.GatherPerPerson = 3; Pressure(w, .32);
+            parent.RudimentaryExpectation = .8; parent.StationaryYears = 80;
+            parent.PlantFood = parent.AnimalFood = parent.AquaticFood = 0;
+            parent.Inventory.Cloth = parent.Inventory.AnimalFabric = 0;
+            parent.Inventory.HandTools = 1e6; parent.Inventory.LightHousingUnits = 1e6;
+            parent.Workforce.Assignments.Add(new PopulationAssignment
+                { Role = WorkforceRoles.Weaver, Population = 10 });
+            parent.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
+
+            var ring = w.Map.Radius(parent.Tile, 4)
+                .Where(id => w.Map.Distance(parent.Tile, id) == 4).OrderBy(id => id).ToArray();
+            int aquatic = ring.First();
+            int land = ring.OrderByDescending(id => w.Map.Distance(aquatic, id)).ThenBy(id => id).First();
+            Check(w.Map.Distance(aquatic, land) >= 4,
+                "shortlist fixture keeps the aquatic and terrestrial footprints separate");
+            parent.People.Memory = new ContactMemory(w.Config.Width);
+            parent.People.Memory.Explored.Add(aquatic); parent.People.Memory.Explored.Add(land);
+
+            foreach (int id in w.Map.Radius(aquatic, 1))
+            {
+                var tile = w.Tiles[id];
+                tile.Food = tile.PotentialFood = 0;
+                for (int season = 0; season < 4; season++)
+                {
+                    tile.Seasons[season].MaxFood = tile.Seasons[season].MaxPotentialFood = 0;
+                    tile.Seasons[season].FoodRecoveryPerDay = 0;
+                }
+                if (id == aquatic) continue;
+                tile.Terrain = Terrain.Shallows; tile.Environment = EnvironmentKind.Shallows;
+                tile.WaterBody = WaterKind.Freshwater; tile.FreshwaterSource = FreshwaterSource.Lake;
+                for (int season = 0; season < 4; season++)
+                {
+                    tile.Seasons[season].MaxFood = tile.Seasons[season].MaxPotentialFood = 20000;
+                    tile.Seasons[season].FoodRecoveryPerDay = .01f;
+                }
+            }
+            // Both sites are fully food-supported. The aquatic site has the
+            // larger raw support ratio, while the terrestrial site can also
+            // supply the transferred weavers' plant feedstock.
+            return w;
+        }
+
+        var control = Fixture(); var controlParent = control.Camps[0];
+        var controlReport = Pass(control, out var controlMetrics);
+        int ecologicalTop = controlReport?.Tile ?? controlParent.FissionDestination?.Tile ?? -1;
+        Check(controlReport == null && ecologicalTop >= 0,
+            "the ecological control caches but rejects the high-volume aquatic site"
+            + " (report=" + (controlReport?.Tile.ToString() ?? "none")
+            + ", mover=" + (controlReport?.MoverUtilityChange.ToString("R") ?? "none")
+            + ", fch=" + (controlReport == null ? "none" : controlReport.DaughterNutrition.ToString("R")
+                + "/" + controlReport.DaughterClothingCoverage.ToString("R")
+                + "/" + controlReport.DaughterHousingCoverage.ToString("R"))
+            + ", cache=" + ecologicalTop + ")");
+        Check(controlMetrics.FissionShortlists == 0,
+            "the shipped ecological policy performs no extra site forecasts");
+
+        var food = Fixture(); food.Config.FissionSiteSelection = FissionSiteSelection.AcceptedRenewableFood;
+        var foodReport = Pass(food, out var foodMetrics);
+        Check(foodMetrics.FissionShortlists == 1
+            && foodMetrics.FissionShortlistedSites == 2
+            && foodMetrics.SocialCandidatesEvaluated >= 2,
+            "the food-priority experiment evaluates a fixed bounded shortlist through the common gate");
+        Check(foodReport != null && foodReport.Tile != ecologicalTop
+            && foodMetrics.FissionShortlistAlternativeSelections == 1
+            && foodMetrics.FissionShortlistAcceptedSites >= 1,
+            "an unacceptable ecological top site cannot hide an accepted typed-food alternative"
+            + " (controlReport=" + (controlReport?.Tile.ToString() ?? "none")
+            + ", controlCache=" + ecologicalTop + ", foodReport=" + (foodReport?.Tile.ToString() ?? "none")
+            + ", alternatives=" + foodMetrics.FissionShortlistAlternativeSelections
+            + ", accepted=" + foodMetrics.FissionShortlistAcceptedSites
+            + ", rejected=" + foodMetrics.SocialMoverRejected + "/" + foodMetrics.SocialAggregateRejected
+            + "/" + foodMetrics.SocialSourceRejected
+            + ", mover=" + (foodReport?.MoverUtilityChange.ToString("R") ?? "none")
+            + ", q=" + (foodReport?.ForecastDaughterQoL.ToString("R") ?? "none")
+            + ", fch=" + (foodReport == null ? "none" : foodReport.DaughterNutrition.ToString("R")
+                + "/" + foodReport.DaughterClothingCoverage.ToString("R")
+                + "/" + foodReport.DaughterHousingCoverage.ToString("R")) + ")");
+        Check(foodReport.ForecastDaughterPlantFoodProduction > 0
+            && foodReport.ForecastDaughterRenewableFoodRatio > 0,
+            "the selected daughter report exposes uncapped renewable and typed food diagnostics");
+        Check(foodMetrics.FissionShortlistedSites <= Fission.SiteShortlistLimit,
+            "the accepted-candidate experiment never exceeds its fixed shortlist bound");
+
+        // Once selected, an experimental target follows the historical one-site
+        // cache validation path; population and ecology are not re-ranked within
+        // the turn or silently reconsidered on a cache hit.
+        var cached = Fixture(); cached.Config.FissionSiteSelection = FissionSiteSelection.AcceptedRenewableFood;
+        cached.Camps[0].FissionDestination = new FissionTarget
+            { Tile = foodReport.Tile, Regime = (int)FissionRegime.Agricultural, Turn = cached.Turn - 1 };
+        var cachedReport = Pass(cached, out var cachedMetrics);
+        Check(cachedReport != null && cachedReport.Tile == foodReport.Tile
+            && cachedMetrics.FissionValidations == 1 && cachedMetrics.FissionSearches == 0
+            && cachedMetrics.FissionShortlists == 0 && cachedMetrics.FissionCandidatesScored == 0,
+            "an accepted-food cache hit validates only the frozen target without a second shortlist");
+
+        var replayA = Fixture(); replayA.Config.FissionSiteSelection = FissionSiteSelection.AcceptedRenewableFood;
+        var replayB = SaveCodec.Load(SaveCodec.Save(replayA));
+        var reportA = Pass(replayA, out var metricsA, new PhaseExecution());
+        var reportB = Pass(replayB, out var metricsB, new PhaseExecution(4, 2, true, 1));
+        Check(reportA != null && reportB != null && reportA.Tile == reportB.Tile
+            && Key(replayA) == Key(replayB)
+            && metricsA.FissionShortlistedSites == metricsB.FissionShortlistedSites
+            && metricsA.FissionShortlistAcceptedSites == metricsB.FissionShortlistAcceptedSites,
+            "the accepted-food choice round trips and agrees across execution modes");
     }
 
     // A daughter inherits its parent's opening status and never delays the end of the opening.
@@ -1203,6 +1318,29 @@ internal static class FissionChecks
             TurnResolver.Invariants(worlds[0]);
         }
         Check(founded >= 6 && worlds[0].PlayerCount == 6 + founded && worlds[0].Camps.Count == 6 + founded, "the replay exercises repeated fission (" + founded + " settlements)");
+        // The non-default bounded selector has the same canonical replay
+        // guarantee across collection order and execution width.
+        var selected = new[] { Busy(), Busy() };
+        foreach (var world in selected)
+        {
+            world.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+            world.Config.FissionSiteSelection = FissionSiteSelection.AcceptedRenewableFood;
+        }
+        selected[1].Camps.Reverse(); selected[1].Societies.Reverse();
+        var selectedResolvers = new[]
+        {
+            new TurnResolver(new PhaseExecution()),
+            new TurnResolver(new PhaseExecution(4, 2, true, 1))
+        };
+        long shortlistCount = 0;
+        for (int t = 0; t < 3; t++)
+        {
+            for (int i = 0; i < 2; i++) selectedResolvers[i].Resolve(selected[i], new Dictionary<int, List<Order>>());
+            Check(Key(selected[0]) == Key(selected[1]),
+                "accepted-food scalar and reversed 4-worker replay agree after turn " + t);
+            shortlistCount += selectedResolvers[0].LastMetrics.FissionShortlists;
+        }
+        Check(shortlistCount > 0, "the accepted-food replay exercises bounded site shortlists");
         // No same-turn multi-hop: no daughter founded in a turn is the parent of one founded in that turn.
         var a = Busy(false); var created = new HashSet<int>(a.Camps.Select(c => c.Id));
         for (int t = 0; t < 9; t++)

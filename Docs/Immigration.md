@@ -30,6 +30,15 @@ the configured maximum and the legacy preferred size where distinct. This replac
 monotone admission bisection because future credible job matching can be
 nonmonotone. It does not enlarge the cap.
 
+A Physical-v1 daughter may receive people immediately but cannot initiate an
+outflow while it is below its saved `FissionEligibleTurn`. This deliberately
+reuses the fission maturity boundary: with the shipped cooldown, the founding
+Close and first complete post-founding Close are protected, and outflow becomes
+eligible at the second. Existing camps have boundary zero, and the exact
+legacy-demography path bypasses the gate. This changes no migration utility,
+deadband, group-size rule or return hysteresis. The transient
+`ImmigrationOutflowCooldownBlocked` metric counts excluded camp-turns.
+
 Canonical reconciliation revalidates later cohorts against the receiver including
 already accepted population, typed food, workforce, deficit exposure and reserved
 opportunities. A final bounded pass then checks every flow against the exact joint
@@ -80,7 +89,9 @@ in the demographic explanation and turn journal.
   destination's true committed state, which a population process may do, exactly as demography reads true state.
 - **Scaling law.** `T(N) = O(N + S_eval * r_imm^2 + I log M)`: O(N) QoL terms (one `Fission.QoLModel` per camp, each
   O(fixed-housing stocks + camps), shared with fission), one map-radius walk per eligible source (a source needs at
-  least `ImmigrationSourceFloor + ImmigrationMinimumGroup` = 16 residents; each visited tile is a dictionary lookup
+  enough residents for both the source floor and fractional cap. At defaults,
+  `min(floor(0.10 N), N - 12) >= 4`, so the effective minimum is 40 residents
+  (the cheap first screen is 16); each visited tile is a dictionary lookup
   and each camp on it one binary-searched contact test), and reconcile/commit proportional to the number of
   intents `I` (bisection over the group size, `M <= 0.1 N`). With `r_imm <= 5` this is O(N) in camps. Nothing scales
   with elapsed years, map size, or the number of Societies. Scoring runs on bounded workers
@@ -174,7 +185,7 @@ when empty. Cooldown 0 or penalty 0 disables the term.
 | `ImmigrationToNomadicCost` | 0.15 | 0.10 / 0.15 / 0.25 | village to nomadic camp |
 | `ImmigrationDeadband` | 0.075 | 0.05 / 0.075 / 0.10 | theta: the utility a move must exceed, and the ramp width of the group size |
 | `ImmigrationMaxFraction` | 0.10 | | largest fraction of residents that leaves in one turn |
-| `ImmigrationMinimumGroup` | 4 | | smallest migrating group |
+| `ImmigrationMinimumGroup` | 4 | | smallest migrating group; with the default 10% cap this makes 40 residents the effective smallest source |
 | `ImmigrationSourceFloor` | 12 | | residents a source always keeps |
 | `ImmigrationReturnCooldownTurns` | 3 | | turns a reversal is penalised (0 disables), validated 0 to 20 |
 | `ImmigrationReturnPenalty` | 0.10 | 0 / 0.10 / 0.15 / 0.20 / 0.25 / 0.30 | the penalty at age 1, validated 0 to 5; 0.20 is an exploratory reversal-suppression candidate, not the shipped setting |
@@ -184,7 +195,7 @@ were swept on identical saved physical-v1.1 boundaries; the shipped cooldown 3 a
 
 **One intent per source.** Among the valid known destinations the source compares `dU` evaluated at its largest group
 `M_max = min(floor(N * ImmigrationMaxFraction), N - ImmigrationSourceFloor)` (the source needs `M_max >=
-ImmigrationMinimumGroup`; ties: higher `dU`, nearer, lower camp ID). The best `dU(M_max)` sets the size by the ramp;
+ImmigrationMinimumGroup`; at defaults this requires `N >= 40`; ties: higher `dU`, nearer, lower camp ID). The best `dU(M_max)` sets the size by the ramp;
 the group is then **re-evaluated at its final size** and emitted only if `dU(M) > theta`:
 
 ```

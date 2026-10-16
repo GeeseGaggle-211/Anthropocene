@@ -118,8 +118,59 @@ internal static class ImmigrationChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Closed(); Known(); Choice(); Deadband(); Reconcile(); Ordering(); MultiHop(); JointPhysicalRevalidation(); JointScaling(); LegacyWorkforceCompatibility(); Conservation(); Records(); Replay(); Persistence(); Forward(); Oscillation(); Hysteresis(); PhysicalDiagnostics(); MultipleArrivalDeficitProjection();
+        checks = 0; Config(); Closed(); Known(); Choice(); Deadband(); Reconcile(); Ordering(); MultiHop(); JointPhysicalRevalidation(); JointScaling(); LegacyWorkforceCompatibility(); Conservation(); Records(); Replay(); Persistence(); Forward(); Oscillation(); Hysteresis(); PhysicalDiagnostics(); DaughterMaturity(); MultipleArrivalDeficitProjection();
         Console.WriteLine("PASS: " + checks + " immigration assertions"); return checks;
+    }
+
+    private static WorldState PhysicalMaturityWorld()
+    {
+        var w = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2));
+        w.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        w.Config.Neolithic.CohesionBandScale = 2000;
+        var source = w.Camps[0]; var destination = w.Camps[1];
+        MakeNomadic(source); MakeNomadic(destination);
+        source.WaterNeedsMetRatio = .1; destination.Population = 900;
+        destination.WaterNeedsMetRatio = 1;
+        source.RudimentaryExpectation = destination.RudimentaryExpectation = .5;
+        source.PlantFood = destination.PlantFood = 1e9;
+        source.AnimalFood = source.AquaticFood = destination.AnimalFood = destination.AquaticFood = 0;
+        source.Inventory.Cloth = destination.Inventory.Cloth = 1e9;
+        source.Inventory.AnimalFabric = destination.Inventory.AnimalFabric = 0;
+        source.Inventory.LightHousingUnits = destination.Inventory.LightHousingUnits = 1e9;
+        Remember(w, source, destination);
+        return w;
+    }
+
+    private static void DaughterMaturity()
+    {
+        var blocked = PhysicalMaturityWorld(); var youngSource = blocked.Camps[0];
+        youngSource.FissionEligibleTurn = blocked.Turn + 1;
+        int before = youngSource.Population;
+        Pass(blocked);
+        Check(lastRecord.Migrations.Count == 0 && youngSource.Population == before
+            && lastMetrics.ImmigrationOutflowCooldownBlocked == 1,
+            "a Physical-v1 daughter cannot initiate immigration before its shared maturity boundary");
+
+        blocked.Turn = youngSource.FissionEligibleTurn;
+        Pass(blocked);
+        Check(Flow(lastRecord, youngSource.Id) != null
+            && lastMetrics.ImmigrationOutflowCooldownBlocked == 0,
+            "the daughter can initiate a welfare-selected outflow exactly at the shared maturity boundary");
+
+        var receiving = PhysicalMaturityWorld(); var source = receiving.Camps[0]; var youngDestination = receiving.Camps[1];
+        youngDestination.FissionEligibleTurn = receiving.Turn + 1;
+        Pass(receiving);
+        Check(Flow(lastRecord, source.Id)?.DestinationCamp == youngDestination.Id
+            && lastMetrics.ImmigrationOutflowCooldownBlocked == 1,
+            "a daughter inside the outflow freeze remains eligible to receive immigrants");
+
+        var legacy = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2));
+        Tune(legacy, legacy.Camps[0], legacy.Camps[1], .3);
+        legacy.Camps[0].FissionEligibleTurn = legacy.Turn + 10;
+        Pass(legacy);
+        Check(Flow(lastRecord, legacy.Camps[0].Id) != null
+            && lastMetrics.ImmigrationOutflowCooldownBlocked == 0,
+            "the exact legacy-demography compatibility path bypasses the daughter maturity gate");
     }
 
     private static void PhysicalDiagnostics()
@@ -857,6 +908,9 @@ internal static class ImmigrationChecks
         Near(Need(t), 80, "the per-head requirement of a turn is 80 at the default duration");
         s.PlantFood = 0; Near(Immigration.CarriedPerPerson(t.Config, s), 0, "a dry source carries nothing");
         Check(Immigration.MaxGroup(t.Config, 100) == 10 && Immigration.MaxGroup(t.Config, 14) == 1 && Immigration.MaxGroup(t.Config, 400) == 40, "the largest group is ten percent of residents, keeping the floor");
+        Check(Immigration.CandidateSizes(t.Config, 39).Length == 0
+            && Immigration.CandidateSizes(t.Config, 40).SequenceEqual(new[] { 4 }),
+            "the four-person minimum and ten-percent cap make 40 residents the effective default source minimum");
         // Closed form of the forward utility with inflow and carried food.
         s.FoodNeedsMetRatio = .6; s.WaterNeedsMetRatio = .9; d.FoodNeedsMetRatio = .7; d.WaterNeedsMetRatio = .8; s.PlantFood = 1.5 * Need(t) * 100;
         var sm = Fission.QoLModelOf(t, s); var dm = Fission.QoLModelOf(t, d); double per = Immigration.CarriedPerPerson(t.Config, s);

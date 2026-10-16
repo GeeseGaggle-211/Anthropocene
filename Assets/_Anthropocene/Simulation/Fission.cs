@@ -41,6 +41,9 @@ namespace Anthropocene.Simulation
         [OptionalField] public double ForecastParentQoL, ForecastDaughterQoL;
         [OptionalField] public double ForecastParentNutrition, ForecastParentClothing, ForecastParentHousing;
         [OptionalField] public double ForecastDaughterMortalityRisk, ForecastDaughterStability;
+        [OptionalField] public double ForecastDaughterRenewableFoodRatio;
+        [OptionalField] public double ForecastDaughterPlantFoodProduction, ForecastDaughterAnimalFoodProduction, ForecastDaughterAquaticFoodProduction;
+        [OptionalField] public double ForecastDaughterHerdForageCoverage, ForecastDaughterHerdWaterCoverage;
         [OptionalField] public double ForecastParentExposureRate, ForecastParentCrowdingRate, ForecastParentDiseaseRate, ForecastParentStarvationRate;
         [OptionalField] public double ForecastDaughterExposureRate, ForecastDaughterCrowdingRate, ForecastDaughterDiseaseRate, ForecastDaughterStarvationRate;
         [OptionalField] public int ForecastConfidence, MatchedOpportunities;
@@ -103,6 +106,7 @@ namespace Anthropocene.Simulation
     public static class Fission
     {
         public const int PolicySeedStream = 500;
+        internal const int SiteShortlistLimit = 4;
         private static readonly FieldInfo[] InventoryFields = typeof(CampInventory).GetFields().Where(f => f.FieldType == typeof(double)).OrderBy(f => f.Name, StringComparer.Ordinal).ToArray();
 
         // Diagnostic push P = clamp(G / G*, 0, 1). The decision itself is G >= G*; a zero threshold is always met.
@@ -339,6 +343,24 @@ namespace Anthropocene.Simulation
             public WorkforceTransfer Workforce;
             public int Validations, Searches, Candidates, TileProjections, Invalidations;
             public int SocialEvaluations, MoverRejected, AggregateRejected, SourceRejected;
+            public int Shortlists, ShortlistedSites, ShortlistAcceptedSites,
+                ShortlistAlternativeSelections, ShortlistNoAccepted;
+        }
+
+        private sealed class SiteCandidate
+        {
+            public int Tile, Distance;
+            public double Desirability, Ratio;
+            public SocialNewSiteCapacity Capacity;
+        }
+
+        private sealed class EvaluatedSite
+        {
+            public SiteCandidate Site;
+            public int Daughter;
+            public double Coverage;
+            public SocialRelocationEvaluation Decision;
+            public WorkforceTransfer Workforce;
         }
 
         private sealed class SourceProjection
@@ -374,6 +396,11 @@ namespace Anthropocene.Simulation
                 metrics.FissionCampsEvaluated++;
                 metrics.FissionValidations += e.Validations; metrics.FissionSearches += e.Searches; metrics.FissionCandidatesScored += e.Candidates;
                 metrics.FissionTileProjections += e.TileProjections; metrics.FissionCacheInvalidations += e.Invalidations;
+                metrics.FissionShortlists += e.Shortlists;
+                metrics.FissionShortlistedSites += e.ShortlistedSites;
+                metrics.FissionShortlistAcceptedSites += e.ShortlistAcceptedSites;
+                metrics.FissionShortlistAlternativeSelections += e.ShortlistAlternativeSelections;
+                metrics.FissionShortlistNoAccepted += e.ShortlistNoAccepted;
                 if (e.ClearTarget) e.Camp.FissionDestination = null;
                 if (e.NewTarget != null) e.Camp.FissionDestination = e.NewTarget;
                 if (e.DaughterTested) { metrics.FissionDaughterChecks++; if (e.DaughterBlocked) metrics.FissionDaughterBlocked++; }
@@ -410,18 +437,16 @@ namespace Anthropocene.Simulation
         }
 
         private static SocialRelocationEvaluation RelocationAt(Context context, Camp parent, int tile,
-            int daughter, double siteFoodCoverage, out WorkforceTransfer workforce)
+            int daughter, SocialNewSiteCapacity siteCapacity, out WorkforceTransfer workforce)
         {
             var w = context.World; var cfg = w.Config; int residents = parent.Population;
             double fraction = daughter / (double)residents;
             var source = context.Source(parent, daughter);
             workforce = source.Workforce;
             var daughterInventory = SocialRelocationForecastCache.ProportionalInventory(parent.Inventory, fraction);
-            double siteFoodCapacity = Numbers.Clamp(siteFoodCoverage, 0, 1) * daughter
-                * cfg.Consumption * cfg.GenerationIntervals;
             var daughterState = context.Forecasts.Daughter(parent, daughter, tile, daughterInventory,
                 workforce.Movers, parent.PlantFood * fraction, parent.AnimalFood * fraction,
-                parent.AquaticFood * fraction, siteFoodCapacity);
+                parent.AquaticFood * fraction, siteCapacity);
             var request = new EmploymentOpportunityRequest(parent.Id, daughterState.View.Id, daughter,
                 SocialRelocationDestination.NewDaughter, workforce.MoverComposition);
             var opportunity = EmploymentOpportunityMatcher.Match(context.Opportunities, request);
@@ -467,7 +492,7 @@ namespace Anthropocene.Simulation
                 e.Validations++;
                 double d = 0, ratio = 0; siteHuman = 0; siteHerd = double.PositiveInfinity;
                 if (!context.Blocked(cached.Tile) && w.Tiles[cached.Tile].TraversableLand)
-                { d = Desirability(context, camp, cached.Tile, size, regime, projections, e, out ratio); siteHuman = e.SiteHuman; siteHerd = e.SiteHerd; }
+                { d = Desirability(context, camp, cached.Tile, size, regime, projections, e, out ratio, out _); siteHuman = e.SiteHuman; siteHerd = e.SiteHerd; }
                 if (!(ratio > 0)) { e.ClearTarget = true; e.Invalidations++; cached = null; }
                 else { e.Desirability = d; siteRatio = ratio; }
             }
@@ -480,7 +505,7 @@ namespace Anthropocene.Simulation
                 {
                     if (!w.Tiles[tile].TraversableLand || !known.Contains(tile) || context.Blocked(tile)) continue;
                     e.Candidates++;
-                    double d = Desirability(context, camp, tile, size, regime, projections, e, out double ratio);
+                    double d = Desirability(context, camp, tile, size, regime, projections, e, out double ratio, out _);
                     int distance = w.Map.Distance(camp.Tile, tile);
                     if (best < 0 || d > bestScore || d == bestScore && (ratio > bestRatio || ratio == bestRatio && distance < bestDistance))
                     { best = tile; bestScore = d; bestRatio = ratio; bestDistance = distance; bestHuman = e.SiteHuman; bestHerd = e.SiteHerd; }
@@ -580,11 +605,13 @@ namespace Anthropocene.Simulation
             e.Screened = true;
             int size = distressLegal ? n1 : n0;
             var projections = new Dictionary<int, double>(); double siteRatio = 0, siteHuman = 0, siteHerd = double.PositiveInfinity;
+            SocialNewSiteCapacity siteCapacity = default;
+            List<SiteCandidate> shortlist = null;
             if (cached != null)
             {
                 e.Validations++;
                 double d = 0, ratio = 0; siteHuman = 0; siteHerd = double.PositiveInfinity;
-                if (!context.Blocked(cached.Tile) && w.Tiles[cached.Tile].TraversableLand) { d = Desirability(context, camp, cached.Tile, size, regime, projections, e, out ratio); siteHuman = e.SiteHuman; siteHerd = e.SiteHerd; }
+                if (!context.Blocked(cached.Tile) && w.Tiles[cached.Tile].TraversableLand) { d = Desirability(context, camp, cached.Tile, size, regime, projections, e, out ratio, out siteCapacity); siteHuman = e.SiteHuman; siteHerd = e.SiteHerd; }
                 // Relative destination test: a site stays cached while it is habitable (its freshwater gate passes and it supports some food).
                 // Welfare remains the calibrated relative veto below; physical mode later records explicit rates without adding a gate.
                 if (!(ratio > 0)) { e.ClearTarget = true; e.Invalidations++; cached = null; }
@@ -595,20 +622,32 @@ namespace Anthropocene.Simulation
                 e.Searches++;
                 var known = new Known(context, camp);
                 int best = -1, bestDistance = 0; double bestScore = -1, bestRatio = -1, bestHuman = 0, bestHerd = double.PositiveInfinity;
+                bool shortlistMode = cfg.FissionSiteSelection != FissionSiteSelection.EcologicalSupport;
+                var ranked = shortlistMode ? new List<SiteCandidate>() : null;
                 // Order: D (capped at 1) descending, then the uncapped support ratio descending, then hex distance, then tile ID
                 // (candidates arrive in tile order, so a full tie keeps the lowest ID).
                 foreach (int tile in w.Map.Radius(camp.Tile, cfg.FissionRadius).OrderBy(n => n))
                 {
                     if (!w.Tiles[tile].TraversableLand || !known.Contains(tile) || context.Blocked(tile)) continue;
                     e.Candidates++;
-                    double d = Desirability(context, camp, tile, size, regime, projections, e, out double ratio);
+                    double d = Desirability(context, camp, tile, size, regime, projections, e, out double ratio, out var candidateCapacity);
                     int distance = w.Map.Distance(camp.Tile, tile);
-                    if (best < 0 || d > bestScore || d == bestScore && (ratio > bestRatio || ratio == bestRatio && distance < bestDistance)) { best = tile; bestScore = d; bestRatio = ratio; bestDistance = distance; bestHuman = e.SiteHuman; bestHerd = e.SiteHerd; }
+                    if (shortlistMode && d > 0 && ratio > 0)
+                        ranked.Add(new SiteCandidate { Tile = tile, Distance = distance,
+                            Desirability = d, Ratio = ratio, Capacity = candidateCapacity });
+                    if (best < 0 || d > bestScore || d == bestScore && (ratio > bestRatio || ratio == bestRatio && distance < bestDistance)) { best = tile; bestScore = d; bestRatio = ratio; bestDistance = distance; bestHuman = e.SiteHuman; bestHerd = e.SiteHerd; siteCapacity = candidateCapacity; }
                 }
                 if (best >= 0 && bestScore > 0 && bestRatio > 0)
                 {
                     e.NewTarget = new FissionTarget { Tile = best, Regime = (int)regime, Turn = w.Turn }; e.ClearTarget = false;
                     e.Desirability = bestScore; siteRatio = bestRatio; siteHuman = bestHuman; siteHerd = bestHerd; cached = e.NewTarget;
+                    if (shortlistMode)
+                    {
+                        shortlist = ranked.OrderByDescending(c => c.Desirability)
+                            .ThenByDescending(c => c.Ratio).ThenBy(c => c.Distance).ThenBy(c => c.Tile)
+                            .Take(SiteShortlistLimit).ToList();
+                        e.Shortlists = 1; e.ShortlistedSites = shortlist.Count;
+                    }
                 }
             }
             if (cached == null) { if (e.Candidates == 0) e.NoCandidates = true; else e.NoViable = true; return e; }
@@ -616,21 +655,86 @@ namespace Anthropocene.Simulation
             e.Tile = cached.Tile;
             SocialRelocationEvaluation chosenDecision = null; WorkforceTransfer chosenWorkforce = null;
             int chosenSize = 0; double chosenCoverage = e.Desirability;
-            // Distress keeps its calibrated shortfall cohort.  If that larger
-            // group is not supportable, the ordinary policy cohort may still be
-            // assessed by exactly the same equation at the selected known site.
-            foreach (int candidateSize in new[] { distressLegal ? n1 : n0, n0 }.Where(n => n >= minimum && n <= largest).Distinct())
+            void CountDecision(SocialRelocationEvaluation decision)
             {
-                double coverage = candidateSize == size ? e.Desirability
-                    : Desirability(context, camp, cached.Tile, candidateSize, regime, projections, e, out _);
-                var decision = RelocationAt(context, camp, cached.Tile, candidateSize, coverage, out var transfer);
                 e.SocialEvaluations++;
                 if (!decision.MoverPass) e.MoverRejected++;
                 if (!decision.AggregatePass) e.AggregateRejected++;
                 if (!decision.SourcePass) e.SourceRejected++;
-                if (!decision.Accepted) { if (chosenDecision == null) chosenDecision = decision; continue; }
-                chosenDecision = decision; chosenWorkforce = transfer; chosenSize = candidateSize;
-                chosenCoverage = coverage; break;
+            }
+            // Distress keeps its calibrated shortfall cohort.  If that larger
+            // group is not supportable, the ordinary policy cohort may still be
+            // assessed by exactly the same equation at the selected known site.
+            var prioritizedSizes = new[] { distressLegal ? n1 : n0, n0 }
+                .Where(n => n >= minimum && n <= largest).Distinct().ToArray();
+            if (shortlist == null)
+            {
+                foreach (int candidateSize in prioritizedSizes)
+                {
+                    SocialNewSiteCapacity candidateCapacity;
+                    double coverage;
+                    if (candidateSize == size)
+                    {
+                        coverage = e.Desirability; candidateCapacity = siteCapacity;
+                    }
+                    else
+                        coverage = Desirability(context, camp, cached.Tile, candidateSize, regime,
+                            projections, e, out _, out candidateCapacity);
+                    var decision = RelocationAt(context, camp, cached.Tile, candidateSize,
+                        candidateCapacity, out var transfer);
+                    CountDecision(decision);
+                    if (!decision.Accepted) { if (chosenDecision == null) chosenDecision = decision; continue; }
+                    chosenDecision = decision; chosenWorkforce = transfer; chosenSize = candidateSize;
+                    chosenCoverage = coverage; break;
+                }
+            }
+            else
+            {
+                SocialRelocationEvaluation firstDecision = null;
+                foreach (int candidateSize in prioritizedSizes)
+                {
+                    var accepted = new List<EvaluatedSite>();
+                    foreach (SiteCandidate candidate in shortlist)
+                    {
+                        double coverage; SocialNewSiteCapacity candidateCapacity;
+                        if (candidateSize == size)
+                        {
+                            coverage = candidate.Desirability; candidateCapacity = candidate.Capacity;
+                        }
+                        else
+                            coverage = Desirability(context, camp, candidate.Tile, candidateSize,
+                                regime, projections, e, out _, out candidateCapacity);
+                        var decision = RelocationAt(context, camp, candidate.Tile, candidateSize,
+                            candidateCapacity, out var transfer);
+                        CountDecision(decision); if (firstDecision == null) firstDecision = decision;
+                        if (decision.Accepted)
+                        {
+                            e.ShortlistAcceptedSites++;
+                            accepted.Add(new EvaluatedSite { Site = candidate, Daughter = candidateSize,
+                                Coverage = coverage, Decision = decision, Workforce = transfer });
+                        }
+                    }
+                    if (accepted.Count == 0) continue;
+                    IOrderedEnumerable<EvaluatedSite> ordered = cfg.FissionSiteSelection
+                        == FissionSiteSelection.AcceptedAggregateWelfare
+                        ? accepted.OrderByDescending(c => c.Decision.AggregateWelfareChange)
+                            .ThenByDescending(c => c.Decision.DestinationAfter.RenewableFoodRatio)
+                            .ThenByDescending(c => c.Decision.MoverUtilityChange)
+                        : accepted.OrderByDescending(c => c.Decision.DestinationAfter.RenewableFoodRatio)
+                            .ThenByDescending(c => c.Decision.MoverUtilityChange)
+                            .ThenByDescending(c => c.Decision.AggregateWelfareChange);
+                    var selected = ordered.ThenBy(c => c.Site.Distance).ThenBy(c => c.Site.Tile).First();
+                    chosenDecision = selected.Decision; chosenWorkforce = selected.Workforce;
+                    chosenSize = selected.Daughter; chosenCoverage = selected.Coverage;
+                    e.Tile = selected.Site.Tile; siteCapacity = selected.Site.Capacity;
+                    if (e.Tile != cached.Tile) e.ShortlistAlternativeSelections++;
+                    e.NewTarget = new FissionTarget { Tile = e.Tile, Regime = (int)regime, Turn = w.Turn };
+                    break;
+                }
+                if (chosenDecision == null)
+                {
+                    chosenDecision = firstDecision; e.ShortlistNoAccepted++;
+                }
             }
             e.Decision = chosenDecision; e.DaughterTested = chosenDecision != null;
             if (chosenDecision == null) { e.NoViable = true; return e; }
@@ -679,9 +783,11 @@ namespace Anthropocene.Simulation
         //   Agricultural: repeatable wild and aquatic food plus the managed flow cultivable footprint land yields at the primitive
         //   supported intensity, limited by the daughter's farm labor ceiling.
         // A planning estimate from current projected ecology, not a forecast of realized harvest.
-        private static double Desirability(Context context, Camp camp, int tile, int daughter, FissionRegime regime, Dictionary<int, double> projections, Evaluation e, out double ratio)
+        private static double Desirability(Context context, Camp camp, int tile, int daughter,
+            FissionRegime regime, Dictionary<int, double> projections, Evaluation e,
+            out double ratio, out SocialNewSiteCapacity siteCapacity)
         {
-            ratio = 0; e.SiteHuman = 0; e.SiteHerd = double.PositiveInfinity;
+            ratio = 0; siteCapacity = default; e.SiteHuman = 0; e.SiteHerd = double.PositiveInfinity;
             var w = context.World; var cfg = w.Config; var index = context.Index;
             double Repeatable(int n)
             {
@@ -720,6 +826,7 @@ namespace Anthropocene.Simulation
                 }
                 double support = Math.Min(land + aquatic + managed, daughter * cfg.FarmerProductivity * cfg.GatherPerPerson * cfg.GenerationIntervals);
                 ratio = (land + aquatic + managed) / need; e.SiteHuman = ratio;
+                siteCapacity = new SocialNewSiteCapacity(land, aquatic, managed);
                 return Numbers.Clamp(support / need, 0, 1);
             }
             // Keep uncapped physical richness for destination ordering. The
@@ -727,7 +834,11 @@ namespace Anthropocene.Simulation
             ratio = (land + aquatic) * PlacementStage.WorkingShare(w, daughter) / need;
             e.SiteHuman = cfg.CropHarvestingOnly ? harvest / need : ratio;
             double food = Numbers.Clamp(harvest / need, 0, 1);
-            if (regime == FissionRegime.Paleolithic || regime != FissionRegime.Nomadic && !cfg.CropHarvestingOnly) return food;
+            if (regime == FissionRegime.Paleolithic || regime != FissionRegime.Nomadic && !cfg.CropHarvestingOnly)
+            {
+                siteCapacity = new SocialNewSiteCapacity(land, aquatic);
+                return food;
+            }
             double forageNeed = 0, waterNeed = 0; int residents = camp.Population;
             foreach (var herd in index.CampHerds(camp.Id))
             {
@@ -736,7 +847,11 @@ namespace Anthropocene.Simulation
                 var species = cfg.GetSpecies(herd.Species);
                 forageNeed += moved * species.FoodConsumption * cfg.GenerationIntervals; waterNeed += moved * species.FreshwaterConsumption * cfg.GenerationIntervals;
             }
-            if (forageNeed <= 0 && waterNeed <= 0) return food;
+            if (forageNeed <= 0 && waterNeed <= 0)
+            {
+                siteCapacity = new SocialNewSiteCapacity(land, aquatic);
+                return food;
+            }
             double forage = 0, water = 0;
             foreach (int n in w.Map.Radius(tile, 1))
             {
@@ -756,6 +871,8 @@ namespace Anthropocene.Simulation
             // Ratios before the cap at one (the destination order's second key); only a herd need constrains them.
             double rawForage = forageNeed <= 0 ? double.PositiveInfinity : (forage - Math.Min(harvest, land)) / forageNeed, rawWater = waterNeed <= 0 ? double.PositiveInfinity : water / waterNeed;
             e.SiteHerd = Math.Min(rawForage, rawWater); ratio = Math.Min(ratio, e.SiteHerd);
+            siteCapacity = new SocialNewSiteCapacity(land, aquatic, 0,
+                forageNeed <= 0 ? 1 : rawForage, waterNeed <= 0 ? 1 : rawWater);
             return Math.Min(food, Math.Min(Numbers.Clamp(rawForage, 0, 1), Numbers.Clamp(rawWater, 0, 1)));
         }
 
@@ -887,6 +1004,12 @@ namespace Anthropocene.Simulation
                 fission.ForecastParentHousing = e.Decision.SourceAfter.HousingCoverage;
                 fission.ForecastDaughterMortalityRisk = e.Decision.DestinationAfter.MortalityRisk;
                 fission.ForecastDaughterStability = e.Decision.DestinationAfter.Stability;
+                fission.ForecastDaughterRenewableFoodRatio = e.Decision.DestinationAfter.RenewableFoodRatio;
+                fission.ForecastDaughterPlantFoodProduction = e.Decision.DestinationAfter.PlantFoodProduction;
+                fission.ForecastDaughterAnimalFoodProduction = e.Decision.DestinationAfter.AnimalFoodProduction;
+                fission.ForecastDaughterAquaticFoodProduction = e.Decision.DestinationAfter.AquaticFoodProduction;
+                fission.ForecastDaughterHerdForageCoverage = e.Decision.DestinationAfter.HerdForageCoverage;
+                fission.ForecastDaughterHerdWaterCoverage = e.Decision.DestinationAfter.HerdWaterCoverage;
                 fission.ForecastParentExposureRate = e.Decision.SourceAfter.ExposureRate;
                 fission.ForecastParentCrowdingRate = e.Decision.SourceAfter.CrowdingRate;
                 fission.ForecastParentDiseaseRate = e.Decision.SourceAfter.DiseaseRate;

@@ -108,6 +108,8 @@ namespace Anthropocene.Simulation
         public int ActiveTiles, TileIntegrations, SeasonalTiles, FullTurnTiles;
         // Fission pass (WP10a). Transient work counts; never saved, observed or fingerprinted.
         public long FissionCampsEvaluated, FissionCooldownBlocked, FissionValidations, FissionSearches, FissionCandidatesScored, FissionTileProjections, FissionCacheInvalidations, FissionProposals, FissionCommits, FissionDropped, FissionDaughterChecks, FissionDaughterBlocked, FissionPhysicalDaughterNegativeNet;
+        public long FissionShortlists, FissionShortlistedSites, FissionShortlistAcceptedSites,
+            FissionShortlistAlternativeSelections, FissionShortlistNoAccepted;
         // Distress fission: proposals and commits by trigger, and the people in distress daughters.
         public long FissionCrowdingProposals, FissionDistressProposals, FissionCrowdingCommits, FissionDistressCommits, FissionDistressDaughters;
         // Fission funnel (Docs/Fission.md, Hinterland and relative destinations): every camp past the gain screen ends in exactly one outcome.
@@ -116,7 +118,7 @@ namespace Anthropocene.Simulation
         public long FissionScreened, FissionSearchesNoCandidates, FissionSearchesNoViable, FissionWithDestination, FissionBelowThreshold, FissionStayersBlocked;
         public double FissionMilliseconds;
         // Immigration pass (WP10b). Transient work counts; never saved, observed or fingerprinted.
-        public long ImmigrationCampsEvaluated, ImmigrationCandidatesScored, ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected, ImmigrationMigrants, ImmigrationHigherQoLWorseMortality, ImmigrationPhysicalDestinationNegativeNet;
+        public long ImmigrationCampsEvaluated, ImmigrationCandidatesScored, ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected, ImmigrationMigrants, ImmigrationHigherQoLWorseMortality, ImmigrationPhysicalDestinationNegativeNet, ImmigrationOutflowCooldownBlocked;
         public double ImmigrationMilliseconds;
         // Shared relocation forecast work.  Builds are the expensive local
         // capacity/source projections; candidate forecasts reuse those envelopes.

@@ -1,7 +1,7 @@
 # Unified social relocation implementation v0.2
 
-Status: implemented on `feature/unified-social-relocation`, based on the reviewed
-demographic commit `bcf7f2147fb476b87a976f6c6d4400b5f02ba894`. Native balance and
+Status: implemented on `feature/unified-social-relocation`, extending the reviewed
+daughter-cooldown commit `472a22ed0159bb36d583afca3a9ec045335bf465`. Native balance and
 MLP-training promotion are **not** certified. The verbatim design source is
 [UnifiedSocialRelocationContract-v0.2.md](UnifiedSocialRelocationContract-v0.2.md).
 
@@ -46,7 +46,7 @@ welfare separate from cumulative physical mortality risk. Verified outside
 surplus is counted only through the future opportunity contract; advertised job
 preference is never aggregate welfare.
 
-The Phase-A compatibility mapping deliberately adds no configuration fields:
+The Phase-A utility mapping deliberately adds no utility weights or thresholds:
 
 | Common term | Provisional Phase-A mapping |
 | --- | --- |
@@ -78,6 +78,10 @@ The estimate uses:
 
 - opening typed food and bounded locally available production, capped by retained
   gatherer/farmer/herder workforce;
+- for a prospective daughter, uncapped repeatable land, aquatic and managed-land
+  supplies as separate transient types; the forecast applies the transferred
+  cohort's accessibility and labor ceiling exactly once, and caps satisfaction
+  rather than physical production headroom;
 - a birth-only upper bound on person-years so finite food and textile stocks cannot
   be spent only against the opening headcount;
 - the existing bounded `MaterialEconomy.Forecast`, actual assigned roles, tools,
@@ -101,6 +105,9 @@ The one-turn physical hazard envelope is integrated analytically over its consta
 hazard bands, including starvation grace. This is a cheap forecast, not another
 authoritative demographic solve. `Stability` records the minimum of renewable food,
 renewable clothing and shelter coverage as a conservative medium-horizon signal.
+`RenewableFoodRatio` additionally records uncapped production divided by the
+birth-only service need, while plant, animal and aquatic production and herd
+forage/water coverage remain separately diagnosable.
 It is currently diagnostic rather than a fifth admission gate; native evidence in
 the validation report shows that this is not sufficient for promotion.
 
@@ -112,6 +119,14 @@ a deterministic bounded size set: the physical minimum, 2.5/5/7.5/10% source
 fractions, the configured maximum and the exact legacy-ramp preferred size where
 distinct. This removes the generalized evaluator's invalid monotone-bisection
 assumption without enlarging the group cap.
+
+A Physical-v1 daughter may receive immigrants immediately, but cannot initiate an
+outflow while `world.Turn < Camp.FissionEligibleTurn`. This is the same saved
+boundary already used for recursive fission, not a new immigration cooldown or
+threshold. With the shipped value, the founding Close and first complete
+post-founding Close are protected; outflow is first eligible at the second. The
+legacy-demography compatibility path bypasses the gate. The transient
+`ImmigrationOutflowCooldownBlocked` counter records excluded daughter-camp turns.
 
 Canonical destination/source reconciliation rebuilds the receiver's before-state
 from already accepted pending population, typed food, workforce, deficit exposure
@@ -147,6 +162,22 @@ the first post-founding Close and permits evaluation at the second; `0` restores
 the former next-turn eligibility. The filter is outside the forecast/evaluator,
 has its own transient diagnostic, and is bypassed by the exact legacy-demography
 path. It changes neither candidate utility nor any threshold.
+
+The corrected new-site envelope carries repeatable land, aquatic and managed-land
+food separately and uncapped. It also carries herd forage and water feasibility
+separately from human food. The common forecast applies the exact transferred
+workforce and site accessibility once, so aquatic food cannot become plant-fibre
+feedstock and a rich site does not lose its renewable headroom merely because
+nutrition coverage caps at one.
+
+`FissionSiteSelection` is an opt-in cache-miss calibration surface. Its shipped
+value, `EcologicalSupport`, retains the historical ordering exactly. The two
+experimental values take at most the first four ecologically ranked sites,
+evaluate every one through the unchanged common gate, preserve daughter-size
+precedence, and rank only accepted sites by either uncapped renewable food or
+aggregate welfare (then the other welfare/utility keys, distance and tile ID).
+A valid cache still costs one site validation and is not reranked. No food bonus,
+survival weight, threshold change or per-turn all-site reranking was introduced.
 
 The source keeps site-bound fixed housing. The daughter gets its proportional
 typed food, portable inventory, tools, demographic remainders, deficit history,

@@ -136,6 +136,7 @@
   "FissionRadius": 4,
   "FissionMinimumDaughter": 12,
   "FissionDaughterCooldownTurns": 1,
+  "FissionSiteSelection": 0,
   "DemographicModel": 1,
   "QoLMortalityEnabled": false,
   "BaseBirthRate": 0.045,

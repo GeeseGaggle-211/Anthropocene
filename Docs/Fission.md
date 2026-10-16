@@ -25,7 +25,8 @@ bonus.
 
 The existing policy daughter fractions and thresholds, minimum population, known
 site/radius search, spacing, deterministic ordering and conflict resolution remain
-unchanged. A daughter begins with no people or fixed infrastructure. The source
+unchanged. A destination begins with no incumbent people or fixed infrastructure;
+the daughter is the transferred founding cohort. The source
 keeps site-bound housing and fields; the daughter receives proportional typed food,
 portable inventory and shelter, tools, herds, workforce roles, demographic
 remainders, histories, expectation and knowledge. Daughter farmers become
@@ -38,7 +39,9 @@ the close of her first complete post-founding turn and is first eligible at the
 close of her second. `0` is the exact next-turn control. Existing camps and older
 camp saves have boundary zero, and `LegacyQoLNetGrowth` keeps its former timing.
 `FissionCooldownBlocked` counts the excluded daughter-camp turns without changing
-QoL, mortality, migration, the RL reward or any fission threshold.
+QoL, mortality, the RL reward or any fission threshold. Immigration now uses this
+same absolute boundary for daughter **outflow** in Physical-v1; a young daughter
+may still receive immigrants.
 
 Before a physical site scan, a permissive common-envelope bound checks every
 supported daughter size. It uses the exact source forecast and an optimistic
@@ -51,9 +54,10 @@ screening any candidate that could meet the final mover gate. The bound never
 accepts a split, and it adds no independent positive-source-relief condition.
 
 The committed `Camp.QoL` formula, Elder reward and observation schema are
-unchanged. Current same-boundary evidence shows 126 fissions with fission alone and
-113 with both systems over 75 continuation turns; only 2 of 137 combined endpoints
-have both clothing and housing coverage at least 0.8. The success/distress
+unchanged. Current same-boundary evidence after the typed daughter-forecast
+correction shows 141 fissions with fission alone and 121 with both systems over 75
+continuation turns; none of 145 combined endpoints has food, clothing and housing
+coverage all at least 0.8. The success/distress
 calibration is therefore not promotion-ready. See
 [UnifiedSocialRelocationValidation-v0.2.md](UnifiedSocialRelocationValidation-v0.2.md).
 
@@ -62,25 +66,49 @@ calibration is therefore not promotion-ready. See
 A matched three-seed, 25-continuation sweep from identical social-free opening
 boundaries compared cooldowns 0 / 1 / 2 with both social systems enabled:
 
-| cooldown | fissions | daughter-parent fissions (age 1/2/3/older) | blocked camp-turns | camps | population | viable F/C/H camps | population-weighted QoL |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 | 113 | 61 (3/4/3/51) | 0 | 137 | 36,728 | 2 | 0.111 |
-| **1** | **112** | **60 (0/5/3/52)** | **87** | **136** | **36,669** | **2** | **0.110** |
-| 2 | 109 | 57 (0/0/5/52) | 177 | 133 | 36,759 | 1 | 0.113 |
+| cooldown | fissions | daughter-parent fissions (age 1/2/3/older) | fission / outflow blocked camp-turns | daughter outflows age 1/2 | camps | population | viable F/C/H camps | population-weighted QoL |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 123 | 73 (7/6/4/56) | 0 / 0 | 2 / 6 (21 / 71 people) | 147 | 39,479 | 0 | 0.124 |
+| **1** | **121** | **71 (0/10/3/58)** | **105 / 118** | **0 / 6 (0 / 72 people)** | **145** | **39,795** | **0** | **0.119** |
+| 2 | 114 | 64 (0/0/7/57) | 202 / 223 | 0 / 0 (0 / 0 people) | 138 | 39,193 | 0 | 0.126 |
 
-The default removes every observed age-one recursive fission, but only one of 113
-total fissions and no viability deficit. Most recursive fissions occur after age
-three. This is a useful temporal invariant, not the GO-gate calibration fix.
+The default removes every observed age-one recursive fission and age-one daughter
+outflow. The zero-cooldown control contains two such outflows totaling 21 people;
+the configured four-person minimum and ten-percent cap make 40 residents the
+effective smallest default source. Young daughters still receive immigrants (13
+age-one inflows under the default). The gate is a useful temporal invariant, not
+the GO-gate calibration fix; most recursive fissions occur later and terminal
+material viability remains zero.
 
-The review also establishes that food priority is already present: cache misses
+The review also established that food priority was already present: cache misses
 rank sites by capped obtainable food `D`, then uncapped support, distance and tile
-ID. The next controlled work is not another arbitrary food weight. The new-site
-forecast currently converts capped `D` back to a one-opening-cohort food capacity,
-loses surplus and aquatic type, and can apply accessibility twice for
-non-cultivators. Correct that representation first; then compare the current
-single-site cache against a bounded shortlist whose candidates all pass the same
-unchanged welfare/physical evaluator. See the validation document for the required
-causal and throughput gates.
+ID. The representation defect is now corrected: the new-site forecast receives
+uncapped repeatable land, aquatic and managed-land supply separately, applies the
+actual transferred workforce and accessibility once, and exposes uncapped
+renewable-food, typed-production and herd-coverage diagnostics.
+
+A bounded four-site experiment then compared the shipped one-site cache with
+accepted-site renewable-food and aggregate-welfare orderings. Both experimental
+rows selected 27 alternatives but were identical in this sample: 127 fissions,
+151 camps, 42,307 people, 13 negative-net daughters and zero materially viable
+settlements, versus 121 / 145 / 39,795 / 10 / zero for the control. They are not
+promoted. The shipped `FissionSiteSelection = EcologicalSupport` therefore keeps
+the historical choice and thresholds; the optional rows remain calibration
+instruments, not new default behavior.
+
+The real-economy daughter audit identifies the leading working diagnosis. Across ages
+one through three, daughters produce 95.5% of food need with fission alone and
+96.9% with immigration also enabled; realized nutrition is 97.1% / 97.5%.
+Clothing is only 0.210 / 0.206 and housing 0.043 / 0.040. Founding moves no fixed
+housing or field capital, so daughter farmers become gatherers. A no-pending-trade
+allocator replay assigns 73-84% of the planning population to gathering, 7-22% to
+farming and 3.1% to manufacturing on average; protective output occurs in about
+32% of camp-turns. Labor rationing and integer staffing dominate the replayed
+request failures; material shortage is rare. Population reaches about 1.9 times
+the founding cohort by age three. This supports calorie viability with a protective-
+goods capital/labor bottleneck as the leading diagnosis, and shows the deficit
+without immigration. It does not yet causally isolate ecology, staffing, capital
+and growth or establish a daughter recovery time.
 
 ## Legacy WP10a/WP10c path and historical evidence
 

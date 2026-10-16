@@ -34,7 +34,8 @@ internal static class SocialRelocationChecks
         => new SocialServiceForecast(camp, population, years, population * years, population * years, 1,
             population * years, population * years, 1, population, 1, 1, q, risk,
             population * years, population * Math.Exp((birth - death) * years), birth, death,
-            death, 0, 0, 0, population * years * death, 0, 0, 0, 1, 1, 1,
+            death, 0, 0, 0, population * years * death, 0, 0, 0,
+            population * years, 0, 0, 1, 1, 1, 1, 1, 1,
             SocialForecastConfidence.LocalPhysicalCapacity | SocialForecastConfidence.WorkforceBound);
 
     private static WorldState World(int camps)
@@ -84,7 +85,8 @@ internal static class SocialRelocationChecks
     {
         checks = 0;
         CommonEquation(); OpportunityContract(); SustainableForecast(); FiniteServiceEnvelope();
-        SharedDensity(); FiniteMaterialEnvelope(); DaughterCapacityOrder(); HerdCapacitySplit(); OpportunityLaborClosure(); NeutralParity();
+        SharedDensity(); FiniteMaterialEnvelope(); DaughterFoodEnvelope(); DaughterCapacityOrder();
+        HerdCapacitySplit(); OpportunityLaborClosure(); NeutralParity();
         NonmonotoneSizing(); ReservationRevalidation(); PendingBaselineRevalidation();
         WorkforceAccounting(); PersistenceSurface();
         Console.WriteLine("PASS: " + checks + " social relocation assertions"); return checks;
@@ -264,7 +266,7 @@ internal static class SocialRelocationChecks
         var cache = new SocialRelocationForecastCache(w, w.Camps);
         var daughterWorkers = WorkforceTransfer.Copy(camp.Workforce);
         var daughter = cache.Daughter(camp, 30, w.Map.Neighbors(camp.Tile).First(), new CampInventory(),
-            daughterWorkers, 0, 0, 0, 1e9);
+            daughterWorkers, 0, 0, 0, new SocialNewSiteCapacity(1e9, 0));
         var forecast = cache.Forecast(daughter);
         Check(forecast.FoodAvailable == 0 && forecast.ClothingAvailable == 0 && forecast.ShelterCapacity == 0,
             "an all-specialist daughter gets no synthetic gathering, textile feedstock or shelter construction");
@@ -278,8 +280,10 @@ internal static class SocialRelocationChecks
             parent.PlantFood = parent.AnimalFood = parent.AquaticFood = 0;
             var cache = new SocialRelocationForecastCache(w, w.Camps);
             int tile = w.Map.Neighbors(parent.Tile).First();
-            var small = cache.Daughter(parent, 20, tile, new CampInventory(), new PopulationLedger(), 0, 0, 0, 100);
-            var large = cache.Daughter(parent, 30, tile, new CampInventory(), new PopulationLedger(), 0, 0, 0, 500);
+            var small = cache.Daughter(parent, 20, tile, new CampInventory(), new PopulationLedger(), 0, 0, 0,
+                new SocialNewSiteCapacity(100, 0));
+            var large = cache.Daughter(parent, 30, tile, new CampInventory(), new PopulationLedger(), 0, 0, 0,
+                new SocialNewSiteCapacity(500, 0));
             SocialServiceForecast a, b;
             if (reverse) { b = cache.Forecast(large); a = cache.Forecast(small); }
             else { a = cache.Forecast(small); b = cache.Forecast(large); }
@@ -292,6 +296,76 @@ internal static class SocialRelocationChecks
             "daughter forecast caching is invariant to evaluating the larger candidate first");
         Check(forward[1].FoodAvailable > forward[0].FoodAvailable,
             "candidate-specific new-site food capacity is not reused across daughter sizes");
+    }
+
+    private static void DaughterFoodEnvelope()
+    {
+        // A founding site carries raw, typed ecological supply. The forecast is
+        // solely responsible for applying the transferred cohort's access and
+        // labor limits, and only satisfaction is capped at one.
+        var w = World(1); var parent = w.Camps[0]; int tile = w.Map.Neighbors(parent.Tile).First();
+        w.Config.GatherPerPerson = 1000; parent.PlantFood = parent.AnimalFood = parent.AquaticFood = 0;
+        var cache = new SocialRelocationForecastCache(w, w.Camps);
+        var small = cache.Daughter(parent, 5, tile, new CampInventory(), new PopulationLedger(), 0, 0, 0,
+            new SocialNewSiteCapacity(1000, 0));
+        var smallForecast = cache.Forecast(small);
+        double access = Math.Min(1, Numbers.Fraction(w.Config.GatherFraction, w.Config.GenerationIntervals)
+            * 5 / w.Config.PopulationScale);
+        double expected = Math.Min(1000 * access,
+            5 * w.Config.GatherPerPerson * w.Config.GenerationIntervals);
+        Near(smallForecast.PlantFoodProduction, expected,
+            "a small daughter's site accessibility is applied exactly once to raw land supply");
+        Near(smallForecast.FoodAvailable, expected,
+            "typed site production enters the finite food envelope exactly once");
+
+        var rich = cache.Daughter(parent, 20, tile, new CampInventory(), new PopulationLedger(), 0, 0, 0,
+            new SocialNewSiteCapacity(10000, 0));
+        var richForecast = cache.Forecast(rich);
+        Check(richForecast.RenewableFoodRatio > 1 && richForecast.RenewableFoodCoverage == 1
+            && richForecast.PlantFoodProduction > 20 * w.Config.Consumption * w.Config.GenerationIntervals,
+            "a rich site preserves uncapped production headroom while satisfaction remains capped");
+        Near(richForecast.RenewableFoodRatio,
+            (richForecast.PlantFoodProduction + richForecast.AnimalFoodProduction
+                + richForecast.AquaticFoodProduction) / richForecast.FoodNeed,
+            "the uncapped renewable-food diagnostic is production divided by the service need");
+
+        // The deterministic fission split converts transferred farmers to site
+        // gatherers while retaining other specialists. The resulting 27-person
+        // gathering cohort, not the full daughter headcount, bounds production.
+        MakeEconomic(parent); parent.Workforce = new PopulationLedger();
+        parent.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = 40 });
+        parent.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Weaver, Population = 10 });
+        var transfer = WorkforceTransfer.Split(parent.Workforce, 100, 30, true);
+        var workforceState = cache.Daughter(parent, 30, tile, new CampInventory(), transfer.Movers, 0, 0, 0,
+            new SocialNewSiteCapacity(1e9, 0));
+        var workforceForecast = cache.Forecast(workforceState);
+        Check(transfer.MoverComposition[WorkforceRoles.Gatherer] == 27
+            && transfer.Movers.Assignments.All(a => a.Role != WorkforceRoles.Farmer),
+            "the exact transferred fission workforce contains 27 site gatherers and no farmers");
+        Near(workforceForecast.PlantFoodProduction,
+            27 * w.Config.GatherPerPerson * w.Config.GenerationIntervals,
+            "new-site production uses the exact transferred gathering workforce");
+
+        // Aquatic food can feed people but cannot become plant-fibre input. A
+        // land-only control with the same physical quantity can fund Cloth.
+        w.Config.GatherPerPerson = 100; parent.Workforce = new PopulationLedger();
+        parent.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Weaver, Population = 15 });
+        var inventory = new CampInventory { HandTools = 1e6 };
+        var aquaticState = cache.Daughter(parent, 30, tile, inventory, parent.Workforce, 0, 0, 0,
+            new SocialNewSiteCapacity(0, 1e9, herdForageCoverage: .25, herdWaterCoverage: .5));
+        var landState = cache.Daughter(parent, 30, tile, inventory, parent.Workforce, 0, 0, 0,
+            new SocialNewSiteCapacity(1e9, 0));
+        var aquaticForecast = cache.Forecast(aquaticState); var landForecast = cache.Forecast(landState);
+        Check(aquaticForecast.PlantFoodProduction == 0
+            && aquaticForecast.AquaticFoodProduction > aquaticForecast.FoodNeed
+            && aquaticForecast.ClothingAvailable == 0,
+            "aquatic-only site production remains aquatic and cannot manufacture plant cloth");
+        Check(landForecast.PlantFoodProduction > landForecast.FoodNeed && landForecast.ClothingAvailable > 0,
+            "the matched land-food control can fund plant-feedstock clothing");
+        Near(aquaticForecast.HerdForageCoverage, .25,
+            "pasture feasibility remains an explicit constraint rather than human plant food");
+        Near(aquaticForecast.HerdWaterCoverage, .5,
+            "herd water feasibility remains separately diagnosed");
     }
 
     private static void HerdCapacitySplit()
