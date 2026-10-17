@@ -357,6 +357,8 @@ namespace Anthropocene.Simulation
             alloc.AccessibleWood = d.Accessible.TryGetValue(MaterialId.Wood, out double accessibleWood) ? accessibleWood : 0;
             // Kernel-scored Elder split state: set once a split is committed.
             bool protectedSplit = false, kernelEnacted = false;
+            // The budget raise covers only the persons the Protected split is actually granted (set after its arbitration).
+            double kernelBudgetBase = 0, kernelCommittedPersons = 0; int kernelWorkers = 0;
             double protectedClothingUnits = -1;
 
             // The resolver-shaped candidate the tool demands read (herders and farmers staffed).
@@ -1111,12 +1113,15 @@ namespace Anthropocene.Simulation
                         || Use(qc, cloth, qh, shelter, r => r.Stone) > stoneRoom + Epsilon || Use(qc, cloth, qh, shelter, r => r.WoodOrClay) > woodClayRoom + Epsilon)) return null;
                     double gatherers = Math.Max(0, workers - persons);
                     double income = animalReceipts + fishingFood + Math.Min(terrestrialRoom, harvest + farmerSpareCapacity + gatherers * gatherRate);
-                    double protectedFood = qc * (cloth?.Food ?? 0) + qh * (shelter?.Food ?? 0);
+                    // Only clothing feedstock is paid before meals (ProtectedClothingUnits); shelter feedstock is ordinary
+                    // manufacturing that may reduce newborn food but never current meals.
+                    double protectedFood = qc * (cloth?.Food ?? 0), shelterFood = qh * (shelter?.Food ?? 0);
+                    double totalFood = Math.Max(0, c.Food) + income, afterClothing = Math.Max(0, totalFood - protectedFood);
                     return new KernelCandidate
                     {
                         ClothingLevel = ci, ShelterLevel = hi, ClothingUnits = qc, ShelterPeople = qh, Persons = persons, ProtectedFood = protectedFood,
                         ClothingRoute = cloth?.Good ?? clothingRoute, ShelterRoute = shelter?.Good ?? durable,
-                        Food = TurnResolver.PhysicalDemographicFoodBudget(Math.Max(0, c.Food) + income, d.Meals, growthFood, protectedFood)
+                        Food = Math.Min(TurnResolver.PhysicalDemographicFoodBudget(totalFood, d.Meals, growthFood, protectedFood), Math.Max(Math.Min(Math.Max(0, d.Meals), afterClothing), afterClothing - shelterFood))
                     };
                 }
                 DemographicResult Kernel(bool exact, double population, double food, double clothing, double capacity, double deficit)
@@ -1202,7 +1207,10 @@ namespace Anthropocene.Simulation
                         best = Best(pool);
                     }
                     // Stage 3: the other shelter route at the chosen clothing.
-                    var otherShelter = ShelterCost(durable == CraftGood.Housing ? CraftGood.LightHousing : CraftGood.Housing);
+                    // The alternative shelter route stays inside the settlement policy: a mobile camp without retained fixed
+                    // or field capital does not acquire fixed Housing merely because a capability exposes the recipe.
+                    var otherShelter = durable == CraftGood.LightHousing && mobilePolicy ? null
+                        : ShelterCost(durable == CraftGood.Housing ? CraftGood.LightHousing : CraftGood.Housing);
                     if (otherShelter != null && totalGapPeople > Epsilon)
                     {
                         var clothOf = best.ClothingUnits > 0 ? ClothingCost(best.ClothingRoute) : clothCost;
@@ -1295,6 +1303,7 @@ namespace Anthropocene.Simulation
                 ShelterRequest("shelter deficit", ServiceClass.Recovery, deficitPreferred, shelterDeficitPeople);
                 // The committed persons may come out of the gatherer reservation; lower classes keep only the original slack.
                 double committedPersons = chosenSplit?.Persons ?? 0;
+                kernelBudgetBase = budget; kernelCommittedPersons = committedPersons; kernelWorkers = workers;
                 budget = Math.Max(budget, Math.Min(workers, committedPersons));
                 alloc.ResidentGoodsBudget = budget;
                 protectedClothingUnits = protectedClothing != null ? 0 : -1;
@@ -1309,7 +1318,12 @@ namespace Anthropocene.Simulation
                 ? new[] { ServiceClass.Protected, ServiceClass.Continuity, ServiceClass.Recovery }
                 : new[] { ServiceClass.Continuity, ServiceClass.Recovery })
             {
-                var active = alloc.Requests.Where(q => q.Class == cls && q.Bundle != null).ToList();
+                // Protected requests are arbitrated one at a time in request order (clothing before shelter), so an
+                // infeasible shelter route cannot freeze the clothing the kernel committed.
+                var classRequests = alloc.Requests.Where(q => q.Class == cls && q.Bundle != null).ToList();
+                foreach (var group in cls == ServiceClass.Protected ? classRequests.Select(q => new List<Request> { q }).ToList() : new List<List<Request>> { classRequests })
+                {
+                var active = group;
                 for (int pass = 0; pass < 8 && active.Count > 0; pass++)
                 {
                     double Grant(Request q, double f) => active.Contains(q) ? q.Units * f : q.Granted;
@@ -1323,6 +1337,17 @@ namespace Anthropocene.Simulation
                     var users = active.Where(q => Uses(q.Bundle, binding)).ToList();
                     if (users.Count == 0) users = active.ToList();
                     foreach (var q in users) { q.Unmet = binding.StartsWith("material") ? "material shortage" : binding; active.Remove(q); }
+                }
+                }
+                if (cls == ServiceClass.Protected)
+                {
+                    // An ungranted protected split must not leave its labour as slack for Development.
+                    double requested = 0, granted = 0;
+                    foreach (var q in alloc.Requests.Where(q => q.Class == ServiceClass.Protected && q.Bundle != null))
+                    { double perUnit = q.Bundle.RoleYears.Values.Sum(); requested += q.Units * perUnit; granted += q.Granted * perUnit; }
+                    double fraction = requested > Epsilon ? Numbers.Clamp(granted / requested, 0, 1) : 0;
+                    budget = Math.Max(kernelBudgetBase, Math.Min(kernelWorkers, kernelCommittedPersons * fraction));
+                    alloc.ResidentGoodsBudget = budget;
                 }
             }
 
@@ -1476,7 +1501,8 @@ namespace Anthropocene.Simulation
             QuantizeHerdDevelopment();
 
             // ---- Integer staffing, compiled per role after aggregation; at most one repair pass ----
-            for (int repair = 0; repair < 2; repair++)
+            // Pass 2 only recompiles staffing, extraction and ceilings from grants trimmed in pass 1.
+            for (int repair = 0; repair < 3; repair++)
             {
                 QuantizeHerdDevelopment();
                 var total = new Bundle();
@@ -1531,8 +1557,9 @@ namespace Anthropocene.Simulation
                     ? plantFromLand / gatherRate : 0;
                 double needed = staff.Values.Sum() + materialGatherers + feedstockGatherers;
                 alloc.FinalCompiledPersons = needed;
-                if (needed <= budget + Epsilon || repair == 1)
+                if (needed <= budget + Epsilon || repair >= 1)
                 {
+                    alloc.Staff.Clear(); alloc.Ceilings.Clear();
                     alloc.PlannedStoneExtraction = Math.Max(0, raw[MaterialId.Stone] - Inventory(MaterialId.Stone));
                     alloc.PlannedClayExtraction = Math.Max(0, raw[MaterialId.Clay] - Inventory(MaterialId.Clay));
                     alloc.PlannedWoodExtraction = Math.Max(0, raw[MaterialId.Wood] - Inventory(MaterialId.Wood));
@@ -1541,7 +1568,11 @@ namespace Anthropocene.Simulation
                     foreach (var p in total.Outputs) alloc.Ceilings[p.Key] = p.Value;
                     if (toolsMade > 0) alloc.Ceilings[toolGood] = (alloc.Ceilings.TryGetValue(toolGood, out double t) ? t : 0) + toolsMade;
                     // A final over-budget (rounding after the repair) drops the lowest-class work in stable order.
-                    if (needed > budget + Epsilon) { alloc.TrimPasses++; TrimToBudget(alloc, budget, needed); }
+                    if (repair == 1 && needed > budget + Epsilon)
+                    {
+                        alloc.TrimPasses++; TrimToBudget(alloc, budget, needed, years);
+                        continue; // recompile from the trimmed grants so no trimmed request keeps idle staff
+                    }
                     break;
                 }
                 // Repair integer rounding from the lowest service class. Within
@@ -1678,7 +1709,7 @@ namespace Anthropocene.Simulation
         }
 
         // Removes the lowest-class granted work, last request first, until the compiled staffing fits.
-        private static void TrimToBudget(Allocation a, double budget, double needed)
+        private static void TrimToBudget(Allocation a, double budget, double needed, double years)
         {
             foreach (var q in a.Requests.Where(q => !q.Frozen && q.Bundle != null &&
                 q.Granted > Epsilon).OrderByDescending(q => q.Class)
@@ -1687,8 +1718,13 @@ namespace Anthropocene.Simulation
                 .ThenByDescending(q => a.Requests.IndexOf(q)))
             {
                 if (needed <= budget + Epsilon) break;
+                // A trimmed request releases the workers it was staffed with (at least one per role), not just one.
                 foreach (var role in q.Bundle.RoleYears)
-                    if (a.Staff.TryGetValue(role.Key, out int s) && s > 0) { a.Staff[role.Key] = s - 1; needed -= 1; if (a.Staff[role.Key] == 0) a.Staff.Remove(role.Key); }
+                    if (a.Staff.TryGetValue(role.Key, out int s) && s > 0)
+                    {
+                        int release = Math.Min(s, Math.Max(1, (int)Math.Ceiling(q.Granted * role.Value / Math.Max(Epsilon, years) - Epsilon)));
+                        a.Staff[role.Key] = s - release; needed -= release; if (a.Staff[role.Key] == 0) a.Staff.Remove(role.Key);
+                    }
                 foreach (var g in q.Bundle.Outputs) if (a.Ceilings.ContainsKey(g.Key)) a.Ceilings[g.Key] = Math.Max(0, a.Ceilings[g.Key] - g.Value * q.Granted);
                 q.Granted = 0; q.Unmet = "integer staffing";
             }
