@@ -17,7 +17,7 @@ internal static class Program
     private static void Check(bool condition, string message) { assertions++; if (!condition) throw new Exception(message); }
     private static WorldState Flat(int players = 2)
     {
-        var cfg = SimulationConfig.Small(players); cfg.TurnDays = 90; cfg.BaseDays = 90; cfg.PracticeDays = 90; cfg.AnnualHumanGrowthRate = 0; cfg.Width = 24; cfg.Height = 16; cfg.ExperienceThreshold = 100000;
+        var cfg = SimulationConfig.Small(players); cfg.DemographicModel = DemographicModel.LegacyQoLNetGrowth; cfg.TurnDays = 90; cfg.BaseDays = 90; cfg.PracticeDays = 90; cfg.AnnualHumanGrowthRate = 0; cfg.Width = 24; cfg.Height = 16; cfg.ExperienceThreshold = 100000;
         var w = new WorldState { Config = cfg, Seed = 42, Generation = new GenerationReport(), Tiles = new Tile[cfg.Width * cfg.Height] };
         for (int i = 0; i < w.Tiles.Length; i++)
         {
@@ -237,6 +237,125 @@ internal static class Program
     {
         if (args.Contains("--economic-settlement-probe")) { EconomicSettlementChecks.Probe(); return 0; }
         if (args.Contains("--issue31-microbench")) { Issue31Microbench(); return 0; }
+        var socialScale = args.FirstOrDefault(a => a.StartsWith("--social-scale=", StringComparison.Ordinal));
+        if (socialScale != null)
+        {
+            string[] values = socialScale.Substring("--social-scale=".Length).Split(',');
+            SocialScaleBenchmark.Run(int.Parse(values[0]), values.Length > 1 ? int.Parse(values[1]) : 0); return 0;
+        }
+        if (args.Contains("--demography-only")) { DemographyChecks.Run(); return 0; }
+        if (args.Contains("--fission-only")) { FissionChecks.Run(); return 0; }
+        if (args.Contains("--immigration-only")) { ImmigrationChecks.Run(); return 0; }
+        if (args.Contains("--social-relocation-only")) { SocialRelocationChecks.Run(); return 0; }
+        if (args.Contains("--demand-control-only")) { DemandControlChecks.Run(); return 0; }
+        var socialNative = args.FirstOrDefault(a => a.StartsWith("--social-relocation-native", StringComparison.Ordinal));
+        if (socialNative != null)
+        {
+            int turns = socialNative.Contains("=") ? int.Parse(socialNative.Substring(socialNative.IndexOf('=') + 1)) : 3;
+            SocialRelocationNativeChecks.Run(turns); return 0;
+        }
+        if (args.Contains("--demography-regression")) { DemographyRegressionChecks.Run(); return 0; }
+        var demographyLive = args.FirstOrDefault(a => a.StartsWith("--demography-live", StringComparison.Ordinal));
+        if (demographyLive != null)
+        {
+            int continuations = demographyLive.Contains("=") ? int.Parse(demographyLive.Substring(demographyLive.IndexOf('=') + 1)) : 30;
+            DemographyLiveAudit.Run(continuations); return 0;
+        }
+        var demographySocial = args.FirstOrDefault(a => a.StartsWith("--demography-social-ablation", StringComparison.Ordinal));
+        if (demographySocial != null)
+        {
+            int continuations = demographySocial.Contains("=") ? int.Parse(demographySocial.Substring(demographySocial.IndexOf('=') + 1)) : 30;
+            DemographySocialAblation.Run(continuations); return 0;
+        }
+        var demographyImmigrationSweep = args.FirstOrDefault(a => a.StartsWith("--demography-immigration-sweep", StringComparison.Ordinal));
+        if (demographyImmigrationSweep != null)
+        {
+            int continuations = demographyImmigrationSweep.Contains("=") ? int.Parse(demographyImmigrationSweep.Substring(demographyImmigrationSweep.IndexOf('=') + 1)) : 30;
+            DemographySocialAblation.RunCalibrationSweep(continuations); return 0;
+        }
+        var demographyFissionCooldownSweep = args.FirstOrDefault(a => a.StartsWith("--demography-fission-cooldown-sweep", StringComparison.Ordinal));
+        if (demographyFissionCooldownSweep != null)
+        {
+            int continuations = demographyFissionCooldownSweep.Contains("=") ? int.Parse(demographyFissionCooldownSweep.Substring(demographyFissionCooldownSweep.IndexOf('=') + 1)) : 30;
+            DemographySocialAblation.RunFissionCooldownSweep(continuations); return 0;
+        }
+        var demographyFissionSiteSweep = args.FirstOrDefault(a => a.StartsWith("--demography-fission-site-sweep", StringComparison.Ordinal));
+        if (demographyFissionSiteSweep != null)
+        {
+            int continuations = demographyFissionSiteSweep.Contains("=") ? int.Parse(demographyFissionSiteSweep.Substring(demographyFissionSiteSweep.IndexOf('=') + 1)) : 30;
+            DemographySocialAblation.RunFissionSiteSweep(continuations); return 0;
+        }
+        var demographyDaughterEconomy = args.FirstOrDefault(a => a.StartsWith("--demography-daughter-economy", StringComparison.Ordinal));
+        if (demographyDaughterEconomy != null)
+        {
+            int continuations = demographyDaughterEconomy.Contains("=") ? int.Parse(demographyDaughterEconomy.Substring(demographyDaughterEconomy.IndexOf('=') + 1)) : 30;
+            DemographySocialAblation.RunDaughterEconomyAudit(continuations); return 0;
+        }
+        if (args.Contains("--surplus-equilibria")) return DemographySocialAblation.RunSurplusEquilibria();
+        if (args.Contains("--kernel-mixed-checks")) { KernelMixedChecks.Run(); return 0; }
+        var kernelScaling = args.FirstOrDefault(a => a.StartsWith("--kernel-scaling=", StringComparison.Ordinal));
+        if (kernelScaling != null)
+        {
+            var parts = kernelScaling.Substring(kernelScaling.IndexOf('=') + 1).Split(',');
+            return DemographySocialAblation.RunKernelScaling(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 11, parts.Contains("mixed"));
+        }
+        var clothingProbe = args.FirstOrDefault(a => a.StartsWith("--clothing-probe=", StringComparison.Ordinal));
+        if (clothingProbe != null)
+        {
+            var parts = clothingProbe.Substring(clothingProbe.IndexOf('=') + 1).Split(',');
+            string seedPart = parts.FirstOrDefault(x => x.StartsWith("seeds=", StringComparison.Ordinal));
+            int[] probeSeeds = seedPart?.Substring(6).Split(';').Select(int.Parse).ToArray();
+            DemandController.ResetKernelSplitCounters();
+            string dumpPart = parts.FirstOrDefault(x => x.StartsWith("dumpturn=", StringComparison.Ordinal));
+            if (dumpPart != null) DemographySocialAblation.LadderDumpTurn = int.Parse(dumpPart.Substring(9));
+            string[] kernelModes = { "kernel", "kernelwy", "kernellex", "kernelterm", "kerneldeaths" };
+            int kernelMode = Array.FindIndex(kernelModes, k => parts.Contains(k));
+            DemandController.KernelSplitDiagnostic = kernelMode >= 0;
+            DemandController.KernelSplitObjective = Math.Max(0, kernelMode);
+            string lexTol = parts.FirstOrDefault(x => x.StartsWith("lextol=", StringComparison.Ordinal));
+            if (lexTol != null) DemandController.KernelLexTolerance = double.Parse(lexTol.Substring(7), System.Globalization.CultureInfo.InvariantCulture);
+            Fission.DistressSizeLadderDiagnostic = parts.Contains("distressladder");
+            DemandController.KernelShelterOnlyDiagnostic = parts.Contains("shelteronly");
+            DemandController.KernelExactScoringDiagnostic = parts.Contains("kernelexact");
+            DemandController.KernelVerifyDiagnostic = parts.Contains("kernelverify");
+            DemandController.KernelMixedDiagnostic = parts.Contains("kernelmixed");
+            string posture = parts.FirstOrDefault(x => x.StartsWith("posture=", StringComparison.Ordinal));
+            DemandController.KernelPostureMode = posture != null ? int.Parse(posture.Substring(8)) : 0;
+            PhysicalDemography.SurplusFundedBirthsDiagnostic = parts.Contains("surplusbirths");
+            string probeTag = (kernelMode >= 0 ? "-" + kernelModes[kernelMode] : "") + string.Concat(parts.Where(x => x.StartsWith("lextol=", StringComparison.Ordinal)).Select(x => "-" + x.Replace('=', '_'))) + (parts.Contains("distressladder") ? "-dladder" : "") + (parts.Contains("shelteronly") ? "-shelteronly" : "") + (parts.Contains("surplusbirths") ? "-surplus" : "") + (parts.Contains("v11") ? "-v11" : "") + (parts.Contains("kernelmixed") ? "-mixed" : "") + string.Concat(parts.Where(x => x.StartsWith("posture=", StringComparison.Ordinal)).Select(x => "-" + x.Replace('=', '_'))) + (seedPart != null ? "-wide" : "")
+                + string.Concat(parts.Where(x => x.StartsWith("intens=", StringComparison.Ordinal) || x.StartsWith("soft=", StringComparison.Ordinal)).Select(x => "-" + x.Replace('=', '_')));
+            return DemographySocialAblation.RunClothingProbe(int.Parse(parts[0]), parts[1],
+                !parts.Contains("nofission"), !parts.Contains("noimm"), (parts.Contains("freecloth") ? "-freecloth" : "") + (parts.Contains("freehouse") ? "-freehouse" : "") + probeTag, cfg =>
+                {
+                    if (parts.Contains("freecloth")) cfg.Neolithic.PlantFoodPerFabricUnit = 0;
+                    // "v11": the configured v1.1 law and planner without the kernel split (pre-promotion control).
+                    if (parts.Contains("v11")) { cfg.SurplusFundedBirths = false; cfg.ElderKernelSplit = false; cfg.ElderMixedRoutes = false; }
+                    string intens = parts.FirstOrDefault(x => x.StartsWith("intens=", StringComparison.Ordinal));
+                    if (intens != null) cfg.Neolithic.IntensificationTurns = double.Parse(intens.Substring(7), System.Globalization.CultureInfo.InvariantCulture);
+                    string soft = parts.FirstOrDefault(x => x.StartsWith("soft=", StringComparison.Ordinal));
+                    if (soft != null) cfg.Neolithic.CultivationMarginalEffortMultiplierPerTenth = double.Parse(soft.Substring(5), System.Globalization.CultureInfo.InvariantCulture);
+                },
+                parts.Contains("freehouse") ? DemographySocialAblation.FreeHousingOracle : (Action<WorldState>)null, probeSeeds,
+                int.Parse(parts.FirstOrDefault(x => x.StartsWith("workers=", StringComparison.Ordinal))?.Substring(8) ?? "1"));
+        }
+        var demographyFissionRecovery = args.FirstOrDefault(a => a.StartsWith("--demography-fission-recovery", StringComparison.Ordinal));
+        if (demographyFissionRecovery != null)
+        {
+            int continuations = demographyFissionRecovery.Contains("=") ? int.Parse(demographyFissionRecovery.Substring(demographyFissionRecovery.IndexOf('=') + 1)) : 20;
+            DemographySocialAblation.RunFissionRecovery(continuations); return 0;
+        }
+        var demographyQoLHistogram = args.FirstOrDefault(a => a.StartsWith("--demography-qol-histogram", StringComparison.Ordinal));
+        if (demographyQoLHistogram != null)
+        {
+            int continuations = demographyQoLHistogram.Contains("=") ? int.Parse(demographyQoLHistogram.Substring(demographyQoLHistogram.IndexOf('=') + 1)) : 30;
+            DemographySocialAblation.RunQoLHistogram(continuations); return 0;
+        }
+        var demographyBenchmark = args.FirstOrDefault(a => a.StartsWith("--demography-benchmark", StringComparison.Ordinal));
+        if (demographyBenchmark != null)
+        {
+            int samples = demographyBenchmark.Contains("=") ? int.Parse(demographyBenchmark.Substring(demographyBenchmark.IndexOf('=') + 1)) : 7;
+            DemographyBenchmark.Run(samples); return 0;
+        }
         if (args.Contains("--foundation-only")) { Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); return 0; }
         if (args.Contains("--issue25-ecology-only")) { Issue25EcologyChecks.Run(args); return 0; }
         if (args.Contains("--issue27-ecology-only")) { Issue27EcologyChecks.Run(); return 0; }
@@ -310,6 +429,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "ContactKnowledgeChecks", Run = () => ContactKnowledgeChecks.Run() },
                 new ParallelChecks.Entry { Name = "FissionChecks", Cost = 3, Run = () => FissionChecks.Run() },
                 new ParallelChecks.Entry { Name = "ImmigrationChecks", Cost = 2, Run = () => ImmigrationChecks.Run() },
+                new ParallelChecks.Entry { Name = "SocialRelocationChecks", Cost = 2, Run = () => SocialRelocationChecks.Run() },
                 new ParallelChecks.Entry { Name = "TradeChecks", Cost = 2, Run = () => TradeChecks.Run() },
                 new ParallelChecks.Entry { Name = "GoodsStorageChecks", Cost = 2, Run = () => GoodsStorageChecks.Run() },
                 new ParallelChecks.Entry { Name = "DemandControlChecks", Cost = 2, Run = () => DemandControlChecks.Run() },
@@ -334,6 +454,8 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "Issue32CapabilityChecks", Run = () => Issue32CapabilityChecks.Run() },
                 new ParallelChecks.Entry { Name = "QoLCohesionChecks", Run = () => QoLCohesionChecks.Run() },
                 new ParallelChecks.Entry { Name = "QoLMortalityChecks", Run = () => QoLMortalityChecks.Run() },
+                new ParallelChecks.Entry { Name = "DemographyChecks", Run = () => DemographyChecks.Run() },
+                new ParallelChecks.Entry { Name = "DemographyRegressionChecks", Cost = 2, Run = () => DemographyRegressionChecks.Run() },
                 new ParallelChecks.Entry { Name = "DemographicStructureChecks", Run = () => DemographicStructureChecks.Run() },
                 new ParallelChecks.Entry { Name = "HerdLabourChecks", Cost = 2, Run = () => HerdLabourChecks.Run() },
                 new ParallelChecks.Entry { Name = "SharedAllocationChecks", Cost = 2, Run = () => SharedAllocationChecks.Run() },
@@ -489,13 +611,19 @@ internal static class Program
                     Console.WriteLine("NOMAD_GAME seed=" + seed + " husbandry=" + nomads + "/" + w.Camps.Count);
 
                 }
+                var fissionStarts = w.History.SelectMany(record => record.Fissions)
+                    .GroupBy(report => report.DaughterCamp)
+                    .ToDictionary(group => group.Key, group => group.First().Daughter);
                 foreach (var camp in w.Camps)
                 {
                     total++; if (w.LinkedPopulation(camp) > 0) survivors++; technologies[(int)camp.Technology]++;
                     endingPopulations.Add(w.LinkedPopulation(camp));
-                    string habitat = startingHabitats[camp.Id];
+                    bool foundingCamp = startingHabitats.TryGetValue(camp.Id, out string habitat);
+                    if (!foundingCamp) habitat = "Fission daughter";
+                    double startingPopulation = foundingCamp ? startingPopulations[camp.Id]
+                        : fissionStarts.TryGetValue(camp.Id, out int daughter) ? daughter : 0;
                     if (!habitatPaths.TryGetValue(habitat, out var path)) habitatPaths[habitat] = path = new HabitatPathStats();
-                    path.Tribes++; path.StartingPopulation += startingPopulations[camp.Id]; path.EndingPopulation += w.LinkedPopulation(camp);
+                    path.Tribes++; path.StartingPopulation += startingPopulation; path.EndingPopulation += w.LinkedPopulation(camp);
                     if (w.LinkedPopulation(camp) > 0) path.Survivors++;
                     if (camp.Technology == Technology.AnimalHusbandry) path.Husbandry++;
                     foreach (var demographic in w.History.SelectMany(record => record.Demographics).Where(report => report.Camp == camp.Id))

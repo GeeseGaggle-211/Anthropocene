@@ -354,7 +354,7 @@ internal static class PastoralCraftChecks
         var observed = new AgentObservationBuilder().Build(w, own.Player);
         string json = ObservationContract.Serialize(observed, own.People.Mandate);
         var dto = ObservationContract.Deserialize(json);
-        Check(dto.Schema == AgentObservation.SchemaVersion && dto.Schema == 21, "observation schema exposes retained natural cover without persisting it");
+        Check(dto.Schema == AgentObservation.SchemaVersion && dto.Schema == 22, "observation schema exposes retained natural cover without persisting it");
         var observedCover = dto.Tiles.Single(tile => tile.Id == own.Tile);
         Near(observedCover.NaturalVegetationRetention, 0, "schema 12 reports zero retained vegetation service at q=1");
         Near(observedCover.EffectiveNaturalVegetationService, 0, "schema 12 reports no standing natural vegetation service at q=1");
@@ -443,6 +443,7 @@ internal static class PastoralCraftChecks
     internal static WorldState PlannerWorld()
     {
         var config = SimulationConfig.Small(1);
+        config.DemographicModel = DemographicModel.LegacyQoLNetGrowth;
         config.Width = 24; config.Height = 16; config.TurnDays = 20 * config.DaysPerYear;
         config.AnnualHumanGrowthRate = 0;
         config.ExperienceThreshold = 1000000;
@@ -794,7 +795,9 @@ internal static class PastoralCraftChecks
             if (allocation == "HerdingToolsAndHousing")
             {
                 Check(totals.TryGetValue(CraftGood.HerdingTools, out double herdingTools) && herdingTools > 0,
-                    "organic bootstrap produces Herding Tools from raw stone and wood");
+                    "organic bootstrap produces Herding Tools from raw stone and wood; outputs="
+                    + string.Join(",", totals.OrderBy(x => x.Key).Select(x => x.Key + "=" + x.Value.ToString("F3")))
+                    + " population=" + c.Population);
                 Check(totals.TryGetValue(CraftGood.LightHousing, out double shelter) && shelter > 0,
                     "organic bootstrap produces Light Housing from produced fabric and extracted wood");
             }

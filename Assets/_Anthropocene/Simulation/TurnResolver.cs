@@ -122,10 +122,31 @@ namespace Anthropocene.Simulation
             int[] destinations; using (PhaseProfile.Scope("HerdIntents")) destinations = execution.Map(herdInputs, h => HerdDestination(w, h, planning));
             var herdMoves = herdInputs.Select((h, i) => new { h.Id, Destination = destinations[i] }).ToDictionary(x => x.Id, x => x.Destination);
             LastMetrics.HerdIntentMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
+            bool physicalDemography = PhysicalDemography.Enabled(w.Config);
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Dispatch).OrderBy(o => o.Entity))
             {
-                var camp = w.Camps.First(c => c.Id == order.Entity); camp.Population -= order.Population;
-                var hunter = new Hunter { Id = w.NextId++, SourceCamp = camp.Id, SocietyId = camp.SocietyId, Player = camp.Player, Population = order.Population, Tile = camp.Tile };
+                var camp = w.Camps.First(c => c.Id == order.Entity); int before = camp.Population;
+                var hunter = new Hunter
+                {
+                    Id = w.NextId++, SourceCamp = camp.Id, SocietyId = camp.SocietyId, Player = camp.Player,
+                    Population = order.Population, Tile = camp.Tile
+                };
+                // The pre-v1.1 legacy model owns fractional growth at the camp and never reads hunter progress.
+                // Only physical demography partitions its gross-event and deficit ledgers across cohorts.
+                if (physicalDemography)
+                {
+                    double share = before > 0 ? order.Population / (double)before : 0;
+                    hunter.GrowthRemainder = camp.GrowthRemainder * share;
+                    hunter.DeathRemainder = camp.DeathRemainder * share;
+                    hunter.FoodDeficitYears = camp.FoodDeficitYears;
+                    hunter.DeficitTurns = camp.DeficitTurns;
+                    hunter.DeficitSeverity = camp.DeficitSeverity;
+                    hunter.FoodDeficit = camp.FoodDeficit * share;
+                    hunter.LastConsumed = camp.LastConsumed * share;
+                    camp.GrowthRemainder -= hunter.GrowthRemainder;
+                    camp.DeathRemainder -= hunter.DeathRemainder;
+                }
+                camp.Population -= order.Population;
                 w.Hunters.Add(hunter); record.Log("Tribe " + camp.Player + " dispatched " + hunter.Population + " hunters [" + hunter.Id + "].");
             }
             using (PhaseProfile.Scope("Movement"))
@@ -145,6 +166,23 @@ namespace Anthropocene.Simulation
                 var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity); if (hunter == null) continue;
                 var camp = w.Camps.First(c => c.Id == hunter.SourceCamp);
                 if (hunter.Tile != camp.Tile) { record.Log("Reintegration deferred: camp moved away from " + hunter.Id + "."); continue; }
+                if (physicalDemography)
+                {
+                    double campWeight = camp.DemographicDeficitMergeWeight > 0
+                        ? camp.DemographicDeficitMergeWeight : camp.Population;
+                    double hunterWeight = hunter.DemographicDeficitMergeWeight > 0
+                        ? hunter.DemographicDeficitMergeWeight : hunter.Population;
+                    double combinedWeight = campWeight + hunterWeight;
+                    if (combinedWeight > 0)
+                    {
+                        camp.FoodDeficitYears = (camp.FoodDeficitYears * campWeight + hunter.FoodDeficitYears * hunterWeight) / combinedWeight;
+                        camp.DeficitSeverity = (camp.DeficitSeverity * campWeight + hunter.DeficitSeverity * hunterWeight) / combinedWeight;
+                        camp.DeficitTurns = Math.Max(camp.DeficitTurns, hunter.DeficitTurns);
+                    }
+                    camp.DemographicDeficitMergeWeight = combinedWeight;
+                    camp.GrowthRemainder += hunter.GrowthRemainder;
+                    camp.DeathRemainder += hunter.DeathRemainder;
+                }
                 camp.Population += hunter.Population; w.Hunters.Remove(hunter); record.Log("Hunters " + hunter.Id + " rejoined their camp.");
             }
             w.Hunters.RemoveAll(h => h.Population <= 0);
@@ -153,8 +191,19 @@ namespace Anthropocene.Simulation
             using (PhaseProfile.Scope("Technology")) TechnologyDiscovery.Resolve(w, record);
             // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
             // Immigration between known settlements precedes fission (QoLFissionTradeDesign 4, 9); its sources and arrivals sit out fission this turn.
-            HashSet<int> mobile; using (PhaseProfile.Scope("Immigration")) mobile = Immigration.Resolve(w, record, execution, LastMetrics);
-            using (PhaseProfile.Scope("Fission")) Fission.Resolve(w, record, execution, LastMetrics, mobile);
+            // The commit is after economy/demography, so its population boundary first enters economy/demography next turn.
+            SocialRelocationForecastCache socialForecasts = PhysicalDemography.Enabled(w.Config)
+                && (w.Config.ImmigrationEnabled || w.Config.FissionEnabled)
+                ? new SocialRelocationForecastCache(w, w.Camps) : null;
+            HashSet<int> mobile; using (PhaseProfile.Scope("Immigration")) mobile = Immigration.Resolve(w, record, execution, LastMetrics, null, socialForecasts);
+            using (PhaseProfile.Scope("Fission")) Fission.Resolve(w, record, execution, LastMetrics, mobile, null, socialForecasts);
+            if (socialForecasts != null)
+            {
+                LastMetrics.SocialForecasts = socialForecasts.Forecasts;
+                LastMetrics.SocialForecastCacheBuilds = socialForecasts.Builds;
+                LastMetrics.SocialForecastCacheHits = socialForecasts.CacheHits;
+            }
+            WelfareDiagnostics.Capture(w, record);
             foreach (var change in touched.Values.OrderBy(t => t.Tile))
             { change.AfterFood = w.Tiles[change.Tile].Food; change.AfterPotentialFood = w.Tiles[change.Tile].PotentialFood; change.AfterFreshwater = w.Tiles[change.Tile].Freshwater; change.AfterLandCondition = w.Tiles[change.Tile].LandCondition; change.AfterAquaticCondition = w.Tiles[change.Tile].AquaticCondition; record.Changes.Add(change); }
             // Untouched tiles follow the recorded configuration/clock regeneration rule; replay does not need world-sized snapshots each turn.
@@ -514,7 +563,7 @@ namespace Anthropocene.Simulation
             foreach (var c in w.Camps)
             {
                 if (c.EconomyAutomationTurns < -1 || c.EconomicLabor != null && c.EconomicLabor.Values().Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0)) throw new InvalidOperationException("Invalid saved economic automation state.");
-                if (c.Inventory == null || typeof(CampInventory).GetFields().Where(f => f.FieldType == typeof(double)).Select(f => (double)f.GetValue(c.Inventory)).Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < -1e-8) || new[] { c.PlantFood, c.AnimalFood, c.AquaticFood, c.StationaryYears, c.HousingDemand, c.FabricConsumed }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < -1e-8) || new[] { c.QoL, c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita, c.RudimentaryExpectation }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0 || v > 1 + 1e-8)) throw new InvalidOperationException("Invalid economic inventory or needs state.");
+                if (c.FissionEligibleTurn < 0 || c.Inventory == null || typeof(CampInventory).GetFields().Where(f => f.FieldType == typeof(double)).Select(f => (double)f.GetValue(c.Inventory)).Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < -1e-8) || new[] { c.PlantFood, c.AnimalFood, c.AquaticFood, c.StationaryYears, c.HousingDemand, c.FabricConsumed }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < -1e-8) || new[] { c.QoL, c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita, c.RudimentaryExpectation }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0 || v > 1 + 1e-8)) throw new InvalidOperationException("Invalid economic inventory, needs or fission-maturity state.");
             }
             if (w.Camps.Select(c => c.Tile).Distinct().Count() != w.Camps.Count) throw new InvalidOperationException("Rival camps overlap.");
             var ids = w.Camps.Select(c => c.Id).Concat(w.Hunters.Select(h => h.Id)).Concat(w.Herds.Select(h => h.Id)).ToArray();
@@ -522,7 +571,11 @@ namespace Anthropocene.Simulation
             if (expectedPeople >= 0 && w.Camps.Sum(w.LinkedPopulation) != expectedPeople) throw new InvalidOperationException("Unexplained population change.");
             if (w.Camps.Any(c => c.Population < 0 || c.Food < -1e-8 || c.DemographicGrowthMultiplier <= 0 || double.IsNaN(c.DemographicGrowthMultiplier) || c.Workforce == null || c.Workforce.Assignments.Any(a => a == null || string.IsNullOrWhiteSpace(a.Role) || a.Population <= 0) || c.Workforce.Assignments.GroupBy(a => a.Role, StringComparer.Ordinal).Any(g => g.Count() != 1) || c.Workforce.Assigned > c.Population || !w.CanEnter(c.Tile, false)) || w.Hunters.Any(h => h.Population < 0 || !w.CanEnter(h.Tile, true, w.Camps.First(c => c.Id == h.SourceCamp))))
                 throw new InvalidOperationException("Invalid people state or location.");
-            if (w.Hunters.Any(h => h.CarriedFood < -1e-8 || h.CarriedFood > Supply.Capacity(w, h) + 1e-8) || w.Camps.Any(c => c.GrowthRemainder < 0 || c.GrowthRemainder >= 1)) throw new InvalidOperationException("Invalid carried provisions or demographic remainder.");
+            if (w.Hunters.Any(h => h.CarriedFood < -1e-8 || h.CarriedFood > Supply.Capacity(w, h) + 1e-8)
+                || w.Camps.Any(c => c.GrowthRemainder < 0 || c.DeathRemainder < 0 || double.IsNaN(c.GrowthRemainder) || double.IsInfinity(c.GrowthRemainder) || double.IsNaN(c.DeathRemainder) || double.IsInfinity(c.DeathRemainder)
+                    || w.Config.DemographicModel == DemographicModel.LegacyQoLNetGrowth && c.GrowthRemainder >= 1)
+                || w.Hunters.Any(h => h.GrowthRemainder < 0 || h.DeathRemainder < 0 || double.IsNaN(h.GrowthRemainder) || double.IsInfinity(h.GrowthRemainder) || double.IsNaN(h.DeathRemainder) || double.IsInfinity(h.DeathRemainder)))
+                throw new InvalidOperationException("Invalid carried provisions or demographic remainder.");
             if (w.Herds.Any(h => !w.Tiles[h.Tile].TraversableLand || h.Animals < 0)) throw new InvalidOperationException("Invalid herd population or peak/aquatic location.");
             foreach (var tile in ecologyScope ?? w.Tiles)
             {

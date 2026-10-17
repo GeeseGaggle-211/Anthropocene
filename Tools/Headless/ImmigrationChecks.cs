@@ -22,7 +22,7 @@ internal static class ImmigrationChecks
     private static WorldState World(params int[][] sites) => World(24, 16, sites);
     private static WorldState World(int width, int height, params int[][] sites)
     {
-        var cfg = SimulationConfig.Small(1); cfg.ImmigrationEnabled = true; cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0; cfg.ContactExpiryTurns = 50;
+        var cfg = SimulationConfig.Small(1); cfg.DemographicModel = DemographicModel.LegacyQoLNetGrowth; cfg.ImmigrationEnabled = true; cfg.Width = width; cfg.Height = height; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0; cfg.ContactExpiryTurns = 50;
         cfg.FissionHousingRelief = 1; cfg.FissionDaughterMargin = 1;
         // The mechanism fixtures isolate the flow rules from housing: the scale is 220 for every camp (band 220, housing gain 0) and the ample
         // Light Housing keeps coverage at one. Forward() and the dedicated housing checks restore the shipped gain.
@@ -118,8 +118,180 @@ internal static class ImmigrationChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Closed(); Known(); Choice(); Deadband(); Reconcile(); Ordering(); MultiHop(); Conservation(); Records(); Replay(); Persistence(); Forward(); Oscillation(); Hysteresis();
+        checks = 0; Config(); Closed(); Known(); Choice(); Deadband(); Reconcile(); Ordering(); MultiHop(); JointPhysicalRevalidation(); JointScaling(); LegacyWorkforceCompatibility(); Conservation(); Records(); Replay(); Persistence(); Forward(); Oscillation(); Hysteresis(); PhysicalDiagnostics(); DaughterMaturity(); MultipleArrivalDeficitProjection();
         Console.WriteLine("PASS: " + checks + " immigration assertions"); return checks;
+    }
+
+    private static WorldState PhysicalMaturityWorld()
+    {
+        var w = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2));
+        w.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        w.Config.Neolithic.CohesionBandScale = 2000;
+        var source = w.Camps[0]; var destination = w.Camps[1];
+        MakeNomadic(source); MakeNomadic(destination);
+        source.WaterNeedsMetRatio = .1; destination.Population = 900;
+        destination.WaterNeedsMetRatio = 1;
+        source.RudimentaryExpectation = destination.RudimentaryExpectation = .5;
+        source.PlantFood = destination.PlantFood = 1e9;
+        source.AnimalFood = source.AquaticFood = destination.AnimalFood = destination.AquaticFood = 0;
+        source.Inventory.Cloth = destination.Inventory.Cloth = 1e9;
+        source.Inventory.AnimalFabric = destination.Inventory.AnimalFabric = 0;
+        source.Inventory.LightHousingUnits = destination.Inventory.LightHousingUnits = 1e9;
+        Remember(w, source, destination);
+        return w;
+    }
+
+    private static void DaughterMaturity()
+    {
+        var blocked = PhysicalMaturityWorld(); var youngSource = blocked.Camps[0];
+        youngSource.FissionEligibleTurn = blocked.Turn + 1;
+        int before = youngSource.Population;
+        Pass(blocked);
+        Check(lastRecord.Migrations.Count == 0 && youngSource.Population == before
+            && lastMetrics.ImmigrationOutflowCooldownBlocked == 1,
+            "a Physical-v1 daughter cannot initiate immigration before its shared maturity boundary");
+
+        blocked.Turn = youngSource.FissionEligibleTurn;
+        Pass(blocked);
+        Check(Flow(lastRecord, youngSource.Id) != null
+            && lastMetrics.ImmigrationOutflowCooldownBlocked == 0,
+            "the daughter can initiate a welfare-selected outflow exactly at the shared maturity boundary");
+
+        var receiving = PhysicalMaturityWorld(); var source = receiving.Camps[0]; var youngDestination = receiving.Camps[1];
+        youngDestination.FissionEligibleTurn = receiving.Turn + 1;
+        Pass(receiving);
+        Check(Flow(lastRecord, source.Id)?.DestinationCamp == youngDestination.Id
+            && lastMetrics.ImmigrationOutflowCooldownBlocked == 1,
+            "a daughter inside the outflow freeze remains eligible to receive immigrants");
+
+        var legacy = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2));
+        Tune(legacy, legacy.Camps[0], legacy.Camps[1], .3);
+        legacy.Camps[0].FissionEligibleTurn = legacy.Turn + 10;
+        Pass(legacy);
+        Check(Flow(lastRecord, legacy.Camps[0].Id) != null
+            && lastMetrics.ImmigrationOutflowCooldownBlocked == 0,
+            "the exact legacy-demography compatibility path bypasses the daughter maturity gate");
+    }
+
+    private static void PhysicalDiagnostics()
+    {
+        var w = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2));
+        w.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        var source = w.Camps[0]; var destination = w.Camps[1]; MakeNomadic(source); MakeNomadic(destination);
+        // Physical forecast fixture: the source has reliable supplies but poor
+        // freshwater welfare; the dense receiver has ample real provisions and
+        // protection.  Its density hazard is higher, yet the welfare gain can
+        // still outweigh cumulative mortality risk (there is no net-sign veto).
+        w.Config.Neolithic.CohesionBandScale = 2000;
+        source.WaterNeedsMetRatio = .1; source.RudimentaryExpectation = .5;
+        destination.Population = 900; destination.WaterNeedsMetRatio = 1; destination.RudimentaryExpectation = .5;
+        source.PlantFood = destination.PlantFood = 1e9;
+        source.AnimalFood = source.AquaticFood = destination.AnimalFood = destination.AquaticFood = 0;
+        source.Inventory.Cloth = destination.Inventory.Cloth = 1e9;
+        source.Inventory.AnimalFabric = destination.Inventory.AnimalFabric = 0;
+        source.Inventory.LightHousingUnits = 1e9;
+        destination.Inventory.LightHousingUnits = 1e9;
+        source.GrowthRemainder = .8; source.DeathRemainder = .6; destination.GrowthRemainder = .7; destination.DeathRemainder = .5;
+        double births = source.GrowthRemainder + destination.GrowthRemainder, deaths = source.DeathRemainder + destination.DeathRemainder;
+        Remember(w, source, destination); Pass(w);
+        var flow = Flow(lastRecord, source.Id);
+        Check(flow != null && flow.HigherQoLWorseMortality
+            && flow.ForecastDestinationQoL > flow.ForecastSourceNoMoveQoL && flow.MortalityGap > 0,
+            "a higher-QoL destination with worse projected mover mortality can still attract migrants (flows="
+            + lastRecord.Migrations.Count + ", accepted=" + lastMetrics.ImmigrationAccepted + ")");
+        Check(flow.DestinationNetNonnegative && flow.DestinationNetRateAfter >= 0
+            && double.IsFinite(flow.SourceNetRateAfter) && double.IsFinite(flow.DestinationNetRateAfter),
+            "receiving-settlement physical net growth is reported without entering migration utility");
+        Check(lastMetrics.ImmigrationHigherQoLWorseMortality == 1, "the migration audit counter records the QoL/survival inversion");
+        Check(lastMetrics.ImmigrationPhysicalDestinationNegativeNet == 0,
+            "the worse-mortality destination's nonnegative projected net rate is diagnosed");
+        Near(source.GrowthRemainder + destination.GrowthRemainder, births, "physical migration conserves gross-birth progress");
+        Near(source.DeathRemainder + destination.DeathRemainder, deaths, "physical migration conserves gross-death progress");
+
+        var failing = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2));
+        failing.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        var fs = failing.Camps[0]; var fd = failing.Camps[1]; MakeNomadic(fs); MakeNomadic(fd);
+        failing.Config.Neolithic.CohesionBandScale = 10000;
+        fs.WaterNeedsMetRatio = .05; fs.Inventory.Cloth = fs.Inventory.AnimalFabric = 0; fs.Inventory.LightHousingUnits = 0;
+        fs.PlantFood = fs.AnimalFood = fs.AquaticFood = 0;
+        foreach (int tile in failing.Map.Radius(fs.Tile, failing.Config.GatherRadius))
+        { failing.Tiles[tile].Food = failing.Tiles[tile].PotentialFood = 0; }
+        fd.Population = 1200; fd.PlantFood = 1e9; fd.AnimalFood = fd.AquaticFood = 0;
+        fd.Inventory.Cloth = 1e9; fd.Inventory.AnimalFabric = 0; fd.Inventory.LightHousingUnits = 1e9;
+        fd.RudimentaryExpectation = .5;
+        fs.FoodDeficitYears = PhysicalDemography.StarvationGraceYears(failing.Config) + 1;
+        fd.FoodDeficitYears = 0;
+        Remember(failing, fs, fd); int beforeSource = fs.Population, beforeDestination = fd.Population;
+        Pass(failing);
+        var decliningFlow = Flow(lastRecord, fs.Id);
+        Check(decliningFlow != null && fs.Population < beforeSource && fd.Population > beforeDestination
+            && lastMetrics.ImmigrationIntents == 1 && lastMetrics.ImmigrationPhysicalDestinationNegativeNet == 1,
+            "a QoL-selected group is not suppressed solely because its receiver has a negative instantaneous net rate");
+        Check(!decliningFlow.DestinationNetNonnegative && decliningFlow.SourceNetRateAfter < 0
+            && decliningFlow.DestinationNetRateAfter < 0
+            && decliningFlow.DestinationNetRateAfter > decliningFlow.SourceNetRateAfter,
+            "people may move from a worse declining source to a safer still-declining receiver under baseline QoL utility"
+            + " (source=" + decliningFlow.SourceNetRateAfter.ToString("G17")
+            + ", destination=" + decliningFlow.DestinationNetRateAfter.ToString("G17") + ")");
+    }
+
+    private static void MultipleArrivalDeficitProjection()
+    {
+        var w = WorldAt(3, (x, i) => i == 2 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2, i));
+        w.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        w.Config.GatherPerPerson = 0;
+        w.Config.Neolithic.CohesionBandScale = 2000;
+        var oldSource = w.Camps[0]; var freshSource = w.Camps[1]; var destination = w.Camps[2];
+        foreach (var c in w.Camps) MakeNomadic(c);
+        foreach (var source in new[] { oldSource, freshSource })
+        {
+            source.WaterNeedsMetRatio = .05;
+            source.PlantFood = source.Population * w.Config.Consumption * w.Config.GenerationIntervals;
+            source.AnimalFood = source.AquaticFood = 0;
+            source.Inventory.Cloth = 1000; source.Inventory.LightHousingUnits = 1e9;
+            Remember(w, source, destination);
+        }
+        double grace = PhysicalDemography.StarvationGraceYears(w.Config);
+        destination.PlantFood = .8 * destination.Population * w.Config.Consumption * w.Config.GenerationIntervals;
+        destination.AnimalFood = destination.AquaticFood = 0;
+        destination.Inventory.Cloth = 1000; destination.Inventory.LightHousingUnits = 1e9;
+        destination.FoodDeficitYears = grace - .5;
+        oldSource.FoodDeficitYears = grace + 20;
+        freshSource.FoodDeficitYears = 0;
+        int destinationResidents = destination.Population;
+        double destinationDeficit = destination.FoodDeficitYears;
+        Pass(w);
+        var flows = lastRecord.Migrations.Where(m => m.DestinationCamp == destination.Id)
+            .OrderBy(m => m.SourceCamp).ToArray();
+        Check(flows.Length == 2 && flows.All(f => f.Migrants == 10),
+            "the multiple-arrival diagnostic accepts two canonical ten-person inflows");
+
+        int cumulative = flows.Sum(f => f.Migrants);
+        double deficitExposure = destinationDeficit * destinationResidents
+            + flows.Sum(flow => (flow.SourceCamp == oldSource.Id ? oldSource : freshSource).FoodDeficitYears * flow.Migrants);
+        int residents = destinationResidents + cumulative;
+        double deficit = deficitExposure / residents;
+        for (int i = 0; i < flows.Length; i++)
+        {
+            var flow = flows[i];
+            double food = flow.ForecastDestinationNutrition;
+            double clothing = flow.ForecastDestinationClothing;
+            double housing = flow.ForecastDestinationHousing * residents;
+            var beforeGrace = PhysicalDemography.Rates(w.Config, residents, food, clothing, housing, false);
+            var afterGrace = PhysicalDemography.Rates(w.Config, residents, food, clothing, housing, true);
+            double years = w.Config.TurnDays / w.Config.DaysPerYear;
+            double firstYears = Math.Min(years, Math.Max(0, grace - deficit));
+            double expectedDeath = (beforeGrace.Death * firstYears + afterGrace.Death * (years - firstYears)) / years;
+            double expectedNet = (beforeGrace.Net * firstYears + afterGrace.Net * (years - firstYears)) / years;
+            Near(flow.DestinationMortalityAfter, expectedDeath,
+                "arrival " + i + " projects mortality from the final joint population-weighted deficit age", 1e-10);
+            Near(flow.DestinationNetRateAfter, expectedNet,
+                "arrival " + i + " reports the matching final joint physical net rate", 1e-10);
+            Check(firstYears > 0 && firstYears < years,
+                "the combined old and fresh arrivals retain a partial grace interval without resetting exposure");
+        }
+        Near(destination.FoodDeficitYears, deficitExposure / (destinationResidents + cumulative),
+            "committed multiple arrivals preserve the same aggregate deficit-age convention", 1e-12);
     }
 
     private static void Config()
@@ -137,6 +309,19 @@ internal static class ImmigrationChecks
         var serializer = new DataContractSerializer(typeof(SimulationConfig)); string xml;
         using (var stream = new MemoryStream()) { serializer.WriteObject(stream, new SimulationConfig { ImmigrationRadius = 5, ImmigrationEnabled = true }); xml = Encoding.UTF8.GetString(stream.ToArray()); }
         Check(xml.Contains("<ImmigrationRadius>5</ImmigrationRadius>") && xml.Contains("<ImmigrationEnabled>true</ImmigrationEnabled>"), "immigration levers are serialized");
+        using (var stream = new MemoryStream())
+        {
+            serializer.WriteObject(stream, new SimulationConfig { ImmigrationReturnPenalty = .20 }); stream.Position = 0;
+            Check(((SimulationConfig)serializer.ReadObject(stream)).ImmigrationReturnPenalty == .20,
+                "a save carrying an alternate return penalty retains its explicit calibration");
+        }
+        string missingPenalty = Regex.Replace(xml, "<ImmigrationReturnPenalty>[^<]*</ImmigrationReturnPenalty>", "");
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(missingPenalty)))
+        {
+            var oldActive = (SimulationConfig)serializer.ReadObject(stream);
+            Check(oldActive.ImmigrationEnabled && oldActive.ImmigrationRadius == 5 && oldActive.ImmigrationReturnPenalty == .10,
+                "an immigration-enabled save predating the return penalty keeps the historical 0.10 fallback");
+        }
         string legacy = Regex.Replace(xml, "<Immigration[A-Za-z]*>[^<]*</Immigration[A-Za-z]*>", "");
         Check(legacy != xml && !legacy.Contains("<Immigration"), "legacy fixture omits every immigration field");
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy)))
@@ -153,7 +338,7 @@ internal static class ImmigrationChecks
             var m = Regex.Match(json, "\"" + pair.Item1 + "\":\\s*([0-9.a-z]+)");
             Check(m.Success && m.Groups[1].Value == pair.Item2, "OpeningConfig.json carries " + pair.Item1);
         }
-        // Disabled by default: the pass neither runs nor reports, whatever the populations.
+        // With the switch disabled, the pass neither runs nor reports, whatever the populations.
         var w = World(new[] { 8, 8 }, new[] { 8, 10 }); w.Config.ImmigrationEnabled = false; Tune(w, w.Camps[0], w.Camps[1], .3);
         Check(Pass(w) == null && lastRecord.Migrations.Count == 0 && lastMetrics.ImmigrationCampsEvaluated == 0 && w.Camps.All(x => x.Population == 100), "a disabled pass changes nothing");
     }
@@ -380,9 +565,24 @@ internal static class ImmigrationChecks
         Check(record.Fissions.Count == 1 && record.Fissions[0].ParentCamp == w.Camps[2].Id, "only the uninvolved camp fissions: the source emits no fission intent and arrivals cannot fission");
         Check(w.Camps.Count == 4, "no settlement was founded by the source or the destination");
         // Through the real resolver: immigration precedes fission in the same Close phase.
-        var real = Make(true); new TurnResolver().Resolve(real, new Dictionary<int, List<Order>>());
+        var real = Make(true);
+        var beforeClose = real.Camps.ToDictionary(c => c.Id, real.LinkedPopulation);
+        new TurnResolver().Resolve(real, new Dictionary<int, List<Order>>());
         var h = real.History.Last();
         Check(h.Migrations.Count >= 1 && h.Fissions.All(f => f.ParentCamp != h.Migrations[0].SourceCamp && f.ParentCamp != h.Migrations[0].DestinationCamp), "the resolver runs immigration before fission and excludes its participants");
+        foreach (int campId in h.Migrations.SelectMany(m => new[] { m.SourceCamp, m.DestinationCamp }).Distinct())
+        {
+            var demographic = h.Demographics.Single(d => d.Camp == campId);
+            var camp = real.Camps.Single(c => c.Id == campId);
+            Check(demographic.StartingPopulation == beforeClose[campId]
+                && real.LinkedPopulation(camp) == demographic.EndingPopulation - demographic.Emigrated + demographic.Immigrated,
+                "immigration changes the Close boundary, not the current turn's demographic calculation for camp " + campId);
+        }
+        var nextTurnStart = real.Camps.ToDictionary(c => c.Id, real.LinkedPopulation);
+        new TurnResolver().Resolve(real, new Dictionary<int, List<Order>>());
+        var next = real.History.Last();
+        Check(nextTurnStart.All(pair => next.Demographics.Single(d => d.Camp == pair.Key).StartingPopulation == pair.Value),
+            "the post-immigration population first becomes the authoritative demographic input on the following turn");
         // Fission alone and immigration alone each run without the other.
         var only = Make(true); only.Config.FissionEnabled = false; new TurnResolver().Resolve(only, new Dictionary<int, List<Order>>());
         Check(only.History.Last().Migrations.Count >= 1 && only.History.Last().Fissions.Count == 0, "immigration runs with fission disabled");
@@ -404,9 +604,142 @@ internal static class ImmigrationChecks
         Check(lastMetrics.ImmigrationIntents == 2, "two intents, evaluated once");
     }
 
+    private static void JointPhysicalRevalidation()
+    {
+        WorldState Fixture(bool receiverDeparts)
+        {
+            var w = WorldAt(3, (x, i) => i == 0 ? x.Map.At(6, 4)
+                : i == 1 ? Ring(x, x.Map.At(6, 4), 2)
+                : Ring(x, Ring(x, x.Map.At(6, 4), 2), 2, 3, x.Map.At(6, 4)));
+            w.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+            w.Config.GatherPerPerson = 0; w.Config.Neolithic.CohesionBandScale = 150;
+            w.Config.FissionDaughterMargin = .05;
+            w.Config.Neolithic.CohesionHousingGain = 0;
+            w.Config.Neolithic.RudimentaryWeightClothing = 1;
+            w.Config.Neolithic.RudimentaryWeightHousing = 0;
+            var a = w.Camps[0]; var b = w.Camps[1]; var c = w.Camps[2];
+            c.Population = 10;
+            foreach (var camp in w.Camps)
+            {
+                MakeAgricultural(camp); camp.RudimentaryExpectation = 1;
+                camp.PlantFood = 1e9; camp.AnimalFood = camp.AquaticFood = 0;
+                camp.Inventory.LightHousingUnits = 1e9; camp.Inventory.Cloth = 1e9;
+            }
+            a.WaterNeedsMetRatio = .01; b.WaterNeedsMetRatio = .65;
+            c.WaterNeedsMetRatio = receiverDeparts ? 1 : .01;
+            b.Inventory.Cloth = b.Inventory.AnimalFabric = 0; b.Inventory.HandTools = 1e9;
+            b.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
+            // Six of one hundred makes the ten-person departure carry one Weaver
+            // by largest remainder: a deliberately lumpy specialist loss that a
+            // sequential receiver-only reconciliation cannot see.
+            b.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Weaver, Population = 6 });
+            double years = w.Config.TurnDays / w.Config.DaysPerYear;
+            double need110 = PhysicalDemography.BirthOnlyPersonYears(110, w.Config.BaseBirthRate, years)
+                * PhysicalDemography.ClothingPerPersonYear(w.Config);
+            w.Config.Neolithic.WeaverFabricOutputPerBaseDays = need110
+                / (6 * w.Config.GenerationIntervals) * 1.005;
+            return w;
+        }
+
+        var control = Fixture(false); int a0 = control.Camps[0].Id, b0 = control.Camps[1].Id;
+        Pass(control);
+        Check(lastRecord.Migrations.Any(m => m.SourceCamp == a0 && m.DestinationCamp == b0),
+            "control: A can move into B while B retains its specialist workforce");
+
+        var chain = Fixture(true); var a = chain.Camps[0]; var b = chain.Camps[1]; var c = chain.Camps[2];
+        int beforeA = a.Population, beforeB = b.Population, beforeC = c.Population;
+        Pass(chain); var flows = lastRecord.Migrations;
+        Check(lastMetrics.ImmigrationIntents == 2 && lastMetrics.ImmigrationRejected >= 1,
+            "the A-to-B and B-to-C intents are both formed before final joint-state revalidation"
+            + " (intents=" + lastMetrics.ImmigrationIntents + ", rejected=" + lastMetrics.ImmigrationRejected
+            + ", flows=" + string.Join(",", flows.Select(m => m.SourceCamp + ">" + m.DestinationCamp
+                + ":M=" + m.Migrants
+                + ":I=" + m.IncumbentUtilityChange.ToString("G6")
+                + ":S=" + m.SourceUtilityChange.ToString("G6")
+                + ":C=" + m.ForecastDestinationClothing.ToString("G6")
+                + ":Q=" + m.ForecastDestinationQoL.ToString("G6"))) + ")");
+        Check(!flows.Any(m => m.SourceCamp == a.Id) && flows.Count == 1
+            && flows[0].SourceCamp == b.Id && flows[0].DestinationCamp == c.Id,
+            "B's simultaneous specialist departure makes A-to-B unsafe, so only B-to-C commits (flows="
+            + string.Join(",", flows.Select(m => m.SourceCamp + ">" + m.DestinationCamp)) + ")");
+        Check(a.Population == beforeA && b.Population < beforeB && c.Population > beforeC,
+            "rejected arrivals stay at A while B's original residents alone move to C");
+        Check(lastMetrics.SocialJointBatches == 2 && lastMetrics.SocialJointFlowEvaluations == 3,
+            "a two-flow rejection cascade performs one initial batch and one incident-flow retry");
+        Check(lastMetrics.SocialJointDependencyVisits == 1
+            && lastMetrics.SocialJointEndpointBuilds <= 9,
+            "cascade invalidation visits only the surviving adjacent dependency and reuses unaffected endpoints");
+        Check(flows.All(m => m.MoverUtilityChange + 1e-12 >= chain.Config.ImmigrationDeadband
+            && m.AggregateWelfareChange >= -1e-12
+            && m.SourceUtilityChange + chain.Config.FissionDaughterMargin >= -1e-12
+            && m.IncumbentUtilityChange + chain.Config.FissionDaughterMargin >= -1e-12),
+            "every committed flow satisfies mover, aggregate, source and incumbent gates in the final simultaneous state");
+        var cache = new SocialRelocationForecastCache(chain, chain.Camps);
+        var committedSource = cache.Baseline(b); var committedDestination = cache.Baseline(c); var report = flows[0];
+        Near(report.ForecastSourceQoL, committedSource.QoL,
+            "the committed report's source forecast equals the actual post-Close source state");
+        Near(report.ForecastDestinationQoL, committedDestination.QoL,
+            "the committed report's destination forecast equals the actual post-Close destination state");
+        Near(report.ForecastDestinationClothing, committedDestination.ClothingCoverage,
+            "the committed report carries final-state destination protection rather than a stale sequential estimate");
+    }
+
+    private static void JointScaling()
+    {
+        void Provision(WorldState w, double[] water)
+        {
+            w.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+            w.Config.Neolithic.CohesionBandScale = 2000;
+            w.Config.Neolithic.CohesionHousingGain = 0;
+            w.Config.FissionDaughterMargin = 1;
+            for (int i = 0; i < w.Camps.Count; i++)
+            {
+                var camp = w.Camps[i]; MakeNomadic(camp); camp.Population = 100;
+                camp.WaterNeedsMetRatio = water[i]; camp.RudimentaryExpectation = .5;
+                camp.PlantFood = 1e9; camp.AnimalFood = camp.AquaticFood = 0;
+                camp.Inventory.Cloth = camp.Inventory.LightHousingUnits = 1e9;
+            }
+        }
+
+        // A sparse three-edge chain exercises camps that receive and emit in the
+        // same Close pass. Only the next camp is remembered at distance four.
+        var chain = WorldAt(4, (w, i) => w.Map.At(2 + i * 4, 8));
+        Check(Enumerable.Range(0, 3).All(i => chain.Map.Distance(chain.Camps[i].Tile,
+            chain.Camps[i + 1].Tile) == 4), "chain scaling fixture has three local distance-four edges");
+        Provision(chain, new[] { .05, .35, .65, 1.0 });
+        for (int i = 0; i < 3; i++) Remember(chain, chain.Camps[i], chain.Camps[i + 1]);
+        Pass(chain);
+        Check(lastRecord.Migrations.Count == 3 && lastMetrics.SocialJointBatches == 1
+            && lastMetrics.SocialJointFlowEvaluations == 3,
+            "an accepted three-flow chain is revalidated once per flow");
+        Check(lastMetrics.SocialJointEndpointBuilds <= 10
+            && lastMetrics.SocialJointOpportunityMatches == 3,
+            "chain endpoint and opportunity work is linear in its three local contacts");
+
+        // Eight sources share one receiver. Marginal X0 forecasts subtract one
+        // aggregate cohort instead of rescanning the other seven arrivals.
+        const int sources = 8;
+        var fanIn = WorldAt(sources + 1, (w, i) =>
+        {
+            int center = w.Map.At(12, 8);
+            return i == sources ? center : Ring(w, center, 2, i);
+        });
+        Provision(fanIn, Enumerable.Range(0, sources).Select(_ => .05).Concat(new[] { 1.0 }).ToArray());
+        Pass(fanIn);
+        Check(lastRecord.Migrations.Count == sources && lastMetrics.SocialJointBatches == 1
+            && lastMetrics.SocialJointFlowEvaluations == sources,
+            "eight accepted fan-in flows receive one joint evaluation each");
+        Check(lastMetrics.SocialJointEndpointBuilds <= 3 * sources + 1
+            && lastMetrics.SocialJointOpportunityMatches == sources
+            && lastMetrics.SocialJointDependencyVisits == 0,
+            "fan-in endpoint builds are linear (two source endpoints, one destination marginal, and one shared final per flow)");
+    }
+
     private static void Conservation()
     {
         var w = WorldAt(4, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2, i - 1)); var s = w.Camps[0];
+        w.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        w.Config.Neolithic.CohesionBandScale = 2000;
         foreach (var c in w.Camps) { MakeNomadic(c); c.Workforce.Assign(WorkforceRoles.Herder, 7, c.Population); }
         s.Population = 300; s.Workforce.Assign(WorkforceRoles.Farmer, 40, 300); s.PlantFood = 9000.5; s.AnimalFood = 2345.25; s.AquaticFood = 777.125; s.Inventory.FishingTools = 88.25;
         s.FoodNeedsMetRatio = .3; w.Camps[1].FoodNeedsMetRatio = 1; w.Camps[2].FoodNeedsMetRatio = .3; w.Camps[3].FoodNeedsMetRatio = .3;
@@ -419,7 +752,8 @@ internal static class ImmigrationChecks
         Check(f0 != null && f0.Migrants > 0, "fixture: a flow happens");
         int m = f0.Migrants; var d = w.Camps.Single(c => c.Id == f0.DestinationCamp);
         var flows = lastRecord.Migrations;
-        Check(flows.Count >= 2 && w.Camps.Sum(c => c.Population) == people, "people are conserved exactly over several simultaneous flows");
+        Check(flows.Count >= 1 && w.Camps.Sum(c => c.Population) == people,
+            "people are conserved exactly over committed simultaneous flows (" + flows.Count + ")");
         foreach (var c in w.Camps)
         {
             int outP = flows.Where(x => x.SourceCamp == c.Id).Sum(x => x.Migrants), inP = flows.Where(x => x.DestinationCamp == c.Id).Sum(x => x.Migrants);
@@ -435,16 +769,67 @@ internal static class ImmigrationChecks
         int fishingToolsIndex = Array.FindIndex(inv, field => field.Name == nameof(CampInventory.FishingTools));
         Check(fishingToolsIndex >= 0 && s.Inventory.FishingTools == 88.25 && w.Camps.Where(c => c.Id != s.Id).All(c => c.Inventory.FishingTools == snapshot[c.Id].Inv[fishingToolsIndex]), "immigration excludes Fishing Tools from both source and destination inventories");
         Check(herd.Animals == 50 && herd.DomesticCamp == s.Id && w.Herds.Count == 1, "no herds move");
-        Check(w.Camps.All(c => c.GrowthRemainder == snapshot[c.Id].GrowthRemainder && c.DeathRemainder == snapshot[c.Id].DeathRemainder), "fractional demographic progress stays with its camp");
+        Near(w.Camps.Sum(c => c.GrowthRemainder), snapshot.Values.Sum(x => x.GrowthRemainder),
+            "fractional gross-birth progress moves with people and is conserved globally");
+        Near(w.Camps.Sum(c => c.DeathRemainder), snapshot.Values.Sum(x => x.DeathRemainder),
+            "fractional gross-death progress moves with people and is conserved globally");
         Check(w.Camps.All(c => c.Workforce.Assigned <= c.Population && c.Workforce.Assignments.All(a => a.Population >= 0)), "workforce ledgers stay within residents");
         int rolesBefore = snapshot[s.Id].Roles.Values.Sum();
         Check(s.Workforce.Assigned < rolesBefore && s.Workforce.Assigned >= rolesBefore - m && s.Workforce.Assignments.Single(a => a.Role == WorkforceRoles.Farmer).Population < 40, "emigrants leave the source's roles in proportion");
-        Check(w.Camps.Where(c => flows.All(x => x.SourceCamp != c.Id)).All(c => c.Workforce.Assigned == snapshot[c.Id].Roles.Values.Sum()), "arrivals join a pure destination as gatherers, leaving its roles untouched");
+        var beforeRoles = snapshot.Values.SelectMany(x => x.Roles).GroupBy(x => x.Key)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Value));
+        var afterRoles = w.Camps.SelectMany(c => c.Workforce.Assignments).GroupBy(x => x.Role)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Population));
+        Check(beforeRoles.All(pair => afterRoles.TryGetValue(pair.Key, out int count) && count == pair.Value),
+            "assigned workforce composition moves with migrants and is conserved globally");
         Check(w.Societies.Count == 4 && flows.All(x => x.SourceSociety != x.DestinationSociety), "migrants join the destination's Society; no Society is created");
         var report = lastRecord.Demographics.Single(x => x.Camp == s.Id);
         Check(report.Emigrated == m && report.Explanation.Contains(m + " then moved"), "the demographic explanation carries the departure");
         var dreport = lastRecord.Demographics.Single(x => x.Camp == d.Id); int arrivals = flows.Where(x => x.DestinationCamp == d.Id).Sum(x => x.Migrants);
         Check(dreport.Immigrated == arrivals && dreport.Explanation.Contains(arrivals + " more arrived"), "the demographic explanation carries the arrivals");
+    }
+
+    private static void LegacyWorkforceCompatibility()
+    {
+        WorldState Fixture()
+        {
+            var w = WorldAt(2, (x, i) => i == 0 ? x.Map.At(10, 8) : Ring(x, x.Map.At(10, 8), 2));
+            var source = w.Camps[0]; var destination = w.Camps[1];
+            source.Population = 300; source.Workforce.Assign(WorkforceRoles.Farmer, 40, source.Population);
+            source.Workforce.Assign(WorkforceRoles.Herder, 20, source.Population);
+            destination.Workforce.Assign(WorkforceRoles.Builder, 7, destination.Population);
+            Tune(w, source, destination, .3); return w;
+        }
+        string Roles(PopulationLedger ledger) => string.Join(";", ledger.Assignments
+            .OrderBy(a => a.Role, StringComparer.Ordinal).Select(a => a.Role + ":" + a.Population));
+
+        var w = Fixture(); var source = w.Camps[0]; var destination = w.Camps[1];
+        var expectedSource = WorkforceTransfer.Copy(source.Workforce);
+        string destinationBefore = Roles(destination.Workforce);
+        double sourceGrowth = source.GrowthRemainder, sourceDeath = source.DeathRemainder;
+        double destinationGrowth = destination.GrowthRemainder, destinationDeath = destination.DeathRemainder;
+        Pass(w); var flow = Flow(lastRecord, source.Id);
+        Check(flow != null && flow.Migrants > 0, "legacy workforce compatibility fixture moves residents");
+        expectedSource.ApplyCasualties(flow.SourceBefore, flow.Migrants);
+        Check(Roles(source.Workforce) == Roles(expectedSource),
+            "LegacyQoLNetGrowth immigration retains the exact ApplyCasualties departure ledger");
+        Check(Roles(destination.Workforce) == destinationBefore,
+            "LegacyQoLNetGrowth arrivals remain unassigned instead of importing the new role-transfer law");
+        Check(source.GrowthRemainder == sourceGrowth && source.DeathRemainder == sourceDeath
+            && destination.GrowthRemainder == destinationGrowth && destination.DeathRemainder == destinationDeath,
+            "legacy immigration leaves per-camp demographic remainders unchanged");
+
+        var uninterrupted = Fixture(); var loaded = SaveCodec.Load(SaveCodec.Save(uninterrupted));
+        Pass(uninterrupted); string expected = SaveCodec.Fingerprint(uninterrupted);
+        Pass(loaded);
+        Check(SaveCodec.Fingerprint(loaded) == expected,
+            "a saved LegacyQoLNetGrowth boundary continues through the exact legacy immigration path");
+
+        var resolverWorld = Fixture(); resolverWorld.Config.FissionEnabled = false;
+        var resolver = new TurnResolver(); resolver.Resolve(resolverWorld, new Dictionary<int, List<Order>>());
+        Check(resolver.LastMetrics.SocialForecasts == 0 && resolver.LastMetrics.SocialForecastCacheBuilds == 0
+            && resolver.LastMetrics.SocialForecastCacheHits == 0,
+            "legacy turn resolution never constructs or evaluates the physical social-forecast cache");
     }
 
     // The previous rule (WP10b): dU from present-state QoL, sized at its ramp, accepted while the destination's QoL at the larger headcount with food held fixed stays
@@ -525,6 +910,9 @@ internal static class ImmigrationChecks
         Near(Need(t), 80, "the per-head requirement of a turn is 80 at the default duration");
         s.PlantFood = 0; Near(Immigration.CarriedPerPerson(t.Config, s), 0, "a dry source carries nothing");
         Check(Immigration.MaxGroup(t.Config, 100) == 10 && Immigration.MaxGroup(t.Config, 14) == 1 && Immigration.MaxGroup(t.Config, 400) == 40, "the largest group is ten percent of residents, keeping the floor");
+        Check(Immigration.CandidateSizes(t.Config, 39).Length == 0
+            && Immigration.CandidateSizes(t.Config, 40).SequenceEqual(new[] { 4 }),
+            "the four-person minimum and ten-percent cap make 40 residents the effective default source minimum");
         // Closed form of the forward utility with inflow and carried food.
         s.FoodNeedsMetRatio = .6; s.WaterNeedsMetRatio = .9; d.FoodNeedsMetRatio = .7; d.WaterNeedsMetRatio = .8; s.PlantFood = 1.5 * Need(t) * 100;
         var sm = Fission.QoLModelOf(t, s); var dm = Fission.QoLModelOf(t, d); double per = Immigration.CarriedPerPerson(t.Config, s);

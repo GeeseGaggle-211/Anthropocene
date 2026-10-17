@@ -579,9 +579,8 @@ namespace Anthropocene.Simulation
                 forecast[MaterialId.Wood] += amount * recipe.Wood;
                 if (recipe.ConstructionMaterial > 0) housingForecast += amount * recipe.ConstructionMaterial;
             }
-            double Shortfall(MaterialId material)
+            double Shortfall(MaterialId material, double horizon)
             {
-                double horizon = w.Config.Neolithic.MaterialReserveMultiplier(years);
                 double direct = Math.Max(0, forecast[material] * horizon - Inventory(c, material));
                 if (material == MaterialId.Stone) return direct;
                 double share = material == MaterialId.Wood ? housing.WoodShare : housing.ClayShare;
@@ -589,9 +588,19 @@ namespace Anthropocene.Simulation
                 return Math.Max(0, total - Inventory(c, material));
             }
             var localSources = KnownSources(w, c, days);
+            var remainingLabor = ExtractionRoles.ToDictionary(role => role,
+                role => role == WorkforceRoles.Gatherer
+                    ? generalistIntervals : CultivationEconomy.Workers(c, role) * intervals);
+            // Current admitted production must receive its raw inputs before a
+            // configured material reserve is filled. Both passes use the same
+            // finite sources and labor; the second pass can spend only what the
+            // first leaves. This is commitment priority, not free extraction.
+            double reserveHorizon = w.Config.Neolithic.MaterialReserveMultiplier(years);
+            foreach (double horizon in reserveHorizon > 1 + 1e-12
+                ? new[] { 1d, reserveHorizon } : new[] { 1d })
             foreach (string role in ExtractionRoles)
             {
-                double labor = role == WorkforceRoles.Gatherer ? generalistIntervals : CultivationEconomy.Workers(c, role) * intervals;
+                double labor = remainingLabor[role];
                 if (labor <= 1e-10) continue;
                 var roleSources = localSources.Where(s => role == WorkforceRoles.Gatherer || role == Specialist(s.Material)).ToArray();
                 if (roleSources.Length == 0) continue;
@@ -609,7 +618,7 @@ namespace Anthropocene.Simulation
                     {
                         var s = roleSources[i];
                         if (s.Available <= 1e-10 || visited.Contains((s.Id, s.Tile))) continue;
-                        double demand = Shortfall(s.Material);
+                        double demand = Shortfall(s.Material, horizon);
                         double priority = s.Material == MaterialId.Stone ? c.StonePriority : s.Material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
                         double score = demand * priority;
                         if (score <= 1e-10) continue;
@@ -641,6 +650,7 @@ namespace Anthropocene.Simulation
                                 localSources[i].Available = Math.Max(0, state.Remaining * localSources[i].Share);
                     labor -= spent;
                 }
+                remainingLabor[role] = labor;
             }
             return housing;
         }
@@ -655,13 +665,20 @@ namespace Anthropocene.Simulation
         public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand = false, double residentPopulation = -1, bool postAgriculturalResolution = false)
             => Forecast(w, c, recipes, intervals, years, equipment, includePlantDemand, residentPopulation, postAgriculturalResolution, postAgriculturalResolution);
 
-        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1, KnownMaterialSource[] knownSources = null, ProductionOrder order = null)
+        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1, KnownMaterialSource[] knownSources = null, ProductionOrder order = null, double stoneBudget = -1, double clayBudget = -1, double woodBudget = -1)
         {
             System.Threading.Interlocked.Increment(ref TurnDiagnostics.For(w).ForecastCalls);
             var planned = recipes.ToDictionary(r => r.Good, r => 0.0);
             var tools = new ToolCoverageBudget(w, c, intervals, equipment);
             double plant = plantFoodBudget >= 0 ? plantFoodBudget : includePlantDemand ? double.PositiveInfinity : c.PlantFood;
             double animalFood = animalFoodBudget >= 0 ? animalFoodBudget : includePlantDemand ? double.PositiveInfinity : c.AnimalFood;
+            // Optional pure-forecast closure. Authoritative production obtains
+            // these inputs in Gather before crafting; social counterfactuals pass
+            // finite opening-stock-plus-attainable-extraction budgets so recipes
+            // cannot manufacture Stone, Clay or Wood.
+            double stone = stoneBudget >= 0 ? stoneBudget : double.PositiveInfinity;
+            double clay = clayBudget >= 0 ? clayBudget : double.PositiveInfinity;
+            double wood = woodBudget >= 0 ? woodBudget : double.PositiveInfinity;
             // Imports arrive after production and are never inputs; goods made for export (Docs/Trade.md: output
             // first fills the made-to-order part owed) are held back from inputs.
             double animalFabric = Math.Max(0, c.Inventory.AnimalFabric) - c.TradeImport(CraftGood.AnimalFabric);
@@ -682,6 +699,19 @@ namespace Anthropocene.Simulation
                 if (usefulDemand.TryGetValue(good, out double value)) return value;
                 if (good == CraftGood.HandTools || good == CraftGood.Tools)
                 {
+                    // DemandControl has already priced the complete granted
+                    // bundles, including the exact same-turn tool output needed
+                    // beyond opening coverage.  Re-deriving that input here from
+                    // opening food creates a circular underestimate: gathered
+                    // feedstock is available to the forecasted Cloth work, but
+                    // ToolReplacementDemands cannot see it and therefore asks for
+                    // only enough tools to process opening Plant Food.  The
+                    // allocated ceiling is the authoritative internal input in a
+                    // ceiling-bearing order; exports retain their separate
+                    // claim-first pass below.  Legacy/Value orders keep the
+                    // existing physical replacement-demand calculation.
+                    if (order != null && order.HasCeilings)
+                        return usefulDemand[good] = Math.Max(0, order.Ceiling(good));
                     var tools = NeolithicProduction.ToolReplacementDemands(w, c, years, residentPopulation < 0 ? c.Population : residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order);
                     usefulDemand[CraftGood.HandTools] = tools.HandTools; usefulDemand[CraftGood.Tools] = tools.Tools;
                     return good == CraftGood.HandTools ? tools.HandTools : tools.Tools;
@@ -740,11 +770,18 @@ namespace Anthropocene.Simulation
                 double amount = Math.Min(wanted, recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
                 // Housing Material and its assembly draw on one Builder pool.
                 if (recipe.Good == CraftGood.HousingMaterial)
-                    amount = NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor, exportOnly ? Outstanding(recipe.Good) : Math.Max(0, useful - planned[recipe.Good]), housingMaterial - HeldForExport(CraftGood.HousingMaterial), Outstanding(CraftGood.HousingMaterial));
+                    amount = Math.Min(amount, NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor,
+                        exportOnly ? Outstanding(recipe.Good) : Math.Max(0, useful - planned[recipe.Good]),
+                        housingMaterial - HeldForExport(CraftGood.HousingMaterial), Outstanding(CraftGood.HousingMaterial)));
                 if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, housingMaterial - HeldForExport(CraftGood.HousingMaterial)) / recipe.HousingMaterial);
                 if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                 if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
                 if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, animalFabric - HeldForExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
+                if (recipe.Stone > 0) amount = Math.Min(amount, stone / recipe.Stone);
+                if (recipe.Clay > 0) amount = Math.Min(amount, clay / recipe.Clay);
+                if (recipe.Wood > 0) amount = Math.Min(amount, wood / recipe.Wood);
+                if (recipe.ConstructionMaterial > 0)
+                    amount = Math.Min(amount, (wood + clay) / recipe.ConstructionMaterial);
                 if (storage != null && amount > 0)
                     amount = storage.Limit(stored, storage.Capacity(c.Food, storagePots + planned[CraftGood.Pots]), recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
                 if (amount <= 0) return;
@@ -753,6 +790,13 @@ namespace Anthropocene.Simulation
                 laborByRole[role] = labor;
                 double forExport = Math.Min(amount, Outstanding(recipe.Good));
                 planned[recipe.Good] += amount; plant -= amount * recipe.PlantFood; animalFood -= amount * recipe.AnimalFood;
+                stone -= amount * recipe.Stone; clay -= amount * recipe.Clay; wood -= amount * recipe.Wood;
+                if (recipe.ConstructionMaterial > 0)
+                {
+                    double required = amount * recipe.ConstructionMaterial;
+                    double fromWood = Math.Min(wood, required);
+                    wood -= fromWood; clay -= required - fromWood;
+                }
                 tools.Credit(recipe.Good, amount - forExport);
                 if (recipe.Good == CraftGood.AnimalFabric) animalFabric += amount;
                 animalFabric -= amount * recipe.AnimalFabric;
@@ -778,7 +822,7 @@ namespace Anthropocene.Simulation
             }
             return planned;
         }
-        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, TurnHorizon horizon, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1, KnownMaterialSource[] knownSources = null, ProductionOrder order = null)
-            => Forecast(w, c, recipes, horizon.ReferenceIntervals, horizon.Years, equipment, includePlantDemand, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, plantFoodBudget, animalFoodBudget, knownSources, order);
+        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, TurnHorizon horizon, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1, KnownMaterialSource[] knownSources = null, ProductionOrder order = null, double stoneBudget = -1, double clayBudget = -1, double woodBudget = -1)
+            => Forecast(w, c, recipes, horizon.ReferenceIntervals, horizon.Years, equipment, includePlantDemand, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, plantFoodBudget, animalFoodBudget, knownSources, order, stoneBudget, clayBudget, woodBudget);
     }
 }

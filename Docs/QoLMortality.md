@@ -1,6 +1,10 @@
 # QoL-dependent mortality
 
-Authoritative record of the rule that couples a camp's quality of life (QoL) to its growth ceiling, its calibration sweep and its limits.
+Legacy compatibility record. This rule is authoritative only when
+`DemographicModel == LegacyQoLNetGrowth`; old saves with no model selector load
+that path unchanged. New worlds use [DemographyQoLContract-v1.1.md](DemographyQoLContract-v1.1.md),
+where QoL remains welfare but never determines births or deaths. The historical
+calibration and results below are retained for migration and regression evidence.
 
 ## Engineering doctrine header
 

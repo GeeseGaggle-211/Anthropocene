@@ -25,6 +25,9 @@ namespace Anthropocene.Simulation
         // Value-rule production order per automated camp (WP3b). Transient: never saved,
         // observed or fingerprinted; absent for manual camps and under the Uniform rule.
         internal readonly Dictionary<int, ProductionOrder> ProductionOrders = new Dictionary<int, ProductionOrder>();
+        // The exact DemandControl allocation used to compile each automatic intent.
+        // Transient diagnostic data only: never saved, observed, or read by resolution.
+        internal readonly Dictionary<int, DemandController.Allocation> DemandAllocations = new Dictionary<int, DemandController.Allocation>();
         internal CampPlacement Placement;
         // The same-turn trade handshake (WP8): agreed from the committed boundary,
         // settled at the opening of the economy phase. Transient: never saved.
@@ -50,6 +53,9 @@ namespace Anthropocene.Simulation
         public double PlantFeedstock, PlantFeedstockGap, AnimalFeedstock, AnimalFeedstockGap;
         // The part of the feedstock above that covers this turn's clothing requirement (paid ahead of the reserve refill).
         public double PlantClothingFeedstock, AnimalClothingFeedstock;
+        // Diagnostic prototype only (DemandController.KernelSplitDiagnostic): the
+        // Elder committed this clothing feedstock ahead of meals. False otherwise.
+        internal bool ProtectedClothing;
         internal Dictionary<CraftGood, double> Production;
         internal HousingMaterialPlan Housing;
         // The camp's Value-rule production order, fixed for the turn (WP3b); null otherwise.
@@ -151,6 +157,7 @@ namespace Anthropocene.Simulation
         public Order Order;
         public ProductionOrder Production;
         public FishingAccessPlan FishingAccess;
+        public DemandController.Allocation DemandAllocation;
     }
 
     // An automatic economic intent with the Value-rule production order that
@@ -160,6 +167,7 @@ namespace Anthropocene.Simulation
         public Order Order;
         public ProductionOrder Production;
         public FishingAccessPlan FishingAccess;
+        public DemandController.Allocation DemandAllocation;
     }
 
     // Planning done while the human player thinks. Never saved, never part of
@@ -256,7 +264,8 @@ namespace Anthropocene.Simulation
                 {
                     Interlocked.Increment(ref diagnostics.DraftIntentsReused);
                     return new AutomaticPlan { Order = cached.Order.Copy(), Production = cached.Production,
-                        FishingAccess = fishingAccess.TryGetValue(camp.Id, out var cachedAccess) ? cachedAccess : null };
+                        FishingAccess = fishingAccess.TryGetValue(camp.Id, out var cachedAccess) ? cachedAccess : null,
+                        DemandAllocation = cached.DemandAllocation };
                 }
                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
                 fishingAccess.TryGetValue(camp.Id, out var access);
@@ -267,6 +276,7 @@ namespace Anthropocene.Simulation
             {
                 var camp = automated[i]; var order = automaticOrders[i].Order;
                 if (automaticOrders[i].Production != null) prepared.ProductionOrders[camp.Id] = automaticOrders[i].Production;
+                if (automaticOrders[i].DemandAllocation != null) prepared.DemandAllocations[camp.Id] = automaticOrders[i].DemandAllocation;
                 prepared.Orders.Add(order); prepared.AutomatedCamps.Add(camp.Id);
                 acceptedEconomy.Add(camp.Id, order);
                 prepared.OrderReceipts.Add(camp.Player + ":automation:" + order + ":accepted");
@@ -318,9 +328,10 @@ namespace Anthropocene.Simulation
             // automated intent can use the prior cohort as gatherers;
             // manual assignments remain the player's responsibility.
             ProductionOrder production = null;
+            DemandController.Allocation demandAllocation = null;
             EconomicIntent intent;
             using (PhaseProfile.Scope("Allocator")) intent = abandoning ? settings.Copy()
-                : EconomicAllocationStrategy.Plan(world, planningCamp, settings, fishingAccess, out production);
+                : EconomicAllocationStrategy.Plan(world, planningCamp, settings, fishingAccess, out production, out demandAllocation);
             if (abandoning)
             {
                 intent.Assignments.Clear();
@@ -337,7 +348,7 @@ namespace Anthropocene.Simulation
             string error = EconomicIntents.Validate(constraints, intent);
             if (error != null) throw new InvalidOperationException("Invalid automatic economic plan: " + error);
             return new AutomaticPlan { Order = new Order(OrderKind.Economy, camp.Id) { Economy = intent },
-                Production = production, FishingAccess = fishingAccess };
+                Production = production, FishingAccess = fishingAccess, DemandAllocation = ResolutionMetrics.CaptureDemandAllocations ? demandAllocation : null };
         }
 
         private static Dictionary<int, FishingAccessPlan> BuildFishingAccessPlans(WorldState world,
@@ -413,7 +424,7 @@ namespace Anthropocene.Simulation
                 fishingAccess.TryGetValue(camp.Id, out var access);
                 var plan = AutomaticIntent(world, camp, tile, abandon, index, trade, access);
                 return new DraftIntent { Camp = camp.Id, Tile = tile, Abandoning = abandon,
-                    Order = plan.Order, Production = plan.Production, FishingAccess = plan.FishingAccess };
+                    Order = plan.Order, Production = plan.Production, FishingAccess = plan.FishingAccess, DemandAllocation = plan.DemandAllocation };
             });
             intentsScope.Dispose();
             var draft = new PlanningDraft(world, excludedPlayer, ai) { Trade = trade };
@@ -481,6 +492,16 @@ namespace Anthropocene.Simulation
                 // substitute inventory above consumption, clothing and reserve.
                 var clothing = NeolithicProduction.ClothingNeedFeedstock(world.Config.Neolithic, residents, years,
                     planningCamp.Inventory.Cloth - planningCamp.TradeExport(CraftGood.Cloth), planningCamp.Inventory.AnimalFabric - planningCamp.TradeExport(CraftGood.AnimalFabric), needs.PlantFeedstock, needs.AnimalFeedstock);
+                if (order != null && order.ProtectedClothingUnits >= 0)
+                {
+                    // Diagnostic prototype: the Elder's committed clothing units
+                    // (already net of opening textiles), bounded by the forecast.
+                    double perCloth = world.Config.Neolithic.PlantFoodPerFabricUnit;
+                    double clothUnits = Math.Min(order.ProtectedClothingUnits, Math.Max(0, needs.Production[CraftGood.Cloth]));
+                    double fabricUnits = Math.Min(Math.Max(0, order.ProtectedClothingUnits - clothUnits), Math.Max(0, needs.AnimalFeedstock));
+                    clothing = new NeolithicProduction.ClothingFeedstock { Plant = clothUnits * perCloth, Animal = fabricUnits };
+                    needs.ProtectedClothing = true;
+                }
                 needs.PlantClothingFeedstock = clothing.Plant; needs.AnimalClothingFeedstock = clothing.Animal;
                 NeolithicProduction.FeedstockGaps(planningCamp.Food, planningCamp.PlantFood, planningCamp.AnimalFood, needs.ConsumptionRequired, needs.ReserveTarget,
                     needs.PlantFeedstock, needs.AnimalFeedstock, clothing, out double plantGap, out double animalGap);

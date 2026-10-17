@@ -10,7 +10,7 @@ internal static class Milestone3Checks
     private static Dictionary<int, List<Order>> Idle() => new Dictionary<int, List<Order>>();
     internal static WorldState Flat(float capacity = 10000, float recovery = 1)
     {
-        var cfg = SimulationConfig.Small(1); cfg.Width = 24; cfg.Height = 16; cfg.ExperienceThreshold = 1000000;
+        var cfg = SimulationConfig.Small(1); cfg.DemographicModel = DemographicModel.LegacyQoLNetGrowth; cfg.Width = 24; cfg.Height = 16; cfg.ExperienceThreshold = 1000000;
         var w = new WorldState { Config = cfg, Seed = 13, Tiles = new Tile[384], Generation = new GenerationReport() };
         for (int i = 0; i < w.Tiles.Length; i++)
         {

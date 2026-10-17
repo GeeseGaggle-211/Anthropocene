@@ -13,6 +13,12 @@ namespace Anthropocene.Simulation
     public enum Relief { Lowland, Hills, Highland, Mountain }
     public enum WaterKind { None, Freshwater, Saltwater }
     public enum FreshwaterSource { None, RainPool, Lake, River, Oasis }
+    public enum FissionSiteSelection
+    {
+        EcologicalSupport,
+        AcceptedRenewableFood,
+        AcceptedAggregateWelfare
+    }
 
     [Serializable]
     public sealed class SimulationConfig
@@ -46,7 +52,7 @@ namespace Anthropocene.Simulation
             // settling cost of a husbandry-primary camp keeps its default.
             SecondaryTechnologyThreshold = defaults.SecondaryTechnologyThreshold; TradePracticePerValue = 0; SettledHerdGrowthPenalty = defaults.SettledHerdGrowthPenalty;
             FissionEnabled = false; FissionGainThreshold = defaults.FissionGainThreshold; FissionGainDiscourage = defaults.FissionGainDiscourage; FissionGainEncourage = defaults.FissionGainEncourage;
-            FissionSearchFraction = defaults.FissionSearchFraction; FissionDaughterMargin = defaults.FissionDaughterMargin; FissionHousingRelief = defaults.FissionHousingRelief; FissionDaughterBuilderShare = defaults.FissionDaughterBuilderShare; FissionRadius = defaults.FissionRadius; FissionMinimumDaughter = defaults.FissionMinimumDaughter;
+            FissionSearchFraction = defaults.FissionSearchFraction; FissionDaughterMargin = defaults.FissionDaughterMargin; FissionHousingRelief = defaults.FissionHousingRelief; FissionDaughterBuilderShare = defaults.FissionDaughterBuilderShare; FissionRadius = defaults.FissionRadius; FissionMinimumDaughter = defaults.FissionMinimumDaughter; FissionDaughterCooldownTurns = defaults.FissionDaughterCooldownTurns; FissionSiteSelection = defaults.FissionSiteSelection;
             ImmigrationEnabled = false; ImmigrationRadius = defaults.ImmigrationRadius; ImmigrationQualityWeight = defaults.ImmigrationQualityWeight; ImmigrationDistanceCost = defaults.ImmigrationDistanceCost;
             ImmigrationAttachmentCost = defaults.ImmigrationAttachmentCost; ImmigrationToSedentaryCost = defaults.ImmigrationToSedentaryCost; ImmigrationToNomadicCost = defaults.ImmigrationToNomadicCost;
             ImmigrationDeadband = defaults.ImmigrationDeadband; ImmigrationMaxFraction = defaults.ImmigrationMaxFraction; ImmigrationMinimumGroup = defaults.ImmigrationMinimumGroup; ImmigrationSourceFloor = defaults.ImmigrationSourceFloor;
@@ -55,8 +61,17 @@ namespace Anthropocene.Simulation
             TradeFoodEnabled = defaults.TradeFoodEnabled; TradeFoodSafeOnly = defaults.TradeFoodSafeOnly; TradeExportLabourShare = defaults.TradeExportLabourShare;
             EconomicAllocation = EconomicAllocationStrategy.Legacy;
             GoodsStorageEnabled = false; GoodsBaseStoragePerResident = defaults.GoodsBaseStoragePerResident; GoodsStorageSpacePerUnit = defaults.GoodsStorageSpacePerUnit;
-            // Absent in older saves: QoL-dependent mortality is off so a loaded game continues with its original growth ceiling (Docs/QoLMortality.md).
+            // Absent in older saves: retain the exact legacy net-growth model. PhysicalMortalityV1 is selected only by a
+            // newly-created configuration or an explicit, recorded migration (Docs/DemographyQoLContract-v1.1.md).
+            DemographicModel = DemographicModel.LegacyQoLNetGrowth;
             QoLMortalityEnabled = false; BaseBirthRate = defaults.BaseBirthRate; QoLMortalityElasticity = defaults.QoLMortalityElasticity;
+            ExposureMortalityRate = defaults.ExposureMortalityRate; ExposureClothingReduction = defaults.ExposureClothingReduction; ExposureHousingReduction = defaults.ExposureHousingReduction;
+            CrowdingMortalityRateAt1000 = defaults.CrowdingMortalityRateAt1000; CrowdingExponent = defaults.CrowdingExponent;
+            DiseaseMortalityRateAt1000 = defaults.DiseaseMortalityRateAt1000; DiseaseExponent = defaults.DiseaseExponent;
+            DemographicLogBandWidth = defaults.DemographicLogBandWidth; DemographicRootTolerance = defaults.DemographicRootTolerance;
+            DemographicServiceTolerance = defaults.DemographicServiceTolerance; DemographicCauseCorrectionTolerance = defaults.DemographicCauseCorrectionTolerance;
+            DemographicMaxRootIterations = defaults.DemographicMaxRootIterations; DemographicMaxBands = defaults.DemographicMaxBands; DemographicMaxServiceIterations = defaults.DemographicMaxServiceIterations;
+            SurplusFundedBirths = false; ElderKernelSplit = false; ElderMixedRoutes = false; ElderSplitObjective = defaults.ElderSplitObjective; ElderSplitLexTolerance = defaults.ElderSplitLexTolerance;
             // Absent in older saves: the herd-labour coupling is off, so a loaded game keeps its unconditional herder reservation and never slaughters (Docs/HerdLabour.md).
             HerdLabourEnabled = false; SharedCropHerdAllocationEnabled = false; MinimumHerdHerders = defaults.MinimumHerdHerders;
             // Resident Fishing and the aquatic-pressure correction are separate opt-in
@@ -121,6 +136,13 @@ namespace Anthropocene.Simulation
         // policy because the policy also sets the daughter fraction and so the gain a split delivers.
         [System.Runtime.Serialization.OptionalField] public double FissionGainThreshold = .113, FissionGainDiscourage = .080, FissionGainEncourage = .0955, FissionSearchFraction = .8, FissionDaughterMargin = .05, FissionHousingRelief = 0;
         [System.Runtime.Serialization.OptionalField] public int FissionRadius = 4, FissionMinimumDaughter = 12;
+        // Additional complete turns after founding during which a physical-demography daughter cannot fission.
+        // A value of one means the daughter is first eligible at the close of her second economic/demographic turn.
+        [System.Runtime.Serialization.OptionalField] public int FissionDaughterCooldownTurns = 1;
+        // Experimental cache-miss site policy. The shipped control keeps the
+        // historical ecological ordering; alternatives compare only candidates
+        // that pass the unchanged shared relocation evaluator.
+        [System.Runtime.Serialization.OptionalField] public FissionSiteSelection FissionSiteSelection = FissionSiteSelection.EcologicalSupport;
         // Share of a daughter's people the estimate counts as Builders for first-turn shelter (Fission.DaughterShelter); 0 credits carried shelter only. Absent in older saves: default.
         [System.Runtime.Serialization.OptionalField] public double FissionDaughterBuilderShare = .05;
         // Immigration between known settlements (WP10b, QoLFissionTradeDesign 4). Saves that predate these fields load with immigration disabled.
@@ -151,10 +173,30 @@ namespace Anthropocene.Simulation
         // load Legacy.
         [System.Runtime.Serialization.OptionalField] public string EconomicAllocation = EconomicAllocationStrategy.DemandControl;
         [System.Runtime.Serialization.OptionalField] public double GoodsBaseStoragePerResident = 2, GoodsStorageSpacePerUnit = 20;
-        // QoL-dependent mortality (Docs/QoLMortality.md): births stay at BaseBirthRate (times the fertility hook); deaths are d0 Q^-a with d0 = BaseBirthRate - AnnualHumanGrowthRate.
-        // The net annual growth ceiling is max(0, b0 F - d(Q)); food still limits growth below it. Saves that predate these fields load with QoLMortalityEnabled = false.
-        [System.Runtime.Serialization.OptionalField] public bool QoLMortalityEnabled = true;
+        // Versioned human demography. New worlds use the v1.1 physical model. Saves without this field load the legacy
+        // net-growth model in InitializeNeolithic; an explicit migration must record its provenance on WorldState.
+        [System.Runtime.Serialization.OptionalField] public DemographicModel DemographicModel = DemographicModel.PhysicalMortalityV1;
+        // Legacy QoL-dependent mortality (Docs/QoLMortality.md), retained only for legacy saves and controlled comparisons.
+        [System.Runtime.Serialization.OptionalField] public bool QoLMortalityEnabled = false;
         [System.Runtime.Serialization.OptionalField] public double BaseBirthRate = .045, QoLMortalityElasticity = 1;
+        // PhysicalMortalityV1 annual continuous hazards. These values are the selected v1.1 coefficient set; composite
+        // QoL, expectation and social cohesion are deliberately absent. Clothing and housing reductions are additive.
+        [System.Runtime.Serialization.OptionalField] public double ExposureMortalityRate = .03255509888111371;
+        [System.Runtime.Serialization.OptionalField] public double ExposureClothingReduction = .45, ExposureHousingReduction = .45;
+        [System.Runtime.Serialization.OptionalField] public double CrowdingMortalityRateAt1000 = .03130836758391647, CrowdingExponent = .00001;
+        [System.Runtime.Serialization.OptionalField] public double DiseaseMortalityRateAt1000 = .010436122527972156, DiseaseExponent = .000027161883008306556;
+        // Deterministic equilibrium-rooted log-population integration and finite-service closure controls.
+        [System.Runtime.Serialization.OptionalField] public double DemographicLogBandWidth = .05, DemographicRootTolerance = 1e-12;
+        [System.Runtime.Serialization.OptionalField] public double DemographicServiceTolerance = 1e-10, DemographicCauseCorrectionTolerance = .002;
+        [System.Runtime.Serialization.OptionalField] public int DemographicMaxRootIterations = 128, DemographicMaxBands = 8192, DemographicMaxServiceIterations = 64;
+        // Surplus-funded births (DemographyQoL v1.2, Docs/ClothingCoverageAndSurplusBirths.md): births occur at
+        // BaseBirthRate * g, g the largest fraction whose newborns the food left after the resident cohort's meals feeds.
+        // The Elder's kernel-scored clothing/shelter split commits a Protected class scored with the same kernel;
+        // objective 2 is lexicographic (person-years within ElderSplitLexTolerance of the best, then QoL). Mixed routes
+        // let a farming and herding camp also score the other clothing and shelter route. Absent in older saves: off.
+        [System.Runtime.Serialization.OptionalField] public bool SurplusFundedBirths = true, ElderKernelSplit = true, ElderMixedRoutes = true;
+        [System.Runtime.Serialization.OptionalField] public int ElderSplitObjective = 2;
+        [System.Runtime.Serialization.OptionalField] public double ElderSplitLexTolerance = .05;
         // Herd-labour coupling (Docs/HerdLabour.md): the Value planner staffs herders on the labour-price rule instead of reserving them first, and animals above the
         // camp's HerdTarget are slaughtered after breeding (carcass food = SpeciesDefinition.FoodYield per animal). MinimumHerdHerders is the seed herd the planner always keeps managed.
         // Saves that predate these fields load with HerdLabourEnabled = false.
@@ -250,7 +292,7 @@ namespace Anthropocene.Simulation
             if (HinterlandReferencePopulation < 1 || HinterlandRingsPerTurn < 0 || HinterlandRingsPerTurn > 8 || HinterlandMaxRadius < VisionRadius || HinterlandMaxRadius > 8 || ExploredMemoryTurns < 1) throw new ArgumentException("Invalid hinterland or explored-memory configuration.");
             if (new[] { SecondaryTechnologyThreshold, TradePracticePerValue, SettledHerdGrowthPenalty }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || SecondaryTechnologyThreshold <= 0 || SettledHerdGrowthPenalty > 1)
                 throw new ArgumentException("Invalid secondary technology, trade practice or settling configuration.");
-            if (new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief, FissionDaughterBuilderShare }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionGainThreshold < 0 || FissionGainThreshold > 5 || FissionGainDiscourage < 0 || FissionGainDiscourage > 5 || FissionGainEncourage < 0 || FissionGainEncourage > 5 || FissionSearchFraction < 0 || FissionSearchFraction > 1 || FissionDaughterMargin < 0 || FissionDaughterMargin > 1 || FissionHousingRelief < 0 || FissionHousingRelief > 1 || FissionDaughterBuilderShare < 0 || FissionDaughterBuilderShare > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1)
+            if (new[] { FissionGainThreshold, FissionGainDiscourage, FissionGainEncourage, FissionSearchFraction, FissionDaughterMargin, FissionHousingRelief, FissionDaughterBuilderShare }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || FissionGainThreshold < 0 || FissionGainThreshold > 5 || FissionGainDiscourage < 0 || FissionGainDiscourage > 5 || FissionGainEncourage < 0 || FissionGainEncourage > 5 || FissionSearchFraction < 0 || FissionSearchFraction > 1 || FissionDaughterMargin < 0 || FissionDaughterMargin > 1 || FissionHousingRelief < 0 || FissionHousingRelief > 1 || FissionDaughterBuilderShare < 0 || FissionDaughterBuilderShare > 1 || FissionRadius < 1 || FissionRadius > 5 || FissionMinimumDaughter < 1 || FissionDaughterCooldownTurns < 0 || FissionDaughterCooldownTurns > 20 || !Enum.IsDefined(typeof(FissionSiteSelection), FissionSiteSelection))
                 throw new ArgumentException("Invalid fission configuration.");
             if (new[] { ImmigrationQualityWeight, ImmigrationDistanceCost, ImmigrationAttachmentCost, ImmigrationToSedentaryCost, ImmigrationToNomadicCost, ImmigrationDeadband, ImmigrationMaxFraction }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || ImmigrationQualityWeight < 0 || ImmigrationQualityWeight > 10 || ImmigrationDistanceCost < 0 || ImmigrationDistanceCost > 5 || ImmigrationAttachmentCost < 0 || ImmigrationAttachmentCost > 5 || ImmigrationToSedentaryCost < 0 || ImmigrationToSedentaryCost > 5 || ImmigrationToNomadicCost < 0 || ImmigrationToNomadicCost > 5 || ImmigrationDeadband <= 0 || ImmigrationDeadband > 5 || ImmigrationMaxFraction < 0 || ImmigrationMaxFraction > .5 || ImmigrationRadius < 1 || ImmigrationRadius > 5 || ImmigrationReturnCooldownTurns < 0 || ImmigrationReturnCooldownTurns > 20 || double.IsNaN(ImmigrationReturnPenalty) || double.IsInfinity(ImmigrationReturnPenalty) || ImmigrationReturnPenalty < 0 || ImmigrationReturnPenalty > 5 || ImmigrationMinimumGroup < 1 || ImmigrationSourceFloor < 1
                 || TradeRange < 1 || TradeRange > 20 || TradeRequisitionsPerCamp < 1 || TradeRequisitionsPerCamp > 10 || TradeListLength < 1 || TradeListLength > 10 || double.IsNaN(TradeMargin) || double.IsInfinity(TradeMargin) || TradeMargin < 0 || TradeMargin > 5 || double.IsNaN(TradeDistanceCostPerHex) || double.IsInfinity(TradeDistanceCostPerHex) || TradeDistanceCostPerHex < 0 || TradeDistanceCostPerHex > 1 || double.IsNaN(TradeExportLabourShare) || TradeExportLabourShare < 0 || TradeExportLabourShare > 1
@@ -258,8 +300,13 @@ namespace Anthropocene.Simulation
                 || double.IsNaN(GoodsStorageSpacePerUnit) || double.IsInfinity(GoodsStorageSpacePerUnit) || GoodsStorageSpacePerUnit <= 0
                 || !EconomicAllocationStrategy.IsKnown(EconomicAllocation))
                 throw new ArgumentException("Invalid immigration or trade configuration.");
-            if (double.IsNaN(BaseBirthRate) || double.IsInfinity(BaseBirthRate) || double.IsNaN(QoLMortalityElasticity) || double.IsInfinity(QoLMortalityElasticity) || BaseBirthRate <= 0 || BaseBirthRate > .2 || QoLMortalityElasticity <= 0 || QoLMortalityElasticity > 20 || QoLMortalityEnabled && BaseBirthRate <= AnnualHumanGrowthRate)
+            if (!Enum.IsDefined(typeof(DemographicModel), DemographicModel))
+                throw new ArgumentException("Unknown demographic model.");
+            if (double.IsNaN(BaseBirthRate) || double.IsInfinity(BaseBirthRate) || double.IsNaN(QoLMortalityElasticity) || double.IsInfinity(QoLMortalityElasticity) || BaseBirthRate <= 0 || BaseBirthRate > .2 || QoLMortalityElasticity <= 0 || QoLMortalityElasticity > 20 || DemographicModel == DemographicModel.LegacyQoLNetGrowth && QoLMortalityEnabled && BaseBirthRate <= AnnualHumanGrowthRate)
                 throw new ArgumentException("Invalid QoL mortality configuration: BaseBirthRate must exceed AnnualHumanGrowthRate and the elasticity must be positive.");
+            var demographicValues = new[] { ExposureMortalityRate, ExposureClothingReduction, ExposureHousingReduction, CrowdingMortalityRateAt1000, CrowdingExponent, DiseaseMortalityRateAt1000, DiseaseExponent, DemographicLogBandWidth, DemographicRootTolerance, DemographicServiceTolerance, DemographicCauseCorrectionTolerance };
+            if (demographicValues.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v <= 0) || ExposureClothingReduction + ExposureHousingReduction > 1 || DemographicModel == DemographicModel.PhysicalMortalityV1 && BaseBirthRate != .045 || DemographicLogBandWidth > .25 || DemographicCauseCorrectionTolerance > .01 || DemographicMaxRootIterations < 16 || DemographicMaxRootIterations > 512 || DemographicMaxBands < 32 || DemographicMaxBands > 100000 || DemographicMaxServiceIterations < 8 || DemographicMaxServiceIterations > 256 || ElderSplitObjective < 0 || ElderSplitObjective > 4 || double.IsNaN(ElderSplitLexTolerance) || ElderSplitLexTolerance < 0 || ElderSplitLexTolerance >= 1)
+                throw new ArgumentException("Invalid physical demographic calibration or numerical controls.");
             if (MinimumHerdHerders < 0 || MinimumHerdHerders > 1000)
                 throw new ArgumentException("Invalid herd-labour configuration: MinimumHerdHerders must be between 0 and 1000.");
             if (NeolithicFishingEnabled && !CorrectedAquaticSeasonalPressureEnabled)
@@ -454,6 +501,12 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double QoL = 1.0, FoodNeedsMetRatio = 1.0, ClothPerCapita = 1.0, HousingPerCapita = 1.0;
         [System.Runtime.Serialization.OptionalField] public double StationaryYears, RudimentaryExpectation, WaterNeedsMetRatio = 1;
         [System.Runtime.Serialization.OptionalField] public double FabricConsumed, HousingDemand, HousingReplacementDemand, HousingGrowthDemand;
+        // Turn-local provenance of FabricConsumed. Physical demography may reconcile the finite textile envelope after
+        // needs resolve; these values are never authoritative save state.
+        [NonSerialized] internal double ResolvedClothConsumed, ResolvedAnimalFabricConsumed;
+        // Turn-local continuous cohort mass used only when a connected expedition reintegrates after the demographic
+        // solve. It keeps hunger-history merging independent of which integer entity received a rounded birth.
+        [NonSerialized] internal double DemographicDeficitMergeWeight;
         [System.Runtime.Serialization.OptionalField] public double StonePriority = 1, ClayPriority = 1, WoodPriority = 1;
         [System.Runtime.Serialization.OptionalField] public double PotsTarget, FarmToolsTarget;
         // 0 = manual, -1 = continuous, positive = remaining automated resolutions.
@@ -469,8 +522,10 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public bool IsVillage;
         [System.Runtime.Serialization.OptionalField] public int VillageTurns;
         // Fission (WP10a). Absent policy is Neutral (the enum's zero); an absent destination is none.
+        // Existing camps and older saves have eligibility turn zero. Physical daughters receive an absolute boundary at founding.
         [System.Runtime.Serialization.OptionalField] public FissionPolicy FissionPolicy;
         [System.Runtime.Serialization.OptionalField] public FissionTarget FissionDestination;
+        [System.Runtime.Serialization.OptionalField] public int FissionEligibleTurn;
         // Immigration hysteresis (WP10b-2): sparse, pruned at commit; null when empty and absent in older saves.
         [System.Runtime.Serialization.OptionalField] public List<MigrationMemory> RecentMigration;
         [NonSerialized] private Society people = new Society();
@@ -498,7 +553,14 @@ namespace Anthropocene.Simulation
         // Compatibility accessors for one-camp callers; society owns and serializes the data.
         public double[] Experience { get => People.Experience; set => People.Experience = value; }
         public List<SpeciesPractice> SpeciesExperience { get => People.SpeciesExperience; set => People.SpeciesExperience = value; }
+        // In PhysicalMortalityV1, GrowthRemainder and DeathRemainder are respectively the fractional gross-birth and
+        // gross-death ledgers. Their difference is the fractional resident endpoint. Legacy saves retain their old use.
         public double GrowthRemainder, DeathRemainder, StepFoodIncome;
+        [System.Runtime.Serialization.OptionalField] public double FoodDeficitYears;
+        // Last physically reconciled demographic rates, persisted so a save/replay continuation and the owner-only
+        // observation expose the same measured outcome without recomputing hidden state.
+        [System.Runtime.Serialization.OptionalField] public double EffectiveFertilityRate, EffectiveMortalityRate;
+        [System.Runtime.Serialization.OptionalField] public double ExposureMortalityRate, CrowdingMortalityRate, DiseaseMortalityRate, StarvationMortalityRate;
         public Technology Technology { get => People.Technology; set => People.Technology = value; }
         public int TransitionTurn { get => People.TransitionTurn; set => People.TransitionTurn = value; }
         public int SecondaryDomain { get => People.SecondaryDomain; set => People.SecondaryDomain = value; }
@@ -514,6 +576,8 @@ namespace Anthropocene.Simulation
     {
         public int Id, Player, SocietyId, SourceCamp, Tile, Population;
         public double CarriedFood, LastConsumed, FoodDeficit, DeficitSeverity, DeathRemainder;
+        [System.Runtime.Serialization.OptionalField] public double GrowthRemainder, FoodDeficitYears;
+        [NonSerialized] internal double DemographicDeficitMergeWeight;
         public int DeficitTurns;
         // Set only on detachments that already exist when their Society first
         // gains a resident food economy. The built-in policy recalls this
@@ -598,6 +662,7 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public List<MaterialReceipt> MaterialTransfers = new List<MaterialReceipt>();
         [NonSerialized] public List<PressureEntry> Pressure = new List<PressureEntry>();
         [NonSerialized] public List<EcologyBalance> EcologyBalances = new List<EcologyBalance>();
+        [NonSerialized] public List<ProductionLimitDiagnostic> ProductionLimits = new List<ProductionLimitDiagnostic>();
         public List<TileChange> Changes = new List<TileChange>();
         public List<DecisionTrace> Decisions = new List<DecisionTrace>();
         public List<LogisticsRecord> Logistics = new List<LogisticsRecord>();
@@ -612,6 +677,10 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public List<TradeRecord> Trades = new List<TradeRecord>();
         [System.Runtime.Serialization.OptionalField] public TradeSummary TradeActivity;
         [System.Runtime.Serialization.OptionalField] public List<ManagedHerdReport> ManagedHerds = new List<ManagedHerdReport>();
+        // Diagnostic only: the authorized reward is unchanged. These records separate local welfare from lineage-wide
+        // population-weighted welfare and make migration/fission transfer effects explicit.
+        [System.Runtime.Serialization.OptionalField] public List<SettlementWelfareReport> SettlementWelfare = new List<SettlementWelfareReport>();
+        [System.Runtime.Serialization.OptionalField] public List<LineageWelfareReport> LineageWelfare = new List<LineageWelfareReport>();
         public void Log(string message) => Events.Add(message);
     }
     [Serializable]
@@ -688,6 +757,15 @@ namespace Anthropocene.Simulation
         private static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
     }
     [Serializable]
+    public sealed class DemographicMigrationRecord
+    {
+        public int Turn;
+        public double Days;
+        public DemographicModel From, To;
+        public string Reason, SourceCommit;
+        public int Camps, Hunters, Population;
+    }
+    [Serializable]
     public sealed class WorldState
     {
         public const int GeneratorVersion = 14;
@@ -719,6 +797,8 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public List<MaterialKnowledge> MaterialKnowledge = new List<MaterialKnowledge>();
         [System.Runtime.Serialization.OptionalField] public List<FixedHousingStock> FixedHousing = new List<FixedHousingStock>();
         [System.Runtime.Serialization.OptionalField] public List<FisherySite> FisherySites = new List<FisherySite>();
+        // Explicit provenance only. Loading an old save never appends this list or changes Config.DemographicModel.
+        [System.Runtime.Serialization.OptionalField] public List<DemographicMigrationRecord> DemographicMigrations = new List<DemographicMigrationRecord>();
         [System.Runtime.Serialization.OnDeserializing]
         private void MarkLegacyFixedHousing(System.Runtime.Serialization.StreamingContext context) { FixedHousing = null; FisherySites = null; }
         public int LivePlayers

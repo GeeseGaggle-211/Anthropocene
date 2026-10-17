@@ -19,6 +19,7 @@ internal static class NeolithicChecks
     {
         cfg.FissionEnabled = false; cfg.ImmigrationEnabled = false; cfg.TradeEnabled = false;
         cfg.EconomicAllocation = EconomicAllocationStrategy.Legacy;
+        cfg.DemographicModel = DemographicModel.LegacyQoLNetGrowth;
         cfg.QoLMortalityEnabled = false; cfg.HerdLabourEnabled = false; cfg.SharedCropHerdAllocationEnabled = false;
         return cfg;
     }
@@ -45,7 +46,7 @@ internal static class NeolithicChecks
     }
     public static int Run()
     {
-        checks = 0; HousingIndexEquivalence(); Cultivation(); TerrestrialFarmerClaims(); ReserveHorizons(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); PotStorage(); Smoke(); HousingMaterialChecks.Run(); WoodEcologyChecks.Run(); EconomicAutomationChecks.Run();
+        checks = 0; HousingIndexEquivalence(); Cultivation(); TerrestrialFarmerClaims(); ReserveHorizons(); MaterialReservePriority(); Recipes(); Needs(); Materials(); IntentsAndSaves(); AdditionalContracts(); PotStorage(); Smoke(); HousingMaterialChecks.Run(); WoodEcologyChecks.Run(); EconomicAutomationChecks.Run();
         Console.WriteLine("PASS: " + checks + " Neolithic realignment assertions"); return checks;
     }
 
@@ -91,6 +92,28 @@ internal static class NeolithicChecks
         double producedPots = 40 * SpecialistProductivity.Multiplier(material.Config.Neolithic, materialCamp.Population);
         Near(materialCamp.Inventory.Pots, producedPots, "material production remains proportional to current elapsed turn and local specialist scale");
         Near(materialCamp.Inventory.Clay, gatheredClay - producedPots, "physical reserve remains after current production");
+    }
+
+    private static void MaterialReservePriority()
+    {
+        var w = Fixture(); AddResources(w); var c = w.Camps[0];
+        c.Inventory.Stone = 1;
+        var recipes = NeolithicProduction.Recipes(w.Config);
+        var production = recipes.ToDictionary(r => r.Good, r => 0d);
+        production[CraftGood.Pots] = 10;
+        production[CraftGood.Tools] = 1;
+        var needs = new TurnNeeds { Production = production };
+        needs.Housing = MaterialEconomy.PlanHousingMaterials(w, c, recipes, production,
+            20, w.Days);
+        double equipment = 0;
+        var record = new TurnRecord { StartDays = w.Days, Duration = w.Config.TurnDays };
+        // A generalist extracts .25 units per interval. Forty-four intervals
+        // cover exactly the ten current Clay and one current Wood, but cannot
+        // also fill their configured twenty-year reserves.
+        MaterialEconomy.Gather(w, c, recipes, 80, 20, 44, ref equipment, record,
+            true, true, needs);
+        Near(c.Inventory.Clay, 10, "current Clay input is gathered before its reserve");
+        Near(c.Inventory.Wood, 1, "current Tool Wood is gathered before lower-priority material reserves");
     }
 
     private static void TerrestrialFarmerClaims()

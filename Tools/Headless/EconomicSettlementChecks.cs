@@ -337,10 +337,12 @@ internal static class EconomicSettlementChecks
         var treatment = SaveCodec.Load(SaveCodec.Save(control));
         treatment.Camps[0].Technologies[(int)Technology.AnimalHusbandry] = true;
         var a = Plan(control); var b = Plan(treatment);
-        var ar = a.Allocation.Requests.Single(r => r.Service == "shelter replacement");
-        var br = b.Allocation.Requests.Single(r => r.Service == "shelter replacement");
-        Check(ar.Good == CraftGood.Housing && br.Good == CraftGood.Housing &&
-            Math.Abs(ar.Units - br.Units) < 1e-9 &&
+        // With the kernel-scored Elder split, protected shelter serves retained replacement first.
+        bool Continuity(DemandController.Request r) => r.Service == "shelter replacement" || r.Service == "shelter protected";
+        var ar = a.Allocation.Requests.Where(Continuity).ToArray();
+        var br = b.Allocation.Requests.Where(Continuity).ToArray();
+        Check(ar.Length > 0 && ar.All(r => r.Good == CraftGood.Housing) && br.All(r => r.Good == CraftGood.Housing) &&
+            Math.Abs(ar.Sum(r => r.Units) - br.Sum(r => r.Units)) < 1e-9 &&
             b.Order.Ceiling(CraftGood.LightHousing) == 0,
             "H secondary Husbandry does not redirect feasible fixed-housing continuity to tents");
 
@@ -351,7 +353,7 @@ internal static class EconomicSettlementChecks
         camp.Inventory.AnimalFabric = 100;
         var fallbackPlan = Plan(fallback);
         Check(fallbackPlan.Allocation.Requests.Any(r =>
-                r.Service == "shelter replacement" &&
+                (r.Service == "shelter replacement" || r.Service == "shelter protected") &&
                 r.Good == CraftGood.LightHousing && r.Granted > 0),
             "an infeasible preferred shelter route admits a feasible bounded fallback");
     }
@@ -415,6 +417,8 @@ internal static class EconomicSettlementChecks
         // unused physical capacity must pass through the shared food ledger
         // before another Gatherer is requested for the same growth service.
         var farmerCapacity = Village(0); var farmerCamp = farmerCapacity.Camps[0];
+        // The ledger fixture bounds growth with the legacy net rate; the physical model's maximum-birth envelope is larger.
+        farmerCapacity.Config.DemographicModel = DemographicModel.LegacyQoLNetGrowth;
         farmerCapacity.Config.AnnualHumanGrowthRate = .01145;
         farmerCamp.PlantFood = 200000;
         farmerCamp.Inventory.Cloth = 1000;
@@ -610,6 +614,8 @@ internal static class EconomicSettlementChecks
             Movement(pastoralCultivation) + " husbandryPrimary=" +
             Movement(pastoralHusbandry));
         var farmerCapacity = Village(0);
+        // The ledger fixture bounds growth with the legacy net rate; the physical model's maximum-birth envelope is larger.
+        farmerCapacity.Config.DemographicModel = DemographicModel.LegacyQoLNetGrowth;
         farmerCapacity.Config.AnnualHumanGrowthRate = .01145;
         farmerCapacity.Camps[0].PlantFood = 200000;
         farmerCapacity.Camps[0].Inventory.Cloth = 1000;
