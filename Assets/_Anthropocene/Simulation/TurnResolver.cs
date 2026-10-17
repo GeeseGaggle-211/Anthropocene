@@ -567,7 +567,9 @@ namespace Anthropocene.Simulation
             var progression = camp.People.Progression;
             if (progression.Era != Era.Paleolithic) return;
             double elapsed = w.Days - progression.EraStartDays;
-            int best = Enumerable.Range(0, 3).OrderByDescending(i => camp.Experience[i]).ThenBy(i => i).First();
+            var allowed = Enumerable.Range(0, 3).Where(i => !w.Config.TrainingWithheld((Technology)(i + 1))).ToArray();
+            if (allowed.Length == 0) allowed = new[] { 0, 1, 2 };
+            int best = allowed.OrderByDescending(i => camp.Experience[i]).ThenBy(i => i).First();
             double total = camp.Experience.Sum();
             if (camp.Technology == Technology.None)
             {
@@ -580,6 +582,7 @@ namespace Anthropocene.Simulation
                 if (camp.ForcedTransition)
                 {
                     int second = Enumerable.Range(0, 3).Where(i => i != best).OrderByDescending(i => camp.Experience[i]).ThenBy(i => i).First();
+                    // (SecondaryDomain only records practice carryover; withheld technologies stay withheld at discovery.)
                     camp.SecondaryDomain = second;
                     // Keep accumulated experience intact; carryover is stored as progress separately at transition display/save.
                 }

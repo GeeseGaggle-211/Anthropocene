@@ -294,13 +294,34 @@ internal static class Program
         }
         if (args.Contains("--surplus-equilibria")) return DemographySocialAblation.RunSurplusEquilibria();
         if (args.Contains("--kernel-mixed-checks")) { KernelMixedChecks.Run(); return 0; }
+        // --set=Field=Value (repeatable): SimulationConfig overrides for model9 openings (calibration sweeps).
+        var model9Sets = args.Where(a => a.StartsWith("--set=", StringComparison.Ordinal)).Select(a => a.Substring(6).Split('=')).ToArray();
+        if (model9Sets.Length > 0)
+            ElderModel9Environment.ConfigOverride = cfg =>
+            {
+                foreach (var pair in model9Sets)
+                {
+                    // Dotted paths reach nested settings, e.g. Neolithic.LightHousingBuilderOutputPerBaseDays.
+                    object target = cfg; var path = pair[0].Split('.');
+                    for (int i = 0; i < path.Length - 1; i++)
+                        target = (target.GetType().GetField(path[i]) ?? throw new ArgumentException("Unknown config field " + pair[0])).GetValue(target);
+                    var field = target.GetType().GetField(path[path.Length - 1]) ?? throw new ArgumentException("Unknown config field " + pair[0]);
+                    field.SetValue(target, Convert.ChangeType(pair[1], field.FieldType, System.Globalization.CultureInfo.InvariantCulture));
+                }
+            };
         var model9Probe = args.FirstOrDefault(a => a.StartsWith("--model9-probe=", StringComparison.Ordinal));
         if (model9Probe != null) { var parts = model9Probe.Substring(15).Split(','); return ElderModel9Tools.Probe(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 8); }
         var model9Profile = args.FirstOrDefault(a => a.StartsWith("--model9-profile=", StringComparison.Ordinal));
         if (args.Contains("--bound-audit")) SocialRelocationForecastCache.AuditBounds = true;
         if (model9Profile != null) { var parts = model9Profile.Substring(17).Split(','); return ElderModel9Tools.Profile(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 8); }
         var model9Teacher = args.FirstOrDefault(a => a.StartsWith("--model9-teacher=", StringComparison.Ordinal));
-        if (model9Teacher != null) { var parts = model9Teacher.Substring(17).Split(','); return ElderModel9Tools.Teacher(parts[0], int.Parse(parts[1]), int.Parse(parts[2]), int.Parse(parts[3]), parts.Length > 4 ? int.Parse(parts[4]) : 8); }
+        if (model9Teacher != null) { var parts = model9Teacher.Substring(17).Split(','); return ElderModel9Tools.Teacher(parts[0], int.Parse(parts[1]), int.Parse(parts[2]), int.Parse(parts[3]), parts.Length > 4 ? int.Parse(parts[4]) : 8, parts.Length > 5 ? int.Parse(parts[5]) : 0); }
+        var model9Requests = args.FirstOrDefault(a => a.StartsWith("--model9-requests=", StringComparison.Ordinal));
+        if (model9Requests != null) { var parts = model9Requests.Substring(18).Split(','); return ElderModel9Tools.Requests(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 0); }
+        var model9Scan = args.FirstOrDefault(a => a.StartsWith("--model9-scan=", StringComparison.Ordinal));
+        if (model9Scan != null) { var parts = model9Scan.Substring(14).Split(','); return ElderModel9Tools.Scan(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 0); }
+        var model9Pastoral = args.FirstOrDefault(a => a.StartsWith("--model9-pastoral=", StringComparison.Ordinal));
+        if (model9Pastoral != null) { var parts = model9Pastoral.Substring(18).Split(','); return ElderModel9Tools.Pastoral(int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2]), parts.Length > 3 ? int.Parse(parts[3]) : 0); }
         var kernelScaling = args.FirstOrDefault(a => a.StartsWith("--kernel-scaling=", StringComparison.Ordinal));
         if (kernelScaling != null)
         {

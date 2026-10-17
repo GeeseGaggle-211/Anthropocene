@@ -429,6 +429,7 @@ namespace Anthropocene.Simulation
             int i = (int)domain;
             if (i < 0 || i >= 3) return;
             var technology = (Technology)(i + 1);
+            if (world.Config.TrainingWithheld(technology)) return;
             if (society.Technologies[(int)technology] || society.Technology == technology ||
                 EffectiveProgress(society, domain, world.Config) < world.Config.SecondaryTechnologyThreshold) return;
             world.PendingTechnologyUnlocks ??= new Dictionary<int, int>();
@@ -452,6 +453,7 @@ namespace Anthropocene.Simulation
                 {
                     if ((entry.Value & 1 << i) == 0) continue;
                     var technology = (Technology)(i + 1);
+                    if (world.Config.TrainingWithheld(technology)) continue;
                     if (society.Technologies[(int)technology] || society.Technology == technology || EffectiveProgress(society, (Domain)i, world.Config) < world.Config.SecondaryTechnologyThreshold) continue;
                     bool economyBefore = EconomicTransition.Enabled(world, society);
                     society.Technologies[(int)technology] = true;

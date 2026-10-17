@@ -294,6 +294,7 @@ namespace Anthropocene.Simulation
     {
         public byte[] InitialSnapshot;
         public int StartTurn;
+        public int WithheldTechnologies;
         public string InitialFingerprint, ConfigurationHash, BuildHash;
         public bool MovementEnabled;
         public List<ElderModel9ReplayStep> Steps = new List<ElderModel9ReplayStep>();
@@ -322,10 +323,19 @@ namespace Anthropocene.Simulation
         // A shipped-configuration Small world played by the heuristic through its opening (the first breakthroughs),
         // the start state of every model9 episode. Deterministic in (seed, players).
         public static byte[] GenerateOpening(int seed, int players, out int openingTurns, int maxTurns = 40)
+            => GenerateOpening(seed, players, out openingTurns, maxTurns, 0);
+
+        // withheldTechnologies: SimulationConfig.TrainingWithheldTechnologies for capability fixtures.
+        // Optional configuration override for calibration sweeps (headless --set); saved with the generated world.
+        public static Action<SimulationConfig> ConfigOverride;
+
+        public static byte[] GenerateOpening(int seed, int players, out int openingTurns, int maxTurns, int withheldTechnologies)
         {
             var cfg = SimulationConfig.Small(players);
+            ConfigOverride?.Invoke(cfg);
             cfg.Validate();
             var world = new WorldGenerator().Generate(seed, cfg); var resolver = new TurnResolver();
+            world.Config.TrainingWithheldTechnologies = withheldTechnologies;
             openingTurns = 0;
             while (!world.Finished && openingTurns < maxTurns)
             {
@@ -359,15 +369,20 @@ namespace Anthropocene.Simulation
                 .Select(v => (float)(ElderRLContract.Finite(v) ? v : 0)).ToArray();
         }
 
+        // Training-only capability fixture mask, re-applied after every load (it is never saved).
+        public int WithheldTechnologies;
+
         public ElderModel9Step Reset(byte[] snapshot, bool movementEnabled)
         {
             World = SaveCodec.Load((byte[])snapshot.Clone());
             World = SaveCodec.Load(SaveCodec.Save(World));
+            World.Config.TrainingWithheldTechnologies = WithheldTechnologies;
             MovementEnabled = movementEnabled; contexts.Clear();
             ResolutionMetrics.CaptureDemandAllocations = true;
             var initial = SaveCodec.Save(World);
             Replay = new ElderModel9Replay { StartTurn = World.Turn, InitialSnapshot = initial, InitialFingerprint = SaveCodec.Fingerprint(World),
-                ConfigurationHash = SaveCodec.ConfigurationHash(World.Config), BuildHash = BuildHash, MovementEnabled = movementEnabled };
+                ConfigurationHash = SaveCodec.ConfigurationHash(World.Config), BuildHash = BuildHash, MovementEnabled = movementEnabled,
+                WithheldTechnologies = WithheldTechnologies };
             var step = new ElderModel9Step { Turn = World.Turn, Fingerprint = Replay.InitialFingerprint };
             Observe(step, new Dictionary<int, int>());
             return step;
@@ -531,6 +546,7 @@ namespace Anthropocene.Simulation
         public static void VerifyReplay(ElderModel9Replay replay, PhaseExecution execution = null)
         {
             var world = SaveCodec.Load((byte[])replay.InitialSnapshot.Clone());
+            world.Config.TrainingWithheldTechnologies = replay.WithheldTechnologies;
             bool capture = ResolutionMetrics.CaptureDemandAllocations; ResolutionMetrics.CaptureDemandAllocations = true;
             try
             {

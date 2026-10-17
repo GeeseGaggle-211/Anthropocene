@@ -23,6 +23,13 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class SimulationConfig
     {
+        // Training fixtures only (model9 curriculum): a bitmask over Technology (1 << (int)technology) that the
+        // Paleolithic breakthrough and secondary discovery never grant, so a world can be single-capability
+        // (for example pastoral societies that never adopt cultivation). Never saved, hashed or set by gameplay;
+        // the training environment re-applies it after every load. Zero is the game.
+        [NonSerialized] public int TrainingWithheldTechnologies;
+        public bool TrainingWithheld(Technology technology)
+            => technology != Technology.None && (TrainingWithheldTechnologies & 1 << (int)technology) != 0;
         [System.Runtime.Serialization.OptionalField] public NeolithicConfig Neolithic = new NeolithicConfig();
         public SimulationConfig()
         {

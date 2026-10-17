@@ -1,5 +1,31 @@
 # Native Elder contract 7 (model9)
 
+## Curriculum fixtures and diagnostics (17 October 2026)
+
+- **Capability fixtures.** `SimulationConfig.TrainingWithheldTechnologies` is a training-only bitmask
+  (`1 << (int)Technology`). It is `[NonSerialized]`: never saved, hashed or set by gameplay, and zero is the game.
+  - The Paleolithic breakthrough picks the most-practised allowed domain, and secondary discovery skips withheld
+    technologies.
+  - `ElderModel9Environment.WithheldTechnologies`, `GenerateOpening(..., withheld)`, the replay record and the bridge
+    `reset {withheld}` re-apply it after every load.
+  - Masks: herding-only 12, farming-only 10, fishing-only 6.
+- **Tools.**
+  - `--model9-teacher=...,players,withheld` writes fixture shards.
+  - `--set=Field=Value` (dotted for nested settings) overrides the opening configuration for calibration sweeps.
+  - `--model9-scan` counts grassland and husbandry villages per opening.
+  - `--model9-pastoral` compares herd-first directives against the heuristic for grassland villages.
+  - `--model9-requests` prints each village's shelter and clothing requests, grants and unmet causes.
+- **Grassland bank.** Seeds 4000-5999 hold 337 openings with at least one husbandry village on grassland
+  (`model9-data/grassland-herding-seeds.txt`). They are outside TRAIN, DEVELOPMENT and CONFIRMATION.
+- **Pastoral finding.** Herding-only worlds run by the heuristic stay fully fed but are badly under-sheltered
+  (housing coverage 0.04, clothing 0.6, QoL about 0.1; median settlement about 190).
+  - Without cultivation, clothing and tents come only from Animal Fabric. The planner counts herd animal food toward
+    meals first, so beyond protected clothing the reserve-clothing and tent requests fail for "animal feedstock".
+  - Societies without Construction raise tents only at the generalist rate.
+  - Neither `AnimalFoodPerManagedAnimal` (x2-x6) nor a 4-8x tent output changes housing materially; x3 food lifts
+    herding population about 60% and the median settlement toward 240.
+  - Calibration is unchanged pending the planner's food/feedstock arbitration (see the M7 report).
+
 ## Contract 8 amendment (17 October 2026): three-way economy mix
 
 Contract 8 (`ElderModel9Contract.NativeContractVersion = 8`, action/observation/environment/replay schema 8) makes

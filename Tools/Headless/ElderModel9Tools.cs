@@ -62,6 +62,114 @@ internal static class ElderModel9Tools
         return 0;
     }
 
+    // Mean crop-moisture suitability (EcologyMath.CropSuitability) over a camp's land footprint and the four seasons:
+    // the factor that scales cultivated food, 1 on well-watered land.
+    internal static double FarmSuitability(WorldState w, Camp c)
+    {
+        var tiles = CultivationEconomy.Footprint(w, c).Where(id => w.Tiles[id].TraversableLand).ToList();
+        return tiles.Count == 0 ? 0 : tiles.Average(id => Enumerable.Range(0, 4)
+            .Average(s => EcologyMath.CropSuitability(w.Config, w.Tiles[id].Seasons[s].Moisture)));
+    }
+
+    // --model9-scan=<firstSeed>,<lastSeed>[,withheld]: openings only. Per seed: villages, husbandry villages on
+    // grassland, and their mean farm suitability; used to build grassland-rich curriculum banks.
+    public static int Scan(int firstSeed, int lastSeed, int withheld = 0)
+    {
+        for (int seed = firstSeed; seed <= lastSeed; seed++)
+        {
+            var world = SaveCodec.Load(ElderModel9Environment.GenerateOpening(seed, 8, out _, 40, withheld));
+            var camps = world.Camps.Where(c => c.Population > 0 && CultivationEconomy.EconomyEnabled(world, c)).ToList();
+            var grass = camps.Where(c => world.Tiles[c.Tile].Environment == EnvironmentKind.Grassland).ToList();
+            var herding = grass.Where(c => CultivationEconomy.HusbandryEnabled(c)).ToList();
+            Console.WriteLine("MODEL9_SCAN seed=" + seed + " villages=" + camps.Count + " grassland=" + grass.Count + " grasslandHerding=" + herding.Count
+                + " suitability=" + I(herding.Count > 0 ? herding.Average(c => FarmSuitability(world, c)) : -1)
+                + " allSuitability=" + I(camps.Count > 0 ? camps.Average(c => FarmSuitability(world, c)) : -1));
+        }
+        return 0;
+    }
+
+    // --model9-requests=<seed>,<turns>[,withheld]: per village, the heuristic's shelter and clothing requests with
+    // grants and unmet causes at the last turn (diagnostic for capability fixtures).
+    public static int Requests(int seed, int turns, int withheld = 0)
+    {
+        var env = new ElderModel9Environment { WithheldTechnologies = withheld };
+        env.Reset(ElderModel9Environment.GenerateOpening(seed, 8, out _, 40, withheld), true);
+        for (int t = 0; t < turns; t++) env.Step(new Dictionary<int, ElderDirective>());
+        ResolutionMetrics.CaptureDemandAllocations = true;
+        var draft = TurnPlanner.Prepare(env.World, AiPlanning.Decide(env.World).Orders.ToDictionary(p => p.Key, p => p.Value.ToList()), new List<DecisionTrace>());
+        foreach (var pair in draft.DemandAllocations.OrderBy(p => p.Key))
+        {
+            var camp = env.World.Camps.First(c => c.Id == pair.Key); var a = pair.Value;
+            var techs = string.Join("", new[] { NeolithicTech.Construction, NeolithicTech.Weaving, NeolithicTech.Toolmaking }.Select(x => camp.People.HasTech(x) ? x.ToString()[0] : '-'));
+            Console.WriteLine("MODEL9_REQ camp=" + camp.Id + " pop=" + camp.Population + " techs=" + techs + " budget=" + I(a.ResidentGoodsBudget)
+                + " herders=" + a.Herders + " fishers=" + a.Fishers + " gatherers=" + a.FoodGatherers + " compiled=" + I(a.FinalCompiledPersons)
+                + " housing=" + I(camp.HousingPerCapita) + " light=" + I(camp.Inventory.LightHousingUnits) + " fabric=" + I(camp.Inventory.AnimalFabric)
+                + " animalFood=" + I(camp.AnimalFood) + " | " + string.Join("; ", a.Requests.Where(q => q.Service.Contains("shelter") || q.Service.Contains("cloth"))
+                    .Select(q => q.Service + ":" + q.Class + " " + I(q.Granted) + "/" + I(q.Units) + (q.Unmet.Length > 0 ? " (" + q.Unmet + ")" : ""))));
+        }
+        return 0;
+    }
+
+    // --model9-pastoral=<firstSeed>,<lastSeed>,<turns>[,withheld]: does keeping herds pay in grassland? From one opening,
+    // arm A runs the heuristic everywhere; arms B and C give every grassland village that can both farm and herd and
+    // holds a herd a herd-first directive (B: no retained field operation, C: half), with the whole herd retained and
+    // the Development budget on herds. Other villages, services, routes, movement and fission stay native. Reports
+    // treated-village and whole-world welfare per arm, and treated villages by farm yield (HarvestProductivity).
+    public static int Pastoral(int firstSeed, int lastSeed, int turns, int withheld = 0)
+    {
+        var rows = new List<(int Seed, int Camp, double Yield, double A, double B, double C)>();
+        double worldA = 0, worldB = 0, worldC = 0;
+        for (int seed = firstSeed; seed <= lastSeed; seed++)
+        {
+            var snapshot = ElderModel9Environment.GenerateOpening(seed, 8, out _, 40, withheld);
+            var arms = new[] { new ElderModel9Environment { WithheldTechnologies = withheld }, new ElderModel9Environment { WithheldTechnologies = withheld },
+                new ElderModel9Environment { WithheldTechnologies = withheld } };
+            foreach (var arm in arms) arm.Reset(snapshot, true);
+            var treated = new Dictionary<int, double>();   // camp -> farm yield when first treated (from arm B)
+            var welfare = new Dictionary<int, double>[] { new Dictionary<int, double>(), new Dictionary<int, double>(), new Dictionary<int, double>() };
+            for (int t = 0; t < turns; t++)
+            {
+                for (int a = 0; a < 3; a++)
+                {
+                    var env = arms[a]; var world = env.World;
+                    var directives = new Dictionary<int, ElderDirective>();
+                    if (a > 0)
+                        foreach (var camp in world.Camps.Where(c => c.Population > 0 && CultivationEconomy.Enabled(c) && CultivationEconomy.HusbandryEnabled(c)
+                            && world.Tiles[c.Tile].Environment == EnvironmentKind.Grassland && world.Herds.Any(h => h.DomesticCamp == c.Id && h.Animals > 0)))
+                        {
+                            if (a == 1 && !treated.ContainsKey(camp.Id)) treated[camp.Id] = FarmSuitability(world, camp);
+                            directives[camp.Id] = new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion,
+                                RetainedFieldOperation = a == 1 ? 0 : .5, RetainedHerdFraction = 1, DevelopmentBudget = .15,
+                                FieldDevelopmentShare = 0, MovementCandidate = ElderModel9Contract.NativeMovement };
+                        }
+                    var step = env.Step(directives);
+                    foreach (var v in step.Villages) welfare[a][v.Camp] = (welfare[a].TryGetValue(v.Camp, out double w) ? w : 0) + v.Welfare;
+                }
+            }
+            worldA += welfare[0].Values.Sum(); worldB += welfare[1].Values.Sum(); worldC += welfare[2].Values.Sum();
+            foreach (var pair in treated)
+                rows.Add((seed, pair.Key, pair.Value, welfare[0].TryGetValue(pair.Key, out double wa) ? wa : 0,
+                    welfare[1].TryGetValue(pair.Key, out double wb) ? wb : 0, welfare[2].TryGetValue(pair.Key, out double wc) ? wc : 0));
+            Console.WriteLine("MODEL9_PASTORAL seed=" + seed + " treated=" + treated.Count + " worldA=" + I(welfare[0].Values.Sum())
+                + " worldB=" + I(welfare[1].Values.Sum()) + " worldC=" + I(welfare[2].Values.Sum()));
+        }
+        foreach (var row in rows)
+            Console.WriteLine("MODEL9_PASTORAL_VILLAGE seed=" + row.Seed + " camp=" + row.Camp + " yield=" + I(row.Yield)
+                + " A=" + I(row.A) + " B=" + I(row.B) + " C=" + I(row.C));
+        string Band(IEnumerable<(int Seed, int Camp, double Yield, double A, double B, double C)> band)
+        {
+            var list = band.ToList(); double a = list.Sum(r => r.A);
+            return "n=" + list.Count + " B/A=" + I(a > 0 ? list.Sum(r => r.B) / a : 0) + " C/A=" + I(a > 0 ? list.Sum(r => r.C) / a : 0)
+                + " Bwins=" + list.Count(r => r.B > r.A) + " Cwins=" + list.Count(r => r.C > r.A);
+        }
+        var sorted = rows.OrderBy(r => r.Yield).ToList(); int third = Math.Max(1, sorted.Count / 3);
+        Console.WriteLine("MODEL9_PASTORAL_SUMMARY seeds=" + firstSeed + "-" + lastSeed + " turns=" + turns + " withheld=" + withheld
+            + " worldB/A=" + I(worldA > 0 ? worldB / worldA : 0) + " worldC/A=" + I(worldA > 0 ? worldC / worldA : 0)
+            + " all{" + Band(rows) + "} lowYield{" + Band(sorted.Take(third)) + "} midYield{" + Band(sorted.Skip(third).Take(third))
+            + "} highYield{" + Band(sorted.Skip(2 * third)) + "} yieldCuts=" + (sorted.Count > 0 ? I(sorted[Math.Min(third, sorted.Count - 1)].Yield) + "/" + I(sorted[Math.Min(2 * third, sorted.Count - 1)].Yield) : "-"));
+        return 0;
+    }
+
     // --model9-profile=<seed>,<turns>[,players]: phase timing of teacher steps (heuristic for every village).
     public static int Profile(int seed, int turns, int players = 8)
     {
@@ -96,16 +204,17 @@ internal static class ElderModel9Tools
         return 0;
     }
 
-    // --model9-teacher=<outDir>,<firstSeed>,<lastSeed>,<turns>[,players]: heuristic rollouts written as NPY shards, one per world.
-    public static int Teacher(string outDir, int firstSeed, int lastSeed, int turns, int players = 8)
+    // --model9-teacher=<outDir>,<firstSeed>,<lastSeed>,<turns>[,players[,withheld]]: heuristic rollouts written as NPY
+    // shards, one per world. withheld is SimulationConfig.TrainingWithheldTechnologies (capability fixtures).
+    public static int Teacher(string outDir, int firstSeed, int lastSeed, int turns, int players = 8, int withheld = 0)
     {
         Directory.CreateDirectory(outDir);
         long totalDecisions = 0; double nativeMs = 0;
         var clock = System.Diagnostics.Stopwatch.StartNew();
         for (int seed = firstSeed; seed <= lastSeed; seed++)
         {
-            var snapshot = Opening(seed, players, out _);
-            var env = new ElderModel9Environment();
+            var snapshot = ElderModel9Environment.GenerateOpening(seed, players, out _, 40, withheld);
+            var env = new ElderModel9Environment { WithheldTechnologies = withheld };
             var reset = env.Reset(snapshot, true);
             var rows = new List<(int Turn, ElderModel9Village Decision, ElderModel9Tensor Obs, float[] Privileged)>();
             var pending = reset.Villages.Where(v => v.Observation != null).ToDictionary(v => v.Camp, v => (v.Observation, v.Privileged));
@@ -123,7 +232,7 @@ internal static class ElderModel9Tools
                 totalDecisions += step.Villages.Count(v => v.Teacher != null);
                 pending = step.Villages.Where(v => v.Observation != null && !v.Terminated).ToDictionary(v => v.Camp, v => (v.Observation, v.Privileged));
             }
-            Write(Path.Combine(outDir, "world-" + seed.ToString("D5")), seed, rows);
+            Write(Path.Combine(outDir, "world-" + seed.ToString("D5")), seed, rows, withheld);
             Console.WriteLine("MODEL9_TEACHER seed=" + seed + " rows=" + rows.Count + " elapsed=" + I(clock.Elapsed.TotalSeconds));
         }
         Console.WriteLine("MODEL9_TEACHER_SUMMARY worlds=" + (lastSeed - firstSeed + 1) + " decisions=" + totalDecisions
@@ -132,7 +241,7 @@ internal static class ElderModel9Tools
         return 0;
     }
 
-    private static void Write(string dir, int seed, List<(int Turn, ElderModel9Village V, ElderModel9Tensor Obs, float[] Privileged)> rows)
+    private static void Write(string dir, int seed, List<(int Turn, ElderModel9Village V, ElderModel9Tensor Obs, float[] Privileged)> rows, int withheld = 0)
     {
         Directory.CreateDirectory(dir);
         int n = rows.Count, core = ElderModel9Contract.CoreWidth, services = ElderModel9Contract.GoodsServices.Length;
@@ -175,6 +284,6 @@ internal static class ElderModel9Tools
         NpyWriter.Write(Path.Combine(dir, "welfare.npy"), rows.Select(r => (float)r.V.Welfare).ToArray(), n);
         NpyWriter.Write(Path.Combine(dir, "terminated.npy"), rows.Select(r => r.V.Terminated).ToArray(), n);
         File.WriteAllText(Path.Combine(dir, "meta.json"), "{\"seed\": " + seed + ", \"rows\": " + n + ", \"contract\": " + ElderModel9Contract.NativeContractVersion
-            + ", \"coreWidth\": " + core + ", \"buildHash\": \"" + ElderModel9Environment.BuildHash + "\"}\n");
+            + ", \"withheldTechnologies\": " + withheld + ", \"coreWidth\": " + core + ", \"buildHash\": \"" + ElderModel9Environment.BuildHash + "\"}\n");
     }
 }

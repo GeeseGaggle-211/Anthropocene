@@ -68,6 +68,16 @@ internal static class ElderModel9Checks
         var fished = fishingStep.Villages.Single(v => v.Camp == fishingCamp);
         Check(fished.Teacher.Action.FishingDevelopmentShare > .5 && fished.Staffing.Contains(WorkforceRoles.Fisher),
             "a fishing-only Development directive staffs development Fishers (staffing " + fished.Staffing + ")");
+        // Capability fixtures: a withheld technology is never granted, and the training-only mask is neither saved
+        // nor hashed.
+        int herdingOnly = 1 << (int)Technology.Cultivation | 1 << (int)Technology.Watercraft;
+        var pastoral = SaveCodec.Load(ElderModel9Environment.GenerateOpening(17, 8, out _, 40, herdingOnly));
+        Check(pastoral.Societies.All(s => !s.Technologies[(int)Technology.Cultivation] && !s.Technologies[(int)Technology.Watercraft])
+            && pastoral.Societies.Any(s => s.Technologies[(int)Technology.AnimalHusbandry]), "a herding-only fixture grants husbandry and nothing else");
+        Check(pastoral.Config.TrainingWithheldTechnologies == 0, "the fixture mask is never saved");
+        var hashed = SimulationConfig.Small(8); string before = SaveCodec.ConfigurationHash(hashed);
+        hashed.TrainingWithheldTechnologies = herdingOnly;
+        Check(SaveCodec.ConfigurationHash(hashed) == before, "the fixture mask does not enter the configuration hash");
         var schema7 = ElderDirectiveValidation.Validate(new ElderDirective { SchemaVersion = 7, DevelopmentBudget = .2, FishingDevelopmentShare = 1 },
             new ElderObservation(), new List<ElderIntervention>());
         Check(schema7.FishingDevelopmentShare == 0, "schema-7 directives have no fishing development");
