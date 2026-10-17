@@ -45,6 +45,10 @@ namespace Anthropocene.Simulation
         };
         public const int CoreV2Width = 128, PresenceV2Width = 48, DemographyWidth = 12, ContextWidth = 3 + 4 + 6;
         public static int CoreWidth => CoreV2Width + PresenceV2Width + DemographyWidth + ContextWidth;
+        // Training-only critic inputs (never part of the actor observation): growth headroom and lineage context.
+        public static readonly string[] PrivilegedFeatures = { "log-population", "episode-age-turns", "site-food-over-meals",
+            "footprint-potential-food-over-meals", "footprint-food-over-meals", "sustainable-herd-over-animals",
+            "absolute-herd-over-animals", "last-growth", "daughters", "fixed-housing-per-resident" };
     }
 
     // One encoded village observation. Values are raw physical units; the learner normalizes (symlog plus a fixed
@@ -222,6 +226,7 @@ namespace Anthropocene.Simulation
         public ElderModel9Label Teacher;   // the heuristic's (or the compiled directive's) decision this step
         public ElderIntervention[] Interventions = Array.Empty<ElderIntervention>();
         public string Staffing = "";   // compiled economic intent (diagnostic)
+        public float[] Privileged;      // ElderModel9Contract.PrivilegedFeatures; critic-only
     }
 
     [Serializable]
@@ -249,6 +254,7 @@ namespace Anthropocene.Simulation
     public sealed class ElderModel9Replay
     {
         public byte[] InitialSnapshot;
+        public int StartTurn;
         public string InitialFingerprint, ConfigurationHash, BuildHash;
         public bool MovementEnabled;
         public List<ElderModel9ReplayStep> Steps = new List<ElderModel9ReplayStep>();
@@ -291,6 +297,29 @@ namespace Anthropocene.Simulation
             return SaveCodec.Save(world);
         }
 
+        // Training-only critic features (ElderModel9Contract.PrivilegedFeatures): physical headroom the actor's capped
+        // observation does not carry, plus lineage and episode context. Pure reads of committed state.
+        private float[] Privileged(Camp camp, int priorPopulation, int age)
+        {
+            var w = World; var cfg = w.Config;
+            double meals = Math.Max(1e-9, Math.Max(1, camp.Population) * cfg.Consumption * cfg.GenerationIntervals);
+            var profile = HerdConsumptionProfile.Owned(w, camp);
+            var site = SettlementSiteEvaluation.Evaluate(w, camp, camp.Tile, camp.Population, profile);
+            double potential = 0, food = 0;
+            foreach (int tile in w.Map.Radius(camp.Tile, 1))
+            {
+                var ecology = LazyEcology.ProjectEcology(w, tile, w.Days);
+                potential += Math.Max(0, ecology.PotentialFood); food += Math.Max(0, ecology.Food);
+            }
+            double animals = Math.Max(1, profile.Animals);
+            int daughters = w.Societies.Count(s => s.ParentSociety == camp.SocietyId);
+            double housing = NeolithicProduction.FixedHousingAt(w, camp, w.Days) * cfg.Neolithic.HousingPeoplePerUnit / Math.Max(1, camp.Population);
+            double growth = priorPopulation > 0 ? camp.Population / (double)priorPopulation - 1 : 0;
+            return new[] { Math.Log(1 + Math.Max(0, camp.Population)), age, site.HumanFood / meals, potential / meals, food / meals,
+                site.SustainableHerdCapacity / animals, site.AbsoluteHerdCapacity / animals, growth, daughters, housing }
+                .Select(v => (float)(ElderRLContract.Finite(v) ? v : 0)).ToArray();
+        }
+
         public ElderModel9Step Reset(byte[] snapshot, bool movementEnabled)
         {
             World = SaveCodec.Load((byte[])snapshot.Clone());
@@ -298,7 +327,7 @@ namespace Anthropocene.Simulation
             MovementEnabled = movementEnabled; contexts.Clear();
             ResolutionMetrics.CaptureDemandAllocations = true;
             var initial = SaveCodec.Save(World);
-            Replay = new ElderModel9Replay { InitialSnapshot = initial, InitialFingerprint = SaveCodec.Fingerprint(World),
+            Replay = new ElderModel9Replay { StartTurn = World.Turn, InitialSnapshot = initial, InitialFingerprint = SaveCodec.Fingerprint(World),
                 ConfigurationHash = SaveCodec.ConfigurationHash(World.Config), BuildHash = BuildHash, MovementEnabled = movementEnabled };
             var step = new ElderModel9Step { Turn = World.Turn, Fingerprint = Replay.InitialFingerprint };
             Observe(step, new Dictionary<int, int>());
@@ -439,6 +468,7 @@ namespace Anthropocene.Simulation
                     step.Villages.Add(v);
                 }
                 v.Observation = ElderModel9Encoder.Encode(obs, Context(id));
+                v.Privileged = Privileged(camp, prior.TryGetValue(id, out int before) ? before : camp.Population, step.Turn - Replay.StartTurn);
             }
             step.Villages.Sort((a, b) => a.Camp.CompareTo(b.Camp));
         }

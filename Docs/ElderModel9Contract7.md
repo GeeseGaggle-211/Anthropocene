@@ -32,6 +32,11 @@ Validation repairs and logs out-of-range or malformed controls (`ElderDirectiveV
 
 Values are raw physical units; the learner normalizes them.
 
+Training-only critic inputs (`ElderModel9Village.Privileged`, `privileged.npy`; never part of the actor observation):
+log population, episode age, site food / meals, footprint potential and current food / meals, sustainable and absolute
+herd capacity / animals, last growth, daughters and fixed housing per resident. They carry the growth headroom the
+actor's capped coverage ratios hide; the learner checks by test that they never reach the actor graph.
+
 ## Environment (`ElderModel9Environment`)
 
 Every camp with a resident economy is a village and decides every turn; daughters join when founded. A village
