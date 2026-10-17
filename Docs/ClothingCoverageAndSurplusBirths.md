@@ -369,7 +369,8 @@ Same 12-seed, 25-turn probe as §3 (Small/8, fission and immigration on), merged
 | Variant | Camps | Population | Median | P90 | 600+ | F | Clothing | Housing | QoL (pop-weighted) | Person-years x QoL | Fissions | Migrations |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | v1.1 law, no split (control) | 462 | 253,392 | 494 | 973 | 169 | 0.949 | 0.566 | 0.772 | 0.461 | 29.98M | 373 | 819 |
-| **Plan of record** | **183** | **108,351** | **556** | **999** | **86** | **0.999** | **0.996** | **0.957** | **0.801** | **24.44M** | **91** | **200** |
+| Plan of record at c931885 | 183 | 108,351 | 556 | 999 | 86 | 0.999 | 0.996 | 0.957 | 0.801 | 24.44M | 91 | 200 |
+| **Plan of record with kernel/trim fixes (a7909ee)** | **256** | **140,517** | **513** | **997** | **102** | **0.999** | **0.994** | **0.935** | **0.790** | **30.94M** | | |
 
 Against the pre-merge prototype (221 camps, median 384), the settlement envelope raises the median
 village to 556 and puts 86 of 183 settlements at 600 or more. The control's larger total population
@@ -382,3 +383,5 @@ Gate: fixed headless suite (`./Tools/Test-Headless.ps1 -Seeds 0`) with the new d
 scalar-versus-2/4-worker replay; `python Tools/Docs/Check-CurrentContract.py`; Unity EditMode 29/29.
 Reproduce the two rows with `--clothing-probe=25,<outDir>,seeds=17;53;991;1;2;3;5;8;13;21;34;89` and
 the same with `,v11` appended.
+
+The a7909ee fixes (found while making the heuristic an exact Elder action on the Elder lineage): the kernel budget raise covers only the granted Protected persons; Protected requests are arbitrated one at a time; shelter feedstock is scored as ordinary manufacturing; a mobile camp without retained capital is not offered fixed Housing; and `TrimToBudget` recompiles staffing from trimmed grants instead of leaving idle workers. Person-years x QoL rises 27% for a 0.011 QoL cost.
