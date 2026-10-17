@@ -255,12 +255,12 @@ internal static class ContactKnowledgeChecks
         // DTO round trip at the current schema.
         var dto = ObservationContract.Deserialize(ObservationContract.Serialize(o3, own.People.Mandate));
         Check(dto.Schema == AgentObservation.SchemaVersion &&
-            AgentObservation.SchemaVersion == 22 &&
+            AgentObservation.SchemaVersion == 23 &&
             dto.RememberedTiles.Length == o3.RememberedTiles.Count &&
             dto.KnownSettlements.Single().Camp == stranger.Id &&
             dto.KnownSettlements.Single().Source == ContactSource.Sighting,
             "the serialized observation carries remembered tiles and known settlements");
-        Check(json.Contains("\"Schema\":22") &&
+        Check(json.Contains("\"Schema\":23") &&
             json.Contains("RememberedTiles") &&
             json.Contains("KnownSettlements") &&
             json.Contains("FishingGrounds") &&

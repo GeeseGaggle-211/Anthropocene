@@ -101,8 +101,13 @@ namespace Anthropocene.Simulation
         // validation harness opts in; it is transient and never enters a save,
         // observation, or authoritative turn record.
         public static bool CaptureCraftWorkDiagnostics;
+        // Retaining a DemandControl allocation keeps its complete request/bundle
+        // graph alive through Prepare. Ordinary play has no consumer for it; the
+        // opt-in recovery harness uses it to close planned grants against receipts.
+        public static bool CaptureDemandAllocations;
         public Dictionary<int, CampFieldWorkDiagnostic> CraftFieldWork { get; private set; }
         public Dictionary<int, CampFoodFlowDiagnostic> CraftFoodFlow { get; private set; }
+        public List<FoodClaimDiagnostic> FoodClaims { get; private set; }
         internal CampFieldWorkDiagnostic CraftFieldWorkFor(int camp)
         {
             if (!CaptureCraftWorkDiagnostics) return null;
@@ -119,12 +124,20 @@ namespace Anthropocene.Simulation
                 CraftFoodFlow[camp] = value = new CampFoodFlowDiagnostic { Camp = camp };
             return value;
         }
+        internal void CaptureFoodClaim(FoodClaimDiagnostic claim)
+        {
+            if (!CaptureCraftWorkDiagnostics || claim == null) return;
+            if (FoodClaims == null) FoodClaims = new List<FoodClaimDiagnostic>();
+            FoodClaims.Add(claim);
+        }
         public double HerdIntentMilliseconds, EcologyMilliseconds, SetupEconomyMilliseconds, ManagedHerdMilliseconds, GrowthPlanMilliseconds, SustainMilliseconds, ProductionMilliseconds, KnowledgeMilliseconds, TotalMilliseconds;
         public double FullTurnIntegrationMilliseconds, SeasonalPreparationMilliseconds, SeasonalIntegrationMilliseconds, SeasonalCommitMilliseconds, SeasonalExpansionMilliseconds;
         public double HorizonPreparationMilliseconds, HorizonCommitMilliseconds;
         public int ActiveTiles, TileIntegrations, SeasonalTiles, FullTurnTiles;
         // Fission pass (WP10a). Transient work counts; never saved, observed or fingerprinted.
-        public long FissionCampsEvaluated, FissionValidations, FissionSearches, FissionCandidatesScored, FissionTileProjections, FissionCacheInvalidations, FissionProposals, FissionCommits, FissionDropped, FissionDaughterChecks, FissionDaughterBlocked;
+        public long FissionCampsEvaluated, FissionCooldownBlocked, FissionValidations, FissionSearches, FissionCandidatesScored, FissionTileProjections, FissionCacheInvalidations, FissionProposals, FissionCommits, FissionDropped, FissionDaughterChecks, FissionDaughterBlocked, FissionPhysicalDaughterNegativeNet;
+        public long FissionShortlists, FissionShortlistedSites, FissionShortlistAcceptedSites,
+            FissionShortlistAlternativeSelections, FissionShortlistNoAccepted;
         // Distress fission: proposals and commits by trigger, and the people in distress daughters.
         public long FissionCrowdingProposals, FissionDistressProposals, FissionCrowdingCommits, FissionDistressCommits, FissionDistressDaughters;
         // Fission funnel (Docs/Fission.md, Hinterland and relative destinations): every camp past the gain screen ends in exactly one outcome.
@@ -133,8 +146,18 @@ namespace Anthropocene.Simulation
         public long FissionScreened, FissionSearchesNoCandidates, FissionSearchesNoViable, FissionWithDestination, FissionBelowThreshold, FissionStayersBlocked;
         public double FissionMilliseconds;
         // Immigration pass (WP10b). Transient work counts; never saved, observed or fingerprinted.
-        public long ImmigrationCampsEvaluated, ImmigrationCandidatesScored, ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected, ImmigrationMigrants;
+        public long ImmigrationCampsEvaluated, ImmigrationCandidatesScored, ImmigrationIntents, ImmigrationAccepted, ImmigrationPartial, ImmigrationRejected, ImmigrationMigrants, ImmigrationHigherQoLWorseMortality, ImmigrationPhysicalDestinationNegativeNet, ImmigrationOutflowCooldownBlocked;
         public double ImmigrationMilliseconds;
+        // Shared relocation forecast work.  Builds are the expensive local
+        // capacity/source projections; candidate forecasts reuse those envelopes.
+        public long SocialForecasts, SocialForecastCacheBuilds, SocialForecastCacheHits;
+        public long SocialCandidatesEvaluated, SocialMoverRejected, SocialAggregateRejected,
+            SocialSourceRejected, SocialIncumbentRejected, SocialMatchedOpportunities;
+        // Exact simultaneous-immigration reconciliation. Endpoint builds are
+        // cache misses, dependency visits are incident-flow invalidations, and
+        // opportunity matches are recomputed only at a changed destination.
+        public long SocialJointBatches, SocialJointFlowEvaluations, SocialJointEndpointBuilds,
+            SocialJointDependencyVisits, SocialJointOpportunityMatches;
         // Trade handshake (WP8, computed in planning) and settlement. Transient; never saved, observed or fingerprinted.
         public long TradeEligible, TradeRequisitions, TradeHonoured, TradeCountered, TradeIgnored, TradesSettled;
         public double TradePlanMilliseconds, TradeSettleMilliseconds;
@@ -171,5 +194,26 @@ namespace Anthropocene.Simulation
         public int Camp;
         public double ConsumptionTarget, ReserveTarget, ReserveFillTarget, GrowthFoodTarget;
         public double GrowthFoodUsed;
+        public double ProjectedFood, NetIncome, PriorityIncome, AvailableAfterReserve;
+        public double PlantFoodAvailable, AnimalFoodAvailable;
+        public double ClothingPlantInput, ClothingAnimalInput;
+        public double RequestedPlantInput, RequestedAnimalInput;
+        // Manufacturing inputs admitted by PlanGrowth's food budget. These are
+        // not authoritative inventory debits; production consumption is traced
+        // separately by the recovery harness.
+        public double BudgetedPlantInput, BudgetedAnimalInput;
+    }
+
+    // Transient claim-to-receipt attribution for the recovery harness. The
+    // authoritative Transfer remains unchanged: this sidecar preserves the
+    // manufacturing tag that is intentionally absent from saved history.
+    public sealed class FoodClaimDiagnostic
+    {
+        public int Tile, Camp, Entity;
+        public string Kind;
+        public bool Manufacturing;
+        public double Requested, Received;
+        public double TileRequested, TileReceived;
+        public double CompetingRequested, CompetingReceived;
     }
 }

@@ -667,6 +667,7 @@ internal static class Program
             fissionEvents,
             fissionMs = Metric("FissionMilliseconds"),
             fissionCampsEvaluated = Metric("FissionCampsEvaluated"),
+            fissionCooldownBlocked = Metric("FissionCooldownBlocked"),
             fissionValidations = Metric("FissionValidations"),
             fissionSearches = Metric("FissionSearches"),
             fissionCandidates = Metric("FissionCandidatesScored"),

@@ -150,6 +150,9 @@ internal static class EconomicSettlementChecks
     {
         var world = Village(animals);
         ScaleLocalPlantProductivity(world, 1000);
+        // Ray-forecast mechanism fixture written for the legacy growth bucket; the physical maximum-birth envelope
+        // lets current growth gathering take the one-head herd increment's labour first.
+        world.Config.DemographicModel = DemographicModel.LegacyQoLNetGrowth;
         return world;
     }
 
@@ -272,9 +275,18 @@ internal static class EconomicSettlementChecks
         {
             var beforeControl = Plan(control);
             var beforeTreatment = Plan(treatment);
-            Check(beforeTreatment.Farmers == 0 &&
-                !beforeTreatment.Allocation.Requests.Any(q =>
-                    q.Service == "field expansion" && q.Granted > 1e-9) &&
+            // The causal claim is about the incidental capital itself. Population pressure under surplus-funded births
+            // can legitimately exhaust the finite gathering frontier and admit fields, so compare against the same
+            // camp with its bridge capital removed: the capital must not change the Farmer/field decision.
+            var noBridge = SaveCodec.Load(SaveCodec.Save(treatment));
+            var noBridgeCamp = noBridge.Camps[0];
+            foreach (int id in noBridge.Map.Radius(noBridgeCamp.Tile, 1))
+                if (noBridge.Tiles[id].CultivationOperator == noBridgeCamp.Id) noBridge.Tiles[id].CultivationCapital = 0;
+            var withoutBridge = Plan(noBridge);
+            double FieldGranted(Planned r) => r.Allocation.Requests.Where(q => q.Service == "field expansion").Sum(q => q.Granted);
+            double step = beforeTreatment.Allocation.StrategicLaborStep;
+            Check(beforeTreatment.Farmers <= withoutBridge.Farmers + step &&
+                FieldGranted(beforeTreatment) <= FieldGranted(withoutBridge) + step + 1e-6 &&
                 beforeTreatment.Order.Ceiling(CraftGood.Housing) == 0,
                 "marginal bridge capital does not become an agricultural commitment at causal turn " + turn);
             Check(Math.Abs(beforeControl.Herders -
@@ -296,7 +308,9 @@ internal static class EconomicSettlementChecks
             "incidental bridge fields remain physical without silently making the pastoral camp sedentary");
         var nonAgriculturalVillage = SaveCodec.Load(SaveCodec.Save(treatment));
         nonAgriculturalVillage.Camps[0].IsVillage = true;
-        Check(Plan(nonAgriculturalVillage).Farmers == 0,
+        // Compare against the same camp without the flag: population pressure may admit fields, the flag must not.
+        var asCamp = Plan(treatment); var asVillage = Plan(nonAgriculturalVillage);
+        Check(asVillage.Farmers <= asCamp.Farmers + asCamp.Allocation.StrategicLaborStep,
             "IsVillage alone does not reinterpret incidental bridge capital as an Agriculture strategy");
 
         var productive = MobileMixed(cultivation: true, productive: true,
@@ -612,10 +626,12 @@ internal static class EconomicSettlementChecks
         var treatment = SaveCodec.Load(SaveCodec.Save(control));
         treatment.Camps[0].Technologies[(int)Technology.AnimalHusbandry] = true;
         var a = Plan(control); var b = Plan(treatment);
-        var ar = a.Allocation.Requests.Single(r => r.Service == "shelter replacement");
-        var br = b.Allocation.Requests.Single(r => r.Service == "shelter replacement");
-        Check(ar.Good == CraftGood.Housing && br.Good == CraftGood.Housing &&
-            Math.Abs(ar.Units - br.Units) < 1e-9 &&
+        // With the kernel-scored Elder split, protected shelter serves retained replacement first.
+        bool Continuity(DemandController.Request r) => r.Service == "shelter replacement" || r.Service == "shelter protected";
+        var ar = a.Allocation.Requests.Where(Continuity).ToArray();
+        var br = b.Allocation.Requests.Where(Continuity).ToArray();
+        Check(ar.Length > 0 && ar.All(r => r.Good == CraftGood.Housing) && br.All(r => r.Good == CraftGood.Housing) &&
+            Math.Abs(ar.Sum(r => r.Units) - br.Sum(r => r.Units)) < 1e-9 &&
             b.Order.Ceiling(CraftGood.LightHousing) == 0,
             "H secondary Husbandry does not redirect feasible fixed-housing continuity to tents");
 
@@ -626,7 +642,7 @@ internal static class EconomicSettlementChecks
         camp.Inventory.AnimalFabric = 100;
         var fallbackPlan = Plan(fallback);
         Check(fallbackPlan.Allocation.Requests.Any(r =>
-                r.Service == "shelter replacement" &&
+                (r.Service == "shelter replacement" || r.Service == "shelter protected") &&
                 r.Good == CraftGood.LightHousing && r.Granted > 0),
             "an infeasible preferred shelter route admits a feasible bounded fallback");
 
@@ -724,6 +740,8 @@ internal static class EconomicSettlementChecks
         // unused physical capacity must pass through the shared food ledger
         // before another Gatherer is requested for the same growth service.
         var farmerCapacity = Village(0); var farmerCamp = farmerCapacity.Camps[0];
+        // The ledger fixture bounds growth with the legacy net rate; the physical model's maximum-birth envelope is larger.
+        farmerCapacity.Config.DemographicModel = DemographicModel.LegacyQoLNetGrowth;
         farmerCapacity.Config.AnnualHumanGrowthRate = .01145;
         farmerCamp.PlantFood = 200000;
         farmerCamp.Inventory.Cloth = 1000;
@@ -1009,6 +1027,8 @@ internal static class EconomicSettlementChecks
             Movement(pastoralCultivation) + " husbandryPrimary=" +
             Movement(pastoralHusbandry));
         var farmerCapacity = Village(0);
+        // The ledger fixture bounds growth with the legacy net rate; the physical model's maximum-birth envelope is larger.
+        farmerCapacity.Config.DemographicModel = DemographicModel.LegacyQoLNetGrowth;
         farmerCapacity.Config.AnnualHumanGrowthRate = .01145;
         farmerCapacity.Camps[0].PlantFood = 200000;
         farmerCapacity.Camps[0].Inventory.Cloth = 1000;

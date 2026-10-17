@@ -1063,6 +1063,9 @@ namespace Anthropocene.Simulation
         private readonly Dictionary<CraftGood, double> ceilings;
         public double Ceiling(CraftGood good) => ceilings != null && ceilings.TryGetValue(good, out double c) ? c : double.PositiveInfinity;
         public bool HasCeilings => ceilings != null;
+        // Diagnostic prototype only (DemandController.KernelSplitDiagnostic): clothing units
+        // the Elder committed ahead of meals; negative (the default) means none.
+        internal double ProtectedClothingUnits = -1;
         // An explicit access order with output ceilings (DemandControl).
         internal ProductionOrder(CraftGood[] goods, IReadOnlyDictionary<CraftGood, double> allocated)
         {

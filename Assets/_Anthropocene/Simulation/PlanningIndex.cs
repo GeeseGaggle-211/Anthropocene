@@ -95,6 +95,9 @@ namespace Anthropocene.Simulation
         public readonly int Id, Tile, Population, Gatherers, LinkedPopulation, FisherPopulation, FishingVillageMaturity, FishingVillageMealSupport;
         public readonly double FishingTools;
         public readonly double AnimalFabric, LightHousing, HerdingTools, FixedHousing, HousingMaterial;
+        // Owner-only physical demography and welfare diagnostics from the last committed turn.
+        public readonly double QoL, Nutrition, ClothingCoverage, HousingCoverage, FoodDeficitYears;
+        public readonly double EffectiveFertilityRate, EffectiveMortalityRate, ExposureMortalityRate, CrowdingMortalityRate, DiseaseMortalityRate, StarvationMortalityRate;
         public readonly bool RecentlyMoved;
         public readonly bool IsVillage;
         public readonly bool Agriculture, Husbandry, FishingEnabled;
@@ -113,6 +116,9 @@ namespace Anthropocene.Simulation
             FishingTools = c.Inventory.FishingTools;
             AnimalFabric = c.Inventory.AnimalFabric; LightHousing = c.Inventory.LightHousingUnits; HerdingTools = c.Inventory.HerdingTools; HousingMaterial = c.Inventory.HousingMaterial;
             FixedHousing = forValidation ? 0 : NeolithicProduction.FixedHousingAt(index.World, c, index.World.Days);
+            QoL = c.QoL; Nutrition = c.FoodNeedsMetRatio; ClothingCoverage = c.ClothPerCapita; HousingCoverage = c.HousingPerCapita; FoodDeficitYears = c.FoodDeficitYears;
+            EffectiveFertilityRate = c.EffectiveFertilityRate; EffectiveMortalityRate = c.EffectiveMortalityRate; ExposureMortalityRate = c.ExposureMortalityRate;
+            CrowdingMortalityRate = c.CrowdingMortalityRate; DiseaseMortalityRate = c.DiseaseMortalityRate; StarvationMortalityRate = c.StarvationMortalityRate;
             RecentlyMoved = c.Moves > 0 && c.StationaryTurns == 0; IsVillage = c.IsVillage; FissionPolicy = c.FissionPolicy; FissionDestination = c.FissionDestination == null ? -1 : c.FissionDestination.Tile;
             Agriculture = CultivationEconomy.Enabled(c); Husbandry = CultivationEconomy.HusbandryEnabled(c);
             // Economy capability is a society flag, not a prediction that a

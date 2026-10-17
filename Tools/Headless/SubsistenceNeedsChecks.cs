@@ -15,7 +15,7 @@ internal static class SubsistenceNeedsChecks
     private static WorldState Fixture(bool enabled = true, int other = 0, int explicitGatherers = 0)
     {
         var w = AutonomousElderChecks.Fixture(); var c = w.Camps[0];
-        w.Config.Neolithic.SubsistenceNeedsCovered = enabled; w.Config.QoLMortalityEnabled = true; w.Config.AnnualHumanGrowthRate = .01145;
+        w.Config.Neolithic.SubsistenceNeedsCovered = enabled; w.Config.DemographicModel = DemographicModel.LegacyQoLNetGrowth; /* the retired gear baseline belongs to the legacy growth law */ w.Config.QoLMortalityEnabled = true; w.Config.AnnualHumanGrowthRate = .01145;
         w.Config.FissionEnabled = w.Config.ImmigrationEnabled = false;
         w.FixedHousing.Clear(); c.Inventory.HousingUnits = c.Inventory.LightHousingUnits = 0;
         c.Population = 100; c.StationaryYears = 100; c.ClothPerCapita = c.HousingPerCapita = 0; c.EconomyAutomationTurns = 0;
@@ -40,7 +40,7 @@ internal static class SubsistenceNeedsChecks
             var times = new List<double>(); var allocations = new List<long>();
             for (int run = 0; run < 4; run++)
             {
-                var w = AutonomousElderChecks.BenchmarkWorld(n); w.Config.Neolithic.SubsistenceNeedsCovered = enabled;
+                var w = AutonomousElderChecks.BenchmarkWorld(n); w.Config.Neolithic.SubsistenceNeedsCovered = enabled; w.Config.DemographicModel = DemographicModel.LegacyQoLNetGrowth;
                 AutonomousElderHistory.Initialize(w, w.Camps.Select(c => c.Id).ToArray());
                 var e = new AutonomousElderHistoryEnvironment(growthAuthority: true);
                 var o = e.Reset(SaveCodec.Save(w), w.Camps.Select(c => c.Id).ToArray());
@@ -133,7 +133,7 @@ internal static class SubsistenceNeedsChecks
         Check(before == SaveCodec.Fingerprint(restored), "Save14 exact fingerprint");
         Near(restored.Camps[0].PhysicalClothingPerCapita.Value, .68, "physical clothing fraction survives save");
         string enabledHash = SaveCodec.ConfigurationHash(mixed.Config);
-        mixed.Config.Neolithic.SubsistenceNeedsCovered = false;
+        mixed.Config.Neolithic.SubsistenceNeedsCovered = false; mixed.Config.DemographicModel = DemographicModel.LegacyQoLNetGrowth;
         Check(enabledHash != SaveCodec.ConfigurationHash(mixed.Config), "mode changes authoritative configuration hash");
         mixed.Config.Neolithic.SubsistenceNeedsCovered = true;
         var legacy = Fixture(false); var legacyBytes = SaveCodec.Save(legacy);

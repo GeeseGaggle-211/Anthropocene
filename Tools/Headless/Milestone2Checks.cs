@@ -9,7 +9,7 @@ internal static class Milestone2Checks
     private static void Check(bool value, string message) { assertions++; if (!value) throw new Exception("Milestone 2: " + message); }
     private static WorldState Flat()
     {
-        var c = SimulationConfig.Small(1); c.TurnDays = 90; c.BaseDays = 90; c.PracticeDays = 90; c.Width = 24; c.Height = 16; c.ExperienceThreshold = 100000; c.AnnualHumanGrowthRate = 0;
+        var c = SimulationConfig.Small(1); c.DemographicModel = DemographicModel.LegacyQoLNetGrowth; c.TurnDays = 90; c.BaseDays = 90; c.PracticeDays = 90; c.Width = 24; c.Height = 16; c.ExperienceThreshold = 100000; c.AnnualHumanGrowthRate = 0;
         var w = new WorldState { Seed = 11, Config = c, Tiles = new Tile[384], Generation = new GenerationReport() };
         for (int i = 0; i < w.Tiles.Length; i++)
         {

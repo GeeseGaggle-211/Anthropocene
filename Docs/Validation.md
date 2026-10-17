@@ -1,5 +1,12 @@
 # Validation - September 25, 2026
 
+> Current demographic annotation (15 October 2026): new worlds now use the
+> versioned physical birth/death model while QoL remains welfare. Native kernel,
+> conservation, migration/fission attribution and benchmark evidence—and the
+> explicit NO-GO caused by unsustained endogenous textile recovery and missing
+> learned-policy comparison—are in
+> [DemographyQoLValidation-v1.1.md](DemographyQoLValidation-v1.1.md). Historical
+> QoL-mortality results below apply only to `LegacyQoLNetGrowth`.
 ## Experimental autonomous Elder direct-control gate — 14 October 2026
 
 The separate action4/native6/model6 path repairs post-growth herd retention and

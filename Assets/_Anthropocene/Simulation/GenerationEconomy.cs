@@ -39,6 +39,26 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double QoLMortalityReduction, QoL;
         // Fishing village support at the close boundary. Absent in older saves: zero.
         [System.Runtime.Serialization.OptionalField] public double FishingVillageMaturity, FishingVillageMealSupport;
+        // PhysicalMortalityV1 diagnostics. Gross integer births/deaths are authoritative turn counters; continuous
+        // causes and person-years expose why the settlement changed without deriving survival from composite QoL.
+        [System.Runtime.Serialization.OptionalField] public DemographicModel Model;
+        [System.Runtime.Serialization.OptionalField] public int GrossBirths, GrossDeaths;
+        [System.Runtime.Serialization.OptionalField] public double ContinuousBirths, ContinuousDeaths;
+        [System.Runtime.Serialization.OptionalField] public double ExposureDeaths, CrowdingDeaths, DiseaseDeaths, StarvationDeaths, AdditionalDeaths;
+        [System.Runtime.Serialization.OptionalField] public double PersonYears, Nutrition, ClothingCoverage, HousingCoverage;
+        [System.Runtime.Serialization.OptionalField] public double EffectiveFertilityRate, EffectiveMortalityRate;
+        [System.Runtime.Serialization.OptionalField] public double ExposureMortalityRate, CrowdingMortalityRate, DiseaseMortalityRate, StarvationMortalityRate;
+        [System.Runtime.Serialization.OptionalField] public double EquilibriumPopulation, CauseCorrection, ConservationError;
+        // A terminal integer convention, not a mortality hazard: when a physically declining cohort ends below half a
+        // continuous resident, the remaining residual is discarded and reported instead of creating an immortal singleton.
+        [System.Runtime.Serialization.OptionalField] public double IntegerExtinctionResidual;
+        [System.Runtime.Serialization.OptionalField] public bool IntegerExtinction;
+        [System.Runtime.Serialization.OptionalField] public int RootEvaluations, BandsCrossed, HazardEvaluations, QuadratureEvaluations, ServiceIterations;
+        // Joint expedition-density extension diagnostics. Exact scalar reductions retain the selected v1.1 analytical
+        // propagator; heterogeneous service/history cohorts use a bounded adaptive log-vector solve.
+        [System.Runtime.Serialization.OptionalField] public int CoupledPools, CoupledCohorts, CoupledRateEvaluations;
+        [System.Runtime.Serialization.OptionalField] public int CoupledAcceptedSteps, CoupledRejectedSteps, CoupledServiceEvaluations, CoupledScalarReductions;
+        [System.Runtime.Serialization.OptionalField] public bool HasPositiveEquilibrium, DeclineToExtinction;
         // Net food paid to (+) or by (-) this camp through trade after production (Docs/Trade.md: food is paid on delivery,
         // refunds included). Absent in older saves: zero.
         [System.Runtime.Serialization.OptionalField] public double TradeFood;

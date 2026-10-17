@@ -1,23 +1,77 @@
 # Immigration between known settlements (WP10b, forward-looking utility and hysteresis WP10b-2)
 
-Design: [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) sections 4 and 9 (normative ordering and forbidden
-architectures); order of work: [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md) WP10.
-Source: `Assets/_Anthropocene/Simulation/Immigration.cs` (pass, utility, size, reconcile, commit) and the
-`Fission.QoLModel` estimator in `Fission.cs`. Checks: `Tools/Headless/ImmigrationChecks.cs`. Companion:
-[Fission.md](Fission.md). Pass contract: [TurnResolutionPasses.md](TurnResolutionPasses.md), Close row.
+Current design: [UnifiedSocialRelocationContract-v0.2.md](UnifiedSocialRelocationContract-v0.2.md).
+Source: `Assets/_Anthropocene/Simulation/Immigration.cs` and
+`Assets/_Anthropocene/Simulation/SocialRelocation.cs`. Checks:
+`Tools/Headless/ImmigrationChecks.cs`, `SocialRelocationChecks.cs` and
+`SocialRelocationNativeChecks.cs`. Companion: [Fission.md](Fission.md). Pass
+contract: [TurnResolutionPasses.md](TurnResolutionPasses.md), Close row.
 
-**Status: opt-in.** `ImmigrationEnabled` is false by default and in `OpeningConfig.json`; saves that predate the
-fields load with it false and the default levers. Immigration and fission are independent switches (either can run
-alone); when both run, immigration goes first.
+**Current Physical-v1 status:** the unified architecture is implemented; native
+balance and MLP-training promotion are not certified. New-world plan-of-record
+flags enable immigration and fission independently, with immigration first. Saves
+whose demographic selector is absent retain `LegacyQoLNetGrowth` and its exact
+former social law.
 
-**WP10b-2 changed the decision rule** (utility and acceptance, below) after the WP10b measurements showed a proportional
-controller on present states: 24% of flows reversed within two turns and QoL fell. The measurements of the original rule
-are kept below as "previous rule"; the current rule's are in the WP10b-2 section.
+## Unified Physical-v1 rule (v0.2)
 
-A camp whose neighbour is a clearly better place to live may send a small group of its residents there. This is a
-resolver population process like births, not an AI decision: no order, no player control, no observation. The owner
-sees the result in the camp's demographic explanation ("... then moved to other settlements" / "... more arrived
-from other settlements") and in the turn journal.
+The physical path no longer admits a move from `ForwardUtility` or
+`Fission.QoLModel.ForwardAt`. It uses `SocialRelocationEvaluator` for the moving
+cohort, source stayers, destination incumbents and population-weighted aggregate
+welfare. Forecast experienced QoL remains in utility, while cumulative mortality
+risk comes directly from forecast food, clothing, shelter, density, disease and
+deficit history. There is no instantaneous-net-growth veto. The optional future
+employment provider is neutral and job weight is zero.
+
+Known contacts, radius, distance/attachment/lifestyle costs, return hysteresis,
+source floor and the 10% maximum remain. Each receiver is checked at a bounded,
+deterministic shortlist containing the minimum, 2.5/5/7.5/10% source fractions,
+the configured maximum and the legacy preferred size where distinct. This replaces
+monotone admission bisection because future credible job matching can be
+nonmonotone. It does not enlarge the cap.
+
+A Physical-v1 daughter may receive people immediately but cannot initiate an
+outflow while it is below its saved `FissionEligibleTurn`. This deliberately
+reuses the fission maturity boundary: with the shipped cooldown, the founding
+Close and first complete post-founding Close are protected, and outflow becomes
+eligible at the second. Existing camps have boundary zero, and the exact
+legacy-demography path bypasses the gate. This changes no migration utility,
+deadband, group-size rule or return hysteresis. The transient
+`ImmigrationOutflowCooldownBlocked` metric counts excluded camp-turns.
+
+Canonical reconciliation revalidates later cohorts against the receiver including
+already accepted population, typed food, workforce, deficit exposure and reserved
+opportunities. A final bounded pass then checks every flow against the exact joint
+simultaneous state, including a receiver's own frozen-resident departure, and
+removes all failures in deterministic batches. Flows are indexed by endpoint;
+final and marginal endpoint forecasts are cached, and a failure invalidates only
+its endpoints and incident dependencies. Chain, eight-source fan-in and rejection-
+cascade counters guard against the former repeated global flow scan. Departures
+commit before arrivals;
+arrivals cannot re-emigrate in the same Close. Workforce roles, provisions and
+physical-demography ledgers move conservatively; arrivals are not casualties or
+newly trained specialists. Because Close follows the real economy and demography,
+the increased receiver population first affects production, needs, births and
+deaths on the next turn. It is visible only to same-Close revalidation and endpoint
+diagnostics in the current turn.
+
+The committed `Camp.QoL` formula, Elder reward, observation schema and hysteresis
+calibration are unchanged. The matched accepted/suppressed/forced native flow has
+a positive three-endpoint `population × QoL` proxy, but that is not an integrated
+person-year welfare measure and it is only one zero-stability case. It does not
+certify the receiver population. See
+[UnifiedSocialRelocationValidation-v0.2.md](UnifiedSocialRelocationValidation-v0.2.md).
+
+## Legacy WP10b/WP10b-2 path and historical evidence
+
+The remaining WP10b text documents `LegacyQoLNetGrowth` compatibility and the
+historical calibration. References below to “current” mean current within that
+legacy series; they do not supersede the unified Physical-v1 rule above.
+
+A camp whose neighbour is a clearly better place to live may send a small group of
+its residents there. This is a resolver population process like births, not an AI
+decision: no order, no player control, no observation. The owner sees the result
+in the demographic explanation and turn journal.
 
 ## Doctrine summary
 
@@ -35,7 +89,9 @@ from other settlements") and in the turn journal.
   destination's true committed state, which a population process may do, exactly as demography reads true state.
 - **Scaling law.** `T(N) = O(N + S_eval * r_imm^2 + I log M)`: O(N) QoL terms (one `Fission.QoLModel` per camp, each
   O(fixed-housing stocks + camps), shared with fission), one map-radius walk per eligible source (a source needs at
-  least `ImmigrationSourceFloor + ImmigrationMinimumGroup` = 16 residents; each visited tile is a dictionary lookup
+  enough residents for both the source floor and fractional cap. At defaults,
+  `min(floor(0.10 N), N - 12) >= 4`, so the effective minimum is 40 residents
+  (the cheap first screen is 16); each visited tile is a dictionary lookup
   and each camp on it one binary-searched contact test), and reconcile/commit proportional to the number of
   intents `I` (bisection over the group size, `M <= 0.1 N`). With `r_imm <= 5` this is O(N) in camps. Nothing scales
   with elapsed years, map size, or the number of Societies. Scoring runs on bounded workers
@@ -129,17 +185,17 @@ when empty. Cooldown 0 or penalty 0 disables the term.
 | `ImmigrationToNomadicCost` | 0.15 | 0.10 / 0.15 / 0.25 | village to nomadic camp |
 | `ImmigrationDeadband` | 0.075 | 0.05 / 0.075 / 0.10 | theta: the utility a move must exceed, and the ramp width of the group size |
 | `ImmigrationMaxFraction` | 0.10 | | largest fraction of residents that leaves in one turn |
-| `ImmigrationMinimumGroup` | 4 | | smallest migrating group |
+| `ImmigrationMinimumGroup` | 4 | | smallest migrating group; with the default 10% cap this makes 40 residents the effective smallest source |
 | `ImmigrationSourceFloor` | 12 | | residents a source always keeps |
 | `ImmigrationReturnCooldownTurns` | 3 | | turns a reversal is penalised (0 disables), validated 0 to 20 |
-| `ImmigrationReturnPenalty` | 0.10 | | the penalty at age 1, validated 0 to 5 |
+| `ImmigrationReturnPenalty` | 0.10 | 0 / 0.10 / 0.15 / 0.20 / 0.25 / 0.30 | the penalty at age 1, validated 0 to 5; 0.20 is an exploratory reversal-suppression candidate, not the shipped setting |
 
-`ImmigrationEnabled` (false) is the switch. The group-size levers and the two hysteresis levers are not in the design
-table; they are uncalibrated placeholders (the hysteresis pair has not been swept).
+`ImmigrationEnabled` (true for new worlds; false when absent from an older save) is the switch. The group-size levers remain uncalibrated. The cooldown and return penalty
+were swept on identical saved physical-v1.1 boundaries; the shipped cooldown 3 and penalty 0.10 remain unchanged pending counterfactual and held-out evidence.
 
 **One intent per source.** Among the valid known destinations the source compares `dU` evaluated at its largest group
 `M_max = min(floor(N * ImmigrationMaxFraction), N - ImmigrationSourceFloor)` (the source needs `M_max >=
-ImmigrationMinimumGroup`; ties: higher `dU`, nearer, lower camp ID). The best `dU(M_max)` sets the size by the ramp;
+ImmigrationMinimumGroup`; at defaults this requires `N >= 40`; ties: higher `dU`, nearer, lower camp ID). The best `dU(M_max)` sets the size by the ramp;
 the group is then **re-evaluated at its final size** and emitted only if `dU(M) > theta`:
 
 ```
@@ -157,11 +213,19 @@ group `m <= M` such that `dU(m)` evaluated with the destination's headcount `N_j
 arriving from earlier sources (their `carried`) and this source's `m * s`, stays above `theta` (return penalty included),
 found by bisection (monotone because dilution and cohesion dominate; the closed form and a linear scan agree in the
 fixtures). The excess of a partly accepted source, and all of a fully rejected one, stays home; nobody is rerouted. A
-partly accepted group is not subject to the minimum group (only the intent is).
+partly accepted group is not subject to the minimum group (only the intent is). Under `PhysicalMortalityV1`, the
+unchanged QoL-selected/reconciled group also receives explicit physical mortality and net-rate diagnostics. The
+projection uses destination population, diluted clothing, carried food and the population-weighted deficit ages of
+prior arrivals; it never uses composite QoL as mortality. A negative instantaneous net rate is recorded by
+`ImmigrationPhysicalDestinationNegativeNet` but does not block, shrink or reroute the group: above-equilibrium decline
+and recoverable distress are not physical nonviability. The utility, ranking, deadband, size ramp and hysteresis remain
+unchanged.
 
 **Commit, simultaneously and canonically.** All departures from the frozen residents and stores first, then all
 arrivals. The migrants of a flow carry their per-capita share (`m / N_i` of the frozen stock) of the source's typed
-Plant, Animal and Aquatic food and nothing else: no herds, tools, housing, fabric or fractional demographic progress.
+Plant, Animal and Aquatic food and no material goods: no herds, tools, housing or fabric. In physical mode they also
+carry their proportional gross-birth/death progress and their deficit age/severity; the receiver combines deficit
+history by population. Legacy mode retains the historical initialization semantics.
 The source's workforce ledger loses the emigrants across its roles in proportion (`PopulationLedger.ApplyCasualties`,
 largest remainder); arrivals join the destination as gatherers (the ledger assigns the remainder to gathering).
 Migrants join the destination's Society (there is no separate migrant record). Every people and food ledger is
@@ -180,12 +244,15 @@ population changed, every other camp is evaluated on its unchanged snapshot. QoL
 **Journal and observations.** `TurnRecord.Migrations` holds one `MigrationReport` per committed flow (turn, source
 and destination camp and Society, residents before, intended and migrated people, distance, kin flag, `Q_i`, `Q_j`,
 the forward `dU` at the committed group, the destination's forward post-inflow QoL, the typed food carried, the return
-penalty paid and the person-equivalents carried), in destination then source order, plus
+penalty paid and the person-equivalents carried, plus projected source/destination mortality, net rates, receiver
+net-rate sign and the higher-QoL/worse-mortality flag). In Physical-v1 the latter
+uses destination X1 versus the mover's source X0 for both QoL and mortality rather
+than mixing source endpoints. Reports remain in destination then source order, plus
 one journal line. Observations carry nothing new beyond what an owner sees of its own camps. No Unity change.
 
 ## Validation
 
-`ImmigrationChecks.cs` (registered in `Anthropocene.Headless.csproj` and the fixed-suite list, 334 assertions, own
+`ImmigrationChecks.cs` (registered in `Anthropocene.Headless.csproj` and the fixed-suite list, 379 assertions, own
 worlds): defaults, validation (including the cooldown and penalty), serialization and old-config loading,
 `OpeningConfig.json` keys; the closed-form present-state utility for every barrier; the size formula exhaustively over
 N = 0 to 400 and `dU` = 0 to 0.40 and its floors; estimator equality with `EstimateSplit` and monotonicity;
@@ -205,8 +272,13 @@ fixtures** (two camps with alternating harvests: the previous rule reimplemented
 and 29 reversals in 30 turns; the forward rule alone still swings, because next season's harvest is unknowable; with the
 return penalty reversals and people moved fall by more than half; a mild swing (130 / 80) that the previous rule
 swaps every turn moves nobody under the forward rule; a stable gap still moves people one way and never back);
-immigration precedes fission and excludes sources and arrivals; no multi-hop (A to B while B to C); exact conservation of
-people and each typed food per camp, no goods, herds or remainders move; demographic lines, journal, contacts in both
+immigration precedes fission and excludes sources and arrivals; its Close-phase population changes are excluded from the
+current demographic result and become the following turn's starting population; no multi-hop (A to B while B to C);
+endpoint-indexed exact joint revalidation over an accepted chain, eight-source fan-in and a specialist-loss rejection
+cascade, with linear endpoint work and only incident retry counters; exact conservation of
+people and each typed food per camp, no goods or herds move; physical gross-event/deficit ledgers transfer without
+creation; higher-QoL/worse-mortality attraction remains possible when physical net growth is nonnegative, and a
+negative-net receiving settlement does not block the otherwise unchanged QoL-selected group; demographic lines, journal, contacts in both
 directions; scalar versus reversed four-worker replay with reordered collections over five turns of an eight-camp world
 and over a generated world with both switches on (the fingerprint includes the memory); save continuation through a
 migration with memory, the memory round trip, an older camp and an older report loading without the new fields.
@@ -296,7 +368,7 @@ Findings:
   unchanged by design; growth, goods and food change them by the next turn): across 3,858 flows the destination's QoL
   on the next turn was a median +0.014 (P25 -0.198, P75 +0.071) from the post-inflow estimate, so the estimator is
   unbiased at the median but a quarter of the destinations end up more than 0.2 worse than estimated. Candidate
-  levers, none applied (they need their own calibration): a wider deadband (design sweep 0.10), a per-pair cooldown
+  levers, none applied in that historical audit (they needed their own calibration): a wider deadband (design sweep 0.10), a per-pair cooldown
   or direction memory, or diluting F with the headcount where the destination is food-limited.
 - **Fission is reduced slightly** (1,545 versus 1,619, -4.6%; Continents -25, -28, -21, Pangaea -20, Archipelagos
   +20): sources that emit an intent and camps that receive arrivals sit out fission that turn, and moving people
@@ -421,14 +493,16 @@ Findings:
   candidate (the `QoLModel` per camp is built once per turn and shared by the reconcile), one memory scan per candidate
   (lists of at most a few records) and an O(camps) prune; no allocation beyond the per-camp lists.
 
-Not measured: a hysteresis or deadband sweep (cooldown, penalty, theta stay at their placeholders), other seeds, 320
-tribes, and anything past turn 62.
+Not measured by that historical WP10b-2 audit: a hysteresis or deadband sweep, other seeds, 320 tribes, and anything
+past turn 62. The v1.1 matched-boundary follow-up now sweeps hysteresis, deadband and group-size controls without
+changing the shipped calibration; see [DemographyQoLValidation-v1.1.md](DemographyQoLValidation-v1.1.md).
 
 ## Deliberate limits and remaining work
 
-- Opt-in and uncalibrated: the design sweeps (deadband 0.05 to 0.10, lifestyle barriers, radius 3 to 5, cooldown, penalty) have
-  not been run. The forward rule with hysteresis (WP10b-2) removed the previous rule's oscillation and QoL loss in the five
-  measured worlds; the estimator's tail error remains.
+- The matched v1.1 sweep covers disabled hysteresis, penalty 0.10 to 0.30, cooldown 3 versus 5, deadband 0.075 versus
+  0.10 and max fraction 0.10 versus 0.075. The shipped 3 / 0.10 hysteresis already mitigates pair returns. A 0.20
+  candidate suppresses more fitted-sample returns but is not promoted without individual-flow counterfactual and held-out
+  evidence. Lifestyle barriers and radius remain at their design baselines, and the estimator's next-turn tail error remains.
 - The forward estimator has no knowledge of next turn's harvest: alternating good and bad seasons still swing flows, and
   only the return penalty damps the swing (fixture). A source's food estimate assumes the committed F is representative.
 - Destination acceptance is checked against the forward estimate (food and water diluted with headcount, plus the carried

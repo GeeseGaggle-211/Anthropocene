@@ -27,7 +27,7 @@ internal static class HusbandryChecks
 
     public static int Run()
     {
-        checks = 0; FullManagedOutput(); UnderManagementAndNoCap(); CurrentNutritionAndNewbornBoundary(); LocalFootprintAndSharedSource(); MovedHunterFoodCohort(); PreparedFoodRemainderLedger(); ProportionalSpeciesManagement(); SharedControlAndSave(); ObservationAndOrderContracts(); PartitionedExposure(); MixedFoodInputBoundary(); MixedAnimalOnlyDoesNotChargePlant(); TypedFabricPriorityBudget(); StorageReceivingCapacity(); SharedStarvationAndSourceLedgers(); SpeciesReplayAndContinuation(); StaleNutritionAndNewbornBoundary(); BreedingIntensityPolicy(); SupportLimitedBreeding(); HerdingToolCoverage(); AcceptedMovementControlsAccessibleSources();
+        checks = 0; FullManagedOutput(); UnderManagementAndNoCap(); CurrentNutritionAndNewbornBoundary(); LocalFootprintAndSharedSource(); VisibleRivalForecast(); MovedHunterFoodCohort(); PreparedFoodRemainderLedger(); ProportionalSpeciesManagement(); SharedControlAndSave(); ObservationAndOrderContracts(); PartitionedExposure(); MixedFoodInputBoundary(); MixedAnimalOnlyDoesNotChargePlant(); TypedFabricPriorityBudget(); StorageReceivingCapacity(); SharedStarvationAndSourceLedgers(); SpeciesReplayAndContinuation(); StaleNutritionAndNewbornBoundary(); BreedingIntensityPolicy(); SupportLimitedBreeding(); HerdingToolCoverage(); AcceptedMovementControlsAccessibleSources();
         Console.WriteLine("PASS: " + checks + " managed husbandry assertions"); return checks;
     }
     private static void FullManagedOutput()
@@ -168,6 +168,69 @@ internal static class HusbandryChecks
         Check(balance.EndingBiomass >= -1e-8 && balance.EndingWater >= -1e-8, "contended tile stocks never go negative");
         Near(balance.BiomassHarvest, FirstFood() + SecondFood(), "shared forage ledger conserves accepted herd receipts");
         Near(balance.WaterHarvest, FirstWater() + SecondWater(), "shared water ledger conserves accepted herd receipts");
+    }
+
+    private static void VisibleRivalForecast()
+    {
+        var w = Fixture(100, 50); var camp = w.Camps.Single(); var owned = w.Herds.Single();
+        w.Config.AnnualHumanGrowthRate = 0; w.Config.WanderChance = 0;
+        var species = w.Config.GetSpecies(owned.Species); species.GrowthRate = 0;
+        double intervals = w.Config.GenerationIntervals;
+        double years = w.Config.TurnDays / w.Config.DaysPerYear;
+        double foodNeed = owned.Animals * species.FoodConsumption * intervals;
+        double waterNeed = owned.Animals * species.FreshwaterConsumption * intervals;
+        foreach (var tile in w.Tiles)
+        {
+            tile.Food = tile.PotentialFood = tile.Freshwater = 0;
+            tile.FreshwaterSource = FreshwaterSource.None;
+            for (int season = 0; season < 4; season++)
+            {
+                tile.Seasons[season].MaxFood = tile.Seasons[season].MaxPotentialFood = 0;
+                tile.Seasons[season].MaxFreshwater = 0;
+                tile.Seasons[season].FoodRecoveryPerDay = 0;
+                tile.Seasons[season].BiomassRecoveryPerDay = 0;
+                tile.Seasons[season].WaterRecoveryPerDay = 0;
+            }
+        }
+        var source = w.Tiles[camp.Tile];
+        source.PotentialFood = foodNeed * 3;
+        source.Freshwater = waterNeed * 1.25;
+        source.FreshwaterSource = FreshwaterSource.RainPool;
+        for (int season = 0; season < 4; season++)
+        {
+            source.Seasons[season].MaxPotentialFood = (float)source.PotentialFood;
+            source.Seasons[season].MaxFreshwater = (float)source.Freshwater;
+        }
+        // Stable entity order gives this visible wild herd the first draw on
+        // the shared spring, exactly as the authoritative tile integration does.
+        int rivalId = owned.Id;
+        owned.Id = w.NextId++;
+        var rival = new Herd
+        {
+            Id = rivalId, Tile = camp.Tile, Species = owned.Species,
+            Animals = owned.Animals, Capacity = owned.Animals
+        };
+        w.Herds.Add(rival);
+        double forecast = TurnResolver.ForecastManagedAnimalFood(w, camp, 50,
+            intervals, years, camp.Tile).AnimalFood;
+        // 96 and 100 are the same public ~100 observation. Private count,
+        // capacity and prior nutritional state therefore cannot change an
+        // automatic economic forecast.
+        rival.Animals = 96; rival.Capacity = 9999; rival.UnmetFood = 123;
+        rival.UnmetFreshwater = 456; rival.GrowthRemainder = .875;
+        rival.DeficitTurns = 7; rival.DeficitSeverity = 3.25;
+        double sameObservation = TurnResolver.ForecastManagedAnimalFood(w, camp, 50,
+            intervals, years, camp.Tile).AnimalFood;
+        Near(sameObservation, forecast,
+            "same observed rival-herd band with different private state produces the same forecast");
+        rival.Animals = owned.Animals; rival.Capacity = owned.Animals;
+        rival.UnmetFood = rival.UnmetFreshwater = rival.GrowthRemainder = 0;
+        rival.DeficitTurns = 0; rival.DeficitSeverity = 0;
+        var report = Resolve(w).ManagedHerds.Single(h => h.Herd == owned.Id);
+        Near(report.WaterNutrition, .25,
+            "visible wild rival receives the prior share of a finite spring");
+        Near(forecast, report.PotentialFood,
+            "managed-food forecast includes visible rival-herd claims on a shared source");
     }
 
     private static void MovedHunterFoodCohort()
@@ -525,10 +588,15 @@ internal static class HusbandryChecks
             }
 
         var mortalityCase = Case(20, true, .18); var hungryHerd = mortalityCase.Herds.Single();
+        double mortalityForecast = TurnResolver.ForecastManagedAnimalFood(mortalityCase,
+            mortalityCase.Camps.Single(), 50, mortalityCase.Config.GenerationIntervals,
+            mortalityCase.Config.TurnDays / mortalityCase.Config.DaysPerYear).AnimalFood;
         var hungry = Resolve(mortalityCase).ManagedHerds.Single();
         Check(hungry.StarvationDeaths > 0 && hungry.NewbornAnimals == 0 &&
             hungryHerd.Animals == hungry.SurvivingAnimals,
             "water-short herd declines without replacing starvation deaths in the same turn");
+        Near(mortalityForecast, hungry.PotentialFood,
+            "managed-food forecast applies the authoritative imminent herd-starvation loss");
         var continuation = SaveCodec.Load(SaveCodec.Save(mortalityCase));
         Near(continuation.Herds.Single().GrowthRemainder, .37,
             "save continuation preserves paused fractional breeding progress");

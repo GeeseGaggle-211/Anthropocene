@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -50,6 +51,8 @@ internal static class ParallelChecks
         return true;
     }
 
+    // --keep-going: run every fixed check, report each failure, then fail once.
+    public static bool KeepGoing;
     public static void Run(Entry[] entries, int jobs, bool timings)
     {
         var total = Stopwatch.StartNew();
@@ -69,12 +72,17 @@ internal static class ParallelChecks
                 var queue = new ConcurrentQueue<Entry>(entries.OrderByDescending(e => e.Cost));
                 for (int lane = 0; lane < Math.Min(jobs, entries.Length); lane++)
                     new Thread(() => Work(queue)) { IsBackground = true, Name = "check-lane-" + lane }.Start();
+                var failed = new List<string>();
                 foreach (var entry in entries)
                 {
                     entry.Done.Wait();
                     original.Write(entry.Output);
-                    if (entry.Error != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(entry.Error).Throw();
+                    if (entry.Error == null) continue;
+                    if (!KeepGoing) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(entry.Error).Throw();
+                    failed.Add(entry.Name);
+                    original.WriteLine("FAILCHECK " + entry.Name + ": " + entry.Error.Message);
                 }
+                if (failed.Count > 0) throw new Exception("Fixed checks failed: " + string.Join(", ", failed));
             }
             finally { Console.SetOut(original); }
         }

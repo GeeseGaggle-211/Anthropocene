@@ -114,9 +114,7 @@ namespace Anthropocene.Presentation
                 JsonUtility.FromJsonOverwrite(tuning.text, config);
                 config.MigrateMissingPhysicalFoodHorizons();
             }
-            // Experimental branch: new games use the subsistence gear baseline.
-            // Loaded historical saves retain the mode stored by SaveCodec.
-            config.Neolithic.SubsistenceNeedsCovered = true;
+            // The subsistence gear baseline is retired (model9 merge); loaded envelope-14 saves keep the mode SaveCodec stores.
             var resourceOptions = new ResourceGenerationOptions();
             try
             {

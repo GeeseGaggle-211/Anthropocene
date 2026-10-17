@@ -2,6 +2,40 @@
 
 > Current-contract annotation (27 September 2026): Provenance note: this file collects measurements from multiple historical revisions. Preserve each section's named source/config/horizon; timing gates and unmerged-branch statements describe that measurement's disposition, not today's integration status. Issue #27 code is present at 19cd328/c519cd4 while the GitHub issue remains open. Current results must use a newly pinned paired run. See [CurrentSimulationContract.md](CurrentSimulationContract.md).
 
+## Unified social-relocation v0.2 — October 15, 2026
+
+The feature branch was measured against pinned demographic revision `bcf7f214`
+with the same-source Release harness. Values are single-process p50/p95 samples;
+the branches can diverge in camp count, so they are scaling evidence rather than
+cycle-exact microbenchmarks.
+
+| Cohort | Baseline turn ms p50/p95 | Unified turn ms p50/p95 | Baseline allocation MiB p50/p95 | Unified allocation MiB p50/p95 |
+| --- | ---: | ---: | ---: | ---: |
+| 8 tribes, opening | 36.1 / 279.3 | 66.7 / 230.7 | 3.06 / 6.41 | 4.52 / 7.58 |
+| 80 tribes | 431.6 / 500.8 | 615.5 / 997.0 | 63.99 / 102.02 | 77.16 / 120.54 |
+| 320 tribes | 1066.3 / 1208.8 | 1271.1 / 2176.4 | 265.38 / 433.54 | 313.03 / 496.86 |
+| 8 tribes + 25 turns, mature tail | 175.4 / 295.3 | 187.4 / 454.1 | 18.98 / 50.52 | 21.85 / 54.49 |
+
+The corrected fission bound constructs physical baselines rather than trusting
+historical satisfaction. The 320 run records 3,405 builds and 2,503 hits; the
+mature run records 1,208 builds and 9,604 hits (88.8% hit share). Each miss can
+still execute the bounded finite-input material forecast. Exact simultaneous
+immigration now indexes endpoint aggregates and invalidates only incident flows;
+chain, eight-source fan-in and rejection-cascade tests pin linear endpoint work in
+those fixtures. The native scale samples have few active flows, so they do not
+substitute for those work-counter tests.
+
+At 320 tribes, whole-turn p95 is 80% higher and allocation p95 14.6% higher in the
+listed samples. The behaviorally divergent mature run ends with 40 rather than 88
+terminal camps but has 54% higher p95. The 80 sample has 99% higher p95;
+short-run timing is noisy and is not warmed repeated-boundary certification. These
+measurements fail rather than pass the gate: performance is locally indexed but
+**NO-GO for MLP throughput**. Before promotion, compact forecast views/material
+summaries and safe baseline reuse without falling back to historic QoL coverage,
+then repeat warmed 80/320/mature and dense-flow cascade profiles. Full setup,
+social timings and caveats are in
+[UnifiedSocialRelocationValidation-v0.2.md](UnifiedSocialRelocationValidation-v0.2.md).
+
 The issue #27 land-recovery reconciliation retains constant work in simulated
 duration: four saved profiles define a cycle, and a transition evaluates four
 distinct land capacities without cultivation decay or five with the tested

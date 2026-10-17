@@ -17,8 +17,15 @@ namespace Anthropocene.Simulation
         // TurnPlanning may supply the access plan it already built for this accepted destination. The normal path keeps
         // the same single physical-demand pass, which creates the access plan only when no reusable one was supplied.
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, FishingAccessPlan fishingAccess, out ProductionOrder production)
+            => Plan(w, c, settings, fishingAccess, out production, out _);
+        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, out ProductionOrder production,
+            out DemandController.Allocation allocation)
+            => Plan(w, c, settings, null, out production, out allocation);
+        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, FishingAccessPlan fishingAccess,
+            out ProductionOrder production, out DemandController.Allocation allocation)
         {
-            if (IsDemandControl(w.Config)) return DemandController.Plan(w, c, settings, fishingAccess, out production, out _);
+            allocation = null;
+            if (IsDemandControl(w.Config)) return DemandController.Plan(w, c, settings, fishingAccess, out production, out allocation);
             return EconomicPlanner.Plan(w, c, settings, EconomicPlanner.ConfiguredRule(w.Config), out _, out production);
         }
     }
@@ -32,7 +39,10 @@ namespace Anthropocene.Simulation
     //   Continuity   this turn's clothing consumption, retained shelter replacement, and the field/herd/equipment work
     //                authorized by that portfolio, including Fishing Tools for staffed Fishers;
     //   Recovery     the clothing reserve, the shelter deficit, Pots for the storage gap.
-    // Development covers explicitly authorized field and herd increments. Each request is a complete bundle:
+    // Development covers explicitly authorized field and herd increments. With the kernel-scored Elder split
+    // (SimulationConfig.ElderKernelSplit, Docs/ClothingCoverageAndSurplusBirths.md) the current clothing and part of the
+    // shelter backlog become a Protected class ahead of every other class: the Elder scores a grid of clothing and shelter
+    // levels with the demographic kernel and commits the best. Each request is a complete bundle:
     // craft time, made intermediates (Animal Fabric for tents, Housing Material for Housing), raw extraction beyond stock,
     // feedstock and its gathering, and tool service (toolmaking at the urgency of the work it enables). The Elder grants
     // Continuity and Recovery use bounded equal fulfilment; Development admits
@@ -41,8 +51,84 @@ namespace Anthropocene.Simulation
     // O(requests x bisection) per camp, one physical demand pass, and no Value search.
     internal static class DemandController
     {
-        internal enum ServiceClass { Survival = 1, Continuity = 2, Recovery = 3, Development = 4 }
+        // Protected holds the kernel-scored clothing and shelter split; it is arbitrated before Continuity.
+        internal enum ServiceClass { Protected = 0, Survival = 1, Continuity = 2, Recovery = 3, Development = 4 }
         private const double Epsilon = 1e-9;
+        // Scalar headless root-cause ablations only; ordinary planning leaves these false.
+        [ThreadStatic] internal static bool ConsumptionFirstDiagnostic;
+        [ThreadStatic] internal static bool ExcludeGrowthFromSurvivalDiagnostic;
+        [ThreadStatic] internal static bool NoFieldDevelopmentDiagnostic;
+        // Diagnostic overrides of the configured Elder split (headless probes). They can only switch the split on; the
+        // authoritative setting is SimulationConfig.ElderKernelSplit / ElderSplitObjective / ElderSplitLexTolerance /
+        // ElderMixedRoutes. Process-wide so parallel preparation sees them. Objectives: 0 person-years, 1 QoL-weighted
+        // person-years, 2 lexicographic (person-years within the tolerance of the best, then QoL; the default), 3 terminal-
+        // population welfare, 4 deaths averted.
+        internal static volatile bool KernelSplitDiagnostic;
+        internal static volatile int KernelSplitObjective = 2;
+        internal static double KernelLexTolerance = .05;
+        // Hybrid counterfactual: score and commit only the shelter split; clothing keeps the ordinary requests.
+        internal static volatile bool KernelShelterOnlyDiagnostic;
+        internal static long KernelSplitCalls, KernelSplitTicks, KernelSplitCamps;
+        internal static long KernelServiceIterations;
+        // Candidates are scored with PhysicalDemography.PlanningBudget (the fast solver). Exact scoring uses the
+        // authoritative AdvanceBudget instead; verify scores both and counts decisions whose winner differs.
+        internal static volatile bool KernelExactScoringDiagnostic, KernelVerifyDiagnostic;
+        internal static readonly object KernelVerifyLock = new object();
+        internal static long KernelVerifyDecisions, KernelVerifyMismatches;
+        internal static double KernelVerifyMaxPersonYearsError, KernelVerifyMaxQoLError;
+        internal static string KernelVerifyWorst = "";
+        internal static readonly double[] KernelClothingGrid = { 0, .25, .5, .75, 1 };
+        internal static readonly double[] KernelShelterGrid = { 0, .5, 1 };
+        internal static readonly long[] KernelChosenClothing = new long[5], KernelChosenShelter = new long[3];
+        // Mixed-use routes: a farming and herding camp also scores the other clothing route (Cloth / Animal Fabric) and
+        // the other shelter route (fixed Housing / Light Housing). Herd-versus-field investment is the settlement
+        // portfolio supervisor's decision; the earlier kernel posture search lost population and is retired, so
+        // KernelPostureMode is kept only for source compatibility and must stay 0.
+        internal static volatile bool KernelMixedDiagnostic;
+        internal static volatile int KernelPostureMode;
+        internal static long KernelMixedCamps, KernelMixedOtherClothing, KernelMixedOtherShelter;
+        internal static readonly long[] KernelChosenPosture = new long[3];
+        internal static void ResetKernelSplitCounters()
+        {
+            KernelMixedCamps = KernelMixedOtherClothing = KernelMixedOtherShelter = 0;
+            Array.Clear(KernelChosenPosture, 0, KernelChosenPosture.Length);
+            KernelSplitCalls = KernelSplitTicks = KernelSplitCamps = KernelServiceIterations = 0;
+            KernelVerifyDecisions = KernelVerifyMismatches = 0; KernelVerifyMaxPersonYearsError = KernelVerifyMaxQoLError = 0; KernelVerifyWorst = "";
+            Array.Clear(KernelChosenClothing, 0, KernelChosenClothing.Length);
+            Array.Clear(KernelChosenShelter, 0, KernelChosenShelter.Length);
+        }
+        internal static bool KernelSplitOn(SimulationConfig cfg) => KernelSplitDiagnostic || cfg.ElderKernelSplit;
+        private static int SplitObjective(SimulationConfig cfg) => KernelSplitDiagnostic ? KernelSplitObjective : cfg.ElderSplitObjective;
+        private static double SplitTolerance(SimulationConfig cfg) => KernelSplitDiagnostic ? KernelLexTolerance : cfg.ElderSplitLexTolerance;
+        private static bool MixedRoutesOn(SimulationConfig cfg) => KernelMixedDiagnostic || cfg.ElderMixedRoutes;
+
+        // Retained for source compatibility of diagnostics; only HerdFirst (the class order) is ever committed.
+        internal enum LabourPosture { HerdFirst = 0, FieldFirst = 1, NoInvestment = 2 }
+
+        // The Elder's committed labour/food split for one camp-turn: the action a Village Elder policy would emit (routes
+        // and grid levels are discrete; units/people are the levels' physical amounts), plus the kernel's score of it.
+        // Transient diagnostics, never saved.
+        internal sealed class ElderAction
+        {
+            public CraftGood ClothingRoute, ShelterRoute;
+            public int ClothingLevel, ShelterLevel;
+            public double ClothingUnits, ShelterPeople;
+            public LabourPosture Posture;
+            public double PersonYears, QoL;
+        }
+
+        // Complete per-unit cost of one clothing or shelter route (shelter per person sheltered).
+        private sealed class RouteCost { public CraftGood Good; public double Persons, Food, Plant, Animal, Stone, WoodOrClay; }
+
+        // One scored (clothing, shelter) split.
+        private sealed class KernelCandidate
+        {
+            public CraftGood ClothingRoute, ShelterRoute;
+            public int ClothingLevel, ShelterLevel;
+            public double ClothingUnits, ShelterPeople, Persons, ProtectedFood, Food;
+            public DemographicResult Result;
+            public double PersonYears, QoL, Value;
+        }
 
         // Per-unit requirements of a request's complete bundle.
         internal sealed class Bundle
@@ -74,6 +160,8 @@ namespace Anthropocene.Simulation
             internal double PriorityScore, DevelopmentFood,
                 DevelopmentFoodPerUnit, TypedDevelopmentNeed,
                 SubstitutionFood, PolicyDevelopmentUnits;
+            // Opening intermediates this request's bundle drew from stock, returned if the request is withdrawn.
+            internal double ReservedFabric, ReservedMaterial;
             public double Fraction => Units > Epsilon ? Granted / Units : 1;
         }
         internal sealed class Allocation
@@ -102,7 +190,27 @@ namespace Anthropocene.Simulation
             public readonly List<InvestmentTrace> InvestmentTraces =
                 new List<InvestmentTrace>();
             public readonly Dictionary<CraftGood, double> Ceilings = new Dictionary<CraftGood, double>();
-            public string FoodUnmet = ""; public int RepairPasses;
+            public string FoodUnmet = ""; public int RepairPasses, TrimPasses;
+            // Prepared-boundary diagnostics (transient).
+            public double ResidentGoodsBudget, FinalCompiledPersons;
+            public double ExpectedSupply, Meals, OperatingReserve;
+            public double ExpectedForageAfterHerds, ExpectedManagedAnimalFood;
+            public double ConsumptionIncomeTarget, ReserveFillTarget, MaximumGrowthFood;
+            public int ConsumptionOnlyFoodGatherers, ConsumptionReserveFoodGatherers, ConsumptionGrowthFoodGatherers;
+            public int FieldExpansionSteps;
+            public double FieldExpansionGapPerYear, FieldExpansionGainPerYear;
+            public double FieldExpansionWorkerYears, FieldExpansionMinimumScore = double.PositiveInfinity;
+            // Diagnostic only (CaptureDemandAllocations): the uncapped ladder — all positive steps from the committed state.
+            public double FieldPotentialGainPerYear, FieldPotentialWorkerYears; public int FieldPotentialSteps = -1;
+            public bool FieldExpansionEligible;
+            public bool HusbandryEnabled;
+            public double PlantEnvelope, AnimalEnvelope, FoodRoomEnvelope;
+            public double PlantEnvelopeClothing, AnimalEnvelopeClothing, FoodRoomEnvelopeClothing;
+            public double AccessibleStone, AccessibleClay, AccessibleWood;
+            public double PlannedStoneExtraction, PlannedClayExtraction, PlannedWoodExtraction;
+            // The committed Elder split and (CaptureDemandAllocations) every scored split.
+            public ElderAction ElderAction;
+            public List<ElderAction> KernelCandidates;
         }
 
         // Diagnostic account of one physically forecast investment band.  This
@@ -335,6 +443,22 @@ namespace Anthropocene.Simulation
                 Math.Max(0, fishingFood - selectedPassive) +
                 d.ManagedFood.AnimalFood;
             double budget = Math.Max(0, residents - herders - farmers - fishers - foodGatherers);   // persons left for goods
+            alloc.ResidentGoodsBudget = budget;
+            alloc.ExpectedSupply = d.Supply; alloc.Meals = d.Meals; alloc.OperatingReserve = d.OperatingReserve;
+            alloc.ExpectedForageAfterHerds = d.ForageAfterHerds; alloc.ExpectedManagedAnimalFood = d.ManagedFood.AnimalFood;
+            alloc.ConsumptionIncomeTarget = survivalFood; alloc.ReserveFillTarget = reserveFood; alloc.MaximumGrowthFood = growthFood;
+            alloc.HusbandryEnabled = d.HusbandryEnabled;
+            alloc.PlantEnvelope = d.PlantEnvelope; alloc.AnimalEnvelope = d.AnimalEnvelope; alloc.FoodRoomEnvelope = d.FoodRoomEnvelope;
+            alloc.PlantEnvelopeClothing = d.PlantEnvelopeClothing; alloc.AnimalEnvelopeClothing = d.AnimalEnvelopeClothing;
+            alloc.FoodRoomEnvelopeClothing = d.FoodRoomEnvelopeClothing;
+            alloc.AccessibleStone = d.Accessible.TryGetValue(MaterialId.Stone, out double accessibleStone) ? accessibleStone : 0;
+            alloc.AccessibleClay = d.Accessible.TryGetValue(MaterialId.Clay, out double accessibleClay) ? accessibleClay : 0;
+            alloc.AccessibleWood = d.Accessible.TryGetValue(MaterialId.Wood, out double accessibleWood) ? accessibleWood : 0;
+            // Kernel-scored Elder split state: set once a split is committed.
+            bool protectedSplit = false, kernelEnacted = false;
+            // The budget raise covers only the persons the Protected split is actually granted (set after its arbitration).
+            double kernelBudgetBase = 0, kernelCommittedPersons = 0; int kernelWorkers = 0;
+            double protectedClothingUnits = -1;
 
             // The resolver-shaped candidate the tool demands read (herders and farmers staffed).
             var staffed = e.Copy();
@@ -367,8 +491,9 @@ namespace Anthropocene.Simulation
             // Stock of made intermediates credited once, before any is made.
             double freeFabric = Math.Max(0, c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric));
             double freeMaterial = Math.Max(0, c.Inventory.HousingMaterial - c.TradeExport(CraftGood.HousingMaterial));
-            Bundle WithInput(Bundle b, double perUnit, CraftGood input, double units, ref double stock, bool fabric)
+            Bundle WithInput(Bundle b, double perUnit, CraftGood input, double units, ref double stock, bool fabric, out double reserved)
             {
+                reserved = 0;
                 if (b == null || !(perUnit > 0)) return b;
                 double need = units * perUnit, fromStock = Math.Min(stock, need); stock -= fromStock;
                 double madeShare = need > Epsilon ? (need - fromStock) / need : 0;
@@ -376,24 +501,30 @@ namespace Anthropocene.Simulation
                 if (madeShare > Epsilon)
                 {
                     var made = Usable(byGood[input]) ? Craft(input) : null;
-                    if (made == null) return null;
+                    if (made == null) { stock += fromStock; return null; }
                     b.Add(made, perUnit * madeShare);
                 }
+                reserved = fromStock;
                 return b;
             }
 
             // ---- Requests ----
-            void Request(string service, ServiceClass cls, CraftGood good, double units)
+            Request Request(string service, ServiceClass cls, CraftGood good, double units)
             {
-                if (!(units > Epsilon) || !byGood.ContainsKey(good)) return;
+                if (!(units > Epsilon) || !byGood.ContainsKey(good)) return null;
                 var r = byGood[good];
                 var req = new Request { Service = service, Class = cls, Good = good, Units = units };
-                if (!Usable(r) || NeolithicProduction.Priority(candidate, good) <= 0) { req.Unmet = "missing capability"; alloc.Requests.Add(req); return; }
+                if (!Usable(r) || NeolithicProduction.Priority(candidate, good) <= 0) { req.Unmet = "missing capability"; alloc.Requests.Add(req); return req; }
                 var b = Craft(good);
-                if (r.AnimalFabric > 0) b = WithInput(b, r.AnimalFabric, CraftGood.AnimalFabric, units, ref freeFabric, true);
-                if (r.HousingMaterial > 0) b = WithInput(b, r.HousingMaterial, CraftGood.HousingMaterial, units, ref freeMaterial, false);
-                if (b == null) { req.Unmet = "missing capability"; alloc.Requests.Add(req); return; }
-                req.Bundle = b; alloc.Requests.Add(req);
+                if (r.AnimalFabric > 0) b = WithInput(b, r.AnimalFabric, CraftGood.AnimalFabric, units, ref freeFabric, true, out req.ReservedFabric);
+                if (b != null && r.HousingMaterial > 0) b = WithInput(b, r.HousingMaterial, CraftGood.HousingMaterial, units, ref freeMaterial, false, out req.ReservedMaterial);
+                if (b == null)
+                {
+                    freeFabric += req.ReservedFabric; freeMaterial += req.ReservedMaterial;
+                    req.ReservedFabric = req.ReservedMaterial = 0;
+                    req.Unmet = "missing capability"; alloc.Requests.Add(req); return req;
+                }
+                req.Bundle = b; alloc.Requests.Add(req); return req;
             }
             // Clothing is one service with capability-gated routes. Compare
             // complete feasible bundles against the actual typed envelope after
@@ -534,6 +665,7 @@ namespace Anthropocene.Simulation
             // fallback. Husbandry only exposes the portable recipe.
             double endDays = w.Days + years * cfg.DaysPerYear;
             double gapPeople = NeolithicProduction.HousingGapPeople(w, candidate, residents, endDays);
+            double totalGapPeople = gapPeople;
             bool fixedPossible = Usable(byGood[CraftGood.Housing]) && NeolithicProduction.Priority(candidate, CraftGood.Housing) > 0;
             bool tentsPossible = CultivationEconomy.HusbandryEnabled(c) && Usable(byGood[CraftGood.LightHousing]) && NeolithicProduction.Priority(candidate, CraftGood.LightHousing) > 0;
             double PerUnit(CraftGood g) => g == CraftGood.Housing ? n.HousingPeoplePerUnit : n.LightHousingPeoplePerUnit;
@@ -568,12 +700,12 @@ namespace Anthropocene.Simulation
                 if (RouteFeasible(preferred, people)) return preferred;
                 return RouteFeasible(fallback, people) ? fallback : preferred;
             }
-            void ShelterRequest(string service, ServiceClass cls,
+            Request ShelterRequest(string service, ServiceClass cls,
                 CraftGood preferred, double people)
             {
-                if (!(people > Epsilon)) return;
+                if (!(people > Epsilon)) return null;
                 var route = ShelterRoute(preferred, people);
-                Request(service, cls, route, people / PerUnit(route));
+                return Request(service, cls, route, people / PerUnit(route));
             }
             double fixedNow = NeolithicProduction.FixedHousingAt(w, c, w.Days);
             double fixedEnd = NeolithicProduction.FixedHousingAt(w, c, endDays);
@@ -600,9 +732,9 @@ namespace Anthropocene.Simulation
                 n.RudimentaryExpectationRampYears;
             bool mobilePolicy = !fixedCapital && portableCapital &&
                 !demonstratedFixedTenure;
-            ShelterRequest("shelter deficit", ServiceClass.Recovery,
-                mobilePolicy ? CraftGood.LightHousing : CraftGood.Housing,
-                gapPeople);
+            CraftGood deficitPreferred = mobilePolicy ? CraftGood.LightHousing : CraftGood.Housing;
+            ShelterRequest("shelter deficit", ServiceClass.Recovery, deficitPreferred, gapPeople);
+            double shelterDeficitPeople = gapPeople;
             // Field and herd equipment for the work staffed (continuity of retained assets).
             Request("farm tools", ServiceClass.Continuity, CraftGood.FarmTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.FarmTools, years, residents, false, false, d.Sources)));
             Request("herding tools", ServiceClass.Continuity, CraftGood.HerdingTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.HerdingTools, years, residents, false, false, d.Sources)));
@@ -1048,8 +1180,18 @@ namespace Anthropocene.Simulation
                 .UseFiniteFieldOpportunity == true ||
                 diagnostics?.UseLegacyUnboundedFieldHurdle != true &&
                 diagnostics?.ExposePhysicalFieldBands != true;
-            if (CultivationEconomy.Enabled(c) && d.Footprint.Length > 0)
+            if (!NoFieldDevelopmentDiagnostic && CultivationEconomy.Enabled(c) && d.Footprint.Length > 0)
             {
+                if (ResolutionMetrics.CaptureDemandAllocations)
+                {
+                    alloc.FieldExpansionEligible = true;
+                    alloc.FieldPotentialSteps = 0;
+                    foreach (var step in CultivationEconomy.ExpansionLadder(w, c, years, d.Footprint))
+                    {
+                        if (!(step.AnnualGain > 0) || !(step.WorkerYears > 0)) continue;
+                        alloc.FieldPotentialSteps++; alloc.FieldPotentialGainPerYear += step.AnnualGain; alloc.FieldPotentialWorkerYears += step.WorkerYears;
+                    }
+                }
                 if (elderPhysicalDevelopment || fieldGapPerYear > Epsilon)
                 {
                     double gain = 0;
@@ -1239,6 +1381,20 @@ namespace Anthropocene.Simulation
                 return rate > 0 ? amount / rate : double.PositiveInfinity;
             }
 
+            // Food the committed Protected clothing may draw before meals.
+            double protectedPlantRoom = Math.Min(d.TerrestrialAfterHerds + Math.Max(0, c.PlantFood), Math.Max(0, c.Food + d.Supply));
+            double protectedAnimalRoom = d.HusbandryEnabled
+                ? Math.Min(Math.Max(0, c.AnimalFood) + d.ManagedFood.AnimalFood + portfolio.SlaughterFood,
+                    Math.Max(0, c.Food + d.Supply + portfolio.SlaughterFood)) : 0;
+            void ProtectedFeedstock(Func<Request, double> grant, out double plant, out double animal)
+            {
+                plant = animal = 0;
+                if (!protectedSplit) return;
+                foreach (var q in alloc.Requests)
+                    if (q.Class == ServiceClass.Protected && q.Service == "clothing" && q.Bundle != null)
+                    { double g = grant(q); plant += q.Bundle.Plant * g; animal += q.Bundle.Animal * g; }
+            }
+
             // Totals for a set of grants: role worker-years (extraction and gathering included), and the binding check.
             string Binding(Func<Request, double> grant)
             {
@@ -1294,15 +1450,37 @@ namespace Anthropocene.Simulation
                 // All food uses one finite post-meal ledger. Typed recipe input,
                 // granted reserve refill and granted growth food cannot each
                 // spend the same accessible stock.
-                if (total.Plant > Math.Max(d.PlantEnvelope, d.PlantEnvelopeClothing) + Epsilon) return "plant feedstock";
-                if (total.Animal > animalEnvelope + Epsilon) return "animal feedstock";
+                // The committed Protected clothing is paid before meals (the
+                // resolver honours ProtectedClothingUnits), bounded by the food
+                // that can exist this turn; it reserves no gatherer time because
+                // the kernel already debited it from the meal budget.
+                ProtectedFeedstock(grant, out double protectedPlant, out double protectedAnimal);
+                // Only this cohort's current clothing input may displace the
+                // reserve refill. Recovery clothing and tent feedstock remain
+                // ordinary manufacturing: using max(normal, clothing) for the
+                // aggregate bundle would let an unrelated input borrow the
+                // clothing exception and promise work the resolver cannot fund.
+                double currentPlant = 0, currentAnimal = 0;
+                foreach (var q in alloc.Requests)
+                    if (q.Service == "clothing" && q.Bundle != null)
+                    { double g = grant(q); currentPlant += q.Bundle.Plant * g; currentAnimal += q.Bundle.Animal * g; }
+                double plantClothingEnvelope = protectedSplit ? Math.Max(d.PlantEnvelopeClothing, protectedPlantRoom) : d.PlantEnvelopeClothing;
+                double animalClothingEnvelope = (protectedSplit ? Math.Max(d.AnimalEnvelopeClothing, protectedAnimalRoom) : d.AnimalEnvelopeClothing)
+                    + portfolio.SlaughterFood;
+                double plantLimit = Math.Min(plantClothingEnvelope, d.PlantEnvelope + currentPlant);
+                double animalLimit = Math.Min(animalClothingEnvelope, d.AnimalEnvelope + portfolio.SlaughterFood + currentAnimal);
+                if (total.Plant > plantLimit + Epsilon) return "plant feedstock";
+                if (total.Animal > animalLimit + Epsilon) return "animal feedstock";
                 double foodRoom = Math.Max(0, c.Food + d.Supply +
                     portfolio.SlaughterFood - d.Meals);
+                if (protectedSplit)
+                    foodRoom = Math.Min(Math.Max(0, c.Food + d.Supply + portfolio.SlaughterFood),
+                        foodRoom + protectedPlant + protectedAnimal);
                 if (total.Plant + total.Animal + total.FoodService >
                     foodRoom + Epsilon) return "food room";
                 if (total.Fabric > Math.Max(0, c.Inventory.AnimalFabric) + Epsilon) return "fabric";
                 if (total.Material > Math.Max(0, c.Inventory.HousingMaterial) + Epsilon) return "housing material";
-                double plantFromLand = Math.Max(0, total.Plant -
+                double plantFromLand = Math.Max(0, total.Plant - protectedPlant -
                     availablePlantInventory);
                 // Retained operating farmers and explicit Gatherers draw from
                 // one land-food work budget.  The farmer capacity left after
@@ -1316,13 +1494,285 @@ namespace Anthropocene.Simulation
                 return persons > budget + Epsilon ? "labor" : null;
             }
 
-            // ---- Elder arbitration ----
-            // Continuity and Recovery retain capped equal fulfilment. Development
-            // is different: complete marginal increments are admitted in physical
-            // retained-return order, and both channels debit one shared food gap.
-            foreach (ServiceClass cls in new[] { ServiceClass.Continuity, ServiceClass.Recovery })
+            // ---- Kernel-scored Elder split (Docs/ClothingCoverageAndSurplusBirths.md) ----
+            // Score a grid of (clothing, shelter) levels with the demographic kernel over the turn and commit the best as
+            // the Protected class. Mixed farming/herding camps also score the other clothing and shelter route.
+            if (KernelSplitOn(cfg) && PhysicalDemography.Enabled(cfg))
             {
-                var active = alloc.Requests.Where(q => q.Class == cls && q.Bundle != null).ToList();
+                long started = System.Diagnostics.Stopwatch.GetTimestamp();
+                int calls = 0;
+                int objective = SplitObjective(cfg); double tolerance = SplitTolerance(cfg);
+                CraftGood durable = ShelterRoute(deficitPreferred, totalGapPeople);
+                double clothingStock = Math.Max(0, c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth))
+                    + Math.Max(0, c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric));
+                double effective = Math.Max(0, c.Population + c.GrowthRemainder - c.DeathRemainder + (d.Consumers - c.Population));
+                double maximumYears = PhysicalDemography.BirthOnlyPersonYears(effective, cfg.BaseBirthRate, years);
+                RouteCost ClothingCost(CraftGood good)
+                {
+                    if (!byGood.ContainsKey(good) || !Usable(byGood[good]) || !(NeolithicProduction.Priority(candidate, good) > 0)) return null;
+                    var b = Craft(good);
+                    return b == null ? null : new RouteCost { Good = good, Persons = b.RoleYears.Values.Sum() / years, Food = b.Plant + b.Animal, Plant = b.Plant, Animal = b.Animal,
+                        Stone = b.Stone, WoodOrClay = b.Wood + b.Clay + b.Construction };
+                }
+                RouteCost ShelterCost(CraftGood good)
+                {
+                    if (!byGood.ContainsKey(good) || !Usable(byGood[good]) || !(NeolithicProduction.Priority(candidate, good) > 0)) return null;
+                    if (good == CraftGood.LightHousing && !tentsPossible) return null;
+                    var r = byGood[good]; var b = Craft(good);
+                    if (b == null) return null;
+                    double persons = b.RoleYears.Values.Sum() / years, food = b.Plant + b.Animal, plant = b.Plant, animal = b.Animal;
+                    double wood = b.Wood + b.Construction, clay = b.Clay, stone = b.Stone;
+                    foreach (var (input, perUnit) in new[] { (CraftGood.HousingMaterial, r.HousingMaterial), (CraftGood.AnimalFabric, r.AnimalFabric) })
+                    {
+                        if (!(perUnit > 0)) continue;
+                        var m = Usable(byGood[input]) ? Craft(input) : null;
+                        if (m == null) return null;
+                        persons += perUnit * m.RoleYears.Values.Sum() / years; food += perUnit * (m.Plant + m.Animal);
+                        plant += perUnit * m.Plant; animal += perUnit * m.Animal;
+                        wood += perUnit * (m.Wood + m.Construction); clay += perUnit * m.Clay; stone += perUnit * m.Stone;
+                    }
+                    double extraction = ExtractionYears(MaterialId.Wood, wood) + ExtractionYears(MaterialId.Clay, clay) + ExtractionYears(MaterialId.Stone, stone);
+                    if (double.IsInfinity(extraction)) return null;
+                    persons += extraction / years;
+                    double per = PerUnit(good);
+                    return new RouteCost { Good = good, Persons = persons / per, Food = food / per, Plant = plant / per, Animal = animal / per,
+                        Stone = stone / per, WoodOrClay = (wood + clay) / per };
+                }
+                // Clothing is sized against the birth-only person-year envelope (not the opening count), capped at useful demand.
+                double ClothingMax(RouteCost cost, double useful) => cost == null ? 0 : Math.Min(useful,
+                    Math.Max(0, PhysicalDemography.ClothingPerPersonYear(cfg) * maximumYears - clothingStock));
+                var clothCost = ClothingCost(clothingRoute);
+                var shelterCost = ShelterCost(durable);
+                double clothingMax = ClothingMax(clothCost, clothingUseful);
+                double shelterMax = shelterCost == null ? 0 : totalGapPeople;
+                var capacityNow = NeolithicProduction.HousingCapacity(w, candidate, endDays);
+                double capacityEnd = capacityNow.Total;
+                int workers = Math.Max(0, residents - herders - farmers - fishers);
+                double terrestrialRoom = Math.Max(0, d.ForageAfterHerds - Math.Min(fishingFood, selectedPassive));
+                bool mixed = MixedRoutesOn(cfg) && d.CultivationEnabled && d.HusbandryEnabled;
+                double stoneRoom = Inventory(MaterialId.Stone) + Accessible(MaterialId.Stone);
+                double woodClayRoom = Inventory(MaterialId.Wood) + Accessible(MaterialId.Wood) + Inventory(MaterialId.Clay) + Accessible(MaterialId.Clay);
+                double Use(double qc, RouteCost cloth, double qh, RouteCost shelter, Func<RouteCost, double> per)
+                    => (qc > 0 ? qc * per(cloth) : 0) + (qh > 0 ? qh * per(shelter) : 0);
+                KernelCandidate Candidate(int ci, int hi, double qc, double qh, RouteCost cloth, RouteCost shelter)
+                {
+                    double persons = (qc > 0 ? qc * cloth.Persons : 0) + (qh > 0 ? qh * shelter.Persons : 0);
+                    if (persons > workers + Epsilon) return null;
+                    if (mixed && (Use(qc, cloth, qh, shelter, r => r.Plant) > protectedPlantRoom + Epsilon || Use(qc, cloth, qh, shelter, r => r.Animal) > protectedAnimalRoom + Epsilon
+                        || Use(qc, cloth, qh, shelter, r => r.Stone) > stoneRoom + Epsilon || Use(qc, cloth, qh, shelter, r => r.WoodOrClay) > woodClayRoom + Epsilon)) return null;
+                    double gatherers = Math.Max(0, workers - persons);
+                    double income = animalReceipts + fishingFood + Math.Min(terrestrialRoom, harvest + farmerSpareCapacity + gatherers * gatherRate);
+                    // Only clothing feedstock is paid before meals (ProtectedClothingUnits); shelter feedstock is ordinary
+                    // manufacturing that may reduce newborn food but never current meals.
+                    double protectedFood = qc * (cloth?.Food ?? 0), shelterFood = qh * (shelter?.Food ?? 0);
+                    double totalFood = Math.Max(0, c.Food) + income, afterClothing = Math.Max(0, totalFood - protectedFood);
+                    return new KernelCandidate
+                    {
+                        ClothingLevel = ci, ShelterLevel = hi, ClothingUnits = qc, ShelterPeople = qh, Persons = persons, ProtectedFood = protectedFood,
+                        ClothingRoute = cloth?.Good ?? clothingRoute, ShelterRoute = shelter?.Good ?? durable,
+                        Food = Math.Min(TurnResolver.PhysicalDemographicFoodBudget(totalFood, d.Meals, growthFood, protectedFood), Math.Max(Math.Min(Math.Max(0, d.Meals), afterClothing), afterClothing - shelterFood))
+                    };
+                }
+                DemographicResult Kernel(bool exact, double population, double food, double clothing, double capacity, double deficit)
+                {
+                    calls++;
+                    var result = exact
+                        ? PhysicalDemography.AdvanceBudget(cfg, population, years, food, clothing, capacity, deficit, true)
+                        : PhysicalDemography.PlanningBudget(cfg, population, years, food, clothing, capacity, deficit, true);
+                    System.Threading.Interlocked.Add(ref KernelServiceIterations, result.ServiceIterations);
+                    return result;
+                }
+                double QoL(DemographicResult result, CraftGood shelterRoute, double qh)
+                {
+                    double people = years > 0 ? result.PersonYears / years : effective;
+                    double clothingTerm = 1 - c.RudimentaryExpectation * (1 - result.ClothingCoverage);
+                    double housingTerm = 1 - c.RudimentaryExpectation * (1 - result.AverageHousingCoverage);
+                    var shelter = new NeolithicProduction.ShelterCapacity(capacityNow.Fixed + (shelterRoute == CraftGood.Housing ? qh : 0), capacityNow.Light + (shelterRoute == CraftGood.Housing ? 0 : qh));
+                    return result.Nutrition * c.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * clothingTerm + n.RudimentaryWeightHousing * housingTerm)
+                        * NeolithicProduction.SocialCohesion(n, NeolithicProduction.HousingShare(n, shelter, people), people);
+                }
+                // Objectives: 0 person-years; 1 QoL-weighted person-years; 2 lexicographic (person-years within the
+                // tolerance of the best, then QoL; the default); 3 terminal-population welfare; 4 deaths averted.
+                double Value(double py, double qol, double end, double deaths)
+                    => objective == 2 ? qol
+                    : objective == 1 ? py * qol
+                    : objective == 3 ? (py + years * end) * qol
+                    : objective == 4 ? py - years * deaths
+                    : py;
+                var scoredInputs = new Dictionary<(double, double, double, bool), DemographicResult>();
+                void Score(KernelCandidate k, bool exact)
+                {
+                    if (k.Result != null) return;
+                    var key = (k.Food, k.ClothingUnits, k.ShelterPeople, exact);
+                    if (!scoredInputs.TryGetValue(key, out k.Result))
+                        scoredInputs[key] = k.Result = Kernel(exact, effective, k.Food, clothingStock + k.ClothingUnits, capacityEnd + k.ShelterPeople, c.FoodDeficitYears);
+                    k.PersonYears = k.Result.PersonYears; k.QoL = QoL(k.Result, k.ShelterRoute, k.ShelterPeople);
+                    k.Value = Value(k.PersonYears, k.QoL, k.Result.FinalPopulation, k.Result.Deaths);
+                }
+                // The winner in list order; ties keep the earlier (cheaper) option.
+                KernelCandidate Best(List<KernelCandidate> pool)
+                {
+                    double maxPersonYears = pool.Count > 0 ? pool.Max(k => k.PersonYears) : 0;
+                    double bestScore = double.NegativeInfinity; KernelCandidate best = null;
+                    foreach (var k in pool)
+                    {
+                        double score = objective == 2
+                            ? (k.PersonYears >= maxPersonYears * (1 - tolerance) - 1e-12 ? k.Value : double.MinValue)
+                            : k.Value;
+                        if (best == null || score > bestScore + Math.Abs(bestScore) * 1e-9 + 1e-12) { bestScore = score; best = k; }
+                    }
+                    return best;
+                }
+                (KernelCandidate split, List<KernelCandidate> pool) Decide(bool exact)
+                {
+                    // Stage 1: the (clothing, shelter) grid on the default routes, in grid order.
+                    var pool = new List<KernelCandidate>();
+                    for (int ci = 0; ci < KernelClothingGrid.Length; ci++)
+                    {
+                        if (KernelShelterOnlyDiagnostic && ci > 0) break;
+                        double qc = clothingMax * KernelClothingGrid[ci];
+                        if (ci > 0 && !(qc > Epsilon)) continue;
+                        for (int hi = 0; hi < KernelShelterGrid.Length; hi++)
+                        {
+                            double qh = shelterMax * KernelShelterGrid[hi];
+                            if (hi > 0 && !(qh > Epsilon)) continue;
+                            var k = Candidate(ci, hi, qc, qh, clothCost, shelterCost);
+                            if (k != null) { Score(k, exact); pool.Add(k); }
+                        }
+                    }
+                    var best = Best(pool);
+                    if (!mixed || best == null) return (best, pool);
+                    // Stage 2: the other clothing route at the chosen shelter.
+                    var otherCloth = KernelShelterOnlyDiagnostic ? null : ClothingCost(clothingRoute == CraftGood.Cloth ? CraftGood.AnimalFabric : CraftGood.Cloth);
+                    if (otherCloth != null)
+                    {
+                        double otherMax = ClothingMax(otherCloth, Math.Max(0, NeolithicProduction.Demand(w, candidate, otherCloth.Good, years, residents, false, false, d.Sources)));
+                        var shelterOf = best.ShelterPeople > 0 ? ShelterCost(best.ShelterRoute) : shelterCost;
+                        for (int ci = 1; ci < KernelClothingGrid.Length && otherMax > Epsilon; ci++)
+                        {
+                            var k = Candidate(ci, best.ShelterLevel, otherMax * KernelClothingGrid[ci], best.ShelterPeople, otherCloth, shelterOf);
+                            if (k != null) { Score(k, exact); pool.Add(k); }
+                        }
+                        best = Best(pool);
+                    }
+                    // Stage 3: the other shelter route at the chosen clothing.
+                    // The alternative shelter route stays inside the settlement policy: a mobile camp without retained fixed
+                    // or field capital does not acquire fixed Housing merely because a capability exposes the recipe.
+                    var otherShelter = durable == CraftGood.LightHousing && mobilePolicy ? null
+                        : ShelterCost(durable == CraftGood.Housing ? CraftGood.LightHousing : CraftGood.Housing);
+                    if (otherShelter != null && totalGapPeople > Epsilon)
+                    {
+                        var clothOf = best.ClothingUnits > 0 ? ClothingCost(best.ClothingRoute) : clothCost;
+                        for (int hi = 1; hi < KernelShelterGrid.Length; hi++)
+                        {
+                            var k = Candidate(best.ClothingLevel, hi, best.ClothingUnits, totalGapPeople * KernelShelterGrid[hi], clothOf, otherShelter);
+                            if (k != null) { Score(k, exact); pool.Add(k); }
+                        }
+                        best = Best(pool);
+                    }
+                    return (best, pool);
+                }
+                var decision = Decide(KernelExactScoringDiagnostic);
+                if (KernelVerifyDiagnostic && !KernelExactScoringDiagnostic && decision.split != null)
+                {
+                    var exactDecision = Decide(true);
+                    lock (KernelVerifyLock)
+                    {
+                        KernelVerifyDecisions++;
+                        var a = decision.split; var b = exactDecision.split;
+                        if (b == null || a.ClothingRoute != b.ClothingRoute || a.ClothingLevel != b.ClothingLevel || a.ShelterRoute != b.ShelterRoute
+                            || a.ShelterLevel != b.ShelterLevel) KernelVerifyMismatches++;
+                        foreach (var fastK in decision.pool)
+                        {
+                            var exactK = exactDecision.pool.FirstOrDefault(k => k.ClothingRoute == fastK.ClothingRoute && k.ClothingLevel == fastK.ClothingLevel && k.ShelterRoute == fastK.ShelterRoute && k.ShelterLevel == fastK.ShelterLevel);
+                            if (exactK == null) continue;
+                            double err = Math.Abs(fastK.PersonYears - exactK.PersonYears) / Math.Max(1, exactK.PersonYears);
+                            if (err > KernelVerifyMaxPersonYearsError)
+                                KernelVerifyWorst = string.Join(",", new[] { effective, years, fastK.Food, clothingStock + fastK.ClothingUnits, capacityEnd + fastK.ShelterPeople, c.FoodDeficitYears, fastK.PersonYears, exactK.PersonYears }.Select(v => v.ToString("R", System.Globalization.CultureInfo.InvariantCulture)));
+                            KernelVerifyMaxPersonYearsError = Math.Max(KernelVerifyMaxPersonYearsError, err);
+                            KernelVerifyMaxQoLError = Math.Max(KernelVerifyMaxQoLError, Math.Abs(fastK.QoL - exactK.QoL));
+                        }
+                    }
+                }
+                var chosenSplit = decision.split;
+                double bestC = chosenSplit?.ClothingUnits ?? 0, bestH = chosenSplit?.ShelterPeople ?? 0;
+                int bestCi = chosenSplit?.ClothingLevel ?? 0, bestHi = chosenSplit?.ShelterLevel ?? 0;
+                CraftGood chosenClothing = chosenSplit?.ClothingRoute ?? clothingRoute, chosenShelter = chosenSplit?.ShelterRoute ?? durable;
+                System.Threading.Interlocked.Add(ref KernelSplitCalls, calls);
+                System.Threading.Interlocked.Add(ref KernelSplitTicks, System.Diagnostics.Stopwatch.GetTimestamp() - started);
+                System.Threading.Interlocked.Increment(ref KernelSplitCamps);
+                System.Threading.Interlocked.Increment(ref KernelChosenClothing[bestCi]);
+                System.Threading.Interlocked.Increment(ref KernelChosenShelter[bestHi]);
+                if (mixed)
+                {
+                    System.Threading.Interlocked.Increment(ref KernelMixedCamps);
+                    if (chosenClothing != clothingRoute) System.Threading.Interlocked.Increment(ref KernelMixedOtherClothing);
+                    if (chosenShelter != durable) System.Threading.Interlocked.Increment(ref KernelMixedOtherShelter);
+                }
+                // The committed action (the shape a Village Elder policy would emit).
+                alloc.ElderAction = new ElderAction
+                {
+                    ClothingRoute = chosenClothing, ClothingLevel = bestCi, ClothingUnits = bestC,
+                    ShelterRoute = chosenShelter, ShelterLevel = bestHi, ShelterPeople = bestH,
+                    Posture = LabourPosture.HerdFirst, PersonYears = chosenSplit?.PersonYears ?? 0, QoL = chosenSplit?.QoL ?? 0
+                };
+                if (ResolutionMetrics.CaptureDemandAllocations)
+                    alloc.KernelCandidates = decision.pool.Select(k => new ElderAction
+                    {
+                        ClothingRoute = k.ClothingRoute, ClothingLevel = k.ClothingLevel, ClothingUnits = k.ClothingUnits,
+                        ShelterRoute = k.ShelterRoute, ShelterLevel = k.ShelterLevel, ShelterPeople = k.ShelterPeople,
+                        PersonYears = k.PersonYears, QoL = k.QoL
+                    }).ToList();
+
+                // Enact: replace the clothing and shelter requests with the committed Protected split.
+                var replaced = new HashSet<string> { "shelter replacement", "portable shelter replacement", "shelter deficit" };
+                if (!KernelShelterOnlyDiagnostic) { replaced.Add("clothing"); replaced.Add("clothing reserve"); }
+                foreach (var q in alloc.Requests.Where(q => replaced.Contains(q.Service)).ToList())
+                {
+                    freeFabric += q.ReservedFabric; freeMaterial += q.ReservedMaterial;
+                    alloc.Requests.Remove(q);
+                }
+                protectedSplit = !KernelShelterOnlyDiagnostic; kernelEnacted = true;
+                Request protectedClothing = null;
+                if (!KernelShelterOnlyDiagnostic)
+                {
+                    double usefulOfChosen = chosenClothing == clothingRoute ? clothingUseful
+                        : Math.Max(0, NeolithicProduction.Demand(w, candidate, chosenClothing, years, residents, false, false, d.Sources));
+                    protectedClothing = Request("clothing", ServiceClass.Protected, chosenClothing, bestC);
+                    Request("clothing reserve", ServiceClass.Recovery, chosenClothing, Math.Max(0, usefulOfChosen - bestC));
+                }
+                if (bestH > Epsilon) Request("shelter protected", ServiceClass.Protected, chosenShelter, bestH / PerUnit(chosenShelter));
+                // Protected shelter serves fixed replacement first, then portable replacement, then the deficit; the
+                // remainders keep their ordinary classes and routes.
+                double protectedLeft = bestH;
+                double Serve(double people) { double s = Math.Min(people, protectedLeft); protectedLeft -= s; return people - s; }
+                ShelterRequest("shelter replacement", ServiceClass.Continuity, CraftGood.Housing, Serve(fixedReplacementPeople));
+                ShelterRequest("portable shelter replacement", ServiceClass.Continuity, CraftGood.LightHousing, Serve(lightReplacementPeople));
+                shelterDeficitPeople = Serve(shelterDeficitPeople);
+                ShelterRequest("shelter deficit", ServiceClass.Recovery, deficitPreferred, shelterDeficitPeople);
+                // The committed persons may come out of the gatherer reservation; lower classes keep only the original slack.
+                double committedPersons = chosenSplit?.Persons ?? 0;
+                kernelBudgetBase = budget; kernelCommittedPersons = committedPersons; kernelWorkers = workers;
+                budget = Math.Max(budget, Math.Min(workers, committedPersons));
+                alloc.ResidentGoodsBudget = budget;
+                protectedClothingUnits = protectedClothing != null ? 0 : -1;
+            }
+
+            // ---- Elder arbitration ----
+            // Protected (when a kernel split is committed), Continuity and Recovery
+            // retain capped equal fulfilment. Development is different: complete
+            // marginal increments are admitted in physical retained-return order,
+            // and both channels debit one shared food gap.
+            foreach (ServiceClass cls in kernelEnacted
+                ? new[] { ServiceClass.Protected, ServiceClass.Continuity, ServiceClass.Recovery }
+                : new[] { ServiceClass.Continuity, ServiceClass.Recovery })
+            {
+                // Protected requests are arbitrated one at a time in request order (clothing before shelter), so an
+                // infeasible shelter route cannot freeze the clothing the kernel committed.
+                var classRequests = alloc.Requests.Where(q => q.Class == cls && q.Bundle != null).ToList();
+                foreach (var group in cls == ServiceClass.Protected ? classRequests.Select(q => new List<Request> { q }).ToList() : new List<List<Request>> { classRequests })
+                {
+                var active = group;
                 for (int pass = 0; pass < 8 && active.Count > 0; pass++)
                 {
                     double Grant(Request q, double f) => active.Contains(q) ? q.Units * f : q.Granted;
@@ -1336,6 +1786,17 @@ namespace Anthropocene.Simulation
                     var users = active.Where(q => Uses(q.Bundle, binding)).ToList();
                     if (users.Count == 0) users = active.ToList();
                     foreach (var q in users) { q.Unmet = binding.StartsWith("material") ? "material shortage" : binding; active.Remove(q); }
+                }
+                }
+                if (cls == ServiceClass.Protected)
+                {
+                    // An ungranted protected split must not leave its labour as slack for Development.
+                    double requested = 0, granted = 0;
+                    foreach (var q in alloc.Requests.Where(q => q.Class == ServiceClass.Protected && q.Bundle != null))
+                    { double perUnit = q.Bundle.RoleYears.Values.Sum(); requested += q.Units * perUnit; granted += q.Granted * perUnit; }
+                    double fraction = requested > Epsilon ? Numbers.Clamp(granted / requested, 0, 1) : 0;
+                    budget = Math.Max(kernelBudgetBase, Math.Min(kernelWorkers, kernelCommittedPersons * fraction));
+                    alloc.ResidentGoodsBudget = budget;
                 }
             }
 
@@ -1904,19 +2365,24 @@ namespace Anthropocene.Simulation
                     if (ExtractionRole(m) == WorkforceRoles.Gatherer) materialGatherers += y / years;
                     else { int people = (int)Math.Ceiling(y / years - Epsilon); if (people > 0) staff[ExtractionRole(m)] = (staff.TryGetValue(ExtractionRole(m), out int s) ? s : 0) + people; }
                 }
-                double plantFromLand = Math.Max(0, total.Plant -
+                ProtectedFeedstock(q => q.Granted, out double protectedPlant, out _);
+                double plantFromLand = Math.Max(0, total.Plant - protectedPlant -
                     availablePlantInventory);
                 double feedstockGatherers = gatherRate > 0
                     ? plantFromLand / gatherRate : 0;
                 double needed = staff.Values.Sum() + materialGatherers + feedstockGatherers;
+                alloc.FinalCompiledPersons = needed;
                 if (needed <= budget + Epsilon || repair == 1)
                 {
+                    alloc.PlannedStoneExtraction = Math.Max(0, raw[MaterialId.Stone] - Inventory(MaterialId.Stone));
+                    alloc.PlannedClayExtraction = Math.Max(0, raw[MaterialId.Clay] - Inventory(MaterialId.Clay));
+                    alloc.PlannedWoodExtraction = Math.Max(0, raw[MaterialId.Wood] - Inventory(MaterialId.Wood));
                     foreach (var p in staff) alloc.Staff[p.Key] = p.Value;
                     alloc.MaterialGatherers = materialGatherers; alloc.FeedstockGatherers = feedstockGatherers; alloc.ToolsMade = toolsMade;
                     foreach (var p in total.Outputs) alloc.Ceilings[p.Key] = p.Value;
                     if (toolsMade > 0) alloc.Ceilings[toolGood] = (alloc.Ceilings.TryGetValue(toolGood, out double t) ? t : 0) + toolsMade;
                     // A final over-budget (rounding after the repair) drops the lowest-class work in stable order.
-                    if (needed > budget + Epsilon) TrimToBudget(alloc, budget, needed);
+                    if (needed > budget + Epsilon) { alloc.TrimPasses++; TrimToBudget(alloc, budget, needed); }
                     break;
                 }
                 // Repair integer rounding from the lowest service class. Within
@@ -2054,6 +2520,8 @@ namespace Anthropocene.Simulation
             foreach (var r in recipes) if (!order.Contains(r.Good)) order.Add(r.Good);
             foreach (var r in recipes) if (!alloc.Ceilings.ContainsKey(r.Good)) alloc.Ceilings[r.Good] = 0;
             production = new ProductionOrder(order.ToArray(), alloc.Ceilings);
+            if (protectedSplit && protectedClothingUnits >= 0)
+                production.ProtectedClothingUnits = alloc.Requests.Where(q => q.Service == "clothing" && q.Class == ServiceClass.Protected).Sum(q => q.Granted);
             return intent;
         }
 

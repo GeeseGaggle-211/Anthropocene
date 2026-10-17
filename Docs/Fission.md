@@ -1,25 +1,125 @@
 # Fission (WP10a, push recalibrated in WP10c)
 
-Design: [QoLFissionTradeDesign.md](QoLFissionTradeDesign.md) 3.1-3.6, 6.4, 9;
-order of work: [ValueModelImplementationPlan.md](ValueModelImplementationPlan.md) WP10.
-Source: `Assets/_Anthropocene/Simulation/Fission.cs`. Checks:
-`Tools/Headless/FissionChecks.cs`. Immigration is WP10b and lives in
-[Immigration.md](Immigration.md) (it runs before this pass and excludes its sources and arrivals from it). Pass contract: [TurnResolutionPasses.md](TurnResolutionPasses.md), Close row.
+Current design: [UnifiedSocialRelocationContract-v0.2.md](UnifiedSocialRelocationContract-v0.2.md).
+Source: `Assets/_Anthropocene/Simulation/Fission.cs` and
+`Assets/_Anthropocene/Simulation/SocialRelocation.cs`. Checks:
+`Tools/Headless/FissionChecks.cs`, `SocialRelocationChecks.cs` and
+`SocialRelocationNativeChecks.cs`. Immigration runs before this pass and excludes
+its sources and arrivals. Pass contract:
+[TurnResolutionPasses.md](TurnResolutionPasses.md), Close row.
 
-**Status: opt-in.** `FissionEnabled` is false by default and in `OpeningConfig.json`.
-WP10a's push (`clamp((Q_fiss - Q) / DeltaQ)`) fired whenever total QoL was low, so camps split at any size
-(agricultural parents at a median of 143 residents against a design size near 600, Paleolithic 40-53 against
-about 101, population about 7x). WP10c replaces it with **crowding plus expected gain**: a camp splits only if
-the stayers' QoL would rise by at least a per-policy threshold once the daughter leaves, and the daughter
-would not be much worse off. The thresholds are calibrated analytically to the design onset sizes (table
-below). The measured result is mixed and is the main finding of WP10c: with the specified rule the stayers'
-housing relief dominates the gain, so agricultural camps still split at a median of 141 residents; counting
-cohesion and clothing only (`FissionHousingRelief = 0`) reproduces the design onset (median 906). See
-"Measurements (WP10c)". **User decision (30 September 2026): `FissionHousingRelief = 0` is the default; fission stays opt-in (`FissionEnabled = false`) until immigration (WP10b) and a performance review.** Fission is also a product of QoL, not of crowding alone: see "Distress fission" below (a camp short of food or water also splits for better ground; the stayers' estimate includes food and water relief).
+**Current Physical-v1 status:** the unified architecture is implemented; native
+balance and MLP-training promotion are not certified. New-world plan-of-record
+flags enable immigration and fission independently. Saves whose demographic
+selector is absent retain `LegacyQoLNetGrowth` and its exact former fission law.
 
-A camp whose split would raise its stayers' QoL enough may send a coherent kin group to a viable empty
-site. The group founds a new Society in a new AI player slot. The parent keeps its site, fields, fixed Housing
-and controller; the player keeps the original camp and never controls a daughter.
+## Unified Physical-v1 rule (v0.2)
+
+Crowding and distress now select only the recorded source circumstance. Both use
+the same `SocialRelocationEvaluator` as immigration: mover advantage,
+population-weighted aggregate welfare, bounded source harm and (for immigration)
+bounded receiver-incumbent harm. Forecast experienced QoL remains a welfare term;
+mortality risk comes from physical food, clothing, shelter, density, disease and
+deficit history. There is no instantaneous-net-growth veto or special distress
+bonus.
+
+The existing policy daughter fractions and thresholds, minimum population, known
+site/radius search, spacing, deterministic ordering and conflict resolution remain
+unchanged. A destination begins with no incumbent people or fixed infrastructure;
+the daughter is the transferred founding cohort. The source
+keeps site-bound housing and fields; the daughter receives proportional typed food,
+portable inventory and shelter, tools, herds, workforce roles, demographic
+remainders, histories, expectation and knowledge. Daughter farmers become
+gatherers because fields do not move. Nothing is manufactured for free, and the
+real economy/demography first processes the daughter on the following turn.
+
+Physical-v1 daughters also carry a saved absolute `FissionEligibleTurn`. With the
+shipped `FissionDaughterCooldownTurns = 1`, a daughter is excluded from fission at
+the close of her first complete post-founding turn and is first eligible at the
+close of her second. `0` is the exact next-turn control. Existing camps and older
+camp saves have boundary zero, and `LegacyQoLNetGrowth` keeps its former timing.
+`FissionCooldownBlocked` counts the excluded daughter-camp turns without changing
+QoL, mortality, the RL reward or any fission threshold. Immigration now uses this
+same absolute boundary for daughter **outflow** in Physical-v1; a young daughter
+may still receive immigrants.
+
+Before a physical site scan, a permissive common-envelope bound checks every
+supported daughter size. It uses the exact source forecast and an optimistic
+daughter with full F/C/H/W, zero linked-settlement density and the lowest physical
+mortality possible at that headcount. It rejects only when every size must fail the
+shared mover threshold or exact source-harm tolerance. Historical satisfaction and
+historical coverage is not an input. `FissionSearchFraction` lowers only this
+physically valid upper-bound threshold, preserving early cache searches without
+screening any candidate that could meet the final mover gate. The bound never
+accepts a split, and it adds no independent positive-source-relief condition.
+
+The committed `Camp.QoL` formula, Elder reward and observation schema are
+unchanged. Current same-boundary evidence after the typed daughter-forecast
+correction shows 141 fissions with fission alone and 121 with both systems over 75
+continuation turns; none of 145 combined endpoints has food, clothing and housing
+coverage all at least 0.8. The success/distress
+calibration is therefore not promotion-ready. See
+[UnifiedSocialRelocationValidation-v0.2.md](UnifiedSocialRelocationValidation-v0.2.md).
+
+### Daughter maturity control and forecaster review (16 October 2026)
+
+A matched three-seed, 25-continuation sweep from identical social-free opening
+boundaries compared cooldowns 0 / 1 / 2 with both social systems enabled:
+
+| cooldown | fissions | daughter-parent fissions (age 1/2/3/older) | fission / outflow blocked camp-turns | daughter outflows age 1/2 | camps | population | viable F/C/H camps | population-weighted QoL |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 123 | 73 (7/6/4/56) | 0 / 0 | 2 / 6 (21 / 71 people) | 147 | 39,479 | 0 | 0.124 |
+| **1** | **121** | **71 (0/10/3/58)** | **105 / 118** | **0 / 6 (0 / 72 people)** | **145** | **39,795** | **0** | **0.119** |
+| 2 | 114 | 64 (0/0/7/57) | 202 / 223 | 0 / 0 (0 / 0 people) | 138 | 39,193 | 0 | 0.126 |
+
+The default removes every observed age-one recursive fission and age-one daughter
+outflow. The zero-cooldown control contains two such outflows totaling 21 people;
+the configured four-person minimum and ten-percent cap make 40 residents the
+effective smallest default source. Young daughters still receive immigrants (13
+age-one inflows under the default). The gate is a useful temporal invariant, not
+the GO-gate calibration fix; most recursive fissions occur later and terminal
+material viability remains zero.
+
+The review also established that food priority was already present: cache misses
+rank sites by capped obtainable food `D`, then uncapped support, distance and tile
+ID. The representation defect is now corrected: the new-site forecast receives
+uncapped repeatable land, aquatic and managed-land supply separately, applies the
+actual transferred workforce and accessibility once, and exposes uncapped
+renewable-food, typed-production and herd-coverage diagnostics.
+
+A bounded four-site experiment then compared the shipped one-site cache with
+accepted-site renewable-food and aggregate-welfare orderings. Both experimental
+rows selected 27 alternatives but were identical in this sample: 127 fissions,
+151 camps, 42,307 people, 13 negative-net daughters and zero materially viable
+settlements, versus 121 / 145 / 39,795 / 10 / zero for the control. They are not
+promoted. The shipped `FissionSiteSelection = EcologicalSupport` therefore keeps
+the historical choice and thresholds; the optional rows remain calibration
+instruments, not new default behavior.
+
+The real-economy daughter audit identifies the leading working diagnosis. Across ages
+one through three, daughters produce 95.5% of food need with fission alone and
+96.9% with immigration also enabled; realized nutrition is 97.1% / 97.5%.
+Clothing is only 0.210 / 0.206 and housing 0.043 / 0.040. Founding moves no fixed
+housing or field capital, so daughter farmers become gatherers. A no-pending-trade
+allocator replay assigns 73-84% of the planning population to gathering, 7-22% to
+farming and 3.1% to manufacturing on average; protective output occurs in about
+32% of camp-turns. Labor rationing and integer staffing dominate the replayed
+request failures; material shortage is rare. Population reaches about 1.9 times
+the founding cohort by age three. This supports calorie viability with a protective-
+goods capital/labor bottleneck as the leading diagnosis, and shows the deficit
+without immigration. It does not yet causally isolate ecology, staffing, capital
+and growth or establish a daughter recovery time.
+
+## Legacy WP10a/WP10c path and historical evidence
+
+The remaining text documents `LegacyQoLNetGrowth` compatibility and the historical
+WP10 calibration. References below to “current” mean current within that legacy
+series; they do not supersede the unified Physical-v1 rule above.
+
+A camp whose split would raise its stayers' QoL enough may send a coherent kin
+group to a viable empty site. The group founds a new Society in a new AI player
+slot. The parent keeps its site, fields, fixed Housing and controller; the player
+keeps the original camp and never controls a daughter.
 
 ## Doctrine summary
 
@@ -36,7 +136,9 @@ and controller; the player keeps the original camp and never controls a daughter
 - **Temporal abstraction.** One evaluation per turn boundary from the frozen
   post-demography snapshot. QoL is the value committed by the turn just resolved and
   recomputes next turn. Nothing is integrated over sub-turn time, and a daughter
-  cannot itself fission in the turn it is founded.
+  cannot itself fission in the turn it is founded. In Physical-v1 the saved maturity
+  boundary also excludes it at the next close by default; it becomes eligible at
+  the close after that.
 - **Scaling law.** `T = O(C + F_v * footprint + F_s * ring * footprint + P)` where `C`
   is camps (one closed-form gain estimate each: a fixed-Housing lookup and a few exponentials), `F_v` camps with `G >= 0.8 G*` and a feasible daughter
   that hold a cache (one footprint validation, at most 7 tile projections), `F_s` camps
@@ -109,7 +211,7 @@ No assumption needed a redesign, so the work proceeded.
 - **Daughter check** ("would part of this population be better off"). The daughter's estimated QoL at the
   destination (`F_d = min(1, support ratio + carried food)`, see Relative destinations, `W = 1`, clothing coverage unchanged, housing from what it carries and can build in its first turn
   (`Fission.DaughterShelter`, below), `S(N_d)`, and the
-  expectation the game applies after a move: stationary years reset to zero then one turn elapses) must be at
+  parent's retained expectation) must be at
   least `Q_now - FissionDaughterMargin` (0.05). It is evaluated only for a camp whose gain reaches `G*` and
   that holds a valid destination, and its binding is counted (`FissionDaughterChecks`, `FissionDaughterBlocked`).
 - **Daughter shelter (B1).** The commit splits every double inventory field in the daughter's people fraction
@@ -148,7 +250,11 @@ No assumption needed a redesign, so the work proceeded.
   while the cache is valid.
   It is invalidated when the regime changes (even with no push), when a camp now stands
   on it or within spacing of it, or when it stops being habitable (support ratio 0: the freshwater
-  gate fails or nothing is harvestable). There is no absolute viability bar (see Relative destinations).
+  gate fails or nothing is harvestable). There is no absolute ecological-support
+  or QoL bar beyond the existing relative test (see Relative destinations).
+  `PhysicalMortalityV1` separately projects the QoL-approved daughter's physical
+  mortality and net rate for diagnostics; those projections do not change cache
+  ordering or add a social veto.
 - **Desirability.** `D = clamp(SiteSupport(daughter) / TargetSupport, 0, 1)`, with
   `TargetSupport` the daughter's own annual-generation need so `D = 1` when fully
   supported. Support uses the start-viability footprint evaluation
@@ -174,8 +280,14 @@ No assumption needed a redesign, so the work proceeded.
   ceiling. These are planning estimates from projected ecology, not forecasts of
   realized harvest. The regime is `Fission.RegimeOf`; it selects only this destination-site scoring (cultivable
   land vs pasture vs gathering) and no longer affects cohesion, which is derived from housing.
-- **Proposal.** `G >= G*(policy)`, a valid cached destination (`D >= StartViability / 100`), the daughter check and
-  the size rules above.
+- **Proposal.** `G >= G*(policy)`, a valid cached destination, the existing
+  daughter/stayer QoL checks and the size rules above. Under
+  `PhysicalMortalityV1`, destination food, carried clothing, projected shelter,
+  population and inherited deficit age produce an explicit physical mortality
+  and net-rate diagnostic. `FissionPhysicalDaughterNegativeNet` counts proposals
+  with negative instantaneous net growth, but does not block, weight or rerank
+  them: above-equilibrium decline and recoverable distress are not physical
+  nonviability.
 - **Reconcile and commit.** Canonical camp-ID order. A proposal whose tile is the same
   as, or within spacing of, an earlier commit is dropped this turn and keeps its cache
   for revalidation next turn (there is no rerouting). Commit creates, in this order:
@@ -215,7 +327,8 @@ No assumption needed a redesign, so the work proceeded.
 
 ## Observations and actions
 
-`AgentObservation.SchemaVersion` is 20. Owner only: each `SettlementObservation`
+`AgentObservation.SchemaVersion` is 22 (the fission block was introduced in 18).
+Owner only: each `SettlementObservation`
 carries `FissionPolicy` and `FissionDestination` (tile or -1); the observation carries
 `ParentSociety`, `KinAffinity` and `KinRelations` (parent, daughters, siblings: society,
 player, relation, affinity; no location, stores or population). A foreign daughter
@@ -570,23 +683,27 @@ camp had `G ~ 0` and never split. The daughter's QoL (`F = W = 1`) was only a ve
    the WP10c estimate, so the closed forms in "Recalibration" hold for fed camps.
 2. *The daughter pull.* `Q_d = F_d W_d * coverage(E) * S(n_d)` at her headcount and shelter (`DaughterShelter`);
    `G_d = Q_d / Q_now - 1` (`Q_now <= 1e-9`: satisfied, `G_d = 1e9`, if `Q_d > 0`). **The trigger compares like with
-   like**: the expectation `E` is the parent's on both sides. The post-move expectation reset is a benefit the parent could
-   get by moving itself, and must not by itself cause a split. The existing veto (`DaughterQoL`, `F = W = 1`, post-move
-   expectation, `Q_d >= Q_now - FissionDaughterMargin`) is unchanged. `F_d = min(1, ratio)`, `ratio` the destination's uncapped
+   like**: the expectation `E` is the parent's on both sides. Under the v1.1 demographic/QoL separation, the veto and founding
+   value also retain that expectation (`DaughterQoL`, `F = W = 1`, `Q_d >= Q_now - FissionDaughterMargin`), closing the former
+   one-turn expectation-reset welfare artefact without changing a threshold. `F_d = min(1, ratio)`, `ratio` the destination's uncapped
    support ratio for the daughter cohort that `Desirability` already computes (for herded nomads it already folds in herd forage
    and water, so it stands for `F_d W_d`); `W_d = 1` because freshwater is a gate of the footprint. The screen before a destination is known
    uses `F_d = W_d = 1` and gates the search exactly like the crowding screen (`FissionSearchFraction * G*`).
 3. *Decision.* Propose when a viable destination is cached AND (`G_stay >= G*` at the policy size, **or** `G_d >= G*` at the
    distress size) AND the daughter veto passes AND the stayers are not worse off (`Q_after >= Q_now - FissionDaughterMargin`,
    true by construction). Same policy thresholds, no new QoL cutoff: the effective "QoL below which people leave" is
-   `Q_now < Q_d / (1 + G*)`, set by the land within reach.
+   `Q_now < Q_d / (1 + G*)`, set by the land within reach. In physical mode, explicit mortality and net growth are
+   projected from food, clothing, shelter, headcount and inherited deficit age—never composite QoL—and reported without
+   changing the decision.
 4. *Who leaves under distress.* When the camp cannot feed itself the leaving group is the people local subsistence cannot
    carry: `n_short = ceil(N (1 - F W))`, `n_d = clamp(max(policy size, n_short), FissionMinimumDaughter, largest n with n < N - n and
    N - n >= MinimumCamp)`. If the distress branch passes the split uses this size; otherwise a passing crowding branch uses
    the policy size. The destination search and validation use the distress size whenever the distress screen passes (the larger,
    harder-to-support group). One split per camp per turn, no chaining.
 5. *Report and metrics.* `FissionReport.Trigger` is Distress when the distress branch was the one used, `DaughterGain` the
-   daughter's relative gain at the chosen destination; `ResolutionMetrics` counts proposals and commits per trigger
+   daughter's relative gain at the chosen destination; it also carries projected daughter nutrition, clothing, housing,
+   mortality, net rate and whether that instantaneous net rate is nonnegative. `ResolutionMetrics` counts negative-net
+   proposals plus proposals and commits per trigger
    (`FissionCrowdingProposals`, `FissionDistressProposals`, `...Commits`, `FissionDistressDaughters`). The report is history only
    (not in observations; schema unchanged).
 
@@ -600,8 +717,8 @@ at `F W = 0.99` also gets the daughter pull.
 (N = 80, housed, F = 0.4: Distress, daughter clamped to 39 from `n_short` = 48, metrics per trigger, people conserved); size follows the
 shortfall (F = 0.8 Crowding 24 through the stayers' relief, 0.6 Distress 32, 0.5 Distress 39); water distress; a small camp whose policy size is below the minimum
 still sends the people its land cannot carry, one whose largest legal daughter is below the minimum cannot; the same camp fed does not split; the
-expectation reset alone does not (the like-for-like gain is below `G*`, the post-move comparison would not be, and the camp splits as soon as `G*`
-falls below the like-for-like gain); no destination (waterless, no known site) and a thinly supported destination (`F_d < 1`) do not split while the
+daughter trigger and veto use the same retained expectation, and the camp splits only when `G*`
+falls below that like-for-like gain; no destination (waterless, no known site) and a thinly supported destination (`F_d < 1`) do not split while the
 control with rich ground does; a fed crowded camp splits with the Crowding trigger; scalar versus reversed 4-worker replay of a starving six-camp world
 (identical fingerprints, trigger and size sequences, invariants); save round trip of the trigger and gain; an older report without the fields loads as Crowding.
 The WP10c closed-form checks that used `F = 0.63, W = 0.9` and `F = 0.4` now include the stayers' relief factor `F_hat W_hat / (F W)`.
@@ -701,10 +818,14 @@ covers (`Immigration.CarriedPerPerson`, the same term immigration uses). For a h
 not feed animals). `EstimateSplit` takes it as the optional `vetoFood` argument (default 1: unchanged callers). The distress and crowding triggers
 and their gain terms are unchanged (the distress gain still uses the site's support ratio alone); only the veto sees the carried food. A parent
 that is well off (high `Q_now`) therefore blocks a thin site that a parent that is short of food, or one carrying food, accepts.
+Under `PhysicalMortalityV1`, a site that passes this relative welfare test can
+still be rejected after the QoL decision if the daughter would begin with a
+negative explicit physical net rate. This does not invalidate or reorder the
+cached site; it prevents that turn's proposal and is counted separately.
 
 **Funnel counters** (`ResolutionMetrics`, transient, in the audit JSON as `fissionScreened` ...): every camp past the gain screen ends in exactly one
 outcome. `screened = searches with no legal candidate + searches with candidates but no destination + camps with a destination`; `with destination =
-below threshold + daughter veto + stayers veto + proposals`; `proposals = dropped (spacing conflict) + committed`. `Tools/PerformanceAudit/Summarize-Hinterland.py`
+below threshold + daughter veto + stayers veto + physical daughter veto + proposals`; `proposals = dropped (spacing conflict) + committed`. `Tools/PerformanceAudit/Summarize-Hinterland.py`
 tabulates them. Checks: `FissionChecks.Funnel` (identities over eight fixtures, scalar versus reversed 4-worker) and `FissionChecks.Relative`.
 
 ### Measurements (hinterland and relative destinations)

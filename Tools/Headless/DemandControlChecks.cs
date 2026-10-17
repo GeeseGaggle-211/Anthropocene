@@ -18,7 +18,7 @@ internal static class DemandControlChecks
 
     private static WorldState World(string strategy, params (int x, int y, int population)[] camps)
     {
-        var cfg = SimulationConfig.Small(1); cfg.EconomicAllocation = strategy; cfg.Width = 24; cfg.Height = 16; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;
+        var cfg = SimulationConfig.Small(1); cfg.DemographicModel = DemographicModel.LegacyQoLNetGrowth; cfg.EconomicAllocation = strategy; cfg.Width = 24; cfg.Height = 16; cfg.AnnualHumanGrowthRate = 0; cfg.LandUseDamagePerYear = 0; cfg.ConditionRecoveryPerYear = 0;
         var w = new WorldState { Seed = 404, Config = cfg, Generation = new GenerationReport(), Tiles = new Tile[cfg.Width * cfg.Height] };
         for (int i = 0; i < w.Tiles.Length; i++)
         {
@@ -56,8 +56,163 @@ internal static class DemandControlChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Purity(); HousingReference(); Saturation(); FishingIntegration(); FishingMealBreakpoint(); Turns();
+        checks = 0; Config(); Purity(); ReserveFeedstockClosure(); IncomingFeedstockToolClosure(); HousingReference();
+        TypedFeedstockPriority(); HousingMaterialCeiling(); Saturation(); FishingIntegration(); FishingMealBreakpoint(); Turns();
         Console.WriteLine("PASS: " + checks + " demand-control assertions"); return checks;
+    }
+
+    // The operating food reserve and the finished-clothing buffer cannot spend
+    // the same Plant Food.  Current clothing may displace reserve refill, but
+    // reserve clothing is normal manufacturing and must use only food beyond
+    // meals plus the attainable reserve target.  Forecast and resolution must
+    // therefore close on the same Cloth quantity.
+    private static void ReserveFeedstockClosure()
+    {
+        var w = World(EconomicAllocationStrategy.DemandControl, (6, 6, 100)); var c = CampOf(w, 1);
+        w.Config.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
+        c.Inventory.Cloth = c.Inventory.AnimalFabric = 0;
+        c.Inventory.Pots = 1000000;
+        foreach (var tile in w.Tiles)
+        {
+            tile.Food = tile.PotentialFood = 0;
+            for (int season = 0; season < tile.Seasons.Length; season++)
+            {
+                SeasonData profile = tile.Seasons[season];
+                profile.MaxFood = profile.MaxPotentialFood = 0;
+                tile.Seasons[season] = profile;
+            }
+        }
+        double intervals = w.Config.GenerationIntervals;
+        double meals = c.Population * w.Config.Consumption * intervals;
+        double reserve = NeolithicProduction.DesiredReserveFood(w, c.Population, intervals);
+        c.PlantFood = meals + reserve; c.AnimalFood = c.AquaticFood = 0;
+        NeolithicProduction.AddFixedHousing(w, c, 1000, w.Days);
+
+        Plan(w, c, out _, out var allocation);
+        var current = allocation.Requests.Single(q => q.Service == "clothing");
+        var buffer = allocation.Requests.Single(q => q.Service == "clothing reserve");
+        Check(allocation.PlantEnvelope <= 1e-8 && allocation.PlantEnvelopeClothing > 0,
+            "normal Plant feedstock preserves the attainable reserve while current clothing may precede it");
+        Check(current.Granted > 0 && Math.Abs(current.Granted - current.Units) <= 1e-8,
+            "current clothing remains fully funded ahead of reserve refill");
+        Check(buffer.Units > 0 && buffer.Granted <= 1e-8 && buffer.Unmet == "plant feedstock",
+            "reserve clothing cannot spend the operating food reserve twice");
+
+        var prepared = TurnPlanner.Prepare(w, new Dictionary<int, List<Order>>());
+        double planned = prepared.Needs[c.Id].Production[CraftGood.Cloth];
+        TurnRecord record = new TurnResolver().Resolve(w, prepared);
+        double actual = record.Production.Where(p => p.Camp == c.Id && p.Good == CraftGood.Cloth).Sum(p => p.Output);
+        Near(actual, planned, "reserve-safe Cloth forecast equals authoritative production", 1e-7);
+    }
+
+    // DemandControl admits current-clothing feedstock that will be gathered in
+    // this turn.  Its tool input must be sized from that admitted work, not from
+    // the opening Plant Food stock; otherwise the forecast closes a large Cloth
+    // grant through only the few tools needed by the opening stock.
+    private static void IncomingFeedstockToolClosure()
+    {
+        var w = World(EconomicAllocationStrategy.DemandControl, (6, 6, 100)); var c = CampOf(w, 1);
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Toolmaking);
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
+        c.Inventory.HandTools = c.Inventory.Tools = 0;
+        c.Inventory.Cloth = c.Inventory.AnimalFabric = 0;
+        c.PlantFood = c.AnimalFood = 0;
+        // Non-plant stock pays meals/reserve while local land supplies the
+        // same-turn textile input. Plant Food therefore opens at exactly zero
+        // without making the complete service physically infeasible.
+        c.AquaticFood = 20000;
+        NeolithicProduction.AddFixedHousing(w, c, 1000, w.Days);
+        var intent = Plan(w, c, out var order, out var allocation);
+        var clothing = allocation.Requests.Where(q => q.Service == "clothing" && q.Good == CraftGood.Cloth).ToArray();
+        double allocatedCloth = clothing.Sum(q => q.Granted);
+        double allocatedToolOutputs = order.Ceiling(CraftGood.HandTools)
+            + order.Ceiling(CraftGood.Tools) * ToolCoverageBudget.OutputsPerTool;
+        Check(allocatedCloth > 0 && allocatedToolOutputs + 1e-8 >= allocatedCloth,
+            "fixture allocates incoming-feedstock Cloth with its complete tool service");
+
+        var candidate = EconomicPlanner.Preview(c, intent, c.Population);
+        var recipes = NeolithicProduction.Recipes(w.Config);
+        var forecast = MaterialEconomy.Forecast(w, candidate, recipes, w.Config.GenerationIntervals,
+            Years(w), new ToolCoverageBudget(w, candidate, w.Config.GenerationIntervals).Remaining,
+            true, c.Population, false, false, knownSources: MaterialEconomy.KnownSources(w, candidate, w.Days), order: order);
+        double forecastToolOutputs = forecast[CraftGood.HandTools]
+            + forecast[CraftGood.Tools] * ToolCoverageBudget.OutputsPerTool;
+        Check(forecastToolOutputs > 0 && forecast[CraftGood.Cloth] > 0,
+            "the ceiling-bearing forecast makes tools and Cloth despite zero opening feedstock");
+        Check(forecast[CraftGood.Cloth] <= forecastToolOutputs + 1e-8,
+            "forecast Cloth remains bounded by realized same-turn tool service");
+        Check(forecast[CraftGood.HandTools] <= order.Ceiling(CraftGood.HandTools) + 1e-8
+            && forecast[CraftGood.Tools] <= order.Ceiling(CraftGood.Tools) + 1e-8,
+            "forecast tool output remains bounded by the Elder allocation");
+
+        var prepared = TurnPlanner.Prepare(w, new Dictionary<int, List<Order>>());
+        double plannedCloth = prepared.Needs[c.Id].Production[CraftGood.Cloth];
+        TurnRecord record = new TurnResolver().Resolve(w, prepared);
+        double actualCloth = record.Production.Where(p => p.Camp == c.Id && p.Good == CraftGood.Cloth).Sum(p => p.Output);
+        double actualToolOutputs = record.Production.Where(p => p.Camp == c.Id && p.Good == CraftGood.HandTools).Sum(p => p.Output)
+            + record.Production.Where(p => p.Camp == c.Id && p.Good == CraftGood.Tools).Sum(p => p.Output)
+                * ToolCoverageBudget.OutputsPerTool;
+        Check(plannedCloth > 0 && actualCloth > 0,
+            "the real gather-production path bootstraps tools and realizes incoming-feedstock Cloth"
+                + " (planned=" + plannedCloth + ", actual=" + actualCloth
+                + ", tools=" + actualToolOutputs + ", food=" + c.Food + ")");
+        Check(actualCloth <= actualToolOutputs + 1e-8,
+            "realized Cloth cannot exceed the same-turn tools physically made in the zero-opening-tool fixture");
+    }
+
+    // Current clothing may use typed feedstock before the operating reserve is
+    // full. That exception belongs to the clothing service, not to every bundle:
+    // a dual-capability camp whose clothing is already stocked cannot promise
+    // tent fabric from the same reserve food.
+    private static void TypedFeedstockPriority()
+    {
+        var w = World(EconomicAllocationStrategy.DemandControl, (6, 6, 100)); var c = CampOf(w, 1);
+        c.Technologies[(int)Technology.AnimalHusbandry] = true;
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Weaving);
+        c.Inventory.Cloth = 10000;
+        foreach (var tile in w.Tiles)
+        {
+            tile.Food = tile.PotentialFood = 0;
+            for (int season = 0; season < tile.Seasons.Length; season++)
+            {
+                SeasonData profile = tile.Seasons[season];
+                profile.MaxFood = profile.MaxPotentialFood = 0;
+                tile.Seasons[season] = profile;
+            }
+        }
+        double meals = c.Population * w.Config.Consumption * w.Config.GenerationIntervals;
+        c.PlantFood = 0; c.AquaticFood = 0; c.AnimalFood = meals + 1000;
+        Plan(w, c, out var order, out var allocation);
+        var tents = allocation.Requests.Where(q => q.Good == CraftGood.LightHousing).ToArray();
+        Check(allocation.AnimalEnvelope <= 1e-9 && allocation.AnimalEnvelopeClothing > 1e-9,
+            "fixture has Animal Food only in the before-reserve clothing envelope");
+        Check(tents.All(q => q.Granted <= 1e-9 && q.Unmet == "animal feedstock")
+            && order.Ceiling(CraftGood.LightHousing) <= 1e-9,
+            "tent feedstock cannot borrow the current-clothing reserve exception: "
+                + string.Join(";", tents.Select(q => q.Service + "=" + q.Units + "/" + q.Granted + "/" + q.Unmet))
+                + " ceiling=" + order.Ceiling(CraftGood.LightHousing));
+        var fixedFallback = allocation.Requests.Where(q => q.Service == "shelter deficit"
+            && q.Good == CraftGood.Housing).ToArray();
+        Check(fixedFallback.Length == 1 && fixedFallback[0].Granted > 0
+            && order.Ceiling(CraftGood.Housing) > 0,
+            "an unfundable tent route yields to fixed Housing");
+    }
+
+    private static void HousingMaterialCeiling()
+    {
+        var w = World(EconomicAllocationStrategy.DemandControl, (6, 6, 100)); var c = CampOf(w, 1);
+        c.Workforce.Assign(WorkforceRoles.Builder, 10, c.Population);
+        c.Inventory.HandTools = 10000; c.Inventory.Wood = 10000; c.Inventory.Clay = 10000;
+        var recipes = NeolithicProduction.Recipes(w.Config);
+        var ceilings = recipes.ToDictionary(r => r.Good, r => 0d);
+        ceilings[CraftGood.HousingMaterial] = .25;
+        ceilings[CraftGood.Housing] = .25;
+        var order = new ProductionOrder(new[] { CraftGood.HousingMaterial, CraftGood.Housing }, ceilings);
+        var forecast = MaterialEconomy.Forecast(w, c, recipes, w.Config.GenerationIntervals,
+            Years(w), 10000, true, c.Population, false, false, knownSources: null, order: order);
+        Check(forecast[CraftGood.HousingMaterial] <= .25 + 1e-9,
+            "Housing Material forecast retains the Elder's output ceiling");
     }
 
     private static string FindConfig()

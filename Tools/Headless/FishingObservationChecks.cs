@@ -96,7 +96,7 @@ internal static class FishingObservationChecks
             "visible tile observations include authoritative fishery accessibility and productivity");
         var serialized = ObservationContract.Serialize(observation, camp.Mandate);
         var dto = ObservationContract.Deserialize(serialized);
-        Check(dto.Schema == 22 && dto.FishingEnabled && dto.FishingGrounds.Any(g => g.Tile == near && g.Visible),
+        Check(dto.Schema == 23 && dto.FishingEnabled && dto.FishingGrounds.Any(g => g.Tile == near && g.Visible),
             "the current schema retains the feature capability and filtered visible-ground DTO");
         Check(dto.Settlements.Single(s => s.Id == camp.Id).FishingEnabled &&
             dto.Settlements.Single(s => s.Id == camp.Id).FishingTools == camp.Inventory.FishingTools,

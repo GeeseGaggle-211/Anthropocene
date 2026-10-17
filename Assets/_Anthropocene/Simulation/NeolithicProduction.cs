@@ -73,6 +73,17 @@ namespace Anthropocene.Simulation
         // Portable Housing Material consumed by a Housing assembly receipt.
         [System.Runtime.Serialization.OptionalField] public double HousingMaterial;
     }
+    // Opt-in, transient explanation of one production attempt. It is populated
+    // only with ResolutionMetrics.CaptureCraftWorkDiagnostics and never saved.
+    public sealed class ProductionLimitDiagnostic
+    {
+        public int Camp;
+        public CraftGood Good;
+        public string Role;
+        public double Requested, LaborToolLimit, MaterialLimit, FoodLimit, DependencyLimit, StorageLimit;
+        public double OpeningPlantFood, OpeningAnimalFood, StorageRoomUnits;
+        public double OpeningStone, OpeningClay, OpeningWood;
+    }
     public sealed class ManufacturingFoodPlan
     {
         public double PlantFood, AnimalFood;
@@ -896,12 +907,16 @@ namespace Anthropocene.Simulation
             double amount = recipe.Good == CraftGood.HousingMaterial && order?.PolicySurplus != true
                 ? ExportedHousingMaterialLimit(coverage, rate, labor, usefulDemand, c.Inventory.HousingMaterial - c.TradeHeldForExport(CraftGood.HousingMaterial), c.TradeOutstanding(CraftGood.HousingMaterial))
                 : Math.Min(usefulDemand, recipe.Equipment || recipe.Good == CraftGood.HousingMaterial ? coverage.Capacity(recipe.Good, rate, labor) : labor * rate);
+            double laborToolLimit = amount;
             var inv = c.Inventory;
             if (recipe.Stone > 0) amount = Math.Min(amount, inv.Stone / recipe.Stone);
             if (recipe.Clay > 0) amount = Math.Min(amount, inv.Clay / recipe.Clay);
             if (recipe.Wood > 0) amount = Math.Min(amount, inv.Wood / recipe.Wood);
+            double materialLimit = amount;
+            double openingPlantFood = c.PlantFood, openingAnimalFood = c.AnimalFood;
             if (recipe.PlantFood > 0) amount = Math.Min(amount, c.PlantFood / recipe.PlantFood);
             if (recipe.AnimalFood > 0) amount = Math.Min(amount, c.AnimalFood / recipe.AnimalFood);
+            double foodLimit = amount;
             // Goods already made for export after production (Docs/Trade.md) are not inputs.
             if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, inv.AnimalFabric - c.TradeHeldForExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
             if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, inv.HousingMaterial - c.TradeHeldForExport(CraftGood.HousingMaterial)) / recipe.HousingMaterial);
@@ -914,8 +929,20 @@ namespace Anthropocene.Simulation
                 if (housing == null) amount = Math.Min(amount, (inv.Wood + inv.Clay) / recipe.ConstructionMaterial);
                 else amount = housing.LimitHousing(c, amount, recipe.ConstructionMaterial, out _, out _);
             }
+            double dependencyLimit = amount;
             // Goods storage (Docs/PlannerTradeStorageDesign.md §3): an addition is cut to what fits; nothing is destroyed.
+            double storageRoom = c.GoodsStorage?.RoomUnits(c) ?? double.PositiveInfinity;
             if (c.GoodsStorage != null) amount = c.GoodsStorage.Limit(c, recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
+            if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+                record.ProductionLimits.Add(new ProductionLimitDiagnostic
+                {
+                    Camp = c.Id, Good = recipe.Good, Role = role, Requested = usefulDemand,
+                    LaborToolLimit = laborToolLimit, MaterialLimit = materialLimit,
+                    FoodLimit = foodLimit, DependencyLimit = dependencyLimit, StorageLimit = amount,
+                    OpeningPlantFood = openingPlantFood, OpeningAnimalFood = openingAnimalFood,
+                    OpeningStone = inv.Stone, OpeningClay = inv.Clay, OpeningWood = inv.Wood,
+                    StorageRoomUnits = storageRoom
+                });
             if (amount <= 1e-12) return 0;
             double wood = amount * recipe.Wood, clay = amount * recipe.Clay;
             if (recipe.ConstructionMaterial > 0)
@@ -1062,6 +1089,7 @@ namespace Anthropocene.Simulation
                 : cohort * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
             double cloth = Math.Min(required, c.Inventory.Cloth); c.Inventory.Cloth -= cloth;
             double animal = Math.Min(Math.Max(0, required - cloth), c.Inventory.AnimalFabric); c.Inventory.AnimalFabric -= animal;
+            c.ResolvedClothConsumed = cloth; c.ResolvedAnimalFabricConsumed = animal;
             c.FabricConsumed = cloth + animal;
             double physicalPeople = perPerson > 0 ? c.FabricConsumed / perPerson : Math.Max(0, cohort - covered);
             if (n.SubsistenceNeedsCovered) c.PhysicalClothingPerCapita = cohort > 0 ? physicalPeople / cohort : 1;
@@ -1080,6 +1108,25 @@ namespace Anthropocene.Simulation
                 housing = SubsistenceNeeds.GearQuality(cohort, eligible, shelter.Total, c.HousingPerCapita, c.RudimentaryExpectation);
             }
             c.QoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing) * SocialCohesion(n, HousingShare(n, shelter, cohort), cohort);
+        }
+
+        // Reconcile the existing composite experienced-welfare signal with the physical coverage that the demographic
+        // integrator actually realized. This changes no utility weights or reward definition: QoL remains food * water *
+        // expected clothing/housing coverage * social cohesion, and is never read back into birth or death hazards.
+        public static void CommitExperiencedWelfare(WorldState w, Camp c, double experiencedPopulation,
+            double nutrition, double clothingCoverage, double housingCoverage)
+        {
+            var n = w.Config.Neolithic;
+            double people = Math.Max(0, experiencedPopulation);
+            var shelter = HousingCapacity(w, c, w.Days);
+            c.FoodNeedsMetRatio = Numbers.Clamp(nutrition, 0, 1);
+            c.ClothPerCapita = Numbers.Clamp(clothingCoverage, 0, 1);
+            c.HousingPerCapita = Numbers.Clamp(housingCoverage, 0, 1);
+            double clothing = 1 - c.RudimentaryExpectation * (1 - c.ClothPerCapita);
+            double housing = 1 - c.RudimentaryExpectation * (1 - c.HousingPerCapita);
+            c.QoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio
+                * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing)
+                * SocialCohesion(n, HousingShare(n, shelter, people), people);
         }
     }
 }
