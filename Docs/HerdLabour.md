@@ -4,8 +4,45 @@ Authoritative record of the rule that lets a camp choose how many managed animal
 
 ## Status (read first)
 
-**Opt-in.** `HerdLabourEnabled` remains **false** (OpeningConfig, API default
-and old saves). The current HV2 candidate uses retained capital value minus
+**On for new worlds.** `HerdLabourEnabled` is **true** in `OpeningConfig.json` (plan of record); the API default and
+old saves keep it false.
+
+### Seed herd and water routing under DemandControl (17 October 2026)
+
+Measured on model9 Small/8 worlds: the DemandControl heuristic slaughtered most granted herds to nothing. That was
+76% of founders' starting herds, 60% of herds gained by later discovery and 40% of daughters' herds; none recovered.
+Two defects combined:
+- **Water routing.** A managed herd's water need was split over the freshwater sources within one tile of its camp
+  in fixed proportions. A source a wild herd already oversubscribed returned nothing, and that share was never
+  re-routed to neighbouring sources with spare water. The herd ended near 0.83 water nutrition with roughly 40 times
+  its need available, and breeding (which requires full nutrition) never happened. The planner's site survey summed
+  all the water, so planning and resolution disagreed.
+- **No seed herd.** `MinimumHerdHerders` was enforced only by the Value planner's `HerdLadder`. DemandControl's
+  `SettlementPortfolioSupervisor` could set a herd target of 0, and food-short camps did so for herds that never grew.
+
+Fixes:
+- `ManagedHerdLocalClaims.Append` takes the claims already placed and splits water by each source's residual water.
+  The resolver places wild herds' claims first and then managed herds in herd-ID order, and the planning forecast
+  places rival claims first, so planning and resolution route identically. Each tile is still integrated once per
+  turn. With no prior claims, or with every source already fully claimed, the split is the previous one.
+- `SettlementPortfolioSupervisor.Select` keeps at least the whole animals `MinimumHerdHerders` can manage. It applies
+  to the heuristic and to Elder directives (with a logged intervention), within the herd, the site's absolute
+  capacity and the residents left after fields.
+
+Matched 60 worlds (seeds 1000-1059, 25 turns after the opening), before -> after:
+- herds slaughtered or lost to zero 315 -> 19;
+- husbandry decisions holding animals 31% -> 57%;
+- managed animals per world at the end 192 -> 523;
+- population per world 16,628 -> 17,219;
+- welfare per world 3.29 -> 3.39 million.
+
+Seed 1000, where wild herds share the camps' water, ends at 531 managed animals instead of 79. Seed 1001, where they
+do not, is unchanged in kind (347 against 334). The fixed suite passes, and model9 teacher labels still reproduce the
+heuristic exactly. The all-or-nothing breeding gate and the no-tool herder rate of 2 animals per herder are
+unchanged.
+
+**Earlier status, superseded:** opt-in, with `HerdLabourEnabled` false in OpeningConfig, the API default
+and old saves. The current HV2 candidate uses retained capital value minus
 slaughter value and local marginal field/pasture alternatives. Read
 [HerdValuationValidation.md](HerdValuationValidation.md) for current mechanics,
 tests, measurements and unresolved design decisions, and

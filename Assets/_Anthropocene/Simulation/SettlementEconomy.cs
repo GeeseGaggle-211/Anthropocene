@@ -1143,6 +1143,35 @@ namespace Anthropocene.Simulation
                     best = retainedCandidate;
             }
 
+            // Seed herd (Docs/HerdLabour.md): with herd labour on, the settlement keeps at least the whole animals
+            // SimulationConfig.MinimumHerdHerders can manage, whatever their value, so a herd is never slaughtered to
+            // nothing and can regrow. It applies to the heuristic and to Elder directives alike (logged for the
+            // latter); it never exceeds the herd, the site's physical capacity or the residents left after fields.
+            if (profile.Exists && cfg.HerdLabourEnabled && cfg.MinimumHerdHerders > 0)
+            {
+                double seedTarget = Math.Min(profile.Animals, Math.Min(site.Herd.AbsoluteCapacity,
+                    Math.Floor(HerdingTooling.AnimalsManagedBy(world, camp, years, cfg.MinimumHerdHerders) + Epsilon)));
+                if (seedTarget >= 1 && best.Herd.Target + Epsilon < seedTarget)
+                {
+                    var seed = BuildHerdOption(seedTarget);
+                    if (best.Field.Farmers + seed.Herders <= residents)
+                    {
+                        double before = profile.Animals > Epsilon ? best.Herd.Target / profile.Animals : 0;
+                        best = Evaluate(best.Field, seed);
+                        result.AlternativesEvaluated++;
+                        if (directive != null)
+                            interventions?.Add(new ElderIntervention
+                            {
+                                Kind = ElderInterventionKind.LegalConstraint,
+                                Control = "retained-herd-fraction",
+                                Reason = "seed herd: MinimumHerdHerders keeps one herder's worth of animals",
+                                Requested = before,
+                                Accepted = best.Herd.Target / profile.Animals
+                            });
+                    }
+                }
+            }
+
             result.FieldFarmers = best.Field.Farmers;
             result.RetainedFoodSupply = best.Food;
             result.SelectedFieldOperation = best.Field.Operation;

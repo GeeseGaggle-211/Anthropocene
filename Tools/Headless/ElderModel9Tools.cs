@@ -76,6 +76,12 @@ internal static class ElderModel9Tools
             for (int i = 0; i < parts.Length; i++) sum[i] += parts[i];
             decisions += s.Villages.Count(v => v.Teacher != null); villagesSum += s.Villages.Count;
             Console.WriteLine("MODEL9_FINGERPRINT turn=" + s.Turn + " villages=" + s.Villages.Count + " " + s.Fingerprint);
+            // Managed herds after the turn: count, animals, newborns and full-nutrition herds (breeding requires it).
+            var managed = env.World.Herds.Where(h => h.DomesticCamp >= 0 && h.StartingAnimals > 0).ToList();
+            Console.WriteLine("MODEL9_HERDS turn=" + s.Turn + " herds=" + managed.Count + " animals=" + managed.Sum(h => h.Animals)
+                + " newborn=" + managed.Sum(h => h.NewbornAnimals) + " breedingHerds=" + managed.Count(h => h.NewbornAnimals > 0)
+                + " fullNutrition=" + managed.Count(h => h.LastNutrition >= 1 - 1e-12) + " fullWater=" + managed.Count(h => h.LastWaterNutrition >= 1 - 1e-12)
+                + " emptied=" + env.World.Herds.Count(h => h.DomesticCamp >= 0 && h.StartingAnimals > 0 && h.Animals == 0));
         }
         PhaseProfile.Enabled = false;
         foreach (var counter in PhaseProfile.Counters())
