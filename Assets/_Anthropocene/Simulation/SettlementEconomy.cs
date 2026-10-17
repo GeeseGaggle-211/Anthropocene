@@ -1213,7 +1213,9 @@ namespace Anthropocene.Simulation
             // against field and other Development work.
             double growthSupport = result.HCurrent > result.HRetained + Epsilon
                 ? result.HRetained : absoluteLabor;
-            result.HGrowthCeiling = Math.Min(growthSupport, result.HGrown);
+            // The ceiling never cuts below the herd this portfolio retained: a labour-short camp whose absolute
+            // envelope fits no further herder still keeps the seed or retained herd it was evaluated with.
+            result.HGrowthCeiling = Math.Max(result.HRetained, Math.Min(growthSupport, result.HGrown));
             return result;
         }
     }

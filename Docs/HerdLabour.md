@@ -25,21 +25,32 @@ Fixes:
   The resolver places wild herds' claims first and then managed herds in herd-ID order, and the planning forecast
   places rival claims first, so planning and resolution route identically. Each tile is still integrated once per
   turn. With no prior claims, or with every source already fully claimed, the split is the previous one.
-- `SettlementPortfolioSupervisor.Select` keeps at least the whole animals `MinimumHerdHerders` can manage. It applies
-  to the heuristic and to Elder directives (with a logged intervention), within the herd, the site's absolute
-  capacity and the residents left after fields.
+- `SettlementPortfolioSupervisor.Select` keeps at least the whole animals `MinimumHerdHerders` can manage. On the
+  Elder line it applies to the heuristic and to Elder directives (with a logged intervention), within the herd, the
+  site's absolute capacity and the residents left after fields.
+- `HGrowthCeiling` never falls below the retained target. A food-short camp whose absolute envelope fits no further
+  herder had a ceiling of 0, and DemandControl then compiled a herd target of 0 under the herd the supervisor had
+  just retained.
 
-Matched 60 worlds (seeds 1000-1059, 25 turns after the opening), before -> after:
-- herds slaughtered or lost to zero 315 -> 19;
-- husbandry decisions holding animals 31% -> 57%;
-- managed animals per world at the end 192 -> 523;
-- population per world 16,628 -> 17,219;
-- welfare per world 3.29 -> 3.39 million.
+Matched 60 model9 worlds (seeds 1000-1059, 25 turns after the opening):
+
+| | Before | All three fixes |
+| --- | ---: | ---: |
+| Herds lost to zero | 315 | 0 |
+| Husbandry decisions holding animals | 31% | 64% |
+| Managed animals per world at the end | 192 | 583 |
+| Population per world at the end | 16,628 | 17,892 |
+| Welfare per world | 3.29 million | 3.50 million |
 
 Seed 1000, where wild herds share the camps' water, ends at 531 managed animals instead of 79. Seed 1001, where they
-do not, is unchanged in kind (347 against 334). The fixed suite passes, and model9 teacher labels still reproduce the
-heuristic exactly. The all-or-nothing breeding gate and the no-tool herder rate of 2 animals per herder are
-unchanged.
+do not, is unchanged in kind (347 against 334).
+
+On main, the production configuration through 25 post-opening turns (PerformanceAudit, Continents, 8 players):
+- seed 1001: managed animals 0 -> 12, births 0 -> 10, population 17,084 -> 17,458;
+- seed 1729: managed animals 0 -> 62, births 0 -> 60, population 8,820 -> 10,401.
+
+The fixed suites pass on both branches, and model9 teacher labels still reproduce the heuristic exactly. The
+all-or-nothing breeding gate and the no-tool herder rate of 2 animals per herder are unchanged.
 
 **Earlier status, superseded:** opt-in, with `HerdLabourEnabled` false in OpeningConfig, the API default
 and old saves. The current HV2 candidate uses retained capital value minus
