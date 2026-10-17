@@ -274,6 +274,23 @@ namespace Anthropocene.Simulation
 
         public static string BuildHash => typeof(ElderModel9Environment).Assembly.ManifestModule.ModuleVersionId.ToString("N");
 
+        // A shipped-configuration Small world played by the heuristic through its opening (the first breakthroughs),
+        // the start state of every model9 episode. Deterministic in (seed, players).
+        public static byte[] GenerateOpening(int seed, int players, out int openingTurns, int maxTurns = 40)
+        {
+            var cfg = SimulationConfig.Small(players);
+            cfg.Validate();
+            var world = new WorldGenerator().Generate(seed, cfg); var resolver = new TurnResolver();
+            openingTurns = 0;
+            while (!world.Finished && openingTurns < maxTurns)
+            {
+                var plan = AiPlanning.Decide(world);
+                resolver.Resolve(world, plan.Orders, plan.Traces);
+                openingTurns++;
+            }
+            return SaveCodec.Save(world);
+        }
+
         public ElderModel9Step Reset(byte[] snapshot, bool movementEnabled)
         {
             World = SaveCodec.Load((byte[])snapshot.Clone());

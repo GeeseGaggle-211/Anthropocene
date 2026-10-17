@@ -12,20 +12,7 @@ internal static class ElderModel9Tools
 {
     private static string I(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
 
-    internal static byte[] Opening(int seed, int players, out int openingTurns)
-    {
-        var cfg = SimulationConfig.Small(players);
-        cfg.Validate();
-        var world = new WorldGenerator().Generate(seed, cfg); var resolver = new TurnResolver();
-        openingTurns = 0;
-        while (!world.Finished && openingTurns < 40)
-        {
-            var plan = AiPlanning.Decide(world);
-            resolver.Resolve(world, plan.Orders, plan.Traces);
-            openingTurns++;
-        }
-        return SaveCodec.Save(world);
-    }
+    internal static byte[] Opening(int seed, int players, out int openingTurns) => ElderModel9Environment.GenerateOpening(seed, players, out openingTurns);
 
     // --model9-probe=<seed>,<turns>: lockstep teacher run (A) and teacher-labels-as-actions run (B) from one snapshot.
     public static int Probe(int seed, int turns, int players = 8)
