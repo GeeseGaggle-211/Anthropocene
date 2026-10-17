@@ -20,6 +20,7 @@ internal static class ElderModel9Tools
         var snapshot = Opening(seed, players, out int opening);
         var a = new ElderModel9Environment(); var b = new ElderModel9Environment();
         a.Reset(snapshot, true); b.Reset(snapshot, true);
+        var controls = new SortedDictionary<string, int>(StringComparer.Ordinal);
         int exact = 0, steps = 0, unrepresentable = 0, moves = 0; bool diverged = false; double welfareA = 0, welfareB = 0, decisions = 0, msA = 0, msB = 0, repairs = 0, labelled = 0;
         for (int t = 0; t < turns; t++)
         {
@@ -34,7 +35,7 @@ internal static class ElderModel9Tools
                     if (vb != null && va.Population == vb.Population && Math.Abs(va.Welfare - vb.Welfare) <= 1e-6 * Math.Max(1, va.Welfare)) continue;
                     diverged = true;
                     string L(ElderModel9Label l) => l == null ? "none" : "f" + I(l.Action.RetainedFieldOperation) + " h" + I(l.Action.RetainedHerdFraction) + " d" + I(l.Action.DevelopmentBudget)
-                        + " s" + I(l.Action.FieldDevelopmentShare) + " lv" + string.Join(",", l.Action.ServiceLevels.Select(I)) + " r" + l.Action.ClothingRoute + l.Action.ShelterRoute;
+                        + " s" + I(l.Action.FieldDevelopmentShare) + " f" + I(l.Action.FishingDevelopmentShare) + " lv" + string.Join(",", l.Action.ServiceLevels.Select(I)) + " r" + l.Action.ClothingRoute + l.Action.ShelterRoute;
                     Console.WriteLine("MODEL9_DIVERGE turn=" + stepA.Turn + " camp=" + va.Camp + " pop=" + va.Population + "/" + (vb?.Population ?? -1) + " welfare=" + I(va.Welfare) + "/" + I(vb?.Welfare ?? 0)
                         + " labelA=" + L(va.Teacher) + " realizedB=" + L(vb?.Teacher) + " staffA=" + va.Staffing + " staffB=" + vb?.Staffing
                         + " interventions=" + string.Join(";", (vb?.Interventions ?? Array.Empty<ElderIntervention>()).Select(i => i.Control + ":" + I(i.Requested) + ">" + I(i.Accepted))));
@@ -44,6 +45,8 @@ internal static class ElderModel9Tools
             welfareA += stepA.Villages.Sum(v => v.Welfare); welfareB += stepB.Villages.Sum(v => v.Welfare);
             decisions += stepA.Villages.Count(v => v.Teacher != null); msA += stepA.NativeMilliseconds; msB += stepB.NativeMilliseconds;
             repairs += stepB.Villages.Sum(v => v.Interventions.Length); labelled += directives.Count;
+            foreach (var intervention in stepB.Villages.SelectMany(v => v.Interventions))
+                controls[intervention.Control] = (controls.TryGetValue(intervention.Control, out int count) ? count : 0) + 1;
             unrepresentable += stepA.Villages.Count(v => v.Teacher != null && !v.Teacher.MovementMask); moves += stepA.Villages.Count(v => v.Teacher != null && (v.Teacher.Action.MovementCandidate >= 0 || !v.Teacher.MovementMask));
             Console.WriteLine("MODEL9_PROBE seed=" + seed + " turn=" + stepA.Turn + " villages=" + stepA.Villages.Count + " decisions=" + directives.Count
                 + " exact=" + (stepA.Fingerprint == stepB.Fingerprint) + " welfareA=" + I(stepA.Villages.Sum(v => v.Welfare)) + " welfareB=" + I(stepB.Villages.Sum(v => v.Welfare))
@@ -54,7 +57,8 @@ internal static class ElderModel9Tools
         Console.WriteLine("MODEL9_PROBE_SUMMARY seed=" + seed + " openingTurns=" + opening + " steps=" + steps + " exactSteps=" + exact
             + " welfareRatio=" + I(welfareA > 0 ? welfareB / welfareA : 0) + " decisions=" + decisions
             + " teacherDecisionsPerSecond=" + I(decisions / Math.Max(1e-9, msA / 1000)) + " directiveDecisionsPerSecond=" + I(labelled / Math.Max(1e-9, msB / 1000))
-            + " heuristicMoves=" + moves + " unrepresentableMoves=" + unrepresentable + " interventionsPerDecision=" + I(labelled > 0 ? repairs / labelled : 0) + " replay=verified");
+            + " heuristicMoves=" + moves + " unrepresentableMoves=" + unrepresentable + " interventionsPerDecision=" + I(labelled > 0 ? repairs / labelled : 0) + " replay=verified"
+            + " interventionControls=" + string.Join(",", controls.Select(p => p.Key + ":" + p.Value)));
         return 0;
     }
 
@@ -138,10 +142,11 @@ internal static class ElderModel9Tools
         NpyWriter.Write(Path.Combine(dir, "movement_mask.npy"), rows.SelectMany(r => r.Obs.MovementMask).ToArray(), n, ElderModel9Contract.MovementSlots);
         NpyWriter.Write(Path.Combine(dir, "clothing_route_mask.npy"), rows.SelectMany(r => r.Obs.ClothingRouteMask).ToArray(), n, 2);
         NpyWriter.Write(Path.Combine(dir, "shelter_route_mask.npy"), rows.SelectMany(r => r.Obs.ShelterRouteMask).ToArray(), n, 2);
+        NpyWriter.Write(Path.Combine(dir, "economy_mix_mask.npy"), rows.SelectMany(r => r.Obs.EconomyMixMask).ToArray(), n, 3);
         var labels = rows.Select(r => r.V.Teacher).ToArray();
         NpyWriter.Write(Path.Combine(dir, "strategic.npy"), labels.SelectMany(l => new[] { (float)l.Action.RetainedFieldOperation, (float)l.Action.RetainedHerdFraction,
-            (float)l.Action.DevelopmentBudget, (float)l.Action.FieldDevelopmentShare }).ToArray(), n, 4);
-        NpyWriter.Write(Path.Combine(dir, "strategic_mask.npy"), labels.SelectMany(l => new[] { l.StrategicFieldMask, l.StrategicHerdMask, l.DevelopmentMask, l.DevelopmentShareMask }).ToArray(), n, 4);
+            (float)l.Action.DevelopmentBudget, (float)l.Action.FieldDevelopmentShare, (float)l.Action.FishingDevelopmentShare }).ToArray(), n, 5);
+        NpyWriter.Write(Path.Combine(dir, "strategic_mask.npy"), labels.SelectMany(l => new[] { l.StrategicFieldMask, l.StrategicHerdMask, l.DevelopmentMask, l.DevelopmentShareMask, l.FishingShareMask }).ToArray(), n, 5);
         NpyWriter.Write(Path.Combine(dir, "service_levels.npy"), labels.SelectMany(l => l.Action.ServiceLevels.Select(x => (float)x)).ToArray(), n, services);
         NpyWriter.Write(Path.Combine(dir, "service_mask.npy"), labels.SelectMany(l => l.ServiceMask).ToArray(), n, services);
         NpyWriter.Write(Path.Combine(dir, "clothing_route.npy"), labels.Select(l => l.Action.ClothingRoute).ToArray(), n);

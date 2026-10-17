@@ -143,6 +143,10 @@ namespace Anthropocene.Simulation
         public double HerdZeroDisplacement, HerdAbsolute, HerdWater;
         public double FixedShelter, RecurringLabor, AbsoluteRecurringLabor;
         public double RetainedFieldService, LostRebuildBurden;
+        // Contract 8: a legal water source next to the site, and the yield of the known fishing grounds within
+        // FishingEconomy.GroundRange weighted by DistanceFactor (observation productivity bands).
+        public bool FishingSource;
+        public double FishingAccess;
     }
 
     [Serializable]
@@ -231,6 +235,8 @@ namespace Anthropocene.Simulation
         public bool HerdRetention;
         public bool FieldDevelopment;
         public bool HerdDevelopment;
+        // Contract 8: whole extra Fishers beyond the survival frontier (resident fishing with a legal source).
+        public bool FishingDevelopment;
         public bool Movement;
 
         public bool AllowsDevelopment()
@@ -259,6 +265,10 @@ namespace Anthropocene.Simulation
         public double RetainedHerdFraction = 1;
         public double DevelopmentBudget;
         public double FieldDevelopmentShare = .5;
+        // Contract 8 (action schema 8): the fishing share of DevelopmentBudget, staffed as whole Fishers beyond the
+        // survival frontier; FieldDevelopmentShare splits the remainder between fields and herds. The economy mix
+        // (cultivation, herding, fishing) is ((1 - f) s, (1 - f)(1 - s), f). Earlier schemas ignore it.
+        [System.Runtime.Serialization.OptionalField] public double FishingDevelopmentShare;
         public int MovementCandidate = -1;
         // Contract 7 (model9) extensions; absent (null / -1) keeps the native heuristic choice. ServiceLevels follow
         // ElderModel9Contract.GoodsServices; routes are 0/1 (Cloth/Animal Fabric, fixed Housing/Light Housing);
@@ -273,6 +283,7 @@ namespace Anthropocene.Simulation
             RetainedHerdFraction = RetainedHerdFraction,
             DevelopmentBudget = DevelopmentBudget,
             FieldDevelopmentShare = FieldDevelopmentShare,
+            FishingDevelopmentShare = FishingDevelopmentShare,
             MovementCandidate = MovementCandidate,
             ServiceLevels = (double[])ServiceLevels?.Clone(),
             ClothingRoute = ClothingRoute, ShelterRoute = ShelterRoute, FissionPolicy = FissionPolicy
@@ -325,6 +336,7 @@ namespace Anthropocene.Simulation
         public double RequestedDevelopmentPeople, AcceptedDevelopmentPeople;
         public double AcceptedFieldDevelopmentPeople,
             AcceptedHerdDevelopmentPeople;
+        [System.Runtime.Serialization.OptionalField] public double AcceptedFishingDevelopmentPeople;
         // Transient compiler/resolver witness. Raw identities never enter the
         // policy observation or replay payload.
         // Contract 7: the exact allocation the compiler produced (teacher labels and realized service levels).

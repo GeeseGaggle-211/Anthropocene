@@ -60,7 +60,7 @@ namespace Anthropocene.Simulation
             };
 
             BuildCore(world, camp, own, years, recent, memory, result.Core);
-            BuildSites(world, camp, game, movementEnabled, result, metadata);
+            BuildSites(world, camp, game, index, movementEnabled, result, metadata);
             BuildFishing(world, camp, game, years, result, metadata);
             BuildFields(world, camp, game, years, result.Fields);
             BuildHerd(world, camp, game, years, recent, result);
@@ -118,17 +118,33 @@ namespace Anthropocene.Simulation
         }
 
         private void BuildSites(WorldState world, Camp camp,
-            AgentObservation game, bool movementEnabled, ElderObservation result,
+            AgentObservation game, PlanningIndex index, bool movementEnabled, ElderObservation result,
             ElderObservationMetadata metadata)
         {
             var agricultural = game.AgriculturalSites.ToDictionary(site =>
                 site.Tile);
+            // Contract 8: a fishing camp without a cultivation or husbandry economy gets the same coarse site
+            // coverage the shared observation builds for agricultural camps (Elder observation only; the native
+            // heuristic's AgentObservation is unchanged).
+            var coverage = game.SiteCoverage;
+            if (ValueOrderedSites && coverage.Count == 0 && FishingEconomy.FeatureEnabled(world, camp))
+            {
+                var visible = new HashSet<int>(game.Tiles.Keys);
+                coverage = world.Map.Radius(camp.Tile, game.CampMovement).Where(visible.Contains)
+                    .OrderBy(id => id).Select(id => AgentObservation.LocalCoverage(world, camp, index, visible, id,
+                        camp.Population, default)).ToArray();
+            }
+            var grounds = game.FishingGrounds;
+            bool Source(int tile) => world.Map.Neighbors(tile).Any(adjacent => game.Tiles.ContainsKey(adjacent) &&
+                (world.Tiles[adjacent].Environment == EnvironmentKind.Shallows || world.Tiles[adjacent].Environment == EnvironmentKind.Lake));
+            double Access(int tile) => grounds.Sum(ground => ground.Productivity *
+                FishingEconomy.DistanceFactor(world.Map.Distance(tile, ground.Tile)));
             // Contract 7 ranks candidates by observable physical value (current first, then human food after herd use)
             // so the bounded candidate list holds the sites a policy would plausibly choose; v2 keeps tile order.
             var all = (ValueOrderedSites
-                ? game.SiteCoverage.OrderBy(site => site.Tile == camp.Tile ? 0 : 1)
+                ? coverage.OrderBy(site => site.Tile == camp.Tile ? 0 : 1)
                     .ThenByDescending(site => site.HumanFoodAfterHerd).ThenByDescending(site => site.HumanFood).ThenBy(site => site.Tile)
-                : game.SiteCoverage.OrderBy(site => site.Tile == camp.Tile ? 0 : 1).ThenBy(site => site.Tile)).ToArray();
+                : coverage.OrderBy(site => site.Tile == camp.Tile ? 0 : 1).ThenBy(site => site.Tile)).ToArray();
             var selected = all.Take(ElderRLContract.MaxLocalSites).ToArray();
             result.Sites = selected.Select((site, candidate) =>
             {
@@ -147,7 +163,9 @@ namespace Anthropocene.Simulation
                     RecurringLabor = site.RecurringLabor,
                     AbsoluteRecurringLabor = site.AbsoluteRecurringLabor,
                     RetainedFieldService = fields?.ManagedRecoveryCoverage ?? 0,
-                    LostRebuildBurden = fields?.LostRebuildBurden ?? 0
+                    LostRebuildBurden = fields?.LostRebuildBurden ?? 0,
+                    FishingSource = ValueOrderedSites && Source(site.Tile),
+                    FishingAccess = ValueOrderedSites ? Access(site.Tile) : 0
                 };
             }).ToArray();
             metadata.SiteTiles = selected.Select(site => site.Tile).ToArray();
@@ -541,6 +559,7 @@ namespace Anthropocene.Simulation
             mask.HerdRetention = retainedHerd;
             mask.FieldDevelopment = cultivation;
             mask.HerdDevelopment = retainedHerd;
+            mask.FishingDevelopment = NeolithicCapabilities.ResidentFishingEnabled(world, camp);
         }
 
         private static void BuildPrevious(ElderCompiledDecision decision,

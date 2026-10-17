@@ -1,5 +1,35 @@
 # Native Elder contract 7 (model9)
 
+## Contract 8 amendment (17 October 2026): three-way economy mix
+
+Contract 8 (`ElderModel9Contract.NativeContractVersion = 8`, action/observation/environment/replay schema 8) makes
+fishing a development channel beside fields and herds. Schema-7 directives remain valid and never develop fishing.
+
+- **Action.** `ElderDirective.FishingDevelopmentShare` (f) is the fishing share of `DevelopmentBudget`;
+  `FieldDevelopmentShare` (s) still splits the remainder between the field and herd ray. The learner's economy-mix
+  simplex (cultivation, herding, fishing) is ((1 - f) s, (1 - f)(1 - s), f).
+- **Compilation.** The fishing part becomes one Development request ("fishing development", `ElderDirected`) for
+  whole Fishers beyond the survival frontier, capped by the residents left after the frontier. Its food service is
+  the extra catch of those Fishers. Fishing Tools are sized for frontier plus development Fishers. Like the Elder's
+  field/herd prefix it is granted up to its units, and it ranks ahead of the native growth-gathering request. As the
+  lowest service class it competes with reserve gathering and goods for labour, which the food and goods service
+  levels control. An unmet request logs a `fishing-development` intervention.
+- **Masks.** `ElderActionMask.FishingDevelopment` is resident fishing with a legal water source. The tensor carries
+  `EconomyMixMask` (cultivation, herding, fishing). Validation forces f = 0 when fishing is unavailable, and f = 1
+  (with a positive budget) when fishing is the only channel.
+- **Observation.** Six core features: fishing-development availability, last allocation's frontier Fishers per
+  resident, next-Fisher catch over one gatherer's turn yield, fishing food over meals, and the previous fishing share
+  and development Fishers per resident. Site rows widen to 14 with a legal water source next to the site and the
+  distance-weighted yield of known fishing grounds within `FishingEconomy.GroundRange`. A fishing camp without a
+  cultivation or husbandry economy now gets site rows: the Elder builder evaluates the same coarse coverage the
+  shared observation builds for agricultural camps. The native `AgentObservation` is unchanged.
+- **Teacher.** The heuristic never develops fishing, so its label is f = 0 (`FishingShareMask` where fishing is
+  available and the budget is positive). Teacher NPY shards add a fifth strategic column and `economy_mix_mask.npy`.
+- **Fidelity.** Seeds 17 and 53, 8 turns: labels as actions reproduce the heuristic exactly (welfare ratio 1.000),
+  and none of the 79 heuristic moves is unrepresentable (the earlier contract-7 probe found 22 of 95), because
+  fishing camps now have site rows. Heuristic
+  per-turn fingerprints are unchanged (seed 1001, 12 turns). `ElderModel9Checks` stages a fishing-only directive.
+
 Status: implemented on `feature/elder-model9-native` (M4 of the learned-Elder plan). The learned Elder acts
 through the DemandControl compiler at the service level; the native heuristic is expressible exactly as one
 action, so its decisions are teacher labels without translation.

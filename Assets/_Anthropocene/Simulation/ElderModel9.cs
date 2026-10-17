@@ -12,10 +12,15 @@ namespace Anthropocene.Simulation
     // environment), and the heuristic's own decision is recorded as an exact contract-7 action for teacher labels.
     public static class ElderModel9Contract
     {
-        public const int NativeContractVersion = 7;
-        public const int ActionSchemaVersion = 7, ObservationSchemaVersion = 7, EnvironmentSchemaVersion = 7, ReplaySchemaVersion = 7;
+        // Contract 8 adds the three-way economy mix (fishing development) and fishing access on site rows.
+        public const int NativeContractVersion = 8;
+        public const int ActionSchemaVersion = 8, ObservationSchemaVersion = 8, EnvironmentSchemaVersion = 8, ReplaySchemaVersion = 8;
+        // Schema-7 directives remain valid (no fishing development).
+        public const int PreviousActionSchemaVersion = 7;
         public static readonly string[] GoodsServices = { "food", "clothing", "shelter", "tools", "storage", "materials" };
-        public static readonly string[] StrategicControls = { "retained-field-operation", "retained-herd-fraction", "development-budget", "field-development-share" };
+        public static readonly string[] StrategicControls = { "retained-field-operation", "retained-herd-fraction", "development-budget", "field-development-share", "fishing-development-share" };
+        // The Development budget's economy mix: ((1 - f) s, (1 - f)(1 - s), f) for field share s and fishing share f.
+        public static readonly string[] EconomyMix = { "cultivation", "herding", "fishing" };
         public const int MovementSlots = 1 + ElderRLContract.MaxLocalSites; // stay + site rows
         // MovementCandidate -2: the native heuristic keeps the camp's movement/dispatch orders (curriculum stages 1-3).
         public const int NativeMovement = -2;
@@ -37,13 +42,13 @@ namespace Anthropocene.Simulation
         // Entity sets: name, rows, row width. Row presence is carried separately; missing rows are never zeros.
         public static readonly (string Name, int Rows, int Width)[] Sets =
         {
-            ("sites", ElderRLContract.MaxLocalSites, 12),
+            ("sites", ElderRLContract.MaxLocalSites, 14),
             ("fishing", ElderRLContract.MaxFishingGrounds, 11),
             ("herds", ElderRLContract.MaxHerdGroups, 8),
             ("commodities", ElderRLContract.MaxCommoditySlots, 8),
             ("contacts", ElderRLContract.MaxKnownContacts, 9)
         };
-        public const int CoreV2Width = 128, PresenceV2Width = 48, DemographyWidth = 12, ContextWidth = 3 + 4 + 6;
+        public const int CoreV2Width = 128, PresenceV2Width = 48, DemographyWidth = 12, ContextWidth = 3 + 4 + 6 + 6;
         public static int CoreWidth => CoreV2Width + PresenceV2Width + DemographyWidth + ContextWidth;
         // Training-only critic inputs (never part of the actor observation): growth headroom and lineage context.
         public static readonly string[] PrivilegedFeatures = { "log-population", "episode-age-turns", "site-food-over-meals",
@@ -62,6 +67,8 @@ namespace Anthropocene.Simulation
         public bool[][] RowPresent; // per set: Rows
         public bool[] MovementMask = new bool[ElderModel9Contract.MovementSlots];
         public bool[] ClothingRouteMask = new bool[2], ShelterRouteMask = new bool[2];
+        // Contract 8: which economy-mix coordinates (cultivation, herding, fishing) are structurally available.
+        public bool[] EconomyMixMask = { true, true, true };
     }
 
     // The heuristic's decision expressed as a contract-7 action, with the masks that say which label parts carry
@@ -71,7 +78,7 @@ namespace Anthropocene.Simulation
     {
         public ElderDirective Action = new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion };
         public bool[] ServiceMask = new bool[ElderModel9Contract.GoodsServices.Length];
-        public bool StrategicFieldMask, StrategicHerdMask, DevelopmentMask, DevelopmentShareMask;
+        public bool StrategicFieldMask, StrategicHerdMask, DevelopmentMask, DevelopmentShareMask, FishingShareMask;
         public bool ClothingRouteMask, ShelterRouteMask, MovementMask;
         public double RepairSize;
     }
@@ -98,6 +105,16 @@ namespace Anthropocene.Simulation
                 double perResident = o.Core.Population > 0 ? context.PreviousServiceRequested[s] / o.Core.Population : 0;
                 t.Core[k] = (float)perResident; t.CorePresent[k] = context.HasPrevious;
             }
+            // Contract 8 fishing block: availability now; last allocation's frontier and fishing development.
+            double population = Math.Max(1, o.Core.Population);
+            foreach (var (value, present) in new[] {
+                (o.Mask.FishingDevelopment ? 1.0 : 0.0, true),
+                (context.PreviousFrontierFishers / population, context.HasPrevious),
+                (context.PreviousMarginalCatchRatio, context.HasPrevious),
+                (context.PreviousMeals > 0 ? context.PreviousFishingFood / context.PreviousMeals : 0, context.HasPrevious),
+                (context.PreviousFishingShare, context.HasPrevious),
+                (context.PreviousFishingDevelopment / population, context.HasPrevious) })
+            { t.Core[k] = (float)(ElderRLContract.Finite(value) ? value : 0); t.CorePresent[k] = present; k++; }
             // Entity sets from the v2 typed blocks (offsets fixed by ElderObservationSchema.Registry).
             int[] offsets = { 128, 212, 248, 312, 400 };
             int[] strides = { 12, 12, 8, 8, 8 };
@@ -115,6 +132,11 @@ namespace Anthropocene.Simulation
                     for (int c = 0; c < width && c < (s == 1 ? 11 : strides[s]); c++)
                         t.Sets[s][r * set.Width + c] = v2.Values[offsets[s] + r * strides[s] + c];
                     if (s == 4) t.Sets[s][r * set.Width + 8] = (float)o.Contacts[r].PopulationBand;
+                    if (s == 0)
+                    {
+                        t.Sets[s][r * set.Width + 12] = o.Sites[r].FishingSource ? 1 : 0;
+                        t.Sets[s][r * set.Width + 13] = (float)o.Sites[r].FishingAccess;
+                    }
                 }
             }
             t.MovementMask[0] = true;
@@ -123,6 +145,8 @@ namespace Anthropocene.Simulation
             t.ShelterRouteMask = context.HasPrevious ? (bool[])context.ShelterRouteFeasible.Clone() : new[] { true, true };
             if (!t.ClothingRouteMask.Any(x => x)) t.ClothingRouteMask = new[] { true, true };
             if (!t.ShelterRouteMask.Any(x => x)) t.ShelterRouteMask = new[] { true, true };
+            t.EconomyMixMask = new[] { o.Mask.FieldDevelopment, o.Mask.HerdDevelopment, o.Mask.FishingDevelopment };
+            if (!t.EconomyMixMask.Any(x => x)) t.EconomyMixMask = new[] { true, true, true };
             return t;
         }
 
@@ -137,6 +161,8 @@ namespace Anthropocene.Simulation
             names.AddRange(new[] { "fission-neutral", "fission-discourage", "fission-encourage" });
             names.AddRange(new[] { "cloth-route-feasible", "fabric-route-feasible", "fixed-shelter-feasible", "light-shelter-feasible" });
             names.AddRange(ElderModel9Contract.GoodsServices.Select(s => "previous-request-" + s + "-per-resident"));
+            names.AddRange(new[] { "fishing-development-available", "frontier-fishers-per-resident", "frontier-marginal-catch-over-gathering",
+                "fishing-food-over-meals", "previous-fishing-development-share", "previous-fishing-development-per-resident" });
             return names.ToArray();
         }
     }
@@ -147,6 +173,8 @@ namespace Anthropocene.Simulation
         public bool HasPrevious;
         public bool[] ClothingRouteFeasible = { true, true }, ShelterRouteFeasible = { true, true };
         public double[] PreviousServiceRequested = new double[ElderModel9Contract.GoodsServices.Length];
+        public double PreviousFrontierFishers, PreviousMarginalCatchRatio, PreviousFishingFood, PreviousMeals;
+        public double PreviousFishingShare, PreviousFishingDevelopment;
         public ElderCompiledDecision PreviousDecision;
     }
 
@@ -187,6 +215,14 @@ namespace Anthropocene.Simulation
             act.RetainedHerdFraction = a.HCurrent > 1e-9 ? ElderRLContract.Unit(a.HRetained / a.HCurrent) : 0;
             act.DevelopmentBudget = c.Population > 0 ? ElderRLContract.Unit(development / c.Population) : 0;
             act.FieldDevelopmentShare = development > 1e-9 ? ElderRLContract.Unit(fieldDevelopment / development) : .5;
+            // The native planner never develops fishing beyond the survival frontier. A compiled contract-8 directive
+            // records the Fishers it actually staffed (the realized economy mix).
+            double fishingDevelopment = Math.Max(0, a.FishingDevelopmentGranted);
+            act.FishingDevelopmentShare = development + fishingDevelopment > 1e-9
+                ? ElderRLContract.Unit(fishingDevelopment / (development + fishingDevelopment)) : 0;
+            if (fishingDevelopment > 0)
+                act.DevelopmentBudget = c.Population > 0 ? ElderRLContract.Unit((development + fishingDevelopment) / c.Population) : 0;
+            label.FishingShareMask = a.FishingDevelopmentFeasible && development + fishingDevelopment > 1e-9;
             label.StrategicFieldMask = a.Farmers > 0 || a.SelectedFieldOperation > 1e-9;
             label.StrategicHerdMask = a.HCurrent > 1e-9;
             label.DevelopmentMask = true; label.DevelopmentShareMask = development > 1e-9;
@@ -411,6 +447,10 @@ namespace Anthropocene.Simulation
                 Array.Copy(allocation.ClothingRouteFeasible, context.ClothingRouteFeasible, 2);
                 Array.Copy(allocation.ShelterRouteFeasible, context.ShelterRouteFeasible, 2);
                 Array.Copy(allocation.ServiceRequested, context.PreviousServiceRequested, context.PreviousServiceRequested.Length);
+                context.PreviousFrontierFishers = allocation.Fishers; context.PreviousMarginalCatchRatio = allocation.FrontierMarginalCatchRatio;
+                context.PreviousFishingFood = allocation.FishingFood; context.PreviousMeals = allocation.Meals;
+                context.PreviousFishingDevelopment = allocation.FishingDevelopmentGranted;
+                context.PreviousFishingShare = labels[id].Action.FishingDevelopmentShare;
                 if (decision != null) context.PreviousDecision = decision;
             }
             double labelMs = phase.Elapsed.TotalMilliseconds; phase.Restart();

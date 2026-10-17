@@ -157,6 +157,9 @@ namespace Anthropocene.Simulation
             // fractional grant is not an economic authorization to breed.
             internal Bundle Bundle; internal bool Frozen, WholeUnits,
                 DevelopmentPlant, DevelopmentAnimal, HerdDevelopment;
+            // Contract 8: a Development quantity the Elder chose directly (fishing development); granted up to its
+            // units like the Elder's field/herd prefix, never re-sized by the food-return ranking.
+            internal bool ElderDirected;
             internal double PriorityScore, DevelopmentFood,
                 DevelopmentFoodPerUnit, TypedDevelopmentNeed,
                 SubstitutionFood, PolicyDevelopmentUnits;
@@ -215,6 +218,10 @@ namespace Anthropocene.Simulation
             public CraftGood NativeClothingRoute = CraftGood.Cloth, NativeShelterRoute = CraftGood.Housing;
             public CraftGood ChosenClothingRoute = CraftGood.Cloth, ChosenShelterRoute = CraftGood.Housing;
             public double HerdDevelopmentAnimals;
+            // Contract 8: Elder fishing development (persons requested and Fishers staffed beyond the frontier),
+            // resident fishing availability and the frontier's next-Fisher catch over one gatherer's turn yield.
+            public double FishingDevelopmentRequested, FishingDevelopmentGranted, FrontierMarginalCatchRatio;
+            public bool FishingDevelopmentFeasible;
             // The committed Elder split and (CaptureDemandAllocations) every scored split.
             public ElderAction ElderAction;
             public List<ElderAction> KernelCandidates;
@@ -446,6 +453,22 @@ namespace Anthropocene.Simulation
                 alloc.FoodUnmet = "labor rationing";
             alloc.Herders = herders; alloc.Farmers = farmers; alloc.Fishers = fishers;
             alloc.FoodGatherers = foodGatherers; alloc.FishingFood = fishingFood;
+            // Contract 8: the fishing share of an Elder's Development budget staffs whole Fishers beyond the survival
+            // frontier. Their extra catch is current food for the reserve and growth buckets. The native planner
+            // never requests it, so the heuristic (and every schema-7 directive) is unchanged.
+            alloc.FishingDevelopmentFeasible = d.FishingEnabled && d.FishingAccess != null &&
+                d.FishingAccess.Grounds.Length > 0;
+            alloc.FrontierMarginalCatchRatio = alloc.FishingDevelopmentFeasible && gatherRate > 0
+                ? marginalAt(fishers + 1) / gatherRate : 0;
+            int elderFishers = 0;
+            if (elderDirective != null && elderDirective.SchemaVersion == ElderModel9Contract.ActionSchemaVersion)
+            {
+                double wantedFishers = ElderRLContract.Unit(elderDirective.DevelopmentBudget) * residents *
+                    ElderRLContract.Unit(elderDirective.FishingDevelopmentShare);
+                alloc.FishingDevelopmentRequested = wantedFishers;
+                if (alloc.FishingDevelopmentFeasible)
+                    elderFishers = Math.Max(0, Math.Min((int)Math.Floor(wantedFishers + Epsilon),
+                        Math.Max(0, residents - herders - farmers - fishers - foodGatherers)));            }
             d.Supply = d.ForageAfterHerds +
                 Math.Max(0, fishingFood - selectedPassive) +
                 d.ManagedFood.AnimalFood;
@@ -471,7 +494,7 @@ namespace Anthropocene.Simulation
             var staffed = e.Copy();
             if (herders > 0) staffed.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = herders });
             if (farmers > 0) staffed.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = farmers });
-            if (fishers > 0) staffed.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Fisher, Population = fishers });
+            if (fishers + elderFishers > 0) staffed.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Fisher, Population = fishers + elderFishers });
             var candidate = EconomicPlanner.Preview(c, staffed, residents);
             NeolithicProduction.DepreciateHousing(w, candidate, years);
 
@@ -773,7 +796,7 @@ namespace Anthropocene.Simulation
             Request("herding tools", ServiceClass.Continuity, CraftGood.HerdingTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.HerdingTools, years, residents, false, false, d.Sources)));
             // Fishing Tools continuity is sized only after the shared survival frontier fixes Fisher staffing.
             Request("fishing tools", ServiceClass.Continuity, CraftGood.FishingTools,
-                fishers > 0 ? Math.Max(0, NeolithicProduction.FishingToolDemand(w, candidate, years)) : 0);
+                fishers + elderFishers > 0 ? Math.Max(0, NeolithicProduction.FishingToolDemand(w, candidate, years)) : 0);
             // Storage: the Pots the food reserve needs beyond natural storage.
             Request("storage", ServiceClass.Recovery, CraftGood.Pots, Math.Max(0, NeolithicProduction.PotDemand(w, c, years, residents)));
             Request LabourRequest(string service, ServiceClass cls, string role, double persons)
@@ -783,6 +806,15 @@ namespace Anthropocene.Simulation
                 var request = new Request { Service = service, Class = cls,
                     Role = role, Units = persons, Bundle = b };
                 alloc.Requests.Add(request); return request;
+            }
+            Request fishingDevelopment = null;
+            if (elderFishers > 0)
+            {
+                fishingDevelopment = LabourRequest("fishing development", ServiceClass.Development,
+                    WorkforceRoles.Fisher, elderFishers);
+                fishingDevelopment.WholeUnits = true; fishingDevelopment.ElderDirected = true;
+                fishingDevelopment.Bundle.FoodService = Math.Max(0, Catch(fishers + elderFishers) - Catch(fishers)) /
+                    elderFishers;
             }
             // Consumption labour is the frozen Survival work above. Reserve
             // refill is Recovery; food for maximum cohort growth is
@@ -2031,8 +2063,11 @@ namespace Anthropocene.Simulation
                 // headless-only DevelopmentSearch diagnostic hook. The
                 // requested budget selects a physical prefix; Binding and the
                 // ordinary compiler retain sole authority over feasibility.
+                // Contract 8: the fishing share is staffed as Fishers above; the ray receives the remainder.
+                double fishingShare = elderDirective.SchemaVersion == ElderModel9Contract.ActionSchemaVersion
+                    ? ElderRLContract.Unit(elderDirective.FishingDevelopmentShare) : 0;
                 double requestedPeople = ElderRLContract.Unit(
-                    elderDirective.DevelopmentBudget) * residents;
+                    elderDirective.DevelopmentBudget) * residents * (1 - fishingShare);
                 double fieldShare = ElderRLContract.Unit(
                     elderDirective.FieldDevelopmentShare);
                 var selected = EvaluateAbsolute(requestedPeople * fieldShare,
@@ -2260,14 +2295,14 @@ namespace Anthropocene.Simulation
                 // otherwise Option A's return ranking would silently override
                 // the action after compilation.
                 .OrderBy(q => elderPhysicalDevelopment &&
-                    !rayRequests.Contains(q) ? 1 : 0)
+                    !(rayRequests.Contains(q) || q.ElderDirected) ? 1 : 0)
                 .ThenByDescending(q => elderPhysicalDevelopment ? 0 :
                     q.PriorityScore)
                 .ThenBy(q => alloc.Requests.IndexOf(q)).ToList();
             foreach (var request in development)
             {
                 bool elderRayRequest = elderPhysicalDevelopment &&
-                    rayRequests.Contains(request);
+                    (rayRequests.Contains(request) || request.ElderDirected);
                 if (rayRequests.Contains(request))
                 {
                     if (!developmentRayLimits.TryGetValue(request,
@@ -2302,8 +2337,7 @@ namespace Anthropocene.Simulation
                     wanted = Math.Max(wanted, Math.Min(request.Units,
                         request.PolicyDevelopmentUnits));
                 request.Granted = MaximumDevelopmentGrant(request, wanted,
-                    out string binding);
-                double food = request.Granted *
+                    out string binding);                double food = request.Granted *
                     request.DevelopmentFoodPerUnit;
                 double typed = Math.Min(typedNeed, food);
                 if (request.DevelopmentPlant)
@@ -2459,7 +2493,7 @@ namespace Anthropocene.Simulation
                         !q.Frozen && q.Bundle != null && q.Granted > Epsilon)
                         .OrderBy(q => cls == ServiceClass.Development &&
                                 elderPhysicalDevelopment &&
-                                rayRequests.Contains(q)
+                                (rayRequests.Contains(q) || q.ElderDirected)
                             ? 1 : 0)
                         .ThenBy(q => cls == ServiceClass.Development &&
                                 !elderPhysicalDevelopment
@@ -2514,6 +2548,8 @@ namespace Anthropocene.Simulation
                     if (excess <= 0) break;
                 }
             }
+            alloc.FishingDevelopmentGranted = alloc.Staff.TryGetValue(WorkforceRoles.Fisher, out int developmentFishers)
+                ? developmentFishers : 0;
             var finalRay = rayRequests.Where(q => q.Granted > Epsilon)
                 .ToDictionary(q => q, q => q.Granted);
             var finalBudgets = RayCurrentBudgets(finalRay);
@@ -2548,7 +2584,7 @@ namespace Anthropocene.Simulation
             intent.Assignments = intent.Assignments.Where(a => a.Population > 0).OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
             int nonGatherers = intent.Assignments.Sum(a => a.Population);
             intent.Labor.MaterialGatherers = Math.Min(Math.Max(0, residents - nonGatherers), alloc.MaterialGatherers);
-            intent.Labor.EquipmentTarget = Math.Min(residents, alloc.Staff.Where(p => !WorkforceRoles.Extractors.Contains(p.Key) && p.Key != WorkforceRoles.Herder && p.Key != WorkforceRoles.Farmer).Sum(p => p.Value));
+            intent.Labor.EquipmentTarget = Math.Min(residents, alloc.Staff.Where(p => !WorkforceRoles.Extractors.Contains(p.Key) && p.Key != WorkforceRoles.Herder && p.Key != WorkforceRoles.Farmer && p.Key != WorkforceRoles.Fisher).Sum(p => p.Value));
             // Build farmers are the field-expansion staff, on top of the operating farmers.
             intent.Labor.ExpansionFarmers = alloc.Staff.TryGetValue(WorkforceRoles.Farmer, out int builders) ? builders : 0;
             // The herd is held at what the staffed herders manage, within the policy's target; breeding is capped to it.

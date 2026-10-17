@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using Anthropocene.Simulation;
 
-// Native Elder contract 7 (model9) contract tests: the heuristic is an exact action, replay is exact, the encoder
+// Native Elder contract 8 (model9) contract tests: the heuristic is an exact action, replay is exact, the encoder
 // layout is stable and malformed actions are repaired with logged interventions.
 internal static class ElderModel9Checks
 {
@@ -26,6 +26,7 @@ internal static class ElderModel9Checks
                 "set " + ElderModel9Contract.Sets[s].Name + " has its declared shape");
         Check(first.MovementMask[0], "stay is always legal");
 
+        ElderModel9Step lastActing = null;
         for (int t = 0; t < 3; t++)
         {
             var a = teacher.Step(new Dictionary<int, ElderDirective>());
@@ -37,7 +38,7 @@ internal static class ElderModel9Checks
             {
                 var d = v.Teacher.Action.Copy(); d.MovementCandidate = ElderModel9Contract.NativeMovement; d.FissionPolicy = -1; return d;
             });
-            var b = acting.Step(directives);
+            var b = acting.Step(directives); lastActing = b;
             Check(a.Villages.Count == b.Villages.Count, "teacher-as-action keeps the same villages at step " + t);
             foreach (var va in a.Villages)
             {
@@ -49,6 +50,28 @@ internal static class ElderModel9Checks
         }
         ElderModel9Environment.VerifyReplay(acting.Replay); checks++;
         ElderModel9Environment.VerifyReplay(teacher.Replay); checks++;
+
+        // Contract 8: the fishing share of the Development budget staffs whole Fishers beyond the survival frontier.
+        int fishingFeature = Array.IndexOf(ElderModel9Encoder.CoreFeatureNames(), "fishing-development-available");
+        var fishingCamps = lastActing.Villages.Where(v => v.Observation != null && !v.Terminated && v.Observation.Core[fishingFeature] > .5
+            && v.Observation.EconomyMixMask[2]).Select(v => v.Camp).ToList();
+        Check(fishingCamps.Count > 0, "the seed-17 fixture has a village with resident fishing");
+        int fishingCamp = fishingCamps[0];
+        var fishingStep = acting.Step(new Dictionary<int, ElderDirective>
+        {
+            // Development is the lowest service class: lower the service levels (reserve gathering included) so
+            // residents are left for it.
+            [fishingCamp] = new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion, DevelopmentBudget = .2,
+                FieldDevelopmentShare = .5, FishingDevelopmentShare = 1, MovementCandidate = ElderModel9Contract.NativeMovement,
+                ServiceLevels = new[] { .2, .2, .2, .2, .2, .2 } }
+        });
+        var fished = fishingStep.Villages.Single(v => v.Camp == fishingCamp);
+        Check(fished.Teacher.Action.FishingDevelopmentShare > .5 && fished.Staffing.Contains(WorkforceRoles.Fisher),
+            "a fishing-only Development directive staffs development Fishers (staffing " + fished.Staffing + ")");
+        var schema7 = ElderDirectiveValidation.Validate(new ElderDirective { SchemaVersion = 7, DevelopmentBudget = .2, FishingDevelopmentShare = 1 },
+            new ElderObservation(), new List<ElderIntervention>());
+        Check(schema7.FishingDevelopmentShare == 0, "schema-7 directives have no fishing development");
+        ElderModel9Environment.VerifyReplay(acting.Replay); checks++;
 
         // Malformed actions are repaired with logged interventions, never rejected silently.
         var bad = new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion, ServiceLevels = new[] { 2.0, -1, double.NaN, .5, .5, .5 },
@@ -74,7 +97,7 @@ internal static class ElderModel9Checks
                 "NPY header is aligned and declares the shape");
         }
         finally { Directory.Delete(dir, true); }
-        Console.WriteLine("PASS: " + checks + " model9 contract-7 assertions");
+        Console.WriteLine("PASS: " + checks + " model9 contract-8 assertions");
         return checks;
     }
 }

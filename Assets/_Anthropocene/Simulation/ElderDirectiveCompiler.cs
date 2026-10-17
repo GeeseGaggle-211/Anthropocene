@@ -18,7 +18,8 @@ namespace Anthropocene.Simulation
                     Requested = double.NaN, Accepted = 0
                 });
             if (fallback.SchemaVersion != ElderRLContract.ActionSchemaVersion &&
-                fallback.SchemaVersion != ElderModel9Contract.ActionSchemaVersion)
+                fallback.SchemaVersion != ElderModel9Contract.ActionSchemaVersion &&
+                fallback.SchemaVersion != ElderModel9Contract.PreviousActionSchemaVersion)
             {
                 interventions.Add(new ElderIntervention
                 {
@@ -54,6 +55,10 @@ namespace Anthropocene.Simulation
                 value => fallback.DevelopmentBudget = value);
             Unit("field-development-share", fallback.FieldDevelopmentShare,
                 value => fallback.FieldDevelopmentShare = value);
+            bool fishingSchema = fallback.SchemaVersion == ElderModel9Contract.ActionSchemaVersion;
+            if (fishingSchema)
+                Unit("fishing-development-share", fallback.FishingDevelopmentShare,
+                    value => fallback.FishingDevelopmentShare = value);
 
             void ForceInactive(string control, double forced,
                 Func<double> read, Action<double> assign, string reason)
@@ -74,6 +79,16 @@ namespace Anthropocene.Simulation
             }
 
             var mask = observation?.Mask;
+            if (!fishingSchema)
+                ForceInactive("fishing-development-share", 0,
+                    () => fallback.FishingDevelopmentShare,
+                    value => fallback.FishingDevelopmentShare = value,
+                    "fishing Development requires action schema 8");
+            else if (mask != null && !mask.FishingDevelopment)
+                ForceInactive("fishing-development-share", 0,
+                    () => fallback.FishingDevelopmentShare,
+                    value => fallback.FishingDevelopmentShare = value,
+                    "fishing Development is structurally unavailable");
             if (mask != null)
             {
                 if (!mask.FieldRetention)
@@ -89,7 +104,23 @@ namespace Anthropocene.Simulation
 
                 bool field = mask.FieldDevelopment;
                 bool herd = mask.HerdDevelopment;
-                if (!field && !herd)
+                bool fishing = fishingSchema && mask.FishingDevelopment;
+                if (!field && !herd && fishing)
+                {
+                    // With no budget the split carries no action; leave it as requested.
+                    if (fallback.DevelopmentBudget > 0)
+                    {
+                        ForceInactive("field-development-share", .5,
+                            () => fallback.FieldDevelopmentShare,
+                            value => fallback.FieldDevelopmentShare = value,
+                            "only fishing Development is structurally available");
+                        ForceInactive("fishing-development-share", 1,
+                            () => fallback.FishingDevelopmentShare,
+                            value => fallback.FishingDevelopmentShare = value,
+                            "only fishing Development is structurally available");
+                    }
+                }
+                else if (!field && !herd)
                 {
                     ForceInactive("development-budget", 0,
                         () => fallback.DevelopmentBudget,
@@ -185,12 +216,13 @@ namespace Anthropocene.Simulation
                 .Sum(assignment => assignment.Population);
             double finalHerd = Math.Max(0,
                 totalHerders - allocation.Herders);
-            double finalDevelopment = finalField + finalHerd;
+            double finalFishing = Math.Max(0, allocation.FishingDevelopmentGranted);
+            double finalDevelopment = finalField + finalHerd + finalFishing;
             double requestedPeople = requested != null &&
                     ElderRLContract.Finite(requested.DevelopmentBudget)
                 ? requested.DevelopmentBudget * residents
                 : legal.DevelopmentBudget * residents;
-            if (Math.Abs(finalDevelopment -
+            if (Math.Abs(finalField + finalHerd -
                     allocation.SelectedFieldBudget -
                     allocation.SelectedHerdBudget) > 1e-8)
                 interventions.Add(new ElderIntervention
@@ -200,7 +232,18 @@ namespace Anthropocene.Simulation
                     Reason = "downstream resource or integer staffing repair",
                     Requested = allocation.SelectedFieldBudget +
                         allocation.SelectedHerdBudget,
-                    Accepted = finalDevelopment
+                    Accepted = finalField + finalHerd
+                });
+            if (Math.Abs(finalFishing - allocation.FishingDevelopmentRequested) > 1e-8)
+                interventions.Add(new ElderIntervention
+                {
+                    Kind = ElderInterventionKind.ResourceConstraint,
+                    Control = "fishing-development",
+                    Reason = allocation.FishingDevelopmentFeasible
+                        ? "whole Fishers, resident labour or integer staffing"
+                        : "no resident fishing ground this turn",
+                    Requested = allocation.FishingDevelopmentRequested,
+                    Accepted = finalFishing
                 });
 
             var compiled = legal.Copy();
@@ -209,9 +252,12 @@ namespace Anthropocene.Simulation
             compiled.RetainedHerdFraction = herdRatio;
             compiled.DevelopmentBudget = residents > 0
                 ? Numbers.Clamp(finalDevelopment / residents, 0, 1) : 0;
-            compiled.FieldDevelopmentShare = finalDevelopment > 1e-9
-                ? Numbers.Clamp(finalField / finalDevelopment, 0, 1)
+            compiled.FieldDevelopmentShare = finalField + finalHerd > 1e-9
+                ? Numbers.Clamp(finalField / (finalField + finalHerd), 0, 1)
                 : legal.FieldDevelopmentShare;
+            compiled.FishingDevelopmentShare = finalDevelopment > 1e-9
+                ? Numbers.Clamp(finalFishing / finalDevelopment, 0, 1)
+                : legal.FishingDevelopmentShare;
 
             void EnsureIntervention(string control, double requestedValue,
                 double acceptedValue, string reason)
@@ -240,6 +286,10 @@ namespace Anthropocene.Simulation
                 legal.FieldDevelopmentShare,
                 compiled.FieldDevelopmentShare,
                 "physical channel capacity and integer staffing");
+            EnsureIntervention("fishing-development-share",
+                legal.FishingDevelopmentShare,
+                compiled.FishingDevelopmentShare,
+                "fishing ground access, whole Fishers and integer staffing");
 
             int[] retainedFieldTiles = world.Map.Radius(camp.Tile, 1)
                 .Where(tile => world.Tiles[tile].CultivationOperator ==
@@ -263,6 +313,7 @@ namespace Anthropocene.Simulation
                 AcceptedDevelopmentPeople = finalDevelopment,
                 AcceptedFieldDevelopmentPeople = finalField,
                 AcceptedHerdDevelopmentPeople = finalHerd,
+                AcceptedFishingDevelopmentPeople = finalFishing,
                 ControlledCampId = context.CommittedCamp.Id,
                 PlanningPopulation = residents,
                 AcceptedTile = context.AcceptedTile,
@@ -306,13 +357,19 @@ namespace Anthropocene.Simulation
                 decision.ResolvedFieldDevelopmentPeople);
             double herdDevelopment = Math.Max(0,
                 decision.ResolvedHerdDevelopmentPeople);
-            double development = fieldDevelopment + herdDevelopment;
+            double fishingDevelopment = Math.Max(0,
+                decision.AcceptedFishingDevelopmentPeople);
+            double development = fieldDevelopment + herdDevelopment +
+                fishingDevelopment;
             realized.DevelopmentBudget = decision.PlanningPopulation > 0
                 ? Numbers.Clamp(development /
                     decision.PlanningPopulation, 0, 1) : 0;
-            realized.FieldDevelopmentShare = development > 1e-9
-                ? Numbers.Clamp(fieldDevelopment / development, 0, 1)
+            realized.FieldDevelopmentShare = fieldDevelopment + herdDevelopment > 1e-9
+                ? Numbers.Clamp(fieldDevelopment / (fieldDevelopment + herdDevelopment), 0, 1)
                 : decision.Accepted.FieldDevelopmentShare;
+            realized.FishingDevelopmentShare = development > 1e-9
+                ? Numbers.Clamp(fishingDevelopment / development, 0, 1)
+                : decision.Accepted.FishingDevelopmentShare;
             realized.MovementCandidate = camp.Tile == decision.AcceptedTile
                 ? decision.Accepted.MovementCandidate : -1;
             decision.Realized = realized;
