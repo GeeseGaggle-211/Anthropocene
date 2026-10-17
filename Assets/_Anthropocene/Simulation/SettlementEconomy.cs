@@ -609,18 +609,14 @@ namespace Anthropocene.Simulation
                 ownedHerds.Select(h => h.Animals).ToArray(),
                 ownedHerds.Select(h => HerdLabour.CarcassFood(world, h)).ToArray());
             var herdOptions = new List<HerdOption>();
-            foreach (int proposed in herderBreaks.Where(h => h >= 0 &&
-                h <= residents).OrderBy(h => h))
+            HerdOption BuildHerdOption(double target)
             {
-                double target = profile.Exists ? Math.Min(profile.Animals,
-                    Math.Min(site.Herd.AbsoluteCapacity,
-                        HerdingTooling.AnimalsManagedBy(world, camp, years,
-                            proposed))) : 0;
+                target = profile.Exists ? Math.Max(0, Math.Min(
+                    profile.Animals, Math.Min(site.Herd.AbsoluteCapacity,
+                        target))) : 0;
                 int herders = profile.Exists
                     ? HerdingTooling.RequiredHerdersFor(world, camp, years,
                         target) : 0;
-                if (herdOptions.Count > 0 && herders == herdOptions.Last().Herders &&
-                    Math.Abs(target - herdOptions.Last().Target) <= Epsilon) continue;
                 double fulfillment = profile.Exists
                     ? HerdingTooling.Plan(world, camp, years, herders,
                         profile.Animals).Fulfillment : 1;
@@ -645,6 +641,18 @@ namespace Anthropocene.Simulation
                     (futureNet / Math.Max(Epsilon, years) -
                      herders * annualGatherRate) +
                     terminalDiscount * residualFood;
+                return option;
+            }
+            foreach (int proposed in herderBreaks.Where(h => h >= 0 &&
+                h <= residents).OrderBy(h => h))
+            {
+                double target = profile.Exists ? Math.Min(profile.Animals,
+                    Math.Min(site.Herd.AbsoluteCapacity,
+                        HerdingTooling.AnimalsManagedBy(world, camp, years,
+                            proposed))) : 0;
+                var option = BuildHerdOption(target);
+                if (herdOptions.Count > 0 && option.Herders == herdOptions.Last().Herders &&
+                    Math.Abs(option.Target - herdOptions.Last().Target) <= Epsilon) continue;
                 herdOptions.Add(option);
             }
             if (herdOptions.Count == 0) herdOptions.Add(new HerdOption());
@@ -832,6 +840,25 @@ namespace Anthropocene.Simulation
                     best = retainedCandidate;
             }
 
+            // Seed herd (Docs/HerdLabour.md): with herd labour on, the settlement keeps at least the whole animals
+            // SimulationConfig.MinimumHerdHerders can manage, whatever their value, so a herd is never slaughtered to
+            // nothing and can regrow. It never exceeds the herd, the site's physical capacity or the residents left
+            // after fields.
+            if (profile.Exists && cfg.HerdLabourEnabled && cfg.MinimumHerdHerders > 0)
+            {
+                double seedTarget = Math.Min(profile.Animals, Math.Min(site.Herd.AbsoluteCapacity,
+                    Math.Floor(HerdingTooling.AnimalsManagedBy(world, camp, years, cfg.MinimumHerdHerders) + Epsilon)));
+                if (seedTarget >= 1 && best.Herd.Target + Epsilon < seedTarget)
+                {
+                    var seed = BuildHerdOption(seedTarget);
+                    if (best.Field.Farmers + seed.Herders <= residents)
+                    {
+                        best = Evaluate(best.Field, seed);
+                        result.AlternativesEvaluated++;
+                    }
+                }
+            }
+
             result.FieldFarmers = best.Field.Farmers;
             result.RetainedFoodSupply = best.Food;
             result.SelectedFieldOperation = best.Field.Operation;
@@ -856,7 +883,9 @@ namespace Anthropocene.Simulation
             // against field and other Development work.
             double growthSupport = result.HCurrent > result.HRetained + Epsilon
                 ? result.HRetained : absoluteLabor;
-            result.HGrowthCeiling = Math.Min(growthSupport, result.HGrown);
+            // The ceiling never cuts below the herd this portfolio retained: a labour-short camp whose absolute
+            // envelope fits no further herder still keeps the seed or retained herd it was evaluated with.
+            result.HGrowthCeiling = Math.Max(result.HRetained, Math.Min(growthSupport, result.HGrown));
             return result;
         }
     }

@@ -40,8 +40,13 @@ namespace Anthropocene.Simulation
     // tile integration remains the sole authority when claimants compete.
     internal static class ManagedHerdLocalClaims
     {
+        // existing: claims already placed this turn (wild and other herds, earlier managed herds). Water is then split
+        // by each source's water left after those claims, so a source another herd already saturates gets no share
+        // while neighbouring sources have spare water. Without existing claims, or when every source is already
+        // claimed in full, the split is by source water as before.
         public static void Append(WorldState world, int campTile, int herdId, double foodNeed,
-            double waterNeed, double duration, List<Demand> claims, HashSet<int> visible = null)
+            double waterNeed, double duration, List<Demand> claims, HashSet<int> visible = null,
+            IReadOnlyList<Demand> existing = null)
         {
             if (foodNeed <= 0 && waterNeed <= 0) return;
             var sites = LocalHerdEcology.Survey(world, campTile, 1, duration,
@@ -77,6 +82,30 @@ namespace Anthropocene.Simulation
             int sourceCount = sites.Count(s => s.WaterSource);
             int lastSource = Array.FindLastIndex(sites, s => s.WaterSource);
             double remainingWater = Math.Max(0, waterNeed);
+            double[] residual = null;
+            if (existing != null && requestedWater > 0)
+            {
+                var claimed = new Dictionary<int, double>();
+                foreach (var d in existing)
+                    if (d.Freshwater > 0)
+                        claimed[d.Tile] = (claimed.TryGetValue(d.Tile, out double prior) ? prior : 0) + d.Freshwater;
+                residual = sites.Select(site => site.WaterSource
+                    ? Math.Max(0, site.Water - (claimed.TryGetValue(site.Tile, out double c) ? c : 0)) : 0).ToArray();
+                if (!(residual.Sum() > 0)) residual = null;
+            }
+            if (residual != null)
+            {
+                double free = residual.Sum();
+                int lastFree = Array.FindLastIndex(residual, r => r > 0);
+                for (int i = 0; i < sites.Length; i++)
+                {
+                    if (!(residual[i] > 0)) continue;
+                    waterClaims[i] = i == lastFree ? remainingWater
+                        : Math.Min(remainingWater, Math.Max(0, Portion(requestedWater, residual[i], free)));
+                    remainingWater = Math.Max(0, remainingWater - waterClaims[i]);
+                }
+            }
+            else
             for (int i = 0; i < sites.Length; i++)
             {
                 if (!sites[i].WaterSource) continue;
@@ -149,25 +178,9 @@ namespace Anthropocene.Simulation
             var claims = new List<Demand>();
             var requestedFood = new Dictionary<int, double>();
             var requestedWater = new Dictionary<int, double>();
-            foreach (var herd in herds)
-            {
-                var species = w.Config.GetSpecies(herd.Species);
-                double food = Animals(herd) * species.FoodConsumption * intervals;
-                double water = Animals(herd) * species.FreshwaterConsumption * intervals;
-                requestedFood[herd.Id] = food; requestedWater[herd.Id] = water;
-                ManagedHerdLocalClaims.Append(w, campTile ?? c.Tile, herd.Id, food, water,
-                    intervals * w.Config.BaseDays, claims, visible);
-            }
-            // Visible rival herds draw from the same finite forage and water
-            // ledgers during resolution. Include only claims on a source this
-            // camp's own herds also use; unrelated rivals cannot affect this
-            // forecast. A rival's private count, deficit, growth remainder,
-            // capacity and owner location are not planner inputs: wild/foreign
-            // counts first pass through the same public observation bands as
-            // policy input. Wild growth uses a public full-intake projection
-            // because its prior nutrition is private; count bands mean this is
-            // an estimate, not a guaranteed upper or lower bound.
-            var ownClaimTiles = claims.Select(d => d.Tile).ToHashSet();
+            // Rival claims are collected first so the camp's own herds route their water around sources the
+            // rivals already saturate, exactly as the resolver does.
+            var rivalAll = new List<Demand>();
             double duration = intervals * w.Config.BaseDays;
             foreach (var rival in w.Herds.Where(h => !ownedIds.Contains(h.Id)
                 && visible.Contains(h.Tile)).OrderBy(h => h.Id))
@@ -211,8 +224,28 @@ namespace Anthropocene.Simulation
                         rivalAnimals * species.FreshwaterConsumption * intervals,
                         duration, rivalClaims, visible);
                 }
-                claims.AddRange(rivalClaims.Where(d => ownClaimTiles.Contains(d.Tile)));
+                rivalAll.AddRange(rivalClaims);
             }
+            foreach (var herd in herds)
+            {
+                var species = w.Config.GetSpecies(herd.Species);
+                double food = Animals(herd) * species.FoodConsumption * intervals;
+                double water = Animals(herd) * species.FreshwaterConsumption * intervals;
+                requestedFood[herd.Id] = food; requestedWater[herd.Id] = water;
+                ManagedHerdLocalClaims.Append(w, campTile ?? c.Tile, herd.Id, food, water,
+                    intervals * w.Config.BaseDays, claims, visible, rivalAll.Concat(claims).ToList());
+            }
+            // Visible rival herds draw from the same finite forage and water
+            // ledgers during resolution. Include only claims on a source this
+            // camp's own herds also use; unrelated rivals cannot affect this
+            // forecast. A rival's private count, deficit, growth remainder,
+            // capacity and owner location are not planner inputs: wild/foreign
+            // counts first pass through the same public observation bands as
+            // policy input. Wild growth uses a public full-intake projection
+            // because its prior nutrition is private; count bands mean this is
+            // an estimate, not a guaranteed upper or lower bound.
+            var ownClaimTiles = claims.Select(d => d.Tile).ToHashSet();
+            claims.AddRange(rivalAll.Where(d => ownClaimTiles.Contains(d.Tile)));
             var transfers = new Dictionary<int, (double food, double water)>();
             foreach (var group in claims.GroupBy(d => d.Tile).OrderBy(g => g.Key))
             {
@@ -381,23 +414,21 @@ namespace Anthropocene.Simulation
                 demands.Add(new Demand { Tile = hunter.Tile, Entity = hunter.Id, Kind = "Foraging", ImpactMultiplier = PracticeEffects.GatheringImpact(w.Config, w.Camps.First(c => c.Id == hunter.SourceCamp)), Food = Math.Min(need, hunter.Population * w.Config.HunterForagePerPerson * intervals) });
             }
             var campTiles = w.Camps.ToDictionary(c => c.Id, c => c.Tile);
+            // Wild herds claim first; managed herds then route their water, in herd-ID order, around sources the
+            // claims already placed saturate (ManagedHerdLocalClaims.Append, residual split).
             foreach (var herd in w.Herds.OrderBy(h => h.Id))
             {
                 var species = w.Config.GetSpecies(herd.Species);
                 herd.UnmetFood = herd.Animals * species.FoodConsumption * intervals; herd.UnmetFreshwater = herd.Animals * species.FreshwaterConsumption * intervals;
-                if (herd.DomesticCamp >= 0)
-                {
-                    ManagedHerdLocalClaims.Append(w,
-                        campTiles.TryGetValue(herd.DomesticCamp, out int campTile) ? campTile : herd.Tile,
-                        herd.Id, herd.UnmetFood, herd.UnmetFreshwater, horizon.Days, demands);
-                }
-                else
-                {
-                    int source = FreshwaterAccess.Source(w, herd.Tile);
-                    demands.Add(new Demand { Tile = herd.Tile, Entity = herd.Id, Kind = "Herd", PotentialFood = herd.UnmetFood, Freshwater = source == herd.Tile ? herd.UnmetFreshwater : 0 });
-                    if (source != herd.Tile) demands.Add(new Demand { Tile = source, Entity = herd.Id, Kind = "Herd", Freshwater = herd.UnmetFreshwater });
-                }
+                if (herd.DomesticCamp >= 0) continue;
+                int source = FreshwaterAccess.Source(w, herd.Tile);
+                demands.Add(new Demand { Tile = herd.Tile, Entity = herd.Id, Kind = "Herd", PotentialFood = herd.UnmetFood, Freshwater = source == herd.Tile ? herd.UnmetFreshwater : 0 });
+                if (source != herd.Tile) demands.Add(new Demand { Tile = source, Entity = herd.Id, Kind = "Herd", Freshwater = herd.UnmetFreshwater });
             }
+            foreach (var herd in w.Herds.Where(h => h.DomesticCamp >= 0).OrderBy(h => h.Id))
+                ManagedHerdLocalClaims.Append(w,
+                    campTiles.TryGetValue(herd.DomesticCamp, out int campTile) ? campTile : herd.Tile,
+                    herd.Id, herd.UnmetFood, herd.UnmetFreshwater, horizon.Days, demands, null, demands);
 
             LastMetrics.SetupEconomyMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
             phaseClock.Restart();
