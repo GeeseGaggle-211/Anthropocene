@@ -208,6 +208,13 @@ namespace Anthropocene.Simulation
             public double PlantEnvelopeClothing, AnimalEnvelopeClothing, FoodRoomEnvelopeClothing;
             public double AccessibleStone, AccessibleClay, AccessibleWood;
             public double PlannedStoneExtraction, PlannedClayExtraction, PlannedWoodExtraction;
+            // Contract 7 teacher data: native request and grant totals per goods service, route feasibility and choices.
+            public readonly double[] ServiceRequested = new double[ElderModel9Contract.GoodsServices.Length];
+            public readonly double[] ServiceGranted = new double[ElderModel9Contract.GoodsServices.Length];
+            public readonly bool[] ClothingRouteFeasible = new bool[2], ShelterRouteFeasible = new bool[2];
+            public CraftGood NativeClothingRoute = CraftGood.Cloth, NativeShelterRoute = CraftGood.Housing;
+            public CraftGood ChosenClothingRoute = CraftGood.Cloth, ChosenShelterRoute = CraftGood.Housing;
+            public double HerdDevelopmentAnimals;
             // The committed Elder split and (CaptureDemandAllocations) every scored split.
             public ElderAction ElderAction;
             public List<ElderAction> KernelCandidates;
@@ -457,7 +464,7 @@ namespace Anthropocene.Simulation
             // Kernel-scored Elder split state: set once a split is committed.
             bool protectedSplit = false, kernelEnacted = false;
             // The budget raise covers only the persons the Protected split is actually granted (set after its arbitration).
-            double kernelBudgetBase = 0, kernelCommittedPersons = 0; int kernelWorkers = 0;
+            double kernelBudgetBase = 0, kernelCommittedPersons = 0; int kernelWorkers = 0; bool kernelRoutesSet = false;
             double protectedClothingUnits = -1;
 
             // The resolver-shaped candidate the tool demands read (herders and farmers staffed).
@@ -592,6 +599,19 @@ namespace Anthropocene.Simulation
                 animalFabricPossible ? CraftGood.AnimalFabric :
                 Usable(byGood[CraftGood.Cloth]) ? CraftGood.Cloth :
                 CraftGood.AnimalFabric;
+            alloc.ClothingRouteFeasible[0] = clothPossible; alloc.ClothingRouteFeasible[1] = animalFabricPossible;
+            alloc.NativeClothingRoute = clothingRoute;
+            // Contract 7: a learned clothing route replaces the native choice when that route is feasible this turn.
+            bool forcedClothingRoute = false;
+            if (elderDirective != null && elderDirective.ClothingRoute >= 0)
+            {
+                var wanted = elderDirective.ClothingRoute == 0 ? CraftGood.Cloth : CraftGood.AnimalFabric;
+                bool feasible = wanted == CraftGood.Cloth ? clothPossible : animalFabricPossible;
+                if (feasible) { clothingRoute = wanted; forcedClothingRoute = true; }
+                else elderInterventions?.Add(new ElderIntervention { Kind = ElderInterventionKind.PhysicalConstraint, Control = "clothing-route",
+                    Reason = "requested clothing route cannot be fed this turn; native route kept", Requested = elderDirective.ClothingRoute,
+                    Accepted = clothingRoute == CraftGood.Cloth ? 0 : 1 });
+            }
             double clothingUseful = clothingRoute == CraftGood.Cloth
                 ? clothPlan.units : animalPlan.units;
             if (!(clothingUseful > Epsilon))
@@ -733,6 +753,19 @@ namespace Anthropocene.Simulation
             bool mobilePolicy = !fixedCapital && portableCapital &&
                 !demonstratedFixedTenure;
             CraftGood deficitPreferred = mobilePolicy ? CraftGood.LightHousing : CraftGood.Housing;
+            alloc.ShelterRouteFeasible[0] = RouteFeasible(CraftGood.Housing, Math.Max(1, gapPeople));
+            alloc.ShelterRouteFeasible[1] = RouteFeasible(CraftGood.LightHousing, Math.Max(1, gapPeople));
+            alloc.NativeShelterRoute = ShelterRoute(deficitPreferred, Math.Max(1, gapPeople));
+            // Contract 7: a learned shelter route sets the deficit route when it is feasible this turn.
+            bool forcedShelterRoute = false;
+            if (elderDirective != null && elderDirective.ShelterRoute >= 0)
+            {
+                var wanted = elderDirective.ShelterRoute == 0 ? CraftGood.Housing : CraftGood.LightHousing;
+                if (alloc.ShelterRouteFeasible[elderDirective.ShelterRoute == 0 ? 0 : 1]) { deficitPreferred = wanted; forcedShelterRoute = true; }
+                else elderInterventions?.Add(new ElderIntervention { Kind = ElderInterventionKind.PhysicalConstraint, Control = "shelter-route",
+                    Reason = "requested shelter route is infeasible this turn; native route kept", Requested = elderDirective.ShelterRoute,
+                    Accepted = deficitPreferred == CraftGood.Housing ? 0 : 1 });
+            }
             ShelterRequest("shelter deficit", ServiceClass.Recovery, deficitPreferred, gapPeople);
             double shelterDeficitPeople = gapPeople;
             // Field and herd equipment for the work staffed (continuity of retained assets).
@@ -1502,7 +1535,7 @@ namespace Anthropocene.Simulation
                 long started = System.Diagnostics.Stopwatch.GetTimestamp();
                 int calls = 0;
                 int objective = SplitObjective(cfg); double tolerance = SplitTolerance(cfg);
-                CraftGood durable = ShelterRoute(deficitPreferred, totalGapPeople);
+                CraftGood durable = forcedShelterRoute ? deficitPreferred : ShelterRoute(deficitPreferred, totalGapPeople);
                 double clothingStock = Math.Max(0, c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth))
                     + Math.Max(0, c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric));
                 double effective = Math.Max(0, c.Population + c.GrowthRemainder - c.DeathRemainder + (d.Consumers - c.Population));
@@ -1643,7 +1676,7 @@ namespace Anthropocene.Simulation
                     var best = Best(pool);
                     if (!mixed || best == null) return (best, pool);
                     // Stage 2: the other clothing route at the chosen shelter.
-                    var otherCloth = KernelShelterOnlyDiagnostic ? null : ClothingCost(clothingRoute == CraftGood.Cloth ? CraftGood.AnimalFabric : CraftGood.Cloth);
+                    var otherCloth = KernelShelterOnlyDiagnostic || forcedClothingRoute ? null : ClothingCost(clothingRoute == CraftGood.Cloth ? CraftGood.AnimalFabric : CraftGood.Cloth);
                     if (otherCloth != null)
                     {
                         double otherMax = ClothingMax(otherCloth, Math.Max(0, NeolithicProduction.Demand(w, candidate, otherCloth.Good, years, residents, false, false, d.Sources)));
@@ -1658,7 +1691,7 @@ namespace Anthropocene.Simulation
                     // Stage 3: the other shelter route at the chosen clothing.
                     // The alternative shelter route stays inside the settlement policy: a mobile camp without retained fixed
                     // or field capital does not acquire fixed Housing merely because a capability exposes the recipe.
-                    var otherShelter = durable == CraftGood.LightHousing && mobilePolicy ? null
+                    var otherShelter = forcedShelterRoute || durable == CraftGood.LightHousing && mobilePolicy ? null
                         : ShelterCost(durable == CraftGood.Housing ? CraftGood.LightHousing : CraftGood.Housing);
                     if (otherShelter != null && totalGapPeople > Epsilon)
                     {
@@ -1709,6 +1742,7 @@ namespace Anthropocene.Simulation
                     if (chosenClothing != clothingRoute) System.Threading.Interlocked.Increment(ref KernelMixedOtherClothing);
                     if (chosenShelter != durable) System.Threading.Interlocked.Increment(ref KernelMixedOtherShelter);
                 }
+                alloc.ChosenClothingRoute = chosenClothing; alloc.ChosenShelterRoute = chosenShelter; kernelRoutesSet = true;
                 // The committed action (the shape a Village Elder policy would emit).
                 alloc.ElderAction = new ElderAction
                 {
@@ -1756,6 +1790,27 @@ namespace Anthropocene.Simulation
                 budget = Math.Max(budget, Math.Min(workers, committedPersons));
                 alloc.ResidentGoodsBudget = budget;
                 protectedClothingUnits = protectedClothing != null ? 0 : -1;
+            }
+
+            // ---- Contract 7 service levels ----
+            // Each goods service's native request total is recorded for teacher labels; a learned level caps that total,
+            // filling higher service classes first. A level never adds units beyond the native physical request.
+            for (int s = 0; s < ElderModel9Contract.GoodsServices.Length; s++)
+            {
+                var group = alloc.Requests.Where(q => q.Bundle != null && ElderModel9Contract.ServiceOf(q.Service) == s)
+                    .OrderBy(q => q.Class).ThenBy(q => alloc.Requests.IndexOf(q)).ToList();
+                double total = group.Sum(q => Math.Max(0, q.Units));
+                alloc.ServiceRequested[s] = total;
+                double[] levels = elderDirective?.ServiceLevels;
+                if (levels == null || s >= levels.Length || !ElderRLContract.Finite(levels[s]) || levels[s] < 0) continue;
+                double remaining = ElderRLContract.Unit(levels[s]) * total;
+                foreach (var q in group)
+                {
+                    double units = Math.Min(Math.Max(0, q.Units), remaining);
+                    remaining -= units;
+                    if (units < q.Units - Epsilon) q.Unmet = "elder service level";
+                    q.Units = units;
+                }
             }
 
             // ---- Elder arbitration ----
@@ -1824,7 +1879,8 @@ namespace Anthropocene.Simulation
 
                 int additionalHerders = Math.Max(0,
                     (int)Math.Floor(herdPeople + Epsilon));
-                if (additionalHerders > 0 && herdDevelopment.Count > 0)
+                // Any positive herd budget admits the animals the existing herders can already manage (free growth).
+                if (herdPeople > Epsilon && herdDevelopment.Count > 0)
                 {
                     int supportedTarget = (int)Math.Floor(Math.Min(
                         portfolio.HGrowthCeiling,
@@ -2317,7 +2373,8 @@ namespace Anthropocene.Simulation
             QuantizeHerdDevelopment();
 
             // ---- Integer staffing, compiled per role after aggregation; at most one repair pass ----
-            for (int repair = 0; repair < 2; repair++)
+            // Pass 2 only recompiles staffing, extraction and ceilings from grants trimmed in pass 1.
+            for (int repair = 0; repair < 3; repair++)
             {
                 QuantizeHerdDevelopment();
                 var total = new Bundle();
@@ -2372,8 +2429,9 @@ namespace Anthropocene.Simulation
                     ? plantFromLand / gatherRate : 0;
                 double needed = staff.Values.Sum() + materialGatherers + feedstockGatherers;
                 alloc.FinalCompiledPersons = needed;
-                if (needed <= budget + Epsilon || repair == 1)
+                if (needed <= budget + Epsilon || repair >= 1)
                 {
+                    alloc.Staff.Clear(); alloc.Ceilings.Clear();
                     alloc.PlannedStoneExtraction = Math.Max(0, raw[MaterialId.Stone] - Inventory(MaterialId.Stone));
                     alloc.PlannedClayExtraction = Math.Max(0, raw[MaterialId.Clay] - Inventory(MaterialId.Clay));
                     alloc.PlannedWoodExtraction = Math.Max(0, raw[MaterialId.Wood] - Inventory(MaterialId.Wood));
@@ -2382,7 +2440,11 @@ namespace Anthropocene.Simulation
                     foreach (var p in total.Outputs) alloc.Ceilings[p.Key] = p.Value;
                     if (toolsMade > 0) alloc.Ceilings[toolGood] = (alloc.Ceilings.TryGetValue(toolGood, out double t) ? t : 0) + toolsMade;
                     // A final over-budget (rounding after the repair) drops the lowest-class work in stable order.
-                    if (needed > budget + Epsilon) { alloc.TrimPasses++; TrimToBudget(alloc, budget, needed); }
+                    if (repair == 1 && needed > budget + Epsilon)
+                    {
+                        alloc.TrimPasses++; TrimToBudget(alloc, budget, needed, years);
+                        continue; // recompile from the trimmed grants so no trimmed request keeps idle staff
+                    }
                     break;
                 }
                 // Repair integer rounding from the lowest service class. Within
@@ -2520,6 +2582,10 @@ namespace Anthropocene.Simulation
             foreach (var r in recipes) if (!order.Contains(r.Good)) order.Add(r.Good);
             foreach (var r in recipes) if (!alloc.Ceilings.ContainsKey(r.Good)) alloc.Ceilings[r.Good] = 0;
             production = new ProductionOrder(order.ToArray(), alloc.Ceilings);
+            for (int s = 0; s < ElderModel9Contract.GoodsServices.Length; s++)
+                alloc.ServiceGranted[s] = alloc.Requests.Where(q => q.Bundle != null && ElderModel9Contract.ServiceOf(q.Service) == s).Sum(q => Math.Max(0, q.Granted));
+            if (!kernelRoutesSet) { alloc.ChosenClothingRoute = clothingRoute; alloc.ChosenShelterRoute = deficitPreferred; }
+            alloc.HerdDevelopmentAnimals = herdDevelopment.Sum(q => q.Granted);
             if (protectedSplit && protectedClothingUnits >= 0)
                 production.ProtectedClothingUnits = alloc.Requests.Where(q => q.Service == "clothing" && q.Class == ServiceClass.Protected).Sum(q => q.Granted);
             return intent;
@@ -2543,7 +2609,7 @@ namespace Anthropocene.Simulation
         }
 
         // Removes the lowest-class granted work, last request first, until the compiled staffing fits.
-        private static void TrimToBudget(Allocation a, double budget, double needed)
+        private static void TrimToBudget(Allocation a, double budget, double needed, double years)
         {
             foreach (var q in a.Requests.Where(q => !q.Frozen && q.Bundle != null &&
                 q.Granted > Epsilon).OrderByDescending(q => q.Class)
@@ -2552,8 +2618,14 @@ namespace Anthropocene.Simulation
                 .ThenByDescending(q => a.Requests.IndexOf(q)))
             {
                 if (needed <= budget + Epsilon) break;
+                // A trimmed request releases the workers it was staffed with (at least one per role), not just one:
+                // its grant and ceiling go to zero, so any staff kept for it would be idle.
                 foreach (var role in q.Bundle.RoleYears)
-                    if (a.Staff.TryGetValue(role.Key, out int s) && s > 0) { a.Staff[role.Key] = s - 1; needed -= 1; if (a.Staff[role.Key] == 0) a.Staff.Remove(role.Key); }
+                    if (a.Staff.TryGetValue(role.Key, out int s) && s > 0)
+                    {
+                        int release = Math.Min(s, Math.Max(1, (int)Math.Ceiling(q.Granted * role.Value / Math.Max(Epsilon, years) - Epsilon)));
+                        a.Staff[role.Key] = s - release; needed -= release; if (a.Staff[role.Key] == 0) a.Staff.Remove(role.Key);
+                    }
                 foreach (var g in q.Bundle.Outputs) if (a.Ceilings.ContainsKey(g.Key)) a.Ceilings[g.Key] = Math.Max(0, a.Ceilings[g.Key] - g.Value * q.Granted);
                 q.Granted = 0; q.Unmet = "integer staffing";
             }

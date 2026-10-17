@@ -294,6 +294,10 @@ internal static class Program
         }
         if (args.Contains("--surplus-equilibria")) return DemographySocialAblation.RunSurplusEquilibria();
         if (args.Contains("--kernel-mixed-checks")) { KernelMixedChecks.Run(); return 0; }
+        var model9Probe = args.FirstOrDefault(a => a.StartsWith("--model9-probe=", StringComparison.Ordinal));
+        if (model9Probe != null) { var parts = model9Probe.Substring(15).Split(','); return ElderModel9Tools.Probe(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 8); }
+        var model9Teacher = args.FirstOrDefault(a => a.StartsWith("--model9-teacher=", StringComparison.Ordinal));
+        if (model9Teacher != null) { var parts = model9Teacher.Substring(17).Split(','); return ElderModel9Tools.Teacher(parts[0], int.Parse(parts[1]), int.Parse(parts[2]), int.Parse(parts[3]), parts.Length > 4 ? int.Parse(parts[4]) : 8); }
         var kernelScaling = args.FirstOrDefault(a => a.StartsWith("--kernel-scaling=", StringComparison.Ordinal));
         if (kernelScaling != null)
         {
@@ -418,6 +422,7 @@ internal static class Program
             {
                 new ParallelChecks.Entry { Name = "SubsistenceNeedsChecks", Run = () => SubsistenceNeedsChecks.Run() },
                 new ParallelChecks.Entry { Name = "AutonomousElderChecks", Run = () => AutonomousElderChecks.Run() },
+            new ParallelChecks.Entry { Name = "ElderModel9Checks", Run = () => ElderModel9Checks.Run() },
                 new ParallelChecks.Entry { Name = "AutonomousElderHistoryChecks", Run = () => AutonomousElderHistoryChecks.Run() },
                 new ParallelChecks.Entry { Name = "Program.Tests", Run = () => Tests() },
                 new ParallelChecks.Entry { Name = "Milestone2Checks", Run = () => Milestone2Checks.Run() },

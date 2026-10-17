@@ -17,7 +17,8 @@ namespace Anthropocene.Simulation
                     Control = "directive", Reason = "null directive; safe default",
                     Requested = double.NaN, Accepted = 0
                 });
-            if (fallback.SchemaVersion != ElderRLContract.ActionSchemaVersion)
+            if (fallback.SchemaVersion != ElderRLContract.ActionSchemaVersion &&
+                fallback.SchemaVersion != ElderModel9Contract.ActionSchemaVersion)
             {
                 interventions.Add(new ElderIntervention
                 {
@@ -111,8 +112,26 @@ namespace Anthropocene.Simulation
                         "only herd Development is structurally available");
             }
 
-            if (observation?.Mask == null ||
-                !observation.Mask.AllowsMovement(fallback.MovementCandidate))
+            if (fallback.ServiceLevels != null)
+            {
+                if (fallback.ServiceLevels.Length != ElderModel9Contract.GoodsServices.Length)
+                {
+                    interventions.Add(new ElderIntervention { Kind = ElderInterventionKind.SchemaMismatch, Control = "service-levels",
+                        Reason = "service level vector has the wrong length; native levels", Requested = fallback.ServiceLevels.Length,
+                        Accepted = ElderModel9Contract.GoodsServices.Length });
+                    fallback.ServiceLevels = null;
+                }
+                else for (int s = 0; s < fallback.ServiceLevels.Length; s++)
+                {
+                    int index = s;
+                    Unit("service-level-" + ElderModel9Contract.GoodsServices[s], fallback.ServiceLevels[s], value => fallback.ServiceLevels[index] = value);
+                }
+            }
+            if (fallback.ClothingRoute < -1 || fallback.ClothingRoute > 1) fallback.ClothingRoute = -1;
+            if (fallback.ShelterRoute < -1 || fallback.ShelterRoute > 1) fallback.ShelterRoute = -1;
+            if (fallback.FissionPolicy < -1 || fallback.FissionPolicy > 2) fallback.FissionPolicy = -1;
+            if (fallback.MovementCandidate != ElderModel9Contract.NativeMovement && (observation?.Mask == null ||
+                !observation.Mask.AllowsMovement(fallback.MovementCandidate)))
             {
                 interventions.Add(new ElderIntervention
                 {
@@ -239,6 +258,7 @@ namespace Anthropocene.Simulation
                 Interventions = interventions.ToArray(),
                 Intent = intent,
                 Production = production,
+                Allocation = allocation,
                 RequestedDevelopmentPeople = requestedPeople,
                 AcceptedDevelopmentPeople = finalDevelopment,
                 AcceptedFieldDevelopmentPeople = finalField,

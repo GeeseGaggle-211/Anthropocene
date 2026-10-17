@@ -46,6 +46,18 @@ namespace Anthropocene.Simulation
         public ElderMemoryObservation Memory = new ElderMemoryObservation();
         public ElderPresenceObservation Presence = new ElderPresenceObservation();
         public ElderActionMask Mask = new ElderActionMask();
+        // Contract 7 additions (filled by ElderModel9Observation; absent from the v2 tensor).
+        public ElderDemographyObservation Demography = new ElderDemographyObservation();
+        public int CurrentFissionPolicy;
+    }
+
+    [Serializable]
+    public sealed class ElderDemographyObservation
+    {
+        // Own committed physical-demography state. Rates are annual hazards; ratios are per resident.
+        public double BirthRate, MortalityRate, ExposureRate, CrowdingRate, DiseaseRate, StarvationRate;
+        public double FoodSurplusPerResident, BirthFundingFraction, FedCapacityRatio, HousingPerResident, ClothingPerResident;
+        public bool SurplusFundedBirths;
     }
 
     [Serializable]
@@ -173,6 +185,8 @@ namespace Anthropocene.Simulation
             RecentTradeFlowPerCapitaYear,
             RecentMigrationPerCapitaYear;
         public bool Kin, CurrentlyVisible;
+        // Contract 7: coarse public population band of the remembered contact (log2 of size, 0 when unknown).
+        public double PopulationBand;
     }
 
     [Serializable]
@@ -246,6 +260,11 @@ namespace Anthropocene.Simulation
         public double DevelopmentBudget;
         public double FieldDevelopmentShare = .5;
         public int MovementCandidate = -1;
+        // Contract 7 (model9) extensions; absent (null / -1) keeps the native heuristic choice. ServiceLevels follow
+        // ElderModel9Contract.GoodsServices; routes are 0/1 (Cloth/Animal Fabric, fixed Housing/Light Housing);
+        // FissionPolicy is the FissionPolicy ordinal.
+        public double[] ServiceLevels;
+        public int ClothingRoute = -1, ShelterRoute = -1, FissionPolicy = -1;
 
         public ElderDirective Copy() => new ElderDirective
         {
@@ -254,7 +273,9 @@ namespace Anthropocene.Simulation
             RetainedHerdFraction = RetainedHerdFraction,
             DevelopmentBudget = DevelopmentBudget,
             FieldDevelopmentShare = FieldDevelopmentShare,
-            MovementCandidate = MovementCandidate
+            MovementCandidate = MovementCandidate,
+            ServiceLevels = (double[])ServiceLevels?.Clone(),
+            ClothingRoute = ClothingRoute, ShelterRoute = ShelterRoute, FissionPolicy = FissionPolicy
         };
     }
 
@@ -306,6 +327,8 @@ namespace Anthropocene.Simulation
             AcceptedHerdDevelopmentPeople;
         // Transient compiler/resolver witness. Raw identities never enter the
         // policy observation or replay payload.
+        // Contract 7: the exact allocation the compiler produced (teacher labels and realized service levels).
+        [NonSerialized] internal DemandController.Allocation Allocation;
         [NonSerialized] internal int ControlledCampId, PlanningPopulation,
             AcceptedTile, AcceptedRetainedFieldPeople,
             AcceptedRetainedHerdPeople, StartingHerdAnimals;

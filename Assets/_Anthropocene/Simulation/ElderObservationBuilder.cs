@@ -16,6 +16,7 @@ namespace Anthropocene.Simulation
     public sealed class ElderObservationBuilder
     {
         public int HistoryRecordsInspected { get; private set; }
+        public bool ValueOrderedSites;
         public ElderObservation Build(WorldState world, int controlledCampId,
             bool movementEnabled, ElderCompiledDecision previous = null)
             => BuildEnvelope(world, controlledCampId, movementEnabled, previous)
@@ -116,14 +117,18 @@ namespace Anthropocene.Simulation
                 (int)ElderMemorySignal.RealizedTradeUtility];
         }
 
-        private static void BuildSites(WorldState world, Camp camp,
+        private void BuildSites(WorldState world, Camp camp,
             AgentObservation game, bool movementEnabled, ElderObservation result,
             ElderObservationMetadata metadata)
         {
             var agricultural = game.AgriculturalSites.ToDictionary(site =>
                 site.Tile);
-            var all = game.SiteCoverage.OrderBy(site => site.Tile == camp.Tile ? 0 : 1)
-                .ThenBy(site => site.Tile).ToArray();
+            // Contract 7 ranks candidates by observable physical value (current first, then human food after herd use)
+            // so the bounded candidate list holds the sites a policy would plausibly choose; v2 keeps tile order.
+            var all = (ValueOrderedSites
+                ? game.SiteCoverage.OrderBy(site => site.Tile == camp.Tile ? 0 : 1)
+                    .ThenByDescending(site => site.HumanFoodAfterHerd).ThenByDescending(site => site.HumanFood).ThenBy(site => site.Tile)
+                : game.SiteCoverage.OrderBy(site => site.Tile == camp.Tile ? 0 : 1).ThenBy(site => site.Tile)).ToArray();
             var selected = all.Take(ElderRLContract.MaxLocalSites).ToArray();
             result.Sites = selected.Select((site, candidate) =>
             {

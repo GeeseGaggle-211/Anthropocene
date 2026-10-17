@@ -28,6 +28,8 @@
     <Compile Include="DemographyFissionRecovery.cs" />
     <Compile Include="ClothingProbe.cs" />
     <Compile Include="KernelMixedChecks.cs" />
+    <Compile Include="ElderModel9Tools.cs" />
+    <Compile Include="ElderModel9Checks.cs" />
     <Compile Include="DemographicStructureChecks.cs" />
     <Compile Include="HerdLabourChecks.cs" />
     <Compile Include="SharedAllocationChecks.cs" />
