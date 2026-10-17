@@ -297,6 +297,7 @@ internal static class Program
         var model9Probe = args.FirstOrDefault(a => a.StartsWith("--model9-probe=", StringComparison.Ordinal));
         if (model9Probe != null) { var parts = model9Probe.Substring(15).Split(','); return ElderModel9Tools.Probe(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 8); }
         var model9Profile = args.FirstOrDefault(a => a.StartsWith("--model9-profile=", StringComparison.Ordinal));
+        if (args.Contains("--bound-audit")) SocialRelocationForecastCache.AuditBounds = true;
         if (model9Profile != null) { var parts = model9Profile.Substring(17).Split(','); return ElderModel9Tools.Profile(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 8); }
         var model9Teacher = args.FirstOrDefault(a => a.StartsWith("--model9-teacher=", StringComparison.Ordinal));
         if (model9Teacher != null) { var parts = model9Teacher.Substring(17).Split(','); return ElderModel9Tools.Teacher(parts[0], int.Parse(parts[1]), int.Parse(parts[2]), int.Parse(parts[3]), parts.Length > 4 ? int.Parse(parts[4]) : 8); }

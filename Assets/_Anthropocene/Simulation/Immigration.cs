@@ -221,26 +221,13 @@ namespace Anthropocene.Simulation
             transfer = sourceProjection.Workforce;
             double fraction = residents > 0 ? movers / (double)residents : 0;
             var sourceAfter = sourceProjection.Forecast;
+            var sourceNoMove = context.Baseline(source);
 
             int destinationBeforePopulation = destination.Population + pendingPopulation;
             var destinationWorkers = WorkforceTransfer.Copy(destination.Workforce);
             if (pendingWorkforce != null)
                 destinationWorkers = WorkforceTransfer.Merge(destinationWorkers, pendingWorkforce,
                     destinationBeforePopulation);
-            double destinationBeforeDeficit = destinationBeforePopulation > 0
-                ? (destination.FoodDeficitYears * destination.Population + pendingDeficitExposure)
-                    / destinationBeforePopulation : 0;
-            SocialServiceForecast destinationBefore;
-            if (pendingPopulation == 0 && (pendingOpportunity == null || pendingOpportunity.Matched == 0))
-                destinationBefore = context.Baseline(destination);
-            else
-            {
-                var beforeState = SocialRelocationForecastCache.Existing(destination, destinationBeforePopulation,
-                    destination.PlantFood + pendingPlant, destination.AnimalFood + pendingAnimal,
-                    destination.AquaticFood + pendingAquatic, destinationWorkers, null, destinationBeforeDeficit,
-                    context.Forecasts.DensityOffset(destination));
-                destinationBefore = context.Forecasts.Forecast(beforeState, pendingOpportunity);
-            }
 
             int destinationPopulation = destinationBeforePopulation + movers;
             var destinationAfterWorkers = WorkforceTransfer.Merge(destinationWorkers, transfer.Movers, destinationPopulation);
@@ -255,15 +242,53 @@ namespace Anthropocene.Simulation
             var request = new EmploymentOpportunityRequest(source.Id, destination.Id, movers,
                 SocialRelocationDestination.ExistingSettlement, transfer.MoverComposition, pendingReservations);
             var opportunity = EmploymentOpportunityMatcher.Match(context.Opportunities, request);
-            var destinationAfter = context.Forecasts.Forecast(destinationState,
-                EmploymentOpportunityMatch.Combine(pendingOpportunity, opportunity));
+            var destinationOpportunity = EmploymentOpportunityMatch.Combine(pendingOpportunity, opportunity);
             var policy = new SocialRelocationPolicy(cfg.ImmigrationDeadband, 0, cfg.FissionDaughterMargin,
                 cfg.FissionDaughterMargin, 1, 0, PrivateCost(cfg, context.World.Map.Distance(source.Tile, destination.Tile),
                     source, destination, ReturnPenalty(context.World, source, destination)), 0, cfg.ImmigrationQualityWeight);
-            return SocialRelocationEvaluator.Evaluate(SocialRelocationDestination.ExistingSettlement,
-                context.Baseline(source), sourceAfter, destinationBefore, destinationAfter,
+
+            // Exact mover-gate screen: the destination's utility cannot exceed
+            // its food-stage bound, so a pair whose bound already misses the
+            // threshold is rejected without the two manufacturing passes. Its
+            // MoverUtilityChange (the bound) is below the deadband exactly as the
+            // true value, so the group-size ramp is unchanged.
+            double moverBound = SocialRelocationEvaluator.MoverBound(sourceNoMove, policy,
+                context.Forecasts.UtilityUpperBound(destinationState, destinationOpportunity, policy,
+                    opportunity.Preference));
+            if (moverBound + 1e-12 < policy.MoverThreshold - BoundSlack)
+            {
+                System.Threading.Interlocked.Increment(ref SocialRelocationForecastCache.BoundPruned);
+                var pruned = SocialRelocationEvaluator.BoundRejected(SocialRelocationDestination.ExistingSettlement,
+                    sourceNoMove, sourceAfter, policy, moverBound, opportunity);
+                if (!SocialRelocationForecastCache.AuditBounds) return pruned;
+            }
+
+            double destinationBeforeDeficit = destinationBeforePopulation > 0
+                ? (destination.FoodDeficitYears * destination.Population + pendingDeficitExposure)
+                    / destinationBeforePopulation : 0;
+            SocialServiceForecast destinationBefore;
+            if (pendingPopulation == 0 && (pendingOpportunity == null || pendingOpportunity.Matched == 0))
+                destinationBefore = context.Baseline(destination);
+            else
+            {
+                var beforeState = SocialRelocationForecastCache.Existing(destination, destinationBeforePopulation,
+                    destination.PlantFood + pendingPlant, destination.AnimalFood + pendingAnimal,
+                    destination.AquaticFood + pendingAquatic, destinationWorkers, null, destinationBeforeDeficit,
+                    context.Forecasts.DensityOffset(destination));
+                destinationBefore = context.Forecasts.Forecast(beforeState, pendingOpportunity);
+            }
+            var destinationAfter = context.Forecasts.Forecast(destinationState, destinationOpportunity);
+            var decision = SocialRelocationEvaluator.Evaluate(SocialRelocationDestination.ExistingSettlement,
+                sourceNoMove, sourceAfter, destinationBefore, destinationAfter,
                 policy, opportunity);
+            if (SocialRelocationForecastCache.AuditBounds && decision.MoverUtilityChange > moverBound + BoundSlack)
+                throw new InvalidOperationException("Immigration mover bound " + moverBound
+                    + " is below the exact mover utility " + decision.MoverUtilityChange + ".");
+            return decision;
         }
+
+        // Rounding allowance between the bound's and the forecast's operation order.
+        private const double BoundSlack = 1e-9;
 
         // One endpoint in the exact simultaneous Close state. Incoming cohorts
         // are aggregated once; an X0 forecast subtracts only the candidate cohort
@@ -581,7 +606,10 @@ namespace Anthropocene.Simulation
             var sources = legacyDecision ? camps : camps.Where(c => w.Turn >= c.FissionEligibleTurn).ToArray();
             if (!legacyDecision)
                 metrics.ImmigrationOutflowCooldownBlocked += camps.LongCount(c => w.Turn < c.FissionEligibleTurn);
+            var evaluateScope = PhaseProfile.Scope("Evaluate");
             var evaluations = execution.Map(sources, c => legacyDecision ? EvaluateLegacy(context, c) : Evaluate(context, c));
+            evaluateScope.Dispose(); PhaseProfile.Count("ImmigrationSources", sources.Length);
+            var reconcileScope = PhaseProfile.Scope("Reconcile");
             var intents = new List<Intent>();
             if (Diagnostic != null)
                 foreach (var c in camps.Except(sources)) Diagnostic[c.Id] = new Diag { Stage = "cooldown" };
@@ -687,7 +715,9 @@ namespace Anthropocene.Simulation
                     }
                 }
             }
-            if (!legacyDecision) RevalidateJointPhysical(context, ordered, metrics);
+            reconcileScope.Dispose();
+            if (!legacyDecision) using (PhaseProfile.Scope("Joint")) RevalidateJointPhysical(context, ordered, metrics);
+            PhaseProfile.Count("ImmigrationIntents", ordered.Length);
             foreach (var intent in ordered)
             {
                 if (Diagnostic != null && Diagnostic.TryGetValue(intent.Source.Id, out var diag))
@@ -914,7 +944,7 @@ namespace Anthropocene.Simulation
                     bool known = c.SocietyId == camp.SocietyId || visible.Contains(tile);
                     if (!known && memory != null) { var contact = memory.Find(c.Id); known = contact != null && !contact.Moved && contact.Tile == tile; }
                     if (!known) continue;
-                    e.Candidates++;
+                    e.Candidates++; PhaseProfile.Count("ImmigrationPairs");
                     int distance = w.Map.Distance(camp.Tile, tile); double qj = context.Quality[c.Id]; double penalty = ReturnPenalty(w, camp, c);
                     var maxDecision = Decide(context, camp, c, maxGroup, 0, 0, 0, 0, null, 0, null,
                         null, out var maxTransfer);

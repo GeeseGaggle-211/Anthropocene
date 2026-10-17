@@ -71,9 +71,14 @@ internal static class ElderModel9Tools
             var parts = new[] { s.DecideMs, s.PrepareMs, s.LabelMs, s.ResolveMs, s.FingerprintMs, s.ObserveMs, s.EncodeMs, s.PrivilegedMs, s.NativeMilliseconds };
             for (int i = 0; i < parts.Length; i++) sum[i] += parts[i];
             decisions += s.Villages.Count(v => v.Teacher != null); villagesSum += s.Villages.Count;
+            Console.WriteLine("MODEL9_FINGERPRINT turn=" + s.Turn + " villages=" + s.Villages.Count + " " + s.Fingerprint);
         }
         PhaseProfile.Enabled = false;
-        foreach (var row in PhaseProfile.Rows().OrderByDescending(r => r.ExclusiveMs).Take(18))
+        foreach (var counter in PhaseProfile.Counters())
+            Console.WriteLine("MODEL9_COUNT " + counter.Key + "/turn=" + I(counter.Value / (double)turns));
+        Console.WriteLine("MODEL9_BOUND evaluations=" + SocialRelocationForecastCache.BoundEvaluations
+            + " pruned=" + SocialRelocationForecastCache.BoundPruned + " audit=" + SocialRelocationForecastCache.AuditBounds);
+        foreach (var row in PhaseProfile.Rows().OrderByDescending(r => r.ExclusiveMs).Take(24))
             Console.WriteLine("MODEL9_PHASE exclusiveMsPerTurn=" + I(row.ExclusiveMs / turns) + " share=" + I(100 * row.ExclusiveMs / Math.Max(1e-9, sum[8])) + "% calls/turn=" + I(row.Calls / (double)turns) + " " + row.Path);
         string[] names = { "decide", "prepare", "labels", "resolve", "fingerprint", "observe", "encode", "privileged", "total" };
         Console.WriteLine("MODEL9_PROFILE seed=" + seed + " players=" + players + " turns=" + turns + " meanVillages=" + I(villagesSum / turns) + " decisions=" + decisions

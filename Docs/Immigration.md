@@ -497,6 +497,30 @@ Not measured by that historical WP10b-2 audit: a hysteresis or deadband sweep, o
 past turn 62. The v1.1 matched-boundary follow-up now sweeps hysteresis, deadband and group-size controls without
 changing the shipped calibration; see [DemographyQoLValidation-v1.1.md](DemographyQoLValidation-v1.1.md).
 
+### Physical-path cost (17 October 2026)
+
+Scaling law: O(sources x known destinations within `ImmigrationRadius` x candidate sizes (at most 6) x forecast cost),
+where one social forecast runs two `MaterialEconomy.Forecast` passes over the recipe set. The radius and camp spacing
+bound destinations per source, so cost is linear in settlements; the per-forecast term grows with recipes, roles and
+known material sources as technology adds goods. Measured on Small/8 model9 worlds (seed 1001, about 21 villages,
+20 known pairs and about 100 evaluations per turn), before any change: 79-93 ms of a 350-400 ms turn, of which 75 ms was
+the material step and 31 ms the tool-replacement schedule computed twice per forecast with identical inputs.
+
+Two exact changes, with identical per-turn whole-world fingerprints on seeds 1001 and 1002 (12 turns each) and the fixed
+suite:
+- The two material passes of one forecast share their useful-demand memo (`MaterialEconomy.Forecast(..., demandMemo)`);
+  demand never reads the raw-material budgets, the only inputs that differ.
+- Mover-gate screen. `SocialRelocationForecastCache.UtilityUpperBound` bounds the destination utility from the food
+  stage alone: protection, cohesion and exposure at their most favourable clothing/housing corners. A pair whose bound
+  misses the mover threshold is rejected without its destination forecasts. Its reported mover change is the bound,
+  which is below the deadband, so the group-size ramp (`Size`) is unchanged. Pruned evaluations count as mover
+  rejections; their aggregate and incumbent gates are not evaluated (`SocialRelocationEvaluation.BoundPruned`).
+  `--bound-audit` runs both and fails on any bound below the exact utility.
+
+Result: 52 and 50 ms per turn (from 83 and 61), 19-37% less. The screen prunes only 16% of evaluations: most rejected
+destinations are under-clothed and under-housed after the inflow, which only the manufacturing pass reveals. Further
+reduction needs a cheaper social service model or fewer candidate sizes, both of which change outcomes.
+
 ## Deliberate limits and remaining work
 
 - The matched v1.1 sweep covers disabled hysteresis, penalty 0.10 to 0.30, cooldown 3 versus 5, deadband 0.075 versus

@@ -681,7 +681,7 @@ namespace Anthropocene.Simulation
         public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand = false, double residentPopulation = -1, bool postAgriculturalResolution = false)
             => Forecast(w, c, recipes, intervals, years, equipment, includePlantDemand, residentPopulation, postAgriculturalResolution, postAgriculturalResolution);
 
-        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1, KnownMaterialSource[] knownSources = null, ProductionOrder order = null, double stoneBudget = -1, double clayBudget = -1, double woodBudget = -1)
+        public static Dictionary<CraftGood, double> Forecast(WorldState w, Camp c, CraftRecipe[] recipes, double intervals, double years, double equipment, bool includePlantDemand, double residentPopulation, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, double plantFoodBudget = -1, double animalFoodBudget = -1, KnownMaterialSource[] knownSources = null, ProductionOrder order = null, double stoneBudget = -1, double clayBudget = -1, double woodBudget = -1, Dictionary<CraftGood, double> demandMemo = null)
         {
             System.Threading.Interlocked.Increment(ref TurnDiagnostics.For(w).ForecastCalls);
             var planned = recipes.ToDictionary(r => r.Good, r => 0.0);
@@ -709,7 +709,10 @@ namespace Anthropocene.Simulation
                 (CultivationEconomy.Workers(c, WorkforceRoles.Builder) > 0 || CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0);
             // The forecast never mutates the camp, so each good's pure useful
             // demand is evaluated once; both tool goods share one schedule run.
-            var usefulDemand = new Dictionary<CraftGood, double>();
+            // demandMemo lets a caller share these values between forecasts of the
+            // same camp view, cohort, horizon, sources and order (only raw-material
+            // budgets may differ: demand never reads them).
+            var usefulDemand = demandMemo ?? new Dictionary<CraftGood, double>();
             double UsefulDemand(CraftGood good)
             {
                 if (usefulDemand.TryGetValue(good, out double value)) return value;
