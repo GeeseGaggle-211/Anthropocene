@@ -35,12 +35,19 @@ snapshot of where something was, never of what it is doing now.
   are explored tiles outside current vision, carrying only environment, relief,
   elevation and ridge links, water kind and river edges (no vegetation state,
   stocks, freshwater amount, herds, occupants or cultivation). `KnownSettlements`
-  carry camp id, owner, tile (-1 when Moved), turn and source. The remembered
+  carry camp id, owner, tile (-1 when Moved), turn, source and the coarse public population band (below). The remembered
   array is built once per Society per planning index and shared by its camps.
   Rendering all explored tiles per camp is O(explored tiles); the current
   mature-scale figure is about 100 tiles per Society.
 - **RL.** Remembered tiles and contacts are plain observation features; nothing
-  hidden (live stocks, rival orders, populations) is added.
+  hidden (live stocks, rival orders, exact populations) is added.
+- **Population band (knowledge-contract amendment Q6, 17 October 2026).** Each contact also stores
+  `PopulationBand = 1 + floor(log2 N)` of the foreign camp at the moment it was sighted, traded with, exchanged
+  migrants with or recorded as kin (0 = unknown; saved contacts that predate the field load 0). It is a public,
+  coarse snapshot like the herd count estimate: it never updates from live state while the camp is out of sight,
+  and it is never a relative or competitive reward. Observation schema 24 (`ObservedContactDto.PopulationBand`)
+  and the Elder contract-7 contact rows carry it; the critic keeps exact neighbour populations among its
+  training-only inputs.
 - **Rejected architectures.** A dense per-Society bit array (map size x
   Societies: 2048x1024x320 is 84 MB) was rejected for the sparse block set.
   Per-player (rather than per-Society) memory was rejected because fission

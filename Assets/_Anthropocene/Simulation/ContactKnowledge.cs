@@ -7,9 +7,9 @@ namespace Anthropocene.Simulation
 {
     public enum ContactSource { Sighting, Trade, Kin, Migration }
 
-    // A snapshot of where one foreign camp was last known. It carries location
-    // only: no population, stores, orders or movement. Tile is -1 once the camp
-    // was found to have left its recorded tile (Moved, location unknown).
+    // A snapshot of where one foreign camp was last known. It carries location and a coarse public population band
+    // (knowledge-contract amendment Q6) taken when the contact was learned or refreshed: never live population,
+    // stores, orders or movement. Tile is -1 once the camp was found to have left its recorded tile (Moved).
     [Serializable]
     public sealed class SettlementContact
     {
@@ -17,6 +17,8 @@ namespace Anthropocene.Simulation
         [OptionalField] public double ObservedDays;
         public ContactSource Source;
         public bool Moved;
+        // 1 + floor(log2(population)) when learned, 0 unknown (saves that predate the band). Snapshot, not live.
+        [OptionalField] public int PopulationBand;
         [OnDeserializing]
         private void Defaults(StreamingContext context)
             => ObservedDays = double.NaN;
@@ -140,11 +142,11 @@ namespace Anthropocene.Simulation
             return ~lo;
         }
         internal void Upsert(int camp, int owner, int tile, int turn,
-            double observedDays, ContactSource source)
+            double observedDays, ContactSource source, int populationBand = 0)
         {
             int at = Index(camp);
-            if (at >= 0) { var c = Contacts[at]; c.Owner = owner; c.Tile = tile; c.Turn = turn; c.ObservedDays = observedDays; c.Source = source; c.Moved = false; }
-            else Contacts.Insert(~at, new SettlementContact { Camp = camp, Owner = owner, Tile = tile, Turn = turn, ObservedDays = observedDays, Source = source });
+            if (at >= 0) { var c = Contacts[at]; c.Owner = owner; c.Tile = tile; c.Turn = turn; c.ObservedDays = observedDays; c.Source = source; c.Moved = false; c.PopulationBand = populationBand; }
+            else Contacts.Insert(~at, new SettlementContact { Camp = camp, Owner = owner, Tile = tile, Turn = turn, ObservedDays = observedDays, Source = source, PopulationBand = populationBand });
         }
         internal void Upsert(int camp, int owner, int tile, int turn,
             ContactSource source)
@@ -178,7 +180,8 @@ namespace Anthropocene.Simulation
         public readonly double ObservedDays;
         public readonly ContactSource Source;
         public readonly bool Moved;
-        internal SettlementContactObservation(SettlementContact c) { Camp = c.Camp; Owner = c.Owner; Tile = c.Moved ? -1 : c.Tile; Turn = c.Turn; ObservedDays = c.ObservedDays; Source = c.Source; Moved = c.Moved; }
+        public readonly int PopulationBand;
+        internal SettlementContactObservation(SettlementContact c) { Camp = c.Camp; Owner = c.Owner; Tile = c.Moved ? -1 : c.Tile; Turn = c.Turn; ObservedDays = c.ObservedDays; Source = c.Source; Moved = c.Moved; PopulationBand = c.PopulationBand; }
     }
 
     // Remembered knowledge: explored static geography and known-settlement
@@ -191,10 +194,12 @@ namespace Anthropocene.Simulation
     // Society; nothing scales with elapsed years or map size. Memory: 16 bytes per occupied 8x8 block plus ~32 bytes per contact, per Society.
     public static class ContactKnowledge
     {
+        // Coarse public population band (Q6): 1 + floor(log2 N) for N >= 1, 0 for an empty or unknown camp.
+        public static int PopulationBand(int population) => population <= 0 ? 0 : 1 + (int)Math.Floor(Math.Log(population, 2) + 1e-12);
         public static bool Remembers(Society s) => s.Progression.Era != Era.Paleolithic || s.Technology != Technology.None;
         public static ContactMemory MemoryOf(WorldState w, Society s) => s.Memory ?? (s.Memory = new ContactMemory(w.Config.Width));
 
-        private sealed class Sighting { public int Camp, Owner, Tile; }
+        private sealed class Sighting { public int Camp, Owner, Tile, Band; }
         private sealed class Update { public Society Society; public int[] Tiles; public HashSet<int> Vision; public Sighting[] Seen; }
 
         // Hinterland radius of a camp that has stayed `stationaryTurns` turns with `population` residents: it grows by HinterlandRingsPerTurn
@@ -238,7 +243,7 @@ namespace Anthropocene.Simulation
                 var seen = new List<Sighting>();
                 foreach (int tile in vision)
                     if (campsByTile.TryGetValue(tile, out var here))
-                        foreach (var c in here) if (c.SocietyId != s.Id) seen.Add(new Sighting { Camp = c.Id, Owner = c.Player, Tile = tile });
+                        foreach (var c in here) if (c.SocietyId != s.Id) seen.Add(new Sighting { Camp = c.Id, Owner = c.Player, Tile = tile, Band = PopulationBand(c.Population) });
                 seen.Sort((a, b) => a.Camp.CompareTo(b.Camp));
                 return new Update { Society = s, Tiles = explore.ToArray(), Vision = vision, Seen = seen.ToArray() };
             });
@@ -250,7 +255,7 @@ namespace Anthropocene.Simulation
                 memory.Explored.StampUnstamped(turn);
                 foreach (int tile in u.Tiles) memory.Explored.Add(tile, turn);
                 foreach (var s in u.Seen) memory.Upsert(s.Camp, s.Owner,
-                    s.Tile, turn, w.Days, ContactSource.Sighting);
+                    s.Tile, turn, w.Days, ContactSource.Sighting, s.Band);
                 // A recorded tile now in view without its camp means the camp moved away.
                 foreach (var c in memory.Contacts)
                     if (c.Turn != turn && !c.Moved && u.Vision.Contains(c.Tile)) { c.Moved = true; c.Tile = -1; }
@@ -265,7 +270,7 @@ namespace Anthropocene.Simulation
         {
             if (!Remembers(society) || partner.SocietyId == society.Id) return;
             MemoryOf(w, society).Upsert(partner.Id, partner.Player,
-                partner.Tile, w.Turn, w.Days, ContactSource.Trade);
+                partner.Tile, w.Turn, w.Days, ContactSource.Trade, PopulationBand(partner.Population));
         }
 
         // Migration hook (WP10b): people moved between two known settlements, so each Society learns the other camp's
@@ -274,7 +279,7 @@ namespace Anthropocene.Simulation
         {
             if (!Remembers(society) || other.SocietyId == society.Id) return;
             MemoryOf(w, society).Upsert(other.Id, other.Player, other.Tile,
-                w.Turn, w.Days, ContactSource.Migration);
+                w.Turn, w.Days, ContactSource.Migration, PopulationBand(other.Population));
         }
 
         // Kin hook (called by later fission work). The daughter receives a plain copy of
@@ -294,11 +299,11 @@ namespace Anthropocene.Simulation
                     daughter.Memory = copy;
                 }
                 parentMemory.Upsert(daughterCamp.Id, daughterCamp.Player,
-                    daughterCamp.Tile, w.Turn, w.Days, ContactSource.Kin);
+                    daughterCamp.Tile, w.Turn, w.Days, ContactSource.Kin, PopulationBand(daughterCamp.Population));
             }
             if (Remembers(daughter)) MemoryOf(w, daughter).Upsert(
                 parentCamp.Id, parentCamp.Player, parentCamp.Tile, w.Turn,
-                w.Days, ContactSource.Kin);
+                w.Days, ContactSource.Kin, PopulationBand(parentCamp.Population));
         }
 
         // Read side for observations: remembered static geography outside current

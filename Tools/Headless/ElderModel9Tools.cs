@@ -58,6 +58,29 @@ internal static class ElderModel9Tools
         return 0;
     }
 
+    // --model9-profile=<seed>,<turns>[,players]: phase timing of teacher steps (heuristic for every village).
+    public static int Profile(int seed, int turns, int players = 8)
+    {
+        var env = new ElderModel9Environment();
+        env.Reset(Opening(seed, players, out _), true);
+        PhaseProfile.Reset(); PhaseProfile.Enabled = true;
+        var sum = new double[9]; long decisions = 0; double villagesSum = 0;
+        for (int t = 0; t < turns; t++)
+        {
+            var s = env.Step(new Dictionary<int, ElderDirective>());
+            var parts = new[] { s.DecideMs, s.PrepareMs, s.LabelMs, s.ResolveMs, s.FingerprintMs, s.ObserveMs, s.EncodeMs, s.PrivilegedMs, s.NativeMilliseconds };
+            for (int i = 0; i < parts.Length; i++) sum[i] += parts[i];
+            decisions += s.Villages.Count(v => v.Teacher != null); villagesSum += s.Villages.Count;
+        }
+        PhaseProfile.Enabled = false;
+        foreach (var row in PhaseProfile.Rows().OrderByDescending(r => r.ExclusiveMs).Take(18))
+            Console.WriteLine("MODEL9_PHASE exclusiveMsPerTurn=" + I(row.ExclusiveMs / turns) + " share=" + I(100 * row.ExclusiveMs / Math.Max(1e-9, sum[8])) + "% calls/turn=" + I(row.Calls / (double)turns) + " " + row.Path);
+        string[] names = { "decide", "prepare", "labels", "resolve", "fingerprint", "observe", "encode", "privileged", "total" };
+        Console.WriteLine("MODEL9_PROFILE seed=" + seed + " players=" + players + " turns=" + turns + " meanVillages=" + I(villagesSum / turns) + " decisions=" + decisions
+            + " decisionsPerSecond=" + I(decisions / Math.Max(1e-9, sum[8] / 1000)) + " " + string.Join(" ", names.Select((n, i) => n + "Ms=" + I(sum[i] / turns) + "(" + I(100 * sum[i] / Math.Max(1e-9, sum[8])) + "%)")));
+        return 0;
+    }
+
     // --model9-teacher=<outDir>,<firstSeed>,<lastSeed>,<turns>[,players]: heuristic rollouts written as NPY shards, one per world.
     public static int Teacher(string outDir, int firstSeed, int lastSeed, int turns, int players = 8)
     {

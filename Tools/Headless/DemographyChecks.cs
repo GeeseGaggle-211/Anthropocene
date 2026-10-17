@@ -225,7 +225,7 @@ internal static class DemographyChecks
         Check(a.SettlementWelfare.Count == 1 && a.LineageWelfare.Count == 1 && !a.SettlementWelfare[0].TransferAffected, "Local and lineage welfare diagnostics are separate and transfer-aware");
         var observed = new AgentObservationBuilder().Build(low, low.Camps.Single().Player);
         var settlement = observed.Settlements.Single();
-        Check(AgentObservation.SchemaVersion == 23 && settlement.EffectiveMortalityRate > 0 && settlement.Nutrition > 0 && settlement.ClothingCoverage > 0, "Schema 23 exposes owner-only physical diagnostic rates and coverage");
+        Check(AgentObservation.SchemaVersion == 24 && settlement.EffectiveMortalityRate > 0 && settlement.Nutrition > 0 && settlement.ClothingCoverage > 0, "Schema 24 exposes owner-only physical diagnostic rates and coverage");
     }
 
     private static void IntegerExtinction()

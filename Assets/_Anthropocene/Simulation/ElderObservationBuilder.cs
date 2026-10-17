@@ -498,7 +498,8 @@ namespace Anthropocene.Simulation
                     RecentMigrationPerCapitaYear = intervalYears > 0
                         ? migration / scale : 0,
                     Kin = relation != null,
-                    CurrentlyVisible = visibleTiles.Contains(contact.Tile)
+                    CurrentlyVisible = visibleTiles.Contains(contact.Tile),
+                    PopulationBand = contact.PopulationBand
                 };
             }).ToArray();
             result.Presence.Contacts.Present = selected.Length;

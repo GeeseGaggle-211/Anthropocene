@@ -237,6 +237,9 @@ namespace Anthropocene.Simulation
         public string Fingerprint;
         public List<ElderModel9Village> Villages = new List<ElderModel9Village>();
         public double NativeMilliseconds;
+        // Diagnostic phase timings (never authoritative): heuristic decide, prepare/compile, teacher labels,
+        // resolution, fingerprint, observation build, privileged features and tensor encoding.
+        public double DecideMs, PrepareMs, LabelMs, ResolveMs, FingerprintMs, ObserveMs, PrivilegedMs, EncodeMs;
         public List<string> Rejections = new List<string>();
         public Dictionary<int, string> Orders = new Dictionary<int, string>();
     }
@@ -341,7 +344,9 @@ namespace Anthropocene.Simulation
         {
             if (World == null) throw new InvalidOperationException("Reset required.");
             var timer = System.Diagnostics.Stopwatch.StartNew();
+            var phase = System.Diagnostics.Stopwatch.StartNew();
             var plan = AiPlanning.Decide(World, execution);
+            double decideMs = phase.Elapsed.TotalMilliseconds;
             var background = plan.Orders.ToDictionary(p => p.Key, p => p.Value.Select(o => o.Copy()).ToList());
             var directives = new Dictionary<int, ElderDirective>();
             foreach (var pair in (submitted ?? new Dictionary<int, ElderDirective>()).OrderBy(p => p.Key))
@@ -371,6 +376,7 @@ namespace Anthropocene.Simulation
                     orders.Add(new Order(OrderKind.FissionPolicy, camp.Id, target: directive.FissionPolicy));
             }
             var result = Advance(background, directives, plan.Traces);
+            result.DecideMs = decideMs;
             result.NativeMilliseconds = timer.Elapsed.TotalMilliseconds;
             return result;
         }
@@ -379,10 +385,12 @@ namespace Anthropocene.Simulation
         {
             var prior = World.Camps.ToDictionary(c => c.Id, c => c.Population);
             var priorSociety = World.Camps.ToDictionary(c => c.Id, c => c.SocietyId);
+            var phase = System.Diagnostics.Stopwatch.StartNew();
             PreparedTurn prepared = directives.Count > 0
                 ? TurnPlanner.PrepareWithElderDirectives(World, background, directives,
                     directives.Keys.ToDictionary(id => id, id => observations[id]), compiler, traces ?? new List<DecisionTrace>(), execution)
                 : TurnPlanner.Prepare(World, background, traces ?? new List<DecisionTrace>());
+            double prepareMs = phase.Elapsed.TotalMilliseconds; phase.Restart();
             // Teacher labels from the exact allocations Prepare used (captured before resolution mutates the world).
             var labels = new Dictionary<int, ElderModel9Label>();
             var interventions = new Dictionary<int, ElderIntervention[]>(); var staffing = new Dictionary<int, string>();
@@ -405,9 +413,12 @@ namespace Anthropocene.Simulation
                 Array.Copy(allocation.ServiceRequested, context.PreviousServiceRequested, context.PreviousServiceRequested.Length);
                 if (decision != null) context.PreviousDecision = decision;
             }
+            double labelMs = phase.Elapsed.TotalMilliseconds; phase.Restart();
             var record = new TurnResolver(execution).Resolve(World, prepared);
+            double resolveMs = phase.Elapsed.TotalMilliseconds; phase.Restart();
             double years = record.Duration / World.Config.DaysPerYear;
             var step = new ElderModel9Step { Turn = World.Turn, Years = years, Fingerprint = SaveCodec.Fingerprint(World) };
+            step.PrepareMs = prepareMs; step.LabelMs = labelMs; step.ResolveMs = resolveMs; step.FingerprintMs = phase.Elapsed.TotalMilliseconds;
             step.Rejections.AddRange(prepared.Rejections);
             foreach (var g in prepared.Orders.GroupBy(o => o.Entity)) step.Orders[g.Key] = string.Join("|", g.Select(o => o.Kind + ":" + o.Target + ":" + o.Destination + ":" + o.Population));
             Replay.Steps.Add(new ElderModel9ReplayStep
@@ -457,6 +468,7 @@ namespace Anthropocene.Simulation
             {
                 var camp = World.Camps.First(c => c.Id == id);
                 ElderInstitutionMemorySystem.EnsureInitialized(World, camp);
+                var clock = System.Diagnostics.Stopwatch.StartNew();
                 var obs = builder.Build(World, id, MovementEnabled, out var meta, Context(id).PreviousDecision);
                 ElderModel9Observation.FillDemography(World, camp, obs);
                 observations[id] = obs; metadata[id] = meta;
@@ -467,8 +479,11 @@ namespace Anthropocene.Simulation
                         ParentSociety = World.Societies.FirstOrDefault(x => x.Id == camp.SocietyId)?.ParentSociety ?? 0 };
                     step.Villages.Add(v);
                 }
+                step.ObserveMs += clock.Elapsed.TotalMilliseconds; clock.Restart();
                 v.Observation = ElderModel9Encoder.Encode(obs, Context(id));
+                step.EncodeMs += clock.Elapsed.TotalMilliseconds; clock.Restart();
                 v.Privileged = Privileged(camp, prior.TryGetValue(id, out int before) ? before : camp.Population, step.Turn - Replay.StartTurn);
+                step.PrivilegedMs += clock.Elapsed.TotalMilliseconds;
             }
             step.Villages.Sort((a, b) => a.Camp.CompareTo(b.Camp));
         }

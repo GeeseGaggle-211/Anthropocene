@@ -26,8 +26,8 @@ Validation repairs and logs out-of-range or malformed controls (`ElderDirectiveV
   current fission policy, and last turn's route feasibility and service requests per resident. Every value has a
   present flag.
 - Entity sets with row presence: sites (7 x 12, value-ordered: current first, then human food after herd use),
-  fishing grounds (3 x 11), herd groups (8 x 8), commodities (11 x 8), contacts (8 x 9, the last column a coarse
-  population band, currently 0 pending the knowledge-contract amendment).
+  fishing grounds (3 x 11), herd groups (8 x 8), commodities (11 x 8), contacts (8 x 9, the last column the remembered
+  coarse population band, 1 + floor(log2 N) at contact, 0 unknown).
 - Masks: movement (stay + site rows), clothing and shelter routes.
 
 Values are raw physical units; the learner normalizes them.

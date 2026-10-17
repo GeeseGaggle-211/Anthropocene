@@ -245,22 +245,28 @@ internal static class ContactKnowledgeChecks
         // Known settlements: the stranger seen from the new position is listed with its tile, turn and source.
         var known = o.KnownSettlements.Single();
         Check(known.Camp == stranger.Id && known.Owner == 1 && known.Tile == At(w, 11) && known.Turn == 1 && known.Source == ContactSource.Sighting && !known.Moved, "a known settlement carries camp, owner, tile, turn and source");
+        int bandAtSighting = known.PopulationBand;
+        Check(bandAtSighting == ContactKnowledge.PopulationBand(stranger.Population) && bandAtSighting > 0, "a sighting records the coarse public population band");
+        Check(ContactKnowledge.PopulationBand(0) == 0 && ContactKnowledge.PopulationBand(1) == 1 && ContactKnowledge.PopulationBand(31) == 5 && ContactKnowledge.PopulationBand(32) == 6, "the band is 1 + floor(log2 N), zero when empty");
         // It walks out of vision: the snapshot stays at the old tile until that tile is seen empty.
         stranger.Tile = At(w, 19); own.Tile = At(w, 7);   // the recorded tile 11 is out of vision from tile 7
+        stranger.Population *= 8;   // unseen growth must not reach the snapshot
         Step(w);
         var o3 = new AgentObservationBuilder().Build(w, 0);
         var stale = o3.KnownSettlements.Single();
         Check(stale.Tile == At(w, 11) && !stale.Moved && stale.Turn == 1, "an out-of-vision snapshot keeps its last known tile and is not refreshed");
+        Check(stale.PopulationBand == bandAtSighting, "the population band is a snapshot: unseen growth does not change it");
         Check(o3.Rivals.Count == 0 && TileDetails.KnownSettlementsAt(o3, At(w, 11)).Length == 1 && TileDetails.Describe(o3, At(w, 11), new Order[0]).Contains("KNOWN SETTLEMENT") && TileDetails.Describe(o3, At(w, 11), new Order[0]).Contains("current state unknown"), "a remembered settlement is labelled as a snapshot and is not a live rival");
         // DTO round trip at the current schema.
         var dto = ObservationContract.Deserialize(ObservationContract.Serialize(o3, own.People.Mandate));
         Check(dto.Schema == AgentObservation.SchemaVersion &&
-            AgentObservation.SchemaVersion == 23 &&
+            AgentObservation.SchemaVersion == 24 &&
             dto.RememberedTiles.Length == o3.RememberedTiles.Count &&
             dto.KnownSettlements.Single().Camp == stranger.Id &&
-            dto.KnownSettlements.Single().Source == ContactSource.Sighting,
+            dto.KnownSettlements.Single().Source == ContactSource.Sighting &&
+            dto.KnownSettlements.Single().PopulationBand == bandAtSighting,
             "the serialized observation carries remembered tiles and known settlements");
-        Check(json.Contains("\"Schema\":23") &&
+        Check(json.Contains("\"Schema\":24") &&
             json.Contains("RememberedTiles") &&
             json.Contains("KnownSettlements") &&
             json.Contains("FishingGrounds") &&
@@ -291,6 +297,12 @@ internal static class ContactKnowledgeChecks
         string legacy = Regex.Replace(xml, "<Memory>.*</Memory>", "", RegexOptions.Singleline);
         Check(legacy != xml && !legacy.Contains("Memory"), "legacy fixture omits the block");
         using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(legacy))) Check(((Society)serializer.ReadObject(stream)).Memory == null, "a save without the block loads with no knowledge");
+        // A contact saved before the population band loads with band 0 (unknown).
+        var contactSerializer = new DataContractSerializer(typeof(SettlementContact)); string cxml;
+        using (var stream = new MemoryStream()) { contactSerializer.WriteObject(stream, new SettlementContact { Camp = 3, Tile = 4, Turn = 1, PopulationBand = 6 }); cxml = Encoding.UTF8.GetString(stream.ToArray()); }
+        string clegacy = Regex.Replace(cxml, "<PopulationBand>\\d+</PopulationBand>", "");
+        Check(clegacy != cxml, "legacy contact fixture omits the band");
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(clegacy))) Check(((SettlementContact)contactSerializer.ReadObject(stream)).PopulationBand == 0, "an older contact loads with an unknown band");
         // The legacy world keeps working: the next turn starts remembering.
         var old = World(new[] { 5, 7 }, 0, 1); Check(Soc(old, 0).Memory == null, "a fresh Society has no memory"); Step(old);
         Check(Soc(old, 0).Memory != null && Soc(old, 0).Memory.Contacts.Count == 1, "a Society without memory begins remembering on its next update");

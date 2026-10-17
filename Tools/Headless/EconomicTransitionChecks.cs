@@ -86,7 +86,7 @@ internal static class EconomicTransitionChecks
         int startingResidents = camp.Population;
         var observation = new AgentObservationBuilder().Build(world, camp.Player);
         var dto = ObservationContract.Deserialize(ObservationContract.Serialize(observation, camp.Mandate));
-        Check(AgentObservation.SchemaVersion == 23 && dto.Schema == 23 &&
+        Check(AgentObservation.SchemaVersion == 24 && dto.Schema == 24 &&
             dto.Hunters.Single(h => h.Id == hunter.Id).EconomicTransitionRecall &&
             dto.Hunters.Single(h => h.Id == hunter.Id).EconomicTransitionWaypoint == camp.Tile,
             "the current schema exposes the owned detachment's marker and only its currently visible route endpoint");
