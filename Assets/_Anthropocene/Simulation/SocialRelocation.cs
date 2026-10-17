@@ -284,6 +284,9 @@ namespace Anthropocene.Simulation
         public readonly double MoverUtilityBefore, MoverUtilityAfter;
         public readonly bool MoverPass, AggregatePass, SourcePass, IncumbentPass, Accepted;
         public readonly EmploymentOpportunityMatch Opportunity;
+        // True when the mover gate was decided by an exact utility upper bound
+        // (SocialRelocationEvaluator.BoundRejected); destination forecasts are null.
+        public bool BoundPruned { get; internal set; }
         internal SocialRelocationEvaluation(SocialRelocationDestination destinationKind,
             SocialServiceForecast sourceNoMove, SocialServiceForecast sourceAfter,
             SocialServiceForecast destinationNoMove, SocialServiceForecast destinationAfter,
@@ -305,6 +308,29 @@ namespace Anthropocene.Simulation
 
     public static class SocialRelocationEvaluator
     {
+        // A candidate whose mover utility upper bound already misses the mover
+        // threshold. The exact evaluation would reject it on the mover gate; the
+        // destination forecasts are not built, so the destination and aggregate
+        // gates are reported as not evaluated (passing) and MoverUtilityChange is
+        // the bound itself, which is below the threshold exactly as the true value.
+        internal static SocialRelocationEvaluation BoundRejected(SocialRelocationDestination kind,
+            SocialServiceForecast sourceNoMove, SocialServiceForecast sourceAfter, SocialRelocationPolicy policy,
+            double moverBound, EmploymentOpportunityMatch opportunity)
+        {
+            double before = Utility(sourceNoMove, policy, 0);
+            double source = Utility(sourceAfter, policy, 0) - before;
+            const double tolerance = 1e-12;
+            return new SocialRelocationEvaluation(kind, sourceNoMove, sourceAfter, null, null,
+                moverBound, source, 0, 0, before, moverBound + before, false, true,
+                source + tolerance >= -policy.SourceHarmTolerance, true, opportunity) { BoundPruned = true };
+        }
+
+        // Upper bound on the mover's utility change given an upper bound on the
+        // destination's utility (before private cost).
+        internal static double MoverBound(SocialServiceForecast sourceNoMove, SocialRelocationPolicy policy,
+            double destinationUtilityBound)
+            => destinationUtilityBound - policy.PrivateCost - Utility(sourceNoMove, policy, 0);
+
         private static double Utility(SocialServiceForecast forecast, SocialRelocationPolicy policy, double jobPreference)
             => policy.WelfareWeight * forecast.QoL - policy.MortalityWeight * forecast.MortalityRisk
                 + policy.JobWeight * jobPreference;
@@ -709,17 +735,25 @@ namespace Anthropocene.Simulation
                 Stock(MaterialId.Wood) + extracted[MaterialId.Wood]);
         }
 
-        internal SocialServiceForecast Forecast(SocialSettlementState state,
-            EmploymentOpportunityMatch opportunity = null)
+        // Food stage shared by the exact forecast and its utility bound: the
+        // cohort's typed production, need and nutrition. Nothing here depends on
+        // manufacturing, so the bound below reads exactly the values the forecast
+        // would use.
+        private sealed class FoodStage
         {
-            Interlocked.Increment(ref forecasts);
-            opportunity = opportunity ?? EmploymentOpportunityMatch.Zero;
-            var cfg = world.Config; var n = cfg.Neolithic;
+            internal Camp Camp; internal Capacity Capacity;
+            internal double Years, Intervals, PlantProduction, AnimalProduction, AquaticProduction;
+            internal double Production, FoodAvailable, Fertility, ServicePersonYears, FoodNeed, Nutrition;
+        }
+
+        private FoodStage Food(SocialSettlementState state, EmploymentOpportunityMatch opportunity)
+        {
+            var cfg = world.Config;
             var c = ReserveOpportunityWorkers(state.View, opportunity);
             double years = cfg.TurnDays / cfg.DaysPerYear, intervals = cfg.GenerationIntervals;
-            if (c.Population <= 0) return SocialServiceForecast.Empty(c.Id, years);
-            var cap = state.NewSite ? NewSiteCapacity(state) : ExistingCapacity(state.Origin);
-
+            var f = new FoodStage { Camp = c, Years = years, Intervals = intervals };
+            if (c.Population <= 0) return f;
+            var cap = f.Capacity = state.NewSite ? NewSiteCapacity(state) : ExistingCapacity(state.Origin);
             double plantProduction, animalProduction, aquaticProduction;
             {
                 int explicitGatherers = CultivationEconomy.Workers(c, WorkforceRoles.Gatherer);
@@ -769,6 +803,89 @@ namespace Anthropocene.Simulation
             double foodNeed = servicePersonYears * PhysicalDemography.FoodPerPersonYear(cfg);
             double nutrition = foodNeed > 0 ? Math.Min(1, foodAvailable / foodNeed) : 1;
 
+            f.PlantProduction = plantProduction; f.AnimalProduction = animalProduction;
+            f.AquaticProduction = aquaticProduction; f.Production = production; f.FoodAvailable = foodAvailable;
+            f.Fertility = fertility; f.ServicePersonYears = servicePersonYears; f.FoodNeed = foodNeed;
+            f.Nutrition = nutrition;
+            return f;
+        }
+
+        private static double Expectation(NeolithicConfig n, Camp c)
+            => c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
+                : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor)
+                    * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+
+        internal static long BoundEvaluations, BoundPruned;
+        // Opt-in soundness audit for checks: every bound is compared with the
+        // exact forecast it stands in for. Never set in play.
+        internal static volatile bool AuditBounds;
+
+        // Exact upper bound on SocialRelocationEvaluator's destination utility
+        // W*QoL - M*MortalityRisk + J*preference for this state. It evaluates
+        // only the food stage: protection, cohesion and the exposure hazard are
+        // taken at their most favourable corners (clothing and housing coverage
+        // 0 or 1; QoL and exposure are monotone or linear in each), so no
+        // manufacturing forecast is needed. Returns +infinity whenever a sign
+        // assumption does not hold, which disables pruning rather than guessing.
+        internal double UtilityUpperBound(SocialSettlementState state, EmploymentOpportunityMatch opportunity,
+            SocialRelocationPolicy policy, double jobPreference)
+        {
+            Interlocked.Increment(ref BoundEvaluations);
+            if (!(policy.WelfareWeight >= 0) || !(policy.MortalityWeight >= 0)) return double.PositiveInfinity;
+            opportunity = opportunity ?? EmploymentOpportunityMatch.Zero;
+            var cfg = world.Config; var n = cfg.Neolithic;
+            var f = Food(state, opportunity);
+            var c = f.Camp;
+            if (c.Population <= 0) return double.PositiveInfinity;
+            double e = Expectation(n, c);
+            double protection = Math.Max(n.RudimentaryWeightClothing * (1 - e), n.RudimentaryWeightClothing)
+                + Math.Max(n.RudimentaryWeightHousing * (1 - e), n.RudimentaryWeightHousing);
+            double scaleLow = NeolithicProduction.CohesionScale(n, 0), scaleHigh = NeolithicProduction.CohesionScale(n, 1);
+            if (!(scaleLow > 0) || !(scaleHigh > 0) || !(n.SocialCohesionExponent > 0)) return double.PositiveInfinity;
+            double cohesion = Math.Max(NeolithicProduction.SocialCohesion(n, 0, c.Population),
+                NeolithicProduction.SocialCohesion(n, 1, c.Population));
+            double qoL = Numbers.Clamp(f.Nutrition * state.WaterCoverage * Math.Max(0, protection) * cohesion, 0, 1);
+
+            bool deficient = f.Nutrition < 1 - 1e-12;
+            double years = f.Years;
+            double graceRemaining = deficient
+                ? Math.Max(0, PhysicalDemography.StarvationGraceYears(cfg) - state.DeficitYears) : years;
+            double firstYears = Math.Min(years, graceRemaining);
+            double crowding = PhysicalDemography.CrowdingMitigation(world, state.Origin);
+            double disease = PhysicalDemography.DiseaseMitigation(world, state.Origin);
+            double additional = PhysicalDemography.AdditionalMortality(world, state.Origin);
+            double MinimumDeath(bool legacyStarvation)
+            {
+                double best = double.PositiveInfinity;
+                foreach (double clothing in new[] { 0.0, 1.0 })
+                    foreach (double housing in new[] { 0.0, c.Population })
+                        best = Math.Min(best, PhysicalDemography.Rates(cfg, c.Population, f.Nutrition, clothing,
+                            housing, legacyStarvation, state.DensityPopulationOffset, crowding, disease,
+                            f.Fertility, additional).Death);
+                return best;
+            }
+            double firstDeath = MinimumDeath(false);
+            double secondDeath = deficient && firstYears < years ? MinimumDeath(true) : firstDeath;
+            double hazard = firstDeath * firstYears + secondDeath * (years - firstYears);
+            double risk = 1 - Math.Exp(-Math.Max(0, hazard));
+            return policy.WelfareWeight * qoL - policy.MortalityWeight * risk + policy.JobWeight * jobPreference;
+        }
+
+        internal SocialServiceForecast Forecast(SocialSettlementState state,
+            EmploymentOpportunityMatch opportunity = null)
+        {
+            Interlocked.Increment(ref forecasts);
+            opportunity = opportunity ?? EmploymentOpportunityMatch.Zero;
+            var cfg = world.Config; var n = cfg.Neolithic;
+            var f = Food(state, opportunity);
+            var c = f.Camp; double years = f.Years, intervals = f.Intervals;
+            if (c.Population <= 0) return SocialServiceForecast.Empty(c.Id, years);
+            var cap = f.Capacity;
+            double plantProduction = f.PlantProduction, animalProduction = f.AnimalProduction;
+            double aquaticProduction = f.AquaticProduction, production = f.Production;
+            double foodAvailable = f.FoodAvailable, fertility = f.Fertility;
+            double servicePersonYears = f.ServicePersonYears, foodNeed = f.FoodNeed, nutrition = f.Nutrition;
+
             // Production gets only the typed food left after the cohort's physical
             // consumption requirement.  This is deliberately conservative and
             // prevents a cloth forecast from spending the same food as survival.
@@ -780,12 +897,17 @@ namespace Anthropocene.Simulation
             double animalBudget = Math.Min(animalPool, Math.Max(0, afterMeals - plantBudget));
             var recipes = cap.Recipes ?? NeolithicProduction.Recipes(cfg);
             var tools = new ToolCoverageBudget(world, c, intervals);
+            // Both passes read the same camp view, cohort, horizon, sources and
+            // (absent) order, so each good's useful demand is identical; only the
+            // raw-material budgets differ, and demand does not read them.
+            var demand = new Dictionary<CraftGood, double>();
             var requested = MaterialEconomy.Forecast(world, c, recipes, intervals, years, tools.Remaining,
-                false, c.Population, false, false, plantBudget, animalBudget, cap.Sources);
+                false, c.Population, false, false, plantBudget, animalBudget, cap.Sources, null,
+                demandMemo: demand);
             var material = RealizableMaterials(c, cap, recipes, requested, intervals);
             var outputs = MaterialEconomy.Forecast(world, c, recipes, intervals, years, tools.Remaining,
                 false, c.Population, false, false, plantBudget, animalBudget, cap.Sources, null,
-                material.Stone, material.Clay, material.Wood);
+                material.Stone, material.Clay, material.Wood, demand);
             double Produced(CraftGood good) => outputs.TryGetValue(good, out double amount) ? Math.Max(0, amount) : 0;
             double cloth = Math.Max(0, c.Inventory.Cloth + c.TradeImport(CraftGood.Cloth)
                 + Produced(CraftGood.Cloth) - c.TradeExport(CraftGood.Cloth));
@@ -810,9 +932,7 @@ namespace Anthropocene.Simulation
             }
             double housingCoverage = NeolithicProduction.HousingCoverage(shelter, c.Population);
             double housingShare = NeolithicProduction.HousingShare(n, shelter, c.Population);
-            double expectation = c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
-                : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor)
-                    * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+            double expectation = Expectation(n, c);
             double protection = n.RudimentaryWeightClothing * (1 - expectation * (1 - clothingCoverage))
                 + n.RudimentaryWeightHousing * (1 - expectation * (1 - housingCoverage));
             double qoL = nutrition * state.WaterCoverage * protection

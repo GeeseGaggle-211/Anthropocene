@@ -293,6 +293,7 @@ internal static class Program
         }
         if (args.Contains("--surplus-equilibria")) return DemographySocialAblation.RunSurplusEquilibria();
         if (args.Contains("--kernel-mixed-checks")) { KernelMixedChecks.Run(); return 0; }
+        if (args.Contains("--bound-audit")) SocialRelocationForecastCache.AuditBounds = true;
         var kernelScaling = args.FirstOrDefault(a => a.StartsWith("--kernel-scaling=", StringComparison.Ordinal));
         if (kernelScaling != null)
         {
