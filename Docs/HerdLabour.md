@@ -61,6 +61,27 @@ A static food-per-animal multiplier (x2, x3) on top of the rule was rejected:
 - Animals concentrate in a few camps, for example one with 254 animals and 100 herders.
 - Pastoral QoL is 0.3-0.45, not the 0.8 of farming worlds.
 
+### Herd transition limit (18 October 2026)
+
+`SimulationConfig.HerdCullLimitPerTurn`: 0.5 for new worlds; absent in older saves, where it loads as 1 (no limit).
+
+**Finding.** `--model9-liquidation` ran the heuristic on 32 TRAIN worlds (1000-1031) for 25 turns:
+- No herd was slaughtered to zero; the seed floor holds.
+- Slaughter was 7% of births (1,778 against 23,873).
+- 70 of 4,042 village-turns with at least 5 animals culled at least half the herd in one turn, and 58 of those
+  coincided with the village adding Farmers.
+- Villages that switched had no better farm yield than herding villages (median 0.88-0.97 against 0.94-0.98).
+
+**Rule.** Outside a survival shortfall, `SettlementPortfolioSupervisor.Select` retains at least (1 - limit) of the
+herd: the kept herd must fit the residents left after fields and leave Survival unmet no worse. A distressed camp
+may still liquidate. It applies to Elder directives with a logged intervention. A switch to farming therefore runs a
+herd down over several 20-year turns.
+
+**Measured.** On the same 32 worlds, culls of at least half the herd fell from 70 to 38: the remainder are at the
+cap or under a survival shortfall. Births were unchanged and slaughter fell from 1,778 to 1,660. On default
+DEVELOPMENT worlds 2000-2005, population moved by at most 1% and QoL by at most 0.002; seeds 2004 and 2005 are
+identical.
+
 ### Seed herd and water routing under DemandControl (17 October 2026)
 
 Measured on model9 Small/8 worlds: the DemandControl heuristic slaughtered most granted herds to nothing. That was

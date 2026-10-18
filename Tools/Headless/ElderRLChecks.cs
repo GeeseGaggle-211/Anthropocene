@@ -811,6 +811,8 @@ internal static class ElderRLChecks
             "a selected learned field prefix is reserved before competing food-for-growth gathering uses residual labor");
 
         var exactWorld = Fixture();
+        // The compiler's precision, not the herd transition limit (which would keep half of the herd), is under test.
+        exactWorld.Config.HerdCullLimitPerTurn = 1;
         var exact = Compile(exactWorld, new ElderDirective
         {
             RetainedFieldOperation = .37,

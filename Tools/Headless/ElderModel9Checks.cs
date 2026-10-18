@@ -86,6 +86,7 @@ internal static class ElderModel9Checks
         pastoral.Config.AnimalTextileNeedFirst = false;
         Check(herders.All(c => !NeolithicProduction.AnimalTextileNeedApplies(pastoral, c)), "the lever off restores the clothing-only need");
         pastoral.Config.AnimalTextileNeedFirst = true;
+        Check(pastoral.Config.HerdCullLimitPerTurn == .5, "new worlds limit a herd cull to half the herd per turn");
         var settled = herders[0]; settled.IsVillage = true;
         Check(!NeolithicProduction.AnimalTextileNeedApplies(pastoral, settled), "a village with fixed settlement is exempt");
         settled.IsVillage = false;
