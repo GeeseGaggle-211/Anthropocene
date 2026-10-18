@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Anthropocene.Presentation;
 using Anthropocene.Simulation;
@@ -143,6 +144,60 @@ namespace Anthropocene.Tests.EditMode
             Assert.That(displaced.NaturalVegetationRetention, Is.EqualTo(0).Within(1e-10));
             Assert.That(displaced.EffectiveNaturalVegetationService, Is.EqualTo(0).Within(1e-10));
             Assert.That(LayeredTileRenderer.VegetationCount(displaced, 80), Is.Zero, "A fully cultivated field has no standing natural vegetation sprites.");
+        }
+
+        [Test]
+        public void ContinuousContours_AreNestedAcrossDensityAndZoomWithoutHiddenInputs()
+        {
+            var map = new HexMap(10, 7);
+            var heights = new Dictionary<int, float>();
+            var included = new HashSet<int>();
+            foreach (int id in map.Radius(map.At(5, 3), 2))
+            {
+                int q = id % map.Width, r = id / map.Width;
+                heights[id] = .451f + q * .0143f + r * .0081f;
+                included.Add(id);
+            }
+            var normal = TopographicContours.Build(map, heights, included, ContourDensity.Normal, 60);
+            var fine = TopographicContours.Build(map, heights, included, ContourDensity.Fine, 60);
+            var distant = TopographicContours.Build(map, heights, included, ContourDensity.Fine, 20);
+            string Key(ContourSegment s) => s.LevelUnits + ":" + s.Start.GetHashCode() + ":" + s.End.GetHashCode();
+            var fineKeys = new HashSet<string>(fine.Select(Key));
+            var normalKeys = new HashSet<string>(normal.Select(Key));
+            Assert.That(normal.Count, Is.GreaterThan(0));
+            Assert.That(fine.Count, Is.GreaterThan(normal.Count));
+            Assert.That(normal.All(s => fineKeys.Contains(Key(s))), Is.True, "Fine adds levels but cannot move Normal contours.");
+            Assert.That(distant.All(s => normalKeys.Contains(Key(s))), Is.True, "Distant zoom retains a fixed subset.");
+            Assert.That(fine.All(s => included.Contains(s.Start.TileA) && included.Contains(s.Start.TileB) && included.Contains(s.End.TileA) && included.Contains(s.End.TileB)), Is.True, "No contour references unknown geography.");
+        }
+
+        [Test]
+        public void MapLayerSwitching_IsPresentationOnlyAndRuggednessUsesOneScale()
+        {
+            var world = new WorldGenerator().Generate(64, SimulationConfig.Small(2));
+            string fingerprint = SaveCodec.Fingerprint(world);
+            var observation = new AgentObservationBuilder().Build(world, 0);
+            var terrain = KnownTerrainAnalysis.Build(observation);
+            float score = terrain.At(observation.CampTile).Ruggedness;
+            int rivers = observation.Tiles.Values.Sum(t => t.Rivers.Count);
+            int occupants = observation.Tiles.Keys.Sum(tile => TileDetails.Occupants(observation, tile).Length);
+            var state = new MapLayerState();
+            state.Select(PlayerMapLayer.Topography);
+            state.ToggleDensity();
+            Assert.That(state.Layer, Is.EqualTo(PlayerMapLayer.Topography));
+            Assert.That(state.Density, Is.EqualTo(ContourDensity.Fine));
+            Assert.That(state.ShowsContinuousContours, Is.True);
+            state.Select(PlayerMapLayer.Ruggedness);
+            state.ToggleRuggednessContours();
+            Assert.That(state.ShowsContinuousContours, Is.False);
+            state.Select(PlayerMapLayer.Terrain);
+            Assert.That(terrain.At(observation.CampTile).Ruggedness, Is.EqualTo(score));
+            Assert.That(observation.Tiles.Values.Sum(t => t.Rivers.Count), Is.EqualTo(rivers));
+            Assert.That(observation.Tiles.Keys.Sum(tile => TileDetails.Occupants(observation, tile).Length), Is.EqualTo(occupants));
+            Assert.That(SaveCodec.Fingerprint(world), Is.EqualTo(fingerprint));
+            Assert.That(TopographicOverlay.RuggednessColor(0), Is.Not.EqualTo(TopographicOverlay.RuggednessColor(50)));
+            Assert.That(TopographicOverlay.RuggednessColor(50), Is.Not.EqualTo(TopographicOverlay.RuggednessColor(100)));
+            Assert.That(TopographicOverlay.Hillshade(terrain.At(observation.CampTile)), Is.InRange(-.11f, .09f));
         }
     }
 }

@@ -12,7 +12,7 @@ namespace Anthropocene.Presentation
         private Texture2D previewTexture;
         private float previewZoom = 1;
         private Vector2 previewPan, menuScroll, previewScroll;
-        private readonly string[] previewLayers = { "Environment", "Renewable food", "Freshwater renewal", "Elevation", "Volcanic activity", "Resources", "Ancient elevation" };
+        private readonly string[] previewLayers = { "Environment", "Renewable food", "Freshwater renewal", "Elevation", "Volcanic activity", "Resources", "Ancient elevation", "Ruggedness" };
 
         private void Menu()
         {
@@ -138,6 +138,11 @@ namespace Anthropocene.Presentation
                         }
                     }
                 }
+                else if (previewLayer == 7)
+                {
+                    Color rugged = TopographicOverlay.RuggednessColor(world.TerrainMetrics.At(t.Id).Ruggedness);
+                    color = Color.Lerp(EnvironmentColor(t), rugged, .78f);
+                }
                 colors[(height - 1 - t.Id / width) * width + t.Id % width] = color;
             }
             previewTexture = new Texture2D(width, height, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
@@ -245,6 +250,7 @@ namespace Anthropocene.Presentation
                 : previewLayer == 3 ? "Continuous elevation\nDeep blue: ocean floor\nTeal: continental shelf\nGreen: lowland\nPale: high mountain belts\nThis is physical relief, not the 1–10 movement levels."
                 : previewLayer == 4 ? "Orange: volcanic activity\nOlder island chains can survive after activity ends, so they may remain dark here. Moving hotspot paths leave islands and submerged remnants. This is a generation proxy, not live tectonics."
                 : previewLayer == 6 ? "Ancient orogen elevation\nWarm gradient: net elevation added by extinct Wilson-cycle mountain belts (sienna -> amber -> gold -> ivory crest).\nMuted land: unaffected continental interior.\nDeep ocean: strictly preserved marine bathymetry (0.0 uplift)."
+                : previewLayer == 7 ? "Radius-four ruggedness (61 cells in the interior)\n0 teal: smooth plane · 50 gold: broken ground · 100 plum: strongest local irregularity\nResidual RMS is mapped by 100 R / (R + 0.005). Height and uniform slope are fitted out."
                 : "Dark = 0 · bright gold = 100+\nLog scale: 0 / 1 / 10 / 100\nUnits per base season (" + world.Config.BaseDays.ToString("0.##") + " days).\nProfile renewal potential, before labor, depletion and competition. Ocean food is excluded from accessible food.";
             GUI.Label(new Rect(12, y, w, 150), legend, small); y += 158;
             var own = world.Camps.First(c => c.Player == 0);
@@ -258,7 +264,8 @@ namespace Anthropocene.Presentation
             float orogenAge = world.Generation?.AncientOrogenAge != null && tile.Id < world.Generation.AncientOrogenAge.Length ? world.Generation.AncientOrogenAge[tile.Id] : 0f;
             string orogenInfo = orogenUplift > 0.0005f ? $"\nAncient orogen uplift: +{orogenUplift:0.000} ({orogenAge:0} Ma)" : (previewLayer == 6 ? "\nAncient orogen uplift: None (0.000)" : "");
             int orogenExtra = previewLayer == 6 || orogenUplift > 0.0005f ? 18 : 0;
-            GUI.Label(new Rect(12, y, w, 108 + orogenExtra), tile.Environment + " · " + tile.CurrentVegetation + (tile.Land ? " vegetation" : " plankton/algae") + "\nElevation " + tile.ElevationLevel + " · river " + (tile.River ? "yes" : "no") + "\nFreshwater source: " + tile.FreshwaterSource + "\nMean temperature: " + tile.Seasons.Average(s => s.Temperature).ToString("0.0") + " C" + orogenInfo, text); y += 116 + orogenExtra;
+            var terrainMetric = world.TerrainMetrics.At(tile.Id);
+            GUI.Label(new Rect(12, y, w, 144 + orogenExtra), tile.Environment + " · " + tile.CurrentVegetation + (tile.Land ? " vegetation" : " plankton/algae") + "\nElevation " + tile.ElevationLevel + " · continuous " + tile.Elevation.ToString("0.000") + " · river " + (tile.River ? "yes" : "no") + "\nRuggedness " + terrainMetric.Ruggedness.ToString("0") + "/100 · fitted slope " + terrainMetric.Slope.ToString("0.000") + " · samples " + terrainMetric.Samples + "\nFreshwater source: " + tile.FreshwaterSource + "\nMean temperature: " + tile.Seasons.Average(s => s.Temperature).ToString("0.0") + " C" + orogenInfo, text); y += 152 + orogenExtra;
             GUI.Label(new Rect(12, y, w, 22), "Season       Food       Freshwater", section); y += 25;
             for (int s = 0; s < 4; s++) { GUI.Label(new Rect(12, y, w, 25), (s + 1) + "                 " + PlaytestScenarios.Food(world, tile, s).ToString("0.0") + "          " + PlaytestScenarios.Water(world, tile, s).ToString("0.0"), small); y += 27; }
             var current = LazyEcology.ProjectEcology(world, tile.Id, world.Days);

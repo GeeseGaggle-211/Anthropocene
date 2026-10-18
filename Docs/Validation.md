@@ -20,6 +20,15 @@ The shipped biomass/access/field-effort defaults and three Standard/80 route
 population, herd, and specialty distributions are in
 [AgricultureHusbandryPlaytests.md](AgricultureHusbandryPlaytests.md).
 
+## Topography and ruggedness — 18 October 2026
+
+The continuous-height player overlay and radius-four residual-RMS ruggedness
+implementation, fog boundary, cache/storage contract, focused checks, measured
+Standard/Continents/11 cost, capture route, and outstanding Unity visual gate are
+recorded in [TopographyAndRuggedness.md](TopographyAndRuggedness.md). The derived
+cache is absent from saves and fingerprints; no elevation, drainage, ecology,
+placement, movement, or turn rule is changed.
+
 ## Demographic structure — 2 October 2026
 
 The QoL correction, independent Light Housing parameters and bounded specialist-scale helper are covered by 678 QoL-mortality assertions and 22 focused demographic-structure assertions. The latter verify independent fixed/tent decay, configurable Animal Fabric and construction inputs, Craftsperson and Gatherer fallbacks, matching-task-only specialist qualification, monotonic saturation, material-extraction parity, forecast/resolver agreement, and missing-field migration. Nonzero specialist scaling is exercised explicitly; the rejected calibration remains disabled in new-world defaults.

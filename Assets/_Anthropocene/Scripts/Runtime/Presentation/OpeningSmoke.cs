@@ -20,7 +20,14 @@ namespace Anthropocene.Presentation
             int resources = Array.IndexOf(args, "--anthropocene-resources-output");
             int neolithic = Array.IndexOf(args, "--anthropocene-neolithic-smoke-output");
             int husbandry = Array.IndexOf(args, "--anthropocene-husbandry-smoke-output");
+            int topography = Array.IndexOf(args, "--anthropocene-topography-output");
             int longRun = Array.IndexOf(args, "--anthropocene-long-run-output");
+            if (topography >= 0 && topography + 1 < args.Length)
+            {
+                int shaAt = Array.IndexOf(args, "--anthropocene-source-sha");
+                string sourceSha = shaAt >= 0 && shaAt + 1 < args.Length ? args[shaAt + 1] : "UNRECORDED";
+                yield return TopographySmoke(args[topography + 1], sourceSha); yield break;
+            }
             if (longRun >= 0 && longRun + 1 < args.Length)
             {
                 int turnsAt = Array.IndexOf(args, "--anthropocene-long-run-turns");

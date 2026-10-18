@@ -86,7 +86,7 @@ namespace Anthropocene.Presentation
             if (Event.current.type != EventType.Repaint) return;
             Vector2 pointer = Event.current.mousePosition;
             int tile = mapRect.Contains(pointer) ? hovered : -1;
-            string context = center + ":" + pan.x + ":" + pan.y + ":" + radius + ":" + mode + ":" + world.Turn + ":" + tilesetIndex;
+            string context = center + ":" + pan.x + ":" + pan.y + ":" + radius + ":" + mode + ":" + world.Turn + ":" + tilesetIndex + ":" + mapLayerState.Layer + ":" + mapLayerState.Density + ":" + mapLayerState.RuggednessContours;
             var config = world.Config;
             hoverTiming.Observe(tile, pointer.x, pointer.y, Time.unscaledTimeAsDouble, context, config.HoverDelay, config.HoverFadeIn, config.HoverFadeOut, config.HoverMotionPixels);
             if (hoverTiming.Displayed < 0 || hoverTiming.Alpha <= 0 || !observation.Tiles.ContainsKey(hoverTiming.Displayed)) return;

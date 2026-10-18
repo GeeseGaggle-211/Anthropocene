@@ -790,6 +790,20 @@ namespace Anthropocene.Simulation
         [NonSerialized] internal MaterialAccessIndex MaterialIndex;
         [NonSerialized] internal FixedHousingIndex HousingIndex;
         [NonSerialized] internal TurnDiagnostics Diagnostics;
+        // Immutable derived geography. It is rebuilt from saved Tile.Elevation and never
+        // participates in authoritative state, turn resolution or fingerprints.
+        [NonSerialized] private TerrainMetrics terrainMetrics;
+        [System.Runtime.Serialization.IgnoreDataMember]
+        public TerrainMetrics TerrainMetrics
+        {
+            get
+            {
+                var current = terrainMetrics;
+                if (current != null) return current;
+                var created = Anthropocene.Simulation.TerrainMetrics.Build(this);
+                return System.Threading.Interlocked.CompareExchange(ref terrainMetrics, created, null) ?? created;
+            }
+        }
         // Secondary technology discovery is receipt-driven. Bits are Domains
         // whose threshold was crossed during this turn, grouped by Society ID;
         // the Close boundary consumes the sparse queue in canonical order.

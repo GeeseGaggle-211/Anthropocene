@@ -58,6 +58,7 @@
     <Compile Include="ClimateGenerationChecks.cs" />
     <Compile Include="DrainageGenerationChecks.cs" />
     <Compile Include="WorldMorphologyChecks.cs" />
+    <Compile Include="TopographyChecks.cs" />
     <Compile Include="ArchipelagoChecks.cs" />
     <Compile Include="GeologyGenerationChecks.cs" />
     <Compile Include="NeolithicChecks.cs" />
