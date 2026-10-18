@@ -502,6 +502,13 @@ namespace Anthropocene.Simulation
                     clothing = new NeolithicProduction.ClothingFeedstock { Plant = clothUnits * perCloth, Animal = fabricUnits };
                     needs.ProtectedClothing = true;
                 }
+                // Animal textile need: a herding camp in portable shelter pays its tents' fabric with the clothing,
+                // bounded by the planned fabric beyond it.
+                if (NeolithicProduction.AnimalTextileNeedApplies(world, snapshot))
+                {
+                    double tent = NeolithicProduction.PortableShelterFabricNeed(world, snapshot, residents, years, world.Days + years * world.Config.DaysPerYear);
+                    clothing.Animal += Math.Min(tent, Math.Max(0, needs.AnimalFeedstock - clothing.Animal));
+                }
                 needs.PlantClothingFeedstock = clothing.Plant; needs.AnimalClothingFeedstock = clothing.Animal;
                 NeolithicProduction.FeedstockGaps(planningCamp.Food, planningCamp.PlantFood, planningCamp.AnimalFood, needs.ConsumptionRequired, needs.ReserveTarget,
                     needs.PlantFeedstock, needs.AnimalFeedstock, clothing, out double plantGap, out double animalGap);

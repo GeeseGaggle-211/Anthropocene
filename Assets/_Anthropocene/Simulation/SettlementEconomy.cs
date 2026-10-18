@@ -859,6 +859,24 @@ namespace Anthropocene.Simulation
                 }
             }
 
+            // Herd transition limit (SimulationConfig.HerdCullLimitPerTurn): keep at least (1 - limit) of the herd
+            // when doing so leaves Survival no worse; a distressed camp may still liquidate.
+            if (profile.Exists && cfg.HerdLabourEnabled && cfg.HerdCullLimitPerTurn < 1)
+            {
+                double keepTarget = Math.Min(site.Herd.AbsoluteCapacity,
+                    Math.Ceiling(profile.Animals * (1 - Math.Max(0, cfg.HerdCullLimitPerTurn)) - Epsilon));
+                if (keepTarget >= 1 && best.Herd.Target + Epsilon < keepTarget)
+                {
+                    var keep = BuildHerdOption(keepTarget);
+                    if (best.Field.Farmers + keep.Herders <= residents)
+                    {
+                        var kept = Evaluate(best.Field, keep);
+                        result.AlternativesEvaluated++;
+                        if (kept.Unmet <= best.Unmet + Epsilon) best = kept;
+                    }
+                }
+            }
+
             result.FieldFarmers = best.Field.Farmers;
             result.RetainedFoodSupply = best.Food;
             result.SelectedFieldOperation = best.Field.Operation;

@@ -74,6 +74,7 @@ namespace Anthropocene.Simulation
             SurplusFundedBirths = false; ElderKernelSplit = false; ElderMixedRoutes = false; ElderSplitObjective = defaults.ElderSplitObjective; ElderSplitLexTolerance = defaults.ElderSplitLexTolerance;
             // Absent in older saves: the herd-labour coupling is off, so a loaded game keeps its unconditional herder reservation and never slaughters (Docs/HerdLabour.md).
             HerdLabourEnabled = false; SharedCropHerdAllocationEnabled = false; MinimumHerdHerders = defaults.MinimumHerdHerders;
+            AnimalTextileNeedFirst = false; HerdCullLimitPerTurn = 1;
             // Resident Fishing and the aquatic-pressure correction are separate opt-in
             // compatibility gates. Saves that predate either feature stay feature-off.
             NeolithicFishingEnabled = false; CorrectedAquaticSeasonalPressureEnabled = false;
@@ -205,6 +206,14 @@ namespace Anthropocene.Simulation
         // Opt-in; absent in legacy saves means the measured corrected control.
         [System.Runtime.Serialization.OptionalField] public bool SharedCropHerdAllocationEnabled = true;
         [System.Runtime.Serialization.OptionalField] public int MinimumHerdHerders = 1;
+        // Animal textile need (Docs/HerdLabour.md): when Animal Fabric is a camp's only textile route, the portable
+        // shelter fabric its residents need joins the clothing-need feedstock, paid after meals and ahead of the
+        // operating-reserve refill, and counts in the planner's typed herd-development need. Absent in older saves: off.
+        [System.Runtime.Serialization.OptionalField] public bool AnimalTextileNeedFirst = true;
+        // Herd transition limit (Docs/HerdLabour.md): outside a survival shortfall, a settlement's retained herd keeps at
+        // least (1 - HerdCullLimitPerTurn) of its animals each turn, so a switch to farming runs a herd down over
+        // several turns instead of slaughtering it at once. Absent in older saves: 1 (no limit).
+        [System.Runtime.Serialization.OptionalField] public double HerdCullLimitPerTurn = .5;
         [System.Runtime.Serialization.OptionalField] public bool NeolithicFishingEnabled;
         [System.Runtime.Serialization.OptionalField] public bool CorrectedAquaticSeasonalPressureEnabled;
         public int StartSeparation = 12, StarvationGraceTurns = 2;
