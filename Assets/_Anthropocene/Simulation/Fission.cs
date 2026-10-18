@@ -1222,9 +1222,14 @@ namespace Anthropocene.Simulation
             camp.FissionPolicy = FissionPolicy.Neutral; camp.FissionDestination = null; parent.FissionDestination = null;
             // Domestic herds move in the same fraction (whole animals, rounded down; the parent keeps the remainder).
             int animals = 0;
+            // Animal textile need: a herding parent's daughter leaves with at least one animal of a herd that keeps
+            // one, so a pastoral split never founds a camp that cannot make Animal Fabric.
+            bool textileHerd = w.Config.AnimalTextileNeedFirst && CultivationEconomy.HusbandryEnabled(parent);
             foreach (var herd in w.Herds.Where(h => h.DomesticCamp == parent.Id).OrderBy(h => h.Id).ToArray())
             {
-                int moved = (int)((long)herd.Animals * n / before); if (moved <= 0) continue;
+                int moved = (int)((long)herd.Animals * n / before);
+                if (moved <= 0 && textileHerd && animals == 0 && herd.Animals >= 2 && n > 0) moved = 1;
+                if (moved <= 0) continue;
                 double hf = moved / (double)herd.Animals;
                 var split = new Herd
                 {

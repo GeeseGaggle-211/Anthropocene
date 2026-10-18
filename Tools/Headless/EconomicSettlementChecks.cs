@@ -271,6 +271,7 @@ internal static class EconomicSettlementChecks
         // Follow the old two-turn failure window. Gathering may still create
         // bridge capital as a physical side effect, but the supervisor must not
         // convert that incidental capital into Farmer/fixed-housing continuity.
+        bool shelterWithoutBridge = false;
         for (int turn = 0; turn < 3; turn++)
         {
             var beforeControl = Plan(control);
@@ -287,8 +288,10 @@ internal static class EconomicSettlementChecks
             double step = beforeTreatment.Allocation.StrategicLaborStep;
             Check(beforeTreatment.Farmers <= withoutBridge.Farmers + step &&
                 FieldGranted(beforeTreatment) <= FieldGranted(withoutBridge) + step + 1e-6 &&
-                beforeTreatment.Order.Ceiling(CraftGood.Housing) == 0,
+                // Fixed shelter is compared the same way: pressure-admitted fields may justify it, the bridge may not.
+                beforeTreatment.Order.Ceiling(CraftGood.Housing) <= withoutBridge.Order.Ceiling(CraftGood.Housing) + 1e-6,
                 "marginal bridge capital does not become an agricultural commitment at causal turn " + turn);
+            if (withoutBridge.Order.Ceiling(CraftGood.Housing) > 1e-9) shelterWithoutBridge = true;
             Check(Math.Abs(beforeControl.Herders -
                     beforeTreatment.Herders) <=
                     beforeTreatment.Allocation.StrategicLaborStep &&
@@ -302,9 +305,10 @@ internal static class EconomicSettlementChecks
             .Where(id => treatment.Tiles[id].CultivationOperator ==
                 treatmentCamp.Id)
             .Sum(id => treatment.Tiles[id].CultivationCapital);
+        // Fixed housing is allowed only when the same camp without its bridge capital also planned it.
         Check(bridgeCapital > 0 && !treatmentCamp.IsVillage &&
-            NeolithicProduction.FixedHousingAt(treatment, treatmentCamp,
-                treatment.Days) <= 1e-9,
+            (NeolithicProduction.FixedHousingAt(treatment, treatmentCamp,
+                treatment.Days) <= 1e-9 || shelterWithoutBridge),
             "incidental bridge fields remain physical without silently making the pastoral camp sedentary");
         var nonAgriculturalVillage = SaveCodec.Load(SaveCodec.Save(treatment));
         nonAgriculturalVillage.Camps[0].IsVillage = true;

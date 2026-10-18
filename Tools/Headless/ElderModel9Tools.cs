@@ -94,17 +94,45 @@ internal static class ElderModel9Tools
     {
         var env = new ElderModel9Environment { WithheldTechnologies = withheld };
         env.Reset(ElderModel9Environment.GenerateOpening(seed, 8, out _, 40, withheld), true);
-        for (int t = 0; t < turns; t++) env.Step(new Dictionary<int, ElderDirective>());
+        for (int t = 0; t < turns; t++)
+        {
+            var s = env.Step(new Dictionary<int, ElderDirective>());
+            var managed = env.World.Herds.Where(h => h.DomesticCamp >= 0 && h.Animals > 0).ToList();
+            Console.WriteLine("MODEL9_REQ_TURN turn=" + s.Turn + " villages=" + s.Villages.Count + " pop=" + env.World.Camps.Sum(c => c.Population)
+                + " qol=" + I(s.Villages.Count > 0 ? s.Villages.Average(v => v.QoL) : 0)
+                + " clothing=" + I(s.Villages.Count > 0 ? s.Villages.Average(v => v.Clothing) : 0)
+                + " housing=" + I(s.Villages.Count > 0 ? s.Villages.Average(v => v.Housing) : 0)
+                + " nutrition=" + I(s.Villages.Count > 0 ? s.Villages.Average(v => v.Nutrition) : 0) + " herds=" + managed.Count + " animals=" + managed.Sum(h => h.Animals)
+                + " fabric=" + I(env.World.Camps.Sum(c => c.Inventory.AnimalFabric)) + " light=" + I(env.World.Camps.Sum(c => c.Inventory.LightHousingUnits)));
+        }
         ResolutionMetrics.CaptureDemandAllocations = true;
         var draft = TurnPlanner.Prepare(env.World, AiPlanning.Decide(env.World).Orders.ToDictionary(p => p.Key, p => p.Value.ToList()), new List<DecisionTrace>());
+        // Units requested and unmet by cause, per textile service, across all villages.
+        var tally = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        foreach (var a in draft.DemandAllocations.Values)
+            foreach (var q in a.Requests.Where(q => q.Service.Contains("shelter") || q.Service.Contains("cloth")))
+            {
+                string key = q.Service.Contains("cloth") ? "clothing" : "shelter";
+                tally[key + " units"] = (tally.TryGetValue(key + " units", out double u) ? u : 0) + q.Units;
+                double unmet = Math.Max(0, q.Units - q.Granted);
+                if (unmet > 0)
+                {
+                    string cause = key + " unmet: " + (q.Unmet.Length > 0 ? q.Unmet : "?");
+                    tally[cause] = (tally.TryGetValue(cause, out double v) ? v : 0) + unmet * (key == "shelter" ? 1 : 1);
+                }
+            }
+        Console.WriteLine("MODEL9_REQ_TALLY " + string.Join("; ", tally.Select(p => p.Key + "=" + I(p.Value))));
         foreach (var pair in draft.DemandAllocations.OrderBy(p => p.Key))
         {
             var camp = env.World.Camps.First(c => c.Id == pair.Key); var a = pair.Value;
             var techs = string.Join("", new[] { NeolithicTech.Construction, NeolithicTech.Weaving, NeolithicTech.Toolmaking }.Select(x => camp.People.HasTech(x) ? x.ToString()[0] : '-'));
             Console.WriteLine("MODEL9_REQ camp=" + camp.Id + " pop=" + camp.Population + " techs=" + techs + " budget=" + I(a.ResidentGoodsBudget)
-                + " herders=" + a.Herders + " fishers=" + a.Fishers + " gatherers=" + a.FoodGatherers + " compiled=" + I(a.FinalCompiledPersons)
+                + " herders=" + a.Herders + " animals=" + env.World.Herds.Where(h => h.DomesticCamp == camp.Id).Sum(h => h.Animals) + " fishers=" + a.Fishers + " gatherers=" + a.FoodGatherers + " compiled=" + I(a.FinalCompiledPersons)
                 + " housing=" + I(camp.HousingPerCapita) + " light=" + I(camp.Inventory.LightHousingUnits) + " fabric=" + I(camp.Inventory.AnimalFabric)
-                + " animalFood=" + I(camp.AnimalFood) + " | " + string.Join("; ", a.Requests.Where(q => q.Service.Contains("shelter") || q.Service.Contains("cloth"))
+                + " animalFood=" + I(camp.AnimalFood) + " food=" + I(camp.Food) + " plantFood=" + I(camp.PlantFood)
+                + " supply=" + I(a.ExpectedSupply) + " forage=" + I(a.ExpectedForageAfterHerds) + " managed=" + I(a.ExpectedManagedAnimalFood)
+                + " meals=" + I(a.Meals) + " reserve=" + I(a.OperatingReserve) + " animalEnv=" + I(a.AnimalEnvelope) + " animalEnvCloth=" + I(a.AnimalEnvelopeClothing)
+                + " plantEnv=" + I(a.PlantEnvelope) + " | " + string.Join("; ", a.Requests.Where(q => q.Service.Contains("shelter") || q.Service.Contains("cloth") || q.Service.Contains("herd"))
                     .Select(q => q.Service + ":" + q.Class + " " + I(q.Granted) + "/" + I(q.Units) + (q.Unmet.Length > 0 ? " (" + q.Unmet + ")" : ""))));
         }
         return 0;
@@ -167,6 +195,49 @@ internal static class ElderModel9Tools
             + " worldB/A=" + I(worldA > 0 ? worldB / worldA : 0) + " worldC/A=" + I(worldA > 0 ? worldC / worldA : 0)
             + " all{" + Band(rows) + "} lowYield{" + Band(sorted.Take(third)) + "} midYield{" + Band(sorted.Skip(third).Take(third))
             + "} highYield{" + Band(sorted.Skip(2 * third)) + "} yieldCuts=" + (sorted.Count > 0 ? I(sorted[Math.Min(third, sorted.Count - 1)].Yield) + "/" + I(sorted[Math.Min(2 * third, sorted.Count - 1)].Yield) : "-"));
+        return 0;
+    }
+
+    // --model9-liquidation=<firstSeed>,<lastSeed>,<turns>[,withheld]: do herding villages slaughter their herds when
+    // they take up farming? Every village runs the heuristic. A liquidation is a turn in which a village holding at
+    // least 5 animals slaughters at least half of them; it is a farming switch when the village's Farmers rose that
+    // turn. Reports counts, the farm yield of switching villages and slaughter against births.
+    public static int Liquidation(int firstSeed, int lastSeed, int turns, int withheld = 0)
+    {
+        int herdTurns = 0, events = 0, farmingSwitches = 0, toZero = 0; long slaughtered = 0, born = 0, starved = 0;
+        var switchYields = new List<double>(); var herdYields = new List<double>();
+        for (int seed = firstSeed; seed <= lastSeed; seed++)
+        {
+            var env = new ElderModel9Environment { WithheldTechnologies = withheld };
+            env.Reset(ElderModel9Environment.GenerateOpening(seed, 8, out _, 40, withheld), true);
+            int Farmers(Camp c) => c.Workforce?.Assignments?.Where(a => a.Role == WorkforceRoles.Farmer).Sum(a => a.Population) ?? 0;
+            int seedEvents = 0;
+            for (int t = 0; t < turns; t++)
+            {
+                var world = env.World;
+                var before = world.Camps.Where(c => c.Population > 0).ToDictionary(c => c.Id,
+                    c => (Animals: world.Herds.Where(h => h.DomesticCamp == c.Id).Sum(h => h.Animals), Farmers: Farmers(c)));
+                env.Step(new Dictionary<int, ElderDirective>());
+                world = env.World; var record = world.History.Last();
+                foreach (var report in record.ManagedHerds) { slaughtered += report.Slaughtered; born += report.NewbornAnimals; starved += report.StarvationDeaths; }
+                foreach (var pair in before.Where(p => p.Value.Animals >= 5))
+                {
+                    var camp = world.Camps.FirstOrDefault(c => c.Id == pair.Key); if (camp == null) continue;
+                    herdTurns++; herdYields.Add(FarmSuitability(world, camp));
+                    int killed = record.ManagedHerds.Where(m => m.Camp == pair.Key).Sum(m => m.Slaughtered);
+                    if (killed * 2 < pair.Value.Animals) continue;
+                    events++; seedEvents++;
+                    if (world.Herds.Where(h => h.DomesticCamp == pair.Key).Sum(h => h.Animals) == 0) toZero++;
+                    if (Farmers(camp) > pair.Value.Farmers) { farmingSwitches++; switchYields.Add(FarmSuitability(world, camp)); }
+                }
+            }
+            Console.WriteLine("MODEL9_LIQUIDATION seed=" + seed + " events=" + seedEvents);
+        }
+        double Median(List<double> x) { if (x.Count == 0) return -1; var s = x.OrderBy(v => v).ToList(); return s[s.Count / 2]; }
+        Console.WriteLine("MODEL9_LIQUIDATION_SUMMARY seeds=" + firstSeed + "-" + lastSeed + " turns=" + turns + " withheld=" + withheld
+            + " herdVillageTurns=" + herdTurns + " liquidations=" + events + " toZero=" + toZero + " withFarmingSwitch=" + farmingSwitches
+            + " switchYieldMedian=" + I(Median(switchYields)) + " herdVillageYieldMedian=" + I(Median(herdYields))
+            + " slaughtered=" + slaughtered + " born=" + born + " starved=" + starved);
         return 0;
     }
 

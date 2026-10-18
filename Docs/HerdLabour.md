@@ -7,6 +7,60 @@ Authoritative record of the rule that lets a camp choose how many managed animal
 **On for new worlds.** `HerdLabourEnabled` is **true** in `OpeningConfig.json` (plan of record); the API default and
 old saves keep it false.
 
+### Animal textile need (18 October 2026)
+
+`SimulationConfig.AnimalTextileNeedFirst`: on for new worlds; absent in older saves, where it loads as off.
+
+**Finding.** Herding-only capability fixtures (no Cultivation or Watercraft) held QoL at about 0.13 under every
+policy. A `--model9-requests` tally showed why:
+- **Tents waited behind the reserve.** Tents are made only of Animal Fabric. Clothing feedstock was paid after meals
+  and ahead of the operating-reserve refill, but tent fabric was paid only after a full reserve and births. The
+  reserve is 1.5 times a turn's meals and rarely full in a growing camp, so tents were starved.
+- **Daughters left without animals.** Fission moved whole animals rounded down, so a daughter of a 2-5 animal herd
+  founded a camp with none and could never make Animal Fabric. That was 11 of the 18 camps short of animal feedstock.
+- **Herd growth ranked behind the reserve refill.** Herd development is Development, the lowest service class. Its
+  herders lost to the reserve-refill gatherers even where the herd was the only source of the textiles requested.
+
+Food per animal was not the constraint. At turn 33 the herding-only world held 0.066 managed animals per person,
+about 2.5 times its aggregate textile need, while "animal feedstock" left 44% of clothing units unmet.
+
+**Rule.** The lever applies to a husbandry camp living in portable shelter: not a village, and no fixed housing. The
+test reads shelter capital, never technology or Farmers, so learning Cultivation or staffing a first field does not
+switch it.
+- `NeolithicProduction.PortableShelterFabricNeed` is the residents' tent fabric beyond the fabric left after this
+  turn's clothing. `TurnPlanning` adds it to the clothing-need feedstock, bounded by the planned fabric, so the
+  resolver pays it after meals and ahead of the reserve refill.
+- `DemandControl` extends the clothing exception in `Binding` to tents up to that need. It also adds the need to the
+  typed animal shortfall that authorizes herd development.
+- After Continuity and before Recovery, `TextileHerdFloor` grants whole-animal herd development up to the typed
+  shortfall. Binding and the growth ceiling bound it; a directive gets a logged intervention.
+- Fission gives a herding parent's daughter at least one animal when the herd has two or more. Every ledger is
+  conserved.
+
+**Measured** (model9 Small/8, heuristic everywhere, flag on vs off):
+
+| Worlds | Off | On |
+| --- | ---: | ---: |
+| Herding-only 1003, turn 38: QoL / housing | 0.127 / 0.070 | 0.317 / 0.301 |
+| Herding-only 1010, turn 38: QoL / housing | 0.152 / 0.027 | 0.439 / 0.517 |
+| Herding-only residents per village | 179 / 241 | 209 / 244 |
+
+Default DEVELOPMENT worlds 2000-2005, about turn 34-36:
+- seed 2001 is bit-identical;
+- population changes by -4% to +50%, with QoL within ±0.025;
+- the one seed that loses population (2004, -4%) gains QoL (0.864 to 0.877).
+
+A static food-per-animal multiplier (x2, x3) on top of the rule was rejected:
+- on herding-only worlds QoL reached 0.41-0.48 at x2-3, but seed 1010 at x3 fell back to 0.35 and population roughly
+  doubled;
+- on default worlds at x2, population moved between -11% and +23%.
+
+**Remaining limits** (not changed):
+- Managed herds grow at the wild species rate (2% per year, with breeding intensity 0.55, about 25% per turn).
+- Herd counts are integers, so 1-2 animal herds grow slowly.
+- Animals concentrate in a few camps, for example one with 254 animals and 100 herders.
+- Pastoral QoL is 0.3-0.45, not the 0.8 of farming worlds.
+
 ### Seed herd and water routing under DemandControl (17 October 2026)
 
 Measured on model9 Small/8 worlds: the DemandControl heuristic slaughtered most granted herds to nothing. That was

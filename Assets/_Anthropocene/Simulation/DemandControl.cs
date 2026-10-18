@@ -50,8 +50,7 @@ namespace Anthropocene.Simulation
     // integer staffing is compiled per role with at most one repair pass. Cost is
     // O(requests x bisection) per camp, one physical demand pass, and no Value search.
     internal static class DemandController
-    {
-        // Protected holds the kernel-scored clothing and shelter split; it is arbitrated before Continuity.
+    {        // Protected holds the kernel-scored clothing and shelter split; it is arbitrated before Continuity.
         internal enum ServiceClass { Protected = 0, Survival = 1, Continuity = 2, Recovery = 3, Development = 4 }
         private const double Epsilon = 1e-9;
         // Scalar headless root-cause ablations only; ordinary planning leaves these false.
@@ -712,6 +711,12 @@ namespace Anthropocene.Simulation
             bool fixedPossible = Usable(byGood[CraftGood.Housing]) && NeolithicProduction.Priority(candidate, CraftGood.Housing) > 0;
             bool tentsPossible = CultivationEconomy.HusbandryEnabled(c) && Usable(byGood[CraftGood.LightHousing]) && NeolithicProduction.Priority(candidate, CraftGood.LightHousing) > 0;
             double PerUnit(CraftGood g) => g == CraftGood.Housing ? n.HousingPeoplePerUnit : n.LightHousingPeoplePerUnit;
+            // Animal textile need (SimulationConfig.AnimalTextileNeedFirst): the food for the tent fabric the residents
+            // need, which the resolver pays with the clothing after meals and ahead of the reserve refill.
+            bool tentTextileNeed = tentsPossible && NeolithicProduction.AnimalTextileNeedApplies(w, c) &&
+                byGood.ContainsKey(CraftGood.AnimalFabric) && Usable(byGood[CraftGood.AnimalFabric]);
+            double tentAnimalNeed = tentTextileNeed
+                ? NeolithicProduction.PortableShelterFabricNeed(w, candidate, residents, years, endDays) * byGood[CraftGood.AnimalFabric].AnimalFood : 0;
             bool RouteFeasible(CraftGood good, double people)
             {
                 if (!(people > Epsilon)) return true;
@@ -873,6 +878,9 @@ namespace Anthropocene.Simulation
             double animalFeedstock = clothingRoute == CraftGood.AnimalFabric &&
                 byGood.ContainsKey(CraftGood.AnimalFabric)
                 ? clothingUseful * byGood[CraftGood.AnimalFabric].AnimalFood : 0;
+            // Animal textile need: where Animal Fabric is the only textile, the
+            // tents the residents need are typed animal demand like clothing.
+            animalFeedstock += tentAnimalNeed;
             double animalFeedstockShortfall = Math.Max(0, animalFeedstock -
                 animalEnvelope);
             double plantFeedstockShortfall = Math.Max(0, plantFeedstock -
@@ -1529,6 +1537,14 @@ namespace Anthropocene.Simulation
                 foreach (var q in alloc.Requests)
                     if (q.Service == "clothing" && q.Bundle != null)
                     { double g = grant(q); currentPlant += q.Bundle.Plant * g; currentAnimal += q.Bundle.Animal * g; }
+                // The animal textile need extends the same exception to tents, up to the residents' need.
+                if (tentAnimalNeed > 0)
+                {
+                    double tentAnimal = 0;
+                    foreach (var q in alloc.Requests)
+                        if (q.Good == CraftGood.LightHousing && q.Bundle != null) tentAnimal += q.Bundle.Animal * grant(q);
+                    currentAnimal += Math.Min(tentAnimal, tentAnimalNeed);
+                }
                 double plantClothingEnvelope = protectedSplit ? Math.Max(d.PlantEnvelopeClothing, protectedPlantRoom) : d.PlantEnvelopeClothing;
                 double animalClothingEnvelope = (protectedSplit ? Math.Max(d.AnimalEnvelopeClothing, protectedAnimalRoom) : d.AnimalEnvelopeClothing)
                     + portfolio.SlaughterFood;
@@ -1850,10 +1866,39 @@ namespace Anthropocene.Simulation
             // retain capped equal fulfilment. Development is different: complete
             // marginal increments are admitted in physical retained-return order,
             // and both channels debit one shared food gap.
+            // Animal textile need: herd growth that supplies the clothing and tent feedstock a camp can make only from
+            // animals is granted after Continuity and before Recovery, so the reserve refill cannot starve it of the
+            // herders it needs. Whole animals, the typed shortfall and the growth ceiling bound it; Binding decides.
+            var textileHerdFloor = new Dictionary<Request, double>();
+            void TextileHerdFloor()
+            {
+                if (!tentTextileNeed || herdDevelopment.Count == 0 || !(animalFeedstockShortfall > Epsilon)) return;
+                double need = animalFeedstockShortfall;
+                foreach (var request in herdDevelopment)
+                {
+                    if (!(need > Epsilon) || !(request.DevelopmentFoodPerUnit > Epsilon)) break;
+                    int wanted = (int)Math.Min(Math.Floor(request.Units + Epsilon), Math.Ceiling(need / request.DevelopmentFoodPerUnit - Epsilon));
+                    int low = 0, high = wanted + 1;
+                    while (low + 1 < high)
+                    {
+                        int middle = low + (high - low) / 2;
+                        if (Binding(q => q == request ? middle : q.Granted) == null) low = middle; else high = middle;
+                    }
+                    if (low <= 0) break;
+                    request.Granted = low; textileHerdFloor[request] = low;
+                    need -= low * request.DevelopmentFoodPerUnit;
+                    if (low < wanted) break;
+                }
+                double animals = textileHerdFloor.Values.Sum();
+                if (animals > 0 && elderDirective != null)
+                    elderInterventions?.Add(new ElderIntervention { Kind = ElderInterventionKind.LegalConstraint, Control = "development-budget",
+                        Reason = "textile herd: animal-only clothing and tent feedstock grows the herd before the reserve refill", Requested = 0, Accepted = animals });
+            }
             foreach (ServiceClass cls in kernelEnacted
                 ? new[] { ServiceClass.Protected, ServiceClass.Continuity, ServiceClass.Recovery }
                 : new[] { ServiceClass.Continuity, ServiceClass.Recovery })
             {
+                if (cls == ServiceClass.Recovery) TextileHerdFloor();
                 // Protected requests are arbitrated one at a time in request order (clothing before shelter), so an
                 // infeasible shelter route cannot freeze the clothing the kernel committed.
                 var classRequests = alloc.Requests.Where(q => q.Class == cls && q.Bundle != null).ToList();
@@ -2311,7 +2356,8 @@ namespace Anthropocene.Simulation
                         request.Unmet = "lower-return ray";
                         continue;
                     }
-                    request.Units = Math.Min(request.Units, rayLimit);
+                    request.Units = Math.Min(request.Units, Math.Max(rayLimit,
+                        textileHerdFloor.TryGetValue(request, out double kept) ? kept : 0));
                 }
                 double typedNeed = request.DevelopmentPlant
                     ? remainingPlantDevelopment : request.DevelopmentAnimal
@@ -2337,7 +2383,10 @@ namespace Anthropocene.Simulation
                     wanted = Math.Max(wanted, Math.Min(request.Units,
                         request.PolicyDevelopmentUnits));
                 request.Granted = MaximumDevelopmentGrant(request, wanted,
-                    out string binding);                double food = request.Granted *
+                    out string binding);
+                if (textileHerdFloor.TryGetValue(request, out double textileFloor) && request.Granted < textileFloor)
+                    request.Granted = textileFloor;
+                double food = request.Granted *
                     request.DevelopmentFoodPerUnit;
                 double typed = Math.Min(typedNeed, food);
                 if (request.DevelopmentPlant)

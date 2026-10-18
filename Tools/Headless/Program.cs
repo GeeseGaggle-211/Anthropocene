@@ -322,6 +322,8 @@ internal static class Program
         if (model9Scan != null) { var parts = model9Scan.Substring(14).Split(','); return ElderModel9Tools.Scan(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 0); }
         var model9Pastoral = args.FirstOrDefault(a => a.StartsWith("--model9-pastoral=", StringComparison.Ordinal));
         if (model9Pastoral != null) { var parts = model9Pastoral.Substring(18).Split(','); return ElderModel9Tools.Pastoral(int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2]), parts.Length > 3 ? int.Parse(parts[3]) : 0); }
+        var model9Liquidation = args.FirstOrDefault(a => a.StartsWith("--model9-liquidation=", StringComparison.Ordinal));
+        if (model9Liquidation != null) { var parts = model9Liquidation.Substring(21).Split(','); return ElderModel9Tools.Liquidation(int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2]), parts.Length > 3 ? int.Parse(parts[3]) : 0); }
         var kernelScaling = args.FirstOrDefault(a => a.StartsWith("--kernel-scaling=", StringComparison.Ordinal));
         if (kernelScaling != null)
         {

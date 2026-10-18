@@ -75,6 +75,20 @@ internal static class ElderModel9Checks
         Check(pastoral.Societies.All(s => !s.Technologies[(int)Technology.Cultivation] && !s.Technologies[(int)Technology.Watercraft])
             && pastoral.Societies.Any(s => s.Technologies[(int)Technology.AnimalHusbandry]), "a herding-only fixture grants husbandry and nothing else");
         Check(pastoral.Config.TrainingWithheldTechnologies == 0, "the fixture mask is never saved");
+        // Animal textile need: herding villages in portable shelter pay tent fabric with their clothing; the lever
+        // survives a save, switching it off restores the clothing-only rule and villages with fixed housing are exempt.
+        var herders = pastoral.Camps.Where(c => c.Population > 0 && CultivationEconomy.HusbandryEnabled(c)).ToList();
+        Check(pastoral.Config.AnimalTextileNeedFirst && herders.Count > 0 && herders.All(c => NeolithicProduction.AnimalTextileNeedApplies(pastoral, c)),
+            "herding villages in portable shelter carry the animal textile need");
+        double years = pastoral.Config.TurnDays / pastoral.Config.DaysPerYear;
+        Check(herders.All(c => NeolithicProduction.PortableShelterFabricNeed(pastoral, c, c.Population, years, pastoral.Days + pastoral.Config.TurnDays) >= 0),
+            "the portable shelter fabric need is never negative");
+        pastoral.Config.AnimalTextileNeedFirst = false;
+        Check(herders.All(c => !NeolithicProduction.AnimalTextileNeedApplies(pastoral, c)), "the lever off restores the clothing-only need");
+        pastoral.Config.AnimalTextileNeedFirst = true;
+        var settled = herders[0]; settled.IsVillage = true;
+        Check(!NeolithicProduction.AnimalTextileNeedApplies(pastoral, settled), "a village with fixed settlement is exempt");
+        settled.IsVillage = false;
         var hashed = SimulationConfig.Small(8); string before = SaveCodec.ConfigurationHash(hashed);
         hashed.TrainingWithheldTechnologies = herdingOnly;
         Check(SaveCodec.ConfigurationHash(hashed) == before, "the fixture mask does not enter the configuration hash");
