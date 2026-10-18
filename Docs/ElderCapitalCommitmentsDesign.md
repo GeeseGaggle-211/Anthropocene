@@ -169,6 +169,55 @@ Both parts are contract changes, so they ship together with the contract-9 movem
 
 The next supply chain is then added as rows, not as a contract redesign.
 
+## Part 3: expert mixture with an attention router (scalability option, kept for later)
+
+Proposed by the user on 18 October 2026, and kept deliberately as a scalability path rather than adopted now.
+
+### Architecture
+
+- **Encoder:** the shared encoder (set encoders and trunk) produces the village context h.
+- **Experts:** N expert FFNs each map h to a plan embedding z_i. Experts are not hard-coded to economies;
+  specialisation is learned.
+- **Router:**
+  - the query is q = W_q h and the keys are k_i = W_k z_i;
+  - the weights are alpha_i = softmax(q . k_i / sqrt(d) / tau), with a learned temperature tau;
+  - the combined plan is the sum of alpha_i z_i.
+
+  Mixing happens in embedding space, not between finished plans, so hybrid settlements are natural: sharp weights
+  pick an expert, soft weights blend them.
+- **Decoders:** the existing Gaussian and categorical action decoders read the combined plan, so PPO
+  log-probabilities stay exact and sampling happens after mixing.
+- **Stability:** a load-balancing loss and a small router-entropy bonus prevent collapse onto one expert.
+- **Warm start:** experts begin as zero-change copies with a uniform router, which reproduces the shared-head policy
+  exactly (as the pilot's adapters did).
+- **With activity tokens (Part 2):** the expert mixture conditions the village query that attends over activity
+  rows. Tokens scale the action to more activities; experts scale the policy's capacity to more regimes.
+
+### Evidence so far
+
+- The pilot's capability-gated adapters (`--experts`, a fixed router given by the economy mask) beat shared heads in
+  stage 3 by 1.5-3%. That is one seed, against evaluation noise of about ±3%, so it is suggestive, not established.
+- Stage 2 with shared heads and regime balancing already passes every regime gate, so the expert mixture is not
+  needed for today's three economies.
+
+### When to adopt
+
+Adopt it when shared heads stop covering the regimes. The signals are:
+- a regime regressing beyond seed noise despite balancing;
+- many activity kinds with distinct operating styles (mining, crafts, trade);
+- a measured capacity limit, where a larger trunk helps and balancing does not.
+
+Before adopting, test a learned router (4-6 experts) against capability-gated adapters and against shared heads,
+over at least 3 seeds each, gated per regime.
+
+### Costs and risks
+
+- **Compute:** negligible next to the simulator.
+- **Data:** each expert sees only part of the data. At about 75 local decisions per second this is the binding
+  cost; at cluster scale it matters less.
+- **Router collapse and dead experts:** handled with load balancing, and monitored through per-regime router weights,
+  which also aid interpretability.
+
 ## Rejected
 
 - **A fixed head per activity:** it does not scale, and every new activity is a contract and network change.
