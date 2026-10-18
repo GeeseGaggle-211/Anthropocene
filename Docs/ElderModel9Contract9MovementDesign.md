@@ -123,6 +123,12 @@ global scans.
 - **A multi-tile jump per turn:** it changes game semantics (`CampMovement`), which is a design decision outside
   the learner.
 
+## Companion design
+
+Contract 9 also carries activity tokens (a scalable allocation action) and multi-turn capital commitments; see
+`ElderCapitalCommitmentsDesign.md`. The economy-conditioned site values above are the movement-side counterpart of
+the activity rows' marginal returns, and should share their features.
+
 ## Decisions for review
 
 1. The intent option and its persisted field: a save-schema addition to the Elder memory.

@@ -93,8 +93,85 @@ proportionally shorter commitment in years. If the turn length becomes configura
    commitment policy that beats the shared-head baseline beyond seed noise is the result we want. Then rerun stage 3
    with free routes, now committed: if committed routes no longer cost default worlds, this was the cause.
 
+## Part 2: activity tokens (the scalable allocation action)
+
+Contract 8's economy mix has exactly three outputs (cultivation, herding, fishing), so every new activity needs a
+new head and a contract change. As mining, smelting, crafts and trade arrive, the allocation must instead scale with
+the number of activities, not the network's shape.
+
+### Tokens
+
+Each economic activity a village can staff is a row in a new `activities` set, padded to at most K = 16 rows with
+presence masks. A row carries:
+- **kind:** a stable activity identifier, used as a learned type embedding, such as cultivation, herding, fishing,
+  and later mine, smelter or trade route;
+- **marginal return:** forecast output per added worker-year, from the planner's existing development bands
+  (field, herd and fishing bands today);
+- **capacity:** the workers the activity can absorb, and the current staffing;
+- **capital at stake:** retained fields, herd, tools or sites that would be lost if the activity were abandoned;
+- **input readiness:** whether its inputs (feedstock, tools, materials) are available;
+- **service fed:** a small vector of which services it supplies (food, textiles, tools, materials, trade value) and
+  the current gap in each;
+- **legality:** a technology and capability mask.
+
+All of it comes from the filtered observation and the planner's own forecasts; no hidden state is exposed.
+
+### Allocation head
+
+The village query (from the trunk) attends over the activity rows. The attention logits, masked to legal rows plus
+one "unassigned" row, are the allocation:
+- the softmax gives the shares of discretionary labour (the Development budget today);
+- PPO samples it as an additive logistic-normal over the present rows, the same family as the contract-8 mix head;
+- log-probabilities stay exact.
+
+The planner turns the shares into whole-worker staffing through the request and bundle machinery it already uses.
+
+### Relationship to what exists
+
+- **Contract 8 is the special case** with rows for cultivation, herding and fishing. A warm start initialises the
+  query so the three-row case reproduces the trained mix head; stage-2 policies carry over.
+- **Commitments (Part 1):** a commitment stores the allocation vector over activity kinds, plus retention for
+  activities with capital. Kinds are stable identifiers, so a held commitment survives rows appearing or
+  disappearing. A new legal activity forces no break; the policy may re-commit to include it.
+- **Expert mixture** (optional, earlier proposal): if tested, it would condition the query, not replace the
+  tokens.
+
+### Supply chains
+
+An intermediate activity (smelting, cloth weaving) is valuable only through what it feeds. Its row's "service fed"
+and gap features expose that demand, and the planner's bundles already chain inputs (feedstock to fabric to
+tents). The policy chooses where labour goes; the planner keeps ensuring each chain is complete and feasible. Long
+chains therefore need no new learner structure, only rows.
+
+### Scaling
+
+- **Learner:** attention is O(K) per village; K = 16 is negligible next to the trunk.
+- **Simulator:** one marginal-return forecast per present activity. Today's three bands are already computed;
+  each new activity adds its own band forecast, which should be measured as it is added.
+- **Contract:** adding an activity kind is a new kind identifier plus its features, with no change to the network's
+  shape. The contract version bumps only when the row's feature layout changes.
+
+### Validation
+
+1. The three-row case reproduces contract-8 behaviour: teacher labels map exactly, and fingerprints match with the
+   heuristic as actions.
+2. A masked dummy row changes nothing.
+3. A benchmark at K = 16 rows covers observation build time and learner step time.
+4. Warm start: a stage-2 policy loaded into the token head gates within noise of the original.
+
+### Phasing
+
+Both parts are contract changes, so they ship together with the contract-9 movement design
+(`ElderModel9Contract9MovementDesign.md`) as one contract-9 schema:
+1. activity rows and the token allocation head, with three kinds;
+2. commitments over token allocations;
+3. destination intents.
+
+The next supply chain is then added as rows, not as a contract redesign.
+
 ## Rejected
 
+- **A fixed head per activity:** it does not scale, and every new activity is a contract and network change.
 - **Fixed decision cadence for everyone** (for example, every third turn): it ignores state and forces stale choices
   in a crisis.
 - **Longer turns:** that changes game semantics.
