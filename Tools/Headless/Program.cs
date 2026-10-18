@@ -322,6 +322,14 @@ internal static class Program
         if (model9Scan != null) { var parts = model9Scan.Substring(14).Split(','); return ElderModel9Tools.Scan(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 0); }
         var model9Pastoral = args.FirstOrDefault(a => a.StartsWith("--model9-pastoral=", StringComparison.Ordinal));
         if (model9Pastoral != null) { var parts = model9Pastoral.Substring(18).Split(','); return ElderModel9Tools.Pastoral(int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2]), parts.Length > 3 ? int.Parse(parts[3]) : 0); }
+        var model9AB = args.FirstOrDefault(a => a.StartsWith("--model9-ab=", StringComparison.Ordinal));
+        if (model9AB != null)
+        {
+            var parts = model9AB.Substring(12).Split(',');
+            string Arm(string name) => args.FirstOrDefault(a => a.StartsWith(name, StringComparison.Ordinal))?.Substring(name.Length) ?? "";
+            return ElderModel9Tools.AB(int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2]), parts.Length > 3 ? int.Parse(parts[3]) : 0,
+                parts.Length > 4 ? int.Parse(parts[4]) : 1, Arm("--arm-a="), Arm("--arm-b="));
+        }
         var model9Oracle = args.FirstOrDefault(a => a.StartsWith("--model9-oracle=", StringComparison.Ordinal));
         if (model9Oracle != null) { var parts = model9Oracle.Substring(16).Split(','); return ElderModel9Tools.Oracle(int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2])); }
         var model9Liquidation = args.FirstOrDefault(a => a.StartsWith("--model9-liquidation=", StringComparison.Ordinal));

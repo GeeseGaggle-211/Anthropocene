@@ -198,6 +198,71 @@ internal static class ElderModel9Tools
         return 0;
     }
 
+    // --model9-ab=<firstSeed>,<lastSeed>,<turns>[,withheld[,jobs]] with --arm-a=Field=Value;... and --arm-b=...: a paired
+    // A/B of configuration overrides. Each seed generates one opening with the base configuration; each arm loads it,
+    // applies its overrides to the loaded world's configuration (dotted paths reach nested settings) and runs the
+    // heuristic for every village. Reports per seed and the paired B/A distribution of welfare (summed village
+    // welfare), final population and population-weighted QoL as mean, standard error, median, a 95% t interval and
+    // sign counts, so a change is judged against seed-to-seed divergence rather than a few worlds.
+    public static int AB(int firstSeed, int lastSeed, int turns, int withheld, int jobs, string armA, string armB)
+    {
+        var seeds = Enumerable.Range(firstSeed, lastSeed - firstSeed + 1).ToArray();
+        var results = new (double Welfare, double Population, double QoL, int Settlements)[seeds.Length, 2];
+        System.Threading.Tasks.Parallel.For(0, seeds.Length, new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, jobs) }, i =>
+        {
+            var snapshot = ElderModel9Environment.GenerateOpening(seeds[i], 8, out _, 40, withheld);
+            for (int arm = 0; arm < 2; arm++)
+            {
+                var env = new ElderModel9Environment { WithheldTechnologies = withheld };
+                env.Reset(snapshot, true);
+                ApplyOverrides(env.World.Config, arm == 0 ? armA : armB);
+                double welfare = 0;
+                for (int t = 0; t < turns; t++) welfare += env.Step(new Dictionary<int, ElderDirective>()).Villages.Sum(v => v.Welfare);
+                var live = env.World.Camps.Where(c => c.Population > 0).ToList();
+                double pop = live.Sum(c => c.Population);
+                results[i, arm] = (welfare, pop, pop > 0 ? live.Sum(c => c.QoL * c.Population) / pop : 0, live.Count);
+            }
+        });
+        for (int i = 0; i < seeds.Length; i++)
+            Console.WriteLine("MODEL9_AB seed=" + seeds[i] + " welfare=" + I(results[i, 0].Welfare) + "/" + I(results[i, 1].Welfare)
+                + " pop=" + results[i, 0].Population + "/" + results[i, 1].Population + " qol=" + I(results[i, 0].QoL) + "/" + I(results[i, 1].QoL)
+                + " settlements=" + results[i, 0].Settlements + "/" + results[i, 1].Settlements);
+        string Summary(string name, Func<int, int, double> value)
+        {
+            var r = Enumerable.Range(0, seeds.Length).Select(i => value(i, 0) > 0 ? value(i, 1) / value(i, 0) : 1).ToArray();
+            double mean = r.Average(), sd = r.Length > 1 ? Math.Sqrt(r.Sum(x => (x - mean) * (x - mean)) / (r.Length - 1)) : 0;
+            double se = sd / Math.Sqrt(r.Length), t = TCritical95(r.Length - 1);
+            var sorted = r.OrderBy(x => x).ToArray();
+            return name + "{mean=" + I(mean) + " se=" + I(se) + " ci95=" + I(mean - t * se) + ".." + I(mean + t * se) + " median=" + I(sorted[sorted.Length / 2])
+                + " sd=" + I(sd) + " better=" + r.Count(x => x > 1.01) + " worse=" + r.Count(x => x < .99) + " identical=" + r.Count(x => Math.Abs(x - 1) < 1e-9) + "}";
+        }
+        Console.WriteLine("MODEL9_AB_SUMMARY seeds=" + firstSeed + "-" + lastSeed + " turns=" + turns + " withheld=" + withheld
+            + " a=[" + armA + "] b=[" + armB + "] " + Summary("welfare", (i, a) => results[i, a].Welfare) + " "
+            + Summary("population", (i, a) => results[i, a].Population) + " " + Summary("qol", (i, a) => results[i, a].QoL));
+        return 0;
+    }
+
+    static void ApplyOverrides(SimulationConfig cfg, string overrides)
+    {
+        foreach (var item in (overrides ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pair = item.Split('=');
+            object target = cfg; var path = pair[0].Trim().Split('.');
+            for (int i = 0; i < path.Length - 1; i++)
+                target = (target.GetType().GetField(path[i]) ?? throw new ArgumentException("Unknown config field " + pair[0])).GetValue(target);
+            var field = target.GetType().GetField(path[path.Length - 1]) ?? throw new ArgumentException("Unknown config field " + pair[0]);
+            field.SetValue(target, Convert.ChangeType(pair[1].Trim(), field.FieldType, System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
+
+    // Two-sided 95% Student t critical values (df 1-30, then the normal value).
+    static double TCritical95(int df)
+    {
+        double[] table = { 12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160, 2.145, 2.131,
+            2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042 };
+        return df < 1 ? double.NaN : df <= table.Length ? table[df - 1] : 1.96;
+    }
+
     // --model9-oracle=<firstSeed>,<lastSeed>,<turns>: is there a better mixed-use allocation than the heuristic's? From
     // one opening, arm 0 runs the heuristic everywhere; each other arm gives every village that can both farm and
     // herd one fixed directive for the whole horizon (routes, services, movement and fission native). Reports, per
