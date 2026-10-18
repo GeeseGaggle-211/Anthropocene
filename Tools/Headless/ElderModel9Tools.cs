@@ -242,6 +242,42 @@ internal static class ElderModel9Tools
         return 0;
     }
 
+    // --model9-divergence=<firstSeed>,<lastSeed>,<turns>,<perturbTurn>[,epsilon[,withheld]]: how fast do two copies of
+    // a world separate after a tiny perturbation? Both copies run the heuristic from one opening; at perturbTurn the
+    // copy B multiplies the food store of its lowest-ID living camp by (1 + epsilon). A diagnostic state edit, not a
+    // game rule. Per turn it reports whether the fingerprints still match, the relative population and settlement
+    // gaps, and each copy's fission and migration counts, so divergence can be attributed to discrete social events.
+    public static int Divergence(int firstSeed, int lastSeed, int turns, int perturbTurn, double epsilon, int withheld)
+    {
+        for (int seed = firstSeed; seed <= lastSeed; seed++)
+        {
+            var snapshot = ElderModel9Environment.GenerateOpening(seed, 8, out _, 40, withheld);
+            var a = new ElderModel9Environment { WithheldTechnologies = withheld }; a.Reset(snapshot, true);
+            var b = new ElderModel9Environment { WithheldTechnologies = withheld }; b.Reset(snapshot, true);
+            int firstDiff = -1, fissionsA = 0, fissionsB = 0, movesA = 0, movesB = 0;
+            for (int t = 0; t < turns; t++)
+            {
+                if (t == perturbTurn)
+                {
+                    var camp = b.World.Camps.Where(c => c.Population > 0).OrderBy(c => c.Id).FirstOrDefault();
+                    if (camp != null) camp.Food *= 1 + epsilon;
+                }
+                var sa = a.Step(new Dictionary<int, ElderDirective>()); var sb = b.Step(new Dictionary<int, ElderDirective>());
+                var ra = a.World.History.Last(); var rb = b.World.History.Last();
+                fissionsA += ra.Fissions.Count; fissionsB += rb.Fissions.Count; movesA += ra.Migrations.Count; movesB += rb.Migrations.Count;
+                bool same = sa.Fingerprint == sb.Fingerprint;
+                if (!same && firstDiff < 0) firstDiff = t;
+                double popA = a.World.Camps.Sum(c => c.Population), popB = b.World.Camps.Sum(c => c.Population);
+                int setA = a.World.Camps.Count(c => c.Population > 0), setB = b.World.Camps.Count(c => c.Population > 0);
+                Console.WriteLine("MODEL9_DIVERGENCE seed=" + seed + " turn=" + t + " same=" + same + " popGap=" + I(popA > 0 ? Math.Abs(popB - popA) / popA : 0)
+                    + " pop=" + popA + "/" + popB + " settlements=" + setA + "/" + setB + " fissions=" + fissionsA + "/" + fissionsB
+                    + " migrations=" + movesA + "/" + movesB);
+            }
+            Console.WriteLine("MODEL9_DIVERGENCE_SUMMARY seed=" + seed + " perturbTurn=" + perturbTurn + " epsilon=" + epsilon + " firstDifferentTurn=" + firstDiff);
+        }
+        return 0;
+    }
+
     static void ApplyOverrides(SimulationConfig cfg, string overrides)
     {
         foreach (var item in (overrides ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))

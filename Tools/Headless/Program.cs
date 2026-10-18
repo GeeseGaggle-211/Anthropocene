@@ -322,6 +322,13 @@ internal static class Program
         if (model9Scan != null) { var parts = model9Scan.Substring(14).Split(','); return ElderModel9Tools.Scan(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 0); }
         var model9Pastoral = args.FirstOrDefault(a => a.StartsWith("--model9-pastoral=", StringComparison.Ordinal));
         if (model9Pastoral != null) { var parts = model9Pastoral.Substring(18).Split(','); return ElderModel9Tools.Pastoral(int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2]), parts.Length > 3 ? int.Parse(parts[3]) : 0); }
+        var model9Divergence = args.FirstOrDefault(a => a.StartsWith("--model9-divergence=", StringComparison.Ordinal));
+        if (model9Divergence != null)
+        {
+            var parts = model9Divergence.Substring(20).Split(',');
+            return ElderModel9Tools.Divergence(int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2]), int.Parse(parts[3]),
+                parts.Length > 4 ? double.Parse(parts[4], System.Globalization.CultureInfo.InvariantCulture) : 1e-6, parts.Length > 5 ? int.Parse(parts[5]) : 0);
+        }
         var model9AB = args.FirstOrDefault(a => a.StartsWith("--model9-ab=", StringComparison.Ordinal));
         if (model9AB != null)
         {
