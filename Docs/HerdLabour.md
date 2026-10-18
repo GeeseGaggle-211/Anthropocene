@@ -50,6 +50,12 @@ Default DEVELOPMENT worlds 2000-2005, about turn 34-36:
 - population changes by -4% to +50%, with QoL within ±0.025;
 - the one seed that loses population (2004, -4%) gains QoL (0.864 to 0.877).
 
+With 20 paired seeds (`--model9-ab=2000,2019,25`, both herding rules on against both off, from shared openings), on
+default DEVELOPMENT worlds:
+- welfare ratio mean 1.065, standard error 0.024, 95% interval 1.014-1.115, median 1.025;
+- 11 seeds better and 3 worse by more than 1%;
+- population +10.6% (SE 3.8%), with QoL unchanged (1.000 ± 0.003).
+
 A static food-per-animal multiplier (x2, x3) on top of the rule was rejected:
 - on herding-only worlds QoL reached 0.41-0.48 at x2-3, but seed 1010 at x3 fell back to 0.35 and population roughly
   doubled;
