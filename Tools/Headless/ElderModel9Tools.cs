@@ -198,6 +198,62 @@ internal static class ElderModel9Tools
         return 0;
     }
 
+    // --model9-oracle=<firstSeed>,<lastSeed>,<turns>: is there a better mixed-use allocation than the heuristic's? From
+    // one opening, arm 0 runs the heuristic everywhere; each other arm gives every village that can both farm and
+    // herd one fixed directive for the whole horizon (routes, services, movement and fission native). Reports, per
+    // arm and seed, the welfare of those mixed villages (summed over every village ever treated in that arm, or for
+    // arm 0, ever mixed) and of the whole world, as ratios to the heuristic.
+    static readonly (string Name, double Field, double Herd, double Budget, double FieldShare)[] OracleArms =
+    {
+        ("farm-lean", 1, .5, .1, 1), ("herd-lean", .5, 1, .1, 0), ("balanced", 1, 1, .1, .5),
+        ("pure-farm", 1, 0, .15, 1), ("pure-herd", 0, 1, .15, 0), ("balanced-nodev", 1, 1, 0, .5),
+        ("balanced-highdev", 1, 1, .3, .5), ("keep-all-lowdev", 1, 1, .05, .5)
+    };
+    public static int Oracle(int firstSeed, int lastSeed, int turns)
+    {
+        int arms = OracleArms.Length + 1;
+        var mixedTotal = new double[arms]; var worldTotal = new double[arms]; var wins = new int[arms];
+        for (int seed = firstSeed; seed <= lastSeed; seed++)
+        {
+            var snapshot = ElderModel9Environment.GenerateOpening(seed, 8, out _, 40);
+            var mixed = new double[arms]; var world = new double[arms]; var qol = new double[arms]; var pop = new double[arms];
+            for (int a = 0; a < arms; a++)
+            {
+                var env = new ElderModel9Environment(); env.Reset(snapshot, true);
+                var ever = new HashSet<int>(); var welfare = new Dictionary<int, double>();
+                for (int t = 0; t < turns; t++)
+                {
+                    var directives = new Dictionary<int, ElderDirective>();
+                    foreach (var camp in env.World.Camps.Where(c => c.Population > 0 && CultivationEconomy.Enabled(c) && CultivationEconomy.HusbandryEnabled(c)))
+                    {
+                        ever.Add(camp.Id);
+                        if (a == 0) continue;
+                        var arm = OracleArms[a - 1];
+                        directives[camp.Id] = new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion,
+                            RetainedFieldOperation = arm.Field, RetainedHerdFraction = arm.Herd, DevelopmentBudget = arm.Budget,
+                            FieldDevelopmentShare = arm.FieldShare, FishingDevelopmentShare = 0, MovementCandidate = ElderModel9Contract.NativeMovement };
+                    }
+                    var step = env.Step(directives);
+                    foreach (var v in step.Villages) welfare[v.Camp] = (welfare.TryGetValue(v.Camp, out double w) ? w : 0) + v.Welfare;
+                }
+                mixed[a] = welfare.Where(p => ever.Contains(p.Key)).Sum(p => p.Value); world[a] = welfare.Values.Sum();
+                var live = env.World.Camps.Where(c => c.Population > 0).ToList();
+                pop[a] = live.Sum(c => c.Population); qol[a] = pop[a] > 0 ? live.Sum(c => c.QoL * c.Population) / pop[a] : 0;
+                mixedTotal[a] += mixed[a]; worldTotal[a] += world[a];
+                if (a > 0 && world[a] > world[0]) wins[a]++;
+            }
+            for (int a = 0; a < arms; a++)
+                Console.WriteLine("MODEL9_ORACLE seed=" + seed + " arm=" + (a == 0 ? "heuristic" : OracleArms[a - 1].Name)
+                    + " mixed/h=" + I(mixed[0] > 0 ? mixed[a] / mixed[0] : 0) + " world/h=" + I(world[0] > 0 ? world[a] / world[0] : 0)
+                    + " pop=" + pop[a] + " qol=" + I(qol[a]));
+        }
+        for (int a = 1; a < arms; a++)
+            Console.WriteLine("MODEL9_ORACLE_SUMMARY seeds=" + firstSeed + "-" + lastSeed + " arm=" + OracleArms[a - 1].Name
+                + " mixed/h=" + I(mixedTotal[0] > 0 ? mixedTotal[a] / mixedTotal[0] : 0) + " world/h=" + I(worldTotal[0] > 0 ? worldTotal[a] / worldTotal[0] : 0)
+                + " worldWins=" + wins[a]);
+        return 0;
+    }
+
     // --model9-liquidation=<firstSeed>,<lastSeed>,<turns>[,withheld]: do herding villages slaughter their herds when
     // they take up farming? Every village runs the heuristic. A liquidation is a turn in which a village holding at
     // least 5 animals slaughters at least half of them; it is a farming switch when the village's Farmers rose that
