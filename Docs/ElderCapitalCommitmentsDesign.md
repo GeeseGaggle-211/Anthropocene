@@ -218,6 +218,23 @@ over at least 3 seeds each, gated per regime.
 - **Router collapse and dead experts:** handled with load balancing, and monitored through per-regime router weights,
   which also aid interpretability.
 
+## Part 4: vector-valued critic (an extensible objective)
+
+Lineage welfare (population x QoL x years) is an interim reward. The objective is endogenous scale-up of a
+civilization with complexity and interdependence. Later components are expected to include production, resource
+output, trade and military strength.
+
+- **Critic:** one value head per objective component (population-years, QoL-weighted population-years, and later
+  production, specialisation and trade measures). Each is trained on its own return with the same discount.
+- **Advantage:** a configurable weighted combination of the component advantages. Today's weights reproduce welfare
+  exactly, so training is unchanged until the weights change.
+- **Scaling:** a new objective component is a new head, a new reward column and a weight. There is no
+  re-architecture and no retraining from scratch: existing heads keep their fit and only the new head starts cold.
+- **Validation:**
+  - with today's weights, advantages match the scalar critic within tolerance;
+  - each head's explained variance is reported per regime;
+  - weights are recorded in the checkpoint and the gate report.
+
 ## Rejected
 
 - **A fixed head per activity:** it does not scale, and every new activity is a contract and network change.
