@@ -259,8 +259,17 @@ internal static class ElderModel9Tools
             {
                 if (t == perturbTurn)
                 {
-                    var camp = b.World.Camps.Where(c => c.Population > 0).OrderBy(c => c.Id).FirstOrDefault();
-                    if (camp != null) camp.Food *= 1 + epsilon;
+                    // epsilon <= -1: a discrete perturbation, removing that many animals from the largest managed herd.
+                    if (epsilon <= -1)
+                    {
+                        var herd = b.World.Herds.Where(h => h.DomesticCamp >= 0 && h.Animals > 1).OrderByDescending(h => h.Animals).ThenBy(h => h.Id).FirstOrDefault();
+                        if (herd != null) herd.Animals = Math.Max(1, herd.Animals - (int)Math.Round(-epsilon));
+                    }
+                    else
+                    {
+                        var camp = b.World.Camps.Where(c => c.Population > 0).OrderBy(c => c.Id).FirstOrDefault();
+                        if (camp != null) camp.Food *= 1 + epsilon;
+                    }
                 }
                 var sa = a.Step(new Dictionary<int, ElderDirective>()); var sb = b.Step(new Dictionary<int, ElderDirective>());
                 var ra = a.World.History.Last(); var rb = b.World.History.Last();
