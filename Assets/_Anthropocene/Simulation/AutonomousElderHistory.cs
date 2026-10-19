@@ -115,7 +115,10 @@ namespace Anthropocene.Simulation
             if (m == null)
             { if (requireInitialized) throw new InvalidDataException("Autonomous institution has no persistent memory."); return; }
             bool Time(double d) => ElderRLContract.Finite(d) && d >= 0 && d <= w.Days + 1e-8;
-            if (m.SchemaVersion != 1 || requireInitialized && !m.Initialized ||
+            if (m.SchemaVersion != 1 && m.SchemaVersion != ElderInstitutionMemory.StorageSchemaVersion || requireInitialized && !m.Initialized ||
+                // Schema 2 commitment: a held directive, a dated decision and a span within the contract.
+                m.HasCommitment && (m.Commitment == null || !Time(m.CommitmentSetDays) || m.CommitmentRemaining < 0 ||
+                    m.CommitmentRemaining > ElderCommitments.MaxTurns || m.CommitmentTurns > ElderCommitments.MaxTurns) ||
                 !Time(m.InitializedDays) || !Time(m.LastIntegratedDays) || m.LastIntegratedDays < m.InitializedDays ||
                 m.CurrentSignals?.Length != 11 || m.ExponentialMeans?.Length != 33 ||
                 m.CurrentSignals.Any(x => !ElderRLContract.Finite(x)) || m.ExponentialMeans.Any(x => !ElderRLContract.Finite(x)) ||

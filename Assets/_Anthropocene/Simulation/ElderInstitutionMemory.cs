@@ -24,7 +24,8 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class ElderInstitutionMemory
     {
-        public const int StorageSchemaVersion = 1;
+        // Schema 2 adds the capital commitment (contract 9). Schema-1 memories load with no commitment.
+        public const int StorageSchemaVersion = 2;
         public const int SignalCount = 11;
         public static readonly double[] TimeConstantsYears = { 20, 60, 180 };
 
@@ -54,9 +55,19 @@ namespace Anthropocene.Simulation
         public double LastCultivationFrontierChangeDays,
             LastFishingFrontierChangeDays;
 
+        // Capital commitment (schema 2, ElderCommitments): the committed capital controls, the decision time it was
+        // set, its span, the holds left and the capability bits it was made under; plus the last forced break.
+        [System.Runtime.Serialization.OptionalField] public bool HasCommitment;
+        [System.Runtime.Serialization.OptionalField] public ElderDirective Commitment;
+        [System.Runtime.Serialization.OptionalField] public double CommitmentSetDays;
+        [System.Runtime.Serialization.OptionalField] public int CommitmentTurns, CommitmentRemaining, CommitmentCapabilities;
+        [System.Runtime.Serialization.OptionalField] public string LastCommitmentBreak;
+        [System.Runtime.Serialization.OptionalField] public double LastCommitmentBreakDays;
+
         public void Normalize()
         {
             if (SchemaVersion == 0) SchemaVersion = StorageSchemaVersion;
+            if (SchemaVersion == 1) { SchemaVersion = StorageSchemaVersion; HasCommitment = false; Commitment = null; }
             if (SchemaVersion != StorageSchemaVersion)
                 throw new InvalidOperationException(
                     "Unsupported Elder institutional-memory schema.");
@@ -202,6 +213,8 @@ namespace Anthropocene.Simulation
             memory.LastRealized = decision.Realized?.Copy();
             memory.LastInterventionCount =
                 decision.Interventions?.Length ?? 0;
+            memory.Normalize();
+            ElderCommitments.Record(world, camp, memory, decision, decisionDays);
         }
 
         public static void ObserveBoundary(WorldState world, Camp camp,

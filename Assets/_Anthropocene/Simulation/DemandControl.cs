@@ -460,7 +460,7 @@ namespace Anthropocene.Simulation
             alloc.FrontierMarginalCatchRatio = alloc.FishingDevelopmentFeasible && gatherRate > 0
                 ? marginalAt(fishers + 1) / gatherRate : 0;
             int elderFishers = 0;
-            if (elderDirective != null && elderDirective.SchemaVersion == ElderModel9Contract.ActionSchemaVersion)
+            if (elderDirective != null && elderDirective.SchemaVersion >= ElderModel9Contract.FishingSchemaVersion)
             {
                 double wantedFishers = ElderRLContract.Unit(elderDirective.DevelopmentBudget) * residents *
                     ElderRLContract.Unit(elderDirective.FishingDevelopmentShare);
@@ -2109,7 +2109,7 @@ namespace Anthropocene.Simulation
                 // requested budget selects a physical prefix; Binding and the
                 // ordinary compiler retain sole authority over feasibility.
                 // Contract 8: the fishing share is staffed as Fishers above; the ray receives the remainder.
-                double fishingShare = elderDirective.SchemaVersion == ElderModel9Contract.ActionSchemaVersion
+                double fishingShare = elderDirective.SchemaVersion >= ElderModel9Contract.FishingSchemaVersion
                     ? ElderRLContract.Unit(elderDirective.FishingDevelopmentShare) : 0;
                 double requestedPeople = ElderRLContract.Unit(
                     elderDirective.DevelopmentBudget) * residents * (1 - fishingShare);

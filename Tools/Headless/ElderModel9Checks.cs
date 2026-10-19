@@ -11,6 +11,77 @@ internal static class ElderModel9Checks
     private static int checks;
     private static void Check(bool ok, string message) { checks++; if (!ok) throw new Exception("ElderModel9: " + message); }
 
+    // Contract 9 capital commitments: commit, hold (re-emitting the committed controls), expiry, forced break,
+    // save round trip, the hold mask and exact replay.
+    private static void CommitmentChecks(ElderModel9Environment acting, ElderModel9Step last)
+    {
+        int camp = last.Villages.First(v => v.Observation != null && !v.Terminated).Camp;
+        ElderDirective Directive(int span, double field, double herd, double budget, double share) => new ElderDirective
+        {
+            SchemaVersion = ElderModel9Contract.ActionSchemaVersion, RetainedFieldOperation = field, RetainedHerdFraction = herd,
+            DevelopmentBudget = budget, FieldDevelopmentShare = share, MovementCandidate = ElderModel9Contract.NativeMovement, CommitTurns = span
+        };
+        ElderInstitutionMemory Memory(ElderModel9Environment env) => env.World.Camps.Single(c => c.Id == camp).ElderMemory;
+        bool Intervened(ElderModel9Step step, string reason) => step.Villages.Single(v => v.Camp == camp).Interventions
+            .Any(i => i.Control == "commitment" && i.Reason.Contains(reason));
+
+        var committed = acting.Step(new Dictionary<int, ElderDirective> { [camp] = Directive(3, .8, 1, .1, .5) });
+        var memory = Memory(acting);
+        Check(memory.HasCommitment && memory.CommitmentTurns == 3 && memory.CommitmentRemaining == 2 && memory.Commitment != null,
+            "a three-turn commitment is saved with two holds left");
+        var village = committed.Villages.Single(v => v.Camp == camp);
+        Check(village.Observation.CommitmentHoldMask == ElderCommitments.CanHold(acting.World, acting.World.Camps.Single(c => c.Id == camp)),
+            "the hold mask reports whether the commitment can be held");
+        var reloaded = SaveCodec.Load(SaveCodec.Save(acting.World)).Camps.Single(c => c.Id == camp).ElderMemory;
+        Check(reloaded.HasCommitment && reloaded.CommitmentRemaining == 2 && reloaded.Commitment.DevelopmentBudget == memory.Commitment.DevelopmentBudget
+            && reloaded.SchemaVersion == ElderInstitutionMemory.StorageSchemaVersion, "a commitment survives a save round trip");
+
+        // A hold with different submitted values compiles exactly like explicitly resubmitting the committed values.
+        var mid = SaveCodec.Save(acting.World);
+        if (ElderCommitments.CanHold(acting.World, acting.World.Camps.Single(c => c.Id == camp)))
+        {
+            var held = new ElderModel9Environment(); held.Reset(mid, true);
+            var explicitly = new ElderModel9Environment(); explicitly.Reset(mid, true);
+            var k = Memory(held).Commitment;
+            var heldStep = held.Step(new Dictionary<int, ElderDirective> { [camp] = Directive(0, .1, .1, .6, .9) });
+            var explicitStep = explicitly.Step(new Dictionary<int, ElderDirective> { [camp] = new ElderDirective
+            {
+                SchemaVersion = ElderModel9Contract.ActionSchemaVersion, RetainedFieldOperation = k.RetainedFieldOperation,
+                RetainedHerdFraction = k.RetainedHerdFraction, DevelopmentBudget = k.DevelopmentBudget, FieldDevelopmentShare = k.FieldDevelopmentShare,
+                FishingDevelopmentShare = k.FishingDevelopmentShare, ClothingRoute = k.ClothingRoute, ShelterRoute = k.ShelterRoute,
+                MovementCandidate = ElderModel9Contract.NativeMovement, CommitTurns = 1 } });
+            var vh = heldStep.Villages.Single(v => v.Camp == camp); var ve = explicitStep.Villages.Single(v => v.Camp == camp);
+            Check(vh.Population == ve.Population && Math.Abs(vh.Welfare - ve.Welfare) <= 1e-9 * Math.Max(1, ve.Welfare),
+                "a hold re-emits the committed capital controls");
+            Check(Memory(held).CommitmentRemaining == 1 && Memory(held).HasCommitment && !Memory(explicitly).HasCommitment,
+                "a hold uses one turn; deciding for one turn ends the commitment");
+            var lastHold = held.Step(new Dictionary<int, ElderDirective> { [camp] = Directive(0, .1, .1, .6, .9) });
+            bool expiredCleanly = !Memory(held).HasCommitment && Memory(held).CommitmentRemaining == 0;
+            Check(expiredCleanly || Memory(held).LastCommitmentBreak != null, "the last hold expires the commitment");
+            var afterExpiry = held.Step(new Dictionary<int, ElderDirective> { [camp] = Directive(0, .1, .1, .6, .9) });
+            Check(Intervened(afterExpiry, "no active commitment"), "a hold without a commitment falls back to the submitted controls, logged");
+            ElderModel9Environment.VerifyReplay(held.Replay); checks++;
+        }
+
+        // Forced break: a survival shortfall refuses the hold and records why.
+        var breaking = new ElderModel9Environment(); breaking.Reset(mid, true);
+        breaking.World.Camps.Single(c => c.Id == camp).DeficitTurns = 1;
+        if (Memory(breaking).HasCommitment)
+        {
+            var broken = breaking.Step(new Dictionary<int, ElderDirective> { [camp] = Directive(0, .1, .1, .6, .9) });
+            Check(Intervened(broken, "survival shortfall") && Memory(breaking).LastCommitmentBreak == "survival shortfall" && !Memory(breaking).HasCommitment,
+                "a survival shortfall force-breaks the commitment, logged and recorded");
+        }
+        // Spans outside 0-6 are repaired; schema-8 directives never hold.
+        var odd = new ElderModel9Environment(); odd.Reset(mid, true);
+        var repaired = odd.Step(new Dictionary<int, ElderDirective> { [camp] = Directive(9, .8, 1, .1, .5) });
+        Check(Intervened(repaired, "commitment span"), "an out-of-range span is repaired and logged");
+        var schema8 = Directive(0, .8, 1, .1, .5); schema8.SchemaVersion = ElderModel9Contract.PreviousActionSchemaVersion;
+        var old = new ElderModel9Environment(); old.Reset(mid, true);
+        var oldStep = old.Step(new Dictionary<int, ElderDirective> { [camp] = schema8 });
+        Check(!Intervened(oldStep, "hold") && !Memory(old).HasCommitment, "a schema-8 directive decides for one turn only");
+    }
+
     public static int Run()
     {
         checks = 0;
@@ -68,6 +139,7 @@ internal static class ElderModel9Checks
         var fished = fishingStep.Villages.Single(v => v.Camp == fishingCamp);
         Check(fished.Teacher.Action.FishingDevelopmentShare > .5 && fished.Staffing.Contains(WorkforceRoles.Fisher),
             "a fishing-only Development directive staffs development Fishers (staffing " + fished.Staffing + ")");
+        CommitmentChecks(acting, fishingStep);
         // Capability fixtures: a withheld technology is never granted, and the training-only mask is neither saved
         // nor hashed.
         int herdingOnly = 1 << (int)Technology.Cultivation | 1 << (int)Technology.Watercraft;
@@ -122,7 +194,7 @@ internal static class ElderModel9Checks
                 "NPY header is aligned and declares the shape");
         }
         finally { Directory.Delete(dir, true); }
-        Console.WriteLine("PASS: " + checks + " model9 contract-8 assertions");
+        Console.WriteLine("PASS: " + checks + " model9 contract-9 assertions");
         return checks;
     }
 }

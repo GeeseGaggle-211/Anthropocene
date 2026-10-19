@@ -238,6 +238,8 @@ namespace Anthropocene.Simulation
         // Contract 8: whole extra Fishers beyond the survival frontier (resident fishing with a legal source).
         public bool FishingDevelopment;
         public bool Movement;
+        // Contract 9: an active, unbroken capital commitment can be held this turn.
+        [System.Runtime.Serialization.OptionalField] public bool CommitmentHold;
 
         public bool AllowsDevelopment()
             => FieldDevelopment || HerdDevelopment;
@@ -275,6 +277,11 @@ namespace Anthropocene.Simulation
         // FissionPolicy is the FissionPolicy ordinal.
         public double[] ServiceLevels;
         public int ClothingRoute = -1, ShelterRoute = -1, FissionPolicy = -1;
+        // Contract 9 (action schema 9): capital commitment span. 1 (the default) decides the capital controls for
+        // this turn only, exactly as before; 2-6 commits them (retained field and herd, Development budget and shares,
+        // clothing and shelter routes) for that many turns; 0 holds the active commitment, re-emitting its values.
+        // ElderCommitments resolves holds and forced breaks. Earlier schemas are always 1.
+        [System.Runtime.Serialization.OptionalField] public int CommitTurns = 1;
 
         public ElderDirective Copy() => new ElderDirective
         {
@@ -286,7 +293,8 @@ namespace Anthropocene.Simulation
             FishingDevelopmentShare = FishingDevelopmentShare,
             MovementCandidate = MovementCandidate,
             ServiceLevels = (double[])ServiceLevels?.Clone(),
-            ClothingRoute = ClothingRoute, ShelterRoute = ShelterRoute, FissionPolicy = FissionPolicy
+            ClothingRoute = ClothingRoute, ShelterRoute = ShelterRoute, FissionPolicy = FissionPolicy,
+            CommitTurns = CommitTurns
         };
     }
 
@@ -337,6 +345,13 @@ namespace Anthropocene.Simulation
         public double AcceptedFieldDevelopmentPeople,
             AcceptedHerdDevelopmentPeople;
         [System.Runtime.Serialization.OptionalField] public double AcceptedFishingDevelopmentPeople;
+        // Contract 9: what the decision did to the capital commitment (ElderCommitmentAction), its span and, for a
+        // refused hold, why.
+        [System.Runtime.Serialization.OptionalField] public int CommitmentAction, CommitTurns;
+        [System.Runtime.Serialization.OptionalField] public string CommitmentBreak;
+        // The validated capital controls a Commit stores (the request after legality checks, not the compiled
+        // outcome, so a turn's integer or resource repair does not ratchet the commitment down).
+        [System.Runtime.Serialization.OptionalField] public ElderDirective CommitmentValues;
         // Transient compiler/resolver witness. Raw identities never enter the
         // policy observation or replay payload.
         // Contract 7: the exact allocation the compiler produced (teacher labels and realized service levels).

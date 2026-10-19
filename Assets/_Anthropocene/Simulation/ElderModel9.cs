@@ -13,10 +13,13 @@ namespace Anthropocene.Simulation
     public static class ElderModel9Contract
     {
         // Contract 8 adds the three-way economy mix (fishing development) and fishing access on site rows.
-        public const int NativeContractVersion = 8;
-        public const int ActionSchemaVersion = 8, ObservationSchemaVersion = 8, EnvironmentSchemaVersion = 8, ReplaySchemaVersion = 8;
-        // Schema-7 directives remain valid (no fishing development).
-        public const int PreviousActionSchemaVersion = 7;
+        // Contract 9 adds multi-turn capital commitments (Docs/ElderCapitalCommitmentsDesign.md, Part 1).
+        public const int NativeContractVersion = 9;
+        public const int ActionSchemaVersion = 9, ObservationSchemaVersion = 9, EnvironmentSchemaVersion = 9, ReplaySchemaVersion = 9;
+        // Schema-8 directives remain valid (no commitments); schema 7 has no fishing development either.
+        public const int PreviousActionSchemaVersion = 8, LegacyActionSchemaVersion = 7;
+        // The first schema with fishing development, and the first with commitments.
+        public const int FishingSchemaVersion = 8, CommitmentSchemaVersion = 9;
         public static readonly string[] GoodsServices = { "food", "clothing", "shelter", "tools", "storage", "materials" };
         public static readonly string[] StrategicControls = { "retained-field-operation", "retained-herd-fraction", "development-budget", "field-development-share", "fishing-development-share" };
         // The Development budget's economy mix: ((1 - f) s, (1 - f)(1 - s), f) for field share s and fishing share f.
@@ -48,7 +51,9 @@ namespace Anthropocene.Simulation
             ("commodities", ElderRLContract.MaxCommoditySlots, 8),
             ("contacts", ElderRLContract.MaxKnownContacts, 9)
         };
-        public const int CoreV2Width = 128, PresenceV2Width = 48, DemographyWidth = 12, ContextWidth = 3 + 4 + 6 + 6;
+        public const int CoreV2Width = 128, PresenceV2Width = 48, DemographyWidth = 12, ContextWidth = 3 + 4 + 6 + 6 + CommitmentWidth;
+        // Contract 9 commitment block (appended after the contract-8 context, so earlier feature indexes are unchanged).
+        public const int CommitmentWidth = 11;
         public static int CoreWidth => CoreV2Width + PresenceV2Width + DemographyWidth + ContextWidth;
         // Training-only critic inputs (never part of the actor observation): growth headroom and lineage context.
         public static readonly string[] PrivilegedFeatures = { "log-population", "episode-age-turns", "site-food-over-meals",
@@ -69,6 +74,8 @@ namespace Anthropocene.Simulation
         public bool[] ClothingRouteMask = new bool[2], ShelterRouteMask = new bool[2];
         // Contract 8: which economy-mix coordinates (cultivation, herding, fishing) are structurally available.
         public bool[] EconomyMixMask = { true, true, true };
+        // Contract 9: the active capital commitment can be held this turn.
+        public bool CommitmentHoldMask;
     }
 
     // The heuristic's decision expressed as a contract-7 action, with the masks that say which label parts carry
@@ -115,6 +122,21 @@ namespace Anthropocene.Simulation
                 (context.PreviousFishingShare, context.HasPrevious),
                 (context.PreviousFishingDevelopment / population, context.HasPrevious) })
             { t.Core[k] = (float)(ElderRLContract.Finite(value) ? value : 0); t.CorePresent[k] = present; k++; }
+            // Contract 9 commitment block: whether one is active, its remaining and elapsed turns, the committed capital
+            // controls, and whether the last turn force-broke one.
+            var commitment = context.Commitment; bool active = commitment != null;
+            foreach (var (value, present) in new[] {
+                (active ? 1.0 : 0.0, true),
+                (active ? context.CommitmentRemaining : 0.0, true),
+                (active ? context.CommitmentAge : 0.0, true),
+                (commitment?.RetainedFieldOperation ?? 0, active), (commitment?.RetainedHerdFraction ?? 0, active),
+                (commitment?.DevelopmentBudget ?? 0, active), (commitment?.FieldDevelopmentShare ?? 0, active),
+                (commitment?.FishingDevelopmentShare ?? 0, active),
+                (commitment != null && commitment.ClothingRoute == 1 ? 1.0 : 0.0, active && commitment.ClothingRoute >= 0),
+                (commitment != null && commitment.ShelterRoute == 1 ? 1.0 : 0.0, active && commitment.ShelterRoute >= 0),
+                (context.CommitmentBrokenLastTurn ? 1.0 : 0.0, true) })
+            { t.Core[k] = (float)(ElderRLContract.Finite(value) ? value : 0); t.CorePresent[k] = present; k++; }
+            t.CommitmentHoldMask = o.Mask.CommitmentHold;
             // Entity sets from the v2 typed blocks (offsets fixed by ElderObservationSchema.Registry).
             int[] offsets = { 128, 212, 248, 312, 400 };
             int[] strides = { 12, 12, 8, 8, 8 };
@@ -163,6 +185,9 @@ namespace Anthropocene.Simulation
             names.AddRange(ElderModel9Contract.GoodsServices.Select(s => "previous-request-" + s + "-per-resident"));
             names.AddRange(new[] { "fishing-development-available", "frontier-fishers-per-resident", "frontier-marginal-catch-over-gathering",
                 "fishing-food-over-meals", "previous-fishing-development-share", "previous-fishing-development-per-resident" });
+            names.AddRange(new[] { "commitment-active", "commitment-remaining-turns", "commitment-age-turns", "committed-field-operation",
+                "committed-herd-fraction", "committed-development-budget", "committed-field-share", "committed-fishing-share",
+                "committed-clothing-animal-fabric", "committed-shelter-light", "commitment-broken-last-turn" });
             return names.ToArray();
         }
     }
@@ -176,6 +201,11 @@ namespace Anthropocene.Simulation
         public double PreviousFrontierFishers, PreviousMarginalCatchRatio, PreviousFishingFood, PreviousMeals;
         public double PreviousFishingShare, PreviousFishingDevelopment;
         public ElderCompiledDecision PreviousDecision;
+        // Contract 9: the settlement's active commitment (null when none), read from its saved Elder memory at
+        // observation time.
+        public ElderDirective Commitment;
+        public double CommitmentRemaining, CommitmentAge;
+        public bool CommitmentBrokenLastTurn;
     }
 
     public static class ElderModel9Observation
@@ -535,7 +565,14 @@ namespace Anthropocene.Simulation
                     step.Villages.Add(v);
                 }
                 step.ObserveMs += clock.Elapsed.TotalMilliseconds; clock.Restart();
-                v.Observation = ElderModel9Encoder.Encode(obs, Context(id));
+                var memory = camp.ElderMemory; var context = Context(id);
+                bool active = memory != null && memory.HasCommitment && memory.Commitment != null && memory.CommitmentRemaining > 0;
+                context.Commitment = active ? memory.Commitment.Copy() : null;
+                context.CommitmentRemaining = active ? memory.CommitmentRemaining : 0;
+                context.CommitmentAge = active ? memory.CommitmentTurns - memory.CommitmentRemaining : 0;
+                context.CommitmentBrokenLastTurn = memory?.LastCommitmentBreak != null &&
+                    memory.LastCommitmentBreakDays + World.Config.TurnDays + 1e-6 >= World.Days;
+                v.Observation = ElderModel9Encoder.Encode(obs, context);
                 step.EncodeMs += clock.Elapsed.TotalMilliseconds; clock.Restart();
                 v.Privileged = Privileged(camp, prior.TryGetValue(id, out int before) ? before : camp.Population, step.Turn - Replay.StartTurn);
                 step.PrivilegedMs += clock.Elapsed.TotalMilliseconds;

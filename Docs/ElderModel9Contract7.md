@@ -1,5 +1,40 @@
 # Native Elder contract 7 (model9)
 
+## Contract 9 amendment (19 October 2026): capital commitments
+
+Design: `Docs/ElderCapitalCommitmentsDesign.md`, Part 1. Action, observation, environment and replay schemas are 9.
+Schema-8 and schema-7 directives remain valid; checks that meant "has fishing development" now test schema 8 or
+later (`ElderModel9Contract.FishingSchemaVersion`).
+
+- **Action.**
+  - `ElderDirective.CommitTurns`: 1 (the default) decides the capital controls for this turn only, exactly as
+    contract 8.
+  - 2-6 commits them for that many turns. The capital controls are retained field operation, retained herd
+    fraction, Development budget, field and fishing shares, and the clothing and shelter routes.
+  - 0 holds the active commitment, re-emitting its values; service levels, movement and fission stay per-turn.
+  - Out-of-range spans are repaired to 1 and logged.
+  - Teacher labels are `CommitTurns 1`, so the heuristic stays exactly representable.
+- **Authoritative state.**
+  - `ElderInstitutionMemory` schema 2 stores the commitment: the validated request (not the compiled outcome), the
+    decision time, the span, the holds left and the capability bits. It also stores the last forced break.
+  - Schema-1 memories load with none.
+  - `ElderCommitments.Resolve` runs in the compiler on the committed world, and `Record` runs at resolution, so
+    replays reproduce holds exactly.
+- **Forced breaks.** A hold is refused, logged as a `commitment` intervention, and the submitted controls are used
+  for the turn when:
+  - the commitment is absent or expired;
+  - the camp relocated or fissioned after the committing decision;
+  - its economy capabilities changed;
+  - it has an active food deficit.
+- **Observation.**
+  - An 11-feature commitment block is appended to the core: active, remaining and elapsed turns, the committed
+    controls, routes, and broken last turn.
+  - `ElderActionMask.CommitmentHold` and the tensor's `CommitmentHoldMask` say whether a hold is legal.
+- **Checks.** `ElderModel9Checks` cover:
+  - commit, hold equals explicit resubmission, expiry, no-commitment fallback;
+  - forced break on a shortfall, span repair, schema-8 directives;
+  - the save round trip, the hold mask, and exact replay with holds.
+
 ## Curriculum fixtures and diagnostics (17 October 2026)
 
 - **Capability fixtures.** `SimulationConfig.TrainingWithheldTechnologies` is a training-only bitmask
@@ -19,8 +54,10 @@
   (`model9-data/grassland-herding-seeds.txt`). They are outside TRAIN, DEVELOPMENT and CONFIRMATION.
 - **Pastoral finding.** Herding-only worlds run by the heuristic stay fully fed but are badly under-sheltered
   (housing coverage 0.04, clothing 0.6, QoL about 0.1; median settlement about 190).
-  - Without cultivation, clothing and tents come only from Animal Fabric. The planner counts herd animal food toward
-    meals first, so beyond protected clothing the reserve-clothing and tent requests fail for "animal feedstock".
+  - Without cultivation, clothing and tents come only from Animal Fabric, and beyond protected clothing the
+    reserve-clothing and tent requests failed for "animal feedstock". (Corrected 18 October: the cause was not meals
+    taking herd food first, but tents paid behind the reserve, herdless fission daughters and herd growth staffed after
+    the reserve refill; fixed by the animal textile need, `Docs/HerdLabour.md`.)
   - Societies without Construction raise tents only at the generalist rate.
   - Neither `AnimalFoodPerManagedAnimal` (x2-x6) nor a 4-8x tent output changes housing materially; x3 food lifts
     herding population about 60% and the median settlement toward 240.

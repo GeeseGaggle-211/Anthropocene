@@ -560,6 +560,7 @@ namespace Anthropocene.Simulation
             mask.FieldDevelopment = cultivation;
             mask.HerdDevelopment = retainedHerd;
             mask.FishingDevelopment = NeolithicCapabilities.ResidentFishingEnabled(world, camp);
+            mask.CommitmentHold = ElderCommitments.CanHold(world, camp);
         }
 
         private static void BuildPrevious(ElderCompiledDecision decision,

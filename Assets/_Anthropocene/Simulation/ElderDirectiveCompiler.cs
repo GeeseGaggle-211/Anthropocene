@@ -19,7 +19,8 @@ namespace Anthropocene.Simulation
                 });
             if (fallback.SchemaVersion != ElderRLContract.ActionSchemaVersion &&
                 fallback.SchemaVersion != ElderModel9Contract.ActionSchemaVersion &&
-                fallback.SchemaVersion != ElderModel9Contract.PreviousActionSchemaVersion)
+                fallback.SchemaVersion != ElderModel9Contract.PreviousActionSchemaVersion &&
+                fallback.SchemaVersion != ElderModel9Contract.LegacyActionSchemaVersion)
             {
                 interventions.Add(new ElderIntervention
                 {
@@ -55,7 +56,7 @@ namespace Anthropocene.Simulation
                 value => fallback.DevelopmentBudget = value);
             Unit("field-development-share", fallback.FieldDevelopmentShare,
                 value => fallback.FieldDevelopmentShare = value);
-            bool fishingSchema = fallback.SchemaVersion == ElderModel9Contract.ActionSchemaVersion;
+            bool fishingSchema = fallback.SchemaVersion >= ElderModel9Contract.FishingSchemaVersion;
             if (fishingSchema)
                 Unit("fishing-development-share", fallback.FishingDevelopmentShare,
                     value => fallback.FishingDevelopmentShare = value);
@@ -188,7 +189,10 @@ namespace Anthropocene.Simulation
             if (context == null) throw new ArgumentNullException(nameof(context));
             var interventions = new List<ElderIntervention>();
             var requested = directive?.Copy();
-            var legal = ElderDirectiveValidation.Validate(directive,
+            // Contract 9: a hold re-emits the committed capital controls before ordinary validation.
+            var resolved = ElderCommitments.Resolve(context.World, context.CommittedCamp,
+                directive, interventions, out var commitmentAction, out var commitTurns, out var commitmentBreak);
+            var legal = ElderDirectiveValidation.Validate(resolved,
                 context.Observation, interventions);
             var world = context.World;
             var camp = context.PlanningCamp;
@@ -302,6 +306,8 @@ namespace Anthropocene.Simulation
             {
                 Requested = requested ?? new ElderDirective(),
                 Accepted = compiled,
+                CommitmentAction = (int)commitmentAction, CommitTurns = commitTurns, CommitmentBreak = commitmentBreak,
+                CommitmentValues = commitmentAction == ElderCommitmentAction.Commit ? legal.Copy() : null,
                 // Reconciled from authoritative state by TurnResolver after
                 // economy resolution and before immigration/fission.
                 Realized = compiled.Copy(),
