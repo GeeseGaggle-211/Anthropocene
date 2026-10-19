@@ -253,6 +253,17 @@ output, trade and military strength.
   exactly, so training is unchanged until the weights change.
 - **Scaling:** a new objective component is a new head, a new reward column and a weight. There is no
   re-architecture and no retraining from scratch: existing heads keep their fit and only the new head starts cold.
+- **Resilience** (planned, 19 October 2026). Natural disasters are on the game roadmap, so the curriculum must teach
+  resilience as well as scaling. Each part extends what exists:
+  - **Shock fixtures:** inject drought, flood, epidemic or harvest failure at chosen turns, as `--model9-divergence`
+    injects perturbations today.
+  - **Critic components:** recovery time after a shock, downside exposure (losses in the worst worlds, for example
+    CVaR) and lineage survival.
+  - **Commitments:** a disaster forces a break, as a food deficit already does.
+  - **Gates:** a paired shock suite, the same worlds with and without the shock, scoring the gap and its closure.
+
+  Fission cascades amplify shocks (divergence study), so resilience includes not over-reacting into a fission
+  spiral. Whether disasters are forecastable, so that preparation is learnable, is a design decision still to make.
 - **Validation:**
   - with today's weights, advantages match the scalar critic within tolerance;
   - each head's explained variance is reported per regime;
