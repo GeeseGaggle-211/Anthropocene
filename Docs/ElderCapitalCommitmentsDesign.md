@@ -143,6 +143,29 @@ and gap features expose that demand, and the planner's bundles already chain inp
 tents). The policy chooses where labour goes; the planner keeps ensuring each chain is complete and feasible. Long
 chains therefore need no new learner structure, only rows.
 
+### Trade-dependent activities (requirement, raised in review 19 October 2026)
+
+A mining or service economy feeds itself through trade. If trade is not valued, the policy sees only workers taken
+off food, and the specialisation starves. Four requirements before such activities are added:
+
+1. **Rows carry trade-adjusted value.** An activity's marginal return includes the expected food and goods its
+   output buys from known partners, at the existing `Trade.Value` curves and the remembered contact prices, not
+   only its direct output. Without a partner, the trade value is zero and the row says so.
+2. **The planner counts contracted imports as supply.** Food arriving through agreed trade must count toward
+   Survival and the reserve in planning. Otherwise the Survival class refuses the labour shift and no learned
+   policy can specialise, however it is rewarded. Today trade is AI-to-AI only, with no Elder order kinds or
+   observation fields, so this needs simulator work.
+3. **Reward credits both sides of an exchange.** Gains from trade show up in the partner's welfare as well as the
+   specialist's. A reward that sees only the specialist's lineage under-values exchange. The vector critic
+   (Part 4) gets a trade or production component, and lineage credit should include realized gains for the
+   partner (`RealizedTradeUtility` is already tracked in Elder memory).
+4. **The curriculum has the regime.** Add scanned fixtures of resource-rich, food-poor sites with a reachable food
+   surplus partner, gated per regime like the herding, farming and fishing fixtures. Also add the failure case:
+   the same site with no partner, where specialisation should not happen.
+
+Validation: on those fixtures, a trade-valued policy specialises and improves combined specialist-plus-partner
+welfare against a self-sufficient baseline, without starvation. Without a partner, it stays self-sufficient.
+
 ### Scaling
 
 - **Learner:** attention is O(K) per village; K = 16 is negligible next to the trunk.
