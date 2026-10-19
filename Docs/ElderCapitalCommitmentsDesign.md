@@ -263,7 +263,17 @@ output, trade and military strength.
   - **Gates:** a paired shock suite, the same worlds with and without the shock, scoring the gap and its closure.
 
   Fission cascades amplify shocks (divergence study), so resilience includes not over-reacting into a fission
-  spiral. Whether disasters are forecastable, so that preparation is learnable, is a design decision still to make.
+  spiral.
+- **Predictability** (decided 19 October 2026):
+  - **At first, pure surprise.** No hazard information enters the observation, and hidden hazard state never leaks,
+    by the same information contract as hidden tiles and foreign stores. The policy can learn only robustness:
+    reserves, diversification and recovery.
+  - **With technology, increasingly predictable.** Forecasts arrive as hazard token rows (seasonal risk, regional
+    hazard, early warning) that appear only once the enabling technology is known; before that they are absent rows,
+    which presence masks distinguish from zero.
+  - **Effect on training.** Preparation becomes learnable as forecasts appear, with no change to the network's shape.
+    Pre-forecast policies keep working, and the curriculum moves from surprise to forecast fixtures as the technology
+    arrives.
 - **Validation:**
   - with today's weights, advantages match the scalar critic within tolerance;
   - each head's explained variance is reported per regime;
