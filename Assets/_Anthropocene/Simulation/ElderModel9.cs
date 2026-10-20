@@ -16,8 +16,9 @@ namespace Anthropocene.Simulation
         // Contract 9 adds multi-turn capital commitments (Docs/ElderCapitalCommitmentsDesign.md, Part 1).
         // Contract 10 adds regional movement rows and destination intents (Docs/ElderModel9Contract9MovementDesign.md).
         // Contract 11 adds the Elder trade posture and trade-group rows (Docs/ElderModel9TradeDesign.md).
-        public const int NativeContractVersion = 11;
-        public const int ActionSchemaVersion = 11, ObservationSchemaVersion = 11, EnvironmentSchemaVersion = 11, ReplaySchemaVersion = 11;
+        // Contract 12 adds activity-token rows (observation only; Anthropocene-RL docs/MODEL9_TOKENS.md). Action schema 11.
+        public const int NativeContractVersion = 12;
+        public const int ActionSchemaVersion = 11, ObservationSchemaVersion = 12, EnvironmentSchemaVersion = 12, ReplaySchemaVersion = 12;
         // Schema-10 directives remain valid (no trade posture), schema 9 has no intents, schema 8 no commitments, schema 7
         // no fishing development.
         public const int MovementActionSchemaVersion = 10, CommitmentActionSchemaVersion = 9, PreviousActionSchemaVersion = 8, LegacyActionSchemaVersion = 7;
@@ -56,8 +57,12 @@ namespace Anthropocene.Simulation
             // Contract 10: regional movement candidates (ElderMovement), appended so earlier set indexes are unchanged.
             ("regions", ElderMovement.MaxRegions, ElderMovement.RowWidth),
             // Contract 11: one row per trade group (ElderTrade.Groups).
-            ("trade", 7, ElderTrade.RowWidth)
+            ("trade", 7, ElderTrade.RowWidth),
+            // Contract 12: activity tokens (Docs/ElderCapitalCommitmentsDesign.md Part 2, slice 1), one row per staffable
+            // activity kind in EconomyMix order; later kinds append rows.
+            ("activities", 3, ActivityWidth)
         };
+        public const int ActivityWidth = 12;
         // Contract 10 movement head: native, keep intent, then one slot per region row.
         public const int RegionMovementSlots = 2 + ElderMovement.MaxRegions;
         public const int CoreV2Width = 128, PresenceV2Width = 48, DemographyWidth = 12, ContextWidth = 3 + 4 + 6 + 6 + CommitmentWidth;
@@ -159,6 +164,7 @@ namespace Anthropocene.Simulation
             {
                 if (s == RegionSet) { EncodeRegions(o, t); continue; }
                 if (s == TradeSet) { EncodeTrade(o, t); continue; }
+                if (s == ActivitySet) { EncodeActivities(o, context, t); continue; }
                 var set = ElderModel9Contract.Sets[s];
                 t.Sets[s] = new float[set.Rows * set.Width]; t.RowPresent[s] = new bool[set.Rows];
                 for (int r = 0; r < set.Rows; r++)
@@ -191,7 +197,52 @@ namespace Anthropocene.Simulation
             return t;
         }
 
-        public const int RegionSet = 5, TradeSet = 6;
+        public const int RegionSet = 5, TradeSet = 6, ActivitySet = 7;
+
+        // Contract 12 activity tokens from the observation's own field, herd and fishing blocks (no new state): per
+        // kind, legality, staffing, maintenance load, capital at stake, current food share, marginal headroom, the
+        // capital lost on abandonment, operation, intensity, whether it feeds textiles. A row is present when its kind
+        // is practised or developable.
+        private static void EncodeActivities(ElderObservation o, ElderModel9Context context, ElderModel9Tensor t)
+        {
+            var set = ElderModel9Contract.Sets[ActivitySet];
+            t.Sets[ActivitySet] = new float[set.Rows * set.Width]; t.RowPresent[ActivitySet] = new bool[set.Rows];
+            double people = Math.Max(1, o.Core.Population), years = Math.Max(1e-9, o.Core.NextIntervalYears);
+            double meals = context.HasPrevious && context.PreviousMeals > 0 ? context.PreviousMeals : 0;
+            var f = o.Fields; var h = o.Herd;
+            var fishing = o.Fishing.Where(g => g.Incumbent).ToArray();
+            double fishers = context.HasPrevious ? context.PreviousFrontierFishers + context.PreviousFishingDevelopment : 0;
+            var rows = new[]
+            {
+                // Cultivation.
+                new double[] { o.Mask.FieldDevelopment ? 1 : 0, f.MaintenanceWorkerYears * f.CurrentOperation / years / people,
+                    f.MaintenanceWorkerYears / years / people, f.RetainedCapitalService, f.CurrentFoodSupport,
+                    Math.Max(0, f.FutureFoodSupport - f.CurrentFoodSupport), f.RebuildBurden, f.CurrentOperation, f.CurrentIntensity, 1, f.RetainedTiles, 0 },
+                // Herding.
+                new double[] { o.Mask.HerdDevelopment ? 1 : 0, h.CurrentManagementWorkerYears / years / people, h.CurrentManagementWorkerYears / years / people,
+                    h.Animals / people, meals > 0 ? h.CurrentAnimalFood / meals : 0,
+                    h.Animals > 0 ? Math.Max(0, h.ZeroDisplacementCapacity / h.Animals - 1) : 0, h.HumanFoodDisplaced / Math.Max(1e-9, meals > 0 ? meals : people),
+                    h.ManagementFulfilment, h.Nutrition, 1, h.BirthTrend - h.MortalityTrend, 0 },
+                // Fishing.
+                new double[] { o.Mask.FishingDevelopment ? 1 : 0, fishers / people, fishing.Sum(g => g.MaintenanceWorkerYears) / years / people,
+                    fishing.Sum(g => g.CurrentCapital), meals > 0 && context.HasPrevious ? context.PreviousFishingFood / meals : 0,
+                    o.Fishing.Length > 0 ? o.Fishing.Max(g => g.YieldPerFisherYear) : 0, 0,
+                    fishing.Length > 0 ? fishing.Average(g => g.OperationFraction) : 0, fishing.Length > 0 ? fishing.Average(g => g.CurrentIntensity) : 0,
+                    0, context.HasPrevious ? context.PreviousMarginalCatchRatio : 0, 0 }
+            };
+            bool[] present = { o.Mask.FieldDevelopment || f.RetainedTiles > 0, o.Mask.HerdDevelopment || h.Animals > 0, o.Mask.FishingDevelopment || fishing.Length > 0 };
+            for (int r = 0; r < set.Rows; r++)
+            {
+                t.RowPresent[ActivitySet][r] = present[r];
+                if (!present[r]) continue;
+                for (int c = 0; c < set.Width; c++)
+                    t.Sets[ActivitySet][r * set.Width + c] = (float)(ElderRLContract.Finite(rows[r][c]) ? rows[r][c] : 0);
+            }
+        }
+
+        public static string[] ActivityFeatureNames() => new[] { "developable", "staffed-per-resident", "maintenance-per-resident",
+            "capital-at-stake", "food-share", "marginal-headroom", "abandonment-loss", "operation", "intensity", "feeds-textiles",
+            "kind-specific", "reserved" };
 
         // Contract 11 trade-group rows; a row is present when its group is tradeable for the village.
         private static void EncodeTrade(ElderObservation o, ElderModel9Tensor t)

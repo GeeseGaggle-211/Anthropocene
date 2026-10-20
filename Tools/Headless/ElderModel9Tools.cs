@@ -539,6 +539,10 @@ internal static class ElderModel9Tools
         NpyWriter.Write(Path.Combine(dir, "clothing_route_mask.npy"), rows.SelectMany(r => r.Obs.ClothingRouteMask).ToArray(), n, 2);
         NpyWriter.Write(Path.Combine(dir, "shelter_route_mask.npy"), rows.SelectMany(r => r.Obs.ShelterRouteMask).ToArray(), n, 2);
         NpyWriter.Write(Path.Combine(dir, "economy_mix_mask.npy"), rows.SelectMany(r => r.Obs.EconomyMixMask).ToArray(), n, 3);
+        // Contract 10-11: region-movement legality and the step's realised trade utility.
+        NpyWriter.Write(Path.Combine(dir, "region_movement_mask.npy"), rows.SelectMany(r => r.Obs.RegionMovementMask).ToArray(), n, ElderModel9Contract.RegionMovementSlots);
+        NpyWriter.Write(Path.Combine(dir, "commit_hold_mask.npy"), rows.Select(r => r.Obs.CommitmentHoldMask).ToArray(), n);
+        NpyWriter.Write(Path.Combine(dir, "trade_utility.npy"), rows.Select(r => (float)r.V.TradeUtility).ToArray(), n);
         var labels = rows.Select(r => r.V.Teacher).ToArray();
         NpyWriter.Write(Path.Combine(dir, "strategic.npy"), labels.SelectMany(l => new[] { (float)l.Action.RetainedFieldOperation, (float)l.Action.RetainedHerdFraction,
             (float)l.Action.DevelopmentBudget, (float)l.Action.FieldDevelopmentShare, (float)l.Action.FishingDevelopmentShare }).ToArray(), n, 5);

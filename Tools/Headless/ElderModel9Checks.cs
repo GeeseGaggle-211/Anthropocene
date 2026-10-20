@@ -330,7 +330,7 @@ internal static class ElderModel9Checks
                 "NPY header is aligned and declares the shape");
         }
         finally { Directory.Delete(dir, true); }
-        Console.WriteLine("PASS: " + checks + " model9 contract-11 assertions");
+        Console.WriteLine("PASS: " + checks + " model9 contract-12 assertions");
         return checks;
     }
 }
