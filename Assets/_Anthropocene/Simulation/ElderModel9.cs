@@ -14,12 +14,13 @@ namespace Anthropocene.Simulation
     {
         // Contract 8 adds the three-way economy mix (fishing development) and fishing access on site rows.
         // Contract 9 adds multi-turn capital commitments (Docs/ElderCapitalCommitmentsDesign.md, Part 1).
-        public const int NativeContractVersion = 9;
-        public const int ActionSchemaVersion = 9, ObservationSchemaVersion = 9, EnvironmentSchemaVersion = 9, ReplaySchemaVersion = 9;
-        // Schema-8 directives remain valid (no commitments); schema 7 has no fishing development either.
-        public const int PreviousActionSchemaVersion = 8, LegacyActionSchemaVersion = 7;
-        // The first schema with fishing development, and the first with commitments.
-        public const int FishingSchemaVersion = 8, CommitmentSchemaVersion = 9;
+        // Contract 10 adds regional movement rows and destination intents (Docs/ElderModel9Contract9MovementDesign.md).
+        public const int NativeContractVersion = 10;
+        public const int ActionSchemaVersion = 10, ObservationSchemaVersion = 10, EnvironmentSchemaVersion = 10, ReplaySchemaVersion = 10;
+        // Schema-9 directives remain valid (no intents), schema 8 has no commitments, schema 7 no fishing development.
+        public const int CommitmentActionSchemaVersion = 9, PreviousActionSchemaVersion = 8, LegacyActionSchemaVersion = 7;
+        // The first schema with fishing development, the first with commitments and the first with intents.
+        public const int FishingSchemaVersion = 8, CommitmentSchemaVersion = 9, MovementSchemaVersion = 10;
         public static readonly string[] GoodsServices = { "food", "clothing", "shelter", "tools", "storage", "materials" };
         public static readonly string[] StrategicControls = { "retained-field-operation", "retained-herd-fraction", "development-budget", "field-development-share", "fishing-development-share" };
         // The Development budget's economy mix: ((1 - f) s, (1 - f)(1 - s), f) for field share s and fishing share f.
@@ -49,8 +50,12 @@ namespace Anthropocene.Simulation
             ("fishing", ElderRLContract.MaxFishingGrounds, 11),
             ("herds", ElderRLContract.MaxHerdGroups, 8),
             ("commodities", ElderRLContract.MaxCommoditySlots, 8),
-            ("contacts", ElderRLContract.MaxKnownContacts, 9)
+            ("contacts", ElderRLContract.MaxKnownContacts, 9),
+            // Contract 10: regional movement candidates (ElderMovement), appended so earlier set indexes are unchanged.
+            ("regions", ElderMovement.MaxRegions, ElderMovement.RowWidth)
         };
+        // Contract 10 movement head: native, keep intent, then one slot per region row.
+        public const int RegionMovementSlots = 2 + ElderMovement.MaxRegions;
         public const int CoreV2Width = 128, PresenceV2Width = 48, DemographyWidth = 12, ContextWidth = 3 + 4 + 6 + 6 + CommitmentWidth;
         // Contract 9 commitment block (appended after the contract-8 context, so earlier feature indexes are unchanged).
         public const int CommitmentWidth = 11;
@@ -76,6 +81,8 @@ namespace Anthropocene.Simulation
         public bool[] EconomyMixMask = { true, true, true };
         // Contract 9: the active capital commitment can be held this turn.
         public bool CommitmentHoldMask;
+        // Contract 10: native, keep intent, region rows 0-7 (ElderModel9Contract.RegionMovementSlots).
+        public bool[] RegionMovementMask = new bool[ElderModel9Contract.RegionMovementSlots];
     }
 
     // The heuristic's decision expressed as a contract-7 action, with the masks that say which label parts carry
@@ -144,6 +151,7 @@ namespace Anthropocene.Simulation
             t.Sets = new float[ElderModel9Contract.Sets.Length][]; t.RowPresent = new bool[ElderModel9Contract.Sets.Length][];
             for (int s = 0; s < ElderModel9Contract.Sets.Length; s++)
             {
+                if (s == RegionSet) { EncodeRegions(o, t); continue; }
                 var set = ElderModel9Contract.Sets[s];
                 t.Sets[s] = new float[set.Rows * set.Width]; t.RowPresent[s] = new bool[set.Rows];
                 for (int r = 0; r < set.Rows; r++)
@@ -169,8 +177,40 @@ namespace Anthropocene.Simulation
             if (!t.ShelterRouteMask.Any(x => x)) t.ShelterRouteMask = new[] { true, true };
             t.EconomyMixMask = new[] { o.Mask.FieldDevelopment, o.Mask.HerdDevelopment, o.Mask.FishingDevelopment };
             if (!t.EconomyMixMask.Any(x => x)) t.EconomyMixMask = new[] { true, true, true };
+            t.RegionMovementMask[0] = true;
+            t.RegionMovementMask[1] = o.Mask.AllowsMovement(ElderMovement.KeepIntent);
+            for (int r = 0; r < ElderMovement.MaxRegions; r++)
+                t.RegionMovementMask[2 + r] = r < o.Regions.Length && o.Mask.AllowsMovement(ElderMovement.RegionBase + r);
             return t;
         }
+
+        public const int RegionSet = 5;
+
+        // Contract 10 region rows, in ElderRegionObservation order (raw units; flags 0/1).
+        private static void EncodeRegions(ElderObservation o, ElderModel9Tensor t)
+        {
+            var set = ElderModel9Contract.Sets[RegionSet];
+            t.Sets[RegionSet] = new float[set.Rows * set.Width]; t.RowPresent[RegionSet] = new bool[set.Rows];
+            for (int r = 0; r < set.Rows && r < o.Regions.Length; r++)
+            {
+                var x = o.Regions[r];
+                t.RowPresent[RegionSet][r] = true;
+                var values = new double[] { x.Current ? 1 : 0, x.Intent ? 1 : 0, x.Visible ? 1 : 0, x.PathFeasible ? 1 : 0,
+                    x.Distance, x.PathTurns,
+                    x.EnvironmentGroup == 0 ? 1 : 0, x.EnvironmentGroup == 1 ? 1 : 0, x.EnvironmentGroup == 2 ? 1 : 0,
+                    x.EnvironmentGroup == 3 ? 1 : 0, x.EnvironmentGroup == 4 ? 1 : 0,
+                    x.River ? 1 : 0, x.Freshwater ? 1 : 0, x.Coast ? 1 : 0, x.Relief,
+                    x.HumanFood, x.HerdForage, x.HerdWater, x.FarmingFood, x.FieldEffort, x.FishingAccess,
+                    x.KnownForeign, x.KnownKin, 0 };
+                for (int c = 0; c < set.Width; c++)
+                    t.Sets[RegionSet][r * set.Width + c] = (float)(ElderRLContract.Finite(values[c]) ? values[c] : 0);
+            }
+        }
+
+        public static string[] RegionFeatureNames() => new[] { "current", "intent", "visible", "path-feasible", "distance", "path-turns",
+            "desert", "grassland", "temperate", "tropical", "cold", "river", "freshwater", "coast", "relief",
+            "human-food", "herd-forage", "herd-water", "farming-food", "field-effort", "fishing-access",
+            "known-foreign", "known-kin", "reserved" };
 
         // Feature names for the learner's schema registry and audits.
         public static string[] CoreFeatureNames()
@@ -443,13 +483,32 @@ namespace Anthropocene.Simulation
                 // NativeMovement keeps the heuristic's ordinary orders; FissionPolicy -1 keeps its policy order.
                 int movement = directive.MovementCandidate;
                 var meta = metadata[camp.Id];
-                bool move = movement >= 0 && movement < meta.SiteTiles.Length && observations[camp.Id].Mask.AllowsMovement(movement);
+                var mask = observations[camp.Id].Mask;
+                bool move = movement >= 0 && movement < meta.SiteTiles.Length && mask.AllowsMovement(movement);
+                // Contract 10: a region row or keep-intent names its target for the intent and steps one tile along the
+                // known path (the current-tile row is stay).
+                int regionStep = -1;
+                if (directive.SchemaVersion >= ElderModel9Contract.MovementSchemaVersion && mask.AllowsMovement(movement) &&
+                    (ElderMovement.IsRegion(movement) || movement == ElderMovement.KeepIntent))
+                {
+                    int row = movement == ElderMovement.KeepIntent ? meta.IntentRow : movement - ElderMovement.RegionBase;
+                    if (row >= 0 && row < meta.RegionTiles.Length)
+                    {
+                        directive.IntentTile = meta.RegionTiles[row];
+                        if (meta.RegionFirstSteps[row] != camp.Tile) regionStep = meta.RegionFirstSteps[row];
+                    }
+                }
                 if (directive.FissionPolicy >= 0) orders.RemoveAll(o => o.Entity == camp.Id && o.Kind == OrderKind.FissionPolicy);
                 if (movement == ElderModel9Contract.NativeMovement) { }
                 else if (move)
                 {
                     orders.RemoveAll(o => o.Entity == camp.Id && o.Kind != OrderKind.Economy);
                     orders.Add(new Order(OrderKind.Move, camp.Id, destination: meta.SiteTiles[movement]));
+                }
+                else if (regionStep >= 0)
+                {
+                    orders.RemoveAll(o => o.Entity == camp.Id && o.Kind != OrderKind.Economy);
+                    orders.Add(new Order(OrderKind.Move, camp.Id, destination: regionStep));
                 }
                 else if (orders.RemoveAll(o => o.Entity == camp.Id && o.Kind == OrderKind.Move) > 0 || !orders.Any(o => o.Entity == camp.Id && o.Kind != OrderKind.Economy))
                     orders.Add(new Order(OrderKind.NoOp, camp.Id));

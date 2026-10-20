@@ -19,6 +19,7 @@ namespace Anthropocene.Simulation
                 });
             if (fallback.SchemaVersion != ElderRLContract.ActionSchemaVersion &&
                 fallback.SchemaVersion != ElderModel9Contract.ActionSchemaVersion &&
+                fallback.SchemaVersion != ElderModel9Contract.CommitmentActionSchemaVersion &&
                 fallback.SchemaVersion != ElderModel9Contract.PreviousActionSchemaVersion &&
                 fallback.SchemaVersion != ElderModel9Contract.LegacyActionSchemaVersion)
             {
@@ -162,6 +163,17 @@ namespace Anthropocene.Simulation
             if (fallback.ClothingRoute < -1 || fallback.ClothingRoute > 1) fallback.ClothingRoute = -1;
             if (fallback.ShelterRoute < -1 || fallback.ShelterRoute > 1) fallback.ShelterRoute = -1;
             if (fallback.FissionPolicy < -1 || fallback.FissionPolicy > 2) fallback.FissionPolicy = -1;
+            // Region rows and keep-intent exist from action schema 10; an earlier directive naming them is repaired.
+            if (fallback.SchemaVersion < ElderModel9Contract.MovementSchemaVersion &&
+                (ElderMovement.IsRegion(fallback.MovementCandidate) || fallback.MovementCandidate == ElderMovement.KeepIntent))
+            {
+                interventions.Add(new ElderIntervention
+                {
+                    Kind = ElderInterventionKind.SchemaMismatch, Control = "movement-candidate",
+                    Reason = "region movement needs action schema 10; stay", Requested = fallback.MovementCandidate, Accepted = -1
+                });
+                fallback.MovementCandidate = -1; fallback.IntentTile = -1;
+            }
             if (fallback.MovementCandidate != ElderModel9Contract.NativeMovement && (observation?.Mask == null ||
                 !observation.Mask.AllowsMovement(fallback.MovementCandidate)))
             {

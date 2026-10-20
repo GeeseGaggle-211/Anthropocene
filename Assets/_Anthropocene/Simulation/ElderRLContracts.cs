@@ -49,6 +49,8 @@ namespace Anthropocene.Simulation
         // Contract 7 additions (filled by ElderModel9Observation; absent from the v2 tensor).
         public ElderDemographyObservation Demography = new ElderDemographyObservation();
         public int CurrentFissionPolicy;
+        // Contract 10 regional movement candidates (ElderMovement; absent from the v2 tensor).
+        [System.Runtime.Serialization.OptionalField] public ElderRegionObservation[] Regions = Array.Empty<ElderRegionObservation>();
     }
 
     [Serializable]
@@ -282,6 +284,9 @@ namespace Anthropocene.Simulation
         // clothing and shelter routes) for that many turns; 0 holds the active commitment, re-emitting its values.
         // ElderCommitments resolves holds and forced breaks. Earlier schemas are always 1.
         [System.Runtime.Serialization.OptionalField] public int CommitTurns = 1;
+        // Contract 10: the target tile of a region-row or keep-intent movement (ElderMovement). The environment fills it
+        // from the observation sidecar; the policy names rows, never tiles.
+        [System.Runtime.Serialization.OptionalField] public int IntentTile = -1;
 
         public ElderDirective Copy() => new ElderDirective
         {
@@ -294,7 +299,7 @@ namespace Anthropocene.Simulation
             MovementCandidate = MovementCandidate,
             ServiceLevels = (double[])ServiceLevels?.Clone(),
             ClothingRoute = ClothingRoute, ShelterRoute = ShelterRoute, FissionPolicy = FissionPolicy,
-            CommitTurns = CommitTurns
+            CommitTurns = CommitTurns, IntentTile = IntentTile
         };
     }
 
@@ -370,6 +375,9 @@ namespace Anthropocene.Simulation
         public int ControlledCampId = -1, ControlledPlayer = -1;
         public int[] SiteTiles = Array.Empty<int>();
         public int[] FishingTiles = Array.Empty<int>();
+        // Contract 10: each region row's tile, the first tile of its known path, and the row holding the intent (-1 none).
+        public int[] RegionTiles = Array.Empty<int>(), RegionFirstSteps = Array.Empty<int>();
+        public int IntentRow = -1;
         public string PermissionModel = "local-game-knowledge";
     }
 

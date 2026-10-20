@@ -82,6 +82,81 @@ internal static class ElderModel9Checks
         Check(!Intervened(oldStep, "hold") && !Memory(old).HasCommitment, "a schema-8 directive decides for one turn only");
     }
 
+    // Contract 10 movement: regional rows (deterministic, the same with or without learned movement, remembered rows
+    // without live forecasts), a region choice sets an intent and steps one tile, keep-intent continues, native cancels,
+    // the intent survives a save, schema-9 directives cannot name regions, and replay stays exact.
+    private static void MovementChecks(byte[] snapshot)
+    {
+        const int set = ElderModel9Encoder.RegionSet, width = ElderMovement.RowWidth;
+        var env = new ElderModel9Environment(); var step = env.Reset(snapshot, true);
+        var twin = new ElderModel9Environment(); var twinStep = twin.Reset(snapshot, true);
+        var off = new ElderModel9Environment(); var offStep = off.Reset(snapshot, false);
+        Check(step.Villages.All(v => v.Observation.Sets[set].SequenceEqual(twinStep.Villages.Single(t => t.Camp == v.Camp).Observation.Sets[set])),
+            "region rows are deterministic");
+        Check(step.Villages.All(v => v.Observation.Sets[set].SequenceEqual(offStep.Villages.Single(t => t.Camp == v.Camp).Observation.Sets[set])),
+            "region rows do not depend on whether movement is learned");
+        Check(offStep.Villages.All(v => v.Observation.RegionMovementMask[0] && !v.Observation.RegionMovementMask.Skip(1).Any(x => x)),
+            "without learned movement only native is legal");
+        Check(step.Villages.All(v => v.Observation.RowPresent[set][0] && v.Observation.Sets[set][0] == 1), "region row 0 is the current tile");
+        int remembered = 0; bool live = true;
+        foreach (var v in step.Villages)
+            for (int r = 0; r < ElderMovement.MaxRegions; r++)
+            {
+                if (!v.Observation.RowPresent[set][r] || v.Observation.Sets[set][r * width + 2] > .5) continue;
+                remembered++;
+                for (int c = 15; c <= 19; c++) live &= v.Observation.Sets[set][r * width + c] == 0;
+            }
+        Check(live, "remembered region rows carry no live forecast (" + remembered + " remembered rows)");
+
+        // A legal region row away from the current tile, preferring a target two or more tiles away.
+        var options = step.Villages.SelectMany(v => Enumerable.Range(0, ElderMovement.MaxRegions)
+                .Where(r => v.Observation.RegionMovementMask[2 + r] && v.Observation.Sets[set][r * width] < .5)
+                .Select(r => (v.Camp, Row: r, Distance: (int)v.Observation.Sets[set][r * width + 4])))
+            .OrderByDescending(o => Math.Min(2, o.Distance)).ThenBy(o => o.Camp).ThenBy(o => o.Row).ToList();
+        Check(options.Count > 0, "some village has a legal region move");
+        var (camp, row, distance) = options[0];
+        ElderDirective Move(int code, int schema = ElderModel9Contract.ActionSchemaVersion)
+            => new ElderDirective { SchemaVersion = schema, MovementCandidate = code };
+        Camp Of(ElderModel9Environment e) => e.World.Camps.Single(c => c.Id == camp);
+        var mid = SaveCodec.Save(env.World);
+        int origin = Of(env).Tile;
+        var moved = env.Step(new Dictionary<int, ElderDirective> { [camp] = Move(ElderMovement.RegionBase + row) });
+        var memory = Of(env).ElderMemory;
+        Check(moved.Villages.Single(v => v.Camp == camp).Interventions.All(i => i.Control != "movement-candidate"), "a legal region choice is accepted");
+        if (distance >= 2)
+        {
+            Check(memory.HasIntent && memory.IntentTurns == 1, "a region choice sets a destination intent");
+            Check(env.World.Map.Distance(Of(env).Tile, memory.IntentTile) == distance - 1, "the camp steps one tile toward its target");
+            var obs = moved.Villages.Single(v => v.Camp == camp).Observation;
+            bool feasible = obs.RegionMovementMask[1];
+            Check(!feasible || Enumerable.Range(0, ElderMovement.MaxRegions).Any(r => obs.RowPresent[set][r] && obs.Sets[set][r * width + 1] > .5),
+                "a keepable intent is shown on its region row");
+            var reloaded = SaveCodec.Load(SaveCodec.Save(env.World)).Camps.Single(c => c.Id == camp).ElderMemory;
+            Check(reloaded.SchemaVersion == ElderInstitutionMemory.StorageSchemaVersion && reloaded.HasIntent && reloaded.IntentTile == memory.IntentTile
+                && reloaded.IntentTurns == memory.IntentTurns, "an intent survives a save round trip");
+            if (feasible)
+            {
+                int target = memory.IntentTile, before = env.World.Map.Distance(Of(env).Tile, target);
+                env.Step(new Dictionary<int, ElderDirective> { [camp] = Move(ElderMovement.KeepIntent) });
+                int after = env.World.Map.Distance(Of(env).Tile, target);
+                Check(after == before - 1 && (after == 0 ? !Of(env).ElderMemory.HasIntent : Of(env).ElderMemory.IntentTurns == 2),
+                    "keeping the intent continues toward the target");
+            }
+            env.Step(new Dictionary<int, ElderDirective> { [camp] = Move(ElderModel9Contract.NativeMovement) });
+            Check(!Of(env).ElderMemory.HasIntent, "a native decision cancels the intent");
+        }
+        else Check(!memory.HasIntent && Of(env).Tile != origin && env.World.Map.Distance(origin, Of(env).Tile) == 1,
+            "an adjacent region move arrives and leaves no intent");
+        ElderModel9Environment.VerifyReplay(env.Replay); checks++;
+        Console.WriteLine("  movement fixture: camp " + camp + ", region row " + row + " at distance " + distance + ", " + remembered + " remembered rows, "
+            + step.Villages.Sum(v => v.Observation.RowPresent[set].Count(x => x)) + " rows over " + step.Villages.Count + " villages");
+
+        var old = new ElderModel9Environment(); old.Reset(mid, true);
+        var repaired = old.Step(new Dictionary<int, ElderDirective> { [camp] = Move(ElderMovement.RegionBase + row, ElderModel9Contract.CommitmentActionSchemaVersion) });
+        Check(repaired.Villages.Single(v => v.Camp == camp).Interventions.Any(i => i.Reason.Contains("schema 10")) && !Of(old).ElderMemory.HasIntent,
+            "a schema-9 directive naming a region row is repaired to stay, logged");
+    }
+
     public static int Run()
     {
         checks = 0;
@@ -140,6 +215,7 @@ internal static class ElderModel9Checks
         Check(fished.Teacher.Action.FishingDevelopmentShare > .5 && fished.Staffing.Contains(WorkforceRoles.Fisher),
             "a fishing-only Development directive staffs development Fishers (staffing " + fished.Staffing + ")");
         CommitmentChecks(acting, fishingStep);
+        MovementChecks(snapshot);
         // Capability fixtures: a withheld technology is never granted, and the training-only mask is neither saved
         // nor hashed.
         int herdingOnly = 1 << (int)Technology.Cultivation | 1 << (int)Technology.Watercraft;
@@ -194,7 +270,7 @@ internal static class ElderModel9Checks
                 "NPY header is aligned and declares the shape");
         }
         finally { Directory.Delete(dir, true); }
-        Console.WriteLine("PASS: " + checks + " model9 contract-9 assertions");
+        Console.WriteLine("PASS: " + checks + " model9 contract-10 assertions");
         return checks;
     }
 }

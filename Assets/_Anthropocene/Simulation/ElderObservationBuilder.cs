@@ -61,6 +61,7 @@ namespace Anthropocene.Simulation
 
             BuildCore(world, camp, own, years, recent, memory, result.Core);
             BuildSites(world, camp, game, index, movementEnabled, result, metadata);
+            BuildRegions(world, camp, game, index, movementEnabled, camp.ElderMemory, result, metadata);
             BuildFishing(world, camp, game, years, result, metadata);
             BuildFields(world, camp, game, years, result.Fields);
             BuildHerd(world, camp, game, years, recent, result);
@@ -184,6 +185,21 @@ namespace Anthropocene.Simulation
                 }
             result.Mask.Movement = movementEnabled && legal.Count > 1;
             result.Mask.LegalMovementCandidates = legal.ToArray();
+        }
+
+        // Contract 10: regional candidates are observed in every stage (the observation does not depend on whether
+        // movement is learned); their legality joins the movement candidates only when movement is enabled.
+        private void BuildRegions(WorldState world, Camp camp, AgentObservation game, PlanningIndex index, bool movementEnabled,
+            ElderInstitutionMemory memory, ElderObservation result, ElderObservationMetadata metadata)
+        {
+            if (!ValueOrderedSites) return;
+            var regions = ElderMovement.Build(world, camp, game, index, memory);
+            result.Regions = regions.Rows;
+            metadata.RegionTiles = regions.Tiles; metadata.RegionFirstSteps = regions.FirstSteps; metadata.IntentRow = regions.IntentRow;
+            if (!movementEnabled) return;
+            var legal = result.Mask.LegalMovementCandidates.Concat(ElderMovement.Legal(game, camp, regions)).ToArray();
+            result.Mask.LegalMovementCandidates = legal;
+            result.Mask.Movement = legal.Length > 1;
         }
 
         private static void BuildFishing(WorldState world, Camp camp,

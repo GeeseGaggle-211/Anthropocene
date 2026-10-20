@@ -25,7 +25,8 @@ namespace Anthropocene.Simulation
     public sealed class ElderInstitutionMemory
     {
         // Schema 2 adds the capital commitment (contract 9). Schema-1 memories load with no commitment.
-        public const int StorageSchemaVersion = 2;
+        // Schema 3 adds the destination intent (contract 10, ElderMovement). Earlier memories load with none.
+        public const int StorageSchemaVersion = 3;
         public const int SignalCount = 11;
         public static readonly double[] TimeConstantsYears = { 20, 60, 180 };
 
@@ -63,11 +64,16 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int CommitmentTurns, CommitmentRemaining, CommitmentCapabilities;
         [System.Runtime.Serialization.OptionalField] public string LastCommitmentBreak;
         [System.Runtime.Serialization.OptionalField] public double LastCommitmentBreakDays;
+        // Destination intent (schema 3, ElderMovement): the target tile, when it was set and the turns it has been held.
+        [System.Runtime.Serialization.OptionalField] public bool HasIntent;
+        [System.Runtime.Serialization.OptionalField] public int IntentTile = -1, IntentTurns;
+        [System.Runtime.Serialization.OptionalField] public double IntentSetDays;
 
         public void Normalize()
         {
             if (SchemaVersion == 0) SchemaVersion = StorageSchemaVersion;
-            if (SchemaVersion == 1) { SchemaVersion = StorageSchemaVersion; HasCommitment = false; Commitment = null; }
+            if (SchemaVersion == 1) { SchemaVersion = 2; HasCommitment = false; Commitment = null; }
+            if (SchemaVersion == 2) { SchemaVersion = StorageSchemaVersion; HasIntent = false; IntentTile = -1; IntentTurns = 0; IntentSetDays = 0; }
             if (SchemaVersion != StorageSchemaVersion)
                 throw new InvalidOperationException(
                     "Unsupported Elder institutional-memory schema.");
@@ -215,6 +221,7 @@ namespace Anthropocene.Simulation
                 decision.Interventions?.Length ?? 0;
             memory.Normalize();
             ElderCommitments.Record(world, camp, memory, decision, decisionDays);
+            ElderMovement.Record(camp, memory, decision, decisionDays);
         }
 
         public static void ObserveBoundary(WorldState world, Camp camp,
