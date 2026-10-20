@@ -178,6 +178,22 @@ At arm level, with intervals pooled over seeds:
   trade off and with learned trade at its native start (DEVELOPMENT 2000 and 2001; 80-86 trading village-turns per
   25-turn world).
 
+**Follow-up stage: trade self-play (user, 20 October 2026; once the learner is stable, i.e. it passes the no-collapse
+guard across seeds).**
+
+Training is already naive self-play: every village in a training world runs the shared policy, so a village's
+partners are copies of itself, learning at the same time. The follow-up adds the standard protections:
+- **Partner league.** Each world's villages draw their policy from a pool: the current policy, frozen past
+  checkpoints and the heuristic. A posture must then work against many partners, not co-adapt with its own copy
+  (avoiding cycles and collusive conventions).
+- **Mixed-population gates.** Candidates are evaluated trading with heuristic partners and with frozen checkpoints,
+  as well as with themselves. A large gap flags conventions that only work between identical villages.
+- **Exploitability.** A learning policy trains against a frozen one, and the frozen side's welfare loss is measured.
+  Own-lineage credit permits exploitative trades, which must be visible.
+
+The simulator already applies postures per village, so a league needs per-village policy assignment in the rollout
+and evaluation code only.
+
 **Not yet done:**
 - trade fixtures (complementary neighbours);
 - commitments holding the posture: commitments are off;
