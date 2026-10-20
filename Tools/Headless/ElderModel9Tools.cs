@@ -88,6 +88,50 @@ internal static class ElderModel9Tools
         return 0;
     }
 
+    // --model9-valley-scan=<firstSeed>,<lastSeed>[,turns]: contract-10 valley fixtures (Docs/ElderModel9Contract9MovementDesign.md).
+    // A herding village on grassland is eligible when its own region observation shows a known foreign settlement
+    // within four tiles (competition; camp spacing rules out nearer ones) and a region row away from it that is good farmland: visible with a farming
+    // forecast of at least one meal per resident and 1.25 times the current tile's, or remembered on a river in
+    // grassland, temperate or tropical land (static geography only). Openings are too sparse for competition, so the
+    // heuristic plays on for up to <turns> turns (default 12); a fixture is (seed, first eligible turn): selected
+    // states of unedited worlds, reached deterministically by playing the heuristic that many turns.
+    public static int ValleyScan(int firstSeed, int lastSeed, int turns = 12)
+    {
+        var builder = new ElderObservationBuilder { ValueOrderedSites = true };
+        for (int seed = firstSeed; seed <= lastSeed; seed++)
+        {
+            var env = new ElderModel9Environment { TeacherLabels = false };
+            env.Reset(ElderModel9Environment.GenerateOpening(seed, 8, out _, 40, 0), true);
+            // Strict: competition and a valley; relaxed: a valley alone (the first turn each occurs).
+            int strict = -1, relaxed = -1, strictCamps = 0, relaxedCamps = 0, contested = 0, visible = 0, remembered = 0;
+            for (int turn = 0; turn <= turns && strict < 0; turn++)
+            {
+                if (turn > 0) env.Step(new Dictionary<int, ElderDirective>());
+                var world = env.World;
+                int withCompetition = 0, valleys = 0;
+                foreach (var camp in world.Camps.Where(c => c.Population > 0 && CultivationEconomy.EconomyEnabled(world, c)
+                    && CultivationEconomy.HusbandryEnabled(c) && world.Tiles[c.Tile].Environment == EnvironmentKind.Grassland).OrderBy(c => c.Id))
+                {
+                    var o = builder.Build(world, camp.Id, true);
+                    if (o.Regions.Length == 0) continue;
+                    var here = o.Regions[0];
+                    bool seen = o.Regions.Skip(1).Any(r => r.Visible && r.FarmingFood >= Math.Max(1, 1.25 * here.FarmingFood));
+                    bool known = o.Regions.Skip(1).Any(r => !r.Visible && r.River && (r.EnvironmentGroup == 1 || r.EnvironmentGroup == 2 || r.EnvironmentGroup == 3));
+                    bool competition = here.KnownForeign > 0;
+                    if (competition) contested++;
+                    if (!seen && !known) continue;
+                    valleys++;
+                    if (competition) { withCompetition++; if (seen) visible++; else remembered++; }
+                }
+                if (relaxed < 0 && valleys > 0) { relaxed = turn; relaxedCamps = valleys; }
+                if (withCompetition > 0) { strict = turn; strictCamps = withCompetition; }
+            }
+            Console.WriteLine("MODEL9_VALLEY seed=" + seed + " strictTurn=" + strict + " strictCamps=" + strictCamps + " relaxedTurn=" + relaxed
+                + " relaxedCamps=" + relaxedCamps + " contestedChecks=" + contested + " visibleValley=" + visible + " rememberedValley=" + remembered);
+        }
+        return 0;
+    }
+
     // --model9-requests=<seed>,<turns>[,withheld]: per village, the heuristic's shelter and clothing requests with
     // grants and unmet causes at the last turn (diagnostic for capability fixtures).
     public static int Requests(int seed, int turns, int withheld = 0)

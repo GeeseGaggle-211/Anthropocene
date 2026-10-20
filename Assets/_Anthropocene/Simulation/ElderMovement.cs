@@ -18,7 +18,8 @@ namespace Anthropocene.Simulation
         public int Relief;
         // Live forecasts, visible tiles only (zero on remembered rows, which carry static geography alone).
         public double HumanFood, HerdForage, HerdWater, FarmingFood, FieldEffort;
-        // Known fishing access (from the Society's own fishing-ground knowledge) and known settlements within two tiles.
+        // Known fishing access (from the Society's own fishing-ground knowledge) and known settlements within
+        // ElderMovement.NeighbourRadius tiles.
         public double FishingAccess;
         public int KnownForeign, KnownKin;
     }
@@ -26,6 +27,9 @@ namespace Anthropocene.Simulation
     public static class ElderMovement
     {
         public const int MaxRegions = 8, Radius = 4, IntentMaximumTurns = 6, RowWidth = 24;
+        // Known settlements are counted within this distance of a row's tile. Camp spacing (3) leaves none within two
+        // tiles of a camp or a legal candidate, so the design's "within two tiles" would always be zero.
+        public const int NeighbourRadius = 4;
         // Movement codes beyond contract 7's -2 native, -1 stay and 0-6 site rows.
         public const int KeepIntent = -3, RegionBase = 100;
         private static readonly EnvironmentKind[] Groups =
@@ -177,9 +181,9 @@ namespace Anthropocene.Simulation
                     Freshwater = river || map.Neighbors(tile).Any(n => Known(game, n, out _, out _, out _, out var env, out _, out _) && env == EnvironmentKind.Lake),
                     Coast = map.Neighbors(tile).Any(n => Known(game, n, out _, out _, out _, out var env, out _, out _) && env == EnvironmentKind.Shallows),
                     FishingAccess = Access(tile),
-                    KnownForeign = game.KnownSettlements.Count(k => !k.Moved && k.Tile >= 0 && k.Camp != camp.Id && !kin.Contains(k.Owner) && map.Distance(tile, k.Tile) <= 2),
-                    KnownKin = game.Settlements.Count(s => s.Id != camp.Id && map.Distance(tile, s.Tile) <= 2) +
-                        game.KnownSettlements.Count(k => !k.Moved && k.Tile >= 0 && k.Camp != camp.Id && k.Owner != camp.Player && kin.Contains(k.Owner) && map.Distance(tile, k.Tile) <= 2)
+                    KnownForeign = game.KnownSettlements.Count(k => !k.Moved && k.Tile >= 0 && k.Camp != camp.Id && !kin.Contains(k.Owner) && map.Distance(tile, k.Tile) <= NeighbourRadius),
+                    KnownKin = game.Settlements.Count(s => s.Id != camp.Id && map.Distance(tile, s.Tile) <= NeighbourRadius) +
+                        game.KnownSettlements.Count(k => !k.Moved && k.Tile >= 0 && k.Camp != camp.Id && k.Owner != camp.Player && kin.Contains(k.Owner) && map.Distance(tile, k.Tile) <= NeighbourRadius)
                 };
                 if (visible)
                 {

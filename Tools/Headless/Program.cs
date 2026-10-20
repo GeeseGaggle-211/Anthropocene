@@ -318,6 +318,8 @@ internal static class Program
         if (model9Teacher != null) { var parts = model9Teacher.Substring(17).Split(','); return ElderModel9Tools.Teacher(parts[0], int.Parse(parts[1]), int.Parse(parts[2]), int.Parse(parts[3]), parts.Length > 4 ? int.Parse(parts[4]) : 8, parts.Length > 5 ? int.Parse(parts[5]) : 0); }
         var model9Requests = args.FirstOrDefault(a => a.StartsWith("--model9-requests=", StringComparison.Ordinal));
         if (model9Requests != null) { var parts = model9Requests.Substring(18).Split(','); return ElderModel9Tools.Requests(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 0); }
+        var model9Valley = args.FirstOrDefault(a => a.StartsWith("--model9-valley-scan=", StringComparison.Ordinal));
+        if (model9Valley != null) { var parts = model9Valley.Substring(21).Split(','); return ElderModel9Tools.ValleyScan(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 12); }
         var model9Scan = args.FirstOrDefault(a => a.StartsWith("--model9-scan=", StringComparison.Ordinal));
         if (model9Scan != null) { var parts = model9Scan.Substring(14).Split(','); return ElderModel9Tools.Scan(int.Parse(parts[0]), int.Parse(parts[1]), parts.Length > 2 ? int.Parse(parts[2]) : 0); }
         var model9Pastoral = args.FirstOrDefault(a => a.StartsWith("--model9-pastoral=", StringComparison.Ordinal));
