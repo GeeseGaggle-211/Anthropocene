@@ -62,6 +62,7 @@ namespace Anthropocene.Simulation
             BuildCore(world, camp, own, years, recent, memory, result.Core);
             BuildSites(world, camp, game, index, movementEnabled, result, metadata);
             BuildRegions(world, camp, game, index, movementEnabled, camp.ElderMemory, result, metadata);
+            if (ValueOrderedSites) result.Trade = ElderTrade.Observe(world, camp, recent);
             BuildFishing(world, camp, game, years, result, metadata);
             BuildFields(world, camp, game, years, result.Fields);
             BuildHerd(world, camp, game, years, recent, result);

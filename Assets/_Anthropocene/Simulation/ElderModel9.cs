@@ -15,12 +15,14 @@ namespace Anthropocene.Simulation
         // Contract 8 adds the three-way economy mix (fishing development) and fishing access on site rows.
         // Contract 9 adds multi-turn capital commitments (Docs/ElderCapitalCommitmentsDesign.md, Part 1).
         // Contract 10 adds regional movement rows and destination intents (Docs/ElderModel9Contract9MovementDesign.md).
-        public const int NativeContractVersion = 10;
-        public const int ActionSchemaVersion = 10, ObservationSchemaVersion = 10, EnvironmentSchemaVersion = 10, ReplaySchemaVersion = 10;
-        // Schema-9 directives remain valid (no intents), schema 8 has no commitments, schema 7 no fishing development.
-        public const int CommitmentActionSchemaVersion = 9, PreviousActionSchemaVersion = 8, LegacyActionSchemaVersion = 7;
-        // The first schema with fishing development, the first with commitments and the first with intents.
-        public const int FishingSchemaVersion = 8, CommitmentSchemaVersion = 9, MovementSchemaVersion = 10;
+        // Contract 11 adds the Elder trade posture and trade-group rows (Docs/ElderModel9TradeDesign.md).
+        public const int NativeContractVersion = 11;
+        public const int ActionSchemaVersion = 11, ObservationSchemaVersion = 11, EnvironmentSchemaVersion = 11, ReplaySchemaVersion = 11;
+        // Schema-10 directives remain valid (no trade posture), schema 9 has no intents, schema 8 no commitments, schema 7
+        // no fishing development.
+        public const int MovementActionSchemaVersion = 10, CommitmentActionSchemaVersion = 9, PreviousActionSchemaVersion = 8, LegacyActionSchemaVersion = 7;
+        // The first schema with fishing development, commitments, intents and trade posture.
+        public const int FishingSchemaVersion = 8, CommitmentSchemaVersion = 9, MovementSchemaVersion = 10, TradeSchemaVersion = 11;
         public static readonly string[] GoodsServices = { "food", "clothing", "shelter", "tools", "storage", "materials" };
         public static readonly string[] StrategicControls = { "retained-field-operation", "retained-herd-fraction", "development-budget", "field-development-share", "fishing-development-share" };
         // The Development budget's economy mix: ((1 - f) s, (1 - f)(1 - s), f) for field share s and fishing share f.
@@ -52,7 +54,9 @@ namespace Anthropocene.Simulation
             ("commodities", ElderRLContract.MaxCommoditySlots, 8),
             ("contacts", ElderRLContract.MaxKnownContacts, 9),
             // Contract 10: regional movement candidates (ElderMovement), appended so earlier set indexes are unchanged.
-            ("regions", ElderMovement.MaxRegions, ElderMovement.RowWidth)
+            ("regions", ElderMovement.MaxRegions, ElderMovement.RowWidth),
+            // Contract 11: one row per trade group (ElderTrade.Groups).
+            ("trade", 7, ElderTrade.RowWidth)
         };
         // Contract 10 movement head: native, keep intent, then one slot per region row.
         public const int RegionMovementSlots = 2 + ElderMovement.MaxRegions;
@@ -94,6 +98,8 @@ namespace Anthropocene.Simulation
         public bool[] ServiceMask = new bool[ElderModel9Contract.GoodsServices.Length];
         public bool StrategicFieldMask, StrategicHerdMask, DevelopmentMask, DevelopmentShareMask, FishingShareMask;
         public bool ClothingRouteMask, ShelterRouteMask, MovementMask;
+        // Contract 11: the trade posture is a label wherever the village can trade.
+        public bool TradeMask;
         public double RepairSize;
     }
 
@@ -152,6 +158,7 @@ namespace Anthropocene.Simulation
             for (int s = 0; s < ElderModel9Contract.Sets.Length; s++)
             {
                 if (s == RegionSet) { EncodeRegions(o, t); continue; }
+                if (s == TradeSet) { EncodeTrade(o, t); continue; }
                 var set = ElderModel9Contract.Sets[s];
                 t.Sets[s] = new float[set.Rows * set.Width]; t.RowPresent[s] = new bool[set.Rows];
                 for (int r = 0; r < set.Rows; r++)
@@ -184,7 +191,27 @@ namespace Anthropocene.Simulation
             return t;
         }
 
-        public const int RegionSet = 5;
+        public const int RegionSet = 5, TradeSet = 6;
+
+        // Contract 11 trade-group rows; a row is present when its group is tradeable for the village.
+        private static void EncodeTrade(ElderObservation o, ElderModel9Tensor t)
+        {
+            var set = ElderModel9Contract.Sets[TradeSet];
+            t.Sets[TradeSet] = new float[set.Rows * set.Width]; t.RowPresent[TradeSet] = new bool[set.Rows];
+            for (int r = 0; r < set.Rows && r < o.Trade.Length; r++)
+            {
+                var x = o.Trade[r];
+                if (!x.Active) continue;
+                t.RowPresent[TradeSet][r] = true;
+                var values = new[] { x.Held, x.Giveable, x.MakeCapacity, x.HasMakeCost ? x.MakeCost : 0, x.HasMakeCost ? 1 : 0, x.UseValue,
+                    x.Imported, x.Exported, x.RealisedUtility, 0 };
+                for (int c = 0; c < set.Width; c++)
+                    t.Sets[TradeSet][r * set.Width + c] = (float)(ElderRLContract.Finite(values[c]) ? values[c] : 0);
+            }
+        }
+
+        public static string[] TradeFeatureNames() => new[] { "held", "giveable", "make-capacity", "make-cost", "has-make-cost", "use-value",
+            "imported", "exported", "realised-utility", "reserved" };
 
         // Contract 10 region rows, in ElderRegionObservation order (raw units; flags 0/1).
         private static void EncodeRegions(ElderObservation o, ElderModel9Tensor t)
@@ -317,6 +344,12 @@ namespace Anthropocene.Simulation
             }
             var policy = campOrders?.FirstOrDefault(o => o.Entity == c.Id && o.Kind == OrderKind.FissionPolicy);
             act.FissionPolicy = policy != null ? policy.Target : (int)c.FissionPolicy;
+            // Contract 11: the heuristic trades on its native posture (values 1, every gate open to making, the
+            // configuration's export share), labelled wherever the village can trade.
+            act.TradeValue = Enumerable.Repeat(1.0, ElderTrade.Groups.Length).ToArray();
+            act.TradeGate = Enumerable.Repeat(ElderTrade.Make, ElderTrade.Groups.Length).ToArray();
+            act.TradeExportShare = w.Config.TradeExportLabourShare;
+            label.TradeMask = Trade.Eligible(w, c);
             return label;
         }
     }
@@ -327,6 +360,8 @@ namespace Anthropocene.Simulation
         public int Camp, Society, ParentSociety, Player;
         public int PriorPopulation, Population;
         public double QoL, Nutrition, Clothing, Housing, Years, Welfare;
+        // Contract 11: realised trade utility over the step (person-QoL-years, true valuations).
+        public double TradeUtility;
         public bool Terminated, Founded;
         public ElderModel9Tensor Observation;
         public ElderModel9Label Teacher;   // the heuristic's (or the compiled directive's) decision this step
@@ -591,6 +626,7 @@ namespace Anthropocene.Simulation
                     v.ParentSociety = World.Societies.FirstOrDefault(x => x.Id == camp.SocietyId)?.ParentSociety ?? 0;
                 }
                 v.Welfare = v.Terminated ? 0 : p0 * v.QoL * years;
+                v.TradeUtility = ElderTrade.RealisedUtility(record, id);
                 step.Villages.Add(v);
             }
             Observe(step, prior);

@@ -19,6 +19,7 @@ namespace Anthropocene.Simulation
                 });
             if (fallback.SchemaVersion != ElderRLContract.ActionSchemaVersion &&
                 fallback.SchemaVersion != ElderModel9Contract.ActionSchemaVersion &&
+                fallback.SchemaVersion != ElderModel9Contract.MovementActionSchemaVersion &&
                 fallback.SchemaVersion != ElderModel9Contract.CommitmentActionSchemaVersion &&
                 fallback.SchemaVersion != ElderModel9Contract.PreviousActionSchemaVersion &&
                 fallback.SchemaVersion != ElderModel9Contract.LegacyActionSchemaVersion)
@@ -163,6 +164,9 @@ namespace Anthropocene.Simulation
             if (fallback.ClothingRoute < -1 || fallback.ClothingRoute > 1) fallback.ClothingRoute = -1;
             if (fallback.ShelterRoute < -1 || fallback.ShelterRoute > 1) fallback.ShelterRoute = -1;
             if (fallback.FissionPolicy < -1 || fallback.FissionPolicy > 2) fallback.FissionPolicy = -1;
+            // Contract 11 trade posture: repaired and logged here; Prepare's handshake applies the same clamps itself.
+            if (fallback.SchemaVersion >= ElderModel9Contract.TradeSchemaVersion) ElderTrade.Repair(fallback, interventions);
+            else { fallback.TradeValue = null; fallback.TradeGate = null; fallback.TradeExportShare = -1; }
             // Region rows and keep-intent exist from action schema 10; an earlier directive naming them is repaired.
             if (fallback.SchemaVersion < ElderModel9Contract.MovementSchemaVersion &&
                 (ElderMovement.IsRegion(fallback.MovementCandidate) || fallback.MovementCandidate == ElderMovement.KeepIntent))

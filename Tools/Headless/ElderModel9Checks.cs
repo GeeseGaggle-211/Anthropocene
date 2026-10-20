@@ -157,6 +157,65 @@ internal static class ElderModel9Checks
             "a schema-9 directive naming a region row is repaired to stay, logged");
     }
 
+    // Contract 11 trade posture: a native posture is exact, withholding never gives, a zero export share makes nothing
+    // to order, relative values scale the trading valuation but never the true one, the village trade utility is the
+    // recorded realised utility, and earlier schemas carry no posture.
+    private static void TradePostureChecks(byte[] snapshot)
+    {
+        TradePosture Posture(double value = 1, int gate = ElderTrade.Make, double share = -1, SimulationConfig cfg = null)
+            => new TradePosture { Value = Enumerable.Repeat(value, ElderTrade.Groups.Length).ToArray(),
+                Gate = Enumerable.Repeat(gate, ElderTrade.Groups.Length).ToArray(), ExportShare = share >= 0 ? share : cfg?.TradeExportLabourShare ?? 0 };
+        // Play the heuristic until the world trades, keeping the boundary state.
+        var env = new ElderModel9Environment(); env.Reset(snapshot, false);
+        WorldState w = null; TradePlan native = null;
+        for (int t = 0; t < 12 && (native == null || native.Agreements.Count == 0); t++)
+        {
+            env.Step(new Dictionary<int, ElderDirective>());
+            w = env.World; native = Trade.Plan(w);
+        }
+        Check(native != null && native.Agreements.Count > 0, "the seed-17 fixture trades within 12 turns");
+        string Canon(TradePlan p) => string.Join(";", p.Agreements.Select(a => a.Requester + ">" + a.Responder + ":" + a.Want + "/" + a.Give + ":" + a.WantQuantity.ToString("R") + "/" + a.GiveQuantity.ToString("R")));
+        var traders = native.Agreements.SelectMany(a => new[] { a.Requester, a.Responder }).Distinct().OrderBy(id => id).ToArray();
+        var allNative = traders.ToDictionary(id => id, id => Posture(cfg: w.Config));
+        Check(Canon(Trade.Plan(w, null, null, allNative)) == Canon(native), "a native posture reproduces the native handshake exactly");
+        int giver = native.Agreements[0].Responder;
+        var withheld = Trade.Plan(w, null, null, new Dictionary<int, TradePosture> { [giver] = Posture(gate: ElderTrade.Withhold, cfg: w.Config) });
+        Check(withheld.Agreements.All(a => a.Responder != giver && a.Requester != giver || a.Requester == giver && a.GiveQuantity <= 0),
+            "a village withholding every group gives nothing");
+        var stockOnly = Trade.Plan(w, null, null, traders.ToDictionary(id => id, id => Posture(share: 0, cfg: w.Config)));
+        Check(stockOnly.Agreements.All(a => a.WantMade <= 1e-12 && a.GiveMade <= 1e-12), "a zero export share makes nothing to order");
+        var camp = w.Camps.Single(c => c.Id == giver);
+        var plain = Trade.Value(w, camp); var raised = Trade.Value(w, camp, 0, null, null, Posture(4, cfg: w.Config));
+        var good = Trade.Registry.First(g => plain.Active[(int)g.Id] && plain.Marginal(g.Id, plain.Position(g.Id)) > 0).Id;
+        double x = plain.Position(good);
+        Check(Math.Abs(raised.Marginal(good, x) - plain.Marginal(good, x)) <= 1e-12 &&
+            ValueCurveMarginal(raised.TrueW(good), x) == ValueCurveMarginal(plain.W(good), x) &&
+            Math.Abs(ValueCurveMarginal(raised.W(good), x) - 4 * ValueCurveMarginal(plain.TrueW(good), x)) <= 1e-9 * Math.Max(1, ValueCurveMarginal(plain.W(good), x)),
+            "a relative value scales the trading valuation, never the true one realised utility is measured on");
+        // The village trade utility reported for a step is the turn's recorded realised utility.
+        var stepped = new ElderModel9Environment(); stepped.Reset(SaveCodec.Save(w), false);
+        var s = stepped.Step(new Dictionary<int, ElderDirective>());
+        var record = stepped.World.History.Last();
+        Check(s.Villages.All(v => Math.Abs(v.TradeUtility - ElderTrade.RealisedUtility(record, v.Camp)) <= 1e-12)
+            && s.Villages.Sum(v => Math.Abs(v.TradeUtility)) > 0, "villages report their realised trade utility");
+        // Schema 10 carries no posture; out-of-range postures are repaired and logged.
+        var old = new ElderDirective { SchemaVersion = ElderModel9Contract.MovementActionSchemaVersion, TradeValue = new[] { 4.0, 4, 4, 4, 4, 4, 4 } };
+        Check(ElderTrade.From(old, w.Config) == null, "a schema-10 directive trades natively");
+        var bad = new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion, TradeValue = new[] { 9.0, .1, double.NaN, 1, 1, 1, 1 },
+            TradeGate = new[] { 5, 0, 1, 2, 2, 2, 2 }, TradeExportShare = 3 };
+        var interventions = new List<ElderIntervention>();
+        var repaired = ElderDirectiveValidation.Validate(bad, new ElderObservation(), interventions);
+        Check(repaired.TradeValue[0] == ElderTrade.MaxValue && repaired.TradeValue[1] == ElderTrade.MinValue && repaired.TradeValue[2] == 1
+            && repaired.TradeGate[0] == ElderTrade.Make && repaired.TradeExportShare == 1 && interventions.Count(i => i.Control.StartsWith("trade")) >= 5,
+            "out-of-range postures are repaired and logged");
+        var posture = ElderTrade.From(bad, w.Config);
+        Check(posture.Value[0] == ElderTrade.MaxValue && posture.Gate[0] == ElderTrade.Make && posture.ExportShare == 1,
+            "the handshake applies the same clamps as the compiler");
+        Console.WriteLine("  trade fixture: " + native.Agreements.Count + " agreements among " + traders.Length + " villages at turn " + w.Turn);
+    }
+
+    private static double ValueCurveMarginal(ValueCurve.Segment[] segments, double x) => ValueCurve.Marginal(segments, x);
+
     public static int Run()
     {
         checks = 0;
@@ -216,6 +275,7 @@ internal static class ElderModel9Checks
             "a fishing-only Development directive staffs development Fishers (staffing " + fished.Staffing + ")");
         CommitmentChecks(acting, fishingStep);
         MovementChecks(snapshot);
+        TradePostureChecks(snapshot);
         // Capability fixtures: a withheld technology is never granted, and the training-only mask is neither saved
         // nor hashed.
         int herdingOnly = 1 << (int)Technology.Cultivation | 1 << (int)Technology.Watercraft;
@@ -270,7 +330,7 @@ internal static class ElderModel9Checks
                 "NPY header is aligned and declares the shape");
         }
         finally { Directory.Delete(dir, true); }
-        Console.WriteLine("PASS: " + checks + " model9 contract-10 assertions");
+        Console.WriteLine("PASS: " + checks + " model9 contract-11 assertions");
         return checks;
     }
 }

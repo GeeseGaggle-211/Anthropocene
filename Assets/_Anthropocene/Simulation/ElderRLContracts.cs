@@ -51,6 +51,8 @@ namespace Anthropocene.Simulation
         public int CurrentFissionPolicy;
         // Contract 10 regional movement candidates (ElderMovement; absent from the v2 tensor).
         [System.Runtime.Serialization.OptionalField] public ElderRegionObservation[] Regions = Array.Empty<ElderRegionObservation>();
+        // Contract 11 trade-group rows (ElderTrade.Groups order; absent from the v2 tensor).
+        [System.Runtime.Serialization.OptionalField] public ElderTradeObservation[] Trade = Array.Empty<ElderTradeObservation>();
     }
 
     [Serializable]
@@ -287,6 +289,12 @@ namespace Anthropocene.Simulation
         // Contract 10: the target tile of a region-row or keep-intent movement (ElderMovement). The environment fills it
         // from the observation sidecar; the policy names rows, never tiles.
         [System.Runtime.Serialization.OptionalField] public int IntentTile = -1;
+        // Contract 11 (action schema 11) trade posture, per ElderTrade.Groups: relative values in [0.25, 4], offer gates
+        // (0 withhold, 1 offer stock, 2 offer and make to order), and the export labour share in [0, 1]. Null / -1 is
+        // native (values 1, gates 2, the configuration's share).
+        [System.Runtime.Serialization.OptionalField] public double[] TradeValue;
+        [System.Runtime.Serialization.OptionalField] public int[] TradeGate;
+        [System.Runtime.Serialization.OptionalField] public double TradeExportShare = -1;
 
         public ElderDirective Copy() => new ElderDirective
         {
@@ -299,7 +307,8 @@ namespace Anthropocene.Simulation
             MovementCandidate = MovementCandidate,
             ServiceLevels = (double[])ServiceLevels?.Clone(),
             ClothingRoute = ClothingRoute, ShelterRoute = ShelterRoute, FissionPolicy = FissionPolicy,
-            CommitTurns = CommitTurns, IntentTile = IntentTile
+            CommitTurns = CommitTurns, IntentTile = IntentTile,
+            TradeValue = (double[])TradeValue?.Clone(), TradeGate = (int[])TradeGate?.Clone(), TradeExportShare = TradeExportShare
         };
     }
 

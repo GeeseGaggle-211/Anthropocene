@@ -344,8 +344,11 @@ namespace Anthropocene.Simulation
             // The handshake reads only the committed world (never orders), so a
             // matching draft's plan is the plan Prepare would compute.
             var tradeTimer = System.Diagnostics.Stopwatch.StartNew();
+            // Contract 11: directed villages trade on their Elder posture (no posture: the native handshake, and a matching
+            // draft's plan is still exact).
+            var postures = ElderTrade.Postures(elderDirectives, world.Config);
             prepared.Trade = autonomous != null ? AutonomousElderTrade.Plan(world, autonomous, autonomousObservations, execution)
-                : useDraft ? draft.Trade : Trade.Plan(world, execution);
+                : useDraft && postures == null ? draft.Trade : Trade.Plan(world, execution, null, postures);
             prepared.TradeMilliseconds = tradeTimer.Elapsed.TotalMilliseconds;
             var trade = prepared.Trade;
             var fishingAccess = BuildFishingAccessPlans(world, world.Camps, prepared.Placement,

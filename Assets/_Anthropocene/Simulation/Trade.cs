@@ -133,15 +133,16 @@ namespace Anthropocene.Simulation
             Trade.Valuation responder, TradeAgreement agreement,
             SimulationConfig config)
         {
+            // Realised utility is measured on the true valuations, never an Elder posture's relative values.
             return new TradeUtilitySnapshot
             {
-                requesterWant = (ValueCurve.Segment[])requester.W(
+                requesterWant = (ValueCurve.Segment[])requester.TrueW(
                     agreement.Want).Clone(),
-                requesterGive = (ValueCurve.Segment[])requester.W(
+                requesterGive = (ValueCurve.Segment[])requester.TrueW(
                     agreement.Give).Clone(),
-                responderGive = (ValueCurve.Segment[])responder.W(
+                responderGive = (ValueCurve.Segment[])responder.TrueW(
                     agreement.Give).Clone(),
-                responderWant = (ValueCurve.Segment[])responder.W(
+                responderWant = (ValueCurve.Segment[])responder.TrueW(
                     agreement.Want).Clone(),
                 requesterWantPosition = requester.Position(agreement.Want),
                 requesterGivePosition = requester.Position(agreement.Give),
@@ -625,25 +626,43 @@ namespace Anthropocene.Simulation
                 => double.IsPositiveInfinity(GoodsRoom) || NetStored(received, inQ, given, outQ) <= Math.Max(0, GoodsRoom) + 1e-9;
             public double MakeCapacity(TradeGood g) => UsesTools[(int)g] ? Math.Min(Capacity[(int)g], ToolPool) : Capacity[(int)g];
             public readonly double[][] Shares = new double[Registry.Length][];          // committed part proportions
+            // Contract 11 Elder trade posture: the relative value scaling each good's use-value curve (its making cost is
+            // unchanged), and goods the village withholds (never given). 1 and false are native.
+            public readonly double[] ValueScale = Enumerable.Repeat(1.0, Registry.Length).ToArray();
+            public readonly bool[] Withheld = new bool[Registry.Length];
             private readonly Dictionary<string, (double Position, double Floor)> positions = new Dictionary<string, (double, double)>();
             internal void SetCurve(string key, double position, double floor) => positions[key] = (position, floor);
             public ValueCurve Curve(TradeGood g) => Curves[(int)g];
             public double Position(TradeGood g) => positions[Descriptor(g).Curve].Position;
             public double Floor(TradeGood g) => positions[Descriptor(g).Curve].Floor;
             // What the camp may give of a good: held stock above its curve's floor, plus what it can make to order.
-            public double Stock(TradeGood g) => Active[(int)g] ? Math.Max(0, Math.Min(Held[(int)g], Position(g) - Floor(g))) + MakeCapacity(g) : 0;
+            public double Stock(TradeGood g) => Active[(int)g] && !Withheld[(int)g] ? Math.Max(0, Math.Min(Held[(int)g], Position(g) - Floor(g))) + MakeCapacity(g) : 0;
             public double Marginal(TradeGood g, double x) => Active[(int)g] ? Curve(g).Marginal(x) : 0;
             // Make or buy (Docs/Trade.md): the value of a unit at position x to a camp that can still make `cap` more at cost c.
             // With u its use value and x* = u.Crossing(c), W'(x) = u(x + cap) below x* - cap, c on [x* - cap, x*], u(x) above.
             // Receiving and giving are both valued on W, so a camp with little making capacity prices stock near its use value.
-            private readonly ValueCurve.Segment[][] wCache = new ValueCurve.Segment[Registry.Length][];
-            private readonly double[] wCap = Enumerable.Repeat(double.NaN, Registry.Length).ToArray();
-            internal double Crossing(TradeGood g) { int i = (int)g; return Active[i] && !double.IsPositiveInfinity(Cost[i]) ? Curve(g).Crossing(Cost[i]) : double.NegativeInfinity; }
-            internal ValueCurve.Segment[] W(TradeGood g)
+            private readonly ValueCurve.Segment[][] wCache = new ValueCurve.Segment[Registry.Length][], trueCache = new ValueCurve.Segment[Registry.Length][];
+            private readonly double[] wCap = Enumerable.Repeat(double.NaN, Registry.Length).ToArray(), trueCap = Enumerable.Repeat(double.NaN, Registry.Length).ToArray();
+            // Under a relative value a, the village's own use value is a u while its making cost c is unchanged, so it
+            // makes rather than buys up to where a u = c.
+            internal double Crossing(TradeGood g) => Crossing(g, ValueScale[(int)g]);
+            private double Crossing(TradeGood g, double scale) { int i = (int)g; return Active[i] && !double.IsPositiveInfinity(Cost[i]) ? Curve(g).Crossing(Cost[i] / scale) : double.NegativeInfinity; }
+            private static ValueCurve.Segment[] Scaled(ValueCurve.Segment[] u, double scale)
+            {
+                if (scale == 1) return u;
+                var s = (ValueCurve.Segment[])u.Clone();
+                for (int k = 0; k < s.Length; k++) { s[k].C *= scale; s[k].V *= scale; }
+                return s;
+            }
+            // The valuation the village trades on (its posture's relative values), and the true one realised utility is
+            // measured on: a village cannot raise its own reward by declaring a good more valuable.
+            internal ValueCurve.Segment[] W(TradeGood g) => W(g, ValueScale[(int)g], wCache, wCap);
+            internal ValueCurve.Segment[] TrueW(TradeGood g) => ValueScale[(int)g] == 1 ? W(g) : W(g, 1, trueCache, trueCap);
+            private ValueCurve.Segment[] W(TradeGood g, double scale, ValueCurve.Segment[][] cache, double[] caps)
             {
                 int i = (int)g; double cap = MakeCapacity(g);
-                if (wCache[i] != null && cap.Equals(wCap[i])) return wCache[i];
-                var u = Curve(g).Uncapped; double c = Cost[i], xs = Crossing(g);
+                if (cache[i] != null && cap.Equals(caps[i])) return cache[i];
+                var u = Scaled(Curve(g).Uncapped, scale); double c = Cost[i], xs = Crossing(g, scale);
                 ValueCurve.Segment[] w;
                 if (!(cap > 0) || double.IsPositiveInfinity(c) || double.IsNegativeInfinity(xs)) w = u;
                 else
@@ -660,7 +679,7 @@ namespace Anthropocene.Simulation
                         if (seg.Hi > xs) list.Add(new ValueCurve.Segment { Lo = Math.Max(seg.Lo, xs), Hi = seg.Hi, C = seg.C, V = seg.V, N = seg.N, K = seg.K, S = seg.S, Exponential = seg.Exponential });
                     w = list.ToArray();
                 }
-                wCache[i] = w; wCap[i] = cap;
+                cache[i] = w; caps[i] = cap;
                 return w;
             }
             // The extra making that giving q from the current position induces: own making refills towards x* within cap.
@@ -727,7 +746,8 @@ namespace Anthropocene.Simulation
         }
 
         // O(goods) per camp: one builder call per curve key, one recipe cost per makeable good.
-        internal static Valuation Value(WorldState w, Camp c, double lastProduction = 0, CraftRecipe[] recipes = null, double[] materialUse = null)
+        internal static Valuation Value(WorldState w, Camp c, double lastProduction = 0, CraftRecipe[] recipes = null, double[] materialUse = null,
+            TradePosture posture = null)
         {
             var context = new CampContext { LastProduction = lastProduction, Recipes = recipes ?? NeolithicProduction.Recipes(w.Config), MaterialUse = materialUse == null ? new double[4] : materialUse.Length >= 4 ? materialUse : materialUse.Concat(new double[4 - materialUse.Length]).ToArray() };
             var cfg = w.Config;
@@ -762,7 +782,18 @@ namespace Anthropocene.Simulation
             bool foodPublished = published != null && published.ContainsKey("Food");
             double foodPosition = foodTerms.Offset + Held(c, TradeGood.Food), protectedEnd = foodPublished ? foodTerms.Floor : ((BandCurve)foodTerms.Curve).Ends[1];
             double spareFood = Math.Max(0, Math.Min(Held(c, TradeGood.Food), foodPosition - protectedEnd));
-            MakeToOrder(w, c, v, foodTerms.Curve.Marginal(foodPosition), spareFood, context.Recipes, published);
+            MakeToOrder(w, c, v, foodTerms.Curve.Marginal(foodPosition), spareFood, context.Recipes, published,
+                posture?.ExportShare ?? cfg.TradeExportLabourShare);
+            // Contract 11: the posture's relative values and offer gates (withhold: never given; stock: nothing made).
+            if (posture != null)
+                foreach (var g in Registry)
+                {
+                    int i = (int)g.Id, group = ElderTrade.GroupOf(g.Curve);
+                    if (group < 0) continue;
+                    v.ValueScale[i] = posture.Value[group];
+                    if (posture.Gate[group] == ElderTrade.Withhold) v.Withheld[i] = true;
+                    if (posture.Gate[group] <= ElderTrade.Stock) v.Capacity[i] = 0;
+                }
             return v;
         }
 
@@ -772,14 +803,15 @@ namespace Anthropocene.Simulation
         // for equipment and housing work, by that share of its tool outputs (one pool for all such goods).
         // A make cost the planner published for the good's curve replaces that derivation. Without a recorded price or a
         // published cost nothing is made to order.
-        private static void MakeToOrder(WorldState w, Camp c, Valuation v, double foodValue, double spareFood, CraftRecipe[] recipes, Dictionary<string, TradeValueSchedule> published)
+        private static void MakeToOrder(WorldState w, Camp c, Valuation v, double foodValue, double spareFood, CraftRecipe[] recipes, Dictionary<string, TradeValueSchedule> published,
+            double exportShare)
         {
             var cfg = w.Config;
             bool priced = c.EconomicLabor != null && c.EconomicLabor.LabourPriceSet;
             bool anyPublishedCost = published != null && published.Values.Any(s => s.MakeCostSet);
-            if (!(cfg.TradeExportLabourShare > 0) || c.EconomicLabor == null || !priced && !anyPublishedCost) return;
+            if (!(exportShare > 0) || c.EconomicLabor == null || !priced && !anyPublishedCost) return;
             double price = c.EconomicLabor.LabourPrice, years = cfg.TurnDays / cfg.DaysPerYear;
-            v.ToolPool = cfg.TradeExportLabourShare * (Math.Max(0, c.Inventory.HandTools) * ToolCoverageBudget.OutputsPerHandTool + Math.Max(0, c.Inventory.Tools) * ToolCoverageBudget.OutputsPerTool);
+            v.ToolPool = exportShare * (Math.Max(0, c.Inventory.HandTools) * ToolCoverageBudget.OutputsPerHandTool + Math.Max(0, c.Inventory.Tools) * ToolCoverageBudget.OutputsPerTool);
             double multiplier = NeolithicProduction.HousingMultiplier(w, c, c.Population);
             // Raw materials a recipe needs: stock plus what the camp's known sources hold, as the planner counts them
             // (CampProductionDemand.Accessible). Census C1 turn 53: Pots promised by camps with no Clay to reach.
@@ -808,7 +840,7 @@ namespace Anthropocene.Simulation
                 bool costPublished = published != null && published.TryGetValue(g.Curve, out schedule) && schedule.MakeCostSet;
                 if (!costPublished && !priced) continue;
                 v.Cost[i] = costPublished ? schedule.MakeCost : labour * price + (recipe.PlantFood + recipe.AnimalFood) * Math.Max(0, foodValue);
-                double capacity = cfg.TradeExportLabourShare * c.Population * years / labour;
+                double capacity = exportShare * c.Population * years / labour;
                 // Food inputs come from spare food only, typed: Animal Fabric needs animal food, Cloth plant food.
                 // Spare food is shared across types in the stock's proportions (consumption draws on every type).
                 double stockFood = Math.Max(1e-12, c.Food);
@@ -950,7 +982,8 @@ namespace Anthropocene.Simulation
         // The bounded same-turn handshake: O(camps (goods log W + contacts)) pure per-camp work, then
         // O(camps K W^2) canonical responses (responder ID, then the responder's own best gain, then requester
         // ID), updating both sides' positions so no camp is promised the same stock or capacity twice.
-        internal static TradePlan Plan(WorldState w, PhaseExecution execution = null, ISet<int> excluded = null)
+        internal static TradePlan Plan(WorldState w, PhaseExecution execution = null, ISet<int> excluded = null,
+            IReadOnlyDictionary<int, TradePosture> postures = null)
         {
             var cfg = w.Config;
             if (!cfg.TradeEnabled) return TradePlan.Empty;
@@ -980,7 +1013,8 @@ namespace Anthropocene.Simulation
                 if (partnersOf[i].Length > 0) { taking.Add(eligible[i].Id); foreach (var partner in partnersOf[i]) taking.Add(partner.Camp); }
             var participants = eligible.Where(c => taking.Contains(c.Id)).ToArray();
             var valueScope = PhaseProfile.Scope("Valuation");
-            var values = workers.Map(participants, c => Value(w, c, production.TryGetValue(c.Id, out double p) ? p : 0, recipeTable, materialUse.TryGetValue(c.Id, out var u) ? u : null));
+            var values = workers.Map(participants, c => Value(w, c, production.TryGetValue(c.Id, out double p) ? p : 0, recipeTable, materialUse.TryGetValue(c.Id, out var u) ? u : null,
+                postures != null && postures.TryGetValue(c.Id, out var posture) ? posture : null));
             valueScope.Dispose(); PhaseProfile.Count("Trade.Valued", participants.Length);
             if (Counters.Enabled) { Counters.ValueTicks += System.Diagnostics.Stopwatch.GetTimestamp() - stage; stage = System.Diagnostics.Stopwatch.GetTimestamp(); }
             var byCamp = new Dictionary<int, Valuation>(); var offers = new Dictionary<int, bool[]>();
