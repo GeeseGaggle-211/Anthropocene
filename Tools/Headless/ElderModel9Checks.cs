@@ -214,6 +214,41 @@ internal static class ElderModel9Checks
         Console.WriteLine("  trade fixture: " + native.Agreements.Count + " agreements among " + traders.Length + " villages at turn " + w.Turn);
     }
 
+    // Search forks: every branch restored from a fork replays the live path exactly, a branch never leaks into the
+    // next, and a fork does not change the path (an unforked twin stays in step).
+    private static void ForkChecks(byte[] snapshot)
+    {
+        var live = new ElderModel9Environment(); var twin = new ElderModel9Environment();
+        live.Reset(snapshot, true); twin.Reset(snapshot, true);
+        for (int t = 0; t < 2; t++) { live.Step(new Dictionary<int, ElderDirective>()); twin.Step(new Dictionary<int, ElderDirective>()); }
+        var fork = live.Fork(out var decision);
+        Check(!twin.Forked && live.Forked && decision.Villages.Count > 0 && decision.Villages.All(v => v.Observation != null),
+            "a fork returns the decision step with every village observed");
+        List<string> Run(ElderModel9Environment env, int turns, Dictionary<int, ElderDirective> first = null)
+        {
+            var prints = new List<string>();
+            for (int t = 0; t < turns; t++) prints.Add(env.Step(t == 0 && first != null ? first : new Dictionary<int, ElderDirective>()).Fingerprint);
+            return prints;
+        }
+        var path = Run(live, 3);
+        Check(path.SequenceEqual(Run(twin, 3)), "a fork does not change the live path");
+        var restored = live.Restore(fork);
+        Check(restored.Fingerprint == decision.Fingerprint && restored.Villages.Count == decision.Villages.Count &&
+              restored.Villages.All(v => v.Observation.Core.SequenceEqual(decision.Villages.Single(d => d.Camp == v.Camp).Observation.Core)),
+            "a restore reproduces the fork's observations");
+        Check(Run(live, 3).SequenceEqual(path), "a restored branch replays the live path exactly");
+        var camp = decision.Villages.First(v => v.Observation.EconomyMixMask.Count(x => x) >= 2).Camp;
+        var deviation = new Dictionary<int, ElderDirective>
+        {
+            [camp] = new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion, DevelopmentBudget = 1, FieldDevelopmentShare = 0,
+                FishingDevelopmentShare = 0, MovementCandidate = ElderModel9Contract.NativeMovement, ServiceLevels = new[] { 1.0, 1, 1, 1, 1, 1 } }
+        };
+        live.Restore(fork);
+        Check(!Run(live, 1, deviation).SequenceEqual(path.Take(1)), "a deviating branch diverges");
+        live.Restore(fork);
+        Check(Run(live, 3).SequenceEqual(path), "a branch does not leak into the next restore");
+    }
+
     private static double ValueCurveMarginal(ValueCurve.Segment[] segments, double x) => ValueCurve.Marginal(segments, x);
 
     public static int Run()
@@ -276,6 +311,7 @@ internal static class ElderModel9Checks
         CommitmentChecks(acting, fishingStep);
         MovementChecks(snapshot);
         TradePostureChecks(snapshot);
+        ForkChecks(snapshot);
         // Capability fixtures: a withheld technology is never granted, and the training-only mask is neither saved
         // nor hashed.
         int herdingOnly = 1 << (int)Technology.Cultivation | 1 << (int)Technology.Watercraft;

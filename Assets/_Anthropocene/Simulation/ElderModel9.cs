@@ -324,6 +324,26 @@ namespace Anthropocene.Simulation
         public ElderDirective Commitment;
         public double CommitmentRemaining, CommitmentAge;
         public bool CommitmentBrokenLastTurn;
+
+        // A branch copy for search forks. PreviousDecision is shared: compiled decisions are replaced, never mutated.
+        public ElderModel9Context Copy()
+        {
+            var c = (ElderModel9Context)MemberwiseClone();
+            c.ClothingRouteFeasible = (bool[])ClothingRouteFeasible.Clone(); c.ShelterRouteFeasible = (bool[])ShelterRouteFeasible.Clone();
+            c.PreviousServiceRequested = (double[])PreviousServiceRequested.Clone();
+            c.Commitment = Commitment?.Copy();
+            return c;
+        }
+    }
+
+    // A search branch point (learner-side expert iteration): the saved world, every village's environment context and
+    // the prior populations of the last step. Opaque outside the environment.
+    public sealed class ElderModel9Fork
+    {
+        internal byte[] World;
+        internal Dictionary<int, ElderModel9Context> Contexts;
+        internal Dictionary<int, int> Prior;
+        internal int ReplaySteps;
     }
 
     public static class ElderModel9Observation
@@ -533,7 +553,7 @@ namespace Anthropocene.Simulation
             World = SaveCodec.Load((byte[])snapshot.Clone());
             World = SaveCodec.Load(SaveCodec.Save(World));
             World.Config.TrainingWithheldTechnologies = WithheldTechnologies;
-            MovementEnabled = movementEnabled; contexts.Clear();
+            MovementEnabled = movementEnabled; contexts.Clear(); lastPrior = new Dictionary<int, int>(); Forked = false;
             ResolutionMetrics.CaptureDemandAllocations = true;
             var initial = SaveCodec.Save(World);
             Replay = new ElderModel9Replay { StartTurn = World.Turn, InitialSnapshot = initial, InitialFingerprint = SaveCodec.Fingerprint(World),
@@ -541,6 +561,39 @@ namespace Anthropocene.Simulation
                 WithheldTechnologies = WithheldTechnologies };
             var step = new ElderModel9Step { Turn = World.Turn, Fingerprint = Replay.InitialFingerprint };
             Observe(step, new Dictionary<int, int>());
+            return step;
+        }
+
+        // Search forks. Fork rebases the live environment on its own saved world, so the live path and every branch
+        // restored from the fork start from byte-identical state with the same per-village context: branches are exact
+        // paired comparisons. Restore returns the decision step (observations; no rewards). After a fork the replay
+        // record is not verifiable (Forked), because verification does not carry the environment context.
+        private Dictionary<int, int> lastPrior = new Dictionary<int, int>();
+        public bool Forked { get; private set; }
+
+        public ElderModel9Fork Fork(out ElderModel9Step step)
+        {
+            if (World == null) throw new InvalidOperationException("Reset required.");
+            var fork = new ElderModel9Fork
+            {
+                World = SaveCodec.Save(World), Contexts = contexts.ToDictionary(p => p.Key, p => p.Value.Copy()),
+                Prior = new Dictionary<int, int>(lastPrior), ReplaySteps = Replay.Steps.Count
+            };
+            step = Restore(fork);
+            return fork;
+        }
+
+        public ElderModel9Step Restore(ElderModel9Fork fork)
+        {
+            World = SaveCodec.Load((byte[])fork.World.Clone());
+            World.Config.TrainingWithheldTechnologies = WithheldTechnologies;
+            contexts.Clear();
+            foreach (var pair in fork.Contexts) contexts[pair.Key] = pair.Value.Copy();
+            lastPrior = new Dictionary<int, int>(fork.Prior);
+            if (Replay.Steps.Count > fork.ReplaySteps) Replay.Steps.RemoveRange(fork.ReplaySteps, Replay.Steps.Count - fork.ReplaySteps);
+            Forked = true;
+            var step = new ElderModel9Step { Turn = World.Turn, Fingerprint = SaveCodec.Fingerprint(World) };
+            Observe(step, new Dictionary<int, int>(lastPrior));
             return step;
         }
 
@@ -680,6 +733,7 @@ namespace Anthropocene.Simulation
                 v.TradeUtility = ElderTrade.RealisedUtility(record, id);
                 step.Villages.Add(v);
             }
+            lastPrior = prior;
             Observe(step, prior);
             return step;
         }
