@@ -1,6 +1,7 @@
-# model9 contract 11: Elder trade posture (design for review)
+# model9 contract 11: Elder trade posture
 
-Status: proposal, 20 October 2026. Nothing here is implemented. It follows the user's direction that the Elder
+Status: approved by the user on 20 October 2026, with self-interested credit (own lineage only) plus the
+`trade_utility` critic component. Implemented the same day; see "Implementation" at the end. It follows the user's direction that the Elder
 learn *when and how to offer goods and at what relative value*, and their warning that mining and service economies
 starve unless trade is sufficiently rewarded (`ElderCapitalCommitmentsDesign.md`, Part 2).
 
@@ -132,9 +133,52 @@ At arm level, with intervals pooled over seeds:
   Gaussian head.
 - **Reward shaping on trade volume:** it rewards trading, not the gains from trade.
 
-## Decisions for review
+## Decisions (user, 20 October 2026)
 
-1. The three levers (relative value, offer gate, export share) and the trade groups.
-2. Reward credit: (a) the `trade_utility` critic component; (b) whether partners' gains are credited (none, kin,
-   all).
-3. The no-collapse guard as the standing condition for looser-anchor stages.
+1. The three levers and the seven groups are approved.
+2. Credit: (a) the `trade_utility` component is approved; (b) partners' gains are not credited (self-interested, own
+   lineage only).
+3. The no-collapse guard: the user accepts the looser anchor provided nothing collapses.
+
+## Implementation (20 October 2026)
+
+**Simulator** (27ff141):
+- `ElderTrade.cs` holds the posture, groups, clamping and repair, the observation rows, and realised utility.
+- `Trade.Valuation` gains `ValueScale` and `Withheld`:
+  - `W` scales use value (cost unchanged, so `Crossing` uses c/a);
+  - `TrueW` is the unscaled curve. Realised utility (`TradeUtilitySnapshot`) is measured on it, so a posture cannot
+    inflate its own reward.
+- `Trade.Value`/`Plan` take postures; `MakeToOrder` takes the village's export share.
+- `TurnPlanner` passes the postures of directed villages and skips the draft plan when any posture exists.
+- Action schema 11 adds `TradeValue`/`TradeGate`/`TradeExportShare`. `From` clamps exactly as the compiler's `Repair`,
+  which logs the repair.
+- The `trade` observation set has 7 rows x 10 features (`ElderModel9Encoder.TradeFeatureNames`). Rows come from the
+  village's own native valuation and last turn's trades.
+- Villages report `TradeUtility` per step. Teacher labels carry the native posture.
+
+**Learner** (RL):
+- heads: Gaussian log value per group, a categorical gate per group, and a logistic export share. They start native:
+  value 1, Make at 0.8, and a share that snaps to 0 at evaluation;
+- `--learned-trade` treats the posture as a capital control anchored to the teacher, turns on the vector critic, and
+  sets the `trade_utility` weight to `contracts.TRADE_UTILITY_WEIGHT` = 0.1 (`data.reward_components`: the village's
+  own utility, not pooled by lineage);
+- exact upgrade from contract 10 (zero trunk columns for the new set; a zero `trade_utility` head on saved vector
+  critics).
+
+**Evidence:**
+- 112 model9 assertions:
+  - a native posture reproduces the handshake exactly;
+  - withholding gives nothing;
+  - a zero share makes nothing to order;
+  - relative values scale `W`, never `TrueW`;
+  - utility reporting is correct;
+  - schema-10 directives and repairs behave as specified.
+- The fixed suite (486 trade assertions) and 37 learner tests pass.
+- An upgraded contract-9 policy reproduces the decisive experiment's per-world welfare bit for bit, with learned
+  trade off and with learned trade at its native start (DEVELOPMENT 2000 and 2001; 80-86 trading village-turns per
+  25-turn world).
+
+**Not yet done:**
+- trade fixtures (complementary neighbours);
+- commitments holding the posture: commitments are off;
+- the planner counting imports as supply (roadmap).
