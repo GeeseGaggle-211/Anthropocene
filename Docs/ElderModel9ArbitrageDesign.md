@@ -17,6 +17,40 @@ That allows carrying over several turns, but nothing motivates it.
 
 ## Design
 
+### 0. Knowledge chain: finished goods before raw materials (review, 20 October 2026)
+
+A society cannot want a good it does not know. Demand for a raw material therefore follows exposure to what is made
+from it. The user's chain:
+1. village C buys copper tools from B, which trades with A, which has the ore;
+2. using them, C accumulates experience toward copper working;
+3. once C learns it, C starts demanding raw copper to make its own.
+
+Mechanics:
+- **Two levels of knowing a good.** A good can be *recognised* (held, traded, valued for its use) or *workable* (made,
+  or its raw input used).
+  - Finished goods are recognised by any society that has received or seen them in trade, and are usable without the
+    making technology. Today copper tools count only for societies holding CopperWorking; that rule changes to "to
+    make", not "to use".
+  - Raw goods are recognised by societies that can work them. Carriers recognise them from seeing them wanted or
+    offered in their own requests and responses (section 1). A trader can carry ingots it cannot smelt.
+- **Exposure toward the making technology.** Receiving and using a finished good adds knowledge exposure toward the
+  technology that makes it (copper tools toward CopperWorking), in proportion to its realised use value.
+  - This extends the existing trade-exposure hook (`TechnologyDiscovery.AddKnowledgeExposure` /
+    `RecordTradePractice`), today limited to the three opening domains, to Neolithic and later technologies.
+  - Discovery follows the existing threshold rules. Exposure without use (a good merely carried) counts less.
+- **Then the raw demand appears.** Once C holds CopperWorking, raw copper has use value for C (its recipe), so it
+  enters C's want lists. Partners see that in requests and record it (section 1). Carriers between C and the ore
+  then gain a resale value for it (sections 2-3). Ore demand thus spreads outward from the frontier of copper-tool
+  use, which is the diffusion the user described.
+
+Validation adds a chain fixture (A ore, B smith, C tool-user, beyond A's range). It checks that C:
+- uses B's tools;
+- accumulates CopperWorking exposure;
+- discovers it within a measured number of turns;
+- then demands ore, which reaches it through carriers.
+
+The no-exposure control never demands ore.
+
 ### 1. Market memory (authoritative, saved; Society-level, beside ContactMemory)
 
 Each society remembers, per contact settlement and trade group:
@@ -45,19 +79,35 @@ A market counts when the camp could reach it: within trade range of where the ca
 current destination intent (contract 10). Demand beyond a source's radius thus becomes reachable by moving toward it,
 which is the behaviour the user described.
 
-### 3. The valuation gains a resale band, scaled by the Elder
+### 3. The valuation gains a demand-scaled resale band
 
 ```
-W(x) = max(use(x), rho_k * r(g))   on [own target, own target + Q_resale)
+W(x) = max(use(x), d(g) * r(g))   on [own target, own target + Q_resale)
 ```
 
-Beyond its own need, a unit is worth its resale value, up to the resale quantity.
+Beyond its own need, a unit is worth its resale value, weighted by how strong and reliable the demand is, up to the
+resale quantity.
 
-- `rho_k` in [0, 1] is a **new per-group Elder lever** (action schema 13): "how much to trade for resale".
-- **The heuristic's `rho` is 0.** Native trade is unchanged and exact, and the teacher never demonstrates arbitrage.
-  The learner must discover it, so the behaviour is emergent rather than cloned.
-- Relative value (contract 11) still scales use value, and the gate still applies. A "withhold" group is not
-  resold.
+**`d(g)` in [0, 1]** is an intermediate, hidden quantity recomputed every turn from market memory. It is neither a
+configured constant nor a frozen weight (user review, 20 October 2026). It rises with:
+- the quantity wanted relative to what the camp can carry;
+- the number of distinct known buyers;
+- freshness;
+- the spread between resale price and own use.
+
+It falls as markets go stale, as the camp's own deliveries fill observed wants, and as other known suppliers serve
+the same buyers. Strong, recent, unserved demand pulls goods toward it; satisfied or stale demand stops pulling.
+
+**It is in every village's valuation**, heuristic or Elder, so goods diffuse even in worlds the heuristic runs. This
+is a deliberate economic change: native trade is re-measured and the teacher regenerated.
+
+**What the Elder learns on top:**
+- *where* to be: destination intents toward markets;
+- *which* groups to carry: the gate, and relative value, which now scales the resale band as well as use value;
+- *when* demand is worth acting on: it observes `d` and `r` in its trade rows.
+
+Its arbitrage is therefore learned from demand signals, and can exceed the heuristic's, because the heuristic never
+moves for a market. A "withhold" group is not resold.
 
 ### 4. Carrying (who can hold goods in transit)
 
@@ -72,6 +122,7 @@ Beyond its own need, a unit is worth its resale value, up to the resale quantity
 ### 5. Observation and learner
 
 **Trade rows** (contract 11) gain, per group:
+- the demand strength `d`;
 - the best known resale price;
 - its quantity;
 - the distance to that market and its age;
@@ -79,12 +130,13 @@ Beyond its own need, a unit is worth its resale value, up to the resale quantity
 
 **Region rows** (contract 10) gain a known-market flag. A destination can be chosen because a buyer lies beyond it.
 
-**The token model** reads `rho` per trade token, as value and gate today, so new metals are new rows.
+**The token model** reads them per trade token, so new metals are new rows. No new action head is needed: the
+existing relative value, gate and movement carry it.
 
 ### 6. Reward
 
-Realised utility is measured on the true valuation, which now includes the market resale band at `rho = 1`. The
-market price is set by others, so a posture cannot inflate it.
+Realised utility is measured on the true valuation, which now includes the demand-scaled resale band. Demand and
+prices are set by others, so a posture cannot inflate it.
 
 - A merchant's purchase registers at its real opportunity value, not as a loss.
 - A sale registers the gain over that value.
@@ -106,7 +158,8 @@ market price is set by others, so a posture cannot inflate it.
 **Failure case:** without demand at C, B never hoards.
 
 **Mechanics checks:**
-- rho = 0 is exact;
+- with no market memory (d = 0 everywhere) trade is exactly today's;
+- `d` falls as observed wants are filled and as markets age;
 - memory obeys the information rules (no hidden partner state);
 - conservation in transit;
 - replay.
