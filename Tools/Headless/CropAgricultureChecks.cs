@@ -100,7 +100,7 @@ internal static class CropAgricultureChecks
             using (var zip = new GZipStream(output, CompressionMode.Compress, true))
             using (var writer = new BinaryWriter(zip))
             {
-                writer.Write(reader.ReadString()); int length = reader.ReadInt32();
+                { string envelope = reader.ReadString(); writer.Write(envelope); if (envelope == "ANTHROPOCENE-15") writer.Write(reader.ReadByte()); } int length = reader.ReadInt32();
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(length), XmlDictionaryReaderQuotas.Max))
                 using (var metadata = new MemoryStream())
                 {

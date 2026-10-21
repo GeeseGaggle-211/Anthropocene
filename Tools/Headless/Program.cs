@@ -536,6 +536,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "ProductionOrderChecks", Cost = 3, Run = () => ProductionOrderChecks.Run() },
                 new ParallelChecks.Entry { Name = "WP4aValueChecks", Cost = 3, Run = () => WP4aValueChecks.Run() },
                 new ParallelChecks.Entry { Name = "SettlingChecks", Cost = 2, Run = () => SettlingChecks.Run() },
+                new ParallelChecks.Entry { Name = "SettlingGraceChecks", Cost = 3, Run = () => SettlingGraceChecks.Run() },
             };
             bool filtered = ParallelChecks.Filter(args, ref fixedChecks);
             ParallelChecks.KeepGoing = args.Contains("--keep-going");

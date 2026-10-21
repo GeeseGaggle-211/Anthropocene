@@ -76,6 +76,10 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double LightHousingBuilderOutputPerBaseDays = .03125;
         public double PlantFoodPerFabricUnit = 1, HousingMaterialUnitsPerHousing = 1;
         [System.Runtime.Serialization.OptionalField] public double AnimalFabricPerLightHousing = 1;
+        // Plant-cloth tents (SimulationConfig.PlantTentsEnabled, Docs/PlantTents.md): Cloth per Light Housing unit on the
+        // plant route. 1.5 x the hide route's fibre (one unit of either fibre costs one food and the same Weaver time), so
+        // a plant tent is never cheaper than a hide tent. Persisted only by Save15, like the flag.
+        [NonSerialized] public double ClothPerLightHousing = 1.5;
         public double StonePerHandTool = 1, ClayPerPot = 1, WoodPerFarmTool = 1, StonePerTool = 1, WoodPerTool = 1;
         public double ToolCoveragePerWorker = 1, CraftMasteryThreshold = 400;
         [System.Runtime.Serialization.OptionalField] public double UsefulFinishedGoodsReserveYears = 20;

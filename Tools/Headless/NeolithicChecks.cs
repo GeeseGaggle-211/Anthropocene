@@ -328,7 +328,8 @@ internal static class NeolithicChecks
         NeolithicProduction.ResolveNeeds(w, c, 20); Near(c.ClothPerCapita, .5, "stockpile cannot be reused"); var nc = w.Config.Neolithic; double cohesion = Math.Exp(-Math.Pow(100 / (nc.CohesionBandScale * (1 + nc.CohesionHousingGain)), 2)); Near(c.QoL, .75 * cohesion, "compensable rudimentary utility times derived cohesion S(100) for fully housed people (H = 1)"); Near(c.Population, 100, "QoL deficit not fatal"); Check(w.Camps.Count == 1, "QoL does not fission");
         c.Inventory.Cloth = 80; NeolithicProduction.ResolveNeeds(w, c, 20); Near(c.QoL, .9 * cohesion, "80 percent clothing is graded");
         c.FoodNeedsMetRatio = .5; c.WaterNeedsMetRatio = .5; c.Inventory.Cloth = 100; NeolithicProduction.ResolveNeeds(w, c, 20); Near(c.QoL, .25 * cohesion, "basic food and water gate QoL");
-        c.StationaryYears = 0; c.Inventory.Cloth = 0; w.FixedHousing.Single().Units = 0; c.Inventory.HousingUnits = 0; c.FoodNeedsMetRatio = c.WaterNeedsMetRatio = 1; NeolithicProduction.ResolveNeeds(w, c, 0);
+        // A camp still in its first settling period (SettlingGraceOnce) gets the expectation grace.
+        c.StationaryYears = 0; c.SettledExpectationEstablished = false; c.SettlingYears = 0; c.Inventory.Cloth = 0; w.FixedHousing.Single().Units = 0; c.Inventory.HousingUnits = 0; c.FoodNeedsMetRatio = c.WaterNeedsMetRatio = 1; NeolithicProduction.ResolveNeeds(w, c, 0);
         Near(c.RudimentaryExpectation, .25, "mobile expectation floor"); Near(c.HousingPerCapita, 0, "expectation cannot fake physical housing");
         Near(.1 / (4 * 2.5), .01, "Builder steady maintenance one percent"); Near(.1 / (4 * 2.5 * .25), .04, "generalist steady maintenance four percent");
     }
@@ -534,7 +535,7 @@ internal static class NeolithicChecks
             using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
             using (var writer = new BinaryWriter(zip))
             {
-                reader.ReadString(); writer.Write("ANTHROPOCENE-10"); int header = reader.ReadInt32();
+                if (reader.ReadString() == "ANTHROPOCENE-15") reader.ReadByte(); writer.Write("ANTHROPOCENE-10"); int header = reader.ReadInt32();
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(header), XmlDictionaryReaderQuotas.Max))
                 using (var metadata = new MemoryStream())
                 {
@@ -562,7 +563,7 @@ internal static class NeolithicChecks
             using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
             using (var writer = new BinaryWriter(zip))
             {
-                writer.Write(reader.ReadString()); int header = reader.ReadInt32();
+                { string envelope = reader.ReadString(); writer.Write(envelope); if (envelope == "ANTHROPOCENE-15") writer.Write(reader.ReadByte()); } int header = reader.ReadInt32();
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(header), XmlDictionaryReaderQuotas.Max))
                 using (var metadata = new MemoryStream())
                 {
@@ -587,7 +588,7 @@ internal static class NeolithicChecks
             using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
             using (var writer = new BinaryWriter(zip))
             {
-                writer.Write(reader.ReadString()); int header = reader.ReadInt32();
+                { string envelope = reader.ReadString(); writer.Write(envelope); if (envelope == "ANTHROPOCENE-15") writer.Write(reader.ReadByte()); } int header = reader.ReadInt32();
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(header), XmlDictionaryReaderQuotas.Max))
                 using (var metadata = new MemoryStream())
                 {

@@ -112,6 +112,10 @@ namespace Anthropocene.Presentation
                 // legacy configuration and convert their original multipliers.
                 config.GrowthReserveYears = config.MinimumStorageYears = config.MaximumStorageYears = double.NaN;
                 JsonUtility.FromJsonOverwrite(tuning.text, config);
+                // The Save15 rules are not serialized config fields (Docs/SettlingGrace.md); read their JSON block separately.
+                var save15 = new Save15TuningFile();
+                JsonUtility.FromJsonOverwrite(tuning.text, save15);
+                save15.Save15Rules?.ApplyTo(config);
                 config.MigrateMissingPhysicalFoodHorizons();
             }
             // The subsistence gear baseline is retired (model9 merge); loaded envelope-14 saves keep the mode SaveCodec stores.

@@ -658,7 +658,8 @@ internal static class EconomicSettlementChecks
             "a recently mobile mixed camp retains its portable shelter route");
 
         var stationary = SaveCodec.Load(SaveCodec.Save(recent));
-        stationary.Camps[0].StationaryYears =
+        // Site tenure: SiteYears under the one-time settling grace, StationaryYears otherwise.
+        stationary.Camps[0].StationaryYears = stationary.Camps[0].SiteYears =
             stationary.Config.Neolithic.RudimentaryExpectationRampYears;
         var stationaryPlan = Plan(stationary);
         Check(stationaryPlan.Order.Ceiling(CraftGood.Housing) > 0 &&
@@ -668,7 +669,7 @@ internal static class EconomicSettlementChecks
 
         var movedInPast = MobileMixed(cultivation: true, animals: 0);
         movedInPast.Camps[0].Inventory.AnimalFabric = 1000;
-        movedInPast.Camps[0].StationaryYears =
+        movedInPast.Camps[0].StationaryYears = movedInPast.Camps[0].SiteYears =
             movedInPast.Config.Neolithic.RudimentaryExpectationRampYears;
         movedInPast.Camps[0].Moves = 1;
         var movedInPastPlan = Plan(movedInPast);

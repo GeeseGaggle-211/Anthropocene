@@ -59,6 +59,8 @@ namespace Anthropocene.Simulation
         public CraftGood Good;
         public string Specialist, Track;
         public double Rate, Stone, Clay, Wood, PlantFood, AnimalFood, AnimalFabric, ConstructionMaterial, HousingMaterial;
+        // Plant Cloth consumed per unit: only the plant-tent route (NeolithicProduction.PlantTentRecipe) sets it.
+        public double Cloth;
         public bool Equipment, SpecialistOnly, HusbandryOnly, AgricultureOnly, AgricultureOrFishing, FishingOnly;
     }
     [Serializable]
@@ -72,6 +74,9 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double AnimalFood, AnimalFabric;
         // Portable Housing Material consumed by a Housing assembly receipt.
         [System.Runtime.Serialization.OptionalField] public double HousingMaterial;
+        // Plant Cloth a plant-tent receipt consumed (Docs/PlantTents.md). Transient: not in the XML history, so
+        // payloads without plant tents are unchanged; the Cloth itself is conserved in the camp inventory.
+        [NonSerialized] public double Cloth;
     }
     // Opt-in, transient explanation of one production attempt. It is populated
     // only with ResolutionMetrics.CaptureCraftWorkDiagnostics and never saved.
@@ -285,6 +290,37 @@ namespace Anthropocene.Simulation
                 new CraftRecipe { Good = CraftGood.FishingTools, Specialist = WorkforceRoles.Carpenter, Track = NeolithicTech.Carpentry, Rate = n.FarmToolsOutput, Stone = 1, Wood = 1, Equipment = true, FishingOnly = true }
             }).ToArray() : recipes;
         }
+        // Plant-cloth tents (SimulationConfig.PlantTentsEnabled, Docs/PlantTents.md). A camp without Husbandry whose
+        // society farms or fishes and holds Weaving and Construction may sew the same Light Housing good from plant
+        // Cloth. Husbandry camps keep the hide route unchanged.
+        public static bool PlantTentRoute(WorldState w, Camp c)
+            => w.Config.PlantTentsEnabled && w.Config.Neolithic.ClothPerLightHousing > 0 && c?.People != null &&
+               !CultivationEconomy.HusbandryEnabled(c) &&
+               (CultivationEconomy.Enabled(c) || NeolithicCapabilities.FeatureFishingEnabled(w, c)) &&
+               c.People.HasTech(NeolithicTech.Weaving) && c.People.HasTech(NeolithicTech.Construction);
+        // The plant route of the Light Housing recipe: same good, Builder, track, rate and equipment; Cloth replaces hide.
+        public static CraftRecipe PlantTentRecipe(CraftRecipe hide, NeolithicConfig n)
+            => new CraftRecipe { Good = CraftGood.LightHousing, Specialist = hide.Specialist, Track = hide.Track, Rate = hide.Rate,
+                Cloth = n.ClothPerLightHousing, Equipment = hide.Equipment, AgricultureOrFishing = true };
+        // The recipe table this camp produces from: the configuration's, with Light Housing on its plant route when the
+        // camp takes it. Identical (the same array) for every camp when plant tents are off.
+        public static CraftRecipe[] Recipes(WorldState w, Camp c)
+        {
+            var recipes = Recipes(w.Config);
+            if (!PlantTentRoute(w, c)) return recipes;
+            return recipes.Select(r => r.Good == CraftGood.LightHousing ? PlantTentRecipe(r, w.Config.Neolithic) : r).ToArray();
+        }
+        // Fibre per tent on the camp's route, in that route's fibre (Cloth or Animal Fabric).
+        public static double TentFibrePerUnit(WorldState w, Camp c)
+            => PlantTentRoute(w, c) ? w.Config.Neolithic.ClothPerLightHousing : w.Config.Neolithic.AnimalFabricPerLightHousing;
+        // Protected clothing first: the Cloth this turn's clothing consumption will use (beyond the Animal Fabric held)
+        // is never tent fibre. Returns the Cloth units held back from tents.
+        public static double TentClothReserve(WorldState w, Camp c, double years, double residents)
+        {
+            var n = w.Config.Neolithic;
+            double consumption = Math.Max(0, residents) * n.FabricConsumptionPerPersonTurn * Math.Max(0, years) / n.ReferenceTurnYears;
+            return Math.Max(0, consumption - Math.Max(0, c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric)));
+        }
         public static double Stock(Camp c, CraftGood good)
         {
             switch (good)
@@ -495,7 +531,8 @@ namespace Anthropocene.Simulation
             double target;
             switch (good)
             {
-                case CraftGood.Cloth: target = Math.Max(0, clothingTarget - Math.Max(0, fabric)); break;
+                case CraftGood.Cloth: target = Math.Max(0, clothingTarget - Math.Max(0, fabric))
+                        + (lightHousingUseful && PlantTentRoute(w, c) ? lightHousingTarget * n.ClothPerLightHousing : 0); break;
                 case CraftGood.AnimalFabric: target = Math.Max(0, clothingTarget - Math.Max(0, cloth)) + (lightHousingUseful ? lightHousingTarget : 0); break;
                 case CraftGood.Housing:
                 case CraftGood.LightHousing: target = 0; break;
@@ -562,7 +599,7 @@ namespace Anthropocene.Simulation
                     baseDemand[good] = value = DemandWithoutToolReplacement(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed);
                 return value;
             }
-            var recipes = ProductionOrder.Sort(Recipes(w.Config).Where(r => (r.Equipment || r.Good == CraftGood.HousingMaterial) && RecipeAvailable(w, c, r)),
+            var recipes = ProductionOrder.Sort(Recipes(w, c).Where(r => (r.Equipment || r.Good == CraftGood.HousingMaterial) && RecipeAvailable(w, c, r)),
                 good => Priority(c, good), order);
             // Under the Value order every recipe claims coverage and material in value
             // order across roles; otherwise the roles run in turn.
@@ -572,6 +609,8 @@ namespace Anthropocene.Simulation
             var room = MaterialEconomy.Materials.ToDictionary(m => m, m => MaterialEconomy.Inventory(c, m) +
                 (MaterialPriority(m) > 0 && n.SpecialistMaterialExtractionRate > 0 ? sources.Where(s => s.Material == m).Sum(s => s.Available) : 0));
             double plant = c.PlantFood, animalFood = c.AnimalFood, animalFabric = c.Inventory.AnimalFabric, housingMaterial = Math.Max(0, c.Inventory.HousingMaterial), useful = 0, copperOutput = 0;
+            // Plant-tent fibre: Cloth beyond this turn's clothing consumption (zero use when plant tents are off).
+            double tentCloth = Math.Max(0, c.Inventory.Cloth - TentClothReserve(w, c, years, residents));
             double generalistUseful = 0, generalistEffort = 0;
             double referenceIntervals = IntervalsForYears(w, years);
             double copperLabor = c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools * referenceIntervals / n.ToolCoveragePerWorker : 0;
@@ -601,6 +640,7 @@ namespace Anthropocene.Simulation
             var probeAnimalFood = animalFood;
             var probeAnimalFabric = animalFabric;
             var probeHousingMaterial = housingMaterial;
+            var probeTentCloth = tentCloth;
             var probePlanned = recipes.ToDictionary(r => r.Good, r => 0d);
             var probeLabor = labor.ToDictionary(p => p.Key, p => p.Value);
             foreach (var (role, recipe) in steps)
@@ -619,6 +659,7 @@ namespace Anthropocene.Simulation
                 if (recipe.PlantFood > 0) amount = Math.Min(amount, probePlant / recipe.PlantFood);
                 if (recipe.AnimalFood > 0) amount = Math.Min(amount, probeAnimalFood / recipe.AnimalFood);
                 if (recipe.AnimalFabric > 0) amount = Math.Min(amount, probeAnimalFabric / recipe.AnimalFabric);
+                if (recipe.Cloth > 0) amount = Math.Min(amount, probeTentCloth / recipe.Cloth);
                 if (recipe.HousingMaterial > 0) amount = Math.Min(amount, probeHousingMaterial / recipe.HousingMaterial);
                 if (recipe.Good == CraftGood.HousingMaterial) amount = Math.Min(wanted, FlatHousingMaterialLimit(rate, availableLabor, wanted, probeHousingMaterial));
                 if (amount <= 1e-12) continue;
@@ -632,6 +673,8 @@ namespace Anthropocene.Simulation
                 probeAnimalFood -= amount * recipe.AnimalFood;
                 probeAnimalFabric += recipe.Good == CraftGood.AnimalFabric ? amount : 0;
                 probeAnimalFabric -= amount * recipe.AnimalFabric;
+                probeTentCloth += recipe.Good == CraftGood.Cloth ? amount : 0;
+                probeTentCloth -= amount * recipe.Cloth;
                 probeHousingMaterial += recipe.Good == CraftGood.HousingMaterial ? amount : 0;
                 probeHousingMaterial -= amount * recipe.HousingMaterial;
             }
@@ -659,6 +702,7 @@ namespace Anthropocene.Simulation
                 if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                 if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
                 if (recipe.AnimalFabric > 0) amount = Math.Min(amount, animalFabric / recipe.AnimalFabric);
+                if (recipe.Cloth > 0) amount = Math.Min(amount, tentCloth / recipe.Cloth);
                 if (recipe.HousingMaterial > 0) amount = Math.Min(amount, housingMaterial / recipe.HousingMaterial);
                 if (recipe.Good == CraftGood.HousingMaterial) amount = Math.Min(amount, FlatHousingMaterialLimit(rate, availableLabor, wanted, housingMaterial));
                 if (amount <= 1e-12) { housingPlan.Settle(recipe, role); continue; }
@@ -691,6 +735,8 @@ namespace Anthropocene.Simulation
                 animalFood -= amount * recipe.AnimalFood;
                 animalFabric += recipe.Good == CraftGood.AnimalFabric ? amount : 0;
                 animalFabric -= amount * recipe.AnimalFabric;
+                tentCloth += recipe.Good == CraftGood.Cloth ? amount : 0;
+                tentCloth -= amount * recipe.Cloth;
                 housingMaterial += recipe.Good == CraftGood.HousingMaterial ? amount : 0;
                 housingMaterial -= amount * recipe.HousingMaterial;
                 housingPlan.Settle(recipe, role);
@@ -799,7 +845,7 @@ namespace Anthropocene.Simulation
             var result = new ManufacturingFoodPlan();
             if (!CultivationEconomy.EconomyEnabled(w, c) || c.Population <= 0) return result;
             var coverage = new ToolCoverageBudget(w, c, intervals);
-            var planned = MaterialEconomy.Forecast(w, c, Recipes(w.Config), intervals, years, coverage.Remaining, true, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, plantFoodBudget, animalFoodBudget, null, order);
+            var planned = MaterialEconomy.Forecast(w, c, Recipes(w, c), intervals, years, coverage.Remaining, true, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, plantFoodBudget, animalFoodBudget, null, order);
             result.PlantFood = planned[CraftGood.Cloth] * w.Config.Neolithic.PlantFoodPerFabricUnit;
             result.AnimalFood = planned[CraftGood.AnimalFabric];
             return result;
@@ -844,7 +890,10 @@ namespace Anthropocene.Simulation
             double clothingUse = SubsistenceNeeds.GoodsResidents(w, c, residents) * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
             double spareFabric = Math.Max(0, Math.Max(0, c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric))
                 - Math.Max(0, clothingUse - Math.Max(0, c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth))));
-            return Math.Max(0, gap / n.LightHousingPeoplePerUnit * n.AnimalFabricPerLightHousing - spareFabric);
+            // Plant-tent route: the fibre is Cloth beyond the clothing consumption.
+            if (PlantTentRoute(w, c))
+                spareFabric = Math.Max(0, Math.Max(0, c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth)) - TentClothReserve(w, c, years, SubsistenceNeeds.GoodsResidents(w, c, residents)));
+            return Math.Max(0, gap / n.LightHousingPeoplePerUnit * TentFibrePerUnit(w, c) - spareFabric);
         }
         // Harvest still required for the planned feedstock. Clothing feedstock may
         // draw on inventory beyond this turn's meals; every other feedstock only on
@@ -938,6 +987,9 @@ namespace Anthropocene.Simulation
             double foodLimit = amount;
             // Goods already made for export after production (Docs/Trade.md) are not inputs.
             if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, inv.AnimalFabric - c.TradeHeldForExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
+            // Plant tents use only Cloth beyond this turn's clothing consumption (protected clothing comes first).
+            if (recipe.Cloth > 0) amount = Math.Min(amount, Math.Max(0, inv.Cloth - c.TradeHeldForExport(CraftGood.Cloth)
+                - TentClothReserve(w, c, intervals * w.Config.BaseDays / w.Config.DaysPerYear, c.Population)) / recipe.Cloth);
             if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, inv.HousingMaterial - c.TradeHeldForExport(CraftGood.HousingMaterial)) / recipe.HousingMaterial);
             // A recipe ranked below Housing Material leaves the Wood/Clay its
             // unfinished claim needs, whichever role happens to run first.
@@ -951,7 +1003,7 @@ namespace Anthropocene.Simulation
             double dependencyLimit = amount;
             // Goods storage (Docs/PlannerTradeStorageDesign.md §3): an addition is cut to what fits; nothing is destroyed.
             double storageRoom = c.GoodsStorage?.RoomUnits(c) ?? double.PositiveInfinity;
-            if (c.GoodsStorage != null) amount = c.GoodsStorage.Limit(c, recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
+            if (c.GoodsStorage != null) amount = c.GoodsStorage.Limit(c, recipe.Good, amount, recipe.AnimalFabric + recipe.Cloth, recipe.HousingMaterial);
             if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
                 record.ProductionLimits.Add(new ProductionLimitDiagnostic
                 {
@@ -982,13 +1034,14 @@ namespace Anthropocene.Simulation
             double consumedTools = recipe.Equipment ? coverage.ToolsConsumed - toolsBeforeBudget : 0;
             inv.HandTools -= consumedHand; inv.Tools -= consumedTools;
             inv.Stone -= amount * recipe.Stone; inv.Wood -= wood; inv.Clay -= clay; c.PlantFood -= amount * recipe.PlantFood; c.AnimalFood -= amount * recipe.AnimalFood; inv.AnimalFabric -= amount * recipe.AnimalFabric; inv.HousingMaterial -= amount * recipe.HousingMaterial;
+            inv.Cloth -= amount * recipe.Cloth;
             if (housing != null) housing.CompleteDirect(recipe, amount);
             switch (recipe.Good) { case CraftGood.HandTools: inv.HandTools += amount; break; case CraftGood.Pots: inv.Pots += amount; break; case CraftGood.Cloth: inv.Cloth += amount; break; case CraftGood.FarmTools: inv.FarmTools += amount; break; case CraftGood.Housing: AddFixedHousing(w, c, amount, record.Duration > 0 ? record.StartDays + record.Duration : w.Days + intervals * w.Config.BaseDays); break; case CraftGood.Tools: inv.Tools += amount; break; case CraftGood.AnimalFabric: inv.AnimalFabric += amount; break; case CraftGood.LightHousing: inv.LightHousingUnits += amount; break; case CraftGood.HerdingTools: inv.HerdingTools += amount; break; case CraftGood.HousingMaterial: inv.HousingMaterial += amount; break; case CraftGood.FishingTools: inv.FishingTools += amount; break; default: throw new ArgumentOutOfRangeException(nameof(recipe.Good), recipe.Good, "Unknown craft good."); }
             // Output first fills what this camp still owes for export; Hand Tools made for export are not this turn's coverage.
             double forExport = c.TradeOwed == null ? 0 : Math.Min(amount, Math.Max(0, c.TradeOwed[(int)recipe.Good]));
             if (forExport > 0) c.TradeOwed[(int)recipe.Good] -= forExport;
             coverage.Credit(recipe.Good, amount - forExport);
-            record.Production.Add(new ProductionReceipt { Camp = c.Id, Good = recipe.Good, Role = role, Output = amount, WorkerIntervals = used, Stone = amount * recipe.Stone, Clay = clay, Wood = wood, PlantFood = amount * recipe.PlantFood, AnimalFood = amount * recipe.AnimalFood, AnimalFabric = amount * recipe.AnimalFabric, HousingMaterial = amount * recipe.HousingMaterial, EquipmentWorkerIntervals = recipe.Equipment ? used : 0, HandToolsConsumed = consumedHand, ToolsConsumed = consumedTools });
+            record.Production.Add(new ProductionReceipt { Camp = c.Id, Good = recipe.Good, Role = role, Output = amount, WorkerIntervals = used, Stone = amount * recipe.Stone, Clay = clay, Wood = wood, PlantFood = amount * recipe.PlantFood, AnimalFood = amount * recipe.AnimalFood, AnimalFabric = amount * recipe.AnimalFabric, HousingMaterial = amount * recipe.HousingMaterial, Cloth = amount * recipe.Cloth, EquipmentWorkerIntervals = recipe.Equipment ? used : 0, HandToolsConsumed = consumedHand, ToolsConsumed = consumedTools });
             var demographic = record.Demographics.FirstOrDefault(d => d.Camp == c.Id);
             if (demographic != null) demographic.ManufacturingFood += amount * (recipe.PlantFood + recipe.AnimalFood);
             double work = amount / recipe.Rate;
@@ -1022,7 +1075,7 @@ namespace Anthropocene.Simulation
             DepreciatePots(w, c, years);
             if (CultivationEconomy.EconomyEnabled(w, c))
             {
-                var recipes = Recipes(w.Config);
+                var recipes = Recipes(w, c);
                 double equipment = (c.Inventory.HandTools + c.Inventory.Tools + (c.People.HasTech(NeolithicTech.CopperWorking) ? c.Inventory.CopperTools : 0)) * intervals / w.Config.Neolithic.ToolCoveragePerWorker;
                 var coverage = new ToolCoverageBudget(w, c, intervals);
                 var housing = MaterialEconomy.Gather(w, c, recipes, intervals, years, gatheringWorkerIntervals, ref equipment, record, true, true, needs);
@@ -1098,6 +1151,15 @@ namespace Anthropocene.Simulation
             var n = w.Config.Neolithic;
             return SocialCohesion(n, HousingShare(n, HousingCapacity(w, c, w.Days), population), population);
         }
+        // Settled expectation E (Docs/SettlingGrace.md). The ramp E = floor + (1 - floor) min(1, StationaryYears / ramp)
+        // is the first-settling grace; once SettledExpectationEstablished (set only under SettlingGraceOnce) E is 1 and a
+        // move never lowers it. Readers without a resolved E use this formula.
+        public static double SettledExpectation(NeolithicConfig n, Camp c)
+            => c.SettledExpectationEstablished ? 1
+                : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+        // Years at the current tile for site-tenure decisions (fixed versus portable shelter). Without the grace this is
+        // the historical StationaryYears, which an abandoning village keeps; with it, SiteYears, which every move resets.
+        public static double SiteTenureYears(SimulationConfig cfg, Camp c) => cfg.SettlingGraceOnce ? c.SiteYears : c.StationaryYears;
         public static void ResolveNeeds(WorldState w, Camp c, double years, int residents = -1)
         {
             var n = w.Config.Neolithic;
@@ -1118,7 +1180,13 @@ namespace Anthropocene.Simulation
             var shelter = HousingCapacity(w, c, w.Days);
             c.HousingPerCapita = n.SubsistenceNeedsCovered ? SubsistenceNeeds.Coverage(cohort, covered, shelter.Total) : HousingCoverage(shelter, cohort);
             c.StationaryYears += years;
-            c.RudimentaryExpectation = n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+            if (w.Config.SettlingGraceOnce)
+            {
+                c.SiteYears += years; c.SettlingYears += years;
+                if (c.SettlingYears + 1e-9 >= n.RudimentaryExpectationRampYears || c.StationaryYears + 1e-9 >= n.RudimentaryExpectationRampYears)
+                    c.SettledExpectationEstablished = true;
+            }
+            c.RudimentaryExpectation = SettledExpectation(n, c);
             double clothing = 1 - c.RudimentaryExpectation * (1 - c.ClothPerCapita), housing = 1 - c.RudimentaryExpectation * (1 - c.HousingPerCapita);
             if (n.SubsistenceNeedsCovered)
             {

@@ -107,7 +107,7 @@ namespace Anthropocene.Simulation
                     prepared.Needs.TryGetValue(camp.Id, out var campNeeds);
                     double equipmentOutputs = 0, housingAssembly = 0;
                     if (campNeeds?.Production != null)
-                        GoodsStorage.PlannedUse(storageRecipes, g => campNeeds.Production.TryGetValue(g, out double q) ? q : 0, out equipmentOutputs, out housingAssembly);
+                        GoodsStorage.PlannedUse(NeolithicProduction.PlantTentRoute(w, camp) ? NeolithicProduction.Recipes(w, camp) : storageRecipes, g => campNeeds.Production.TryGetValue(g, out double q) ? q : 0, out equipmentOutputs, out housingAssembly);
                     camp.GoodsStorage = GoodsStorage.Begin(w, camp, horizon.Years, campNeeds?.Residents ?? camp.Population, equipmentOutputs, housingAssembly);
                 }
             }
@@ -453,6 +453,9 @@ namespace Anthropocene.Simulation
                     // Settled expectations survive abandonment, so fixed
                     // housing left behind hurts QoL under the same formula.
                     if (!abandoning) camp.StationaryYears = 0;
+                    // Site tenure always restarts; the settled expectation of an established
+                    // camp does not (SettlingGraceOnce, Docs/SettlingGrace.md).
+                    camp.SiteYears = 0;
                     record.Log("Camp " + camp.Id + " moved from " + camp.Tile + " to " + target + ".");
                 }
                 else camp.StationaryTurns++;

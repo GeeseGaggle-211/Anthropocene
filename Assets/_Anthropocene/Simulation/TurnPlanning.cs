@@ -653,7 +653,7 @@ namespace Anthropocene.Simulation
             {
                 var economy = acceptedEconomy.TryGetValue(camp.Id, out var economyOrder) ? economyOrder.Economy : EconomicIntent.From(camp);
                 var snapshot = EconomicPlanner.Preview(planningCamp, economy, residents);
-                var recipes = NeolithicProduction.Recipes(world.Config);
+                var recipes = NeolithicProduction.Recipes(world, planningCamp);
                 var sources = MaterialEconomy.KnownSources(world, snapshot, world.Days);
                 prepared.ProductionOrders.TryGetValue(camp.Id, out var order);
                 needs.Order = order;
@@ -719,6 +719,8 @@ namespace Anthropocene.Simulation
             copy.DeficitTurns = camp.DeficitTurns; copy.DemographicGrowthMultiplier = camp.DemographicGrowthMultiplier;
             copy.GrowthRemainder = camp.GrowthRemainder; copy.Moves = camp.Moves;
             copy.StationaryTurns = camp.StationaryTurns; copy.StationaryYears = camp.StationaryYears;
+            copy.SettledExpectationEstablished = camp.SettledExpectationEstablished;
+            copy.SettlingYears = camp.SettlingYears; copy.SiteYears = camp.SiteYears;
             copy.IsVillage = camp.IsVillage;
             if (tile != camp.Tile)
             {
@@ -728,6 +730,9 @@ namespace Anthropocene.Simulation
                 // relocation rather than the years spent at the old site.
                 copy.StationaryTurns = 0;
                 copy.StationaryYears = 0;
+                // As in TurnResolver.Move: site tenure restarts, an established
+                // settled expectation is kept (SettlingGraceOnce).
+                copy.SiteYears = 0;
                 if (camp.IsVillage) copy.IsVillage = false;
             }
             return copy;

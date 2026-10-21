@@ -1,0 +1,56 @@
+# One-time settling grace
+
+Status: plan of record for new worlds (`SimulationConfig.SettlingGraceOnce = true`, `OpeningConfig.json`
+`Save15Rules.SettlingGraceOnce`). Saves without the Save15 envelope load with the rule off and keep the earlier
+behaviour exactly.
+
+## Problem
+
+The settled expectation `E = floor + (1 - floor) min(1, StationaryYears / RudimentaryExpectationRampYears)` scales
+the clothing and housing shortfall terms of QoL (`1 - E (1 - coverage)`). Before this rule every move of a non-village
+camp set `StationaryYears = 0` (`TurnResolver.Move`, and the planning copy `TurnPlanner.PlanningCampAt`), so a camp
+with long tenure dropped from `E = 1.0` to `0.40` after a one-tile move and its clothing and housing shortfalls counted
+60% less. The model9 movement audit (RL `docs/MODEL9_MOVEMENT_AUDIT.md`) found a learned policy exploiting it: it
+shuttled between its own housed tiles (49% of moves returned to one of the last two tiles), split more, and hid real
+clothing and housing shortfalls.
+
+The low expectation was meant only as a grace for tribes first settling after the Paleolithic transition.
+
+## Rule
+
+- **Authoritative state** (per camp, Save15 block): `SettlingYears` (Neolithic years lived by the lineage, never reset
+  by a move), `SettledExpectationEstablished` (the grace is over) and `SiteYears` (years at the current tile, reset by
+  every move). `StationaryYears` and `StationaryTurns` keep their meaning.
+- **Completion condition.** The grace ends the first time the lineage has lived `RudimentaryExpectationRampYears`
+  (100 years, five 20-year turns) of settled life, counted in `NeolithicProduction.ResolveNeeds` where
+  `StationaryYears` accrues, or `StationaryYears` itself reaches the ramp. For a camp that never moves the two
+  coincide with the first time `E` reaches 1.0. Counting lineage years rather than waiting for `E = 1` stops a camp
+  that keeps moving from staying in the grace indefinitely; the horizon is the ramp's own.
+- **After completion** `E = 1` (`NeolithicProduction.SettledExpectation`), whatever `StationaryYears` does; moving
+  never lowers it.
+- **Moves** still reset `StationaryTurns`, `SiteYears` and (outside village abandonment) `StationaryYears`, in the
+  resolver and in the planning copy, so the planner and the resolver agree.
+- **Site tenure.** The fixed- versus portable-shelter test in `DemandControl` (`demonstratedFixedTenure`) reads
+  `NeolithicProduction.SiteTenureYears`: `SiteYears` under the rule, the historical `StationaryYears` without it.
+- **Fission.** A daughter inherits her parent's `SettlingYears` and `SettledExpectationEstablished`; her `SiteYears`
+  starts at zero at her new tile.
+- All readers of an unresolved `E` (`ProductionDemand`, `Fission`, `SocialRelocation`) use
+  `NeolithicProduction.SettledExpectation`, numerically identical to the old formula when the rule is off.
+
+## Scaling, determinism and persistence
+
+O(1) per camp per turn; no new scans. Deterministic, no new random streams. The rule fields are `[NonSerialized]`
+and travel in the Save15 envelope (`SaveCodec`, `ANTHROPOCENE-15`): it is the Save14 layout with the subsistence
+profile as extension flag 4, plus a trailing block with the rule flags, `ClothPerLightHousing` and each camp's
+settling state. It is written only when either Save15 rule is on, so every world with both rules off keeps its
+earlier envelope, payload and `SaveCodec.Fingerprint` byte for byte. `ConfigurationHash` adds a discriminator when
+a Save15 rule is on.
+
+## Validation
+
+`Tools/Headless/SettlingGraceChecks.cs` (fixed suite): golden fingerprints of two generated Small(6) worlds after
+13 turns with both rules off, recorded from a build of 557c6f9; the grace and established cases; moves reset
+`StationaryTurns` and `SiteYears`; daughters inherit; the planning copy agrees with the resolver; site-tenure test;
+Save15 round trip and three-turn continuation; earlier envelopes load with the rules off; `OpeningConfig.json`
+consistency. A cross-build probe (base 557c6f9 versus this branch with both rules off, seeds 11 and 23, 30 turns,
+plus loading the base build's saves and continuing 9 turns) matched every fingerprint.

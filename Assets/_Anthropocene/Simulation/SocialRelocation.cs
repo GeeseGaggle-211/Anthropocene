@@ -626,7 +626,7 @@ namespace Anthropocene.Simulation
                     TerrestrialSupply = site.TerrestrialFood, ManagedHumanFoodDisplaced = 0,
                     ManagedAnimalFood = 0,
                     HarvestProductivity = 1, ReservedHerders = CultivationEconomy.Workers(c, WorkforceRoles.Herder),
-                    Sources = MaterialEconomy.KnownSources(world, c, world.Days), Recipes = NeolithicProduction.Recipes(world.Config)
+                    Sources = MaterialEconomy.KnownSources(world, c, world.Days), Recipes = NeolithicProduction.Recipes(world, c)
                 };
             }
         }
@@ -812,8 +812,7 @@ namespace Anthropocene.Simulation
 
         private static double Expectation(NeolithicConfig n, Camp c)
             => c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
-                : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor)
-                    * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+                : NeolithicProduction.SettledExpectation(n, c);
 
         internal static long BoundEvaluations, BoundPruned;
         // Opt-in soundness audit for checks: every bound is compared with the
@@ -895,7 +894,8 @@ namespace Anthropocene.Simulation
             double afterMeals = Math.Max(0, plantPool + animalPool + aquaticPool - foodNeed);
             double plantBudget = Math.Min(plantPool, afterMeals);
             double animalBudget = Math.Min(animalPool, Math.Max(0, afterMeals - plantBudget));
-            var recipes = cap.Recipes ?? NeolithicProduction.Recipes(cfg);
+            var recipes = cap.Recipes ?? NeolithicProduction.Recipes(world, c);
+            bool plantTents = recipes.Any(r => r.Cloth > 0);
             var tools = new ToolCoverageBudget(world, c, intervals);
             // Both passes read the same camp view, cohort, horizon, sources and
             // (absent) order, so each good's useful demand is identical; only the
@@ -909,11 +909,13 @@ namespace Anthropocene.Simulation
                 false, c.Population, false, false, plantBudget, animalBudget, cap.Sources, null,
                 material.Stone, material.Clay, material.Wood, demand);
             double Produced(CraftGood good) => outputs.TryGetValue(good, out double amount) ? Math.Max(0, amount) : 0;
+            // Tents consume the fibre of the camp's route: Cloth on the plant route, Animal Fabric otherwise.
             double cloth = Math.Max(0, c.Inventory.Cloth + c.TradeImport(CraftGood.Cloth)
-                + Produced(CraftGood.Cloth) - c.TradeExport(CraftGood.Cloth));
+                + Produced(CraftGood.Cloth) - c.TradeExport(CraftGood.Cloth)
+                - (plantTents ? Produced(CraftGood.LightHousing) * n.ClothPerLightHousing : 0));
             double animalFabric = Math.Max(0, c.Inventory.AnimalFabric + c.TradeImport(CraftGood.AnimalFabric)
                 + Produced(CraftGood.AnimalFabric) - c.TradeExport(CraftGood.AnimalFabric)
-                - Produced(CraftGood.LightHousing) * n.AnimalFabricPerLightHousing);
+                - (plantTents ? 0 : Produced(CraftGood.LightHousing) * n.AnimalFabricPerLightHousing));
             double clothingAvailable = cloth + animalFabric + opportunity.Clothing;
             double clothingNeed = servicePersonYears * PhysicalDemography.ClothingPerPersonYear(cfg);
             double clothingCoverage = clothingNeed > 0 ? Math.Min(1, clothingAvailable / clothingNeed) : 1;

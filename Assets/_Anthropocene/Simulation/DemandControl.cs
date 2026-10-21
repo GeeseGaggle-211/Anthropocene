@@ -136,13 +136,15 @@ namespace Anthropocene.Simulation
             public readonly Dictionary<CraftGood, double> Outputs = new Dictionary<CraftGood, double>(); // goods made per unit, intermediates included
             public double ToolOutputs, Stone, Clay, Wood, Construction, Plant,
                 Animal, Fabric, Material, FoodService;
+            // Plant Cloth a plant tent draws from stock (Docs/PlantTents.md).
+            public double ClothStock;
             public void Add(Bundle b, double scale)
             {
                 foreach (var p in b.RoleYears) RoleYears[p.Key] = (RoleYears.TryGetValue(p.Key, out double v) ? v : 0) + p.Value * scale;
                 foreach (var p in b.Outputs) Outputs[p.Key] = (Outputs.TryGetValue(p.Key, out double v) ? v : 0) + p.Value * scale;
                 ToolOutputs += b.ToolOutputs * scale; Stone += b.Stone * scale; Clay += b.Clay * scale; Wood += b.Wood * scale; Construction += b.Construction * scale;
                 Plant += b.Plant * scale; Animal += b.Animal * scale;
-                Fabric += b.Fabric * scale; Material += b.Material * scale;
+                Fabric += b.Fabric * scale; Material += b.Material * scale; ClothStock += b.ClothStock * scale;
                 FoodService += b.FoodService * scale;
             }
         }
@@ -163,7 +165,7 @@ namespace Anthropocene.Simulation
                 DevelopmentFoodPerUnit, TypedDevelopmentNeed,
                 SubstitutionFood, PolicyDevelopmentUnits;
             // Opening intermediates this request's bundle drew from stock, returned if the request is withdrawn.
-            internal double ReservedFabric, ReservedMaterial;
+            internal double ReservedFabric, ReservedMaterial, ReservedCloth;
             public double Fraction => Units > Epsilon ? Granted / Units : 1;
         }
         internal sealed class Allocation
@@ -520,13 +522,16 @@ namespace Anthropocene.Simulation
             // Stock of made intermediates credited once, before any is made.
             double freeFabric = Math.Max(0, c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric));
             double freeMaterial = Math.Max(0, c.Inventory.HousingMaterial - c.TradeExport(CraftGood.HousingMaterial));
-            Bundle WithInput(Bundle b, double perUnit, CraftGood input, double units, ref double stock, bool fabric, out double reserved)
+            // Plant-tent Cloth free of this turn's clothing consumption; set with the fabric adjustment below.
+            double freeTentCloth = 0;
+            Bundle WithInput(Bundle b, double perUnit, CraftGood input, double units, ref double stock, bool fabric, out double reserved, bool cloth = false)
             {
                 reserved = 0;
                 if (b == null || !(perUnit > 0)) return b;
                 double need = units * perUnit, fromStock = Math.Min(stock, need); stock -= fromStock;
                 double madeShare = need > Epsilon ? (need - fromStock) / need : 0;
-                if (fabric) b.Fabric += perUnit * (1 - madeShare); else b.Material += perUnit * (1 - madeShare);
+                if (cloth) b.ClothStock += perUnit * (1 - madeShare);
+                else if (fabric) b.Fabric += perUnit * (1 - madeShare); else b.Material += perUnit * (1 - madeShare);
                 if (madeShare > Epsilon)
                 {
                     var made = Usable(byGood[input]) ? Craft(input) : null;
@@ -547,10 +552,11 @@ namespace Anthropocene.Simulation
                 var b = Craft(good);
                 if (r.AnimalFabric > 0) b = WithInput(b, r.AnimalFabric, CraftGood.AnimalFabric, units, ref freeFabric, true, out req.ReservedFabric);
                 if (b != null && r.HousingMaterial > 0) b = WithInput(b, r.HousingMaterial, CraftGood.HousingMaterial, units, ref freeMaterial, false, out req.ReservedMaterial);
+                if (b != null && r.Cloth > 0) b = WithInput(b, r.Cloth, CraftGood.Cloth, units, ref freeTentCloth, false, out req.ReservedCloth, true);
                 if (b == null)
                 {
-                    freeFabric += req.ReservedFabric; freeMaterial += req.ReservedMaterial;
-                    req.ReservedFabric = req.ReservedMaterial = 0;
+                    freeFabric += req.ReservedFabric; freeMaterial += req.ReservedMaterial; freeTentCloth += req.ReservedCloth;
+                    req.ReservedFabric = req.ReservedMaterial = req.ReservedCloth = 0;
                     req.Unmet = "missing capability"; alloc.Requests.Add(req); return req;
                 }
                 req.Bundle = b; alloc.Requests.Add(req); return req;
@@ -700,6 +706,8 @@ namespace Anthropocene.Simulation
             alloc.DevelopmentFoodGap = currentDevelopmentFoodGap;
             // Fabric this turn's clothing consumption will use (beyond the Cloth held) is not free for tents.
             double consumption = residents * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
+            // Plant tents: likewise the Cloth this turn's clothing will use (beyond the Animal Fabric held) is not tent fibre.
+            freeTentCloth = Math.Max(0, Math.Max(0, c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth)) - Math.Max(0, consumption - freeFabric));
             freeFabric = Math.Max(0, freeFabric - Math.Max(0, consumption - Math.Max(0, c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth))));
             // Shelter is one service. Retained fixed and portable capital each
             // request their own replacement; the remaining deficit follows the
@@ -709,7 +717,8 @@ namespace Anthropocene.Simulation
             double gapPeople = NeolithicProduction.HousingGapPeople(w, candidate, residents, endDays);
             double totalGapPeople = gapPeople;
             bool fixedPossible = Usable(byGood[CraftGood.Housing]) && NeolithicProduction.Priority(candidate, CraftGood.Housing) > 0;
-            bool tentsPossible = CultivationEconomy.HusbandryEnabled(c) && Usable(byGood[CraftGood.LightHousing]) && NeolithicProduction.Priority(candidate, CraftGood.LightHousing) > 0;
+            bool plantTents = byGood.TryGetValue(CraftGood.LightHousing, out var tentRecipe) && tentRecipe.Cloth > 0;
+            bool tentsPossible = (CultivationEconomy.HusbandryEnabled(c) || plantTents) && Usable(byGood[CraftGood.LightHousing]) && NeolithicProduction.Priority(candidate, CraftGood.LightHousing) > 0;
             double PerUnit(CraftGood g) => g == CraftGood.Housing ? n.HousingPeoplePerUnit : n.LightHousingPeoplePerUnit;
             // Animal textile need (SimulationConfig.AnimalTextileNeedFirst): the food for the tent fabric the residents
             // need, which the resolver pays with the clothing after meals and ahead of the reserve refill.
@@ -733,6 +742,14 @@ namespace Anthropocene.Simulation
                 }
                 if (!tentsPossible) return false;
                 double lightUnits = people / n.LightHousingPeoplePerUnit;
+                if (plantTents)
+                {
+                    // Plant tents: Cloth beyond the clothing consumption, else woven from the plant envelope.
+                    double missingCloth = Math.Max(0, lightUnits * byGood[CraftGood.LightHousing].Cloth - freeTentCloth);
+                    if (!(missingCloth > Epsilon)) return true;
+                    return byGood.ContainsKey(CraftGood.Cloth) && Usable(byGood[CraftGood.Cloth]) &&
+                        missingCloth * byGood[CraftGood.Cloth].PlantFood <= Math.Max(d.PlantEnvelope, d.PlantEnvelopeClothing) + Epsilon;
+                }
                 double missingFabric = Math.Max(0,
                     lightUnits * byGood[CraftGood.LightHousing].AnimalFabric - freeFabric);
                 if (!(missingFabric > Epsilon)) return true;
@@ -776,7 +793,8 @@ namespace Anthropocene.Simulation
             // route. Once the same site has been retained for the existing
             // settlement-expectation horizon, fixed shelter becomes the
             // preferred deficit route even if this society moved in the past.
-            bool demonstratedFixedTenure = c.StationaryYears + Epsilon >=
+            // Site tenure, not lifestyle years (Docs/SettlingGrace.md).
+            bool demonstratedFixedTenure = NeolithicProduction.SiteTenureYears(w.Config, c) + Epsilon >=
                 n.RudimentaryExpectationRampYears;
             bool mobilePolicy = !fixedCapital && portableCapital &&
                 !demonstratedFixedTenure;
@@ -1560,6 +1578,7 @@ namespace Anthropocene.Simulation
                 if (total.Plant + total.Animal + total.FoodService >
                     foodRoom + Epsilon) return "food room";
                 if (total.Fabric > Math.Max(0, c.Inventory.AnimalFabric) + Epsilon) return "fabric";
+                if (total.ClothStock > Math.Max(0, c.Inventory.Cloth) + Epsilon) return "cloth";
                 if (total.Material > Math.Max(0, c.Inventory.HousingMaterial) + Epsilon) return "housing material";
                 double plantFromLand = Math.Max(0, total.Plant - protectedPlant -
                     availablePlantInventory);
@@ -1603,7 +1622,7 @@ namespace Anthropocene.Simulation
                     if (b == null) return null;
                     double persons = b.RoleYears.Values.Sum() / years, food = b.Plant + b.Animal, plant = b.Plant, animal = b.Animal;
                     double wood = b.Wood + b.Construction, clay = b.Clay, stone = b.Stone;
-                    foreach (var (input, perUnit) in new[] { (CraftGood.HousingMaterial, r.HousingMaterial), (CraftGood.AnimalFabric, r.AnimalFabric) })
+                    foreach (var (input, perUnit) in new[] { (CraftGood.HousingMaterial, r.HousingMaterial), (CraftGood.AnimalFabric, r.AnimalFabric), (CraftGood.Cloth, r.Cloth) })
                     {
                         if (!(perUnit > 0)) continue;
                         var m = Usable(byGood[input]) ? Craft(input) : null;
@@ -1811,7 +1830,7 @@ namespace Anthropocene.Simulation
                 if (!KernelShelterOnlyDiagnostic) { replaced.Add("clothing"); replaced.Add("clothing reserve"); }
                 foreach (var q in alloc.Requests.Where(q => replaced.Contains(q.Service)).ToList())
                 {
-                    freeFabric += q.ReservedFabric; freeMaterial += q.ReservedMaterial;
+                    freeFabric += q.ReservedFabric; freeMaterial += q.ReservedMaterial; freeTentCloth += q.ReservedCloth;
                     alloc.Requests.Remove(q);
                 }
                 protectedSplit = !KernelShelterOnlyDiagnostic; kernelEnacted = true;
@@ -2685,6 +2704,7 @@ namespace Anthropocene.Simulation
                 case "animal feedstock": return b.Animal > 0;
                 case "food room": return b.Plant + b.Animal + b.FoodService > 0;
                 case "fabric": return b.Fabric > 0;
+                case "cloth": return b.ClothStock > 0;
                 case "housing material": return b.Material > 0;
                 case "material Stone": return b.Stone > 0;
                 case "material Clay": return b.Clay > 0 || b.Construction > 0;

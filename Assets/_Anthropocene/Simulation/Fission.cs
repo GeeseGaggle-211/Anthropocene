@@ -149,7 +149,7 @@ namespace Anthropocene.Simulation
             var cfg = w.Config; var n = cfg.Neolithic; int residents = camp.Population, nd = daughterSize, stay = residents - nd;
             double f = residents > 0 ? nd / (double)residents : 0;
             double floor = n.RudimentaryExpectationFloor;
-            double e = camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : floor + (1 - floor) * Numbers.Clamp(camp.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+            double e = camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : NeolithicProduction.SettledExpectation(n, camp);
             var shelter = NeolithicProduction.HousingCapacity(w, camp, w.Days); double fixedPeople = shelter.Fixed, portable = shelter.Light;
             double Housing(double people, double capacity) => people > 0 ? Math.Min(1, capacity / people) : 1;
             double Share(double people, double fixedCapacity, double portableCapacity) => NeolithicProduction.HousingShare(n, new NeolithicProduction.ShelterCapacity(fixedCapacity, portableCapacity), people);
@@ -240,7 +240,10 @@ namespace Anthropocene.Simulation
             var tools = new ToolCoverageBudget(n, Math.Max(0, inv.HandTools) * f, Math.Max(0, inv.Tools) * f * ToolCoverageBudget.OutputsPerTool, copper);
             bool fixedFeasible = CultivationEconomy.Enabled(parent) ||
                 NeolithicCapabilities.FeatureFishingEnabled(w, parent);
-            bool lightFeasible = CultivationEconomy.HusbandryEnabled(parent);
+            // Plant-cloth tents (Docs/PlantTents.md): a farming or fishing parent with Weaving and Construction sews tents from
+            // carried Cloth beyond the daughter's first-turn clothing.
+            bool plantTents = NeolithicProduction.PlantTentRoute(w, parent);
+            bool lightFeasible = CultivationEconomy.HusbandryEnabled(parent) || plantTents;
             bool fixedCapital = parent.IsVillage ||
                 NeolithicProduction.FixedHousingAt(w, parent, w.Days) > 1e-9 ||
                 (parent.Workforce?.Assignments?.Any(a =>
@@ -276,7 +279,10 @@ namespace Anthropocene.Simulation
             {
                 if (!lightFeasible || need <= 1e-9 || !(labor > 0)) return;
                 double lightRate = Rate(n.LightHousingBuilderOutputPerBaseDays);
-                double sewn = Math.Min(need / n.LightHousingPeoplePerUnit, Math.Max(0, inv.AnimalFabric) * f / n.AnimalFabricPerLightHousing);
+                double fibre = plantTents
+                    ? Math.Max(0, Math.Max(0, inv.Cloth) * f - daughter * n.FabricConsumptionPerPersonTurn * (cfg.TurnDays / cfg.DaysPerYear) / n.ReferenceTurnYears) / n.ClothPerLightHousing
+                    : Math.Max(0, inv.AnimalFabric) * f / n.AnimalFabricPerLightHousing;
+                double sewn = Math.Min(need / n.LightHousingPeoplePerUnit, fibre);
                 sewn = Math.Min(sewn, tools.Capacity(CraftGood.LightHousing, lightRate, labor));
                 if (sewn > 0)
                 {
@@ -308,7 +314,7 @@ namespace Anthropocene.Simulation
             {
                 n = w.Config.Neolithic; world = w; this.camp = camp; Residents = camp.Population;
                 double floor = n.RudimentaryExpectationFloor;
-                expectation = camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : floor + (1 - floor) * Numbers.Clamp(camp.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+                expectation = camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : NeolithicProduction.SettledExpectation(n, camp);
                 shelter = NeolithicProduction.HousingCapacity(w, camp, w.Days);
                 b0 = camp.FoodNeedsMetRatio * camp.WaterNeedsMetRatio;
             }
@@ -1185,6 +1191,11 @@ namespace Anthropocene.Simulation
                 camp.StarvationMortalityRate = parent.StarvationMortalityRate;
                 camp.FissionEligibleTurn = checked(w.Turn + 1 + w.Config.FissionDaughterCooldownTurns);
             }
+            // One-time settling grace: the daughter inherits her parent's settling progress and, once established, the
+            // settled expectation; her site tenure starts at her new tile (Docs/SettlingGrace.md).
+            camp.SettledExpectationEstablished = parent.SettledExpectationEstablished;
+            camp.SettlingYears = parent.SettlingYears; camp.SiteYears = 0;
+            if (camp.SettledExpectationEstablished && camp.RudimentaryExpectation > 0) camp.RudimentaryExpectation = 1;
             camp.Bind(society); w.Camps.Add(camp);
             // A daughter has no newly resolved needs until her first turn; her committed QoL is the estimate that justified the split
             // (never the unset 1.0). It remains a welfare/planning signal and is not a mortality input.

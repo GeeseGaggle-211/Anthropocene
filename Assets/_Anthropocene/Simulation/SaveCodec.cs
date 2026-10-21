@@ -16,8 +16,12 @@ namespace Anthropocene.Simulation
         private const string HistoryMagic = "ANTHROPOCENE-12";
         private const string GrowthHistoryMagic = "ANTHROPOCENE-13";
         private const string SubsistenceMagic = "ANTHROPOCENE-14";
+        // Save15 (Docs/SettlingGrace.md): the Save14 layout with the subsistence profile as an extension flag (4) plus a
+        // trailing block for the one-time settling grace and plant tents. Written only when either rule is on, so every
+        // world with both off keeps its exact earlier envelope, payload and fingerprint.
+        private const string Save15Magic = "ANTHROPOCENE-15";
         private static bool History(string magic) => magic == HistoryMagic || magic == GrowthHistoryMagic;
-        private static bool Modern(string magic) => magic == Magic || History(magic) || magic == SubsistenceMagic;
+        private static bool Modern(string magic) => magic == Magic || History(magic) || magic == SubsistenceMagic || magic == Save15Magic;
         // Benchmark-only 320-tribe openings can retain more than 128 MiB of
         // legitimate turn receipts in the binary XML header. Keep a finite cap.
         private const int MaximumMetadataBytes = 512 * 1024 * 1024;
@@ -48,8 +52,17 @@ namespace Anthropocene.Simulation
                 bool history = world.AutonomousReceipts != null && world.AutonomousReceipts.Count > 0;
                 bool growth = history && world.AutonomousReceipts.Values.Any(r => r?.SchemaVersion == 2);
                 bool subsistence = world.Config.Neolithic.SubsistenceNeedsCovered;
-                writer.Write(subsistence ? SubsistenceMagic : history ? (growth ? GrowthHistoryMagic : HistoryMagic) : Magic);
-                if (subsistence) writer.Write((byte)((history ? 1 : 0) | (growth ? 2 : 0)));
+                bool save15 = world.Config.UsesSave15();
+                if (save15)
+                {
+                    writer.Write(Save15Magic);
+                    writer.Write((byte)((history ? 1 : 0) | (growth ? 2 : 0) | (subsistence ? 4 : 0)));
+                }
+                else
+                {
+                    writer.Write(subsistence ? SubsistenceMagic : history ? (growth ? GrowthHistoryMagic : HistoryMagic) : Magic);
+                    if (subsistence) writer.Write((byte)((history ? 1 : 0) | (growth ? 2 : 0)));
+                }
                 // Geography dominates the save. Fixed primitive records avoid reflection and repeated XML member names for every tile.
                 var metadata = CopyWithoutTiles(world);
                 using (var header = new MemoryStream())
@@ -112,6 +125,18 @@ namespace Anthropocene.Simulation
                         }
                     }
                 }
+                if (save15)
+                {
+                    var cfg = world.Config;
+                    writer.Write((byte)((cfg.SettlingGraceOnce ? 1 : 0) | (cfg.PlantTentsEnabled ? 2 : 0)));
+                    writer.Write(cfg.Neolithic.ClothPerLightHousing);
+                    writer.Write(world.Camps.Count);
+                    foreach (var camp in world.Camps.OrderBy(c => c.Id))
+                    {
+                        writer.Write(camp.Id); writer.Write(camp.SettledExpectationEstablished);
+                        writer.Write(camp.SettlingYears); writer.Write(camp.SiteYears);
+                    }
+                }
             }
         }
         public static WorldState Load(byte[] bytes)
@@ -123,15 +148,20 @@ namespace Anthropocene.Simulation
             {
                 string magic = reader.ReadString();
                 if (!Modern(magic) && magic != LegacyMagic10 && magic != LegacyMagic9 && magic != LegacyMagic8) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
-                byte extensionFlags = magic == SubsistenceMagic ? reader.ReadByte() : (byte)0;
-                if ((extensionFlags & ~3) != 0 || (extensionFlags & 2) != 0 && (extensionFlags & 1) == 0)
+                bool save15 = magic == Save15Magic;
+                byte extensionFlags = magic == SubsistenceMagic || save15 ? reader.ReadByte() : (byte)0;
+                if ((extensionFlags & ~(save15 ? 7 : 3)) != 0 || (extensionFlags & 2) != 0 && (extensionFlags & 1) == 0)
                     throw new InvalidDataException("Invalid Save14 extension flags.");
+                bool subsistence = magic == SubsistenceMagic || save15 && (extensionFlags & 4) != 0;
                 bool history = History(magic) || (extensionFlags & 1) != 0;
                 bool growth = magic == GrowthHistoryMagic || (extensionFlags & 2) != 0;
                 int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > MaximumMetadataBytes) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
-                world.Config.Neolithic.SubsistenceNeedsCovered = magic == SubsistenceMagic;
+                world.Config.Neolithic.SubsistenceNeedsCovered = subsistence;
+                // Absent before Save15: the earlier exact rules.
+                world.Config.SettlingGraceOnce = world.Config.PlantTentsEnabled = false;
+                world.Config.Neolithic.ClothPerLightHousing = 0;
                 if (history)
                     foreach (var camp in world.Camps) AutonomousElderHistory.ValidateMemory(world, camp, false);
                 // Generators 8-11 change profiles already stored in this format. Preserve old
@@ -207,7 +237,7 @@ namespace Anthropocene.Simulation
                     world.AutonomousReceipts = state.Receipts.ToDictionary(r => r.Camp);
                     foreach (var receipt in state.Receipts) receipt.Validate(world);
                 }
-                if (magic == SubsistenceMagic)
+                if (subsistence)
                 {
                     if (reader.ReadInt32() != world.Camps.Count) throw new InvalidDataException("Invalid Save14 camp count.");
                     foreach (var camp in world.Camps.OrderBy(c => c.Id))
@@ -218,6 +248,25 @@ namespace Anthropocene.Simulation
                         if (double.IsNaN(value) || double.IsInfinity(value) || value < 0 || value > 1)
                             throw new InvalidDataException("Invalid Save14 physical clothing coverage.");
                         camp.PhysicalClothingPerCapita = value;
+                    }
+                }
+                if (save15)
+                {
+                    byte rules = reader.ReadByte();
+                    if ((rules & ~3) != 0 || rules == 0) throw new InvalidDataException("Invalid Save15 rule flags.");
+                    world.Config.SettlingGraceOnce = (rules & 1) != 0; world.Config.PlantTentsEnabled = (rules & 2) != 0;
+                    double clothPerTent = reader.ReadDouble();
+                    if (double.IsNaN(clothPerTent) || double.IsInfinity(clothPerTent) || clothPerTent < 0) throw new InvalidDataException("Invalid Save15 cloth per tent.");
+                    world.Config.Neolithic.ClothPerLightHousing = clothPerTent;
+                    if (reader.ReadInt32() != world.Camps.Count) throw new InvalidDataException("Invalid Save15 camp count.");
+                    foreach (var camp in world.Camps.OrderBy(c => c.Id))
+                    {
+                        if (reader.ReadInt32() != camp.Id) throw new InvalidDataException("Invalid Save15 camp identity.");
+                        camp.SettledExpectationEstablished = reader.ReadBoolean();
+                        camp.SettlingYears = reader.ReadDouble(); camp.SiteYears = reader.ReadDouble();
+                        if (double.IsNaN(camp.SettlingYears) || double.IsInfinity(camp.SettlingYears) || camp.SettlingYears < 0 ||
+                            double.IsNaN(camp.SiteYears) || double.IsInfinity(camp.SiteYears) || camp.SiteYears < 0)
+                            throw new InvalidDataException("Invalid Save15 settling tenure.");
                     }
                 }
                 NeolithicProduction.NormalizeFixedHousing(world);
@@ -361,6 +410,12 @@ namespace Anthropocene.Simulation
                 if (config.Neolithic.SubsistenceNeedsCovered)
                 {
                     var discriminator = Encoding.UTF8.GetBytes("\0subsistence-needs-v13:gear-baseline=0.80");
+                    output.Write(discriminator, 0, discriminator.Length);
+                }
+                if (config.UsesSave15())
+                {
+                    var discriminator = Encoding.UTF8.GetBytes("\0save15:grace=" + (config.SettlingGraceOnce ? 1 : 0) + ":plant-tents=" + (config.PlantTentsEnabled ? 1 : 0)
+                        + ":cloth-per-tent=" + config.Neolithic.ClothPerLightHousing.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
                     output.Write(discriminator, 0, discriminator.Length);
                 }
                 using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(output.ToArray())).Replace("-", "");

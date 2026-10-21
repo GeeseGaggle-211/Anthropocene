@@ -65,11 +65,17 @@ internal static class ElderModel9Checks
 
         // Forced break: a survival shortfall refuses the hold and records why.
         var breaking = new ElderModel9Environment(); breaking.Reset(mid, true);
-        breaking.World.Camps.Single(c => c.Id == camp).DeficitTurns = 1;
+        var breakingCamp = breaking.World.Camps.Single(c => c.Id == camp);
+        // An earlier break reason (relocation, fission, capability change) takes precedence over the deficit; the
+        // trajectory decides which applies, so the expected reason is the one BreakReason reports.
+        string prior = ElderCommitments.BreakReason(breaking.World, breakingCamp, Memory(breaking));
+        breakingCamp.DeficitTurns = 1;
         if (Memory(breaking).HasCommitment)
         {
+            string reason = prior ?? "survival shortfall";
+            Check(ElderCommitments.BreakReason(breaking.World, breakingCamp, Memory(breaking)) == reason, "a survival shortfall is a break reason");
             var broken = breaking.Step(new Dictionary<int, ElderDirective> { [camp] = Directive(0, .1, .1, .6, .9) });
-            Check(Intervened(broken, "survival shortfall") && Memory(breaking).LastCommitmentBreak == "survival shortfall" && !Memory(breaking).HasCommitment,
+            Check(Intervened(broken, reason) && Memory(breaking).LastCommitmentBreak == reason && !Memory(breaking).HasCommitment,
                 "a survival shortfall force-breaks the commitment, logged and recorded");
         }
         // Spans outside 0-6 are repaired; schema-8 directives never hold.

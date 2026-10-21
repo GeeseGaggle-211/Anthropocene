@@ -749,7 +749,7 @@ namespace Anthropocene.Simulation
         internal static Valuation Value(WorldState w, Camp c, double lastProduction = 0, CraftRecipe[] recipes = null, double[] materialUse = null,
             TradePosture posture = null)
         {
-            var context = new CampContext { LastProduction = lastProduction, Recipes = recipes ?? NeolithicProduction.Recipes(w.Config), MaterialUse = materialUse == null ? new double[4] : materialUse.Length >= 4 ? materialUse : materialUse.Concat(new double[4 - materialUse.Length]).ToArray() };
+            var context = new CampContext { LastProduction = lastProduction, Recipes = recipes ?? NeolithicProduction.Recipes(w, c), MaterialUse = materialUse == null ? new double[4] : materialUse.Length >= 4 ? materialUse : materialUse.Concat(new double[4 - materialUse.Length]).ToArray() };
             var cfg = w.Config;
             var v = new Valuation { Camp = c.Id, Society = c.SocietyId, Tile = c.Tile };
             var built = new Dictionary<string, CurveTerms>(); var held = new Dictionary<string, double>();
@@ -849,6 +849,8 @@ namespace Anthropocene.Simulation
                 // Made goods consumed as inputs (Animal Fabric for tents, Housing Material for Housing) come from stock on hand:
                 // a camp without the fabric cannot promise the tents (census C1 turn 52: tents owed with no fabric held).
                 if (recipe.AnimalFabric > 0) capacity = Math.Min(capacity, Math.Max(0, c.Inventory.AnimalFabric) / recipe.AnimalFabric);
+                // Plant tents: Cloth on hand beyond this turn's clothing consumption.
+                if (recipe.Cloth > 0) capacity = Math.Min(capacity, Math.Max(0, c.Inventory.Cloth - NeolithicProduction.TentClothReserve(w, c, years, c.Population)) / recipe.Cloth);
                 if (recipe.HousingMaterial > 0) capacity = Math.Min(capacity, Math.Max(0, c.Inventory.HousingMaterial) / recipe.HousingMaterial);
                 if (recipe.Stone > 0) capacity = Math.Min(capacity, Material(MaterialId.Stone) / recipe.Stone);
                 if (recipe.Clay > 0) capacity = Math.Min(capacity, Material(MaterialId.Clay) / recipe.Clay);
@@ -1013,7 +1015,7 @@ namespace Anthropocene.Simulation
                 if (partnersOf[i].Length > 0) { taking.Add(eligible[i].Id); foreach (var partner in partnersOf[i]) taking.Add(partner.Camp); }
             var participants = eligible.Where(c => taking.Contains(c.Id)).ToArray();
             var valueScope = PhaseProfile.Scope("Valuation");
-            var values = workers.Map(participants, c => Value(w, c, production.TryGetValue(c.Id, out double p) ? p : 0, recipeTable, materialUse.TryGetValue(c.Id, out var u) ? u : null,
+            var values = workers.Map(participants, c => Value(w, c, production.TryGetValue(c.Id, out double p) ? p : 0, NeolithicProduction.PlantTentRoute(w, c) ? NeolithicProduction.Recipes(w, c) : recipeTable, materialUse.TryGetValue(c.Id, out var u) ? u : null,
                 postures != null && postures.TryGetValue(c.Id, out var posture) ? posture : null));
             valueScope.Dispose(); PhaseProfile.Count("Trade.Valued", participants.Length);
             if (Counters.Enabled) { Counters.ValueTicks += System.Diagnostics.Stopwatch.GetTimestamp() - stage; stage = System.Diagnostics.Stopwatch.GetTimestamp(); }

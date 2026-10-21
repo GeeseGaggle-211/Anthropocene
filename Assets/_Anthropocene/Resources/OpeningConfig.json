@@ -500,5 +500,10 @@
   "CultivationVegetationDisplacementStart": 0.5,
   "LowPotentialRecoveryMultiplier": 0.5,
   "HighPotentialRecoveryMultiplier": 1.5,
-  "BenchmarkScale": false
+  "BenchmarkScale": false,
+  "Save15Rules": {
+    "SettlingGraceOnce": true,
+    "PlantTentsEnabled": true,
+    "ClothPerLightHousing": 1.5
+  }
 }

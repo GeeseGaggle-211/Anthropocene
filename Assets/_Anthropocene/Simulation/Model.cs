@@ -20,6 +20,22 @@ namespace Anthropocene.Simulation
         AcceptedAggregateWelfare
     }
 
+    // OpeningConfig.json block for the Save15 rules (SettlingGraceOnce, PlantTentsEnabled, ClothPerLightHousing),
+    // which are deliberately not serialized SimulationConfig fields. Defaults match SimulationConfig/NeolithicConfig.
+    [Serializable]
+    public sealed class Save15Tuning
+    {
+        public bool SettlingGraceOnce = true, PlantTentsEnabled = true;
+        public double ClothPerLightHousing = 1.5;
+        public void ApplyTo(SimulationConfig config)
+        {
+            config.SettlingGraceOnce = SettlingGraceOnce; config.PlantTentsEnabled = PlantTentsEnabled;
+            config.Neolithic.ClothPerLightHousing = ClothPerLightHousing;
+        }
+    }
+    [Serializable]
+    public sealed class Save15TuningFile { public Save15Tuning Save15Rules = new Save15Tuning(); }
+
     [Serializable]
     public sealed class SimulationConfig
     {
@@ -171,6 +187,14 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int ImmigrationReturnCooldownTurns = 3;
         [System.Runtime.Serialization.OptionalField] public double ImmigrationReturnPenalty = .10;
         [System.Runtime.Serialization.OptionalField] public bool ImmigrationEnabled = true;
+        // One-time settling grace (Docs/SettlingGrace.md): the settled-expectation ramp applies only until a camp's lineage
+        // has lived RudimentaryExpectationRampYears in the Neolithic; afterwards moving never lowers the expectation.
+        // Plant tents: LightHousing may also be built from plant Cloth (NeolithicConfig.ClothPerLightHousing) by
+        // Weaving+Construction societies without Husbandry. Neither flag is in the XML header: both are carried by the
+        // Save15 envelope, so saves without them load false (the exact earlier rules) and their fingerprints are unchanged.
+        [NonSerialized] public bool SettlingGraceOnce = true;
+        [NonSerialized] public bool PlantTentsEnabled = true;
+        public bool UsesSave15() => SettlingGraceOnce || PlantTentsEnabled;
         [System.Runtime.Serialization.OptionalField] public int ImmigrationRadius = 4, ImmigrationMinimumGroup = 4, ImmigrationSourceFloor = 12;
         [System.Runtime.Serialization.OptionalField] public double ImmigrationQualityWeight = 1, ImmigrationDistanceCost = .01, ImmigrationAttachmentCost = .02, ImmigrationToSedentaryCost = .05, ImmigrationToNomadicCost = .15, ImmigrationDeadband = .075, ImmigrationMaxFraction = .10;
         // Trade between known settlements (WP7-WP8, Docs/Trade.md): AI-to-AI barter of Cloth, Animal Fabric, Housing Material and food,
@@ -549,6 +573,13 @@ namespace Anthropocene.Simulation
         // Save14 separates actual clothing coverage from job-based coverage.
         [NonSerialized] public double? PhysicalClothingPerCapita;
         [System.Runtime.Serialization.OptionalField] public double StationaryYears, RudimentaryExpectation, WaterNeedsMetRatio = 1;
+        // One-time settling grace (SimulationConfig.SettlingGraceOnce, Docs/SettlingGrace.md). Persisted only in the
+        // Save15 extension block, so worlds with the grace off keep their exact pre-grace payload and fingerprint.
+        // SettlingYears: Neolithic years lived by this lineage, never reset by a move (inherited at fission).
+        // SettledExpectationEstablished: the grace is over; the settled expectation is 1 from now on (inherited).
+        // SiteYears: years at the current tile, reset by every move; the fixed-shelter tenure test reads it.
+        [NonSerialized] public bool SettledExpectationEstablished;
+        [NonSerialized] public double SettlingYears, SiteYears;
         [System.Runtime.Serialization.OptionalField] public double FabricConsumed, HousingDemand, HousingReplacementDemand, HousingGrowthDemand;
         // Turn-local provenance of FabricConsumed. Physical demography may reconcile the finite textile envelope after
         // needs resolve; these values are never authoritative save state.

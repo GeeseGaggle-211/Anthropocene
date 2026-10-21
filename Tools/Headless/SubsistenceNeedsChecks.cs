@@ -129,7 +129,7 @@ internal static class SubsistenceNeedsChecks
         Near(NeolithicProduction.Produce(none, none.Camps[0], recipe, WorkforceRoles.Craftsperson, none.Config.GenerationIntervals,
             none.Config.GenerationIntervals, 1000, ref equipment, new TurnRecord()), 0, "crafting still needs tools");
         var before = SaveCodec.Fingerprint(mixed); var bytes = SaveCodec.Save(mixed); var restored = SaveCodec.Load(bytes);
-        Check(Magic(bytes) == "ANTHROPOCENE-14" && restored.Config.Neolithic.SubsistenceNeedsCovered, "enabled mode uses Save14");
+        Check((Magic(bytes) == "ANTHROPOCENE-14" || Magic(bytes) == "ANTHROPOCENE-15" && mixed.Config.UsesSave15()) && restored.Config.Neolithic.SubsistenceNeedsCovered, "enabled mode uses Save14 (Save15 when its rules are on)");
         Check(before == SaveCodec.Fingerprint(restored), "Save14 exact fingerprint");
         Near(restored.Camps[0].PhysicalClothingPerCapita.Value, .68, "physical clothing fraction survives save");
         string enabledHash = SaveCodec.ConfigurationHash(mixed.Config);
@@ -137,7 +137,7 @@ internal static class SubsistenceNeedsChecks
         Check(enabledHash != SaveCodec.ConfigurationHash(mixed.Config), "mode changes authoritative configuration hash");
         mixed.Config.Neolithic.SubsistenceNeedsCovered = true;
         var legacy = Fixture(false); var legacyBytes = SaveCodec.Save(legacy);
-        Check(Magic(legacyBytes) == "ANTHROPOCENE-11" && !SaveCodec.Load(legacyBytes).Config.Neolithic.SubsistenceNeedsCovered, "legacy remains opt-out");
+        Check((Magic(legacyBytes) == "ANTHROPOCENE-11" || Magic(legacyBytes) == "ANTHROPOCENE-15" && legacy.Config.UsesSave15()) && !SaveCodec.Load(legacyBytes).Config.Neolithic.SubsistenceNeedsCovered, "legacy remains opt-out");
         legacy.Camps[0].PhysicalClothingPerCapita = .7;
         Check(legacyBytes.SequenceEqual(SaveCodec.Save(legacy)), "legacy bytes omit all new fields");
         var invalid = Fixture(true); invalid.Camps[0].PhysicalClothingPerCapita = double.NaN;

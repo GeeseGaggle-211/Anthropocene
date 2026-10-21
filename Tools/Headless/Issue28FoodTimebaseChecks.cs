@@ -51,12 +51,13 @@ internal static class Issue28FoodTimebaseChecks
         using (var input = new MemoryStream(SaveCodec.Save(world)))
         using (var gzip = new GZipStream(input, CompressionMode.Decompress))
         using (var output = new MemoryStream()) { gzip.CopyTo(output); raw = output.ToArray(); }
-        string magic;
+        string magic; byte? envelopeFlags = null;
         byte[] header, body;
         using (var input = new MemoryStream(raw))
         using (var reader = new BinaryReader(input, Encoding.UTF8, true))
         {
             magic = reader.ReadString();
+            if (magic == "ANTHROPOCENE-15") envelopeFlags = reader.ReadByte();
             int headerLength = reader.ReadInt32();
             header = reader.ReadBytes(headerLength);
             body = reader.ReadBytes(checked((int)(input.Length - input.Position)));
@@ -78,6 +79,7 @@ internal static class Issue28FoodTimebaseChecks
         using (var writer = new BinaryWriter(gzip, Encoding.UTF8, true))
         {
             writer.Write(magic);
+            if (envelopeFlags.HasValue) writer.Write(envelopeFlags.Value);
             writer.Write(checked((int)binaryHeader.Length));
             writer.Write(binaryHeader.ToArray());
             writer.Write(body);

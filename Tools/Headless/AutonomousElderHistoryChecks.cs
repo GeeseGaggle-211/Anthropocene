@@ -167,16 +167,18 @@ internal static class AutonomousElderHistoryChecks
     {
         using var plain = new MemoryStream(); using (var zip = new GZipStream(new MemoryStream(snapshot), CompressionMode.Decompress)) zip.CopyTo(plain);
         plain.Position = 0; using var reader = new BinaryReader(plain);
-        Check(reader.ReadString() == "ANTHROPOCENE-12", "explicit new save envelope");
+        // Save15 (settling grace / plant tents on) carries the history as extension flag 1 after the envelope.
+        string envelope = reader.ReadString();
+        Check(envelope == "ANTHROPOCENE-12" || envelope == "ANTHROPOCENE-15" && (reader.ReadByte() & 1) != 0, "explicit new save envelope");
         int header = reader.ReadInt32(); plain.Position += header; int tiles = reader.ReadInt32(); plain.Position += 365L * tiles;
         Check(!reader.ReadBoolean(), "corruption fixture has no resource block");
-        long at = plain.Position; int length = reader.ReadInt32(); var bytes = reader.ReadBytes(length);
+        long at = plain.Position; int length = reader.ReadInt32(); var bytes = reader.ReadBytes(length); long rest = plain.Position;
         var serializer = new DataContractSerializer(typeof(AutonomousElderHistorySave)); AutonomousElderHistorySave state;
         using (var xml = XmlDictionaryReader.CreateBinaryReader(bytes, XmlDictionaryReaderQuotas.Max)) state = (AutonomousElderHistorySave)serializer.ReadObject(xml);
         corrupt(state); using var block = new MemoryStream();
         using (var xml = XmlDictionaryWriter.CreateBinaryWriter(block, null, null, false)) serializer.WriteObject(xml, state);
         using var output = new MemoryStream(); using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
-        { zip.Write(plain.ToArray(), 0, (int)at); using var writer = new BinaryWriter(zip); writer.Write((int)block.Length); writer.Write(block.ToArray()); }
+        { zip.Write(plain.ToArray(), 0, (int)at); using var writer = new BinaryWriter(zip); writer.Write((int)block.Length); writer.Write(block.ToArray()); zip.Write(plain.ToArray(), (int)rest, (int)(plain.Length - rest)); }
         return output.ToArray();
     }
     private static void Corruption(byte[] snapshot)

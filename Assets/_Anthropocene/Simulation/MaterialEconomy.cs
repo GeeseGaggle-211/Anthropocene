@@ -699,6 +699,11 @@ namespace Anthropocene.Simulation
             // first fills the made-to-order part owed) are held back from inputs.
             double animalFabric = Math.Max(0, c.Inventory.AnimalFabric) - c.TradeImport(CraftGood.AnimalFabric);
             double housingMaterial = Math.Max(0, c.Inventory.HousingMaterial) - c.TradeImport(CraftGood.HousingMaterial);
+            // Plant-tent route (Docs/PlantTents.md): Cloth on hand plus forecast weaving, of which the clothing
+            // consumption is held back from tents. Unused when the camp's tent recipe takes hide.
+            bool plantTents = recipes.Any(r => r.Cloth > 0);
+            double tentCloth = Math.Max(0, c.Inventory.Cloth) - c.TradeImport(CraftGood.Cloth);
+            double tentClothReserve = plantTents ? NeolithicProduction.TentClothReserve(w, c, years, residentPopulation < 0 ? c.Population : residentPopulation) : 0;
             double HeldForExport(CraftGood good) => Math.Min(c.TradeExport(good), planned[good]);
             double Outstanding(CraftGood good) => Math.Max(0, c.TradeExport(good) - planned[good]);
             var orderedRecipes = ProductionOrder.Sort(recipes, good => NeolithicProduction.Priority(c, good), order);
@@ -781,6 +786,15 @@ namespace Anthropocene.Simulation
                     useful = recipe.Good == CraftGood.Cloth
                         ? Math.Max(remainingClothing, Math.Max(0, -virtualCloth))
                         : Math.Max(remainingClothing + remainingShelter, Math.Max(0, -virtualAnimalFabric));
+                    if (plantTents)
+                    {
+                        // Plant tents: the shelter fibre is Cloth beyond the clothing; hide carries clothing only.
+                        double clothForShelter = Math.Max(0, virtualCloth + Math.Max(0, virtualAnimalFabric) - clothing);
+                        double shelterCloth = Math.Max(0, Math.Max(0, shelter - planned[CraftGood.LightHousing]) * n.ClothPerLightHousing - clothForShelter);
+                        useful = recipe.Good == CraftGood.Cloth
+                            ? Math.Max(remainingClothing + shelterCloth, Math.Max(0, -virtualCloth))
+                            : Math.Max(remainingClothing, Math.Max(0, -virtualAnimalFabric));
+                    }
                 }
                 if (order?.PolicySurplus == true) useful = double.PositiveInfinity;
                 bool sharedFabricNeed = recipe.Good == CraftGood.Cloth || recipe.Good == CraftGood.AnimalFabric;
@@ -797,15 +811,17 @@ namespace Anthropocene.Simulation
                 if (recipe.PlantFood > 0) amount = Math.Min(amount, plant / recipe.PlantFood);
                 if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
                 if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, animalFabric - HeldForExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
+                if (recipe.Cloth > 0) amount = Math.Min(amount, Math.Max(0, tentCloth - HeldForExport(CraftGood.Cloth) - tentClothReserve) / recipe.Cloth);
                 if (recipe.Stone > 0) amount = Math.Min(amount, stone / recipe.Stone);
                 if (recipe.Clay > 0) amount = Math.Min(amount, clay / recipe.Clay);
                 if (recipe.Wood > 0) amount = Math.Min(amount, wood / recipe.Wood);
                 if (recipe.ConstructionMaterial > 0)
                     amount = Math.Min(amount, (wood + clay) / recipe.ConstructionMaterial);
                 if (storage != null && amount > 0)
-                    amount = storage.Limit(stored, storage.Capacity(c.Food, storagePots + planned[CraftGood.Pots]), recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
+                    amount = storage.Limit(stored, storage.Capacity(c.Food, storagePots + planned[CraftGood.Pots]), recipe.Good, amount, recipe.AnimalFabric + recipe.Cloth, recipe.HousingMaterial);
                 if (amount <= 0) return;
-                if (stored != null) GoodsStorage.Add(stored, recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
+                // Storage pools Cloth and Animal Fabric as one textile stock, so a plant tent's Cloth frees textile room.
+                if (stored != null) GoodsStorage.Add(stored, recipe.Good, amount, recipe.AnimalFabric + recipe.Cloth, recipe.HousingMaterial);
                 labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : recipe.Good == CraftGood.HousingMaterial ? tools.Time(recipe.Good, rate, amount) : amount / rate;
                 laborByRole[role] = labor;
                 double forExport = Math.Min(amount, Outstanding(recipe.Good));
@@ -820,6 +836,8 @@ namespace Anthropocene.Simulation
                 tools.Credit(recipe.Good, amount - forExport);
                 if (recipe.Good == CraftGood.AnimalFabric) animalFabric += amount;
                 animalFabric -= amount * recipe.AnimalFabric;
+                if (recipe.Good == CraftGood.Cloth) tentCloth += amount;
+                tentCloth -= amount * recipe.Cloth;
                 housingMaterial += recipe.Good == CraftGood.HousingMaterial ? amount : 0;
                 housingMaterial -= amount * recipe.HousingMaterial;
             }

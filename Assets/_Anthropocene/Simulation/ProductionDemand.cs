@@ -529,7 +529,7 @@ namespace Anthropocene.Simulation
             var sources = d.Sources = MaterialEconomy.KnownSources(w, c, w.Days);
             double Priority(MaterialId m) => m == MaterialId.Stone ? e.StonePriority : m == MaterialId.Clay ? e.ClayPriority : e.WoodPriority;
             d.Accessible = MaterialEconomy.Materials.ToDictionary(m => m, m => Priority(m) <= 0 || n.SpecialistMaterialExtractionRate <= 0 ? 0 : sources.Where(s => s.Material == m).GroupBy(s => s.Id).Sum(g => g.Sum(s => s.Available)));
-            d.Recipes = NeolithicProduction.Recipes(cfg);
+            d.Recipes = NeolithicProduction.Recipes(w, c);
             var previewIntent = e.Copy();
             if (d.ReservedHerders > 0) previewIntent.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = d.ReservedHerders });
             // A single prospective builder/crafter makes downstream shelter
@@ -601,7 +601,7 @@ namespace Anthropocene.Simulation
             b = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio;
             s = NeolithicProduction.SocialCohesion(w, c, c.Population);
             e = c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
-                : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+                : NeolithicProduction.SettledExpectation(n, c);
         }
         internal static double HousingLife(NeolithicConfig n, CraftGood good)
         {
@@ -658,6 +658,14 @@ namespace Anthropocene.Simulation
                     double inputLabour = input == null ? 0 : Labour(input);
                     if (inputLabour <= 0) return 0;
                     l += x.AnimalFabric * inputLabour;
+                }
+                if (x.Cloth > 0)
+                {
+                    // Plant-tent route: the tent's Cloth is woven for it.
+                    var input = recipes.FirstOrDefault(y => y.Good == CraftGood.Cloth);
+                    double inputLabour = input == null ? 0 : Labour(input);
+                    if (inputLabour <= 0) return 0;
+                    l += x.Cloth * inputLabour;
                 }
                 if (x.HousingMaterial > 0)
                 {
@@ -858,7 +866,7 @@ namespace Anthropocene.Simulation
         {
             var n = w.Config.Neolithic;
             double e = c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
-                : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
+                : NeolithicProduction.SettledExpectation(n, c);
             double dilution = population > 0 ? Math.Min(1, n0 / population) : 1;
             double clothing = 1 - e * (1 - Math.Min(1, c.ClothPerCapita * dilution));
             double housing = 1 - e * (1 - Math.Min(1, c.HousingPerCapita * dilution));

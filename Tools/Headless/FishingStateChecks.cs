@@ -65,7 +65,7 @@ internal static class FishingStateChecks
             using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
             using (var writer = new BinaryWriter(zip))
             {
-                writer.Write(reader.ReadString()); int headerLength = reader.ReadInt32();
+                { string envelope = reader.ReadString(); writer.Write(envelope); if (envelope == "ANTHROPOCENE-15") writer.Write(reader.ReadByte()); } int headerLength = reader.ReadInt32();
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max))
                 using (var metadata = new MemoryStream())
                 {
