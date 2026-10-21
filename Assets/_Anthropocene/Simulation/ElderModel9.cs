@@ -433,6 +433,10 @@ namespace Anthropocene.Simulation
         public double QoL, Nutrition, Clothing, Housing, Years, Welfare;
         // Contract 11: realised trade utility over the step (person-QoL-years, true valuations).
         public double TradeUtility;
+        // Reporting only (not observed, not rewarded, not a contract field; see ElderSpecialistShare):
+        // the share of residents' person-years spent on goods recipes that produced output this step, and that
+        // output in summed native good units (HousingMaterial, an intermediate, excluded).
+        public double SpecialistShare, GoodsOutput;
         public bool Terminated, Founded;
         public ElderModel9Tensor Observation;
         public ElderModel9Label Teacher;   // the heuristic's (or the compiled directive's) decision this step
@@ -731,6 +735,11 @@ namespace Anthropocene.Simulation
                 }
                 v.Welfare = v.Terminated ? 0 : p0 * v.QoL * years;
                 v.TradeUtility = ElderTrade.RealisedUtility(record, id);
+                if (ElderSpecialistShare.Report)
+                {
+                    v.SpecialistShare = ElderSpecialistShare.Measure(record, World.Config, id, p0, years, out double goods);
+                    v.GoodsOutput = goods;
+                }
                 step.Villages.Add(v);
             }
             lastPrior = prior;
@@ -816,6 +825,40 @@ namespace Anthropocene.Simulation
                 }
             }
             finally { ResolutionMetrics.CaptureDemandAllocations = capture; }
+        }
+    }
+
+    // Specialist share (reporting only; Docs/ElderModel9SpecialistShare.md). The share of a village's residents producing
+    // goods rather than food, weighted by realised output, never by role headcount:
+    //   SpecialistShare = sum over this turn's ProductionReceipts of the village (Output > 0) of WorkerIntervals * BaseDays / DaysPerYear
+    //                     / (residents at the start of the turn * turn years), clamped to [0, 1].
+    // Every ProductionReceipt is a goods recipe (craft: tools, pots, cloth, animal fabric woven from animal produce, farm,
+    // herding and fishing tools; construction: housing material, fixed and portable housing), whichever role ran it,
+    // so a Craftsperson counts when it makes something and a nominal specialist with no receipt counts zero. Food
+    // acquisition (gathering, farming, herding, fishing, hunting), herd yields and raw-material extraction
+    // (Woodcutter, Stonecutter, ClayMiner: MaterialReceipts) never write a ProductionReceipt and so never count. Trade
+    // and amenities join when they write goods receipts. GoodsOutput is the summed receipt Output in each good's native
+    // unit (one tool, pot, cloth unit, housing unit, ...); HousingMaterial is an intermediate consumed by Housing
+    // assembly and is excluded from GoodsOutput (its labour still counts). Pure read of the committed turn record:
+    // O(receipts) per village, no authoritative state, fingerprint or observation change.
+    public static class ElderSpecialistShare
+    {
+        // Process-wide switch for the fingerprint-equivalence check only; reporting never alters the world.
+        public static bool Report = true;
+
+        public static double Measure(TurnRecord record, SimulationConfig config, int camp, int residents, double years, out double goodsOutput)
+        {
+            goodsOutput = 0;
+            if (record?.Production == null || residents <= 0 || years <= 0) return 0;
+            double labourYears = 0;
+            foreach (var receipt in record.Production)
+            {
+                if (receipt == null || receipt.Camp != camp || !(receipt.Output > 0)) continue;
+                labourYears += Math.Max(0, receipt.WorkerIntervals) * config.BaseDays / config.DaysPerYear;
+                if (receipt.Good != CraftGood.HousingMaterial) goodsOutput += receipt.Output;
+            }
+            double share = labourYears / (residents * years);
+            return ElderRLContract.Finite(share) ? Math.Max(0, Math.Min(1, share)) : 0;
         }
     }
 

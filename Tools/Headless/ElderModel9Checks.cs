@@ -249,6 +249,67 @@ internal static class ElderModel9Checks
         Check(Run(live, 3).SequenceEqual(path), "a branch does not leak into the next restore");
     }
 
+    // Specialist share (reporting only): a unit share weighted by realised goods output, zero in a food-only economy,
+    // positive once crafts produce, zero for a nominal receipt without output, and invisible to the world's path.
+    private static void SpecialistShareChecks(byte[] snapshot)
+    {
+        var cfg = SimulationConfig.Small(8);
+        var empty = new TurnRecord();
+        Check(ElderSpecialistShare.Measure(empty, cfg, 1, 20, 20, out double g0) == 0 && g0 == 0, "no receipts give a zero share");
+        var nominal = new TurnRecord(); nominal.Production.Add(new ProductionReceipt { Camp = 1, Good = CraftGood.Pots, Output = 0, WorkerIntervals = 50 });
+        Check(ElderSpecialistShare.Measure(nominal, cfg, 1, 20, 20, out _) == 0, "a specialist producing nothing does not count");
+        var made = new TurnRecord();
+        made.Production.Add(new ProductionReceipt { Camp = 1, Good = CraftGood.Pots, Output = 3, WorkerIntervals = 20 * cfg.DaysPerYear / cfg.BaseDays });
+        made.Production.Add(new ProductionReceipt { Camp = 1, Good = CraftGood.HousingMaterial, Output = 2, WorkerIntervals = 20 * cfg.DaysPerYear / cfg.BaseDays });
+        made.Production.Add(new ProductionReceipt { Camp = 2, Good = CraftGood.Pots, Output = 9, WorkerIntervals = 1e9 });
+        double share = ElderSpecialistShare.Measure(made, cfg, 1, 20, 20, out double g1);
+        Check(Math.Abs(share - 2.0 / 20) <= 1e-12 && g1 == 3, "two specialist-lifetimes in twenty residents: share .1, intermediate excluded from output");
+        Check(ElderSpecialistShare.Measure(made, cfg, 2, 20, 20, out _) == 1, "the share is clamped to one");
+
+        List<ElderModel9Step> Run(byte[] start, bool report, int turns, Action<WorldState> adjust = null)
+        {
+            bool before = ElderSpecialistShare.Report; ElderSpecialistShare.Report = report;
+            try
+            {
+                var env = new ElderModel9Environment(); env.Reset(start, false); adjust?.Invoke(env.World);
+                var steps = new List<ElderModel9Step>();
+                for (int t = 0; t < turns; t++)
+                {
+                    var s = env.Step(new Dictionary<int, ElderDirective>());
+                    var record = env.World.History.Last();
+                    foreach (var v in s.Villages.Where(v => v.Years > 0))
+                    {
+                        bool produced = record.Production.Any(r => r.Camp == v.Camp && r.Output > 0);
+                        Check(v.SpecialistShare >= 0 && v.SpecialistShare <= 1 && v.GoodsOutput >= 0, "the specialist share is a unit share (camp " + v.Camp + ")");
+                        Check(!report || produced == (v.SpecialistShare > 0), "a share is positive exactly when the village's crafts produced (camp " + v.Camp + ")");
+                    }
+                    steps.Add(s);
+                }
+                return steps;
+            }
+            finally { ElderSpecialistShare.Report = before; }
+        }
+        var on = Run(snapshot, true, 4); var off = Run(snapshot, false, 4);
+        Check(on.Select(s => s.Fingerprint).SequenceEqual(off.Select(s => s.Fingerprint)), "reporting the specialist share leaves every fingerprint unchanged");
+        Check(off.All(s => s.Villages.All(v => v.SpecialistShare == 0 && v.GoodsOutput == 0)), "reporting off leaves the fields zero");
+        var crafted = on.SelectMany(s => s.Villages).Where(v => v.SpecialistShare > 0).ToList();
+        Check(crafted.Count > 0 && crafted.All(v => v.GoodsOutput > 0), "crafts that produce goods give a positive share");
+        // Food-only economy: every recipe rate zero or negligible (set on the live fixture world), so no village can make goods.
+        var foodSteps = Run(snapshot, true, 3, w =>
+        {
+            var n = w.Config.Neolithic;
+            n.HandToolsOutput = n.PotsOutput = n.FarmToolsOutput = n.ToolsOutput = 0;
+            // Validation requires these to be positive; at 1e-200 any staffed labour makes less than the 1e-12 receipt floor.
+            n.WeaverFabricOutputPerBaseDays = n.BuilderHousingOutputPerBaseDays = n.LightHousingBuilderOutputPerBaseDays = 1e-200;
+        });
+        var rows = foodSteps.SelectMany(s => s.Villages).Where(v => v.Years > 0 && !v.Terminated).ToList();
+        Check(rows.Count > 0 && rows.All(v => v.SpecialistShare == 0 && v.GoodsOutput == 0) && rows.Any(v => v.Nutrition > 0),
+            "a pure food economy has a zero specialist share");
+        Console.WriteLine("  specialist share: " + crafted.Count + " producing village-steps, mean share " +
+            crafted.Average(v => v.SpecialistShare).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture) + ", max " +
+            crafted.Max(v => v.SpecialistShare).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     private static double ValueCurveMarginal(ValueCurve.Segment[] segments, double x) => ValueCurve.Marginal(segments, x);
 
     public static int Run()
@@ -312,6 +373,7 @@ internal static class ElderModel9Checks
         MovementChecks(snapshot);
         TradePostureChecks(snapshot);
         ForkChecks(snapshot);
+        SpecialistShareChecks(snapshot);
         // Capability fixtures: a withheld technology is never granted, and the training-only mask is neither saved
         // nor hashed.
         int herdingOnly = 1 << (int)Technology.Cultivation | 1 << (int)Technology.Watercraft;
