@@ -54,3 +54,25 @@ a Save15 rule is on.
 Save15 round trip and three-turn continuation; earlier envelopes load with the rules off; `OpeningConfig.json`
 consistency. A cross-build probe (base 557c6f9 versus this branch with both rules off, seeds 11 and 23, 30 turns,
 plus loading the base build's saves and continuing 9 turns) matched every fingerprint.
+
+## Measured effect (model9 S-s55, 54 default worlds, 25 turns)
+
+RL movement-audit tools (RL `feature/r3-tenure`, bridge rule override `ANTHROPOCENE_SIM_RULES`), S-s55 with the
+grouped region choice against the frozen reference with heuristic movement, both under the same rules. With both
+rules off all 108 rollouts reproduce the audit's per-step fingerprints exactly.
+
+| | current rule | grace | grace + plant tents |
+|---|---|---|---|
+| welfare / ref (reported) | 1.166 | 1.065 | 1.071 |
+| welfare / ref at E = 1 | 1.135 | 1.065 | 1.071 |
+| physical-move share; returns to one of last two tiles | 0.323; 48.9% | 0.408; 52.3% | 0.410; 52.2% |
+| fissions per world (ref) | 70.6 (30.5) | 55.9 (23.0) | 55.9 (22.8) |
+| settlements below 30 | 3.5% | 3.1% | 2.8% |
+| clothing / housing coverage (population-weighted) | 0.932 / 0.863 | 0.926 / 0.868 | 0.926 / 0.868 |
+| final QoL (at E = 1) | 0.889 (0.879) | 0.865 (0.865) | 0.866 (0.866) |
+| 4-turn MOVE / STAY fork welfare (move wins) | 0.997, E = 1: 0.967 | 0.957 (12%) | 0.956 (12%) |
+| full-episode MOVE / STAY fork welfare | 1.40, E = 1: 1.35 | 1.089 | 1.103 |
+
+The reported and E = 1 gaps now coincide: the accounting artefact is gone. The reference also changes (residents
+-16%, fissions 30.5 to 23.0), because planners and fission now value clothing and housing at the full expectation.
+S-s55 was trained under the old rule and still shuttles; it must be retrained before its movement can be judged.

@@ -46,3 +46,12 @@ protected clothing in `Produce`, Cloth conservation, daughter shelter, a full De
 camp against the rule-off twin (tents are made, clothing coverage is not lower, housing coverage is higher, Cloth is
 conserved through weaving, tents and clothing), Save15 round trip and continuation, and the byte-identical rule-off
 fingerprints.
+
+## Measured effect
+
+On the 54-world S-s55 re-measure (`Docs/SettlingGrace.md`) plant tents add little on top of the grace: agricultural
+camps hold tents on 4.4% of camp-turns (reference 0.4%); their housing coverage on the arrival turn is 0.611 against
+0.608 without tents (0.894 when staying); settlements below 30 fall from 3.1% to 2.8%; fissions are unchanged
+(55.9); welfare / ref 1.065 to 1.071. A moved farming camp holds no portable capital, so its deficit route stays
+fixed Housing, which shelters more people per Builder-year whenever Wood or Clay is reachable; tents are the
+fallback when Housing is infeasible and the route a learned portable `shelterRoute` can now use.
