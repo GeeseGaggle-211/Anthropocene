@@ -16,8 +16,11 @@ namespace Anthropocene.Simulation
         private const string HistoryMagic = "ANTHROPOCENE-12";
         private const string GrowthHistoryMagic = "ANTHROPOCENE-13";
         private const string SubsistenceMagic = "ANTHROPOCENE-14";
+        // Contract 13 market memory (MarketMemory.cs): written only when MarketMemoryEnabled. One flags byte (1 autonomous
+        // history, 2 growth receipts, 4 subsistence block) then, after every earlier block, the market extension.
+        private const string MarketMagic = "ANTHROPOCENE-15";
         private static bool History(string magic) => magic == HistoryMagic || magic == GrowthHistoryMagic;
-        private static bool Modern(string magic) => magic == Magic || History(magic) || magic == SubsistenceMagic;
+        private static bool Modern(string magic) => magic == Magic || History(magic) || magic == SubsistenceMagic || magic == MarketMagic;
         // Benchmark-only 320-tribe openings can retain more than 128 MiB of
         // legitimate turn receipts in the binary XML header. Keep a finite cap.
         private const int MaximumMetadataBytes = 512 * 1024 * 1024;
@@ -48,8 +51,17 @@ namespace Anthropocene.Simulation
                 bool history = world.AutonomousReceipts != null && world.AutonomousReceipts.Count > 0;
                 bool growth = history && world.AutonomousReceipts.Values.Any(r => r?.SchemaVersion == 2);
                 bool subsistence = world.Config.Neolithic.SubsistenceNeedsCovered;
-                writer.Write(subsistence ? SubsistenceMagic : history ? (growth ? GrowthHistoryMagic : HistoryMagic) : Magic);
-                if (subsistence) writer.Write((byte)((history ? 1 : 0) | (growth ? 2 : 0)));
+                bool market = MarketMemorySystem.Enabled(world.Config);
+                if (market)
+                {
+                    writer.Write(MarketMagic);
+                    writer.Write((byte)((history ? 1 : 0) | (growth ? 2 : 0) | (subsistence ? 4 : 0)));
+                }
+                else
+                {
+                    writer.Write(subsistence ? SubsistenceMagic : history ? (growth ? GrowthHistoryMagic : HistoryMagic) : Magic);
+                    if (subsistence) writer.Write((byte)((history ? 1 : 0) | (growth ? 2 : 0)));
+                }
                 // Geography dominates the save. Fixed primitive records avoid reflection and repeated XML member names for every tile.
                 var metadata = CopyWithoutTiles(world);
                 using (var header = new MemoryStream())
@@ -112,6 +124,14 @@ namespace Anthropocene.Simulation
                         }
                     }
                 }
+                if (market)
+                {
+                    using var extension = new MemoryStream();
+                    using (var xml = XmlDictionaryWriter.CreateBinaryWriter(extension, null, null, false))
+                        Serializer(typeof(MarketMemorySave)).WriteObject(xml, MarketMemorySystem.Capture(world));
+                    if (extension.Length > 64 * 1024 * 1024) throw new InvalidDataException("Market memory extension is too large.");
+                    writer.Write(checked((int)extension.Length)); extension.Position = 0; extension.CopyTo(buffered);
+                }
             }
         }
         public static WorldState Load(byte[] bytes)
@@ -123,15 +143,19 @@ namespace Anthropocene.Simulation
             {
                 string magic = reader.ReadString();
                 if (!Modern(magic) && magic != LegacyMagic10 && magic != LegacyMagic9 && magic != LegacyMagic8) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
-                byte extensionFlags = magic == SubsistenceMagic ? reader.ReadByte() : (byte)0;
-                if ((extensionFlags & ~3) != 0 || (extensionFlags & 2) != 0 && (extensionFlags & 1) == 0)
+                bool market = magic == MarketMagic;
+                byte extensionFlags = magic == SubsistenceMagic || market ? reader.ReadByte() : (byte)0;
+                if ((extensionFlags & ~(market ? 7 : 3)) != 0 || (extensionFlags & 2) != 0 && (extensionFlags & 1) == 0)
                     throw new InvalidDataException("Invalid Save14 extension flags.");
+                bool subsistenceBlock = magic == SubsistenceMagic || market && (extensionFlags & 4) != 0;
                 bool history = History(magic) || (extensionFlags & 1) != 0;
                 bool growth = magic == GrowthHistoryMagic || (extensionFlags & 2) != 0;
                 int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > MaximumMetadataBytes) throw new InvalidDataException("Invalid save metadata size.");
                 WorldState world;
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
-                world.Config.Neolithic.SubsistenceNeedsCovered = magic == SubsistenceMagic;
+                world.Config.Neolithic.SubsistenceNeedsCovered = subsistenceBlock;
+                // Market memory is off unless the extension below restores it.
+                world.Config.MarketMemoryEnabled = false; world.Config.MarketMemory = new MarketMemoryConfig();
                 if (history)
                     foreach (var camp in world.Camps) AutonomousElderHistory.ValidateMemory(world, camp, false);
                 // Generators 8-11 change profiles already stored in this format. Preserve old
@@ -207,7 +231,7 @@ namespace Anthropocene.Simulation
                     world.AutonomousReceipts = state.Receipts.ToDictionary(r => r.Camp);
                     foreach (var receipt in state.Receipts) receipt.Validate(world);
                 }
-                if (magic == SubsistenceMagic)
+                if (subsistenceBlock)
                 {
                     if (reader.ReadInt32() != world.Camps.Count) throw new InvalidDataException("Invalid Save14 camp count.");
                     foreach (var camp in world.Camps.OrderBy(c => c.Id))
@@ -219,6 +243,16 @@ namespace Anthropocene.Simulation
                             throw new InvalidDataException("Invalid Save14 physical clothing coverage.");
                         camp.PhysicalClothingPerCapita = value;
                     }
+                }
+                if (market)
+                {
+                    int length = reader.ReadInt32();
+                    if (length < 1 || length > 64 * 1024 * 1024) throw new InvalidDataException("Invalid market memory extension length.");
+                    var data = reader.ReadBytes(length);
+                    if (data.Length != length) throw new EndOfStreamException("Truncated market memory extension.");
+                    using (var xml = XmlDictionaryReader.CreateBinaryReader(data, XmlDictionaryReaderQuotas.Max))
+                        MarketMemorySystem.Restore(world, (MarketMemorySave)Serializer(typeof(MarketMemorySave)).ReadObject(xml));
+                    world.Config.Validate();
                 }
                 NeolithicProduction.NormalizeFixedHousing(world);
                 FisheryState.Normalize(world);
@@ -361,6 +395,11 @@ namespace Anthropocene.Simulation
                 if (config.Neolithic.SubsistenceNeedsCovered)
                 {
                     var discriminator = Encoding.UTF8.GetBytes("\0subsistence-needs-v13:gear-baseline=0.80");
+                    output.Write(discriminator, 0, discriminator.Length);
+                }
+                if (MarketMemorySystem.Enabled(config))
+                {
+                    var discriminator = Encoding.UTF8.GetBytes("\0market-memory-v" + MarketMemorySystem.SchemaVersion + ":" + MarketMemorySystem.Levers(config).Describe());
                     output.Write(discriminator, 0, discriminator.Length);
                 }
                 using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(output.ToArray())).Replace("-", "");

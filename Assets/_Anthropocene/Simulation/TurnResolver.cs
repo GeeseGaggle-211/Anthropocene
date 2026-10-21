@@ -249,6 +249,7 @@ namespace Anthropocene.Simulation
             phaseTimer.Restart(); using (PhaseProfile.Scope("ContactKnowledge"))
             {
                 ContactKnowledge.EndTurn(w, execution);
+                if (MarketMemorySystem.Enabled(w.Config)) MarketMemorySystem.EndTurn(w);
                 UpdateFishingGroundKnowledge(w, prepared.FishingPlans, record, resolvedFisheryOperations);
             }
             LastMetrics.KnowledgeMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;

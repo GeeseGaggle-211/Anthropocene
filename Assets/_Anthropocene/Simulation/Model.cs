@@ -30,6 +30,11 @@ namespace Anthropocene.Simulation
         [NonSerialized] public int TrainingWithheldTechnologies;
         public bool TrainingWithheld(Technology technology)
             => technology != Technology.None && (TrainingWithheldTechnologies & 1 << (int)technology) != 0;
+        // Contract 13 market memory and resale (MarketMemory.cs, Docs/ElderModel9ArbitrageDesign.md). Default false. The flag and
+        // its levers are not in the serialized config: they persist only in the ANTHROPOCENE-15 save extension, written only
+        // when the flag is on, so flag-off saves, fingerprints and configuration hashes are byte-identical to earlier builds.
+        [NonSerialized] public bool MarketMemoryEnabled;
+        [NonSerialized] public MarketMemoryConfig MarketMemory;
         [System.Runtime.Serialization.OptionalField] public NeolithicConfig Neolithic = new NeolithicConfig();
         public SimulationConfig()
         {
@@ -313,6 +318,7 @@ namespace Anthropocene.Simulation
                 double.IsNaN(CropMoistureExponent) || double.IsInfinity(CropMoistureExponent) || CropMoistureExponent <= 0)
                 throw new ArgumentException("Invalid crop moisture response.");
             Neolithic.Validate();
+            if (MarketMemoryEnabled) MarketMemorySystem.Levers(this).Validate();
             if (double.IsNaN(LandFoodRegeneration) || double.IsInfinity(LandFoodRegeneration)
                 || LandFoodRegeneration < 0 || LandFoodRegeneration >= 1)
                 throw new ArgumentException("Invalid land food regeneration fraction.");

@@ -60,6 +60,9 @@ namespace Anthropocene.Simulation
         // Lineage (WP10a): the parent Society (0 = none) and the affinity fixed by the parent camp's fission policy at fission. Inert afterwards.
         [System.Runtime.Serialization.OptionalField] public int ParentSociety;
         [System.Runtime.Serialization.OptionalField] public double KinAffinity;
+        // Contract 13 market memory (MarketMemory.cs): null unless MarketMemoryEnabled; persisted only in the ANTHROPOCENE-15
+        // save extension, so it never enters a flag-off save or fingerprint.
+        [NonSerialized] public MarketMemory Market;
         public double NeolithicPractice(Domain domain) => NeolithicExperience == null ? 0 : NeolithicExperience[(int)domain];
         public double KnowledgeExposure(Domain domain) => TechnologyExposure == null ? 0 : TechnologyExposure[(int)domain];
         public bool HasTech(string tech) => NeolithicTechnologies != null && NeolithicTechnologies.Contains(tech);

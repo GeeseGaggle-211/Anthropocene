@@ -304,6 +304,7 @@ namespace Anthropocene.Simulation
             if (Remembers(daughter)) MemoryOf(w, daughter).Upsert(
                 parentCamp.Id, parentCamp.Player, parentCamp.Tile, w.Turn,
                 w.Days, ContactSource.Kin, PopulationBand(parentCamp.Population));
+            if (Remembers(parent) && Remembers(daughter)) MarketMemorySystem.CopyAtFission(w, parent, daughter, parentCamp, daughterCamp);
         }
 
         // Read side for observations: remembered static geography outside current

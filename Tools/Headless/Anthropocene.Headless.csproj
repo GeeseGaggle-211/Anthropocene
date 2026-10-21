@@ -38,6 +38,7 @@
     <Compile Include="SocialRelocationNativeChecks.cs" />
     <Compile Include="SocialScaleBenchmark.cs" />
     <Compile Include="TradeChecks.cs" />
+    <Compile Include="MarketMemoryChecks.cs" />
     <Compile Include="GoodsStorageChecks.cs" />
     <Compile Include="DemandControlChecks.cs" />
     <Compile Include="EconomicSettlementChecks.cs" />

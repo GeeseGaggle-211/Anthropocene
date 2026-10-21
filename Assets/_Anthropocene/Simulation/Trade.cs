@@ -118,6 +118,8 @@ namespace Anthropocene.Simulation
         public double[] WantParts, GiveParts;
         public double WantMade, GiveMade;
         public TradeUtilitySnapshot Utility;
+        // Market memory (flag on): the share of each received leg within the receiver's own need (used, not carried).
+        public double RequesterUseShare = 1, ResponderUseShare = 1;
         // No made part: both legs come from opening stock and the agreement settles at the opening.
         public bool AllStock => !(WantMade > 1e-12) && !(GiveMade > 1e-12);
     }
@@ -160,6 +162,12 @@ namespace Anthropocene.Simulation
                 ValueCurve.Integral(requesterGive,
                     requesterGivePosition - Math.Max(0, giveQuantity),
                     requesterGivePosition);
+
+        // The received leg alone (market memory's knowledge exposure).
+        public double RequesterReceived(double wantQuantity)
+            => ValueCurve.Integral(requesterWant, requesterWantPosition, requesterWantPosition + Math.Max(0, wantQuantity)) * (1 - transport);
+        public double ResponderReceived(double giveQuantity)
+            => ValueCurve.Integral(responderGive, responderGivePosition, responderGivePosition + Math.Max(0, giveQuantity)) * (1 - transport);
 
         public double Responder(double wantQuantity, double giveQuantity)
             => ValueCurve.Integral(responderGive, responderGivePosition,
@@ -323,6 +331,9 @@ namespace Anthropocene.Simulation
         public readonly TradeSummary Summary = new TradeSummary();
         public readonly Dictionary<int, double[]> Deltas = new Dictionary<int, double[]>();
         public readonly Dictionary<int, double[]> Exports = new Dictionary<int, double[]>();
+        // Market memory (flag on only): what each side saw in its own requests and responses, in canonical order.
+        internal readonly List<MarketMemorySystem.OfferSighting> OfferSightings = new List<MarketMemorySystem.OfferSighting>();
+        internal readonly List<MarketMemorySystem.RequestSighting> RequestSightings = new List<MarketMemorySystem.RequestSighting>();
         public bool Changes(int camp) => Deltas.ContainsKey(camp) || Exports.ContainsKey(camp) || Imports.ContainsKey(camp);
         public bool AfterProduction => Agreements.Any(a => !a.AllStock);
         // Net change of a good in a camp's planning view (made exports leave after production).
@@ -630,6 +641,14 @@ namespace Anthropocene.Simulation
             // unchanged), and goods the village withholds (never given). 1 and false are native.
             public readonly double[] ValueScale = Enumerable.Repeat(1.0, Registry.Length).ToArray();
             public readonly bool[] Withheld = new bool[Registry.Length];
+            // Market memory: the own-use target under a resale band (NaN: no band; the curve's Target is the own target).
+            public readonly double[] OwnTarget = Enumerable.Repeat(double.NaN, Registry.Length).ToArray();
+            internal double UseShare(TradeGood g, double quantity)
+            {
+                if (!(quantity > 0) || !Active[(int)g]) return 1;
+                double target = double.IsNaN(OwnTarget[(int)g]) ? Curve(g).Target : OwnTarget[(int)g];
+                return Math.Max(0, Math.Min(1, (target - Position(g)) / quantity));
+            }
             private readonly Dictionary<string, (double Position, double Floor)> positions = new Dictionary<string, (double, double)>();
             internal void SetCurve(string key, double position, double floor) => positions[key] = (position, floor);
             public ValueCurve Curve(TradeGood g) => Curves[(int)g];
@@ -747,7 +766,7 @@ namespace Anthropocene.Simulation
 
         // O(goods) per camp: one builder call per curve key, one recipe cost per makeable good.
         internal static Valuation Value(WorldState w, Camp c, double lastProduction = 0, CraftRecipe[] recipes = null, double[] materialUse = null,
-            TradePosture posture = null)
+            TradePosture posture = null, Dictionary<TradeGood, MarketMemorySystem.Resale> resale = null, int packAnimals = -1)
         {
             var context = new CampContext { LastProduction = lastProduction, Recipes = recipes ?? NeolithicProduction.Recipes(w.Config), MaterialUse = materialUse == null ? new double[4] : materialUse.Length >= 4 ? materialUse : materialUse.Concat(new double[4 - materialUse.Length]).ToArray() };
             var cfg = w.Config;
@@ -770,6 +789,9 @@ namespace Anthropocene.Simulation
             }
             foreach (var pair in built) v.SetCurve(pair.Key, pair.Value.Offset + (held.TryGetValue(pair.Key, out double h) ? h : 0), pair.Value.Floor);
             foreach (var g in Registry) if (!v.Active[(int)g.Id] && (!built.TryGetValue(g.Curve, out var t) || t.Unpriced)) v.SetCurve(g.Curve, v.Held[(int)g.Id], double.PositiveInfinity);
+            // Contract 13 (flag on): the demand-scaled resale band from the Society's market memory (Docs/ElderModel9ArbitrageDesign.md 3).
+            if (MarketMemorySystem.Enabled(cfg))
+                MarketMemorySystem.ApplyResale(w, c, v, packAnimals >= 0 ? packAnimals : w.Herds.Where(h => h.DomesticCamp == c.Id).Sum(h => Math.Max(0, h.Animals)), resale);
             // Food a made recipe may consume: what lies above the protected band (consumption, feedstock, reserve).
             // Goods storage: the free room at the committed boundary (this turn's tool use is not yet known, so tools count as stored).
             if (GoodsStorage.Enabled(cfg))
@@ -1012,14 +1034,22 @@ namespace Anthropocene.Simulation
             for (int i = 0; i < eligible.Length; i++)
                 if (partnersOf[i].Length > 0) { taking.Add(eligible[i].Id); foreach (var partner in partnersOf[i]) taking.Add(partner.Camp); }
             var participants = eligible.Where(c => taking.Contains(c.Id)).ToArray();
+            bool market = MarketMemorySystem.Enabled(cfg);
+            var packAnimals = market ? MarketMemorySystem.PackAnimals(w) : null;
             var valueScope = PhaseProfile.Scope("Valuation");
             var values = workers.Map(participants, c => Value(w, c, production.TryGetValue(c.Id, out double p) ? p : 0, recipeTable, materialUse.TryGetValue(c.Id, out var u) ? u : null,
-                postures != null && postures.TryGetValue(c.Id, out var posture) ? posture : null));
+                postures != null && postures.TryGetValue(c.Id, out var posture) ? posture : null, null,
+                market ? (packAnimals.TryGetValue(c.Id, out int animals) ? animals : 0) : -1));
             valueScope.Dispose(); PhaseProfile.Count("Trade.Valued", participants.Length);
             if (Counters.Enabled) { Counters.ValueTicks += System.Diagnostics.Stopwatch.GetTimestamp() - stage; stage = System.Diagnostics.Stopwatch.GetTimestamp(); }
             var byCamp = new Dictionary<int, Valuation>(); var offers = new Dictionary<int, bool[]>();
             for (int i = 0; i < participants.Length; i++) { byCamp[participants[i].Id] = values[i]; offers[participants[i].Id] = Offers(values[i]); }
             int length = ListLength(cfg);
+            // Market memory: a requester sees each partner's offers (goods, never quantities).
+            if (market)
+                for (int i = 0; i < eligible.Length; i++)
+                    foreach (var partner in partnersOf[i])
+                        plan.OfferSightings.Add(new MarketMemorySystem.OfferSighting { Observer = eligible[i].Id, Partner = partner.Camp, Offers = (bool[])offers[partner.Camp].Clone() });
             var societies = w.Societies.ToDictionary(s => s.Id);
             var requestScope = PhaseProfile.Scope("Requisitions");
             var requisitions = workers.Map(Enumerable.Range(0, eligible.Length).Where(i => partnersOf[i].Length > 0).ToArray(), i =>
@@ -1037,6 +1067,7 @@ namespace Anthropocene.Simulation
             });
             requestScope.Dispose();
             var all = requisitions.SelectMany(x => x).ToList();
+            if (market) foreach (var x in all) plan.RequestSightings.Add(new MarketMemorySystem.RequestSighting { Requester = x.From, Responder = x.To, Wants = (TradeGood[])x.Wants.Clone() });
             var responseScope = PhaseProfile.Scope("Responses");
             if (Counters.Enabled) { Counters.RequestTicks += System.Diagnostics.Stopwatch.GetTimestamp() - stage; stage = System.Diagnostics.Stopwatch.GetTimestamp(); }
             plan.Summary.Requisitions = all.Count;
@@ -1058,6 +1089,7 @@ namespace Anthropocene.Simulation
                     if (agreement == null) { plan.Summary.Ignored++; continue; }
                     agreement.Utility = TradeUtilitySnapshot.Capture(r, p,
                         agreement, cfg);
+                    if (market) { agreement.RequesterUseShare = r.UseShare(agreement.Want, agreement.WantQuantity); agreement.ResponderUseShare = p.UseShare(agreement.Give, agreement.GiveQuantity); }
                     plan.Agreements.Add(agreement);
                     flows.Add((p.Camp, r.Camp, Descriptor(agreement.Want).Curve)); flows.Add((r.Camp, p.Camp, Descriptor(agreement.Give).Curve));
                     // Each leg splits into the giver's stock part (its committed proportions) and its made-to-order part.
@@ -1237,6 +1269,9 @@ namespace Anthropocene.Simulation
         {
             if (s == null) return;
             var camps = w.Camps.ToDictionary(c => c.Id);
+            bool market = MarketMemorySystem.Enabled(w.Config);
+            var settled = market ? new List<(TradeAgreement, double, double)>() : null;
+            var recipes = market ? NeolithicProduction.Recipes(w.Config) : null;
             for (int k = 0; k < s.Plan.Agreements.Count; k++)
             {
                 var a = s.Plan.Agreements[k];
@@ -1264,7 +1299,16 @@ namespace Anthropocene.Simulation
                     Math.Max(0, a.RequesterGain * want));
                 TechnologyDiscovery.RecordTradeContactPractice(w, p.People, r.People,
                     Math.Max(0, a.ResponderGain * give));
+                if (!market) continue;
+                settled.Add((a, wantQuantity, giveQuantity));
+                // Knowledge chain: a received made good is exposure toward the craft that makes it.
+                if (a.Utility != null)
+                {
+                    MarketMemorySystem.Expose(w, r, a.Want, a.Utility.RequesterReceived(wantQuantity), a.RequesterUseShare, recipes);
+                    MarketMemorySystem.Expose(w, p, a.Give, a.Utility.ResponderReceived(giveQuantity), a.ResponderUseShare, recipes);
+                }
             }
+            if (market) MarketMemorySystem.Observe(w, s.Plan, settled);
         }
     }
 }

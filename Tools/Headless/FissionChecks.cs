@@ -768,7 +768,7 @@ internal static class FissionChecks
         int outpost = w.Map.Radius(parent.Tile, 2).Where(n => w.Map.Distance(parent.Tile, n) == 2).OrderBy(n => n).First();
         w.Hunters.Add(new Hunter { Id = w.NextId++, SourceCamp = parent.Id, SocietyId = parent.SocietyId, Player = parent.Player, Tile = outpost, Population = 6, CarriedFood = 10 });
         Check(Pass(w, out _) != null, "a Paleolithic parent fissions (its hunters see a site)");
-        var ds = Daughter(w, parent).People; var skipped = new HashSet<string> { "Id", "Player", "PolicySeed", "ParentSociety", "KinAffinity", "Memory" };
+        var ds = Daughter(w, parent).People; var skipped = new HashSet<string> { "Id", "Player", "PolicySeed", "ParentSociety", "KinAffinity", "Memory", "Market" };
         foreach (var f in typeof(Society).GetFields())
         {
             if (skipped.Contains(f.Name)) continue;

@@ -419,6 +419,8 @@ internal static class Program
         if (tradeProfile != null) { TradeChecks.ProfileProbe(tradeProfile.Substring("--trade-profile=".Length)); return 0; }
         if (tradeResolve != null) { var parts = tradeResolve.Substring("--trade-resolve=".Length).Split(','); TradeChecks.ResolveProbe(parts[0], int.Parse(parts[1])); return 0; }
         if (tradeProbe != null) { TradeChecks.Probe(tradeProbe.Substring("--trade-probe=".Length)); return 0; }
+        var marketPerf = args.FirstOrDefault(a => a.StartsWith("--market-perf=", StringComparison.Ordinal));
+        if (marketPerf != null) { MarketMemoryChecks.Perf(marketPerf.Substring("--market-perf=".Length)); return 0; }
         if (args.Contains("--issue32-capability-only")) { Issue32CapabilityChecks.Run(); return 0; }
         if (args.Contains("--economic-transition-only")) { EconomicTransitionChecks.Run(); return 0; }
         if (args.Contains("--aquatic-pressure-only")) { AquaticSeasonalPressureChecks.Run(); return 0; }
@@ -500,6 +502,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "ImmigrationChecks", Cost = 2, Run = () => ImmigrationChecks.Run() },
                 new ParallelChecks.Entry { Name = "SocialRelocationChecks", Cost = 2, Run = () => SocialRelocationChecks.Run() },
                 new ParallelChecks.Entry { Name = "TradeChecks", Cost = 2, Run = () => TradeChecks.Run() },
+                new ParallelChecks.Entry { Name = "MarketMemoryChecks", Cost = 3, Run = () => MarketMemoryChecks.Run() },
                 new ParallelChecks.Entry { Name = "GoodsStorageChecks", Cost = 2, Run = () => GoodsStorageChecks.Run() },
                 new ParallelChecks.Entry { Name = "DemandControlChecks", Cost = 2, Run = () => DemandControlChecks.Run() },
                 new ParallelChecks.Entry { Name = "EconomicSettlementChecks", Cost = 2, Run = () => EconomicSettlementChecks.Run() },

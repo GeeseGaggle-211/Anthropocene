@@ -7,6 +7,60 @@
 > learned-policy comparison—are in
 > [DemographyQoLValidation-v1.1.md](DemographyQoLValidation-v1.1.md). Historical
 > QoL-mortality results below apply only to `LegacyQoLNetGrowth`.
+## Contract 13 simulator side: market memory and resale — 21 October 2026
+
+`MarketMemory.cs`, behind `SimulationConfig.MarketMemoryEnabled` (default false). The design and its
+implementation status are in [ElderModel9ArbitrageDesign.md](ElderModel9ArbitrageDesign.md).
+
+**Flag-off equivalence.** The flag, its levers and every Society's memory are `[NonSerialized]`, and they persist
+only in the `ANTHROPOCENE-15` save extension, which is written only when the flag is on.
+- `--model9-profile=17,15` and `--model9-profile=53,15` print 15 identical per-turn fingerprints on this branch and
+  at its base f06e3be.
+- Flag-off saves keep their earlier envelope, and their configuration hash is unchanged.
+
+**`MarketMemoryChecks` (fixed suite, 724 assertions).**
+- *Configuration:* off by default; levers hashed only when on; invalid levers rejected.
+- *Resale curve:* nonincreasing; segment marginals, integrals (capped too), inverses, crossings and target agree with
+  `max(use, band)`, on exponential and band bases.
+- *Chain fixture* (uniform strip, no production):
+  - producer A is ten hexes from consumer C, and intermediary B is five hexes from each;
+  - B sells its surplus cloth to C in round 0, buys 100.3 cloth from A for resale in round 1, and resells to C in
+    round 2;
+  - C receives 34.3 cloth with the flag on, against 25 with it off;
+  - with the flag off, or when C is already clothed, B never gets a resale band;
+  - cloth, Housing Material and food are conserved every round;
+  - with empty memory, the handshake equals the flag-off one exactly;
+  - remembered terms are always the Society's own settled trades, and only foreign, remembered contacts appear;
+  - received cloth adds Weaving exposure only with the flag on.
+- *Decay:* the resale value falls monotonically with age (four ages), and own holdings beyond need fill the observed
+  want. Entries expire after `ExpiryTurns`, and a moved contact drops its entries.
+- *Exposure:* used units credit their full value and carried units 0.25. Raw goods expose nothing. The mastery
+  threshold unlocks the craft and its specialist, and a held technology takes no further exposure.
+- *Generated Small/8, seed 17, 12 flag-on turns:*
+  - fingerprints identical on scalar and reversed-partition 4-worker execution;
+  - exact save/load continuation at turn 6, with flag, levers and memories restored;
+  - older saves load with the flag off;
+  - remembered terms belong to the Society's lineage's own trades (fission daughters inherit memory).
+
+**Cost (`--market-perf=<seed>,20`, Small/8, second matched pair, after JIT warm-up).**
+
+| Seed | Turn median/mean, off (ms) | Turn median/mean, on (ms) | `Trade.Plan` median, off/on (ms) | Entries at end |
+| --- | --- | --- | --- | --- |
+| 17 | 98.2 / 80.6 | 94.1 / 82.3 | 0.35 / 0.41 | 43 |
+| 53 | 144.3 / 118.9 | 118.4 / 113.0 | 0.46 / 0.52 | 59 |
+
+The flag-on paths diverge from flag-off (seed 53: 20 trades against 17), so turn costs are not paired. The handshake
+overhead is about 0.06 ms per turn.
+
+**Scaling.**
+- Memory: O(contacts x goods) per Society.
+- Updates: O(offers seen + requisitions + agreements) per turn.
+- Resale: O(keys x entries of the camp's Society) per valued camp.
+- Prune: O(entries).
+- Pack animals: one O(herds) index per handshake.
+
+Nothing scans the map or scales with elapsed years.
+
 ## Experimental autonomous Elder direct-control gate — 14 October 2026
 
 The separate action4/native6/model6 path repairs post-growth herd retention and

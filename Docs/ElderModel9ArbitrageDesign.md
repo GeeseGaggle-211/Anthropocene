@@ -166,6 +166,109 @@ prices are set by others, so a posture cannot inflate it.
 
 Copper arrives later as new trade-good rows, with a curve key and source deposits. No new mechanism is needed.
 
+## Implementation status (simulator side, 21 October 2026, branch feature/c13-market-memory)
+
+The status is implemented behind `SimulationConfig.MarketMemoryEnabled`, default false. There is no Elder
+observation, action or contract change, and the learner integration is round 4. Evidence is in
+[Validation.md](Validation.md), "Contract 13 simulator side".
+
+### Built (`MarketMemory.cs`, hooks in `Trade.cs`)
+
+**Market memory (section 1).** `Society.Market` holds sorted (camp, good) entries:
+- the last turn the settlement was seen wanting the good, from its want list in a request this Society answered, or
+  from a good it accepted in payment;
+- the last settled terms (quantity, price and payment good);
+- the last turn it was seen offering the good, from offers a requester sees.
+
+Information rules:
+- Updates come only from this Society's own requests and responses, at `Trade.Finish`, in canonical order (offers,
+  requests, agreements).
+- No stock, valuation or third-party trade is ever read.
+- Location always comes from the contact snapshot.
+
+Entries are forgotten:
+- after `ExpiryTurns` (6) without refresh;
+- when the contact is forgotten, or known to have moved.
+
+Freshness is 0.5^(age / `HalfLifeTurns` 2). A fission daughter copies its parent's memory, as it copies its contacts.
+
+**Resale value and band (sections 2-3).** For every non-food curve key, the price is:
+
+`r = max over reachable buyers of price x own marginal value of the payment good x (1 - transport) / (1 + margin) x terms freshness`
+
+Reachable means within trade range of the camp, or of its contract-10 intent tile. The margin divisor keeps a
+producer's floor at or below the price its own buyer paid, so prices cannot ratchet.
+
+`d` is hidden and recomputed every turn:
+
+`d = (1 - e^-S) x min(1, wanted / carry) x unserved share x spread`
+
+- `S` sums buyer freshness divided by (1 + known rival suppliers within range of that buyer).
+- `wanted` is the fresh, rival-shared observed quantity.
+- The unserved share is (wanted - held beyond own need) / wanted.
+- `spread` is (r - own use at the band end) / r.
+
+The curve becomes `ResaleCurve`: max(use, d r) below own target + held + min(unserved, carrying room). It enters every
+valuation, heuristic or Elder. Therefore:
+- `TrueW`, and with it realised utility (section 6), includes it;
+- the contract-11 relative value scales it;
+- withheld goods are never resold.
+
+**Carrying (section 4).**
+- A mobile camp carries residents x `CarryPerPerson` (0.5) + managed animals x `CarryPerPackAnimal` (2) goods units.
+- A settled village is unbounded (goods storage still bounds stored goods).
+- Goods in transit are ordinary inventory.
+
+**Knowledge chain (section 0), today's goods only.** A received made good adds craft work toward the track that makes
+it (Cloth toward Weaving, Pots toward Pottery, and so on):
+- the amount is its realised received value x `CraftExposurePerValue` (1);
+- units beyond the receiver's own need count at `CarriedExposureWeight` (0.25);
+- the existing `CraftMasteryThreshold` unlocks the technology and its specialist.
+
+**Persistence.**
+- The `ANTHROPOCENE-15` envelope (flags byte: history, growth, subsistence) carries a market extension with the
+  levers and memories. It is written only with the flag on.
+- Older envelopes load with the flag off.
+- The configuration hash takes a market discriminator only when the flag is on.
+
+**Flag off.** Byte-identical saves and fingerprints (see Validation).
+
+### Deferred
+
+- Pack animals lowering transport cost and extending trade range. The design calls for measurement before
+  calibration, and changing the range changes partner selection.
+- Copper and other metal goods, and the recognised/workable split for raw goods. Today's finished goods are already
+  usable without their making technology. Housing Material, which a camp without Construction values at zero, is the
+  only exception, and it is an intermediate.
+- The Elder trade-row and region-row features of section 5 (contract 13 observation, round 4).
+- The fixtures of section 7 that need the learner.
+
+### Findings, and parts of the design I think are wrong or underspecified
+
+1. **Offer-filtered want lists hide demand from non-holders.**
+   - A requester lists only goods its partner offers, so a carrier sees a settlement's demand for a good only after
+     holding some itself.
+   - The A-to-B-to-C chain therefore starts only from a B that once held the good.
+   - Raw-ore demand (section 0) will not reach a carrier that never held ore, unless requests also carry unmet wants.
+2. **Barter terms equalise marginal rates.**
+   - A carrier that *requests* from its buyer pays down to its own marginal rate, so the remembered price barely
+     exceeds its own use and `d` stays near zero.
+   - Arbitrage pays when the carrier is the responder, or when the buyer pays in a good the carrier keeps needing.
+     The chain fixture needed exactly that (C pays in Housing Material, which B lacks).
+   - The 1:1 honour rule sets most remembered prices, so `r` mostly reflects the payment good's marginal value, not
+     scarcity.
+3. **"Own need" is not a hard boundary on exponential curves.**
+   - Their use tail stays positive, so a camp that lists a good because of its band buys along the use tail beyond
+     the band end whenever its payment is nearly free.
+   - In the fixture, B bought 100 cloth against a 17.7-unit band.
+   - The same tail lets goods relay without market memory: B accepts cloth as payment, then sells it on. Flag-off
+     worlds already move goods through intermediaries this way.
+4. **`d` as a multiplier below 1 always discounts the resale price.** The band binds only where own use falls below
+   d r, which is the intended margin. With one fresh buyer, d is at most about 0.5, so thin markets rarely pull.
+5. **Self-referential pricing.** Without the margin divisor, a producer valuing its surplus at its own buyer's price
+   would demand at least d(1+m)/(1-t) times the last price, an upward ratchet once d > 0.86. Dividing r by (1 + margin)
+   removes it. The design should state the rule.
+
 ### 8. Scaling
 
 - Memory: O(contacts x groups) per society.
