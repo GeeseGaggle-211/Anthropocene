@@ -149,7 +149,7 @@ namespace Anthropocene.Simulation
             var cfg = w.Config; var n = cfg.Neolithic; int residents = camp.Population, nd = daughterSize, stay = residents - nd;
             double f = residents > 0 ? nd / (double)residents : 0;
             double floor = n.RudimentaryExpectationFloor;
-            double e = camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : NeolithicProduction.SettledExpectation(n, camp);
+            double e = ExpectationOneDiagnostic ? 1 : camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : NeolithicProduction.SettledExpectation(n, camp);
             var shelter = NeolithicProduction.HousingCapacity(w, camp, w.Days); double fixedPeople = shelter.Fixed, portable = shelter.Light;
             double Housing(double people, double capacity) => people > 0 ? Math.Min(1, capacity / people) : 1;
             double Share(double people, double fixedCapacity, double portableCapacity) => NeolithicProduction.HousingShare(n, new NeolithicProduction.ShelterCapacity(fixedCapacity, portableCapacity), people);
@@ -314,7 +314,7 @@ namespace Anthropocene.Simulation
             {
                 n = w.Config.Neolithic; world = w; this.camp = camp; Residents = camp.Population;
                 double floor = n.RudimentaryExpectationFloor;
-                expectation = camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : NeolithicProduction.SettledExpectation(n, camp);
+                expectation = ExpectationOneDiagnostic ? 1 : camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : NeolithicProduction.SettledExpectation(n, camp);
                 shelter = NeolithicProduction.HousingCapacity(w, camp, w.Days);
                 b0 = camp.FoodNeedsMetRatio * camp.WaterNeedsMetRatio;
             }
@@ -432,6 +432,34 @@ namespace Anthropocene.Simulation
             public int Daughter;
         }
         internal static Dictionary<int, Diag> Diagnostic;
+        // Measurement only (Docs/FissionRecalibrationCase.md): when non-null, Resolve re-evaluates the same frozen
+        // snapshot with every fission-decision read of the settled expectation forced to 1 (ExpectationOneDiagnostic)
+        // and records those rows here. Pure: a fresh context, nothing committed; null in ordinary play.
+        internal static Dictionary<int, Diag> CounterfactualDiagnostic;
+        internal static volatile bool ExpectationOneDiagnostic;
+        private static Diag Describe(Evaluation e)
+        {
+            var diag = new Diag
+            {
+                DistressLegal = e.DistressLegal, MoverScreen = e.MoverScreenPassed, SourceScreen = e.SourceScreenPassed,
+                BaselineUtility = e.BaselineUtility, BaselineNutrition = e.BaselineNutrition, Threshold = e.Threshold, Daughter = e.Daughter,
+                Stage = !e.LegalChecked ? "not-legal-size"
+                    : !e.MoverScreenPassed ? "screen-mover-bound" : !e.SourceScreenPassed ? "screen-source-harm"
+                    : e.NoCandidates ? "no-known-site" : e.Decision == null ? "no-viable-site" : e.Propose ? "proposed" : "decided"
+            };
+            if (e.Decision != null)
+            {
+                var dd = e.Decision;
+                diag.MoverPass = dd.MoverPass; diag.AggregatePass = dd.AggregatePass; diag.SourcePass = dd.SourcePass;
+                diag.MoverChange = dd.MoverUtilityChange; diag.SourceChange = dd.SourceUtilityChange; diag.AggregateChange = dd.AggregateWelfareChange;
+                diag.DaughterQoL = dd.DestinationAfter.QoL; diag.DaughterNutrition = dd.DestinationAfter.Nutrition;
+                diag.DaughterClothing = dd.DestinationAfter.ClothingCoverage; diag.DaughterHousing = dd.DestinationAfter.HousingCoverage;
+                diag.DaughterRisk = dd.DestinationAfter.MortalityRisk; diag.DaughterRenewableFood = dd.DestinationAfter.RenewableFoodRatio;
+                diag.SourceNoMoveQoL = dd.SourceNoMove.QoL; diag.SourceNoMoveRisk = dd.SourceNoMove.MortalityRisk;
+                if (!e.Propose) diag.Stage = !dd.MoverPass ? "reject-mover" : !dd.AggregatePass ? "reject-aggregate" : !dd.SourcePass ? "reject-source" : "not-proposed";
+            }
+            return diag;
+        }
         // Diagnostic counterfactual only (default off): a distress camp also offers 3/4, 1/2 and 1/4 of its shortfall cohort.
         internal static volatile bool DistressSizeLadderDiagnostic;
         private static int[] DistressSizes(int n1, int n0, int minimum, int largest, bool distressLegal)
@@ -512,6 +540,16 @@ namespace Anthropocene.Simulation
             var context = new Context(w, opportunities, forecasts);
             var evaluations = (execution ?? new PhaseExecution()).Map(camps,
                 c => legacyDecision ? EvaluateLegacy(context, c) : Evaluate(context, c));
+            if (CounterfactualDiagnostic != null && !legacyDecision)
+            {
+                ExpectationOneDiagnostic = true;
+                try
+                {
+                    var counterfactual = new Context(w, opportunities, null);
+                    foreach (var c in camps) CounterfactualDiagnostic[c.Id] = Describe(Evaluate(counterfactual, c));
+                }
+                finally { ExpectationOneDiagnostic = false; }
+            }
             var committed = new List<int>(); int spacing = Math.Max(1, w.Config.MinimumCampSpacing);
             Dictionary<int, List<MaterialKnowledge>> knowledge = null; Dictionary<int, DemographicReport> demographics = null;
             // Canonical reconcile and commit in camp ID order. A conflicting proposal is dropped this turn and keeps its cache.
@@ -545,25 +583,7 @@ namespace Anthropocene.Simulation
                 Diag diag = null;
                 if (Diagnostic != null)
                 {
-                    diag = new Diag
-                    {
-                        DistressLegal = e.DistressLegal, MoverScreen = e.MoverScreenPassed, SourceScreen = e.SourceScreenPassed,
-                        BaselineUtility = e.BaselineUtility, BaselineNutrition = e.BaselineNutrition, Threshold = e.Threshold, Daughter = e.Daughter,
-                        Stage = !e.LegalChecked ? "not-legal-size"
-                            : !e.MoverScreenPassed ? "screen-mover-bound" : !e.SourceScreenPassed ? "screen-source-harm"
-                            : e.NoCandidates ? "no-known-site" : e.Decision == null ? "no-viable-site" : "decided"
-                    };
-                    if (e.Decision != null)
-                    {
-                        var dd = e.Decision;
-                        diag.MoverPass = dd.MoverPass; diag.AggregatePass = dd.AggregatePass; diag.SourcePass = dd.SourcePass;
-                        diag.MoverChange = dd.MoverUtilityChange; diag.SourceChange = dd.SourceUtilityChange; diag.AggregateChange = dd.AggregateWelfareChange;
-                        diag.DaughterQoL = dd.DestinationAfter.QoL; diag.DaughterNutrition = dd.DestinationAfter.Nutrition;
-                        diag.DaughterClothing = dd.DestinationAfter.ClothingCoverage; diag.DaughterHousing = dd.DestinationAfter.HousingCoverage;
-                        diag.DaughterRisk = dd.DestinationAfter.MortalityRisk; diag.DaughterRenewableFood = dd.DestinationAfter.RenewableFoodRatio;
-                        diag.SourceNoMoveQoL = dd.SourceNoMove.QoL; diag.SourceNoMoveRisk = dd.SourceNoMove.MortalityRisk;
-                        if (!e.Propose) diag.Stage = !dd.MoverPass ? "reject-mover" : !dd.AggregatePass ? "reject-aggregate" : !dd.SourcePass ? "reject-source" : "not-proposed";
-                    }
+                    diag = Describe(e);
                     Diagnostic[e.Camp.Id] = diag;
                 }
                 if (!e.Propose) continue;

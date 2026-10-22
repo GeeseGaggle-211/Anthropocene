@@ -811,7 +811,7 @@ namespace Anthropocene.Simulation
         }
 
         private static double Expectation(NeolithicConfig n, Camp c)
-            => c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
+            => Fission.ExpectationOneDiagnostic ? 1 : c.RudimentaryExpectation > 0 ? c.RudimentaryExpectation
                 : NeolithicProduction.SettledExpectation(n, c);
 
         internal static long BoundEvaluations, BoundPruned;
