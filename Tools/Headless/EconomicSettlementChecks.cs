@@ -666,6 +666,19 @@ internal static class EconomicSettlementChecks
             stationaryPlan.Order.Ceiling(CraftGood.LightHousing) == 0 &&
             !stationary.Camps[0].IsVillage && stationaryPlan.Farmers == 0,
             "a complementary herd does not prevent fixed shelter after demonstrated tenure");
+        // Settling grace (Docs/SettlingGrace.md): the tenure test reads site tenure. Lifestyle years without site
+        // tenure keep the portable route; with the rule off the historical StationaryYears test still applies.
+        var lifestyleOnly = SaveCodec.Load(SaveCodec.Save(recent));
+        lifestyleOnly.Camps[0].StationaryYears = lifestyleOnly.Config.Neolithic.RudimentaryExpectationRampYears;
+        lifestyleOnly.Camps[0].SiteYears = 0;
+        var lifestylePlan = Plan(lifestyleOnly);
+        Check(lifestyleOnly.Config.SettlingGraceOnce && lifestylePlan.Order.Ceiling(CraftGood.LightHousing) > 0 &&
+            lifestylePlan.Order.Ceiling(CraftGood.Housing) == 0, "lifestyle years without site tenure keep the portable route");
+        var legacyTenure = SettlingGraceChecks.WithoutSave15Rules(recent);
+        legacyTenure.Camps[0].StationaryYears = legacyTenure.Config.Neolithic.RudimentaryExpectationRampYears;
+        var legacyTenurePlan = Plan(legacyTenure);
+        Check(legacyTenurePlan.Order.Ceiling(CraftGood.Housing) > 0 && legacyTenurePlan.Order.Ceiling(CraftGood.LightHousing) == 0,
+            "rule off: StationaryYears alone is demonstrated tenure, as before");
 
         var movedInPast = MobileMixed(cultivation: true, animals: 0);
         movedInPast.Camps[0].Inventory.AnimalFabric = 1000;

@@ -128,7 +128,8 @@ internal static class SharedAllocationChecks
         Check(Signature(plan) == Signature(EconomicPlanner.Plan(pure, pc, EconomicIntent.From(pc))), "primary-technology labels do not select a subsistence plan");
         var loaded = SaveCodec.Load(SaveCodec.Save(pure));
         Check(loaded.Config.SharedCropHerdAllocationEnabled && Signature(EconomicPlanner.Plan(loaded, loaded.Camps[0], EconomicIntent.From(loaded.Camps[0]))) == Signature(EconomicPlanner.Plan(pure, pc, EconomicIntent.From(pc))), "enabled save continuation retains the plan");
-        using (var input = new MemoryStream(SaveCodec.Save(pure)))
+        // Old saves predate the Save15 envelope: strip the field from the rules-off form.
+        using (var input = new MemoryStream(SettlingGraceChecks.SaveWithoutSave15Rules(pure)))
         using (var output = new MemoryStream())
         {
             using (var unzip = new GZipStream(input, CompressionMode.Decompress))
@@ -136,7 +137,7 @@ internal static class SharedAllocationChecks
             using (var zip = new GZipStream(output, CompressionMode.Compress, true))
             using (var writer = new BinaryWriter(zip))
             {
-                { string envelope = reader.ReadString(); writer.Write(envelope); if (envelope == "ANTHROPOCENE-15") writer.Write(reader.ReadByte()); } int length = reader.ReadInt32();
+                writer.Write(reader.ReadString()); int length = reader.ReadInt32();
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(length), XmlDictionaryReaderQuotas.Max))
                 using (var metadata = new MemoryStream())
                 {

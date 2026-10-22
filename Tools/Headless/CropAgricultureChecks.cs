@@ -94,13 +94,14 @@ internal static class CropAgricultureChecks
         Check(loaded.Config.CropHarvestingOnly && SaveCodec.Fingerprint(dry) == SaveCodec.Fingerprint(loaded), "save retains harvest policy and state");
         using (var output = new MemoryStream())
         {
-            using (var input = new MemoryStream(saved))
+            // Old saves predate the Save15 envelope: strip fields from the rules-off form.
+            using (var input = new MemoryStream(SettlingGraceChecks.SaveWithoutSave15Rules(dry)))
             using (var unzip = new GZipStream(input, CompressionMode.Decompress))
             using (var reader = new BinaryReader(unzip))
             using (var zip = new GZipStream(output, CompressionMode.Compress, true))
             using (var writer = new BinaryWriter(zip))
             {
-                { string envelope = reader.ReadString(); writer.Write(envelope); if (envelope == "ANTHROPOCENE-15") writer.Write(reader.ReadByte()); } int length = reader.ReadInt32();
+                writer.Write(reader.ReadString()); int length = reader.ReadInt32();
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(length), XmlDictionaryReaderQuotas.Max))
                 using (var metadata = new MemoryStream())
                 {

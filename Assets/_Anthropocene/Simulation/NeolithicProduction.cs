@@ -1159,7 +1159,13 @@ namespace Anthropocene.Simulation
                 : n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
         // Years at the current tile for site-tenure decisions (fixed versus portable shelter). Without the grace this is
         // the historical StationaryYears, which an abandoning village keeps; with it, SiteYears, which every move resets.
-        public static double SiteTenureYears(SimulationConfig cfg, Camp c) => cfg.SettlingGraceOnce ? c.SiteYears : c.StationaryYears;
+        public static double SiteTenureYears(SimulationConfig cfg, Camp c) => cfg.SettlingGraceOnce && !SiteTenureRepointDiagnosticOff ? c.SiteYears : c.StationaryYears;
+        // Measurement-only switches for decomposing the Save15 rules (Docs/SettlingGrace.md). Process-wide, never set
+        // in play or by the fixed suite; the RL bridge sets them from ANTHROPOCENE_SIM_STATICS.
+        //   SiteTenureRepointDiagnosticOff: the shelter tenure test keeps reading StationaryYears under the grace.
+        //   GraceTenureCompletionDiagnostic: the grace ends only when StationaryYears reaches the ramp (the old ramp
+        //   reaching 1.0), not after RampYears of lineage life, so never-moving camps follow the old E trajectory.
+        public static bool SiteTenureRepointDiagnosticOff, GraceTenureCompletionDiagnostic;
         public static void ResolveNeeds(WorldState w, Camp c, double years, int residents = -1)
         {
             var n = w.Config.Neolithic;
@@ -1183,7 +1189,7 @@ namespace Anthropocene.Simulation
             if (w.Config.SettlingGraceOnce)
             {
                 c.SiteYears += years; c.SettlingYears += years;
-                if (c.SettlingYears + 1e-9 >= n.RudimentaryExpectationRampYears || c.StationaryYears + 1e-9 >= n.RudimentaryExpectationRampYears)
+                if (!GraceTenureCompletionDiagnostic && c.SettlingYears + 1e-9 >= n.RudimentaryExpectationRampYears || c.StationaryYears + 1e-9 >= n.RudimentaryExpectationRampYears)
                     c.SettledExpectationEstablished = true;
             }
             c.RudimentaryExpectation = SettledExpectation(n, c);

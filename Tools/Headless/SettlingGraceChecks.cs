@@ -30,6 +30,23 @@ internal static class SettlingGraceChecks
         return checks;
     }
 
+    // The rules-off form of a world, as a save from before Save15 would hold it (checks that build "old save"
+    // fixtures use it, so they exercise the genuine earlier envelope).
+    internal static WorldState WithoutSave15Rules(WorldState w)
+    {
+        var copy = SaveCodec.Load(SaveCodec.Save(w));
+        copy.Config.SettlingGraceOnce = copy.Config.PlantTentsEnabled = false; copy.Config.Neolithic.ClothPerLightHousing = 0;
+        foreach (var c in copy.Camps) { c.SettledExpectationEstablished = false; c.SettlingYears = c.SiteYears = 0; }
+        return copy;
+    }
+    // The same world saved in place with the Save15 rules off (no load round trip, so fixtures that build legacy
+    // inventory keep it exactly); the world is restored afterwards.
+    internal static byte[] SaveWithoutSave15Rules(WorldState w)
+    {
+        var cfg = w.Config; bool grace = cfg.SettlingGraceOnce, tents = cfg.PlantTentsEnabled; double cloth = cfg.Neolithic.ClothPerLightHousing;
+        try { cfg.SettlingGraceOnce = cfg.PlantTentsEnabled = false; return SaveCodec.Save(w); }
+        finally { cfg.SettlingGraceOnce = grace; cfg.PlantTentsEnabled = tents; cfg.Neolithic.ClothPerLightHousing = cloth; }
+    }
     private static string Magic(byte[] bytes)
     {
         using var zip = new GZipStream(new MemoryStream(bytes), CompressionMode.Decompress); using var reader = new BinaryReader(zip); return reader.ReadString();

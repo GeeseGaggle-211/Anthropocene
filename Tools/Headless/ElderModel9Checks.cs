@@ -15,12 +15,22 @@ internal static class ElderModel9Checks
     // save round trip, the hold mask and exact replay.
     private static void CommitmentChecks(ElderModel9Environment acting, ElderModel9Step last)
     {
-        int camp = last.Villages.First(v => v.Observation != null && !v.Terminated).Camp;
         ElderDirective Directive(int span, double field, double herd, double budget, double share) => new ElderDirective
         {
             SchemaVersion = ElderModel9Contract.ActionSchemaVersion, RetainedFieldOperation = field, RetainedHerdFraction = herd,
             DevelopmentBudget = budget, FieldDevelopmentShare = share, MovementCandidate = ElderModel9Contract.NativeMovement, CommitTurns = span
         };
+        // The first live village whose three-turn commitment can then be held (probed on a fork), so the hold, expiry
+        // and forced-break assertions fire whatever the trajectory (the Save15 rules change which villages relocate).
+        var live = last.Villages.Where(v => v.Observation != null && !v.Terminated).Select(v => v.Camp).ToList();
+        var origin = SaveCodec.Save(acting.World);
+        int camp = live.FirstOrDefault(id =>
+        {
+            var probe = new ElderModel9Environment(); probe.Reset(origin, true);
+            probe.Step(new Dictionary<int, ElderDirective> { [id] = Directive(3, .8, 1, .1, .5) });
+            var pc = probe.World.Camps.SingleOrDefault(c => c.Id == id);
+            return pc != null && ElderCommitments.CanHold(probe.World, pc);
+        }, live[0]);
         ElderInstitutionMemory Memory(ElderModel9Environment env) => env.World.Camps.Single(c => c.Id == camp).ElderMemory;
         bool Intervened(ElderModel9Step step, string reason) => step.Villages.Single(v => v.Camp == camp).Interventions
             .Any(i => i.Control == "commitment" && i.Reason.Contains(reason));
@@ -38,7 +48,9 @@ internal static class ElderModel9Checks
 
         // A hold with different submitted values compiles exactly like explicitly resubmitting the committed values.
         var mid = SaveCodec.Save(acting.World);
-        if (ElderCommitments.CanHold(acting.World, acting.World.Camps.Single(c => c.Id == camp)))
+        bool canHold = ElderCommitments.CanHold(acting.World, acting.World.Camps.Single(c => c.Id == camp));
+        Check(canHold, "fixture: a village can hold its commitment");
+        if (canHold)
         {
             var held = new ElderModel9Environment(); held.Reset(mid, true);
             var explicitly = new ElderModel9Environment(); explicitly.Reset(mid, true);
@@ -72,6 +84,8 @@ internal static class ElderModel9Checks
         breakingCamp.DeficitTurns = 1;
         if (Memory(breaking).HasCommitment)
         {
+            // Rules off: the fixture as before, where the deficit is the only break reason.
+            if (!rulesOn) Check(prior == null, "rules off: the deficit is the only break reason");
             string reason = prior ?? "survival shortfall";
             Check(ElderCommitments.BreakReason(breaking.World, breakingCamp, Memory(breaking)) == reason, "a survival shortfall is a break reason");
             var broken = breaking.Step(new Dictionary<int, ElderDirective> { [camp] = Directive(0, .1, .1, .6, .9) });
@@ -318,10 +332,25 @@ internal static class ElderModel9Checks
 
     private static double ValueCurveMarginal(ValueCurve.Segment[] segments, double x) => ValueCurve.Marginal(segments, x);
 
+    // The whole contract runs twice: with the Save15 rules off (the fixture and every assertion as before
+    // Docs/SettlingGrace.md) and with the new-world defaults (settling grace and plant tents on).
     public static int Run()
     {
         checks = 0;
-        var snapshot = ElderModel9Tools.Opening(17, 8, out _);
+        int legacy = RunWith(false);
+        Console.WriteLine("  rules off: " + legacy + " assertions");
+        int current = RunWith(true) - legacy;
+        Console.WriteLine("  rules on: " + current + " assertions");
+        Console.WriteLine("PASS: " + checks + " model9 contract-12 assertions");
+        return checks;
+    }
+    private static bool rulesOn;
+    private static void Rules(SimulationConfig cfg) { cfg.SettlingGraceOnce = rulesOn; cfg.PlantTentsEnabled = rulesOn; }
+    private static int RunWith(bool rules)
+    {
+        rulesOn = rules;
+        var snapshot = ElderModel9Environment.GenerateOpening(17, 8, out _, 40, 0, Rules);
+        Check(SaveCodec.Load(snapshot).Config.SettlingGraceOnce == rules, "fixture rules as requested");
         var teacher = new ElderModel9Environment(); var acting = new ElderModel9Environment();
         var reset = teacher.Reset(snapshot, true); acting.Reset(snapshot, true);
         Check(reset.Villages.Count > 0 && reset.Villages.All(v => v.Observation != null), "reset observes every resident-economy village");
@@ -383,7 +412,7 @@ internal static class ElderModel9Checks
         // Capability fixtures: a withheld technology is never granted, and the training-only mask is neither saved
         // nor hashed.
         int herdingOnly = 1 << (int)Technology.Cultivation | 1 << (int)Technology.Watercraft;
-        var pastoral = SaveCodec.Load(ElderModel9Environment.GenerateOpening(17, 8, out _, 40, herdingOnly));
+        var pastoral = SaveCodec.Load(ElderModel9Environment.GenerateOpening(17, 8, out _, 40, herdingOnly, Rules));
         Check(pastoral.Societies.All(s => !s.Technologies[(int)Technology.Cultivation] && !s.Technologies[(int)Technology.Watercraft])
             && pastoral.Societies.Any(s => s.Technologies[(int)Technology.AnimalHusbandry]), "a herding-only fixture grants husbandry and nothing else");
         Check(pastoral.Config.TrainingWithheldTechnologies == 0, "the fixture mask is never saved");
@@ -434,7 +463,6 @@ internal static class ElderModel9Checks
                 "NPY header is aligned and declares the shape");
         }
         finally { Directory.Delete(dir, true); }
-        Console.WriteLine("PASS: " + checks + " model9 contract-12 assertions");
         return checks;
     }
 }

@@ -330,7 +330,15 @@ internal static class NeolithicChecks
         c.FoodNeedsMetRatio = .5; c.WaterNeedsMetRatio = .5; c.Inventory.Cloth = 100; NeolithicProduction.ResolveNeeds(w, c, 20); Near(c.QoL, .25 * cohesion, "basic food and water gate QoL");
         // A camp still in its first settling period (SettlingGraceOnce) gets the expectation grace.
         c.StationaryYears = 0; c.SettledExpectationEstablished = false; c.SettlingYears = 0; c.Inventory.Cloth = 0; w.FixedHousing.Single().Units = 0; c.Inventory.HousingUnits = 0; c.FoodNeedsMetRatio = c.WaterNeedsMetRatio = 1; NeolithicProduction.ResolveNeeds(w, c, 0);
-        Near(c.RudimentaryExpectation, .25, "mobile expectation floor"); Near(c.HousingPerCapita, 0, "expectation cannot fake physical housing");
+        Near(c.RudimentaryExpectation, .25, "mobile expectation floor");
+        // Settling grace: an established camp keeps E = 1 after a move; with the rule off the reset is historical.
+        c.SettledExpectationEstablished = true; NeolithicProduction.ResolveNeeds(w, c, 0);
+        Near(c.RudimentaryExpectation, 1, "an established camp keeps the settled expectation");
+        w.Config.SettlingGraceOnce = false; c.SettledExpectationEstablished = false; c.StationaryYears = 100; c.SettlingYears = 0;
+        NeolithicProduction.ResolveNeeds(w, c, 0); Near(c.RudimentaryExpectation, 1, "rule off: tenure ramp");
+        c.StationaryYears = 0; NeolithicProduction.ResolveNeeds(w, c, 0);
+        Near(c.RudimentaryExpectation, .25, "rule off: a move resets the expectation to the floor, as before");
+        Check(!c.SettledExpectationEstablished, "rule off: no grace state"); w.Config.SettlingGraceOnce = true; Near(c.HousingPerCapita, 0, "expectation cannot fake physical housing");
         Near(.1 / (4 * 2.5), .01, "Builder steady maintenance one percent"); Near(.1 / (4 * 2.5 * .25), .04, "generalist steady maintenance four percent");
     }
     private static void Materials()
@@ -527,7 +535,8 @@ internal static class NeolithicChecks
     {
         // Historical tile layout: 97 bytes through q, then four 64-byte seasons.
         // Envelope 11 inserts E (double) and operator (int) between those sections.
-        using (var input = new MemoryStream(SaveCodec.Save(world)))
+        // Old saves predate the Save15 envelope: save the rules-off form.
+        using (var input = new MemoryStream(SettlingGraceChecks.SaveWithoutSave15Rules(world)))
         using (var unzip = new GZipStream(input, CompressionMode.Decompress))
         using (var reader = new BinaryReader(unzip))
         using (var output = new MemoryStream())
@@ -535,7 +544,7 @@ internal static class NeolithicChecks
             using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
             using (var writer = new BinaryWriter(zip))
             {
-                if (reader.ReadString() == "ANTHROPOCENE-15") reader.ReadByte(); writer.Write("ANTHROPOCENE-10"); int header = reader.ReadInt32();
+                reader.ReadString(); writer.Write("ANTHROPOCENE-10"); int header = reader.ReadInt32();
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(header), XmlDictionaryReaderQuotas.Max))
                 using (var metadata = new MemoryStream())
                 {
@@ -555,7 +564,8 @@ internal static class NeolithicChecks
     }
     private static byte[] MissingPotFields(WorldState world)
     {
-        using (var input = new MemoryStream(SaveCodec.Save(world)))
+        // Old saves predate the Save15 envelope: save the rules-off form.
+        using (var input = new MemoryStream(SettlingGraceChecks.SaveWithoutSave15Rules(world)))
         using (var unzip = new GZipStream(input, CompressionMode.Decompress))
         using (var reader = new BinaryReader(unzip))
         using (var output = new MemoryStream())
@@ -563,7 +573,7 @@ internal static class NeolithicChecks
             using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
             using (var writer = new BinaryWriter(zip))
             {
-                { string envelope = reader.ReadString(); writer.Write(envelope); if (envelope == "ANTHROPOCENE-15") writer.Write(reader.ReadByte()); } int header = reader.ReadInt32();
+                writer.Write(reader.ReadString()); int header = reader.ReadInt32();
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(header), XmlDictionaryReaderQuotas.Max))
                 using (var metadata = new MemoryStream())
                 {
@@ -580,7 +590,8 @@ internal static class NeolithicChecks
     }
     private static byte[] MissingReserveFields(WorldState world)
     {
-        using (var input = new MemoryStream(SaveCodec.Save(world)))
+        // Old saves predate the Save15 envelope: save the rules-off form.
+        using (var input = new MemoryStream(SettlingGraceChecks.SaveWithoutSave15Rules(world)))
         using (var unzip = new GZipStream(input, CompressionMode.Decompress))
         using (var reader = new BinaryReader(unzip))
         using (var output = new MemoryStream())
@@ -588,7 +599,7 @@ internal static class NeolithicChecks
             using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
             using (var writer = new BinaryWriter(zip))
             {
-                { string envelope = reader.ReadString(); writer.Write(envelope); if (envelope == "ANTHROPOCENE-15") writer.Write(reader.ReadByte()); } int header = reader.ReadInt32();
+                writer.Write(reader.ReadString()); int header = reader.ReadInt32();
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(header), XmlDictionaryReaderQuotas.Max))
                 using (var metadata = new MemoryStream())
                 {

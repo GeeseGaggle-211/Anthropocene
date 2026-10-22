@@ -510,9 +510,15 @@ namespace Anthropocene.Simulation
         public static Action<SimulationConfig> ConfigOverride;
 
         public static byte[] GenerateOpening(int seed, int players, out int openingTurns, int maxTurns, int withheldTechnologies)
+            => GenerateOpening(seed, players, out openingTurns, maxTurns, withheldTechnologies, null);
+
+        // configure: a per-call configuration change applied after ConfigOverride (no process-wide state), for checks
+        // that run the same fixture under different rules concurrently with other checks.
+        public static byte[] GenerateOpening(int seed, int players, out int openingTurns, int maxTurns, int withheldTechnologies, Action<SimulationConfig> configure)
         {
             var cfg = SimulationConfig.Small(players);
             ConfigOverride?.Invoke(cfg);
+            configure?.Invoke(cfg);
             cfg.Validate();
             var world = new WorldGenerator().Generate(seed, cfg); var resolver = new TurnResolver();
             world.Config.TrainingWithheldTechnologies = withheldTechnologies;

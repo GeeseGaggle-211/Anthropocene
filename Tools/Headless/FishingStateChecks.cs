@@ -57,7 +57,8 @@ internal static class FishingStateChecks
 
     private static byte[] RemoveSaveFields(WorldState world, params string[] fields)
     {
-        using (var input = new MemoryStream(SaveCodec.Save(world)))
+        // Old saves predate the Save15 envelope: save the rules-off form.
+        using (var input = new MemoryStream(SettlingGraceChecks.SaveWithoutSave15Rules(world)))
         using (var unzip = new GZipStream(input, CompressionMode.Decompress))
         using (var reader = new BinaryReader(unzip))
         using (var output = new MemoryStream())
@@ -65,7 +66,7 @@ internal static class FishingStateChecks
             using (var zip = new GZipStream(output, CompressionLevel.Fastest, true))
             using (var writer = new BinaryWriter(zip))
             {
-                { string envelope = reader.ReadString(); writer.Write(envelope); if (envelope == "ANTHROPOCENE-15") writer.Write(reader.ReadByte()); } int headerLength = reader.ReadInt32();
+                writer.Write(reader.ReadString()); int headerLength = reader.ReadInt32();
                 using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max))
                 using (var metadata = new MemoryStream())
                 {

@@ -76,3 +76,33 @@ rules off all 108 rollouts reproduce the audit's per-step fingerprints exactly.
 The reported and E = 1 gaps now coincide: the accounting artefact is gone. The reference also changes (residents
 -16%, fissions 30.5 to 23.0), because planners and fission now value clothing and housing at the full expectation.
 S-s55 was trained under the old rule and still shuttles; it must be retrained before its movement can be judged.
+
+## Reference shift decomposition
+
+Heuristic reference only (frozen reference checkpoint, heuristic movement), 54 worlds, 25 turns, one rule at a time.
+The two switches used here are measurement-only statics (`NeolithicProduction.SiteTenureRepointDiagnosticOff`,
+`GraceTenureCompletionDiagnostic`), set through the RL bridge's `ANTHROPOCENE_SIM_STATICS`.
+
+| reference run | residents | fissions/world | settlements | welfare |
+|---|---|---|---|---|
+| current rule | 17,318 | 30.5 | 39.4 | 0 |
+| plant tents alone | -0.9% | 30.0 | 38.9 | -0.7% |
+| grace, tenure test not repointed | -16.4% | 23.0 | 31.6 | -15.1% |
+| grace (shipped) | -16.4% | 23.0 | 31.6 | -15.1% |
+| grace + tents (shipped) | -17.1% | 22.8 | 31.3 | -15.4% |
+| grace ending only when the old ramp reaches 1.0 | -13.5% | 24.1 | 32.8 | -12.9% |
+| that variant + tents | -13.9% | 23.9 | 32.6 | -13.1% |
+
+- The site-tenure repoint has no measurable effect, and the tents almost none. The shift comes from the grace.
+- It is not caused by never-moving camps reaching E = 1 sooner. Under the current rule, non-moving camps follow the
+  old ramp exactly: mean E 0.88 at episode start, 1.00 by turn 16. Under the grace every lineage has already lived
+  100 Neolithic years during the opening, so E = 1 from the start of the episode. Only 4.0% of non-moving camp-turns
+  differ from the old ramp, all of them camps that moved earlier.
+- It comes from moving camps. The heuristic moves on 4% of camp-turns. Under the old rule each move reset E to 0.40,
+  which raised the arriving camp's and its daughter's estimated QoL and drove distress fission. That discount is the
+  artefact being removed, so the ordinary game loses it too.
+- The old-ramp completion variant recovers only 3 of the 16 points. It also lets camps that never stay 100 years
+  remain in the grace: with it, S-s55's E averages 0.990 and its reported welfare / ref (1.058) exceeds its E = 1
+  value (1.054). It is not adopted.
+- Holding the reference's fission and population at their old level would need a separate recalibration of fission,
+  not a different completion rule.

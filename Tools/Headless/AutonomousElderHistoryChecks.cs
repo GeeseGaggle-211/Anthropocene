@@ -66,7 +66,7 @@ internal static class AutonomousElderHistoryChecks
         Check(resumed.Replay.Steps.Last().CompletedHistory[ids[0]][0] == 1, "caller edits do not mutate committed replay");
         var tampered = resumed.Replay; tampered.Steps[0].CompletedHistory[ids[0]][1] += 1;
         Reject(() => AutonomousElderHistoryEnvironment.VerifyReplay(tampered), "tampered action receipt replay rejected"); replaySteps++;
-        EqualCurrentHistory(); DirectPreparation(); Quotes(); Daughters(); Terminal(); Corruption(saved);
+        EqualCurrentHistory(); DirectPreparation(); Quotes(); Daughters(); Terminal(); Corruption(saved); Corruption(SaveCodec.Save(SettlingGraceChecks.WithoutSave15Rules(SaveCodec.Load(saved))));
         Console.WriteLine(JsonSerializer.Serialize(new { assertions = checks, validationResolves = steps, replayResolves = replaySteps,
             schema = 5, historyWidth = 300, result = "PASS" }));
     }
@@ -168,8 +168,9 @@ internal static class AutonomousElderHistoryChecks
         using var plain = new MemoryStream(); using (var zip = new GZipStream(new MemoryStream(snapshot), CompressionMode.Decompress)) zip.CopyTo(plain);
         plain.Position = 0; using var reader = new BinaryReader(plain);
         // Save15 (settling grace / plant tents on) carries the history as extension flag 1 after the envelope.
+        bool save15 = SaveCodec.Load(snapshot).Config.UsesSave15();
         string envelope = reader.ReadString();
-        Check(envelope == "ANTHROPOCENE-12" || envelope == "ANTHROPOCENE-15" && (reader.ReadByte() & 1) != 0, "explicit new save envelope");
+        Check(save15 ? envelope == "ANTHROPOCENE-15" && (reader.ReadByte() & 1) != 0 : envelope == "ANTHROPOCENE-12", "explicit new save envelope");
         int header = reader.ReadInt32(); plain.Position += header; int tiles = reader.ReadInt32(); plain.Position += 365L * tiles;
         Check(!reader.ReadBoolean(), "corruption fixture has no resource block");
         long at = plain.Position; int length = reader.ReadInt32(); var bytes = reader.ReadBytes(length); long rest = plain.Position;
