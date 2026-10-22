@@ -451,7 +451,7 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 record.Demographics.First(d => d.Camp == camp.Id).FoodRequired += plans[camp.Id].Required;
-                if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+                if (LastMetrics.CaptureWork)
                 {
                     var flow = LastMetrics.CraftFoodFlowFor(camp.Id);
                     var need = needs[camp.Id];
@@ -908,7 +908,7 @@ namespace Anthropocene.Simulation
             }
             var result = ForRate(low);
             if (needs.ProtectedClothing) result.ProtectedClothingFood = clothing;
-            if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+            if (ResolutionMetrics.CaptureCraftWorkDiagnostics || w.EconomicDiagnosticCapture)
             {
                 result.ProjectedFood = projectedFood; result.NetIncome = netIncome;
                 result.PriorityIncome = priorityIncome; result.AvailableAfterReserve = available;
@@ -1199,7 +1199,7 @@ namespace Anthropocene.Simulation
                     double growthFood = Math.Min(plans[camp.Id].GrowthFood, camp.Food);
                     ConsumeCampFood(camp, growthFood, plans[camp.Id].PlantManufacturingInput, plans[camp.Id].AnimalManufacturingInput); camp.LastConsumed += growthFood;
                     summary.GrowthFoodAccepted += growthFood;
-                    if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+                    if (metrics.CaptureWork)
                         metrics.CraftFoodFlowFor(camp.Id).GrowthFoodUsed = growthFood;
                     pendingBirths[camp.Id] = plans[camp.Id];
                 }

@@ -857,6 +857,9 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldState
     {
+        // Environment-owned reporting switch; never persisted or fingerprinted.
+        [NonSerialized] internal bool EconomicDiagnosticCapture;
+        [NonSerialized] internal bool DemandAllocationCapture;
         public const int GeneratorVersion = 14;
         public int Version = 7, Seed, Turn = 1, NextId = 1;
         // Live player-slot count (WP10a): fission creates AI slots mid-game. 0 means not recorded (older saves and hand-built worlds);

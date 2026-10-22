@@ -251,7 +251,7 @@ internal static class ElderModel9Checks
               immediateForkStep.Villages.Single(v => v.Camp == immediateCamp).DecisionDiagnostics?.TrajectoryId ==
               immediateStep.Villages.Single(v => v.Camp == immediateCamp).DecisionDiagnostics.TrajectoryId,
             "an immediate fork preserves same-step per-village decision diagnostics");
-        Check(immediateForkStep.DiagnosticSchemaVersion == ElderModel9DiagnosticEnvelope.CurrentSchemaVersion &&
+        Check(immediateForkStep.DiagnosticSchemaVersion == 2 &&
               immediateForkStep.DecisionDiagnostics.Count > 0,
             "fork-returned steps retain the schema version for their restored diagnostic sidecars");
         var preservedTrajectory = immediateFork.DecisionDiagnostics[immediateCamp].TrajectoryId;
@@ -287,7 +287,7 @@ internal static class ElderModel9Checks
               restored.DecisionDiagnostics.All(p => p.Value.TrajectoryId == decision.DecisionDiagnostics[p.Key].TrajectoryId) &&
               restored.Villages.All(v => v.DecisionDiagnostics?.TrajectoryId == decision.Villages.Single(d => d.Camp == v.Camp).DecisionDiagnostics?.TrajectoryId),
             "restore preserves the prior-decision sidecar alignment");
-        Check(restored.DiagnosticSchemaVersion == ElderModel9DiagnosticEnvelope.CurrentSchemaVersion,
+        Check(restored.DiagnosticSchemaVersion == 2,
             "restored step carries the schema version for its diagnostic sidecars (schema=" + restored.DiagnosticSchemaVersion + ")");
         Check(Run(live, 3).SequenceEqual(path), "a restored branch replays the live path exactly");
         var camp = decision.Villages.First(v => v.Observation.EconomyMixMask.Count(x => x) >= 2).Camp;
@@ -383,11 +383,84 @@ internal static class ElderModel9Checks
         return checks;
     }
     private static bool rulesOn;
+    private static void EconomicDiagnosticsChecks(byte[] snapshot)
+    {
+        bool originalCapture = ResolutionMetrics.CaptureDemandAllocations;
+        var on = new ElderModel9Environment { EconomicDiagnosticsEnabled = true };
+        var off = new ElderModel9Environment();
+        var reset = on.Reset(snapshot, true); off.Reset(snapshot, true);
+        Check(reset.DiagnosticSchemaVersion == 0 && reset.EconomicDiagnostics.Count == 0, "economic reset has no preceding receipts");
+        Check(ResolutionMetrics.CaptureDemandAllocations == originalCapture, "model9 capture does not change the process-global demand switch");
+        var actions = reset.Villages.ToDictionary(v => v.Camp, v => new ElderDirective { MovementCandidate = ElderModel9Contract.NativeMovement });
+        var a = on.Step(actions); var b = off.Step(actions);
+        Check(a.Fingerprint == b.Fingerprint && b.DiagnosticSchemaVersion == 2 && b.EconomicDiagnostics.Count == 0,
+            "economic capture preserves physics and disabled envelope two");
+        Check(a.DiagnosticSchemaVersion == 3 && a.EconomicDiagnostics.Count > 0, "economic envelope three carries schema-one records");
+        foreach (var p in a.EconomicDiagnostics)
+        {
+            var d = p.Value;
+            Check(d.CampId == p.Key && d.DecisionTurn == a.Turn - 1 && d.TrajectoryId == a.TrajectoryId && d.SchemaVersion == 1,
+                "economic record binds camp/turn/trajectory/schema");
+            Check(d.Goods.Select(g => (string)g["good"]).SequenceEqual(Enum.GetNames(typeof(CraftGood))), "economic goods use stable enum order");
+            Check(d.Materials.Select(g => (string)g["material"]).SequenceEqual(new[] { "Stone", "Clay", "Wood" }), "economic materials use stable order");
+            Check(d.Herds.Select(h => (int)h["herdId"]).Distinct().Count() == d.Herds.Count, "managed groups are counted once by herd ID");
+            Check(d.Conservation["foodResidual"] == null && d.Unavailable.ContainsKey("conservation.foodResidual"),
+                "unclosed stock ledger is explicitly unavailable");
+            if (d.Conservation.TryGetValue("populationResidual", out var residual)) Check(Convert.ToDouble(residual) == 0, "linked population reconciles at committed close");
+        }
+        foreach (var v in a.Villages.Where(v => v.Observation != null))
+        {
+            var twin = b.Villages.Single(x => x.Camp == v.Camp);
+            Check(v.Observation.Core.SequenceEqual(twin.Observation.Core) && v.Welfare == twin.Welfare && v.TradeUtility == twin.TradeUtility,
+                "economic capture cannot leak into actor observations or rewards");
+            Check(v.Teacher == null && twin.Teacher == null || v.Teacher.Action.ServiceLevels.SequenceEqual(twin.Teacher.Action.ServiceLevels), "teacher labels are capture invariant");
+        }
+        ElderModel9Environment.VerifyReplay(on.Replay); checks++;
+        var replayEconomic = on.Replay.Steps[0].EconomicDiagnostics.First().Value;
+        var population = (Dictionary<string, object>)replayEconomic.Domains["population"];
+        var original = population["endingLinked"]; population["endingLinked"] = -7.0;
+        bool rejected = false;
+        try { ElderModel9Environment.VerifyReplay(on.Replay); } catch (InvalidOperationException e) { rejected = e.Message.Contains("economic diagnostics diverged"); }
+        Check(rejected, "economic replay mismatch is rejected"); population["endingLinked"] = original;
+        var fork = on.Fork(out var restored);
+        Check(restored.RestoredObservation && restored.EconomicDiagnostics.First().Value.TransitionId == a.EconomicDiagnostics.First().Value.TransitionId,
+            "restore preserves original transition identity and is labelled observation only");
+        var saved = fork.EconomicDiagnostics.First().Value;
+        ((Dictionary<string, object>)restored.EconomicDiagnostics.First().Value.Domains["population"])["endingLinked"] = -9.0;
+        Check(Convert.ToDouble(((Dictionary<string, object>)saved.Domains["population"])["endingLinked"]) >= 0, "fork economic trees do not alias returned observations");
+        var firstBranch = on.Step(actions);
+        ElderModel9Environment.VerifyReplay(on.Replay); checks++;
+        on.Restore(fork); var secondBranch = on.Step(actions);
+        Check(firstBranch.Fingerprint == secondBranch.Fingerprint && firstBranch.TrajectoryId != secondBranch.TrajectoryId,
+            "independently named fork continuations preserve paired physics");
+        Check(firstBranch.EconomicDiagnostics.Values.All(d => d.ForkId != null && d.BranchId != null && d.ParentTransitionId != null),
+            "new fork transitions retain branch provenance");
+        foreach (var diagnostic in firstBranch.EconomicDiagnostics.Values)
+        {
+            if (fork.EconomicDiagnostics.TryGetValue(diagnostic.CampId, out var preceding))
+                Check(diagnostic.ParentTransitionId == preceding.TransitionId,
+                    "existing camp branch points to its own preceding transition");
+            else
+            {
+                var parents = fork.EconomicDiagnostics.Values.Where(d => d.Transfers.Any(t =>
+                    (string)t["kind"] == "fission" && (int)t["destinationCamp"] == diagnostic.CampId)).ToArray();
+                Check(parents.Length == 1 && diagnostic.ParentTransitionId == parents[0].TransitionId,
+                    "new daughter branch points to its witnessed parent transition");
+            }
+        }
+        var worker = new ElderModel9Environment(new PhaseExecution(2, 1, true, 1)) { EconomicDiagnosticsEnabled = true };
+        worker.Reset(snapshot, true); var workerStep = worker.Step(actions);
+        Check(workerStep.Fingerprint == a.Fingerprint, "economic capture preserves scalar/worker physics");
+        Check(workerStep.EconomicDiagnostics.All(p => p.Value.Goods.Select(g => (double)g["output"]).SequenceEqual(a.EconomicDiagnostics[p.Key].Goods.Select(g => (double)g["output"]))),
+            "economic physical receipts agree across worker partitions");
+        ElderModel9Environment.VerifyReplay(worker.Replay, new PhaseExecution(2, 1, true, 1)); checks++;
+    }
     private static void Rules(SimulationConfig cfg) { cfg.SettlingGraceOnce = rulesOn; cfg.PlantTentsEnabled = rulesOn; }
     private static int RunWith(bool rules)
     {
         rulesOn = rules;
         var snapshot = ElderModel9Environment.GenerateOpening(17, 8, out _, 40, 0, Rules);
+        EconomicDiagnosticsChecks(snapshot);
         Check(SaveCodec.Load(snapshot).Config.SettlingGraceOnce == rules, "fixture rules as requested");
         var teacher = new ElderModel9Environment(); var acting = new ElderModel9Environment();
         var reset = teacher.Reset(snapshot, true); acting.Reset(snapshot, true);
@@ -444,9 +517,9 @@ internal static class ElderModel9Checks
                 MovementCandidate = ElderModel9Contract.NativeMovement, ServiceLevels = new[] { 0d, 0, 0, 0, 0, 1 } });
         var rawStep = rawEnv.Step(rawDirectives);
         var rawRecord = rawEnv.World.History.Last();
-        Check(rawStep.DiagnosticSchemaVersion == ElderModel9DiagnosticEnvelope.CurrentSchemaVersion &&
+        Check(rawStep.DiagnosticSchemaVersion == 2 &&
               rawStep.DecisionDiagnostics.Values.All(d => d.SchemaVersion == ElderModel9DecisionDiagnostics.CurrentSchemaVersion) &&
-              rawStep.RawMaterialDiagnostics.Values.All(d => d.SchemaVersion == ElderModel9DiagnosticEnvelope.CurrentSchemaVersion),
+              rawStep.RawMaterialDiagnostics.Values.All(d => d.SchemaVersion == 2),
             "diagnostic envelope and per-head/raw sidecars use independent schema versions");
         Check(rawStep.RawMaterialDiagnostics.Count > 0, "flag-on materials service creates typed raw requests when residual residents and sources exist");
         Check(rawStep.RawMaterialDiagnostics.Values.All(d => d.AcceptedUnits <= d.RequestedUnits + 1e-9 && d.RealisedUnits <= d.AcceptedUnits + 1e-9),
@@ -625,7 +698,7 @@ internal static class ElderModel9Checks
             "materials teacher target/mask and RepairSize delta equal the raw-request service equivalent while every other label mask remains unchanged");
         var transitionFork = transitionOn.Fork(out var transitionForkStep);
         var transitionRestored = transitionOn.Restore(transitionFork);
-        bool rawSidecarPreserved = transitionForkStep.DiagnosticSchemaVersion == ElderModel9DiagnosticEnvelope.CurrentSchemaVersion &&
+        bool rawSidecarPreserved = transitionForkStep.DiagnosticSchemaVersion == 2 &&
             transitionForkStep.RawMaterialDiagnostics.Keys.OrderBy(k => k, StringComparer.Ordinal)
                 .SequenceEqual(transitionOnStep2.RawMaterialDiagnostics.Keys.OrderBy(k => k, StringComparer.Ordinal)) &&
             transitionRestored.RawMaterialDiagnostics.All(p => transitionForkStep.RawMaterialDiagnostics.TryGetValue(p.Key, out var saved) &&

@@ -347,6 +347,7 @@ namespace Anthropocene.Simulation
         internal int ReplaySteps;
         internal Dictionary<int, ElderModel9DecisionDiagnostics> DecisionDiagnostics;
         internal Dictionary<string, ElderModel9RawMaterialDiagnostic> RawMaterialDiagnostics;
+        internal Dictionary<int, ElderEconomicDiagnostic> EconomicDiagnostics;
         internal int DiagnosticSchemaVersion;
         internal string TrajectoryId;
     }
@@ -474,7 +475,7 @@ namespace Anthropocene.Simulation
     public static class ElderModel9DiagnosticEnvelope
     {
         // Independently versioned from the per-head diagnostic records.
-        public const int CurrentSchemaVersion = 2;
+        public const int CurrentSchemaVersion = 3;
     }
 
     [Serializable]
@@ -512,7 +513,7 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class ElderModel9RawMaterialDiagnostic
     {
-        public int SchemaVersion = ElderModel9DiagnosticEnvelope.CurrentSchemaVersion, CampId, DecisionTurn;
+        public int SchemaVersion = 2, CampId, DecisionTurn;
         public MaterialId Material;
         public string RequestId;
         public double RequestedUnits, AcceptedUnits, RealisedUnits;
@@ -525,6 +526,8 @@ namespace Anthropocene.Simulation
     public sealed class ElderModel9Step
     {
         public int Turn;
+        public bool RestoredObservation;
+        public Dictionary<int, ElderEconomicDiagnostic> EconomicDiagnostics = new Dictionary<int, ElderEconomicDiagnostic>();
         [System.Runtime.Serialization.OptionalField] public int DiagnosticSchemaVersion;
         [System.Runtime.Serialization.OptionalField] public string TrajectoryId;
         [System.Runtime.Serialization.OptionalField] public Dictionary<int, ElderModel9DecisionDiagnostics> DecisionDiagnostics = new Dictionary<int, ElderModel9DecisionDiagnostics>();
@@ -543,6 +546,7 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class ElderModel9ReplayStep
     {
+        public Dictionary<int, ElderEconomicDiagnostic> EconomicDiagnostics = new Dictionary<int, ElderEconomicDiagnostic>();
         [System.Runtime.Serialization.OptionalField] public int DiagnosticSchemaVersion;
         [System.Runtime.Serialization.OptionalField] public string TrajectoryId;
         [System.Runtime.Serialization.OptionalField] public Dictionary<int, ElderModel9DecisionDiagnostics> DecisionDiagnostics = new Dictionary<int, ElderModel9DecisionDiagnostics>();
@@ -577,6 +581,7 @@ namespace Anthropocene.Simulation
         private Dictionary<int, ElderObservationMetadata> metadata = new Dictionary<int, ElderObservationMetadata>();
         public WorldState World { get; private set; }
         public ElderModel9Replay Replay { get; private set; }
+        public bool EconomicDiagnosticsEnabled { get; set; }
         internal ResolutionMetrics LastResolutionMetrics { get; private set; }
         public bool MovementEnabled { get; private set; }
         public bool TeacherLabels = true;
@@ -651,7 +656,11 @@ namespace Anthropocene.Simulation
             MovementEnabled = movementEnabled; contexts.Clear(); lastPrior = new Dictionary<int, int>(); lastDecisionDiagnostics.Clear(); lastRawMaterialDiagnostics.Clear(); Forked = false;
             LastResolutionMetrics = null;
             lastDiagnosticSchemaVersion = 0;
-            ResolutionMetrics.CaptureDemandAllocations = true;
+            World.DemandAllocationCapture = true;
+            World.EconomicDiagnosticCapture = EconomicDiagnosticsEnabled;
+            lastEconomicDiagnostics.Clear();
+            currentForkId = currentBranchId = parentTransitionId = null;
+            forkParentTransitions.Clear();
             var initial = SaveCodec.Save(World);
             Replay = new ElderModel9Replay { StartTurn = World.Turn, InitialSnapshot = initial, InitialFingerprint = SaveCodec.Fingerprint(World),
                 ConfigurationHash = SaveCodec.ConfigurationHash(World.Config), BuildHash = BuildHash, MovementEnabled = movementEnabled,
@@ -665,8 +674,8 @@ namespace Anthropocene.Simulation
 
         // Search forks. Fork rebases the live environment on its own saved world, so the live path and every branch
         // restored from the fork start from byte-identical state with the same per-village context: branches are exact
-        // paired comparisons. Restore returns the decision step (observations; no rewards). After a fork the replay
-        // record is not verifiable (Forked), because verification does not carry the environment context.
+        // paired comparisons. Restore returns an observation of the saved decision boundary, not a new transition.
+        // The canonical reset and retained background/action path also permit independent replay of a branch.
         private Dictionary<int, int> lastPrior = new Dictionary<int, int>();
         private string trajectoryId;
         private string rootTrajectoryId;
@@ -674,6 +683,9 @@ namespace Anthropocene.Simulation
         private Dictionary<int, ElderModel9DecisionDiagnostics> lastDecisionDiagnostics = new Dictionary<int, ElderModel9DecisionDiagnostics>();
         private Dictionary<string, ElderModel9RawMaterialDiagnostic> lastRawMaterialDiagnostics = new Dictionary<string, ElderModel9RawMaterialDiagnostic>();
         private int lastDiagnosticSchemaVersion;
+        private Dictionary<int, ElderEconomicDiagnostic> lastEconomicDiagnostics = new Dictionary<int, ElderEconomicDiagnostic>();
+        private string currentForkId, currentBranchId, parentTransitionId;
+        private Dictionary<int, string> forkParentTransitions = new Dictionary<int, string>();
         public bool Forked { get; private set; }
 
         public ElderModel9Fork Fork(out ElderModel9Step step)
@@ -685,7 +697,8 @@ namespace Anthropocene.Simulation
                 Prior = new Dictionary<int, int>(lastPrior), ReplaySteps = Replay.Steps.Count,
                 DecisionDiagnostics = lastDecisionDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy()), TrajectoryId = trajectoryId,
                 RawMaterialDiagnostics = lastRawMaterialDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy()),
-                DiagnosticSchemaVersion = lastDiagnosticSchemaVersion
+                DiagnosticSchemaVersion = lastDiagnosticSchemaVersion,
+                EconomicDiagnostics = lastEconomicDiagnostics.ToDictionary(p => p.Key, p => p.Value.Copy())
             };
             step = Restore(fork);
             return fork;
@@ -695,21 +708,44 @@ namespace Anthropocene.Simulation
         {
             World = SaveCodec.Load((byte[])fork.World.Clone());
             World.Config.TrainingWithheldTechnologies = WithheldTechnologies;
+            World.DemandAllocationCapture = true; World.EconomicDiagnosticCapture = EconomicDiagnosticsEnabled;
             contexts.Clear();
             foreach (var pair in fork.Contexts) contexts[pair.Key] = pair.Value.Copy();
             lastPrior = new Dictionary<int, int>(fork.Prior);
             lastDecisionDiagnostics = fork.DecisionDiagnostics?.ToDictionary(p => p.Key, p => p.Value?.Copy()) ?? new Dictionary<int, ElderModel9DecisionDiagnostics>();
             lastRawMaterialDiagnostics = fork.RawMaterialDiagnostics?.ToDictionary(p => p.Key, p => p.Value?.Copy()) ?? new Dictionary<string, ElderModel9RawMaterialDiagnostic>();
+            lastEconomicDiagnostics = fork.EconomicDiagnostics?.ToDictionary(p => p.Key, p => p.Value.Copy()) ?? new Dictionary<int, ElderEconomicDiagnostic>();
             trajectoryId = fork.TrajectoryId ?? rootTrajectoryId ?? trajectoryId;
             if (Replay.Steps.Count > fork.ReplaySteps) Replay.Steps.RemoveRange(fork.ReplaySteps, Replay.Steps.Count - fork.ReplaySteps);
             Forked = true;
-            var step = new ElderModel9Step { Turn = World.Turn, Fingerprint = SaveCodec.Fingerprint(World) };
+            var step = new ElderModel9Step { Turn = World.Turn, Fingerprint = SaveCodec.Fingerprint(World), RestoredObservation = true,
+                EconomicDiagnostics = lastEconomicDiagnostics.ToDictionary(p => p.Key, p => p.Value.Copy()) };
             step.TrajectoryId = lastDecisionDiagnostics.Values.FirstOrDefault()?.TrajectoryId ?? trajectoryId;
             step.DecisionDiagnostics = lastDecisionDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy());
             step.RawMaterialDiagnostics = lastRawMaterialDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy());
             step.DiagnosticSchemaVersion = fork.DiagnosticSchemaVersion;
             Observe(step, new Dictionary<int, int>(lastPrior));
             trajectoryId = (fork.TrajectoryId ?? rootTrajectoryId ?? trajectoryId) + "/branch-" + (++branchSequence).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            currentForkId = SaveCodec.Fingerprint(World); currentBranchId = trajectoryId;
+            parentTransitionId = lastEconomicDiagnostics.OrderBy(p => p.Key).Select(p => p.Value.TransitionId).FirstOrDefault();
+            forkParentTransitions = lastEconomicDiagnostics.ToDictionary(p => p.Key, p => p.Value.TransitionId);
+            // A daughter born on the preceding transition has no opening decision row of its own.
+            // Bind its first branch decision through the committed fission witness, rather than
+            // borrowing an unrelated village's transition or losing its actual ancestry.
+            var foundedParents = new Dictionary<int, string>();
+            foreach (var diagnostic in lastEconomicDiagnostics.Values)
+                foreach (var transfer in diagnostic.Transfers)
+                    if (transfer.TryGetValue("kind", out var kind) && (string)kind == "fission" &&
+                        transfer.TryGetValue("sourceCamp", out var source) && (int)source == diagnostic.CampId &&
+                        transfer.TryGetValue("destinationCamp", out var destination))
+                    {
+                        int daughter = (int)destination;
+                        if (foundedParents.TryGetValue(daughter, out var existing) && existing != diagnostic.TransitionId)
+                            throw new InvalidOperationException("Fork daughter has ambiguous economic transition ancestry.");
+                        foundedParents[daughter] = diagnostic.TransitionId;
+                    }
+            foreach (var pair in foundedParents)
+                if (!forkParentTransitions.ContainsKey(pair.Key)) forkParentTransitions[pair.Key] = pair.Value;
             lastDiagnosticSchemaVersion = step.DiagnosticSchemaVersion;
             return step;
         }
@@ -779,6 +815,8 @@ namespace Anthropocene.Simulation
 
         private ElderModel9Step Advance(Dictionary<int, List<Order>> background, Dictionary<int, ElderDirective> directives, List<DecisionTrace> traces)
         {
+            World.EconomicDiagnosticCapture = EconomicDiagnosticsEnabled;
+            var economicOpening = EconomicDiagnosticsEnabled ? EconomicBoundary.Capture(World) : null;
             var prior = World.Camps.ToDictionary(c => c.Id, c => c.Population);
             int decisionTurn = World.Turn;
             var priorSociety = World.Camps.ToDictionary(c => c.Id, c => c.SocietyId);
@@ -824,7 +862,7 @@ namespace Anthropocene.Simulation
             double resolveMs = phase.Elapsed.TotalMilliseconds; phase.Restart();
             double years = record.Duration / World.Config.DaysPerYear;
             var step = new ElderModel9Step { Turn = World.Turn, Years = years, Fingerprint = SaveCodec.Fingerprint(World),
-                DiagnosticSchemaVersion = ElderModel9DiagnosticEnvelope.CurrentSchemaVersion, TrajectoryId = trajectoryId };
+                DiagnosticSchemaVersion = EconomicDiagnosticsEnabled ? 3 : 2, TrajectoryId = trajectoryId };
             step.PrepareMs = prepareMs; step.LabelMs = labelMs; step.ResolveMs = resolveMs; step.FingerprintMs = phase.Elapsed.TotalMilliseconds;
             step.Rejections.AddRange(prepared.Rejections);
             foreach (var g in prepared.Orders.GroupBy(o => o.Entity)) step.Orders[g.Key] = string.Join("|", g.Select(o => o.Kind + ":" + o.Target + ":" + o.Destination + ":" + o.Population));
@@ -835,6 +873,12 @@ namespace Anthropocene.Simulation
                     metadata.TryGetValue(pair.Key, out var decisionMetadata) ? decisionMetadata : null,
                     decisionTradeEligibility.TryGetValue(pair.Key, out var tradeWasEligible) && tradeWasEligible);
             var rawDiagnostics = BuildRawMaterialDiagnostics(prepared, record, decisionTurn);
+            if (EconomicDiagnosticsEnabled)
+            {
+                step.EconomicDiagnostics = ElderEconomicCapture.Build(World, prepared, record, LastResolutionMetrics, economicOpening,
+                    trajectoryId, currentForkId, currentBranchId, parentTransitionId, forkParentTransitions);
+                lastEconomicDiagnostics = step.EconomicDiagnostics.ToDictionary(p => p.Key, p => p.Value.Copy());
+            }
             lastDecisionDiagnostics = decisionDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy());
             step.DecisionDiagnostics = decisionDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy());
             step.RawMaterialDiagnostics = rawDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy());
@@ -842,7 +886,8 @@ namespace Anthropocene.Simulation
             lastDiagnosticSchemaVersion = step.DiagnosticSchemaVersion;
             Replay.Steps.Add(new ElderModel9ReplayStep
             {
-                DiagnosticSchemaVersion = ElderModel9DiagnosticEnvelope.CurrentSchemaVersion, TrajectoryId = trajectoryId,
+                DiagnosticSchemaVersion = step.DiagnosticSchemaVersion, TrajectoryId = trajectoryId,
+                EconomicDiagnostics = step.EconomicDiagnostics.ToDictionary(p => p.Key, p => p.Value.Copy()),
                 DecisionDiagnostics = decisionDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy()),
                 RawMaterialDiagnostics = rawDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy()),
                 Directives = directives.ToDictionary(p => p.Key, p => p.Value.Copy()),
@@ -1038,8 +1083,7 @@ namespace Anthropocene.Simulation
         {
             var world = SaveCodec.Load((byte[])replay.InitialSnapshot.Clone());
             world.Config.TrainingWithheldTechnologies = replay.WithheldTechnologies;
-            bool capture = ResolutionMetrics.CaptureDemandAllocations; ResolutionMetrics.CaptureDemandAllocations = true;
-            try
+            world.DemandAllocationCapture = true;
             {
                 if (SaveCodec.Fingerprint(world) != replay.InitialFingerprint) throw new InvalidOperationException("Replay initial fingerprint mismatch.");
                 var builder = new ElderObservationBuilder { ValueOrderedSites = true }; var compiler = new NativeElderDirectiveCompiler();
@@ -1074,7 +1118,19 @@ namespace Anthropocene.Simulation
                     var decisionTradeEligibility = prepared.ElderDecisions.Keys.OrderBy(id => id).ToDictionary(id => id,
                         id => world.Camps.FirstOrDefault(c => c.Id == id) is Camp camp && Trade.Eligible(world, camp));
                     foreach (var pair in prepared.ElderDecisions) previous[pair.Key] = pair.Value;
-                    var replayRecord = new TurnResolver(execution ?? new PhaseExecution()).Resolve(world, prepared);
+                    world.EconomicDiagnosticCapture = s.DiagnosticSchemaVersion >= 3;
+                    var economicOpening = world.EconomicDiagnosticCapture ? EconomicBoundary.Capture(world) : null;
+                    var resolver = new TurnResolver(execution ?? new PhaseExecution());
+                    var replayRecord = resolver.Resolve(world, prepared);
+                    if (s.DiagnosticSchemaVersion >= 3)
+                    {
+                        var context = s.EconomicDiagnostics.Values.FirstOrDefault();
+                        var actualEconomic = ElderEconomicCapture.Build(world, prepared, replayRecord, resolver.LastMetrics, economicOpening,
+                            s.TrajectoryId, context?.ForkId, context?.BranchId, context?.ParentTransitionId,
+                            s.EconomicDiagnostics.ToDictionary(p => p.Key, p => p.Value.ParentTransitionId));
+                        if (!EconomicDiagnosticsEqual(actualEconomic, s.EconomicDiagnostics))
+                            throw new InvalidOperationException("Replay economic diagnostics diverged at step " + index + ".");
+                    }
                     if (s.DiagnosticSchemaVersion == 1 && world.Config.ElderRawMaterialsEnabled)
                         throw new InvalidOperationException("Schema-1 replay cannot be used with raw materials enabled; regenerate under schema 2.");
                     if (s.DiagnosticSchemaVersion >= ElderModel9DecisionDiagnostics.CurrentSchemaVersion)
@@ -1085,7 +1141,7 @@ namespace Anthropocene.Simulation
                                 decisionTradeEligibility.TryGetValue(p.Key, out var tradeWasEligible) && tradeWasEligible));
                         if (!DecisionDiagnosticsEqual(actual, s.DecisionDiagnostics))
                             throw new InvalidOperationException("Replay decision diagnostics diverged at step " + index + ".");
-                        if (s.DiagnosticSchemaVersion >= ElderModel9DiagnosticEnvelope.CurrentSchemaVersion)
+                        if (s.DiagnosticSchemaVersion >= 2)
                         {
                             var raw = BuildRawMaterialDiagnostics(prepared, replayRecord, world.Turn - 1);
                             if (!RawMaterialDiagnosticsEqual(raw, s.RawMaterialDiagnostics))
@@ -1096,7 +1152,33 @@ namespace Anthropocene.Simulation
                     index++;
                 }
             }
-            finally { ResolutionMetrics.CaptureDemandAllocations = capture; }
+        }
+
+        private static bool EconomicDiagnosticsEqual(Dictionary<int, ElderEconomicDiagnostic> a, Dictionary<int, ElderEconomicDiagnostic> b)
+        {
+            bool Equal(object x, object y)
+            {
+                if (x == null || y == null) return x == y;
+                if (x is System.Collections.IDictionary xd && y is System.Collections.IDictionary yd)
+                {
+                    if (xd.Count != yd.Count) return false;
+                    foreach (var k in xd.Keys) if (!yd.Contains(k) || !Equal(xd[k], yd[k])) return false;
+                    return true;
+                }
+                if (x is System.Collections.IEnumerable xe && y is System.Collections.IEnumerable ye && !(x is string))
+                    return xe.Cast<object>().SequenceEqual(ye.Cast<object>(), new EconomicTreeComparer(Equal));
+                if (x is ElderEconomicDiagnostic)
+                    return typeof(ElderEconomicDiagnostic).GetFields().Where(f => !f.IsStatic).All(f => Equal(f.GetValue(x), f.GetValue(y)));
+                return x.Equals(y);
+            }
+            return Equal(a, b);
+        }
+        private sealed class EconomicTreeComparer : IEqualityComparer<object>
+        {
+            private readonly Func<object, object, bool> equal;
+            public EconomicTreeComparer(Func<object, object, bool> equal) { this.equal = equal; }
+            public new bool Equals(object x, object y) => equal(x, y);
+            public int GetHashCode(object value) => 0;
         }
 
         private static bool DecisionDiagnosticsEqual(Dictionary<int, ElderModel9DecisionDiagnostics> a,

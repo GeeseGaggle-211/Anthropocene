@@ -225,7 +225,7 @@ namespace Anthropocene.Simulation
                         Math.Max(0, labor.ExpansionFarmers);
                 }
                 CampFieldWorkDiagnostic fieldWork = null;
-                if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+                if (LastMetrics.CaptureWork)
                 {
                     fieldWork = LastMetrics.CraftFieldWorkFor(camp.Id);
                     fieldWork.ResidentWorkerYears = Math.Max(0, camp.Population) * horizon.Years;
@@ -348,7 +348,7 @@ namespace Anthropocene.Simulation
             {
                 int tile = groups[i].Tile;
                 var result = results[i];
-                if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+                if (LastMetrics.CaptureWork)
                 {
                     // groups[i].Claims is already in the canonical Entity/Kind
                     // order consumed by Integrate. LINQ's stable ordering also
@@ -435,7 +435,15 @@ namespace Anthropocene.Simulation
                     * w.Config.BaseDays / w.Config.DaysPerYear;
                 var corrected = CultivationEconomy.ReconcileHorizonBridge(w, camp,
                     allocations[camp.Id], bridge, farmToolBudgets[camp.Id]);
-                if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+                if (LastMetrics.EconomicCapture)
+                {
+                    var rows = new List<Dictionary<string, object>>();
+                    for (int i = 0; i < corrected.Tiles.Length; i++) rows.Add(new Dictionary<string, object>
+                    { ["fieldId"] = corrected.Tiles[i], ["openingCapital"] = corrected.StartCapital[i],
+                        ["meanCapital"] = corrected.AverageCapital[i], ["endingCapital"] = corrected.EndCapital[i] });
+                    LastMetrics.EconomicFields[camp.Id] = rows;
+                }
+                if (LastMetrics.CaptureWork)
                 {
                     var fieldWork = LastMetrics.CraftFieldWorkFor(camp.Id);
                     if (fieldWork != null)

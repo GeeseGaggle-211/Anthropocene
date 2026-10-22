@@ -521,7 +521,7 @@ namespace Anthropocene.Simulation
             if (error != null) throw new InvalidOperationException("Invalid automatic economic plan: " + error);
             return new AutomaticPlan { Order = new Order(OrderKind.Economy, camp.Id) { Economy = intent },
                 Production = production, FishingAccess = fishingAccess,
-                Elder = elder, DemandAllocation = ResolutionMetrics.CaptureDemandAllocations ? demandAllocation : null };
+                Elder = elder, DemandAllocation = (ResolutionMetrics.CaptureDemandAllocations || world.DemandAllocationCapture) ? demandAllocation : null };
         }
 
         private static int ResidentCountAfterActions(Camp camp, IReadOnlyDictionary<int, Order> actions)

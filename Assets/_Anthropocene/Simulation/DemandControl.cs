@@ -153,6 +153,7 @@ namespace Anthropocene.Simulation
         {
             // A goods request names its Good; a labour request (herd growth, field expansion) its Role, in persons.
             public string Service; public ServiceClass Class; public CraftGood? Good; public string Role; public double Units, Granted, NativeUnits; public string Unmet = "";
+            internal double? DiagnosticNativeUnits;
             internal MaterialId? RawMaterial; internal string ExtractionRole, RequestId; internal double ServiceEquivalentPerUnit;
             // Development requests are ordered by physical retained food per
             // recurring worker-year. WholeUnits marks livestock heads; a
@@ -1949,6 +1950,7 @@ namespace Anthropocene.Simulation
             {
                 var group = alloc.Requests.Where(q => q.Bundle != null && ElderModel9Contract.ServiceOf(q.Service) == s)
                     .OrderBy(q => q.Class).ThenBy(q => alloc.Requests.IndexOf(q)).ToList();
+                foreach (var q in group) q.DiagnosticNativeUnits = Math.Max(0, q.Units);
                 double total = group.Sum(q => Math.Max(0, q.Units));
                 alloc.ServiceRequested[s] = total;
                 double[] levels = elderDirective?.ServiceLevels;

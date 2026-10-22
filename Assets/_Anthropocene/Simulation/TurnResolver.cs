@@ -67,7 +67,7 @@ namespace Anthropocene.Simulation
             if (prepared == null || !ReferenceEquals(w, prepared.World) || w.Turn != prepared.Turn || Math.Abs(w.Days - prepared.StartDays) > 1e-8 || Math.Abs(w.Config.TurnDays - prepared.Horizon.Days) > 1e-8)
                 throw new InvalidOperationException("Prepared turn does not match the current world boundary.");
             using var profile = PhaseProfile.Scope("Resolve");
-            var resolutionTimer = System.Diagnostics.Stopwatch.StartNew(); LastMetrics = new ResolutionMetrics(); trade = null;
+            var resolutionTimer = System.Diagnostics.Stopwatch.StartNew(); LastMetrics = new ResolutionMetrics { EconomicCapture = w.EconomicDiagnosticCapture }; trade = null;
             resolvedFisheryOperations = new Dictionary<int, double>();
             activeElderDecisions = prepared.ElderDecisions;
             Ownership.Bind(w);
@@ -151,6 +151,9 @@ namespace Anthropocene.Simulation
                     camp.DeathRemainder -= hunter.DeathRemainder;
                 }
                 camp.Population -= order.Population;
+                if (LastMetrics.EconomicCapture) LastMetrics.EconomicTransfers.Add(new Dictionary<string, object>
+                { ["kind"] = "dispatch", ["phase"] = "before-demography", ["sourceCamp"] = camp.Id, ["destinationCamp"] = camp.Id,
+                    ["hunterId"] = hunter.Id, ["people"] = order.Population });
                 w.Hunters.Add(hunter); record.Log("Tribe " + camp.Player + " dispatched " + hunter.Population + " hunters [" + hunter.Id + "].");
             }
             using (PhaseProfile.Scope("Movement"))
@@ -162,8 +165,10 @@ namespace Anthropocene.Simulation
             }
             var touched = new Dictionary<int, TileChange>();
             Action<int> touch = id => { if (!touched.ContainsKey(id)) touched[id] = new TileChange { Tile = id, BeforeFood = w.Tiles[id].Food, BeforePotentialFood = w.Tiles[id].PotentialFood, BeforeFreshwater = w.Tiles[id].Freshwater, BeforeLandCondition = w.Tiles[id].LandCondition, BeforeAquaticCondition = w.Tiles[id].AquaticCondition }; };
+            LastMetrics.CaptureBoundary("beforeDemography", w);
             using (PhaseProfile.Scope("Economy")) ResolveEcology(w, locked, establishedHunters, record, touch,
                 prepared.Needs, prepared.AbandoningVillages, prepared.FishingPlans);
+            LastMetrics.CaptureBoundary("afterEconomy", w);
             Trade.Finish(w, trade, record); LastMetrics.TradesSettled = record.Trades.Count; trade = null;
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Reintegrate).OrderBy(o => o.Entity))
             {
@@ -187,8 +192,12 @@ namespace Anthropocene.Simulation
                     camp.GrowthRemainder += hunter.GrowthRemainder;
                     camp.DeathRemainder += hunter.DeathRemainder;
                 }
+                if (LastMetrics.EconomicCapture) LastMetrics.EconomicTransfers.Add(new Dictionary<string, object>
+                { ["kind"] = "reintegration", ["phase"] = "after-demography", ["sourceCamp"] = camp.Id, ["destinationCamp"] = camp.Id,
+                    ["hunterId"] = hunter.Id, ["people"] = hunter.Population, ["carriedFood"] = hunter.CarriedFood });
                 camp.Population += hunter.Population; w.Hunters.Remove(hunter); record.Log("Hunters " + hunter.Id + " rejoined their camp.");
             }
+            LastMetrics.CaptureBoundary("afterReintegration", w);
             w.Hunters.RemoveAll(h => h.Population <= 0);
             Ownership.Bind(w);
             // Local herd contact is an end-boundary knowledge receipt. It is

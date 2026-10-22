@@ -1004,7 +1004,7 @@ namespace Anthropocene.Simulation
             // Goods storage (Docs/PlannerTradeStorageDesign.md §3): an addition is cut to what fits; nothing is destroyed.
             double storageRoom = c.GoodsStorage?.RoomUnits(c) ?? double.PositiveInfinity;
             if (c.GoodsStorage != null) amount = c.GoodsStorage.Limit(c, recipe.Good, amount, recipe.AnimalFabric + recipe.Cloth, recipe.HousingMaterial);
-            if (ResolutionMetrics.CaptureCraftWorkDiagnostics)
+            if (ResolutionMetrics.CaptureCraftWorkDiagnostics || w.EconomicDiagnosticCapture)
                 record.ProductionLimits.Add(new ProductionLimitDiagnostic
                 {
                     Camp = c.Id, Good = recipe.Good, Role = role, Requested = usefulDemand,

@@ -103,6 +103,13 @@ namespace Anthropocene.Simulation
         // validation harness opts in; it is transient and never enters a save,
         // observation, or authoritative turn record.
         public static bool CaptureCraftWorkDiagnostics;
+        internal bool EconomicCapture;
+        internal Dictionary<int, List<Dictionary<string, object>>> EconomicFields = new Dictionary<int, List<Dictionary<string, object>>>();
+        internal List<Dictionary<string, object>> EconomicTransfers = new List<Dictionary<string, object>>();
+        internal Dictionary<string, Dictionary<int, EconomicBoundary>> EconomicBoundaries = new Dictionary<string, Dictionary<int, EconomicBoundary>>();
+        internal void CaptureBoundary(string phase, WorldState world)
+        { if (EconomicCapture) EconomicBoundaries[phase] = EconomicBoundary.Capture(world, false); }
+        internal bool CaptureWork => CaptureCraftWorkDiagnostics || EconomicCapture;
         // Retaining a DemandControl allocation keeps its complete request/bundle
         // graph alive through Prepare. Ordinary play has no consumer for it; the
         // opt-in recovery harness uses it to close planned grants against receipts.
@@ -112,7 +119,7 @@ namespace Anthropocene.Simulation
         public List<FoodClaimDiagnostic> FoodClaims { get; private set; }
         internal CampFieldWorkDiagnostic CraftFieldWorkFor(int camp)
         {
-            if (!CaptureCraftWorkDiagnostics) return null;
+            if (!CaptureWork) return null;
             if (CraftFieldWork == null) CraftFieldWork = new Dictionary<int, CampFieldWorkDiagnostic>();
             if (!CraftFieldWork.TryGetValue(camp, out var value))
                 CraftFieldWork[camp] = value = new CampFieldWorkDiagnostic { Camp = camp };
@@ -120,7 +127,7 @@ namespace Anthropocene.Simulation
         }
         internal CampFoodFlowDiagnostic CraftFoodFlowFor(int camp)
         {
-            if (!CaptureCraftWorkDiagnostics) return null;
+            if (!CaptureWork) return null;
             if (CraftFoodFlow == null) CraftFoodFlow = new Dictionary<int, CampFoodFlowDiagnostic>();
             if (!CraftFoodFlow.TryGetValue(camp, out var value))
                 CraftFoodFlow[camp] = value = new CampFoodFlowDiagnostic { Camp = camp };
@@ -128,7 +135,7 @@ namespace Anthropocene.Simulation
         }
         internal void CaptureFoodClaim(FoodClaimDiagnostic claim)
         {
-            if (!CaptureCraftWorkDiagnostics || claim == null) return;
+            if (!CaptureWork || claim == null) return;
             if (FoodClaims == null) FoodClaims = new List<FoodClaimDiagnostic>();
             FoodClaims.Add(claim);
         }

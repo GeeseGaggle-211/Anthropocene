@@ -579,7 +579,7 @@ namespace Anthropocene.Simulation
                     demographics = new Dictionary<int, DemographicReport>();
                     foreach (var d in record.Demographics) demographics[d.Camp] = d;
                 }
-                Found(w, e, record, knowledge, demographics);
+                Found(w, e, record, knowledge, demographics, metrics);
                 committed.Add(e.Tile); metrics.FissionCommits++;
                 if (e.Decision != null) metrics.SocialMatchedOpportunities += e.Decision.Opportunity.Matched;
                 if (e.Trigger == FissionTrigger.Distress) { metrics.FissionDistressCommits++; metrics.FissionDistressDaughters += e.Daughter; }
@@ -1148,7 +1148,7 @@ namespace Anthropocene.Simulation
 
         // Commits one daughter settlement. Every ledger is conserved exactly: people, typed food, inventory, herds and fractional
         // progress move in the daughter's people fraction; the parent keeps its site, fields, fixed Housing and controller.
-        private static void Found(WorldState w, Evaluation e, TurnRecord record, Dictionary<int, List<MaterialKnowledge>> knowledge, Dictionary<int, DemographicReport> demographics)
+        private static void Found(WorldState w, Evaluation e, TurnRecord record, Dictionary<int, List<MaterialKnowledge>> knowledge, Dictionary<int, DemographicReport> demographics, ResolutionMetrics metrics)
         {
             var parent = e.Camp; var ps = parent.People; int before = parent.Population, n = e.Daughter; double f = n / (double)before;
             double parentMortalityBefore = PhysicalDemography.Enabled(w.Config)
@@ -1209,6 +1209,10 @@ namespace Anthropocene.Simulation
                 double value = (double)field.GetValue(parent.Inventory), moved = value * f;
                 field.SetValue(camp.Inventory, moved); field.SetValue(parent.Inventory, value - moved);
             }
+            if (metrics.EconomicCapture) metrics.EconomicTransfers.Add(new Dictionary<string, object>
+            { ["kind"] = "fission-inventory", ["phase"] = "close-after-demography", ["sourceCamp"] = parent.Id, ["destinationCamp"] = camp.Id,
+                ["people"] = n, ["plantFood"] = plant, ["animalFood"] = animal, ["aquaticFood"] = aquatic,
+                ["inventory"] = InventoryFields.ToDictionary(field => field.Name, field => (object)(double)field.GetValue(camp.Inventory)) });
             double growth = parent.GrowthRemainder * f, death = parent.DeathRemainder * f;
             camp.GrowthRemainder = growth; parent.GrowthRemainder -= growth; camp.DeathRemainder = death; parent.DeathRemainder -= death;
             if (PhysicalDemography.Enabled(w.Config))
@@ -1254,6 +1258,9 @@ namespace Anthropocene.Simulation
                 herd.AnimalFoodPotential -= split.AnimalFoodPotential; herd.AnimalFoodProduced -= split.AnimalFoodProduced;
                 herd.StartingAnimals -= split.StartingAnimals; herd.SurvivingAnimals -= split.SurvivingAnimals; herd.NewbornAnimals -= split.NewbornAnimals; herd.StarvationDeaths -= split.StarvationDeaths;
                 herd.Animals -= moved; w.Herds.Add(split); animals += moved;
+                if (metrics.EconomicCapture) metrics.EconomicTransfers.Add(new Dictionary<string, object>
+                { ["kind"] = "fission-herd", ["phase"] = "close-after-demography", ["sourceCamp"] = parent.Id, ["destinationCamp"] = camp.Id,
+                    ["parentHerdId"] = herd.Id, ["childHerdId"] = split.Id, ["animals"] = moved });
             }
             // Material discovery is knowledge; the daughter knows what the parent knew at fission.
             if (knowledge.TryGetValue(ps.Id, out var known))
