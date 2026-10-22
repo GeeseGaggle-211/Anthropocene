@@ -175,6 +175,37 @@ internal static class FlagOffCompatibilityChecks
 
     private static string Digest(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     private static string FileDigest(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+    private static string PayloadPartDigest(string payload, string marker)
+    {
+        int start = payload.IndexOf(marker, StringComparison.Ordinal);
+        if (start < 0) return "missing";
+        start += marker.Length;
+        int end = marker == ":header=" ? payload.IndexOf(":tail=", start, StringComparison.Ordinal) : payload.Length;
+        return Digest(payload.Substring(start, end < 0 ? payload.Length - start : end - start));
+    }
+    private static string FirstHeaderDifference(string left, string right)
+    {
+        string Extract(string payload)
+        {
+            int start = payload.IndexOf(":header=", StringComparison.Ordinal) + 8;
+            int end = payload.IndexOf(":tail=", start, StringComparison.Ordinal);
+            return payload.Substring(start, end - start);
+        }
+        var a = XDocument.Parse(Extract(left)).Root?.DescendantsAndSelf().ToArray() ?? Array.Empty<XElement>();
+        var b = XDocument.Parse(Extract(right)).Root?.DescendantsAndSelf().ToArray() ?? Array.Empty<XElement>();
+        List<string> Flatten(XElement[] elements) => elements.SelectMany(e =>
+        {
+            string path = string.Join("/", e.AncestorsAndSelf().Reverse().Select(x => x.Name.LocalName));
+            var values = e.Attributes().Select(x => path + "/@" + x.Name.LocalName + "=" + x.Value).ToList();
+            if (!e.Elements().Any() && e.Value.Length != 0) values.Add(path + "=" + e.Value);
+            return values;
+        }).ToList();
+        var av = Flatten(a); var bv = Flatten(b); int n = Math.Min(av.Count, bv.Count);
+        for (int i = 0; i < n; i++)
+            if (!string.Equals(av[i], bv[i], StringComparison.Ordinal))
+                return "index=" + i + " old=" + av[i].Substring(0, Math.Min(400, av[i].Length)) + " new=" + bv[i].Substring(0, Math.Min(400, bv[i].Length));
+        return av.Count == bv.Count ? "unlocated" : "node-count old=" + av.Count + " new=" + bv.Count + " next=" + (av.Count > n ? av[n] : "") + " | " + (bv.Count > n ? bv[n] : "");
+    }
 
     internal static string CanonicalSavePayload(Assembly assembly, object world)
     {
@@ -199,7 +230,21 @@ internal static class FlagOffCompatibilityChecks
             bool nullReceiptTag = (element.Name.LocalName == "Phase" || element.Name.LocalName == "RequestId") &&
                 element.Parent?.Name.LocalName == "MaterialReceipt" &&
                 ((string)element.Attribute(xsi + "nil") == "true" || (string)element.Attribute(xsi + "nil") == "1");
-            if (addedFlag || addedTuning || nullReceiptTag) element.Remove();
+            // ConfigurationHash is derived from the serialized SimulationConfig. The new
+            // flag and three tuning fields above are intentionally additive and differ
+            // between schemas even when raw materials are OFF. Keep every config field
+            // comparison (after stripping only those four additions), but omit this
+            // derived digest so it cannot make a schema-only difference look physical.
+            bool derivedConfigHash = element.Name.LocalName == "ConfigurationHash" &&
+                element.Parent?.Name.LocalName == "Generation";
+            // Generation stage timings are sampled wall-clock diagnostics, not
+            // authoritative state (SaveCodec.Fingerprint already excludes the
+            // GenerationReport for this reason). Remove only this exact member;
+            // generation identity, stage list, warnings and all other metadata
+            // remain part of the complete-header comparison.
+            bool elapsedTimings = element.Name.LocalName == "Milliseconds" &&
+                element.Parent?.Name.LocalName == "Generation";
+            if (addedFlag || addedTuning || nullReceiptTag || derivedConfigHash || elapsedTimings) element.Remove();
         }
         string canonicalHeader = document.ToString(SaveOptions.DisableFormatting);
         byte[] tail;
@@ -233,6 +278,11 @@ internal static class FlagOffCompatibilityChecks
                     SemanticMatch = oldRun.Semantic == newRun.Semantic,
                     MaterialReceiptMatch = oldRun.MaterialReceipts == newRun.MaterialReceipts,
                     CompleteSaveMatch = oldRun.CompleteSavePayload == newRun.CompleteSavePayload,
+                    BaselineHeaderSha256 = PayloadPartDigest(oldRun.CompleteSavePayload, ":header="),
+                    CurrentHeaderSha256 = PayloadPartDigest(newRun.CompleteSavePayload, ":header="),
+                    BaselineTailSha256 = PayloadPartDigest(oldRun.CompleteSavePayload, ":tail="),
+                    CurrentTailSha256 = PayloadPartDigest(newRun.CompleteSavePayload, ":tail="),
+                    FirstHeaderDifference = FirstHeaderDifference(oldRun.CompleteSavePayload, newRun.CompleteSavePayload),
                     BaselineSaveSha256 = Digest(oldRun.CompleteSavePayload), CurrentSaveSha256 = Digest(newRun.CompleteSavePayload),
                     BaselineSemanticSha256 = Digest(oldRun.Semantic), CurrentSemanticSha256 = Digest(newRun.Semantic),
                     BaselineReceiptsSha256 = Digest(oldRun.MaterialReceipts), CurrentReceiptsSha256 = Digest(newRun.MaterialReceipts) };
@@ -244,6 +294,11 @@ internal static class FlagOffCompatibilityChecks
                 CurrentWorldFingerprint = model9New.WorldFingerprint, SemanticMatch = model9Old.Semantic == model9New.Semantic,
                 MaterialReceiptMatch = model9Old.MaterialReceipts == model9New.MaterialReceipts,
                 CompleteSaveMatch = model9Old.CompleteSavePayload == model9New.CompleteSavePayload,
+                BaselineHeaderSha256 = PayloadPartDigest(model9Old.CompleteSavePayload, ":header="),
+                CurrentHeaderSha256 = PayloadPartDigest(model9New.CompleteSavePayload, ":header="),
+                BaselineTailSha256 = PayloadPartDigest(model9Old.CompleteSavePayload, ":tail="),
+                CurrentTailSha256 = PayloadPartDigest(model9New.CompleteSavePayload, ":tail="),
+                FirstHeaderDifference = FirstHeaderDifference(model9Old.CompleteSavePayload, model9New.CompleteSavePayload),
                 BaselineSaveSha256 = Digest(model9Old.CompleteSavePayload), CurrentSaveSha256 = Digest(model9New.CompleteSavePayload),
                 BaselineSemanticSha256 = Digest(model9Old.Semantic), CurrentSemanticSha256 = Digest(model9New.Semantic),
                 BaselineReceiptsSha256 = Digest(model9Old.MaterialReceipts), CurrentReceiptsSha256 = Digest(model9New.MaterialReceipts) });
