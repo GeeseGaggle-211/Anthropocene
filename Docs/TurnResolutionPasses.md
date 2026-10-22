@@ -21,6 +21,37 @@ coefficients. They do not create seasonal or annual world states.
 | Needs and demographics | Realized resource and herd flows, fixed `TurnNeeds`, assigned prior cohort | Resolve managed herds and escrow the finite food budget, then resolve production, goods and physical needs. Protected clothing feedstock (`TurnNeeds.ProtectedClothing`) is honoured before meals. When trade has goods legs, every camp produces first, the goods settle in agreement order, escrowed food pays the delivered share and every camp resolves needs; otherwise production and needs remain one pass. Under `PhysicalMortalityV1`, close the paid food/textile person-years with dynamic shelter (with `SurplusFundedBirths`, births occur at `BaseBirthRate x g`, `g` the largest fraction whose newborns the food left after the resident cohort's meals feeds; Docs/ClothingCoverageAndSurplusBirths.md), recompute QoL only as experienced welfare, return unused typed provisions, and record pending gross births and cause-specific deaths. Apply storage to the locked cohort, then commit the single net resident/workforce change. The legacy model retains its old growth/starvation path. | Newborn needs and labor begin at the next preparation boundary. |
 | Close | Completed endpoint and realized practice receipts | Reintegrate eligible hunters, bind ownership, resolve the first breakthrough and acquire independently qualified domains. Construct one transient, on-demand `SocialRelocationForecastCache` from the post-demography endpoint. Under `PhysicalMortalityV1`, immigration then fission use the same bounded physical-service counterfactual and mover/source/incumbent/aggregate constraints; under `LegacyQoLNetGrowth`, each retains its exact former QoL law. Immigration considers only known local camps and a deterministic bounded size shortlist, canonically includes pending receiver resources/reservations, then revalidates every remaining flow against the exact joint endpoint (including each camp's frozen-resident departure); endpoint-indexed caches invalidate and retry only incident dependencies after a failed batch. Commit all departures before arrivals, and never let arrivals re-emigrate in the same Close. Immigration participants sit out fission. Before its known-site search, Physical-v1 fission may reject only through a permissive common-envelope upper bound (exact source plus optimistic full-service daughter); historical coverage is not an input, and `FissionSearchFraction` only lowers the valid upper-bound request threshold. Only the common finite-capacity evaluator may accept crowding or distress fission. Both passes conserve transferred workforce and physical state. They do not rerun the economy or demography: arrivals and daughters enter real production, needs, births and deaths next turn. Then capture settlement/lineage welfare diagnostics. `ContactKnowledge.EndTurn` records/prunes owner-specific Fishing ground snapshots with endpoint accessible food, biomass, condition, productive profile, fishery capital/operator and observation day; snapshots are sparse and pruned with their explored-memory blocks. Resident `FisheryHarvest` credits Fishing practice once using `ActiveFishingPracticeMultiplier` during domain acquisition. Conservation, history and turn increment follow. | The committed endpoint becomes the next decision boundary. |
 
+### Feature-gated conditional raw settlement
+
+The Elder raw-material extension in [ElderModel9MaterialsRequestDesign.md](ElderModel9MaterialsRequestDesign.md) is latent
+infrastructure, not a delivered positive-authority capability or permission to replan. Current normal Prepare commits
+every residual resident interval to native fallback gathering, leaving no genuinely unused Phase-A labor; therefore a
+normal full turn must produce zero Phase-B reservation, grant, and receipt. Positive full-turn gathering is deferred
+pending a separately reviewed workforce-idleness contract. Synthetic-authority settlement-kernel tests validate only
+the late pass and do not establish reachable positive authorization. When a future contract exports genuinely unused
+labor, Prepare may freeze only the request, repaired service
+fraction, eligible source identities, dedicated genuinely-unused prior-cohort labour, and a conditional physical ceiling.
+It must not forecast endpoint source quantities or replace ordinary baseline gathering. Gatherer reservations are
+unavailable to passive food and baseline gathering; specialist reservations are unavailable to baseline extraction and
+recipes, even if later settlement falls short.
+
+Even at zero grant, raw-on is not fully label/observation-identical to raw-off: service slot 5's teacher target/mask and
+RepairSize reflect the typed request, and its existing previous-service-requested Core coordinate reflects the normalized
+service equivalent. This is the expected sole feature/teacher delta and does not add a tensor field or head. The
+requested/accepted/realised material diagnostics remain sidecars. Full-turn parity claims apply to physical state,
+ordered material receipts, production/needs, endpoint Wood and integration work, with those named service-5 deltas
+checked against request equivalents; they do not claim identical complete saves or observations.
+
+The legacy resource, cultivation-reconciliation, baseline-extraction, production, optional goods-settlement, and needs
+sequence executes once. Baseline extraction captures its immediate pre-extraction inventory and actual receipts. Only
+after every camp crosses that production/needs barrier, and before any pending birth/death population mutation, entity
+removal, migration, fission or other Close operation, may one global pass settle conditional raw authorizations in camp
+ID, material ID, role, distance, and stable source-ID order against dedicated labour and authoritative residual sources.
+It may reduce realised delivery but cannot change requests, accepted actions, labels, workers, discoveries, claims,
+ceilings, baseline receipts, cultivation, production, trade, needs, or any earlier result. Its receipts are next-turn
+inventory. When the feature flag is off, neither authorization, reservation, capture ledger, nor settlement exists and
+the legacy path is exact.
+
 ## Rules protecting the pass order
 
 - Trade ([Trade.md](Trade.md)) is agreed once, in preparation, from the committed
@@ -54,6 +85,9 @@ coefficients. They do not create seasonal or annual world states.
   for that one plan even when its saved automation mode is Off, preserving the
   AI's previous per-turn staffing behavior. A player Move with automation Off
   retains its assignments.
+- A prepared raw-material accepted quantity is a conditional authorization, not an endpoint stock promise. The late
+  pass completes only realised diagnostics; it never rewrites `Allocation.ServiceGranted`, accepted actions, teacher
+  labels, policy memory, or the authoritative decision identity.
 - The prior cohort includes people present before births. Dispatch changes who
   is a camp resident without creating new people. Preparation evaluates
   accepted hunter destinations against the effective camp destination to

@@ -1035,6 +1035,21 @@ namespace Anthropocene.Simulation
     // Housing Material always precedes Housing, whatever their keys.
     public sealed class ProductionOrder
     {
+        internal sealed class RawMaterialAllowance
+        {
+            public MaterialId Material;
+            public string Role, RequestId;
+            public double Units;
+            public double WorkerIntervals;
+            public string[] EligibleSourceIds;
+            public double TargetStock, ServiceFraction;
+        }
+        internal readonly List<RawMaterialAllowance> RawMaterialAllowances = new List<RawMaterialAllowance>();
+        // Frozen Phase-A extraction intervals are the baseline-gathering budget.
+        // Phase-B dedicated intervals are kept separately and cannot leak into
+        // ordinary gathering or recipes.
+        [NonSerialized] internal Dictionary<string, double> PhaseAExtractionIntervals;
+        [NonSerialized] internal BaselineGatherPlan BaselineGatherPlan; // unused by the revised raw-material path
         internal bool PolicySurplus;
         private Dictionary<string, double[]> activityWorkers;
         internal double ActivityLabor(string role, CraftGood good, double intervals, double fallback)

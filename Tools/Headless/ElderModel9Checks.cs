@@ -56,6 +56,10 @@ internal static class ElderModel9Checks
             var explicitly = new ElderModel9Environment(); explicitly.Reset(mid, true);
             var k = Memory(held).Commitment;
             var heldStep = held.Step(new Dictionary<int, ElderDirective> { [camp] = Directive(0, .1, .1, .6, .9) });
+            var heldDiagnostic = heldStep.DecisionDiagnostics[camp];
+            Check(heldDiagnostic.ActiveMask.Strategic.All(x => !x) && !heldDiagnostic.ActiveMask.ClothingRoute &&
+                  !heldDiagnostic.ActiveMask.ShelterRoute && heldDiagnostic.ActiveMask.Commit,
+                "commitment hold suppresses capital-control activity while preserving the hold action mask");
             var explicitStep = explicitly.Step(new Dictionary<int, ElderDirective> { [camp] = new ElderDirective
             {
                 SchemaVersion = ElderModel9Contract.ActionSchemaVersion, RetainedFieldOperation = k.RetainedFieldOperation,
@@ -238,6 +242,29 @@ internal static class ElderModel9Checks
     // next, and a fork does not change the path (an unforked twin stays in step).
     private static void ForkChecks(byte[] snapshot)
     {
+        var immediate = new ElderModel9Environment(); var immediateReset = immediate.Reset(snapshot, true);
+        int immediateCamp = immediateReset.Villages.First(v => !v.Terminated).Camp;
+        var immediateStep = immediate.Step(new Dictionary<int, ElderDirective>
+            { [immediateCamp] = new ElderDirective { MovementCandidate = ElderModel9Contract.NativeMovement } });
+        var immediateFork = immediate.Fork(out var immediateForkStep);
+        Check(immediateStep.Villages.Single(v => v.Camp == immediateCamp).DecisionDiagnostics != null &&
+              immediateForkStep.Villages.Single(v => v.Camp == immediateCamp).DecisionDiagnostics?.TrajectoryId ==
+              immediateStep.Villages.Single(v => v.Camp == immediateCamp).DecisionDiagnostics.TrajectoryId,
+            "an immediate fork preserves same-step per-village decision diagnostics");
+        Check(immediateForkStep.DiagnosticSchemaVersion == ElderModel9DiagnosticEnvelope.CurrentSchemaVersion &&
+              immediateForkStep.DecisionDiagnostics.Count > 0,
+            "fork-returned steps retain the schema version for their restored diagnostic sidecars");
+        var preservedTrajectory = immediateFork.DecisionDiagnostics[immediateCamp].TrajectoryId;
+        var replayTrajectory = immediate.Replay.Steps.Last().DecisionDiagnostics[immediateCamp].TrajectoryId;
+        immediateStep.DecisionDiagnostics[immediateCamp].TrajectoryId = "mutated-step";
+        immediateForkStep.DecisionDiagnostics[immediateCamp].TrajectoryId = "mutated-result";
+        immediateForkStep.Villages.Single(v => v.Camp == immediateCamp).DecisionDiagnostics.TrajectoryId = "mutated-village";
+        var isolatedRestore = immediate.Restore(immediateFork);
+        Check(immediateFork.DecisionDiagnostics[immediateCamp].TrajectoryId == preservedTrajectory &&
+              isolatedRestore.DecisionDiagnostics[immediateCamp].TrajectoryId == preservedTrajectory &&
+              immediate.Replay.Steps.Last().DecisionDiagnostics[immediateCamp].TrajectoryId == replayTrajectory,
+            "step, village and fork-result mutation cannot alter saved fork/replay evidence");
+
         var live = new ElderModel9Environment(); var twin = new ElderModel9Environment();
         live.Reset(snapshot, true); twin.Reset(snapshot, true);
         for (int t = 0; t < 2; t++) { live.Step(new Dictionary<int, ElderDirective>()); twin.Step(new Dictionary<int, ElderDirective>()); }
@@ -256,8 +283,19 @@ internal static class ElderModel9Checks
         Check(restored.Fingerprint == decision.Fingerprint && restored.Villages.Count == decision.Villages.Count &&
               restored.Villages.All(v => v.Observation.Core.SequenceEqual(decision.Villages.Single(d => d.Camp == v.Camp).Observation.Core)),
             "a restore reproduces the fork's observations");
+        Check(restored.DecisionDiagnostics.Keys.OrderBy(x => x).SequenceEqual(decision.DecisionDiagnostics.Keys.OrderBy(x => x)) &&
+              restored.DecisionDiagnostics.All(p => p.Value.TrajectoryId == decision.DecisionDiagnostics[p.Key].TrajectoryId) &&
+              restored.Villages.All(v => v.DecisionDiagnostics?.TrajectoryId == decision.Villages.Single(d => d.Camp == v.Camp).DecisionDiagnostics?.TrajectoryId),
+            "restore preserves the prior-decision sidecar alignment");
+        Check(restored.DiagnosticSchemaVersion == ElderModel9DiagnosticEnvelope.CurrentSchemaVersion,
+            "restored step carries the schema version for its diagnostic sidecars (schema=" + restored.DiagnosticSchemaVersion + ")");
         Check(Run(live, 3).SequenceEqual(path), "a restored branch replays the live path exactly");
         var camp = decision.Villages.First(v => v.Observation.EconomyMixMask.Count(x => x) >= 2).Camp;
+        var branchDirective = new Dictionary<int, ElderDirective> { [camp] = new ElderDirective { MovementCandidate = ElderModel9Contract.NativeMovement } };
+        live.Restore(fork); var branchOne = live.Step(branchDirective).DecisionDiagnostics[camp].TrajectoryId;
+        live.Restore(fork); var branchTwo = live.Step(branchDirective).DecisionDiagnostics[camp].TrajectoryId;
+        Check(branchOne != branchTwo, "each repeated restore receives a distinct deterministic branch trajectory identity");
+        live.Restore(fork);
         var deviation = new Dictionary<int, ElderDirective>
         {
             [camp] = new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion, DevelopmentBudget = 1, FieldDevelopmentShare = 0,
@@ -354,6 +392,7 @@ internal static class ElderModel9Checks
         var teacher = new ElderModel9Environment(); var acting = new ElderModel9Environment();
         var reset = teacher.Reset(snapshot, true); acting.Reset(snapshot, true);
         Check(reset.Villages.Count > 0 && reset.Villages.All(v => v.Observation != null), "reset observes every resident-economy village");
+        Check(reset.Villages.All(v => v.DecisionDiagnostics == null), "reset has no preceding decision sidecar");
         var first = reset.Villages[0].Observation;
         Check(first.Core.Length == ElderModel9Contract.CoreWidth && ElderModel9Encoder.CoreFeatureNames().Length == ElderModel9Contract.CoreWidth,
             "core width matches the registered feature names");
@@ -375,6 +414,11 @@ internal static class ElderModel9Checks
                 var d = v.Teacher.Action.Copy(); d.MovementCandidate = ElderModel9Contract.NativeMovement; d.FissionPolicy = -1; return d;
             });
             var b = acting.Step(directives); lastActing = b;
+            Check(b.DecisionDiagnostics.Count == directives.Count && directives.Keys.All(id => b.Villages.Single(v => v.Camp == id).DecisionDiagnostics != null),
+                "submitted village decisions have aligned sidecars");
+            Check(b.DecisionDiagnostics.Values.All(d => d.SchemaVersion == ElderModel9DecisionDiagnostics.CurrentSchemaVersion && d.CampId >= 0 &&
+                d.Requested.Strategic.Length == 5 && d.Requested.Service.Length == ElderModel9Contract.GoodsServices.Length &&
+                d.Requested.TradeValue.Length == 7 && d.Requested.TradeGate.Length == 7), "decision sidecar has schema-v1 head shapes");
             Check(a.Villages.Count == b.Villages.Count, "teacher-as-action keeps the same villages at step " + t);
             foreach (var va in a.Villages)
             {
@@ -386,6 +430,350 @@ internal static class ElderModel9Checks
         }
         ElderModel9Environment.VerifyReplay(acting.Replay); checks++;
         ElderModel9Environment.VerifyReplay(teacher.Replay); checks++;
+
+        // Raw materials use the delayed shared baseline plan and attribute only
+        // matching tagged receipts; actor tensor/action widths remain unchanged.
+        var rawEnv = new ElderModel9Environment(); rawEnv.Reset(snapshot, true);
+        rawEnv.World.Config.ElderRawMaterialsEnabled = true;
+        rawEnv.World.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        rawEnv.Replay.InitialSnapshot = SaveCodec.Save(rawEnv.World);
+        rawEnv.Replay.InitialFingerprint = SaveCodec.Fingerprint(rawEnv.World);
+        rawEnv.Replay.ConfigurationHash = SaveCodec.ConfigurationHash(rawEnv.World.Config);
+        var rawDirectives = rawEnv.World.Camps.Where(c => c.Population > 0 && CultivationEconomy.EconomyEnabled(rawEnv.World, c))
+            .ToDictionary(c => c.Id, c => new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion,
+                MovementCandidate = ElderModel9Contract.NativeMovement, ServiceLevels = new[] { 0d, 0, 0, 0, 0, 1 } });
+        var rawStep = rawEnv.Step(rawDirectives);
+        var rawRecord = rawEnv.World.History.Last();
+        Check(rawStep.DiagnosticSchemaVersion == ElderModel9DiagnosticEnvelope.CurrentSchemaVersion &&
+              rawStep.DecisionDiagnostics.Values.All(d => d.SchemaVersion == ElderModel9DecisionDiagnostics.CurrentSchemaVersion) &&
+              rawStep.RawMaterialDiagnostics.Values.All(d => d.SchemaVersion == ElderModel9DiagnosticEnvelope.CurrentSchemaVersion),
+            "diagnostic envelope and per-head/raw sidecars use independent schema versions");
+        Check(rawStep.RawMaterialDiagnostics.Count > 0, "flag-on materials service creates typed raw requests when residual residents and sources exist");
+        Check(rawStep.RawMaterialDiagnostics.Values.All(d => d.AcceptedUnits <= d.RequestedUnits + 1e-9 && d.RealisedUnits <= d.AcceptedUnits + 1e-9),
+            "raw material acceptance and realised receipts never exceed their requests/grants");
+        Check(rawStep.RawMaterialDiagnostics.All(pair => Math.Abs(pair.Value.RealisedUnits - rawRecord.MaterialTransfers
+            .Where(m => m.Camp == pair.Value.CampId && m.Material == pair.Value.Material && m.Phase == "elder-raw" &&
+                pair.Value.RequestId.Split('+').Contains(m.RequestId)).Sum(m => Math.Max(0, m.Amount))) <= 1e-9),
+            "raw realised diagnostics sum only receipts with matching phase, request id, camp and material");
+        var parityOff = new ElderModel9Environment(); parityOff.Reset(snapshot, true);
+        var parityOn = new ElderModel9Environment(); parityOn.Reset(snapshot, true);
+        parityOff.World.Config.EconomicAllocation = parityOn.World.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        parityOff.World.Config.ElderRawMaterialsEnabled = false; parityOn.World.Config.ElderRawMaterialsEnabled = true;
+        var parityActions = rawDirectives.Keys.ToDictionary(id => id, id => new ElderDirective
+        { SchemaVersion = ElderModel9Contract.ActionSchemaVersion, MovementCandidate = ElderModel9Contract.NativeMovement,
+          ServiceLevels = new[] { 1d, 1, 1, 1, 1, 0 } });
+        var parityOffStep = parityOff.Step(parityActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+        var parityOnStep = parityOn.Step(parityActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+        var parityOffRecord = parityOff.World.History.Last(); var parityOnRecord = parityOn.World.History.Last();
+        string OrderedMaterials(TurnRecord record) => string.Join("|", record.MaterialTransfers.Select(m =>
+            string.Join(":", m.Camp, m.Society, m.Tile, m.Source, (int)m.Material, m.Role,
+                m.Amount.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                m.Before.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                m.After.ToString("R", System.Globalization.CultureInfo.InvariantCulture), m.Phase ?? "", m.RequestId ?? "")));
+        string OrderedProduction(TurnRecord record) => string.Join("|", record.Production.Select(p =>
+            string.Join(":", p.Camp, (int)p.Good, p.Role, p.Output.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                p.WorkerIntervals.ToString("R", System.Globalization.CultureInfo.InvariantCulture), p.Stone, p.Clay, p.Wood,
+                p.PlantFood, p.AnimalFood, p.AnimalFabric, p.HousingMaterial)));
+        string canonicalOff = FlagOffCompatibilityChecks.CanonicalSavePayload(typeof(SaveCodec).Assembly, parityOff.World);
+        string canonicalOn = FlagOffCompatibilityChecks.CanonicalSavePayload(typeof(SaveCodec).Assembly, parityOn.World);
+        bool parityZeroRaw = parityOnStep.RawMaterialDiagnostics.Count > 0 &&
+            parityOnStep.RawMaterialDiagnostics.Values.All(d => d.AcceptedUnits == 0 && d.RealisedUnits == 0) &&
+            !parityOnRecord.MaterialTransfers.Any(m => m.Phase == "elder-raw");
+        bool paritySave = canonicalOff == canonicalOn;
+        bool parityMaterials = OrderedMaterials(parityOffRecord) == OrderedMaterials(parityOnRecord);
+        bool parityProduction = OrderedProduction(parityOffRecord) == OrderedProduction(parityOnRecord);
+        bool parityIntegration = parityOff.LastResolutionMetrics.TileIntegrations == parityOn.LastResolutionMetrics.TileIntegrations &&
+            parityOff.LastResolutionMetrics.TileIntegrations > 0 && parityOffRecord.Changes.Count == parityOnRecord.Changes.Count;
+        int saveDiff = Enumerable.Range(0, Math.Min(canonicalOff.Length, canonicalOn.Length)).FirstOrDefault(i => canonicalOff[i] != canonicalOn[i]);
+        string saveDiffText = paritySave ? "equal" : "idx=" + saveDiff + " off=" + canonicalOff.Substring(Math.Max(0, saveDiff - 50), Math.Min(140, canonicalOff.Length - Math.Max(0, saveDiff - 50))) + " on=" + canonicalOn.Substring(Math.Max(0, saveDiff - 50), Math.Min(140, canonicalOn.Length - Math.Max(0, saveDiff - 50)));
+        Check(parityZeroRaw && paritySave && parityMaterials && parityProduction && parityIntegration,
+            "paired full-turn flag-off/on fallback-only run has zero raw authority and exact save, production, needs/world, endpoint source/Wood, transfer and integration parity (raw=" + parityZeroRaw + ", save=" + paritySave + ", " + saveDiffText + ", materials=" + parityMaterials + ", production=" + parityProduction + ", integrations=" + parityOff.LastResolutionMetrics.TileIntegrations + "/" + parityOn.LastResolutionMetrics.TileIntegrations + ", parity=" + parityIntegration + ", changes=" + parityOffRecord.Changes.Count + "/" + parityOnRecord.Changes.Count + ")");
+        var terminalTrade = new ElderModel9Environment(); terminalTrade.Reset(snapshot, true);
+        var terminalCamp = terminalTrade.World.Camps.First(c => c.Player > 0 && c.Population > 0 && CultivationEconomy.EconomyEnabled(terminalTrade.World, c));
+        int terminalCampId = terminalCamp.Id;
+        terminalCamp.Population = 1; terminalCamp.Workforce.Assignments.Clear(); terminalCamp.DeficitTurns = 1;
+        terminalCamp.Food = 0; terminalTrade.World.Config.Mortality = 1; terminalTrade.World.Config.StarvationGraceTurns = 0;
+        terminalTrade.World.Config.FissionEnabled = false;
+        foreach (var tile in terminalTrade.World.Tiles)
+        {
+            tile.Food = tile.PotentialFood = tile.Freshwater = 0;
+            for (int i = 0; i < tile.Seasons.Length; i++)
+            { var season = tile.Seasons[i]; season.MaxFood = season.MaxPotentialFood = season.MaxFreshwater = 0;
+              season.FoodRecoveryPerDay = season.BiomassRecoveryPerDay = season.WaterRecoveryPerDay = 0; tile.Seasons[i] = season; }
+        }
+        var terminalDecision = new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion,
+            MovementCandidate = ElderModel9Contract.NativeMovement };
+        Check(Trade.Eligible(terminalTrade.World, terminalCamp), "terminal trade fixture begins eligible at decision time");
+        var terminalStep = terminalTrade.Step(new Dictionary<int, ElderDirective> { [terminalCampId] = terminalDecision });
+        var terminalVillage = terminalStep.Villages.Single(v => v.Camp == terminalCampId);
+        Check(terminalVillage.Terminated && terminalVillage.DecisionDiagnostics.ActiveMask.TradeValue.All(x => x) &&
+              terminalVillage.DecisionDiagnostics.ActiveMask.TradeGate.All(x => x) && terminalVillage.DecisionDiagnostics.ActiveMask.TradeShare,
+            "trade activity remains decision-time active when the eligible camp terminates during resolution");
+        var nativeRawEnv = new ElderModel9Environment(); nativeRawEnv.Reset(snapshot, true);
+        nativeRawEnv.World.Config.ElderRawMaterialsEnabled = true;
+        nativeRawEnv.World.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        var nativeRawStep = nativeRawEnv.Step(new Dictionary<int, ElderDirective>());
+        Check(nativeRawStep.RawMaterialDiagnostics.Count > 0,
+            "native teacher preparation executes and reports flag-on raw-material work without submitted actor decisions");
+        var transitionSnapshot = ElderModel9Environment.GenerateOpening(1000, 8, out _, 40, 0);
+        var transitionOff = new ElderModel9Environment(); transitionOff.Reset(transitionSnapshot, true);
+        var transitionOn = new ElderModel9Environment(); transitionOn.Reset(transitionSnapshot, true);
+        transitionOff.World.Config.EconomicAllocation = transitionOn.World.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        transitionOff.World.Config.ElderRawMaterialsEnabled = false; transitionOn.World.Config.ElderRawMaterialsEnabled = true;
+        var transitionPlayers = transitionOn.World.Camps.Where(c => c.Population > 0 && c.Player > 0 && CultivationEconomy.EconomyEnabled(transitionOn.World, c)).ToArray();
+        var transitionPriorSpecialists = transitionPlayers.ToDictionary(c => c.Id, c => c.Workforce.Assignments
+            .Where(a => a.Role != WorkforceRoles.Gatherer).Sum(a => a.Population));
+        var transitionActions = transitionPlayers.ToDictionary(c => c.Id, c => new ElderDirective
+        { SchemaVersion = ElderModel9Contract.ActionSchemaVersion, MovementCandidate = ElderModel9Contract.NativeMovement,
+          ServiceLevels = new[] { 0d, 0, 0, 0, 0, 1 } });
+        bool priorCraftDiagnosticCapture = ResolutionMetrics.CaptureCraftWorkDiagnostics;
+        ResolutionMetrics.CaptureCraftWorkDiagnostics = true;
+        ElderModel9Step transitionOffStep, transitionOnStep;
+        try
+        {
+            transitionOffStep = transitionOff.Step(transitionActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+            transitionOnStep = transitionOn.Step(transitionActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+        }
+        finally { ResolutionMetrics.CaptureCraftWorkDiagnostics = priorCraftDiagnosticCapture; }
+        int reducedPriorStaff = transitionPriorSpecialists.Count(pair => transitionOn.World.Camps.FirstOrDefault(c => c.Id == pair.Key) is Camp camp &&
+            camp.Workforce.Assignments.Where(a => a.Role != WorkforceRoles.Gatherer).Sum(a => a.Population) < pair.Value);
+        var transitionOnRecord = transitionOn.World.History.Last();
+        bool transitionZero = transitionOnStep.RawMaterialDiagnostics.Count > 0 &&
+            transitionOnStep.RawMaterialDiagnostics.Values.All(d => d.AcceptedUnits == 0 && d.RealisedUnits == 0) &&
+            !transitionOnRecord.MaterialTransfers.Any(m => m.Phase == "elder-raw");
+        string PhysicalSave(ElderModel9Environment env)
+        {
+            var copy = SaveCodec.Load(SaveCodec.Save(env.World));
+            // The raw service is intentionally a teacher/diagnostic label today;
+            // normalize only the corresponding persisted previous-label coordinate.
+            foreach (var camp in copy.Camps)
+            {
+                var memory = camp.ElderMemory;
+                foreach (var action in new[] { memory?.LastRequested, memory?.LastAccepted, memory?.LastRealized })
+                    if (action?.ServiceLevels != null && action.ServiceLevels.Length > 5) action.ServiceLevels[5] = 0;
+            }
+            return FlagOffCompatibilityChecks.CanonicalSavePayload(typeof(SaveCodec).Assembly, copy);
+        }
+        string transitionPhysicalOff = PhysicalSave(transitionOff), transitionPhysicalOn = PhysicalSave(transitionOn);
+        int transitionSaveDiff = Enumerable.Range(0, Math.Min(transitionPhysicalOff.Length, transitionPhysicalOn.Length))
+            .FirstOrDefault(i => transitionPhysicalOff[i] != transitionPhysicalOn[i]);
+        Check(transitionPriorSpecialists.Values.Any(x => x > 0) && reducedPriorStaff > 0 && transitionZero &&
+              transitionPhysicalOff == transitionPhysicalOn &&
+              transitionOff.LastResolutionMetrics.TileIntegrations == transitionOn.LastResolutionMetrics.TileIntegrations,
+            "seed-1000 positive-service full turn releases prior specialists only to fallback and preserves physical source/Wood, production, needs, receipts and integration parity (prior=" + transitionPriorSpecialists.Values.Sum() + ", reduced=" + reducedPriorStaff + ", diagnostics=" + transitionOnStep.RawMaterialDiagnostics.Count + ", zero=" + transitionZero + ", save=" + (transitionPhysicalOff == transitionPhysicalOn) + ", diff=" + transitionSaveDiff + ", off=" + transitionPhysicalOff.Substring(Math.Max(0, transitionSaveDiff - 50), Math.Min(120, transitionPhysicalOff.Length - Math.Max(0, transitionSaveDiff - 50))) + ", on=" + transitionPhysicalOn.Substring(Math.Max(0, transitionSaveDiff - 50), Math.Min(120, transitionPhysicalOn.Length - Math.Max(0, transitionSaveDiff - 50))) + ", integrations=" + transitionOff.LastResolutionMetrics.TileIntegrations + "/" + transitionOn.LastResolutionMetrics.TileIntegrations + ")");
+        bool endpointCapitalWitness = transitionOff.LastResolutionMetrics.CraftFieldWork != null &&
+            transitionOff.LastResolutionMetrics.CraftFieldWork.Values.Any(d =>
+                Math.Abs(d.ProvisionalGatheringBridgeCreditWorkerYears - d.GatheringBridgeCreditWorkerYears) > 1e-8);
+        Check(endpointCapitalWitness && transitionOff.World.Resources != null && transitionOff.World.Resources.Wood.Sum(x => (long)x) > 0 &&
+              transitionOff.World.Resources.Wood.SequenceEqual(transitionOn.World.Resources.Wood) &&
+              transitionOff.LastResolutionMetrics.TileIntegrations == transitionOn.LastResolutionMetrics.TileIntegrations,
+            "full resolver fixture witnesses provisional-versus-realised cultivation bridge divergence and exact endpoint Wood/integration parity");
+        var transitionOffStep2 = transitionOff.Step(transitionActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+        var transitionOnStep2 = transitionOn.Step(transitionActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+        bool SameTensorExceptMaterials(ElderModel9Tensor a, ElderModel9Tensor b)
+        {
+            return a.Core.Length == b.Core.Length && a.CorePresent.SequenceEqual(b.CorePresent) &&
+                a.Core.Where((_, i) => i != 200).SequenceEqual(b.Core.Where((_, i) => i != 200)) &&
+                a.Sets.Length == b.Sets.Length && a.Sets.Zip(b.Sets, (x, y) => x.SequenceEqual(y)).All(x => x) &&
+                a.RowPresent.Zip(b.RowPresent, (x, y) => x.SequenceEqual(y)).All(x => x) &&
+                a.MovementMask.SequenceEqual(b.MovementMask) && a.ClothingRouteMask.SequenceEqual(b.ClothingRouteMask) &&
+                a.ShelterRouteMask.SequenceEqual(b.ShelterRouteMask) && a.EconomyMixMask.SequenceEqual(b.EconomyMixMask) &&
+                a.CommitmentHoldMask == b.CommitmentHoldMask && a.RegionMovementMask.SequenceEqual(b.RegionMovementMask);
+        }
+        bool transitionObservationParity = transitionOffStep2.Villages.OrderBy(v => v.Camp).Zip(transitionOnStep2.Villages.OrderBy(v => v.Camp), (a, b) =>
+        {
+            return a.Camp == b.Camp && SameTensorExceptMaterials(a.Observation, b.Observation);
+        }).All(x => x);
+        Check(transitionObservationParity && PhysicalSave(transitionOff) == PhysicalSave(transitionOn),
+            "second fixed-directive turn preserves physical world and all actor observations except the explicitly new materials-service prior-request coordinate");
+        bool rawTeacherTiedToRequest = transitionOnStep.RawMaterialDiagnostics.Values.GroupBy(d => d.CampId).All(group =>
+        {
+            var offVillage = transitionOffStep.Villages.First(v => v.Camp == group.Key);
+            var onVillage = transitionOnStep.Villages.First(v => v.Camp == group.Key);
+            double equivalent = group.Sum(d =>
+            {
+                var camp = transitionOn.World.Camps.First(c => c.Id == d.CampId);
+                string role = camp.People.HasTech(EconomicIntents.RequiredTechnology(MaterialEconomy.Specialist(d.Material)))
+                    ? MaterialEconomy.Specialist(d.Material) : WorkforceRoles.Gatherer;
+                double annualRate = SpecialistProductivity.ExtractionRate(transitionOn.World, camp, d.Material, role) *
+                    transitionOn.World.Config.DaysPerYear / transitionOn.World.Config.BaseDays;
+                return annualRate > 0 ? d.RequestedUnits / annualRate : 0;
+            });
+            var left = offVillage.Teacher.Action; var right = onVillage.Teacher.Action;
+            bool sameOtherAction = left.RetainedFieldOperation == right.RetainedFieldOperation &&
+                left.RetainedHerdFraction == right.RetainedHerdFraction && left.DevelopmentBudget == right.DevelopmentBudget &&
+                left.FieldDevelopmentShare == right.FieldDevelopmentShare && left.FishingDevelopmentShare == right.FishingDevelopmentShare &&
+                left.ServiceLevels.Take(5).SequenceEqual(right.ServiceLevels.Take(5)) && left.ClothingRoute == right.ClothingRoute &&
+                left.ShelterRoute == right.ShelterRoute && left.MovementCandidate == right.MovementCandidate && left.IntentTile == right.IntentTile &&
+                left.FissionPolicy == right.FissionPolicy && left.CommitTurns == right.CommitTurns &&
+                left.TradeValue.SequenceEqual(right.TradeValue) && left.TradeGate.SequenceEqual(right.TradeGate) &&
+                left.TradeExportShare == right.TradeExportShare;
+            bool sameOtherMasks = offVillage.Teacher.ServiceMask.Take(5).SequenceEqual(onVillage.Teacher.ServiceMask.Take(5)) &&
+                offVillage.Teacher.StrategicFieldMask == onVillage.Teacher.StrategicFieldMask &&
+                offVillage.Teacher.StrategicHerdMask == onVillage.Teacher.StrategicHerdMask &&
+                offVillage.Teacher.DevelopmentMask == onVillage.Teacher.DevelopmentMask &&
+                offVillage.Teacher.DevelopmentShareMask == onVillage.Teacher.DevelopmentShareMask &&
+                offVillage.Teacher.FishingShareMask == onVillage.Teacher.FishingShareMask &&
+                offVillage.Teacher.ClothingRouteMask == onVillage.Teacher.ClothingRouteMask &&
+                offVillage.Teacher.ShelterRouteMask == onVillage.Teacher.ShelterRouteMask &&
+                offVillage.Teacher.MovementMask == onVillage.Teacher.MovementMask && offVillage.Teacher.TradeMask == onVillage.Teacher.TradeMask;
+            return onVillage.Teacher.ServiceMask[5] && Math.Abs(onVillage.Teacher.Action.ServiceLevels[5]) < 1e-9 &&
+                Math.Abs((onVillage.Teacher.RepairSize - offVillage.Teacher.RepairSize) - equivalent) < 1e-6 * Math.Max(1, equivalent) &&
+                sameOtherAction && sameOtherMasks;
+        });
+        Check(rawTeacherTiedToRequest,
+            "materials teacher target/mask and RepairSize delta equal the raw-request service equivalent while every other label mask remains unchanged");
+        var transitionFork = transitionOn.Fork(out var transitionForkStep);
+        var transitionRestored = transitionOn.Restore(transitionFork);
+        bool rawSidecarPreserved = transitionForkStep.DiagnosticSchemaVersion == ElderModel9DiagnosticEnvelope.CurrentSchemaVersion &&
+            transitionForkStep.RawMaterialDiagnostics.Keys.OrderBy(k => k, StringComparer.Ordinal)
+                .SequenceEqual(transitionOnStep2.RawMaterialDiagnostics.Keys.OrderBy(k => k, StringComparer.Ordinal)) &&
+            transitionRestored.RawMaterialDiagnostics.All(p => transitionForkStep.RawMaterialDiagnostics.TryGetValue(p.Key, out var saved) &&
+                saved.RequestedUnits == p.Value.RequestedUnits && saved.AcceptedUnits == p.Value.AcceptedUnits && saved.RealisedUnits == p.Value.RealisedUnits);
+        string restoredTrajectory = transitionRestored.TrajectoryId;
+        var branchContinuation = transitionOn.Step(transitionActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+        Check(rawSidecarPreserved && branchContinuation.TrajectoryId != restoredTrajectory &&
+              branchContinuation.RawMaterialDiagnostics.Values.All(d => d.AcceptedUnits == 0 && d.RealisedUnits == 0),
+            "staffing-transition raw diagnostics survive fork/restore and branch continuation receives a distinct trajectory with zero authority");
+        var transitionReloaded = new ElderModel9Environment(); transitionReloaded.Reset(SaveCodec.Save(transitionOff.World), true);
+        transitionOff.Step(transitionActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+        transitionReloaded.Step(transitionActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+        Check(PhysicalSave(transitionReloaded) == PhysicalSave(transitionOff) &&
+              transitionReloaded.LastResolutionMetrics.TileIntegrations == transitionOff.LastResolutionMetrics.TileIntegrations,
+            "fixed-directive save/load continuation after staffing reduction preserves complete physical state and integration work");
+        var rawOnReloaded = new ElderModel9Environment(); rawOnReloaded.Reset(SaveCodec.Save(transitionOn.World), true);
+        var rawOnLiveStep = transitionOn.Step(transitionActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+        var rawOnReloadStep = rawOnReloaded.Step(transitionActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+        Check(rawOnLiveStep.RawMaterialDiagnostics.Values.All(d => d.AcceptedUnits == 0 && d.RealisedUnits == 0) &&
+              rawOnReloadStep.RawMaterialDiagnostics.Values.All(d => d.AcceptedUnits == 0 && d.RealisedUnits == 0) &&
+              PhysicalSave(rawOnReloaded) == PhysicalSave(transitionOn) &&
+              rawOnReloaded.LastResolutionMetrics.TileIntegrations == transitionOn.LastResolutionMetrics.TileIntegrations,
+            "flag-on fixed-directive save/load continuation after staffing reduction preserves zero-authority physical state and integration work");
+        bool acceptedRawLabelDelta = transitionOffStep.Villages.Where(v => v.DecisionDiagnostics != null).Any(v =>
+                transitionOnStep.Villages.First(x => x.Camp == v.Camp).DecisionDiagnostics != null &&
+                v.DecisionDiagnostics.Accepted.Service[5] != transitionOnStep.Villages.First(x => x.Camp == v.Camp).DecisionDiagnostics.Accepted.Service[5]);
+        bool priorRequestFeatureTied = transitionOffStep2.Villages.OrderBy(v => v.Camp).Zip(transitionOnStep2.Villages.OrderBy(v => v.Camp), (a, b) =>
+                  a.Camp == b.Camp && b.Population > 0 &&
+                  Math.Abs((b.Observation.Core[200] - a.Observation.Core[200]) -
+                    transitionOnStep2.RawMaterialDiagnostics.Values.Where(d => d.CampId == b.Camp).Sum(d =>
+                    {
+                        var camp = transitionOn.World.Camps.First(c => c.Id == d.CampId);
+                        string role = camp.People.HasTech(EconomicIntents.RequiredTechnology(MaterialEconomy.Specialist(d.Material)))
+                            ? MaterialEconomy.Specialist(d.Material) : WorkforceRoles.Gatherer;
+                        double annualRate = SpecialistProductivity.ExtractionRate(transitionOn.World, camp, d.Material, role) *
+                            transitionOn.World.Config.DaysPerYear / transitionOn.World.Config.BaseDays;
+                        return annualRate > 0 ? d.RequestedUnits / annualRate / b.Population : 0;
+                    })) < 1e-6).Any(x => x);
+        Check(acceptedRawLabelDelta && priorRequestFeatureTied,
+            "flag-on zero-authority raw service changes only the expected accepted service label and next-turn prior-requested observation feature (label=" + acceptedRawLabelDelta + ", requestFeature=" + priorRequestFeatureTied + ")");
+        var transitionFractionOff = new ElderModel9Environment(); transitionFractionOff.Reset(transitionSnapshot, true);
+        var transitionFractionOn = new ElderModel9Environment(); transitionFractionOn.Reset(transitionSnapshot, true);
+        transitionFractionOff.World.Config.EconomicAllocation = transitionFractionOn.World.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        transitionFractionOff.World.Config.ElderRawMaterialsEnabled = false; transitionFractionOn.World.Config.ElderRawMaterialsEnabled = true;
+        var transitionFractionActions = transitionFractionOn.World.Camps.Where(c => c.Population > 0 && c.Player > 0 && CultivationEconomy.EconomyEnabled(transitionFractionOn.World, c))
+            .ToDictionary(c => c.Id, c => new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion,
+                MovementCandidate = ElderModel9Contract.NativeMovement, ServiceLevels = new[] { 0d, 0, 0, 0, 0, .35 } });
+        var transitionFractionPrior = transitionFractionOn.World.Camps.Where(c => transitionFractionActions.ContainsKey(c.Id))
+            .ToDictionary(c => c.Id, c => c.Workforce.Assignments.Where(a => a.Role != WorkforceRoles.Gatherer).Sum(a => a.Population));
+        transitionFractionOff.Step(transitionFractionActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+        var transitionFractionStep = transitionFractionOn.Step(transitionFractionActions.ToDictionary(p => p.Key, p => p.Value.Copy()));
+        int fractionReduced = transitionFractionPrior.Count(pair => transitionFractionOn.World.Camps.FirstOrDefault(c => c.Id == pair.Key) is Camp camp &&
+            camp.Workforce.Assignments.Where(a => a.Role != WorkforceRoles.Gatherer).Sum(a => a.Population) < pair.Value);
+        Check(transitionFractionPrior.Values.Any(x => x > 0) && fractionReduced > 0 && transitionFractionStep.RawMaterialDiagnostics.Count > 0 &&
+              transitionFractionStep.RawMaterialDiagnostics.Values.All(d => d.AcceptedUnits == 0 && d.RealisedUnits == 0) &&
+              !transitionFractionOn.World.History.Last().MaterialTransfers.Any(m => m.Phase == "elder-raw") &&
+              PhysicalSave(transitionFractionOff) == PhysicalSave(transitionFractionOn) &&
+              transitionFractionOff.LastResolutionMetrics.TileIntegrations == transitionFractionOn.LastResolutionMetrics.TileIntegrations,
+            "fractional-service staffing reduction keeps all residual labor committed to native fallback with zero raw grant/receipt and flag-off physical parity");
+        Check(rawDirectives.Values.All(d => d.ServiceLevels.Length == ElderModel9Contract.GoodsServices.Length),
+            "materials service uses the existing action slot without changing tensor width");
+        int malformedCamp = rawStep.RawMaterialDiagnostics.Values.OrderBy(d => d.CampId).First().CampId;
+        ElderModel9Environment RunRawAction(ElderDirective action)
+        {
+            var env = new ElderModel9Environment(); env.Reset(snapshot, true);
+            env.World.Config.ElderRawMaterialsEnabled = true;
+            env.World.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+            env.Step(new Dictionary<int, ElderDirective> { [malformedCamp] = action });
+            return env;
+        }
+        var zeroServiceAction = new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion,
+            MovementCandidate = ElderModel9Contract.NativeMovement, ServiceLevels = new[] { 0d, 0, 0, 0, 0, 0 } };
+        var fractionalRawEnv = new ElderModel9Environment(); fractionalRawEnv.Reset(snapshot, true);
+        fractionalRawEnv.World.Config.ElderRawMaterialsEnabled = true;
+        fractionalRawEnv.World.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        var fractionalActions = fractionalRawEnv.World.Camps.Where(c => c.Population > 0 && CultivationEconomy.EconomyEnabled(fractionalRawEnv.World, c))
+            .ToDictionary(c => c.Id, c => new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion,
+                MovementCandidate = ElderModel9Contract.NativeMovement, ServiceLevels = new[] { 0d, 0, 0, 0, 0, .35 } });
+        var fractionalStep = fractionalRawEnv.Step(fractionalActions);
+        Check(fractionalStep.RawMaterialDiagnostics.Count > 0 &&
+              fractionalStep.RawMaterialDiagnostics.Values.All(d => d.AcceptedUnits == 0 && d.RealisedUnits == 0),
+            "fractional service cannot manufacture Phase-B labor when all residual residents are committed to native fallback gathering");
+        var zeroServiceRaw = RunRawAction(zeroServiceAction);
+        var zeroServiceLegacy = new ElderModel9Environment(); zeroServiceLegacy.Reset(snapshot, true);
+        zeroServiceLegacy.World.Config.ElderRawMaterialsEnabled = false;
+        zeroServiceLegacy.World.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        zeroServiceLegacy.Step(new Dictionary<int, ElderDirective> { [malformedCamp] = zeroServiceAction });
+        string TransferLedger(ElderModel9Environment env) => string.Join("|", env.World.History.Last().MaterialTransfers.Select(m =>
+            string.Join(":", m.Camp, m.Source, (int)m.Material, m.Role, m.Amount.ToString("R", System.Globalization.CultureInfo.InvariantCulture), m.Phase ?? "", m.RequestId ?? "")));
+        Check(zeroServiceRaw.Replay.Steps[0].RawMaterialDiagnostics.Values.All(d => d.AcceptedUnits == 0 && d.RealisedUnits == 0) &&
+              zeroServiceRaw.World.Camps.Select(c => (c.Id, c.Population, c.Food, c.Inventory.Stone, c.Inventory.Clay, c.Inventory.Wood))
+                  .SequenceEqual(zeroServiceLegacy.World.Camps.Select(c => (c.Id, c.Population, c.Food, c.Inventory.Stone, c.Inventory.Clay, c.Inventory.Wood))) &&
+              TransferLedger(zeroServiceRaw) == TransferLedger(zeroServiceLegacy),
+            "flag-on zero service preserves legacy food gathering, outcomes and ordered material transfers");
+        var nonfiniteService = RunRawAction(new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion,
+            MovementCandidate = ElderModel9Contract.NativeMovement, ServiceLevels = new[] { 1d, 1, 1, 1, 1, double.NaN } });
+        var unsupportedService = RunRawAction(new ElderDirective { SchemaVersion = 999,
+            ServiceLevels = new[] { 0d, 0, 0, 0, 0, 0 } });
+        var shortService = RunRawAction(new ElderDirective { SchemaVersion = ElderModel9Contract.ActionSchemaVersion,
+            ServiceLevels = new[] { 0d } });
+        double AcceptedRaw(ElderModel9Environment env) => env.Replay.Steps[0].RawMaterialDiagnostics.Values
+            .Where(d => d.CampId == malformedCamp).Sum(d => d.AcceptedUnits);
+        double AcceptedService(ElderModel9Environment env) => env.Replay.Steps[0].DecisionDiagnostics[malformedCamp].Accepted.Service[5];
+        Check(nonfiniteService.Replay.Steps[0].DiagnosticSchemaVersion > 0 && AcceptedRaw(nonfiniteService) == 0 && AcceptedService(nonfiniteService) == 0 &&
+              nonfiniteService.Replay.Steps[0].DecisionDiagnostics[malformedCamp].AcceptedMask.Service[5],
+            "a nonfinite materials service is repaired to zero before raw grants are finalized");
+        Check(unsupportedService.Replay.Steps[0].Directives[malformedCamp].SchemaVersion == 999 &&
+              !unsupportedService.Replay.Steps[0].DecisionDiagnostics[malformedCamp].AcceptedMask.Service[5] &&
+              shortService.Replay.Steps[0].Directives[malformedCamp].ServiceLevels.Length == 1 &&
+              !shortService.Replay.Steps[0].DecisionDiagnostics[malformedCamp].AcceptedMask.Service[5],
+            "unsupported-schema and wrong-length service vectors retain native/null semantics, distinct from repaired zero");
+        var rawFork = rawEnv.Fork(out var rawForkStep);
+        if (rawForkStep.RawMaterialDiagnostics.Count > 0)
+        {
+            var rawKey = rawForkStep.RawMaterialDiagnostics.Keys.OrderBy(x => x, StringComparer.Ordinal).First();
+            double savedRequested = rawFork.RawMaterialDiagnostics[rawKey].RequestedUnits;
+            rawForkStep.RawMaterialDiagnostics[rawKey].RequestedUnits = -99;
+            rawForkStep.DecisionDiagnostics.Values.First().Requested.Service[0] = -99;
+            var rawRestored = rawEnv.Restore(rawFork);
+            Check(rawFork.RawMaterialDiagnostics[rawKey].RequestedUnits == savedRequested &&
+                  rawRestored.RawMaterialDiagnostics[rawKey].RequestedUnits == savedRequested &&
+                  rawRestored.DecisionDiagnostics.Values.All(d => d.Requested.Service[0] >= 0),
+                "raw and generic diagnostics are deep-copied across step, fork and restore");
+        }
+        ElderModel9Environment.VerifyReplay(rawEnv.Replay); checks++;
+        Check(true, "raw-on schema-2 replay verifies against its stored decision-time sidecars");
+        var schema1RawOn = rawEnv.Replay;
+        schema1RawOn.Steps[0].DiagnosticSchemaVersion = 1;
+        bool rawOnSchema1Rejected = false;
+        try { ElderModel9Environment.VerifyReplay(schema1RawOn); }
+        catch (InvalidOperationException ex) { rawOnSchema1Rejected = ex.Message.Contains("Schema-1 replay"); }
+        Check(rawOnSchema1Rejected,
+            "schema-1 replay fails closed when its captured configuration enables raw settlement");
+        var rawOffLegacy = new ElderModel9Environment(); rawOffLegacy.Reset(snapshot, true);
+        rawOffLegacy.Step(new Dictionary<int, ElderDirective>());
+        rawOffLegacy.Replay.Steps[0].DiagnosticSchemaVersion = 1;
+        ElderModel9Environment.VerifyReplay(rawOffLegacy.Replay); checks++;
+        Check(true, "raw-off schema-1 replay remains valid under its legacy fingerprint");
+        rawOffLegacy.Replay.Steps[0].DiagnosticSchemaVersion = ElderModel9DiagnosticEnvelope.CurrentSchemaVersion + 1;
+        bool futureEnvelopeRejected = false;
+        try { ElderModel9Environment.VerifyReplay(rawOffLegacy.Replay); }
+        catch (InvalidOperationException ex) { futureEnvelopeRejected = ex.Message.Contains("outside the supported schema allowlist"); }
+        Check(futureEnvelopeRejected, "replay rejects diagnostic envelopes newer than the supported version");
+        rawOffLegacy.Replay.Steps[0].DiagnosticSchemaVersion = -1;
+        bool negativeEnvelopeRejected = false;
+        try { ElderModel9Environment.VerifyReplay(rawOffLegacy.Replay); }
+        catch (InvalidOperationException ex) { negativeEnvelopeRejected = ex.Message.Contains("outside the supported schema allowlist"); }
+        Check(negativeEnvelopeRejected, "replay rejects negative diagnostic envelope versions instead of treating them as schema zero");
 
         // Contract 8: the fishing share of the Development budget staffs whole Fishers beyond the survival frontier.
         int fishingFeature = Array.IndexOf(ElderModel9Encoder.CoreFeatureNames(), "fishing-development-available");

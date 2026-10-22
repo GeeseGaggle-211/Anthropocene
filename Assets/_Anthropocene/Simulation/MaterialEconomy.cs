@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace Anthropocene.Simulation
 {
@@ -24,6 +25,7 @@ namespace Anthropocene.Simulation
         public string Source, Role;
         public MaterialId Material;
         public double Amount, Before, After, WorkerIntervals, Days;
+        [System.Runtime.Serialization.OptionalField] public string Phase, RequestId;
     }
     [Serializable]
     public sealed class MaterialSourceObservation
@@ -40,6 +42,22 @@ namespace Anthropocene.Simulation
         public int Tile, Distance;
         public MaterialId Material;
         public double Initial, Available, Share, RecoveryPerYear;
+    }
+    internal sealed class BaselineMaterialTargets
+    {
+        internal readonly Dictionary<MaterialId, double> ByMaterial = new Dictionary<MaterialId, double>();
+    }
+    // Retained temporarily for the guarded compatibility branch below. New
+    // Elder preparation never creates or consumes this endpoint projection.
+    internal sealed class BaselineGatherPlan
+    {
+        internal sealed class Debit { internal KnownMaterialSource Source; internal string Role; internal double Units, WorkerIntervals, Horizon; }
+        internal readonly Dictionary<MaterialId, double> Targets = new Dictionary<MaterialId, double>();
+        internal readonly Dictionary<MaterialId, double> PlannedReceipts = new Dictionary<MaterialId, double>();
+        internal readonly List<Debit> Debits = new List<Debit>();
+        internal double PhaseAMaterialGathererIntervals;
+        internal KnownMaterialSource[] ResidualSources;
+        internal Dictionary<string, double> ResidualRoleIntervals;
     }
     // A local, pure companion to an existing Wood source. It has no ecological
     // fields of its own: every capacity target comes from the authoritative
@@ -207,7 +225,7 @@ namespace Anthropocene.Simulation
         internal static void RegisterSourceState(WorldState w, MaterialSourceState state) => w.MaterialIndex?.AddState(state);
         public static MaterialSourceObservation[] Observe(WorldState w, Camp c, double days) => KnownSources(w, c, days).Select(s => new MaterialSourceObservation { Id = s.Id, Tile = s.Tile, Distance = s.Distance, Material = s.Material, Available = s.Available }).ToArray();
         public static readonly MaterialId[] Materials = { MaterialId.Stone, MaterialId.Clay, MaterialId.Wood };
-        private static readonly string[] ExtractionRoles = { WorkforceRoles.Stonecutter, WorkforceRoles.Woodcutter, WorkforceRoles.ClayMiner, WorkforceRoles.Gatherer };
+        internal static readonly string[] ExtractionRoles = { WorkforceRoles.Stonecutter, WorkforceRoles.Woodcutter, WorkforceRoles.ClayMiner, WorkforceRoles.Gatherer };
         private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<TurnRecord, Tuple<int, Dictionary<int, EcologyBalance>>> BalanceIndices
             = new System.Runtime.CompilerServices.ConditionalWeakTable<TurnRecord, Tuple<int, Dictionary<int, EcologyBalance>>>();
 
@@ -522,7 +540,122 @@ namespace Anthropocene.Simulation
         public static double Extract(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record)
             => ExtractKnown(w, c, requested, role, workerIntervals, useful, days, record, false);
 
-        private static double ExtractKnown(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record, bool trustedLocalCatalog)
+        // Pure counterpart of the legacy current-input + reserve gather loop.
+        // It receives the exact prepared forecast/housing plan and a single local
+        // source snapshot; Gather later executes these ordered intents verbatim.
+        internal static BaselineMaterialTargets BuildBaselineMaterialTargets(WorldState w,
+            CraftRecipe[] recipes, double years, TurnNeeds needs)
+        {
+            var targets = new BaselineMaterialTargets();
+            var forecast = new Dictionary<MaterialId, double>
+                { [MaterialId.Stone] = 0, [MaterialId.Clay] = 0, [MaterialId.Wood] = 0 };
+            double housingForecast = 0;
+            var planned = needs.Production;
+            var housing = needs.Housing;
+            foreach (var recipe in recipes)
+            {
+                double amount = planned[recipe.Good];
+                forecast[MaterialId.Stone] += amount * recipe.Stone;
+                forecast[MaterialId.Clay] += amount * recipe.Clay;
+                forecast[MaterialId.Wood] += amount * recipe.Wood;
+                if (recipe.ConstructionMaterial > 0) housingForecast += amount * recipe.ConstructionMaterial;
+            }
+            double reserveHorizon = w.Config.Neolithic.MaterialReserveMultiplier(years);
+            targets.ByMaterial[MaterialId.Stone] = forecast[MaterialId.Stone] * reserveHorizon;
+            targets.ByMaterial[MaterialId.Clay] = (forecast[MaterialId.Clay] + housingForecast * housing.ClayShare) * reserveHorizon;
+            targets.ByMaterial[MaterialId.Wood] = (forecast[MaterialId.Wood] + housingForecast * housing.WoodShare) * reserveHorizon;
+            return targets;
+        }
+
+        // Test-only legacy reference planner. The live raw-material path never
+        // calls this endpoint projection; it exists to retain the explicit
+        // Gather parity fixture for the legacy algorithm.
+        internal static BaselineGatherPlan BuildBaselineGatherPlan(WorldState w, Camp c,
+            CraftRecipe[] recipes, double intervals, double years, double generalistIntervals,
+            TurnNeeds needs, KnownMaterialSource[] sourceSnapshot,
+            IReadOnlyDictionary<string, double> phaseAExtractionIntervals = null)
+        {
+            var plan = new BaselineGatherPlan();
+            plan.PhaseAMaterialGathererIntervals = Math.Max(0, generalistIntervals);
+            var forecast = new Dictionary<MaterialId, double>
+                { [MaterialId.Stone] = 0, [MaterialId.Clay] = 0, [MaterialId.Wood] = 0 };
+            double housingForecast = 0;
+            var planned = needs.Production;
+            var housing = needs.Housing;
+            foreach (var recipe in recipes)
+            {
+                double amount = planned[recipe.Good];
+                forecast[MaterialId.Stone] += amount * recipe.Stone;
+                forecast[MaterialId.Clay] += amount * recipe.Clay;
+                forecast[MaterialId.Wood] += amount * recipe.Wood;
+                if (recipe.ConstructionMaterial > 0) housingForecast += amount * recipe.ConstructionMaterial;
+            }
+            double reserveHorizon = w.Config.Neolithic.MaterialReserveMultiplier(years);
+            plan.Targets[MaterialId.Stone] = forecast[MaterialId.Stone] * reserveHorizon;
+            plan.Targets[MaterialId.Clay] = (forecast[MaterialId.Clay] + housingForecast * housing.ClayShare) * reserveHorizon;
+            plan.Targets[MaterialId.Wood] = (forecast[MaterialId.Wood] + housingForecast * housing.WoodShare) * reserveHorizon;
+            var virtualInventory = Materials.ToDictionary(m => m, m => Inventory(c, m));
+            double Shortfall(MaterialId material, double horizon)
+            {
+                double direct = Math.Max(0, forecast[material] * horizon - virtualInventory[material]);
+                if (material == MaterialId.Stone) return direct;
+                double share = material == MaterialId.Wood ? housing.WoodShare : housing.ClayShare;
+                return Math.Max(0, forecast[material] * horizon + housingForecast * horizon * share - virtualInventory[material]);
+            }
+            var sources = sourceSnapshot.Select(s => new KnownMaterialSource
+            { Id = s.Id, Tile = s.Tile, Distance = s.Distance, Material = s.Material,
+                Initial = s.Initial, Available = s.Available, Share = s.Share, RecoveryPerYear = s.RecoveryPerYear }).ToArray();
+            var laborByRole = ExtractionRoles.ToDictionary(role => role,
+                role => phaseAExtractionIntervals != null && phaseAExtractionIntervals.TryGetValue(role, out double frozen)
+                    ? Math.Max(0, frozen) : role == WorkforceRoles.Gatherer
+                        ? generalistIntervals : CultivationEconomy.Workers(c, role) * intervals);
+            foreach (double horizon in reserveHorizon > 1 + 1e-12 ? new[] { 1d, reserveHorizon } : new[] { 1d })
+            foreach (string role in ExtractionRoles)
+            {
+                double labor = laborByRole[role];
+                if (labor <= 1e-10) continue;
+                var eligible = sources.Where(s => role == WorkforceRoles.Gatherer || role == Specialist(s.Material)).ToArray();
+                if (eligible.Length == 0) continue;
+                double rate = SpecialistProductivity.ExtractionRate(w, c, eligible[0].Material, role);
+                var visited = new HashSet<(string Id, int Tile)>();
+                for (int pass = 0; pass < eligible.Length && labor > 1e-10; pass++)
+                {
+                    KnownMaterialSource best = null; double bestScore = 1e-10, bestDemand = 0;
+                    foreach (var source in eligible)
+                    {
+                        if (source.Available <= 1e-10 || visited.Contains((source.Id, source.Tile))) continue;
+                        double demand = Shortfall(source.Material, horizon);
+                        double priority = source.Material == MaterialId.Stone ? c.StonePriority : source.Material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
+                        double score = demand * priority;
+                        if (score <= 1e-10) continue;
+                        if (best == null || score > bestScore || score == bestScore &&
+                            (source.Distance < best.Distance || source.Distance == best.Distance && StringComparer.Ordinal.Compare(source.Id, best.Id) < 0))
+                        { best = source; bestScore = score; bestDemand = demand; }
+                    }
+                    if (best == null) break;
+                    visited.Add((best.Id, best.Tile));
+                    double units = Math.Min(best.Available, Math.Min(bestDemand, labor * rate));
+                    if (!(units > 1e-12)) break;
+                    var debitSource = new KnownMaterialSource { Id = best.Id, Tile = best.Tile, Distance = best.Distance,
+                        Material = best.Material, Initial = best.Initial, Available = best.Available,
+                        Share = best.Share, RecoveryPerYear = best.RecoveryPerYear };
+                    plan.Debits.Add(new BaselineGatherPlan.Debit { Source = debitSource, Role = role,
+                        Units = units, WorkerIntervals = units / rate, Horizon = horizon });
+                    plan.PlannedReceipts[best.Material] = plan.PlannedReceipts.TryGetValue(best.Material, out double prior) ? prior + units : units;
+                    virtualInventory[best.Material] += units;
+                    labor -= units / rate;
+                    foreach (var local in sources.Where(s => s.Id == best.Id))
+                        local.Available = Math.Max(0, local.Available - units * local.Share);
+                }
+                laborByRole[role] = labor;
+            }
+            foreach (var material in Materials)
+                if (!plan.PlannedReceipts.ContainsKey(material)) plan.PlannedReceipts[material] = 0;
+            plan.ResidualSources = sources; plan.ResidualRoleIntervals = laborByRole;
+            return plan;
+        }
+
+        private static double ExtractKnown(WorldState w, Camp c, KnownMaterialSource requested, string role, double workerIntervals, double useful, double days, TurnRecord record, bool trustedLocalCatalog, string phase = null, string requestId = null)
         {
             if (!CultivationEconomy.EconomyEnabled(w, c) || workerIntervals <= 0 || useful <= 0) return 0;
             var source = trustedLocalCatalog ? requested : KnownSources(w, c, days).FirstOrDefault(s => s.Id == requested.Id && s.Tile == requested.Tile && s.Material == requested.Material);
@@ -552,7 +685,7 @@ namespace Anthropocene.Simulation
             if (source.Material == MaterialId.Stone) c.Inventory.Stone += amount; else if (source.Material == MaterialId.Clay) c.Inventory.Clay += amount; else c.Inventory.Wood += amount;
             if (MaterialAccessIndex.For(w).Remember(c.SocietyId, source.Id, source.Tile))
                 w.MaterialKnowledge.Add(new MaterialKnowledge { Society = c.SocietyId, Source = source.Id, Tile = source.Tile });
-            record.MaterialTransfers.Add(new MaterialReceipt { Camp = c.Id, Society = c.SocietyId, Tile = source.Tile, Source = source.Id, Material = source.Material, Role = role, Amount = amount, Before = before, After = state.Remaining, WorkerIntervals = amount / rate, Days = days });
+            record.MaterialTransfers.Add(new MaterialReceipt { Camp = c.Id, Society = c.SocietyId, Tile = source.Tile, Source = source.Id, Material = source.Material, Role = role, Amount = amount, Before = before, After = state.Remaining, WorkerIntervals = amount / rate, Days = days, Phase = phase, RequestId = requestId });
             if (source.Material == MaterialId.Wood)
             {
                 EcologicalPressure.RecordMaterialExtraction(source.Tile, c.Id,
@@ -603,14 +736,29 @@ namespace Anthropocene.Simulation
                 double total = forecast[material] * horizon + housingForecast * horizon * share;
                 return Math.Max(0, total - Inventory(c, material));
             }
+            // The revised Elder path leaves the legacy baseline gatherer as the
+            // sole authority. No Prepare-time source quantity or debit plan is
+            // consulted here.
+            var baselinePlan = (BaselineGatherPlan)null;
             var localSources = KnownSources(w, c, days);
             var remainingLabor = ExtractionRoles.ToDictionary(role => role,
-                role => role == WorkforceRoles.Gatherer
-                    ? generalistIntervals : CultivationEconomy.Workers(c, role) * intervals);
+                role => role == WorkforceRoles.Gatherer ? generalistIntervals :
+                    needs?.Order?.PhaseAExtractionIntervals != null &&
+                    needs.Order.PhaseAExtractionIntervals.TryGetValue(role, out double frozen)
+                        ? Math.Min(Math.Max(0, frozen), CultivationEconomy.Workers(c, role) * intervals)
+                        : CultivationEconomy.Workers(c, role) * intervals);
+            bool captureRawBaseline = w.Config.ElderRawMaterialsEnabled &&
+                w.Config.EconomicAllocation == EconomicAllocationStrategy.DemandControl &&
+                needs?.Order?.RawMaterialAllowances?.Count > 0;
+            int baselineReceiptStart = record.MaterialTransfers.Count;
+            if (captureRawBaseline)
+                needs.PreBaselineInventory = Materials.ToDictionary(m => m, m => Inventory(c, m));
             // Current admitted production must receive its raw inputs before a
             // configured material reserve is filled. Both passes use the same
             // finite sources and labor; the second pass can spend only what the
             // first leaves. This is commitment priority, not free extraction.
+            if (baselinePlan == null)
+            {
             double reserveHorizon = w.Config.Neolithic.MaterialReserveMultiplier(years);
             foreach (double horizon in reserveHorizon > 1 + 1e-12
                 ? new[] { 1d, reserveHorizon } : new[] { 1d })
@@ -668,10 +816,121 @@ namespace Anthropocene.Simulation
                 }
                 remainingLabor[role] = labor;
             }
+            }
+            else
+            {
+                foreach (var debit in baselinePlan.Debits)
+                {
+                    // The turn plan is a snapshot, but another earlier camp may
+                    // already have committed against this shared source.
+                    var priorState = SourceState(w, debit.Source.Id);
+                    if (priorState != null) debit.Source.Available = Math.Min(
+                        debit.Source.Available, Math.Max(0, priorState.Remaining * debit.Source.Share));
+                    int beforeReceipt = record.MaterialTransfers.Count;
+                    ExtractKnown(w, c, debit.Source, debit.Role, debit.WorkerIntervals,
+                        debit.Units, days, record, true);
+                    if (record.MaterialTransfers.Count > beforeReceipt)
+                    {
+                        var receipt = record.MaterialTransfers[record.MaterialTransfers.Count - 1];
+                        // The stored plan's residual ledger is the reservation after the
+                        // planned debit. Earlier camp commits can only lower it further.
+                        foreach (var source in localSources.Where(s => s.Id == debit.Source.Id))
+                        {
+                            var state = SourceState(w, source.Id);
+                            if (state != null) source.Available = Math.Min(source.Available,
+                                Math.Max(0, state.Remaining * source.Share));
+                        }
+                    }
+                }
+                // Cross-camp source competition may have exhausted a source beyond
+                // the planned debit. Clamp the residual snapshot to authoritative state.
+                foreach (var source in localSources)
+                {
+                    var state = SourceState(w, source.Id);
+                    if (state != null) source.Available = Math.Min(source.Available,
+                        Math.Max(0, state.Remaining * source.Share));
+                }
+            }
+            if (captureRawBaseline)
+                needs.BaselineReceipts = Materials.ToDictionary(material => material,
+                    material => record.MaterialTransfers.Skip(baselineReceiptStart)
+                        .Where(receipt => receipt.Camp == c.Id && receipt.Material == material && receipt.Phase != "elder-raw")
+                        .Sum(receipt => Math.Max(0, receipt.Amount)));
             return housing;
         }
         public static HousingMaterialPlan Gather(WorldState w, Camp c, CraftRecipe[] recipes, TurnHorizon horizon, double generalistIntervals, ref double equipment, TurnRecord record, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, TurnNeeds needs = null)
             => Gather(w, c, recipes, horizon.ReferenceIntervals, horizon.Years, generalistIntervals, ref equipment, record, fieldWorkAlreadyResolved, potsAlreadyDecayed, needs);
+
+        // Canonical late settlement. This is intentionally separate from
+        // Gather so no raw stock can affect baseline gathering, crafting,
+        // trade, needs, or storage in this turn.
+        internal static void SettleElderRawMaterials(WorldState w,
+            IReadOnlyDictionary<int, TurnNeeds> needsByCamp, TurnRecord record)
+        {
+            if (w == null || needsByCamp == null || record == null ||
+                !w.Config.ElderRawMaterialsEnabled ||
+                w.Config.EconomicAllocation != EconomicAllocationStrategy.DemandControl) return;
+            double days = record.StartDays + record.Duration;
+            var campsById = w.Camps.ToDictionary(c => c.Id);
+            var diagnostics = ResolutionMetrics.CaptureDetailedCounters ? TurnDiagnostics.For(w) : null;
+            if (diagnostics != null) Interlocked.Add(ref diagnostics.RawSettlementCampIndexEntries, campsById.Count);
+            foreach (var item in needsByCamp.OrderBy(p => p.Key))
+            {
+                if (diagnostics != null) Interlocked.Increment(ref diagnostics.RawSettlementNeedRows);
+                campsById.TryGetValue(item.Key, out var camp);
+                var needs = item.Value;
+                var allowances = needs?.Order?.RawMaterialAllowances;
+                if (camp == null || allowances == null) continue;
+                foreach (var allowance in allowances.Where(a => a != null)
+                    .OrderBy(a => a.Material).ThenBy(a => a.Role, StringComparer.Ordinal)
+                    .ThenBy(a => a.RequestId, StringComparer.Ordinal))
+                {
+                    if (diagnostics != null) Interlocked.Increment(ref diagnostics.RawSettlementAllowanceRows);
+                    double rate = SpecialistProductivity.ExtractionRate(w, camp,
+                        allowance.Material, allowance.Role);
+                    if (!(rate > 0) || allowance.WorkerIntervals <= 1e-10 ||
+                        needs.PreBaselineInventory == null || needs.BaselineReceipts == null ||
+                        !needs.PreBaselineInventory.TryGetValue(allowance.Material, out double preBaseline) ||
+                        !needs.BaselineReceipts.TryGetValue(allowance.Material, out double baselineReceipts)) continue;
+                    double deficit = Math.Max(0, allowance.TargetStock - preBaseline - baselineReceipts);
+                    double remaining = Math.Min(allowance.Units,
+                        Math.Min(allowance.ServiceFraction * deficit,
+                            allowance.WorkerIntervals * rate));
+                    if (!(remaining > 1e-10)) continue;
+                    if (diagnostics != null) Interlocked.Increment(ref diagnostics.RawSettlementSourceQueries);
+                    var eligible = new HashSet<string>(allowance.EligibleSourceIds ?? Array.Empty<string>(), StringComparer.Ordinal);
+                    var localSources = KnownSources(w, camp, days)
+                        .Where(source => source.Material == allowance.Material && eligible.Contains(source.Id))
+                        .OrderBy(source => source.Distance).ThenBy(source => source.Id, StringComparer.Ordinal)
+                        .ThenBy(source => source.Tile).ToArray();
+                    double labor = allowance.WorkerIntervals;
+                    foreach (var source in localSources)
+                    {
+                        if (remaining <= 1e-10 || labor <= 1e-10) break;
+                        var state = SourceState(w, source.Id);
+                        if (state != null) source.Available = Math.Min(source.Available,
+                            Math.Max(0, state.Remaining * source.Share));
+                        if (source.Available <= 1e-10) continue;
+                        double work = Math.Min(labor,
+                            Math.Min(remaining, source.Available) / rate);
+                        if (!(work > 1e-10)) continue;
+                        int before = record.MaterialTransfers.Count;
+                        double spent = ExtractKnown(w, camp, source, allowance.Role,
+                            work, Math.Min(remaining, source.Available), days, record,
+                            true, "elder-raw", allowance.RequestId);
+                        if (!(spent > 1e-10) || record.MaterialTransfers.Count <= before) continue;
+                        double received = Math.Max(0, record.MaterialTransfers[record.MaterialTransfers.Count - 1].Amount);
+                        remaining = Math.Max(0, remaining - received);
+                        labor = Math.Max(0, labor - spent);
+                        state = SourceState(w, source.Id);
+                        if (state != null)
+                            foreach (var alias in localSources.Where(s => s.Id == source.Id))
+                                alias.Available = Math.Max(0, state.Remaining * alias.Share);
+                    }
+                }
+            }
+        }
+
         public static double Inventory(Camp c, MaterialId material) => material == MaterialId.Stone ? c.Inventory.Stone : material == MaterialId.Clay ? c.Inventory.Clay : c.Inventory.Wood;
         public static string Specialist(MaterialId material) => material == MaterialId.Stone ? WorkforceRoles.Stonecutter : material == MaterialId.Clay ? WorkforceRoles.ClayMiner : material == MaterialId.Wood ? WorkforceRoles.Woodcutter : null;
         // Mirror the ordered recipe/role plan without changing stock or gaining progress.

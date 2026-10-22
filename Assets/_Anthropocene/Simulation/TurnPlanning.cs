@@ -63,6 +63,12 @@ namespace Anthropocene.Simulation
         internal bool ProtectedClothing;
         internal Dictionary<CraftGood, double> Production;
         internal HousingMaterialPlan Housing;
+        // Raw authorization is conditional on resolver-time residuals. These
+        // are the exact target and inventory values frozen at preparation; the
+        // pre-baseline inventory and receipts are filled only by Gather.
+        internal BaselineMaterialTargets BaselineMaterialTargets;
+        internal Dictionary<MaterialId, double> PreBaselineInventory;
+        internal Dictionary<MaterialId, double> BaselineReceipts;
         // The camp's Value-rule production order, fixed for the turn (WP3b); null otherwise.
         internal ProductionOrder Order;
     }
@@ -664,6 +670,26 @@ namespace Anthropocene.Simulation
                 double equipment = new ToolCoverageBudget(world, snapshot, prepared.Horizon).Remaining;
                 needs.Production = MaterialEconomy.Forecast(world, snapshot, recipes, prepared.Horizon, equipment, true, residents, false, false, -1, -1, sources, order);
                 needs.Housing = MaterialEconomy.PlanHousingMaterials(world, snapshot, recipes, needs.Production, years, world.Days, sources, order);
+                prepared.ElderDecisions.TryGetValue(camp.Id, out var elderDecision);
+                if (order != null && world.Config.ElderRawMaterialsEnabled &&
+                    world.Config.EconomicAllocation == EconomicAllocationStrategy.DemandControl)
+                {
+                    var allocation = elderDecision?.Allocation;
+                    if (allocation == null) prepared.DemandAllocations.TryGetValue(camp.Id, out allocation);
+                    if (allocation != null)
+                    {
+                        var baseline = MaterialEconomy.BuildBaselineMaterialTargets(world,
+                            recipes, years, needs);
+                        needs.BaselineMaterialTargets = baseline;
+                        order.PhaseAExtractionIntervals = new Dictionary<string, double>(
+                            allocation.PhaseAExtractionIntervals, StringComparer.Ordinal);
+                        DemandController.FinalizeRawMaterialPhase(world, snapshot, economy,
+                            order, allocation, elderDecision?.Accepted ?? new ElderDirective(), baseline, prepared.Horizon);
+                        if (elderDecision?.Accepted?.ServiceLevels != null && elderDecision.Accepted.ServiceLevels.Length > 5)
+                            elderDecision.Accepted.ServiceLevels[5] = allocation.ServiceRequested[5] > 1e-9
+                                ? ElderRLContract.Unit(allocation.ServiceGranted[5] / allocation.ServiceRequested[5]) : 1;
+                    }
+                }
                 needs.PlantFeedstock = needs.Production[CraftGood.Cloth] * world.Config.Neolithic.PlantFoodPerFabricUnit;
                 needs.AnimalFeedstock = needs.Production[CraftGood.AnimalFabric];
                 // Clothing-need feedstock is paid after this cohort's consumption

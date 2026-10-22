@@ -152,7 +152,8 @@ namespace Anthropocene.Simulation
         internal sealed class Request
         {
             // A goods request names its Good; a labour request (herd growth, field expansion) its Role, in persons.
-            public string Service; public ServiceClass Class; public CraftGood? Good; public string Role; public double Units, Granted; public string Unmet = "";
+            public string Service; public ServiceClass Class; public CraftGood? Good; public string Role; public double Units, Granted, NativeUnits; public string Unmet = "";
+            internal MaterialId? RawMaterial; internal string ExtractionRole, RequestId; internal double ServiceEquivalentPerUnit;
             // Development requests are ordered by physical retained food per
             // recurring worker-year. WholeUnits marks livestock heads; a
             // fractional grant is not an economic authorization to breed.
@@ -175,6 +176,11 @@ namespace Anthropocene.Simulation
             public int Herders, Farmers, Fishers, FoodGatherers;
             public double FishingFood, FeedstockGatherers,
                 MaterialGatherers, ToolsMade;
+            // Frozen Phase-A labour ledger exported for the later raw-material continuation.
+            public int PhaseANonGathererStaff, PhaseAUnassignedResidents, PhaseAFallbackGathererResidents;
+            public double PhaseAFoodGathererIntervals, PhaseAMaterialGathererIntervals, PhaseAFallbackGathererIntervals;
+            public readonly Dictionary<string, double> PhaseAExtractionIntervals = new Dictionary<string, double>(StringComparer.Ordinal);
+            public readonly Dictionary<string, int> PhaseBStaff = new Dictionary<string, int>(StringComparer.Ordinal);
             public double HCurrent, HSustainable, HAbsolute, HGrown, HRetained;
             public double RetainedFoodSupply, DevelopmentFoodGap;
             public double RetainedFarmerPlantService,
@@ -306,6 +312,83 @@ namespace Anthropocene.Simulation
 
         internal delegate DevelopmentChoice DevelopmentSearch(
             DevelopmentSearchContext context);
+
+        // Phase-B continuation: this runs only after exact production and
+        // housing forecasts have produced the shared baseline gather plan.
+        internal static void FinalizeRawMaterialPhase(WorldState w, Camp c,
+            EconomicIntent intent, ProductionOrder production, Allocation allocation,
+            ElderDirective requested, BaselineMaterialTargets baseline, TurnHorizon horizon)
+        {
+            if (w == null || c == null || intent == null || production == null || allocation == null || baseline == null ||
+                !w.Config.ElderRawMaterialsEnabled || w.Config.EconomicAllocation != EconomicAllocationStrategy.DemandControl)
+                return;
+            var cfg = w.Config; var n = cfg.Neolithic;
+            double intervals = horizon.ReferenceIntervals;
+            double level = requested?.ServiceLevels != null && requested.ServiceLevels.Length > 5 && ElderRLContract.Finite(requested.ServiceLevels[5])
+                ? ElderRLContract.Unit(requested.ServiceLevels[5]) : 1;
+            int residentsLeft = allocation.PhaseAUnassignedResidents;
+            var receipts = new List<ProductionOrder.RawMaterialAllowance>();
+            foreach (var material in MaterialEconomy.Materials.OrderBy(m => m))
+            {
+                double priority = material == MaterialId.Stone ? c.StonePriority : material == MaterialId.Clay ? c.ClayPriority : c.WoodPriority;
+                if (!(priority > 0)) continue;
+                string role = MaterialEconomy.Specialist(material);
+                if (!c.People.HasTech(EconomicIntents.RequiredTechnology(role))) role = WorkforceRoles.Gatherer;
+                double perInterval = SpecialistProductivity.ExtractionRate(w, c, material, role);
+                double annualRate = perInterval * cfg.DaysPerYear / cfg.BaseDays;
+                if (!(perInterval > 0) || !(annualRate > 0) || double.IsInfinity(annualRate)) continue;
+                var eligibleSourceIds = MaterialEconomy.KnownSources(w, c, w.Days)
+                    .Where(s => s.Material == material && s.Available > 1e-10).Select(s => s.Id)
+                    .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+                if (eligibleSourceIds.Length == 0) continue;
+                double floor = Math.Max(n.ElderRawMaterialMinimumUnits,
+                    Math.Min(n.ElderRawMaterialMaximumUnits, c.Population * n.ElderRawMaterialUnitsPerResident)) * Math.Min(1, priority);
+                double inventory = MaterialEconomy.Inventory(c, material);
+                double target = baseline.ByMaterial.TryGetValue(material, out double t) ? t : 0;
+                double wanted = Math.Max(0, target + floor - inventory);
+                if (!(wanted > 1e-10)) continue;
+                double scaled = wanted * level;
+                int headcount = scaled > 0 ? Math.Min(residentsLeft,
+                    (int)Math.Ceiling(scaled / Math.Max(1e-12, perInterval * intervals))) : 0;
+                double dedicatedIntervals = headcount * intervals;
+                double grant = Math.Min(scaled, dedicatedIntervals * perInterval);
+                if (grant > 0 && !(dedicatedIntervals > 0)) continue;
+                string id = "elder-raw:" + w.Turn.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + c.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + (int)material;
+                var bundle = new Bundle();
+                if (material == MaterialId.Stone) bundle.Stone = 1;
+                else if (material == MaterialId.Clay) bundle.Clay = 1;
+                else bundle.Wood = 1;
+                bundle.RoleYears[role] = 1 / annualRate;
+                var request = new Request { Service = "materials", Class = ServiceClass.Development,
+                    Units = wanted, Granted = grant, NativeUnits = wanted, Bundle = bundle,
+                    RawMaterial = material, ExtractionRole = role, RequestId = id,
+                    ServiceEquivalentPerUnit = 1 / annualRate };
+                allocation.Requests.Add(request);
+                allocation.ServiceRequested[5] += wanted / annualRate;
+                allocation.ServiceGranted[5] += grant / annualRate;
+                if (grant > 0)
+                {
+                    receipts.Add(new ProductionOrder.RawMaterialAllowance { Material = material, Role = role,
+                        Units = grant, RequestId = id, WorkerIntervals = dedicatedIntervals,
+                        EligibleSourceIds = eligibleSourceIds, TargetStock = target + floor,
+                        ServiceFraction = level });
+                    residentsLeft -= headcount;
+                    if (role == WorkforceRoles.Gatherer)
+                    {
+                        intent.Labor.MaterialGatherers = Math.Min(c.Population,
+                            intent.Labor.MaterialGatherers + headcount);
+                    }
+                    else
+                    {
+                        var assignment = intent.Assignments.FirstOrDefault(a => a.Role == role);
+                        if (assignment == null) intent.Assignments.Add(new PopulationAssignment { Role = role, Population = headcount });
+                        else assignment.Population += headcount;
+                        allocation.PhaseBStaff[role] = allocation.PhaseBStaff.TryGetValue(role, out int staff) ? staff + headcount : headcount;
+                    }
+                }
+            }
+            production.RawMaterialAllowances.AddRange(receipts);
+        }
 
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, out ProductionOrder production, out Allocation allocation)
             => Plan(w, c, settings, null, out production, out allocation);
@@ -2652,6 +2735,24 @@ namespace Anthropocene.Simulation
             intent.Assignments = intent.Assignments.Where(a => a.Population > 0).OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
             int nonGatherers = intent.Assignments.Sum(a => a.Population);
             intent.Labor.MaterialGatherers = Math.Min(Math.Max(0, residents - nonGatherers), alloc.MaterialGatherers);
+            alloc.PhaseANonGathererStaff = nonGatherers;
+            alloc.PhaseAFoodGathererIntervals = Math.Max(0, alloc.FoodGatherers) * intervals;
+            alloc.PhaseAMaterialGathererIntervals = Math.Max(0, intent.Labor.MaterialGatherers) * intervals;
+            foreach (string role in MaterialEconomy.ExtractionRoles)
+            {
+                int assigned = intent.Assignments.Where(a => a.Role == role).Sum(a => a.Population);
+                double roleIntervals = role == WorkforceRoles.Gatherer
+                    ? intent.Labor.MaterialGatherers * intervals : assigned * intervals;
+                alloc.PhaseAExtractionIntervals[role] = Math.Max(0, roleIntervals);
+            }
+            int afterCommitted = Math.Max(0, (int)Math.Floor(residents - nonGatherers - intent.Labor.MaterialGatherers - alloc.FoodGatherers - alloc.FeedstockGatherers + Epsilon));
+            // Every interval remaining after Phase-A intent/staffing is used by
+            // native fallback gathering in the resolver, including residents
+            // released when a previously assigned specialist is staffed lower.
+            // There is no separately established idle-labor contract yet.
+            alloc.PhaseAFallbackGathererResidents = afterCommitted;
+            alloc.PhaseAFallbackGathererIntervals = alloc.PhaseAFallbackGathererResidents * intervals;
+            alloc.PhaseAUnassignedResidents = 0;
             intent.Labor.EquipmentTarget = Math.Min(residents, alloc.Staff.Where(p => !WorkforceRoles.Extractors.Contains(p.Key) && p.Key != WorkforceRoles.Herder && p.Key != WorkforceRoles.Farmer && p.Key != WorkforceRoles.Fisher).Sum(p => p.Value));
             // Build farmers are the field-expansion staff, on top of the operating farmers.
             intent.Labor.ExpansionFarmers = alloc.Staff.TryGetValue(WorkforceRoles.Farmer, out int builders) ? builders : 0;

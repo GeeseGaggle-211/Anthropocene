@@ -374,8 +374,12 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 var labor = agriculturalLabor[camp.Id];
-                double gatherers = camp.EconomicLabor?.PolicyAuthority == true
-                    ? Math.Max(0, labor.Gatherers - camp.EconomicLabor.MaterialGatherers) : labor.Gatherers;
+                double gatherers = PassiveFoodGathererIntervals(camp, needs.TryGetValue(camp.Id, out var preparedNeeds) ? preparedNeeds : null,
+                    labor.Gatherers, intervals);
+                // Phase-B Elder raw-material Gatherers are genuinely dedicated
+                // workers, even though DemandControl does not make its entire
+                // economic labor plan policy-authoritative. Remove only these
+                // newly committed intervals from food gathering.
                 if (CultivationEconomy.Enabled(camp) && !abandoningVillages.Contains(camp.Id))
                 {
                     // Field and nearby gathering tiles receive one turn-horizon
@@ -499,7 +503,13 @@ namespace Anthropocene.Simulation
                 var labor = agriculturalLabor[camp.Id];
                 double gathered = gatheredFoodForMaterials.TryGetValue(camp.Id, out double amount) ? amount : 0;
                 labor.GatheringWorkerIntervals = Math.Min(labor.Gatherers * intervals, gathered / w.Config.GatherPerPerson);
-                NeolithicProduction.ResolveCampNeolithic(w, camp, horizon, record, Math.Max(0, labor.Gatherers * intervals - labor.GatheringWorkerIntervals), needs[camp.Id], !tradeAfterProduction);
+                double phaseBRawGathererIntervals = needs[camp.Id]?.Order?.RawMaterialAllowances?
+                    .Where(a => a != null && a.Role == WorkforceRoles.Gatherer)
+                    .Sum(a => Math.Max(0, a.WorkerIntervals)) ?? 0;
+                double baselineMaterialGathererIntervals = Math.Max(0,
+                    labor.Gatherers * intervals - labor.GatheringWorkerIntervals - phaseBRawGathererIntervals);
+                NeolithicProduction.ResolveCampNeolithic(w, camp, horizon, record,
+                    baselineMaterialGathererIntervals, needs[camp.Id], !tradeAfterProduction);
                 if (CultivationEconomy.Enabled(camp))
                 {
                     foreach (int id in labor.Footprint) { LazyEcology.MaterializeEcology(w, id, record.StartDays + record.Duration); w.Tiles[id].Cultivation = (float)CultivationEconomy.Intensity(w.Config, w.Tiles[id].CultivationCapital); }
@@ -522,6 +532,13 @@ namespace Anthropocene.Simulation
                 Supply.Finish(w, record);
             }
             ApplyStorage(w, record, intervals);
+
+            // Raw material authorization is settled globally only after every
+            // camp's baseline gather, production, optional goods trade, needs,
+            // and storage have completed. Its stock is next-turn inventory.
+            if (w.Config.ElderRawMaterialsEnabled &&
+                w.Config.EconomicAllocation == EconomicAllocationStrategy.DemandControl)
+                MaterialEconomy.SettleElderRawMaterials(w, needs, record);
 
             // Physical service and goods settle against the locked cohort. Gross natural events become authoritative
             // only after storage, so newborns cannot create same-turn capacity and deaths cannot erase it.
@@ -554,6 +571,19 @@ namespace Anthropocene.Simulation
 
             w.Days += record.Duration;
             FinishDemographicReports(w, record, orders);
+        }
+
+        internal static double PassiveFoodGathererIntervals(Camp camp, TurnNeeds needs, double availableFoodGatherers, double intervals)
+        {
+            if (camp?.EconomicLabor?.PolicyAuthority == true)
+                return Math.Max(0, availableFoodGatherers - camp.EconomicLabor.MaterialGatherers);
+            if (needs?.Order?.RawMaterialAllowances == null || needs.Order.RawMaterialAllowances.Count == 0)
+                return Math.Max(0, availableFoodGatherers);
+            double phaseA = needs?.Order?.PhaseAExtractionIntervals != null &&
+                needs.Order.PhaseAExtractionIntervals.TryGetValue(WorkforceRoles.Gatherer, out double frozen)
+                    ? frozen : 0;
+            double phaseB = needs?.Order?.RawMaterialAllowances?.Where(a => a.Role == WorkforceRoles.Gatherer).Sum(a => a.WorkerIntervals) ?? 0;
+            return Math.Max(0, availableFoodGatherers - (phaseA + phaseB) / Math.Max(1e-12, intervals));
         }
 
         // Membership is fixed after movement; all quantities below are refreshed at

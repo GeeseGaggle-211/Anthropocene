@@ -235,6 +235,14 @@ internal static class Program
     }
     private static int Main(string[] args)
     {
+        if (args.Contains("--flagoff-compare"))
+        {
+            string reference = args[Array.IndexOf(args, "--flagoff-compare") + 1];
+            string report = args[Array.IndexOf(args, "--flagoff-compare") + 2];
+            string baselineCommit = args[Array.IndexOf(args, "--flagoff-compare") + 3];
+            string currentCommit = args[Array.IndexOf(args, "--flagoff-compare") + 4];
+            return FlagOffCompatibilityChecks.Run(reference, report, baselineCommit, currentCommit);
+        }
         if (args.Contains("--economic-allocation-oracle")) { EconomicAllocationOracleChecks.Run(args); return 0; }
         if (args.Contains("--economic-settlement-probe")) { EconomicSettlementChecks.Probe(); return 0; }
         if (args.Contains("--issue31-microbench")) { Issue31Microbench(); return 0; }
@@ -444,6 +452,8 @@ internal static class Program
         if (args.Contains("--autonomous-elder-benchmark")) { AutonomousElderChecks.Benchmark(); return 0; }
         if (args.Contains("--autonomous-elder-fixture")) { System.IO.File.WriteAllBytes(args[Array.IndexOf(args, "--autonomous-elder-fixture") + 1], SaveCodec.Save(AutonomousElderChecks.Fixture(true))); return 0; }
         if (args.Contains("--elder-rl-only")) { ElderRLChecks.Run(); return 0; }
+        if (args.Contains("--model9-only")) { Console.WriteLine("PASS: " + ElderModel9Checks.Run() + " model9 assertions"); return 0; }
+        if (args.Contains("--demand-control-only")) { Console.WriteLine("PASS: " + DemandControlChecks.Run() + " demand-control assertions"); return 0; }
         if (args.Contains("--horizon-only")) { HorizonEcologyChecks.Run(); HorizonCultivationChecks.Run(); HorizonExecutionChecks.Run(); return 0; }
         if (args.Contains("--land-food-only")) { AquaticChecks.Run(); HorizonEcologyChecks.Run(); Issue27EcologyChecks.Run(); return 0; }
         if (args.Contains("--neolithic-only")) { NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); FarmPlannerChecks.Run(); FarmFoodPhaseChecks.Run(); CultivationCacheChecks.Run(); HorizonCultivationChecks.Run(); HorizonEcologyChecks.Run(); HorizonExecutionChecks.Run(); HusbandryChecks.Run(); PastoralCraftChecks.Run(); Issue25EcologyChecks.Run(args); Issue27EcologyChecks.Run(); Issue26ForecastChecks.Run(); Issue28FoodTimebaseChecks.Run(); Issue32CapabilityChecks.Run(); return 0; }

@@ -1082,6 +1082,13 @@ namespace Anthropocene.Simulation
                 var produced = new Dictionary<CraftGood, double>();
                 var roles = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToArray();
                 var laborByRole = roles.ToDictionary(role => role, role => CultivationEconomy.Workers(c, role) * intervals);
+                // Phase-B extraction is staffed from Phase-A's exported idle
+                // residents. Reserve those intervals from recipes as well as food.
+                if (needs?.Order?.RawMaterialAllowances != null)
+                    foreach (var allowance in needs.Order.RawMaterialAllowances)
+                        if (allowance != null && laborByRole.ContainsKey(allowance.Role))
+                            laborByRole[allowance.Role] = Math.Max(0,
+                                laborByRole[allowance.Role] - allowance.WorkerIntervals);
                 // The Value order (when this camp has one) fixes the order in which
                 // recipes claim shared tool coverage and material; the planner and
                 // forecast walk the same sequence.

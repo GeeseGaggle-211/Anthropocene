@@ -56,7 +56,7 @@ internal static class DemandControlChecks
 
     public static int Run()
     {
-        checks = 0; Config(); Purity(); ReserveFeedstockClosure(); IncomingFeedstockToolClosure(); HousingReference();
+        checks = 0; Config(); Purity(); ReserveFeedstockClosure(); IncomingFeedstockToolClosure(); HousingReference(); RawMaterialContinuation();
         TypedFeedstockPriority(); HousingMaterialCeiling(); Saturation(); FishingIntegration(); FishingMealBreakpoint(); Turns();
         Console.WriteLine("PASS: " + checks + " demand-control assertions"); return checks;
     }
@@ -357,6 +357,388 @@ internal static class DemandControlChecks
         var disabled = World(EconomicAllocationStrategy.DemandControl, (6, 6, 60)); var dc = CampOf(disabled, 1);
         dc.Technologies = new bool[Enum.GetValues(typeof(Technology)).Length]; dc.Technology = Technology.None;
         Check(!CultivationEconomy.EconomyEnabled(disabled, dc), "feature-off eligibility remains unchanged");
+    }
+
+    private static void RawMaterialContinuation()
+    {
+        var releasedWorld = NeolithicChecks.Fixture();
+        releasedWorld.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        releasedWorld.Config.ElderRawMaterialsEnabled = true;
+        var releasedCamp = releasedWorld.Camps[0];
+        releasedCamp.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Stonecutter, Population = 99 });
+        int priorSpecialists = releasedCamp.Workforce.Assignments.Where(a => a.Role != WorkforceRoles.Gatherer).Sum(a => a.Population);
+        var releasedIntent = DemandController.Plan(releasedWorld, releasedCamp, EconomicIntent.From(releasedCamp),
+            out _, out var releasedAllocation);
+        int replannedSpecialists = releasedIntent.Assignments.Where(a => a.Role != WorkforceRoles.Gatherer).Sum(a => a.Population);
+        double postIntentResidual = Math.Max(0, releasedCamp.Population - replannedSpecialists - releasedIntent.Labor.MaterialGatherers -
+            releasedAllocation.FoodGatherers - releasedAllocation.FeedstockGatherers);
+        Check(priorSpecialists > replannedSpecialists && releasedAllocation.PhaseAUnassignedResidents == 0 &&
+              releasedAllocation.PhaseAFallbackGathererResidents == postIntentResidual,
+            "replanning down from prior specialist staffing commits every newly released residual interval to native fallback, never Phase B (prior=" + priorSpecialists + ", planned=" + replannedSpecialists + ", fallback=" + releasedAllocation.PhaseAFallbackGathererResidents + ", idle=" + releasedAllocation.PhaseAUnassignedResidents + ", residual=" + postIntentResidual + ")");
+
+        var w = NeolithicChecks.Fixture(); var c = w.Camps[0];
+        w.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        w.Config.ElderRawMaterialsEnabled = true;
+        w.Config.Neolithic.MaterialReserveHorizonYears = 40;
+        int count = w.Tiles.Length;
+        w.Resources = new WorldResourceState { MaximumQuantity = 100000, CatalogHash = ResourceCatalog.Hash,
+            ProfileHash = ResourceCatalog.Hash, ConfigurationHash = ResourceCatalog.Hash,
+            Provinces = Array.Empty<GeologicalProvince>(), Province = new ushort[count], History = new ushort[count],
+            Host = new byte[count], Marine = new byte[count], Stone = new ushort[count], Clay = new ushort[count], Wood = new ushort[count] };
+        foreach (int tile in w.Map.Radius(c.Tile, 1))
+        { w.Resources.Stone[tile] = 1000; w.Resources.Clay[tile] = 1000; w.Resources.Wood[tile] = 1000; }
+        var intent = DemandController.Plan(w, c, EconomicIntent.From(c), out var order, out var allocation);
+        var originalRequests = allocation.Requests.Select(q => (Request: q, q.Units, q.Granted)).ToArray();
+        var originalStaff = allocation.Staff.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray();
+        var originalExtractionIntervals = allocation.PhaseAExtractionIntervals.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray();
+        int originalNonGatherers = allocation.PhaseANonGathererStaff;
+        int originalUnassigned = allocation.PhaseAUnassignedResidents;
+        double originalGatherers = allocation.PhaseAMaterialGathererIntervals;
+        var originalCeilings = Enum.GetValues(typeof(CraftGood)).Cast<CraftGood>().ToDictionary(g => g, order.Ceiling);
+        var horizon = TurnHorizon.Next(w);
+        var planningCamp = EconomicPlanner.Preview(c, intent, c.Population);
+        var recipes = NeolithicProduction.Recipes(w, planningCamp);
+        double equipment = new ToolCoverageBudget(w, planningCamp, horizon).Remaining;
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Toolmaking);
+        c.People.NeolithicTechnologies.Add(NeolithicTech.Carpentry);
+        planningCamp.People.NeolithicTechnologies = new List<string>(c.People.NeolithicTechnologies);
+        planningCamp.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Stonecutter, Population = 2 });
+        planningCamp.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Woodcutter, Population = 2 });
+        var sources = MaterialEconomy.KnownSources(w, planningCamp, w.Days);
+        var comparisonPhaseAIntervals = new Dictionary<string, double>(allocation.PhaseAExtractionIntervals, StringComparer.Ordinal)
+        {
+            [WorkforceRoles.Stonecutter] = 2 * horizon.ReferenceIntervals,
+            [WorkforceRoles.Woodcutter] = 2 * horizon.ReferenceIntervals
+        };
+        var comparisonRecipes = new[]
+        {
+            new CraftRecipe { Good = CraftGood.HandTools, Stone = 10 },
+            new CraftRecipe { Good = CraftGood.Pots, Wood = 10 }
+        };
+        var forecast = comparisonRecipes.ToDictionary(r => r.Good, r => 1d);
+        var needs = new TurnNeeds { Camp = c.Id, Residents = c.Population, Order = order, Production = forecast,
+            Housing = new HousingMaterialPlan(0, 0, new List<HousingMaterialPlan.Reservation>(), new HashSet<CraftGood>(), 0) };
+        var baseline = MaterialEconomy.BuildBaselineGatherPlan(w, planningCamp, comparisonRecipes,
+            horizon.ReferenceIntervals, horizon.Years, allocation.PhaseAMaterialGathererIntervals, needs, sources,
+            comparisonPhaseAIntervals);
+        var rawTargets = MaterialEconomy.BuildBaselineMaterialTargets(w, comparisonRecipes, horizon.Years, needs);
+        // Compare the prepared ordered intent stream against the untouched
+        // legacy Gather loop on an independently reconstructed identical fixture.
+        var legacyWorld = NeolithicChecks.Fixture(); var legacyCamp = legacyWorld.Camps[0];
+        legacyWorld.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        legacyWorld.Config.ElderRawMaterialsEnabled = false;
+        legacyWorld.Config.Neolithic.MaterialReserveHorizonYears = w.Config.Neolithic.MaterialReserveHorizonYears;
+        int legacyCount = legacyWorld.Tiles.Length;
+        legacyWorld.Resources = new WorldResourceState { MaximumQuantity = 100000, CatalogHash = ResourceCatalog.Hash,
+            ProfileHash = ResourceCatalog.Hash, ConfigurationHash = ResourceCatalog.Hash,
+            Provinces = Array.Empty<GeologicalProvince>(), Province = new ushort[legacyCount], History = new ushort[legacyCount],
+            Host = new byte[legacyCount], Marine = new byte[legacyCount], Stone = new ushort[legacyCount], Clay = new ushort[legacyCount], Wood = new ushort[legacyCount] };
+        foreach (int tile in legacyWorld.Map.Radius(legacyCamp.Tile, 1))
+        { legacyWorld.Resources.Stone[tile] = 1000; legacyWorld.Resources.Clay[tile] = 1000; legacyWorld.Resources.Wood[tile] = 1000; }
+        var legacyIntent = DemandController.Plan(legacyWorld, legacyCamp, EconomicIntent.From(legacyCamp), out var legacyOrder, out var legacyAllocation);
+        var legacyHorizon = TurnHorizon.Next(legacyWorld);
+        var legacyPlanningCamp = EconomicPlanner.Preview(legacyCamp, legacyIntent, legacyCamp.Population);
+        legacyCamp.People.NeolithicTechnologies = new List<string>(c.People.NeolithicTechnologies);
+        legacyPlanningCamp.People.NeolithicTechnologies = new List<string>(c.People.NeolithicTechnologies);
+        legacyCamp.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Stonecutter, Population = 2 });
+        legacyCamp.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Woodcutter, Population = 2 });
+        legacyPlanningCamp.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Stonecutter, Population = 2 });
+        legacyPlanningCamp.Workforce.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Woodcutter, Population = 2 });
+        var legacyRecipes = comparisonRecipes;
+        var legacySources = MaterialEconomy.KnownSources(legacyWorld, legacyPlanningCamp, legacyWorld.Days);
+        double legacyEquipment = new ToolCoverageBudget(legacyWorld, legacyPlanningCamp, legacyHorizon).Remaining;
+        var legacyForecast = comparisonRecipes.ToDictionary(r => r.Good, r => 1d);
+        var legacyNeeds = new TurnNeeds { Camp = legacyCamp.Id, Residents = legacyCamp.Population, Order = legacyOrder,
+            Production = legacyForecast, Housing = new HousingMaterialPlan(0, 0, new List<HousingMaterialPlan.Reservation>(), new HashSet<CraftGood>(), 0) };
+        var legacyPhaseALabor = new Dictionary<string, double>(legacyAllocation.PhaseAExtractionIntervals, StringComparer.Ordinal)
+        {
+            [WorkforceRoles.Stonecutter] = 2 * legacyHorizon.ReferenceIntervals,
+            [WorkforceRoles.Woodcutter] = 2 * legacyHorizon.ReferenceIntervals
+        };
+        var legacyBaseline = MaterialEconomy.BuildBaselineGatherPlan(legacyWorld, legacyPlanningCamp, legacyRecipes,
+            legacyHorizon.ReferenceIntervals, legacyHorizon.Years, 0, legacyNeeds, legacySources, legacyPhaseALabor);
+        Check(legacyBaseline.Debits.Count > 0, "deterministic comparison fixture has baseline material work");
+        var legacyRecord = new TurnRecord { StartDays = legacyWorld.Days, Duration = legacyWorld.Config.TurnDays };
+        double legacyBudget = new ToolCoverageBudget(legacyWorld, legacyPlanningCamp, legacyHorizon).Remaining;
+        MaterialEconomy.Gather(legacyWorld, legacyPlanningCamp, legacyRecipes, legacyHorizon.ReferenceIntervals,
+            legacyHorizon.Years, legacyAllocation.PhaseAMaterialGathererIntervals, ref legacyBudget, legacyRecord, true, true, legacyNeeds);
+        var expectedDebits = baseline.Debits.Select(d => (d.Source.Id, d.Source.Material, d.Role, d.Units)).ToArray();
+        var actualDebits = legacyRecord.MaterialTransfers.Select(r => (r.Source, r.Material, r.Role, r.Amount)).ToArray();
+        Check(expectedDebits.Length > 0 && expectedDebits.Select(x => x.Role).Distinct(StringComparer.Ordinal).Count() >= 2 &&
+            baseline.Debits.Any(d => d.Horizon > 1 + 1e-12) && expectedDebits.Length == actualDebits.Length && expectedDebits.Zip(actualDebits).All(pair =>
+                pair.First.Id == pair.Second.Source && pair.First.Material == pair.Second.Material && pair.First.Role == pair.Second.Role &&
+                Math.Abs(pair.First.Units - pair.Second.Amount) <= 1e-9),
+            "nonempty shared baseline plan preserves legacy current-input/reserve debit order and amounts across competing roles (plan=" + expectedDebits.Length + ", roles=" + expectedDebits.Select(x => x.Role).Distinct(StringComparer.Ordinal).Count() + ", reserve=" + baseline.Debits.Count(d => d.Horizon > 1 + 1e-12) + ", legacy=" + actualDebits.Length + ")");
+
+        // One authoritative geological body is visible through two local sites
+        // with fractional access. Sequential role debits must conserve the
+        // body's stock, not subtract the body debit from each local alias.
+        var sharedBodySources = new[]
+        {
+            new KnownMaterialSource { Id = "body:shared-stone", Tile = planningCamp.Tile, Material = MaterialId.Stone, Initial = 100, Available = 25, Share = .25, Distance = 0 },
+            new KnownMaterialSource { Id = "body:shared-stone", Tile = planningCamp.Tile + 1, Material = MaterialId.Stone, Initial = 100, Available = 75, Share = .75, Distance = 1 }
+        };
+        var sharedBodyNeeds = new TurnNeeds { Camp = planningCamp.Id, Residents = planningCamp.Population, Order = order,
+            Production = Enum.GetValues(typeof(CraftGood)).Cast<CraftGood>().ToDictionary(g => g, g => g == CraftGood.HandTools ? 20d : 0d),
+            Housing = new HousingMaterialPlan(0, 0, new List<HousingMaterialPlan.Reservation>(), new HashSet<CraftGood>(), 0) };
+        var sharedBodyPlan = MaterialEconomy.BuildBaselineGatherPlan(w, planningCamp, comparisonRecipes,
+            horizon.ReferenceIntervals, horizon.Years, 100, sharedBodyNeeds, sharedBodySources,
+            new Dictionary<string, double>(StringComparer.Ordinal)
+            { [WorkforceRoles.Stonecutter] = 100, [WorkforceRoles.Gatherer] = 100 });
+        double bodyDebited = sharedBodyPlan.Debits.Where(d => d.Source.Id == "body:shared-stone").Sum(d => d.Units);
+        double bodyResidual = sharedBodyPlan.ResidualSources.Where(s => s.Id == "body:shared-stone").Sum(s => s.Available);
+        Check(sharedBodyPlan.Debits.Count(d => d.Source.Id == "body:shared-stone") >= 2 && bodyDebited > 0 && bodyDebited < 100 &&
+            Math.Abs(bodyResidual - (100 - bodyDebited)) < 1e-8,
+            "fractional shared-body aliases conserve authoritative stock across sequential extraction-role debits (debits=" + bodyDebited + ", residual=" + bodyResidual + ")");
+        order.BaselineGatherPlan = baseline;
+        DemandController.FinalizeRawMaterialPhase(w, planningCamp, intent, order, allocation,
+            new ElderDirective { ServiceLevels = new[] { 1d, 1, 1, 1, 1, 1 } }, rawTargets, horizon);
+        Check(ReferenceEquals(order.BaselineGatherPlan, baseline), "resolution order owns the exact prepared baseline-plan object");
+        Check(originalRequests.All(x => allocation.Requests.Contains(x.Request) && x.Request.Units == x.Units && x.Request.Granted == x.Granted),
+            "Phase-B continuation leaves every Phase-A request and grant unchanged");
+        Check(originalNonGatherers == allocation.PhaseANonGathererStaff && originalUnassigned == allocation.PhaseAUnassignedResidents &&
+            originalGatherers == allocation.PhaseAMaterialGathererIntervals && originalStaff.SequenceEqual(allocation.Staff.OrderBy(p => p.Key, StringComparer.Ordinal)) &&
+            originalExtractionIntervals.SequenceEqual(allocation.PhaseAExtractionIntervals.OrderBy(p => p.Key, StringComparer.Ordinal)),
+            "Phase-A staffing and exported idle pool remain frozen");
+        var overlapAllocation = new DemandController.Allocation();
+        overlapAllocation.PhaseAUnassignedResidents = 10;
+        overlapAllocation.Staff[WorkforceRoles.Stonecutter] = 2;
+        overlapAllocation.PhaseAExtractionIntervals[WorkforceRoles.Stonecutter] = 2 * horizon.ReferenceIntervals;
+        var overlapPhaseAIntervals = overlapAllocation.PhaseAExtractionIntervals[WorkforceRoles.Stonecutter];
+        var overlapPhaseAStaff = overlapAllocation.Staff[WorkforceRoles.Stonecutter];
+        c.StonePriority = 1;
+        DemandController.FinalizeRawMaterialPhase(w, planningCamp, intent, new ProductionOrder(order.Goods, new Dictionary<CraftGood, double>()), overlapAllocation,
+            new ElderDirective { ServiceLevels = new[] { 1d, 1, 1, 1, 1, 1 } }, rawTargets, horizon);
+        Check(overlapAllocation.PhaseBStaff.Count > 0 && overlapAllocation.PhaseBStaff.ContainsKey(WorkforceRoles.Stonecutter) &&
+            overlapAllocation.PhaseAExtractionIntervals[WorkforceRoles.Stonecutter] == overlapPhaseAIntervals &&
+            overlapAllocation.Staff[WorkforceRoles.Stonecutter] == overlapPhaseAStaff,
+            "overlapping Phase-B specialist staff is separate while its Phase-A staff and intervals remain frozen");
+        var fractionalAllocation = new DemandController.Allocation { PhaseAUnassignedResidents = 10 };
+        var fractionalOrder = new ProductionOrder(Array.Empty<CraftGood>(), new Dictionary<CraftGood, double>());
+        DemandController.FinalizeRawMaterialPhase(w, planningCamp, intent, fractionalOrder, fractionalAllocation,
+            new ElderDirective { ServiceLevels = new[] { 0d, 0, 0, 0, 0, .35 } }, rawTargets, horizon);
+        var fractionalRequests = fractionalAllocation.Requests.Where(r => r.RawMaterial.HasValue).ToArray();
+        Check(fractionalRequests.Length > 0 && fractionalRequests.Any(r => r.Granted > 1e-9) &&
+              fractionalRequests.All(r => r.Granted <= .35 * r.Units + 1e-8) &&
+              fractionalOrder.RawMaterialAllowances.All(a => a.Units <= .35 * a.TargetStock + 1e-8),
+            "non-vacuous fractional service proportionally caps each typed raw authorization when a frozen unused pool exists");
+        Check(Enum.GetValues(typeof(CraftGood)).Cast<CraftGood>().All(g => originalCeilings[g] == order.Ceiling(g)),
+            "Phase-B does not reopen any existing goods ceiling");
+        Check(allocation.Requests.Where(q => q.RawMaterial.HasValue).All(q => q.Class == DemandController.ServiceClass.Development && q.Bundle != null &&
+            q.Bundle.Plant == 0 && q.Bundle.Animal == 0 && q.Bundle.FoodService == 0 && q.Bundle.ToolOutputs == 0),
+            "raw requests are typed Development bundles with no direct food or tool cost");
+        Check(order.RawMaterialAllowances.All(a => a.WorkerIntervals <= originalUnassigned * horizon.ReferenceIntervals + 1e-9),
+            "dedicated raw worker intervals fit the Phase-A genuinely unassigned pool");
+        Check(allocation.PhaseAFallbackGathererIntervals == allocation.PhaseAFallbackGathererResidents * horizon.ReferenceIntervals &&
+              allocation.PhaseAFallbackGathererResidents + allocation.PhaseAUnassignedResidents <= c.Population,
+            "Phase-A native fallback gatherers are frozen separately from the residual dedicated worker pool");
+        var fallbackOnlyAllocation = new DemandController.Allocation
+        { PhaseAUnassignedResidents = 0, PhaseAFallbackGathererResidents = 5,
+          PhaseAFallbackGathererIntervals = 5 * horizon.ReferenceIntervals };
+        var fallbackOnlyOrder = new ProductionOrder(Array.Empty<CraftGood>(), new Dictionary<CraftGood, double>());
+        DemandController.FinalizeRawMaterialPhase(w, planningCamp, intent, fallbackOnlyOrder, fallbackOnlyAllocation,
+            new ElderDirective { ServiceLevels = new[] { 1d, 1, 1, 1, 1, 1 } }, rawTargets, horizon);
+        Check(fallbackOnlyOrder.RawMaterialAllowances.Count == 0 && fallbackOnlyAllocation.PhaseBStaff.Count == 0 &&
+              fallbackOnlyAllocation.Requests.Where(r => r.RawMaterial.HasValue).All(r => r.Granted == 0),
+            "Phase-B authorization is zero when the entire residual cohort is already committed to native fallback gathering");
+
+        var exhaustedWorld = NeolithicChecks.Fixture(); var exhaustedCamp = exhaustedWorld.Camps[0];
+        exhaustedWorld.Config.ElderRawMaterialsEnabled = true;
+        var exhaustedPlanning = EconomicPlanner.Preview(exhaustedCamp, EconomicIntent.From(exhaustedCamp), exhaustedCamp.Population);
+        var knownBeforeExhaustion = MaterialEconomy.KnownSources(exhaustedWorld, exhaustedPlanning, exhaustedWorld.Days);
+        foreach (var source in knownBeforeExhaustion.GroupBy(s => s.Id, StringComparer.Ordinal).Select(g => g.First()))
+        {
+            var state = MaterialEconomy.SourceState(exhaustedWorld, source.Id);
+            if (state == null)
+            {
+                state = new MaterialSourceState { Id = source.Id, Material = source.Material,
+                    Initial = source.Initial, Remaining = 0, LastDays = exhaustedWorld.Days };
+                exhaustedWorld.MaterialSources.Add(state); MaterialEconomy.RegisterSourceState(exhaustedWorld, state);
+            }
+            else state.Remaining = 0;
+        }
+        var exhaustedOrder = new ProductionOrder(Array.Empty<CraftGood>(), new Dictionary<CraftGood, double>());
+        var exhaustedAllocation = new DemandController.Allocation { PhaseAUnassignedResidents = 20 };
+        foreach (var material in MaterialEconomy.Materials) exhaustedAllocation.ServiceRequested[(int)material] = 0;
+        var exhaustedBaseline = new BaselineMaterialTargets();
+        foreach (var material in MaterialEconomy.Materials) exhaustedBaseline.ByMaterial[material] = 100;
+        DemandController.FinalizeRawMaterialPhase(exhaustedWorld, exhaustedCamp, EconomicIntent.From(exhaustedCamp),
+            exhaustedOrder, exhaustedAllocation,
+            new ElderDirective { ServiceLevels = new[] { 1d, 1, 1, 1, 1, 1 } }, exhaustedBaseline, TurnHorizon.Next(exhaustedWorld));
+        Check(exhaustedOrder.RawMaterialAllowances.Count == 0 && !exhaustedAllocation.Requests.Any(r => r.RawMaterial.HasValue),
+            "exhausted finite sources cannot create raw-material requests or consume dedicated staffing");
+
+        var shared = World(EconomicAllocationStrategy.DemandControl, (6, 6, 60), (7, 6, 60));
+        int sharedTile = CampOf(shared, 1).Tile;
+        int sharedCount = shared.Tiles.Length;
+        shared.Resources = new WorldResourceState { MaximumQuantity = 100000, CatalogHash = ResourceCatalog.Hash,
+            ProfileHash = ResourceCatalog.Hash, ConfigurationHash = ResourceCatalog.Hash,
+            Provinces = Array.Empty<GeologicalProvince>(), Province = new ushort[sharedCount], History = new ushort[sharedCount],
+            Host = new byte[sharedCount], Marine = new byte[sharedCount], Stone = new ushort[sharedCount],
+            Clay = new ushort[sharedCount], Wood = new ushort[sharedCount] };
+        int sharedSite2 = shared.Map.Radius(sharedTile, 1).Where(id => id != sharedTile && shared.Tiles[id].TraversableLand).OrderBy(id => id).First();
+        shared.Resources.Version = 4; shared.Resources.GenerationVersion = 3;
+        shared.Resources.DeepReserveMultiplier = 1; shared.Resources.DeepMiningTechnology = "AdvancedMining";
+        shared.Resources.DeepStone = new ushort[sharedCount]; shared.Resources.DeepClay = new ushort[sharedCount];
+        shared.Resources.Bodies = new[] { new DepositBody { Id = 42, OriginTile = sharedTile, Quantity = 50,
+            SiteExposureWeightTotal = 10000, Components = new[] { new DepositComponent(MaterialId.Stone, 10000)
+                { InitialAccessibleQuantity = 50, AccessibleQuantity = 50 } },
+            Sites = new[] { new DepositSite { Tile = sharedTile, Share = 2500, Exposure = 10000 },
+                new DepositSite { Tile = sharedSite2, Share = 7500, Exposure = 10000 } } } };
+        string sharedStoneId = "body:42:" + (int)MaterialId.Stone;
+        shared.MaterialSources.Add(new MaterialSourceState { Id = sharedStoneId, Material = MaterialId.Stone,
+            Initial = 50, Remaining = 50, LastDays = shared.Days });
+        shared.Config.ElderRawMaterialsEnabled = true;
+        var sharedRecord = new TurnRecord { StartDays = shared.Days, Duration = shared.Config.TurnDays };
+        var sharedNeedsByCamp = new Dictionary<int, TurnNeeds>();
+        int laterSharedCamp = shared.Camps.Where(c => c.Player > 0).Max(c => c.Id);
+        foreach (var camp in shared.Camps.Where(x => x.Player > 0).OrderBy(x => x.Id))
+        {
+            camp.Inventory.Stone = 0;
+            var sharedRecipes = new[] { new CraftRecipe { Good = CraftGood.HandTools, Stone = 1 } };
+            var zero = Enum.GetValues(typeof(CraftGood)).Cast<CraftGood>().ToDictionary(g => g, _ => 0d);
+            if (camp.Id == laterSharedCamp) zero[CraftGood.HandTools] = 30;
+            var sharedOrder = new ProductionOrder(sharedRecipes.Select(r => r.Good).ToArray(), new Dictionary<CraftGood, double>());
+            var sharedSources = MaterialEconomy.KnownSources(shared, camp, shared.Days);
+            var sharedNeeds = new TurnNeeds { Camp = camp.Id, Residents = camp.Population, Order = sharedOrder,
+                Production = zero, Housing = MaterialEconomy.PlanHousingMaterials(shared, camp, sharedRecipes, zero,
+                    shared.Config.TurnDays / shared.Config.DaysPerYear, shared.Days, sharedSources, sharedOrder) };
+            sharedNeeds.PreBaselineInventory = new Dictionary<MaterialId, double>
+                { [MaterialId.Stone] = camp.Inventory.Stone, [MaterialId.Clay] = camp.Inventory.Clay, [MaterialId.Wood] = camp.Inventory.Wood };
+            sharedNeeds.BaselineReceipts = new Dictionary<MaterialId, double>
+                { [MaterialId.Stone] = 0, [MaterialId.Clay] = 0, [MaterialId.Wood] = 0 };
+            sharedOrder.RawMaterialAllowances.Add(new ProductionOrder.RawMaterialAllowance { Material = MaterialId.Stone,
+                Role = WorkforceRoles.Gatherer, Units = 40, WorkerIntervals = 100, RequestId = "shared:" + camp.Id,
+                EligibleSourceIds = new[] { sharedStoneId },
+                TargetStock = 1000, ServiceFraction = 1 });
+            sharedNeedsByCamp[camp.Id] = sharedNeeds;
+            double equipmentBudget = 0;
+            MaterialEconomy.Gather(shared, camp, sharedRecipes, shared.Config.GenerationIntervals,
+                shared.Config.TurnDays / shared.Config.DaysPerYear, 100, ref equipmentBudget, sharedRecord, true, true, sharedNeeds);
+        }
+        shared.Diagnostics = new TurnDiagnostics(shared.Turn);
+        bool previousDetailedCounters = ResolutionMetrics.CaptureDetailedCounters;
+        ResolutionMetrics.CaptureDetailedCounters = true;
+        try { MaterialEconomy.SettleElderRawMaterials(shared, sharedNeedsByCamp, sharedRecord); }
+        finally { ResolutionMetrics.CaptureDetailedCounters = previousDetailedCounters; }
+        var sharedRawReceipts = sharedRecord.MaterialTransfers.Where(r => r.Phase == "elder-raw" &&
+            r.Source == sharedStoneId).ToArray();
+        double laterBaseline = sharedRecord.MaterialTransfers.Where(r => r.Camp == laterSharedCamp &&
+            r.Material == MaterialId.Stone && r.Phase != "elder-raw").Sum(r => r.Amount);
+        double allSharedReceipts = sharedRecord.MaterialTransfers.Where(r => r.Source == sharedStoneId).Sum(r => r.Amount);
+        Check(sharedRawReceipts.Length > 0 && sharedRawReceipts[0].Camp == shared.Camps.Where(c => c.Player > 0).Min(c => c.Id) &&
+            laterBaseline > 0 && allSharedReceipts > 0 && allSharedReceipts <= 50 + 1e-8,
+            "late camp-ID ordered allowances debit shared residual stock once after all baseline passes (count=" + sharedRawReceipts.Length + ", units=" + sharedRawReceipts.Sum(r => r.Amount) + ", baseline=" + laterBaseline + ", all=" + string.Join(";", sharedRecord.MaterialTransfers.Select(r => r.Camp + ":" + r.Phase + ":" + r.Amount + ":" + r.Before + ":" + r.After)) + ", camps=" + string.Join(",", sharedRawReceipts.Select(r => r.Camp)) + ", enabled=" + shared.Config.ElderRawMaterialsEnabled + ", auth=" + shared.Config.EconomicAllocation + ", pre=" + string.Join(";", sharedNeedsByCamp.Select(p => p.Key + ":" + (p.Value.PreBaselineInventory == null ? "null" : p.Value.PreBaselineInventory[MaterialId.Stone]) + ":" + p.Value.Order.RawMaterialAllowances[0].EligibleSourceIds.Length)) + ")");
+        int activeAllowanceCount = sharedNeedsByCamp.Values.Sum(n => n.Order.RawMaterialAllowances.Count);
+        Check(shared.Diagnostics.RawSettlementCampIndexEntries == shared.Camps.Count &&
+              shared.Diagnostics.RawSettlementNeedRows == sharedNeedsByCamp.Count &&
+              shared.Diagnostics.RawSettlementAllowanceRows == activeAllowanceCount &&
+              shared.Diagnostics.RawSettlementSourceQueries <= activeAllowanceCount,
+            "late settlement work is one O(C) camp index plus need rows and allowance-local source queries (camps=" +
+            shared.Diagnostics.RawSettlementCampIndexEntries + ", needs=" + shared.Diagnostics.RawSettlementNeedRows +
+            ", allowances=" + shared.Diagnostics.RawSettlementAllowanceRows + ", sourceQueries=" + shared.Diagnostics.RawSettlementSourceQueries + ")");
+        var baselineOnlyTransfers = sharedRecord.MaterialTransfers.Where(r => r.Phase != "elder-raw").ToArray();
+        double baselineBodyDebited = baselineOnlyTransfers.Where(r => r.Source == sharedStoneId).Sum(r => r.Amount);
+        bool fractionalSiteShare = shared.Camps.Where(c => c.Player > 0).SelectMany(c => MaterialEconomy.KnownSources(shared, c, shared.Days))
+            .Any(s => s.Id == sharedStoneId && s.Share < 1 - 1e-9);
+        bool settlementFractions = true;
+        foreach (double serviceFraction in new[] { 0d, .35, 1d })
+        {
+            var sourceState = MaterialEconomy.SourceState(shared, sharedStoneId);
+            sourceState.Remaining = Math.Max(0, 50 - baselineBodyDebited); sourceState.LastDays = shared.Days;
+            foreach (var pair in sharedNeedsByCamp)
+            {
+                var camp = shared.Camps.First(c => c.Id == pair.Key);
+                camp.Inventory.Stone = pair.Value.PreBaselineInventory[MaterialId.Stone] + pair.Value.BaselineReceipts[MaterialId.Stone];
+                pair.Value.Order.RawMaterialAllowances[0].ServiceFraction = serviceFraction;
+            }
+            var fractionalRecord = new TurnRecord { StartDays = shared.Days, Duration = shared.Config.TurnDays };
+            fractionalRecord.MaterialTransfers.AddRange(baselineOnlyTransfers);
+            MaterialEconomy.SettleElderRawMaterials(shared, sharedNeedsByCamp, fractionalRecord);
+            double rawReceived = fractionalRecord.MaterialTransfers.Where(r => r.Phase == "elder-raw" && r.Source == sharedStoneId).Sum(r => r.Amount);
+            double rawLimit = sharedNeedsByCamp.Values.Sum(n => n.Order.RawMaterialAllowances.Sum(a =>
+                Math.Min(a.Units, Math.Max(0, a.ServiceFraction * (a.TargetStock -
+                    n.PreBaselineInventory[a.Material] - n.BaselineReceipts[a.Material])))));
+            double totalDebited = baselineOnlyTransfers.Where(r => r.Source == sharedStoneId).Sum(r => r.Amount) + rawReceived;
+            bool amountOk = serviceFraction == 0 ? rawReceived == 0 : rawReceived > 0 && rawReceived <= rawLimit + 1e-8;
+            bool conserved = Math.Abs(totalDebited + sourceState.Remaining - 50) < 1e-8 && rawReceived <= 50 + 1e-8;
+            settlementFractions &= amountOk && conserved;
+        }
+        Check(fractionalSiteShare && settlementFractions,
+            "live late settlement honors 0/fractional/full service caps and conserves one shared geological body through Share<1 aliases");
+        var scarcityCamp = shared.Camps.First(x => x.Player > 0);
+        scarcityCamp.EconomicLabor = new EconomicLaborPlan { PolicyAuthority = false };
+        var scarcityOrder = new ProductionOrder(Array.Empty<CraftGood>(), new Dictionary<CraftGood, double>())
+        { PhaseAExtractionIntervals = new Dictionary<string, double> { [WorkforceRoles.Gatherer] = 2 * horizon.ReferenceIntervals } };
+        Check(TurnResolver.PassiveFoodGathererIntervals(scarcityCamp,
+            new TurnNeeds { Order = new ProductionOrder(Array.Empty<CraftGood>(), new Dictionary<CraftGood, double>())
+                { PhaseAExtractionIntervals = new Dictionary<string, double> { [WorkforceRoles.Gatherer] = 8 * horizon.ReferenceIntervals } } },
+            8 * horizon.ReferenceIntervals, horizon.ReferenceIntervals) == 8 * horizon.ReferenceIntervals,
+            "flag-on zero-service/no-allowance plan leaves legacy passive food gathering unchanged");
+        scarcityOrder.RawMaterialAllowances.Add(new ProductionOrder.RawMaterialAllowance
+        { Material = MaterialId.Stone, Role = WorkforceRoles.Gatherer, Units = 10, WorkerIntervals = 2 * horizon.ReferenceIntervals });
+        var scarcityNeeds = new TurnNeeds { Order = scarcityOrder };
+        double remainingPassive = TurnResolver.PassiveFoodGathererIntervals(scarcityCamp, scarcityNeeds, 5, horizon.ReferenceIntervals);
+        Check(Math.Abs(remainingPassive - 1) < 1e-9 &&
+              scarcityOrder.PhaseAExtractionIntervals[WorkforceRoles.Gatherer] + scarcityOrder.RawMaterialAllowances.Sum(a => a.WorkerIntervals) + remainingPassive * horizon.ReferenceIntervals <=
+                  5 * horizon.ReferenceIntervals + 1e-9 && scarcityOrder.PhaseAExtractionIntervals[WorkforceRoles.Gatherer] == 2 * horizon.ReferenceIntervals,
+            "scarce passive food labor reserves frozen Phase-A and dedicated Phase-B Gatherer intervals exactly once");
+
+        WorldState RegeneratingWoodWorld()
+        {
+            var woodWorld = NeolithicChecks.Fixture(); var woodCamp = woodWorld.Camps[0];
+            woodWorld.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+            woodWorld.Config.TurnDays = woodWorld.Config.DaysPerYear;
+            int tiles = woodWorld.Tiles.Length;
+            woodWorld.Resources = new WorldResourceState { MaximumQuantity = 100000, CatalogHash = ResourceCatalog.Hash,
+                ProfileHash = ResourceCatalog.Hash, ConfigurationHash = ResourceCatalog.Hash, WoodRecoveryPerYear = 1,
+                Provinces = Array.Empty<GeologicalProvince>(), Province = new ushort[tiles], History = new ushort[tiles],
+                Host = new byte[tiles], Marine = new byte[tiles], Stone = new ushort[tiles], Clay = new ushort[tiles], Wood = new ushort[tiles] };
+            int woodTile = woodWorld.Map.Neighbors(woodCamp.Tile).OrderBy(id => id).First();
+            woodWorld.Resources.Wood[woodTile] = 500;
+            woodWorld.Tiles[woodTile].CultivationCapital = 1;
+            woodWorld.Tiles[woodTile].CultivationOperator = woodCamp.Id;
+            woodWorld.MaterialSources.Add(new MaterialSourceState { Id = "surface:" + woodTile + ":" + (int)MaterialId.Wood,
+                Material = MaterialId.Wood, Initial = 500, Remaining = 0, LastDays = woodWorld.Days });
+            return woodWorld;
+        }
+        var regrowing = RegeneratingWoodWorld(); var regrowingCamp = regrowing.Camps[0];
+        var regrowingRecipes = new[] { new CraftRecipe { Good = CraftGood.Pots, Wood = 100 } };
+        var woodForecast = Enum.GetValues(typeof(CraftGood)).Cast<CraftGood>().ToDictionary(g => g, g => g == CraftGood.Pots ? 100d : 0d);
+        var woodHousing = new HousingMaterialPlan(0, 0, new List<HousingMaterialPlan.Reservation>(), new HashSet<CraftGood>(), 0);
+        var woodNeeds = new TurnNeeds { Camp = regrowingCamp.Id, Residents = regrowingCamp.Population,
+            Production = woodForecast, Housing = woodHousing };
+        var endSources = MaterialEconomy.KnownSources(regrowing, regrowingCamp, regrowing.Days + regrowing.Config.TurnDays);
+        var startWood = MaterialEconomy.KnownSources(regrowing, regrowingCamp, regrowing.Days)
+            .Where(s => s.Material == MaterialId.Wood).Sum(s => s.Available);
+        var woodOrder = new ProductionOrder(new[] { CraftGood.Pots }, new Dictionary<CraftGood, double>());
+        woodNeeds.Order = woodOrder;
+        var woodHorizon = TurnHorizon.Next(regrowing);
+        var woodPlan = MaterialEconomy.BuildBaselineGatherPlan(regrowing, regrowingCamp, regrowingRecipes,
+            woodHorizon.ReferenceIntervals, woodHorizon.Years, 1000, woodNeeds, endSources,
+            new Dictionary<string, double> { [WorkforceRoles.Gatherer] = 1000 });
+        var woodTargets = MaterialEconomy.BuildBaselineMaterialTargets(regrowing, regrowingRecipes, woodHorizon.Years, woodNeeds);
+        var disabledRawAllocation = new DemandController.Allocation();
+        DemandController.FinalizeRawMaterialPhase(regrowing, regrowingCamp, EconomicIntent.From(regrowingCamp), woodOrder,
+            disabledRawAllocation, new ElderDirective { ServiceLevels = new[] { 1d, 1, 1, 1, 1, 0 } }, woodTargets, woodHorizon);
+        Check(startWood <= 1e-9 && endSources.Sum(s => s.Material == MaterialId.Wood ? s.Available : 0) > 0 &&
+              woodPlan.Debits.Any(d => d.Source.Material == MaterialId.Wood) && woodOrder.RawMaterialAllowances.Count == 0,
+            "depleted Wood regenerates at the frozen turn endpoint while a zero Elder service adds no Phase-B allowance");
+        var legacyWood = RegeneratingWoodWorld(); var legacyWoodCamp = legacyWood.Camps[0];
+        var legacyWoodNeeds = new TurnNeeds { Camp = legacyWoodCamp.Id, Residents = legacyWoodCamp.Population,
+            Production = woodForecast, Housing = woodHousing };
+        double woodEquipment = 0;
+        var woodRecord = new TurnRecord { StartDays = legacyWood.Days, Duration = legacyWood.Config.TurnDays };
+        MaterialEconomy.Gather(legacyWood, legacyWoodCamp, regrowingRecipes, woodHorizon.ReferenceIntervals,
+            woodHorizon.Years, 1000, ref woodEquipment, woodRecord, true, true, legacyWoodNeeds);
+        var plannedWoodDebits = woodPlan.Debits.Where(d => d.Source.Material == MaterialId.Wood)
+            .Select(d => (d.Source.Id, d.Role, d.Units)).ToArray();
+        var executedWood = woodRecord.MaterialTransfers.Where(r => r.Material == MaterialId.Wood)
+            .Select(r => (r.Source, r.Role, r.Amount)).ToArray();
+        Check(plannedWoodDebits.Length > 0 && plannedWoodDebits.Length == executedWood.Length &&
+              plannedWoodDebits.Zip(executedWood).All(pair => pair.First.Id == pair.Second.Source &&
+                  pair.First.Role == pair.Second.Role && Math.Abs(pair.First.Units - pair.Second.Amount) <= 1e-8),
+            "endpoint-projected depleted/regenerating Wood plan matches legacy Gather debit order and receipts");
     }
 
     private static void FishingMealBreakpoint()

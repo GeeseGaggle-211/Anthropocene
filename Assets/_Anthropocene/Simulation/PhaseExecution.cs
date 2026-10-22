@@ -43,6 +43,8 @@ namespace Anthropocene.Simulation
         public readonly int Turn;
         public long PlanCalls, ForecastCalls, LocalSourceQueries, SourceLookups, DepositEdges, BodyScans;
         public long FoodForecastQueries, FoodInvestmentComparisons;
+        // Elder raw settlement: structural visits proving one global camp index plus local allowance work.
+        public long RawSettlementCampIndexEntries, RawSettlementNeedRows, RawSettlementAllowanceRows, RawSettlementSourceQueries;
         // Planner work counts (Docs/SharedAllocationValidation.md, planner cost):
         // transient, opt-in through ResolutionMetrics.CaptureDetailedCounters.
         public long SharedAllocations, SharedOperationChoices, SharedHerdChoices, ExpansionLadderBuilds, HerdLadderBuilds, PastureScans;
@@ -184,6 +186,9 @@ namespace Anthropocene.Simulation
         public double MaintenanceWorkerYears, HarvestEquivalentWorkerYears;
         public double ReconciledFarmerWorkerYears;
         public double ExpansionWorkUsedWorkerYears, FarmToolCoveredWorkerYears;
+        // TurnHorizonResources' initial preclaim estimate, retained only to
+        // verify the authoritative post-gather bridge reconciliation.
+        public double ProvisionalGatheringBridgeCreditWorkerYears;
         // The bridge is derived from realized gathering receipts. It is
         // reported as a side effect and must not be added to labor totals.
         public double GatheringBridgeCreditWorkerYears;

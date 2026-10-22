@@ -150,6 +150,16 @@ Start with the relevant symbols and check methods rather than dumping all of `Mo
 
 ## Build and validate
 
+### Training workload sampling rule
+
+- Use the local machine only for validation and stability probes, with at most three seeds for any training workload.
+  Local results are diagnostic and may not select an arm, tune a treatment, or establish readiness.
+- Run readiness-bearing training comparisons on the VM at no smaller sampling scale than the T3 experiment: three
+  matched arms and five optimizer seeds per arm (15 runs), with the same seed identities paired across arms. A different
+  arm/seed design requires a reviewed pre-registration; a convenient smaller sample is not a substitute.
+- Keep confirmation seeds 3000-3059 sealed until an explicitly authorized milestone. VM scale prevents the local
+  three-seed stability sample from becoming a biased selection screen.
+
 For rebuild requests or Unity licensing failures, read `Docs/UnityBuildRecovery.md` first. It records the verified graphical build with the observed Hub licensing pipe, safe process inspection without exposing tokens, handling of the separate Git checkpoint-ref failure, and player verification. Do not repeat stalled batch launches or install Unity MCP as a licensing workaround.
 
 Use Unity **6000.5.10f1**, matching `ProjectSettings/ProjectVersion.txt`. Open `Assets/Scenes/SampleScene.unity` and press Play. Do not launch concurrent Unity editor/batch instances against the same checkout. Check the process project path before closing an editor; other checkouts may be running.

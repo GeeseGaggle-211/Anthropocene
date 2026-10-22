@@ -20,6 +20,10 @@ namespace Anthropocene.Simulation
         // Neolithic reference turn while remaining stable when turn duration changes.
         [System.Runtime.Serialization.OptionalField] public double MaterialReserveHorizonYears = 20;
         [System.Runtime.Serialization.OptionalField] public double MaterialReserveHorizonTurns = 1;
+        // Round-3 Elder raw-material target policy, in recipe-input units.
+        [System.Runtime.Serialization.OptionalField] public double ElderRawMaterialUnitsPerResident = .05;
+        [System.Runtime.Serialization.OptionalField] public double ElderRawMaterialMinimumUnits = 1;
+        [System.Runtime.Serialization.OptionalField] public double ElderRawMaterialMaximumUnits = 8;
         [NonSerialized] private bool legacyMaterialReserveTurns;
         [System.Runtime.Serialization.OptionalField] public double PrimitiveAgricultureSupportedIntensity = .40, StoneFarmToolsSupportedIntensity = .45;
         // One preserves the historical quadratic worker cost. Values above one
@@ -101,6 +105,9 @@ namespace Anthropocene.Simulation
             MaterialReserveHorizonYears = double.NaN;
             UsefulFinishedGoodsReserveYears = double.NaN;
             MaterialReserveHorizonTurns = double.NaN;
+            ElderRawMaterialUnitsPerResident = .05;
+            ElderRawMaterialMinimumUnits = 1;
+            ElderRawMaterialMaximumUnits = 8;
             UsefulFinishedGoodsReserveTurns = double.NaN;
             PotStorageFoodPerUnit = 80;
             PotDecayPerReferenceTurn = .10;
@@ -192,7 +199,7 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Invalid fishing technology frontier.");
             if (new[] { OpenBuild, WoodlandBuild, ForestBuild, WeaverFabricOutputPerBaseDays, BuilderHousingOutputPerBaseDays, LightHousingBuilderOutputPerBaseDays, AnimalFabricPerLightHousing, GeneralistTaskEfficiency, SpecialistScalePopulation, FishingToolFisherYearsPerUnit, FishingToolHarvestMultiplier }.Any(v => v <= 0)) throw new ArgumentException("Neolithic construction and allocation rates must be positive.");
             var values = GetType().GetFields().Where(f => f.FieldType == typeof(double)).Select(f => (double)f.GetValue(this));
-            if (values.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || ReferencePopulation <= 0 || ReferenceFootprintTiles != 7 || ReferenceTurnYears <= 0 || IntensificationTurns <= 0 || AllocationStepE <= 0 || DecayHalfLifeYears <= 0 || HousingPeoplePerUnit <= 0 || LightHousingPeoplePerUnit <= 0 || CohesionBandScale <= 0 || SocialCohesionExponent <= 0 || LightHousingPermanence > 1 || HousingDecayPerTurn >= 1 || LightHousingDecayPerReferenceTurn >= 1 || PotStorageFoodPerUnit <= 0 || PotDecayPerReferenceTurn >= 1 || ToolCoveragePerWorker <= 0 || FarmToolFarmerYearsPerUnit <= 0 || StoneHerdingToolAnimalsPerHerder < 2 || EarlyAdvancedHerdingAnimalsPerHerder < StoneHerdingToolAnimalsPerHerder || CopperHerdingAnimalsPerHerder < EarlyAdvancedHerdingAnimalsPerHerder || IronHerdingAnimalsPerHerder < CopperHerdingAnimalsPerHerder || PoweredHerdingAnimalsPerHerder < IronHerdingAnimalsPerHerder || HerdingToolCoverageYearsPerUnit <= 0 || PrimitiveAgricultureSupportedIntensity <= 0 || StoneFarmToolsSupportedIntensity < PrimitiveAgricultureSupportedIntensity || PloughSupportedIntensity < StoneFarmToolsSupportedIntensity || CopperFarmToolsSupportedIntensity < PloughSupportedIntensity || IronFarmToolsSupportedIntensity < CopperFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity < IronFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity > 1 || RudimentaryExpectationRampYears <= 0 || RudimentaryExpectationFloor > 1 || Math.Abs(RudimentaryWeightClothing + RudimentaryWeightHousing - 1) > 1e-10 || GeneralistTaskEfficiency > 1 || SpecialistScaleMaxBonus > 1 || CraftMasteryThreshold <= 0 || CohesionHousingGain < 0)
+            if (values.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0) || ElderRawMaterialMinimumUnits > ElderRawMaterialMaximumUnits || ReferencePopulation <= 0 || ReferenceFootprintTiles != 7 || ReferenceTurnYears <= 0 || IntensificationTurns <= 0 || AllocationStepE <= 0 || DecayHalfLifeYears <= 0 || HousingPeoplePerUnit <= 0 || LightHousingPeoplePerUnit <= 0 || CohesionBandScale <= 0 || SocialCohesionExponent <= 0 || LightHousingPermanence > 1 || HousingDecayPerTurn >= 1 || LightHousingDecayPerReferenceTurn >= 1 || PotStorageFoodPerUnit <= 0 || PotDecayPerReferenceTurn >= 1 || ToolCoveragePerWorker <= 0 || FarmToolFarmerYearsPerUnit <= 0 || StoneHerdingToolAnimalsPerHerder < 2 || EarlyAdvancedHerdingAnimalsPerHerder < StoneHerdingToolAnimalsPerHerder || CopperHerdingAnimalsPerHerder < EarlyAdvancedHerdingAnimalsPerHerder || IronHerdingAnimalsPerHerder < CopperHerdingAnimalsPerHerder || PoweredHerdingAnimalsPerHerder < IronHerdingAnimalsPerHerder || HerdingToolCoverageYearsPerUnit <= 0 || PrimitiveAgricultureSupportedIntensity <= 0 || StoneFarmToolsSupportedIntensity < PrimitiveAgricultureSupportedIntensity || PloughSupportedIntensity < StoneFarmToolsSupportedIntensity || CopperFarmToolsSupportedIntensity < PloughSupportedIntensity || IronFarmToolsSupportedIntensity < CopperFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity < IronFarmToolsSupportedIntensity || PoweredFarmToolsSupportedIntensity > 1 || RudimentaryExpectationRampYears <= 0 || RudimentaryExpectationFloor > 1 || Math.Abs(RudimentaryWeightClothing + RudimentaryWeightHousing - 1) > 1e-10 || GeneralistTaskEfficiency > 1 || SpecialistScaleMaxBonus > 1 || CraftMasteryThreshold <= 0 || CohesionHousingGain < 0)
                 throw new ArgumentException("Invalid Neolithic calibration.");
         }
     }

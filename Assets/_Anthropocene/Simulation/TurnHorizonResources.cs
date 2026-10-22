@@ -248,6 +248,8 @@ namespace Anthropocene.Simulation
                         needs[camp.Id].PlantFeedstockGap));
                 double provisionalBridge = provisionalFood / Math.Max(1e-12, w.Config.GatherPerPerson)
                     * w.Config.BaseDays / w.Config.DaysPerYear;
+                if (fieldWork != null)
+                    fieldWork.ProvisionalGatheringBridgeCreditWorkerYears = provisionalBridge;
                 var allocation = CultivationEconomy.PlanHorizonExpansion(w, camp, horizon.Years,
                     labor.ExpansionFarmers * horizon.Years, provisionalBridge,
                     budget, campScratch.Footprint);

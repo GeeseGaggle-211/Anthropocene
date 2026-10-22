@@ -42,6 +42,7 @@ namespace Anthropocene.Simulation
                 case "shelter protected": case "shelter replacement": case "portable shelter replacement": case "shelter deficit": return 2;
                 case "farm tools": case "herding tools": case "fishing tools": return 3;
                 case "storage": return 4;
+                case "materials": return 5;
                 default: return -1;
             }
         }
@@ -344,6 +345,10 @@ namespace Anthropocene.Simulation
         internal Dictionary<int, ElderModel9Context> Contexts;
         internal Dictionary<int, int> Prior;
         internal int ReplaySteps;
+        internal Dictionary<int, ElderModel9DecisionDiagnostics> DecisionDiagnostics;
+        internal Dictionary<string, ElderModel9RawMaterialDiagnostic> RawMaterialDiagnostics;
+        internal int DiagnosticSchemaVersion;
+        internal string TrajectoryId;
     }
 
     public static class ElderModel9Observation
@@ -439,6 +444,9 @@ namespace Anthropocene.Simulation
         public double SpecialistShare, GoodsOutput;
         public bool Terminated, Founded;
         public ElderModel9Tensor Observation;
+        // Diagnostic-only control sidecar for the decision that produced this returned observation.
+        // Null on reset and for villages without a submitted policy decision.
+        public ElderModel9DecisionDiagnostics DecisionDiagnostics;
         public ElderModel9Label Teacher;   // the heuristic's (or the compiled directive's) decision this step
         public ElderIntervention[] Interventions = Array.Empty<ElderIntervention>();
         public string Staffing = "";   // compiled economic intent (diagnostic)
@@ -446,9 +454,81 @@ namespace Anthropocene.Simulation
     }
 
     [Serializable]
+    public sealed class ElderModel9DecisionDiagnostics
+    {
+        public const int CurrentSchemaVersion = 1;
+        public int SchemaVersion = CurrentSchemaVersion;
+        public string TrajectoryId;
+        public int DecisionTurn, CampId;
+        public ElderModel9HeadValues Requested, Accepted, Realised;
+        public ElderModel9HeadMask RequestedMask, AcceptedMask, RealisedMask, ActiveMask;
+        public ElderModel9DecisionDiagnostics Copy() => new ElderModel9DecisionDiagnostics
+        {
+            SchemaVersion = SchemaVersion, TrajectoryId = TrajectoryId, DecisionTurn = DecisionTurn, CampId = CampId,
+            Requested = Requested?.Copy(), Accepted = Accepted?.Copy(), Realised = Realised?.Copy(),
+            RequestedMask = RequestedMask?.Copy(), AcceptedMask = AcceptedMask?.Copy(),
+            RealisedMask = RealisedMask?.Copy(), ActiveMask = ActiveMask?.Copy()
+        };
+    }
+
+    public static class ElderModel9DiagnosticEnvelope
+    {
+        // Independently versioned from the per-head diagnostic records.
+        public const int CurrentSchemaVersion = 2;
+    }
+
+    [Serializable]
+    public sealed class ElderModel9HeadValues
+    {
+        public double[] Strategic = new double[5], Service = new double[6];
+        public int ClothingRoute, ShelterRoute, Movement, IntentTile, Fission, Commit;
+        public double[] TradeValue = new double[7], TradeGate = new double[7];
+        public double TradeShare;
+        public ElderModel9HeadValues Copy() => new ElderModel9HeadValues
+        {
+            Strategic = (double[])Strategic.Clone(), Service = (double[])Service.Clone(),
+            ClothingRoute = ClothingRoute, ShelterRoute = ShelterRoute, Movement = Movement, IntentTile = IntentTile,
+            Fission = Fission, Commit = Commit, TradeValue = (double[])TradeValue.Clone(),
+            TradeGate = (double[])TradeGate.Clone(), TradeShare = TradeShare
+        };
+    }
+
+    [Serializable]
+    public sealed class ElderModel9HeadMask
+    {
+        public bool[] Strategic = new bool[5], Service = new bool[6];
+        public bool ClothingRoute, ShelterRoute, Movement, IntentTile, Fission, Commit;
+        public bool[] TradeValue = new bool[7], TradeGate = new bool[7];
+        public bool TradeShare;
+        public ElderModel9HeadMask Copy() => new ElderModel9HeadMask
+        {
+            Strategic = (bool[])Strategic.Clone(), Service = (bool[])Service.Clone(),
+            ClothingRoute = ClothingRoute, ShelterRoute = ShelterRoute, Movement = Movement, IntentTile = IntentTile,
+            Fission = Fission, Commit = Commit, TradeValue = (bool[])TradeValue.Clone(),
+            TradeGate = (bool[])TradeGate.Clone(), TradeShare = TradeShare
+        };
+    }
+
+    [Serializable]
+    public sealed class ElderModel9RawMaterialDiagnostic
+    {
+        public int SchemaVersion = ElderModel9DiagnosticEnvelope.CurrentSchemaVersion, CampId, DecisionTurn;
+        public MaterialId Material;
+        public string RequestId;
+        public double RequestedUnits, AcceptedUnits, RealisedUnits;
+        public ElderModel9RawMaterialDiagnostic Copy() => new ElderModel9RawMaterialDiagnostic
+        { SchemaVersion = SchemaVersion, CampId = CampId, DecisionTurn = DecisionTurn, Material = Material,
+            RequestId = RequestId, RequestedUnits = RequestedUnits, AcceptedUnits = AcceptedUnits, RealisedUnits = RealisedUnits };
+    }
+
+    [Serializable]
     public sealed class ElderModel9Step
     {
         public int Turn;
+        [System.Runtime.Serialization.OptionalField] public int DiagnosticSchemaVersion;
+        [System.Runtime.Serialization.OptionalField] public string TrajectoryId;
+        [System.Runtime.Serialization.OptionalField] public Dictionary<int, ElderModel9DecisionDiagnostics> DecisionDiagnostics = new Dictionary<int, ElderModel9DecisionDiagnostics>();
+        [System.Runtime.Serialization.OptionalField] public Dictionary<string, ElderModel9RawMaterialDiagnostic> RawMaterialDiagnostics = new Dictionary<string, ElderModel9RawMaterialDiagnostic>();
         public double Years;
         public string Fingerprint;
         public List<ElderModel9Village> Villages = new List<ElderModel9Village>();
@@ -463,6 +543,10 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class ElderModel9ReplayStep
     {
+        [System.Runtime.Serialization.OptionalField] public int DiagnosticSchemaVersion;
+        [System.Runtime.Serialization.OptionalField] public string TrajectoryId;
+        [System.Runtime.Serialization.OptionalField] public Dictionary<int, ElderModel9DecisionDiagnostics> DecisionDiagnostics = new Dictionary<int, ElderModel9DecisionDiagnostics>();
+        [System.Runtime.Serialization.OptionalField] public Dictionary<string, ElderModel9RawMaterialDiagnostic> RawMaterialDiagnostics = new Dictionary<string, ElderModel9RawMaterialDiagnostic>();
         public Dictionary<int, ElderDirective> Directives = new Dictionary<int, ElderDirective>();
         public Dictionary<int, List<Order>> Background = new Dictionary<int, List<Order>>();
         public List<DecisionTrace> Traces = new List<DecisionTrace>();
@@ -493,6 +577,7 @@ namespace Anthropocene.Simulation
         private Dictionary<int, ElderObservationMetadata> metadata = new Dictionary<int, ElderObservationMetadata>();
         public WorldState World { get; private set; }
         public ElderModel9Replay Replay { get; private set; }
+        internal ResolutionMetrics LastResolutionMetrics { get; private set; }
         public bool MovementEnabled { get; private set; }
         public bool TeacherLabels = true;
 
@@ -563,12 +648,16 @@ namespace Anthropocene.Simulation
             World = SaveCodec.Load((byte[])snapshot.Clone());
             World = SaveCodec.Load(SaveCodec.Save(World));
             World.Config.TrainingWithheldTechnologies = WithheldTechnologies;
-            MovementEnabled = movementEnabled; contexts.Clear(); lastPrior = new Dictionary<int, int>(); Forked = false;
+            MovementEnabled = movementEnabled; contexts.Clear(); lastPrior = new Dictionary<int, int>(); lastDecisionDiagnostics.Clear(); lastRawMaterialDiagnostics.Clear(); Forked = false;
+            LastResolutionMetrics = null;
+            lastDiagnosticSchemaVersion = 0;
             ResolutionMetrics.CaptureDemandAllocations = true;
             var initial = SaveCodec.Save(World);
             Replay = new ElderModel9Replay { StartTurn = World.Turn, InitialSnapshot = initial, InitialFingerprint = SaveCodec.Fingerprint(World),
                 ConfigurationHash = SaveCodec.ConfigurationHash(World.Config), BuildHash = BuildHash, MovementEnabled = movementEnabled,
                 WithheldTechnologies = WithheldTechnologies };
+            trajectoryId = Replay.InitialFingerprint;
+            rootTrajectoryId = trajectoryId; branchSequence = 0;
             var step = new ElderModel9Step { Turn = World.Turn, Fingerprint = Replay.InitialFingerprint };
             Observe(step, new Dictionary<int, int>());
             return step;
@@ -579,6 +668,12 @@ namespace Anthropocene.Simulation
         // paired comparisons. Restore returns the decision step (observations; no rewards). After a fork the replay
         // record is not verifiable (Forked), because verification does not carry the environment context.
         private Dictionary<int, int> lastPrior = new Dictionary<int, int>();
+        private string trajectoryId;
+        private string rootTrajectoryId;
+        private int branchSequence;
+        private Dictionary<int, ElderModel9DecisionDiagnostics> lastDecisionDiagnostics = new Dictionary<int, ElderModel9DecisionDiagnostics>();
+        private Dictionary<string, ElderModel9RawMaterialDiagnostic> lastRawMaterialDiagnostics = new Dictionary<string, ElderModel9RawMaterialDiagnostic>();
+        private int lastDiagnosticSchemaVersion;
         public bool Forked { get; private set; }
 
         public ElderModel9Fork Fork(out ElderModel9Step step)
@@ -587,7 +682,10 @@ namespace Anthropocene.Simulation
             var fork = new ElderModel9Fork
             {
                 World = SaveCodec.Save(World), Contexts = contexts.ToDictionary(p => p.Key, p => p.Value.Copy()),
-                Prior = new Dictionary<int, int>(lastPrior), ReplaySteps = Replay.Steps.Count
+                Prior = new Dictionary<int, int>(lastPrior), ReplaySteps = Replay.Steps.Count,
+                DecisionDiagnostics = lastDecisionDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy()), TrajectoryId = trajectoryId,
+                RawMaterialDiagnostics = lastRawMaterialDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy()),
+                DiagnosticSchemaVersion = lastDiagnosticSchemaVersion
             };
             step = Restore(fork);
             return fork;
@@ -600,10 +698,19 @@ namespace Anthropocene.Simulation
             contexts.Clear();
             foreach (var pair in fork.Contexts) contexts[pair.Key] = pair.Value.Copy();
             lastPrior = new Dictionary<int, int>(fork.Prior);
+            lastDecisionDiagnostics = fork.DecisionDiagnostics?.ToDictionary(p => p.Key, p => p.Value?.Copy()) ?? new Dictionary<int, ElderModel9DecisionDiagnostics>();
+            lastRawMaterialDiagnostics = fork.RawMaterialDiagnostics?.ToDictionary(p => p.Key, p => p.Value?.Copy()) ?? new Dictionary<string, ElderModel9RawMaterialDiagnostic>();
+            trajectoryId = fork.TrajectoryId ?? rootTrajectoryId ?? trajectoryId;
             if (Replay.Steps.Count > fork.ReplaySteps) Replay.Steps.RemoveRange(fork.ReplaySteps, Replay.Steps.Count - fork.ReplaySteps);
             Forked = true;
             var step = new ElderModel9Step { Turn = World.Turn, Fingerprint = SaveCodec.Fingerprint(World) };
+            step.TrajectoryId = lastDecisionDiagnostics.Values.FirstOrDefault()?.TrajectoryId ?? trajectoryId;
+            step.DecisionDiagnostics = lastDecisionDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy());
+            step.RawMaterialDiagnostics = lastRawMaterialDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy());
+            step.DiagnosticSchemaVersion = fork.DiagnosticSchemaVersion;
             Observe(step, new Dictionary<int, int>(lastPrior));
+            trajectoryId = (fork.TrajectoryId ?? rootTrajectoryId ?? trajectoryId) + "/branch-" + (++branchSequence).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            lastDiagnosticSchemaVersion = step.DiagnosticSchemaVersion;
             return step;
         }
 
@@ -673,12 +780,16 @@ namespace Anthropocene.Simulation
         private ElderModel9Step Advance(Dictionary<int, List<Order>> background, Dictionary<int, ElderDirective> directives, List<DecisionTrace> traces)
         {
             var prior = World.Camps.ToDictionary(c => c.Id, c => c.Population);
+            int decisionTurn = World.Turn;
             var priorSociety = World.Camps.ToDictionary(c => c.Id, c => c.SocietyId);
             var phase = System.Diagnostics.Stopwatch.StartNew();
             PreparedTurn prepared = directives.Count > 0
                 ? TurnPlanner.PrepareWithElderDirectives(World, background, directives,
                     directives.Keys.ToDictionary(id => id, id => observations[id]), compiler, traces ?? new List<DecisionTrace>(), execution)
                 : TurnPlanner.Prepare(World, background, traces ?? new List<DecisionTrace>());
+            // Freeze trade eligibility at decision time, before resolution can remove a camp.
+            var decisionTradeEligibility = prepared.ElderDecisions.Keys.OrderBy(id => id).ToDictionary(id => id,
+                id => World.Camps.FirstOrDefault(c => c.Id == id) is Camp camp && Trade.Eligible(World, camp));
             double prepareMs = phase.Elapsed.TotalMilliseconds; phase.Restart();
             // Teacher labels from the exact allocations Prepare used (captured before resolution mutates the world).
             var labels = new Dictionary<int, ElderModel9Label>();
@@ -707,15 +818,33 @@ namespace Anthropocene.Simulation
                 if (decision != null) context.PreviousDecision = decision;
             }
             double labelMs = phase.Elapsed.TotalMilliseconds; phase.Restart();
-            var record = new TurnResolver(execution).Resolve(World, prepared);
+            var turnResolver = new TurnResolver(execution);
+            var record = turnResolver.Resolve(World, prepared);
+            LastResolutionMetrics = turnResolver.LastMetrics;
             double resolveMs = phase.Elapsed.TotalMilliseconds; phase.Restart();
             double years = record.Duration / World.Config.DaysPerYear;
-            var step = new ElderModel9Step { Turn = World.Turn, Years = years, Fingerprint = SaveCodec.Fingerprint(World) };
+            var step = new ElderModel9Step { Turn = World.Turn, Years = years, Fingerprint = SaveCodec.Fingerprint(World),
+                DiagnosticSchemaVersion = ElderModel9DiagnosticEnvelope.CurrentSchemaVersion, TrajectoryId = trajectoryId };
             step.PrepareMs = prepareMs; step.LabelMs = labelMs; step.ResolveMs = resolveMs; step.FingerprintMs = phase.Elapsed.TotalMilliseconds;
             step.Rejections.AddRange(prepared.Rejections);
             foreach (var g in prepared.Orders.GroupBy(o => o.Entity)) step.Orders[g.Key] = string.Join("|", g.Select(o => o.Kind + ":" + o.Target + ":" + o.Destination + ":" + o.Population));
+            var decisionDiagnostics = new Dictionary<int, ElderModel9DecisionDiagnostics>();
+            foreach (var pair in prepared.ElderDecisions.OrderBy(p => p.Key))
+                decisionDiagnostics[pair.Key] = BuildDecisionDiagnostics(pair.Key, decisionTurn, trajectoryId, pair.Value,
+                    observations.TryGetValue(pair.Key, out var decisionObservation) ? decisionObservation : null,
+                    metadata.TryGetValue(pair.Key, out var decisionMetadata) ? decisionMetadata : null,
+                    decisionTradeEligibility.TryGetValue(pair.Key, out var tradeWasEligible) && tradeWasEligible);
+            var rawDiagnostics = BuildRawMaterialDiagnostics(prepared, record, decisionTurn);
+            lastDecisionDiagnostics = decisionDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy());
+            step.DecisionDiagnostics = decisionDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy());
+            step.RawMaterialDiagnostics = rawDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy());
+            lastRawMaterialDiagnostics = rawDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy());
+            lastDiagnosticSchemaVersion = step.DiagnosticSchemaVersion;
             Replay.Steps.Add(new ElderModel9ReplayStep
             {
+                DiagnosticSchemaVersion = ElderModel9DiagnosticEnvelope.CurrentSchemaVersion, TrajectoryId = trajectoryId,
+                DecisionDiagnostics = decisionDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy()),
+                RawMaterialDiagnostics = rawDiagnostics.ToDictionary(p => p.Key, p => p.Value?.Copy()),
                 Directives = directives.ToDictionary(p => p.Key, p => p.Value.Copy()),
                 Background = background.ToDictionary(p => p.Key, p => p.Value.Select(o => o.Copy()).ToList()),
                 Traces = (traces ?? new List<DecisionTrace>()).ToList(),
@@ -731,6 +860,7 @@ namespace Anthropocene.Simulation
                     Camp = id, PriorPopulation = p0, Years = years, Terminated = camp == null || camp.Population <= 0,
                     Society = camp?.SocietyId ?? (priorSociety.TryGetValue(id, out int s) ? s : -1),
                     Teacher = labels.TryGetValue(id, out var label) ? label : null, Staffing = staffing.TryGetValue(id, out var st) ? st : "",
+                    DecisionDiagnostics = decisionDiagnostics.TryGetValue(id, out var dd) ? dd : null,
                     Interventions = interventions.TryGetValue(id, out var list) ? list ?? Array.Empty<ElderIntervention>() : Array.Empty<ElderIntervention>()
                 };
                 if (camp != null)
@@ -751,6 +881,113 @@ namespace Anthropocene.Simulation
             lastPrior = prior;
             Observe(step, prior);
             return step;
+        }
+
+        private static ElderModel9DecisionDiagnostics BuildDecisionDiagnostics(int campId, int decisionTurn, string trajectory,
+            ElderCompiledDecision decision, ElderObservation observation, ElderObservationMetadata metadata, bool tradeEligible)
+        {
+            var result = new ElderModel9DecisionDiagnostics { TrajectoryId = trajectory, DecisionTurn = decisionTurn, CampId = campId };
+            if (decision?.Requested == null || decision.Accepted == null || decision.Realized == null) return result;
+            result.Requested = HeadValues(decision.Requested); result.Accepted = HeadValues(decision.Accepted); result.Realised = HeadValues(decision.Realized);
+            result.RequestedMask = HeadMask(decision.Requested); result.AcceptedMask = HeadMask(decision.Accepted);
+            result.RealisedMask = HeadMask(decision.Realized);
+            result.ActiveMask = ActiveHeadMask(decision, observation, metadata, tradeEligible);
+            return result;
+        }
+
+        private static ElderModel9HeadMask ActiveHeadMask(ElderCompiledDecision decision, ElderObservation observation,
+            ElderObservationMetadata metadata, bool tradeEligible)
+        {
+            var active = new ElderModel9HeadMask();
+            if (observation == null || observation.Mask == null) return active;
+            var mask = observation.Mask;
+            bool held = decision.CommitmentAction == (int)ElderCommitmentAction.Hold;
+            active.Strategic[0] = mask.FieldRetention && !held;
+            active.Strategic[1] = mask.HerdRetention && !held;
+            active.Strategic[2] = (mask.FieldDevelopment || mask.HerdDevelopment || mask.FishingDevelopment) && !held;
+            active.Strategic[3] = mask.FieldDevelopment && mask.HerdDevelopment && !held;
+            active.Strategic[4] = mask.FishingDevelopment && !held;
+            if (decision.Allocation != null)
+                for (int i = 0; i < active.Service.Length; i++)
+                    active.Service[i] = i < decision.Allocation.ServiceRequested.Length && decision.Allocation.ServiceRequested[i] > 1e-9;
+            active.ClothingRoute = !held && decision.Allocation?.ClothingRouteFeasible?.Length >= 2 &&
+                decision.Allocation.ClothingRouteFeasible[0] && decision.Allocation.ClothingRouteFeasible[1];
+            active.ShelterRoute = !held && decision.Allocation?.ShelterRouteFeasible?.Length >= 2 &&
+                decision.Allocation.ShelterRouteFeasible[0] && decision.Allocation.ShelterRouteFeasible[1];
+            active.Movement = mask.Movement && (mask.LegalMovementCandidates?.Distinct().Count() ?? 0) > 1;
+            active.IntentTile = active.Movement && metadata?.RegionTiles?.Length > 0;
+            active.Fission = observation.Fission?.CandidatePresent == true;
+            active.Commit = mask.CommitmentHold;
+            for (int i = 0; i < active.TradeValue.Length; i++)
+            { active.TradeValue[i] = tradeEligible; active.TradeGate[i] = tradeEligible; }
+            active.TradeShare = tradeEligible;
+            return active;
+        }
+
+        private static Dictionary<string, ElderModel9RawMaterialDiagnostic> BuildRawMaterialDiagnostics(PreparedTurn prepared, TurnRecord record, int decisionTurn)
+        {
+            var result = new Dictionary<string, ElderModel9RawMaterialDiagnostic>(StringComparer.Ordinal);
+            var realised = new Dictionary<(int Camp, MaterialId Material, string RequestId), double>();
+            foreach (var receipt in record.MaterialTransfers)
+                if (receipt.Phase == "elder-raw" && !string.IsNullOrEmpty(receipt.RequestId))
+                {
+                    var key = (receipt.Camp, receipt.Material, receipt.RequestId);
+                    realised[key] = realised.TryGetValue(key, out double amount) ? amount + Math.Max(0, receipt.Amount) : Math.Max(0, receipt.Amount);
+                }
+            var diagnosticAllocations = new SortedDictionary<int, DemandController.Allocation>();
+            foreach (var pair in prepared.DemandAllocations) diagnosticAllocations[pair.Key] = pair.Value;
+            foreach (var pair in prepared.ElderDecisions)
+                if (pair.Value?.Allocation != null) diagnosticAllocations[pair.Key] = pair.Value.Allocation;
+            foreach (var pair in diagnosticAllocations)
+            {
+                var requests = pair.Value?.Requests;
+                if (requests == null) continue;
+                foreach (var group in requests.Where(r => r.RawMaterial.HasValue && !string.IsNullOrEmpty(r.RequestId))
+                    .GroupBy(r => r.RawMaterial.Value).OrderBy(g => g.Key))
+                {
+                    string requestId = string.Join("+", group.Select(r => r.RequestId).OrderBy(x => x, StringComparer.Ordinal));
+                    var item = new ElderModel9RawMaterialDiagnostic { CampId = pair.Key, Material = group.Key,
+                        DecisionTurn = decisionTurn, RequestId = requestId,
+                        RequestedUnits = group.Sum(r => Math.Max(0, r.NativeUnits > 0 ? r.NativeUnits : r.Units)), AcceptedUnits = group.Sum(r => Math.Max(0, r.Granted)) };
+                    foreach (var request in group)
+                        if (realised.TryGetValue((pair.Key, group.Key, request.RequestId), out double amount)) item.RealisedUnits += amount;
+                    result[pair.Key.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + (int)group.Key] = item;
+                }
+            }
+            return result;
+        }
+
+        private static ElderModel9HeadValues HeadValues(ElderDirective d)
+        {
+            var h = new ElderModel9HeadValues
+            {
+                Strategic = new[] { d.RetainedFieldOperation, d.RetainedHerdFraction, d.DevelopmentBudget,
+                    d.FieldDevelopmentShare, d.FishingDevelopmentShare },
+                Service = new double[ElderModel9Contract.GoodsServices.Length],
+                ClothingRoute = d.ClothingRoute, ShelterRoute = d.ShelterRoute,
+                Movement = d.MovementCandidate, IntentTile = d.IntentTile, Fission = d.FissionPolicy,
+                Commit = d.CommitTurns, TradeValue = new double[7], TradeGate = new double[7], TradeShare = d.TradeExportShare
+            };
+            if (d.ServiceLevels != null) Array.Copy(d.ServiceLevels, h.Service, Math.Min(d.ServiceLevels.Length, h.Service.Length));
+            if (d.TradeValue != null) Array.Copy(d.TradeValue, h.TradeValue, Math.Min(d.TradeValue.Length, h.TradeValue.Length));
+            if (d.TradeGate != null) for (int i = 0; i < Math.Min(d.TradeGate.Length, h.TradeGate.Length); i++) h.TradeGate[i] = d.TradeGate[i];
+            return h;
+        }
+
+        private static ElderModel9HeadMask HeadMask(ElderDirective d)
+        {
+            var m = new ElderModel9HeadMask
+            {
+                Strategic = Enumerable.Repeat(true, 5).ToArray(), Service = new bool[ElderModel9Contract.GoodsServices.Length],
+                ClothingRoute = d.ClothingRoute >= 0, ShelterRoute = d.ShelterRoute >= 0,
+                Movement = d.MovementCandidate != ElderModel9Contract.NativeMovement,
+                IntentTile = d.IntentTile >= 0, Fission = d.FissionPolicy >= 0,
+                Commit = d.CommitTurns >= 0, TradeValue = new bool[7], TradeGate = new bool[7],
+                TradeShare = d.TradeExportShare >= 0
+            };
+            for (int i = 0; i < m.Service.Length; i++) m.Service[i] = d.ServiceLevels != null && i < d.ServiceLevels.Length;
+            for (int i = 0; i < 7; i++) { m.TradeValue[i] = d.TradeValue != null && i < d.TradeValue.Length; m.TradeGate[i] = d.TradeGate != null && i < d.TradeGate.Length; }
+            return m;
         }
 
         private ElderModel9Context Context(int id)
@@ -779,6 +1016,8 @@ namespace Anthropocene.Simulation
                         ParentSociety = World.Societies.FirstOrDefault(x => x.Id == camp.SocietyId)?.ParentSociety ?? 0 };
                     step.Villages.Add(v);
                 }
+                if (step.DecisionDiagnostics != null && step.DecisionDiagnostics.TryGetValue(id, out var decisionDiagnostics))
+                    v.DecisionDiagnostics = decisionDiagnostics?.Copy();
                 step.ObserveMs += clock.Elapsed.TotalMilliseconds; clock.Restart();
                 var memory = camp.ElderMemory; var context = Context(id);
                 bool active = memory != null && memory.HasCommitment && memory.Commitment != null && memory.CommitmentRemaining > 0;
@@ -808,30 +1047,98 @@ namespace Anthropocene.Simulation
                 int index = 0;
                 foreach (var s in replay.Steps)
                 {
+                    if (s.DiagnosticSchemaVersion < 0 ||
+                        s.DiagnosticSchemaVersion > ElderModel9DiagnosticEnvelope.CurrentSchemaVersion)
+                        throw new InvalidOperationException("Replay diagnostic envelope version " + s.DiagnosticSchemaVersion +
+                            " is outside the supported schema allowlist {0,1," +
+                            ElderModel9DiagnosticEnvelope.CurrentSchemaVersion + "}.");
                     // Mirror the environment exactly: every village is observed (in camp-ID order) before each decision.
                     var observations = new Dictionary<int, ElderObservation>();
+                    var witnessMetadata = new Dictionary<int, ElderObservationMetadata>();
                     foreach (var camp in world.Camps.Where(c => c.Population > 0 && CultivationEconomy.EconomyEnabled(world, c)).OrderBy(c => c.Id).ToList())
                     {
                         ElderInstitutionMemorySystem.EnsureInitialized(world, camp);
                         previous.TryGetValue(camp.Id, out var prev);
-                        var obs = builder.Build(world, camp.Id, replay.MovementEnabled, out _, prev);
+                        var obs = builder.Build(world, camp.Id, replay.MovementEnabled, out var meta, prev);
                         ElderModel9Observation.FillDemography(world, camp, obs);
                         observations[camp.Id] = obs;
+                        witnessMetadata[camp.Id] = meta;
                     }
                     observations = observations.Where(p => s.Directives.ContainsKey(p.Key)).ToDictionary(p => p.Key, p => p.Value);
+                    witnessMetadata = witnessMetadata.Where(p => s.Directives.ContainsKey(p.Key)).ToDictionary(p => p.Key, p => p.Value);
                     var background = s.Background.ToDictionary(p => p.Key, p => p.Value.Select(o => o.Copy()).ToList());
                     var prepared = s.Directives.Count > 0
                         ? TurnPlanner.PrepareWithElderDirectives(world, background, s.Directives.ToDictionary(p => p.Key, p => p.Value.Copy()),
                             observations, compiler, s.Traces, execution ?? new PhaseExecution())
                         : TurnPlanner.Prepare(world, background, s.Traces);
+                    var decisionTradeEligibility = prepared.ElderDecisions.Keys.OrderBy(id => id).ToDictionary(id => id,
+                        id => world.Camps.FirstOrDefault(c => c.Id == id) is Camp camp && Trade.Eligible(world, camp));
                     foreach (var pair in prepared.ElderDecisions) previous[pair.Key] = pair.Value;
-                    new TurnResolver(execution ?? new PhaseExecution()).Resolve(world, prepared);
+                    var replayRecord = new TurnResolver(execution ?? new PhaseExecution()).Resolve(world, prepared);
+                    if (s.DiagnosticSchemaVersion == 1 && world.Config.ElderRawMaterialsEnabled)
+                        throw new InvalidOperationException("Schema-1 replay cannot be used with raw materials enabled; regenerate under schema 2.");
+                    if (s.DiagnosticSchemaVersion >= ElderModel9DecisionDiagnostics.CurrentSchemaVersion)
+                    {
+                        var actual = prepared.ElderDecisions.OrderBy(p => p.Key).ToDictionary(p => p.Key,
+                            p => BuildDecisionDiagnostics(p.Key, world.Turn - 1, s.TrajectoryId, p.Value,
+                                observations[p.Key], witnessMetadata[p.Key],
+                                decisionTradeEligibility.TryGetValue(p.Key, out var tradeWasEligible) && tradeWasEligible));
+                        if (!DecisionDiagnosticsEqual(actual, s.DecisionDiagnostics))
+                            throw new InvalidOperationException("Replay decision diagnostics diverged at step " + index + ".");
+                        if (s.DiagnosticSchemaVersion >= ElderModel9DiagnosticEnvelope.CurrentSchemaVersion)
+                        {
+                            var raw = BuildRawMaterialDiagnostics(prepared, replayRecord, world.Turn - 1);
+                            if (!RawMaterialDiagnosticsEqual(raw, s.RawMaterialDiagnostics))
+                                throw new InvalidOperationException("Replay raw-material diagnostics diverged at step " + index + ".");
+                        }
+                    }
                     if (SaveCodec.Fingerprint(world) != s.PostFingerprint) throw new InvalidOperationException("Replay diverged at step " + index + ".");
                     index++;
                 }
             }
             finally { ResolutionMetrics.CaptureDemandAllocations = capture; }
         }
+
+        private static bool DecisionDiagnosticsEqual(Dictionary<int, ElderModel9DecisionDiagnostics> a,
+            Dictionary<int, ElderModel9DecisionDiagnostics> b)
+        {
+            if (a == null || b == null || a.Count != b.Count) return false;
+            foreach (var pair in a)
+            {
+                if (!b.TryGetValue(pair.Key, out var x) || x == null) return false;
+                var y = pair.Value;
+                if (y.SchemaVersion != x.SchemaVersion || y.TrajectoryId != x.TrajectoryId || y.DecisionTurn != x.DecisionTurn || y.CampId != x.CampId)
+                    return false;
+                if (!HeadValuesEqual(y.Requested, x.Requested) || !HeadValuesEqual(y.Accepted, x.Accepted) || !HeadValuesEqual(y.Realised, x.Realised) ||
+                    !HeadMaskEqual(y.RequestedMask, x.RequestedMask) || !HeadMaskEqual(y.AcceptedMask, x.AcceptedMask) ||
+                    !HeadMaskEqual(y.RealisedMask, x.RealisedMask) || !HeadMaskEqual(y.ActiveMask, x.ActiveMask)) return false;
+            }
+            return true;
+        }
+        private static bool RawMaterialDiagnosticsEqual(Dictionary<string, ElderModel9RawMaterialDiagnostic> a,
+            Dictionary<string, ElderModel9RawMaterialDiagnostic> b)
+        {
+            if (a == null || b == null || a.Count != b.Count) return false;
+            foreach (var p in a)
+                if (!b.TryGetValue(p.Key, out var x) || x == null || p.Value.SchemaVersion != x.SchemaVersion ||
+                    p.Value.CampId != x.CampId || p.Value.Material != x.Material || p.Value.DecisionTurn != x.DecisionTurn ||
+                    p.Value.RequestId != x.RequestId || !p.Value.RequestedUnits.Equals(x.RequestedUnits) ||
+                    !p.Value.AcceptedUnits.Equals(x.AcceptedUnits) || !p.Value.RealisedUnits.Equals(x.RealisedUnits)) return false;
+            return true;
+        }
+
+        private static bool HeadValuesEqual(ElderModel9HeadValues a, ElderModel9HeadValues b)
+            => a != null && b != null && a.ClothingRoute == b.ClothingRoute && a.ShelterRoute == b.ShelterRoute &&
+                a.Movement == b.Movement && a.IntentTile == b.IntentTile && a.Fission == b.Fission && a.Commit == b.Commit &&
+                a.TradeShare.Equals(b.TradeShare) && DoubleArrayEqual(a.Strategic, b.Strategic) && DoubleArrayEqual(a.Service, b.Service) &&
+                DoubleArrayEqual(a.TradeValue, b.TradeValue) && DoubleArrayEqual(a.TradeGate, b.TradeGate);
+        private static bool HeadMaskEqual(ElderModel9HeadMask a, ElderModel9HeadMask b)
+            => a != null && b != null && a.ClothingRoute == b.ClothingRoute && a.ShelterRoute == b.ShelterRoute &&
+                a.Movement == b.Movement && a.IntentTile == b.IntentTile && a.Fission == b.Fission && a.Commit == b.Commit &&
+                a.TradeShare == b.TradeShare && BoolArrayEqual(a.Strategic, b.Strategic) && BoolArrayEqual(a.Service, b.Service) &&
+                BoolArrayEqual(a.TradeValue, b.TradeValue) && BoolArrayEqual(a.TradeGate, b.TradeGate);
+        private static bool DoubleArrayEqual(double[] a, double[] b) => a != null && b != null && a.SequenceEqual(b);
+        private static bool BoolArrayEqual(bool[] a, bool[] b) => a != null && b != null && a.SequenceEqual(b);
     }
 
     // Specialist share (reporting only; Docs/ElderModel9SpecialistShare.md). The share of a village's residents producing

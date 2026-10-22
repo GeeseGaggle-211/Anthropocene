@@ -88,6 +88,7 @@ namespace Anthropocene.Simulation
             TradeEnabled = false; TradeRange = defaults.TradeRange; TradeRequisitionsPerCamp = defaults.TradeRequisitionsPerCamp; TradeListLength = defaults.TradeListLength; TradeMargin = defaults.TradeMargin; TradeDistanceCostPerHex = defaults.TradeDistanceCostPerHex;
             TradeFoodEnabled = defaults.TradeFoodEnabled; TradeFoodSafeOnly = defaults.TradeFoodSafeOnly; TradeExportLabourShare = defaults.TradeExportLabourShare;
             EconomicAllocation = EconomicAllocationStrategy.Legacy;
+            ElderRawMaterialsEnabled = false;
             GoodsStorageEnabled = false; GoodsBaseStoragePerResident = defaults.GoodsBaseStoragePerResident; GoodsStorageSpacePerUnit = defaults.GoodsStorageSpacePerUnit;
             // Absent in older saves: retain the exact legacy net-growth model. PhysicalMortalityV1 is selected only by a
             // newly-created configuration or an explicit, recorded migration (Docs/DemographyQoLContract-v1.1.md).
@@ -216,6 +217,8 @@ namespace Anthropocene.Simulation
         // EconomicPlanner) or "DemandControl" (service controllers and Elder arbitration, DemandControl.cs). Saves without it
         // load Legacy.
         [System.Runtime.Serialization.OptionalField] public string EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        // Round-3 model9 raw-material stock requests. Absent in old saves: off.
+        [System.Runtime.Serialization.OptionalField] public bool ElderRawMaterialsEnabled = false;
         [System.Runtime.Serialization.OptionalField] public double GoodsBaseStoragePerResident = 2, GoodsStorageSpacePerUnit = 20;
         // Versioned human demography. New worlds use the v1.1 physical model. Saves without this field load the legacy
         // net-growth model in InitializeNeolithic; an explicit migration must record its provenance on WorldState.
