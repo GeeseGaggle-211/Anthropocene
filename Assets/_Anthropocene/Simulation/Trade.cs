@@ -110,6 +110,8 @@ namespace Anthropocene.Simulation
     internal sealed class TradeAgreement
     {
         public int Requester, Responder, Distance;
+        public string RequestId, TransactionId;
+        public Dictionary<string, object> Diagnostic;
         public TradeGood Want, Give;
         public double WantQuantity, GiveQuantity, Ratio, Affinity, RequesterGain, ResponderGain;
         public bool Countered;
@@ -320,6 +322,10 @@ namespace Anthropocene.Simulation
     {
         public static readonly TradePlan Empty = new TradePlan();
         public readonly List<TradeAgreement> Agreements = new List<TradeAgreement>();
+        // Transient reporting-only rows. They are allocated only when the
+        // environment-owned economic diagnostic gate is enabled.
+        public readonly List<Dictionary<string, object>> Diagnostics = new List<Dictionary<string, object>>();
+        public bool CaptureDiagnostics;
         public readonly TradeSummary Summary = new TradeSummary();
         public readonly Dictionary<int, double[]> Deltas = new Dictionary<int, double[]>();
         public readonly Dictionary<int, double[]> Exports = new Dictionary<int, double[]>();
@@ -722,6 +728,17 @@ namespace Anthropocene.Simulation
             => w.Config.TradeEnabled && c.Population > 0 && c.Player != 0
                && CultivationEconomy.EconomyEnabled(w, c) && c.People?.Memory != null;
 
+        private static string EligibilityReason(WorldState w, Camp c, ISet<int> excluded)
+        {
+            if (!w.Config.TradeEnabled) return "trade-disabled";
+            if (c.Population <= 0) return "no-residents";
+            if (c.Player == 0) return "player-controlled-camp";
+            if (!CultivationEconomy.EconomyEnabled(w, c)) return "economy-inactive";
+            if (c.People?.Memory == null) return "contact-memory-unavailable";
+            if (excluded != null && excluded.Contains(c.Id)) return "excluded-by-turn-plan";
+            return null;
+        }
+
         // Last turn's committed food production per camp, the lagged income forecast of the food envelope.
         internal static Dictionary<int, double> LastProduction(WorldState w)
         {
@@ -939,6 +956,8 @@ namespace Anthropocene.Simulation
         private sealed class Requisition
         {
             public int From, To, Distance;
+            public string Id;
+            public Dictionary<string, object> Diagnostic;
             public TradeGood[] Wants, Gives;
             public double Affinity;
         }
@@ -948,9 +967,11 @@ namespace Anthropocene.Simulation
         // want; the requester's 1:1 best quantity is halved up to three times until both accept. It honours at
         // 1:1 when it accepts that, otherwise counters once at its floor inside the requester's limit (closed).
         // `flows` holds the (giver, receiver, curve) flows already agreed this turn: a pair never moves one curve both ways.
-        private static TradeAgreement Respond(Valuation r, Valuation p, Requisition x, SimulationConfig cfg, HashSet<(int, int, string)> flows)
+        private static TradeAgreement Respond(Valuation r, Valuation p, Requisition x, SimulationConfig cfg,
+            HashSet<(int, int, string)> flows, out string rejectionReason)
         {
             Counters.Count(ref Counters.Responds);
+            rejectionReason = "no-mutually-acceptable-good-pair";
             double margin = cfg.TradeMargin * (1 - x.Affinity), transport = Math.Min(1, cfg.TradeDistanceCostPerHex * x.Distance);
             TradeAgreement best = null;
             foreach (var want in x.Wants)
@@ -978,7 +999,32 @@ namespace Anthropocene.Simulation
                         break;
                     }
                 }
+            if (best != null) rejectionReason = null;
             return best;
+        }
+
+        private static Dictionary<string, object> LifecycleLeg(string id, int sender, int receiver,
+            TradeGood good, double agreed, double[] stockParts, double made, bool allStock)
+        {
+            var descriptor = Descriptor(good);
+            var parts = new List<Dictionary<string, object>>();
+            for (int i = 0; i < descriptor.Parts.Length; i++)
+                parts.Add(new Dictionary<string, object>(StringComparer.Ordinal)
+                { ["item"] = descriptor.Parts[i].Name, ["stockQuantity"] = stockParts[i],
+                    ["madeToOrderQuantity"] = i == 0 ? made : 0.0, ["deliveredQuantity"] = 0.0 });
+            return new Dictionary<string, object>(StringComparer.Ordinal)
+            { ["legId"] = id, ["sender"] = sender, ["receiver"] = receiver, ["good"] = good.ToString(),
+                ["unit"] = "trade-good-units", ["requestedQuantity"] = agreed, ["agreedQuantity"] = agreed,
+                ["stockQuantity"] = Sum(stockParts), ["madeToOrderQuantity"] = made,
+                ["escrowedQuantity"] = 0.0, ["producedMadeToOrderQuantity"] = 0.0,
+                ["supplyAvailableQuantity"] = 0.0, ["bilateralDeliverableQuantity"] = 0.0,
+                ["deliveredQuantity"] = 0.0, ["acceptedQuantity"] = 0.0,
+                ["senderDebitQuantity"] = 0.0, ["receiverCreditQuantity"] = 0.0,
+                ["deliveryFraction"] = 0.0, ["producerDeliveryFraction"] = made > 0 ? 0.0 : 1.0,
+                ["storageBlockedQuantity"] = 0.0, ["counterpartyShortfallQuantity"] = 0.0,
+                ["refundedOrReturnedQuantity"] = 0.0, ["destroyedQuantity"] = 0.0,
+                ["deliveryPhase"] = allStock ? "opening" : "after-production", ["state"] = "agreed",
+                ["parts"] = parts };
         }
 
         // The bounded same-turn handshake: O(camps (goods log W + contacts)) pure per-camp work, then
@@ -988,9 +1034,20 @@ namespace Anthropocene.Simulation
             IReadOnlyDictionary<int, TradePosture> postures = null)
         {
             var cfg = w.Config;
-            if (!cfg.TradeEnabled) return TradePlan.Empty;
+            bool capture = w.EconomicDiagnosticCapture;
+            if (!cfg.TradeEnabled && !capture) return TradePlan.Empty;
             using var profile = PhaseProfile.Scope("Trade.Plan");
-            var plan = new TradePlan();
+            var plan = new TradePlan { CaptureDiagnostics = capture };
+            if (capture)
+                foreach (var camp in w.Camps.OrderBy(c => c.Id))
+                {
+                    string reason = EligibilityReason(w, camp, excluded);
+                    plan.Diagnostics.Add(new Dictionary<string, object>(StringComparer.Ordinal)
+                    { ["recordType"] = "eligibility", ["eventId"] = "turn/" + w.Turn + "/eligibility/" + camp.Id,
+                        ["campId"] = camp.Id, ["societyId"] = camp.SocietyId, ["eligible"] = reason == null,
+                        ["gatingReason"] = reason, ["partnerSearchCount"] = 0 });
+                }
+            if (!cfg.TradeEnabled) return plan;
             var eligible = w.Camps.Where(c => Eligible(w, c) && (excluded == null || !excluded.Contains(c.Id))).OrderBy(c => c.Id).ToArray();
             PhaseProfile.Count("Trade.Eligible", eligible.Length);
             plan.Summary.Eligible = eligible.Length;
@@ -1010,6 +1067,13 @@ namespace Anthropocene.Simulation
                 .Select(k => (k.Camp, Distance: map.Distance(c.Tile, k.Tile)))
                 .Where(p => p.Distance <= cfg.TradeRange)
                 .OrderBy(p => p.Distance).ThenBy(p => p.Camp).Take(cfg.TradeRequisitionsPerCamp).ToArray());
+            if (capture)
+                for (int i = 0; i < eligible.Length; i++)
+                {
+                    var eligibility = plan.Diagnostics.First(r => (string)r["recordType"] == "eligibility" && (int)r["campId"] == eligible[i].Id);
+                    eligibility["partnerSearchCount"] = partnersOf[i].Length;
+                    if (partnersOf[i].Length == 0) eligibility["partnerSearchReason"] = "no-eligible-remembered-partner-in-range";
+                }
             var taking = new HashSet<int>();
             for (int i = 0; i < eligible.Length; i++)
                 if (partnersOf[i].Length > 0) { taking.Add(eligible[i].Id); foreach (var partner in partnersOf[i]) taking.Add(partner.Camp); }
@@ -1039,6 +1103,19 @@ namespace Anthropocene.Simulation
             });
             requestScope.Dispose();
             var all = requisitions.SelectMany(x => x).ToList();
+            for (int i = 0; i < all.Count; i++)
+            {
+                var request = all[i];
+                if (!capture) continue;
+                request.Id = "turn/" + w.Turn + "/request/" + i;
+                request.Diagnostic = new Dictionary<string, object>(StringComparer.Ordinal)
+                { ["recordType"] = "requisition", ["requestId"] = request.Id, ["requester"] = request.From,
+                    ["responder"] = request.To, ["distance"] = request.Distance, ["affinity"] = request.Affinity,
+                    ["wantedGoods"] = request.Wants.Select(g => g.ToString()).ToArray(),
+                    ["offeredGoods"] = request.Gives.Select(g => g.ToString()).ToArray(), ["outcome"] = "pending",
+                    ["rejectionReason"] = null };
+                plan.Diagnostics.Add(request.Diagnostic);
+            }
             var responseScope = PhaseProfile.Scope("Responses");
             if (Counters.Enabled) { Counters.RequestTicks += System.Diagnostics.Stopwatch.GetTimestamp() - stage; stage = System.Diagnostics.Stopwatch.GetTimestamp(); }
             plan.Summary.Requisitions = all.Count;
@@ -1047,17 +1124,23 @@ namespace Anthropocene.Simulation
             {
                 var p = byCamp[group.Key];
                 // Value order: the responder's best gain from each request on its opening positions, then requester ID.
-                var ordered = group.Select(x => { var a = Respond(byCamp[x.From], p, x, cfg, flows); return (x, a, RV: byCamp[x.From].Version, PV: p.Version, Score: a?.ResponderGain ?? double.NegativeInfinity); })
+                var ordered = group.Select(x => { var a = Respond(byCamp[x.From], p, x, cfg, flows, out string reason); return (x, a, Reason: reason, RV: byCamp[x.From].Version, PV: p.Version, Score: a?.ResponderGain ?? double.NegativeInfinity); })
                     .OrderByDescending(t => t.Score).ThenBy(t => t.x.From).ToList();
-                foreach (var (x, scored, rv, pv, _) in ordered)
+                foreach (var (x, scored, scoredReason, rv, pv, _) in ordered)
                 {
                     var r = byCamp[x.From];
                     // Re-evaluated on the positions earlier agreements left, so honours from several partners never
                     // overshoot and no stock is promised twice; a scored answer on unchanged positions is reused.
                     bool unchanged = r.Version == rv && p.Version == pv && (scored == null
                         || !flows.Contains((r.Camp, p.Camp, Descriptor(scored.Want).Curve)) && !flows.Contains((p.Camp, r.Camp, Descriptor(scored.Give).Curve)));
-                    var agreement = unchanged ? scored : Respond(r, p, x, cfg, flows);
-                    if (agreement == null) { plan.Summary.Ignored++; continue; }
+                    string rejectionReason = scoredReason;
+                    var agreement = unchanged ? scored : Respond(r, p, x, cfg, flows, out rejectionReason);
+                    if (agreement == null)
+                    {
+                        plan.Summary.Ignored++;
+                        if (capture) { x.Diagnostic["outcome"] = "ignored"; x.Diagnostic["rejectionReason"] = rejectionReason; }
+                        continue;
+                    }
                     agreement.Utility = TradeUtilitySnapshot.Capture(r, p,
                         agreement, cfg);
                     plan.Agreements.Add(agreement);
@@ -1068,6 +1151,32 @@ namespace Anthropocene.Simulation
                     agreement.WantMade = wantMade; agreement.GiveMade = giveMade;
                     agreement.WantParts = p.Parts(agreement.Want, Math.Max(0, agreement.WantQuantity - wantMade));
                     agreement.GiveParts = r.Parts(agreement.Give, Math.Max(0, agreement.GiveQuantity - giveMade));
+                    if (capture)
+                    {
+                        agreement.RequestId = x.Id;
+                        agreement.TransactionId = "turn/" + w.Turn + "/trade/" + (plan.Agreements.Count - 1);
+                        x.Diagnostic["outcome"] = agreement.Countered ? "countered" : "honoured";
+                        agreement.Diagnostic = new Dictionary<string, object>(StringComparer.Ordinal)
+                        { ["recordType"] = "transaction", ["requestId"] = x.Id, ["transactionId"] = agreement.TransactionId,
+                            ["requester"] = agreement.Requester, ["responder"] = agreement.Responder,
+                            ["distance"] = agreement.Distance, ["handshake"] = agreement.Countered ? "countered" : "honoured",
+                            ["ratio"] = agreement.Ratio, ["requesterPlannedGain"] = agreement.RequesterGain,
+                            ["responderPlannedGain"] = agreement.ResponderGain, ["settlementState"] = "agreed",
+                            ["deliveryFraction"] = 0.0,
+                            ["requesterImmediateUtility"] = null, ["responderImmediateUtility"] = null,
+                            ["requesterImmediateUtilityUnavailableReason"] = "settlement-not-finished",
+                            ["responderImmediateUtilityUnavailableReason"] = "settlement-not-finished",
+                            ["delayedUtility"] = null,
+                            ["delayedUtilityUnavailableReason"] = "future-outcome-linkage-not-yet-observed-at-current-transition",
+                            ["legs"] = new List<Dictionary<string, object>>
+                            {
+                                LifecycleLeg(agreement.TransactionId + "/want", agreement.Responder, agreement.Requester,
+                                    agreement.Want, agreement.WantQuantity, agreement.WantParts, agreement.WantMade, agreement.AllStock),
+                                LifecycleLeg(agreement.TransactionId + "/give", agreement.Requester, agreement.Responder,
+                                    agreement.Give, agreement.GiveQuantity, agreement.GiveParts, agreement.GiveMade, agreement.AllStock)
+                            } };
+                        plan.Diagnostics.Add(agreement.Diagnostic);
+                    }
                     plan.Receive(r.Camp, agreement.Want, WithMade(agreement.WantParts, wantMade), agreement.AllStock); plan.Send(p.Camp, agreement.Want, agreement.WantParts, wantMade);
                     plan.Send(r.Camp, agreement.Give, agreement.GiveParts, giveMade); plan.Receive(p.Camp, agreement.Give, WithMade(agreement.GiveParts, giveMade), agreement.AllStock);
                     if (agreement.Countered) plan.Summary.Countered++; else plan.Summary.Honoured++;
@@ -1141,6 +1250,33 @@ namespace Anthropocene.Simulation
             }
         }
         private static double Sum(double[] a) { double s = 0; if (a != null) foreach (double x in a) s += x; return s; }
+        private static Dictionary<string, object> DiagnosticLeg(TradeAgreement agreement, int index)
+        {
+            if (agreement?.Diagnostic == null || !(agreement.Diagnostic["legs"] is List<Dictionary<string, object>> legs)) return null;
+            return legs[index];
+        }
+        private static void RecordSettlement(TradeAgreement agreement, int index, double[] stockParts,
+            double made, double escrowed, double produced, double ownFraction, double bilateralFraction,
+            double roomFraction, double settledFraction)
+        {
+            var row = DiagnosticLeg(agreement, index); if (row == null) return;
+            double agreed = (double)row["agreedQuantity"], delivered = agreed * settledFraction;
+            row["escrowedQuantity"] = escrowed;
+            row["producedMadeToOrderQuantity"] = produced;
+            row["supplyAvailableQuantity"] = agreed * ownFraction;
+            row["bilateralDeliverableQuantity"] = agreed * bilateralFraction;
+            row["deliveredQuantity"] = delivered; row["acceptedQuantity"] = delivered;
+            row["senderDebitQuantity"] = delivered; row["receiverCreditQuantity"] = delivered;
+            row["deliveryFraction"] = settledFraction;
+            row["producerDeliveryFraction"] = made > 1e-12 ? Math.Min(1, produced / made) : 1.0;
+            row["storageBlockedQuantity"] = Math.Max(0, agreed * bilateralFraction * (1 - roomFraction));
+            row["counterpartyShortfallQuantity"] = Math.Max(0, agreed * (ownFraction - bilateralFraction));
+            row["refundedOrReturnedQuantity"] = Math.Max(0, escrowed - Math.Min(escrowed, delivered));
+            row["state"] = settledFraction >= 1 - 1e-12 ? "delivered" : settledFraction > 1e-12 ? "partial" : "undelivered";
+            var parts = (List<Dictionary<string, object>>)row["parts"];
+            for (int i = 0; i < parts.Count; i++)
+                parts[i]["deliveredQuantity"] = settledFraction * (stockParts[i] + (i == 0 ? made : 0));
+        }
         // After production, the fraction of a leg its giver can deliver: what escrow holds plus, of its made part,
         // what it now holds of the good.
         private static double Deliverable(Camp giver, TradeGood good, double[] held, double stock, double made)
@@ -1180,27 +1316,72 @@ namespace Anthropocene.Simulation
                     // A party that vanished: refund any escrow to the giver still present.
                     if (camps.TryGetValue(a.Responder, out var pr)) Release(pr, pr, a.Want, s.WantEscrow[k], 0);
                     if (camps.TryGetValue(a.Requester, out var rr)) Release(rr, rr, a.Give, s.GiveEscrow[k], 0);
+                    if (a.Diagnostic != null)
+                    {
+                        a.Diagnostic["settlementState"] = "party-vanished";
+                        a.Diagnostic["deliveryFraction"] = 0.0;
+                        a.Diagnostic["requesterImmediateUtility"] = null;
+                        a.Diagnostic["responderImmediateUtility"] = null;
+                        a.Diagnostic["requesterImmediateUtilityUnavailableReason"] = "party-vanished-before-terminal-utility";
+                        a.Diagnostic["responderImmediateUtilityUnavailableReason"] = "party-vanished-before-terminal-utility";
+                        a.Diagnostic["delayedUtility"] = null;
+                        a.Diagnostic["delayedUtilityUnavailableReason"] = "party-vanished-before-terminal-utility";
+                        foreach (var leg in (List<Dictionary<string, object>>)a.Diagnostic["legs"])
+                        {
+                            double escrowed = Convert.ToDouble(leg["escrowedQuantity"]);
+                            leg["state"] = "party-vanished";
+                            leg["supplyAvailableQuantity"] = escrowed;
+                            leg["bilateralDeliverableQuantity"] = 0.0;
+                            leg["counterpartyShortfallQuantity"] = escrowed;
+                            leg["deliveredQuantity"] = leg["acceptedQuantity"] = 0.0;
+                            leg["senderDebitQuantity"] = leg["receiverCreditQuantity"] = 0.0;
+                            leg["deliveryFraction"] = 0.0;
+                            leg["refundedOrReturnedQuantity"] = escrowed;
+                            foreach (var part in (List<Dictionary<string, object>>)leg["parts"])
+                                part["deliveredQuantity"] = 0.0;
+                        }
+                    }
                     s.WantEscrow[k] = s.GiveEscrow[k] = null; s.WantScale[k] = s.GiveScale[k] = 0; continue;
                 }
                 if (!afterProduction)
                 {
                     double fw = Available(p, a.Want, a.WantParts), fg = Available(r, a.Give, a.GiveParts);
                     s.WantEscrow[k] = Escrow(p, a.Want, a.WantParts, fw); s.GiveEscrow[k] = Escrow(r, a.Give, a.GiveParts, fg);
-                    if (!a.AllStock) continue;
+                    if (!a.AllStock)
+                    {
+                        var want = DiagnosticLeg(a, 0); var give = DiagnosticLeg(a, 1);
+                        if (want != null) { want["escrowedQuantity"] = Sum(s.WantEscrow[k]); want["state"] = "escrowed-awaiting-production"; }
+                        if (give != null) { give["escrowedQuantity"] = Sum(s.GiveEscrow[k]); give["state"] = "escrowed-awaiting-production"; }
+                        continue;
+                    }
                     double f = Math.Min(fw, fg);
                     // A receiver short of storage room takes less, and both legs scale with it.
-                    f = Math.Min(f * RoomFraction(r, a.Want, f * Sum(a.WantParts)), f * RoomFraction(p, a.Give, f * Sum(a.GiveParts)));
+                    double roomWant = RoomFraction(r, a.Want, f * Sum(a.WantParts));
+                    double roomGive = RoomFraction(p, a.Give, f * Sum(a.GiveParts));
+                    double room = Math.Min(roomWant, roomGive); f *= room;
+                    RecordSettlement(a, 0, a.WantParts, 0, Sum(s.WantEscrow[k]), 0, fw, Math.Min(fw, fg), room, f);
+                    RecordSettlement(a, 1, a.GiveParts, 0, Sum(s.GiveEscrow[k]), 0, fg, Math.Min(fw, fg), room, f);
                     Release(p, r, a.Want, s.WantEscrow[k], fw > 0 ? f / fw : 0); Release(r, p, a.Give, s.GiveEscrow[k], fg > 0 ? f / fg : 0);
                     s.WantEscrow[k] = s.GiveEscrow[k] = null; s.WantScale[k] = s.GiveScale[k] = f;
+                    if (a.Diagnostic != null) { a.Diagnostic["settlementState"] = f >= 1 - 1e-12 ? "delivered" : f > 1e-12 ? "partial" : "undelivered"; a.Diagnostic["deliveryFraction"] = f; }
                     continue;
                 }
                 if (a.AllStock) continue;
                 double wantStock = Sum(a.WantParts), giveStock = Sum(a.GiveParts);
-                double share = Math.Min(Deliverable(p, a.Want, s.WantEscrow[k], wantStock, a.WantMade), Deliverable(r, a.Give, s.GiveEscrow[k], giveStock, a.GiveMade));
-                share = Math.Min(share * RoomFraction(r, a.Want, share * (wantStock + a.WantMade)), share * RoomFraction(p, a.Give, share * (giveStock + a.GiveMade)));
+                double wantOwn = Deliverable(p, a.Want, s.WantEscrow[k], wantStock, a.WantMade);
+                double giveOwn = Deliverable(r, a.Give, s.GiveEscrow[k], giveStock, a.GiveMade);
+                double supplyShare = Math.Min(wantOwn, giveOwn);
+                double roomWantAfter = RoomFraction(r, a.Want, supplyShare * (wantStock + a.WantMade));
+                double roomGiveAfter = RoomFraction(p, a.Give, supplyShare * (giveStock + a.GiveMade));
+                double roomAfter = Math.Min(roomWantAfter, roomGiveAfter), share = supplyShare * roomAfter;
+                double wantProduced = a.WantMade > 0 ? Math.Min(a.WantMade, Math.Max(0, Descriptor(a.Want).Parts[0].Get(p))) : 0;
+                double giveProduced = a.GiveMade > 0 ? Math.Min(a.GiveMade, Math.Max(0, Descriptor(a.Give).Parts[0].Get(r))) : 0;
+                RecordSettlement(a, 0, a.WantParts, a.WantMade, Sum(s.WantEscrow[k]), wantProduced, wantOwn, supplyShare, roomAfter, share);
+                RecordSettlement(a, 1, a.GiveParts, a.GiveMade, Sum(s.GiveEscrow[k]), giveProduced, giveOwn, supplyShare, roomAfter, share);
                 Deliver(p, r, a.Want, s.WantEscrow[k], wantStock, a.WantMade, share);
                 Deliver(r, p, a.Give, s.GiveEscrow[k], giveStock, a.GiveMade, share);
                 s.WantEscrow[k] = s.GiveEscrow[k] = null; s.WantScale[k] = s.GiveScale[k] = share;
+                if (a.Diagnostic != null) { a.Diagnostic["settlementState"] = share >= 1 - 1e-12 ? "delivered" : share > 1e-12 ? "partial" : "undelivered"; a.Diagnostic["deliveryFraction"] = share; }
             }
             var after = Enumerable.Range(0, parts.Length).Select(Total).ToArray();
             for (int i = 0; i < parts.Length; i++)
@@ -1250,6 +1431,15 @@ namespace Anthropocene.Simulation
                     giveQuantity) ?? 0;
                 double responderUtility = a.Utility?.Responder(wantQuantity,
                     giveQuantity) ?? 0;
+                if (a.Diagnostic != null)
+                {
+                    a.Diagnostic["requesterImmediateUtility"] = requesterUtility;
+                    a.Diagnostic["responderImmediateUtility"] = responderUtility;
+                    a.Diagnostic["requesterImmediateUtilityUnavailableReason"] = null;
+                    a.Diagnostic["responderImmediateUtilityUnavailableReason"] = null;
+                    a.Diagnostic["delayedUtility"] = null;
+                    a.Diagnostic["delayedUtilityUnavailableReason"] = "future-outcome-linkage-not-yet-observed-at-current-transition";
+                }
                 record.Trades.Add(new TradeRecord { Turn = w.Turn, Requester = r.Id, Responder = p.Id, RequesterSociety = r.SocietyId, ResponderSociety = p.SocietyId,
                     Distance = a.Distance, Want = a.Want, Give = a.Give, WantQuantity = wantQuantity, GiveQuantity = giveQuantity,
                     Ratio = a.Ratio, Affinity = a.Affinity, Countered = a.Countered, RequesterGain = a.RequesterGain, ResponderGain = a.ResponderGain, Delivered = want, GiveDelivered = give,
@@ -1268,5 +1458,10 @@ namespace Anthropocene.Simulation
                     Math.Max(0, a.ResponderGain * give));
             }
         }
+
+        internal static List<Dictionary<string, object>> DiagnosticRows(TradeSettlement settlement)
+            => settlement?.Plan?.CaptureDiagnostics == true
+                ? settlement.Plan.Diagnostics
+                : new List<Dictionary<string, object>>();
     }
 }

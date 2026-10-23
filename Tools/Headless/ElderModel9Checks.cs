@@ -395,19 +395,188 @@ internal static class ElderModel9Checks
         var a = on.Step(actions); var b = off.Step(actions);
         Check(a.Fingerprint == b.Fingerprint && b.DiagnosticSchemaVersion == 2 && b.EconomicDiagnostics.Count == 0,
             "economic capture preserves physics and disabled envelope two");
-        Check(a.DiagnosticSchemaVersion == 3 && a.EconomicDiagnostics.Count > 0, "economic envelope three carries schema-one records");
+        Check(a.DiagnosticSchemaVersion == 3 && a.EconomicDiagnostics.Count > 0, "economic envelope three carries schema-two records");
+        bool sawStoredProductionControl = false;
+        bool sawTypedCampFoodConsumption = false;
+        bool sawActiveHerdDevelopment = false;
         foreach (var p in a.EconomicDiagnostics)
         {
             var d = p.Value;
-            Check(d.CampId == p.Key && d.DecisionTurn == a.Turn - 1 && d.TrajectoryId == a.TrajectoryId && d.SchemaVersion == 1,
+            Check(d.CampId == p.Key && d.DecisionTurn == a.Turn - 1 && d.TrajectoryId == a.TrajectoryId && d.SchemaVersion == 2,
                 "economic record binds camp/turn/trajectory/schema");
             Check(d.Goods.Select(g => (string)g["good"]).SequenceEqual(Enum.GetNames(typeof(CraftGood))), "economic goods use stable enum order");
             Check(d.Materials.Select(g => (string)g["material"]).SequenceEqual(new[] { "Stone", "Clay", "Wood" }), "economic materials use stable order");
             Check(d.Herds.Select(h => (int)h["herdId"]).Distinct().Count() == d.Herds.Count, "managed groups are counted once by herd ID");
-            Check(d.Conservation["foodResidual"] == null && d.Unavailable.ContainsKey("conservation.foodResidual"),
-                "unclosed stock ledger is explicitly unavailable");
+            Check(Math.Abs(Convert.ToDouble(d.Conservation["foodResidual"])) < 1e-8,
+                "food ledger closes from authoritative demographic receipts");
+            Check(Math.Abs(Convert.ToDouble(d.Conservation["grossPopulationResidual"])) < 1e-8,
+                "gross population changes close from independently recorded births and deaths");
+            Check(d.Controls.Select(row => (string)row["controlId"]).Distinct().Count() == d.Controls.Count,
+                "causal control rows have stable unique identities");
+            Check(d.Controls.All(row => row.ContainsKey("classification") && row.ContainsKey("classificationReason") &&
+                ((Dictionary<string, string>)row["phaseUnits"])["endingPopulation"].Equals("people") &&
+                ((Dictionary<string, string>)row["phaseUnits"])["endingQol"].Equals("qol")),
+                "causal controls carry explicit activity classification and phase-local units");
+            var populationDomain = (Dictionary<string, object>)d.Domains["population"];
+            Check(d.Controls.All(row =>
+                {
+                    var phases = (Dictionary<string, object>)row["phases"];
+                    return phases["endingPopulation"] == null || Math.Abs(Convert.ToDouble(phases["endingPopulation"])
+                        - Convert.ToDouble(populationDomain["endingLinked"])) < 1e-9;
+                }), "all available control outcomes bind the committed closing population after transfers");
+            var manufacturingRequestIds = d.Requests.Select(row => (string)row["requestId"]).ToHashSet(StringComparer.Ordinal);
+            Check(d.PhysicalEvents.Where(row => row.ContainsKey("sourceRequestId")).All(row =>
+                manufacturingRequestIds.Contains((string)row["sourceRequestId"]) && row.ContainsKey("receiptId") &&
+                ((string)row["category"] == "production-receipt" || (string)row["category"] == "intermediate-recipe-consumption")),
+                "request-bound production mutations join an authoritative compiler request and receipt");
+            foreach (var row in d.Controls.Where(row => (string)row["domain"] == "manufacturing"))
+            {
+                var phases = (Dictionary<string, object>)row["phases"];
+                var request = d.Requests.Single(value => (string)value["requestId"] == (string)row["identity"]);
+                if (phases["committedPhysicalReceipt"] != null)
+                {
+                    string good = Convert.ToString(request["good"], System.Globalization.CultureInfo.InvariantCulture);
+                    string material = Convert.ToString(request["rawMaterial"], System.Globalization.CultureInfo.InvariantCulture);
+                    double bound = good != "" ? d.PhysicalEvents.Where(value =>
+                            (string)value["category"] == "production-receipt" && (string)value["item"] == good &&
+                            value.TryGetValue("sourceRequestId", out var source) && (string)source == (string)row["identity"])
+                        .Sum(value => Convert.ToDouble(value["quantity"]))
+                        : d.PhysicalEvents.Where(value => (string)value["category"] == "material-extraction-receipt" &&
+                            (string)value["item"] == material && value.TryGetValue("receiptId", out var receipt) &&
+                            (string)receipt == (string)row["identity"]).Sum(value => Convert.ToDouble(value["quantity"]));
+                    Check(Math.Abs(bound - Convert.ToDouble(phases["committedPhysicalReceipt"])) < 1e-9,
+                        "available manufacturing receipts cross-bind exact request-labelled mutations");
+                }
+                if (phases["committedPhysicalReceipt"] != null && phases["consumptionOrFinalService"] != null &&
+                    Convert.ToDouble(phases["committedPhysicalReceipt"]) > 1e-12 &&
+                    Convert.ToDouble(phases["consumptionOrFinalService"]) <= 1e-12)
+                {
+                    sawStoredProductionControl = true;
+                    Check(Convert.ToDouble(phases["executedWorkerOrInputClaim"]) > 1e-12,
+                        "stored production retains positive attributed work and receipt with zero terminal service");
+                }
+            }
+            foreach (var good in d.Goods)
+            {
+                string goodName = (string)good["good"];
+                double openingClaims = d.Requests.Where(row => Convert.ToString(row["good"]) == goodName && row.ContainsKey("openingStockDraw"))
+                    .Sum(row => Convert.ToDouble(row["openingStockDraw"]));
+                double receiptClaims = d.Requests.Where(row => Convert.ToString(row["good"]) == goodName && row.ContainsKey("productionReceiptAllocation"))
+                    .Sum(row => Convert.ToDouble(row["productionReceiptAllocation"]));
+                Check(openingClaims <= Convert.ToDouble(good["openingStock"]) + 1e-8 &&
+                    receiptClaims <= Convert.ToDouble(good["output"]) + 1e-8,
+                    "manufacturing service allocation never reuses opening stock or production receipts");
+            }
+            Check(d.ConservationRows.Any(row => (string)row["domain"] == "population") &&
+                d.ConservationRows.Any(row => (string)row["domain"] == "food") &&
+                d.ConservationRows.Count(row => (string)row["domain"] == "material") == 3 &&
+                d.ConservationRows.Count(row => (string)row["domain"] == "craft-good") == Enum.GetValues(typeof(CraftGood)).Length,
+                "mandatory population, food, material and craft-good ledgers are explicit");
+            Check(d.ConservationRows.All(row => Math.Abs(Convert.ToDouble(row["residual"])) < 1e-7),
+                "authoritative physical ledgers reconcile at the committed boundary");
+            Check(d.PhysicalEvents.Select(row => (string)row["eventId"]).Distinct().Count() == d.PhysicalEvents.Count,
+                "physical mutation and boundary events have unique stable identities");
+            var typedCampFood = d.PhysicalEvents.Where(row =>
+                (string)row["category"] == "human-food-consumption" &&
+                new[] { "PlantFood", "AnimalFood", "AquaticFood" }.Contains((string)row["item"])).ToArray();
+            Check(typedCampFood.All(row => (string)row["unit"] == "food" && (string)row["direction"] == "out" &&
+                row.TryGetValue("phase", out var rawPhase) && (string)rawPhase == "needs-after-production" &&
+                Convert.ToDouble(row["quantity"]) > 0),
+                "typed camp food debits carry exact food units and the physical needs/refund phase");
+            double typedCampFoodTotal = typedCampFood.Sum(row => Convert.ToDouble(row["quantity"]));
+            Check(typedCampFoodTotal <= Convert.ToDouble(populationDomain["humanFoodConsumption"]) + 1e-8,
+                "typed camp food debits do not claim detached-hunter or untyped local consumption");
+            sawTypedCampFoodConsumption |= typedCampFood.Length > 0;
+            var herdDevelopment = d.Controls.Single(row => (string)row["domain"] == "herding" &&
+                (string)row["identity"] == "herdDevelopment");
+            var herdPhases = (Dictionary<string, object>)herdDevelopment["phases"];
+            var herdUnavailable = (Dictionary<string, string>)herdDevelopment["unavailable"];
+            if ((string)herdDevelopment["classification"] == "active")
+            {
+                var herdDomain = (Dictionary<string, object>)d.Domains["herding"];
+                var herdFunnel = ((List<Dictionary<string, object>>)herdDomain["funnels"])
+                    .Single(row => (string)row["metric"] == "herdDevelopment");
+                Check(herdPhases["executedWorkerOrInputClaim"] != null &&
+                    Math.Abs(Convert.ToDouble(herdPhases["executedWorkerOrInputClaim"]) -
+                        Convert.ToDouble(herdFunnel["executedWork"]) * d.Years) < 1e-9 &&
+                    !herdUnavailable.ContainsKey("executedWorkerOrInputClaim"),
+                    "active herd development reports resolved worker-years without clearing terminal missingness");
+                sawActiveHerdDevelopment = true;
+            }
+            else
+                Check(herdPhases["executedWorkerOrInputClaim"] == null &&
+                    herdUnavailable.ContainsKey("executedWorkerOrInputClaim"),
+                    "inactive herd development does not claim executed worker-years");
+            foreach (var service in d.PhysicalEvents.Where(row =>
+                (string)row["category"] == "final-service-fulfilment"))
+            {
+                string item = (string)service["item"];
+                string phase = service.TryGetValue("phase", out var rawPhase) ? (string)rawPhase : null;
+                bool workTool = item == "FarmTools" || item == "HerdingTools" || item == "FishingTools";
+                Check(phase == (workTool ? "work-before-production" : "needs-after-production"),
+                    "terminal service carries its authoritative work/needs phase: " + item);
+            }
+            double Physical(string category, string item) => d.PhysicalEvents
+                .Where(row => (string)row["category"] == category && (string)row["item"] == item)
+                .Sum(row => Convert.ToDouble(row["quantity"]));
+            foreach (var good in d.Goods)
+            {
+                string name = (string)good["good"];
+                Check(d.PhysicalEvents.Count(row => (string)row["category"] == "opening-stock-boundary" && (string)row["item"] == name) == 1 &&
+                    d.PhysicalEvents.Count(row => (string)row["category"] == "ending-stock-boundary" && (string)row["item"] == name) == 1,
+                    "every craft good has exact opening and ending boundary receipts");
+                Check(Math.Abs(Physical("opening-stock-boundary", name) - Convert.ToDouble(good["openingStock"])) < 1e-8 &&
+                    Math.Abs(Physical("ending-stock-boundary", name) - Convert.ToDouble(good["endingStock"])) < 1e-8 &&
+                    Math.Abs(Physical("production-receipt", name) - Convert.ToDouble(good["output"])) < 1e-8 &&
+                    Math.Abs(Physical("intermediate-recipe-consumption", name) - Convert.ToDouble(good["intermediateConsumption"])) < 1e-8 &&
+                    Math.Abs(Physical("final-service-fulfilment", name) + Physical("wear-depreciation", name)
+                        - Convert.ToDouble(good["serviceConsumptionOrDepreciation"])) < 1e-8,
+                    "craft-good mutation reasons reconcile to authoritative stock changes: " + name +
+                    " open=" + Physical("opening-stock-boundary", name) + "/" + good["openingStock"] +
+                    " close=" + Physical("ending-stock-boundary", name) + "/" + good["endingStock"] +
+                    " produced=" + Physical("production-receipt", name) + "/" + good["output"] +
+                    " recipe=" + Physical("intermediate-recipe-consumption", name) + "/" + good["intermediateConsumption"] +
+                    " service=" + (Physical("final-service-fulfilment", name) + Physical("wear-depreciation", name)) +
+                    "/" + good["serviceConsumptionOrDepreciation"] + " trade=" + good["actualTradeIn"] +
+                    "/" + good["actualTradeOut"] + " transfer=" + good["transferIn"] + "/" + good["transferOut"]);
+            }
+            foreach (var materialRow in d.Materials)
+            {
+                string name = (string)materialRow["material"];
+                Check(Math.Abs(Physical("opening-stock-boundary", name) - Convert.ToDouble(materialRow["openingStock"])) < 1e-8 &&
+                    Math.Abs(Physical("ending-stock-boundary", name) - Convert.ToDouble(materialRow["endingStock"])) < 1e-8 &&
+                    Math.Abs(Physical("material-extraction-receipt", name) - Convert.ToDouble(materialRow["received"])) < 1e-8 &&
+                    Math.Abs(Physical("intermediate-recipe-consumption", name) - Convert.ToDouble(materialRow["recipeConsumption"])) < 1e-8,
+                    "material mutation reasons reconcile to authoritative stock changes");
+            }
+            var lifecycleRequests = d.Trades.Where(row => (string)row["recordType"] == "requisition")
+                .ToDictionary(row => (string)row["requestId"]);
+            foreach (var transaction in d.Trades.Where(row => (string)row["recordType"] == "transaction"))
+            {
+                Check(lifecycleRequests.ContainsKey((string)transaction["requestId"]),
+                    "settled transaction joins its requisition");
+                var legs = (List<Dictionary<string, object>>)transaction["legs"];
+                Check(legs.Count == 2 && legs.Select(row => ((int)row["sender"], (int)row["receiver"])).Distinct().Count() == 2,
+                    "trade lifecycle carries two reciprocal legs");
+                foreach (var leg in legs)
+                    Check(Math.Abs(Convert.ToDouble(leg["deliveredQuantity"]) + Convert.ToDouble(leg["storageBlockedQuantity"])
+                        - Convert.ToDouble(leg["bilateralDeliverableQuantity"])) < 1e-8,
+                        "trade delivery and storage rejection reconcile");
+                Check(legs.All(leg => Math.Abs(Convert.ToDouble(leg["deliveredQuantity"]) - Convert.ToDouble(leg["senderDebitQuantity"])) < 1e-8 &&
+                    Math.Abs(Convert.ToDouble(leg["deliveredQuantity"]) - Convert.ToDouble(leg["receiverCreditQuantity"])) < 1e-8 &&
+                    Math.Abs(Convert.ToDouble(leg["deliveryFraction"]) - Convert.ToDouble(transaction["deliveryFraction"])) < 1e-8),
+                    "bilateral lifecycle binds actual debit, credit and equal delivery fractions");
+            }
             if (d.Conservation.TryGetValue("populationResidual", out var residual)) Check(Convert.ToDouble(residual) == 0, "linked population reconciles at committed close");
         }
+        Check(on.LastResolutionMetrics.EconomicIndexedPhysicalEvents == on.LastResolutionMetrics.EconomicPhysicalEvents.Count &&
+            on.LastResolutionMetrics.EconomicIndexedTradeRows == on.LastResolutionMetrics.EconomicTradeLifecycle.Count &&
+            on.LastResolutionMetrics.EconomicIndexedTransferRows == on.LastResolutionMetrics.EconomicTransfers.Count &&
+            on.LastResolutionMetrics.EconomicCapturedCampRows == a.EconomicDiagnostics.Count,
+            "economic diagnostics index each native event stream once per turn");
+        Check(sawTypedCampFoodConsumption, "the physical fixture captures at least one typed camp food debit");
+        Check(sawActiveHerdDevelopment, "the physical fixture captures resolved herd-development worker-years");
+        _ = sawStoredProductionControl; // The adversarial stored-only fixture is exercised by the cross-repo accounting tests.
         foreach (var v in a.Villages.Where(v => v.Observation != null))
         {
             var twin = b.Villages.Single(x => x.Camp == v.Camp);
@@ -422,6 +591,16 @@ internal static class ElderModel9Checks
         bool rejected = false;
         try { ElderModel9Environment.VerifyReplay(on.Replay); } catch (InvalidOperationException e) { rejected = e.Message.Contains("economic diagnostics diverged"); }
         Check(rejected, "economic replay mismatch is rejected"); population["endingLinked"] = original;
+        var conservationRow = replayEconomic.ConservationRows.First();
+        original = conservationRow["residual"]; conservationRow["residual"] = 9.0;
+        rejected = false;
+        try { ElderModel9Environment.VerifyReplay(on.Replay); } catch (InvalidOperationException e) { rejected = e.Message.Contains("economic diagnostics diverged"); }
+        Check(rejected, "economic conservation mutation is rejected by replay"); conservationRow["residual"] = original;
+        var physicalEvent = replayEconomic.PhysicalEvents.First();
+        original = physicalEvent["quantity"]; physicalEvent["quantity"] = Convert.ToDouble(original) + 1;
+        rejected = false;
+        try { ElderModel9Environment.VerifyReplay(on.Replay); } catch (InvalidOperationException e) { rejected = e.Message.Contains("economic diagnostics diverged"); }
+        Check(rejected, "economic physical-event mutation is rejected by replay"); physicalEvent["quantity"] = original;
         var fork = on.Fork(out var restored);
         Check(restored.RestoredObservation && restored.EconomicDiagnostics.First().Value.TransitionId == a.EconomicDiagnostics.First().Value.TransitionId,
             "restore preserves original transition identity and is labelled observation only");

@@ -114,6 +114,7 @@ namespace Anthropocene.Simulation
             // Confirmed trades settle from committed stock before dispatch, provisions, production and needs (WP7):
             // every later step sees the post-trade stock the planner and prepared needs saw.
             var tradeTimer = System.Diagnostics.Stopwatch.StartNew(); using (PhaseProfile.Scope("Trade.Settle")) trade = Trade.Settle(w, prepared.Trade, record); LastMetrics.TradeSettleMilliseconds = tradeTimer.Elapsed.TotalMilliseconds;
+            LastMetrics.CaptureBoundary("afterOpeningTrade", w);
             LastMetrics.TradePlanMilliseconds = prepared.TradeMilliseconds;
             if (prepared.Trade != null)
             {
@@ -160,7 +161,7 @@ namespace Anthropocene.Simulation
             {
                 Supply.ProvisionDepartures(w, locked, record, prepared.Placement);
                 Move(w, locked, herdMoves, prepared.Placement, prepared.AbandoningVillages,
-                    planning, record);
+                    planning, record, LastMetrics);
                 Supply.DepositReturns(w, record);
             }
             var touched = new Dictionary<int, TileChange>();
@@ -169,7 +170,10 @@ namespace Anthropocene.Simulation
             using (PhaseProfile.Scope("Economy")) ResolveEcology(w, locked, establishedHunters, record, touch,
                 prepared.Needs, prepared.AbandoningVillages, prepared.FishingPlans);
             LastMetrics.CaptureBoundary("afterEconomy", w);
-            Trade.Finish(w, trade, record); LastMetrics.TradesSettled = record.Trades.Count; trade = null;
+            Trade.Finish(w, trade, record);
+            if (LastMetrics.EconomicCapture) LastMetrics.EconomicTradeLifecycle = Trade.DiagnosticRows(trade);
+            LastMetrics.CaptureBoundary("afterFinalTrade", w);
+            LastMetrics.TradesSettled = record.Trades.Count; trade = null;
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Reintegrate).OrderBy(o => o.Entity))
             {
                 var hunter = w.Hunters.FirstOrDefault(h => h.Id == order.Entity); if (hunter == null) continue;
@@ -416,7 +420,8 @@ namespace Anthropocene.Simulation
         }
 
         private static void Move(WorldState w, List<Order> orders, Dictionary<int, int> herds, CampPlacement placement,
-            IReadOnlyCollection<int> abandoningVillages, PlanningIndex planning, TurnRecord record)
+            IReadOnlyCollection<int> abandoningVillages, PlanningIndex planning, TurnRecord record,
+            ResolutionMetrics metrics)
         {
             foreach (int id in placement.Blocked.OrderBy(id => id))
                 record.Log("Camp " + id + " movement blocked by another camp.");
@@ -440,6 +445,11 @@ namespace Anthropocene.Simulation
                         foreach (int id in w.Map.Radius(camp.Tile, 1))
                             if (w.Tiles[id].CultivationOperator == camp.Id)
                             {
+                                if (metrics?.EconomicCapture == true)
+                                    metrics.EconomicTransfers.Add(new Dictionary<string, object>(StringComparer.Ordinal)
+                                    { ["kind"] = "field-abandonment", ["phase"] = "movement-before-economy",
+                                        ["sourceCamp"] = camp.Id, ["destinationCamp"] = camp.Id,
+                                        ["fieldId"] = id, ["capital"] = Math.Max(0, w.Tiles[id].CultivationCapital) });
                                 w.Tiles[id].CultivationOperator = -1;
                                 w.Tiles[id].CultivationOperatingFraction = 0;
                             }

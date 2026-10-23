@@ -446,8 +446,14 @@ namespace Anthropocene.Simulation
                 var planningCamp = PlanningCampAt(camp, prepared.Placement.Destinations[camp.Id], trade);
                 double fishingTools = Math.Max(0, planningCamp.Inventory.FishingTools);
                 bool departing = prepared.Placement.Destinations[camp.Id] != camp.Tile;
-                prepared.FishingPlans[camp.Id] = FishingEconomy.PreparePlan(world, camp, access,
-                    fishers, fishingTools, prepared.Horizon.Days, departing, residents);
+                prepared.FishingPlans[camp.Id] = intent?.Labor?.ActorActivityAuthority == true
+                    ? FishingEconomy.PrepareActorPlan(world, camp, access, fishers,
+                        intent.Labor.ActorFishingHarvestWorkers,
+                        intent.Labor.ActorFishingDevelopmentWorkers,
+                        fishingTools, prepared.Horizon.Days, departing, residents)
+                    : FishingEconomy.PreparePlan(world, camp, access,
+                        fishers, fishingTools, prepared.Horizon.Days, departing,
+                        residents);
             }
             return prepared;
         }

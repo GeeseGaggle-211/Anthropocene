@@ -2788,7 +2788,24 @@ namespace Anthropocene.Simulation
             }
             foreach (var r in recipes) if (!order.Contains(r.Good)) order.Add(r.Good);
             foreach (var r in recipes) if (!alloc.Ceilings.ContainsKey(r.Good)) alloc.Ceilings[r.Good] = 0;
-            production = new ProductionOrder(order.ToArray(), alloc.Ceilings);
+            // Stable compiler request identities are transient accounting keys.
+            // A good is request-bound only when exactly one granted bundle is
+            // its source; shared intermediates and multiple same-good requests
+            // remain null rather than receiving inferred provenance.
+            for (int requestIndex = 0; requestIndex < alloc.Requests.Count; requestIndex++)
+                if (alloc.Requests[requestIndex].RequestId == null)
+                    alloc.Requests[requestIndex].RequestId = "turn/" + w.Turn.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        + "/camp/" + c.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        + "/request/" + requestIndex.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var requestIds = new Dictionary<CraftGood, string>();
+            foreach (CraftGood good in Enum.GetValues(typeof(CraftGood)))
+            {
+                var sources = alloc.Requests.Where(q => q.Granted > Epsilon && q.Bundle != null &&
+                        q.Bundle.Outputs.TryGetValue(good, out double output) && output > Epsilon)
+                    .Select(q => q.RequestId).Distinct(StringComparer.Ordinal).ToArray();
+                if (sources.Length == 1) requestIds[good] = sources[0];
+            }
+            production = new ProductionOrder(order.ToArray(), alloc.Ceilings, requestIds);
             for (int s = 0; s < ElderModel9Contract.GoodsServices.Length; s++)
                 alloc.ServiceGranted[s] = alloc.Requests.Where(q => q.Bundle != null && ElderModel9Contract.ServiceOf(q.Service) == s).Sum(q => Math.Max(0, q.Granted));
             if (!kernelRoutesSet) { alloc.ChosenClothingRoute = clothingRoute; alloc.ChosenShelterRoute = deficitPreferred; }

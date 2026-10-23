@@ -13,6 +13,19 @@ namespace Anthropocene.Simulation
         [NonSerialized] public bool PolicyAuthority;
         [NonSerialized] public bool PostGrowthHerdRetentionSet;
         [NonSerialized] public double PostGrowthHerdRetention;
+        // Contract-13 actor authority.  These are turn-local worker-equivalent
+        // upper bounds, not promised output and not saved policy.  When absent,
+        // every legacy labor calculation follows its original branch exactly.
+        [NonSerialized] public bool ActorActivityAuthority;
+        [NonSerialized] public double ActorIdleWorkers;
+        [NonSerialized] public double ActorFoodGathererWorkers;
+        [NonSerialized] public double ActorFieldOperationWorkers;
+        [NonSerialized] public double ActorFieldExpansionWorkers;
+        [NonSerialized] public double ActorHerdManagementWorkers;
+        [NonSerialized] public double ActorHerdExpansionWorkers;
+        [NonSerialized] public double ActorFishingHarvestWorkers;
+        [NonSerialized] public double ActorFishingDevelopmentWorkers;
+        [NonSerialized] public double[][] ActorActivityWorkers;
         // Shared-allocation planner (Docs/SharedAllocationValidation.md, warm start):
         // the fulfilment-path position the last plan chose. Absent in older saves
         // and outside the shared planner (unset); not part of the intent stamp.
@@ -35,6 +48,8 @@ namespace Anthropocene.Simulation
         {
             var copy = (EconomicLaborPlan)MemberwiseClone();
             copy.TradeValues = TradeValues?.Select(s => s?.Copy()).ToList();
+            copy.ActorActivityWorkers = ActorActivityWorkers?.Select(row =>
+                (double[])row?.Clone()).ToArray();
             return copy;
         }
         public IEnumerable<double> Values() => new[] { MaterialGatherers, ExpansionFarmers, EquipmentTarget };

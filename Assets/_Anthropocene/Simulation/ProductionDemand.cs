@@ -1051,6 +1051,10 @@ namespace Anthropocene.Simulation
         [NonSerialized] internal Dictionary<string, double> PhaseAExtractionIntervals;
         [NonSerialized] internal BaselineGatherPlan BaselineGatherPlan; // unused by the revised raw-material path
         internal bool PolicySurplus;
+        // Contract-13 labor is already split by the actor.  A budget belongs to
+        // exactly one (role, good/material) activity and may not be borrowed by
+        // a sibling activity or replenished between export and domestic passes.
+        internal bool ActorActivityAuthority;
         private Dictionary<string, double[]> activityWorkers;
         internal double ActivityLabor(string role, CraftGood good, double intervals, double fallback)
             => PolicySurplus ? activityWorkers[role][4 + (int)good] * intervals : fallback;
@@ -1060,20 +1064,46 @@ namespace Anthropocene.Simulation
             int col = material == MaterialId.Stone ? 1 : material == MaterialId.Clay ? 2 : 3;
             return activityWorkers[role][col];
         }
-        internal static ProductionOrder Autonomous(AutonomousElderAction action, int[] counts)
+        internal Dictionary<string, double[]> ActivityIntervalBudgets(double intervals)
+        {
+            if (!ActorActivityAuthority) return null;
+            return activityWorkers.ToDictionary(pair => pair.Key, pair =>
+                pair.Value.Select(value => Math.Max(0, value) * Math.Max(0, intervals)).ToArray());
+        }
+        internal static double RemainingActivityLabor(Dictionary<string, double[]> remaining,
+            string role, CraftGood good)
+            => remaining != null && remaining.TryGetValue(role, out var row) &&
+                4 + (int)good < row.Length ? Math.Max(0, row[4 + (int)good]) : 0;
+        internal static void ConsumeActivityLabor(Dictionary<string, double[]> remaining,
+            string role, CraftGood good, double consumed)
+        {
+            if (remaining == null || !remaining.TryGetValue(role, out var row) ||
+                4 + (int)good >= row.Length) return;
+            int column = 4 + (int)good;
+            row[column] = Math.Max(0, row[column] - Math.Max(0, consumed));
+        }
+        internal static ProductionOrder Autonomous(AutonomousElderAction action, int[] counts,
+            IReadOnlyDictionary<CraftGood, double> acceptedCeilings = null,
+            IReadOnlyDictionary<CraftGood, string> requestIds = null,
+            bool preserveExplicitIdle = false)
         {
             var goods = ((CraftGood[])Enum.GetValues(typeof(CraftGood))).OrderBy(NeolithicProduction.ScheduleKey).ToList();
             MoveBefore(goods, CraftGood.AnimalFabric, CraftGood.LightHousing);
             MoveBefore(goods, CraftGood.HousingMaterial, CraftGood.Housing);
-            var order = new ProductionOrder(goods.ToArray(), new Dictionary<CraftGood, double>()) { PolicySurplus = true,
+            var order = new ProductionOrder(goods.ToArray(), acceptedCeilings ??
+                new Dictionary<CraftGood, double>(), requestIds) { PolicySurplus = true,
+                ActorActivityAuthority = preserveExplicitIdle,
                 activityWorkers = new Dictionary<string, double[]>() };
             for (int r = 0; r < counts.Length; r++)
             {
                 var row = action.Activities[r].Select(x => x * counts[r]).ToArray();
                 string role = WorkforceRoles.All[r];
-                if (role == WorkforceRoles.Stonecutter) row[1] = counts[r];
-                if (role == WorkforceRoles.ClayMiner) row[2] = counts[r];
-                if (role == WorkforceRoles.Woodcutter) row[3] = counts[r];
+                // Legacy AutonomousElder has no explicit per-role idle activity,
+                // so its extractor specialists retain their historic forced row.
+                // Contract 13 does expose idle and must preserve the sampled split.
+                if (!preserveExplicitIdle && role == WorkforceRoles.Stonecutter) row[1] = counts[r];
+                if (!preserveExplicitIdle && role == WorkforceRoles.ClayMiner) row[2] = counts[r];
+                if (!preserveExplicitIdle && role == WorkforceRoles.Woodcutter) row[3] = counts[r];
                 order.activityWorkers[role] = row;
             }
             return order;
@@ -1084,18 +1114,27 @@ namespace Anthropocene.Simulation
         // DemandControl (Docs/EconomicControlContract.md §15): the allocated output per good this turn. The forecast and the
         // resolver produce no more than it; goods without a ceiling are unbounded (every Legacy order).
         private readonly Dictionary<CraftGood, double> ceilings;
+        // DemandControl only: one request id is retained for a good only when
+        // that request is the sole granted compiler bundle producing it.
+        // Ambiguous/mixed output remains deliberately unbound.
+        private readonly Dictionary<CraftGood, string> authoritativeRequestIds;
         public double Ceiling(CraftGood good) => ceilings != null && ceilings.TryGetValue(good, out double c) ? c : double.PositiveInfinity;
+        internal string AuthoritativeRequestId(CraftGood good)
+            => authoritativeRequestIds != null && authoritativeRequestIds.TryGetValue(good, out string id) ? id : null;
         public bool HasCeilings => ceilings != null;
         // Diagnostic prototype only (DemandController.KernelSplitDiagnostic): clothing units
         // the Elder committed ahead of meals; negative (the default) means none.
         internal double ProtectedClothingUnits = -1;
         // An explicit access order with output ceilings (DemandControl).
-        internal ProductionOrder(CraftGood[] goods, IReadOnlyDictionary<CraftGood, double> allocated)
+        internal ProductionOrder(CraftGood[] goods, IReadOnlyDictionary<CraftGood, double> allocated,
+            IReadOnlyDictionary<CraftGood, string> requestIds = null)
         {
             Goods = goods;
             for (int i = 0; i < goods.Length; i++) rank[goods[i]] = i;
             ceilings = new Dictionary<CraftGood, double>();
             foreach (var pair in allocated) ceilings[pair.Key] = Math.Max(0, pair.Value);
+            if (requestIds != null)
+                authoritativeRequestIds = new Dictionary<CraftGood, string>(requestIds);
         }
         // Goods from first to last in access order.
         public readonly CraftGood[] Goods;

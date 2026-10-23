@@ -355,8 +355,13 @@ namespace Anthropocene.Simulation
         }
         internal static AgriculturalLabor CalculateLabor(WorldState w, Camp camp, int[] footprint, FarmToolWorkBudget toolBudget = null, double segmentYears = 0)
         {
-            var plan = new AgriculturalLabor { Gatherers = camp.GathererPopulation + Workers(camp, WorkforceRoles.Gatherer) };
-            plan.FoodGatherers = Math.Max(0, plan.Gatherers - (camp.EconomicLabor?.MaterialGatherers ?? 0));
+            bool actor = camp.EconomicLabor?.ActorActivityAuthority == true;
+            var plan = new AgriculturalLabor { Gatherers = actor
+                ? Workers(camp, WorkforceRoles.Gatherer)
+                : camp.GathererPopulation + Workers(camp, WorkforceRoles.Gatherer) };
+            plan.FoodGatherers = actor
+                ? Math.Max(0, camp.EconomicLabor.ActorFoodGathererWorkers)
+                : Math.Max(0, plan.Gatherers - (camp.EconomicLabor?.MaterialGatherers ?? 0));
             if (!Enabled(camp) || camp.Population <= 0) return plan;
             plan.Footprint = footprint;
             plan.HarvestProductivity = HarvestProductivity(w, camp, footprint);
@@ -373,9 +378,15 @@ namespace Anthropocene.Simulation
             // The shared portfolio may deliberately let existing fields decay
             // while building a more productive local field. Its explicit build
             // work cannot first be spent maintaining the abandoned capital.
-            double buildFarmers = (w.Config.SharedCropHerdAllocationEnabled || camp.EconomicLabor?.PolicyAuthority == true)
+            double buildFarmers = actor
+                ? Math.Min(farmers, Math.Max(0,
+                    camp.EconomicLabor.ActorFieldExpansionWorkers))
+                : (w.Config.SharedCropHerdAllocationEnabled || camp.EconomicLabor?.PolicyAuthority == true)
                 ? Math.Min(farmers, Math.Max(0, camp.EconomicLabor?.ExpansionFarmers ?? 0)) : 0;
-            double upkeepFarmers = farmers - buildFarmers;
+            double upkeepFarmers = actor
+                ? Math.Min(Math.Max(0, farmers - buildFarmers), Math.Max(0,
+                    camp.EconomicLabor.ActorFieldOperationWorkers))
+                : farmers - buildFarmers;
             double years = segmentYears > 0 ? segmentYears : w.Config.TurnDays / w.Config.DaysPerYear;
             double efficiency = FarmToolFieldWorkEfficiency(w.Config.Neolithic);
             double availableCovered = Math.Min(upkeepFarmers, (toolBudget ?? new FarmToolWorkBudget(w, camp)).AvailableWorkerYears(w.Config.Neolithic.FarmToolFarmerYearsPerUnit) / years);
@@ -392,9 +403,12 @@ namespace Anthropocene.Simulation
             {
                 // Maintenance is a minimum, not a ceiling on harvesting employment.
                 // Explicit expansion time cannot simultaneously harvest or do upkeep.
-                plan.ExpansionFarmers = (w.Config.SharedCropHerdAllocationEnabled || camp.EconomicLabor.PolicyAuthority) ? buildFarmers
+                plan.ExpansionFarmers = actor ? buildFarmers
+                    : (w.Config.SharedCropHerdAllocationEnabled || camp.EconomicLabor.PolicyAuthority) ? buildFarmers
                     : Math.Min(plan.ExpansionFarmers, camp.EconomicLabor.ExpansionFarmers);
-                plan.OperatingFarmers = established ? farmers - plan.ExpansionFarmers : 0;
+                plan.OperatingFarmers = established
+                    ? actor ? upkeepFarmers : farmers - plan.ExpansionFarmers
+                    : 0;
             }
             return plan;
         }
@@ -852,7 +866,8 @@ namespace Anthropocene.Simulation
         // the once-reconciled bridge difference and tool service are written here.
         // The mean efficacy that served claims remains the preclaim estimate.
         public static void CommitHorizonExpansion(WorldState w, Camp camp, HorizonCultivationAllocation plan,
-            TurnRecord record, FarmToolWorkBudget toolBudget, HorizonCultivationAllocation preclaim = null)
+            TurnRecord record, FarmToolWorkBudget toolBudget, HorizonCultivationAllocation preclaim = null,
+            ResolutionMetrics metrics = null)
         {
             if (plan == null || plan.CampId != camp.Id) throw new ArgumentException("Invalid horizon cultivation proposal.");
             if (preclaim != null && (preclaim.CampId != camp.Id || !plan.Tiles.SequenceEqual(preclaim.Tiles)))
@@ -861,8 +876,14 @@ namespace Anthropocene.Simulation
             {
                 if (toolBudget.HorizonCommitted) throw new InvalidOperationException("Horizon farm tool service was already committed.");
                 double covered = toolBudget.ReservedMaintenanceWorkerYears + plan.CoveredFarmerWorkerYears;
+                double toolsBefore = camp.Inventory.FarmTools;
                 double actual = toolBudget.Consume(covered, w.Config.Neolithic.FarmToolFarmerYearsPerUnit);
                 if (actual + 1e-8 < covered) throw new InvalidOperationException("Farm tool horizon budget changed after planning.");
+                if (metrics?.EconomicCapture == true)
+                    metrics.CapturePhysicalEvent("turn/" + record.Turn + "/camp/" + camp.Id + "/service/FarmTools",
+                        camp.Id, "final-service-fulfilment", "FarmTools", "good-units",
+                        Math.Max(0, toolsBefore - camp.Inventory.FarmTools), "out",
+                        phase: "work-before-production");
                 toolBudget.HorizonCommitted = true;
             }
             Dictionary<int, EcologyBalance> balances = null;

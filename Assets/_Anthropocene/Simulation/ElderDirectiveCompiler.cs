@@ -19,6 +19,7 @@ namespace Anthropocene.Simulation
                 });
             if (fallback.SchemaVersion != ElderRLContract.ActionSchemaVersion &&
                 fallback.SchemaVersion != ElderModel9Contract.ActionSchemaVersion &&
+                fallback.SchemaVersion != ElderActorLaborContract.ActionSchemaVersion &&
                 fallback.SchemaVersion != ElderModel9Contract.MovementActionSchemaVersion &&
                 fallback.SchemaVersion != ElderModel9Contract.CommitmentActionSchemaVersion &&
                 fallback.SchemaVersion != ElderModel9Contract.PreviousActionSchemaVersion &&
@@ -203,6 +204,8 @@ namespace Anthropocene.Simulation
             ElderDirective directive)
         {
             if (context == null) throw new ArgumentNullException(nameof(context));
+            if (directive?.SchemaVersion == ElderActorLaborContract.ActionSchemaVersion)
+                return ElderActorLaborCompiler.Compile(context, directive);
             var interventions = new List<ElderIntervention>();
             var requested = directive?.Copy();
             // Contract 9: a hold re-emits the committed capital controls before ordinary validation.
@@ -354,6 +357,13 @@ namespace Anthropocene.Simulation
             ElderCompiledDecision decision)
         {
             if (world == null || decision?.Accepted == null) return;
+            // Actor-labor execution is reconciled from its typed task ledger after the resolver. Never reinterpret its
+            // task budget as the legacy five strategic heads.
+            if (decision.ActorLabor != null)
+            {
+                decision.Realized = decision.Accepted.Copy();
+                return;
+            }
             var camp = world.Camps.FirstOrDefault(item => item.Id ==
                 decision.ControlledCampId);
             if (camp == null)

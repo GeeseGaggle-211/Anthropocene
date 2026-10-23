@@ -128,16 +128,21 @@ namespace Anthropocene.Simulation
     public sealed class FishingPlan
     {
         public readonly int CampId, CampTile, Residents, FisherCount;
-        public readonly double HorizonDays, HorizonYears, FishingToolsAtOpen;
+        public readonly double HorizonDays, HorizonYears, FishingToolsAtOpen,
+            RequestedHarvestWorkerYears, RequestedDevelopmentWorkerYears;
         public readonly bool Departing, OperatorEligible;
         public readonly FishingGroundPlan[] Candidates, Grounds;
 
         internal FishingPlan(int campId, int campTile, int residents, int fisherCount,
             double horizonDays, double horizonYears, double fishingToolsAtOpen,
-            bool departing, bool operatorEligible, FishingGroundPlan[] candidates, FishingGroundPlan[] grounds)
+            bool departing, bool operatorEligible, FishingGroundPlan[] candidates,
+            FishingGroundPlan[] grounds, double requestedHarvestWorkerYears = 0,
+            double requestedDevelopmentWorkerYears = 0)
         {
             CampId = campId; CampTile = campTile; Residents = residents; FisherCount = fisherCount;
             HorizonDays = horizonDays; HorizonYears = horizonYears; FishingToolsAtOpen = fishingToolsAtOpen;
+            RequestedHarvestWorkerYears = requestedHarvestWorkerYears;
+            RequestedDevelopmentWorkerYears = requestedDevelopmentWorkerYears;
             Departing = departing; OperatorEligible = operatorEligible;
             Candidates = candidates ?? Array.Empty<FishingGroundPlan>(); Grounds = grounds ?? Array.Empty<FishingGroundPlan>();
         }
@@ -544,21 +549,43 @@ namespace Anthropocene.Simulation
 
         public static FishingPlan PreparePlan(WorldState world, Camp camp, FishingAccessPlan access,
             int fisherCount, double fishingTools, double horizonDays, bool departing, int residentOverride = -1)
+            => PreparePlan(world, camp, access, fisherCount, fisherCount, 0,
+                fishingTools, horizonDays, departing, residentOverride, false);
+
+        // Contract-13 actor mode keeps harvest and fishery-capital work in
+        // separate fractional worker-equivalent budgets. Unused harvest work
+        // never becomes development, and development work never requests catch.
+        public static FishingPlan PrepareActorPlan(WorldState world, Camp camp,
+            FishingAccessPlan access, int fisherCount, double harvestWorkers,
+            double developmentWorkers, double fishingTools, double horizonDays,
+            bool departing, int residentOverride = -1)
+            => PreparePlan(world, camp, access, fisherCount, harvestWorkers,
+                developmentWorkers, fishingTools, horizonDays, departing,
+                residentOverride, true);
+
+        private static FishingPlan PreparePlan(WorldState world, Camp camp,
+            FishingAccessPlan access, int fisherCount, double harvestWorkers,
+            double developmentWorkers, double fishingTools, double horizonDays,
+            bool departing, int residentOverride, bool actorSeparated)
         {
             if (world == null || camp == null) throw new ArgumentNullException(world == null ? nameof(world) : nameof(camp));
             int tile = access?.CampTile ?? camp.Tile;
             int residents = Math.Max(0, residentOverride >= 0 ? residentOverride : access?.Residents ?? camp.Population);
             double years = Math.Max(0, horizonDays) / world.Config.DaysPerYear;
             fisherCount = Math.Min(residents, Math.Max(0, fisherCount));
+            harvestWorkers = Math.Min(fisherCount, Math.Max(0, harvestWorkers));
+            developmentWorkers = Math.Min(Math.Max(0,
+                fisherCount - harvestWorkers), Math.Max(0, developmentWorkers));
             fishingTools = Math.Max(0, fishingTools);
             var candidates = access?.Candidates ?? Array.Empty<FishingGroundPlan>();
             var grounds = access?.Grounds ?? Array.Empty<FishingGroundPlan>();
             if (years <= 0 || fisherCount <= 0 || grounds.Length == 0)
                 return new FishingPlan(camp.Id, tile, residents, fisherCount, horizonDays, years, fishingTools,
-                    departing, false, candidates, Array.Empty<FishingGroundPlan>());
+                    departing, false, candidates, Array.Empty<FishingGroundPlan>(),
+                    harvestWorkers * years, developmentWorkers * years);
 
             double toolMultiplier = Math.Max(1, world.Config.Neolithic.FishingToolHarvestMultiplier);
-            AllocateHarvestWork(grounds, fisherCount * years, fishingTools,
+            AllocateHarvestWork(grounds, harvestWorkers * years, fishingTools,
                 world.Config.Neolithic.FishingToolFisherYearsPerUnit, toolMultiplier,
                 out var harvestEffort, out var covered);
             // Catch allocation stops when a ground's known envelope is full.
@@ -567,7 +594,10 @@ namespace Anthropocene.Simulation
             // forecast. Spread that surplus deterministically over the selected
             // known grounds; conservative priors never receive work/capital.
             var assigned = (double[])harvestEffort.Clone();
-            double surplus = Math.Max(0, fisherCount * years - harvestEffort.Sum());
+            var development = new double[grounds.Length];
+            double surplus = actorSeparated
+                ? developmentWorkers * years
+                : Math.Max(0, fisherCount * years - harvestEffort.Sum());
             var investable = Enumerable.Range(0, grounds.Length)
                 .Where(i => grounds[i].KnowledgeSource != FishingKnowledgeSource.ConservativePrior)
                 .OrderByDescending(i => grounds[i].YieldPerFisherYear).ThenBy(i => grounds[i].TileId).ToArray();
@@ -575,7 +605,9 @@ namespace Anthropocene.Simulation
             {
                 int i = investable[position]; int remainingGrounds = investable.Length - position;
                 double share = surplus / remainingGrounds;
-                assigned[i] += share; surplus -= share;
+                assigned[i] += share;
+                development[i] += share;
+                surplus -= share;
             }
             var result = new List<FishingGroundPlan>(grounds.Length);
             bool operatorEligible = false;
@@ -584,11 +616,13 @@ namespace Anthropocene.Simulation
                 var ground = grounds[i]; double fisherYears = assigned[i];
                 if (ground.KnowledgeSource == FishingKnowledgeSource.ConservativePrior)
                     fisherYears = 0; // Unknown geometry never becomes a hidden-stock claim.
-                double effectiveWork = departing ? 0 : fisherYears * ground.DistanceFactor;
-                double effectiveToolWork = Math.Min(fisherYears, covered[i]);
+                double harvestYears = actorSeparated ? harvestEffort[i] : fisherYears;
+                double capitalYears = actorSeparated ? development[i] : fisherYears;
+                double effectiveWork = departing ? 0 : capitalYears * ground.DistanceFactor;
+                double effectiveToolWork = Math.Min(harvestYears, covered[i]);
                 var capital = AllocateCapital(world, camp,
                     ground.OpeningCapital, effectiveWork, years);
-                double baseCatch = fisherYears * ground.YieldPerFisherYear;
+                double baseCatch = harvestYears * ground.YieldPerFisherYear;
                 double toolBonus = harvestEffort[i] > Epsilon
                     ? baseCatch * (toolMultiplier - 1)
                         * effectiveToolWork / harvestEffort[i] : 0;
@@ -598,14 +632,17 @@ namespace Anthropocene.Simulation
                 result.Add(new FishingGroundPlan(ground.TileId, ground.Route, ground.Distance, ground.KnowledgeSource,
                     ground.Incumbent, ground.RivalOperators, ground.OpeningAccessibleFood, ground.OpeningBiomass,
                     ground.OpeningCondition, ground.OpeningCapital, ground.ProspectiveClosingCapacity, ground.FoodPotential,
-                    ground.ProductiveProfile, ground.YieldPerFisherYear, fisherYears, fisherYears, effectiveToolWork,
+                    ground.ProductiveProfile, ground.YieldPerFisherYear, fisherYears,
+                    harvestYears, effectiveToolWork,
                     effectiveWork,
                     capital.MaintenanceWorkerYears, capital.RequiredMaintenanceWorkerYears, capital.BuildWorkerYears,
                     capital.AverageCapital, capital.EndingCapital, capital.ManagementIntensity,
                     capital.OperationFraction, catchRequest));
             }
             return new FishingPlan(camp.Id, tile, residents, fisherCount, horizonDays, years, fishingTools,
-                departing, operatorEligible, candidates, result.OrderBy(g => g.TileId).ToArray());
+                departing, operatorEligible, candidates,
+                result.OrderBy(g => g.TileId).ToArray(), harvestWorkers * years,
+                developmentWorkers * years);
         }
 
         internal static void AllocateHarvestWork(FishingGroundPlan[] grounds, double totalWorkerYears,

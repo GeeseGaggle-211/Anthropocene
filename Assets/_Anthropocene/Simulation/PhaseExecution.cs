@@ -106,9 +106,43 @@ namespace Anthropocene.Simulation
         internal bool EconomicCapture;
         internal Dictionary<int, List<Dictionary<string, object>>> EconomicFields = new Dictionary<int, List<Dictionary<string, object>>>();
         internal List<Dictionary<string, object>> EconomicTransfers = new List<Dictionary<string, object>>();
+        internal List<Dictionary<string, object>> EconomicTradeLifecycle = new List<Dictionary<string, object>>();
+        internal List<Dictionary<string, object>> EconomicPhysicalEvents = new List<Dictionary<string, object>>();
+        public long EconomicIndexedPhysicalEvents { get; internal set; }
+        public long EconomicIndexedTradeRows { get; internal set; }
+        public long EconomicIndexedTransferRows { get; internal set; }
+        public long EconomicCapturedCampRows { get; internal set; }
+        private readonly object economicEventLock = new object();
+        internal void CapturePhysicalEvent(Dictionary<string, object> row)
+        {
+            if (!EconomicCapture || row == null) return;
+            lock (economicEventLock) EconomicPhysicalEvents.Add(row);
+        }
+        internal void CapturePhysicalEvent(string eventId, int campId, string category,
+            string item, string unit, double quantity, string direction,
+            string recipe = null, string receiptId = null, string phase = null,
+            string sourceRequestId = null)
+        {
+            if (!EconomicCapture || !(quantity > 1e-12)) return;
+            var row = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["eventId"] = eventId,
+                ["campId"] = campId,
+                ["category"] = category,
+                ["item"] = item,
+                ["unit"] = unit,
+                ["quantity"] = quantity,
+                ["direction"] = direction
+            };
+            if (recipe != null) row["recipe"] = recipe;
+            if (receiptId != null) row["receiptId"] = receiptId;
+            if (phase != null) row["phase"] = phase;
+            if (sourceRequestId != null) row["sourceRequestId"] = sourceRequestId;
+            CapturePhysicalEvent(row);
+        }
         internal Dictionary<string, Dictionary<int, EconomicBoundary>> EconomicBoundaries = new Dictionary<string, Dictionary<int, EconomicBoundary>>();
         internal void CaptureBoundary(string phase, WorldState world)
-        { if (EconomicCapture) EconomicBoundaries[phase] = EconomicBoundary.Capture(world, false); }
+        { if (EconomicCapture) EconomicBoundaries[phase] = EconomicBoundary.Capture(world); }
         internal bool CaptureWork => CaptureCraftWorkDiagnostics || EconomicCapture;
         // Retaining a DemandControl allocation keeps its complete request/bundle
         // graph alive through Prepare. Ordinary play has no consumer for it; the

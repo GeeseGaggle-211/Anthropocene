@@ -325,6 +325,10 @@ namespace Anthropocene.Simulation
         public ElderDirective Commitment;
         public double CommitmentRemaining, CommitmentAge;
         public bool CommitmentBrokenLastTurn;
+        // Contract 13: post-execution labor evidence from this camp's preceding
+        // decision.  It is copied across exact forks and emitted beside (never
+        // folded into) the next decision catalog.
+        public ElderActorLaborFeedback PreviousLaborFeedback;
 
         // A branch copy for search forks. PreviousDecision is shared: compiled decisions are replaced, never mutated.
         public ElderModel9Context Copy()
@@ -333,6 +337,7 @@ namespace Anthropocene.Simulation
             c.ClothingRouteFeasible = (bool[])ClothingRouteFeasible.Clone(); c.ShelterRouteFeasible = (bool[])ShelterRouteFeasible.Clone();
             c.PreviousServiceRequested = (double[])PreviousServiceRequested.Clone();
             c.Commitment = Commitment?.Copy();
+            c.PreviousLaborFeedback = PreviousLaborFeedback?.Copy();
             return c;
         }
     }
@@ -452,6 +457,11 @@ namespace Anthropocene.Simulation
         public ElderIntervention[] Interventions = Array.Empty<ElderIntervention>();
         public string Staffing = "";   // compiled economic intent (diagnostic)
         public float[] Privileged;      // ElderModel9Contract.PrivilegedFeatures; critic-only
+        // Contract 13: the immutable origin-boundary catalog for this decision
+        // and the preceding decision's post-execution evidence.  Daughters have
+        // no inherited PreviousLaborFeedback unless they made that decision.
+        [System.Runtime.Serialization.OptionalField] public ElderActorLaborCatalog LaborCatalog;
+        [System.Runtime.Serialization.OptionalField] public ElderActorLaborFeedback LaborPrevious;
     }
 
     [Serializable]
@@ -579,9 +589,11 @@ namespace Anthropocene.Simulation
         private readonly Dictionary<int, ElderModel9Context> contexts = new Dictionary<int, ElderModel9Context>();
         private Dictionary<int, ElderObservation> observations = new Dictionary<int, ElderObservation>();
         private Dictionary<int, ElderObservationMetadata> metadata = new Dictionary<int, ElderObservationMetadata>();
+        private Dictionary<int, ElderActorLaborCatalog> laborCatalogs = new Dictionary<int, ElderActorLaborCatalog>();
         public WorldState World { get; private set; }
         public ElderModel9Replay Replay { get; private set; }
         public bool EconomicDiagnosticsEnabled { get; set; }
+        public bool ActorLaborEnabled { get; set; }
         internal ResolutionMetrics LastResolutionMetrics { get; private set; }
         public bool MovementEnabled { get; private set; }
         public bool TeacherLabels = true;
@@ -653,7 +665,7 @@ namespace Anthropocene.Simulation
             World = SaveCodec.Load((byte[])snapshot.Clone());
             World = SaveCodec.Load(SaveCodec.Save(World));
             World.Config.TrainingWithheldTechnologies = WithheldTechnologies;
-            MovementEnabled = movementEnabled; contexts.Clear(); lastPrior = new Dictionary<int, int>(); lastDecisionDiagnostics.Clear(); lastRawMaterialDiagnostics.Clear(); Forked = false;
+            MovementEnabled = movementEnabled; contexts.Clear(); laborCatalogs.Clear(); lastPrior = new Dictionary<int, int>(); lastDecisionDiagnostics.Clear(); lastRawMaterialDiagnostics.Clear(); Forked = false;
             LastResolutionMetrics = null;
             lastDiagnosticSchemaVersion = 0;
             World.DemandAllocationCapture = true;
@@ -752,8 +764,133 @@ namespace Anthropocene.Simulation
 
         public IEnumerable<int> Villages() => World.Camps.Where(c => c.Population > 0 && CultivationEconomy.EconomyEnabled(World, c)).Select(c => c.Id).OrderBy(id => id);
 
+        // Zero-time contract-13 validation. It reads the exact catalog emitted
+        // at the committed decision boundary and neither previews a destination
+        // nor mutates world/context/RNG state.
+        public Dictionary<int, ElderActorLaborAttempt> ValidateLabor(
+            IReadOnlyDictionary<int, ElderDirective> submitted, int attempt,
+            IReadOnlyDictionary<int, string> expectedCatalogDigests = null)
+        {
+            if (World == null) throw new InvalidOperationException("Reset required.");
+            if (!ActorLaborEnabled) throw new InvalidOperationException(
+                "Actor labor contract was not enabled at reset.");
+            if (attempt < 0 || attempt >= ElderActorLaborContract.MaxProposals)
+                throw new ArgumentOutOfRangeException(nameof(attempt));
+            var result = new Dictionary<int, ElderActorLaborAttempt>();
+            foreach (var pair in (submitted ?? new Dictionary<int, ElderDirective>())
+                .OrderBy(item => item.Key))
+            {
+                if (!observations.TryGetValue(pair.Key, out var observation) ||
+                    !laborCatalogs.TryGetValue(pair.Key, out var catalog))
+                    throw new ArgumentException("Unknown labor decision camp " + pair.Key + ".");
+                if (expectedCatalogDigests != null &&
+                    (!expectedCatalogDigests.TryGetValue(pair.Key, out string expected) ||
+                     !string.Equals(expected, catalog.Digest, StringComparison.Ordinal)))
+                    throw new InvalidOperationException(
+                        "Labor catalog digest differs from the committed observation for camp " + pair.Key + ".");
+                var validated = ElderActorLaborLedger.ValidateDecision(catalog,
+                    pair.Value, observation, MovementEnabled);
+                validated.Attempt = attempt;
+                validated.RemainingProposals = attempt == 0 ? 1 : 0;
+                result[pair.Key] = validated;
+            }
+            return result;
+        }
+
+        // Initial complete actions plus, only for rejected camps, one labor-only
+        // retry.  Validation finishes before AiPlanning/Prepare; one final action
+        // map then executes exactly once. A second invalid proposal executes the
+        // explicit all-idle fallback and is reported, never silently repaired.
+        public ElderModel9Step StepLabor(
+            IReadOnlyDictionary<int, ElderDirective> initial,
+            IReadOnlyDictionary<int, ElderDirective> retry,
+            IReadOnlyDictionary<int, string> expectedCatalogDigests = null)
+        {
+            var first = ValidateLabor(initial, 0, expectedCatalogDigests);
+            var retryMap = retry ?? new Dictionary<int, ElderDirective>();
+            if (retryMap.Keys.Any(id => !first.TryGetValue(id, out var item) || item.Valid))
+                throw new ArgumentException(
+                    "Labor retries are allowed only for camps rejected on attempt zero.");
+            var execute = new Dictionary<int, ElderDirective>();
+            var feedback = new Dictionary<int, ElderActorLaborFeedback>();
+            foreach (var pair in (initial ?? new Dictionary<int, ElderDirective>()).OrderBy(item => item.Key))
+            {
+                int id = pair.Key; var initialDirective = pair.Value.Copy();
+                ElderDirective chosen = initialDirective;
+                ElderActorLaborAttempt final = first[id];
+                bool fallback = false;
+                if (!final.Valid)
+                {
+                    if (retryMap.TryGetValue(id, out var laborRetry))
+                    {
+                        chosen = initialDirective.Copy();
+                        chosen.LaborSpecialtyAllocation = (double[])laborRetry?.LaborSpecialtyAllocation?.Clone();
+                        chosen.LaborActivityAllocation = laborRetry?.LaborActivityAllocation?
+                            .Select(row => (double[])row?.Clone()).ToArray();
+                        final = ValidateLabor(new Dictionary<int, ElderDirective>
+                            { [id] = chosen }, 1, expectedCatalogDigests)[id];
+                    }
+                    if (!final.Valid)
+                    {
+                        fallback = true;
+                        chosen = AllIdleDirective(initialDirective,
+                            World.Camps.First(c => c.Id == id), World.Config, final);
+                    }
+                }
+                execute[id] = chosen;
+                string decisionId = (trajectoryId ?? Replay.InitialFingerprint) +
+                    "/turn-" + World.Turn.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                    "/camp-" + id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                feedback[id] = ElderActorLaborFeedbackBuilder.Begin(
+                    laborCatalogs[id], first[id], final, World.Turn, decisionId,
+                    fallback);
+            }
+            return StepCore(execute, feedback);
+        }
+
+        private static ElderDirective AllIdleDirective(ElderDirective original,
+            Camp camp, SimulationConfig config, ElderActorLaborAttempt rejected)
+        {
+            var result = original.Copy();
+            result.SchemaVersion = ElderActorLaborContract.ActionSchemaVersion;
+            result.LaborSpecialtyAllocation = new double[ElderActorLaborContract.SpecialtyRows];
+            result.LaborSpecialtyAllocation[0] = 1;
+            result.LaborActivityAllocation = ElderActorLaborAttempt.Matrix();
+            for (int role = 0; role < ElderActorLaborContract.RoleRows; role++)
+                result.LaborActivityAllocation[role][0] = 1;
+            // Nonlabor cannot be changed by a retry. A malformed external
+            // payload therefore receives a visible, minimal fallback rather
+            // than being passed into the legacy repair path.
+            if (rejected.Violations.Any(item =>
+                item.Reason == "unsupported-action-schema"))
+            {
+                result.RetainedFieldOperation = result.RetainedHerdFraction = 1;
+                result.DevelopmentBudget = result.FishingDevelopmentShare = 0;
+                result.FieldDevelopmentShare = .5; result.ServiceLevels = null;
+                result.ClothingRoute = result.ShelterRoute = -1;
+                result.CommitTurns = 1; result.IntentTile = -1;
+                result.MovementCandidate = -1;
+                result.FissionPolicy = (int)camp.FissionPolicy;
+                result.TradeValue = Enumerable.Repeat(1d, ElderTrade.Groups.Length).ToArray();
+                result.TradeGate = Enumerable.Repeat(ElderTrade.Make,
+                    ElderTrade.Groups.Length).ToArray();
+                result.TradeExportShare = config.TradeExportLabourShare;
+            }
+            return result;
+        }
+
         // Submitted directives for some villages; the rest run the heuristic.
         public ElderModel9Step Step(IReadOnlyDictionary<int, ElderDirective> submitted)
+        {
+            if (ActorLaborEnabled || (submitted?.Values.Any(d =>
+                    d?.SchemaVersion == ElderActorLaborContract.ActionSchemaVersion) ?? false))
+                throw new InvalidOperationException(
+                "Actor-labor environments require StepLabor so rejection/retry evidence cannot be bypassed.");
+            return StepCore(submitted, null);
+        }
+
+        private ElderModel9Step StepCore(IReadOnlyDictionary<int, ElderDirective> submitted,
+            Dictionary<int, ElderActorLaborFeedback> laborFeedback)
         {
             if (World == null) throw new InvalidOperationException("Reset required.");
             var timer = System.Diagnostics.Stopwatch.StartNew();
@@ -767,9 +904,14 @@ namespace Anthropocene.Simulation
                 var camp = World.Camps.FirstOrDefault(c => c.Id == pair.Key);
                 if (camp == null || pair.Value == null || !observations.ContainsKey(camp.Id)) continue;
                 var directive = pair.Value.Copy();
-                if (!MovementEnabled) directive.MovementCandidate = ElderModel9Contract.NativeMovement;
+                if (!MovementEnabled) directive.MovementCandidate =
+                    directive.SchemaVersion == ElderActorLaborContract.ActionSchemaVersion
+                        ? -1 : ElderModel9Contract.NativeMovement;
                 directives[camp.Id] = directive;
                 if (!background.TryGetValue(camp.Player, out var orders)) background[camp.Player] = orders = new List<Order>();
+                if (directive.SchemaVersion == ElderActorLaborContract.ActionSchemaVersion)
+                    orders.RemoveAll(o => o.Entity == camp.Id &&
+                        o.Kind == OrderKind.Dispatch);
                 // One ordinary order per camp: a learned move replaces whatever the heuristic ordered; staying keeps a
                 // non-movement order (e.g. a hunter dispatch) and otherwise replaces a heuristic move with NoOp.
                 // NativeMovement keeps the heuristic's ordinary orders; FissionPolicy -1 keeps its policy order.
@@ -807,13 +949,14 @@ namespace Anthropocene.Simulation
                 if (directive.FissionPolicy >= 0 && directive.FissionPolicy != (int)camp.FissionPolicy)
                     orders.Add(new Order(OrderKind.FissionPolicy, camp.Id, target: directive.FissionPolicy));
             }
-            var result = Advance(background, directives, plan.Traces);
+            var result = Advance(background, directives, plan.Traces, laborFeedback);
             result.DecideMs = decideMs;
             result.NativeMilliseconds = timer.Elapsed.TotalMilliseconds;
             return result;
         }
 
-        private ElderModel9Step Advance(Dictionary<int, List<Order>> background, Dictionary<int, ElderDirective> directives, List<DecisionTrace> traces)
+        private ElderModel9Step Advance(Dictionary<int, List<Order>> background, Dictionary<int, ElderDirective> directives, List<DecisionTrace> traces,
+            Dictionary<int, ElderActorLaborFeedback> laborFeedback = null)
         {
             World.EconomicDiagnosticCapture = EconomicDiagnosticsEnabled;
             var economicOpening = EconomicDiagnosticsEnabled ? EconomicBoundary.Capture(World) : null;
@@ -829,6 +972,9 @@ namespace Anthropocene.Simulation
             var decisionTradeEligibility = prepared.ElderDecisions.Keys.OrderBy(id => id).ToDictionary(id => id,
                 id => World.Camps.FirstOrDefault(c => c.Id == id) is Camp camp && Trade.Eligible(World, camp));
             double prepareMs = phase.Elapsed.TotalMilliseconds; phase.Restart();
+            if (laborFeedback != null)
+                foreach (var item in laborFeedback.Values)
+                    ElderActorLaborFeedbackBuilder.BindPrepared(item, prepared);
             // Teacher labels from the exact allocations Prepare used (captured before resolution mutates the world).
             var labels = new Dictionary<int, ElderModel9Label>();
             var interventions = new Dictionary<int, ElderIntervention[]>(); var staffing = new Dictionary<int, string>();
@@ -861,6 +1007,15 @@ namespace Anthropocene.Simulation
             LastResolutionMetrics = turnResolver.LastMetrics;
             double resolveMs = phase.Elapsed.TotalMilliseconds; phase.Restart();
             double years = record.Duration / World.Config.DaysPerYear;
+            if (laborFeedback != null)
+                foreach (var item in laborFeedback.Values)
+                {
+                    bool vanished = !World.Camps.Any(c => c.Id == item.CampId &&
+                        c.Population > 0);
+                    ElderActorLaborFeedbackBuilder.BindResolved(item, record,
+                        World.Config, vanished);
+                    Context(item.CampId).PreviousLaborFeedback = item.Copy();
+                }
             var step = new ElderModel9Step { Turn = World.Turn, Years = years, Fingerprint = SaveCodec.Fingerprint(World),
                 DiagnosticSchemaVersion = EconomicDiagnosticsEnabled ? 3 : 2, TrajectoryId = trajectoryId };
             step.PrepareMs = prepareMs; step.LabelMs = labelMs; step.ResolveMs = resolveMs; step.FingerprintMs = phase.Elapsed.TotalMilliseconds;
@@ -906,6 +1061,7 @@ namespace Anthropocene.Simulation
                     Society = camp?.SocietyId ?? (priorSociety.TryGetValue(id, out int s) ? s : -1),
                     Teacher = labels.TryGetValue(id, out var label) ? label : null, Staffing = staffing.TryGetValue(id, out var st) ? st : "",
                     DecisionDiagnostics = decisionDiagnostics.TryGetValue(id, out var dd) ? dd : null,
+                    LaborPrevious = laborFeedback != null && laborFeedback.TryGetValue(id, out var labor) ? labor.Copy() : null,
                     Interventions = interventions.TryGetValue(id, out var list) ? list ?? Array.Empty<ElderIntervention>() : Array.Empty<ElderIntervention>()
                 };
                 if (camp != null)
@@ -1045,7 +1201,9 @@ namespace Anthropocene.Simulation
         private void Observe(ElderModel9Step step, Dictionary<int, int> prior)
         {
             observations = new Dictionary<int, ElderObservation>(); metadata = new Dictionary<int, ElderObservationMetadata>();
+            laborCatalogs = new Dictionary<int, ElderActorLaborCatalog>();
             var rows = step.Villages.ToDictionary(v => v.Camp);
+            var fishingCache = ActorLaborEnabled ? new FishingAccessCache(World) : null;
             foreach (int id in Villages())
             {
                 var camp = World.Camps.First(c => c.Id == id);
@@ -1071,6 +1229,18 @@ namespace Anthropocene.Simulation
                 context.CommitmentAge = active ? memory.CommitmentTurns - memory.CommitmentRemaining : 0;
                 context.CommitmentBrokenLastTurn = memory?.LastCommitmentBreak != null &&
                     memory.LastCommitmentBreakDays + World.Config.TurnDays + 1e-6 >= World.Days;
+                if (ActorLaborEnabled)
+                {
+                    var originAccess = FishingEconomy.BuildAccess(World, camp,
+                        camp.Tile, camp.Population, World.Days,
+                        World.Config.TurnDays, fishingCache);
+                    var laborCatalog = ElderActorLaborCompiler.BuildCatalog(World,
+                        camp, originAccess);
+                    laborCatalogs[id] = laborCatalog;
+                    v.LaborCatalog = laborCatalog.Copy();
+                    if (v.LaborPrevious == null)
+                        v.LaborPrevious = context.PreviousLaborFeedback?.Copy();
+                }
                 v.Observation = ElderModel9Encoder.Encode(obs, context);
                 step.EncodeMs += clock.Elapsed.TotalMilliseconds; clock.Restart();
                 v.Privileged = Privileged(camp, prior.TryGetValue(id, out int before) ? before : camp.Population, step.Turn - Replay.StartTurn);
@@ -1111,6 +1281,9 @@ namespace Anthropocene.Simulation
                     observations = observations.Where(p => s.Directives.ContainsKey(p.Key)).ToDictionary(p => p.Key, p => p.Value);
                     witnessMetadata = witnessMetadata.Where(p => s.Directives.ContainsKey(p.Key)).ToDictionary(p => p.Key, p => p.Value);
                     var background = s.Background.ToDictionary(p => p.Key, p => p.Value.Select(o => o.Copy()).ToList());
+                    // Trade lifecycle capture begins during pure preparation, so replay must establish
+                    // the environment-owned gate at the same boundary as the live environment.
+                    world.EconomicDiagnosticCapture = s.DiagnosticSchemaVersion >= 3;
                     var prepared = s.Directives.Count > 0
                         ? TurnPlanner.PrepareWithElderDirectives(world, background, s.Directives.ToDictionary(p => p.Key, p => p.Value.Copy()),
                             observations, compiler, s.Traces, execution ?? new PhaseExecution())
@@ -1118,7 +1291,6 @@ namespace Anthropocene.Simulation
                     var decisionTradeEligibility = prepared.ElderDecisions.Keys.OrderBy(id => id).ToDictionary(id => id,
                         id => world.Camps.FirstOrDefault(c => c.Id == id) is Camp camp && Trade.Eligible(world, camp));
                     foreach (var pair in prepared.ElderDecisions) previous[pair.Key] = pair.Value;
-                    world.EconomicDiagnosticCapture = s.DiagnosticSchemaVersion >= 3;
                     var economicOpening = world.EconomicDiagnosticCapture ? EconomicBoundary.Capture(world) : null;
                     var resolver = new TurnResolver(execution ?? new PhaseExecution());
                     var replayRecord = resolver.Resolve(world, prepared);
@@ -1129,7 +1301,8 @@ namespace Anthropocene.Simulation
                             s.TrajectoryId, context?.ForkId, context?.BranchId, context?.ParentTransitionId,
                             s.EconomicDiagnostics.ToDictionary(p => p.Key, p => p.Value.ParentTransitionId));
                         if (!EconomicDiagnosticsEqual(actualEconomic, s.EconomicDiagnostics))
-                            throw new InvalidOperationException("Replay economic diagnostics diverged at step " + index + ".");
+                            throw new InvalidOperationException("Replay economic diagnostics diverged at step " + index +
+                                " (" + EconomicDiagnosticsDifference(actualEconomic, s.EconomicDiagnostics) + ").");
                     }
                     if (s.DiagnosticSchemaVersion == 1 && world.Config.ElderRawMaterialsEnabled)
                         throw new InvalidOperationException("Schema-1 replay cannot be used with raw materials enabled; regenerate under schema 2.");
@@ -1172,6 +1345,49 @@ namespace Anthropocene.Simulation
                 return x.Equals(y);
             }
             return Equal(a, b);
+        }
+        private static string EconomicDiagnosticsDifference(object actual, object expected, string path = "economicDiagnostics")
+        {
+            if (actual == null || expected == null) return actual == expected ? "unknown" : path + ": null mismatch";
+            if (actual is System.Collections.IDictionary ad && expected is System.Collections.IDictionary ed)
+            {
+                if (ad.Count != ed.Count) return path + ": dictionary count " + ad.Count + " != " + ed.Count;
+                foreach (var key in ad.Keys)
+                {
+                    if (!ed.Contains(key)) return path + ": unexpected key " + key;
+                    if (!EconomicDiagnosticsEqualValue(ad[key], ed[key]))
+                        return EconomicDiagnosticsDifference(ad[key], ed[key], path + "." + key);
+                }
+                return path + ": dictionary value mismatch";
+            }
+            if (actual is ElderEconomicDiagnostic diagnostic && expected is ElderEconomicDiagnostic expectedDiagnostic)
+                foreach (var field in typeof(ElderEconomicDiagnostic).GetFields().Where(f => !f.IsStatic))
+                    if (!EconomicDiagnosticsEqualValue(field.GetValue(diagnostic), field.GetValue(expectedDiagnostic)))
+                        return EconomicDiagnosticsDifference(field.GetValue(diagnostic), field.GetValue(expectedDiagnostic), path + "." + field.Name);
+            if (actual is System.Collections.IEnumerable ae && expected is System.Collections.IEnumerable ee && !(actual is string))
+            {
+                var al = ae.Cast<object>().ToArray(); var el = ee.Cast<object>().ToArray();
+                if (al.Length != el.Length) return path + ": sequence count " + al.Length + " != " + el.Length;
+                for (int i = 0; i < al.Length; i++) if (!EconomicDiagnosticsEqualValue(al[i], el[i]))
+                    return EconomicDiagnosticsDifference(al[i], el[i], path + "[" + i + "]");
+            }
+            return path + ": " + actual + " != " + expected;
+        }
+        private static bool EconomicDiagnosticsEqualValue(object x, object y)
+        {
+            if (x == null || y == null) return x == y;
+            if (x is System.Collections.IDictionary xd && y is System.Collections.IDictionary yd)
+            {
+                if (xd.Count != yd.Count) return false;
+                foreach (var key in xd.Keys) if (!yd.Contains(key) || !EconomicDiagnosticsEqualValue(xd[key], yd[key])) return false;
+                return true;
+            }
+            if (x is ElderEconomicDiagnostic dx && y is ElderEconomicDiagnostic dy)
+                return typeof(ElderEconomicDiagnostic).GetFields().Where(f => !f.IsStatic)
+                    .All(f => EconomicDiagnosticsEqualValue(f.GetValue(dx), f.GetValue(dy)));
+            if (x is System.Collections.IEnumerable xe && y is System.Collections.IEnumerable ye && !(x is string))
+                return xe.Cast<object>().SequenceEqual(ye.Cast<object>(), new EconomicTreeComparer(EconomicDiagnosticsEqualValue));
+            return x.Equals(y);
         }
         private sealed class EconomicTreeComparer : IEqualityComparer<object>
         {

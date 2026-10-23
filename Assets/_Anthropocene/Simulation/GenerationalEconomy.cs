@@ -314,7 +314,9 @@ namespace Anthropocene.Simulation
             var agriculturalLabor = w.Camps.OrderBy(c => c.Id).ToDictionary(c => c.Id, c =>
                 new AgriculturalLabor
                 {
-                    Gatherers = c.GathererPopulation + CultivationEconomy.Workers(c, WorkforceRoles.Gatherer),
+                    Gatherers = c.EconomicLabor?.ActorActivityAuthority == true
+                        ? CultivationEconomy.Workers(c, WorkforceRoles.Gatherer)
+                        : c.GathererPopulation + CultivationEconomy.Workers(c, WorkforceRoles.Gatherer),
                     Footprint = CultivationEconomy.Enabled(c) && !abandoningVillages.Contains(c.Id)
                         ? CultivationEconomy.Footprint(w, c) : Array.Empty<int>()
                 });
@@ -509,7 +511,7 @@ namespace Anthropocene.Simulation
                 double baselineMaterialGathererIntervals = Math.Max(0,
                     labor.Gatherers * intervals - labor.GatheringWorkerIntervals - phaseBRawGathererIntervals);
                 NeolithicProduction.ResolveCampNeolithic(w, camp, horizon, record,
-                    baselineMaterialGathererIntervals, needs[camp.Id], !tradeAfterProduction);
+                    baselineMaterialGathererIntervals, needs[camp.Id], !tradeAfterProduction, LastMetrics);
                 if (CultivationEconomy.Enabled(camp))
                 {
                     foreach (int id in labor.Footprint) { LazyEcology.MaterializeEcology(w, id, record.StartDays + record.Duration); w.Tiles[id].Cultivation = (float)CultivationEconomy.Intensity(w.Config, w.Tiles[id].CultivationCapital); }
@@ -520,14 +522,15 @@ namespace Anthropocene.Simulation
             {
                 Trade.SettleAfterProduction(w, trade, record);
                 foreach (var camp in neolithicCamps)
-                    if (camp.Population > 0) NeolithicProduction.ResolveNeeds(w, camp, horizon.Years, needs[camp.Id]?.Residents ?? camp.Population);
+                    if (camp.Population > 0) NeolithicProduction.ResolveNeeds(w, camp, horizon.Years,
+                        needs[camp.Id]?.Residents ?? camp.Population, LastMetrics, record);
             }
             LastMetrics.ProductionMilliseconds = phaseClock.Elapsed.TotalMilliseconds;
             LastMetrics.ProductionReceipts = record.Production.Count;
             if (PhysicalDemography.Enabled(w.Config))
             {
                 ReconcilePhysicalDemography(w, record, years, physicalCampFood, physicalHunterFood,
-                    pendingPhysicalCamps, pendingPhysicalHunters);
+                    pendingPhysicalCamps, pendingPhysicalHunters, LastMetrics);
                 // Remote provisions may have been refunded after person-year closure.
                 Supply.Finish(w, record);
             }
@@ -575,6 +578,9 @@ namespace Anthropocene.Simulation
 
         internal static double PassiveFoodGathererIntervals(Camp camp, TurnNeeds needs, double availableFoodGatherers, double intervals)
         {
+            if (camp?.EconomicLabor?.ActorActivityAuthority == true)
+                return Math.Max(0, Math.Min(availableFoodGatherers,
+                    camp.EconomicLabor.ActorFoodGathererWorkers));
             if (camp?.EconomicLabor?.PolicyAuthority == true)
                 return Math.Max(0, availableFoodGatherers - camp.EconomicLabor.MaterialGatherers);
             if (needs?.Order?.RawMaterialAllowances == null || needs.Order.RawMaterialAllowances.Count == 0)
@@ -700,18 +706,25 @@ namespace Anthropocene.Simulation
             var managementPlans = new Dictionary<int, HerdingManagementPlan>();
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
-                var plan = HerdingTooling.Plan(w, camp, horizon);
+                int totalHerders = camp.Workforce.Assignments
+                    .Where(assignment => assignment.Role ==
+                        WorkforceRoles.Herder)
+                    .Sum(assignment => assignment.Population);
+                var plan = camp.EconomicLabor?.ActorActivityAuthority == true
+                    ? HerdingTooling.PlanActor(w, camp, horizon.Years,
+                        camp.EconomicLabor.ActorHerdManagementWorkers,
+                        totalHerders)
+                    : HerdingTooling.Plan(w, camp, horizon);
                 managementPlans[camp.Id] = plan;
                 if (activeElderDecisions.TryGetValue(camp.Id,
                         out var elderDecision))
                 {
-                    int totalHerders = camp.Workforce.Assignments
-                        .Where(assignment => assignment.Role ==
-                            WorkforceRoles.Herder)
-                        .Sum(assignment => assignment.Population);
-                    elderDecision.ResolvedHerdDevelopmentPeople = Math.Max(0,
-                        totalHerders -
-                            elderDecision.AcceptedRetainedHerdPeople);
+                    elderDecision.ResolvedHerdDevelopmentPeople =
+                        camp.EconomicLabor?.ActorActivityAuthority == true
+                            ? Math.Max(0, camp.EconomicLabor
+                                .ActorHerdExpansionWorkers)
+                            : Math.Max(0, totalHerders -
+                                elderDecision.AcceptedRetainedHerdPeople);
                 }
                 foreach (var herd in w.Herds.Where(h => h.DomesticCamp == camp.Id && h.Animals > 0).OrderBy(h => h.Id))
                     managementByHerd[herd.Id] = plan.Fulfillment;
@@ -764,7 +777,16 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 if (!managementPlans.TryGetValue(camp.Id, out var plan)) continue;
-                if (plan.ToolsConsumed > 0) camp.Inventory.HerdingTools = Math.Max(0, camp.Inventory.HerdingTools - plan.ToolsConsumed);
+                if (plan.ToolsConsumed > 0)
+                {
+                    double before = camp.Inventory.HerdingTools;
+                    camp.Inventory.HerdingTools = Math.Max(0, camp.Inventory.HerdingTools - plan.ToolsConsumed);
+                    if (LastMetrics.EconomicCapture)
+                        LastMetrics.CapturePhysicalEvent("turn/" + record.Turn + "/camp/" + camp.Id + "/service/HerdingTools",
+                            camp.Id, "final-service-fulfilment", "HerdingTools", "good-units",
+                            Math.Max(0, before - camp.Inventory.HerdingTools), "out",
+                            phase: "work-before-production");
+                }
             }
             // Project the entire potential receipt through the same growth/input
             // solver used by SustainGeneration.  Then cap the receipt and make
@@ -1241,7 +1263,8 @@ namespace Anthropocene.Simulation
         // gross events at the turn boundary. Only B-D changes the workforce: equilibrium turnover cannot erase roles.
         private static void ReconcilePhysicalDemography(WorldState w, TurnRecord record, double years,
             Dictionary<int, PhysicalFoodEnvelope> campFood, Dictionary<int, PhysicalFoodEnvelope> hunterFood,
-            List<PhysicalCampEvents> pendingCamps, List<PhysicalHunterEvents> pendingHunters)
+            List<PhysicalCampEvents> pendingCamps, List<PhysicalHunterEvents> pendingHunters,
+            ResolutionMetrics metrics)
         {
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
@@ -1278,8 +1301,36 @@ namespace Anthropocene.Simulation
                 camp.Inventory.AnimalFabric = Math.Max(0, initialAnimalFabric - animalUsed);
                 camp.ResolvedClothConsumed = clothUsed; camp.ResolvedAnimalFabricConsumed = animalUsed;
                 camp.FabricConsumed = clothUsed + animalUsed;
+                if (metrics?.EconomicCapture == true)
+                {
+                    metrics.CapturePhysicalEvent("turn/" + record.Turn + "/camp/" + camp.Id + "/service-final/Cloth",
+                        camp.Id, "final-service-fulfilment", "Cloth", "good-units", clothUsed, "out",
+                        phase: "needs-after-production");
+                    metrics.CapturePhysicalEvent("turn/" + record.Turn + "/camp/" + camp.Id + "/service-final/AnimalFabric",
+                        camp.Id, "final-service-fulfilment", "AnimalFabric", "good-units", animalUsed, "out",
+                        phase: "needs-after-production");
+                }
 
+                double preRefundPlant = 0, preRefundAnimal = 0, preRefundAquatic = 0;
+                if (metrics?.EconomicCapture == true)
+                {
+                    preRefundPlant = camp.PlantFood;
+                    preRefundAnimal = camp.AnimalFood;
+                    preRefundAquatic = camp.AquaticFood;
+                }
                 RefundCampFood(camp, food, Math.Max(0, food.Total - result.FoodConsumed));
+                if (metrics?.EconomicCapture == true)
+                {
+                    metrics.CapturePhysicalEvent("turn/" + record.Turn + "/camp/" + camp.Id + "/human-consumption/PlantFood",
+                        camp.Id, "human-food-consumption", "PlantFood", "food",
+                        food.Plant - (camp.PlantFood - preRefundPlant), "out", phase: "needs-after-production");
+                    metrics.CapturePhysicalEvent("turn/" + record.Turn + "/camp/" + camp.Id + "/human-consumption/AnimalFood",
+                        camp.Id, "human-food-consumption", "AnimalFood", "food",
+                        food.Animal - (camp.AnimalFood - preRefundAnimal), "out", phase: "needs-after-production");
+                    metrics.CapturePhysicalEvent("turn/" + record.Turn + "/camp/" + camp.Id + "/human-consumption/AquaticFood",
+                        camp.Id, "human-food-consumption", "AquaticFood", "food",
+                        food.Aquatic - (camp.AquaticFood - preRefundAquatic), "out", phase: "needs-after-production");
+                }
                 camp.LastConsumed = result.FoodConsumed;
                 camp.FoodDeficit = Math.Max(0, PhysicalDemography.FoodPerPersonYear(w.Config) * result.PersonYears - result.FoodConsumed);
                 camp.FoodNeedsMetRatio = result.Nutrition;

@@ -424,8 +424,13 @@ namespace Anthropocene.Simulation
                             w.Config.Neolithic.FishingToolFisherYearsPerUnit);
                         double available = Math.Min(Math.Max(0, fisherCamp.Inventory.FishingTools),
                             Math.Max(0, plan.FishingToolsAtOpen));
+                        double consumed = Math.Min(available, plannedUse);
                         fisherCamp.Inventory.FishingTools = Math.Max(0,
-                            fisherCamp.Inventory.FishingTools - Math.Min(available, plannedUse));
+                            fisherCamp.Inventory.FishingTools - consumed);
+                        if (LastMetrics.EconomicCapture)
+                            LastMetrics.CapturePhysicalEvent("turn/" + record.Turn + "/camp/" + fisherCamp.Id + "/service/FishingTools",
+                                fisherCamp.Id, "final-service-fulfilment", "FishingTools", "good-units",
+                                consumed, "out", phase: "work-before-production");
                     }
 
             foreach (var camp in agriculturalCamps)
@@ -438,9 +443,19 @@ namespace Anthropocene.Simulation
                 if (LastMetrics.EconomicCapture)
                 {
                     var rows = new List<Dictionary<string, object>>();
-                    for (int i = 0; i < corrected.Tiles.Length; i++) rows.Add(new Dictionary<string, object>
-                    { ["fieldId"] = corrected.Tiles[i], ["openingCapital"] = corrected.StartCapital[i],
-                        ["meanCapital"] = corrected.AverageCapital[i], ["endingCapital"] = corrected.EndCapital[i] });
+                    for (int i = 0; i < corrected.Tiles.Length; i++)
+                    {
+                        double decayed = CultivationEconomy.Decay(w.Config, corrected.StartCapital[i],
+                            corrected.StartOperatingFractions[i], horizon.Years);
+                        double added = Math.Max(0, corrected.EndCapital[i] - decayed);
+                        double lost = Math.Max(0, corrected.StartCapital[i] - decayed);
+                        rows.Add(new Dictionary<string, object>
+                        { ["fieldId"] = corrected.Tiles[i], ["openingCapital"] = corrected.StartCapital[i],
+                            ["meanCapital"] = corrected.AverageCapital[i], ["decayedCapital"] = decayed,
+                            ["capitalAdded"] = added, ["capitalLost"] = lost,
+                            ["endingCapital"] = corrected.EndCapital[i],
+                            ["residual"] = corrected.StartCapital[i] + added - lost - corrected.EndCapital[i] });
+                    }
                     LastMetrics.EconomicFields[camp.Id] = rows;
                 }
                 if (LastMetrics.CaptureWork)
@@ -467,7 +482,7 @@ namespace Anthropocene.Simulation
                     }
                 }
                 CultivationEconomy.CommitHorizonExpansion(w, camp, corrected, record,
-                    farmToolBudgets[camp.Id], allocations[camp.Id]);
+                    farmToolBudgets[camp.Id], allocations[camp.Id], LastMetrics);
             }
             // Preserve the pre-fishing path exactly when the feature is disabled:
             // only agricultural camps are visited and no fishing indexes are built.

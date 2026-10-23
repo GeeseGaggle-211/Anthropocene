@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Anthropocene.Simulation
 {
@@ -295,6 +296,13 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double[] TradeValue;
         [System.Runtime.Serialization.OptionalField] public int[] TradeGate;
         [System.Runtime.Serialization.OptionalField] public double TradeExportShare = -1;
+        // Opt-in Model9 contract 13. Row 0 of LaborSpecialtyAllocation is explicit
+        // idle; rows 1..13 follow WorkforceRoles.All.  Activity rows follow
+        // WorkforceRoles.All and ElderActorLaborContract.ActivityIds.  Only the
+        // specialty simplex is converted to whole residents.  Activity shares
+        // remain fractional worker-time within the accepted specialty count.
+        [System.Runtime.Serialization.OptionalField] public double[] LaborSpecialtyAllocation;
+        [System.Runtime.Serialization.OptionalField] public double[][] LaborActivityAllocation;
 
         public ElderDirective Copy() => new ElderDirective
         {
@@ -308,7 +316,10 @@ namespace Anthropocene.Simulation
             ServiceLevels = (double[])ServiceLevels?.Clone(),
             ClothingRoute = ClothingRoute, ShelterRoute = ShelterRoute, FissionPolicy = FissionPolicy,
             CommitTurns = CommitTurns, IntentTile = IntentTile,
-            TradeValue = (double[])TradeValue?.Clone(), TradeGate = (int[])TradeGate?.Clone(), TradeExportShare = TradeExportShare
+            TradeValue = (double[])TradeValue?.Clone(), TradeGate = (int[])TradeGate?.Clone(), TradeExportShare = TradeExportShare,
+            LaborSpecialtyAllocation = (double[])LaborSpecialtyAllocation?.Clone(),
+            LaborActivityAllocation = LaborActivityAllocation?.Select(row =>
+                (double[])row?.Clone()).ToArray()
         };
     }
 
@@ -376,6 +387,9 @@ namespace Anthropocene.Simulation
         [NonSerialized] internal int[] RetainedFieldTiles = Array.Empty<int>();
         [NonSerialized] internal double ResolvedRetainedFieldOperation,
             ResolvedFieldDevelopmentPeople, ResolvedHerdDevelopmentPeople;
+        // Contract-13 transient task compiler result. Replay/feedback copies an explicit serializable record instead of
+        // treating the legacy strategic/service controls as task execution.
+        [NonSerialized] internal ElderActorLaborAttempt ActorLabor;
     }
 
     [Serializable]

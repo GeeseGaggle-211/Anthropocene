@@ -711,6 +711,19 @@ namespace Anthropocene.Simulation
                             if (remaining <= 1e-10) break;
                             double requested = remaining * SpecialistProductivity.ExtractionRate(w, c, material, role);
                             remaining -= Extract(w, c, source, role, remaining, requested, record.StartDays + record.Duration, record);
+                            // Every actor activity sees the authoritative remainder
+                            // left by earlier activities in the stable role/material/
+                            // source order. A stale opening snapshot must not let a
+                            // later sibling spend the same source twice.
+                            if (needs.Order.ActorActivityAuthority)
+                            {
+                                var state = SourceState(w, source.Id);
+                                if (state != null)
+                                    foreach (var sameSource in available.Where(item =>
+                                        item.Id == source.Id))
+                                        sameSource.Available = Math.Max(0,
+                                            state.Remaining * sameSource.Share);
+                            }
                         }
                     }
                 return needs.Housing;
@@ -969,8 +982,13 @@ namespace Anthropocene.Simulation
             var steps = ProductionOrder.Steps(orderedRecipes, order != null).ToArray();
             var roles = WorkforceRoles.Specialists.Concat(new[] { WorkforceRoles.Craftsperson }).ToArray();
             var laborByRole = roles.ToDictionary(role => role, role => CultivationEconomy.Workers(c, role) * intervals);
-            bool lightHousingUseful = NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 &&
-                (CultivationEconomy.Workers(c, WorkforceRoles.Builder) > 0 || CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0);
+            var actorActivityIntervals = order?.ActivityIntervalBudgets(intervals);
+            bool lightHousingUseful = order?.ActorActivityAuthority == true
+                ? roles.Any(role => order.ActivityLabor(role,
+                    CraftGood.LightHousing, intervals, 0) > 0)
+                : NeolithicProduction.Priority(c, CraftGood.LightHousing) > 0 &&
+                    (CultivationEconomy.Workers(c, WorkforceRoles.Builder) > 0 ||
+                     CultivationEconomy.Workers(c, WorkforceRoles.Craftsperson) > 0);
             // The forecast never mutates the camp, so each good's pure useful
             // demand is evaluated once; both tool goods share one schedule run.
             // demandMemo lets a caller share these values between forecasts of the
@@ -1006,7 +1024,11 @@ namespace Anthropocene.Simulation
             GoodsStorage storage = null; double[] stored = null; double storagePots = 0;
             if (GoodsStorage.Enabled(w.Config))
             {
-                GoodsStorage.PlannedUse(recipes, good => NeolithicProduction.Priority(c, good) > 0 ? UsefulDemand(good) : 0, out double equipmentUse, out double housingUse);
+                GoodsStorage.PlannedUse(recipes, good =>
+                    order?.ActorActivityAuthority == true ||
+                    NeolithicProduction.Priority(c, good) > 0
+                        ? UsefulDemand(good) : 0,
+                    out double equipmentUse, out double housingUse);
                 storage = GoodsStorage.Begin(w, c, years, residentPopulation, equipmentUse, housingUse);
                 stored = GoodsStorage.StockOf(c);
                 var nc = w.Config.Neolithic;
@@ -1019,13 +1041,18 @@ namespace Anthropocene.Simulation
             // Docs/PlannerTradeStorageDesign.md §2 P4), whatever the recipe's priority.
             void Step(string role, CraftRecipe recipe, bool exportOnly)
             {
-                if (!exportOnly && NeolithicProduction.Priority(c, recipe.Good) <= 0) return;
+                if (!exportOnly && order?.ActorActivityAuthority != true &&
+                    NeolithicProduction.Priority(c, recipe.Good) <= 0) return;
                 if (!NeolithicProduction.RecipeAvailable(w, c, recipe)) return;
                 bool specialist = role == recipe.Specialist && c.People.HasTech(recipe.Track);
                 if (!specialist && (role != WorkforceRoles.Craftsperson || recipe.SpecialistOnly)) return;
                 double rate = SpecialistProductivity.CraftRate(w, c, recipe, role);
                 if (rate <= 0) return;
-                double labor = order?.ActivityLabor(role, recipe.Good, intervals, laborByRole[role]) ?? laborByRole[role];
+                double labor = actorActivityIntervals != null
+                    ? ProductionOrder.RemainingActivityLabor(actorActivityIntervals,
+                        role, recipe.Good)
+                    : order?.ActivityLabor(role, recipe.Good, intervals,
+                        laborByRole[role]) ?? laborByRole[role];
                 double useful;
                 if (recipe.Good != CraftGood.Cloth && recipe.Good != CraftGood.AnimalFabric) useful = UsefulDemand(recipe.Good);
                 else
@@ -1081,8 +1108,15 @@ namespace Anthropocene.Simulation
                 if (amount <= 0) return;
                 // Storage pools Cloth and Animal Fabric as one textile stock, so a plant tent's Cloth frees textile room.
                 if (stored != null) GoodsStorage.Add(stored, recipe.Good, amount, recipe.AnimalFabric + recipe.Cloth, recipe.HousingMaterial);
-                labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : recipe.Good == CraftGood.HousingMaterial ? tools.Time(recipe.Good, rate, amount) : amount / rate;
-                laborByRole[role] = labor;
+                double usedLabor = recipe.Equipment
+                    ? tools.Spend(recipe.Good, rate, amount)
+                    : recipe.Good == CraftGood.HousingMaterial
+                        ? tools.Time(recipe.Good, rate, amount) : amount / rate;
+                labor -= usedLabor;
+                if (actorActivityIntervals != null)
+                    ProductionOrder.ConsumeActivityLabor(actorActivityIntervals,
+                        role, recipe.Good, usedLabor);
+                else laborByRole[role] = labor;
                 double forExport = Math.Min(amount, Outstanding(recipe.Good));
                 planned[recipe.Good] += amount; plant -= amount * recipe.PlantFood; animalFood -= amount * recipe.AnimalFood;
                 stone -= amount * recipe.Stone; clay -= amount * recipe.Clay; wood -= amount * recipe.Wood;

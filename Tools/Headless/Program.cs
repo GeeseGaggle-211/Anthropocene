@@ -453,6 +453,7 @@ internal static class Program
         if (args.Contains("--autonomous-elder-fixture")) { System.IO.File.WriteAllBytes(args[Array.IndexOf(args, "--autonomous-elder-fixture") + 1], SaveCodec.Save(AutonomousElderChecks.Fixture(true))); return 0; }
         if (args.Contains("--elder-rl-only")) { ElderRLChecks.Run(); return 0; }
         if (args.Contains("--model9-only")) { Console.WriteLine("PASS: " + ElderModel9Checks.Run() + " model9 assertions"); return 0; }
+        if (args.Contains("--actor-labor-only")) { Console.WriteLine("PASS: " + ElderActorLaborChecks.Run() + " actor-labor assertions"); return 0; }
         if (args.Contains("--demand-control-only")) { Console.WriteLine("PASS: " + DemandControlChecks.Run() + " demand-control assertions"); return 0; }
         if (args.Contains("--horizon-only")) { HorizonEcologyChecks.Run(); HorizonCultivationChecks.Run(); HorizonExecutionChecks.Run(); return 0; }
         if (args.Contains("--land-food-only")) { AquaticChecks.Run(); HorizonEcologyChecks.Run(); Issue27EcologyChecks.Run(); return 0; }
@@ -478,6 +479,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "SubsistenceNeedsChecks", Run = () => SubsistenceNeedsChecks.Run() },
                 new ParallelChecks.Entry { Name = "AutonomousElderChecks", Run = () => AutonomousElderChecks.Run() },
             new ParallelChecks.Entry { Name = "ElderModel9Checks", Run = () => ElderModel9Checks.Run() },
+                new ParallelChecks.Entry { Name = "ElderActorLaborChecks", Run = () => ElderActorLaborChecks.Run() },
                 new ParallelChecks.Entry { Name = "AutonomousElderHistoryChecks", Run = () => AutonomousElderHistoryChecks.Run() },
                 new ParallelChecks.Entry { Name = "Program.Tests", Run = () => Tests() },
                 new ParallelChecks.Entry { Name = "Milestone2Checks", Run = () => Milestone2Checks.Run() },
