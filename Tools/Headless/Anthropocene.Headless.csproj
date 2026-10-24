@@ -32,6 +32,7 @@
     <Compile Include="SettlingGraceChecks.cs" />
     <Compile Include="ElderModel9Tools.cs" />
     <Compile Include="ElderModel9Checks.cs" />
+    <Compile Include="ElderEconomicStaffingChecks.cs" />
     <Compile Include="ElderActorLaborChecks.cs" />
     <Compile Include="DemographicStructureChecks.cs" />
     <Compile Include="HerdLabourChecks.cs" />

@@ -479,6 +479,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "SubsistenceNeedsChecks", Run = () => SubsistenceNeedsChecks.Run() },
                 new ParallelChecks.Entry { Name = "AutonomousElderChecks", Run = () => AutonomousElderChecks.Run() },
             new ParallelChecks.Entry { Name = "ElderModel9Checks", Run = () => ElderModel9Checks.Run() },
+                new ParallelChecks.Entry { Name = "ElderEconomicStaffingChecks", Run = () => ElderEconomicStaffingChecks.Run() },
                 new ParallelChecks.Entry { Name = "ElderActorLaborChecks", Run = () => ElderActorLaborChecks.Run() },
                 new ParallelChecks.Entry { Name = "AutonomousElderHistoryChecks", Run = () => AutonomousElderHistoryChecks.Run() },
                 new ParallelChecks.Entry { Name = "Program.Tests", Run = () => Tests() },

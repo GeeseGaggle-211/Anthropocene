@@ -128,7 +128,7 @@ namespace Anthropocene.Simulation
                     inventory.TryGetValue(item, out var value)) total += Convert.ToDouble(value);
             return total;
         }
-        static double TransferFood(IEnumerable<Dictionary<string, object>> rows, int camp, bool incoming)
+        internal static double TransferFood(IEnumerable<Dictionary<string, object>> rows, int camp, bool incoming)
         {
             double total = 0;
             foreach (var row in rows)
@@ -136,7 +136,7 @@ namespace Anthropocene.Simulation
                 string kind = Convert.ToString(row["kind"], System.Globalization.CultureInfo.InvariantCulture);
                 if (kind != "migration" && kind != "fission-inventory") continue;
                 if ((int)row[incoming ? "destinationCamp" : "sourceCamp"] != camp) continue;
-                foreach (string key in new[] { "plantFood", "animalFood", "aquaticFood", "carriedFood" })
+                foreach (string key in new[] { "plantFood", "animalFood", "aquaticFood" })
                     if (row.TryGetValue(key, out var value)) total += Math.Max(0, Convert.ToDouble(value));
             }
             return total;
@@ -333,7 +333,10 @@ namespace Anthropocene.Simulation
                 if (migrationByCamp.TryGetValue(id, out var migrations)) foreach (var flow in migrations)
                     d.Transfers.Add(new Dictionary<string, object> { ["kind"] = "migration", ["phase"] = "close-after-demography", ["sourceCamp"] = flow.SourceCamp,
                         ["destinationCamp"] = flow.DestinationCamp, ["people"] = flow.Migrants, ["plantFood"] = flow.Plant, ["animalFood"] = flow.Animal,
-                        ["aquaticFood"] = flow.Aquatic, ["carriedFood"] = flow.Carried });
+                        ["aquaticFood"] = flow.Aquatic,
+                        // Immigration.Carried is person-equivalents of the turn's food need (a social-utility
+                        // estimate), not physical food: it is never added to physical food transfer sums.
+                        ["carriedFoodPersonEquivalents"] = flow.Carried });
                 foreach (var flow in fissionByCamp[id])
                     d.Transfers.Add(new Dictionary<string, object> { ["kind"] = "fission", ["phase"] = "close-after-demography", ["sourceCamp"] = flow.ParentCamp,
                         ["destinationCamp"] = flow.DaughterCamp, ["people"] = flow.Daughter, ["animals"] = flow.AnimalsMoved });
@@ -535,6 +538,10 @@ namespace Anthropocene.Simulation
                     else d.Missing(herding, p.Key, "herding", "zero-denominator");
                 var manufacturing = Row(); d.Domains["manufacturing"] = manufacturing;
                 manufacturing["active"] = allocation != null;
+                if (allocation == null)
+                    foreach (string key in new[] { "assignedHerderResidents", "managementHerderResidents", "developmentHerderResidents",
+                        "managementHerderWorkerYears", "developmentHerderWorkerYears", "assignedHerderWorkerYears" })
+                        d.Missing(herding, key, "herding", "no-native-demand-allocation");
                 var funnels = new List<Dictionary<string, object>>(); manufacturing["funnels"] = funnels;
                 if (allocation != null)
                 {
@@ -680,6 +687,19 @@ namespace Anthropocene.Simulation
                     d.Put(herding, "herdMarginalReturn", allocation.HerdMarginalReturn, "herding", "food/worker-year");
                     herding["selectedHerdBudget"] = allocation.SelectedHerdBudget; herding["finalHerdBudget"] = allocation.FinalHerdBudget; herding["developmentAnimals"] = allocation.HerdDevelopmentAnimals;
                     herding["plannedHerderYears"] = allocation.Herders * years;
+                    // Pre-execution Herder staffing the native planner compiled into the intent: whole
+                    // management herders plus development herders staffed from herd-development bundles.
+                    // These are assigned residents and their full planned worker-time, independent of
+                    // tool-covered service (coveredHerderYears is a receipt, not a staffing count).
+                    int developmentHerders = allocation.Staff.TryGetValue(WorkforceRoles.Herder, out int staffedDevelopmentHerders)
+                        ? Math.Max(0, staffedDevelopmentHerders) : 0;
+                    int managementHerders = Math.Max(0, allocation.Herders);
+                    d.Put(herding, "assignedHerderResidents", managementHerders + developmentHerders, "herding", "people");
+                    d.Put(herding, "managementHerderResidents", managementHerders, "herding", "people");
+                    d.Put(herding, "developmentHerderResidents", developmentHerders, "herding", "people");
+                    d.Put(herding, "managementHerderWorkerYears", managementHerders * years, "herding", "worker-years");
+                    d.Put(herding, "developmentHerderWorkerYears", developmentHerders * years, "herding", "worker-years");
+                    d.Put(herding, "assignedHerderWorkerYears", (managementHerders + developmentHerders) * years, "herding", "worker-years");
                     string[] units = { "food-worker-headcount", "selected-route-clothing-units", "selected-route-shelter-units", "mixed-tool-good-units", "pot-units", "raw-extraction-worker-years" };
                     for (int s = 0; s < 6; s++)
                     {
