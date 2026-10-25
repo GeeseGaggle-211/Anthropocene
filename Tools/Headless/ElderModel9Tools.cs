@@ -497,8 +497,8 @@ internal static class ElderModel9Tools
             var snapshot = ElderModel9Environment.GenerateOpening(seed, players, out _, 40, withheld);
             var env = new ElderModel9Environment { WithheldTechnologies = withheld };
             var reset = env.Reset(snapshot, true);
-            var rows = new List<(int Turn, ElderModel9Village Decision, ElderModel9Tensor Obs, float[] Privileged)>();
-            var pending = reset.Villages.Where(v => v.Observation != null).ToDictionary(v => v.Camp, v => (v.Observation, v.Privileged));
+            var rows = new List<(int Turn, ElderModel9Village Decision, ElderModel9Tensor Obs, ElderModel9PrivilegedView Privileged)>();
+            var pending = reset.Villages.Where(v => v.Observation != null).ToDictionary(v => v.Camp, v => (v.Observation, v.PrivilegedView));
             int turn0 = env.World.Turn;
             var outcomes = new List<(int Turn, ElderModel9Village V)>();
             for (int t = 0; t < turns; t++)
@@ -508,10 +508,10 @@ internal static class ElderModel9Tools
                 nativeMs += step.NativeMilliseconds;
                 foreach (var v in step.Villages)
                 {
-                    if (pending.TryGetValue(v.Camp, out var obs) && v.Teacher != null) rows.Add((turn, v, obs.Observation, obs.Privileged));
+                    if (pending.TryGetValue(v.Camp, out var obs) && v.Teacher != null) rows.Add((turn, v, obs.Observation, obs.PrivilegedView));
                 }
                 totalDecisions += step.Villages.Count(v => v.Teacher != null);
-                pending = step.Villages.Where(v => v.Observation != null && !v.Terminated).ToDictionary(v => v.Camp, v => (v.Observation, v.Privileged));
+                pending = step.Villages.Where(v => v.Observation != null && !v.Terminated).ToDictionary(v => v.Camp, v => (v.Observation, v.PrivilegedView));
             }
             Write(Path.Combine(outDir, "world-" + seed.ToString("D5")), seed, rows, withheld);
             Console.WriteLine("MODEL9_TEACHER seed=" + seed + " rows=" + rows.Count + " elapsed=" + I(clock.Elapsed.TotalSeconds));
@@ -522,13 +522,20 @@ internal static class ElderModel9Tools
         return 0;
     }
 
-    private static void Write(string dir, int seed, List<(int Turn, ElderModel9Village V, ElderModel9Tensor Obs, float[] Privileged)> rows, int withheld = 0)
+    private static void Write(string dir, int seed, List<(int Turn, ElderModel9Village V, ElderModel9Tensor Obs, ElderModel9PrivilegedView Privileged)> rows, int withheld = 0)
     {
         Directory.CreateDirectory(dir);
         int n = rows.Count, core = ElderModel9Contract.CoreWidth, services = ElderModel9Contract.GoodsServices.Length;
         NpyWriter.Write(Path.Combine(dir, "core.npy"), rows.SelectMany(r => r.Obs.Core).ToArray(), n, core);
         NpyWriter.Write(Path.Combine(dir, "core_present.npy"), rows.SelectMany(r => r.Obs.CorePresent).ToArray(), n, core);
-        NpyWriter.Write(Path.Combine(dir, "privileged.npy"), rows.SelectMany(r => r.Privileged).ToArray(), n, ElderModel9Contract.PrivilegedFeatures.Length);
+        // A teacher row pairs a decision's observation and privileged view (same boundary) with its executed label/outcome.
+        NpyWriter.Write(Path.Combine(dir, "privileged.npy"), rows.SelectMany(r => r.Privileged.Rows[ElderModel9Privileged.Core]).ToArray(), n, ElderModel9Contract.PrivilegedFeatures.Length);
+        for (int f = 0; f < ElderModel9Privileged.Families.Length; f++)
+        {
+            var family = ElderModel9Privileged.Families[f];
+            NpyWriter.Write(Path.Combine(dir, "privileged_" + family.Name + ".npy"), rows.SelectMany(r => r.Privileged.Rows[f]).ToArray(), n, family.Rows, family.Width);
+            NpyWriter.Write(Path.Combine(dir, "privileged_" + family.Name + "_present.npy"), rows.SelectMany(r => r.Privileged.Present[f]).ToArray(), n, family.Rows);
+        }
         for (int s = 0; s < ElderModel9Contract.Sets.Length; s++)
         {
             var set = ElderModel9Contract.Sets[s];
@@ -569,6 +576,8 @@ internal static class ElderModel9Tools
         NpyWriter.Write(Path.Combine(dir, "welfare.npy"), rows.Select(r => (float)r.V.Welfare).ToArray(), n);
         NpyWriter.Write(Path.Combine(dir, "terminated.npy"), rows.Select(r => r.V.Terminated).ToArray(), n);
         File.WriteAllText(Path.Combine(dir, "meta.json"), "{\"seed\": " + seed + ", \"rows\": " + n + ", \"contract\": " + ElderModel9Contract.NativeContractVersion
-            + ", \"withheldTechnologies\": " + withheld + ", \"coreWidth\": " + core + ", \"buildHash\": \"" + ElderModel9Environment.BuildHash + "\"}\n");
+            + ", \"withheldTechnologies\": " + withheld + ", \"coreWidth\": " + core + ", \"buildHash\": \"" + ElderModel9Environment.BuildHash + "\""
+            + ", \"privilegedSchemaVersion\": " + ElderModel9Contract.PrivilegedSchemaVersion + ", \"rowSchemaVersion\": " + ElderModel9Contract.RowSchemaVersion
+            + ", \"privilegedLayout\": " + System.Text.Json.JsonSerializer.Serialize(ElderModel9Privileged.Layout()) + "}\n");
     }
 }

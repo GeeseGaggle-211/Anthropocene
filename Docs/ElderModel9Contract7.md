@@ -139,6 +139,63 @@ log population, episode age, site food / meals, footprint potential and current 
 herd capacity / animals, last growth, daughters and fixed housing per resident. They carry the growth headroom the
 actor's capped coverage ratios hide; the learner checks by test that they never reach the actor graph.
 
+### Privileged critic view (`ElderModel9Privileged`, `PrivilegedSchemaVersion = 1`, 26 October 2026)
+
+Intervention A's critic-only view of hidden economic state, on `ElderModel9Village.PrivilegedView` with
+`PrivilegedSchemaVersion` on every row (teacher shards: `privileged_<family>.npy`, `privileged_<family>_present.npy`,
+and `privilegedSchemaVersion`, `rowSchemaVersion` and the full `privilegedLayout` in `meta.json`). Families, in order:
+
+| Family | Rows (cap + overflow) | Width | Contents |
+|---|---|---|---|
+| 0 `core` | 1 | 10 | `PrivilegedFeatures` unchanged (bit-identical to the earlier vector; `Privileged` is a copy). |
+| 1 `fields` | 16 + 1 | 19 | Cultivable radius-1 footprint plus radius-2 tiles the camp still operates, by distance then tile ID. |
+| 2 `herds` | 8 + 1 | 24 | Owned herds by herd ID. |
+| 3 `unlocks` | 1 + 1 | 28 | The camp's Society. |
+| 4 `economy` | 1 + 1 | 64 | The camp, plus summed counterpart stocks of known trade partners (training-only). |
+
+Typed families start with `row-count` (1 per row); the last row is the overflow aggregate, the column-wise sum of
+every row beyond the cap (so its `row-count` is the number aggregated), present only when something overflowed.
+Absent rows are zero with presence false. Features and units:
+
+- fields: row-count; distance-hex; operated-by-camp, foreign-operated, access (flags); capital-E (field capital,
+  projected to now); intensity-q; operating-fraction (the camp's current Farmer cover of required upkeep, on operated
+  tiles); food-stock, biomass-stock (food units, projected); land-condition (0..1); vegetation-tier (0..3);
+  mean-soil-moisture, mean-max-food (food units), mean-food-recovery-per-day (four-season means); crop-suitability;
+  expansion-available (flag: accessible and below the reference capital ceiling); maintenance-farmers (upkeep workers
+  for this tile's capital); farm-tool-demand (Farm Tools to cover that upkeep over the turn).
+- herds: row-count; animals (exact); species-index (configuration order); growth-rate-per-year;
+  food-per-animal-interval, water-per-animal-interval; starvation-mortality; growth-remainder, death-remainder
+  (fractional animals); food-nutrition, water-nutrition, nutrition (0..1); unmet-forage (food units), unmet-water;
+  deficit-turns; deficit-severity; managed (flag); management-fulfilment; breeding-intensity; shared
+  zero-displacement and absolute forage capacity and water capacity (animals, the camp site's herd support envelope);
+  animal-food-potential, animal-food-produced (food units, last turn).
+- unlocks: row-count; era-neolithic; first-technology one-hot (husbandry, cultivation, watercraft); acquired flags;
+  lifetime practice, Neolithic practice and knowledge exposure by domain (hunting, gathering, fishing; practice
+  units); progress-over-threshold by domain (effective progress over the era's threshold); withheld flags;
+  forced-transition; secondary-domain-plus-one; era-elapsed-years; neolithic-technologies, unlocked-specialists
+  (counts).
+- economy: row-count; residents, linked-population (people); food, plant-, animal-, aquatic-food (food units); stock
+  of each `CraftGood` (native units; Housing as fixed housing units now); stone, clay, wood (material units);
+  recipe-available per good (flags); farm-tool-farmer-years; meals-per-turn (food units); clothing-need-units;
+  housing-capacity-people; cloth- and housing-per-capita (coverage); workers per `WorkforceRoles.All` role
+  (people); trade-partners (count of the partners `Trade.Plan` would pair, nearest first, at most
+  `TradeRequisitionsPerCamp`); partner-food and partner stock per good (summed exact stocks: training-only, never
+  published to the actor).
+
+Row pairing (`ElderModel9Contract.RowSchemaVersion = 1`): a returned village row pairs the outcome of the transition
+it just executed (`ExecutedTransitionFields`: prior/end population, QoL, years, welfare, trade utility, teacher label,
+interventions, decision diagnostics, labor feedback) with the observation of the next decision
+(`NextDecisionFields`: `Observation`, `LaborCatalog`, `Privileged`, `PrivilegedView`). The privileged view is built in
+`Observe` at that same boundary, before any action applies, and is aligned with the observation, never the reward.
+
+Cost: one pass per step over herds, societies, hunters and camps builds `ElderModel9Privileged.Index`; each village then
+costs O(19 footprint tiles + owned herds + remembered contacts + goods) with no per-village world scan (family 0's
+earlier per-village herd and society scans now use the index). Small/8 seed 31, 25 turns, 28 villages: privileged
+emission 2.22 ms per step (0.08 ms per village decision, 0.85% of the step) against 0.87 ms for the ten-float vector
+alone; 16 players, 37 villages: 2.63 against 0.97 ms. World fingerprints are unchanged.
+`ElderModel9PrivilegedChecks` covers layout, the bit-exact family 0, boundary capture, overflow, actor-visible
+invariance under privileged-only perturbation and the filtered-observation contract.
+
 ## Environment (`ElderModel9Environment`)
 
 Every camp with a resident economy is a village and decides every turn; daughters join when founded. A village

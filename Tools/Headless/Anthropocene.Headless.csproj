@@ -35,6 +35,7 @@
     <Compile Include="ElderEconomicStaffingChecks.cs" />
     <Compile Include="ElderModel9ContextChecks.cs" />
     <Compile Include="ElderHerdLedgerChecks.cs" />
+    <Compile Include="ElderModel9PrivilegedChecks.cs" />
     <Compile Include="ElderActorLaborChecks.cs" />
     <Compile Include="DemographicStructureChecks.cs" />
     <Compile Include="HerdLabourChecks.cs" />

@@ -43,10 +43,13 @@ namespace Anthropocene.Simulation
         }
 
         public static HerdConsumptionProfile Owned(WorldState world, Camp camp)
+            => FromHerds(world, world.Herds.Where(h => h.DomesticCamp == camp.Id).OrderBy(h => h.Id));
+
+        // The same profile from a caller-supplied owned-herd list in herd-ID order (an index, not a world scan).
+        public static HerdConsumptionProfile FromHerds(WorldState world, IEnumerable<Herd> ownedInIdOrder)
         {
             double animals = 0, food = 0, water = 0;
-            foreach (var herd in world.Herds.Where(h => h.DomesticCamp == camp.Id && h.Animals > 0)
-                .OrderBy(h => h.Id))
+            foreach (var herd in ownedInIdOrder.Where(h => h.Animals > 0))
             {
                 var species = world.Config.GetSpecies(herd.Species);
                 animals += herd.Animals;

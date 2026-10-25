@@ -215,7 +215,7 @@ namespace Anthropocene.Simulation
                 (t.Environment == EnvironmentKind.Temperate || t.Environment == EnvironmentKind.Tropical || t.Environment == EnvironmentKind.Cold);
             return !wooded ? n.OpenBuild : vegetation == VegetationTier.High ? n.ForestBuild : n.WoodlandBuild;
         }
-        private static double MaintenanceMultiplier(SimulationConfig c, Tile t, VegetationTier vegetation)
+        internal static double MaintenanceMultiplier(SimulationConfig c, Tile t, VegetationTier vegetation)
         {
             var n = c.Neolithic;
             bool wooded = t.Land && vegetation >= VegetationTier.Medium &&

@@ -74,6 +74,18 @@ namespace Anthropocene.Simulation
         public static readonly string[] PrivilegedFeatures = { "log-population", "episode-age-turns", "site-food-over-meals",
             "footprint-potential-food-over-meals", "footprint-food-over-meals", "sustainable-herd-over-animals",
             "absolute-herd-over-animals", "last-growth", "daughters", "fixed-housing-per-resident" };
+        // Version of the critic-only privileged view (ElderModel9Privileged): family layout, row caps and feature lists.
+        // Family 0 is PrivilegedFeatures unchanged. Written into every village row (ElderModel9Village.PrivilegedSchemaVersion,
+        // PrivilegedView.SchemaVersion) and into privileged-view metadata.
+        public const int PrivilegedSchemaVersion = 1;
+        // Row schema: which step each ElderModel9Village field belongs to. A returned row pairs the outcome of the
+        // transition it just executed with the observation of the next decision boundary. Privileged state is aligned
+        // with the observation (captured at the same boundary, before any action applies), never with the reward.
+        public const int RowSchemaVersion = 1;
+        public static readonly string[] ExecutedTransitionFields = { "PriorPopulation", "Population", "QoL", "Nutrition", "Clothing",
+            "Housing", "Years", "Welfare", "TradeUtility", "SpecialistShare", "GoodsOutput", "Terminated", "Teacher", "Interventions",
+            "Staffing", "DecisionDiagnostics", "LaborPrevious" };
+        public static readonly string[] NextDecisionFields = { "Observation", "LaborCatalog", "Privileged", "PrivilegedView", "PrivilegedSchemaVersion" };
     }
 
     // One encoded village observation. Values are raw physical units; the learner normalizes (symlog plus a fixed
@@ -477,7 +489,13 @@ namespace Anthropocene.Simulation
         public ElderModel9Label Teacher;   // the heuristic's (or the compiled directive's) decision this step
         public ElderIntervention[] Interventions = Array.Empty<ElderIntervention>();
         public string Staffing = "";   // compiled economic intent (diagnostic)
-        public float[] Privileged;      // ElderModel9Contract.PrivilegedFeatures; critic-only
+        // Next decision boundary (paired with Observation, not with the reward fields above; ElderModel9Contract row schema).
+        public float[] Privileged;      // ElderModel9Contract.PrivilegedFeatures; critic-only (privileged family 0)
+        // Critic-only typed privileged view (ElderModel9Privileged.Families), captured with Observation. Null on a
+        // terminated row (no next decision).
+        [System.Runtime.Serialization.OptionalField] public ElderModel9PrivilegedView PrivilegedView;
+        [System.Runtime.Serialization.OptionalField] public int PrivilegedSchemaVersion;
+        [System.Runtime.Serialization.OptionalField] public int RowSchemaVersion = ElderModel9Contract.RowSchemaVersion;
         // Contract 13: the immutable origin-boundary catalog for this decision
         // and the preceding decision's post-execution evidence.  Daughters have
         // no inherited PreviousLaborFeedback unless they made that decision.
@@ -653,29 +671,6 @@ namespace Anthropocene.Simulation
                 openingTurns++;
             }
             return SaveCodec.Save(world);
-        }
-
-        // Training-only critic features (ElderModel9Contract.PrivilegedFeatures): physical headroom the actor's capped
-        // observation does not carry, plus lineage and episode context. Pure reads of committed state.
-        private float[] Privileged(Camp camp, int priorPopulation, int age)
-        {
-            var w = World; var cfg = w.Config;
-            double meals = Math.Max(1e-9, Math.Max(1, camp.Population) * cfg.Consumption * cfg.GenerationIntervals);
-            var profile = HerdConsumptionProfile.Owned(w, camp);
-            var site = SettlementSiteEvaluation.Evaluate(w, camp, camp.Tile, camp.Population, profile);
-            double potential = 0, food = 0;
-            foreach (int tile in w.Map.Radius(camp.Tile, 1))
-            {
-                var ecology = LazyEcology.ProjectEcology(w, tile, w.Days);
-                potential += Math.Max(0, ecology.PotentialFood); food += Math.Max(0, ecology.Food);
-            }
-            double animals = Math.Max(1, profile.Animals);
-            int daughters = w.Societies.Count(s => s.ParentSociety == camp.SocietyId);
-            double housing = NeolithicProduction.FixedHousingAt(w, camp, w.Days) * cfg.Neolithic.HousingPeoplePerUnit / Math.Max(1, camp.Population);
-            double growth = priorPopulation > 0 ? camp.Population / (double)priorPopulation - 1 : 0;
-            return new[] { Math.Log(1 + Math.Max(0, camp.Population)), age, site.HumanFood / meals, potential / meals, food / meals,
-                site.SustainableHerdCapacity / animals, site.AbsoluteHerdCapacity / animals, growth, daughters, housing }
-                .Select(v => (float)(ElderRLContract.Finite(v) ? v : 0)).ToArray();
         }
 
         // Training-only capability fixture mask, re-applied after every load (it is never saved).
@@ -1260,6 +1255,10 @@ namespace Anthropocene.Simulation
             laborCatalogs = new Dictionary<int, ElderActorLaborCatalog>();
             var rows = step.Villages.ToDictionary(v => v.Camp);
             var fishingCache = ActorLaborEnabled ? new FishingAccessCache(World) : null;
+            // Critic-only privileged view: one shared index per step, then O(footprint + owned herds + contacts) per village.
+            var privilegedClock = System.Diagnostics.Stopwatch.StartNew();
+            var privilegedIndex = new ElderModel9Privileged.Index(World);
+            step.PrivilegedMs += privilegedClock.Elapsed.TotalMilliseconds;
             foreach (int id in Villages())
             {
                 var camp = World.Camps.First(c => c.Id == id);
@@ -1299,7 +1298,10 @@ namespace Anthropocene.Simulation
                 }
                 v.Observation = ElderModel9Encoder.Encode(obs, context);
                 step.EncodeMs += clock.Elapsed.TotalMilliseconds; clock.Restart();
-                v.Privileged = Privileged(camp, prior.TryGetValue(id, out int before) ? before : camp.Population, step.Turn - Replay.StartTurn);
+                v.PrivilegedView = ElderModel9Privileged.Build(World, camp, prior.TryGetValue(id, out int before) ? before : camp.Population,
+                    step.Turn - Replay.StartTurn, privilegedIndex);
+                v.Privileged = (float[])v.PrivilegedView.Rows[ElderModel9Privileged.Core].Clone();
+                v.PrivilegedSchemaVersion = ElderModel9Contract.PrivilegedSchemaVersion;
                 step.PrivilegedMs += clock.Elapsed.TotalMilliseconds;
             }
             step.Villages.Sort((a, b) => a.Camp.CompareTo(b.Camp));
