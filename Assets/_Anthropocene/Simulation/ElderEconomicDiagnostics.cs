@@ -8,7 +8,9 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class ElderEconomicDiagnostic
     {
-        public const int CurrentSchemaVersion = 2;
+        // Schema 3: herd rows carry typed acquisition (taming) and compatibility-grant inflows and fission ownership
+        // inflow, so the managed-herd count closes exactly (Docs/ElderModel9Contract7.md, herd ledger).
+        public const int CurrentSchemaVersion = 3;
         public int SchemaVersion = CurrentSchemaVersion, CampId, SocietyId, DecisionTurn;
         public string TransitionId, TrajectoryId, ForkId, BranchId, ParentTransitionId;
         public double Years;
@@ -484,6 +486,13 @@ namespace Anthropocene.Simulation
                 herdIdentities.UnionWith(reportsByHerd.Keys);
                 herdIdentities.UnionWith(d.Transfers.Where(row => (string)row["kind"] == "fission-herd" && (int)row["sourceCamp"] == id)
                     .Select(row => (int)row["parentHerdId"]));
+                // Typed non-birth inflows into this camp's managed herds: acquisition from a wild herd (taming),
+                // the opening compatibility grant, and a fission split received from another camp.
+                double HerdInflow(string kind, int herdId) => d.Transfers.Where(t => (string)t["kind"] == kind && (int)t["destinationCamp"] == id &&
+                    (int)t[kind == "fission-herd" ? "childHerdId" : "herdId"] == herdId).Sum(t => Convert.ToDouble(t["animals"]));
+                foreach (var kind in new[] { "herd-acquisition", "herd-compatibility-grant", "fission-herd" })
+                    herdIdentities.UnionWith(d.Transfers.Where(t => (string)t["kind"] == kind && (int)t["destinationCamp"] == id)
+                        .Select(t => (int)t[kind == "fission-herd" ? "childHerdId" : "herdId"]));
                 foreach (int herdId in herdIdentities.OrderBy(value => value))
                 {
                     reportsByHerd.TryGetValue(herdId, out var h);
@@ -491,6 +500,8 @@ namespace Anthropocene.Simulation
                     double endingAnimals = after != null && after.Herds.TryGetValue(herdId, out int endingCount) ? endingCount : 0;
                     double ownershipOut = d.Transfers.Where(t => (string)t["kind"] == "fission-herd" &&
                         (int)t["sourceCamp"] == id && (int)t["parentHerdId"] == herdId).Sum(t => Convert.ToDouble(t["animals"]));
+                    double acquired = HerdInflow("herd-acquisition", herdId), granted = HerdInflow("herd-compatibility-grant", herdId),
+                        ownershipIn = HerdInflow("fission-herd", herdId);
                     var row = new Dictionary<string, object> { ["herdId"] = herdId, ["openingAnimals"] = openingAnimals,
                         ["startingAnimals"] = h == null ? openingAnimals : h.StartingAnimals,
                         ["survivingAnimals"] = h == null ? openingAnimals : h.SurvivingAnimals,
@@ -504,15 +515,16 @@ namespace Anthropocene.Simulation
                         ["slaughterFood"] = h == null ? 0 : h.SlaughterFood,
                         ["coveredHerderYears"] = h == null ? 0 : h.CoveredHerderYears,
                         ["herdingToolsConsumed"] = h == null ? 0 : h.HerdingToolsConsumed,
-                        ["ownershipInflow"] = 0.0, ["ownershipOutflow"] = ownershipOut,
+                        ["acquiredAnimals"] = acquired, ["grantedAnimals"] = granted,
+                        ["ownershipInflow"] = ownershipIn, ["ownershipOutflow"] = ownershipOut,
                         ["committedEndingAnimals"] = endingAnimals, ["reportAvailable"] = h != null,
                         ["unavailableReason"] = h == null ? "no-managed-herd-report-for-opening-or-closing-identity" : null };
-                    row["residual"] = openingAnimals + Convert.ToDouble(row["newbornAnimals"])
+                    row["residual"] = openingAnimals + Convert.ToDouble(row["newbornAnimals"]) + acquired + granted + ownershipIn
                         - Convert.ToDouble(row["starvationDeaths"]) - Convert.ToDouble(row["slaughtered"])
                         - ownershipOut - endingAnimals;
                     d.Herds.Add(row);
                     Conservation(d, "herd", herdId.ToString(System.Globalization.CultureInfo.InvariantCulture), "animals",
-                        openingAnimals, Convert.ToDouble(row["newbornAnimals"]), 0, 0,
+                        openingAnimals, Convert.ToDouble(row["newbornAnimals"]) + granted, 0, acquired + ownershipIn,
                         Convert.ToDouble(row["starvationDeaths"]) + Convert.ToDouble(row["slaughtered"]), 0,
                         ownershipOut, 0, endingAnimals);
                     BoundaryEvent("opening-stock-boundary", "herd:" + herdId, "animals", openingAnimals);
@@ -521,12 +533,19 @@ namespace Anthropocene.Simulation
                     MutationEvent("herd-death-or-slaughter", "herd:" + herdId, "animals",
                         Convert.ToDouble(row["starvationDeaths"]) + Convert.ToDouble(row["slaughtered"]), "out");
                     MutationEvent("transfer-out", "herd:" + herdId, "animals", ownershipOut, "out");
+                    MutationEvent("herd-acquisition", "herd:" + herdId, "animals", acquired, "in");
+                    MutationEvent("herd-compatibility-grant", "herd:" + herdId, "animals", granted, "in");
+                    MutationEvent("transfer-in", "herd:" + herdId, "animals", ownershipIn, "in");
                 }
                 double herdResidual = 0;
                 foreach (var row in d.Herds) herdResidual += Convert.ToDouble(row["residual"]);
                 d.Conservation["herdResidual"] = herdResidual;
                 d.Conservation["herdOpeningBoundary"] = "decision-opening-owned-herd-identities";
-                d.Conservation["herdScope"] = "union-of-opening-closing-and-managed-herd-identities";
+                d.Conservation["herdScope"] = "union-of-opening-closing-managed-and-typed-mutation-herd-identities";
+                // Conservation row terms: production = newborn + compatibility grant; transferIn = acquisition +
+                // fission ownership inflow; consumption = starvation deaths + slaughter; transferOut = fission outflow.
+                d.Put(herding, "acquiredAnimals", d.Herds.Sum(row => Convert.ToDouble(row["acquiredAnimals"])), "herding", "animals");
+                d.Put(herding, "grantedAnimals", d.Herds.Sum(row => Convert.ToDouble(row["grantedAnimals"])), "herding", "animals");
                 foreach (var p in new Dictionary<string, double> { ["startingAnimals"] = herdRows.Sum(h => h.StartingAnimals), ["newbornAnimals"] = herdRows.Sum(h => h.NewbornAnimals),
                     ["starvationDeaths"] = herdRows.Sum(h => h.StarvationDeaths), ["slaughtered"] = herdRows.Sum(h => h.Slaughtered),
                     ["coveredHerderYears"] = herdRows.Sum(h => h.CoveredHerderYears), ["potentialFood"] = herdRows.Sum(h => h.PotentialFood), ["acceptedFood"] = herdRows.Sum(h => h.AcceptedFood) })

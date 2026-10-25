@@ -148,6 +148,21 @@ parent society), the teacher label from the exact allocation Prepare used (`Elde
 and the next observation. `VerifyReplay` re-runs the stored background orders, traces and directives from the
 initial snapshot and checks every post-step fingerprint.
 
+### Herd ledger (economic diagnostics schema 3, 26 October 2026)
+
+With `EconomicDiagnosticsEnabled`, every managed-herd row closes exactly:
+`opening + newbornAnimals + acquiredAnimals + grantedAnimals + ownershipInflow - starvationDeaths - slaughtered -
+ownershipOutflow = committedEndingAnimals`. Schema 2 recorded only births, deaths, slaughter and fission outflow, so
+two resolver paths changed counts silently: taming (`HusbandryAcquisition`, a typed `herd-acquisition` transfer from
+wild herd `wildHerdId`, `sourceCamp = -1`, into an existing or new herd at the end boundary) and the opening Husbandry
+compatibility grant (`OpeningTransitions.Apply`, `herd-compatibility-grant`, `InitialDomesticAnimals` for a camp
+that breaks through mid-episode). Fission herd splits already carried `fission-herd`; the receiving side is now the
+typed `ownershipInflow` (a daughter is founded mid-turn and has no row until the next decision). Each inflow is also
+a physical event (`herd-acquisition`, `herd-compatibility-grant`, `transfer-in`); in the conservation row,
+production is births plus grants and transfer-in is acquisition plus ownership inflow. `ElderHerdLedgerChecks`
+asserts closure, the committed closing count, opening = previous closing, and typed acquisitions = tamed animals
+over three multi-turn fixtures. The learner's schema-2 validator rejects schema 3 until it registers these fields.
+
 ## Teacher fidelity
 
 `--model9-probe=<seed>,<turns>` runs the heuristic (A) and its own labels as actions (B) in lockstep. Seeds 17,

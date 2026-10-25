@@ -112,7 +112,7 @@ namespace Anthropocene.Simulation
 
     public static class OpeningTransitions
     {
-        public static void Apply(WorldState w, Camp camp, Technology technology)
+        public static void Apply(WorldState w, Camp camp, Technology technology, ResolutionMetrics metrics = null)
         {
             var society = camp.People;
             if (society.OpeningTransitionProcessed) return;
@@ -126,7 +126,19 @@ namespace Anthropocene.Simulation
             if (!w.Config.OpeningCompatibilityEffects) return;
             // Temporary visible opening reward, not a domestication or cultivation simulation.
             if (technology == Technology.AnimalHusbandry)
-                w.Herds.Add(new Herd { Id = w.NextId++, Tile = camp.Tile, DomesticCamp = camp.Id, OwnerSociety = society.Id, OpeningCompatibility = true, Species = species, Animals = w.Config.InitialDomesticAnimals });
+            {
+                var granted = new Herd { Id = w.NextId++, Tile = camp.Tile, DomesticCamp = camp.Id, OwnerSociety = society.Id, OpeningCompatibility = true, Species = species, Animals = w.Config.InitialDomesticAnimals };
+                w.Herds.Add(granted);
+                // Typed herd-ledger witness (diagnostic only): a compatibility grant creates managed animals that
+                // were never born into or acquired by the herd.
+                if (metrics?.EconomicCapture == true)
+                    metrics.EconomicTransfers.Add(new Dictionary<string, object>(StringComparer.Ordinal)
+                    {
+                        ["kind"] = "herd-compatibility-grant", ["phase"] = "close-breakthrough",
+                        ["sourceCamp"] = -1, ["destinationCamp"] = camp.Id, ["herdId"] = granted.Id,
+                        ["species"] = species, ["animals"] = granted.Animals
+                    });
+            }
             else
             {
                 // Resident Fishing develops sparse fishery capital through work;

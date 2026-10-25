@@ -402,7 +402,7 @@ internal static class ElderModel9Checks
         foreach (var p in a.EconomicDiagnostics)
         {
             var d = p.Value;
-            Check(d.CampId == p.Key && d.DecisionTurn == a.Turn - 1 && d.TrajectoryId == a.TrajectoryId && d.SchemaVersion == 2,
+            Check(d.CampId == p.Key && d.DecisionTurn == a.Turn - 1 && d.TrajectoryId == a.TrajectoryId && d.SchemaVersion == ElderEconomicDiagnostic.CurrentSchemaVersion,
                 "economic record binds camp/turn/trajectory/schema");
             Check(d.Goods.Select(g => (string)g["good"]).SequenceEqual(Enum.GetNames(typeof(CraftGood))), "economic goods use stable enum order");
             Check(d.Materials.Select(g => (string)g["material"]).SequenceEqual(new[] { "Stone", "Clay", "Wood" }), "economic materials use stable order");

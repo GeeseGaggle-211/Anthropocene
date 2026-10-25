@@ -556,7 +556,7 @@ namespace Anthropocene.Simulation
             // Taming commits at the end boundary: captured animals were part of
             // the wild herd's ecology this turn and become managed only for the
             // next decision/production horizon.
-            HusbandryAcquisition.ResolveTaming(w, taming, record);
+            HusbandryAcquisition.ResolveTaming(w, taming, record, LastMetrics);
             if (w.Config.WildHerdFissionEnabled) SplitHerds(w, record);
             // Demographic losses are applied after this cohort has completed
             // production, needs and storage. They cannot reduce the workforce

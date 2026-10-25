@@ -15,7 +15,8 @@ namespace Anthropocene.Simulation
         }
 
         public static int ResolveTaming(WorldState world,
-            IEnumerable<Opportunity> opportunities, TurnRecord record)
+            IEnumerable<Opportunity> opportunities, TurnRecord record,
+            ResolutionMetrics metrics = null)
         {
             if (world == null || record == null || !world.Config.HusbandryTamingEnabled)
                 return 0;
@@ -47,7 +48,7 @@ namespace Anthropocene.Simulation
                     !herds.TryGetValue(opportunity.HerdId, out var wild)) continue;
                 if (!owned.TryGetValue(camp.Id, out var domestic))
                     owned[camp.Id] = domestic = new List<Herd>();
-                captured += Capture(world, camp, wild, domestic, record);
+                captured += Capture(world, camp, wild, domestic, record, metrics);
             }
             return captured;
         }
@@ -61,7 +62,7 @@ namespace Anthropocene.Simulation
         }
 
         private static int Capture(WorldState world, Camp camp, Herd wild,
-            List<Herd> domesticHerds, TurnRecord record)
+            List<Herd> domesticHerds, TurnRecord record, ResolutionMetrics metrics = null)
         {
             if (wild == null || record == null || !world.Config.HusbandryTamingEnabled ||
                 camp.Population <= 0 || camp.People.Progression.Era != Era.Neolithic ||
@@ -94,6 +95,7 @@ namespace Anthropocene.Simulation
             wild.GrowthRemainder -= growth; wild.DeathRemainder -= death;
             wild.Animals -= captured;
             var domestic = domesticHerds.FirstOrDefault(h => h.Species == wild.Species);
+            bool created = domestic == null;
             if (domestic == null)
             {
                 domestic = new Herd
@@ -111,6 +113,17 @@ namespace Anthropocene.Simulation
                 domestic.Animals += captured;
                 domestic.GrowthRemainder += growth; domestic.DeathRemainder += death;
             }
+            // Typed herd-ledger witness (diagnostic only): the managed herd gains animals by acquisition from a
+            // wild herd, not by birth, so economic diagnostics can close the managed-herd count.
+            if (metrics?.EconomicCapture == true)
+                metrics.EconomicTransfers.Add(new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["kind"] = "herd-acquisition", ["phase"] = "close-taming",
+                    ["sourceCamp"] = -1, ["destinationCamp"] = camp.Id,
+                    ["wildHerdId"] = wild.Id, ["herdId"] = domestic.Id, ["createdHerd"] = created,
+                    ["species"] = wild.Species, ["animals"] = captured,
+                    ["growthRemainder"] = growth, ["deathRemainder"] = death
+                });
             record.Log("Camp " + camp.Id + " tamed " + captured + " " +
                 species.Name + " from wild herd " + wild.Id + ".");
             return captured;

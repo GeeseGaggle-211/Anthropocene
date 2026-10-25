@@ -208,7 +208,7 @@ namespace Anthropocene.Simulation
             // separate from hunting performance and can unlock Husbandry at the
             // same Close boundary as trade-derived knowledge.
             TechnologyDiscovery.RecordHusbandryProximity(w);
-            foreach (var camp in w.Camps.OrderBy(c => c.Id)) BreakthroughBound(w, camp, record);
+            foreach (var camp in w.Camps.OrderBy(c => c.Id)) BreakthroughBound(w, camp, record, LastMetrics);
             using (PhaseProfile.Scope("Technology")) TechnologyDiscovery.Resolve(w, record);
             // Reconcile compiled Elder targets against the authoritative
             // post-economy state. Do this before immigration/fission so those
@@ -583,7 +583,7 @@ namespace Anthropocene.Simulation
         }
         public static void Breakthrough(WorldState w, Camp camp, TurnRecord record)
         { Ownership.Bind(w); BreakthroughBound(w, camp, record); }
-        private static void BreakthroughBound(WorldState w, Camp camp, TurnRecord record)
+        private static void BreakthroughBound(WorldState w, Camp camp, TurnRecord record, ResolutionMetrics metrics = null)
         {
             if (w.LinkedPopulation(camp) <= 0) return;
             var progression = camp.People.Progression;
@@ -609,7 +609,7 @@ namespace Anthropocene.Simulation
                     // Keep accumulated experience intact; carryover is stored as progress separately at transition display/save.
                 }
                 progression.Era = Era.Neolithic; progression.CompletionDays = w.Days; progression.CompletionTurn = w.Turn; progression.CompletionRule = threshold ? "Mastery" : majority ? "Maturity" : "Forced";
-                OpeningTransitions.Apply(w, camp, camp.Technology);
+                OpeningTransitions.Apply(w, camp, camp.Technology, metrics);
                 if (!economyBefore && EconomicTransition.Enabled(w, camp.People))
                     EconomicTransition.Begin(w, camp.People);
                 TechnologyDiscovery.QueueEligible(w, camp.People);
