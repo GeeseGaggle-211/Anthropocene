@@ -125,21 +125,22 @@ namespace Anthropocene.Simulation
             { t.Core[k] = (float)(ElderRLContract.Finite(value) ? value : 0); t.CorePresent[k] = true; k++; }
             for (int p = 0; p < 3; p++, k++) { t.Core[k] = o.CurrentFissionPolicy == p ? 1 : 0; t.CorePresent[k] = true; }
             foreach (bool flag in context.ClothingRouteFeasible.Concat(context.ShelterRouteFeasible))
-            { t.Core[k] = flag ? 1 : 0; t.CorePresent[k] = context.HasPrevious; k++; }
+            { t.Core[k] = flag ? 1 : 0; t.CorePresent[k] = context.HasPrevious && context.RoutesKnown; k++; }
             for (int s = 0; s < ElderModel9Contract.GoodsServices.Length; s++, k++)
             {
                 double perResident = o.Core.Population > 0 ? context.PreviousServiceRequested[s] / o.Core.Population : 0;
-                t.Core[k] = (float)perResident; t.CorePresent[k] = context.HasPrevious;
+                t.Core[k] = (float)perResident; t.CorePresent[k] = context.HasPrevious && context.RequestsKnown;
             }
             // Contract 8 fishing block: availability now; last allocation's frontier and fishing development.
             double population = Math.Max(1, o.Core.Population);
+            bool staffing = context.HasPrevious && context.FishingStaffingKnown, plan = context.HasPrevious && context.FishingPlanKnown;
             foreach (var (value, present) in new[] {
                 (o.Mask.FishingDevelopment ? 1.0 : 0.0, true),
-                (context.PreviousFrontierFishers / population, context.HasPrevious),
-                (context.PreviousMarginalCatchRatio, context.HasPrevious),
-                (context.PreviousMeals > 0 ? context.PreviousFishingFood / context.PreviousMeals : 0, context.HasPrevious),
-                (context.PreviousFishingShare, context.HasPrevious),
-                (context.PreviousFishingDevelopment / population, context.HasPrevious) })
+                (context.PreviousFrontierFishers / population, staffing),
+                (context.PreviousMarginalCatchRatio, plan),
+                (context.PreviousMeals > 0 ? context.PreviousFishingFood / context.PreviousMeals : 0, plan),
+                (context.PreviousFishingShare, staffing),
+                (context.PreviousFishingDevelopment / population, staffing) })
             { t.Core[k] = (float)(ElderRLContract.Finite(value) ? value : 0); t.CorePresent[k] = present; k++; }
             // Contract 9 commitment block: whether one is active, its remaining and elapsed turns, the committed capital
             // controls, and whether the last turn force-broke one.
@@ -185,8 +186,9 @@ namespace Anthropocene.Simulation
             }
             t.MovementMask[0] = true;
             for (int i = 0; i < ElderRLContract.MaxLocalSites; i++) t.MovementMask[i + 1] = o.Mask.AllowsMovement(i);
-            t.ClothingRouteMask = context.HasPrevious ? (bool[])context.ClothingRouteFeasible.Clone() : new[] { true, true };
-            t.ShelterRouteMask = context.HasPrevious ? (bool[])context.ShelterRouteFeasible.Clone() : new[] { true, true };
+            bool routes = context.HasPrevious && context.RoutesKnown;
+            t.ClothingRouteMask = routes ? (bool[])context.ClothingRouteFeasible.Clone() : new[] { true, true };
+            t.ShelterRouteMask = routes ? (bool[])context.ShelterRouteFeasible.Clone() : new[] { true, true };
             if (!t.ClothingRouteMask.Any(x => x)) t.ClothingRouteMask = new[] { true, true };
             if (!t.ShelterRouteMask.Any(x => x)) t.ShelterRouteMask = new[] { true, true };
             t.EconomyMixMask = new[] { o.Mask.FieldDevelopment, o.Mask.HerdDevelopment, o.Mask.FishingDevelopment };
@@ -314,7 +316,13 @@ namespace Anthropocene.Simulation
     // Per-village state carried between decisions: the previous allocation's route feasibility and requests.
     public sealed class ElderModel9Context
     {
+        // HasPrevious: this village executed a decision at the preceding boundary. The per-block flags say which of
+        // that decision's native evidence exists. A DemandControl allocation (heuristic or contract-7..11 directive)
+        // defines every block. An action-12 actor-labor decision has no native route plan, service requests or
+        // frontier catch forecast; it defines only its accepted fishing staffing, so the other blocks are explicitly
+        // absent (zero, not present) rather than carried over from an older decision.
         public bool HasPrevious;
+        public bool RoutesKnown, RequestsKnown, FishingStaffingKnown, FishingPlanKnown;
         public bool[] ClothingRouteFeasible = { true, true }, ShelterRouteFeasible = { true, true };
         public double[] PreviousServiceRequested = new double[ElderModel9Contract.GoodsServices.Length];
         public double PreviousFrontierFishers, PreviousMarginalCatchRatio, PreviousFishingFood, PreviousMeals;
@@ -386,10 +394,7 @@ namespace Anthropocene.Simulation
             // Development is labelled by the strategic budgets the native ray search selected (the quantities the
             // directive path consumes), not by compiled headcount: whole-animal growth within existing herders has a
             // positive budget share but adds no herder.
-            double fieldDevelopment = Math.Max(0, a.SelectedFieldBudget);
-            double herdDevelopment = Math.Max(0, a.SelectedHerdBudget);
-            if (a.HerdDevelopmentAnimals > 1e-9 && herdDevelopment < .5) herdDevelopment = .5; // free growth: a positive sub-person budget
-            double development = fieldDevelopment + herdDevelopment;
+            double development = LabelledDevelopment(a, out double fieldDevelopment);
             act.RetainedFieldOperation = ElderRLContract.Unit(a.SelectedFieldOperation);
             act.RetainedHerdFraction = a.HCurrent > 1e-9 ? ElderRLContract.Unit(a.HRetained / a.HCurrent) : 0;
             act.DevelopmentBudget = c.Population > 0 ? ElderRLContract.Unit(development / c.Population) : 0;
@@ -397,8 +402,7 @@ namespace Anthropocene.Simulation
             // The native planner never develops fishing beyond the survival frontier. A compiled contract-8 directive
             // records the Fishers it actually staffed (the realized economy mix).
             double fishingDevelopment = Math.Max(0, a.FishingDevelopmentGranted);
-            act.FishingDevelopmentShare = development + fishingDevelopment > 1e-9
-                ? ElderRLContract.Unit(fishingDevelopment / (development + fishingDevelopment)) : 0;
+            act.FishingDevelopmentShare = FishingDevelopmentShare(a);
             if (fishingDevelopment > 0)
                 act.DevelopmentBudget = c.Population > 0 ? ElderRLContract.Unit((development + fishingDevelopment) / c.Population) : 0;
             label.FishingShareMask = a.FishingDevelopmentFeasible && development + fishingDevelopment > 1e-9;
@@ -433,6 +437,23 @@ namespace Anthropocene.Simulation
             act.TradeExportShare = w.Config.TradeExportLabourShare;
             label.TradeMask = Trade.Eligible(w, c);
             return label;
+        }
+
+        // The strategic development (people) the native ray search selected; free herd growth is a positive
+        // sub-person budget.
+        internal static double LabelledDevelopment(DemandController.Allocation a, out double fieldDevelopment)
+        {
+            fieldDevelopment = Math.Max(0, a.SelectedFieldBudget);
+            double herdDevelopment = Math.Max(0, a.SelectedHerdBudget);
+            if (a.HerdDevelopmentAnimals > 1e-9 && herdDevelopment < .5) herdDevelopment = .5;
+            return fieldDevelopment + herdDevelopment;
+        }
+
+        // The labelled contract-8 fishing development share of a native allocation (independent of label emission).
+        internal static double FishingDevelopmentShare(DemandController.Allocation a)
+        {
+            double development = LabelledDevelopment(a, out _), fishing = Math.Max(0, a.FishingDevelopmentGranted);
+            return development + fishing > 1e-9 ? ElderRLContract.Unit(fishing / (development + fishing)) : 0;
         }
     }
 
@@ -986,21 +1007,20 @@ namespace Anthropocene.Simulation
                 DemandController.Allocation allocation = null;
                 if (prepared.ElderDecisions.TryGetValue(id, out var decision)) { interventions[id] = decision.Interventions; allocation = decision.Allocation; }
                 if (allocation == null) prepared.DemandAllocations.TryGetValue(id, out allocation);
+                // The per-village context records the decision that executes now, whoever made it and whether or not
+                // teacher labels are emitted. (It previously updated only inside the labelled native branch, so an
+                // action-12 decision, which has no DemandControl allocation, or TeacherLabels = false left it frozen
+                // at its last native values, still marked present.)
+                UpdateContext(Context(id), allocation, decision);
                 if (allocation == null || !TeacherLabels) continue;
                 background.TryGetValue(camp.Player, out var orders);
                 labels[id] = ElderModel9Teacher.Label(World, camp, intent, allocation, orders, metadata[id]);
                 staffing[id] = intent == null ? "" : intent.Stamp;
-                var context = Context(id);
-                context.HasPrevious = true;
-                Array.Copy(allocation.ClothingRouteFeasible, context.ClothingRouteFeasible, 2);
-                Array.Copy(allocation.ShelterRouteFeasible, context.ShelterRouteFeasible, 2);
-                Array.Copy(allocation.ServiceRequested, context.PreviousServiceRequested, context.PreviousServiceRequested.Length);
-                context.PreviousFrontierFishers = allocation.Fishers; context.PreviousMarginalCatchRatio = allocation.FrontierMarginalCatchRatio;
-                context.PreviousFishingFood = allocation.FishingFood; context.PreviousMeals = allocation.Meals;
-                context.PreviousFishingDevelopment = allocation.FishingDevelopmentGranted;
-                context.PreviousFishingShare = labels[id].Action.FishingDevelopmentShare;
-                if (decision != null) context.PreviousDecision = decision;
             }
+            // An observed village without an automated decision this turn has no previous-decision evidence.
+            var automated = new HashSet<int>(prepared.AutomatedCamps);
+            foreach (int id in observations.Keys.Where(id => !automated.Contains(id)).OrderBy(id => id))
+                if (contexts.TryGetValue(id, out var stale)) UpdateContext(stale, null, null);
             double labelMs = phase.Elapsed.TotalMilliseconds; phase.Restart();
             var turnResolver = new TurnResolver(execution);
             var record = turnResolver.Resolve(World, prepared);
@@ -1189,6 +1209,42 @@ namespace Anthropocene.Simulation
             for (int i = 0; i < m.Service.Length; i++) m.Service[i] = d.ServiceLevels != null && i < d.ServiceLevels.Length;
             for (int i = 0; i < 7; i++) { m.TradeValue[i] = d.TradeValue != null && i < d.TradeValue.Length; m.TradeGate[i] = d.TradeGate != null && i < d.TradeGate.Length; }
             return m;
+        }
+
+        // Context for the next observation from the decision executing now. A native allocation defines every block
+        // (values identical to the earlier labelled-branch update). An action-12 decision defines only its accepted
+        // fishing staffing: harvest Fishers stand in the frontier-Fisher slot, development Fishers in the
+        // development slot, and the share is fishing over all accepted development workers (field expansion, herd
+        // expansion, fishing development), the contract-8 label definition. Its routes, requests and catch forecast
+        // are absent. A decision with neither clears the context.
+        internal static void UpdateContext(ElderModel9Context context, DemandController.Allocation allocation, ElderCompiledDecision decision)
+        {
+            context.PreviousDecision = decision;
+            context.ClothingRouteFeasible = new[] { true, true }; context.ShelterRouteFeasible = new[] { true, true };
+            Array.Clear(context.PreviousServiceRequested, 0, context.PreviousServiceRequested.Length);
+            context.PreviousFrontierFishers = context.PreviousMarginalCatchRatio = context.PreviousFishingFood = context.PreviousMeals = 0;
+            context.PreviousFishingDevelopment = context.PreviousFishingShare = 0;
+            context.HasPrevious = context.RoutesKnown = context.RequestsKnown = context.FishingStaffingKnown = context.FishingPlanKnown = false;
+            if (allocation != null)
+            {
+                context.HasPrevious = context.RoutesKnown = context.RequestsKnown = context.FishingStaffingKnown = context.FishingPlanKnown = true;
+                Array.Copy(allocation.ClothingRouteFeasible, context.ClothingRouteFeasible, 2);
+                Array.Copy(allocation.ShelterRouteFeasible, context.ShelterRouteFeasible, 2);
+                Array.Copy(allocation.ServiceRequested, context.PreviousServiceRequested, context.PreviousServiceRequested.Length);
+                context.PreviousFrontierFishers = allocation.Fishers; context.PreviousMarginalCatchRatio = allocation.FrontierMarginalCatchRatio;
+                context.PreviousFishingFood = allocation.FishingFood; context.PreviousMeals = allocation.Meals;
+                context.PreviousFishingDevelopment = allocation.FishingDevelopmentGranted;
+                context.PreviousFishingShare = ElderModel9Teacher.FishingDevelopmentShare(allocation);
+                return;
+            }
+            var labor = decision?.ActorLabor != null ? decision.Intent?.Labor : null;
+            if (labor == null) return;
+            context.HasPrevious = context.FishingStaffingKnown = true;
+            double fishing = Math.Max(0, labor.ActorFishingDevelopmentWorkers);
+            double development = Math.Max(0, labor.ActorFieldExpansionWorkers) + Math.Max(0, labor.ActorHerdExpansionWorkers) + fishing;
+            context.PreviousFrontierFishers = Math.Max(0, labor.ActorFishingHarvestWorkers);
+            context.PreviousFishingDevelopment = fishing;
+            context.PreviousFishingShare = development > 1e-9 ? ElderRLContract.Unit(fishing / development) : 0;
         }
 
         private ElderModel9Context Context(int id)

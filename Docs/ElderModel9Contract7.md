@@ -125,6 +125,15 @@ Validation repairs and logs out-of-range or malformed controls (`ElderDirectiveV
 
 Values are raw physical units; the learner normalizes them.
 
+The previous-decision blocks (route feasibility, service requests per resident, and the contract-8 fishing block)
+come from the per-village `ElderModel9Context`, updated from the decision that executes at each boundary whether or
+not teacher labels are emitted (`ElderModel9Environment.UpdateContext`). A native DemandControl allocation defines
+every block. An action-12 actor-labor decision has no native route plan, service requests or frontier catch
+forecast: those blocks are zero and not present, and only its accepted fishing staffing is present (harvest
+Fishers in the frontier-Fisher slot, development Fishers, and fishing over all accepted development workers as the
+share). Before 26 October 2026 the context updated only inside the labelled native branch, so an action-12 village
+kept its last native values, still marked present, for the rest of the episode (`ElderModel9ContextChecks`).
+
 Training-only critic inputs (`ElderModel9Village.Privileged`, `privileged.npy`; never part of the actor observation):
 log population, episode age, site food / meals, footprint potential and current food / meals, sustainable and absolute
 herd capacity / animals, last growth, daughters and fixed housing per resident. They carry the growth headroom the
