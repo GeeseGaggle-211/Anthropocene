@@ -713,6 +713,13 @@ namespace Anthropocene.Simulation
                     clothing = new NeolithicProduction.ClothingFeedstock { Plant = clothUnits * perCloth, Animal = fabricUnits };
                     needs.ProtectedClothing = true;
                 }
+                // Contract 13 (action-12 actor labor) has no clothing/food split head, so its order carries no Elder
+                // clothing units. Under the shipped kernel split the native Elder protects its clothing ahead of meals;
+                // an actor order left on the legacy after-meals rule lost all weaving feedstock whenever meals took the
+                // food, so clothing alternated ~0.95 <-> 0 with population (the converted-teacher 2-turn cycle). Protect
+                // the clothing-need feedstock the actor's own staffing plans (net of stock, bounded by its forecast).
+                else if (order != null && order.ActorActivityAuthority && world.Config.ElderKernelSplit)
+                    needs.ProtectedClothing = true;
                 // Animal textile need: a herding camp in portable shelter pays its tents' fabric with the clothing,
                 // bounded by the planned fabric beyond it.
                 if (NeolithicProduction.AnimalTextileNeedApplies(world, snapshot))

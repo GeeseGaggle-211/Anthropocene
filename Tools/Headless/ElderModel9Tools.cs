@@ -485,6 +485,78 @@ internal static class ElderModel9Tools
         return 0;
     }
 
+    // --model9-cycle=<seed>,<turns>,<players>[,width,height,separation[,focalCamp[,actorLabor]]]: native heuristic teacher
+    // rollout measuring the per-camp clothing/QoL 2-turn cycle (decision-traces.md case B). Reporting only.
+    public static int Cycle(int seed, int turns, int players, int width, int height, int separation, int focal, bool actorLabor)
+    {
+        var previous = ElderModel9Environment.ConfigOverride;
+        byte[] snapshot;
+        try
+        {
+            ElderModel9Environment.ConfigOverride = c => { if (width > 0) c.Width = width; if (height > 0) c.Height = height; if (separation > 0) c.StartSeparation = separation; };
+            snapshot = ElderModel9Environment.GenerateOpening(seed, players, out _, 40, 0);
+        }
+        finally { ElderModel9Environment.ConfigOverride = previous; }
+        var env = new ElderModel9Environment { ActorLaborEnabled = actorLabor };
+        env.Reset(snapshot, true);
+        var series = new Dictionary<int, List<(int Turn, int P0, int Pop, double Cloth, double QoLYears)>>();
+        for (int t = 0; t < turns; t++)
+        {
+            var s = env.Step(new Dictionary<int, ElderDirective>());
+            foreach (var v in s.Villages.Where(v => v.Years > 0 && !v.Terminated).OrderBy(v => v.Camp))
+            {
+                if (!series.TryGetValue(v.Camp, out var list)) series[v.Camp] = list = new List<(int, int, int, double, double)>();
+                list.Add((s.Turn, v.PriorPopulation, v.Population, v.Clothing, v.QoL * v.Years));
+                if (v.Camp == focal)
+                {
+                    var camp = env.World.Camps.First(c => c.Id == v.Camp);
+                    Console.WriteLine("MODEL9_CYCLE_FOCAL turn=" + s.Turn + " camp=" + v.Camp + " p0=" + v.PriorPopulation + " pop=" + v.Population
+                        + " linked=" + env.World.LinkedPopulation(camp) + " cloth=" + I(v.Clothing) + " qol=" + I(v.QoL) + " qolYears=" + I(v.QoL * v.Years)
+                        + " nutrition=" + I(v.Nutrition) + " housing=" + I(v.Housing) + " invCloth=" + I(camp.Inventory.Cloth) + " invAnimalFabric=" + I(camp.Inventory.AnimalFabric)
+                        + " food=" + I(camp.Food) + DemographyText(env.World, v.Camp) + " staffing=" + v.Staffing);
+                }
+            }
+            Console.WriteLine("MODEL9_CYCLE_TURN turn=" + s.Turn + " villages=" + s.Villages.Count(v => !v.Terminated && v.Observation != null)
+                + " residents=" + env.World.Camps.Sum(c => c.Population) + " linked=" + env.World.Camps.Sum(env.World.LinkedPopulation)
+                + " fingerprint=" + s.Fingerprint);
+        }
+        // Mature rows: camp rows from turn index >= 10 of the run with residents >= 50.
+        int start = series.Values.SelectMany(l => l).Min(r => r.Turn) + 10;
+        double dCloth = 0, dReward2 = 0, alternation = 0; int pairs = 0, triples = 0;
+        foreach (var list in series.Values)
+            for (int i = 1; i < list.Count; i++)
+            {
+                if (list[i].Turn < start || list[i].P0 < 50 || list[i].Turn != list[i - 1].Turn + 1) continue;
+                dCloth += Math.Abs(list[i].Cloth - list[i - 1].Cloth); double dr = list[i].QoLYears - list[i - 1].QoLYears; dReward2 += dr * dr; pairs++;
+                if (i >= 2 && list[i - 1].Turn == list[i - 2].Turn + 1)
+                {
+                    double a = list[i - 1].Cloth - list[i - 2].Cloth, b = list[i].Cloth - list[i - 1].Cloth;
+                    triples++; if (a * b < 0 && Math.Abs(a) > 0.3 && Math.Abs(b) > 0.3) alternation++;
+                }
+            }
+        var last = series.Values.SelectMany(l => l).Max(r => r.Turn);
+        var lastRows = series.Values.SelectMany(l => l).Where(r => r.Turn == last).ToList();
+        var allRows = series.Values.SelectMany(l => l).ToList();
+        Console.WriteLine("MODEL9_CYCLE_SUMMARY seed=" + seed + " players=" + players + " turns=" + turns + " maturePairs=" + pairs
+            + " meanAbsDeltaCloth=" + I(dCloth / Math.Max(1, pairs)) + " rmsDeltaQoLYears=" + I(Math.Sqrt(dReward2 / Math.Max(1, pairs)))
+            + " alternatingClothTriples=" + I(alternation / Math.Max(1, triples)) + " finalResidents=" + lastRows.Sum(r => r.Pop)
+            + " finalLinked=" + env.World.Camps.Sum(env.World.LinkedPopulation) + " finalVillages=" + lastRows.Count
+            + " meanQoLYearsPerRow=" + I(allRows.Average(r => r.QoLYears)) + " meanClothPerRow=" + I(allRows.Average(r => r.Cloth))
+            + " personQoLYears=" + I(allRows.Sum(r => r.P0 * r.QoLYears)) + " personYearsRows=" + allRows.Sum(r => (long)r.P0));
+        return 0;
+    }
+
+    private static string DemographyText(WorldState w, int camp)
+    {
+        var record = w.History.LastOrDefault();
+        var d = record?.Demographics?.FirstOrDefault(x => x.Camp == camp);
+        if (d == null) return " demo=none";
+        return " births=" + d.GrossBirths + " deaths=" + d.GrossDeaths + " exposure=" + I(d.ExposureDeaths) + " crowding=" + I(d.CrowdingDeaths)
+            + " disease=" + I(d.DiseaseDeaths) + " starvation=" + I(d.StarvationDeaths) + " splitOff=" + d.SplitOff + " emigrated=" + d.Emigrated
+            + " immigrated=" + d.Immigrated + " foodProduced=" + I(d.FoodProduced) + " foodRequired=" + I(d.FoodRequired) + " foodConsumed=" + I(d.FoodConsumed)
+            + " demoCloth=" + I(d.ClothingCoverage) + " demoNutrition=" + I(d.Nutrition) + " limiting=" + (d.LimitingFactor ?? "").Replace(' ', '_');
+    }
+
     // --model9-teacher=<outDir>,<firstSeed>,<lastSeed>,<turns>[,players[,withheld]]: heuristic rollouts written as NPY
     // shards, one per world. withheld is SimulationConfig.TrainingWithheldTechnologies (capability fixtures).
     public static int Teacher(string outDir, int firstSeed, int lastSeed, int turns, int players = 8, int withheld = 0)

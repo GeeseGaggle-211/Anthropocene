@@ -349,6 +349,8 @@ namespace Anthropocene.Simulation
         // decision.  It is copied across exact forks and emitted beside (never
         // folded into) the next decision catalog.
         public ElderActorLaborFeedback PreviousLaborFeedback;
+        // The last step reported this village without a decision boundary and not extinct (ElderModel9Village.Terminated).
+        public bool Dormant;
 
         // A branch copy for search forks. PreviousDecision is shared: compiled decisions are replaced, never mutated.
         public ElderModel9Context Copy()
@@ -977,6 +979,10 @@ namespace Anthropocene.Simulation
             World.EconomicDiagnosticCapture = EconomicDiagnosticsEnabled;
             var economicOpening = EconomicDiagnosticsEnabled ? EconomicBoundary.Capture(World) : null;
             var prior = World.Camps.ToDictionary(c => c.Id, c => c.Population);
+            // Dormant villages: reported, not extinct, but without a decision boundary (no resident, e.g. everyone is
+            // away hunting). Each step reports them (no observation, not terminated) until they are observed again or
+            // their last linked person dies, which is then their terminal row.
+            var dormant = contexts.Where(p => p.Value.Dormant).Select(p => p.Key).ToList();
             int decisionTurn = World.Turn;
             var priorSociety = World.Camps.ToDictionary(c => c.Id, c => c.SocietyId);
             var phase = System.Diagnostics.Stopwatch.StartNew();
@@ -1066,13 +1072,15 @@ namespace Anthropocene.Simulation
                 PostFingerprint = step.Fingerprint
             });
             // Rewards for the villages that decided this step, then observations for the next decision.
-            foreach (var id in observations.Keys.OrderBy(id => id))
+            foreach (var id in observations.Keys.Union(dormant).OrderBy(id => id))
             {
                 var camp = World.Camps.FirstOrDefault(c => c.Id == id);
                 prior.TryGetValue(id, out int p0);
                 var v = new ElderModel9Village
                 {
-                    Camp = id, PriorPopulation = p0, Years = years, Terminated = camp == null || camp.Population <= 0,
+                    // Extinct: no resident and no linked hunter group alive (none can return). A camp whose residents are
+                    // all away hunting is dormant, not terminated.
+                    Camp = id, PriorPopulation = p0, Years = years, Terminated = camp == null || World.LinkedPopulation(camp) <= 0,
                     Society = camp?.SocietyId ?? (priorSociety.TryGetValue(id, out int s) ? s : -1),
                     Teacher = labels.TryGetValue(id, out var label) ? label : null, Staffing = staffing.TryGetValue(id, out var st) ? st : "",
                     DecisionDiagnostics = decisionDiagnostics.TryGetValue(id, out var dd) ? dd : null,
@@ -1096,6 +1104,7 @@ namespace Anthropocene.Simulation
             }
             lastPrior = prior;
             Observe(step, prior);
+            foreach (var v in step.Villages) Context(v.Camp).Dormant = !v.Terminated && v.Observation == null;
             return step;
         }
 

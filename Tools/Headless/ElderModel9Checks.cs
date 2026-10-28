@@ -372,6 +372,67 @@ internal static class ElderModel9Checks
 
     // The whole contract runs twice: with the Save15 rules off (the fixture and every assertion as before
     // Docs/SettlingGrace.md) and with the new-world defaults (settling grace and plant tents on).
+    // Termination means extinction (no resident and no linked hunter alive). A camp whose residents are all away
+    // hunting is dormant: reported without an observation and not terminated, then revived under the same id or
+    // terminated when its last linked person dies. A camp with neither residents nor hunters terminates at once.
+    private static void TerminationChecks(byte[] snapshot)
+    {
+        Hunter Away(WorldState w, Camp c, int people)
+        {
+            var hunter = new Hunter { Id = w.NextId++, Player = c.Player, SocietyId = c.SocietyId, SourceCamp = c.Id, Tile = c.Tile,
+                Population = people, CarriedFood = people * w.Config.Consumption * w.Config.GenerationIntervals * 4 };
+            w.Hunters.Add(hunter); return hunter;
+        }
+        Camp Pick(ElderModel9Environment e) => e.World.Camps.Where(c => c.Player > 0 && c.Population > 4 && CultivationEconomy.EconomyEnabled(e.World, c))
+            .OrderBy(c => c.Id).First();
+        // Away hunters: every resident leaves, so the decided camp has zero residents but four linked people.
+        var away = new ElderModel9Environment(); away.Reset(snapshot, true);
+        var awayCamp = Pick(away); int awayId = awayCamp.Id;
+        awayCamp.Population = 0; awayCamp.Workforce.Assignments.Clear(); Away(away.World, awayCamp, 4);
+        Check(away.World.LinkedPopulation(awayCamp) == 4, "away-hunter fixture keeps four linked people");
+        var awayStep = away.Step(new Dictionary<int, ElderDirective>());
+        var awayRow = awayStep.Villages.Single(v => v.Camp == awayId);
+        Check(!awayRow.Terminated && away.World.LinkedPopulation(away.World.Camps.First(c => c.Id == awayId)) > 0,
+            "a camp with zero residents and living linked hunters is not terminated");
+        bool revived = awayRow.Observation != null, dormantRowsLive = true;
+        for (int t = 0; t < 6 && !revived; t++)
+        {
+            var row = away.Step(new Dictionary<int, ElderDirective>()).Villages.SingleOrDefault(v => v.Camp == awayId);
+            if (row == null) { dormantRowsLive = false; break; }
+            dormantRowsLive &= !row.Terminated || away.World.LinkedPopulation(away.World.Camps.First(c => c.Id == awayId)) == 0;
+            if (row.Observation != null) { revived = true; Check(!row.Founded && row.Society == awayRow.Society, "a revived dormant camp keeps its id and society and is not founded"); }
+        }
+        Check(dormantRowsLive, "a dormant camp is reported every step and terminates only when no linked person remains");
+        // Dormant then extinct: the residents are away and the last linked person then dies before returning.
+        var lost = new ElderModel9Environment(); lost.Reset(snapshot, true);
+        var lostCamp = Pick(lost); int lostId = lostCamp.Id;
+        lostCamp.Population = 0; lostCamp.Workforce.Assignments.Clear();
+        var party = Away(lost.World, lostCamp, 4);
+        // Far enough away that the group cannot be back home within the turn.
+        party.Tile = lost.World.Map.Radius(lostCamp.Tile, 8).Where(tile => lost.World.Tiles[tile].TraversableLand)
+            .OrderByDescending(tile => lost.World.Map.Distance(lostCamp.Tile, tile)).ThenBy(tile => tile).First();
+        var lostFirst = lost.Step(new Dictionary<int, ElderDirective>()).Villages.Single(v => v.Camp == lostId);
+        var lostNow = lost.World.Camps.First(c => c.Id == lostId);
+        if (!lostFirst.Terminated && lostNow.Population == 0 && lost.World.LinkedPopulation(lostNow) > 0)
+        {
+            Check(lostFirst.Observation == null, "a dormant camp has no observation and so no decision");
+            lost.World.Hunters.RemoveAll(h => h.SourceCamp == lostId);   // the away group perishes between decisions
+            var lostRow = lost.Step(new Dictionary<int, ElderDirective>()).Villages.SingleOrDefault(v => v.Camp == lostId);
+            Check(lostRow != null && lostRow.Terminated && lostRow.Observation == null && lostRow.Welfare == 0,
+                "a dormant camp whose last linked person died reports one terminal row");
+            var after = lost.Step(new Dictionary<int, ElderDirective>());
+            Check(after.Villages.All(v => v.Camp != lostId), "an extinct camp is not reported after its terminal row");
+        }
+        else throw new Exception("ElderModel9: dormant fixture did not stay dormant (terminated=" + lostFirst.Terminated + ", residents=" + lostNow.Population + ", linked=" + lost.World.LinkedPopulation(lostNow) + ")");
+        // Real extinction: no resident and no linked hunter.
+        var gone = new ElderModel9Environment(); gone.Reset(snapshot, true);
+        var goneCamp = Pick(gone); int goneId = goneCamp.Id;
+        gone.World.Hunters.RemoveAll(h => h.SourceCamp == goneId);
+        goneCamp.Population = 0; goneCamp.Workforce.Assignments.Clear();
+        var goneRow = gone.Step(new Dictionary<int, ElderDirective>()).Villages.Single(v => v.Camp == goneId);
+        Check(goneRow.Terminated && goneRow.Observation == null && goneRow.Welfare == 0, "a camp with no resident and no linked hunter terminates");
+        Check(gone.Step(new Dictionary<int, ElderDirective>()).Villages.All(v => v.Camp != goneId), "a terminated camp is not reported again");
+    }
     public static int Run()
     {
         checks = 0;
@@ -640,6 +701,7 @@ internal static class ElderModel9Checks
         rulesOn = rules;
         var snapshot = ElderModel9Environment.GenerateOpening(17, 8, out _, 40, 0, Rules);
         EconomicDiagnosticsChecks(snapshot);
+        TerminationChecks(snapshot);
         Check(SaveCodec.Load(snapshot).Config.SettlingGraceOnce == rules, "fixture rules as requested");
         var teacher = new ElderModel9Environment(); var acting = new ElderModel9Environment();
         var reset = teacher.Reset(snapshot, true); acting.Reset(snapshot, true);

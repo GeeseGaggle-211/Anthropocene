@@ -149,6 +149,22 @@ internal static class ElderActorLaborChecks
         Check(compiled.Allocation == null,
             "the specialty compiler does not invoke the legacy DemandControl allocator");
 
+        // An action-12 order has no clothing/food split head: under the shipped kernel split its clothing-need
+        // feedstock is protected ahead of meals like the native Elder's (no after-meals bang-bang); without the
+        // kernel split it keeps the legacy after-meals order.
+        foreach (bool kernel in new[] { true, false })
+        {
+            var splitWorld = SaveCodec.Load(snapshot); splitWorld.Config.ElderKernelSplit = kernel;
+            var splitCamp = splitWorld.Camps.First(c => c.Id == camp.Id);
+            var splitObservation = new ElderObservationBuilder { ValueOrderedSites = true }.Build(splitWorld, splitCamp.Id, true, out _);
+            var splitPrepared = TurnPlanner.PrepareWithElderDirectives(splitWorld, new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<Order>>(),
+                new System.Collections.Generic.Dictionary<int, ElderDirective> { [splitCamp.Id] = gather },
+                new System.Collections.Generic.Dictionary<int, ElderObservation> { [splitCamp.Id] = splitObservation }, compiler);
+            Check(splitPrepared.Needs.TryGetValue(splitCamp.Id, out var splitNeeds) && splitNeeds.Order != null &&
+                    splitNeeds.Order.ActorActivityAuthority && splitNeeds.ProtectedClothing == kernel,
+                "actor-labor clothing feedstock is protected exactly when the kernel split is on (" + kernel + ")");
+        }
+
         // Unassigned actor residents are explicit idle, never the ledger's
         // legacy implicit Gatherers. Fractional Gatherer activity is the only
         // food-gathering capacity exposed to the ecology pass.

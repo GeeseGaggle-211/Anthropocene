@@ -244,3 +244,13 @@ About 55-85 village-decisions per second per worker (teacher and directive paths
 One NPY shard directory per world: the observation sets and masks, strategic/service/route/movement/fission
 labels with their label masks, compiler repair size, and camp, turn, society, parent society, prior and end
 population, QoL, nutrition, years, welfare and termination. Checks: `ElderModel9Checks` (fixed suite).
+
+## Termination and dormant villages
+
+A village row is `Terminated` only when its camp is extinct: no resident and no linked hunter group alive
+(`WorldState.LinkedPopulation(camp) == 0`), so nobody can return. A previously observed camp whose residents are all
+away hunting is *dormant*: it has no observation and no decision (it is not in `Villages()`), and each step reports it
+with `Terminated = false` and `Observation = null` until its hunters return (the camp is observed again, same id, not
+`Founded`) or the last linked person dies (that step's row is its terminal row). Before this rule a camp with zero
+residents was terminated at once although its hunters later returned (world 90104 camp 24 in the r5 collection).
+Checks: `ElderModel9Checks` (dormant and extinct cases).
