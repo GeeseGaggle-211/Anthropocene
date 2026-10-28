@@ -382,3 +382,35 @@ Gate: fixed headless suite (`./Tools/Test-Headless.ps1 -Seeds 0`) with the new d
 scalar-versus-2/4-worker replay; `python Tools/Docs/Check-CurrentContract.py`; Unity EditMode 29/29.
 Reproduce the two rows with `--clothing-probe=25,<outDir>,seeds=17;53;991;1;2;3;5;8;13;21;34;89` and
 the same with `,v11` appended.
+
+## 10. Actor-labor clothing protection: the converted-teacher 2-turn cycle (28 October 2026)
+
+**Symptom.** In the r5 labor-teacher data (16 players, 128x64, separation 9) most mature camps alternate every
+turn between clothing coverage ~0.93 and 0, with QoL reward ~16-17 vs ~8.5 QoL-years per 20-year turn and
+residents swinging together (world 90103 camp 29 from turn 22: residents 546/332/508/542/491/569/516...,
+Farmers ~300 <-> ~60).
+
+**Mechanism.** The native heuristic teacher does not cycle: its kernel-scored Elder split commits clothing units
+(`ProductionOrder.ProtectedClothingUnits`), and `TurnPlanning` sets `TurnNeeds.ProtectedClothing`, so the
+resolver pays the clothing-need feedstock ahead of meals (`GenerationalEconomy` `clothingRoom`). The teacher
+label is executed through contract 13 (action 12), which has no clothing/food split head:
+`ProductionOrder.Autonomous` leaves `ProtectedClothingUnits = -1`, so the executed turn falls back to the legacy
+after-meals rule. Whenever meals take the food (the turn after a birth pulse) the whole clothing feedstock is lost,
+clothing is 0, exposure deaths cut the population, the next turn has a food surplus, clothing is covered, births
+refill the camp, and the cycle repeats. The native shadow outcome from the same states stays at clothing 1.
+
+Isolation (native heuristic, `--model9-cycle=90103,50,16,128,64,9,29,0`, protection disabled by hand only for
+this measurement): mature mean |delta cloth| 0.001 -> 0.403, alternating cloth triples 0.0003 -> 0.354,
+RMS turn-to-turn QoL-years change 1.13 -> 4.96, the same 0.95 <-> 0 / 17 <-> 9 signature.
+
+**Fix.** `TurnPlanning`: an actor-activity (contract-13) order is protected like the native Elder's when
+`ElderKernelSplit` is on: the clothing-need feedstock its own staffing forecasts (net of stock) is paid before
+meals. Without the kernel split the legacy after-meals order is kept. Native heuristic trajectories are
+unchanged (50 turns of identical world fingerprints, world 90103/16 players). Check:
+`ElderActorLaborChecks` (protected exactly when the kernel split is on).
+
+**Measurement** (converted-teacher loop identical to `labor_bc._teacher_transition`,
+`Tools/PerformanceAudit/Model9Cycle/teacher_fast.py`, summarised by `compare.py`; mature rows are residents >= 50):
+see the report for the turn ranges completed; at turns 14-19 of world 90103 mean |delta cloth| 0.352 -> 0.138,
+alternating triples 0.240 -> 0.046, zero-clothing share 0.158 -> 0.008, RMS delta QoL-years 4.94 -> 3.27,
+mean QoL-years per row 11.60 -> 12.55, residents 23,368 -> 22,745.
