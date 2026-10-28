@@ -409,8 +409,26 @@ meals. Without the kernel split the legacy after-meals order is kept. Native heu
 unchanged (50 turns of identical world fingerprints, world 90103/16 players). Check:
 `ElderActorLaborChecks` (protected exactly when the kernel split is on).
 
-**Measurement** (converted-teacher loop identical to `labor_bc._teacher_transition`,
-`Tools/PerformanceAudit/Model9Cycle/teacher_fast.py`, summarised by `compare.py`; mature rows are residents >= 50):
-see the report for the turn ranges completed; at turns 14-19 of world 90103 mean |delta cloth| 0.352 -> 0.138,
-alternating triples 0.240 -> 0.046, zero-clothing share 0.158 -> 0.008, RMS delta QoL-years 4.94 -> 3.27,
-mean QoL-years per row 11.60 -> 12.55, residents 23,368 -> 22,745.
+**Measurement** (converted-teacher loop identical to `labor_bc._teacher_transition`, verified row-identical to it on
+turns 10-15; `Tools/PerformanceAudit/Model9Cycle/teacher_fast.py`, summarised by `compare.py`; world 90103,
+16 players, 128x64, separation 9, turns 20-37 (the before run reached turn 44, the after run turn 37 when stopped);
+mature rows are residents >= 50):
+
+| Metric | Before | After |
+|---|---|---|
+| mean abs turn-to-turn change in clothing coverage | 0.552 | 0.085 |
+| share of lag-1 alternating clothing triples (both steps > 0.3) | 0.542 | 0.001 |
+| share of mature rows with clothing < 0.1 | 0.300 | 0.000 |
+| RMS turn-to-turn change in QoL-years per row | 5.86 | 1.92 |
+| mean within-camp variance of QoL-years | 11.22 | 2.05 |
+| mean clothing coverage | 0.629 | 0.927 |
+| mean QoL-years per row | 13.76 | 16.49 |
+| person-QoL-years (sum p0 x QoL x years) | 11.58 M | 13.90 M |
+| person-years | 16.95 M | 17.33 M |
+| residents at turn 37 | 61,112 | 62,107 |
+
+Camp 29 (case B) now runs clothing 1.00 / ~0.88 and QoL ~18 / ~15.7 instead of ~0.93 / 0 and ~16 / ~8.7.
+**Residual, not fixed here:** residents and Farmers still alternate (camp 29: 497/622/514/657..., Farmers
+~300 <-> ~60). That smaller cycle is the native planner's own field-development alternation (a high-population
+turn authorises a large field build that crowds out gathering and funds few births; the next turn has no gap); it is
+present in the native heuristic too (`--model9-cycle`, same world: residents 565/375/576/499...) with clothing at 1.
