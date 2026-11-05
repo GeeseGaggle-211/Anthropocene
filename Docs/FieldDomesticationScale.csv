@@ -1,0 +1,5 @@
+villages,herds,width,height,repetitions,median_ms,allocated_bytes_per_pass
+8,8,320,320,10,0.041,31397
+80,80,320,320,10,0.457,293077
+320,320,320,320,10,4.276,1170928
+1280,1280,320,320,10,8.188,4691469

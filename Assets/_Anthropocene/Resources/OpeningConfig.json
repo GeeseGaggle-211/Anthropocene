@@ -214,6 +214,9 @@
   "SustainableHerdGrowthRetention": 0.25,
   "FishPerPerson": 2.6,
   "WanderChance": 0.05,
+  "FieldDomesticationEnabled": true,
+  "FieldDetectionRadius": 6,
+  "FieldContactTurns": 6,
   "ExperienceThreshold": 225,
   "UnproductivePracticeFraction": 0.1,
   "CarryoverMultiplier": 1.25,
@@ -337,6 +340,7 @@
     },
     {
       "Id": "goat",
+      "CultivationAffinity": true,
       "Name": "Wild goats",
       "FoodConsumption": 0.25,
       "FreshwaterConsumption": 0.3,

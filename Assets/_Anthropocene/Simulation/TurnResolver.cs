@@ -118,8 +118,10 @@ namespace Anthropocene.Simulation
                 LastMetrics.TradeHonoured = activity.Honoured; LastMetrics.TradeCountered = activity.Countered; LastMetrics.TradeIgnored = activity.Ignored;
             }
             var phaseTimer = System.Diagnostics.Stopwatch.StartNew();
+            FieldDomestication fieldContact;
+            using (PhaseProfile.Scope("FieldAttraction")) fieldContact = new FieldDomestication(w, planning);
             var herdInputs = w.Herds.OrderBy(h => h.Id).ToArray();
-            int[] destinations; using (PhaseProfile.Scope("HerdIntents")) destinations = execution.Map(herdInputs, h => HerdDestination(w, h, planning));
+            int[] destinations; using (PhaseProfile.Scope("HerdIntents")) destinations = execution.Map(herdInputs, h => HerdDestination(w, h, planning, fieldContact));
             var herdMoves = herdInputs.Select((h, i) => new { h.Id, Destination = destinations[i] }).ToDictionary(x => x.Id, x => x.Destination);
             LastMetrics.HerdIntentMilliseconds = phaseTimer.Elapsed.TotalMilliseconds;
             bool physicalDemography = PhysicalDemography.Enabled(w.Config);
@@ -189,6 +191,7 @@ namespace Anthropocene.Simulation
             Ownership.Bind(w);
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) BreakthroughBound(w, camp, record);
             using (PhaseProfile.Scope("Technology")) TechnologyDiscovery.Resolve(w, record);
+            using (PhaseProfile.Scope("FieldDomestication")) fieldContact.Resolve(w, record);
             // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
             // Immigration between known settlements precedes fission (QoLFissionTradeDesign 4, 9); its sources and arrivals sit out fission this turn.
             // The commit is after economy/demography, so its population boundary first enters economy/demography next turn.
@@ -253,7 +256,7 @@ namespace Anthropocene.Simulation
             LastMetrics.TotalMilliseconds = resolutionTimer.Elapsed.TotalMilliseconds; return record;
         }
 
-        public static int HerdDestination(WorldState w, Herd herd, PlanningIndex index = null)
+        public static int HerdDestination(WorldState w, Herd herd, PlanningIndex index = null, FieldDomestication fields = null)
         {
             if (herd.DomesticCamp >= 0) return herd.Tile;
             var map = w.Map; index = index ?? new PlanningIndex(w); var hunters = index.VisibleHunters(map.Radius(herd.Tile, 3)).ToArray();
@@ -270,9 +273,11 @@ namespace Anthropocene.Simulation
                     .ThenByDescending(n => Knowledge.Band(FreshwaterAccess.Available(w, n, index), 70, w.Config))
                     .ThenByDescending(n => Knowledge.Band(index.Ecology(n).PotentialFood, Math.Max(1, w.Ecology(n).MaxPotentialFood), w.Config))
                     .ThenBy(n => n).First();
+            fields ??= new FieldDomestication(w, index);
             if (!thirsty && !hungry && Numbers.Random(w.Seed, 71, herd.Id, w.Turn) >= w.Config.WanderChance) return herd.Tile;
             return candidates.OrderByDescending(n => (thirsty ? FreshwaterAccess.Available(w, n, index) / Math.Max(1, waterDemand) : hungry ? index.Ecology(n).PotentialFood / Math.Max(1, foodDemand) : Numbers.Random(w.Seed, 72, herd.Id ^ n, w.Turn)) + species.Suitability(w.Tiles[n], index.Ecology(n).CurrentVegetation,
-                    EcologyMath.CultivationVegetationRetention(w.Config, CultivationEconomy.Intensity(w.Config, index.Ecology(n).CultivationCapital))) * species.MovementHabitatWeight)
+                    EcologyMath.CultivationVegetationRetention(w.Config, CultivationEconomy.Intensity(w.Config, index.Ecology(n).CultivationCapital))) * species.MovementHabitatWeight
+                    + fields.Score(w, herd, n))
                 .ThenBy(n => n == herd.Tile ? 0 : 1).ThenBy(n => n).First();
         }
 
@@ -464,6 +469,8 @@ namespace Anthropocene.Simulation
                     .OrderByDescending(h => Math.Max(0, h.Animals - Math.Max(w.Config.GetSpecies(h.Species).MinimumAnimals, (int)Math.Ceiling(h.Animals * w.Config.HuntBreedingReserveFraction))))
                     .ThenByDescending(h => h.Animals).ThenBy(h => h.Id).FirstOrDefault();
                 if (herd == null) continue;
+                // An attempted hunt is hostile even when no carcass is obtained.
+                if (w.Config.FieldDomesticationEnabled) herd.LastHostileTurnPlusOne = w.Turn + 1;
                 var camp = w.Camps.First(c => c.Id == hunter.SourceCamp);
                 var practice = camp.SpeciesExperience.FirstOrDefault(p => p.Species == herd.Species);
                 if (practice == null) { practice = new SpeciesPractice { Species = herd.Species }; camp.SpeciesExperience.Add(practice); }

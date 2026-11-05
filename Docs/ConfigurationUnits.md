@@ -130,3 +130,13 @@ Hotspots is the active-track budget; generation also attempts two extinct tracks
 ClimateGeneration limits its atmospheric grid to 256 x 128 and advects over 48 normalized travel steps per longitude circuit, with 240 spin-up iterations per season. MoistureDecay enters a per-transport-step retention proxy as pow(MoistureDecay,0.2), not once per gameplay tile. Evaporation, OrographicRain and Monsoon modulate ocean recharge, uplift extraction and seasonal winds. Rain/Snow/Runoff remain dimensionless forcing; they are not millimetres of precipitation.
 
 Drainage retains supplied connected depressions from 0.008 normalized depth and screens basin area against max(6,worldTileCount*0.0007). This represents limited basin retention plus geologic spillway erosion, not an arbitrary replacement of large blue lakes with dry raised plateaus. The inflow/evaporation screen uses calibrated dimensionless annual precipitation/temperature proxies. Residual filled land is audited independently. See [WorldGeneration.md](WorldGeneration.md) for exact scope and limits.
+
+## Field contact (#12)
+
+`FieldDetectionRadius` is a bounded spatial radius in hexes (default 6).
+`FieldContactTurns` counts consecutive committed turn boundaries for a wild
+herd and Society (default 6, or 120 years at the default twenty-year turn),
+not annual or seasonal substeps. `SpeciesDefinition.CultivationAffinity` is
+binary and distinct from `Domesticable`; owned field intensity q supplies the
+whole movement-score amplitude. `FieldDomesticationEnabled` is true for new
+worlds and false when absent from a save. See [FieldDomestication.md](FieldDomestication.md).

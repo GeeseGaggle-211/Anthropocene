@@ -1,5 +1,21 @@
 # Validation - September 25, 2026
 
+## Field domestication — 5 November 2026
+
+All 64 fixed headless suites passed (68 PASS outputs), including the initial 76
+focused assertions. The final focused suite passes 77 after an additional
+matched-wander check, including exact save continuation and forced
+scalar/four-worker replay through acquisition. The matched six-world,
+96×48/8-founder/30-turn sweep produced a real
+managed herd for 9/47 Agriculture-primary village societies under both five and
+six contact turns; the disabled control produced none through this path.
+The six-turn default adds one turn without reducing that sample's discovery
+rate. The 480 controlled approach runs, sparse-state scale measurements,
+committed CSV summaries and the existing wild-starvation limitation are in
+[FieldDomestication.md](FieldDomestication.md). No Unity presentation changed;
+no Unity player/UI test is claimed.
+
+
 > Current demographic annotation (15 October 2026): new worlds now use the
 > versioned physical birth/death model while QoL remains welfare. Native kernel,
 > conservation, migration/fission attribution and benchmark evidence—and the

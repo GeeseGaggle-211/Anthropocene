@@ -50,6 +50,7 @@ namespace Anthropocene.Simulation
             HinterlandReferencePopulation = defaults.HinterlandReferencePopulation; HinterlandRingsPerTurn = defaults.HinterlandRingsPerTurn; HinterlandMaxRadius = defaults.HinterlandMaxRadius; ExploredMemoryTurns = defaults.ExploredMemoryTurns;
             // Absent in older saves: secondary technologies use the established threshold, trade credits no practice, and the
             // settling cost of a husbandry-primary camp keeps its default.
+            FieldDomesticationEnabled = false; FieldDetectionRadius = defaults.FieldDetectionRadius; FieldContactTurns = defaults.FieldContactTurns;
             SecondaryTechnologyThreshold = defaults.SecondaryTechnologyThreshold; TradePracticePerValue = 0; SettledHerdGrowthPenalty = defaults.SettledHerdGrowthPenalty;
             FissionEnabled = false; FissionGainThreshold = defaults.FissionGainThreshold; FissionGainDiscourage = defaults.FissionGainDiscourage; FissionGainEncourage = defaults.FissionGainEncourage;
             FissionSearchFraction = defaults.FissionSearchFraction; FissionDaughterMargin = defaults.FissionDaughterMargin; FissionHousingRelief = defaults.FissionHousingRelief; FissionDaughterBuilderShare = defaults.FissionDaughterBuilderShare; FissionRadius = defaults.FissionRadius; FissionMinimumDaughter = defaults.FissionMinimumDaughter; FissionDaughterCooldownTurns = defaults.FissionDaughterCooldownTurns; FissionSiteSelection = defaults.FissionSiteSelection;
@@ -230,6 +231,8 @@ namespace Anthropocene.Simulation
         // Practice points of post-breakthrough (Neolithic) practice that grant a secondary technology. Paleolithic practice counts
         // toward the first breakthrough only (TechnologyDiscovery.AddPractice). Default equals ExperienceThreshold.
         [System.Runtime.Serialization.OptionalField] public double SecondaryTechnologyThreshold = 225;
+        [System.Runtime.Serialization.OptionalField] public bool FieldDomesticationEnabled = true;
+        [System.Runtime.Serialization.OptionalField] public int FieldDetectionRadius = 6, FieldContactTurns = 6;
         // Practice points credited per unit of traded goods value (TechnologyDiscovery.RecordTradePractice). 0 keeps the hook inert until trade exists.
         [System.Runtime.Serialization.OptionalField] public double TradePracticePerValue = 0;
         // Fraction of a husbandry-primary camp's expected herd-growth value forfeited when field expansion would make it a village
@@ -339,6 +342,8 @@ namespace Anthropocene.Simulation
             if (HerdSmallCountThreshold < 1 || HerdCountRounding < 1 || HerdBroadCountSize < HerdSmallCountThreshold) throw new ArgumentException("Invalid observable herd count thresholds.");
             if (new[] { AnimalsPerHerder, AnimalFoodPerManagedAnimal, AnimalFoodNutritionExponent, AnimalManagementExponent }.Any(v => double.IsNaN(v) || double.IsInfinity(v)) || AnimalsPerHerder <= 0 || AnimalFoodPerManagedAnimal < 0 || AnimalFoodNutritionExponent <= 0 || AnimalManagementExponent <= 0 || Species == null || Species.Count == 0 || Species.Select(s => s.Id).Distinct().Count() != Species.Count || Species.Any(s => string.IsNullOrWhiteSpace(s.Id) || s.FoodConsumption < 0 || s.FreshwaterConsumption <= 0 || s.GrowthRate < 0 || s.FoodYield <= 0 || s.MaximumHerdSize < s.MaximumAnimals))
                 throw new ArgumentException("Species definitions must have unique stable IDs and valid ecological rates.");
+            if (FieldDetectionRadius < 1 || FieldDetectionRadius > 12 || FieldContactTurns < 2 || FieldContactTurns > 100)
+                throw new ArgumentException("Field domestication requires radius 1-12 and 2-100 consecutive contact turns.");
         }
         public static int MaximumPlayersFor(int width, int height)
         {
@@ -606,6 +611,8 @@ namespace Anthropocene.Simulation
         public int Id, Tile, Animals, Capacity = 40, DomesticCamp = -1, OwnerSociety = -1;
         public bool OpeningCompatibility;
         public string Species = "antelope";
+        [System.Runtime.Serialization.OptionalField] public List<HerdContact> FieldContacts;
+        [System.Runtime.Serialization.OptionalField] public int LastHostileTurnPlusOne;
         public double GrowthRemainder, UnmetFood, UnmetFreshwater;
         [System.Runtime.Serialization.OptionalField] public int DeficitTurns;
         [System.Runtime.Serialization.OptionalField] public double DeficitSeverity, DeathRemainder, LastNutrition = 1, LastFoodNutrition = 1, LastWaterNutrition = 1, ManagementFulfillment = 1, AnimalFoodPotential, AnimalFoodProduced;
