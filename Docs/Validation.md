@@ -1,20 +1,22 @@
 # Validation - September 25, 2026
 
-## Field domestication — 5 November 2026
+## Field domestication — 6 November 2026
 
-All 64 fixed headless suites passed (68 PASS outputs), including the initial 76
-focused assertions. The final focused suite passes 77 after an additional
-matched-wander check, including exact save continuation and forced
-scalar/four-worker replay through acquisition. The matched six-world,
-96×48/8-founder/30-turn sweep produced a real
-managed herd for 9/47 Agriculture-primary village societies under both five and
-six contact turns; the disabled control produced none through this path.
-The six-turn default adds one turn without reducing that sample's discovery
-rate. The 480 controlled approach runs, sparse-state scale measurements,
-committed CSV summaries and the existing wild-starvation limitation are in
-[FieldDomestication.md](FieldDomestication.md). No Unity presentation changed;
-no Unity player/UI test is claimed.
-
+The approved update uses detection/contact distances of 12/6 shortest
+traversable-land steps and supports goats, wild cattle (aurochs), camels and
+horses. The focused suite passes 114 assertions, including barriers, detours,
+wrapping, saved ranges/species, conservation and scalar/four-worker replay.
+All 64 fixed suites and the three-seed/Standard/80/geography checks passed.
+The matched six-world, 96×48/8-founder/30-turn (600-year) sample acquired herds
+for 16/48 agricultural village Societies at six contact turns, versus 10/48
+with old 6/2 ranges on the same expanded-species worlds. Five contact turns
+produced 19/47; village denominators can differ with later village formation.
+The previous goat-only 9/47 result covered 29 completed turns / 580 years
+(the earlier 600-year description was an off-by-one report), and is not a
+matched comparison to changed herd generation. The harness now records actual
+completed turns and elapsed years explicitly. Full mechanics, 480 controlled approach
+runs, performance measurements and the wild-mortality limitation are in
+[FieldDomestication.md](FieldDomestication.md). No manual Unity UI test is claimed.
 
 > Current demographic annotation (15 October 2026): new worlds now use the
 > versioned physical birth/death model while QoL remains welfare. Native kernel,

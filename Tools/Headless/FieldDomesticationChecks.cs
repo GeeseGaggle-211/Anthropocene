@@ -47,13 +47,13 @@ internal static class FieldDomesticationChecks
     public static int Run()
     {
         checks = 0;
-        EligibilityAndMovement(); ContactRules(); Competition(); BoundaryAndReplay(); LegacyAndConfiguration();
+        EligibilityAndMovement(); ContactRules(); LandPaths(); SpeciesCoverage(); Competition(); BoundaryAndReplay(); LegacyAndConfiguration();
         Console.WriteLine("PASS: " + checks + " field-domestication assertions"); return checks;
     }
     private static void EligibilityAndMovement()
     {
         var w = Fixture(); var c = w.Camps[0]; var h = w.Herds[0];
-        Check(w.Config.Species.Where(s => s.CultivationAffinity).Select(s => s.Id).SequenceEqual(new[] { "goat" }), "only represented historically domesticable crop-raiding goats are field-attracted by default");
+        Check(w.Config.Species.Where(s => s.CultivationAffinity).Select(s => s.Id).OrderBy(id => id).SequenceEqual(new[] { "camel", "cattle", "goat", "horse" }), "goats, cattle, camels and horses are field-attracted; antelope and bison remain excluded");
         var fields = new FieldDomestication(w, new PlanningIndex(w));
         Check(fields.Score(w, h, c.Tile) > 0, "positive owned q attracts selected herd");
         var other = new Herd { Id = w.NextId++, Tile = h.Tile, Species = "goat", Animals = 8 }; w.Herds.Add(other);
@@ -82,11 +82,11 @@ internal static class FieldDomesticationChecks
         Fields(w, c); c.IsVillage = false;
         Check(new FieldDomestication(w, new PlanningIndex(w)).Score(w, h, c.Tile) == 0, "mobile camps do not emit field attraction");
         c.IsVillage = true;
-        h.Tile = w.Map.Radius(c.Tile, 7).First(n => w.Map.Distance(c.Tile, n) == 7);
+        h.Tile = w.Map.Radius(c.Tile, 12).First(n => w.Map.Distance(c.Tile, n) == 12);
         w.Herds.Remove(other);
-        Check(new FieldDomestication(w, new PlanningIndex(w)).Score(w, h, c.Tile) == 0, "radius six excludes distance seven");
-        w.Config.FieldDetectionRadius = 7;
-        Check(new FieldDomestication(w, new PlanningIndex(w)).Score(w, h, c.Tile) > 0, "detection radius is configurable");
+        Check(new FieldDomestication(w, new PlanningIndex(w)).Score(w, h, c.Tile) > 0, "detection includes exactly twelve land steps");
+        w.Config.FieldDetectionRadius = 11;
+        Check(new FieldDomestication(w, new PlanningIndex(w)).Score(w, h, c.Tile) == 0, "detection radius is configurable and excludes twelve steps at eleven");
         h.Tile = c.Tile; w.Config.WanderChance = 1;
         w.Hunters.Add(new Hunter { Id = w.NextId++, SourceCamp = c.Id, SocietyId = c.SocietyId, Player = c.Player, Tile = h.Tile, Population = 4 });
         int threatened = TurnResolver.HerdDestination(w, h);
@@ -109,9 +109,9 @@ internal static class FieldDomesticationChecks
     }
     private static void ContactRules()
     {
-        var w = Fixture(6); var c = w.Camps[0]; var h = w.Herds[0];
-        Check(new FieldDomestication(w, new PlanningIndex(w)).Score(w, h, c.Tile) > 0, "radius-six herd can sense cultivation outside vision");
-        Contact(w); Check(h.FieldContacts == null && h.DomesticCamp < 0, "detection does not grant visibility or contact");
+        var w = Fixture(12); var c = w.Camps[0]; var h = w.Herds[0];
+        Check(new FieldDomestication(w, new PlanningIndex(w)).Score(w, h, c.Tile) > 0, "radius-twelve herd can sense cultivation outside contact range");
+        Contact(w); Check(h.FieldContacts == null && h.DomesticCamp < 0, "detection does not grant contact");
         w.Hunters.Add(new Hunter { Id = w.NextId++, SourceCamp = c.Id, SocietyId = c.SocietyId, Player = 0, Population = 1, Tile = h.Tile });
         Contact(w); Check(h.FieldContacts == null, "remote scout visibility cannot substitute for village contact");
         w.Hunters.Clear();
@@ -119,13 +119,13 @@ internal static class FieldDomesticationChecks
         Contact(w, false); int count = h.FieldContacts.Single().Turns; Contact(w, false);
         Check(h.FieldContacts.Single().Turns == count, "same boundary never double counts");
         w.Turn++;
-        h.Tile = w.Map.Radius(c.Tile, 6).First(n => w.Map.Distance(c.Tile, n) == 6); Contact(w);
-        Check(h.FieldContacts == null, "a visibility break erases familiarity");
+        h.Tile = w.Map.Radius(c.Tile, 7).First(n => w.Map.Distance(c.Tile, n) == 7); Contact(w);
+        Check(h.FieldContacts == null, "leaving six-step contact range erases familiarity");
         h.Tile = c.Tile; Contact(w); Check(h.FieldContacts.Single().Turns == 1, "returning contact restarts at one");
         h.LastHostileTurnPlusOne = w.Turn + 1; Contact(w);
         Check(h.FieldContacts == null && h.DomesticCamp < 0, "any hostile attack blocks and resets contact");
         Contact(w); Check(h.FieldContacts.Single().Turns == 1, "peace must be sustained anew after attack");
-        for (int i = 0; i < 8; i++) { h.Tile = i % 2 == 0 ? c.Tile : w.Map.Radius(c.Tile, 6).First(n => w.Map.Distance(c.Tile, n) == 6); Contact(w); }
+        for (int i = 0; i < 8; i++) { h.Tile = i % 2 == 0 ? c.Tile : w.Map.Radius(c.Tile, 7).First(n => w.Map.Distance(c.Tile, n) == 7); Contact(w); }
         Check(h.DomesticCamp < 0 && !c.Technologies[(int)Technology.AnimalHusbandry], "repeated intermittent encounters cannot cause rapid false positives");
         h.Tile = c.Tile; Contact(w); c.IsVillage = false; Contact(w);
         Check(h.FieldContacts == null, "abandoning village breaks contact");
@@ -146,6 +146,77 @@ internal static class FieldDomesticationChecks
         Check(h.DomesticCamp == c.Id && h.OwnerSociety == c.SocietyId, "competing Societies resolve once by canonical camp ID");
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(copy), "contact ownership is collection-order independent");
         Check(!rival.Technologies[(int)Technology.AnimalHusbandry], "losing Society receives neither animals nor technology");
+    }
+
+    private static void LandPaths()
+    {
+        var w = Fixture(6); var c = w.Camps[0]; var h = w.Herds[0];
+        Check(w.Map.Distance(c.Tile, h.Tile) > w.Config.VisionRadius, "contact fixture is outside ordinary player vision");
+        Contact(w); Check(h.FieldContacts.Single().Turns == 1, "six reachable land steps count without expanding player vision");
+        h.FieldContacts = null;
+        var ring = w.Map.Neighbors(h.Tile).ToArray();
+        foreach (int n in ring) { w.Tiles[n].ElevationLevel = 0; w.Tiles[n].Terrain = Terrain.Ocean; w.Tiles[n].WaterBody = WaterKind.Saltwater; }
+        Check(new FieldDomestication(w, new PlanningIndex(w)).Score(w, h, c.Tile) == 0, "a nearby isolated island cannot attract across water");
+        Contact(w); Check(h.FieldContacts == null, "water separation prevents contact");
+        foreach (int n in ring) { w.Tiles[n].ElevationLevel = 10; w.Tiles[n].Terrain = Terrain.Grassland; w.Tiles[n].WaterBody = WaterKind.None; }
+        Check(new FieldDomestication(w, new PlanningIndex(w)).Score(w, h, c.Tile) == 0, "impassable mountains also block detection");
+        var other = new Herd { Id = w.NextId++, Tile = c.Tile, Species = "horse", Animals = 8 };
+        w.Herds.Add(other);
+        var fields = new FieldDomestication(w, new PlanningIndex(w));
+        Check(fields.Score(w, other, c.Tile) > 0 && fields.Score(w, h, c.Tile) == 0, "unreachable herd does not occupy the village's one-herd selection");
+        w.Herds.Remove(other);
+        foreach (int n in ring) { w.Tiles[n].ElevationLevel = 1; w.Tiles[n].Terrain = Terrain.Grassland; w.Tiles[n].WaterBody = WaterKind.None; }
+        Contact(w); Check(h.FieldContacts.Single().Turns == 1, "restoring a route starts fresh contact");
+        foreach (int n in ring) { w.Tiles[n].ElevationLevel = 0; w.Tiles[n].Terrain = Terrain.Ocean; w.Tiles[n].WaterBody = WaterKind.Saltwater; }
+        Contact(w); Check(h.FieldContacts == null, "losing a land route resets existing contact");
+
+        w = Fixture(); c = w.Camps[0]; h = w.Herds[0];
+        foreach (var t in w.Tiles) t.ElevationLevel = 10;
+        // Direct hex distance two, but the only traversable corridor is five steps.
+        int q = c.Tile % w.Config.Width, r = c.Tile / w.Config.Width;
+        int[] corridor = { c.Tile, w.Map.At(q, r - 1), w.Map.At(q + 1, r - 2), w.Map.At(q + 2, r - 2), w.Map.At(q + 2, r - 1), w.Map.At(q + 2, r) };
+        foreach (int n in corridor) w.Tiles[n].ElevationLevel = 1;
+        h.Tile = corridor.Last(); w.Config.FieldContactRadius = 4;
+        Check(w.Map.Distance(c.Tile, h.Tile) == 2 && FieldDomestication.LandDistances(w, c.Tile, 12)[h.Tile] == 5, "range measures the valid detour, not straight-line proximity");
+        Contact(w); Check(h.FieldContacts == null, "a five-step detour exceeds a four-step contact limit");
+        w.Config.FieldContactRadius = 5; Contact(w);
+        Check(h.FieldContacts.Single().Turns == 1, "contact includes a valid detour at the exact limit");
+        w.Config.FieldDetectionRadius = 4; w.Config.FieldContactRadius = 4;
+        Check(new FieldDomestication(w, new PlanningIndex(w)).Score(w, h, c.Tile) == 0, "a path longer than detection is excluded despite geometric proximity");
+
+        w = Fixture(); c = w.Camps[0]; h = w.Herds[0];
+        c.Tile = w.Map.At(0, 8); Fields(w, c); h.Tile = w.Map.At(w.Config.Width - 1, 8);
+        Contact(w); Check(h.FieldContacts.Single().Turns == 1, "land paths preserve cylindrical longitude wrapping");
+        // Compare the bounded flood against the independent existing path query.
+        foreach (var t in w.Tiles.Where(t => t.Id % 7 == 0 && t.Id != c.Tile)) t.ElevationLevel = 10;
+        foreach (int radius in new[] { 2, 6, 12 })
+        {
+            var paths = FieldDomestication.LandDistances(w, c.Tile, radius);
+            Check(w.Tiles.All(t => paths.ContainsKey(t.Id) == w.Map.Reachable(c.Tile, t.Id, radius, n => w.Tiles[n].TraversableLand)), "land flood agrees with independent reachability through obstacles and wrapping");
+        }
+    }
+
+    private static void SpeciesCoverage()
+    {
+        var jsonOptions = new System.Text.Json.JsonSerializerOptions { IncludeFields = true };
+        var opening = System.Text.Json.JsonSerializer.Deserialize<SimulationConfig>(File.ReadAllText("Assets/_Anthropocene/Resources/OpeningConfig.json"), jsonOptions);
+        foreach (var species in new SimulationConfig().Species)
+            Check(System.Text.Json.JsonSerializer.Serialize(species, jsonOptions) == System.Text.Json.JsonSerializer.Serialize(opening.GetSpecies(species.Id), jsonOptions),
+                species.Id + " has matching API and production species settings");
+        foreach (string species in new[] { "goat", "cattle", "camel", "horse" })
+        {
+            var w = Fixture(6); var h = w.Herds[0]; h.Species = species;
+            for (int i = 0; i < w.Config.FieldContactTurns; i++) Contact(w);
+            Check(h.DomesticCamp == w.Camps[0].Id && h.Species == species && h.Animals == 8, species + " converts existing animals after reachable contact");
+            var loaded = SaveCodec.Load(SaveCodec.Save(w));
+            Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), species + " ownership and species parameters survive save/load");
+        }
+        var cfg = SimulationConfig.Small(4);
+        var a = new WorldGenerator().Generate(17, cfg);
+        var b = new WorldGenerator().Generate(17, SimulationConfig.Small(4));
+        Check(a.Herds.Any(h => h.Species == "cattle"), "new world generation places actual wild cattle");
+        Check(SaveCodec.Fingerprint(a) == SaveCodec.Fingerprint(b), "expanded species generation remains deterministic");
+        Check(a.Generation.GeneratorVersion == 15, "new cattle generation has explicit provenance");
     }
     private static void BoundaryAndReplay()
     {
@@ -180,8 +251,22 @@ internal static class FieldDomesticationChecks
         var w = Fixture(); Contact(w); var loaded = SaveCodec.Load(SaveCodec.Save(w));
         Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(loaded), "partial contact save round-trip is exact");
         var old = SaveCodec.Load(WithoutFields(w));
-        Check(!old.Config.FieldDomesticationEnabled && old.Config.FieldDetectionRadius == 6 && old.Config.FieldContactTurns == 6
+        Check(!old.Config.FieldDomesticationEnabled && old.Config.FieldDetectionRadius == 6 && old.Config.FieldContactTurns == 6 && old.Config.FieldContactRadius == 2
             && old.Herds[0].FieldContacts == null && old.Config.Species.All(s => !s.CultivationAffinity), "legacy saves retain old behavior and no fabricated contacts/species affinities");
+        var earlier = Fixture(); earlier.Config.FieldDetectionRadius = 6;
+        earlier.Config.Species.RemoveAll(s => s.Id == "cattle");
+        foreach (var species in earlier.Config.Species) species.CultivationAffinity = species.Id == "goat";
+        var migrated = SaveCodec.Load(WithoutFields(earlier, "FieldContactRadius"));
+        Check(migrated.Config.FieldDomesticationEnabled && migrated.Config.FieldDetectionRadius == 6 && migrated.Config.FieldContactRadius == 2,
+            "first-version contact saves retain explicit detection and legacy two-step contact radius");
+        Check(migrated.Config.Species.Count == 5 && migrated.Config.Species.Where(s => s.CultivationAffinity).Single().Id == "goat",
+            "loading old species does not insert cattle or rewrite horse/camel affinity");
+        foreach (int radius in new[] { 0, 13 })
+        {
+            var cfg = new SimulationConfig { FieldContactRadius = radius };
+            bool rejected = false; try { cfg.Validate(); } catch (ArgumentException) { rejected = true; }
+            Check(rejected, "contact radius must be positive and no larger than detection");
+        }
         foreach (var pair in new[] { (0, 6), (13, 6), (6, 1), (6, 101) })
         {
             w.Config.FieldDetectionRadius = pair.Item1; w.Config.FieldContactTurns = pair.Item2;
@@ -189,7 +274,7 @@ internal static class FieldDomesticationChecks
             Check(rejected, "invalid/unbounded field configuration rejected");
         }
     }
-    private static byte[] WithoutFields(WorldState world)
+    private static byte[] WithoutFields(WorldState world, params string[] absent)
     {
         using var input = new MemoryStream(SaveCodec.Save(world)); using var unzip = new GZipStream(input, CompressionMode.Decompress);
         using var reader = new BinaryReader(unzip); using var output = new MemoryStream();
@@ -201,7 +286,7 @@ internal static class FieldDomesticationChecks
             using (var metadata = new MemoryStream())
             {
                 var document = XDocument.Load(xml);
-                string[] absent = { "FieldDomesticationEnabled", "FieldDetectionRadius", "FieldContactTurns", "CultivationAffinity", "FieldContacts", "LastHostileTurnPlusOne" };
+                if (absent.Length == 0) absent = new[] { "FieldDomesticationEnabled", "FieldDetectionRadius", "FieldContactRadius", "FieldContactTurns", "CultivationAffinity", "FieldContacts", "LastHostileTurnPlusOne" };
                 document.Descendants().Where(e => absent.Contains(e.Name.LocalName)).Remove();
                 using (var binary = XmlDictionaryWriter.CreateBinaryWriter(metadata, null, null, false)) document.WriteTo(binary);
                 writer.Write((int)metadata.Length); writer.Write(metadata.ToArray());

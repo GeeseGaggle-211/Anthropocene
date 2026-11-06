@@ -133,10 +133,16 @@ Drainage retains supplied connected depressions from 0.008 normalized depth and 
 
 ## Field contact (#12)
 
-`FieldDetectionRadius` is a bounded spatial radius in hexes (default 6).
+`FieldDetectionRadius` is a bounded shortest-land-path length (default 12 steps).
+`FieldContactRadius` is the corresponding contact path length (default 6 steps,
+no greater than detection). Paths use traversable land only, including cylindrical
+longitude wrapping; water and impassable mountains cannot be crossed. Contact is
+independent of the unchanged two-hex player vision radius. A missing saved contact
+radius loads as 2 for saves from the original implementation.
 `FieldContactTurns` counts consecutive committed turn boundaries for a wild
 herd and Society (default 6, or 120 years at the default twenty-year turn),
 not annual or seasonal substeps. `SpeciesDefinition.CultivationAffinity` is
-binary and distinct from `Domesticable`; owned field intensity q supplies the
+binary and distinct from `Domesticable`; goats, cattle, horses and camels opt in
+for new worlds. Owned field intensity q supplies the
 whole movement-score amplitude. `FieldDomesticationEnabled` is true for new
 worlds and false when absent from a save. See [FieldDomestication.md](FieldDomestication.md).

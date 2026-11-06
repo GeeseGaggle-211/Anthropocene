@@ -13,6 +13,8 @@ internal static class FieldDomesticationSweep
     {
         public string Cohort; public int Seed, Threshold, Society, VillageTurn = -1, FirstManaged = -1, MaxContact, SelectedTurns, DeficitTurns, SelectedLost;
         public int InitialPeople, FinalPeople, HerdsConverted, AnimalsConverted; public double HumanStarvation;
+        public int DetectionRadius, ContactRadius, GoatHerds, CattleHerds, CamelHerds, HorseHerds;
+        public int CompletedTurns; public double ElapsedYears;
     }
     private static readonly List<Result> results = new List<Result>();
     public static void Run(string[] args)
@@ -34,10 +36,15 @@ internal static class FieldDomesticationSweep
                 if (threshold != 0) w.Config.FieldContactTurns = threshold;
                 RunWorld(w, "natural-" + cfg.Shape, seed, threshold, 30, true);
             }
+            // Same expanded-species world: isolate the range change from the
+            // different herd placement produced by adding cattle to generation.
+            var rangeControl = SaveCodec.Load(saved);
+            rangeControl.Config.FieldDetectionRadius = 6; rangeControl.Config.FieldContactRadius = 2;
+            RunWorld(rangeControl, "range-control-" + cfg.Shape, seed, 6, 30, true);
             Console.WriteLine("Natural seed " + seed + " complete.");
         }
         foreach (string supply in new[] { "supplied", "limited" })
-        foreach (int distance in new[] { 2, 4, 6 })
+        foreach (int distance in new[] { 6, 8, 12 })
         foreach (int seed in Enumerable.Range(1, controlledSeeds))
         {
             var initial = FieldDomesticationChecks.Fixture(distance); initial.Seed = seed;
@@ -57,9 +64,9 @@ internal static class FieldDomesticationSweep
         }
         using (var csv = new StreamWriter(Path.Combine(output, "cohorts.csv")))
         {
-            csv.WriteLine("cohort,seed,threshold,society,village_turn,first_managed_turn,turns_from_village,max_contact,selected_herd_turns,selected_deficit_turns,selected_herds_lost,herds_converted,animals_converted,initial_people,final_people,human_starvation_deaths");
+            csv.WriteLine("cohort,seed,threshold,society,village_turn,first_managed_turn,turns_from_village,max_contact,selected_herd_turns,selected_deficit_turns,selected_herds_lost,herds_converted,animals_converted,initial_people,final_people,human_starvation_deaths,detection_radius,contact_radius,goat_herds,cattle_herds,camel_herds,horse_herds,completed_turns,elapsed_years");
             foreach (var r in results)
-                csv.WriteLine(string.Join(",", r.Cohort, r.Seed, r.Threshold, r.Society, r.VillageTurn, r.FirstManaged, r.FirstManaged < 0 || r.VillageTurn < 0 ? -1 : r.FirstManaged - r.VillageTurn, r.MaxContact, r.SelectedTurns, r.DeficitTurns, r.SelectedLost, r.HerdsConverted, r.AnimalsConverted, r.InitialPeople, r.FinalPeople, r.HumanStarvation.ToString("R", CultureInfo.InvariantCulture)));
+                csv.WriteLine(string.Join(",", r.Cohort, r.Seed, r.Threshold, r.Society, r.VillageTurn, r.FirstManaged, r.FirstManaged < 0 || r.VillageTurn < 0 ? -1 : r.FirstManaged - r.VillageTurn, r.MaxContact, r.SelectedTurns, r.DeficitTurns, r.SelectedLost, r.HerdsConverted, r.AnimalsConverted, r.InitialPeople, r.FinalPeople, r.HumanStarvation.ToString("R", CultureInfo.InvariantCulture), r.DetectionRadius, r.ContactRadius, r.GoatHerds, r.CattleHerds, r.CamelHerds, r.HorseHerds, r.CompletedTurns, r.ElapsedYears.ToString("R", CultureInfo.InvariantCulture)));
         }
         using (var summary = new StreamWriter(Path.Combine(output, "summary.txt")))
         {
@@ -71,26 +78,28 @@ internal static class FieldDomesticationSweep
                     + " first_managed_delay_median=" + (turns.Length == 0 ? "NA" : turns[turns.Length / 2].ToString()) + " selected_herd_turns=" + group.Sum(r => r.SelectedTurns) + " deficit_turns=" + group.Sum(r => r.DeficitTurns) + " selected_lost=" + group.Sum(r => r.SelectedLost) + " max_contact=" + group.Max(r => r.MaxContact) + " human_starvation=" + group.Sum(r => r.HumanStarvation).ToString("F2", CultureInfo.InvariantCulture);
                 summary.WriteLine(line); Console.WriteLine(line);
             }
-            summary.WriteLine("Natural denominator: all Agriculture-primary societies (including daughters) that formed a village by turn 30. Controls match generation and all AI behavior; threshold=0 disables only field domestication. Controlled denominator: one pre-established village per seed, 24 actual resolver turns, no scripted herd moves or contact credits. Limited supply uses 800 biomass / 80 edible / 100 water per tile. Wild shortfalls in the existing model reduce reproduction and drive movement, but do not kill wild animals: deficit exposure is reported separately, not interpreted as zero starvation risk. No rapid transfers: every transfer checked against the prior same-herd/Society streak >= threshold-1.");
+            summary.WriteLine("Natural denominator: all Agriculture-primary societies (including daughters) that formed a village within 30 completed turns (600 years). New ranges: detection 12/contact 6 shortest traversable-land steps. Range controls use detection 6/contact 2 on the same expanded-species generated worlds, with valid land paths. Threshold=0 disables only field domestication. Controlled denominator: one pre-established village per seed, 24 actual resolver turns, starting distances 6/8/12, no scripted herd moves or contact credits. Limited supply uses 800 biomass / 80 edible / 100 water per tile. Wild shortfalls in the existing model reduce reproduction and drive movement, but do not kill wild animals: deficit exposure is reported separately, not interpreted as zero starvation risk. No rapid transfers: every transfer checked against the prior same-herd/Society streak >= threshold-1.");
         }
         Scale(output);
     }
     private static void RunWorld(WorldState w, string cohort, int seed, int threshold, int horizon, bool ai)
     {
         var stats = new Dictionary<int, Result>(); var resolver = new TurnResolver();
+        int startTurn = w.Turn, endTurn = startTurn + horizon;
+        double startDays = w.Days;
         void Enroll()
         {
             foreach (var society in w.Societies.Where(s => s.Technology == Technology.Cultivation))
             {
                 if (!stats.TryGetValue(society.Id, out var r))
                 {
-                    r = new Result { Cohort = cohort, Seed = seed, Threshold = threshold, Society = society.Id, InitialPeople = w.Camps.Where(c => c.SocietyId == society.Id).Sum(w.LinkedPopulation) }; stats.Add(society.Id, r);
+                    r = new Result { Cohort = cohort, Seed = seed, Threshold = threshold, Society = society.Id, DetectionRadius = w.Config.FieldDetectionRadius, ContactRadius = w.Config.FieldContactRadius, InitialPeople = w.Camps.Where(c => c.SocietyId == society.Id).Sum(w.LinkedPopulation) }; stats.Add(society.Id, r);
                 }
                 if (r.VillageTurn < 0 && w.Camps.Any(c => c.SocietyId == society.Id && c.IsVillage)) r.VillageTurn = w.Turn;
             }
         }
         Enroll();
-        while (w.Turn < horizon && w.Camps.Any(c => w.LinkedPopulation(c) > 0))
+        while (w.Turn < endTurn && w.Camps.Any(c => w.LinkedPopulation(c) > 0))
         {
             var wild = w.Herds.Where(h => h.DomesticCamp < 0).ToDictionary(h => h.Id);
             var contacts = wild.Values.ToDictionary(h => h.Id, h => h.FieldContacts?.ToDictionary(c => c.Society, c => c.Turns) ?? new Dictionary<int, int>());
@@ -105,6 +114,7 @@ internal static class FieldDomesticationSweep
                     if (!contacts[h.Id].TryGetValue(h.OwnerSociety, out int prior) || prior < threshold - 1) throw new Exception("Rapid false-positive domestication");
                     if (r.FirstManaged < 0) r.FirstManaged = w.Turn;
                     r.HerdsConverted++; r.AnimalsConverted += h.Animals;
+                    switch (h.Species) { case "goat": r.GoatHerds++; break; case "cattle": r.CattleHerds++; break; case "camel": r.CamelHerds++; break; case "horse": r.HorseHerds++; break; }
                 }
             foreach (var r in stats.Values)
             {
@@ -123,6 +133,11 @@ internal static class FieldDomesticationSweep
                     if (!w.Herds.Contains(h) || h.Animals <= 0) r.SelectedLost++;
                 }
             }
+        }
+        foreach (var r in stats.Values)
+        {
+            r.CompletedTurns = w.Turn - startTurn;
+            r.ElapsedYears = (w.Days - startDays) / w.Config.DaysPerYear;
         }
         results.AddRange(stats.Values.OrderBy(r => r.Society));
     }
