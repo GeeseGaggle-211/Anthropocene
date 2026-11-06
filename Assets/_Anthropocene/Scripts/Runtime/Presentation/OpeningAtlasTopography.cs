@@ -9,6 +9,7 @@ namespace Anthropocene.Presentation
     {
         private ContourDensity atlasContourDensity = ContourDensity.Normal;
         private bool atlasRuggednessContours = true;
+        private bool atlasRivers = true, atlasCachedRivers;
         private Texture2D atlasContourTexture;
         private Rect atlasContourMap;
         private Vector2 atlasContourSize;
@@ -31,6 +32,7 @@ namespace Anthropocene.Presentation
                 atlasContourDensity = atlasContourDensity == ContourDensity.Normal ? ContourDensity.Fine : ContourDensity.Normal;
             if (previewLayer == 7 && Button(new Rect(494, 100, 175, 30), "Contours: " + (atlasRuggednessContours ? "On" : "Off")))
                 atlasRuggednessContours = !atlasRuggednessContours;
+            if (Button(new Rect(677, 100, 135, 30), "Rivers: " + (atlasRivers ? "On" : "Off"))) atlasRivers = !atlasRivers;
         }
 
         // A derived viewport raster avoids thousands of IMGUI calls at world scale.
@@ -40,13 +42,17 @@ namespace Anthropocene.Presentation
         private void DrawAtlasContours(Rect map, Vector2 size)
         {
             float cellPixels = map.width / world.Config.Width;
-            int step = TopographicContours.StepUnits(atlasContourDensity, cellPixels);
+            int step = atlasContourDensity == ContourDensity.Normal ? (cellPixels < 6 ? 10 : 5)
+                : cellPixels < 3 ? 5 : cellPixels < 20 ? 2 : 1;
             bool rugged = previewLayer == 7;
-            if (atlasContourTexture == null || map != atlasContourMap || size != atlasContourSize || step != atlasContourStep || rugged != atlasContourRugged)
+            bool contours = !rugged || atlasRuggednessContours;
+            if (!contours) step = 0;
+            if (atlasContourTexture == null || map != atlasContourMap || size != atlasContourSize || step != atlasContourStep || rugged != atlasContourRugged || atlasRivers != atlasCachedRivers)
             {
                 var timer = System.Diagnostics.Stopwatch.StartNew();
                 InvalidateAtlasContours();
                 var heights = new Dictionary<int, float>();
+                var rivers = new HashSet<int>();
                 int q0 = Mathf.Max(0, Mathf.FloorToInt(-map.x / cellPixels) - 1);
                 int q1 = Mathf.Min(world.Config.Width - 1, Mathf.CeilToInt((size.x - map.x) / cellPixels) + 1);
                 int r0 = Mathf.Max(0, Mathf.FloorToInt(-map.y / cellPixels) - 1);
@@ -56,8 +62,10 @@ namespace Anthropocene.Presentation
                     {
                         var tile = world.Tiles[r * world.Config.Width + q];
                         if (tile.Land) heights[tile.Id] = tile.Elevation;
+                        if (atlasRivers && tile.RiverEdges != null)
+                            foreach (int edge in tile.RiverEdges) if (edge >= 0) rivers.Add(edge);
                     }
-                var segments = TopographicContours.Build(world.Map, heights, null, atlasContourDensity, cellPixels);
+                var segments = contours ? TopographicContours.BuildAtStep(world.Map, heights, null, step) : Array.Empty<ContourSegment>();
                 int width = Mathf.CeilToInt(size.x), height = Mathf.CeilToInt(size.y);
                 var pixels = new Color32[width * height];
                 var layer = rugged ? PlayerMapLayer.Ruggedness : PlayerMapLayer.Topography;
@@ -74,12 +82,35 @@ namespace Anthropocene.Presentation
                         if (a.x < map.x || b.x < map.x)
                             RasterAtlasLine(pixels, width, height, a + Vector2.right * map.width, b + Vector2.right * map.width, lineWidth, color);
                     }
+                var geometry = new HexCorners(world.Config.Width, world.Config.Height);
+                foreach (int id in rivers)
+                {
+                    var edge = world.Rivers[id];
+                    Vector2 a = AtlasRiverPoint(geometry, edge.FromVertex, map), b = AtlasRiverPoint(geometry, edge.ToVertex, map);
+                    if (b.x - a.x > map.width / 2) b.x -= map.width;
+                    if (a.x - b.x > map.width / 2) b.x += map.width;
+                    float riverWidth = Mathf.Clamp(edge.Width * Mathf.Sqrt(cellPixels) * .35f, .8f, 3.5f);
+                    Color riverColor = new Color(.20f, .68f, .94f, 1);
+                    RasterAtlasLine(pixels, width, height, a, b, riverWidth, riverColor);
+                    if (a.x < map.x || b.x < map.x)
+                        RasterAtlasLine(pixels, width, height, a + Vector2.right * map.width, b + Vector2.right * map.width, riverWidth, riverColor);
+                }
                 atlasContourTexture = new Texture2D(width, height, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
                 atlasContourTexture.SetPixels32(pixels); atlasContourTexture.Apply(false, true);
                 atlasContourMap = map; atlasContourSize = size; atlasContourStep = step; atlasContourRugged = rugged;
+                atlasCachedRivers = atlasRivers;
                 atlasContourMilliseconds = timer.Elapsed.TotalMilliseconds;
             }
             GUI.DrawTexture(new Rect(Vector2.zero, size), atlasContourTexture);
+        }
+
+        private Vector2 AtlasRiverPoint(HexCorners geometry, int vertex, Rect map)
+        {
+            float row = geometry.Row(vertex) / 3f;
+            float column = (geometry.Column(vertex) - row) / 2;
+            column = Mathf.Repeat(column, world.Config.Width);
+            return new Vector2(map.x + (column + .5f) * map.width / world.Config.Width,
+                map.y + (row + .5f) * map.height / world.Config.Height);
         }
 
         private Vector2 AtlasContourPoint(ContourPoint point, Rect map)

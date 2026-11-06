@@ -103,6 +103,15 @@ internal static class TopographyChecks
         var fine = TopographicContours.Build(map, heights, land, ContourDensity.Fine, 60);
         var distant = TopographicContours.Build(map, heights, land, ContourDensity.Fine, 20);
         Check(normal.Count > 0 && fine.Count > normal.Count && distant.Count < normal.Count, "Normal, Fine and distant zoom select nested contour detail");
+        Check(Math.Abs(TopographicContours.Interval(ContourDensity.Normal, 60) - .025) < 1e-12
+            && Math.Abs(TopographicContours.Interval(ContourDensity.Fine, 60) - .0125) < 1e-12
+            && Math.Abs(TopographicContours.Interval(ContourDensity.Fine, 20) - .1) < 1e-12,
+            "finer atlas lattice preserves the established player contour intervals");
+        var shallow = heights.ToDictionary(pair => pair.Key, pair => .501f + .0003f * Math.Abs(pair.Key % map.Width - 5));
+        var shallowPlayer = TopographicContours.Build(map, shallow, land, ContourDensity.Fine, 60);
+        var shallowAtlas = TopographicContours.BuildAtStep(map, shallow, land, 1);
+        Check(shallowPlayer.Count == 0 && shallowAtlas.Count > 0, "atlas fine contours expose shallow relief between player contour levels");
+        Check(shallowAtlas.All(s => Math.Abs(s.Elevation - .5025) < 1e-10), "shallow valley contours retain absolute height calibration");
 
         string Key(ContourSegment segment) => segment.LevelUnits + ":" + Point(segment.Start) + ":" + Point(segment.End);
         string Point(ContourPoint point) => point.TileA + "," + point.TileB + "," + BitConverter.SingleToInt32Bits(point.T);

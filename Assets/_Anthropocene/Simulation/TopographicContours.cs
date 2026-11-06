@@ -43,25 +43,30 @@ namespace Anthropocene.Simulation
     /// </summary>
     public static class TopographicContours
     {
-        public const double BaseInterval = 0.0125;
-        public const int MajorIntervalUnits = 8; // 0.100 normalized elevation.
+        public const double BaseInterval = 0.0025;
+        public const int MajorIntervalUnits = 40; // 0.100 normalized elevation.
 
         public static int StepUnits(ContourDensity density, float hexRadius)
         {
-            if (hexRadius < 30) return 8; // Major contours only at the most distant view.
-            if (hexRadius < 44) return 4;
-            if (density == ContourDensity.Fine && hexRadius >= 52) return 1;
-            return 2;
+            if (hexRadius < 30) return 40; // Major contours only at the most distant player view.
+            if (hexRadius < 44) return 20;
+            if (density == ContourDensity.Fine && hexRadius >= 52) return 5;
+            return 10;
         }
 
         public static double Interval(ContourDensity density, float hexRadius) => StepUnits(density, hexRadius) * BaseInterval;
 
         public static IReadOnlyList<ContourSegment> Build(HexMap map, IReadOnlyDictionary<int, float> heights,
             ISet<int> includedTiles, ContourDensity density, float hexRadius)
+            => BuildAtStep(map, heights, includedTiles, StepUnits(density, hexRadius));
+
+        // The developer atlas can request finer contours without changing player LOD.
+        public static IReadOnlyList<ContourSegment> BuildAtStep(HexMap map, IReadOnlyDictionary<int, float> heights,
+            ISet<int> includedTiles, int step)
         {
             if (map == null) throw new ArgumentNullException(nameof(map));
             if (heights == null) throw new ArgumentNullException(nameof(heights));
-            int step = StepUnits(density, hexRadius);
+            if (step < 1) throw new ArgumentOutOfRangeException(nameof(step));
             var ids = new List<int>(heights.Keys); ids.Sort();
             var triangles = new HashSet<TriangleKey>();
             var unique = new HashSet<SegmentKey>();

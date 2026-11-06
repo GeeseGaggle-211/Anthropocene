@@ -141,3 +141,15 @@ Initial validation passed eight captures and all 31 EditMode tests. Measured
 contour-raster builds were 233–255 ms for the whole Standard world and 6–16 ms
 for the regional views; these are one-time UI cache builds, not frame-time or
 simulation throughput benchmarks. Local evidence: `TestResults/PR45Atlas/`.
+
+## Contour, river and climate inspection follow-up
+
+The atlas now has its own finer contour LOD (Normal/Fine at full-world intervals
+0.025/0.0125, reaching 0.0125/0.0025 regionally), actual boundary-river overlays,
+unblended land ruggedness colours, and annual/seasonal Temperature and Snowfall
+layers. Player contour intervals and generated terrain/climate are unchanged.
+The capture route now writes twelve images, including the natural desert-river
+region and both climate views, checks state/fog purity and leaves the atlas open.
+See [TerrainClimateAudit.md](TerrainClimateAudit.md) for measured seed-11
+limitations, reproduction and the proposed generation follow-up. Snowfall is a
+precipitation fraction; it does not claim accumulated snow cover.

@@ -677,3 +677,10 @@ regional inspections use complete 61-cell ruggedness fits. See
 for scope, capture command and initial measured cache-build costs. This is a UI
 validation, not a training comparison or an exact-site recreation of the chat
 prototype.
+
+### PR 45 terrain/climate inspection audit
+
+See [TerrainClimateAudit.md](TerrainClimateAudit.md) for the seed-11 diagnostic
+and the distinction between implemented atlas improvements and unimplemented
+generation changes. The focused contour suite passes 984 assertions, including
+retained player intervals and shallow relief resolved by the finer atlas lattice.
