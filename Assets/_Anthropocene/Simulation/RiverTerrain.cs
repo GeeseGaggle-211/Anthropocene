@@ -67,13 +67,13 @@ namespace Anthropocene.Simulation
             if (!c.Config.DrainageTerrainEnabled) return;
             var w = c.World; var tiles = w.Tiles; int count = tiles.Length;
             var corners = new HexCorners(c.Config.Width, c.Config.Height);
-            var constraints = new Constraints(count, count + w.Rivers.Count * 2);
+            var constraints = new Constraints(count, count + w.Rivers.Count * 5);
             foreach (var tile in tiles)
                 if (tile.Downstream >= 0) constraints.Add(tile.Id, tile.Downstream);
             foreach (var edge in w.Rivers)
             {
                 int[] a = corners.TilesAt(edge.FromVertex).ToArray(), b = corners.TilesAt(edge.ToVertex).ToArray();
-                int[] onlyA = a.Except(b).ToArray(), onlyB = b.Except(a).ToArray();
+                int[] onlyA = a.Except(b).ToArray(), onlyB = b.Except(a).ToArray(), shared = a.Intersect(b).ToArray();
                 // Interior corners share two of their three tiles, so the exact mean
                 // inequality cancels those banks and compares the two opposite tiles.
                 // Polar corners have fewer contributors; subset cases use sufficient
@@ -81,6 +81,13 @@ namespace Anthropocene.Simulation
                 var sources = onlyA.Length > 0 ? onlyA : a;
                 var targets = onlyB.Length > 0 ? onlyB : b;
                 foreach (int from in sources) foreach (int to in targets) constraints.Add(from, to);
+                // The displayed triangular height field also crosses the shared-bank
+                // midpoint. Endpoint descent alone could conceal an intervening hump.
+                foreach (int bank in shared)
+                {
+                    foreach (int from in onlyA) constraints.Add(from, bank);
+                    foreach (int to in onlyB) constraints.Add(bank, to);
+                }
             }
 
             var original = tiles.Select(t => t.Elevation).ToArray();

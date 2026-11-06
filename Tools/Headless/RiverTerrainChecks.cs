@@ -35,7 +35,9 @@ internal static class RiverTerrainChecks
         {
             double from = g.TilesAt(e.FromVertex).Average(id => (double)w.Tiles[id].Elevation);
             double to = g.TilesAt(e.ToVertex).Average(id => (double)w.Tiles[id].Elevation);
-            return to <= from + 1e-6 && Math.Abs(from - e.FromSurface) < 1e-6 && Math.Abs(to - e.ToSurface) < 1e-6;
+            double midpoint = g.TilesAt(e.FromVertex).Intersect(g.TilesAt(e.ToVertex)).Average(id => (double)w.Tiles[id].Elevation);
+            return to <= midpoint + 1e-6 && midpoint <= from + 1e-6
+                && Math.Abs(from - e.FromSurface) < 1e-6 && Math.Abs(to - e.ToSurface) < 1e-6;
         });
     }
 

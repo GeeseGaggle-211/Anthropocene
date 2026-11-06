@@ -62,7 +62,11 @@ continuity can require a deeper downstream breach than the initial local cut.
 
 At ordinary hex corners, two incident tile heights are shared by the endpoints
 of a boundary river. Comparing their means cancels those two banks: the remaining
-upstream tile must be at least as high as the remaining downstream tile. Polar
+upstream tile must be at least as high as the remaining downstream tile. The
+segment also crosses the shared-bank midpoint in the contour interpolation.
+Upstream-to-bank and bank-to-downstream constraints ensure that midpoint lies
+between the endpoint heights: a river cannot cross a hidden mid-segment hump.
+Polar
 corners have fewer contributors; conservative pairwise constraints on the common
 mean handle them without fabricated polar tiles. Wrapped contributor lookup is
 tested against the forward corner construction.
@@ -120,7 +124,7 @@ resource conservation, presets and replay checks use the new defaults.
 
 `RiverTerrainChecks` covers exact corner contributors/seams/poles, equal-uplift
 edge/core removal, bounded age, fixed sea, real incision on controlled valleys,
-unchanged river flow/connectivity, raw-corner and tile-graph descent, all three
+unchanged river flow/connectivity, raw-corner/midpoint and tile-graph descent, all three
 world shapes, viable starts, repeat generation and exact saves. Altitude tests
 also remove the new field from a serialized payload and verify unchanged loaded
 heights/profiles. Existing climate, morphology, drainage and topography suites
@@ -137,17 +141,17 @@ ignored `TestResults/PR45Erosion/`.
 | River edges | 45,365 | 45,089 |
 | Raw corner uphill segments | 1,104 | 0 |
 | River-bank tiles below nearby non-river land | 78.6% | 97.0% |
-| Median bank-minus-nearby height | -0.00101 | -0.00681 |
-| Land median ruggedness | 21.11 | 31.05 |
-| Ancient-core median ruggedness | 31.49 | 36.69 |
-| Ancient-core share scoring at least 50 | 13.3% | 16.7% |
+| Median bank-minus-nearby height | -0.00101 | -0.00697 |
+| Land median ruggedness | 21.11 | 31.23 |
+| Ancient-core median ruggedness | 31.49 | 36.84 |
+| Ancient-core share scoring at least 50 | 13.3% | 16.9% |
 | Viable camps | 80/80 | 80/80 |
 
 These population summaries do not imply every river bank or old range is rugged.
 The larger-map run also retained 160/160 viable camps. Standard seed 11 removed
-height from 62,428 tiles during river shaping, mean 0.00540 (65 m), maximum
-0.04876 (585 m). Margin erosion took 18.7 ms and river shaping 618.7 ms in that
-run; whole generation plus terrain-metric warmup took 11.32 s. Timings are local
+height from 62,429 tiles during river shaping, mean 0.00554 (66 m), maximum
+0.04876 (585 m). Margin erosion took 20.4 ms and river shaping 827.1 ms in that
+run; whole generation plus terrain-metric warmup took 12.22 s. Timings are local
 single-run measurements. The sixteen-frame Unity capture route adds the ancient
 flank with greatest river cut within strength 0.1–0.5 as a disclosed inspection
 site, alongside the earlier comparison regions, full-world maps and climate.
