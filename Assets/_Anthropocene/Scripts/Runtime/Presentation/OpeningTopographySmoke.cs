@@ -52,7 +52,8 @@ namespace Anthropocene.Presentation
             yield return new WaitForSeconds(.35f);
             if (SaveCodec.Fingerprint(world) != fingerprint) throw new InvalidOperationException("Map-layer capture changed authoritative state.");
             var metric = world.TerrainMetrics.At(center);
-            bool hasObserved = knownTerrain != null && knownTerrain.TryGet(center, out var observedMetric);
+            KnownTerrainMetric observedMetric = default;
+            bool hasObserved = knownTerrain != null && knownTerrain.TryGet(center, out observedMetric);
             metadata.AppendLine(name + ": seed=" + world.Seed + " size=" + world.Config.Width + "x" + world.Config.Height +
                 " shape=" + world.Config.Shape + " players=" + world.Config.Players + " cameraTile=" + center +
                 " cameraQ=" + center % world.Config.Width + " cameraR=" + center / world.Config.Width +

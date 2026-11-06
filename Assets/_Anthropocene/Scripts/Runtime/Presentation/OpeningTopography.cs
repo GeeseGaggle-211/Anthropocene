@@ -156,7 +156,8 @@ namespace Anthropocene.Presentation
 
         private void DrawMapLayerControls(Rect area)
         {
-            float width = Mathf.Min(330, area.width - 24), x = area.width - width - 12;
+            // Allow the longest label, "3 Ruggedness", to fit with the shared button padding.
+            float width = Mathf.Min(390, area.width - 24), x = area.width - width - 12;
             Fill(new Rect(x - 6, 8, width + 6, mapLayerState.Layer == PlayerMapLayer.Terrain ? 38 : 74), new Color(.035f, .044f, .043f, .94f));
             float third = width / 3;
             if (Button(new Rect(x, 11, third - 4, 30), "1 Terrain", mapLayerState.Layer == PlayerMapLayer.Terrain)) SelectMapLayer(PlayerMapLayer.Terrain);

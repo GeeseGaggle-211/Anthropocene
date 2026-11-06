@@ -47,6 +47,12 @@ Major contours occur every 0.100 normalized elevation and use a heavier line. Zo
 
 Player controls are `1` Terrain, `2` Topography, `3` Ruggedness, `G` Normal/Fine, and `K` ruggedness contour context. The layer can change without regeneration. Selected-tile details report continuous height, slope, numeric ruggedness, and whether the local fit is partial.
 
+Ground colour and artwork follow the tile's biome at every elevation. The former
+highland/mountain background override is no longer selected; hills and mountains
+use their desert, grassland, temperate, tropical or cold ground. Topography and
+ruggedness communicate the shape of that ground. Gameplay elevation levels,
+relief classification and peak impassability are unchanged.
+
 ## Automated evidence
 
 Focused headless checks cover exact plane recovery, flat and inclined zero cases, offset invariance, added undulations, score normalization, deterministic longitude rotation, the seam, polar sample counts, finite values, contour interpolation/continuity/deduplication, nested zoom density, hidden-height isolation, cache identity, byte-identical saves, deterministic reconstruction, unchanged fingerprints/turn results, and a Pangaea seed-29 smoke world.

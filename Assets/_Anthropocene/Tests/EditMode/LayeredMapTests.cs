@@ -91,7 +91,7 @@ namespace Anthropocene.Tests.EditMode
             }
         }
         [Test]
-        public void CoverChangesDensityAndClimateMotifsWhileReliefKeepsItsOwnBase()
+        public void CoverChangesDensityAndClimateMotifsWhileBiomeOwnsGroundAtEveryRelief()
         {
             var cfg = new SimulationConfig();
             var t = new Tile { Terrain = Terrain.Woodland, Relief = Relief.Highland, ElevationLevel = 8 };
@@ -105,6 +105,11 @@ namespace Anthropocene.Tests.EditMode
             foreach (var environment in new[] { EnvironmentKind.Desert, EnvironmentKind.Grassland, EnvironmentKind.Temperate, EnvironmentKind.Tropical, EnvironmentKind.Cold })
             {
                 t.Environment = environment;
+                foreach (var relief in new[] { Relief.Lowland, Relief.Hills, Relief.Highland, Relief.Mountain })
+                {
+                    t.Relief = relief;
+                    Assert.That(LayeredTileRenderer.BaseKey(Observe()), Is.EqualTo("terrain." + environment.ToString().ToLowerInvariant()), "Elevation must not replace biome ground with mountain artwork.");
+                }
                 foreach (float height in new[] { 42f, 64f, 80f, 112f })
                 {
                     t.CurrentVegetation = VegetationTier.Low;
