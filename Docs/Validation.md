@@ -665,3 +665,15 @@ starvation. The all-feature cohort is much larger and therefore slower: the
 result creates 8,395 post-checkpoint daughter camps versus 3,472 before. Full
 statistics, scaling interpretation and ignored evidence paths are in
 [EconomicTransitionRecall.md](EconomicTransitionRecall.md).
+
+### PR 45 developer atlas follow-up (6 November 2026)
+
+The full-world developer preview now includes biome-coloured Topography with
+continuous contours/hillshade and an optional contour overlay on Ruggedness.
+An eight-frame Standard/Continents/11/80 capture checks unchanged authoritative
+state and player visibility, then leaves the interactive atlas open. The three
+regional inspections use complete 61-cell ruggedness fits. See
+[TopographyAndRuggedness.md](TopographyAndRuggedness.md#full-world-atlas-review--6-november-2026)
+for scope, capture command and initial measured cache-build costs. This is a UI
+validation, not a training comparison or an exact-site recreation of the chat
+prototype.

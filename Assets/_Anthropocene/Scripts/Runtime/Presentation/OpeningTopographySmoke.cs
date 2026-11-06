@@ -13,6 +13,67 @@ namespace Anthropocene.Presentation
 {
     public sealed partial class OpeningGame
     {
+        // Opt-in full-world review through the production developer atlas. Leaves it
+        // interactive at the end and never touches the normal save slot or player fog.
+        private IEnumerator TopographyAtlasSmoke(string directory, string sourceSha)
+        {
+            Application.runInBackground = true;
+            string output = Path.GetFullPath(directory); Directory.CreateDirectory(output);
+            scenarioIndex = 1; sizeIndex = 0; shapeIndex = (int)WorldShape.Continents; players = 80;
+            previewAfterGeneration = true;
+            NewGame(); while (generating != null) yield return null;
+            if (world == null || world.Seed != 11 || world.Config.Width != 1024)
+                throw new InvalidOperationException("Expected Standard/Continents/11.");
+            while (drafting != null && !drafting.IsCompleted) yield return null;
+            string fingerprint = SaveCodec.Fingerprint(world);
+            string visible = string.Join(",", observation.Tiles.Keys.OrderBy(id => id));
+            var metadata = new StringBuilder("Unity developer atlas; all geography revealed; player fog unchanged.\n");
+            metadata.AppendLine("sourceSha=" + sourceSha + " seed=11 shape=Continents size=1024x512 players=80");
+            int[] sites = { -1, 396446, 382626, 176362 };
+            string[] names = { "world", "rolling-region", "rough-coast-region", "smooth-uplands-region" };
+            for (int site = 0; site < sites.Length; site++)
+            {
+                previewZoom = site == 0 ? 1 : 32; previewPan = Vector2.zero;
+                previewTile = sites[site]; previewScroll = Vector2.zero;
+                atlasContourDensity = ContourDensity.Fine;
+                if (site > 0)
+                {
+                    float side = Mathf.Min(350, Screen.width * .34f);
+                    var size = new Vector2(Screen.width - side - 32, Screen.height - 184);
+                    float fit = Mathf.Min(size.x / world.Config.Width, size.y / world.Config.Height);
+                    var map = new Rect((size.x - world.Config.Width * fit * previewZoom) / 2,
+                        (size.y - world.Config.Height * fit * previewZoom) / 2,
+                        world.Config.Width * fit * previewZoom, world.Config.Height * fit * previewZoom);
+                    previewPan = size / 2 - PreviewPoint(previewTile, map);
+                }
+                foreach (int layer in new[] { 8, 7 })
+                {
+                    previewLayer = layer;
+                    if (previewTexture != null) Destroy(previewTexture); previewTexture = null;
+                    yield return null;
+                    yield return new WaitForEndOfFrame();
+                    string name = (site * 2 + (layer == 8 ? 1 : 2)).ToString("00") + "-" + names[site] + "-" + previewLayers[layer].ToLowerInvariant();
+                    ScreenCapture.CaptureScreenshot(Path.Combine(output, name + ".png"));
+                    yield return new WaitForSeconds(.4f);
+                    metadata.AppendLine(name + " zoom=" + previewZoom + " tile=" + previewTile
+                        + " pan=" + previewPan + " contourStep=" + (atlasContourStep * TopographicContours.BaseInterval)
+                        + " contourRasterMs=" + atlasContourMilliseconds.ToString("0.0", CultureInfo.InvariantCulture));
+                    if (previewTile >= 0)
+                    {
+                        var metric = world.TerrainMetrics.At(previewTile);
+                        metadata.AppendLine("  ruggedness=" + metric.Ruggedness + " samples=" + metric.Samples);
+                    }
+                }
+            }
+            if (fingerprint != SaveCodec.Fingerprint(world) || visible != string.Join(",", observation.Tiles.Keys.OrderBy(id => id)))
+                throw new InvalidOperationException("Developer atlas changed authoritative state or player visibility.");
+            File.WriteAllText(Path.Combine(output, "captures.txt"), metadata.ToString());
+            if (Directory.GetFiles(output, "*.png").Length != 8) throw new InvalidOperationException("Missing atlas captures.");
+            previewLayer = 8; previewZoom = 1; previewPan = Vector2.zero;
+            if (previewTexture != null) Destroy(previewTexture); previewTexture = null;
+            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: eight atlas captures; authoritative state and player visibility unchanged. Atlas left open for inspection.\n");
+        }
+
         private sealed class TopographyCaptureSite
         {
             public Camp Camp;

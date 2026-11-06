@@ -34,8 +34,11 @@ namespace Anthropocene.Presentation
         // Signed overlay strength: positive lightens, negative darkens. The local plane
         // gradient is measured in normalized elevation per centre-to-centre hex spacing.
         public static float Hillshade(KnownTerrainMetric metric)
+            => Hillshade(metric.GradientX, metric.GradientY);
+
+        public static float Hillshade(float gradientX, float gradientY)
         {
-            var normal = new Vector3(-metric.GradientX * 9, -metric.GradientY * 9, 1).normalized;
+            var normal = new Vector3(-gradientX * 9, -gradientY * 9, 1).normalized;
             var light = new Vector3(-.55f, -.72f, .68f).normalized;
             float illumination = Vector3.Dot(normal, light);
             return Mathf.Clamp((illumination - .66f) * .22f, -.11f, .09f);

@@ -112,3 +112,32 @@ are not numerical parity with the fully known chat prototype. The earlier
 review verified mouse layer selection, G/1/3/K shortcuts, pan, zoom and stable
 displayed scores across layers. Frame-time/allocation profiling, a dedicated
 longitude-seam visual pass, and current-main integration remain outstanding.
+
+## Full-world atlas review — 6 November 2026
+
+The developer atlas now offers Topography alongside Ruggedness. Topography keeps
+biome colours and uses the same continuous-height contour construction and
+hillshade function as the player view. Ruggedness offers a contour toggle; both
+layers offer Normal/Fine density and preserve the camera when switching. Labels
+are shortened to fit all nine layers at the default window width. The atlas
+remains rectangular axial rows, rather than the player's symbolic hex artwork.
+
+Contours are cached in a screen-sized transparent raster. Construction reads
+only viewport tiles plus a one-cell margin (all tiles at fit-world), using the
+shared O(N log N) contour builder; memory/upload scales with screen pixels.
+Pan, zoom, density, layer and world changes invalidate the appropriate cache.
+No simulation state, player observation, save format or generation rule changes.
+
+`--anthropocene-topography-atlas-output <fresh-directory>` captures eight actual
+Unity frames: paired full-world, rolling-region, rough-coast and smooth-uplands
+views for Standard/Continents/11/80, and leaves the atlas open for inspection.
+It checks unchanged authoritative fingerprints and player-visible tile IDs.
+At 1920 x 1080, regional zoom 32 covers about 32 x 19 tiles. Selected regional
+ruggedness scores are 42.37, 76.62 and 12.35, each using all 61 samples. These are
+the earlier review's locations, not a claim to reproduce the prototype's exact
+chosen sites. Full-world contour interval is 0.100; regional interval is 0.025.
+
+Initial validation passed eight captures and all 31 EditMode tests. Measured
+contour-raster builds were 233–255 ms for the whole Standard world and 6–16 ms
+for the regional views; these are one-time UI cache builds, not frame-time or
+simulation throughput benchmarks. Local evidence: `TestResults/PR45Atlas/`.

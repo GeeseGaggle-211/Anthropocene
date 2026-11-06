@@ -12,7 +12,7 @@ namespace Anthropocene.Presentation
         private Texture2D previewTexture;
         private float previewZoom = 1;
         private Vector2 previewPan, menuScroll, previewScroll;
-        private readonly string[] previewLayers = { "Environment", "Renewable food", "Freshwater renewal", "Elevation", "Volcanic activity", "Resources", "Ancient elevation", "Ruggedness" };
+        private readonly string[] previewLayers = { "Environment", "Food renewal", "Freshwater", "Elevation", "Volcanism", "Resources", "Ancient relief", "Ruggedness", "Topography" };
 
         private void Menu()
         {
@@ -56,6 +56,7 @@ namespace Anthropocene.Presentation
         {
             if (previewTexture != null) Destroy(previewTexture);
             previewTexture = null; previewTile = -1; previewPan = Vector2.zero; previewZoom = 1;
+            InvalidateAtlasContours();
             previewResourceValues = null; previewResourcePicker = false;
         }
         private static Color EnvironmentColor(Tile t)
@@ -143,6 +144,12 @@ namespace Anthropocene.Presentation
                     Color rugged = TopographicOverlay.RuggednessColor(world.TerrainMetrics.At(t.Id).Ruggedness);
                     color = Color.Lerp(EnvironmentColor(t), rugged, .78f);
                 }
+                else if (previewLayer == 8 && t.Land)
+                {
+                    var metric = world.TerrainMetrics.At(t.Id);
+                    float shade = TopographicOverlay.Hillshade(metric.GradientX, metric.GradientY);
+                    color = Color.Lerp(color, shade < 0 ? Color.black : Color.white, Mathf.Abs(shade));
+                }
                 colors[(height - 1 - t.Id / width) * width + t.Id % width] = color;
             }
             previewTexture = new Texture2D(width, height, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
@@ -163,7 +170,8 @@ namespace Anthropocene.Presentation
             float layerWidth = Mathf.Min(185, (Screen.width - 40) / (float)previewLayers.Length);
             for (int i = 0; i < previewLayers.Length; i++)
                 if (Button(new Rect(20 + i * layerWidth, 58, layerWidth - 6, 32), previewLayers[i], previewLayer == i)) { previewLayer = i; Destroy(previewTexture); previewTexture = null; }
-            if (previewLayer == 5) DrawResourceControls();
+            if (previewLayer == 7 || previewLayer == 8) DrawAtlasTopographyControls();
+            else if (previewLayer == 5) DrawResourceControls();
             else if (previewLayer == 6)
             {
                 if (Button(new Rect(20, 100, 110, 30), "Fit world")) { previewZoom = 1; previewPan = Vector2.zero; }
@@ -203,6 +211,7 @@ namespace Anthropocene.Presentation
             if (previewTile >= 0 && previewZoom == 12 && previewPan == Vector2.zero)
             { previewPan = new Vector2(area.width / 2, area.height / 2) - PreviewPoint(previewTile, map); map.position += previewPan; }
             if (previewTexture != null) GUI.DrawTexture(map, previewTexture);
+            if (previewLayer == 8 || previewLayer == 7 && atlasRuggednessContours) DrawAtlasContours(map, area.size);
             foreach (var c in world.Camps)
             {
                 var p = PreviewPoint(c.Tile, map); bool own = c.Player == 0;
@@ -251,6 +260,7 @@ namespace Anthropocene.Presentation
                 : previewLayer == 4 ? "Orange: volcanic activity\nOlder island chains can survive after activity ends, so they may remain dark here. Moving hotspot paths leave islands and submerged remnants. This is a generation proxy, not live tectonics."
                 : previewLayer == 6 ? "Ancient orogen elevation\nWarm gradient: net elevation added by extinct Wilson-cycle mountain belts (sienna -> amber -> gold -> ivory crest).\nMuted land: unaffected continental interior.\nDeep ocean: strictly preserved marine bathymetry (0.0 uplift)."
                 : previewLayer == 7 ? "Radius-four ruggedness (61 cells in the interior)\n0 teal: smooth plane · 50 gold: broken ground · 100 plum: strongest local irregularity\nResidual RMS is mapped by 100 R / (R + 0.005). Height and uniform slope are fitted out."
+                : previewLayer == 8 ? "Biome colours with continuous elevation contours and hillshade.\nBold: major contours (0.100 height). Minor contours appear as you zoom in.\nSame terrain measurements as the player view, with all geography revealed.\nAxial rows are shown as a rectangular atlas."
                 : "Dark = 0 · bright gold = 100+\nLog scale: 0 / 1 / 10 / 100\nUnits per base season (" + world.Config.BaseDays.ToString("0.##") + " days).\nProfile renewal potential, before labor, depletion and competition. Ocean food is excluded from accessible food.";
             GUI.Label(new Rect(12, y, w, 150), legend, small); y += 158;
             var own = world.Camps.First(c => c.Player == 0);
