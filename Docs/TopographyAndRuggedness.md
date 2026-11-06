@@ -1,6 +1,6 @@
 # Topography and ruggedness
 
-Status: implemented on `feature/topography-ruggedness`; **awaiting visual acceptance and not approved for merge**. Automated Unity visual acceptance is still required on a workstation with Unity 6000.5.10f1. The implementation baseline is `d4f949a7eb83a59150741222e410fbbfbc196f2d` (`origin/main`, 18 October 2026).
+Status: implemented on `feature/topography-ruggedness`; **draft and not approved for merge**. Windows build, EditMode tests and the nine-frame Unity capture route passed on 6 November 2026 (see the follow-up below). Full prototype parity, frame profiling and integration with newer `main` remain unaccepted. The implementation baseline is `d4f949a7eb83a59150741222e410fbbfbc196f2d` (`origin/main`, 18 October 2026).
 
 ## Contract
 
@@ -88,3 +88,27 @@ $sourceSha = git rev-parse HEAD
 ```
 
 Acceptance requires `result.txt`, all nine PNG files, a clean player log, and human review of contour joins at ordinary edges and the longitude seam; fog boundaries; biome/rivers/settlements/units/selection legibility; high-but-smooth versus genuinely rugged land; aliasing while zooming; and pan/zoom frame behavior. These captures must not be replaced with synthetic illustrations.
+
+## Windows review follow-up — 6 November 2026
+
+Code revision `5fa5a1b4324449efee3f75f123023d3020509256` fixes the capture
+routine's CS0170 definite-assignment failure, widens the layer controls so
+`3 Ruggedness` fits, and removes the elevation-based highland background override.
+Unity 6000.5.10f1 built the Development player successfully; all 31 EditMode tests
+passed, including biome-ground coverage across Lowland, Hills, Highland and
+Mountain relief. No simulation source changed.
+
+The nine-frame capture route passed at 1280 x 800 using Standard/Continents/11
+and Tiny/Pangaea/29. The manifest records the code revision and unchanged
+authoritative fingerprints during view use. Screenshots confirm the complete
+Ruggedness label and biome ground in the rolling and smooth elevated comparisons.
+Local, ignored evidence is in `TestResults/PR45Fixes/` (Build.log, EditMode.xml,
+Player.log, and Captures with captures.txt/result.txt).
+
+The opening player fits still use 19/61 known cells. For example, the rolling
+capture displays 22.4 versus the full-world score 42.4; smooth elevated ground
+displays 2.0 versus 12.4. These partial fits are labelled in the inspector and
+are not numerical parity with the fully known chat prototype. The earlier
+review verified mouse layer selection, G/1/3/K shortcuts, pan, zoom and stable
+displayed scores across layers. Frame-time/allocation profiling, a dedicated
+longitude-seam visual pass, and current-main integration remain outstanding.

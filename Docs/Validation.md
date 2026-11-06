@@ -29,6 +29,12 @@ recorded in [TopographyAndRuggedness.md](TopographyAndRuggedness.md). The derive
 cache is absent from saves and fingerprints; no elevation, drainage, ecology,
 placement, movement, or turn rule is changed.
 
+Windows follow-up, 6 November 2026: code revision `5fa5a1b` fixes the Unity
+capture compile error and clipped Ruggedness label, and uses biome ground art
+at every relief. Unity 6000.5.10f1 build, 31 EditMode tests and all nine real
+captures at 1280 x 800 passed. See the linked follow-up for provenance, partial
+knowledge differences and the remaining acceptance limits; the PR stays draft.
+
 ## Demographic structure — 2 October 2026
 
 The QoL correction, independent Light Housing parameters and bounded specialist-scale helper are covered by 678 QoL-mortality assertions and 22 focused demographic-structure assertions. The latter verify independent fixed/tent decay, configurable Animal Fabric and construction inputs, Craftsperson and Gatherer fallbacks, matching-task-only specialist qualification, monotonic saturation, material-extraction parity, forecast/resolver agreement, and missing-field migration. Nonzero specialist scaling is exercised explicitly; the rejected calibration remains disabled in new-world defaults.
