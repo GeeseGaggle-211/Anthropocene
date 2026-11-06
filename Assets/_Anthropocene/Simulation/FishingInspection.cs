@@ -43,6 +43,8 @@ namespace Anthropocene.Simulation
             foreach (var material in new[] { MaterialId.Wood, MaterialId.Stone, MaterialId.Clay })
                 if (MaterialEconomy.Inventory(camp, material) <= 0 && !sources.Any(s => s.Material == material && s.Available > 0))
                     warnings.Add("No stocked or known accessible " + material + ".");
+            if (fishers > 0 && !intent.Assignments.Any(a => (a.Role == WorkforceRoles.Craftsperson || a.Role == WorkforceRoles.Carpenter) && a.Population > 0))
+                warnings.Add("No tool-producing craft labor assigned; Fisher work cannot manufacture replacement Fishing Tools.");
             return new FishingInspection
             {
                 Fishers = fishers, Gatherers = camp.Population - intent.Assignments.Sum(a => a.Population),

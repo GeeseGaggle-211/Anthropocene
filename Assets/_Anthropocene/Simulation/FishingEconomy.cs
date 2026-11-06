@@ -33,7 +33,7 @@ namespace Anthropocene.Simulation
         public readonly int Distance;
         public readonly double DistanceFactor;
         public readonly FishingKnowledgeSource KnowledgeSource;
-        public readonly bool Incumbent;
+        public readonly bool Incumbent, Offshore;
         public readonly int RivalOperators;
         public readonly double OpeningAccessibleFood, OpeningBiomass, OpeningCondition, OpeningCapital;
         public readonly double ProspectiveClosingCapacity, FoodPotential;
@@ -53,10 +53,11 @@ namespace Anthropocene.Simulation
             double toolCoveredHarvestWorkerYears = 0, double capitalWorkerYears = 0, double maintenanceWorkerYears = 0,
             double requiredMaintenanceWorkerYears = 0, double buildWorkerYears = 0,
             double averageCapital = 0, double endingCapital = 0, double managementIntensity = 0,
-            double operationFraction = 0, double requestedCatch = 0)
+            double operationFraction = 0, double requestedCatch = 0, bool offshore = false, double distanceFactor = -1)
         {
             TileId = tileId; Route = route; Distance = distance;
-            DistanceFactor = FishingEconomy.DistanceFactor(distance);
+            DistanceFactor = distanceFactor >= 0 ? distanceFactor : FishingEconomy.DistanceFactor(distance);
+            Offshore = offshore;
             KnowledgeSource = source; Incumbent = incumbent; RivalOperators = rivalOperators;
             OpeningAccessibleFood = openingFood; OpeningBiomass = biomass; OpeningCondition = condition;
             OpeningCapital = openingCapital; ProspectiveClosingCapacity = closingCapacity; FoodPotential = foodPotential;
@@ -285,11 +286,15 @@ namespace Anthropocene.Simulation
                 while (queue.Count > 0)
                 {
                     int current = queue.Dequeue(); int nextDistance = result[current] + 1;
-                    if (nextDistance > FishingEconomy.GroundRange) continue;
+                    if (nextDistance > FishingEconomy.Range(world, camp)) continue;
                     foreach (int next in world.Map.Neighbors(current).OrderBy(id => id))
                     {
-                        if (result.ContainsKey(next) || !Known(next, visible, remembered) || !IsRouteTile(world.Tiles[next], route)) continue;
-                        result[next] = nextDistance; queue.Enqueue(next);
+                        if (result.ContainsKey(next) || !Known(next, visible, remembered)) continue;
+                        bool terminal = route == FishingRoute.Shallows && FishingEconomy.SailingEnabled(world, camp) &&
+                            world.Tiles[next].Environment == EnvironmentKind.Ocean;
+                        if (!terminal && !IsRouteTile(world.Tiles[next], route)) continue;
+                        result[next] = nextDistance;
+                        if (!terminal) queue.Enqueue(next);
                     }
                 }
             }
@@ -307,7 +312,7 @@ namespace Anthropocene.Simulation
             var path = new int[distance + 1];
             path[0] = origin; path[distance] = ground.TileId;
             for (int step = distance - 1; step > 0; step--)
-                path[step] = world.Map.Neighbors(path[step + 1]).Where(id => distances.TryGetValue(id, out int d) && d == step)
+                path[step] = world.Map.Neighbors(path[step + 1]).Where(id => distances.TryGetValue(id, out int d) && d == step && world.Tiles[id].Environment != EnvironmentKind.Ocean)
                     .OrderBy(id => id).First();
             return path;
         }
@@ -322,6 +327,14 @@ namespace Anthropocene.Simulation
     {
         public const int GroundRange = 3;
         public const double DistanceRetention = .75;
+        public const int SailingRange = 5;
+        public const double SailingDistanceRetention = .90;
+        public static bool SailingEnabled(WorldState world, Camp camp)
+            => FeatureEnabled(world, camp) && world.Config.NeolithicSailingEnabled && camp.People.HasTech(NeolithicTech.Sailing);
+        public static int Range(WorldState world, Camp camp) => SailingEnabled(world, camp) ? SailingRange : GroundRange;
+        public static double DistanceFactor(WorldState world, Camp camp, int distance)
+            => distance < 1 || distance > Range(world, camp) ? 0 :
+                Math.Pow(SailingEnabled(world, camp) ? SailingDistanceRetention : DistanceRetention, distance - 1);
         public const double GroundSwitchMargin = .025;
         public const double ProspectiveCapacityWeight = .20;
         private const double Epsilon = 1e-12;
@@ -504,15 +517,22 @@ namespace Anthropocene.Simulation
                         : Math.Max(0, (1 - ProspectiveCapacityWeight) * openingFood + ProspectiveCapacityWeight * closingCapacity
                             + Math.Max(0, rate) * horizonDays) * rivalFactor;
                     double maxAnnualCatch = world.Config.FishPerPerson * world.Config.DaysPerYear / world.Config.BaseDays;
-                    double yield = years > 0 ? Math.Min(maxAnnualCatch, foodPotential / years) * DistanceFactor(entry.Value) : 0;
+                    double yield = years > 0 ? Math.Min(maxAnnualCatch, foodPotential / years) * DistanceFactor(world, camp, entry.Value) : 0;
                     candidates.Add(new FishingGroundPlan(id, route, entry.Value, source, lastSelected.Contains(id),
                         rivalOperators, openingFood, biomass, condition, openingCapital, closingCapacity, foodPotential,
-                        profile, Math.Max(0, yield)));
+                        profile, Math.Max(0, yield), offshore: tile.Environment == EnvironmentKind.Ocean,
+                        distanceFactor: DistanceFactor(world, camp, entry.Value)));
                 }
             }
 
             var ranked = candidates.OrderByDescending(g => g.YieldPerFisherYear).ThenBy(g => g.TileId).ToArray();
-            var selectedGrounds = ranked.Take(3).ToList();
+            var selectedGrounds = new List<FishingGroundPlan>();
+            foreach (var ground in ranked)
+            {
+                if (ground.Offshore && selectedGrounds.Any(g => g.Offshore)) continue;
+                selectedGrounds.Add(ground);
+                if (selectedGrounds.Count == 3) break;
+            }
             if (selectedGrounds.Count == 3)
             {
                 // Incumbency protects the selected set at its cutoff. It does
@@ -523,7 +543,8 @@ namespace Anthropocene.Simulation
                 {
                     if (incumbent.YieldPerFisherYear + Epsilon < cutoff * (1 - GroundSwitchMargin)) continue;
                     int replace = selectedGrounds.FindLastIndex(g => !g.Incumbent &&
-                        incumbent.YieldPerFisherYear + Epsilon >= g.YieldPerFisherYear * (1 - GroundSwitchMargin));
+                        incumbent.YieldPerFisherYear + Epsilon >= g.YieldPerFisherYear * (1 - GroundSwitchMargin) &&
+                        (!incumbent.Offshore || g.Offshore || !selectedGrounds.Any(s => s.Offshore)));
                     if (replace >= 0) selectedGrounds[replace] = incumbent;
                 }
             }
@@ -561,7 +582,7 @@ namespace Anthropocene.Simulation
             var assigned = (double[])harvestEffort.Clone();
             double surplus = Math.Max(0, fisherCount * years - harvestEffort.Sum());
             var investable = Enumerable.Range(0, grounds.Length)
-                .Where(i => grounds[i].KnowledgeSource != FishingKnowledgeSource.ConservativePrior)
+                .Where(i => !grounds[i].Offshore && grounds[i].KnowledgeSource != FishingKnowledgeSource.ConservativePrior)
                 .OrderByDescending(i => grounds[i].YieldPerFisherYear).ThenBy(i => grounds[i].TileId).ToArray();
             for (int position = 0; position < investable.Length && surplus > Epsilon; position++)
             {
@@ -576,7 +597,7 @@ namespace Anthropocene.Simulation
                 var ground = grounds[i]; double fisherYears = assigned[i];
                 if (ground.KnowledgeSource == FishingKnowledgeSource.ConservativePrior)
                     fisherYears = 0; // Unknown geometry never becomes a hidden-stock claim.
-                double effectiveWork = departing ? 0 : fisherYears * ground.DistanceFactor;
+                double effectiveWork = departing || ground.Offshore ? 0 : fisherYears * ground.DistanceFactor;
                 double effectiveToolWork = Math.Min(fisherYears, covered[i]);
                 var capital = AllocateCapital(world, ground.OpeningCapital, effectiveWork, years);
                 double baseCatch = fisherYears * ground.YieldPerFisherYear;
@@ -593,7 +614,7 @@ namespace Anthropocene.Simulation
                     effectiveWork,
                     capital.MaintenanceWorkerYears, capital.RequiredMaintenanceWorkerYears, capital.BuildWorkerYears,
                     capital.AverageCapital, capital.EndingCapital, capital.ManagementIntensity,
-                    capital.OperationFraction, catchRequest));
+                    capital.OperationFraction, catchRequest, ground.Offshore, ground.DistanceFactor));
             }
             return new FishingPlan(camp.Id, tile, residents, fisherCount, horizonDays, years, fishingTools,
                 departing, operatorEligible, candidates, result.OrderBy(g => g.TileId).ToArray());

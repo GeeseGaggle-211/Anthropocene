@@ -141,7 +141,7 @@ coefficients. They do not create seasonal or annual world states.
   order. Shared deposit extraction and inventory changes remain canonical.
 - Resident fishing grounds are sparse (`FisherySite`, keyed by aquatic tile),
   not flags or capital fields on every tile. Before Sailing, each eligible
-  Watercraft camp routes through traversable land to Shallows-only and
+  Watercraft camp starts directly from adjacent water, following Shallows-only and
   Lake-only sources, selects no more than three grounds within water-kind
   range three, and discounts effort by `0.75^(distance-1)` (distance one is
   undiminished). All scoring, selected-ground state, operator reconciliation,
@@ -160,6 +160,16 @@ coefficients. They do not create seasonal or annual world states.
   `CorrectedAquaticSeasonalPressureEnabled` default off for legacy loads, and
   resident Fishing requires both gates plus DemandControl. These conditions
   leave feature-off opening FisherySeed rewards and fingerprints unchanged.
+- Opt-in `NeolithicSailingEnabled` (absent saves: false) credits shared craft
+  mastery at Close from useful Weaver textile receipts with actual resident
+  fishing or Hunter watercraft fishing activity. It uses the existing
+  `CraftMasteryThreshold` and output/base-recipe-rate units. The unlock cannot
+  revise the prepared plan. At the next Prepare, Sailing permits five water
+  steps with `0.90^(distance-1)` effort retention and at most one terminal Ocean
+  destination reached from Shallows, within three total grounds. Ocean is never
+  enqueued as a transit tile, managed, capitalized or credited toward a village.
+  Its catch uses the same natural finite tile ledger. See
+  [NeolithicFishingUnityCompletion.md](NeolithicFishingUnityCompletion.md).
 - Land biomass `B`, human-gatherable food `G`, and freshwater are finite stocks.
   Realized harvest and drinking debit them; bounded recovery over elapsed `dt`
   prepares future stock and never revises current receipts. Every committed

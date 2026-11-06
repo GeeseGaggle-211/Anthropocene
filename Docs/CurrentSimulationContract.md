@@ -10,6 +10,20 @@ Implementation evidence is not itself a new design approval. The index is a navi
 and conflict-resolution aid. The linked normative documents and accepted issue
 contracts remain the rule sources.
 
+## Fishing Unity and opt-in Sailing (6 November 2026)
+
+[NeolithicFishingUnityCompletion.md](NeolithicFishingUnityCompletion.md) records
+shared human/AI economy control, the owner-only fishing inspector, the named
+validation profile, a reproduced incumbent-selection correctness defect and
+current regression evidence. General resident Fishing remains off. The profile
+also enables `NeolithicSailingEnabled` (absent saves: false): useful Weaver work
+with actual watercraft activity advances the shared craft mastery track at
+Close. Sailing extends the water graph to five steps at 0.90 retention, with at
+most one terminal Ocean ground and no offshore capital or village credit.
+These explicit user-requested effects supersede earlier Sailing deferral prose;
+Kiln, Plough and Irrigation effects remain deferred. Issue #41 and native Unity
+verification remain independent release gates.
+
 ## Physical altitude for new worlds (6 November 2026)
 
 The subsequent user-authorized generation-16 change makes boundary rivers carve

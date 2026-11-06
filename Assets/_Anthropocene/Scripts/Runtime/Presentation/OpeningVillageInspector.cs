@@ -37,6 +37,7 @@ namespace Anthropocene.Presentation
             float livestockRows = husbandry ? ownedLivestock.Length * 54 : 0;
             float fishingRows = fishing ? observation.FishingGrounds.Count(g => world.Map.Distance(camp.Tile, g.Tile) <= FishingEconomy.GroundRange + 1) * 24 : 0;
             float contentHeight = Mathf.Max(1370 + livestockRows + fishingRows, 940 + livestockRows + pastoralDescriptionHeight + fishingRows) + (fishing ? 1000 : 0);
+            if (fishing) contentHeight = Mathf.Max(contentHeight, fishingInspectorBottom);
             villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, scrollContentWidth, contentHeight));
             float y = 4;
             var inventory = camp.Inventory;

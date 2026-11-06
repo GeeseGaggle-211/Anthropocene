@@ -83,7 +83,7 @@ namespace Anthropocene.Simulation
             AnimalTextileNeedFirst = false; HerdCullLimitPerTurn = 1;
             // Resident Fishing and the aquatic-pressure correction are separate opt-in
             // compatibility gates. Saves that predate either feature stay feature-off.
-            NeolithicFishingEnabled = false; CorrectedAquaticSeasonalPressureEnabled = false;
+            NeolithicFishingEnabled = false; CorrectedAquaticSeasonalPressureEnabled = false; NeolithicSailingEnabled = false;
             LandBiomassMultiplier = 1;
             LandSafeUseRatio = 1;
             LandFoodRegenerationInitialized = false;
@@ -221,6 +221,7 @@ namespace Anthropocene.Simulation
         // several turns instead of slaughtering it at once. Absent in older saves: 1 (no limit).
         [System.Runtime.Serialization.OptionalField] public double HerdCullLimitPerTurn = .5;
         [System.Runtime.Serialization.OptionalField] public bool NeolithicFishingEnabled;
+        [System.Runtime.Serialization.OptionalField] public bool NeolithicSailingEnabled;
         [System.Runtime.Serialization.OptionalField] public bool CorrectedAquaticSeasonalPressureEnabled;
         public int StartSeparation = 12, StarvationGraceTurns = 2;
         public double StartingFood = 48, StartingReserveGenerations = 1, Consumption = 1, Mortality = .18;
@@ -334,6 +335,8 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Invalid physical demographic calibration or numerical controls.");
             if (MinimumHerdHerders < 0 || MinimumHerdHerders > 1000)
                 throw new ArgumentException("Invalid herd-labour configuration: MinimumHerdHerders must be between 0 and 1000.");
+            if (NeolithicSailingEnabled && !NeolithicFishingEnabled)
+                throw new ArgumentException("Sailing requires resident Fishing.");
             if (NeolithicFishingEnabled && !CorrectedAquaticSeasonalPressureEnabled)
                 throw new ArgumentException("Neolithic Fishing requires corrected aquatic seasonal pressure.");
             if (NeolithicFishingEnabled && EconomicAllocation != EconomicAllocationStrategy.DemandControl)
@@ -761,8 +764,10 @@ namespace Anthropocene.Simulation
             {
                 camp.LastSelectedFishingGrounds ??= new List<int>();
                 if (camp.LastSelectedFishingGrounds.Count > 3 || camp.LastSelectedFishingGrounds.Any(t => t < 0 || world.Tiles == null || t >= world.Tiles.Length ||
-                    !(world.Tiles[t].Environment == EnvironmentKind.Shallows || world.Tiles[t].Environment == EnvironmentKind.Lake)) ||
-                    camp.LastSelectedFishingGrounds.Distinct().Count() != camp.LastSelectedFishingGrounds.Count)
+                    !(world.Tiles[t].Environment == EnvironmentKind.Shallows || world.Tiles[t].Environment == EnvironmentKind.Lake ||
+                        world.Config.NeolithicSailingEnabled && world.Tiles[t].Environment == EnvironmentKind.Ocean)) ||
+                    camp.LastSelectedFishingGrounds.Distinct().Count() != camp.LastSelectedFishingGrounds.Count ||
+                    camp.LastSelectedFishingGrounds.Count(t => world.Tiles[t].Environment == EnvironmentKind.Ocean) > 1)
                     throw new InvalidOperationException("Invalid last-selected Fishing grounds.");
                 camp.LastSelectedFishingGrounds.Sort();
             }
@@ -770,7 +775,9 @@ namespace Anthropocene.Simulation
             {
                 society.FishingGroundKnowledge ??= new List<FishingGroundSnapshot>();
                 if (society.FishingGroundKnowledge.Any(s => s == null || s.TileId < 0 || world.Tiles == null || s.TileId >= world.Tiles.Length ||
-                    !(world.Tiles[s.TileId].Environment == EnvironmentKind.Shallows || world.Tiles[s.TileId].Environment == EnvironmentKind.Lake) ||
+                    !(world.Tiles[s.TileId].Environment == EnvironmentKind.Shallows || world.Tiles[s.TileId].Environment == EnvironmentKind.Lake ||
+                        world.Config.NeolithicSailingEnabled && world.Tiles[s.TileId].Environment == EnvironmentKind.Ocean &&
+                        s.Capital == 0 && s.OperationFraction == 0 && s.OperatorCampId == -1) ||
                     s.OperatorCampId < -1 || s.OperatorCampId >= 0 && !campIds.Contains(s.OperatorCampId) ||
                     !Finite(s.AccessibleFood) || s.AccessibleFood < 0 || !Finite(s.Biomass) || s.Biomass < 0 ||
                     !Finite(s.Condition) || s.Condition < 0 || s.Condition > 1 || !Finite(s.Capital) || s.Capital < 0 ||
