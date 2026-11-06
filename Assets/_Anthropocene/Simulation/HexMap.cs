@@ -11,9 +11,10 @@ namespace Anthropocene.Simulation
         private static readonly int[] Dr = { 0, -1, -1, 0, 1, 1 };
         public HexMap(int width, int height) { Width = width; Height = height; }
         public int At(int q, int r) => r < 0 || r >= Height ? -1 : r * Width + ((q % Width) + Width) % Width;
+        internal int Neighbor(int tile, int direction) => At(tile % Width + Dq[direction], tile / Width + Dr[direction]);
         public IEnumerable<int> Neighbors(int tile)
         {
-            for (int i = 0; i < 6; i++) { int n = At(tile % Width + Dq[i], tile / Width + Dr[i]); if (n >= 0) yield return n; }
+            for (int i = 0; i < 6; i++) { int n = Neighbor(tile, i); if (n >= 0) yield return n; }
         }
         public int Distance(int a, int b)
         {

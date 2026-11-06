@@ -386,6 +386,8 @@ internal static class Program
         if (args.Contains("--neolithic-only")) { NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); FarmPlannerChecks.Run(); FarmFoodPhaseChecks.Run(); CultivationCacheChecks.Run(); HorizonCultivationChecks.Run(); HorizonEcologyChecks.Run(); HorizonExecutionChecks.Run(); HusbandryChecks.Run(); PastoralCraftChecks.Run(); Issue25EcologyChecks.Run(args); Issue27EcologyChecks.Run(); Issue26ForecastChecks.Run(); Issue28FoodTimebaseChecks.Run(); Issue32CapabilityChecks.Run(); return 0; }
         if (args.Contains("--economy-only")) { Milestone2Checks.Run(); Milestone3Checks.Run(); EcologyChecks.Run(); AgentContractChecks.Run(); ExecutionChecks.Run(); NeolithicChecks.Run(); ToolConsumptionChecks.Run(); FarmToolChecks.Run(); FarmPlannerChecks.Run(); FarmFoodPhaseChecks.Run(); CultivationCacheChecks.Run(); HorizonCultivationChecks.Run(); HorizonEcologyChecks.Run(); HorizonExecutionChecks.Run(); HusbandryChecks.Run(); PastoralCraftChecks.Run(); Issue25EcologyChecks.Run(args); Issue27EcologyChecks.Run(); Issue26ForecastChecks.Run(); Issue28FoodTimebaseChecks.Run(); Issue32CapabilityChecks.Run(); EconomicSettlementChecks.Run(); return 0; }
         if (args.Contains("--pastoral-craft-only")) { PastoralCraftChecks.Run(); return 0; }
+        if (args.Contains("--issue12-sweep")) { FieldDomesticationSweep.Run(args); return 0; }
+        if (args.Contains("--issue12-only")) { FieldDomesticationChecks.Run(); return 0; }
         if (args.Contains("--husbandry-only")) { HusbandryChecks.Run(); return 0; }
         if (args.Contains("--farm-food-phase")) { FarmFoodPhaseChecks.Run(); return 0; }
         try
@@ -445,6 +447,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "HorizonCultivationChecks", Run = () => HorizonCultivationChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonEcologyChecks", Run = () => HorizonEcologyChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonExecutionChecks", Run = () => HorizonExecutionChecks.Run() },
+                new ParallelChecks.Entry { Name = "FieldDomesticationChecks", Run = () => FieldDomesticationChecks.Run() },
                 new ParallelChecks.Entry { Name = "HusbandryChecks", Run = () => HusbandryChecks.Run() },
                 new ParallelChecks.Entry { Name = "PastoralCraftChecks", Run = () => PastoralCraftChecks.Run() },
                 new ParallelChecks.Entry { Name = "HousingMaterialRecipeChecks", Run = () => HousingMaterialRecipeChecks.Run() },

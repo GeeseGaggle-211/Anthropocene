@@ -214,6 +214,10 @@
   "SustainableHerdGrowthRetention": 0.25,
   "FishPerPerson": 2.6,
   "WanderChance": 0.05,
+  "FieldDomesticationEnabled": true,
+  "FieldDetectionRadius": 12,
+  "FieldContactRadius": 6,
+  "FieldContactTurns": 6,
   "ExperienceThreshold": 225,
   "UnproductivePracticeFraction": 0.1,
   "CarryoverMultiplier": 1.25,
@@ -337,6 +341,7 @@
     },
     {
       "Id": "goat",
+      "CultivationAffinity": true,
       "Name": "Wild goats",
       "FoodConsumption": 0.25,
       "FreshwaterConsumption": 0.3,
@@ -400,7 +405,39 @@
       ]
     },
     {
+      "Id": "cattle",
+      "Name": "Wild cattle (aurochs)",
+      "FoodConsumption": 0.65,
+      "FreshwaterConsumption": 0.7,
+      "GrowthRate": 0.0201,
+      "FoodYield": 150,
+      "MinimumAnimals": 3,
+      "MaximumAnimals": 7,
+      "MaximumHerdSize": 150,
+      "Domesticable": true,
+      "DefaultHabitatWeight": 0.05,
+      "ReliefAffinity": 0,
+      "OasisAffinity": 0,
+      "MovementHabitatWeight": 0.3,
+      "Biomes": [
+        {
+          "Biome": 3,
+          "Weight": 1.2
+        },
+        {
+          "Biome": 4,
+          "Weight": 1.0
+        },
+        {
+          "Biome": 7,
+          "Weight": 0.1
+        }
+      ],
+      "CultivationAffinity": true
+    },
+    {
       "Id": "camel",
+      "CultivationAffinity": true,
       "Name": "Wild camels",
       "FoodConsumption": 0.22,
       "FreshwaterConsumption": 0.12,
@@ -427,6 +464,7 @@
     },
     {
       "Id": "horse",
+      "CultivationAffinity": true,
       "Name": "Wild horses",
       "FoodConsumption": 0.42,
       "FreshwaterConsumption": 0.4,
