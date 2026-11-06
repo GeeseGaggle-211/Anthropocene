@@ -300,6 +300,18 @@ namespace Anthropocene.Simulation
         private static bool Known(int tile, HashSet<int> visible, ExploredTiles remembered)
             => visible.Contains(tile) || remembered != null && remembered.Contains(tile);
 
+        internal int[] Path(Camp camp, int origin, FishingGroundPlan ground)
+        {
+            var distances = Distances(camp, origin, ground.Route, Visible(camp.Player), Remembered(camp.People));
+            if (!distances.TryGetValue(ground.TileId, out int distance)) return Array.Empty<int>();
+            var path = new int[distance + 1];
+            path[0] = origin; path[distance] = ground.TileId;
+            for (int step = distance - 1; step > 0; step--)
+                path[step] = world.Map.Neighbors(path[step + 1]).Where(id => distances.TryGetValue(id, out int d) && d == step)
+                    .OrderBy(id => id).First();
+            return path;
+        }
+
         private static bool IsRouteTile(Tile tile, FishingRoute route)
             => tile != null && (route == FishingRoute.Shallows
                 ? tile.Environment == EnvironmentKind.Shallows : tile.Environment == EnvironmentKind.Lake);

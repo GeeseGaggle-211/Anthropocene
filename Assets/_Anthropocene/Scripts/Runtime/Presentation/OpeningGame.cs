@@ -114,6 +114,12 @@ namespace Anthropocene.Presentation
                 JsonUtility.FromJsonOverwrite(tuning.text, config);
                 config.MigrateMissingPhysicalFoodHorizons();
             }
+            if (fishingValidation || Array.IndexOf(System.Environment.GetCommandLineArgs(), "--anthropocene-fishing-validation") >= 0)
+            {
+                var profile = Resources.Load<TextAsset>("FishingValidationConfig");
+                if (profile == null) { status = "Fishing validation profile is missing."; return; }
+                JsonUtility.FromJsonOverwrite(profile.text, config);
+            }
             var resourceOptions = new ResourceGenerationOptions();
             try
             {

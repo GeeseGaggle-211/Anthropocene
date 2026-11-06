@@ -422,6 +422,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "GeologyGenerationChecks", Cost = 7, Run = () => GeologyGenerationChecks.Run() },
                 new ParallelChecks.Entry { Name = "AquaticChecks", Run = () => AquaticChecks.Run() },
                 new ParallelChecks.Entry { Name = "AquaticSeasonalPressureChecks", Run = () => AquaticSeasonalPressureChecks.Run() },
+                new ParallelChecks.Entry { Name = "FishingInspectionChecks", Run = () => FishingInspectionChecks.Run() },
                 new ParallelChecks.Entry { Name = "FishingObservationChecks", Run = () => FishingObservationChecks.Run() },
                 new ParallelChecks.Entry { Name = "FishingEconomyChecks", Run = () => FishingEconomyChecks.Run() },
                 new ParallelChecks.Entry { Name = "FishingResourceChecks", Run = () => FishingResourceChecks.Run() },

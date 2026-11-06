@@ -1,0 +1,5 @@
+{
+  "NeolithicFishingEnabled": true,
+  "CorrectedAquaticSeasonalPressureEnabled": true,
+  "EconomicAllocation": "DemandControl"
+}

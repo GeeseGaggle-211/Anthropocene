@@ -48,6 +48,7 @@
     <Compile Include="AquaticChecks.cs" />
     <Compile Include="AquaticSeasonalPressureChecks.cs" />
     <Compile Include="FishingObservationChecks.cs" />
+    <Compile Include="FishingInspectionChecks.cs" />
     <Compile Include="FishingEconomyChecks.cs" />
     <Compile Include="FishingResourceChecks.cs" />
     <Compile Include="FishingStateChecks.cs" />
