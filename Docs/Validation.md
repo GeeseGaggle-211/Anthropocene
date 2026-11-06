@@ -709,3 +709,11 @@ Standard seed 11 retained 80/80 viable camps (minimum 107.4%); 2048×1024 retain
 scale, with an 8 MiB temporary height snapshot. New climate changes biomes,
 resources and start distributions; [Playtesting.md](Playtesting.md) has the
 remeasured presets. Evidence lives in ignored `TestResults/PR45Altitude/`.
+
+The fourteen-frame 1920×1080 atlas route passed at source revision `28e221b`:
+world, rolling region, rough coast, smooth uplands, river region, highest peak,
+annual temperature and annual snowfall. World fingerprint and player-visible
+tile IDs stayed unchanged. The peak inspector shows 5,647 m, -26.0 to -17.3 C,
+Ice biome and snow in all four profiles. Full-world contour/river raster builds
+took 636–659 ms; regional builds took 28–376 ms depending on contour density.
+These are cache reconstruction costs, not steady-state frame measurements.
