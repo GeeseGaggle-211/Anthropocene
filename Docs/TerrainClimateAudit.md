@@ -122,3 +122,17 @@ in explicit units. Rejected shortcuts are colour-only mountains, globally
 inflated ruggedness scores, snow solely by elevation percentile, or a dense
 geological-time erosion simulation. Numerical coefficients and any persistent
 snow model remain design decisions; this document does not silently ship them.
+
+## Validation of the display correction
+
+Unity 6000.5.10f1 built code revision `7d6c9ac` successfully; all 31 EditMode tests
+passed. The twelve-frame 1920 x 1080 capture route passed with unchanged world
+fingerprint and player-visible tile IDs. The focused headless suite passed 984
+assertions. The standalone audit reproduced the numbers above, and the current
+contract document check passed. Ignored local evidence is in
+`TestResults/PR45TerrainAudit/` (baseline.txt, reproduce.txt, topography-checks.txt,
+Build.log, EditMode.xml, Player.log, Captures). The capture manifest records the
+exact code revision. Finer full-world contour/river raster builds measured
+677–713 ms; the representative rolling close-up measured 116–120 ms. These are
+cache reconstruction costs, not steady-state frame times. Full frame profiling
+and generator/altitude corrections remain outstanding.
