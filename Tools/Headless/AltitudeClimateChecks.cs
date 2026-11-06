@@ -82,12 +82,19 @@ internal static class AltitudeClimateChecks
         config = SimulationConfig.Small(2); config.ElevationMetersPerUnit = 10000; config.LapseRateCPerKm = 6;
         var current = new WorldGenerator().Generate(92, config);
         var bytes = SaveCodec.Save(current); var copy = SaveCodec.Load(bytes);
-        Check(copy.Generation.GeneratorVersion == 15 && copy.Config.ElevationMetersPerUnit == 10000 && copy.Config.LapseRateCPerKm == 6, "custom physical calibration round-trips with generation revision");
+        Check(copy.Generation.GeneratorVersion == WorldState.GeneratorVersion && copy.Config.ElevationMetersPerUnit == 10000 && copy.Config.LapseRateCPerKm == 6, "custom physical calibration round-trips with generation revision");
         Check(bytes.SequenceEqual(SaveCodec.Save(copy)), "physical world's repeated save is byte-identical");
         Check(current.Tiles.SelectMany(t => t.Seasons).SequenceEqual(copy.Tiles.SelectMany(t => t.Seasons)), "physical profiles do not regenerate on load");
+        current.Generation.GeneratorVersion = 15;
+        var beforeTerrain = SaveCodec.Load(WithoutAltitudeFields(current, terrainOnly: true));
+        Check(!beforeTerrain.Config.DrainageTerrainEnabled && beforeTerrain.Generation.GeneratorVersion == 15,
+            "saves predating erosion keep the legacy terrain selector and provenance");
+        Check(current.Tiles.Select(t => t.Elevation).SequenceEqual(beforeTerrain.Tiles.Select(t => t.Elevation))
+            && current.Tiles.SelectMany(t => t.Seasons).SequenceEqual(beforeTerrain.Tiles.SelectMany(t => t.Seasons)),
+            "missing erosion option never regenerates stored terrain or climate");
     }
 
-    private static byte[] WithoutAltitudeFields(WorldState world)
+    private static byte[] WithoutAltitudeFields(WorldState world, bool terrainOnly = false)
     {
         using var raw = new MemoryStream();
         using (var input = new MemoryStream(SaveCodec.Save(world)))
@@ -98,7 +105,8 @@ internal static class AltitudeClimateChecks
         byte[] header = reader.ReadBytes(length), body = reader.ReadBytes((int)(raw.Length - raw.Position));
         XDocument document;
         using (var xml = XmlDictionaryReader.CreateBinaryReader(header, XmlDictionaryReaderQuotas.Max)) document = XDocument.Load(xml);
-        foreach (var field in document.Descendants().Where(e => e.Name.LocalName == "ElevationMetersPerUnit" || e.Name.LocalName == "LapseRateCPerKm").ToArray()) field.Remove();
+        foreach (var field in document.Descendants().Where(e => terrainOnly ? e.Name.LocalName == "DrainageTerrainEnabled"
+            : e.Name.LocalName == "ElevationMetersPerUnit" || e.Name.LocalName == "LapseRateCPerKm").ToArray()) field.Remove();
         using var binary = new MemoryStream();
         using (var xml = XmlDictionaryWriter.CreateBinaryWriter(binary, null, null, false)) { document.WriteTo(xml); xml.Flush(); }
         using var output = new MemoryStream();

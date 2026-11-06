@@ -277,7 +277,9 @@ namespace Anthropocene.Presentation
                 : previewLayer == 7 ? "Radius-four ruggedness (61 cells in the interior)\n0 teal: smooth plane · 50 gold: broken ground · 100 plum: strongest local irregularity\nResidual RMS is mapped by 100 R / (R + 0.005). Height and uniform slope are fitted out."
                 : previewLayer == 8 ? "Biome colours with continuous elevation contours and hillshade.\n" + (AltitudeClimate.Physical(world.Config)
                     ? "Bold: every " + (.1 * world.Config.ElevationMetersPerUnit).ToString("0") + " m. Fine reaches " + (.0025 * world.Config.ElevationMetersPerUnit).ToString("0") + " m when zoomed in."
-                    : "Bold: every 0.100 height. Fine reaches 0.0025 when zoomed in.") + "\nBlue: actual boundary river network. Routing can use a filled surface; channels are not all carved into terrain."
+                    : "Bold: every 0.100 height. Fine reaches 0.0025 when zoomed in.") + (world.Config.DrainageTerrainEnabled
+                    ? "\nBlue: rivers follow carved valleys. Their terrain corners descend downstream; flat reaches can occur."
+                    : "\nBlue: actual boundary river network. Legacy routing can use a filled surface above terrain.")
                 : previewLayer == 9 ? "Temperature in degrees Celsius.\nBlue: -30 C · white: 0 C · red: +30 C\nChoose annual mean or a seasonal profile.\n" + (AltitudeClimate.Physical(world.Config)
                     ? "Altitude cooling: " + world.Config.LapseRateCPerKm.ToString("0.#") + " C/km above sea level. Gameplay levels remain percentile bands."
                     : "Legacy abstract altitude calibration. Gameplay levels are percentile bands, not metres.")

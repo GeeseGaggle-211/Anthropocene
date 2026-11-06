@@ -249,6 +249,7 @@
   "LapseRate": 28,
   "ElevationMetersPerUnit": 12000,
   "LapseRateCPerKm": 6.5,
+  "DrainageTerrainEnabled": true,
   "OceanModeration": 0.45,
   "Evaporation": 0.2,
   "MoistureDecay": 0.97,

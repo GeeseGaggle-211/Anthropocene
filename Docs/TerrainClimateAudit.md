@@ -1,8 +1,9 @@
 # Terrain, river and altitude-climate audit — 6 November 2026
 
 Status: display corrections and the user-authorized physical altitude climate
-are implemented on PR 45. River incision and ancient-range dissection remain
-open. Sections 1–3 below record the **pre-altitude baseline**: one generated
+are implemented on PR 45. The subsequent river incision and ancient-margin
+erosion work is recorded in [DrainageTerrain.md](DrainageTerrain.md); it supersedes
+the open generation items in this historical audit. Sections 1–3 record the **pre-altitude baseline**: one generated
 Standard / Continents / seed 11 / 80-tribe world with the former climate calibration.
 This is a deterministic geography diagnostic, not a training experiment.
 

@@ -31,8 +31,12 @@ namespace Anthropocene.Presentation
             metadata.AppendLine("sourceSha=" + sourceSha + " seed=11 shape=Continents size=1024x512 players=80");
             metadata.AppendLine("generator=" + world.Generation.GeneratorVersion + " metresPerHeightUnit=" + world.Config.ElevationMetersPerUnit + " lapseCPerKm=" + world.Config.LapseRateCPerKm);
             int peak = world.Tiles.Where(t => t.Land).OrderByDescending(t => t.Elevation).First().Id;
-            int[] sites = { -1, 396446, 382626, 176362, world.Camps.First(c => c.Player == 0).Tile, peak };
-            string[] names = { "world", "rolling-region", "rough-coast-region", "smooth-uplands-region", "river-region", "highest-peak" };
+            int flank = world.Tiles.Where(t => t.Land && world.Generation.AncientOrogenStrength[t.Id] > .1f
+                && world.Generation.AncientOrogenStrength[t.Id] < .5f && world.Generation.AncientOrogenUplift[t.Id] > .01f)
+                .OrderByDescending(t => world.Generation.RiverTerrainErosion?[t.Id] ?? 0).ThenBy(t => t.Id).First().Id;
+            metadata.AppendLine("drainageTerrain=" + world.Config.DrainageTerrainEnabled + " ancientFlankSelection=maxRiverCutWithinStrength0.1to0.5");
+            int[] sites = { -1, 396446, 382626, 176362, world.Camps.First(c => c.Player == 0).Tile, peak, flank };
+            string[] names = { "world", "rolling-region", "rough-coast-region", "smooth-uplands-region", "river-region", "highest-peak", "ancient-flank" };
             for (int site = 0; site < sites.Length; site++)
             {
                 previewZoom = site == 0 ? 1 : 32; previewPan = Vector2.zero;
@@ -82,10 +86,10 @@ namespace Anthropocene.Presentation
             if (fingerprint != SaveCodec.Fingerprint(world) || visible != string.Join(",", observation.Tiles.Keys.OrderBy(id => id)))
                 throw new InvalidOperationException("Developer atlas changed authoritative state or player visibility.");
             File.WriteAllText(Path.Combine(output, "captures.txt"), metadata.ToString());
-            if (Directory.GetFiles(output, "*.png").Length != 14) throw new InvalidOperationException("Missing atlas captures.");
+            if (Directory.GetFiles(output, "*.png").Length != sites.Length * 2 + 2) throw new InvalidOperationException("Missing atlas captures.");
             previewLayer = 8; previewZoom = 1; previewPan = Vector2.zero;
             if (previewTexture != null) Destroy(previewTexture); previewTexture = null;
-            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: fourteen atlas captures including rivers, physical altitude, highest peak, temperature and snowfall; authoritative state and player visibility unchanged. Atlas left open for inspection.\n");
+            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: sixteen atlas captures including carved rivers, ancient flanks, physical altitude, highest peak, temperature and snowfall; authoritative state and player visibility unchanged. Atlas left open for inspection.\n");
         }
 
         private sealed class TopographyCaptureSite

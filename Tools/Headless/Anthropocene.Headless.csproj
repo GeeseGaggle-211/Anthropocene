@@ -57,6 +57,7 @@
     <Compile Include="ScenarioChecks.cs" />
     <Compile Include="ClimateGenerationChecks.cs" />
     <Compile Include="AltitudeClimateChecks.cs" />
+    <Compile Include="RiverTerrainChecks.cs" />
     <Compile Include="DrainageGenerationChecks.cs" />
     <Compile Include="WorldMorphologyChecks.cs" />
     <Compile Include="TopographyChecks.cs" />

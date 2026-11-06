@@ -37,6 +37,7 @@ namespace Anthropocene.Simulation
             var defaults = new SimulationConfig(); Neolithic = defaults.Neolithic;
             // Older saves retain abstract altitude calibration and their stored climate.
             ElevationMetersPerUnit = 0; LapseRateCPerKm = defaults.LapseRateCPerKm;
+            DrainageTerrainEnabled = false;
             // Preserve established tuning defaults when reading older saves that
             // predate these legacy food-horizon fields. Explicit serialized zero
             // values still overwrite these defaults during deserialization.
@@ -246,6 +247,7 @@ namespace Anthropocene.Simulation
         public double SeasonalAmplitude = 13, LatitudeGradient = 48, LapseRate = 28, OceanModeration = .45;
         // New-world physical height calibration. Zero keeps the legacy LapseRate path.
         [System.Runtime.Serialization.OptionalField] public double ElevationMetersPerUnit = 12000, LapseRateCPerKm = 6.5;
+        [System.Runtime.Serialization.OptionalField] public bool DrainageTerrainEnabled = true;
         public double Evaporation = .2, MoistureDecay = .97, OrographicRain = 2.5, Monsoon = .12;
         public double RiverThreshold = 28, WaterRecovery = .35, FoodRegeneration = .4;
         // Older saves have neither field. Their stored seasonal rates remain
@@ -777,7 +779,7 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldState
     {
-        public const int GeneratorVersion = 15;
+        public const int GeneratorVersion = 16;
         public int Version = 7, Seed, Turn = 1, NextId = 1;
         // Live player-slot count (WP10a): fission creates AI slots mid-game. 0 means not recorded (older saves and hand-built worlds);
         // LivePlayers then falls back to Config.Players and the highest camp player.

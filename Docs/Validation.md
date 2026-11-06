@@ -717,3 +717,18 @@ tile IDs stayed unchanged. The peak inspector shows 5,647 m, -26.0 to -17.3 C,
 Ice biome and snow in all four profiles. Full-world contour/river raster builds
 took 636–659 ms; regional builds took 28–376 ms depending on contour density.
 These are cache reconstruction costs, not steady-state frame measurements.
+
+### PR 45 drainage-shaped terrain (6 November 2026)
+
+Generator 16 implements the requested river incision and preferential ancient
+uplift margin erosion. [DrainageTerrain.md](DrainageTerrain.md) records the
+mechanism, scaling, bank grading, compatibility and matched seed-11 measures.
+The complete fixed suite, three-seed opening validation and 36 compact geography
+cases pass. New focused coverage has 34 river/margin assertions, and altitude
+compatibility coverage now has 30 assertions. Both drainage graphs descend the
+same final terrain; stored river endpoint surfaces equal raw corner means.
+Standard seed 11 has zero uphill river edges and 80/80 viable starts; the
+2048×1024 probe has 160/160 viable starts. Terrain, climate, biome/resource
+generation and start placement change for new worlds; saved worlds do not rerun
+generation. This is deterministic validation, not training-readiness evidence.
+Ignored evidence: `TestResults/PR45Erosion/`.

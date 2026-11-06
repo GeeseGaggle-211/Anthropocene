@@ -169,3 +169,14 @@ ruggedness locations (including the highest peak), then world Temperature and
 Snowfall. It records the source revision and physical calibration in its
 manifest, checks unchanged world/fog state and leaves full-world Topography
 open. This supersedes the earlier eight/twelve-frame route descriptions above.
+
+## Drainage-shaped terrain follow-up (generator 16)
+
+New worlds now erode ancient uplift more strongly towards its outer footprint
+and carve valleys along the boundary rivers. Final river surfaces equal raw
+terrain-corner means, with both boundary and tile drainage non-uphill. The
+metric and palette remain unchanged. See [DrainageTerrain.md](DrainageTerrain.md)
+for the authority, fixed-water treatment, old-save compatibility and validation.
+The capture route now writes sixteen frames, adding Topography/Ruggedness of an
+ancient flank. Its manifest discloses the selection: greatest river incision
+among ancient-footprint tiles with strength 0.1–0.5 and uplift above 0.01.

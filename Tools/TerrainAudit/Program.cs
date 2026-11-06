@@ -8,12 +8,16 @@ class Audit {
 static double P(IEnumerable<double> vals,double p) {var v=vals.OrderBy(x=>x).ToArray(); return v.Length==0?0:v[(int)((v.Length-1)*p)];}
 static void Main(string[] args) {
 var cfg=JsonSerializer.Deserialize<SimulationConfig>(File.ReadAllText("Assets/_Anthropocene/Resources/OpeningConfig.json"),new JsonSerializerOptions{IncludeFields=true});PlaytestScenarios.Configure(cfg);
-if(args.Contains("--legacy")) cfg.ElevationMetersPerUnit=0;
+if(args.Contains("--legacy")) { cfg.ElevationMetersPerUnit=0; cfg.DrainageTerrainEnabled=false; }
+if(args.Contains("--no-erosion")) cfg.DrainageTerrainEnabled=false;
 if(args.Contains("--large")) { cfg.Width=2048; cfg.Height=1024; cfg.Players=160; cfg.BenchmarkScale=true; }
 var timer=System.Diagnostics.Stopwatch.StartNew();
 var w=new WorldGenerator().Generate(11,cfg); var metrics=w.TerrainMetrics;var land=w.Tiles.Where(t=>t.Land).ToArray();
 Console.WriteLine($"Seed11 {cfg.Width}x{cfg.Height} metresPerUnit={cfg.ElevationMetersPerUnit} lapseCPerKm={cfg.LapseRateCPerKm} legacyLapse={cfg.LapseRate} sea={cfg.SeaLevel} land={land.Length} generationSeconds={timer.Elapsed.TotalSeconds:F3} camps={w.Camps.Count} minViability={w.Camps.Min(c=>PlaytestScenarios.Viability(w,c.Tile)):F1}");
 for(int stage=0;stage<w.Generation.Stages.Count;stage++) if(w.Generation.Stages[stage].Contains("temperature")) Console.WriteLine($"ClimateHeightCorrectionMs={w.Generation.Milliseconds[stage]:F3} transientHeightBytes={4L*w.Tiles.Length}");
+for(int stage=0;stage<w.Generation.Stages.Count;stage++) if(w.Generation.Stages[stage].Contains("erosion")||w.Generation.Stages[stage].Contains("incision")) Console.WriteLine($"{w.Generation.Stages[stage]} ms={w.Generation.Milliseconds[stage]:F3}");
+Console.WriteLine($"BankGrade tiles={w.Generation.RiverBankGradeTiles} max={w.Generation.RiverBankGradeMaximum:F7}");
+if(w.Generation.RiverTerrainErosion!=null) Console.WriteLine($"RiverIncision tiles={w.Generation.RiverTerrainErosion.Count(x=>x>0)} mean={w.Generation.RiverTerrainErosion.Where(x=>x>0).DefaultIfEmpty().Average():F5} max={w.Generation.RiverTerrainErosion.Max():F5}");
 if(args.Contains("--large")) { Console.WriteLine($"LargeWorld managedBytes={GC.GetTotalMemory(false)} maxAltitudeMetres={AltitudeClimate.Meters(cfg,land.Max(t=>t.Elevation)):F0} meanTemperature={land.Average(t=>t.Seasons.Average(s=>s.Temperature)):F2}"); return; }
 for(int scenario=1;scenario<=3;scenario++) foreach(var camp in w.Camps.Where(c=>PlaytestScenarios.MatchesHabitat(w,scenario,c.Tile)).OrderBy(c=>w.Map.Distance(c.Tile,PlaytestScenarios.Tile(scenario))).Take(3))
  Console.WriteLine($"Preset{scenario} candidate={camp.Tile} temp={w.Tiles[camp.Tile].Seasons.Average(s=>s.Temperature):F2} viability={PlaytestScenarios.Viability(w,camp.Tile):F1}");

@@ -58,6 +58,7 @@ internal static class GeologyGenerationChecks
             // Keep its exact reference under legacy altitude; validate the new-world
             // resource accounting, repeatability and saves below on physical climate.
             var legacyClimate = SimulationConfig.Small(4); legacyClimate.Shape = shape; legacyClimate.ElevationMetersPerUnit = 0;
+            legacyClimate.DrainageTerrainEnabled = false;
             Check(OriginalCorePayloadHash(generator.Generate(42, legacyClimate).Resources) == originalResourceFingerprints[shape],
                 shape + " original resource generation payload under legacy altitude");
             Check(SaveCodec.LegacyFingerprint(before) == SaveCodec.LegacyFingerprint(world), shape + " preserves all legacy state and IDs");

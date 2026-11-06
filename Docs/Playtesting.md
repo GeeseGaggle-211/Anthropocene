@@ -2,12 +2,12 @@
 
 The opening menu offers three environmental presets alongside Custom world. Each uses Standard / Continents / seed **11** / **80 tribes** and normal tuning. They select an existing generated camp as the human tribe by exchanging player labels; geography, society policies, IDs, spacing, food, reserves and wild herds are unchanged. No technology is granted. Historical names are environmental analogues, not reconstructed civilizations.
 
-These sites were rechecked among naturally generated camps under generator 15's physical altitude climate and the land harvest-before-recovery profile. The warm river site moved from 225046 to 223410 because the former site cooled below the preset's temperature criterion. The steppe and Temperate coastal sites remain. Legacy-altitude worlds retain the old river marker and preset. Seed 11 supplies all three openings without changing landscape, stocks, herds or camp placement to fit the presets.
+These sites were rechecked among naturally generated camps under generator 16's physical altitude climate, drainage-shaped terrain and the land harvest-before-recovery profile. Generator 15 moved the warm river site from 225046 to 223410 because the former site cooled below the preset's temperature criterion; generator 16 retains all three sites. Legacy-altitude worlds retain the old river marker and preset. Seed 11 supplies all three openings without changing landscape, stocks, herds or camp placement to fit the presets.
 
 | Preset | Camp tile | Local setting | Land food | Aquatic food | Start viability |
 | --- | ---: | --- | ---: | ---: | ---: |
 | Desert river valley | 223410 | Desert river tiles | 610.51 | 0 | 180.00% |
-| Steppe hunters | 413877 | Open grassland, freshwater nearby, reachable horse or bison | 64.96 | 0 | 145.80% |
+| Steppe hunters | 413877 | Open grassland, freshwater nearby, reachable horse or bison | 86.02 | 0 | 180.00% |
 | Coastal fishers | 117495 | Temperate shore, three adjacent Shallows, land freshwater | 40.51 | 112.98 | 180.00% |
 
 Food columns are **annual-mean renewal potential per 91.25-day base season**, summed within radius 1. They are neither current stocks nor realized harvests. Start viability now credits conservatively repeatable **opening land stock** after a depleted tile recovers through the preceding turn, plus aquatic renewal, under one shared labor ceiling. It does not simply divide the food columns by current demand. Depletion, competing animals, workforce choices, freshwater and reserves also matter. The 180% ceiling is the starting gathering labor ceiling, not a promise of population growth. All three meet the normal 85% viability threshold.
@@ -16,8 +16,8 @@ The four stored seasonal profiles show the local variation behind those annual m
 
 | Preset / food source | Season 1 | Season 2 | Season 3 | Season 4 | Minimum local freshwater capacity across seasons |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Desert river / land | 610.75 | 610.01 | 610.43 | 610.87 | 514.30 |
-| Steppe / land | 55.20 | 143.43 | 54.89 | 6.32 | 227.53 |
+| Desert river / land | 610.74 | 610.00 | 610.42 | 610.86 | 514.30 |
+| Steppe / land | 76.29 | 177.26 | 75.94 | 14.58 | 226.40 |
 | Temperate shore / land | 37.73 | 24.27 | 41.61 | 58.41 | 67.89 |
 | Temperate shore / shallows | 103.93 | 35.29 | 103.93 | 208.78 | 0: saltwater cannot be drunk |
 
