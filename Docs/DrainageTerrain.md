@@ -11,7 +11,7 @@ formula, colour scale and contour interpolation are unchanged.
 and `RiverEdge` connectivity/flow remain the two existing drainage graphs. After
 incision, `RiverEdge.FromSurface/ToSurface` equal the means of the actual tile
 heights incident to their corners, rather than a separate raised routing surface.
-Retained lake and marine surfaces are fixed. Generation diagnostics are transient
+Retained lake and marine surfaces are fixed. New erosion diagnostics are transient
 and excluded from saves; they describe source uplift and subsequent removal,
 not another gameplay elevation field.
 

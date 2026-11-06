@@ -740,3 +740,15 @@ bank-grading diagnostics are transient and omitted from serialized worlds.
 The final 2048×1024 run took 32.02 s overall, including terrain-metric warmup;
 the valley pass took 2.725 s. Single-run timing and the deep-breach limit are
 recorded in the design document.
+
+Unity 6000.5.10f1 built source revision `0e58933` successfully and passed all
+31 EditMode tests. The sixteen-frame 1920×1080 atlas route passed with unchanged
+world fingerprint and player-visible tiles. Visual review covered full-world
+Topography/Ruggedness, the desert-river valley and paired ancient-flank views:
+contours show incised channels, the selected flank scores 69.27/100, biome
+colour remains visible in Topography, and labels/legends fit. The live layer
+switch preserves framing. Hex-derived angular channels and flat reaches remain
+visible limitations, not a claim of fully naturalistic erosion or exact chat
+prototype parity. The viewer is left open on full-world Topography with rivers.
+Evidence: `Build-reviewed.log`, `EditMode-reviewed.xml`, `Captures/captures.txt`
+and the sixteen PNGs under `TestResults/PR45Erosion/`.
