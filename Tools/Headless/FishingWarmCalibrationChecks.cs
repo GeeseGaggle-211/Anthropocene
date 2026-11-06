@@ -49,6 +49,10 @@ internal static class FishingWarmCalibrationChecks
         config.TradeEnabled = false;
         config.NeolithicFishingEnabled = false;
         config.CorrectedAquaticSeasonalPressureEnabled = false;
+        // Reproduce S24's locked geography, including its pre-metre climate.
+        // Physical new-world climate is covered by AltitudeClimateChecks.
+        config.ElevationMetersPerUnit = 0;
+        config.DrainageTerrainEnabled = false;
         config.Validate();
         return config;
     }

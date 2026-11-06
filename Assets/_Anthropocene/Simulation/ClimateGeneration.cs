@@ -21,6 +21,9 @@ namespace Anthropocene.Simulation
         {
             var cfg = c.Config;
             var tiles = c.World.Tiles;
+            c.ClimateSurfaceHeights = AltitudeClimate.Physical(cfg) ? new float[tiles.Length] : null;
+            if (c.ClimateSurfaceHeights != null)
+                for (int i = 0; i < tiles.Length; i++) c.ClimateSurfaceHeights[i] = tiles[i].Elevation;
             int width = Math.Min(256, cfg.Width), height = Math.Min(128, cfg.Height), count = width * height;
             var elevation = new float[count];
             var ocean = new float[count];
@@ -134,7 +137,7 @@ namespace Anthropocene.Simulation
         {
             double thermalLatitude = Numbers.Clamp(Math.Abs(latitude + .045 * anomaly), 0, 1);
             double annual = 29 + baseline - cfg.LatitudeGradient * Math.Pow(thermalLatitude, 1.3)
-                - Math.Max(0, elevation - cfg.SeaLevel) * cfg.LapseRate + 4 * anomaly + 2 * thermalLatitude * maritime;
+                - AltitudeClimate.Cooling(cfg, elevation) + 4 * anomaly + 2 * thermalLatitude * maritime;
             double seasonal = phase * latitude * cfg.SeasonalAmplitude * (1 - cfg.OceanModeration * maritime);
             return annual + seasonal;
         }

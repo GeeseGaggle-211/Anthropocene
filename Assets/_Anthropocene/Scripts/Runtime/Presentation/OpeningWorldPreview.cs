@@ -12,7 +12,7 @@ namespace Anthropocene.Presentation
         private Texture2D previewTexture;
         private float previewZoom = 1;
         private Vector2 previewPan, menuScroll, previewScroll;
-        private readonly string[] previewLayers = { "Environment", "Renewable food", "Freshwater renewal", "Elevation", "Volcanic activity", "Resources", "Ancient elevation" };
+        private readonly string[] previewLayers = { "Environment", "Food renewal", "Freshwater", "Elevation", "Volcanism", "Resources", "Ancient relief", "Ruggedness", "Topography", "Temperature", "Snowfall" };
 
         private void Menu()
         {
@@ -56,6 +56,7 @@ namespace Anthropocene.Presentation
         {
             if (previewTexture != null) Destroy(previewTexture);
             previewTexture = null; previewTile = -1; previewPan = Vector2.zero; previewZoom = 1;
+            InvalidateAtlasContours();
             previewResourceValues = null; previewResourcePicker = false;
         }
         private static Color EnvironmentColor(Tile t)
@@ -138,6 +139,29 @@ namespace Anthropocene.Presentation
                         }
                     }
                 }
+                else if (previewLayer == 7)
+                {
+                    Color rugged = TopographicOverlay.RuggednessColor(world.TerrainMetrics.At(t.Id).Ruggedness);
+                    if (t.Land) color = rugged;
+                }
+                else if (previewLayer == 8 && t.Land)
+                {
+                    var metric = world.TerrainMetrics.At(t.Id);
+                    float shade = TopographicOverlay.Hillshade(metric.GradientX, metric.GradientY);
+                    color = Color.Lerp(color, shade < 0 ? Color.black : Color.white, Mathf.Abs(shade));
+                }
+                else if (previewLayer == 9)
+                {
+                    float temperature = previewSeason < 0 ? t.Seasons.Average(s => s.Temperature) : t.Seasons[previewSeason].Temperature;
+                    color = temperature <= 0 ? Color.Lerp(new Color(.12f, .25f, .64f), new Color(.88f, .94f, .98f), Mathf.InverseLerp(-30, 0, temperature))
+                        : Color.Lerp(new Color(.88f, .94f, .98f), new Color(.78f, .20f, .08f), Mathf.InverseLerp(0, 30, temperature));
+                }
+                else if (previewLayer == 10 && t.Land)
+                {
+                    float snow = previewSeason < 0 ? t.Seasons.Sum(s => s.Snow) : t.Seasons[previewSeason].Snow;
+                    float precipitation = previewSeason < 0 ? t.Seasons.Sum(s => s.Snow + s.Rain) : t.Seasons[previewSeason].Snow + t.Seasons[previewSeason].Rain;
+                    color = Color.Lerp(new Color(.20f, .28f, .24f), Color.white, precipitation > 0 ? snow / precipitation : 0);
+                }
                 colors[(height - 1 - t.Id / width) * width + t.Id % width] = color;
             }
             previewTexture = new Texture2D(width, height, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
@@ -158,7 +182,8 @@ namespace Anthropocene.Presentation
             float layerWidth = Mathf.Min(185, (Screen.width - 40) / (float)previewLayers.Length);
             for (int i = 0; i < previewLayers.Length; i++)
                 if (Button(new Rect(20 + i * layerWidth, 58, layerWidth - 6, 32), previewLayers[i], previewLayer == i)) { previewLayer = i; Destroy(previewTexture); previewTexture = null; }
-            if (previewLayer == 5) DrawResourceControls();
+            if (previewLayer == 7 || previewLayer == 8) DrawAtlasTopographyControls();
+            else if (previewLayer == 5) DrawResourceControls();
             else if (previewLayer == 6)
             {
                 if (Button(new Rect(20, 100, 110, 30), "Fit world")) { previewZoom = 1; previewPan = Vector2.zero; }
@@ -198,6 +223,7 @@ namespace Anthropocene.Presentation
             if (previewTile >= 0 && previewZoom == 12 && previewPan == Vector2.zero)
             { previewPan = new Vector2(area.width / 2, area.height / 2) - PreviewPoint(previewTile, map); map.position += previewPan; }
             if (previewTexture != null) GUI.DrawTexture(map, previewTexture);
+            if (previewLayer == 8 || previewLayer == 7) DrawAtlasContours(map, area.size);
             foreach (var c in world.Camps)
             {
                 var p = PreviewPoint(c.Tile, map); bool own = c.Player == 0;
@@ -206,8 +232,8 @@ namespace Anthropocene.Presentation
             if (world.Seed == PlaytestScenarios.Seed && world.Config.Width == 1024 && world.Config.Height == 512)
                 for (int i = 1; i <= 3; i++)
                 {
-                    if (!world.Camps.Any(c => c.Tile == PlaytestScenarios.Tile(i))) continue;
-                    var p = PreviewPoint(PlaytestScenarios.Tile(i), map);
+                    if (!world.Camps.Any(c => c.Tile == PlaytestScenarios.Tile(world, i))) continue;
+                    var p = PreviewPoint(PlaytestScenarios.Tile(world, i), map);
                     Fill(new Rect(p.x - 8, p.y - 8, 16, 16), Gold);
                     GUI.Label(new Rect(p.x - 8, p.y - 8, 16, 16), i.ToString(), badge);
                 }
@@ -228,7 +254,10 @@ namespace Anthropocene.Presentation
             }
             if (previewTile >= 0) { var p = PreviewPoint(previewTile, map); GUI.Label(new Rect(p.x - 8, p.y - 24, 30, 24), "+", title); }
             GUI.EndGroup();
-            GUI.Label(new Rect(20, Screen.height - 30, area.width, 26), "Wheel: zoom · Drag: pan · Click: inspect · Rectangular atlas of axial rows", small);
+            double contourInterval = atlasContourStep * TopographicContours.BaseInterval;
+            string contourUnit = AltitudeClimate.Physical(world.Config) ? (contourInterval * world.Config.ElevationMetersPerUnit).ToString("0.#") + " m" : contourInterval.ToString("0.####") + " height";
+            string contourInfo = previewLayer == 7 || previewLayer == 8 ? " · Contours " + contourUnit + " · Blue: rivers" : "";
+            GUI.Label(new Rect(20, Screen.height - 30, area.width, 26), "Wheel: zoom · Drag: pan · Click: inspect · Rectangular axial rows" + contourInfo, small);
             DrawPreviewDetails(new Rect(Screen.width - side, 146, side - 16, Screen.height - 158));
             GUI.enabled = true;
             if (previewResourcePicker) DrawResourcePicker();
@@ -245,6 +274,16 @@ namespace Anthropocene.Presentation
                 : previewLayer == 3 ? "Continuous elevation\nDeep blue: ocean floor\nTeal: continental shelf\nGreen: lowland\nPale: high mountain belts\nThis is physical relief, not the 1–10 movement levels."
                 : previewLayer == 4 ? "Orange: volcanic activity\nOlder island chains can survive after activity ends, so they may remain dark here. Moving hotspot paths leave islands and submerged remnants. This is a generation proxy, not live tectonics."
                 : previewLayer == 6 ? "Ancient orogen elevation\nWarm gradient: net elevation added by extinct Wilson-cycle mountain belts (sienna -> amber -> gold -> ivory crest).\nMuted land: unaffected continental interior.\nDeep ocean: strictly preserved marine bathymetry (0.0 uplift)."
+                : previewLayer == 7 ? "Radius-four ruggedness (61 cells in the interior)\n0 teal: smooth plane · 50 gold: broken ground · 100 plum: strongest local irregularity\nResidual RMS is mapped by 100 R / (R + 0.005). Height and uniform slope are fitted out."
+                : previewLayer == 8 ? "Biome colours with continuous elevation contours and hillshade.\n" + (AltitudeClimate.Physical(world.Config)
+                    ? "Bold: every " + (.1 * world.Config.ElevationMetersPerUnit).ToString("0") + " m. Fine reaches " + (.0025 * world.Config.ElevationMetersPerUnit).ToString("0") + " m when zoomed in."
+                    : "Bold: every 0.100 height. Fine reaches 0.0025 when zoomed in.") + (world.Config.DrainageTerrainEnabled
+                    ? "\nBlue: rivers follow carved valleys. Their terrain corners descend downstream; flat reaches can occur."
+                    : "\nBlue: actual boundary river network. Legacy routing can use a filled surface above terrain.")
+                : previewLayer == 9 ? "Temperature in degrees Celsius.\nBlue: -30 C · white: 0 C · red: +30 C\nChoose annual mean or a seasonal profile.\n" + (AltitudeClimate.Physical(world.Config)
+                    ? "Altitude cooling: " + world.Config.LapseRateCPerKm.ToString("0.#") + " C/km above sea level. Gameplay levels remain percentile bands."
+                    : "Legacy abstract altitude calibration. Gameplay levels are percentile bands, not metres.")
+                : previewLayer == 10 ? "Snowfall fraction of precipitation.\nDark: 0% · white: 100%\nAnnual uses the precipitation-weighted fraction over all four profiles. This shows falling snow, not accumulated snow cover or glaciers."
                 : "Dark = 0 · bright gold = 100+\nLog scale: 0 / 1 / 10 / 100\nUnits per base season (" + world.Config.BaseDays.ToString("0.##") + " days).\nProfile renewal potential, before labor, depletion and competition. Ocean food is excluded from accessible food.";
             GUI.Label(new Rect(12, y, w, 150), legend, small); y += 158;
             var own = world.Camps.First(c => c.Player == 0);
@@ -257,8 +296,14 @@ namespace Anthropocene.Presentation
             float orogenUplift = world.Generation?.AncientOrogenUplift != null && tile.Id < world.Generation.AncientOrogenUplift.Length ? world.Generation.AncientOrogenUplift[tile.Id] : 0f;
             float orogenAge = world.Generation?.AncientOrogenAge != null && tile.Id < world.Generation.AncientOrogenAge.Length ? world.Generation.AncientOrogenAge[tile.Id] : 0f;
             string orogenInfo = orogenUplift > 0.0005f ? $"\nAncient orogen uplift: +{orogenUplift:0.000} ({orogenAge:0} Ma)" : (previewLayer == 6 ? "\nAncient orogen uplift: None (0.000)" : "");
-            int orogenExtra = previewLayer == 6 || orogenUplift > 0.0005f ? 18 : 0;
-            GUI.Label(new Rect(12, y, w, 108 + orogenExtra), tile.Environment + " · " + tile.CurrentVegetation + (tile.Land ? " vegetation" : " plankton/algae") + "\nElevation " + tile.ElevationLevel + " · river " + (tile.River ? "yes" : "no") + "\nFreshwater source: " + tile.FreshwaterSource + "\nMean temperature: " + tile.Seasons.Average(s => s.Temperature).ToString("0.0") + " C" + orogenInfo, text); y += 116 + orogenExtra;
+            var terrainMetric = world.TerrainMetrics.At(tile.Id);
+            string details = tile.Environment + " · " + tile.CurrentVegetation + (tile.Land ? " vegetation" : " plankton/algae") + "\nElevation " + tile.ElevationLevel + " · continuous " + tile.Elevation.ToString("0.0000") + " · river " + (tile.River ? "yes" : "no") + "\nRuggedness " + terrainMetric.Ruggedness.ToString("0") + "/100 · fitted slope " + terrainMetric.Slope.ToString("0.000") + " · samples " + terrainMetric.Samples + "\nFreshwater source: " + tile.FreshwaterSource + "\nMean temperature: " + tile.Seasons.Average(s => s.Temperature).ToString("0.0") + " C"
+                + "\nSeasonal range: " + tile.Seasons.Min(s => s.Temperature).ToString("0.0") + " to " + tile.Seasons.Max(s => s.Temperature).ToString("0.0") + " C"
+                + (AltitudeClimate.Physical(world.Config) ? "\nAltitude: " + AltitudeClimate.Meters(world.Config, tile.Elevation).ToString("N0") + " m relative to sea level" : "\nAltitude: legacy abstract scale")
+                + "\nAltitude cooling: " + AltitudeClimate.Cooling(world.Config, tile.Elevation).ToString("0.0") + " C"
+                + "\nSnowfall in " + tile.Seasons.Count(s => s.Snow > 0) + "/4 seasonal profiles" + orogenInfo;
+            float detailsHeight = text.CalcHeight(new GUIContent(details), w);
+            GUI.Label(new Rect(12, y, w, detailsHeight), details, text); y += detailsHeight + 8;
             GUI.Label(new Rect(12, y, w, 22), "Season       Food       Freshwater", section); y += 25;
             for (int s = 0; s < 4; s++) { GUI.Label(new Rect(12, y, w, 25), (s + 1) + "                 " + PlaytestScenarios.Food(world, tile, s).ToString("0.0") + "          " + PlaytestScenarios.Water(world, tile, s).ToString("0.0"), small); y += 27; }
             var current = LazyEcology.ProjectEcology(world, tile.Id, world.Days);

@@ -2,13 +2,13 @@
 
 The opening menu offers three environmental presets alongside Custom world. Each uses Standard / Continents / seed **11** / **80 tribes** and normal tuning. They select an existing generated camp as the human tribe by exchanging player labels; geography, society policies, IDs, spacing, food, reserves and wild herds are unchanged. No technology is granted. Historical names are environmental analogues, not reconstructed civilizations.
 
-These sites were reselected among naturally generated camps under generator 13 and the land harvest-before-recovery profile. The river site remains; the previous steppe tile is no longer occupied, and no generated Cold camp has two adjacent Shallows. The coastal preset is therefore a Temperate shore with three Shallows and aquatic-dominant local food. Seed 11 supplies all three openings without changing landscape, stocks, herds or camp placement to fit the presets.
+These sites were rechecked among naturally generated camps under generator 16's physical altitude climate, drainage-shaped terrain and the land harvest-before-recovery profile. The physical-altitude change moved the warm river site from 225046 to 223410 because the former site cooled below the preset's temperature criterion. Integrating main's expanded species roster moved the steppe site from 413877 to 373994: the old site now has reachable goats rather than the required horse or bison. Saves with the prior species roster retain the old steppe marker; legacy-altitude worlds retain the old river marker. Seed 11 supplies all three openings without changing landscape, stocks, herds or camp placement to fit the presets.
 
 | Preset | Camp tile | Local setting | Land food | Aquatic food | Start viability |
 | --- | ---: | --- | ---: | ---: | ---: |
-| Desert river valley | 225046 | Desert river tiles | 194.04 | 0 | 180.00% |
-| Steppe hunters | 413877 | Open grassland, freshwater nearby, reachable horse or bison | 41.37 | 0 | 111.49% |
-| Coastal fishers | 117495 | Temperate shore, three adjacent Shallows, land freshwater | 20.16 | 112.98 | 135.04% |
+| Desert river valley | 223410 | Desert river tiles | 610.51 | 0 | 180.00% |
+| Steppe hunters | 373994 | Open grassland, freshwater nearby, reachable horse or bison | 151.53 | 0 | 180.00% |
+| Coastal fishers | 117495 | Temperate shore, three adjacent Shallows, land freshwater | 40.51 | 112.98 | 180.00% |
 
 Food columns are **annual-mean renewal potential per 91.25-day base season**, summed within radius 1. They are neither current stocks nor realized harvests. Start viability now credits conservatively repeatable **opening land stock** after a depleted tile recovers through the preceding turn, plus aquatic renewal, under one shared labor ceiling. It does not simply divide the food columns by current demand. Depletion, competing animals, workforce choices, freshwater and reserves also matter. The 180% ceiling is the starting gathering labor ceiling, not a promise of population growth. All three meet the normal 85% viability threshold.
 
@@ -16,9 +16,9 @@ The four stored seasonal profiles show the local variation behind those annual m
 
 | Preset / food source | Season 1 | Season 2 | Season 3 | Season 4 | Minimum local freshwater capacity across seasons |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Desert river / land | 195.53 | 164.75 | 195.01 | 220.86 | 370.56 |
-| Steppe / land | 37.94 | 84.23 | 37.47 | 5.85 | 227.53 |
-| Temperate shore / land | 18.84 | 11.89 | 20.58 | 29.32 | 67.89 |
+| Desert river / land | 610.74 | 610.00 | 610.42 | 610.86 | 514.30 |
+| Steppe / land | 144.63 | 250.10 | 143.82 | 67.56 | 469.26 |
+| Temperate shore / land | 37.73 | 24.27 | 41.61 | 58.41 | 67.89 |
 | Temperate shore / shallows | 103.93 | 35.29 | 103.93 | 208.78 | 0: saltwater cannot be drunk |
 
 Food is renewal potential in the same units as the first table; freshwater is **capacity**, not a food yield or a promise of realized recharge. The coastal site's fourth season has the strongest shallow potential while the steppe site's fourth season is lean. The viable-start rule checks every season's freshwater and the repeatable land stock plus aquatic renewal under the shared labor limit. Turn-horizon harvest can consume only opening land food; recovered land food enters the next turn.
@@ -33,4 +33,4 @@ The developer atlas intentionally reveals hidden geography and camp locations an
 
 The fixed preset habitat and viability checks fail explicitly if future generation/tuning invalidates a site. Update and remeasure the presets in that case; do not inject food to preserve the table. `ScenarioChecks` exercises the actual generated world, ownership-only changes, filtered observations, exact save restoration, profile averaging, freshwater separation and pure preview reads.
 
-The preset suite contains **22 automated assertions**, including all three normal save round-trips and rejection of mismatched shape/tribe-count settings. The tables above were measured from the generated seed-11 world; final test and rebuilt-player evidence is recorded in [Validation.md](Validation.md). This establishes reproducibility and environmental contrast; it does not establish multi-generation balance or player usability.
+The preset suite contains **23 automated assertions**, including all three normal save round-trips, the legacy-roster steppe marker and rejection of mismatched shape/tribe-count settings. The tables above were measured from the generated seed-11 world; earlier test and rebuilt-player evidence is recorded in [Validation.md](Validation.md). Post-main-integration headless evidence is in `TestResults/PR45Merge/focused-final.txt`; the earlier screenshots predate the steppe reselection. This establishes reproducibility and environmental contrast; it does not establish multi-generation balance or player usability.

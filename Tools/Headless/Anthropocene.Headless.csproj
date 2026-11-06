@@ -56,8 +56,11 @@
     <Compile Include="StartViabilityChecks.cs" />
     <Compile Include="ScenarioChecks.cs" />
     <Compile Include="ClimateGenerationChecks.cs" />
+    <Compile Include="AltitudeClimateChecks.cs" />
+    <Compile Include="RiverTerrainChecks.cs" />
     <Compile Include="DrainageGenerationChecks.cs" />
     <Compile Include="WorldMorphologyChecks.cs" />
+    <Compile Include="TopographyChecks.cs" />
     <Compile Include="ArchipelagoChecks.cs" />
     <Compile Include="GeologyGenerationChecks.cs" />
     <Compile Include="NeolithicChecks.cs" />

@@ -28,7 +28,7 @@ namespace Anthropocene.Presentation
         private GUIStyle text, title, glyph, small, button, badge, section, centered;
         private Font font;
         private TilesetDefinition[] tilesets;
-        private ITileRenderer tileRenderer;
+        private LayeredTileRenderer tileRenderer;
         private int tilesetIndex;
         private int selected, hovered = -1, inspected = -1, center, dispatch = 8, sizeIndex, shapeIndex, players = 32;
         private float radius = 56;
@@ -136,7 +136,13 @@ namespace Anthropocene.Presentation
             operation = "Building plates, climate, rivers, ecology and viable starts";
             int preset = scenarioIndex;
             if (preset > 0) { PlaytestScenarios.Configure(config); seed = PlaytestScenarios.Seed; }
-            generating = Task.Run(() => { var created = new WorldGenerator().Generate(seed, config, resourceOptions); if (preset > 0) PlaytestScenarios.Select(created, preset); return created; });
+            generating = Task.Run(() =>
+            {
+                var created = new WorldGenerator().Generate(seed, config, resourceOptions);
+                if (preset > 0) PlaytestScenarios.Select(created, preset);
+                _ = created.TerrainMetrics; // Derived once on the generation worker, never in a render frame.
+                return created;
+            });
         }
         private void CycleWorldSize()
         {
@@ -183,6 +189,7 @@ namespace Anthropocene.Presentation
             int offsetCol = Mathf.RoundToInt(-pan.x / (radius * 1.73205f) - offsetRow * .5f);
             float nearest = radius * radius;
             var camp = world.Camps.First(c => c.Player == 0);
+            mapRenderEntries.Clear();
             for (int dr = offsetRow - rowRange; dr <= offsetRow + rowRange; dr++)
                 for (int dq = offsetCol - colRange; dq <= offsetCol + colRange; dq++)
                 {
@@ -190,9 +197,14 @@ namespace Anthropocene.Presentation
                     var pos = Position(id, area); if (pos.x < -radius || pos.x > area.width + radius || pos.y < -radius || pos.y > area.height + radius) continue;
                     bool visible = observation.Tiles.TryGetValue(id, out var tile);
                     var rect = new Rect(pos.x - radius * .866f, pos.y - radius, radius * 1.732f, radius * 2);
-                    var visual = new TileRenderContext { Bounds = rect, Tile = visible ? tile : null, Inspected = inspected == id, Selected = SelectedTile == id, SelectedEntity = selected };
+                    var visual = new TileRenderContext { Bounds = rect, Tile = visible ? tile : null, Inspected = inspected == id, Selected = SelectedTile == id, SelectedEntity = selected, MapLayer = mapLayerState.Layer };
                     if (visible)
                     {
+                        if (knownTerrain != null && knownTerrain.TryGet(id, out var terrainMetric))
+                        {
+                            visual.Ruggedness = terrainMetric.Ruggedness;
+                            visual.Hillshade = TopographicOverlay.Hillshade(terrainMetric);
+                        }
                         var neighborLevels = new int?[6];
                         for (int direction = 0; direction < neighborLevels.Length; direction++)
                         {
@@ -206,16 +218,26 @@ namespace Anthropocene.Presentation
                         visual.ContourEdgeMask = LayeredTileRenderer.ContourEdgeMask(tile.ElevationLevel, neighborLevels);
                     }
                     if (visible) visual.Entities.AddRange(TileDetails.Occupants(observation, id));
-                    tileRenderer.Draw(visual);
-                    if (!visible) continue;
-                    float distance = (mouse - pos).sqrMagnitude;
-                    if (distance < nearest) { nearest = distance; hovered = id; hoveredBounds = new Rect(rect.x + area.x, rect.y + area.y, rect.width, rect.height); }
-                    for (int slot = 0; slot < Math.Min(6, visual.Entities.Count); slot++) if (LayeredTileRenderer.OccupantSlot(rect, slot, visual.Entities.Count).Contains(mouse)) hoveredOccupant = visual.Entities[slot].Id;
-                    DrawPlanningTile(rect, id);
+                    tileRenderer.DrawTerrain(visual);
+                    mapRenderEntries.Add(new MapRenderEntry { Tile = id, Position = pos, Bounds = rect, Visible = visible, Context = visual });
                 }
+            DrawVisibleContours(area);
+            foreach (var entry in mapRenderEntries)
+            {
+                tileRenderer.DrawFeatures(entry.Context);
+                tileRenderer.DrawFrame(entry.Context);
+                if (!entry.Visible) continue;
+                float distance = (mouse - entry.Position).sqrMagnitude;
+                if (distance < nearest) { nearest = distance; hovered = entry.Tile; hoveredBounds = new Rect(entry.Bounds.x + area.x, entry.Bounds.y + area.y, entry.Bounds.width, entry.Bounds.height); }
+                for (int slot = 0; slot < Math.Min(6, entry.Context.Entities.Count); slot++)
+                    if (LayeredTileRenderer.OccupantSlot(entry.Bounds, slot, entry.Context.Entities.Count).Contains(mouse)) hoveredOccupant = entry.Context.Entities[slot].Id;
+                DrawPlanningTile(entry.Bounds, entry.Tile);
+            }
             DrawPaths(area);
-            Fill(new Rect(12, 10, Mathf.Min(area.width - 24, 720), 32), new Color(.035f, .044f, .043f, .92f));
-            GUI.Label(new Rect(24, 17, Mathf.Min(area.width - 48, 696), 22), ModeInstruction(), small);
+            float instructionWidth = Mathf.Min(area.width - 24, 430);
+            Fill(new Rect(12, 10, instructionWidth, 32), new Color(.035f, .044f, .043f, .92f));
+            GUI.Label(new Rect(24, 17, instructionWidth - 24, 22), ModeInstruction(), small);
+            DrawMapLayerControls(area);
             if (world.LinkedPopulation(camp) <= 0) TransitionGameOver(new Rect(30, 55, Mathf.Min(550, area.width - 60), 225));
             else if (camp.Technology != Technology.None && !transitionDismissed) TransitionBreakthrough(new Rect(30, 55, Mathf.Min(550, area.width - 60), 275));
             GUI.EndGroup();
@@ -343,7 +365,13 @@ namespace Anthropocene.Presentation
                     ? "Standing natural cover: none (0% of ecological " + tile.CurrentVegetation + " service retained)\n"
                     : "Standing natural cover: " + Vegetation.Label(tile.Environment, tile.EffectiveVegetation, tile.River) + " · " + Math.Round(tile.NaturalVegetationRetention * 100) + "% of ecological " + tile.CurrentVegetation + " service retained\n"
                     : "Plankton/algae: " + tile.CurrentVegetation + " / " + tile.NaturalVegetationPotential + " natural potential\n";
-                string ecologyDetails = "Elevation " + tile.ElevationLevel + "/10: " + ElevationLevelStage.Description(tile.ElevationLevel) + "\n" + vegetation + "Gatherable food: " + Knowledge.Bands[tile.Food] + "\n" + (tile.Land ? "Herd forage: " : "Aquatic biomass: ") + Knowledge.Bands[tile.PotentialFood] + " (" + tile.GatherablePercent + "% human-accessible)\n" + water + "\nRenewal: " + Knowledge.Bands[tile.Productivity] + " · " + (tile.Land ? "land" : "aquatic") + " condition: " + Knowledge.Bands[tile.Condition] + rivers + "\n" + featureStatus;
+                string terrainDetails = "";
+                if (knownTerrain != null && knownTerrain.TryGet(target, out var metric))
+                    terrainDetails = (AltitudeClimate.Physical(world.Config) ? "\nAltitude: " + AltitudeClimate.Meters(world.Config, metric.Elevation).ToString("N0") + " m relative to sea level" : "")
+                        + "\nContinuous height: " + metric.Elevation.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) + " normalized · slope " + metric.Slope.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
+                        "\n" + (metric.Complete ? "Ruggedness" : "Observed ruggedness") + ": " + metric.Ruggedness.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "/100" +
+                        (metric.Complete ? "" : " (partial " + metric.Samples + "/" + metric.NeighborhoodSamples + " known cells)");
+                string ecologyDetails = "Elevation " + tile.ElevationLevel + "/10: " + ElevationLevelStage.Description(tile.ElevationLevel) + terrainDetails + "\n" + vegetation + "Gatherable food: " + Knowledge.Bands[tile.Food] + "\n" + (tile.Land ? "Herd forage: " : "Aquatic biomass: ") + Knowledge.Bands[tile.PotentialFood] + " (" + tile.GatherablePercent + "% human-accessible)\n" + water + "\nRenewal: " + Knowledge.Bands[tile.Productivity] + " · " + (tile.Land ? "land" : "aquatic") + " condition: " + Knowledge.Bands[tile.Condition] + rivers + "\n" + featureStatus;
                 float ecologyHeight = text.CalcHeight(new GUIContent(ecologyDetails), width) + 8;
                 GUI.Label(new Rect(14, y, width, ecologyHeight), ecologyDetails, text); y += ecologyHeight;
                 DrawStack(target, ref y, width);
@@ -423,6 +451,11 @@ namespace Anthropocene.Presentation
                 case KeyCode.Escape: BeginMode("Inspect"); status = "Inspection mode. No queued orders were changed."; break;
                 case KeyCode.F3: debug = !debug; break;
                 case KeyCode.V: SetTileset(tilesetIndex + 1); status = "Tileset: " + tilesets[tilesetIndex].Name; break;
+                case KeyCode.Alpha1: SelectMapLayer(PlayerMapLayer.Terrain); break;
+                case KeyCode.Alpha2: SelectMapLayer(PlayerMapLayer.Topography); break;
+                case KeyCode.Alpha3: SelectMapLayer(PlayerMapLayer.Ruggedness); break;
+                case KeyCode.G: if (mapLayerState.Layer != PlayerMapLayer.Terrain) ToggleContourDensity(); else return; break;
+                case KeyCode.K: if (mapLayerState.Layer == PlayerMapLayer.Ruggedness) ToggleRuggednessContours(); else return; break;
                 case KeyCode.LeftArrow: pan.x += 40; break;
                 case KeyCode.RightArrow: pan.x -= 40; break;
                 case KeyCode.UpArrow: pan.y += 40; break;
@@ -548,7 +581,7 @@ namespace Anthropocene.Presentation
             TurnPlanner.Prewarm(committed);
             drafting = Task.Run(() => TurnPlanner.Draft(committed, 0, PhaseExecution.Desktop));
         }
-        private void Refresh() { observation = builder.Build(world, 0); if (!observation.Tiles.ContainsKey(inspected)) inspected = -1; }
+        private void Refresh() { observation = builder.Build(world, 0); RefreshTerrainPresentation(); if (!observation.Tiles.ContainsKey(inspected)) inspected = -1; }
         private void FocusCamp() { var camp = world.Camps.First(c => c.Player == 0); center = camp.Tile; selected = camp.Id; pan = Vector2.zero; mode = "Inspect"; }
         private void Save()
         {
@@ -568,7 +601,7 @@ namespace Anthropocene.Presentation
             if (saving != null || generating != null) return;
             drafting = null;
             previewAfterGeneration = false; string path = SavePath; operation = "Loading the saved opening";
-            generating = Task.Run(() => SaveCodec.Load(File.ReadAllBytes(path)));
+            generating = Task.Run(() => { var loaded = SaveCodec.Load(File.ReadAllBytes(path)); _ = loaded.TerrainMetrics; return loaded; });
         }
         private void TransitionGameOver(Rect rect)
         {
@@ -602,7 +635,7 @@ namespace Anthropocene.Presentation
             Fill(r, new Color(.12f, .14f, .12f));
             GUI.Label(new Rect(r.x + 20, r.y + 15, width - 40, 38), "READING THE LAND", title);
             string helpText =
-                "Tent: camp (gold yours, red rival). Spear: hunters.\nHoofed silhouette: wild herd; tether badge: domestic herd.\nGround shows climate. Vegetation: Low = no trees; Medium = one tree; High = three trees.\nVegetation detail is hidden at distant zoom.\nMerged contours: elevation 1-10; shared edges at equal height disappear; X Impassable peak; o Oasis; w Freshwater\nRivers follow tile edges. Sea tiles contain undrinkable saltwater.\n\nDots beneath symbols show food from Depleted (one) to Abundant (five). Select a tile for food, water and renewal bands.\n\nClick a unit slot or roster entry to select that exact unit. The selected slot has a gold frame. M or right-click enters movement planning: green tiles are valid this generation, a thick line previews the route, and red means the pointed tile is unavailable. Established hunter groups automatically hunt any wild herd sharing their final tile; fishing targets are blue.\n\nEach unit can queue one order. A new order for that unit replaces its previous order; Backspace or the Cancel button removes it. Gold paths and Q badges are committed previews. Enter resolves every queued order simultaneously. Units without orders hold position; camp gathering is automatic.\n\nD dispatches hunters. A dispatched group appears at camp after resolution and can first receive orders next generation. R reintegrates hunters already at their source camp. Escape leaves targeting without changing queued orders.\n\nWheel zooms; middle-drag or arrows pan; C centers camp.\nHunter tethers preview the planned camp connection: green is supplied, amber crosses unknown terrain, and red will be disconnected. Hunters outside supply forage locally for subsistence before consuming carried provisions. Return to deposit surplus food. V switches tilesets. Hold still on a visible tile for two seconds for details. Saltwater is undrinkable. Wild herd labels are estimates: fewer than 10, rounded tens (~40), then broad hundreds (100+). Your own livestock counts are exact.";
+                "Tent: camp (gold yours, red rival). Spear: hunters.\nHoofed silhouette: wild herd; tether badge: domestic herd.\nGround shows climate. Vegetation: Low = no trees; Medium = one tree; High = three trees.\nVegetation detail is hidden at distant zoom.\nTerrain [1] keeps gameplay elevation bands. Topography [2] uses continuous height contours and hillshade. Ruggedness [3] shows local departure from a fitted incline on a fixed 0–100 scale. G switches Normal/Fine contour density; K toggles contour context on Ruggedness. Zooming out removes minor detail without moving retained contours.\nMerged terrain contours: elevation 1-10; shared edges at equal height disappear; X Impassable peak; o Oasis; w Freshwater\nRivers follow tile edges and remain above map overlays. Sea tiles contain undrinkable saltwater.\n\nDots beneath symbols show food from Depleted (one) to Abundant (five). Select a tile for food, water, ruggedness and renewal bands.\n\nClick a unit slot or roster entry to select that exact unit. The selected slot has a gold frame. M or right-click enters movement planning: green tiles are valid this generation, a thick line previews the route, and red means the pointed tile is unavailable. Established hunter groups automatically hunt any wild herd sharing their final tile; fishing targets are blue.\n\nEach unit can queue one order. A new order for that unit replaces its previous order; Backspace or the Cancel button removes it. Gold paths and Q badges are committed previews. Enter resolves every queued order simultaneously. Units without orders hold position; camp gathering is automatic.\n\nD dispatches hunters. A dispatched group appears at camp after resolution and can first receive orders next generation. R reintegrates hunters already at their source camp. Escape leaves targeting without changing queued orders.\n\nWheel zooms; middle-drag or arrows pan; C centers camp.\nHunter tethers preview the planned camp connection: green is supplied, amber crosses unknown terrain, and red will be disconnected. Hunters outside supply forage locally for subsistence before consuming carried provisions. Return to deposit surplus food. V switches tilesets. Hold still on a visible tile for two seconds for details. Saltwater is undrinkable. Wild herd labels are estimates: fewer than 10, rounded tens (~40), then broad hundreds (100+). Your own livestock counts are exact.";
             float contentHeight = text.CalcHeight(new GUIContent(helpText), width - 62);
             helpScroll = GUI.BeginScrollView(new Rect(r.x + 20, r.y + 62, width - 40, r.height - 120), helpScroll, new Rect(0, 0, width - 62, contentHeight));
             GUI.Label(new Rect(0, 0, width - 62, contentHeight), helpText, text);

@@ -10,6 +10,23 @@ Implementation evidence is not itself a new design approval. The index is a navi
 and conflict-resolution aid. The linked normative documents and accepted issue
 contracts remain the rule sources.
 
+## Physical altitude for new worlds (6 November 2026)
+
+The subsequent user-authorized generation-16 change makes boundary rivers carve
+the saved terrain, reconciles raw-corner and tile-drainage descent, and removes
+a larger fraction of ancient uplift at its outer margins. Climate/ecology and
+resource placement follow the final heights. Older saves retain their generated
+terrain. [DrainageTerrain.md](DrainageTerrain.md) is the current erosion contract,
+including fixed-water bank grading, scaling, compatibility and measured limits.
+
+The PR 45 generation-15 change, authorized on 6 November 2026, gives new worlds
+a physical altitude scale of 12,000 metres per normalized height unit and
+6.5 C/km cooling. Final hydrological height corrections precede ecology; old
+saves keep their existing heights and profiles in legacy altitude mode.
+[TerrainClimateAudit.md](TerrainClimateAudit.md) records the abstraction,
+compatibility, habitat changes and scale evidence. The later erosion contract
+supersedes its open river/dissection items; persistent snow cover remains open.
+
 ## Field contact and Husbandry (6 November 2026)
 
 [FieldDomestication.md](FieldDomestication.md) records the user-approved #12

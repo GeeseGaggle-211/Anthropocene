@@ -390,6 +390,8 @@ internal static class Program
         if (args.Contains("--issue12-only")) { FieldDomesticationChecks.Run(); return 0; }
         if (args.Contains("--husbandry-only")) { HusbandryChecks.Run(); return 0; }
         if (args.Contains("--farm-food-phase")) { FarmFoodPhaseChecks.Run(); return 0; }
+        if (args.Contains("--topography-only")) { TopographyChecks.Run(); return 0; }
+        if (args.Contains("--topography-benchmark")) { TopographyChecks.Benchmark(); return 0; }
         try
         {
             var scaleOnly = args.FirstOrDefault(a => a.StartsWith("--scale-only=", StringComparison.Ordinal));
@@ -411,7 +413,11 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "CropAgricultureChecks", Run = () => CropAgricultureChecks.Run() },
                 new ParallelChecks.Entry { Name = "ClimateMoistureChecks", Run = () => ClimateMoistureChecks.Run() },
                 new ParallelChecks.Entry { Name = "ClimateGenerationChecks", Cost = 1.5, Run = () => ClimateGenerationChecks.Run() },
+                new ParallelChecks.Entry { Name = "AltitudeClimateChecks", Cost = 1.5, Run = () => AltitudeClimateChecks.Run() },
+                new ParallelChecks.Entry { Name = "RiverTerrainChecks", Cost = 2, Run = () => RiverTerrainChecks.Run() },
+                new ParallelChecks.Entry { Name = "DrainageGenerationChecks", Cost = 1.5, Run = () => DrainageGenerationChecks.Run() },
                 new ParallelChecks.Entry { Name = "WorldMorphologyChecks", Cost = 7, Run = () => WorldMorphologyChecks.Run() },
+                new ParallelChecks.Entry { Name = "TopographyChecks", Cost = 2, Run = () => TopographyChecks.Run() },
                 new ParallelChecks.Entry { Name = "ArchipelagoChecks", Cost = 10, Run = () => ArchipelagoChecks.Run() },
                 new ParallelChecks.Entry { Name = "GeologyGenerationChecks", Cost = 7, Run = () => GeologyGenerationChecks.Run() },
                 new ParallelChecks.Entry { Name = "AquaticChecks", Run = () => AquaticChecks.Run() },

@@ -216,7 +216,7 @@ internal static class FieldDomesticationChecks
         var b = new WorldGenerator().Generate(17, SimulationConfig.Small(4));
         Check(a.Herds.Any(h => h.Species == "cattle"), "new world generation places actual wild cattle");
         Check(SaveCodec.Fingerprint(a) == SaveCodec.Fingerprint(b), "expanded species generation remains deterministic");
-        Check(a.Generation.GeneratorVersion == 15, "new cattle generation has explicit provenance");
+        Check(a.Generation.GeneratorVersion == WorldState.GeneratorVersion, "new cattle generation has explicit provenance");
     }
     private static void BoundaryAndReplay()
     {

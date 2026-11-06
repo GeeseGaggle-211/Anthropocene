@@ -54,8 +54,13 @@ internal static class GeologyGenerationChecks
             }
             Check(r.CoreGeneratorVersion == world.Generation.GeneratorVersion,
                 shape + " resource block records current core generator provenance");
-            Check(OriginalCorePayloadHash(r) == originalResourceFingerprints[shape],
-                shape + " original resource generation payload");
+            // The historical payload includes climate-dependent surface Wood/Clay.
+            // Keep its exact reference under legacy altitude; validate the new-world
+            // resource accounting, repeatability and saves below on physical climate.
+            var legacyClimate = SimulationConfig.Small(4); legacyClimate.Shape = shape; legacyClimate.ElevationMetersPerUnit = 0;
+            legacyClimate.DrainageTerrainEnabled = false;
+            Check(OriginalCorePayloadHash(generator.Generate(42, legacyClimate).Resources) == originalResourceFingerprints[shape],
+                shape + " original resource generation payload under legacy altitude");
             Check(SaveCodec.LegacyFingerprint(before) == SaveCodec.LegacyFingerprint(world), shape + " preserves all legacy state and IDs");
             Check(ObservationContract.Serialize(new AgentObservationBuilder().Build(before, 0), before.Camps[0].Mandate) == ObservationContract.Serialize(new AgentObservationBuilder().Build(world, 0), world.Camps[0].Mandate), shape + " latent minerals do not leak into observations");
             Check(ResourceCodec.Fingerprint(r) == ResourceCodec.Fingerprint(generator.Generate(42, config).Resources), shape + " repeated generation");

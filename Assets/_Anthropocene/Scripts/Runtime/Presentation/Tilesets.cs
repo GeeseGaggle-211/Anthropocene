@@ -39,6 +39,8 @@ namespace Anthropocene.Presentation
         public int SelectedEntity = -1;
         public int ContourEdgeMask = 0x3f;
         public int ShoreEdgeMask;
+        public PlayerMapLayer MapLayer;
+        public float Ruggedness, Hillshade;
         public readonly List<VisibleOccupant> Entities = new List<VisibleOccupant>();
     }
     public interface ITileRenderer { void Draw(TileRenderContext context); }
@@ -124,8 +126,9 @@ namespace Anthropocene.Presentation
             return new Rect(slot.center.x - size / 2, slot.center.y - size / 2, size, size);
         }
         public bool HasSprite(string key) => sprites.TryGetValue(key, out var sprite) && sprite != null;
+        // Biome owns ground colour and art; elevation is conveyed by the map overlays.
         public static string BaseKey(TileObservation tile) => tile == null ? "hidden" : "terrain." +
-            (tile.Land && (tile.Relief == Relief.Highland || tile.Relief == Relief.Mountain) ? "highland" : tile.Environment == EnvironmentKind.Ice ? "cold" : tile.Environment.ToString().ToLowerInvariant());
+            (tile.Environment == EnvironmentKind.Ice ? "cold" : tile.Environment.ToString().ToLowerInvariant());
         public static int VegetationCount(TileObservation tile, float height) => !tile.Land || tile.Environment == EnvironmentKind.Ice || height < 42 || tile.NaturalVegetationRetention <= 0 ? 0 :
             tile.EffectiveVegetation == VegetationTier.Medium ? 1 : 3;
         public static string VegetationKey(TileObservation tile) => "vegetation." +
@@ -148,6 +151,13 @@ namespace Anthropocene.Presentation
         }
         public void Draw(TileRenderContext context)
         {
+            DrawTerrain(context);
+            DrawFeatures(context);
+            DrawFrame(context);
+        }
+
+        public void DrawTerrain(TileRenderContext context)
+        {
             var rect = context.Bounds; var tile = context.Tile;
             string biome = BaseKey(tile);
             var ground = tileset.Find(biome);
@@ -158,38 +168,55 @@ namespace Anthropocene.Presentation
             Tint(interior, hex, ColorOf(ground.Background));
             if (tile == null) return;
             if (HasSprite(biome)) Tint(interior, sprites[biome].texture, tileset.Id == "classic" ? Color.white : new Color(.76f, .81f, .78f));
-            // Terrain -> contours -> water -> vegetation -> land use -> settlements -> units -> UI.
-            var contours = tileset.Find("elevation.contours"); var contourColor = ColorOf(contours.Tint); contourColor.a = contours.Opacity;
-            int count = ContourCount(tile.ElevationLevel, rect.height);
-            float step = Mathf.Min(contours.Spacing, rect.width * .30f / Mathf.Max(1, count));
-            for (int ring = 0; ring < count; ring++)
+            if (context.MapLayer == PlayerMapLayer.Ruggedness && tile.Land)
             {
-                float inset = 3 + ring * step; var inner = new Rect(rect.x + inset, rect.y + inset, rect.width - 2 * inset, rect.height - 2 * inset);
-                for (int side = 0; side < 6; side++)
-                    if ((context.ContourEdgeMask & 1 << side) != 0) Line(inner.position + Vector2.Scale(Corners[side], inner.size), inner.position + Vector2.Scale(Corners[(side + 1) % 6], inner.size), contours.LineWidth, contourColor);
+                Color rugged = TopographicOverlay.RuggednessColor(context.Ruggedness); rugged.a = .62f;
+                Tint(interior, hex, rugged);
+            }
+            if (tile.Land && context.MapLayer != PlayerMapLayer.Terrain && Math.Abs(context.Hillshade) > .0001f)
+                Tint(interior, hex, context.Hillshade > 0 ? new Color(1, 1, .92f, context.Hillshade) : new Color(.02f, .035f, .04f, -context.Hillshade));
+            // The ordinary terrain layer retains the established gameplay-level rings.
+            if (context.MapLayer == PlayerMapLayer.Terrain)
+            {
+                var contours = tileset.Find("elevation.contours"); var contourColor = ColorOf(contours.Tint); contourColor.a = contours.Opacity;
+                int count = ContourCount(tile.ElevationLevel, rect.height);
+                float step = Mathf.Min(contours.Spacing, rect.width * .30f / Mathf.Max(1, count));
+                for (int ring = 0; ring < count; ring++)
+                {
+                    float inset = 3 + ring * step; var inner = new Rect(rect.x + inset, rect.y + inset, rect.width - 2 * inset, rect.height - 2 * inset);
+                    for (int side = 0; side < 6; side++)
+                        if ((context.ContourEdgeMask & 1 << side) != 0) DrawLine(inner.position + Vector2.Scale(Corners[side], inner.size), inner.position + Vector2.Scale(Corners[(side + 1) % 6], inner.size), contours.LineWidth, contourColor);
+                }
             }
             if (!HasSprite(biome)) Symbol(biome, new Rect(rect.x + rect.width * .05f, rect.y + rect.height * .6f, rect.width * .22f, rect.height * .25f));
+        }
+
+        public void DrawFeatures(TileRenderContext context)
+        {
+            var rect = context.Bounds; var tile = context.Tile;
+            if (tile == null) return;
+            // Continuous contours are inserted between terrain and these semantic layers.
             // Shorelines are derived only from observed neighbours, never guessed through fog.
             for (int side = 0; side < 6; side++) if ((context.ShoreEdgeMask & 1 << side) != 0)
             {
                 var shore = new Rect(rect.x + 3, rect.y + 3, rect.width - 6, rect.height - 6);
                 var a = shore.position + Vector2.Scale(Corners[side], shore.size); var b = shore.position + Vector2.Scale(Corners[(side + 1) % 6], shore.size);
-                Line(a, b, Mathf.Clamp(rect.height * .043f, 1.5f, 6), ColorOf("#DCCC9C"));
+                DrawLine(a, b, Mathf.Clamp(rect.height * .043f, 1.5f, 6), ColorOf("#DCCC9C"));
                 shore = new Rect(rect.x + 6, rect.y + 6, rect.width - 12, rect.height - 12);
-                Line(shore.position + Vector2.Scale(Corners[side], shore.size), shore.position + Vector2.Scale(Corners[(side + 1) % 6], shore.size), 1.2f, ColorOf("#9DCCD0"));
+                DrawLine(shore.position + Vector2.Scale(Corners[side], shore.size), shore.position + Vector2.Scale(Corners[(side + 1) % 6], shore.size), 1.2f, ColorOf("#9DCCD0"));
             }
             foreach (var river in tile.Rivers)
             {
                 Vector2 a = rect.position + Vector2.Scale(Corners[river.Side], rect.size), b = rect.position + Vector2.Scale(Corners[(river.Side + 1) % 6], rect.size);
                 float width = Mathf.Clamp(river.Width * 1.25f, 1.5f, 5);
-                Line(a, b, width + 2, ColorOf("#C6C58D"));
-                Line(a, b, width, ColorOf(tileset.Find("feature.river").Tint));
+                DrawLine(a, b, width + 2, ColorOf("#C6C58D"));
+                DrawLine(a, b, width, ColorOf(tileset.Find("feature.river").Tint));
                 if (river.FlowBand >= 2)
                 {
                     Vector2 direction = (river.Forward ? b - a : a - b).normalized, middle = (a + b) / 2;
                     Vector2 normal = new Vector2(-direction.y, direction.x);
-                    Line(middle + direction * 3, middle - direction * 2 + normal * 2, 1, ColorOf(tileset.Find("feature.freshwater").Tint));
-                    Line(middle + direction * 3, middle - direction * 2 - normal * 2, 1, ColorOf(tileset.Find("feature.freshwater").Tint));
+                    DrawLine(middle + direction * 3, middle - direction * 2 + normal * 2, 1, ColorOf(tileset.Find("feature.freshwater").Tint));
+                    DrawLine(middle + direction * 3, middle - direction * 2 - normal * 2, 1, ColorOf(tileset.Find("feature.freshwater").Tint));
                 }
             }
             VegetationLayer(tile, rect, context.Entities.Count > 0);
@@ -236,6 +263,15 @@ namespace Anthropocene.Presentation
                 GUI.Label(new Rect(rect.x, rect.y + rect.height * .8f, rect.width, rect.height * .2f), "+" + (context.Entities.Count - 6), glyph);
             }
         }
+        public void DrawFrame(TileRenderContext context)
+        {
+            if (!context.Selected && !context.Inspected) return;
+            var rect = new Rect(context.Bounds.x + 1.5f, context.Bounds.y + 1.5f, context.Bounds.width - 3, context.Bounds.height - 3);
+            Color color = ColorOf(tileset.Find(context.Selected ? "selected" : "friendly").Tint);
+            float width = context.Selected ? 2.2f : 1.5f;
+            for (int side = 0; side < 6; side++)
+                DrawLine(rect.position + Vector2.Scale(Corners[side], rect.size), rect.position + Vector2.Scale(Corners[(side + 1) % 6], rect.size), width, color);
+        }
         private void Badge(Rect rect, string label, int size, string colorHex = null)
         {
             glyph.fontSize = size; glyph.normal.textColor = ColorOf("#29372E");
@@ -252,11 +288,11 @@ namespace Anthropocene.Presentation
             {
                 var horizontal = corner + new Vector2(corner.x == slot.x ? length : -length, 0);
                 var vertical = corner + new Vector2(0, corner.y == slot.y ? length : -length);
-                Line(corner, horizontal, width + 2, ColorOf("#3D422E")); Line(corner, vertical, width + 2, ColorOf("#3D422E"));
-                Line(corner, horizontal, width, ColorOf(tileset.Find("selected").Tint)); Line(corner, vertical, width, ColorOf(tileset.Find("selected").Tint));
+                DrawLine(corner, horizontal, width + 2, ColorOf("#3D422E")); DrawLine(corner, vertical, width + 2, ColorOf("#3D422E"));
+                DrawLine(corner, horizontal, width, ColorOf(tileset.Find("selected").Tint)); DrawLine(corner, vertical, width, ColorOf(tileset.Find("selected").Tint));
             }
         }
-        private static void Line(Vector2 start, Vector2 end, float width, Color color)
+        internal static void DrawLine(Vector2 start, Vector2 end, float width, Color color)
         {
             var matrix = GUI.matrix; var previous = GUI.color; GUI.color = color;
             GUIUtility.RotateAroundPivot(Mathf.Atan2(end.y - start.y, end.x - start.x) * Mathf.Rad2Deg, start);

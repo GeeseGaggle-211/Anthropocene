@@ -22,6 +22,19 @@ namespace Anthropocene.Simulation
         public int Corner(int tile, int corner) => At(2 * (tile % width) + tile / width + X[corner], 3 * (tile / width) + Y[corner]);
         public int Column(int vertex) => vertex % (2 * width);
         public int Row(int vertex) => vertex / (2 * width) - 2;
+        internal IEnumerable<int> TilesAt(int vertex)
+        {
+            int x = Column(vertex), y = Row(vertex);
+            for (int c = 0; c < 6; c++)
+            {
+                int row3 = y - Y[c];
+                if (row3 % 3 != 0) continue;
+                int row = row3 / 3, col2 = x - X[c] - row;
+                if (row < 0 || row >= height || col2 % 2 != 0) continue;
+                int col = col2 / 2;
+                yield return row * width + (col % width + width) % width;
+            }
+        }
         public IEnumerable<int> Neighbors(int vertex)
         {
             int x = Column(vertex), y = Row(vertex), direction = ((y % 3) + 3) % 3 == 1 ? 1 : -1;

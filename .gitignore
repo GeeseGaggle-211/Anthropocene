@@ -43,6 +43,7 @@ Desktop.ini
 **/bin/
 TestResults/
 !Tools/Headless/Anthropocene.Headless.csproj
+!Tools/TerrainAudit/Anthropocene.TerrainAudit.csproj
 !Tools/ResourceAccess/Anthropocene.ResourceAccess.csproj
 !Tools/NeolithicSweeps/Anthropocene.NeolithicSweeps.csproj
 !Tools/NeolithicTransitionValidation/Anthropocene.NeolithicTransitionValidation.csproj

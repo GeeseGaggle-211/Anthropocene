@@ -38,6 +38,21 @@ The shipped biomass/access/field-effort defaults and three Standard/80 route
 population, herd, and specialty distributions are in
 [AgricultureHusbandryPlaytests.md](AgricultureHusbandryPlaytests.md).
 
+## Topography and ruggedness — 18 October 2026
+
+The continuous-height player overlay and radius-four residual-RMS ruggedness
+implementation, fog boundary, cache/storage contract, focused checks, measured
+Standard/Continents/11 cost, capture route, and outstanding Unity visual gate are
+recorded in [TopographyAndRuggedness.md](TopographyAndRuggedness.md). The derived
+cache is absent from saves and fingerprints; no elevation, drainage, ecology,
+placement, movement, or turn rule is changed.
+
+Windows follow-up, 6 November 2026: code revision `5fa5a1b` fixes the Unity
+capture compile error and clipped Ruggedness label, and uses biome ground art
+at every relief. Unity 6000.5.10f1 build, 31 EditMode tests and all nine real
+captures at 1280 x 800 passed. See the linked follow-up for provenance, partial
+knowledge differences and the remaining acceptance limits; the PR stays draft.
+
 ## Demographic structure — 2 October 2026
 
 The QoL correction, independent Light Housing parameters and bounded specialist-scale helper are covered by 678 QoL-mortality assertions and 22 focused demographic-structure assertions. The latter verify independent fixed/tent decay, configurable Animal Fabric and construction inputs, Craftsperson and Gatherer fallbacks, matching-task-only specialist qualification, monotonic saturation, material-extraction parity, forecast/resolver agreement, and missing-field migration. Nonzero specialist scaling is exercised explicitly; the rejected calibration remains disabled in new-world defaults.
@@ -668,3 +683,90 @@ starvation. The all-feature cohort is much larger and therefore slower: the
 result creates 8,395 post-checkpoint daughter camps versus 3,472 before. Full
 statistics, scaling interpretation and ignored evidence paths are in
 [EconomicTransitionRecall.md](EconomicTransitionRecall.md).
+
+### PR 45 developer atlas follow-up (6 November 2026)
+
+The full-world developer preview now includes biome-coloured Topography with
+continuous contours/hillshade and an optional contour overlay on Ruggedness.
+An eight-frame Standard/Continents/11/80 capture checks unchanged authoritative
+state and player visibility, then leaves the interactive atlas open. The three
+regional inspections use complete 61-cell ruggedness fits. See
+[TopographyAndRuggedness.md](TopographyAndRuggedness.md#full-world-atlas-review--6-november-2026)
+for scope, capture command and initial measured cache-build costs. This is a UI
+validation, not a training comparison or an exact-site recreation of the chat
+prototype.
+
+### PR 45 terrain/climate inspection audit
+
+See [TerrainClimateAudit.md](TerrainClimateAudit.md) for the seed-11 diagnostic
+and the distinction between implemented atlas improvements and unimplemented
+generation changes. The focused contour suite passes 984 assertions, including
+retained player intervals and shallow relief resolved by the finer atlas lattice.
+
+### PR 45 physical altitude climate (6 November 2026)
+
+Generator 15 implements the user-authorized physical altitude scale for new
+worlds: 12,000 metres per normalized height unit, with 6.5 C/km cooling and a
+conservative final-height temperature/rain/snow correction before ecology.
+Older saves retain legacy calibration and exact stored heights/profiles.
+[TerrainClimateAudit.md](TerrainClimateAudit.md) records the design, seed-11
+comparison, scale measurements and remaining river/dissection limitations.
+
+The complete fixed headless suite, three-seed opening validation and 36 compact
+geography cases passed (`3 --jobs=3 --geography`). Focused coverage includes
+28 altitude/climate assertions, 15 climate, 20 drainage, 35 morphology and
+984 topography assertions. Historical S24 fishing and geological payload
+goldens explicitly use legacy altitude; physical defaults still exercise the
+current generator, resource accounting, presets, determinism and saves.
+Unity 6000.5.10f1 Development build succeeded and all 31 EditMode tests passed.
+The current-contract document checker passed. These are deterministic
+simulation/UI validations, not training-readiness evidence.
+
+Standard seed 11 retained 80/80 viable camps (minimum 107.4%); 2048×1024 retained
+160/160 (minimum 86.1%). The extra generation pass took 19.88 ms at that larger
+scale, with an 8 MiB temporary height snapshot. New climate changes biomes,
+resources and start distributions; [Playtesting.md](Playtesting.md) has the
+remeasured presets. Evidence lives in ignored `TestResults/PR45Altitude/`.
+
+The fourteen-frame 1920×1080 atlas route passed at source revision `28e221b`:
+world, rolling region, rough coast, smooth uplands, river region, highest peak,
+annual temperature and annual snowfall. World fingerprint and player-visible
+tile IDs stayed unchanged. The peak inspector shows 5,647 m, -26.0 to -17.3 C,
+Ice biome and snow in all four profiles. Full-world contour/river raster builds
+took 636–659 ms; regional builds took 28–376 ms depending on contour density.
+These are cache reconstruction costs, not steady-state frame measurements.
+
+### PR 45 drainage-shaped terrain (6 November 2026)
+
+Generator 16 implements the requested river incision and preferential ancient
+uplift margin erosion. [DrainageTerrain.md](DrainageTerrain.md) records the
+mechanism, scaling, bank grading, compatibility and matched seed-11 measures.
+The complete fixed suite, three-seed opening validation and 36 compact geography
+cases pass. New focused coverage has 37 river/margin assertions, and altitude
+compatibility coverage now has 30 assertions. Both drainage graphs descend the
+same final terrain; stored river endpoint surfaces equal raw corner means.
+Standard seed 11 has zero uphill river edges and 80/80 viable starts; the
+2048×1024 probe has 160/160 viable starts. Terrain, climate, biome/resource
+generation and start placement change for new worlds; saved worlds do not rerun
+generation. This is deterministic validation, not training-readiness evidence.
+Ignored evidence: `TestResults/PR45Erosion/`.
+
+The final checks include segment midpoints in the interpolated terrain, not
+only corner endpoints. The full suite/geography matrix passed with those
+constraints. A subsequent focused save check verifies the erosion rasters and
+bank-grading diagnostics are transient and omitted from serialized worlds.
+The final 2048×1024 run took 32.02 s overall, including terrain-metric warmup;
+the valley pass took 2.725 s. Single-run timing and the deep-breach limit are
+recorded in the design document.
+
+Unity 6000.5.10f1 built source revision `0e58933` successfully and passed all
+31 EditMode tests. The sixteen-frame 1920×1080 atlas route passed with unchanged
+world fingerprint and player-visible tiles. Visual review covered full-world
+Topography/Ruggedness, the desert-river valley and paired ancient-flank views:
+contours show incised channels, the selected flank scores 69.27/100, biome
+colour remains visible in Topography, and labels/legends fit. The live layer
+switch preserves framing. Hex-derived angular channels and flat reaches remain
+visible limitations, not a claim of fully naturalistic erosion or exact chat
+prototype parity. The viewer is left open on full-world Topography with rivers.
+Evidence: `Build-reviewed.log`, `EditMode-reviewed.xml`, `Captures/captures.txt`
+and the sixteen PNGs under `TestResults/PR45Erosion/`.
