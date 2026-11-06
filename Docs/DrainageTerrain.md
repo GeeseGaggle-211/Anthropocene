@@ -155,3 +155,14 @@ run; whole generation plus terrain-metric warmup took 12.22 s. Timings are local
 single-run measurements. The sixteen-frame Unity capture route adds the ancient
 flank with greatest river cut within strength 0.1–0.5 as a disclosed inspection
 site, alongside the earlier comparison regions, full-world maps and climate.
+
+At 2048×1024 / 160 tribes / seed 11, the final midpoint-aware implementation
+generated in 32.02 s including terrain-metric warmup. Margin erosion took
+56.56 ms and valley shaping 2,724.54 ms. All 160 starts passed viability
+(minimum 85.8%); no banks needed raising. River shaping lowered 304,508 tiles,
+mean 0.00669 (80 m), maximum 0.16980 (2,038 m). That maximum is a downstream
+continuity breach, not the bounded initial bank cut. Large gorges are possible;
+this model does not limit incision by a sediment budget or explicit bedrock
+hardness. Managed heap after generation was 1.33 GB including uncollected
+objects, not a peak or an incremental-allocation measurement. The earlier
+60.84 s run overlapped other tests and is not an isolated timing comparison.

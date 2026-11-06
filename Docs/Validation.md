@@ -724,7 +724,7 @@ Generator 16 implements the requested river incision and preferential ancient
 uplift margin erosion. [DrainageTerrain.md](DrainageTerrain.md) records the
 mechanism, scaling, bank grading, compatibility and matched seed-11 measures.
 The complete fixed suite, three-seed opening validation and 36 compact geography
-cases pass. New focused coverage has 34 river/margin assertions, and altitude
+cases pass. New focused coverage has 37 river/margin assertions, and altitude
 compatibility coverage now has 30 assertions. Both drainage graphs descend the
 same final terrain; stored river endpoint surfaces equal raw corner means.
 Standard seed 11 has zero uphill river edges and 80/80 viable starts; the
@@ -732,3 +732,11 @@ Standard seed 11 has zero uphill river edges and 80/80 viable starts; the
 generation and start placement change for new worlds; saved worlds do not rerun
 generation. This is deterministic validation, not training-readiness evidence.
 Ignored evidence: `TestResults/PR45Erosion/`.
+
+The final checks include segment midpoints in the interpolated terrain, not
+only corner endpoints. The full suite/geography matrix passed with those
+constraints. A subsequent focused save check verifies the erosion rasters and
+bank-grading diagnostics are transient and omitted from serialized worlds.
+The final 2048×1024 run took 32.02 s overall, including terrain-metric warmup;
+the valley pass took 2.725 s. Single-run timing and the deep-breach limit are
+recorded in the design document.

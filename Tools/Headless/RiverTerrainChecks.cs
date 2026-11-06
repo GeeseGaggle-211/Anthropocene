@@ -22,7 +22,10 @@ internal static class RiverTerrainChecks
             Check(world.Tiles.All(t => t.Downstream < 0 || world.Tiles[t.Downstream].Elevation <= t.Elevation + 1e-6), shape + " tile drainage also remains downhill");
             Check(world.Camps.Count == 4 && world.Camps.All(c => PlacementStage.Viability(world, c.Tile) >= config.StartViability), shape + " all starts viable");
             string fingerprint = SaveCodec.Fingerprint(world);
-            Check(SaveCodec.Fingerprint(SaveCodec.Load(SaveCodec.Save(world))) == fingerprint, shape + " eroded terrain and river surfaces round-trip exactly");
+            var loaded = SaveCodec.Load(SaveCodec.Save(world));
+            Check(SaveCodec.Fingerprint(loaded) == fingerprint, shape + " eroded terrain and river surfaces round-trip exactly");
+            Check(loaded.Generation.AncientMarginErosion == null && loaded.Generation.RiverTerrainErosion == null
+                && loaded.Generation.RiverBankGradeTiles == 0, shape + " generation-only erosion diagnostics are excluded from saves");
             Check(SaveCodec.Fingerprint(new WorldGenerator().Generate(42, config)) == fingerprint, shape + " generation repeats exactly");
         }
         Console.WriteLine("PASS: " + checks + " river terrain and uplift-margin assertions");

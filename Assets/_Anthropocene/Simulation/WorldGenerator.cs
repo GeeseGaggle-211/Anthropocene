@@ -25,10 +25,10 @@ namespace Anthropocene.Simulation
         public float[] AncientOrogenAge;
         [IgnoreDataMember]
         public float[] AncientOrogenStrength;
-        [IgnoreDataMember] public float[] AncientMarginErosion;
-        [IgnoreDataMember] public float[] RiverTerrainErosion;
-        [IgnoreDataMember] public int RiverBankGradeTiles;
-        [IgnoreDataMember] public float RiverBankGradeMaximum;
+        [NonSerialized, IgnoreDataMember] public float[] AncientMarginErosion;
+        [NonSerialized, IgnoreDataMember] public float[] RiverTerrainErosion;
+        [NonSerialized, IgnoreDataMember] public int RiverBankGradeTiles;
+        [NonSerialized, IgnoreDataMember] public float RiverBankGradeMaximum;
     }
     public interface IWorldGenerationStage
     {
