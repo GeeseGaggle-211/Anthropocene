@@ -522,7 +522,8 @@ namespace Anthropocene.Simulation
                 foreach (var incumbent in ranked.Where(g => g.Incumbent && selectedGrounds.All(s => s.TileId != g.TileId)))
                 {
                     if (incumbent.YieldPerFisherYear + Epsilon < cutoff * (1 - GroundSwitchMargin)) continue;
-                    int replace = selectedGrounds.FindLastIndex(g => !g.Incumbent);
+                    int replace = selectedGrounds.FindLastIndex(g => !g.Incumbent &&
+                        incumbent.YieldPerFisherYear + Epsilon >= g.YieldPerFisherYear * (1 - GroundSwitchMargin));
                     if (replace >= 0) selectedGrounds[replace] = incumbent;
                 }
             }

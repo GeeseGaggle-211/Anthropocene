@@ -46,6 +46,24 @@ internal static class FishingInspectionChecks
             try { FishingInspection.Build(w, c.Player + 1, c, intent); } catch (ArgumentException) { rejected = true; }
             Check(rejected, "foreign camp rejected");
         }
+        var replacementWorld = FishingEconomyChecks.Fixture();
+        var replacementCamp = replacementWorld.Camps[0];
+        var near = replacementWorld.Map.Neighbors(replacementCamp.Tile).OrderBy(t => t).Take(4).ToArray();
+        foreach (int tile in near)
+        {
+            replacementWorld.Tiles[tile].Terrain = Terrain.Shallows;
+            replacementWorld.Tiles[tile].WaterBody = WaterKind.Saltwater;
+        }
+        replacementCamp.LastSelectedFishingGrounds = near.Take(3).ToList();
+        foreach (int tile in near.Take(3))
+        {
+            replacementWorld.Tiles[tile].Food = replacementWorld.Tiles[tile].PotentialFood = 0;
+            for (int season = 0; season < 4; season++) replacementWorld.Tiles[tile].Seasons[season] = new SeasonData();
+        }
+        var replacement = FishingEconomy.BuildAccess(replacementWorld, replacementCamp, replacementCamp.Tile,
+            replacementCamp.Population, replacementWorld.Days, replacementWorld.Config.TurnDays);
+        Check(replacement.Grounds.Any(g => g.TileId == near[3] && g.YieldPerFisherYear > 0),
+            "three exhausted incumbents cannot evict a productive newcomer at a zero cutoff");
         Console.WriteLine("PASS: " + checks + " Fishing inspection assertions"); return checks;
     }
 }
