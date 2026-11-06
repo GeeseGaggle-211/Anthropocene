@@ -7,6 +7,94 @@ Authoritative record of the rule that lets a camp choose how many managed animal
 **On for new worlds.** `HerdLabourEnabled` is **true** in `OpeningConfig.json` (plan of record); the API default and
 old saves keep it false.
 
+### Animal textile need (18 October 2026)
+
+`SimulationConfig.AnimalTextileNeedFirst`: on for new worlds; absent in older saves, where it loads as off.
+
+**Finding.** Herding-only capability fixtures (no Cultivation or Watercraft) held QoL at about 0.13 under every
+policy. A `--model9-requests` tally showed why:
+- **Tents waited behind the reserve.** Tents are made only of Animal Fabric. Clothing feedstock was paid after meals
+  and ahead of the operating-reserve refill, but tent fabric was paid only after a full reserve and births. The
+  reserve is 1.5 times a turn's meals and rarely full in a growing camp, so tents were starved.
+- **Daughters left without animals.** Fission moved whole animals rounded down, so a daughter of a 2-5 animal herd
+  founded a camp with none and could never make Animal Fabric. That was 11 of the 18 camps short of animal feedstock.
+- **Herd growth ranked behind the reserve refill.** Herd development is Development, the lowest service class. Its
+  herders lost to the reserve-refill gatherers even where the herd was the only source of the textiles requested.
+
+Food per animal was not the constraint. At turn 33 the herding-only world held 0.066 managed animals per person,
+about 2.5 times its aggregate textile need, while "animal feedstock" left 44% of clothing units unmet.
+
+**Rule.** The lever applies to a husbandry camp living in portable shelter (not a village, and no fixed housing)
+that cannot make Cloth, so Animal Fabric is its only textile. The Elder branch applies it to every portable-shelter
+husbandry camp; main narrows it to camps without Cloth (see *Main* below).
+- `NeolithicProduction.PortableShelterFabricNeed` is the residents' tent fabric beyond the fabric left after this
+  turn's clothing. `TurnPlanning` adds it to the clothing-need feedstock, bounded by the planned fabric, so the
+  resolver pays it after meals and ahead of the reserve refill.
+- `DemandControl` extends the clothing exception in `Binding` to tents up to that need. It also adds the need to the
+  typed animal shortfall that authorizes herd development.
+- After Continuity and before Recovery, `TextileHerdFloor` grants whole-animal herd development up to the typed
+  shortfall. Binding and the growth ceiling bound it.
+- Fission gives a herding parent's daughter at least one animal when the herd has two or more. Every ledger is
+  conserved.
+
+**Measured** (model9 Small/8, heuristic everywhere, flag on vs off):
+
+| Worlds | Off | On |
+| --- | ---: | ---: |
+| Herding-only 1003, turn 38: QoL / housing | 0.127 / 0.070 | 0.317 / 0.301 |
+| Herding-only 1010, turn 38: QoL / housing | 0.152 / 0.027 | 0.439 / 0.517 |
+| Herding-only residents per village | 179 / 241 | 209 / 244 |
+
+Default DEVELOPMENT worlds 2000-2005, about turn 34-36:
+- seed 2001 is bit-identical;
+- population changes by -4% to +50%, with QoL within ±0.025;
+- the one seed that loses population (2004, -4%) gains QoL (0.864 to 0.877).
+
+A static food-per-animal multiplier (x2, x3) on top of the rule was rejected:
+- on herding-only worlds QoL reached 0.41-0.48 at x2-3, but seed 1010 at x3 fell back to 0.35 and population roughly
+  doubled;
+- on default worlds at x2, population moved between -11% and +23%.
+
+**Main** (production configuration, PerformanceAudit Continents/8, 25 post-opening turns, flags on vs off):
+- **Broad rule rejected.** On the first six seeds the Elder-branch rule cost 11-15% population on three of them,
+  with flat QoL.
+- **Ablation.** Protecting tents in camps that can make Cloth was the cause. The textile herd floor, the fission
+  minimum and the cull cap had no effect on those seeds.
+- **Narrowed rule, 20 seeds** (1001-1019 and 1729):
+  - welfare (population x QoL) ratio mean 1.017 (standard error 0.019), median 1.002;
+  - 9 seeds better and 5 worse by more than 1%, 4 identical;
+  - total population +1.0%.
+
+  Per-seed spread is large (sigma 8.6%, from 0.87 to 1.22). It is trajectory divergence through fission and
+  immigration, so judge the rule on many seeds, not a few.
+
+**Remaining limits** (not changed):
+- Managed herds grow at the wild species rate (2% per year, with breeding intensity 0.55, about 25% per turn).
+- Herd counts are integers, so 1-2 animal herds grow slowly.
+- Animals concentrate in a few camps, for example one with 254 animals and 100 herders.
+- Pastoral QoL is 0.3-0.45, not the 0.8 of farming worlds.
+
+### Herd transition limit (18 October 2026)
+
+`SimulationConfig.HerdCullLimitPerTurn`: 0.5 for new worlds; absent in older saves, where it loads as 1 (no limit).
+
+**Finding.** `--model9-liquidation` ran the heuristic on 32 TRAIN worlds (1000-1031) for 25 turns:
+- No herd was slaughtered to zero; the seed floor holds.
+- Slaughter was 7% of births (1,778 against 23,873).
+- 70 of 4,042 village-turns with at least 5 animals culled at least half the herd in one turn, and 58 of those
+  coincided with the village adding Farmers.
+- Villages that switched had no better farm yield than herding villages (median 0.88-0.97 against 0.94-0.98).
+
+**Rule.** Outside a survival shortfall, `SettlementPortfolioSupervisor.Select` retains at least (1 - limit) of the
+herd: the kept herd must fit the residents left after fields and leave Survival unmet no worse. A distressed camp
+may still liquidate. A switch to farming therefore runs a herd down over several 20-year turns. On main's six
+measured seeds the cap never bound: populations were identical with and without it.
+
+**Measured.** On the same 32 worlds, culls of at least half the herd fell from 70 to 38: the remainder are at the
+cap or under a survival shortfall. Births were unchanged and slaughter fell from 1,778 to 1,660. On default
+DEVELOPMENT worlds 2000-2005, population moved by at most 1% and QoL by at most 0.002; seeds 2004 and 2005 are
+identical.
+
 ### Seed herd and water routing under DemandControl (17 October 2026)
 
 Measured on model9 Small/8 worlds: the DemandControl heuristic slaughtered most granted herds to nothing. That was

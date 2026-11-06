@@ -332,6 +332,16 @@ namespace Anthropocene.Simulation
             world.PendingTechnologyUnlocks[society.Id] = pending | 1 << i;
         }
 
+        // Shared Close effect. Physical animal acquisition remains the caller's responsibility.
+        internal static void Acquire(WorldState world, Society society, Technology technology, TurnRecord record, string source)
+        {
+            if (society.Technologies[(int)technology] || society.Technology == technology) return;
+            bool economyBefore = EconomicTransition.Enabled(world, society);
+            society.Technologies[(int)technology] = true;
+            if (!economyBefore && EconomicTransition.Enabled(world, society)) EconomicTransition.Begin(world, society);
+            record.Log("Society " + society.Id + " discovered " + technology + " through " + source + ".");
+        }
+
         // Called only at Close, after all realized food/practice receipts have been credited.
         public static void Resolve(WorldState world, TurnRecord record)
         {
@@ -349,11 +359,7 @@ namespace Anthropocene.Simulation
                     if ((entry.Value & 1 << i) == 0) continue;
                     var technology = (Technology)(i + 1);
                     if (society.Technologies[(int)technology] || society.Technology == technology || EffectiveProgress(society, (Domain)i, world.Config) < world.Config.SecondaryTechnologyThreshold) continue;
-                    bool economyBefore = EconomicTransition.Enabled(world, society);
-                    society.Technologies[(int)technology] = true;
-                    if (!economyBefore && EconomicTransition.Enabled(world, society))
-                        EconomicTransition.Begin(world, society);
-                    record.Log("Society " + society.Id + " discovered " + technology + " through " + (Domain)i + " practice.");
+                    Acquire(world, society, technology, record, (Domain)i + " practice");
                 }
             }
             pending.Clear();

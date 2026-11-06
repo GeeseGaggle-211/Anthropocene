@@ -21,6 +21,10 @@ END = "<!-- CURRENT_CONFIG_TABLE:END -->"
 # JSON key -> (unit / meaning, status). Keep this registry small and purposeful:
 # it catches prose drift for current values that have historically conflicted.
 FIELDS = [
+    ("FieldDomesticationEnabled", "boolean: cultivated-village attraction and sustained peaceful wild-herd acquisition", "new worlds enabled; absent saved field stays false (Docs/FieldDomestication.md)"),
+    ("FieldDetectionRadius", "shortest traversable-land steps from a village for selecting one eligible wild herd", "default 12; unreachable herds excluded before selection; validated 1-12"),
+    ("FieldContactRadius", "shortest traversable-land steps from the village for peaceful contact", "default 6; independent of player vision; missing saved value loads 2; validated 1-detection"),
+    ("FieldContactTurns", "consecutive reachable peaceful turns for the same herd and Society", "default 6 (120 years at the default horizon), selected against 5 by the issue-12 sweep; validated 2-100"),
     ("SharedCropHerdAllocationEnabled", "boolean: joint food ledger, field-operation and bounded herd portfolio under the Value rule", "plan of record since 5 October 2026: true for new worlds; saves without the field load false"),
     ("NeolithicFishingEnabled", "boolean: resident Watercraft Fishing and its shared goods-economy capability", "compatibility gate: false in the general opening and in saves missing the field"),
     ("CorrectedAquaticSeasonalPressureEnabled", "boolean: capped seasonal-pressure allocation for aquatic claims", "separate compatibility gate: false in the general opening and in saves missing the field; required by resident Fishing"),

@@ -14,9 +14,10 @@ namespace Anthropocene.Simulation
             "Steppe analogue: open grassland, nearby freshwater and reachable mobile herds. Test mobile hunters and animal husbandry.",
             "Temperate coastal shore with three adjacent shallows and land freshwater. Test fishing and seasonal reserves."
         };
-        public static int Tile(int scenario) => scenario == 1 ? 223410 : scenario == 2 ? 413877 : scenario == 3 ? 117495 : -1;
+        public static int Tile(int scenario) => scenario == 1 ? 223410 : scenario == 2 ? 373994 : scenario == 3 ? 117495 : -1;
         public static int Tile(WorldState world, int scenario)
-            => scenario == 1 && !AltitudeClimate.Physical(world.Config) ? 225046 : Tile(scenario);
+            => scenario == 1 && !AltitudeClimate.Physical(world.Config) ? 225046
+                : scenario == 2 && !world.Config.Species.Any(s => s.Id == "cattle") ? 413877 : Tile(scenario);
         public static void Configure(SimulationConfig config)
         { config.Width = 1024; config.Height = 512; config.Players = 80; config.Shape = WorldShape.Continents; config.StartSeparation = 12; }
 

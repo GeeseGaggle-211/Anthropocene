@@ -15,6 +15,11 @@ internal static class ScenarioChecks
         config.Shape = WorldShape.Continents; config.Players = 79;
         Check(!PlaytestScenarios.Matches(world, 1), "a different tribe-count configuration cannot masquerade as the fixed preset");
         config.Players = 80;
+        // Older saves keep their recorded species roster and original steppe marker.
+        var currentSpecies = config.Species;
+        config.Species = currentSpecies.Where(s => s.Id != "cattle").ToList();
+        Check(PlaytestScenarios.Tile(world, 2) == 413877, "legacy species roster retains the prior steppe preset");
+        config.Species = currentSpecies;
         string original = SaveCodec.Fingerprint(world);
         var players = world.Societies.ToDictionary(s => s.Id, s => s.Player);
         foreach (int scenario in new[] { 1, 2, 3 })

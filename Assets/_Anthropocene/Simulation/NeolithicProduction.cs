@@ -825,6 +825,29 @@ namespace Anthropocene.Simulation
             double animalUnits = Math.Min(units - clothUnits, Math.Max(0, plannedAnimalFeedstock));
             return new ClothingFeedstock { Plant = clothUnits * perCloth, Animal = animalUnits };
         }
+        // Animal textile need (SimulationConfig.AnimalTextileNeedFirst): a husbandry camp living in portable shelter
+        // (not a village, no fixed housing) whose only textile is Animal Fabric (it cannot make Cloth) pays its
+        // residents' tent fabric with the clothing feedstock. Camps that can make Cloth keep tents behind the reserve:
+        // on main's mixed worlds, protecting their tents cost 11-15% population on three of six seeds.
+        public static bool AnimalTextileNeedApplies(WorldState w, Camp c)
+        {
+            if (!w.Config.AnimalTextileNeedFirst || !CultivationEconomy.HusbandryEnabled(c) || c.IsVillage ||
+                FixedHousingAt(w, c, w.Days) > 0) return false;
+            var cloth = Recipes(w.Config).FirstOrDefault(r => r.Good == CraftGood.Cloth);
+            return !(cloth != null && Priority(c, CraftGood.Cloth) > 0 && RecipeAvailable(w, c, cloth));
+        }
+        // Fabric units the residents' portable shelter gap needs beyond the fabric left after this turn's clothing
+        // consumption, at the turn's end housing (fixed stock depreciated; tents at their current units).
+        public static double PortableShelterFabricNeed(WorldState w, Camp c, double residents, double years, double endDays)
+        {
+            var n = w.Config.Neolithic;
+            if (!(n.LightHousingPeoplePerUnit > 0)) return 0;
+            double gap = HousingGapPeople(w, c, residents, endDays);
+            double clothingUse = residents * n.FabricConsumptionPerPersonTurn * years / n.ReferenceTurnYears;
+            double spareFabric = Math.Max(0, Math.Max(0, c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric))
+                - Math.Max(0, clothingUse - Math.Max(0, c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth))));
+            return Math.Max(0, gap / n.LightHousingPeoplePerUnit * n.AnimalFabricPerLightHousing - spareFabric);
+        }
         // Harvest still required for the planned feedstock. Clothing feedstock may
         // draw on inventory beyond this turn's meals; every other feedstock only on
         // inventory beyond meals, the clothing already paid and the operating reserve.
