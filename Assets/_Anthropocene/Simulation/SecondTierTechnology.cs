@@ -35,6 +35,8 @@ namespace Anthropocene.Simulation
                     world.Tiles[hunter.Tile].Environment == EnvironmentKind.Shallows)
                     activeWatercraft.Add(hunter.SourceCamp);
             }
+            // Positive authoritative receipts already prove legal navigable-water activity;
+            // do not rebuild visibility or search the world for each productive camp.
             var recipes = NeolithicProduction.Recipes(world.Config).ToDictionary(r => r.Good);
             foreach (var track in Tracks)
             {
@@ -44,7 +46,7 @@ namespace Anthropocene.Simulation
                 {
                     if (!camps.TryGetValue(group.Key, out var camp) || !FishingEconomy.FeatureEnabled(world, camp) ||
                         !camp.People.HasTech(track.Prerequisite) || camp.People.HasTech(track.Technology) ||
-                        !activeWatercraft.Contains(camp.Id) || !FishingEconomy.HasLegalSource(world, camp)) continue;
+                        !activeWatercraft.Contains(camp.Id)) continue;
                     double work = group.OrderBy(p => p.Good).ThenBy(p => p.Output)
                         .Sum(p => p.Output / recipes[p.Good].Rate);
                     camp.People.CraftExperience.TryGetValue(track.Technology, out double prior);

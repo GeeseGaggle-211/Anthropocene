@@ -14,6 +14,7 @@ namespace Anthropocene.Simulation
             public FishingGroundPlan Plan;
             public int[] Path;
             public double ObservedDays, LastCatch;
+            public double? ObservedOperation;
             public bool PreviouslySelected;
         }
         public Ground[] Grounds;
@@ -63,6 +64,7 @@ namespace Anthropocene.Simulation
                     Path = cache.Path(camp, camp.Tile, g), PreviouslySelected = selected.Contains(g.TileId),
                     ObservedDays = g.KnowledgeSource == FishingKnowledgeSource.Visible ? world.Days :
                         snapshots.TryGetValue(g.TileId, out var snapshot) ? snapshot.ObservedDays : -1,
+                    ObservedOperation = snapshots.TryGetValue(g.TileId, out var operationSnapshot) ? operationSnapshot.OperationFraction : (double?)null,
                     LastCatch = receipts.Where(t => t.Tile == g.TileId).Sum(t => t.Food)
                 }).ToArray()
             };

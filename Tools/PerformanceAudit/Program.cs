@@ -18,6 +18,7 @@ internal static class Program
 #if !MAIN
     // WP1 exactness: plan AI players in a draft (player 0 excluded) and prepare with it.
     private static bool DraftMode;
+    private static IReadOnlyDictionary<int, FishingPlan> LastFishingPlans;
 #endif
     private const int ReportSchema = 2;
 
@@ -134,6 +135,7 @@ internal static class Program
         }
         clock.Restart();
         var prepared = TurnPlanner.Prepare(world, ai.Orders, ai.Traces, execution, draft);
+        LastFishingPlans = prepared.FishingPlans;
         prepareMs = clock.Elapsed.TotalMilliseconds;
         clock.Restart();
         var record = resolver.Resolve(world, prepared);
@@ -536,6 +538,17 @@ internal static class Program
                 c.GrowthRemainder, c.LastConsumed, c.FoodDeficit, c.DeficitTurns,
                 c.Inventory.Cloth, c.Inventory.AnimalFabric, c.Inventory.Wood, c.Inventory.Clay,
                 c.Inventory.HandTools, c.Inventory.Pots, c.Inventory.Stone, c.Inventory.FarmTools,
+                c.Inventory.FishingTools, c.AquaticFood,
+                fishing = LastFishingPlans != null && LastFishingPlans.TryGetValue(c.Id, out var fishingPlan) ? new {
+                    fishingPlan.FisherCount, expectedCatch = fishingPlan.Grounds.Sum(g => g.RequestedCatch),
+                    realizedCatch = record.Transfers.Where(t => t.Entity == c.Id && t.Kind == "FisheryHarvest").Sum(t => t.Food),
+                    maintenanceYears = fishingPlan.Grounds.Sum(g => g.MaintenanceWorkerYears),
+                    requiredMaintenanceYears = fishingPlan.Grounds.Sum(g => g.RequiredMaintenanceWorkerYears),
+                    buildYears = fishingPlan.Grounds.Sum(g => g.BuildWorkerYears),
+                    toolCoveredYears = fishingPlan.Grounds.Sum(g => g.ToolCoveredHarvestWorkerYears),
+                    grounds = fishingPlan.Grounds.Select(g => new { g.TileId, g.Distance, g.OpeningCapital, g.EndingCapital, g.OperationFraction, g.AssignedFisherYears, g.RequestedCatch }).ToArray()
+                } : null,
+                foodReceipts = record.Transfers.Where(t => t.Entity == c.Id).GroupBy(t => t.Kind).ToDictionary(g => g.Key, g => g.Sum(t => t.Food)),
                 c.Inventory.Tools, c.Inventory.HerdingTools, c.Inventory.LightHousingUnits, c.Inventory.HousingMaterial,
                 discardedFood = record.Demographics.Where(d => d.Camp == c.Id).Sum(d => d.DiscardedInventory),
                 assignments = c.Workforce.Assignments.OrderBy(a => a.Role).Select(a => new { a.Role, a.Population }).ToArray(),
