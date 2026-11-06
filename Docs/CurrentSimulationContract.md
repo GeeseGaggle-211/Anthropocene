@@ -10,6 +10,16 @@ Implementation evidence is not itself a new design approval. The index is a navi
 and conflict-resolution aid. The linked normative documents and accepted issue
 contracts remain the rule sources.
 
+## Physical altitude for new worlds (6 November 2026)
+
+The PR 45 generation-15 change, authorized on 6 November 2026, gives new worlds
+a physical altitude scale of 12,000 metres per normalized height unit and
+6.5 C/km cooling. Final hydrological height corrections precede ecology; old
+saves keep their existing heights and profiles in legacy altitude mode.
+[TerrainClimateAudit.md](TerrainClimateAudit.md) records the abstraction,
+compatibility, habitat changes and scale evidence. River incision, ancient-range
+dissection and persistent snow cover remain open.
+
 ## Unified social relocation candidate (15 October 2026)
 
 The feature branch rooted at demographic revision `bcf7f214` implements the

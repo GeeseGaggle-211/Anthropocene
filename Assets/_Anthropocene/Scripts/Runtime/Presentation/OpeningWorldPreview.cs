@@ -232,8 +232,8 @@ namespace Anthropocene.Presentation
             if (world.Seed == PlaytestScenarios.Seed && world.Config.Width == 1024 && world.Config.Height == 512)
                 for (int i = 1; i <= 3; i++)
                 {
-                    if (!world.Camps.Any(c => c.Tile == PlaytestScenarios.Tile(i))) continue;
-                    var p = PreviewPoint(PlaytestScenarios.Tile(i), map);
+                    if (!world.Camps.Any(c => c.Tile == PlaytestScenarios.Tile(world, i))) continue;
+                    var p = PreviewPoint(PlaytestScenarios.Tile(world, i), map);
                     Fill(new Rect(p.x - 8, p.y - 8, 16, 16), Gold);
                     GUI.Label(new Rect(p.x - 8, p.y - 8, 16, 16), i.ToString(), badge);
                 }
@@ -254,7 +254,9 @@ namespace Anthropocene.Presentation
             }
             if (previewTile >= 0) { var p = PreviewPoint(previewTile, map); GUI.Label(new Rect(p.x - 8, p.y - 24, 30, 24), "+", title); }
             GUI.EndGroup();
-            string contourInfo = previewLayer == 7 || previewLayer == 8 ? " · Contours " + (atlasContourStep * TopographicContours.BaseInterval).ToString("0.####") + " height · Blue: rivers" : "";
+            double contourInterval = atlasContourStep * TopographicContours.BaseInterval;
+            string contourUnit = AltitudeClimate.Physical(world.Config) ? (contourInterval * world.Config.ElevationMetersPerUnit).ToString("0.#") + " m" : contourInterval.ToString("0.####") + " height";
+            string contourInfo = previewLayer == 7 || previewLayer == 8 ? " · Contours " + contourUnit + " · Blue: rivers" : "";
             GUI.Label(new Rect(20, Screen.height - 30, area.width, 26), "Wheel: zoom · Drag: pan · Click: inspect · Rectangular axial rows" + contourInfo, small);
             DrawPreviewDetails(new Rect(Screen.width - side, 146, side - 16, Screen.height - 158));
             GUI.enabled = true;
@@ -273,8 +275,12 @@ namespace Anthropocene.Presentation
                 : previewLayer == 4 ? "Orange: volcanic activity\nOlder island chains can survive after activity ends, so they may remain dark here. Moving hotspot paths leave islands and submerged remnants. This is a generation proxy, not live tectonics."
                 : previewLayer == 6 ? "Ancient orogen elevation\nWarm gradient: net elevation added by extinct Wilson-cycle mountain belts (sienna -> amber -> gold -> ivory crest).\nMuted land: unaffected continental interior.\nDeep ocean: strictly preserved marine bathymetry (0.0 uplift)."
                 : previewLayer == 7 ? "Radius-four ruggedness (61 cells in the interior)\n0 teal: smooth plane · 50 gold: broken ground · 100 plum: strongest local irregularity\nResidual RMS is mapped by 100 R / (R + 0.005). Height and uniform slope are fitted out."
-                : previewLayer == 8 ? "Biome colours with continuous elevation contours and hillshade.\nBold: major contours (0.100 height). Fine reaches 0.0025 when zoomed in.\nBlue: actual boundary river network. River routing can use a filled surface; channels are not all carved into terrain."
-                : previewLayer == 9 ? "Temperature in degrees Celsius.\nBlue: -30 C · white: 0 C · red: +30 C\nChoose annual mean or a seasonal profile. Altitude cooling is included; gameplay elevation levels are percentile bands, not metres."
+                : previewLayer == 8 ? "Biome colours with continuous elevation contours and hillshade.\n" + (AltitudeClimate.Physical(world.Config)
+                    ? "Bold: every " + (.1 * world.Config.ElevationMetersPerUnit).ToString("0") + " m. Fine reaches " + (.0025 * world.Config.ElevationMetersPerUnit).ToString("0") + " m when zoomed in."
+                    : "Bold: every 0.100 height. Fine reaches 0.0025 when zoomed in.") + "\nBlue: actual boundary river network. Routing can use a filled surface; channels are not all carved into terrain."
+                : previewLayer == 9 ? "Temperature in degrees Celsius.\nBlue: -30 C · white: 0 C · red: +30 C\nChoose annual mean or a seasonal profile.\n" + (AltitudeClimate.Physical(world.Config)
+                    ? "Altitude cooling: " + world.Config.LapseRateCPerKm.ToString("0.#") + " C/km above sea level. Gameplay levels remain percentile bands."
+                    : "Legacy abstract altitude calibration. Gameplay levels are percentile bands, not metres.")
                 : previewLayer == 10 ? "Snowfall fraction of precipitation.\nDark: 0% · white: 100%\nAnnual uses the precipitation-weighted fraction over all four profiles. This shows falling snow, not accumulated snow cover or glaciers."
                 : "Dark = 0 · bright gold = 100+\nLog scale: 0 / 1 / 10 / 100\nUnits per base season (" + world.Config.BaseDays.ToString("0.##") + " days).\nProfile renewal potential, before labor, depletion and competition. Ocean food is excluded from accessible food.";
             GUI.Label(new Rect(12, y, w, 150), legend, small); y += 158;
@@ -291,7 +297,8 @@ namespace Anthropocene.Presentation
             var terrainMetric = world.TerrainMetrics.At(tile.Id);
             string details = tile.Environment + " · " + tile.CurrentVegetation + (tile.Land ? " vegetation" : " plankton/algae") + "\nElevation " + tile.ElevationLevel + " · continuous " + tile.Elevation.ToString("0.0000") + " · river " + (tile.River ? "yes" : "no") + "\nRuggedness " + terrainMetric.Ruggedness.ToString("0") + "/100 · fitted slope " + terrainMetric.Slope.ToString("0.000") + " · samples " + terrainMetric.Samples + "\nFreshwater source: " + tile.FreshwaterSource + "\nMean temperature: " + tile.Seasons.Average(s => s.Temperature).ToString("0.0") + " C"
                 + "\nSeasonal range: " + tile.Seasons.Min(s => s.Temperature).ToString("0.0") + " to " + tile.Seasons.Max(s => s.Temperature).ToString("0.0") + " C"
-                + "\nAltitude cooling: " + (Math.Max(0, tile.Elevation - world.Config.SeaLevel) * world.Config.LapseRate).ToString("0.0") + " C"
+                + (AltitudeClimate.Physical(world.Config) ? "\nAltitude: " + AltitudeClimate.Meters(world.Config, tile.Elevation).ToString("N0") + " m relative to sea level" : "\nAltitude: legacy abstract scale")
+                + "\nAltitude cooling: " + AltitudeClimate.Cooling(world.Config, tile.Elevation).ToString("0.0") + " C"
                 + "\nSnowfall in " + tile.Seasons.Count(s => s.Snow > 0) + "/4 seasonal profiles" + orogenInfo;
             float detailsHeight = text.CalcHeight(new GUIContent(details), w);
             GUI.Label(new Rect(12, y, w, detailsHeight), details, text); y += detailsHeight + 8;

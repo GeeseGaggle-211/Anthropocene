@@ -367,7 +367,8 @@ namespace Anthropocene.Presentation
                     : "Plankton/algae: " + tile.CurrentVegetation + " / " + tile.NaturalVegetationPotential + " natural potential\n";
                 string terrainDetails = "";
                 if (knownTerrain != null && knownTerrain.TryGet(target, out var metric))
-                    terrainDetails = "\nContinuous height: " + metric.Elevation.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) + " normalized · slope " + metric.Slope.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
+                    terrainDetails = (AltitudeClimate.Physical(world.Config) ? "\nAltitude: " + AltitudeClimate.Meters(world.Config, metric.Elevation).ToString("N0") + " m relative to sea level" : "")
+                        + "\nContinuous height: " + metric.Elevation.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) + " normalized · slope " + metric.Slope.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
                         "\n" + (metric.Complete ? "Ruggedness" : "Observed ruggedness") + ": " + metric.Ruggedness.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "/100" +
                         (metric.Complete ? "" : " (partial " + metric.Samples + "/" + metric.NeighborhoodSamples + " known cells)");
                 string ecologyDetails = "Elevation " + tile.ElevationLevel + "/10: " + ElevationLevelStage.Description(tile.ElevationLevel) + terrainDetails + "\n" + vegetation + "Gatherable food: " + Knowledge.Bands[tile.Food] + "\n" + (tile.Land ? "Herd forage: " : "Aquatic biomass: ") + Knowledge.Bands[tile.PotentialFood] + " (" + tile.GatherablePercent + "% human-accessible)\n" + water + "\nRenewal: " + Knowledge.Bands[tile.Productivity] + " · " + (tile.Land ? "land" : "aquatic") + " condition: " + Knowledge.Bands[tile.Condition] + rivers + "\n" + featureStatus;

@@ -46,6 +46,7 @@ namespace Anthropocene.Simulation
         public float[] AncientOrogenStrength;
         public float[] AncientOrogenAge;
         public ResourceGenerationOptions ResourceOptions = new ResourceGenerationOptions();
+        internal float[] ClimateSurfaceHeights;
     }
     public sealed class WorldGenerator
     {
@@ -77,7 +78,7 @@ namespace Anthropocene.Simulation
         }
         public static IWorldGenerationStage[] CreateStages(bool placement = true)
         {
-            var stages = new List<IWorldGenerationStage> { new GeometryStage(), new PlateStage(), new ElevationStage(), new ClimateStage(), new HydrologyStage(), new BoundaryRiverStage(), new ElevationLevelStage(), new EcologyStage(), new OasisStage(), new VegetationResourceStage(), new GeologicalProvinceStage(), new MineralDepositStage(), new SurfaceMaterialStage() };
+            var stages = new List<IWorldGenerationStage> { new GeometryStage(), new PlateStage(), new ElevationStage(), new ClimateStage(), new HydrologyStage(), new SurfaceClimateStage(), new BoundaryRiverStage(), new ElevationLevelStage(), new EcologyStage(), new OasisStage(), new VegetationResourceStage(), new GeologicalProvinceStage(), new MineralDepositStage(), new SurfaceMaterialStage() };
             if (placement) stages.Add(new PlacementStage());
             stages.Add(new ResourceAccessAuditStage());
             return stages.ToArray();

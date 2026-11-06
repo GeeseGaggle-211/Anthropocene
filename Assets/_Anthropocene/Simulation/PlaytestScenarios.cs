@@ -14,16 +14,23 @@ namespace Anthropocene.Simulation
             "Steppe analogue: open grassland, nearby freshwater and reachable mobile herds. Test mobile hunters and animal husbandry.",
             "Temperate coastal shore with three adjacent shallows and land freshwater. Test fishing and seasonal reserves."
         };
-        public static int Tile(int scenario) => scenario == 1 ? 225046 : scenario == 2 ? 413877 : scenario == 3 ? 117495 : -1;
+        public static int Tile(int scenario) => scenario == 1 ? 223410 : scenario == 2 ? 413877 : scenario == 3 ? 117495 : -1;
+        public static int Tile(WorldState world, int scenario)
+            => scenario == 1 && !AltitudeClimate.Physical(world.Config) ? 225046 : Tile(scenario);
         public static void Configure(SimulationConfig config)
         { config.Width = 1024; config.Height = 512; config.Players = 80; config.Shape = WorldShape.Continents; config.StartSeparation = 12; }
 
         public static bool Matches(WorldState world, int scenario)
         {
-            int id = Tile(scenario);
+            int id = Tile(world, scenario);
             if (id < 0 || id >= world.Tiles.Length || world.Seed != Seed || world.Config.Width != 1024 || world.Config.Height != 512 || world.Config.Shape != WorldShape.Continents || world.Config.Players != 80) return false;
-            var tile = world.Tiles[id]; var near = world.Map.Radius(id, 1).Select(n => world.Tiles[n]).ToArray();
             if (!world.Camps.Any(c => c.Tile == id) || PlacementStage.Viability(world, id) < world.Config.StartViability) return false;
+            return MatchesHabitat(world, scenario, id);
+        }
+
+        internal static bool MatchesHabitat(WorldState world, int scenario, int id)
+        {
+            var tile = world.Tiles[id]; var near = world.Map.Radius(id, 1).Select(n => world.Tiles[n]).ToArray();
             if (scenario == 1) return tile.Environment == EnvironmentKind.Desert && tile.River && tile.CurrentVegetation == VegetationTier.Medium
                 && tile.Seasons.Average(s => s.Temperature) >= 18 && near.Count(t => t.Environment == EnvironmentKind.Desert) >= 5 && near.All(t => t.TraversableLand);
             if (scenario == 2) return tile.Environment == EnvironmentKind.Grassland && tile.Seasons.Average(s => s.Temperature) < 21
@@ -38,7 +45,7 @@ namespace Anthropocene.Simulation
             if (scenario < 1 || scenario > 3) throw new ArgumentOutOfRangeException(nameof(scenario));
             if (world.Turn != 1 || world.Days != 0 || world.Hunters.Count != 0 || !Matches(world, scenario))
                 throw new InvalidOperationException("This preset no longer matches the generated opening. Check its habitat and viability before updating the preset.");
-            var selected = world.Camps.Single(c => c.Tile == Tile(scenario));
+            var selected = world.Camps.Single(c => c.Tile == Tile(world, scenario));
             int previous = selected.Player;
             if (previous == 0) return;
             foreach (var society in world.Societies)

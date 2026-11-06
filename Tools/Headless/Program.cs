@@ -411,6 +411,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "CropAgricultureChecks", Run = () => CropAgricultureChecks.Run() },
                 new ParallelChecks.Entry { Name = "ClimateMoistureChecks", Run = () => ClimateMoistureChecks.Run() },
                 new ParallelChecks.Entry { Name = "ClimateGenerationChecks", Cost = 1.5, Run = () => ClimateGenerationChecks.Run() },
+                new ParallelChecks.Entry { Name = "AltitudeClimateChecks", Cost = 1.5, Run = () => AltitudeClimateChecks.Run() },
                 new ParallelChecks.Entry { Name = "DrainageGenerationChecks", Cost = 1.5, Run = () => DrainageGenerationChecks.Run() },
                 new ParallelChecks.Entry { Name = "WorldMorphologyChecks", Cost = 7, Run = () => WorldMorphologyChecks.Run() },
                 new ParallelChecks.Entry { Name = "TopographyChecks", Cost = 2, Run = () => TopographyChecks.Run() },

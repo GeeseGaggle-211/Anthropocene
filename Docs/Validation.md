@@ -684,3 +684,28 @@ See [TerrainClimateAudit.md](TerrainClimateAudit.md) for the seed-11 diagnostic
 and the distinction between implemented atlas improvements and unimplemented
 generation changes. The focused contour suite passes 984 assertions, including
 retained player intervals and shallow relief resolved by the finer atlas lattice.
+
+### PR 45 physical altitude climate (6 November 2026)
+
+Generator 15 implements the user-authorized physical altitude scale for new
+worlds: 12,000 metres per normalized height unit, with 6.5 C/km cooling and a
+conservative final-height temperature/rain/snow correction before ecology.
+Older saves retain legacy calibration and exact stored heights/profiles.
+[TerrainClimateAudit.md](TerrainClimateAudit.md) records the design, seed-11
+comparison, scale measurements and remaining river/dissection limitations.
+
+The complete fixed headless suite, three-seed opening validation and 36 compact
+geography cases passed (`3 --jobs=3 --geography`). Focused coverage includes
+28 altitude/climate assertions, 15 climate, 20 drainage, 35 morphology and
+984 topography assertions. Historical S24 fishing and geological payload
+goldens explicitly use legacy altitude; physical defaults still exercise the
+current generator, resource accounting, presets, determinism and saves.
+Unity 6000.5.10f1 Development build succeeded and all 31 EditMode tests passed.
+The current-contract document checker passed. These are deterministic
+simulation/UI validations, not training-readiness evidence.
+
+Standard seed 11 retained 80/80 viable camps (minimum 107.4%); 2048×1024 retained
+160/160 (minimum 86.1%). The extra generation pass took 19.88 ms at that larger
+scale, with an 8 MiB temporary height snapshot. New climate changes biomes,
+resources and start distributions; [Playtesting.md](Playtesting.md) has the
+remeasured presets. Evidence lives in ignored `TestResults/PR45Altitude/`.

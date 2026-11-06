@@ -153,3 +153,19 @@ region and both climate views, checks state/fog purity and leaves the atlas open
 See [TerrainClimateAudit.md](TerrainClimateAudit.md) for measured seed-11
 limitations, reproduction and the proposed generation follow-up. Snowfall is a
 precipitation fraction; it does not claim accumulated snow cover.
+
+## Physical-altitude follow-up (generator 15)
+
+New worlds now convert normalized elevation to metres above sea level at
+12,000 m/unit and use 6.5 C/km surface cooling. Older saves retain abstract
+calibration and their stored profiles. See [TerrainClimateAudit.md](TerrainClimateAudit.md)
+for the generation boundary, compatibility checks and changed climate evidence.
+The atlas and player inspector show derived metres; atlas Fine contours are
+150 m at world scale and as fine as 30 m close up, with 1,200 m major contours.
+These units do not redefine the ten gameplay elevation levels.
+
+The atlas capture route now writes fourteen images: six paired topography and
+ruggedness locations (including the highest peak), then world Temperature and
+Snowfall. It records the source revision and physical calibration in its
+manifest, checks unchanged world/fog state and leaves full-world Topography
+open. This supersedes the earlier eight/twelve-frame route descriptions above.

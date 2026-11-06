@@ -35,6 +35,8 @@ namespace Anthropocene.Simulation
         private void InitializeNeolithic(System.Runtime.Serialization.StreamingContext context)
         {
             var defaults = new SimulationConfig(); Neolithic = defaults.Neolithic;
+            // Older saves retain abstract altitude calibration and their stored climate.
+            ElevationMetersPerUnit = 0; LapseRateCPerKm = defaults.LapseRateCPerKm;
             // Preserve established tuning defaults when reading older saves that
             // predate these legacy food-horizon fields. Explicit serialized zero
             // values still overwrite these defaults during deserialization.
@@ -242,6 +244,8 @@ namespace Anthropocene.Simulation
         public double HabitableZonePosition = .5, InnerTemperature = 12, OuterTemperature = -12;
         public double SeaLevel = .45, Uplift = .2, ElevationNoise = .11, Erosion = .12;
         public double SeasonalAmplitude = 13, LatitudeGradient = 48, LapseRate = 28, OceanModeration = .45;
+        // New-world physical height calibration. Zero keeps the legacy LapseRate path.
+        [System.Runtime.Serialization.OptionalField] public double ElevationMetersPerUnit = 12000, LapseRateCPerKm = 6.5;
         public double Evaporation = .2, MoistureDecay = .97, OrographicRain = 2.5, Monsoon = .12;
         public double RiverThreshold = 28, WaterRecovery = .35, FoodRegeneration = .4;
         // Older saves have neither field. Their stored seasonal rates remain
@@ -274,6 +278,11 @@ namespace Anthropocene.Simulation
 
         public void Validate()
         {
+            if (double.IsNaN(ElevationMetersPerUnit) || double.IsInfinity(ElevationMetersPerUnit) || ElevationMetersPerUnit < 0
+                || double.IsNaN(LapseRateCPerKm) || double.IsInfinity(LapseRateCPerKm) || LapseRateCPerKm < 0
+                || double.IsNaN(LapseRate) || double.IsInfinity(LapseRate) || LapseRate < 0
+                || double.IsNaN(SeaLevel) || double.IsInfinity(SeaLevel))
+                throw new ArgumentException("Invalid altitude/climate calibration.");
             if (double.IsNaN(CropMoistureReference) || double.IsInfinity(CropMoistureReference) || CropMoistureReference < 0 || CropMoistureReference > 1 ||
                 double.IsNaN(CropMoistureExponent) || double.IsInfinity(CropMoistureExponent) || CropMoistureExponent <= 0)
                 throw new ArgumentException("Invalid crop moisture response.");
@@ -768,7 +777,7 @@ namespace Anthropocene.Simulation
     [Serializable]
     public sealed class WorldState
     {
-        public const int GeneratorVersion = 14;
+        public const int GeneratorVersion = 15;
         public int Version = 7, Seed, Turn = 1, NextId = 1;
         // Live player-slot count (WP10a): fission creates AI slots mid-game. 0 means not recorded (older saves and hand-built worlds);
         // LivePlayers then falls back to Config.Players and the highest camp player.

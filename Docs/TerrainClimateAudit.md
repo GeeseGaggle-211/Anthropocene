@@ -1,14 +1,15 @@
 # Terrain, river and altitude-climate audit — 6 November 2026
 
-Status: display corrections are implemented on PR 45; generation corrections
-are **not** implemented or accepted by this audit. Results below are one generated
-Standard / Continents / seed 11 / 80-tribe world with the shipped configuration.
+Status: display corrections and the user-authorized physical altitude climate
+are implemented on PR 45. River incision and ancient-range dissection remain
+open. Sections 1–3 below record the **pre-altitude baseline**: one generated
+Standard / Continents / seed 11 / 80-tribe world with the former climate calibration.
 This is a deterministic geography diagnostic, not a training experiment.
 
 Run from the repository root:
 
 ```powershell
-dotnet run --project Tools/TerrainAudit/Anthropocene.TerrainAudit.csproj -c Release
+dotnet run --project Tools/TerrainAudit/Anthropocene.TerrainAudit.csproj -c Release -- --legacy
 ```
 
 ## 1. Contour detail and rivers
@@ -79,7 +80,8 @@ The standard-atmosphere reference is 6.5 C per kilometre, not 6.5 C per arbitrar
 height unit: [FAA Aviation Weather, chapter 1](https://www.faa.gov/documentLibrary/media/Advisory_Circular/AC_00-6B.pdf).
 Actual surface climate varies with latitude, moisture, season and exposure. A
 metre conversion must be chosen before interpreting current cooling physically.
-That calibration preference was requested from the user and is still pending.
+The user subsequently approved an Earth-like altitude scale for new worlds;
+the implemented conversion and measured effects are recorded below.
 
 The viewer now includes annual/seasonal Temperature and Snowfall layers and
 reports the selected tile's seasonal temperature range, cooling estimate and
@@ -135,4 +137,98 @@ Build.log, EditMode.xml, Player.log, Captures). The capture manifest records the
 exact code revision. Finer full-world contour/river raster builds measured
 677–713 ms; the representative rolling close-up measured 116–120 ms. These are
 cache reconstruction costs, not steady-state frame times. Full frame profiling
-and generator/altitude corrections remain outstanding.
+remains outstanding. The subsequent altitude correction is documented below.
+
+## Physical altitude for new worlds — generator 15
+
+The user authorized an Earth-like altitude scale on 6 November 2026. New worlds
+use `ElevationMetersPerUnit=12000` and `LapseRateCPerKm=6.5`:
+
+```
+altitude metres = (Tile.Elevation - SeaLevel) * ElevationMetersPerUnit
+surface cooling C = max(0, altitude metres) * LapseRateCPerKm / 1000
+```
+
+The 12,000 m/unit conversion is a chosen game calibration, not a measured Earth
+constant. With sea level 0.45, height 0.55 is 1,200 m, 0.70 is 3,000 m and the
+generator's 1.20 ceiling is 9,000 m. The 6.5 C/km rate follows the standard
+atmosphere reference above; local weather and inversions are not simulated.
+Negative underwater elevations are depths relative to sea level and do not
+warm surface air. Gameplay elevation levels remain relative movement bands.
+
+**Authority and ordering.** Final saved `Tile.Elevation`, saved calibration and
+four saved seasonal profiles are authoritative. Altitude is derived, with no
+second per-tile height field. The climate stage captures a temporary height
+snapshot; after hydrology, `SurfaceClimateStage` applies the exact difference
+in altitude cooling to each changed tile's four temperatures, then repartitions
+its existing precipitation at 0 C. Total precipitation, runoff and atmospheric
+transport remain fixed. Ecology, vegetation, food, geological surface resources
+and placement consume the corrected profiles. This is an explicit one-way
+generation boundary, not an iterative atmosphere/hydrology equilibrium. A full
+climate rerun on final land/water classifications still differs by up to 0.707 C
+in seed 11 because maritime forcing also changes; this is a retained abstraction.
+
+**Time, cost and mature scale.** Four environmental profiles remain fixed forcing;
+no new turn clock, snowpack integration or geological-time loop is introduced.
+The additional correction is O(N), with four constant profile operations per
+changed tile and a temporary 4N-byte height snapshot, released after the pass.
+It adds two configuration scalars to saves and no per-turn geography work. Cost
+does not grow with population, settlements, claims or historical duration.
+On 2048×1024 / 160 tribes / seed 11, total generation plus initial terrain-metric
+construction took 24.75 s; the correction took 19.88 ms with an 8 MiB snapshot.
+All 160 starts exceeded the normal 85% viability threshold (minimum 86.1%).
+The observed managed heap was 1.32 GB including uncollected objects; this is not
+a peak-memory or incremental-allocation measurement. No RL readiness claim is
+made: new-world climate changes habitat, resources and observation distributions.
+
+**Compatibility.** Missing altitude fields deserialize to physical scale zero,
+retaining `LapseRate=28` and the legacy generation path. Existing saved heights,
+profiles, resources and generator provenance are not regenerated or relabelled.
+Explicit custom physical scales round-trip. New generation records version 15.
+The selected-tile inspector and contour legend show physical metres only for
+physical-mode worlds; older worlds retain abstract units.
+
+### Seed-11 comparison
+
+Both audits use Standard / Continents / seed 11 / 80 tribes. The generated land
+height and ruggedness distributions are unchanged in this comparison.
+
+| Measurement | Legacy altitude | Physical altitude |
+| --- | ---: | ---: |
+| Land mean annual temperature | 12.29 C | 8.31 C |
+| Land classified Cold/Ice | 18.7% | 29.2% |
+| Land receiving snow in any profile | 24.6% | 34.5% |
+| Level-10 land mean temperature | 8.82 C | -8.03 C |
+| Level-10 land receiving snow in any profile | 8.9% | 99.0% |
+| Highest tile seasonal temperatures | 1.9 / -2.5 / 1.9 / 6.3 C | -21.6 / -26.0 / -21.6 / -17.3 C |
+
+The highest tile (156607) is 5,647 m and now Ice biome with snowfall in every
+profile. New generation took 10.38 s including initial terrain-metric
+construction; all 80 starts remained viable (minimum 107.4%). The warm desert
+river preset moved to an existing generated camp at tile 223410 because the
+old site no longer met its warm-habitat contract. The steppe and coastal sites
+remain. See [Playtesting.md](Playtesting.md) for remeasured food and viability.
+
+Snowfall still means precipitation falling as snow, not persistent snow cover
+or glaciers. River counts can change with climate; raw-channel uphill segments
+and insufficient dissection in old ranges are **not fixed by this change**.
+Rejected alternatives remain percentile-driven snow, cosmetic ruggedness
+inflation, rewriting saved worlds and a second coupled climate/routing solve.
+
+### Reproduction and validation
+
+Run the audit without `--legacy` for physical defaults, or with `--large` for
+the 2048×1024 scale probe. `AltitudeClimateChecks` contains 28 assertions for
+matched-latitude cooling, snowy equatorial peaks, final-height correction,
+precipitation conservation, legacy field omission and custom exact save
+round-trips. Existing climate, morphology, drainage and topography checks run
+on physical defaults. Historical geology payload hashes and the locked S24
+fishing cohort explicitly retain legacy altitude, preserving their original
+goldens rather than silently replacing that evidence.
+
+Local evidence: `TestResults/PR45Altitude/` (`focused.txt`, `standard11.txt`,
+`large-scale.txt`, `full-suite-final.txt`, Unity build/test logs and `Captures`).
+The expanded capture route records fourteen views including the highest peak,
+temperature and snowfall, and asserts that viewing preserves the saved world
+fingerprint and player-visible tile IDs. Final execution results are recorded
+in [Validation.md](Validation.md).

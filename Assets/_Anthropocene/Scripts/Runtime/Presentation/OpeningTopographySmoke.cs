@@ -29,8 +29,10 @@ namespace Anthropocene.Presentation
             string visible = string.Join(",", observation.Tiles.Keys.OrderBy(id => id));
             var metadata = new StringBuilder("Unity developer atlas; all geography revealed; player fog unchanged.\n");
             metadata.AppendLine("sourceSha=" + sourceSha + " seed=11 shape=Continents size=1024x512 players=80");
-            int[] sites = { -1, 396446, 382626, 176362, world.Camps.First(c => c.Player == 0).Tile };
-            string[] names = { "world", "rolling-region", "rough-coast-region", "smooth-uplands-region", "river-region" };
+            metadata.AppendLine("generator=" + world.Generation.GeneratorVersion + " metresPerHeightUnit=" + world.Config.ElevationMetersPerUnit + " lapseCPerKm=" + world.Config.LapseRateCPerKm);
+            int peak = world.Tiles.Where(t => t.Land).OrderByDescending(t => t.Elevation).First().Id;
+            int[] sites = { -1, 396446, 382626, 176362, world.Camps.First(c => c.Player == 0).Tile, peak };
+            string[] names = { "world", "rolling-region", "rough-coast-region", "smooth-uplands-region", "river-region", "highest-peak" };
             for (int site = 0; site < sites.Length; site++)
             {
                 previewZoom = site == 0 ? 1 : 32; previewPan = Vector2.zero;
@@ -66,13 +68,13 @@ namespace Anthropocene.Presentation
                 }
             }
             previewZoom = 1; previewPan = Vector2.zero; previewSeason = -1;
-            previewTile = world.Tiles.Where(t => t.Land).OrderByDescending(t => t.Elevation).First().Id;
+            previewTile = peak;
             foreach (int layer in new[] { 9, 10 })
             {
                 previewLayer = layer;
                 if (previewTexture != null) Destroy(previewTexture); previewTexture = null;
                 yield return null; yield return new WaitForEndOfFrame();
-                string name = (layer + 2).ToString("00") + "-world-" + previewLayers[layer].ToLowerInvariant();
+                string name = (sites.Length * 2 + layer - 8).ToString("00") + "-world-" + previewLayers[layer].ToLowerInvariant();
                 ScreenCapture.CaptureScreenshot(Path.Combine(output, name + ".png"));
                 yield return new WaitForSeconds(.4f);
                 metadata.AppendLine(name + " inspectedPeak=" + previewTile + " season=annual");
@@ -80,10 +82,10 @@ namespace Anthropocene.Presentation
             if (fingerprint != SaveCodec.Fingerprint(world) || visible != string.Join(",", observation.Tiles.Keys.OrderBy(id => id)))
                 throw new InvalidOperationException("Developer atlas changed authoritative state or player visibility.");
             File.WriteAllText(Path.Combine(output, "captures.txt"), metadata.ToString());
-            if (Directory.GetFiles(output, "*.png").Length != 12) throw new InvalidOperationException("Missing atlas captures.");
+            if (Directory.GetFiles(output, "*.png").Length != 14) throw new InvalidOperationException("Missing atlas captures.");
             previewLayer = 8; previewZoom = 1; previewPan = Vector2.zero;
             if (previewTexture != null) Destroy(previewTexture); previewTexture = null;
-            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: twelve atlas captures including rivers, temperature and snowfall; authoritative state and player visibility unchanged. Atlas left open for inspection.\n");
+            File.WriteAllText(Path.Combine(output, "result.txt"), "PASS: fourteen atlas captures including rivers, physical altitude, highest peak, temperature and snowfall; authoritative state and player visibility unchanged. Atlas left open for inspection.\n");
         }
 
         private sealed class TopographyCaptureSite
