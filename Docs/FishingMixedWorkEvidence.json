@@ -1,0 +1,2201 @@
+{
+  "baselineSource": "64ce95343bb5d9f6d04d72dc017ec8352a49323b",
+  "correctionCommit": "b6a690ad2785409ff41bcfd393c74630463ad392",
+  "correctedSourceSha256": {
+    "Assets/_Anthropocene/Simulation/GenerationalEconomy.cs": "3a2892de2f246644496190b6f7349263084fdb785b2cceca42a4b3b4a10e0ab0",
+    "Assets/_Anthropocene/Simulation/FoodHorizonForecast.cs": "a6bb73a2108908fedfab153775926745eae0f7f19493ca0550edd1e2e62aadc9"
+  },
+  "historicalMatchedCohorts": {
+    "method": "Current production config; only resident Fishing and corrected aquatic pressure differ; Sailing off. First technology is diagnostic only. Gatherer person-turns are an endpoint staffing proxy against prior residents, not exact locked labor. Detailed timings are not clean performance comparisons.",
+    "rows": [
+      {
+        "seed": 23,
+        "variant": "control",
+        "revision": "90e4a72-with-sailing-gate-off",
+        "configurationHash": "11C823E08D594B67CBF12761A929626890CBAB537E71A0110508849ED8F20A69",
+        "artifactSha256": "19370b16d714f48914cdf617e8a6b7c4e88056ef47bed45b8d99fe1bba327d4b",
+        "openingTurns": 8,
+        "postOpeningTurns": 40,
+        "worldPopulation": 310684,
+        "fishingFirstSettlements": 9,
+        "fishingFirstResidents": 5309,
+        "fishingFirstResidentWeightedQoL": 0.8094255843913568,
+        "fisherPersonTurns": 0,
+        "gathererPersonTurns": 38619,
+        "forecastResidentCatch": 0,
+        "realizedResidentCatch": 0,
+        "realizedToForecast": null,
+        "plannedMaintenanceWorkerYears": 0,
+        "requiredMaintenanceWorkerYears": 0,
+        "plannedBuildWorkerYears": 0,
+        "toolCoveredWorkerYears": 0,
+        "toolsProduced": 0,
+        "meanPlannedEndpointGroundCapital": null,
+        "moves": 2,
+        "villageAbandonments": 0,
+        "fissions": 7,
+        "emigrants": 260,
+        "immigrants": 260,
+        "foodReceipts": {
+          "Marine gathering": 568790.3190456742,
+          "Gathering": 4633072.65921072,
+          "Cultivation": 3320358.6725723115,
+          "Animal Product": 823844.3255617559,
+          "Slaughter": 31350
+        }
+      },
+      {
+        "seed": 23,
+        "variant": "fishing",
+        "revision": "d014ff0-plus-audit-fields",
+        "configurationHash": "A9686D58E19527495B17638DD6B88A39C69F03EBA054E508E76DB0E85F841A06",
+        "artifactSha256": "6efb585e65317d75fd5ae56d6cf9783501e6074c45205c5d130062467df8ec44",
+        "openingTurns": 8,
+        "postOpeningTurns": 40,
+        "worldPopulation": 323967,
+        "fishingFirstSettlements": 3,
+        "fishingFirstResidents": 1954,
+        "fishingFirstResidentWeightedQoL": 0.8236063537308403,
+        "fisherPersonTurns": 2919,
+        "gathererPersonTurns": 9740,
+        "forecastResidentCatch": 701394.8464130993,
+        "realizedResidentCatch": 701394.8464130993,
+        "realizedToForecast": 1.0,
+        "plannedMaintenanceWorkerYears": 24294.469505143807,
+        "requiredMaintenanceWorkerYears": 24294.469505143807,
+        "plannedBuildWorkerYears": 34085.5304948562,
+        "toolCoveredWorkerYears": 18159.735582099518,
+        "toolsProduced": 961.986779104976,
+        "meanPlannedEndpointGroundCapital": 1.0291594191112667,
+        "moves": 1,
+        "villageAbandonments": 0,
+        "fissions": 1,
+        "emigrants": 0,
+        "immigrants": 0,
+        "foodReceipts": {
+          "FisheryHarvest": 701394.8464130994,
+          "Marine gathering": 317680.0102953152,
+          "Gathering": 1076344.6386320398,
+          "Cultivation": 1143998.4281541076,
+          "Animal Product": 644855.30969332,
+          "Slaughter": 15570
+        }
+      },
+      {
+        "seed": 101,
+        "variant": "control",
+        "revision": "90e4a72-with-sailing-gate-off",
+        "configurationHash": "11C823E08D594B67CBF12761A929626890CBAB537E71A0110508849ED8F20A69",
+        "artifactSha256": "0c93c122c68d408307ef25b1a7a633a53a27566f558f88b1f79658c4a963cb16",
+        "openingTurns": 10,
+        "postOpeningTurns": 40,
+        "worldPopulation": 505383,
+        "fishingFirstSettlements": 25,
+        "fishingFirstResidents": 3618,
+        "fishingFirstResidentWeightedQoL": 0.8460318922456213,
+        "fisherPersonTurns": 0,
+        "gathererPersonTurns": 30677,
+        "forecastResidentCatch": 0,
+        "realizedResidentCatch": 0,
+        "realizedToForecast": null,
+        "plannedMaintenanceWorkerYears": 0,
+        "requiredMaintenanceWorkerYears": 0,
+        "plannedBuildWorkerYears": 0,
+        "toolCoveredWorkerYears": 0,
+        "toolsProduced": 0,
+        "meanPlannedEndpointGroundCapital": null,
+        "moves": 5,
+        "villageAbandonments": 0,
+        "fissions": 23,
+        "emigrants": 463,
+        "immigrants": 463,
+        "foodReceipts": {
+          "Gathering": 4268240.347515038,
+          "Marine gathering": 313825.8462695739,
+          "Cultivation": 2009964.353288564,
+          "Animal Product": 661442.8195472719,
+          "Slaughter": 660
+        }
+      },
+      {
+        "seed": 101,
+        "variant": "fishing",
+        "revision": "d014ff0-plus-audit-fields",
+        "configurationHash": "A9686D58E19527495B17638DD6B88A39C69F03EBA054E508E76DB0E85F841A06",
+        "artifactSha256": "ab184a3736413eb21b57432c332b7679c4c72536ba317075a2eccecd3c39e32f",
+        "openingTurns": 10,
+        "postOpeningTurns": 40,
+        "worldPopulation": 482497,
+        "fishingFirstSettlements": 33,
+        "fishingFirstResidents": 6965,
+        "fishingFirstResidentWeightedQoL": 0.8579474805154527,
+        "fisherPersonTurns": 4180,
+        "gathererPersonTurns": 47328,
+        "forecastResidentCatch": 978528.7043504199,
+        "realizedResidentCatch": 961727.0086122988,
+        "realizedToForecast": 0.9828296342627223,
+        "plannedMaintenanceWorkerYears": 30410.583571315885,
+        "requiredMaintenanceWorkerYears": 31153.564216333507,
+        "plannedBuildWorkerYears": 40391.80483047972,
+        "toolCoveredWorkerYears": 32341.253014839982,
+        "toolsProduced": 1706.062650741999,
+        "meanPlannedEndpointGroundCapital": 0.36934211612556245,
+        "moves": 18,
+        "villageAbandonments": 0,
+        "fissions": 30,
+        "emigrants": 403,
+        "immigrants": 403,
+        "foodReceipts": {
+          "FisheryHarvest": 961727.0086122986,
+          "Gathering": 5976249.813410677,
+          "Marine gathering": 505111.48247645714,
+          "Cultivation": 3591452.7103833184,
+          "Animal Product": 64808.80073840641,
+          "Slaughter": 18480
+        }
+      }
+    ]
+  },
+  "correctedAndPressureOnlyCohorts": {
+    "final-control-23": {
+      "metadata": {
+        "revision": "64ce953+material-reservation",
+        "seed": 23,
+        "inputHash": null,
+        "initialFingerprint": "31C01CECD6F16A2E856039D60F9ED640C1FC7A1D3E1BB2180B0D3978B23D13C9",
+        "finalFingerprint": "BC589F7A544F18DA9742A11BB755BA6CB92A6B2FACAD441DCC6D90E37F003EA2",
+        "configurationHash": "11C823E08D594B67CBF12761A929626890CBAB537E71A0110508849ED8F20A69",
+        "endTurn": 48,
+        "checkpoints": {},
+        "worldPopulation": 350379,
+        "NeolithicFishingEnabled": false,
+        "CorrectedAquaticSeasonalPressureEnabled": false,
+        "NeolithicSailingEnabled": false,
+        "EconomicAllocation": "DemandControl",
+        "artifactSha256": "36580D03EFD42855C1E031D6FFDEBE5D01BF5951649EC07272326C65898E60CB"
+      },
+      "series": [
+        {
+          "turn": 9,
+          "settlements": 2,
+          "residents": 184,
+          "weightedQoL": 0.0
+        },
+        {
+          "turn": 10,
+          "settlements": 2,
+          "residents": 210,
+          "weightedQoL": 0.0
+        },
+        {
+          "turn": 11,
+          "settlements": 2,
+          "residents": 236,
+          "weightedQoL": 0.0
+        },
+        {
+          "turn": 12,
+          "settlements": 2,
+          "residents": 260,
+          "weightedQoL": 0.0
+        },
+        {
+          "turn": 13,
+          "settlements": 3,
+          "residents": 282,
+          "weightedQoL": 0.17965508237632924
+        },
+        {
+          "turn": 14,
+          "settlements": 4,
+          "residents": 318,
+          "weightedQoL": 0.22418159260687984
+        },
+        {
+          "turn": 15,
+          "settlements": 4,
+          "residents": 535,
+          "weightedQoL": 0.21143897322704022
+        },
+        {
+          "turn": 16,
+          "settlements": 6,
+          "residents": 707,
+          "weightedQoL": 0.2812993233283165
+        },
+        {
+          "turn": 17,
+          "settlements": 6,
+          "residents": 973,
+          "weightedQoL": 0.25504943792869095
+        },
+        {
+          "turn": 18,
+          "settlements": 7,
+          "residents": 1095,
+          "weightedQoL": 0.35751109930060776
+        },
+        {
+          "turn": 19,
+          "settlements": 8,
+          "residents": 1310,
+          "weightedQoL": 0.4175539516402944
+        },
+        {
+          "turn": 20,
+          "settlements": 8,
+          "residents": 1790,
+          "weightedQoL": 0.5600690687775747
+        },
+        {
+          "turn": 21,
+          "settlements": 9,
+          "residents": 2319,
+          "weightedQoL": 0.7732491241535945
+        },
+        {
+          "turn": 22,
+          "settlements": 9,
+          "residents": 2567,
+          "weightedQoL": 0.7822320597106289
+        },
+        {
+          "turn": 23,
+          "settlements": 9,
+          "residents": 2589,
+          "weightedQoL": 0.8494541467322868
+        },
+        {
+          "turn": 24,
+          "settlements": 9,
+          "residents": 2641,
+          "weightedQoL": 0.8562064417760257
+        },
+        {
+          "turn": 25,
+          "settlements": 9,
+          "residents": 2767,
+          "weightedQoL": 0.8903539588324167
+        },
+        {
+          "turn": 26,
+          "settlements": 9,
+          "residents": 2913,
+          "weightedQoL": 0.9080153601515853
+        },
+        {
+          "turn": 27,
+          "settlements": 9,
+          "residents": 2836,
+          "weightedQoL": 0.9169923171857889
+        },
+        {
+          "turn": 28,
+          "settlements": 9,
+          "residents": 3110,
+          "weightedQoL": 0.8964995711094209
+        },
+        {
+          "turn": 29,
+          "settlements": 9,
+          "residents": 3208,
+          "weightedQoL": 0.8861806713528115
+        },
+        {
+          "turn": 30,
+          "settlements": 9,
+          "residents": 3332,
+          "weightedQoL": 0.8827229638598897
+        },
+        {
+          "turn": 31,
+          "settlements": 9,
+          "residents": 3441,
+          "weightedQoL": 0.8806674273564717
+        },
+        {
+          "turn": 32,
+          "settlements": 9,
+          "residents": 3646,
+          "weightedQoL": 0.8715118125699037
+        },
+        {
+          "turn": 33,
+          "settlements": 9,
+          "residents": 4051,
+          "weightedQoL": 0.8316072359966671
+        },
+        {
+          "turn": 34,
+          "settlements": 9,
+          "residents": 3897,
+          "weightedQoL": 0.8808367875094465
+        },
+        {
+          "turn": 35,
+          "settlements": 9,
+          "residents": 3930,
+          "weightedQoL": 0.866929497798562
+        },
+        {
+          "turn": 36,
+          "settlements": 9,
+          "residents": 4114,
+          "weightedQoL": 0.8568141985053368
+        },
+        {
+          "turn": 37,
+          "settlements": 9,
+          "residents": 4160,
+          "weightedQoL": 0.851161923011698
+        },
+        {
+          "turn": 38,
+          "settlements": 9,
+          "residents": 4452,
+          "weightedQoL": 0.8370835424875613
+        },
+        {
+          "turn": 39,
+          "settlements": 9,
+          "residents": 4400,
+          "weightedQoL": 0.8419467657881657
+        },
+        {
+          "turn": 40,
+          "settlements": 9,
+          "residents": 4588,
+          "weightedQoL": 0.839926900577269
+        },
+        {
+          "turn": 41,
+          "settlements": 9,
+          "residents": 4604,
+          "weightedQoL": 0.8377639694351717
+        },
+        {
+          "turn": 42,
+          "settlements": 9,
+          "residents": 4787,
+          "weightedQoL": 0.8270604562433282
+        },
+        {
+          "turn": 43,
+          "settlements": 9,
+          "residents": 4813,
+          "weightedQoL": 0.8315938551024296
+        },
+        {
+          "turn": 44,
+          "settlements": 9,
+          "residents": 4986,
+          "weightedQoL": 0.8187773827537954
+        },
+        {
+          "turn": 45,
+          "settlements": 9,
+          "residents": 5093,
+          "weightedQoL": 0.8150815336555158
+        },
+        {
+          "turn": 46,
+          "settlements": 9,
+          "residents": 5179,
+          "weightedQoL": 0.8119666574867695
+        },
+        {
+          "turn": 47,
+          "settlements": 9,
+          "residents": 5252,
+          "weightedQoL": 0.8072167111700644
+        },
+        {
+          "turn": 48,
+          "settlements": 9,
+          "residents": 5289,
+          "weightedQoL": 0.8081674483474373
+        }
+      ],
+      "finalCamps": [
+        {
+          "camp": 1435,
+          "population": 479,
+          "site": 124843
+        },
+        {
+          "camp": 1447,
+          "population": 1000,
+          "site": 120855
+        },
+        {
+          "camp": 1997,
+          "population": 448,
+          "site": 125973
+        },
+        {
+          "camp": 2032,
+          "population": 510,
+          "site": 122904
+        },
+        {
+          "camp": 2079,
+          "population": 322,
+          "site": 126888
+        },
+        {
+          "camp": 2084,
+          "population": 497,
+          "site": 117786
+        },
+        {
+          "camp": 2129,
+          "population": 982,
+          "site": 125976
+        },
+        {
+          "camp": 2151,
+          "population": 436,
+          "site": 119835
+        },
+        {
+          "camp": 2188,
+          "population": 615,
+          "site": 130068
+        }
+      ],
+      "founders": {
+        "1435": {
+          "firstCloth": 16,
+          "firstHousing": 18,
+          "cultivation": 13,
+          "finalPopulation": 479,
+          "fissionStages": {
+            "no-viable-site": 1,
+            "reject-mover": 38,
+            "committed-Distress": 1,
+            "excluded-immigration": 2
+          }
+        },
+        "1447": {
+          "firstCloth": 16,
+          "firstHousing": 20,
+          "cultivation": 13,
+          "finalPopulation": 1000,
+          "fissionStages": {
+            "reject-mover": 7,
+            "committed-Crowding": 3,
+            "excluded-immigration": 8,
+            "no-known-site": 24
+          }
+        }
+      }
+    },
+    "final-fishing-23": {
+      "metadata": {
+        "revision": "64ce953+material-reservation",
+        "seed": 23,
+        "inputHash": null,
+        "initialFingerprint": "5AEC61EF2D0681CF9176D9D8FE57716F6D529861F1F2112B121144B3C7FA6DDB",
+        "finalFingerprint": "E8C55AEF4824B437A38F70EB45EA6E1296CDD89276E15464C998EB005B356A4C",
+        "configurationHash": "A9686D58E19527495B17638DD6B88A39C69F03EBA054E508E76DB0E85F841A06",
+        "endTurn": 48,
+        "checkpoints": {},
+        "worldPopulation": 355146,
+        "NeolithicFishingEnabled": true,
+        "CorrectedAquaticSeasonalPressureEnabled": true,
+        "NeolithicSailingEnabled": false,
+        "EconomicAllocation": "DemandControl",
+        "artifactSha256": "93B3ECC11837DC5E3D0514526D8478690AE6E12834F2CB351AECF1DD132175AC"
+      },
+      "series": [
+        {
+          "turn": 9,
+          "settlements": 4,
+          "residents": 356,
+          "weightedQoL": 0.11544676341013281
+        },
+        {
+          "turn": 10,
+          "settlements": 4,
+          "residents": 546,
+          "weightedQoL": 0.3836486826641441
+        },
+        {
+          "turn": 11,
+          "settlements": 4,
+          "residents": 753,
+          "weightedQoL": 0.7895996325155797
+        },
+        {
+          "turn": 12,
+          "settlements": 5,
+          "residents": 1136,
+          "weightedQoL": 0.7922191431870702
+        },
+        {
+          "turn": 13,
+          "settlements": 5,
+          "residents": 1121,
+          "weightedQoL": 0.8024654238857845
+        },
+        {
+          "turn": 14,
+          "settlements": 6,
+          "residents": 1573,
+          "weightedQoL": 0.8226077464855267
+        },
+        {
+          "turn": 15,
+          "settlements": 7,
+          "residents": 1522,
+          "weightedQoL": 0.8268456955813931
+        },
+        {
+          "turn": 16,
+          "settlements": 7,
+          "residents": 1891,
+          "weightedQoL": 0.8987118168509016
+        },
+        {
+          "turn": 17,
+          "settlements": 7,
+          "residents": 1872,
+          "weightedQoL": 0.9469880510562388
+        },
+        {
+          "turn": 18,
+          "settlements": 7,
+          "residents": 2048,
+          "weightedQoL": 0.9310714345195267
+        },
+        {
+          "turn": 19,
+          "settlements": 7,
+          "residents": 2112,
+          "weightedQoL": 0.9507421596255208
+        },
+        {
+          "turn": 20,
+          "settlements": 7,
+          "residents": 2240,
+          "weightedQoL": 0.9309152822278217
+        },
+        {
+          "turn": 21,
+          "settlements": 7,
+          "residents": 2349,
+          "weightedQoL": 0.9393510904140183
+        },
+        {
+          "turn": 22,
+          "settlements": 7,
+          "residents": 2434,
+          "weightedQoL": 0.9268461203688971
+        },
+        {
+          "turn": 23,
+          "settlements": 7,
+          "residents": 2553,
+          "weightedQoL": 0.9297940100424019
+        },
+        {
+          "turn": 24,
+          "settlements": 7,
+          "residents": 2604,
+          "weightedQoL": 0.9250122082126253
+        },
+        {
+          "turn": 25,
+          "settlements": 7,
+          "residents": 3002,
+          "weightedQoL": 0.8745646429902036
+        },
+        {
+          "turn": 26,
+          "settlements": 7,
+          "residents": 3084,
+          "weightedQoL": 0.8916807943780793
+        },
+        {
+          "turn": 27,
+          "settlements": 7,
+          "residents": 3192,
+          "weightedQoL": 0.8759591823761411
+        },
+        {
+          "turn": 28,
+          "settlements": 7,
+          "residents": 3308,
+          "weightedQoL": 0.881795656011873
+        },
+        {
+          "turn": 29,
+          "settlements": 7,
+          "residents": 3150,
+          "weightedQoL": 0.8764743819836529
+        },
+        {
+          "turn": 30,
+          "settlements": 7,
+          "residents": 3389,
+          "weightedQoL": 0.8852449332496292
+        },
+        {
+          "turn": 31,
+          "settlements": 7,
+          "residents": 3346,
+          "weightedQoL": 0.876042952247983
+        },
+        {
+          "turn": 32,
+          "settlements": 7,
+          "residents": 3530,
+          "weightedQoL": 0.8699051806655796
+        },
+        {
+          "turn": 33,
+          "settlements": 7,
+          "residents": 3492,
+          "weightedQoL": 0.8703591695797971
+        },
+        {
+          "turn": 34,
+          "settlements": 7,
+          "residents": 3615,
+          "weightedQoL": 0.8666368583550621
+        },
+        {
+          "turn": 35,
+          "settlements": 7,
+          "residents": 3610,
+          "weightedQoL": 0.8710657916924147
+        },
+        {
+          "turn": 36,
+          "settlements": 7,
+          "residents": 3636,
+          "weightedQoL": 0.8653902490219271
+        },
+        {
+          "turn": 37,
+          "settlements": 7,
+          "residents": 3718,
+          "weightedQoL": 0.8656045073924499
+        },
+        {
+          "turn": 38,
+          "settlements": 7,
+          "residents": 3713,
+          "weightedQoL": 0.8639988396253706
+        },
+        {
+          "turn": 39,
+          "settlements": 7,
+          "residents": 3805,
+          "weightedQoL": 0.863804910533911
+        },
+        {
+          "turn": 40,
+          "settlements": 7,
+          "residents": 3788,
+          "weightedQoL": 0.8624583417845563
+        },
+        {
+          "turn": 41,
+          "settlements": 7,
+          "residents": 4049,
+          "weightedQoL": 0.8427829368286888
+        },
+        {
+          "turn": 42,
+          "settlements": 7,
+          "residents": 3926,
+          "weightedQoL": 0.8570413727467979
+        },
+        {
+          "turn": 43,
+          "settlements": 7,
+          "residents": 4137,
+          "weightedQoL": 0.8484557980430123
+        },
+        {
+          "turn": 44,
+          "settlements": 7,
+          "residents": 4072,
+          "weightedQoL": 0.8508815036195692
+        },
+        {
+          "turn": 45,
+          "settlements": 7,
+          "residents": 4286,
+          "weightedQoL": 0.8337928615754401
+        },
+        {
+          "turn": 46,
+          "settlements": 7,
+          "residents": 4260,
+          "weightedQoL": 0.8380647792350191
+        },
+        {
+          "turn": 47,
+          "settlements": 7,
+          "residents": 4480,
+          "weightedQoL": 0.8178368398531807
+        },
+        {
+          "turn": 48,
+          "settlements": 7,
+          "residents": 4556,
+          "weightedQoL": 0.808107359911569
+        }
+      ],
+      "finalCamps": [
+        {
+          "camp": 1435,
+          "population": 565,
+          "site": 123820
+        },
+        {
+          "camp": 1447,
+          "population": 1000,
+          "site": 121878
+        },
+        {
+          "camp": 1862,
+          "population": 395,
+          "site": 125865
+        },
+        {
+          "camp": 1864,
+          "population": 936,
+          "site": 124948
+        },
+        {
+          "camp": 1979,
+          "population": 199,
+          "site": 128935
+        },
+        {
+          "camp": 2026,
+          "population": 934,
+          "site": 123927
+        },
+        {
+          "camp": 2057,
+          "population": 527,
+          "site": 118809
+        }
+      ],
+      "founders": {
+        "1435": {
+          "firstCloth": 8,
+          "firstHousing": 11,
+          "cultivation": 15,
+          "finalPopulation": 565,
+          "fissionStages": {
+            "no-viable-site": 37,
+            "reject-mover": 1,
+            "committed-Distress": 1,
+            "excluded-immigration": 3
+          }
+        },
+        "1447": {
+          "firstCloth": 8,
+          "firstHousing": 11,
+          "cultivation": 14,
+          "finalPopulation": 1000,
+          "fissionStages": {
+            "reject-mover": 27,
+            "committed-Distress": 3,
+            "excluded-immigration": 12
+          }
+        }
+      }
+    },
+    "final-control-101": {
+      "metadata": {
+        "revision": "64ce953+material-reservation",
+        "seed": 101,
+        "inputHash": null,
+        "initialFingerprint": "E2DE518CEDD26AF0532DB7D3D79376735AE894D807535803C9544E12D794D3C9",
+        "finalFingerprint": "636D4879E36C9A3D4F6DC6DEA7D398356D92CDBCD75763962832E3EEA486AA82",
+        "configurationHash": "11C823E08D594B67CBF12761A929626890CBAB537E71A0110508849ED8F20A69",
+        "endTurn": 50,
+        "checkpoints": {},
+        "worldPopulation": 579433,
+        "NeolithicFishingEnabled": false,
+        "CorrectedAquaticSeasonalPressureEnabled": false,
+        "NeolithicSailingEnabled": false,
+        "EconomicAllocation": "DemandControl",
+        "artifactSha256": "4A10FA631D65B852428B7ECBF2DC9309C359ACDC2897ECE55438889E424A2AB4"
+      },
+      "series": [
+        {
+          "turn": 11,
+          "settlements": 3,
+          "residents": 114,
+          "weightedQoL": 0.4621648667099094
+        },
+        {
+          "turn": 12,
+          "settlements": 3,
+          "residents": 125,
+          "weightedQoL": 0.4280637605281082
+        },
+        {
+          "turn": 13,
+          "settlements": 3,
+          "residents": 145,
+          "weightedQoL": 0.3458431973659567
+        },
+        {
+          "turn": 14,
+          "settlements": 3,
+          "residents": 171,
+          "weightedQoL": 0.2233268101074523
+        },
+        {
+          "turn": 15,
+          "settlements": 3,
+          "residents": 228,
+          "weightedQoL": 0.11999072715134523
+        },
+        {
+          "turn": 16,
+          "settlements": 3,
+          "residents": 288,
+          "weightedQoL": 0.1566167982749793
+        },
+        {
+          "turn": 17,
+          "settlements": 3,
+          "residents": 419,
+          "weightedQoL": 0.06622031090964815
+        },
+        {
+          "turn": 18,
+          "settlements": 4,
+          "residents": 516,
+          "weightedQoL": 0.24284747437691276
+        },
+        {
+          "turn": 19,
+          "settlements": 4,
+          "residents": 519,
+          "weightedQoL": 0.24047911222870533
+        },
+        {
+          "turn": 20,
+          "settlements": 5,
+          "residents": 704,
+          "weightedQoL": 0.36629326404936735
+        },
+        {
+          "turn": 21,
+          "settlements": 6,
+          "residents": 1021,
+          "weightedQoL": 0.6902536026774257
+        },
+        {
+          "turn": 22,
+          "settlements": 7,
+          "residents": 1496,
+          "weightedQoL": 0.7145158845880872
+        },
+        {
+          "turn": 23,
+          "settlements": 7,
+          "residents": 1796,
+          "weightedQoL": 0.8300009098996236
+        },
+        {
+          "turn": 24,
+          "settlements": 8,
+          "residents": 1653,
+          "weightedQoL": 0.8304415534581925
+        },
+        {
+          "turn": 25,
+          "settlements": 8,
+          "residents": 1778,
+          "weightedQoL": 0.8759736398403483
+        },
+        {
+          "turn": 26,
+          "settlements": 8,
+          "residents": 1902,
+          "weightedQoL": 0.8561470384276394
+        },
+        {
+          "turn": 27,
+          "settlements": 9,
+          "residents": 1793,
+          "weightedQoL": 0.896261864865431
+        },
+        {
+          "turn": 28,
+          "settlements": 9,
+          "residents": 2028,
+          "weightedQoL": 0.8612992070500775
+        },
+        {
+          "turn": 29,
+          "settlements": 9,
+          "residents": 2073,
+          "weightedQoL": 0.865039500807019
+        },
+        {
+          "turn": 30,
+          "settlements": 10,
+          "residents": 2110,
+          "weightedQoL": 0.8516231453392701
+        },
+        {
+          "turn": 31,
+          "settlements": 10,
+          "residents": 2245,
+          "weightedQoL": 0.839071053588595
+        },
+        {
+          "turn": 32,
+          "settlements": 10,
+          "residents": 2348,
+          "weightedQoL": 0.8226821776497365
+        },
+        {
+          "turn": 33,
+          "settlements": 11,
+          "residents": 2359,
+          "weightedQoL": 0.8198308088932761
+        },
+        {
+          "turn": 34,
+          "settlements": 11,
+          "residents": 2444,
+          "weightedQoL": 0.8259226744884857
+        },
+        {
+          "turn": 35,
+          "settlements": 13,
+          "residents": 2461,
+          "weightedQoL": 0.8080358316567773
+        },
+        {
+          "turn": 36,
+          "settlements": 13,
+          "residents": 2647,
+          "weightedQoL": 0.8129336298144663
+        },
+        {
+          "turn": 37,
+          "settlements": 13,
+          "residents": 2707,
+          "weightedQoL": 0.8190583287803228
+        },
+        {
+          "turn": 38,
+          "settlements": 14,
+          "residents": 2809,
+          "weightedQoL": 0.8107200217173333
+        },
+        {
+          "turn": 39,
+          "settlements": 16,
+          "residents": 2791,
+          "weightedQoL": 0.8234351092725
+        },
+        {
+          "turn": 40,
+          "settlements": 16,
+          "residents": 3055,
+          "weightedQoL": 0.8289837746661812
+        },
+        {
+          "turn": 41,
+          "settlements": 16,
+          "residents": 3003,
+          "weightedQoL": 0.8301328638464482
+        },
+        {
+          "turn": 42,
+          "settlements": 17,
+          "residents": 3055,
+          "weightedQoL": 0.8349887180533976
+        },
+        {
+          "turn": 43,
+          "settlements": 18,
+          "residents": 3071,
+          "weightedQoL": 0.8365504657257574
+        },
+        {
+          "turn": 44,
+          "settlements": 18,
+          "residents": 3196,
+          "weightedQoL": 0.8302881838629523
+        },
+        {
+          "turn": 45,
+          "settlements": 19,
+          "residents": 3168,
+          "weightedQoL": 0.8189702528836896
+        },
+        {
+          "turn": 46,
+          "settlements": 19,
+          "residents": 3357,
+          "weightedQoL": 0.8269645985218824
+        },
+        {
+          "turn": 47,
+          "settlements": 21,
+          "residents": 3243,
+          "weightedQoL": 0.8241670081785362
+        },
+        {
+          "turn": 48,
+          "settlements": 21,
+          "residents": 3452,
+          "weightedQoL": 0.8311242815147343
+        },
+        {
+          "turn": 49,
+          "settlements": 21,
+          "residents": 3391,
+          "weightedQoL": 0.8221931933615201
+        },
+        {
+          "turn": 50,
+          "settlements": 22,
+          "residents": 3490,
+          "weightedQoL": 0.8355104640885987
+        }
+      ],
+      "finalCamps": [
+        {
+          "camp": 1478,
+          "population": 84,
+          "site": 358315
+        },
+        {
+          "camp": 1962,
+          "population": 1074,
+          "site": 353196
+        },
+        {
+          "camp": 2006,
+          "population": 155,
+          "site": 359341
+        },
+        {
+          "camp": 2163,
+          "population": 835,
+          "site": 352170
+        },
+        {
+          "camp": 2194,
+          "population": 100,
+          "site": 362413
+        },
+        {
+          "camp": 2216,
+          "population": 72,
+          "site": 361386
+        },
+        {
+          "camp": 2229,
+          "population": 69,
+          "site": 356266
+        },
+        {
+          "camp": 2260,
+          "population": 67,
+          "site": 359336
+        },
+        {
+          "camp": 2320,
+          "population": 61,
+          "site": 357287
+        },
+        {
+          "camp": 2389,
+          "population": 59,
+          "site": 360357
+        },
+        {
+          "camp": 2495,
+          "population": 383,
+          "site": 354215
+        },
+        {
+          "camp": 2585,
+          "population": 62,
+          "site": 362407
+        },
+        {
+          "camp": 2602,
+          "population": 58,
+          "site": 358308
+        },
+        {
+          "camp": 2844,
+          "population": 53,
+          "site": 361378
+        },
+        {
+          "camp": 2949,
+          "population": 75,
+          "site": 364462
+        },
+        {
+          "camp": 2967,
+          "population": 44,
+          "site": 363428
+        },
+        {
+          "camp": 3256,
+          "population": 44,
+          "site": 364458
+        },
+        {
+          "camp": 3368,
+          "population": 52,
+          "site": 359329
+        },
+        {
+          "camp": 3599,
+          "population": 47,
+          "site": 362399
+        },
+        {
+          "camp": 3847,
+          "population": 38,
+          "site": 356259
+        },
+        {
+          "camp": 3907,
+          "population": 42,
+          "site": 364449
+        },
+        {
+          "camp": 4186,
+          "population": 16,
+          "site": 358303
+        }
+      ],
+      "founders": {}
+    },
+    "final-fishing-101": {
+      "metadata": {
+        "revision": "64ce953+material-reservation",
+        "seed": 101,
+        "inputHash": null,
+        "initialFingerprint": "CBF57EBB05649A9FD7C1AE7C1DADAEA44AE9EAB4769B6322911B6F2A38316CAB",
+        "finalFingerprint": "726062F318EEE8EAD41945A6C9AAB8C76B6EA8979E5F82F2641ABDBC69F115E5",
+        "configurationHash": "A9686D58E19527495B17638DD6B88A39C69F03EBA054E508E76DB0E85F841A06",
+        "endTurn": 50,
+        "checkpoints": {},
+        "worldPopulation": 546158,
+        "NeolithicFishingEnabled": true,
+        "CorrectedAquaticSeasonalPressureEnabled": true,
+        "NeolithicSailingEnabled": false,
+        "EconomicAllocation": "DemandControl",
+        "artifactSha256": "FF9CC2484DFE231F8B6E3D49383FC3307A89754F5393D4ECE026BF44ADB8A44F"
+      },
+      "series": [
+        {
+          "turn": 11,
+          "settlements": 3,
+          "residents": 336,
+          "weightedQoL": 0.6059826341807647
+        },
+        {
+          "turn": 12,
+          "settlements": 3,
+          "residents": 430,
+          "weightedQoL": 0.7332429206651784
+        },
+        {
+          "turn": 13,
+          "settlements": 4,
+          "residents": 661,
+          "weightedQoL": 0.8339454190784767
+        },
+        {
+          "turn": 14,
+          "settlements": 4,
+          "residents": 1057,
+          "weightedQoL": 0.8660374563582178
+        },
+        {
+          "turn": 15,
+          "settlements": 6,
+          "residents": 1288,
+          "weightedQoL": 0.8478090736706528
+        },
+        {
+          "turn": 16,
+          "settlements": 6,
+          "residents": 1364,
+          "weightedQoL": 0.8999409650443249
+        },
+        {
+          "turn": 17,
+          "settlements": 7,
+          "residents": 1507,
+          "weightedQoL": 0.9103306238717764
+        },
+        {
+          "turn": 18,
+          "settlements": 7,
+          "residents": 1640,
+          "weightedQoL": 0.8945273663807011
+        },
+        {
+          "turn": 19,
+          "settlements": 7,
+          "residents": 1480,
+          "weightedQoL": 0.9353254293408185
+        },
+        {
+          "turn": 20,
+          "settlements": 7,
+          "residents": 1703,
+          "weightedQoL": 0.9018594469587429
+        },
+        {
+          "turn": 21,
+          "settlements": 9,
+          "residents": 1612,
+          "weightedQoL": 0.9182979047360802
+        },
+        {
+          "turn": 22,
+          "settlements": 9,
+          "residents": 1933,
+          "weightedQoL": 0.874167092292491
+        },
+        {
+          "turn": 23,
+          "settlements": 10,
+          "residents": 1930,
+          "weightedQoL": 0.8770727651227589
+        },
+        {
+          "turn": 24,
+          "settlements": 10,
+          "residents": 2277,
+          "weightedQoL": 0.8567285184607878
+        },
+        {
+          "turn": 25,
+          "settlements": 11,
+          "residents": 2278,
+          "weightedQoL": 0.8411548064526386
+        },
+        {
+          "turn": 26,
+          "settlements": 13,
+          "residents": 2342,
+          "weightedQoL": 0.8650598867434407
+        },
+        {
+          "turn": 27,
+          "settlements": 13,
+          "residents": 2628,
+          "weightedQoL": 0.8360893542827307
+        },
+        {
+          "turn": 28,
+          "settlements": 13,
+          "residents": 2632,
+          "weightedQoL": 0.8493838324104648
+        },
+        {
+          "turn": 29,
+          "settlements": 13,
+          "residents": 2693,
+          "weightedQoL": 0.8438360722433205
+        },
+        {
+          "turn": 30,
+          "settlements": 15,
+          "residents": 2742,
+          "weightedQoL": 0.8362161152143344
+        },
+        {
+          "turn": 31,
+          "settlements": 15,
+          "residents": 2930,
+          "weightedQoL": 0.8277417972775875
+        },
+        {
+          "turn": 32,
+          "settlements": 15,
+          "residents": 2996,
+          "weightedQoL": 0.8190117155302612
+        },
+        {
+          "turn": 33,
+          "settlements": 16,
+          "residents": 3019,
+          "weightedQoL": 0.8167944560481053
+        },
+        {
+          "turn": 34,
+          "settlements": 16,
+          "residents": 3066,
+          "weightedQoL": 0.8230291846502752
+        },
+        {
+          "turn": 35,
+          "settlements": 16,
+          "residents": 3113,
+          "weightedQoL": 0.8165027564399033
+        },
+        {
+          "turn": 36,
+          "settlements": 18,
+          "residents": 3106,
+          "weightedQoL": 0.8140165214366628
+        },
+        {
+          "turn": 37,
+          "settlements": 18,
+          "residents": 3206,
+          "weightedQoL": 0.8211098166363853
+        },
+        {
+          "turn": 38,
+          "settlements": 19,
+          "residents": 3209,
+          "weightedQoL": 0.8118446544745047
+        },
+        {
+          "turn": 39,
+          "settlements": 20,
+          "residents": 3341,
+          "weightedQoL": 0.8231389830172385
+        },
+        {
+          "turn": 40,
+          "settlements": 21,
+          "residents": 3483,
+          "weightedQoL": 0.8136935278217797
+        },
+        {
+          "turn": 41,
+          "settlements": 22,
+          "residents": 3683,
+          "weightedQoL": 0.8219632575750966
+        },
+        {
+          "turn": 42,
+          "settlements": 22,
+          "residents": 3939,
+          "weightedQoL": 0.8227546256884611
+        },
+        {
+          "turn": 43,
+          "settlements": 22,
+          "residents": 3885,
+          "weightedQoL": 0.8457590545932514
+        },
+        {
+          "turn": 44,
+          "settlements": 22,
+          "residents": 4203,
+          "weightedQoL": 0.8496448526012383
+        },
+        {
+          "turn": 45,
+          "settlements": 23,
+          "residents": 4368,
+          "weightedQoL": 0.84363422037304
+        },
+        {
+          "turn": 46,
+          "settlements": 24,
+          "residents": 4330,
+          "weightedQoL": 0.850099224961946
+        },
+        {
+          "turn": 47,
+          "settlements": 24,
+          "residents": 4571,
+          "weightedQoL": 0.8387462629679268
+        },
+        {
+          "turn": 48,
+          "settlements": 24,
+          "residents": 4568,
+          "weightedQoL": 0.8447310498741024
+        },
+        {
+          "turn": 49,
+          "settlements": 25,
+          "residents": 4671,
+          "weightedQoL": 0.839073004413793
+        },
+        {
+          "turn": 50,
+          "settlements": 25,
+          "residents": 4687,
+          "weightedQoL": 0.8504077000953737
+        }
+      ],
+      "finalCamps": [
+        {
+          "camp": 1478,
+          "population": 165,
+          "site": 357292
+        },
+        {
+          "camp": 1935,
+          "population": 1000,
+          "site": 353197
+        },
+        {
+          "camp": 1963,
+          "population": 1000,
+          "site": 354218
+        },
+        {
+          "camp": 2071,
+          "population": 179,
+          "site": 359341
+        },
+        {
+          "camp": 2114,
+          "population": 75,
+          "site": 360362
+        },
+        {
+          "camp": 2131,
+          "population": 76,
+          "site": 362412
+        },
+        {
+          "camp": 2159,
+          "population": 69,
+          "site": 358313
+        },
+        {
+          "camp": 2220,
+          "population": 167,
+          "site": 363438
+        },
+        {
+          "camp": 2222,
+          "population": 59,
+          "site": 360358
+        },
+        {
+          "camp": 2257,
+          "population": 56,
+          "site": 362407
+        },
+        {
+          "camp": 2286,
+          "population": 51,
+          "site": 363433
+        },
+        {
+          "camp": 2332,
+          "population": 57,
+          "site": 359332
+        },
+        {
+          "camp": 2338,
+          "population": 45,
+          "site": 363428
+        },
+        {
+          "camp": 2416,
+          "population": 33,
+          "site": 365483
+        },
+        {
+          "camp": 2425,
+          "population": 54,
+          "site": 357287
+        },
+        {
+          "camp": 2549,
+          "population": 50,
+          "site": 357283
+        },
+        {
+          "camp": 2688,
+          "population": 54,
+          "site": 360353
+        },
+        {
+          "camp": 2698,
+          "population": 624,
+          "site": 353192
+        },
+        {
+          "camp": 2872,
+          "population": 52,
+          "site": 362402
+        },
+        {
+          "camp": 2964,
+          "population": 602,
+          "site": 352166
+        },
+        {
+          "camp": 3056,
+          "population": 52,
+          "site": 359327
+        },
+        {
+          "camp": 3203,
+          "population": 38,
+          "site": 363423
+        },
+        {
+          "camp": 3542,
+          "population": 41,
+          "site": 356257
+        },
+        {
+          "camp": 3647,
+          "population": 65,
+          "site": 359324
+        },
+        {
+          "camp": 3987,
+          "population": 23,
+          "site": 362397
+        }
+      ],
+      "founders": {}
+    },
+    "baseline-pressure-only-23": {
+      "metadata": {
+        "revision": "64ce953",
+        "seed": 23,
+        "inputHash": null,
+        "initialFingerprint": "E3722F61C88359B4F782D43CCB10D773F71D33762486C28821BA0862D2F38F03",
+        "finalFingerprint": "7677A2AFF7DE78940268B8A23550D0332C59F9543E5AF87E3FB253B81CC88CA2",
+        "configurationHash": "B1FE7C4125D1B3A689CCED9D804766F09BBF52AC1F1FD3ED0CD5AA2A95EE4B99",
+        "endTurn": 48,
+        "checkpoints": {},
+        "worldPopulation": 310684,
+        "NeolithicFishingEnabled": false,
+        "CorrectedAquaticSeasonalPressureEnabled": true,
+        "NeolithicSailingEnabled": false,
+        "EconomicAllocation": "DemandControl",
+        "artifactSha256": "FE521FA78A8BBEB2BB1598CA051B72A646FBAD3EA9865AAE2476ED2D84D7A30B"
+      },
+      "series": [
+        {
+          "turn": 9,
+          "settlements": 2,
+          "residents": 184,
+          "weightedQoL": 0.0
+        },
+        {
+          "turn": 10,
+          "settlements": 2,
+          "residents": 210,
+          "weightedQoL": 0.0
+        },
+        {
+          "turn": 11,
+          "settlements": 2,
+          "residents": 236,
+          "weightedQoL": 0.0
+        },
+        {
+          "turn": 12,
+          "settlements": 2,
+          "residents": 260,
+          "weightedQoL": 0.0
+        },
+        {
+          "turn": 13,
+          "settlements": 3,
+          "residents": 282,
+          "weightedQoL": 0.17965508237632924
+        },
+        {
+          "turn": 14,
+          "settlements": 4,
+          "residents": 318,
+          "weightedQoL": 0.22418159260687984
+        },
+        {
+          "turn": 15,
+          "settlements": 4,
+          "residents": 535,
+          "weightedQoL": 0.21143897322704022
+        },
+        {
+          "turn": 16,
+          "settlements": 6,
+          "residents": 707,
+          "weightedQoL": 0.2812993233283165
+        },
+        {
+          "turn": 17,
+          "settlements": 6,
+          "residents": 973,
+          "weightedQoL": 0.25504943792869095
+        },
+        {
+          "turn": 18,
+          "settlements": 7,
+          "residents": 1095,
+          "weightedQoL": 0.35751109930060776
+        },
+        {
+          "turn": 19,
+          "settlements": 8,
+          "residents": 1310,
+          "weightedQoL": 0.4175539516402944
+        },
+        {
+          "turn": 20,
+          "settlements": 8,
+          "residents": 1790,
+          "weightedQoL": 0.5600690687775747
+        },
+        {
+          "turn": 21,
+          "settlements": 9,
+          "residents": 2319,
+          "weightedQoL": 0.773211682966449
+        },
+        {
+          "turn": 22,
+          "settlements": 9,
+          "residents": 2560,
+          "weightedQoL": 0.7835775336111754
+        },
+        {
+          "turn": 23,
+          "settlements": 9,
+          "residents": 2600,
+          "weightedQoL": 0.8592179991268771
+        },
+        {
+          "turn": 24,
+          "settlements": 9,
+          "residents": 2623,
+          "weightedQoL": 0.8685011403870877
+        },
+        {
+          "turn": 25,
+          "settlements": 9,
+          "residents": 2786,
+          "weightedQoL": 0.9049844495546624
+        },
+        {
+          "turn": 26,
+          "settlements": 9,
+          "residents": 2905,
+          "weightedQoL": 0.9065766812139119
+        },
+        {
+          "turn": 27,
+          "settlements": 9,
+          "residents": 2853,
+          "weightedQoL": 0.9141714811263826
+        },
+        {
+          "turn": 28,
+          "settlements": 9,
+          "residents": 3098,
+          "weightedQoL": 0.8903468850935651
+        },
+        {
+          "turn": 29,
+          "settlements": 9,
+          "residents": 3067,
+          "weightedQoL": 0.8964879762726881
+        },
+        {
+          "turn": 30,
+          "settlements": 9,
+          "residents": 3309,
+          "weightedQoL": 0.8867521409674274
+        },
+        {
+          "turn": 31,
+          "settlements": 9,
+          "residents": 3449,
+          "weightedQoL": 0.88280568585126
+        },
+        {
+          "turn": 32,
+          "settlements": 9,
+          "residents": 3541,
+          "weightedQoL": 0.8844761594049468
+        },
+        {
+          "turn": 33,
+          "settlements": 9,
+          "residents": 4014,
+          "weightedQoL": 0.8322075036609997
+        },
+        {
+          "turn": 34,
+          "settlements": 9,
+          "residents": 3778,
+          "weightedQoL": 0.899038151360712
+        },
+        {
+          "turn": 35,
+          "settlements": 9,
+          "residents": 3925,
+          "weightedQoL": 0.8632532445062044
+        },
+        {
+          "turn": 36,
+          "settlements": 9,
+          "residents": 4047,
+          "weightedQoL": 0.8669418245125806
+        },
+        {
+          "turn": 37,
+          "settlements": 9,
+          "residents": 4168,
+          "weightedQoL": 0.8452793845391877
+        },
+        {
+          "turn": 38,
+          "settlements": 9,
+          "residents": 4433,
+          "weightedQoL": 0.8411459678963714
+        },
+        {
+          "turn": 39,
+          "settlements": 9,
+          "residents": 4385,
+          "weightedQoL": 0.8371825074607906
+        },
+        {
+          "turn": 40,
+          "settlements": 9,
+          "residents": 4599,
+          "weightedQoL": 0.8423937014774108
+        },
+        {
+          "turn": 41,
+          "settlements": 9,
+          "residents": 4492,
+          "weightedQoL": 0.8465950792547839
+        },
+        {
+          "turn": 42,
+          "settlements": 9,
+          "residents": 4815,
+          "weightedQoL": 0.8237728820019534
+        },
+        {
+          "turn": 43,
+          "settlements": 9,
+          "residents": 4734,
+          "weightedQoL": 0.8410535992181658
+        },
+        {
+          "turn": 44,
+          "settlements": 9,
+          "residents": 5026,
+          "weightedQoL": 0.8179657523937307
+        },
+        {
+          "turn": 45,
+          "settlements": 9,
+          "residents": 5070,
+          "weightedQoL": 0.8204631859323698
+        },
+        {
+          "turn": 46,
+          "settlements": 9,
+          "residents": 5193,
+          "weightedQoL": 0.8104885679680074
+        },
+        {
+          "turn": 47,
+          "settlements": 9,
+          "residents": 5137,
+          "weightedQoL": 0.8183454282666034
+        },
+        {
+          "turn": 48,
+          "settlements": 9,
+          "residents": 5309,
+          "weightedQoL": 0.8094255843913568
+        }
+      ],
+      "finalCamps": [
+        {
+          "camp": 1435,
+          "population": 479,
+          "site": 124843
+        },
+        {
+          "camp": 1447,
+          "population": 994,
+          "site": 120855
+        },
+        {
+          "camp": 2019,
+          "population": 462,
+          "site": 125973
+        },
+        {
+          "camp": 2047,
+          "population": 511,
+          "site": 122904
+        },
+        {
+          "camp": 2091,
+          "population": 322,
+          "site": 126888
+        },
+        {
+          "camp": 2096,
+          "population": 501,
+          "site": 117786
+        },
+        {
+          "camp": 2131,
+          "population": 981,
+          "site": 125976
+        },
+        {
+          "camp": 2162,
+          "population": 436,
+          "site": 119835
+        },
+        {
+          "camp": 2197,
+          "population": 623,
+          "site": 130068
+        }
+      ],
+      "founders": {
+        "1435": {
+          "firstCloth": 16,
+          "firstHousing": 18,
+          "cultivation": 13,
+          "finalPopulation": 479,
+          "fissionStages": {
+            "no-viable-site": 1,
+            "reject-mover": 38,
+            "committed-Distress": 1,
+            "excluded-immigration": 2
+          }
+        },
+        "1447": {
+          "firstCloth": 16,
+          "firstHousing": 20,
+          "cultivation": 13,
+          "finalPopulation": 994,
+          "fissionStages": {
+            "reject-mover": 7,
+            "committed-Crowding": 3,
+            "excluded-immigration": 23,
+            "no-known-site": 9
+          }
+        }
+      }
+    }
+  },
+  "openingVerification": {
+    "final-control-23": {
+      "revision": "b6a690a",
+      "seed": 23,
+      "inputHash": null,
+      "initialFingerprint": "31C01CECD6F16A2E856039D60F9ED640C1FC7A1D3E1BB2180B0D3978B23D13C9",
+      "finalFingerprint": "ED0F8157324F15EF2DC34DBA218EE2B90817778ACE0A5BDEA3E2BC5F789C2AFD",
+      "configurationHash": "11C823E08D594B67CBF12761A929626890CBAB537E71A0110508849ED8F20A69",
+      "endTurn": 12,
+      "openingCompletedTurn": 8,
+      "checkpoints": {},
+      "worldPopulation": 20609,
+      "NeolithicFishingEnabled": false,
+      "CorrectedAquaticSeasonalPressureEnabled": false,
+      "NeolithicSailingEnabled": false,
+      "EconomicAllocation": "DemandControl",
+      "artifactSha256": "57C726AF6671A9710469F1BDFA68845F2A4D2BFB60D454DB8A9CB33E52979329"
+    },
+    "final-fishing-23": {
+      "revision": "b6a690a",
+      "seed": 23,
+      "inputHash": null,
+      "initialFingerprint": "5AEC61EF2D0681CF9176D9D8FE57716F6D529861F1F2112B121144B3C7FA6DDB",
+      "finalFingerprint": "08AEEDAB4AB0A7EE87FF71DE985FA25E80C14929E23975F75BC4319D2FBD8829",
+      "configurationHash": "A9686D58E19527495B17638DD6B88A39C69F03EBA054E508E76DB0E85F841A06",
+      "endTurn": 12,
+      "openingCompletedTurn": 8,
+      "checkpoints": {},
+      "worldPopulation": 21379,
+      "NeolithicFishingEnabled": true,
+      "CorrectedAquaticSeasonalPressureEnabled": true,
+      "NeolithicSailingEnabled": false,
+      "EconomicAllocation": "DemandControl",
+      "artifactSha256": "5D1F60B5133889BEF56944DB34336B7FBE983C37A605B3297999C63540AFBEF9"
+    },
+    "final-control-101": {
+      "revision": "b6a690a",
+      "seed": 101,
+      "inputHash": null,
+      "initialFingerprint": "E2DE518CEDD26AF0532DB7D3D79376735AE894D807535803C9544E12D794D3C9",
+      "finalFingerprint": "64A3F41C787ED48F3AA6440568E9F7B41F1D10D7981AD22BE6BC2C7BC020E9A9",
+      "configurationHash": "11C823E08D594B67CBF12761A929626890CBAB537E71A0110508849ED8F20A69",
+      "endTurn": 12,
+      "openingCompletedTurn": 10,
+      "checkpoints": {},
+      "worldPopulation": 19651,
+      "NeolithicFishingEnabled": false,
+      "CorrectedAquaticSeasonalPressureEnabled": false,
+      "NeolithicSailingEnabled": false,
+      "EconomicAllocation": "DemandControl",
+      "artifactSha256": "BA402D7265B6BBD34A3969AF10C44D53020A5D7D77B7C115B594A51562FDE74F"
+    },
+    "final-fishing-101": {
+      "revision": "b6a690a",
+      "seed": 101,
+      "inputHash": null,
+      "initialFingerprint": "CBF57EBB05649A9FD7C1AE7C1DADAEA44AE9EAB4769B6322911B6F2A38316CAB",
+      "finalFingerprint": "1BC972814B8E5D16CF0696B71C0F762FE7B1AEC37F16294F11E8BB961CE700C5",
+      "configurationHash": "A9686D58E19527495B17638DD6B88A39C69F03EBA054E508E76DB0E85F841A06",
+      "endTurn": 12,
+      "openingCompletedTurn": 10,
+      "checkpoints": {},
+      "worldPopulation": 20114,
+      "NeolithicFishingEnabled": true,
+      "CorrectedAquaticSeasonalPressureEnabled": true,
+      "NeolithicSailingEnabled": false,
+      "EconomicAllocation": "DemandControl",
+      "artifactSha256": "D11EA2BEED59E45980B2B8C4AFE9FC6D0B5D3C0CB21D5D8AEEFF4041B934AB0F"
+    }
+  },
+  "frozenExperiment": {
+    "beforeMetadata": {
+      "revision": "64ce953",
+      "seed": 23,
+      "inputHash": "73C14C8EE99110F7FC84650C8420C4472F3E531D1B647F02B675EAEDB5477367",
+      "initialFingerprint": "D1C7DD011614F735AA1BA104F8E7ECD9C4EDCE37909A5013358A703E6AED5047",
+      "finalFingerprint": "1E35C940867BAAD44D734594C94B09FA2A7CDB2360C34BB301FB33BCC5DDED8B",
+      "configurationHash": "A9686D58E19527495B17638DD6B88A39C69F03EBA054E508E76DB0E85F841A06",
+      "endTurn": 12,
+      "checkpoints": {},
+      "worldPopulation": 19770,
+      "NeolithicFishingEnabled": true,
+      "CorrectedAquaticSeasonalPressureEnabled": true,
+      "NeolithicSailingEnabled": false,
+      "EconomicAllocation": "DemandControl",
+      "artifactSha256": "15E09099177DEADFB34DD9A889AA53425388084F90C881A8C8CF8B4A462E4EA5"
+    },
+    "afterMetadata": {
+      "revision": "64ce953+material-reservation",
+      "seed": 23,
+      "inputHash": "73C14C8EE99110F7FC84650C8420C4472F3E531D1B647F02B675EAEDB5477367",
+      "initialFingerprint": "D1C7DD011614F735AA1BA104F8E7ECD9C4EDCE37909A5013358A703E6AED5047",
+      "finalFingerprint": "FE7E0EC28DE830080A270CB8EBAF9556BEE27CA1D5129F839285F5AB4221C393",
+      "configurationHash": "A9686D58E19527495B17638DD6B88A39C69F03EBA054E508E76DB0E85F841A06",
+      "endTurn": 12,
+      "checkpoints": {},
+      "worldPopulation": 19896,
+      "NeolithicFishingEnabled": true,
+      "CorrectedAquaticSeasonalPressureEnabled": true,
+      "NeolithicSailingEnabled": false,
+      "EconomicAllocation": "DemandControl",
+      "artifactSha256": "D2DD217EB8A3F43B395F4355181A6A46F17500A2A4BCB09816A3BD2E424B8CC8"
+    },
+    "witnesses": [
+      {
+        "camp": 1435,
+        "priorAllocationAndAssignmentsEqual": true,
+        "before": {
+          "openingResidents": 172,
+          "endingResidents": 190,
+          "plannedCloth": 278.9279891448227,
+          "materialGatherers": 17.00000000099828,
+          "materialWorkerIntervals": 0,
+          "handTools": 0,
+          "cloth": 0,
+          "foodReceipts": {
+            "FisheryHarvest": 9152,
+            "Marine gathering": 3171.957278163668,
+            "Gathering": 3884.0427218363325
+          },
+          "clothingCoverage": 0,
+          "housingCoverage": 0,
+          "exposureDeaths": 117.84211940288645,
+          "births": 162.88335372042005,
+          "personYears": 3619.630082676001
+        },
+        "after": {
+          "openingResidents": 172,
+          "endingResidents": 248,
+          "plannedCloth": 278.9279891448227,
+          "materialGatherers": 17.00000000099828,
+          "materialWorkerIntervals": 1360.0000000798618,
+          "handTools": 340.00000001996546,
+          "cloth": 278.9279891448227,
+          "foodReceipts": {
+            "FisheryHarvest": 9152.000000000002,
+            "Marine gathering": 2071.482304042263,
+            "Gathering": 2536.5176958139855
+          },
+          "clothingCoverage": 1,
+          "housingCoverage": 0,
+          "exposureDeaths": 74.86481626229845,
+          "births": 188.13918656802016,
+          "personYears": 4180.870812622671
+        }
+      },
+      {
+        "camp": 1447,
+        "priorAllocationAndAssignmentsEqual": true,
+        "before": {
+          "openingResidents": 172,
+          "endingResidents": 190,
+          "plannedCloth": 278.9279891448227,
+          "materialGatherers": 17.28622982620147,
+          "materialWorkerIntervals": 0,
+          "handTools": 0,
+          "cloth": 0,
+          "foodReceipts": {
+            "FisheryHarvest": 11609.1516934131,
+            "Marine gathering": 1995.8056561780222,
+            "Gathering": 2756.1943438219773
+          },
+          "clothingCoverage": 0,
+          "housingCoverage": 0,
+          "exposureDeaths": 117.84211940288645,
+          "births": 162.88335372042005,
+          "personYears": 3619.630082676001
+        },
+        "after": {
+          "openingResidents": 172,
+          "endingResidents": 248,
+          "plannedCloth": 278.9279891448227,
+          "materialGatherers": 17.28622982620147,
+          "materialWorkerIntervals": 1382.8983860961175,
+          "handTools": 345.7245965240294,
+          "cloth": 278.9279891448227,
+          "foodReceipts": {
+            "FisheryHarvest": 11609.1516934131,
+            "Marine gathering": 950.3524664469278,
+            "Gathering": 1312.4304385800608
+          },
+          "clothingCoverage": 1,
+          "housingCoverage": 0,
+          "exposureDeaths": 74.86481626229845,
+          "births": 188.13918656802016,
+          "personYears": 4180.870812622671
+        }
+      }
+    ]
+  },
+  "checks": {
+    "fixed-suite.log": {
+      "sha256": "60ece8b0e1d5dd821118a69185ea264fbb27a916148cbec7e82925dd9bea7780",
+      "results": [
+        "PASS: 33 focused assertions",
+        "PASS: 59 milestone-two assertions",
+        "PASS: 82 milestone-three assertions",
+        "PASS: 55 foundation assertions",
+        "PASS: 104 crop agriculture assertions",
+        "PASS: 25 regional/local moisture assertions",
+        "PASS: 15 atmospheric generation assertions",
+        "PASS: 30 altitude/climate assertions",
+        "PASS: 37 river terrain and uplift-margin assertions",
+        "PASS: 20 drainage and longitude assertions",
+        "PASS: 35 reference-world morphology assertions",
+        "PASS: 984 topography/ruggedness assertions",
+        "PASS: 51 archipelago and historical-track assertions",
+        "PASS: 8929 geology assertions",
+        "PASS: 37 aquatic productivity assertions",
+        "PASS: 53 aquatic seasonal pressure assertions",
+        "PASS: 23 Sailing assertions",
+        "PASS: 41 Fishing inspection assertions",
+        "PASS: 13 Fishing observation assertions",
+        "PASS: 47 Fishing economy assertions",
+        "PASS: 43 Fishing resource assertions",
+        "PASS: 24 fishing state assertions",
+        "PASS: 36892 Fishing warm calibration assertions",
+        "PASS: 14 seasonal start-viability assertions",
+        "PASS: 23 preset and developer-preview assertions",
+        "PASS: 49 ecology assertions",
+        "PASS: 41323 agent-contract assertions",
+        "PASS: 27 economic-transition assertions",
+        "PASS: mature agricultural save restoration matched fingerprints for 2/4-worker worlds at post-opening turn 12",
+        "PASS: reference vs 2/4 workers, reversed partitions and entity collections across 33 resolutions, including 25 post-opening turns with partial seasonal boundaries",
+        "PASS: 411 planning draft assertions",
+        "PASS: 792 camp spacing assertions",
+        "PASS: 136 contact knowledge assertions",
+        "PASS: 678 fission assertions",
+        "PASS: 385 immigration assertions",
+        "PASS: 70 social relocation assertions",
+        "PASS: 480 trade assertions",
+        "PASS: 64 goods-storage assertions",
+        "PASS: 154 demand-control assertions",
+        "PASS: 42 economic-settlement assertions (A-I)",
+        "PASS: 66 clothing feedstock assertions",
+        "PASS: 38 residual Housing material assertions",
+        "PASS: 83 Wood ecology assertions",
+        "PASS: 125 demand automation assertions",
+        "PASS: 22788 Neolithic realignment assertions",
+        "PASS: 104 tool-consumption assertions",
+        "PASS: 45 Stone Farm Tool contract assertions",
+        "PASS: 1154 Stone Farm Tool planner assertions",
+        "PASS: 12 mixed FarmTools/Cloth chronology assertions",
+        "PASS: 4724 cultivation score-cache differential assertions",
+        "PASS: 108 horizon cultivation assertions",
+        "PASS: 168 horizon ecology assertions",
+        "PASS: horizon execution uses 28 tile kernels for fractional, one-, five-, ten-, and twenty-year turns",
+        "PASS: 114 field-domestication assertions",
+        "PASS: 268 managed husbandry assertions",
+        "PASS: 659 pastoral craft assertions",
+        "PASS: 154 Housing Material recipe assertions",
+        "PASS: 43824 issue #25 ecology assertions",
+        "PASS: 4366 issue #27 ecology assertions",
+        "PASS: 408 issue 26 forecast assertions",
+        "PASS: 54 Issue 28 physical food timebase assertions",
+        "PASS: 131 Issue 32 capability assertions",
+        "PASS: 1157 QoL cohesion assertions",
+        "PASS: 679 QoL mortality assertions",
+        "PASS: 6272 physical demography assertions",
+        "PASS: 83 death-spiral regression assertions",
+        "PASS: 22 demographic-structure assertions",
+        "PASS: 1688 herd-labour assertions",
+        "PASS: 879 shared-allocation assertions",
+        "PASS: 86744 value fulfilment assertions",
+        "PASS: 127 expansion claim assertions",
+        "PASS: 184 production order assertions",
+        "PASS: 190 WP4a value assertions",
+        "PASS: 61 settling assertions",
+        "TIMING fixed checks jobs=3 wall=95.1s peakWorkingSetMiB=1892"
+      ]
+    },
+    "final-followup.log": {
+      "sha256": "9ea7c4095754692a2d2e4c0e5466c0c2a0c6a4170ad20bfec33ee75d38cda7f1",
+      "results": [
+        "PASS: 158 demand-control assertions",
+        "PASS: 659 pastoral craft assertions",
+        "PASS: 408 issue 26 forecast assertions"
+      ]
+    },
+    "baseline-regression-test.log": {
+      "sha256": "63889382e8a6f7af183fceb9f36c8c2c3204d3fe7053d95f441db1e27002ed8b",
+      "results": [
+        "System.Exception: DemandControl: productive coast cannot spend reserved material work on passive food"
+      ]
+    }
+  },
+  "limits": [
+    "The original five-world 50-turn replay suites have not been rerun after this correction.",
+    "Native Unity verification remains unavailable.",
+    "The residual seed-23 lineage deficit remains a rollout blocker."
+  ]
+}

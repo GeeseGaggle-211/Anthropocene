@@ -133,6 +133,11 @@ coefficients. They do not create seasonal or annual world states.
   claims use the range rule of their producer; connected hunters may fish
   farther away. Distant hunter and wild-herd claims remain independent and
   compete on shared tiles.
+- Both agricultural and passive non-agricultural food claims deduct the prepared
+  material-Gatherer reservation before consuming gathering capacity. Raw extraction
+  receives the remaining finite worker-time; a productive coast must not spend
+  its reserved material work on food. Accepted village departure releases the
+  old economic assignments/reservation. Read-only food forecasts use the same rule.
 - Every shared tile has one ecological supply and one nonnegative harvest
   ledger. If future parallel writers debit it, guard each read/debit/write
   transaction with a tile mutex. Earlier claimants may exhaust available

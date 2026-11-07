@@ -1,5 +1,11 @@
 # Fishing Unity integration and Sailing
 
+**7 November follow-up:** the major seed-23 regression source is now isolated and
+repaired: non-agricultural passive gathering consumed labor reserved for raw
+materials, starving otherwise-funded manufacturing. See the final section for
+the identical-state counterfactual, corrected cohorts and remaining limits.
+The original measurements below remain historical evidence, not reruns of the fix.
+
 ## Baseline and authority
 
 Work starts from the fetched, verified default `main`,
@@ -254,3 +260,166 @@ and registered long-run gates pass, but #41's seed-23 cohort decline remains
 unresolved, and this environment cannot verify native Unity compilation or
 presentation. The opt-in profile is ready for that native verification; this is
 not final balance sign-off or a claim of an interactive playtest.
+
+## 7 November: cause of the seed-23 regression
+
+The main demonstrated defect is the boundary between mixed food and material
+work, **not a failure to deliver the planned fish catch**. `DemandController`
+reserved resident Gatherer time in `EconomicLabor.MaterialGatherers` to extract
+Stone/Wood for its admitted Hand Tools, clothing and housing. Agricultural
+claims use `AgriculturalLabor.FoodGatherers`, which subtracts this reservation.
+The non-agricultural `AddPassiveCampClaims` path instead used the complete
+Gatherer pool. Where available food saturated gathering capacity, it consumed
+all the work before `MaterialEconomy.Gather`; that later pass correctly found no
+remaining extraction time. No Stone meant no Hand Tools, which prevented the
+tool-dependent goods from being made despite positive grants and assigned
+Craftspersons. This is a resolver failure to honor the heuristic's mixed-work
+plan. It does not establish that the heuristic's food portfolio is globally
+optimal.
+
+The two seed-23 founders are camps **1435 and 1447**. In the original enabled
+case they made no clothing until turns **19 and 21**, the first resolutions after
+Cultivation on turns **18 and 20**. With Fishing disabled, Cultivation arrived
+at turn **13** for both. Actual receipts distribute practice: resident fishery
+food credits Fishing, while terrestrial/passive gathering also credits Gathering
+(`AwardLifestyleProgress`). Greater dependence on resident Fishing therefore
+slowed Gathering practice, extending the period in the broken non-agricultural
+production path. This practice allocation is an existing rule, not changed here.
+
+### Identical-state causal experiment
+
+Load the original enabled save after turn 11 and resolve turn 12. Both founders
+start with 172 residents. Opening state, the complete prepared demand allocation
+and workforce assignments compare **exactly equal** between runs. For camp 1435,
+the plan assigns 79 Craftspersons and reserves 17 Gatherers for materials.
+The only changed rule is honoring that reservation in passive food claims.
+
+| Camp 1435, turn 12 | Original | Corrected |
+| --- | ---: | ---: |
+| Planned Cloth | 278.929618 | 278.929618 |
+| Actual Hand Tools | 0 | 340 |
+| Actual Cloth | 0 | 278.929618 |
+| Passive food receipts | 7,056 | 4,608 |
+| Resident fishing receipts | 9,152 | 9,152 |
+| Experienced clothing coverage | 0 | 1 |
+| Continuous exposure deaths | 117.842119 | 74.864816 |
+| Ending residents | 190 | 248 |
+
+Camp 1447 independently makes 345.724597 Hand Tools and 278.929618 Cloth with
+the correction, versus zero goods before; its ending residents also rise from
+190 to 248. Food gathering falls because raw extraction now pays its actual
+labor cost. There is no free food, material, tool, technology or demographic
+subsidy. This single-turn result establishes the causal mechanism independently
+of later technology, trade, movement and fission feedback.
+
+### Corrected seed-23 cohort and residual
+
+The final implementation repeats the same production-config Continents/80 bank:
+eight opening turns, then exactly 40 post-opening turns; Sailing off. Both
+feature-off and feature-on controls use the correction because the same passive
+path also serves Husbandry-only camps. All non-Fishing rules stay fixed.
+
+| Source | Fishing | First-Watercraft settlements | Residents | Resident-weighted QoL |
+| --- | --- | ---: | ---: | ---: |
+| Before correction | off | 9 | 5,309 | 0.809426 |
+| Before correction | on | 3 | 1,954 | 0.823606 |
+| Corrected | off | 9 | 5,289 | 0.808167 |
+| Corrected | on | 7 | 4,556 | 0.808107 |
+
+The absolute deficit falls from **3,355 to 733 residents**, closing **78.2%** of
+the original gap; the relative deficit falls from **63.2% to 13.9%**. Comparing
+the corrected enabled case only with the old control would mix code versions,
+so the corrected control is the relevant final comparator.
+
+In the corrected enabled run both founders produce Cloth at turn **8**, Housing
+at turn **11**, and Cultivation arrives at turns **15/14**. Their final populations
+are **565/1,000**, versus **479/1,000** in the corrected control. The residual is
+entirely in the descendant settlements: **2,991 versus 3,810** residents, offset
+by 86 more residents in the original founders. This is a decomposition of the
+outcome, not proof that every later social/economic decision is optimal.
+
+The trace records five fissions in the corrected enabled lineage versus seven
+in the control (original enabled: one). Both enabled founders first split at
+turn 9; the control first splits at turns 13/16. Their later destination and
+utility gates differ: camp 1435 has 37 `no-viable-site` evaluations in the enabled
+run, while camp 1447 has 27 `reject-mover` evaluations. We retain those actual
+gate results rather than changing fission thresholds to force equal settlement
+counts. A separate original-code **pressure-only** run (Fishing off, corrected
+aquatic pressure on) exactly matches every original control Watercraft-descended
+camp population throughout all 48 turns. The pressure switch therefore does
+not explain this seed's measured cohort deficit.
+
+Seed **101** also completes a matched 40-post-opening-turn check (opening ends
+at turn 10). The corrected control has **22 settlements / 3,490 residents /
+0.835510 weighted QoL**; corrected Fishing has **25 / 4,687 / 0.850408**. Fishing
+remains ahead of its matched control by 34.3%, but its total is below the original
+enabled 6,965. Restoring manufacturing is not guaranteed to increase aggregate
+lineage population: it also changes development, mortality and social decisions.
+These two seeds do not constitute a general balance sign-off.
+
+### Implementation, scope and validation
+
+`AddPassiveCampClaims` now deducts the prepared material reservation before
+building food claims. The pure `FoodHorizonForecast.Settlement` passes the same
+reservation, including accepted locations; accepted village departure releases
+the old economy reservation. Correction and regression tests are committed at
+`b6a690ad2785409ff41bcfd393c74630463ad392`. No authoritative state, save schema, observation,
+RL interface, recipe, yield, fishery capital law, demographic coefficient or
+social threshold changes. The correction adds constant arithmetic to the existing
+bounded local claim builder; it adds no timestep loop or world scan. Old saves
+load unchanged, but future non-agricultural turns now honor their saved/planned
+material reservations.
+
+`DemandControlChecks.FishingMaterialBootstrap` uses a productive coast and zero
+manufactured stock. It fails against the original simulation with “productive
+coast cannot spend reserved material work on passive food.” The corrected path
+produces real raw inputs, Hand Tools and Cloth, bounds food plus material work
+by the resident cohort, and matches save/load scalar/four-worker replay.
+Additional checks cover current/accepted-location forecasts, departure and
+purity. All **70 fixed suites** pass (74 PASS lines, 95.1 seconds under concurrent
+audit load; this is not a performance comparison). The final focused follow-up
+passes **158 DemandControl, 659 pastoral-craft and 408 forecast assertions**.
+Short replays from the exact same initial fingerprints reproduce every traced
+row through turn 12 and confirm opening completion at 8/10 for seeds 23/101
+in both final configurations. Those marker checks are retained in the evidence.
+
+The two original registered 50-turn replays predate this correction and have
+**not** been rerun for it. Native Unity compilation and play remain unverified.
+The residual cohort deficit is not signed off as acceptable. General defaults
+remain off; #41 stays open. No RL checkout, training job or checkpoint changed.
+
+### Reproduce the diagnostic
+
+From the repository root, build `Tools/FishingRegressionAudit/Anthropocene.FishingRegressionAudit.csproj`
+in Release. The probe records prepared grants, material extraction, actual goods,
+practice, cause-specific demography and fission gates for every Watercraft-first
+descendant. It refuses to overwrite output, writes artifact/configuration hashes
+and final fingerprints, and never changes simulation policy through diagnostics.
+
+```sh
+dotnet build -c Release Tools/FishingRegressionAudit/Anthropocene.FishingRegressionAudit.csproj
+dotnet Tools/FishingRegressionAudit/bin/Release/net8.0/Anthropocene.FishingRegressionAudit.dll \
+  --fishing=1 --pressure=1 --seed=23 --end-turn=48 --revision=YOUR_COMMIT \
+  --output=TestResults/FishingRegressionFresh/final-fishing-23.jsonl
+# Repeat with --fishing=0 --pressure=0 for its matched control.
+# Seed 101 completes opening at turn 10: use --end-turn=50 for 40 more turns.
+```
+
+For old-source controls, extract only `Assets/_Anthropocene/Simulation` from
+commit `64ce95343bb5d9f6d04d72dc017ec8352a49323b` to a temporary directory and
+build the same probe with `-p:SimulationSource=ABSOLUTE_EXTRACTED_SIMULATION_PATH`
+and a separate `-o` directory. To reproduce the frozen counterfactual, run that
+old binary with `--fishing=1 --pressure=1 --end-turn=11 --save-turns=11`, then
+run both binaries with `--load=OUTPUT.jsonl.turn-11.anthro --end-turn=12` and
+distinct outputs. Loading preserves all saved configuration; it does not apply
+the fresh-world feature switches. Raw evidence is retained under ignored
+`TestResults/FishingRegression`; [FishingMixedWorkEvidence.json](FishingMixedWorkEvidence.json)
+contains the compact evidence. `Tools/FishingRegressionAudit/Summarize.py`
+rebuilds it from the named `final-control-23`, `final-fishing-23`,
+`final-control-101`, `final-fishing-101`, `baseline-pressure-only-23`,
+`before-frozen` and `final-frozen` JSONL files and their metadata, plus validation
+logs. It asserts identical saved inputs and prepared allocations in the frozen
+experiment and verifies every raw artifact hash.
+For these first long-run artifacts, whose metadata preceded the explicit opening
+marker, the reducer also reads the four `opening-SEED-FLAG` short replays. Future
+probe runs record that marker directly.
