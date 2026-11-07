@@ -57,7 +57,7 @@ internal static class DemandControlChecks
     public static int Run()
     {
         checks = 0; Config(); Purity(); ReserveFeedstockClosure(); IncomingFeedstockToolClosure(); HousingReference();
-        TypedFeedstockPriority(); HousingMaterialCeiling(); Saturation(); FishingIntegration(); FishingMealBreakpoint(); Turns();
+        TypedFeedstockPriority(); HousingMaterialCeiling(); Saturation(); FishingIntegration(); FishingMealBreakpoint(); FishingMaterialBootstrap(); Turns();
         Console.WriteLine("PASS: " + checks + " demand-control assertions"); return checks;
     }
 
@@ -305,6 +305,75 @@ internal static class DemandControlChecks
         var shelter = dryAllocation.Requests.Where(q => q.Good == CraftGood.Housing && q.Units > 1e-6).ToList();
         Check(shelter.Count > 0 && shelter.All(q => q.Granted < 1e-6 && q.Unmet == "material shortage") && dryOrder.Ceiling(CraftGood.Housing) < 1e-6, "with no construction material in reach no Housing is promised");
         Check(dryAllocation.Requests.Any(q => q.Good != CraftGood.Housing && q.Granted > 1e-6), "unrelated requests still use the remaining capacity");
+    }
+
+    private static void FishingMaterialBootstrap()
+    {
+        var w = World(EconomicAllocationStrategy.DemandControl, (6, 6, 100));
+        var c = CampOf(w, 1); var cfg = w.Config;
+        cfg.NeolithicFishingEnabled = cfg.CorrectedAquaticSeasonalPressureEnabled = true;
+        cfg.FissionEnabled = cfg.ImmigrationEnabled = cfg.TradeEnabled = false;
+        cfg.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        cfg.SurplusFundedBirths = cfg.ElderKernelSplit = true;
+        c.Technologies[(int)Technology.Cultivation] = false;
+        c.Technologies[(int)Technology.Watercraft] = true;
+        c.Technology = Technology.Watercraft; c.IsVillage = false;
+        c.People.NeolithicTechnologies.Clear();
+        c.Inventory = new CampInventory(); c.PlantFood = 2000; c.AnimalFood = 0; c.AquaticFood = 9000;
+        int shore = w.Map.Neighbors(c.Tile).OrderBy(id => id).First();
+        w.Tiles[shore].Terrain = Terrain.Shallows; w.Tiles[shore].ElevationLevel = 0;
+        w.Tiles[shore].WaterBody = WaterKind.Saltwater;
+        w.Tiles[shore].Freshwater = 0; w.Tiles[shore].FreshwaterSource = FreshwaterSource.None;
+        for (int s = 0; s < 4; s++) { w.Tiles[shore].Seasons[s].MaxFreshwater = 0; w.Tiles[shore].Seasons[s].WaterRecoveryPerDay = 0; }
+        foreach (var t in w.Tiles)
+        {
+            t.Food = 100000; t.PotentialFood = 800000;
+            for (int s = 0; s < 4; s++) { t.Seasons[s].MaxFood = 100000; t.Seasons[s].MaxPotentialFood = 800000; }
+        }
+        int count = w.Tiles.Length;
+        w.Resources = new WorldResourceState {
+            MaximumQuantity = 100000, CatalogHash = ResourceCatalog.Hash,
+            ProfileHash = ResourceCatalog.Hash, ConfigurationHash = ResourceCatalog.Hash,
+            Provinces = Array.Empty<GeologicalProvince>(), Province = new ushort[count],
+            History = new ushort[count], Host = new byte[count], Marine = new byte[count],
+            Stone = new ushort[count], Clay = new ushort[count], Wood = new ushort[count], WoodRecoveryPerYear = .05
+        };
+        foreach (var m in new[] { MaterialId.Stone, MaterialId.Clay, MaterialId.Wood }) w.Resources.AccessibleParts[(int)m] = 10000;
+        w.Resources.Stone[c.Tile] = w.Resources.Clay[c.Tile] = w.Resources.Wood[c.Tile] = 1000;
+        var orders = new Dictionary<int, List<Order>>();
+        var bytes = SaveCodec.Save(w); var replay = SaveCodec.Load(bytes);
+        var prepared = TurnPlanner.Prepare(w, orders);
+        var intent = prepared.Orders.Single(o => o.Entity == c.Id && o.Kind == OrderKind.Economy).Economy;
+        Check(intent.Labor.MaterialGatherers > 0, "Watercraft goods plan reserves raw-material gathering time");
+        double pool = c.Population - intent.Assignments.Where(a => a.Role != WorkforceRoles.Gatherer).Sum(a => a.Population);
+        double reserved = intent.Labor.MaterialGatherers;
+        var preview = EconomicPlanner.Preview(c, intent, c.Population);
+        var labor = new AgriculturalLabor { Gatherers = pool };
+        int destination = w.Map.Neighbors(c.Tile).First(id => w.Tiles[id].TraversableLand);
+        string beforeForecast = SaveCodec.Fingerprint(w);
+        foreach (int tile in new[] { c.Tile, destination })
+        {
+            var forecast = FoodHorizonForecast.Settlement(w, preview, tile, w.Days, cfg.TurnDays, labor, double.MaxValue, 0);
+            Check(forecast.MealFood <= (pool - reserved) * cfg.GatherPerPerson * cfg.GenerationIntervals + 1e-6,
+                "passive food forecast honors material work at current and accepted locations");
+        }
+        preview.IsVillage = true;
+        var departed = FoodHorizonForecast.Settlement(w, preview, destination, w.Days, cfg.TurnDays, labor, double.MaxValue, 0);
+        Check(departed.MealFood > (pool - reserved) * cfg.GatherPerPerson * cfg.GenerationIntervals + 1e-6,
+            "village departure releases the old economy reservation");
+        Check(beforeForecast == SaveCodec.Fingerprint(w), "material-aware food forecasts are pure");
+        var record = new TurnResolver(new PhaseExecution(1)).Resolve(w, prepared);
+        double food = record.Transfers.Where(t => t.Entity == c.Id && (t.Kind == "Gathering" || t.Kind == "Marine gathering" || t.Kind == "Aquatic gathering")).Sum(t => t.Food);
+        double materialWork = record.MaterialTransfers.Where(t => t.Camp == c.Id && t.Role == WorkforceRoles.Gatherer).Sum(t => t.WorkerIntervals);
+        Check(food <= (pool - reserved) * cfg.GatherPerPerson * cfg.GenerationIntervals + 1e-6,
+            "productive coast cannot spend reserved material work on passive food");
+        Check(materialWork > 0 && food / cfg.GatherPerPerson + materialWork <= pool * cfg.GenerationIntervals + 1e-6,
+            "real material extraction shares the finite gathering pool");
+        Check(record.Production.Any(p => p.Camp == c.Id && p.Good == CraftGood.HandTools && p.Output > 0)
+            && record.Production.Any(p => p.Camp == c.Id && p.Good == CraftGood.Cloth && p.Output > 0),
+            "Fishing-only camp bootstraps tools and clothing from zero manufactured stock");
+        new TurnResolver(new PhaseExecution(4)).Resolve(replay, TurnPlanner.Prepare(replay, orders));
+        Check(SaveCodec.Fingerprint(w) == SaveCodec.Fingerprint(replay), "Fishing material bootstrap survives save/load and worker replay");
     }
 
     // Fishing-only economies use the same physical pass and resident budget. A prepared access plan is injected exactly as

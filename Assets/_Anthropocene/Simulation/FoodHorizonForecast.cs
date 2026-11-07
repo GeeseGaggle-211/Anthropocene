@@ -225,7 +225,7 @@ namespace Anthropocene.Simulation
             {
                 TurnResolver.AddPassiveCampClaims(snapshot, location, labor.Gatherers,
                     startDays, durationDays, durationDays / snapshot.Config.BaseDays,
-                    abandoningVillage, Available, ownClaims);
+                    abandoningVillage, Available, ownClaims, camp.EconomicLabor?.MaterialGatherers ?? 0);
                 double requested = ownClaims.Sum(d => d.Food);
                 double scale = Math.Min(1, Math.Max(0, biologicalFoodTarget) /
                     Math.Max(1e-12, requested));

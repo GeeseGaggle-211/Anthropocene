@@ -393,7 +393,7 @@ namespace Anthropocene.Simulation
                 }
                 AddPassiveCampClaims(w, camp, gatherers, record.StartDays,
                     record.Duration, intervals, abandoningVillages.Contains(camp.Id),
-                    PassiveAvailable, campClaims[camp.Id]);
+                    PassiveAvailable, campClaims[camp.Id], camp.EconomicLabor?.MaterialGatherers ?? 0);
             }
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
@@ -579,8 +579,15 @@ namespace Anthropocene.Simulation
         // path, with bridge-level access on its former fields and no farm work.
         internal static void AddPassiveCampClaims(WorldState w, Camp camp, double gatherers,
             double startDays, double durationDays, double intervals, bool abandoning,
-            Func<int, double> availability, List<Demand> claims)
+            Func<int, double> availability, List<Demand> claims, double materialGatherers = 0)
         {
+            // The same unassigned/explicit Gatherer pool supplies food and raw
+            // materials. Honor the prepared extraction reservation here, as the
+            // agricultural claim path does through labor.FoodGatherers. Otherwise
+            // a productive coast consumes all gathering time before Stone/Wood
+            // extraction and strands every tool-dependent manufacturing grant.
+            // Forecast callers also pass the full pool, so debit it only here.
+            gatherers = Math.Max(0, gatherers - (abandoning ? 0 : materialGatherers));
             if (gatherers <= 0) return;
             var requests = new List<Demand>(); double total = 0;
             foreach (int id in w.Map.Radius(camp.Tile, w.Config.GatherRadius).OrderBy(n => n))
