@@ -190,7 +190,11 @@ namespace Anthropocene.Simulation
             w.Hunters.RemoveAll(h => h.Population <= 0);
             Ownership.Bind(w);
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) BreakthroughBound(w, camp, record);
-            using (PhaseProfile.Scope("Technology")) TechnologyDiscovery.Resolve(w, record);
+            using (PhaseProfile.Scope("Technology"))
+            {
+                TechnologyDiscovery.Resolve(w, record);
+                SecondTierTechnology.Resolve(w, record);
+            }
             using (PhaseProfile.Scope("FieldDomestication")) fieldContact.Resolve(w, record);
             // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
             // Immigration between known settlements precedes fission (QoLFissionTradeDesign 4, 9); its sources and arrivals sit out fission this turn.

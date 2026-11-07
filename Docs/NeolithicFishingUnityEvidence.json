@@ -1,0 +1,6563 @@
+{
+  "integrationBase": "07f3501c2d5e047e44d61e85cc0d4613b54572d6",
+  "implementationHead": "5354793ff2323677ea14f13a5b73bfeee55c9fdd",
+  "matchedCohorts": {
+    "method": "Current production config; only resident Fishing and corrected aquatic pressure differ; Sailing off. First technology is diagnostic only. Gatherer person-turns are an endpoint staffing proxy against prior residents, not exact locked labor. Detailed timings are not clean performance comparisons.",
+    "rows": [
+      {
+        "seed": 23,
+        "variant": "control",
+        "revision": "90e4a72-with-sailing-gate-off",
+        "configurationHash": "11C823E08D594B67CBF12761A929626890CBAB537E71A0110508849ED8F20A69",
+        "artifactSha256": "19370b16d714f48914cdf617e8a6b7c4e88056ef47bed45b8d99fe1bba327d4b",
+        "openingTurns": 8,
+        "postOpeningTurns": 40,
+        "worldPopulation": 310684,
+        "fishingFirstSettlements": 9,
+        "fishingFirstResidents": 5309,
+        "fishingFirstResidentWeightedQoL": 0.8094255843913568,
+        "fisherPersonTurns": 0,
+        "gathererPersonTurns": 38619,
+        "forecastResidentCatch": 0,
+        "realizedResidentCatch": 0,
+        "realizedToForecast": null,
+        "plannedMaintenanceWorkerYears": 0,
+        "requiredMaintenanceWorkerYears": 0,
+        "plannedBuildWorkerYears": 0,
+        "toolCoveredWorkerYears": 0,
+        "toolsProduced": 0,
+        "meanPlannedEndpointGroundCapital": null,
+        "moves": 2,
+        "villageAbandonments": 0,
+        "fissions": 7,
+        "emigrants": 260,
+        "immigrants": 260,
+        "foodReceipts": {
+          "Marine gathering": 568790.3190456742,
+          "Gathering": 4633072.65921072,
+          "Cultivation": 3320358.6725723115,
+          "Animal Product": 823844.3255617559,
+          "Slaughter": 31350
+        }
+      },
+      {
+        "seed": 23,
+        "variant": "fishing",
+        "revision": "d014ff0-plus-audit-fields",
+        "configurationHash": "A9686D58E19527495B17638DD6B88A39C69F03EBA054E508E76DB0E85F841A06",
+        "artifactSha256": "6efb585e65317d75fd5ae56d6cf9783501e6074c45205c5d130062467df8ec44",
+        "openingTurns": 8,
+        "postOpeningTurns": 40,
+        "worldPopulation": 323967,
+        "fishingFirstSettlements": 3,
+        "fishingFirstResidents": 1954,
+        "fishingFirstResidentWeightedQoL": 0.8236063537308403,
+        "fisherPersonTurns": 2919,
+        "gathererPersonTurns": 9740,
+        "forecastResidentCatch": 701394.8464130993,
+        "realizedResidentCatch": 701394.8464130993,
+        "realizedToForecast": 1.0,
+        "plannedMaintenanceWorkerYears": 24294.469505143807,
+        "requiredMaintenanceWorkerYears": 24294.469505143807,
+        "plannedBuildWorkerYears": 34085.5304948562,
+        "toolCoveredWorkerYears": 18159.735582099518,
+        "toolsProduced": 961.986779104976,
+        "meanPlannedEndpointGroundCapital": 1.0291594191112667,
+        "moves": 1,
+        "villageAbandonments": 0,
+        "fissions": 1,
+        "emigrants": 0,
+        "immigrants": 0,
+        "foodReceipts": {
+          "FisheryHarvest": 701394.8464130994,
+          "Marine gathering": 317680.0102953152,
+          "Gathering": 1076344.6386320398,
+          "Cultivation": 1143998.4281541076,
+          "Animal Product": 644855.30969332,
+          "Slaughter": 15570
+        }
+      },
+      {
+        "seed": 101,
+        "variant": "control",
+        "revision": "90e4a72-with-sailing-gate-off",
+        "configurationHash": "11C823E08D594B67CBF12761A929626890CBAB537E71A0110508849ED8F20A69",
+        "artifactSha256": "0c93c122c68d408307ef25b1a7a633a53a27566f558f88b1f79658c4a963cb16",
+        "openingTurns": 10,
+        "postOpeningTurns": 40,
+        "worldPopulation": 505383,
+        "fishingFirstSettlements": 25,
+        "fishingFirstResidents": 3618,
+        "fishingFirstResidentWeightedQoL": 0.8460318922456213,
+        "fisherPersonTurns": 0,
+        "gathererPersonTurns": 30677,
+        "forecastResidentCatch": 0,
+        "realizedResidentCatch": 0,
+        "realizedToForecast": null,
+        "plannedMaintenanceWorkerYears": 0,
+        "requiredMaintenanceWorkerYears": 0,
+        "plannedBuildWorkerYears": 0,
+        "toolCoveredWorkerYears": 0,
+        "toolsProduced": 0,
+        "meanPlannedEndpointGroundCapital": null,
+        "moves": 5,
+        "villageAbandonments": 0,
+        "fissions": 23,
+        "emigrants": 463,
+        "immigrants": 463,
+        "foodReceipts": {
+          "Gathering": 4268240.347515038,
+          "Marine gathering": 313825.8462695739,
+          "Cultivation": 2009964.353288564,
+          "Animal Product": 661442.8195472719,
+          "Slaughter": 660
+        }
+      },
+      {
+        "seed": 101,
+        "variant": "fishing",
+        "revision": "d014ff0-plus-audit-fields",
+        "configurationHash": "A9686D58E19527495B17638DD6B88A39C69F03EBA054E508E76DB0E85F841A06",
+        "artifactSha256": "ab184a3736413eb21b57432c332b7679c4c72536ba317075a2eccecd3c39e32f",
+        "openingTurns": 10,
+        "postOpeningTurns": 40,
+        "worldPopulation": 482497,
+        "fishingFirstSettlements": 33,
+        "fishingFirstResidents": 6965,
+        "fishingFirstResidentWeightedQoL": 0.8579474805154527,
+        "fisherPersonTurns": 4180,
+        "gathererPersonTurns": 47328,
+        "forecastResidentCatch": 978528.7043504199,
+        "realizedResidentCatch": 961727.0086122988,
+        "realizedToForecast": 0.9828296342627223,
+        "plannedMaintenanceWorkerYears": 30410.583571315885,
+        "requiredMaintenanceWorkerYears": 31153.564216333507,
+        "plannedBuildWorkerYears": 40391.80483047972,
+        "toolCoveredWorkerYears": 32341.253014839982,
+        "toolsProduced": 1706.062650741999,
+        "meanPlannedEndpointGroundCapital": 0.36934211612556245,
+        "moves": 18,
+        "villageAbandonments": 0,
+        "fissions": 30,
+        "emigrants": 403,
+        "immigrants": 403,
+        "foodReceipts": {
+          "FisheryHarvest": 961727.0086122986,
+          "Gathering": 5976249.813410677,
+          "Marine gathering": 505111.48247645714,
+          "Cultivation": 3591452.7103833184,
+          "Animal Product": 64808.80073840641,
+          "Slaughter": 18480
+        }
+      }
+    ]
+  },
+  "longHorizonNoMovement": {
+    "schema": 3,
+    "worldCount": 5,
+    "completedTurnsPerWorld": 50,
+    "scenario": "trade-no-population-movement",
+    "cohort": "Standard/80 pooled census: C1,C2,C3,P1,A1",
+    "executionMode": "serial; PhaseExecution workers=1",
+    "quantileConvention": "type-7 linear interpolation; h=(n-1)p",
+    "configuration": {
+      "neolithicFishingEnabled": true,
+      "correctedAquaticSeasonalPressureEnabled": true,
+      "tradeEnabled": true,
+      "fissionEnabled": false,
+      "immigrationEnabled": false,
+      "economicAllocation": "DemandControl"
+    },
+    "gate": {
+      "basis": "matched feature-off no-movement census medians minus 20%; historical 480/383 anchors require the all-features cohort",
+      "agricultureFloor": 800,
+      "husbandryFloor": 800
+    },
+    "fissionEvents": 0,
+    "immigrationEvents": 0,
+    "fisherPersonTurns": 24742,
+    "fisherySiteTurns": 2782,
+    "residentFisheryHarvest": 5795741.211144745,
+    "toolCoveredFisherYears": 269449.0592067183,
+    "fisheryCapitalWorkerYears": 409790.47315452097,
+    "worlds": [
+      {
+        "name": "C1",
+        "shape": "Continents",
+        "checkpointIdentity": "613D50B6B75DDC9A58562B7627BE95D4DFB293A784448ECD619D5520A70BD2BB",
+        "finalFingerprint": "8C015111F56A3FFD201554C99102A48E5176114F499865B67A8B56C2160E56C8",
+        "seed": 1,
+        "openingFinishedTurn": 9,
+        "firstMeasuredAbsoluteTurn": 10,
+        "lastMeasuredAbsoluteTurn": 59
+      },
+      {
+        "name": "C2",
+        "shape": "Continents",
+        "checkpointIdentity": "6CB4C3CC97E9C85EBACB5F329031144484F1675A7B7A8A7D682308A42490E1F7",
+        "finalFingerprint": "978E4D94BDABB4367AB62B567E2197907A5487302F5BD7051CB64EC921A98CA0",
+        "seed": 2,
+        "openingFinishedTurn": 8,
+        "firstMeasuredAbsoluteTurn": 9,
+        "lastMeasuredAbsoluteTurn": 58
+      },
+      {
+        "name": "C3",
+        "shape": "Continents",
+        "checkpointIdentity": "7EAFC0E4B0690497763D7D1983BC92D58B6F0D148F9474CA3D81711B790A3FA6",
+        "finalFingerprint": "3955A2278C40E32553040DCC97C7A116C6B023295E5F70D2CE107E8AE39BBFE7",
+        "seed": 3,
+        "openingFinishedTurn": 8,
+        "firstMeasuredAbsoluteTurn": 9,
+        "lastMeasuredAbsoluteTurn": 58
+      },
+      {
+        "name": "P1",
+        "shape": "Pangaea",
+        "checkpointIdentity": "20545A7AB7CE7B2891D1E94C336793228F2031AD15F5D564F8330AF5DDE207FC",
+        "finalFingerprint": "0687E875E85D781B8C0378F30B05687787E740128544E2C0790E3DFC3C38408D",
+        "seed": 1,
+        "openingFinishedTurn": 10,
+        "firstMeasuredAbsoluteTurn": 11,
+        "lastMeasuredAbsoluteTurn": 60
+      },
+      {
+        "name": "A1",
+        "shape": "Archipelagos",
+        "checkpointIdentity": "767A857F52BDC4BE769009F16FB81A1FA546AF10B77B8B05A8156AC9C4A5D1A5",
+        "finalFingerprint": "29B1123E7E46336249239B4FEFD0528DC79059E59C3ADCEBEBC1D7EF450C91AD",
+        "seed": 1,
+        "openingFinishedTurn": 10,
+        "firstMeasuredAbsoluteTurn": 11,
+        "lastMeasuredAbsoluteTurn": 60
+      }
+    ],
+    "referenceWorlds": [
+      {
+        "name": "C1",
+        "shape": "Continents",
+        "checkpointIdentity": "1F7F114D48C6E575F9119752C30E11C95FF9B11E4067C50094605B0894F148EC",
+        "finalFingerprint": "95E2B9B1739E7E9A960959154244EB79A689C547B7C21BF5E06C5848A6977E26",
+        "seed": 1,
+        "openingFinishedTurn": 9,
+        "firstMeasuredAbsoluteTurn": 10,
+        "lastMeasuredAbsoluteTurn": 59
+      },
+      {
+        "name": "C2",
+        "shape": "Continents",
+        "checkpointIdentity": "C5795E64122597962E29A989B12ED94CF98A38234A8C43AA136EB8133F5CEEC5",
+        "finalFingerprint": "4A62DEA728CC0C40111041085CC06C6667598000551010299E4363D3752621EC",
+        "seed": 2,
+        "openingFinishedTurn": 8,
+        "firstMeasuredAbsoluteTurn": 9,
+        "lastMeasuredAbsoluteTurn": 58
+      },
+      {
+        "name": "C3",
+        "shape": "Continents",
+        "checkpointIdentity": "199DA2A6C2D100E6BB95B76F8665240CF37E771283563448DEBC4FB01607A1AD",
+        "finalFingerprint": "1F14DFE41D34FCF415B2D1148205EFE8772AF265AB65E8CC09359FFFFB0BD57B",
+        "seed": 3,
+        "openingFinishedTurn": 8,
+        "firstMeasuredAbsoluteTurn": 9,
+        "lastMeasuredAbsoluteTurn": 58
+      },
+      {
+        "name": "P1",
+        "shape": "Pangaea",
+        "checkpointIdentity": "684FBD86CAAAA6D53F14EF8A72A4565A50FA0DF489A4BE7A72B1010DCBDFAE7B",
+        "finalFingerprint": "39471982359494B5EE753E69CADF41EBA84790C889317CB6803EB762A5622D92",
+        "seed": 1,
+        "openingFinishedTurn": 10,
+        "firstMeasuredAbsoluteTurn": 11,
+        "lastMeasuredAbsoluteTurn": 60
+      },
+      {
+        "name": "A1",
+        "shape": "Archipelagos",
+        "checkpointIdentity": "EEA6E5CBC681DA5180D03F59FBA868AC1537EC1E52879A2C11CC856018A977C7",
+        "finalFingerprint": "AE9F3552CD79388B9EB91C8F56EBDCDF2DE11B6F375B95EC3B7E929B15BB236C",
+        "seed": 1,
+        "openingFinishedTurn": 10,
+        "firstMeasuredAbsoluteTurn": 11,
+        "lastMeasuredAbsoluteTurn": 60
+      }
+    ],
+    "turns": [
+      {
+        "turn": 1,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 119,
+              "p25": 84,
+              "p75": 172,
+              "minimum": 6,
+              "maximum": 325
+            },
+            "qoL": {
+              "median": 0.15951789818079784,
+              "p25": 0.019792434712222546,
+              "p75": 0.35581484988081236,
+              "minimum": 0,
+              "maximum": 0.8994623283328205
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 135,
+              "p25": 85.25,
+              "p75": 205,
+              "minimum": 3,
+              "maximum": 304
+            },
+            "qoL": {
+              "median": 0.3306429870044289,
+              "p25": 0.21933464795140137,
+              "p75": 0.5612595764472266,
+              "minimum": 0,
+              "maximum": 0.9951432942976045
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 172,
+              "p25": 139.75,
+              "p75": 172,
+              "minimum": 90,
+              "maximum": 297
+            },
+            "qoL": {
+              "median": 0.049001361335262485,
+              "p25": 0,
+              "p75": 0.2874920947366364,
+              "minimum": 0,
+              "maximum": 0.39051727737335795
+            }
+          }
+        ]
+      },
+      {
+        "turn": 2,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 158,
+              "p25": 90,
+              "p75": 216,
+              "minimum": 8,
+              "maximum": 499
+            },
+            "qoL": {
+              "median": 0.24111408690879158,
+              "p25": 0.05107758278743185,
+              "p75": 0.6384470559274436,
+              "minimum": 0,
+              "maximum": 0.9988657023555289
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 166.5,
+              "p25": 100.75,
+              "p75": 240.75,
+              "minimum": 3,
+              "maximum": 379
+            },
+            "qoL": {
+              "median": 0.3909380746987711,
+              "p25": 0.1848448808415209,
+              "p75": 0.7133681692483436,
+              "minimum": 0,
+              "maximum": 0.997879910957825
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 190,
+              "p25": 169,
+              "p75": 190,
+              "minimum": 103,
+              "maximum": 314
+            },
+            "qoL": {
+              "median": 0.1967257875171393,
+              "p25": 0.023299079872029668,
+              "p75": 0.28593818662453085,
+              "minimum": 0,
+              "maximum": 0.39051727737335795
+            }
+          }
+        ]
+      },
+      {
+        "turn": 3,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 200,
+              "p25": 106,
+              "p75": 263,
+              "minimum": 13,
+              "maximum": 672
+            },
+            "qoL": {
+              "median": 0.468961158714738,
+              "p25": 0.11486537685342404,
+              "p75": 0.7893876109924124,
+              "minimum": 0,
+              "maximum": 0.9988554357654934
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 199,
+              "p25": 113.5,
+              "p75": 278.25,
+              "minimum": 3,
+              "maximum": 557
+            },
+            "qoL": {
+              "median": 0.6354493121760398,
+              "p25": 0.24324623725591213,
+              "p75": 0.823885715572432,
+              "minimum": 0,
+              "maximum": 0.9958638903726074
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 206,
+              "p25": 194,
+              "p75": 221.5,
+              "minimum": 139,
+              "maximum": 447
+            },
+            "qoL": {
+              "median": 0.2558490016579862,
+              "p25": 0.047074211650321475,
+              "p75": 0.297854588287836,
+              "minimum": 0,
+              "maximum": 0.8230174394016535
+            }
+          }
+        ]
+      },
+      {
+        "turn": 4,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 237,
+              "p25": 128,
+              "p75": 343,
+              "minimum": 17,
+              "maximum": 732
+            },
+            "qoL": {
+              "median": 0.7583523761693235,
+              "p25": 0.2673757560436041,
+              "p75": 0.9012540649991598,
+              "minimum": 0,
+              "maximum": 0.9990687124134523
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 250.5,
+              "p25": 125.25,
+              "p75": 350.25,
+              "minimum": 2,
+              "maximum": 694
+            },
+            "qoL": {
+              "median": 0.8177941614743874,
+              "p25": 0.5941213106662738,
+              "p75": 0.9345548897610273,
+              "minimum": 0,
+              "maximum": 0.9989359087602611
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 221,
+              "p25": 194,
+              "p75": 298.25,
+              "minimum": 151,
+              "maximum": 484
+            },
+            "qoL": {
+              "median": 0.28563586557156606,
+              "p25": 0.1644733073210899,
+              "p75": 0.7338975456104393,
+              "minimum": 0,
+              "maximum": 0.9176760030688051
+            }
+          }
+        ]
+      },
+      {
+        "turn": 5,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 272,
+              "p25": 146,
+              "p75": 445,
+              "minimum": 18,
+              "maximum": 842
+            },
+            "qoL": {
+              "median": 0.8226849825763376,
+              "p25": 0.6546387205591191,
+              "p75": 0.943382861970691,
+              "minimum": 0,
+              "maximum": 0.9990681424625135
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 267.5,
+              "p25": 140,
+              "p75": 430.5,
+              "minimum": 2,
+              "maximum": 722
+            },
+            "qoL": {
+              "median": 0.86069000180064,
+              "p25": 0.6868036405645863,
+              "p75": 0.9394834252675693,
+              "minimum": 0,
+              "maximum": 0.9974854386204857
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 242,
+              "p25": 224.5,
+              "p75": 367.5,
+              "minimum": 141,
+              "maximum": 471
+            },
+            "qoL": {
+              "median": 0.314395346159307,
+              "p25": 0.2109767955455621,
+              "p75": 0.7239210570488187,
+              "minimum": 0,
+              "maximum": 0.9338810923374805
+            }
+          }
+        ]
+      },
+      {
+        "turn": 6,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 303,
+              "p25": 155,
+              "p75": 522,
+              "minimum": 21,
+              "maximum": 877
+            },
+            "qoL": {
+              "median": 0.880435462542949,
+              "p25": 0.7707820732552342,
+              "p75": 0.9606879615502368,
+              "minimum": 0.005468744129721694,
+              "maximum": 0.999127918637667
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 275,
+              "p25": 153.75,
+              "p75": 523.25,
+              "minimum": 2,
+              "maximum": 841
+            },
+            "qoL": {
+              "median": 0.8918336315794819,
+              "p25": 0.7860475038965179,
+              "p75": 0.9630917340731187,
+              "minimum": 0.028506577414612287,
+              "maximum": 0.9990123083599878
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 264,
+              "p25": 238,
+              "p75": 471,
+              "minimum": 119,
+              "maximum": 608
+            },
+            "qoL": {
+              "median": 0.6511604094804264,
+              "p25": 0.186230635591672,
+              "p75": 0.8173372080585404,
+              "minimum": 0.15413022362752987,
+              "maximum": 0.9943972373646793
+            }
+          }
+        ]
+      },
+      {
+        "turn": 7,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 348,
+              "p25": 163,
+              "p75": 569,
+              "minimum": 24,
+              "maximum": 931
+            },
+            "qoL": {
+              "median": 0.8969324822345891,
+              "p25": 0.7845183682689733,
+              "p75": 0.9622813518967478,
+              "minimum": 0.013956682441797529,
+              "maximum": 0.9990423947006314
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 355.5,
+              "p25": 177.5,
+              "p75": 596,
+              "minimum": 2,
+              "maximum": 911
+            },
+            "qoL": {
+              "median": 0.8791650945296947,
+              "p25": 0.7904946817859454,
+              "p75": 0.9539068531686163,
+              "minimum": 0.021168703861450103,
+              "maximum": 0.9952568491433511
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 287,
+              "p25": 249.5,
+              "p75": 469,
+              "minimum": 119,
+              "maximum": 674
+            },
+            "qoL": {
+              "median": 0.7378668971205292,
+              "p25": 0.16623271736392048,
+              "p75": 0.9197355558464031,
+              "minimum": 0.08778584648601587,
+              "maximum": 0.9587366800019652
+            }
+          }
+        ]
+      },
+      {
+        "turn": 8,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 364,
+              "p25": 182,
+              "p75": 663,
+              "minimum": 28,
+              "maximum": 965
+            },
+            "qoL": {
+              "median": 0.8974097410629556,
+              "p25": 0.8048428392798366,
+              "p75": 0.9585213065068561,
+              "minimum": 0.4300373419451312,
+              "maximum": 0.9991241804549619
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 386,
+              "p25": 197,
+              "p75": 627,
+              "minimum": 2,
+              "maximum": 923
+            },
+            "qoL": {
+              "median": 0.9076841023636247,
+              "p25": 0.8140081918097647,
+              "p75": 0.9650054191003192,
+              "minimum": 0.1007391043398665,
+              "maximum": 0.9989664264116405
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 363,
+              "p25": 259,
+              "p75": 604.25,
+              "minimum": 122,
+              "maximum": 809
+            },
+            "qoL": {
+              "median": 0.8026458742153817,
+              "p25": 0.1503305101122388,
+              "p75": 0.9042042445551134,
+              "minimum": 0.04380523532657191,
+              "maximum": 0.9913405789164547
+            }
+          }
+        ]
+      },
+      {
+        "turn": 9,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 396,
+              "p25": 195,
+              "p75": 712,
+              "minimum": 33,
+              "maximum": 982
+            },
+            "qoL": {
+              "median": 0.9023115187258546,
+              "p25": 0.7982565370695187,
+              "p75": 0.9544046122330976,
+              "minimum": 0.36121164229201347,
+              "maximum": 0.9990428175696889
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 445.5,
+              "p25": 214.75,
+              "p75": 703.75,
+              "minimum": 4,
+              "maximum": 961
+            },
+            "qoL": {
+              "median": 0.877603709333769,
+              "p25": 0.783228385981448,
+              "p75": 0.948962479123691,
+              "minimum": 0.18527255434712644,
+              "maximum": 0.9945433343950729
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 382,
+              "p25": 280.75,
+              "p75": 579.5,
+              "minimum": 114,
+              "maximum": 895
+            },
+            "qoL": {
+              "median": 0.8017128130461469,
+              "p25": 0.2675503803674568,
+              "p75": 0.8837597128754014,
+              "minimum": 0.046869804169464964,
+              "maximum": 0.9824031832508168
+            }
+          }
+        ]
+      },
+      {
+        "turn": 10,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 428,
+              "p25": 201,
+              "p75": 721,
+              "minimum": 37,
+              "maximum": 991
+            },
+            "qoL": {
+              "median": 0.8942708674906888,
+              "p25": 0.7954585494383257,
+              "p75": 0.9623789384535825,
+              "minimum": 0.4526496427681709,
+              "maximum": 0.9991205019561106
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 458,
+              "p25": 223.5,
+              "p75": 726.5,
+              "minimum": 7,
+              "maximum": 980
+            },
+            "qoL": {
+              "median": 0.8936275411167413,
+              "p25": 0.80646080899052,
+              "p75": 0.9646212678159173,
+              "minimum": 0.42559543095388375,
+              "maximum": 0.9986854976260185
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 504.5,
+              "p25": 292,
+              "p75": 712,
+              "minimum": 106,
+              "maximum": 788
+            },
+            "qoL": {
+              "median": 0.8092294647559182,
+              "p25": 0.7907871439194343,
+              "p75": 0.8845247672094619,
+              "minimum": 0.061110172095848965,
+              "maximum": 0.9961969150174362
+            }
+          }
+        ]
+      },
+      {
+        "turn": 11,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 453,
+              "p25": 210,
+              "p75": 777,
+              "minimum": 38,
+              "maximum": 995
+            },
+            "qoL": {
+              "median": 0.8941647191594593,
+              "p25": 0.7805433072261327,
+              "p75": 0.9632422680432483,
+              "minimum": 0.4407907392666903,
+              "maximum": 0.9989363521660313
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 500,
+              "p25": 245.5,
+              "p75": 775.75,
+              "minimum": 6,
+              "maximum": 990
+            },
+            "qoL": {
+              "median": 0.8753467354085029,
+              "p25": 0.7937531675712546,
+              "p75": 0.9519914214395011,
+              "minimum": 0.49695043757448265,
+              "maximum": 0.9939016392022986
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 413,
+              "p25": 328.25,
+              "p75": 690.75,
+              "minimum": 131,
+              "maximum": 886
+            },
+            "qoL": {
+              "median": 0.8106037680783158,
+              "p25": 0.7262888259020078,
+              "p75": 0.9175155508584181,
+              "minimum": 0.029376322874770204,
+              "maximum": 0.9917340797208488
+            }
+          }
+        ]
+      },
+      {
+        "turn": 12,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 454,
+              "p25": 218,
+              "p75": 799,
+              "minimum": 40,
+              "maximum": 998
+            },
+            "qoL": {
+              "median": 0.8984081311008683,
+              "p25": 0.7812967378631345,
+              "p75": 0.9594673204031845,
+              "minimum": 0.42236936208483633,
+              "maximum": 0.9991508841278426
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 518,
+              "p25": 260.25,
+              "p75": 796.75,
+              "minimum": 7,
+              "maximum": 995
+            },
+            "qoL": {
+              "median": 0.893452189219681,
+              "p25": 0.7898184719733997,
+              "p75": 0.9646333022206721,
+              "minimum": 0.6692110129594334,
+              "maximum": 0.996108159408441
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 568,
+              "p25": 340.25,
+              "p75": 801.75,
+              "minimum": 114,
+              "maximum": 940
+            },
+            "qoL": {
+              "median": 0.7856024562448903,
+              "p25": 0.718580908687012,
+              "p75": 0.952213904525395,
+              "minimum": 0.047199068812798124,
+              "maximum": 0.9952513498219377
+            }
+          }
+        ]
+      },
+      {
+        "turn": 13,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 511,
+              "p25": 223,
+              "p75": 854,
+              "minimum": 38,
+              "maximum": 999
+            },
+            "qoL": {
+              "median": 0.9014026339073313,
+              "p25": 0.7678111886144724,
+              "p75": 0.9629536699613077,
+              "minimum": 0.4503422167742819,
+              "maximum": 0.9995268982399447
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 573.5,
+              "p25": 277,
+              "p75": 868.75,
+              "minimum": 8,
+              "maximum": 997
+            },
+            "qoL": {
+              "median": 0.8740265742246708,
+              "p25": 0.7561925951985188,
+              "p75": 0.9488108801621277,
+              "minimum": 0.7252640961221107,
+              "maximum": 0.9927400957334512
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 580.5,
+              "p25": 297.25,
+              "p75": 864.25,
+              "minimum": 126,
+              "maximum": 969
+            },
+            "qoL": {
+              "median": 0.8439594078814618,
+              "p25": 0.7597046483903162,
+              "p75": 0.9557252128303757,
+              "minimum": 0.7355569434988644,
+              "maximum": 0.983488279527888
+            }
+          }
+        ]
+      },
+      {
+        "turn": 14,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 549,
+              "p25": 243,
+              "p75": 907,
+              "minimum": 40,
+              "maximum": 999
+            },
+            "qoL": {
+              "median": 0.8782990361928384,
+              "p25": 0.7483106919895331,
+              "p75": 0.9642924649234571,
+              "minimum": 0.4979360424665937,
+              "maximum": 0.9991154854669797
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 631.5,
+              "p25": 291.25,
+              "p75": 913.75,
+              "minimum": 9,
+              "maximum": 999
+            },
+            "qoL": {
+              "median": 0.8467740972162892,
+              "p25": 0.7464027170769499,
+              "p75": 0.9597518529967387,
+              "minimum": 0.724998234946087,
+              "maximum": 0.9940427665388966
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 620,
+              "p25": 247,
+              "p75": 921,
+              "minimum": 125,
+              "maximum": 984
+            },
+            "qoL": {
+              "median": 0.8175448511576984,
+              "p25": 0.7443020445724157,
+              "p75": 0.9460755024536582,
+              "minimum": 0.7325672631616096,
+              "maximum": 0.9950915161200969
+            }
+          }
+        ]
+      },
+      {
+        "turn": 15,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 593,
+              "p25": 248,
+              "p75": 951,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8571605499898374,
+              "p25": 0.7396843859625294,
+              "p75": 0.9627006215572309,
+              "minimum": 0.6279451808515623,
+              "maximum": 0.9995259960416384
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 670,
+              "p25": 313.75,
+              "p75": 951,
+              "minimum": 10,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8471493244547421,
+              "p25": 0.7386680809965807,
+              "p75": 0.9355705248758395,
+              "minimum": 0.7257837048125829,
+              "maximum": 0.9948233830358023
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 543,
+              "p25": 248.5,
+              "p75": 939,
+              "minimum": 128,
+              "maximum": 993
+            },
+            "qoL": {
+              "median": 0.8995055361193348,
+              "p25": 0.7515922937896405,
+              "p75": 0.9693789842446553,
+              "minimum": 0.7310254994912322,
+              "maximum": 0.9897544604360757
+            }
+          }
+        ]
+      },
+      {
+        "turn": 16,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 648,
+              "p25": 272,
+              "p75": 971,
+              "minimum": 40,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8451694217049394,
+              "p25": 0.7352898741735024,
+              "p75": 0.9605465018101508,
+              "minimum": 0.7101179584173458,
+              "maximum": 0.9991426837368247
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 734.5,
+              "p25": 332,
+              "p75": 973.75,
+              "minimum": 12,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8081124937844404,
+              "p25": 0.7339303398333473,
+              "p75": 0.9513601333034618,
+              "minimum": 0.725928118335866,
+              "maximum": 0.9919268507449222
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 678,
+              "p25": 272,
+              "p75": 950.5,
+              "minimum": 129,
+              "maximum": 997
+            },
+            "qoL": {
+              "median": 0.8445835179176631,
+              "p25": 0.7454594436425115,
+              "p75": 0.9775878517243404,
+              "minimum": 0.7311406488352868,
+              "maximum": 0.9936192462670457
+            }
+          }
+        ]
+      },
+      {
+        "turn": 17,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 692,
+              "p25": 282,
+              "p75": 986,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8239152164092987,
+              "p25": 0.7324745644193711,
+              "p75": 0.9602047844525704,
+              "minimum": 0.7099389195572511,
+              "maximum": 0.999525089891118
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 788.5,
+              "p25": 346.75,
+              "p75": 987,
+              "minimum": 13,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7980952046749041,
+              "p25": 0.7315878628238939,
+              "p75": 0.9320749511562058,
+              "minimum": 0.7265175511284196,
+              "maximum": 0.9876036734339181
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 736.5,
+              "p25": 271,
+              "p75": 913.5,
+              "minimum": 128,
+              "maximum": 998
+            },
+            "qoL": {
+              "median": 0.8255940951704823,
+              "p25": 0.7471983284471553,
+              "p75": 0.9707309345483006,
+              "minimum": 0.7306922954546365,
+              "maximum": 0.9939204084725131
+            }
+          }
+        ]
+      },
+      {
+        "turn": 18,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 687,
+              "p25": 290,
+              "p75": 992,
+              "minimum": 39,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.815676115862094,
+              "p25": 0.7310518682616597,
+              "p75": 0.9541095584146257,
+              "minimum": 0.7104986825618793,
+              "maximum": 0.9991398039072005
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 826,
+              "p25": 376.5,
+              "p75": 993.25,
+              "minimum": 12,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7826278206481805,
+              "p25": 0.7306599992149714,
+              "p75": 0.9345230970208225,
+              "minimum": 0.726581662976747,
+              "maximum": 0.9911965500971157
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 820.5,
+              "p25": 290.25,
+              "p75": 954.75,
+              "minimum": 136,
+              "maximum": 999
+            },
+            "qoL": {
+              "median": 0.8079622587060575,
+              "p25": 0.7384800831952838,
+              "p75": 0.9593825347889982,
+              "minimum": 0.7296340982906718,
+              "maximum": 0.9933001892096245
+            }
+          }
+        ]
+      },
+      {
+        "turn": 19,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 740,
+              "p25": 321,
+              "p75": 996,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8148409441180345,
+              "p25": 0.7305277175702204,
+              "p75": 0.9494855282222746,
+              "minimum": 0.7106439883144732,
+              "maximum": 0.9989707891327779
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 886,
+              "p25": 405.25,
+              "p75": 997,
+              "minimum": 14,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7502946484383312,
+              "p25": 0.7301319052779497,
+              "p75": 0.9201704551358578,
+              "minimum": 0.7251550540881535,
+              "maximum": 0.9886608313180264
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 622.5,
+              "p25": 289.25,
+              "p75": 976.5,
+              "minimum": 131,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8355330856403114,
+              "p25": 0.73440821067768,
+              "p75": 0.9672980197769993,
+              "minimum": 0.7298447038201168,
+              "maximum": 0.9944109354717432
+            }
+          }
+        ]
+      },
+      {
+        "turn": 20,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 785,
+              "p25": 355,
+              "p75": 998,
+              "minimum": 39,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7894350133536158,
+              "p25": 0.7302567276891766,
+              "p75": 0.9401577508806789,
+              "minimum": 0.5438240973161823,
+              "maximum": 0.9991084831311942
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 929.5,
+              "p25": 429.75,
+              "p75": 998,
+              "minimum": 22,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7432285573425271,
+              "p25": 0.7299048461572387,
+              "p75": 0.9285339545927385,
+              "minimum": 0.7204275722158958,
+              "maximum": 0.9902426243604531
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 752.5,
+              "p25": 308,
+              "p75": 988,
+              "minimum": 137,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8435540812062292,
+              "p25": 0.7320533167698686,
+              "p75": 0.9497195130319779,
+              "minimum": 0.7298817561674664,
+              "maximum": 0.9911779802918608
+            }
+          }
+        ]
+      },
+      {
+        "turn": 21,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 825,
+              "p25": 343,
+              "p75": 999,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7861319391572635,
+              "p25": 0.7299851969901023,
+              "p75": 0.9393245174685176,
+              "minimum": 0.6824504336859551,
+              "maximum": 0.9989664949667653
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 958,
+              "p25": 449.25,
+              "p75": 999,
+              "minimum": 32,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.740610385361886,
+              "p25": 0.7298730443669482,
+              "p75": 0.9158527007784463,
+              "minimum": 0.7277769610839295,
+              "maximum": 0.9891465747502987
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 766.5,
+              "p25": 348.25,
+              "p75": 994,
+              "minimum": 121,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7781705149432105,
+              "p25": 0.7309161967122992,
+              "p75": 0.9518263041897209,
+              "minimum": 0.7299188963147112,
+              "maximum": 0.9948314297071887
+            }
+          }
+        ]
+      },
+      {
+        "turn": 22,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 860,
+              "p25": 379,
+              "p75": 999,
+              "minimum": 40,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7692095621041282,
+              "p25": 0.7299596754551024,
+              "p75": 0.9331573271412946,
+              "minimum": 0.5152933920005093,
+              "maximum": 0.999133947232949
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 979,
+              "p25": 482.25,
+              "p75": 999,
+              "minimum": 33,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7332817401218006,
+              "p25": 0.7297008723361673,
+              "p75": 0.9100589132723128,
+              "minimum": 0.7273054377572786,
+              "maximum": 0.9883212170352592
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 794.5,
+              "p25": 357.25,
+              "p75": 996.5,
+              "minimum": 150,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8099911466125402,
+              "p25": 0.7304160695445865,
+              "p75": 0.9342764076963371,
+              "minimum": 0.7293637603019782,
+              "maximum": 0.956333108788318
+            }
+          }
+        ]
+      },
+      {
+        "turn": 23,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 880,
+              "p25": 394,
+              "p75": 1000,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7609619252141059,
+              "p25": 0.7299304651861314,
+              "p75": 0.9348582775004644,
+              "minimum": 0.7292272550180122,
+              "maximum": 0.9995226173515802
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 989,
+              "p25": 520.5,
+              "p75": 1000,
+              "minimum": 43,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7312850516543836,
+              "p25": 0.729567525852413,
+              "p75": 0.9067697953783098,
+              "minimum": 0.2928317344373225,
+              "maximum": 0.9877432568814148
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 809.5,
+              "p25": 368.25,
+              "p75": 998.25,
+              "minimum": 125,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7989829334070331,
+              "p25": 0.7300166451400201,
+              "p75": 0.8834244739319703,
+              "minimum": 0.7296592199705805,
+              "maximum": 0.9931625235258636
+            }
+          }
+        ]
+      },
+      {
+        "turn": 24,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 918,
+              "p25": 397,
+              "p75": 1000,
+              "minimum": 40,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7464760292424221,
+              "p25": 0.7299037744220429,
+              "p75": 0.9317397457775695,
+              "minimum": 0.6701973287314935,
+              "maximum": 0.999128335513853
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 994.5,
+              "p25": 495,
+              "p75": 1000,
+              "minimum": 46,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7300738070296744,
+              "p25": 0.7295022319168346,
+              "p75": 0.8753884789665239,
+              "minimum": 0.43484148467599765,
+              "maximum": 0.9854651299334116
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 822,
+              "p25": 383.5,
+              "p75": 999.5,
+              "minimum": 134,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7993086286168107,
+              "p25": 0.7299453549312259,
+              "p75": 0.9379043097301191,
+              "minimum": 0.7298219814119437,
+              "maximum": 0.9947253803067807
+            }
+          }
+        ]
+      },
+      {
+        "turn": 25,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 927,
+              "p25": 397,
+              "p75": 1000,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7449159222868674,
+              "p25": 0.7298880989630632,
+              "p75": 0.934139265646747,
+              "minimum": 0.7219881392870314,
+              "maximum": 0.9995219016501093
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 997.5,
+              "p25": 521,
+              "p75": 1000,
+              "minimum": 48,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7300886941942702,
+              "p25": 0.7294661446523718,
+              "p75": 0.8909933734385137,
+              "minimum": 0.608051659384544,
+              "maximum": 0.9769871002522178
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 826.5,
+              "p25": 383.5,
+              "p75": 999.75,
+              "minimum": 135,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7856830447619609,
+              "p25": 0.7299948987184952,
+              "p75": 0.872355494739623,
+              "minimum": 0.7298577604166497,
+              "maximum": 0.9926935660530154
+            }
+          }
+        ]
+      },
+      {
+        "turn": 26,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 958,
+              "p25": 396,
+              "p75": 1000,
+              "minimum": 40,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7375038104743884,
+              "p25": 0.729869630827373,
+              "p75": 0.9180018577426711,
+              "minimum": 0.7271555860938983,
+              "maximum": 0.9991021896356984
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 999,
+              "p25": 502.5,
+              "p75": 1000,
+              "minimum": 50,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7300507553213973,
+              "p25": 0.7295627600103302,
+              "p75": 0.8854786800534173,
+              "minimum": 0.23712253554463192,
+              "maximum": 0.979823085257839
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 840,
+              "p25": 401,
+              "p75": 999.75,
+              "minimum": 136,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7914399081180744,
+              "p25": 0.7299192701009365,
+              "p75": 0.8632888074801317,
+              "minimum": 0.7298564997634964,
+              "maximum": 0.9928396646226794
+            }
+          }
+        ]
+      },
+      {
+        "turn": 27,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 971,
+              "p25": 452,
+              "p75": 1000,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7355640277704928,
+              "p25": 0.7298631037398301,
+              "p75": 0.9214709339988615,
+              "minimum": 0.7172427330094363,
+              "maximum": 0.999515343079166
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 999,
+              "p25": 513.5,
+              "p75": 1000,
+              "minimum": 54,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7299576461919276,
+              "p25": 0.729530827613623,
+              "p75": 0.8906173417159403,
+              "minimum": 0.30938290609132163,
+              "maximum": 0.9941887363405644
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 837,
+              "p25": 397.75,
+              "p75": 1000,
+              "minimum": 136,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.796803235593311,
+              "p25": 0.7298639433831957,
+              "p75": 0.9443821661061342,
+              "minimum": 0.7295745468887892,
+              "maximum": 0.994169954363034
+            }
+          }
+        ]
+      },
+      {
+        "turn": 28,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 985,
+              "p25": 403,
+              "p75": 1000,
+              "minimum": 40,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.732769805304322,
+              "p25": 0.7298583274561129,
+              "p75": 0.9293148373487878,
+              "minimum": 0.7206881869125058,
+              "maximum": 0.9991264152540937
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 999,
+              "p25": 540.25,
+              "p75": 1000,
+              "minimum": 53,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7299134325062387,
+              "p25": 0.7295618641881846,
+              "p75": 0.8946068003534294,
+              "minimum": 0.41409924353215105,
+              "maximum": 0.9987809677944587
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 852.5,
+              "p25": 412.25,
+              "p75": 999.75,
+              "minimum": 242,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7851276839987522,
+              "p25": 0.7298591755597307,
+              "p75": 0.8534273516815378,
+              "minimum": 0.7297533060958877,
+              "maximum": 0.9795822235421896
+            }
+          }
+        ]
+      },
+      {
+        "turn": 29,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 990,
+              "p25": 457,
+              "p75": 1000,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7314404935205189,
+              "p25": 0.7298569549140039,
+              "p75": 0.912286069556271,
+              "minimum": 0.390003237827193,
+              "maximum": 0.9994815454794127
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 999,
+              "p25": 504.5,
+              "p75": 1000,
+              "minimum": 56,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298945087425353,
+              "p25": 0.7295748558295461,
+              "p75": 0.8892932322254916,
+              "minimum": 0.5315867047455785,
+              "maximum": 0.9947830551153984
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 844.5,
+              "p25": 411.75,
+              "p75": 999.75,
+              "minimum": 193,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7940322939172513,
+              "p25": 0.7298557194737652,
+              "p75": 0.9402046010758315,
+              "minimum": 0.7292271937292214,
+              "maximum": 0.9825937038401451
+            }
+          }
+        ]
+      },
+      {
+        "turn": 30,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 995,
+              "p25": 445,
+              "p75": 1000,
+              "minimum": 40,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7304764782813663,
+              "p25": 0.7298562715521811,
+              "p75": 0.905733318370681,
+              "minimum": 0.5033936611118415,
+              "maximum": 0.9990985672566761
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 999,
+              "p25": 586.5,
+              "p75": 1000,
+              "minimum": 56,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298953250485837,
+              "p25": 0.7296194058772233,
+              "p75": 0.8705480718737039,
+              "minimum": 0.49093520166615295,
+              "maximum": 0.9911365829380702
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 851.5,
+              "p25": 422.5,
+              "p75": 1000,
+              "minimum": 193,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7902588330291904,
+              "p25": 0.7298556165257005,
+              "p75": 0.9210063611009156,
+              "minimum": 0.7293482770033329,
+              "maximum": 0.9882894850438428
+            }
+          }
+        ]
+      },
+      {
+        "turn": 31,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 998,
+              "p25": 469,
+              "p75": 1000,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7301487039578326,
+              "p25": 0.7298557614495049,
+              "p75": 0.914080861542707,
+              "minimum": 0.6878993238404867,
+              "maximum": 0.9994160761318828
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 999,
+              "p25": 544.25,
+              "p75": 1000,
+              "minimum": 61,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.72987924605543,
+              "p25": 0.7296695006553795,
+              "p75": 0.8762860169870876,
+              "minimum": 0.7286969246654434,
+              "maximum": 0.9885313520899054
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 872,
+              "p25": 427.25,
+              "p75": 1000,
+              "minimum": 199,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7733613647185578,
+              "p25": 0.7298800414098344,
+              "p75": 0.9376046033091363,
+              "minimum": 0.7298555525830823,
+              "maximum": 0.9879001165536047
+            }
+          }
+        ]
+      },
+      {
+        "turn": 32,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 999,
+              "p25": 451,
+              "p75": 1000,
+              "minimum": 40,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7300391176795544,
+              "p25": 0.7298556528229779,
+              "p75": 0.9186711632813434,
+              "minimum": 0.7033951194983379,
+              "maximum": 0.9990997276681023
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 999,
+              "p25": 625.5,
+              "p75": 1000,
+              "minimum": 60,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298604961432698,
+              "p25": 0.7296310146439448,
+              "p75": 0.8710439731378433,
+              "minimum": 0.4134831640563522,
+              "maximum": 0.9987943347321233
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 859,
+              "p25": 555.5,
+              "p75": 1000,
+              "minimum": 197,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7752392119647773,
+              "p25": 0.72986344585989,
+              "p75": 0.8495145128646832,
+              "minimum": 0.7292244125178484,
+              "maximum": 0.987571623963258
+            }
+          }
+        ]
+      },
+      {
+        "turn": 33,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 999,
+              "p25": 486,
+              "p75": 1000,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.729959527642682,
+              "p25": 0.7298556200543951,
+              "p75": 0.9116750389514551,
+              "minimum": 0.6014984598192411,
+              "maximum": 0.9993300911139019
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 600,
+              "p75": 1000,
+              "minimum": 59,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298576836810275,
+              "p25": 0.729683023239198,
+              "p75": 0.8758508662224027,
+              "minimum": 0.6479263768089601,
+              "maximum": 0.9988838675511923
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 865,
+              "p25": 538.5,
+              "p75": 1000,
+              "minimum": 178,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7806339963017863,
+              "p25": 0.7298589602816862,
+              "p75": 0.9064341284601959,
+              "minimum": 0.7293473926379075,
+              "maximum": 0.9890691508902706
+            }
+          }
+        ]
+      },
+      {
+        "turn": 34,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 999,
+              "p25": 467,
+              "p75": 1000,
+              "minimum": 40,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7299005445452618,
+              "p25": 0.7298555610082957,
+              "p75": 0.9149469107492939,
+              "minimum": 0.5635749698386083,
+              "maximum": 0.9991034837350594
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 604.25,
+              "p75": 1000,
+              "minimum": 63,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298569335570942,
+              "p25": 0.7297116646037154,
+              "p75": 0.8864068814754953,
+              "minimum": 0.7290276011752234,
+              "maximum": 0.9988334525173297
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 868.5,
+              "p25": 581.75,
+              "p75": 1000,
+              "minimum": 214,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.783745770095541,
+              "p25": 0.7298619934499675,
+              "p75": 0.8734789812428642,
+              "minimum": 0.729855539167848,
+              "maximum": 0.9680500267853186
+            }
+          }
+        ]
+      },
+      {
+        "turn": 35,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 999,
+              "p25": 493,
+              "p75": 1000,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298755367311428,
+              "p25": 0.7298555456622401,
+              "p75": 0.8920829018371497,
+              "minimum": 0.5609364262497903,
+              "maximum": 0.9992185898613419
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 574.5,
+              "p75": 1000,
+              "minimum": 63,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298563695481439,
+              "p25": 0.7297408358285649,
+              "p75": 0.8853093529262703,
+              "minimum": 0.7291752605509604,
+              "maximum": 0.9987354582094725
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 872.5,
+              "p25": 603.75,
+              "p75": 1000,
+              "minimum": 184,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7836438439103797,
+              "p25": 0.7298583316601384,
+              "p75": 0.8802190955061957,
+              "minimum": 0.729855538496712,
+              "maximum": 0.9876872423751687
+            }
+          }
+        ]
+      },
+      {
+        "turn": 36,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 461,
+              "p75": 1000,
+              "minimum": 41,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298693266099077,
+              "p25": 0.7298555420125128,
+              "p75": 0.902106189712306,
+              "minimum": 0.7012311939960026,
+              "maximum": 0.9991018434279809
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 555.75,
+              "p75": 1000,
+              "minimum": 57,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298557993481872,
+              "p25": 0.7297466940935293,
+              "p75": 0.8830312760586096,
+              "minimum": 0.26007276587704903,
+              "maximum": 0.9988610227444683
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 881,
+              "p25": 662.5,
+              "p75": 1000,
+              "minimum": 213,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7787054045256658,
+              "p25": 0.7298567469752798,
+              "p75": 0.8490512925842035,
+              "minimum": 0.7298555382062742,
+              "maximum": 0.9803690872358598
+            }
+          }
+        ]
+      },
+      {
+        "turn": 37,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 497,
+              "p75": 1000,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298879784169493,
+              "p25": 0.7298555408631976,
+              "p75": 0.9032530943419455,
+              "minimum": 0.7013316189038471,
+              "maximum": 0.99951887693887
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 588.75,
+              "p75": 1000,
+              "minimum": 63,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298556132427921,
+              "p25": 0.729741885907103,
+              "p75": 0.8760730375656198,
+              "minimum": 0.39850190421290965,
+              "maximum": 0.9988833688390949
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 888,
+              "p25": 702.5,
+              "p75": 1000,
+              "minimum": 190,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7764877142876061,
+              "p25": 0.7298560611865413,
+              "p75": 0.8458546480070521,
+              "minimum": 0.7298555380805856,
+              "maximum": 0.9873615610478962
+            }
+          }
+        ]
+      },
+      {
+        "turn": 38,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 465,
+              "p75": 1000,
+              "minimum": 41,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298869123000163,
+              "p25": 0.7298555392497494,
+              "p75": 0.918118081282029,
+              "minimum": 0.7010091569329912,
+              "maximum": 0.9991160766892975
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 602,
+              "p75": 1000,
+              "minimum": 61,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555587328599,
+              "p25": 0.729748888368406,
+              "p75": 0.8688259957686555,
+              "minimum": 0.6099991187000176,
+              "maximum": 0.9987964014542137
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 902.5,
+              "p25": 740.25,
+              "p75": 1000,
+              "minimum": 208,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7542814904854369,
+              "p25": 0.7298557644049906,
+              "p75": 0.8394229686359348,
+              "minimum": 0.7298555380261967,
+              "maximum": 0.9804841513238819
+            }
+          }
+        ]
+      },
+      {
+        "turn": 39,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 496,
+              "p75": 1000,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298591925708362,
+              "p25": 0.7298555383464667,
+              "p75": 0.8991602001752772,
+              "minimum": 0.38252759480005916,
+              "maximum": 0.9995185840774791
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 599.5,
+              "p75": 1000,
+              "minimum": 58,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.729855567150863,
+              "p25": 0.729766430117648,
+              "p75": 0.8753735604314428,
+              "minimum": 0.7290379630569348,
+              "maximum": 0.9988742647745095
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 946.5,
+              "p25": 733,
+              "p75": 1000,
+              "minimum": 194,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7405156598153623,
+              "p25": 0.7298556359700836,
+              "p75": 0.8405195684820866,
+              "minimum": 0.7298555380026597,
+              "maximum": 0.9873759011119556
+            }
+          }
+        ]
+      },
+      {
+        "turn": 40,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 507,
+              "p75": 1000,
+              "minimum": 41,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298591069347505,
+              "p25": 0.7298555382179923,
+              "p75": 0.884656696021564,
+              "minimum": 0.5479762891396889,
+              "maximum": 0.9991152540201848
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 606.75,
+              "p75": 1000,
+              "minimum": 63,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555471517145,
+              "p25": 0.7297678542970498,
+              "p75": 0.8778966493263326,
+              "minimum": 0.7289565425431203,
+              "maximum": 0.9988340095463472
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 972,
+              "p25": 773.75,
+              "p75": 1000,
+              "minimum": 204,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7352266041302866,
+              "p25": 0.729855580388737,
+              "p75": 0.8140430948617179,
+              "minimum": 0.7298555379924695,
+              "maximum": 0.979893993657975
+            }
+          }
+        ]
+      },
+      {
+        "turn": 41,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 540,
+              "p75": 1000,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298580808967173,
+              "p25": 0.7298555380872143,
+              "p75": 0.892195686444237,
+              "minimum": 0.5231501952322586,
+              "maximum": 0.9995184130634244
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 629.25,
+              "p75": 1000,
+              "minimum": 63,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555419518005,
+              "p25": 0.7297807631694417,
+              "p75": 0.8723184315204877,
+              "minimum": 0.7289559453933209,
+              "maximum": 0.9958443973213242
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 985.5,
+              "p25": 766.75,
+              "p75": 1000,
+              "minimum": 202,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7325883940743656,
+              "p25": 0.7298555563354193,
+              "p75": 0.8260226942369263,
+              "minimum": 0.7298555379896611,
+              "maximum": 0.9872233158293995
+            }
+          }
+        ]
+      },
+      {
+        "turn": 42,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 509,
+              "p75": 1000,
+              "minimum": 41,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298566549864179,
+              "p25": 0.7298555380324274,
+              "p75": 0.8904692453030554,
+              "minimum": 0.4656945597146034,
+              "maximum": 0.9991204392198177
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 607.75,
+              "p75": 1000,
+              "minimum": 56,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555409173627,
+              "p25": 0.7297936257127398,
+              "p75": 0.8810935743938438,
+              "minimum": 0.7291107880617969,
+              "maximum": 0.9985637077491417
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 992.5,
+              "p25": 775.25,
+              "p75": 1000,
+              "minimum": 203,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7311057475177145,
+              "p25": 0.7298555459261349,
+              "p75": 0.8232132360703865,
+              "minimum": 0.7298555379896611,
+              "maximum": 0.9856913654770417
+            }
+          }
+        ]
+      },
+      {
+        "turn": 43,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 570,
+              "p75": 1000,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298560213774606,
+              "p25": 0.7298555380053497,
+              "p75": 0.901429564045426,
+              "minimum": 0.6270606081025676,
+              "maximum": 0.9995191620321475
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 650,
+              "p75": 1000,
+              "minimum": 63,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555384790298,
+              "p25": 0.7297931873625346,
+              "p75": 0.8704856309844943,
+              "minimum": 0.48671691141325135,
+              "maximum": 0.9941950860779089
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 996.5,
+              "p25": 795.75,
+              "p75": 1000,
+              "minimum": 200,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7303810326758746,
+              "p25": 0.7298555414214185,
+              "p75": 0.8108102349693502,
+              "minimum": 0.7298555379896611,
+              "maximum": 0.98713538148726
+            }
+          }
+        ]
+      },
+      {
+        "turn": 44,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 566,
+              "p75": 1000,
+              "minimum": 41,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298557451047266,
+              "p25": 0.7298555379950749,
+              "p75": 0.9001398974405391,
+              "minimum": 0.6635562470282717,
+              "maximum": 0.9991186073382189
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 638.75,
+              "p75": 1000,
+              "minimum": 56,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555383062235,
+              "p25": 0.7298028858818306,
+              "p75": 0.870996218846781,
+              "minimum": 0.5961068194097334,
+              "maximum": 0.9940220251888541
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 998,
+              "p25": 788,
+              "p75": 1000,
+              "minimum": 201,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7303119983844037,
+              "p25": 0.7298555394719652,
+              "p75": 0.8166966491314013,
+              "minimum": 0.7298555379896611,
+              "maximum": 0.9852758526081176
+            }
+          }
+        ]
+      },
+      {
+        "turn": 45,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 541,
+              "p75": 1000,
+              "minimum": 37,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298556276177255,
+              "p25": 0.7298555379941013,
+              "p75": 0.9027128888797199,
+              "minimum": 0.6040119165156476,
+              "maximum": 0.9995197823421621
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 656.75,
+              "p75": 1000,
+              "minimum": 57,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555380772702,
+              "p25": 0.7298064538310276,
+              "p75": 0.8600440850132792,
+              "minimum": 0.7263884214878634,
+              "maximum": 0.9970300076664572
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 999,
+              "p25": 819.25,
+              "p75": 1000,
+              "minimum": 198,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298980912165068,
+              "p25": 0.7298555386283267,
+              "p75": 0.7972487043989436,
+              "minimum": 0.7298555379896611,
+              "maximum": 0.9874079645222603
+            }
+          }
+        ]
+      },
+      {
+        "turn": 46,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 554,
+              "p75": 1000,
+              "minimum": 41,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555771623205,
+              "p25": 0.7298555379938423,
+              "p75": 0.8972030240492317,
+              "minimum": 0.5387295473495142,
+              "maximum": 0.9990559645495255
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 661.25,
+              "p75": 1000,
+              "minimum": 57,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555380247582,
+              "p25": 0.7298119548596992,
+              "p75": 0.8677676110455089,
+              "minimum": 0.729702368681377,
+              "maximum": 0.9937599301798624
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 999.5,
+              "p25": 808,
+              "p75": 1000,
+              "minimum": 201,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298995924524718,
+              "p25": 0.7298555382632349,
+              "p75": 0.8097711522971992,
+              "minimum": 0.7298555379896611,
+              "maximum": 0.9821691063485942
+            }
+          }
+        ]
+      },
+      {
+        "turn": 47,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 541,
+              "p75": 1000,
+              "minimum": 38,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555453952671,
+              "p25": 0.7298555379931502,
+              "p75": 0.8807428224823691,
+              "minimum": 0.42774018862327545,
+              "maximum": 0.9995207430626241
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 657,
+              "p75": 1000,
+              "minimum": 59,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555379970675,
+              "p25": 0.7298134903336151,
+              "p75": 0.8588332684931326,
+              "minimum": 0.6405921368031565,
+              "maximum": 0.9964664501950009
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 999.5,
+              "p25": 805.75,
+              "p75": 1000,
+              "minimum": 203,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.729884591238359,
+              "p25": 0.7298555381052401,
+              "p75": 0.8125594732747043,
+              "minimum": 0.7298555379896611,
+              "maximum": 0.9843058298408408
+            }
+          }
+        ]
+      },
+      {
+        "turn": 48,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 570,
+              "p75": 1000,
+              "minimum": 41,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555453218718,
+              "p25": 0.7298555379931502,
+              "p75": 0.8958976319335874,
+              "minimum": 0.7006506147221687,
+              "maximum": 0.9991008579804734
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 680,
+              "p75": 1000,
+              "minimum": 60,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555379954557,
+              "p25": 0.7298197563911051,
+              "p75": 0.8633045878658168,
+              "minimum": 0.7297314284169186,
+              "maximum": 0.9964017593421378
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 810.5,
+              "p75": 1000,
+              "minimum": 202,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555383112096,
+              "p25": 0.7298555380010152,
+              "p75": 0.8093691865305366,
+              "minimum": 0.7295686189872574,
+              "maximum": 0.9871911836452222
+            }
+          }
+        ]
+      },
+      {
+        "turn": 49,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 573,
+              "p75": 1000,
+              "minimum": 37,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555393844666,
+              "p25": 0.729855537992929,
+              "p75": 0.8992691802312182,
+              "minimum": 0.40212707509058937,
+              "maximum": 0.9995202466554358
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 685.25,
+              "p75": 1000,
+              "minimum": 62,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.729855537994061,
+              "p25": 0.7298233348005929,
+              "p75": 0.8612042818114012,
+              "minimum": 0.7291795354839021,
+              "maximum": 0.9963050326604759
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 810,
+              "p75": 1000,
+              "minimum": 200,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555381259966,
+              "p25": 0.7298555379942513,
+              "p75": 0.8113562692420088,
+              "minimum": 0.7296613874456768,
+              "maximum": 0.9873679487109366
+            }
+          }
+        ]
+      },
+      {
+        "turn": 50,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 273,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 571,
+              "p75": 1000,
+              "minimum": 41,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555393588056,
+              "p25": 0.7298555379928876,
+              "p75": 0.8959330599479757,
+              "minimum": 0.41350783057081875,
+              "maximum": 0.9991159709424364
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 116,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 691.25,
+              "p75": 1000,
+              "minimum": 64,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555379940113,
+              "p25": 0.7298265553258614,
+              "p75": 0.8582179878517697,
+              "minimum": 0.7293119748321453,
+              "maximum": 0.9961724505374117
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 10,
+            "residentPopulation": {
+              "median": 1000,
+              "p25": 817,
+              "p75": 1000,
+              "minimum": 207,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.7298555380460727,
+              "p25": 0.729855537991324,
+              "p75": 0.8063907091979359,
+              "minimum": 0.7298226798801565,
+              "maximum": 0.9794144079662808
+            }
+          }
+        ]
+      }
+    ],
+    "turn50": [
+      {
+        "branch": "Agriculture",
+        "count": 273,
+        "residentPopulation": {
+          "median": 1000,
+          "p25": 571,
+          "p75": 1000,
+          "minimum": 41,
+          "maximum": 1000
+        },
+        "qoL": {
+          "median": 0.7298555393588056,
+          "p25": 0.7298555379928876,
+          "p75": 0.8959330599479757,
+          "minimum": 0.41350783057081875,
+          "maximum": 0.9991159709424364
+        }
+      },
+      {
+        "branch": "Husbandry",
+        "count": 116,
+        "residentPopulation": {
+          "median": 1000,
+          "p25": 691.25,
+          "p75": 1000,
+          "minimum": 64,
+          "maximum": 1000
+        },
+        "qoL": {
+          "median": 0.7298555379940113,
+          "p25": 0.7298265553258614,
+          "p75": 0.8582179878517697,
+          "minimum": 0.7293119748321453,
+          "maximum": 0.9961724505374117
+        }
+      },
+      {
+        "branch": "Fishing",
+        "count": 10,
+        "residentPopulation": {
+          "median": 1000,
+          "p25": 817,
+          "p75": 1000,
+          "minimum": 207,
+          "maximum": 1000
+        },
+        "qoL": {
+          "median": 0.7298555380460727,
+          "p25": 0.729855537991324,
+          "p75": 0.8063907091979359,
+          "minimum": 0.7298226798801565,
+          "maximum": 0.9794144079662808
+        }
+      }
+    ],
+    "referenceTurn50": [
+      {
+        "branch": "Agriculture",
+        "count": 273,
+        "residentPopulation": {
+          "median": 1000,
+          "p25": 571,
+          "p75": 1000,
+          "minimum": 41,
+          "maximum": 1000
+        },
+        "qoL": {
+          "median": 0.7298555393720805,
+          "p25": 0.7298555379928897,
+          "p75": 0.8959330599479757,
+          "minimum": 0.41350783057081875,
+          "maximum": 0.9991159709424364
+        }
+      },
+      {
+        "branch": "Husbandry",
+        "count": 116,
+        "residentPopulation": {
+          "median": 1000,
+          "p25": 691.25,
+          "p75": 1000,
+          "minimum": 64,
+          "maximum": 1000
+        },
+        "qoL": {
+          "median": 0.7298555379940113,
+          "p25": 0.7298265553258614,
+          "p75": 0.8582179878517697,
+          "minimum": 0.7293119748321453,
+          "maximum": 0.9961724505374117
+        }
+      },
+      {
+        "branch": "Fishing",
+        "count": 10,
+        "residentPopulation": {
+          "median": 1000,
+          "p25": 756,
+          "p75": 1000,
+          "minimum": 227,
+          "maximum": 1000
+        },
+        "qoL": {
+          "median": 0.7298555380100628,
+          "p25": 0.7298555379925815,
+          "p75": 0.831467434868921,
+          "minimum": 0.7280532984300278,
+          "maximum": 0.983765776185223
+        }
+      }
+    ]
+  },
+  "checks": {
+    "final-fixed.log": {
+      "sha256": "bb59f5b35dc5fb7865b9d06fdd88fecae33c3f20e7ff83c499d6945d1eafab22",
+      "passLines": [
+        "PASS: 33 focused assertions",
+        "PASS: 59 milestone-two assertions",
+        "PASS: 82 milestone-three assertions",
+        "PASS: 55 foundation assertions",
+        "PASS: 104 crop agriculture assertions",
+        "PASS: 25 regional/local moisture assertions",
+        "PASS: 15 atmospheric generation assertions",
+        "PASS: 30 altitude/climate assertions",
+        "PASS: 37 river terrain and uplift-margin assertions",
+        "PASS: 20 drainage and longitude assertions",
+        "PASS: 35 reference-world morphology assertions",
+        "PASS: 984 topography/ruggedness assertions",
+        "PASS: 51 archipelago and historical-track assertions",
+        "PASS: 8929 geology assertions",
+        "PASS: 37 aquatic productivity assertions",
+        "PASS: 53 aquatic seasonal pressure assertions",
+        "PASS: 23 Sailing assertions",
+        "PASS: 41 Fishing inspection assertions",
+        "PASS: 13 Fishing observation assertions",
+        "PASS: 47 Fishing economy assertions",
+        "PASS: 43 Fishing resource assertions",
+        "PASS: 23 fishing state assertions",
+        "PASS: 36892 Fishing warm calibration assertions",
+        "PASS: 14 seasonal start-viability assertions",
+        "PASS: 23 preset and developer-preview assertions",
+        "PASS: 49 ecology assertions",
+        "PASS: 41926 agent-contract assertions",
+        "PASS: 27 economic-transition assertions",
+        "PASS: mature agricultural save restoration matched fingerprints for 2/4-worker worlds at post-opening turn 12",
+        "PASS: reference vs 2/4 workers, reversed partitions and entity collections across 33 resolutions, including 25 post-opening turns with partial seasonal boundaries",
+        "PASS: 411 planning draft assertions",
+        "PASS: 792 camp spacing assertions",
+        "PASS: 136 contact knowledge assertions",
+        "PASS: 678 fission assertions",
+        "PASS: 385 immigration assertions",
+        "PASS: 70 social relocation assertions",
+        "PASS: 480 trade assertions",
+        "PASS: 64 goods-storage assertions",
+        "PASS: 149 demand-control assertions",
+        "PASS: 42 economic-settlement assertions (A-I)",
+        "PASS: 66 clothing feedstock assertions",
+        "PASS: 38 residual Housing material assertions",
+        "PASS: 83 Wood ecology assertions",
+        "PASS: 125 demand automation assertions",
+        "PASS: 22788 Neolithic realignment assertions",
+        "PASS: 104 tool-consumption assertions",
+        "PASS: 45 Stone Farm Tool contract assertions",
+        "PASS: 1154 Stone Farm Tool planner assertions",
+        "PASS: 12 mixed FarmTools/Cloth chronology assertions",
+        "PASS: 4724 cultivation score-cache differential assertions",
+        "PASS: 108 horizon cultivation assertions",
+        "PASS: 168 horizon ecology assertions",
+        "PASS: horizon execution uses 28 tile kernels for fractional, one-, five-, ten-, and twenty-year turns",
+        "PASS: 114 field-domestication assertions",
+        "PASS: 268 managed husbandry assertions",
+        "PASS: 659 pastoral craft assertions",
+        "PASS: 154 Housing Material recipe assertions",
+        "PASS: 43824 issue #25 ecology assertions",
+        "PASS: 4366 issue #27 ecology assertions",
+        "PASS: 408 issue 26 forecast assertions",
+        "PASS: 54 Issue 28 physical food timebase assertions",
+        "PASS: 131 Issue 32 capability assertions",
+        "PASS: 1157 QoL cohesion assertions",
+        "PASS: 679 QoL mortality assertions",
+        "PASS: 6272 physical demography assertions",
+        "PASS: 83 death-spiral regression assertions",
+        "PASS: 22 demographic-structure assertions",
+        "PASS: 1688 herd-labour assertions",
+        "PASS: 879 shared-allocation assertions",
+        "PASS: 86744 value fulfilment assertions",
+        "PASS: 127 expansion claim assertions",
+        "PASS: 184 production order assertions",
+        "PASS: 190 WP4a value assertions",
+        "PASS: 61 settling assertions",
+        "TIMING fixed checks jobs=3 wall=70.2s peakWorkingSetMiB=1811"
+      ]
+    },
+    "final-followup.log": {
+      "sha256": "d33cc68aae0047eb401612ed59035a3753b54a7ae4da00cc9f74d3f66db2961a",
+      "passLines": [
+        "PASS: 23 Sailing assertions",
+        "PASS: 41 Fishing inspection assertions",
+        "PASS: 24 fishing state assertions"
+      ]
+    },
+    "csharp-syntax.log": {
+      "sha256": "873db72757bfca5f9b819331f236e25b82cb462997702bd2105c6d9336508feb",
+      "passLines": [
+        "C# 9 syntax: 106 files, 0 errors (not Unity API compilation)."
+      ]
+    },
+    "documentation-check.log": {
+      "sha256": "1afc4bfd3956f4ee1963b845979033862cd0f6abf8da3b1dca6de39d173ee7ed",
+      "passLines": [
+        "Current contract checks passed (93 JSON/API config values, 21 test claims, document links)."
+      ]
+    },
+    "final-long-no-movement.log": {
+      "sha256": "6d8c08246cfacbeaa5a4eade523ddca56b9b251960c32aa148846fa636eae5b2",
+      "passLines": []
+    },
+    "final-long-all-features.log": {
+      "sha256": "5c0473a4d32ab0b064c1c31083538c88008c522612c060756111604145185312",
+      "exitCode": 0
+    },
+    "no-population-movement.json": {
+      "sha256": "83e80643b0e8bfb5affae1a594bc5d3619514f26415aa9a22a9d90a8dfb0dec6",
+      "exactReplayPassed": true,
+      "populationGatePassed": true
+    },
+    "all-social-features.json": {
+      "sha256": "10606ee4a6994a6f80babaa48627792fe1928740336783fe2f482588485dd2ed",
+      "exactReplayPassed": true,
+      "populationGatePassed": true
+    }
+  },
+  "longHorizonAllFeatures": {
+    "schema": 3,
+    "worldCount": 5,
+    "completedTurnsPerWorld": 50,
+    "scenario": "trade-fission-immigration",
+    "cohort": "Standard/80 pooled census: C1,C2,C3,P1,A1",
+    "executionMode": "serial; PhaseExecution workers=1",
+    "quantileConvention": "type-7 linear interpolation; h=(n-1)p",
+    "configuration": {
+      "neolithicFishingEnabled": true,
+      "correctedAquaticSeasonalPressureEnabled": true,
+      "tradeEnabled": true,
+      "fissionEnabled": true,
+      "immigrationEnabled": true,
+      "economicAllocation": "DemandControl"
+    },
+    "gate": {
+      "basis": "historical all-features medians minus 20%: Agriculture 480, Husbandry 383",
+      "agricultureFloor": 384,
+      "husbandryFloor": 306.40000000000003
+    },
+    "fissionEvents": 5534,
+    "immigrationEvents": 8409,
+    "fisherPersonTurns": 104030,
+    "fisherySiteTurns": 10298,
+    "residentFisheryHarvest": 23325464.39694397,
+    "toolCoveredFisherYears": 999559.9572591993,
+    "fisheryCapitalWorkerYears": 1786746.2103426163,
+    "worlds": [
+      {
+        "name": "C1",
+        "shape": "Continents",
+        "checkpointIdentity": "613D50B6B75DDC9A58562B7627BE95D4DFB293A784448ECD619D5520A70BD2BB",
+        "finalFingerprint": "45965D3F830BD191304DA0805352B4C2AB6CBAB57D07E449D18626A345A6C771",
+        "seed": 1,
+        "openingFinishedTurn": 9,
+        "firstMeasuredAbsoluteTurn": 10,
+        "lastMeasuredAbsoluteTurn": 59
+      },
+      {
+        "name": "C2",
+        "shape": "Continents",
+        "checkpointIdentity": "6CB4C3CC97E9C85EBACB5F329031144484F1675A7B7A8A7D682308A42490E1F7",
+        "finalFingerprint": "E04130D1C7B7D32F6D9B983E33C374E193017D97CE0A4B88849157B13C84F506",
+        "seed": 2,
+        "openingFinishedTurn": 8,
+        "firstMeasuredAbsoluteTurn": 9,
+        "lastMeasuredAbsoluteTurn": 58
+      },
+      {
+        "name": "C3",
+        "shape": "Continents",
+        "checkpointIdentity": "7EAFC0E4B0690497763D7D1983BC92D58B6F0D148F9474CA3D81711B790A3FA6",
+        "finalFingerprint": "9F47B1E46874072B5FEB49F4BA1CB3114A18DEF5ED640043DF734560B95C1A2E",
+        "seed": 3,
+        "openingFinishedTurn": 8,
+        "firstMeasuredAbsoluteTurn": 9,
+        "lastMeasuredAbsoluteTurn": 58
+      },
+      {
+        "name": "P1",
+        "shape": "Pangaea",
+        "checkpointIdentity": "20545A7AB7CE7B2891D1E94C336793228F2031AD15F5D564F8330AF5DDE207FC",
+        "finalFingerprint": "BAE10A1BA29052065C57DD497D2AF50CACFC7A0B337F22AEC89A07BCF4634F4A",
+        "seed": 1,
+        "openingFinishedTurn": 10,
+        "firstMeasuredAbsoluteTurn": 11,
+        "lastMeasuredAbsoluteTurn": 60
+      },
+      {
+        "name": "A1",
+        "shape": "Archipelagos",
+        "checkpointIdentity": "767A857F52BDC4BE769009F16FB81A1FA546AF10B77B8B05A8156AC9C4A5D1A5",
+        "finalFingerprint": "5AFF51CDC30CD96D5E516453A601B094F2A27EEDB20F6B2C8B924296EF374527",
+        "seed": 1,
+        "openingFinishedTurn": 10,
+        "firstMeasuredAbsoluteTurn": 11,
+        "lastMeasuredAbsoluteTurn": 60
+      }
+    ],
+    "referenceWorlds": null,
+    "turns": [
+      {
+        "turn": 1,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 322,
+            "residentPopulation": {
+              "median": 100,
+              "p25": 62,
+              "p75": 135,
+              "minimum": 6,
+              "maximum": 325
+            },
+            "qoL": {
+              "median": 0.19897186834915465,
+              "p25": 0.056488989494870884,
+              "p75": 0.4185133264598319,
+              "minimum": 0,
+              "maximum": 0.8994623283328205
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 151,
+            "residentPopulation": {
+              "median": 92,
+              "p25": 55,
+              "p75": 154,
+              "minimum": 3,
+              "maximum": 304
+            },
+            "qoL": {
+              "median": 0.4177111181005785,
+              "p25": 0.2408641234232463,
+              "p75": 0.5841498367583848,
+              "minimum": 0,
+              "maximum": 0.9951432942976045
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 12,
+            "residentPopulation": {
+              "median": 128,
+              "p25": 103.5,
+              "p75": 172,
+              "minimum": 46,
+              "maximum": 297
+            },
+            "qoL": {
+              "median": 0.13711309661601845,
+              "p25": 0,
+              "p75": 0.35792737981601813,
+              "minimum": 0,
+              "maximum": 0.5470140337253102
+            }
+          }
+        ]
+      },
+      {
+        "turn": 2,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 362,
+            "residentPopulation": {
+              "median": 107.5,
+              "p25": 64.25,
+              "p75": 171,
+              "minimum": 8,
+              "maximum": 499
+            },
+            "qoL": {
+              "median": 0.313124446556211,
+              "p25": 0.13572850437054473,
+              "p75": 0.5955565962561012,
+              "minimum": 0,
+              "maximum": 0.9988657023555289
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 164,
+            "residentPopulation": {
+              "median": 108,
+              "p25": 69.5,
+              "p75": 176.5,
+              "minimum": 3,
+              "maximum": 371
+            },
+            "qoL": {
+              "median": 0.4836097817680499,
+              "p25": 0.29283639786307203,
+              "p75": 0.6937961955729113,
+              "minimum": 0,
+              "maximum": 0.997879910957825
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 16,
+            "residentPopulation": {
+              "median": 105.5,
+              "p25": 66.75,
+              "p75": 173.5,
+              "minimum": 30,
+              "maximum": 220
+            },
+            "qoL": {
+              "median": 0.3538611831838381,
+              "p25": 0.16974010851880367,
+              "p75": 0.4225379974792019,
+              "minimum": 0,
+              "maximum": 0.6883143309075958
+            }
+          }
+        ]
+      },
+      {
+        "turn": 3,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 411,
+            "residentPopulation": {
+              "median": 127,
+              "p25": 72,
+              "p75": 192,
+              "minimum": 13,
+              "maximum": 672
+            },
+            "qoL": {
+              "median": 0.4497408783002464,
+              "p25": 0.20382252440887272,
+              "p75": 0.6965920707843045,
+              "minimum": 0,
+              "maximum": 0.9988554357654934
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 185,
+            "residentPopulation": {
+              "median": 122,
+              "p25": 77,
+              "p75": 182,
+              "minimum": 3,
+              "maximum": 549
+            },
+            "qoL": {
+              "median": 0.5431528133438834,
+              "p25": 0.3253409409280788,
+              "p75": 0.7520148735230588,
+              "minimum": 0,
+              "maximum": 0.9958638903726074
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 18,
+            "residentPopulation": {
+              "median": 128.5,
+              "p25": 80.75,
+              "p75": 164,
+              "minimum": 51,
+              "maximum": 304
+            },
+            "qoL": {
+              "median": 0.29133864769869156,
+              "p25": 0.19183338501337158,
+              "p75": 0.434343944985231,
+              "minimum": 0,
+              "maximum": 0.8749776393537925
+            }
+          }
+        ]
+      },
+      {
+        "turn": 4,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 436,
+            "residentPopulation": {
+              "median": 156,
+              "p25": 87.75,
+              "p75": 245,
+              "minimum": 12,
+              "maximum": 732
+            },
+            "qoL": {
+              "median": 0.5976031840479303,
+              "p25": 0.35425972017343926,
+              "p75": 0.825807495810116,
+              "minimum": 0,
+              "maximum": 0.9990687124134523
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 193,
+            "residentPopulation": {
+              "median": 152,
+              "p25": 92,
+              "p75": 242,
+              "minimum": 2,
+              "maximum": 694
+            },
+            "qoL": {
+              "median": 0.6663173410884303,
+              "p25": 0.42380917278951125,
+              "p75": 0.8239512977082808,
+              "minimum": 0,
+              "maximum": 0.9989359087602611
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 20,
+            "residentPopulation": {
+              "median": 125,
+              "p25": 93,
+              "p75": 183,
+              "minimum": 51,
+              "maximum": 429
+            },
+            "qoL": {
+              "median": 0.36968651028456423,
+              "p25": 0.188049064411616,
+              "p75": 0.5612827941279076,
+              "minimum": 0,
+              "maximum": 0.9061224851414749
+            }
+          }
+        ]
+      },
+      {
+        "turn": 5,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 454,
+            "residentPopulation": {
+              "median": 198.5,
+              "p25": 111,
+              "p75": 320.75,
+              "minimum": 18,
+              "maximum": 840
+            },
+            "qoL": {
+              "median": 0.7831987690595905,
+              "p25": 0.4937796700227487,
+              "p75": 0.8764182124844654,
+              "minimum": 0,
+              "maximum": 0.9991565089503593
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 204,
+            "residentPopulation": {
+              "median": 173.5,
+              "p25": 108.25,
+              "p75": 311.25,
+              "minimum": 2,
+              "maximum": 722
+            },
+            "qoL": {
+              "median": 0.732398110218619,
+              "p25": 0.4857241289636284,
+              "p75": 0.8819821581372809,
+              "minimum": 0,
+              "maximum": 0.9959935867181853
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 26,
+            "residentPopulation": {
+              "median": 103,
+              "p25": 84.25,
+              "p75": 160.25,
+              "minimum": 38,
+              "maximum": 463
+            },
+            "qoL": {
+              "median": 0.40571627553057577,
+              "p25": 0.23101613352536934,
+              "p75": 0.5622780815715456,
+              "minimum": 0,
+              "maximum": 0.9288116971664582
+            }
+          }
+        ]
+      },
+      {
+        "turn": 6,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 474,
+            "residentPopulation": {
+              "median": 236,
+              "p25": 131.25,
+              "p75": 397.75,
+              "minimum": 20,
+              "maximum": 870
+            },
+            "qoL": {
+              "median": 0.8200389417089212,
+              "p25": 0.6522086202704839,
+              "p75": 0.9182327954752174,
+              "minimum": 0,
+              "maximum": 0.9991326468400317
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 209,
+            "residentPopulation": {
+              "median": 220,
+              "p25": 124,
+              "p75": 400,
+              "minimum": 2,
+              "maximum": 841
+            },
+            "qoL": {
+              "median": 0.818662452935876,
+              "p25": 0.6206766017433161,
+              "p75": 0.9114282316425001,
+              "minimum": 0.05603804148886537,
+              "maximum": 0.9986245524267513
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 30,
+            "residentPopulation": {
+              "median": 126.5,
+              "p25": 87.75,
+              "p75": 178.25,
+              "minimum": 22,
+              "maximum": 620
+            },
+            "qoL": {
+              "median": 0.474026624618594,
+              "p25": 0.29918952148319355,
+              "p75": 0.5998136519064216,
+              "minimum": 0,
+              "maximum": 0.9145666794524292
+            }
+          }
+        ]
+      },
+      {
+        "turn": 7,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 489,
+            "residentPopulation": {
+              "median": 289,
+              "p25": 150,
+              "p75": 472,
+              "minimum": 14,
+              "maximum": 931
+            },
+            "qoL": {
+              "median": 0.8412492134162474,
+              "p25": 0.7654013518301883,
+              "p75": 0.9317844929374582,
+              "minimum": 0.03257771625607292,
+              "maximum": 0.9990693523289045
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 216,
+            "residentPopulation": {
+              "median": 257,
+              "p25": 142.75,
+              "p75": 455.25,
+              "minimum": 2,
+              "maximum": 888
+            },
+            "qoL": {
+              "median": 0.8500508480623514,
+              "p25": 0.7526267026409735,
+              "p75": 0.935276315142107,
+              "minimum": 0.04291670150703602,
+              "maximum": 0.9952568491433511
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 31,
+            "residentPopulation": {
+              "median": 159,
+              "p25": 104,
+              "p75": 277,
+              "minimum": 33,
+              "maximum": 584
+            },
+            "qoL": {
+              "median": 0.5730442432589246,
+              "p25": 0.44832412225473206,
+              "p75": 0.7999773666756544,
+              "minimum": 0,
+              "maximum": 0.9991165415337959
+            }
+          }
+        ]
+      },
+      {
+        "turn": 8,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 499,
+            "residentPopulation": {
+              "median": 339,
+              "p25": 188.5,
+              "p75": 546,
+              "minimum": 17,
+              "maximum": 965
+            },
+            "qoL": {
+              "median": 0.8577872881599644,
+              "p25": 0.7798059081302053,
+              "p75": 0.9352146296514936,
+              "minimum": 0.13466301383978435,
+              "maximum": 0.9987556843210748
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 225,
+            "residentPopulation": {
+              "median": 295,
+              "p25": 158,
+              "p75": 517,
+              "minimum": 2,
+              "maximum": 923
+            },
+            "qoL": {
+              "median": 0.861734198786865,
+              "p25": 0.7733377252373893,
+              "p75": 0.9412991498952327,
+              "minimum": 0.0858603282238425,
+              "maximum": 0.9978829392403018
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 34,
+            "residentPopulation": {
+              "median": 157.5,
+              "p25": 121.5,
+              "p75": 361.25,
+              "minimum": 26,
+              "maximum": 706
+            },
+            "qoL": {
+              "median": 0.7231810431040459,
+              "p25": 0.4305529870489647,
+              "p75": 0.8465639271775035,
+              "minimum": 0,
+              "maximum": 0.9990939593406359
+            }
+          }
+        ]
+      },
+      {
+        "turn": 9,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 520,
+            "residentPopulation": {
+              "median": 359.5,
+              "p25": 186,
+              "p75": 608.25,
+              "minimum": 19,
+              "maximum": 982
+            },
+            "qoL": {
+              "median": 0.8717843514971555,
+              "p25": 0.7828577877649832,
+              "p75": 0.9439219092299479,
+              "minimum": 0.22446190610618558,
+              "maximum": 0.9980911463995383
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 231,
+            "residentPopulation": {
+              "median": 325,
+              "p25": 181,
+              "p75": 572.5,
+              "minimum": 4,
+              "maximum": 961
+            },
+            "qoL": {
+              "median": 0.8703641429600939,
+              "p25": 0.7708557478442801,
+              "p75": 0.9389622054479696,
+              "minimum": 0.15452704594123023,
+              "maximum": 0.995371347130061
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 35,
+            "residentPopulation": {
+              "median": 238,
+              "p25": 126,
+              "p75": 388.5,
+              "minimum": 38,
+              "maximum": 718
+            },
+            "qoL": {
+              "median": 0.7601729886426523,
+              "p25": 0.5211649009509141,
+              "p75": 0.8776650795002482,
+              "minimum": 0,
+              "maximum": 0.9989586146222498
+            }
+          }
+        ]
+      },
+      {
+        "turn": 10,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 539,
+            "residentPopulation": {
+              "median": 371,
+              "p25": 193.5,
+              "p75": 636,
+              "minimum": 18,
+              "maximum": 991
+            },
+            "qoL": {
+              "median": 0.8807751431153502,
+              "p25": 0.7816137098773857,
+              "p75": 0.9428910109402198,
+              "minimum": 0.2059534159298578,
+              "maximum": 0.9993842984943198
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 237,
+            "residentPopulation": {
+              "median": 341,
+              "p25": 184,
+              "p75": 627,
+              "minimum": 7,
+              "maximum": 980
+            },
+            "qoL": {
+              "median": 0.8858094975408992,
+              "p25": 0.7983194954022803,
+              "p75": 0.9464885234408851,
+              "minimum": 0.17598807068987662,
+              "maximum": 0.997514851466015
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 37,
+            "residentPopulation": {
+              "median": 234,
+              "p25": 100,
+              "p75": 556,
+              "minimum": 17,
+              "maximum": 838
+            },
+            "qoL": {
+              "median": 0.8295567613909053,
+              "p25": 0.47446492274448043,
+              "p75": 0.9066464254259557,
+              "minimum": 0,
+              "maximum": 0.9967992493377894
+            }
+          }
+        ]
+      },
+      {
+        "turn": 11,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 554,
+            "residentPopulation": {
+              "median": 384.5,
+              "p25": 193.75,
+              "p75": 679.25,
+              "minimum": 15,
+              "maximum": 995
+            },
+            "qoL": {
+              "median": 0.874541860521175,
+              "p25": 0.7709002401349054,
+              "p75": 0.9431858609851889,
+              "minimum": 0.21938806547761028,
+              "maximum": 0.9990410284050302
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 239,
+            "residentPopulation": {
+              "median": 390,
+              "p25": 218,
+              "p75": 657.5,
+              "minimum": 6,
+              "maximum": 990
+            },
+            "qoL": {
+              "median": 0.8780681637071505,
+              "p25": 0.799794903432239,
+              "p75": 0.9425575441226935,
+              "minimum": 0.29137220121012125,
+              "maximum": 0.9963923576632157
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 39,
+            "residentPopulation": {
+              "median": 240,
+              "p25": 109.5,
+              "p75": 596.5,
+              "minimum": 32,
+              "maximum": 903
+            },
+            "qoL": {
+              "median": 0.8073997122868917,
+              "p25": 0.4740401113626073,
+              "p75": 0.9458658178070432,
+              "minimum": 0,
+              "maximum": 0.9985638904007232
+            }
+          }
+        ]
+      },
+      {
+        "turn": 12,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 566,
+            "residentPopulation": {
+              "median": 397,
+              "p25": 208,
+              "p75": 700,
+              "minimum": 21,
+              "maximum": 1026
+            },
+            "qoL": {
+              "median": 0.8788516141139985,
+              "p25": 0.7772254558218551,
+              "p75": 0.9474400724860235,
+              "minimum": 0.09950921579307784,
+              "maximum": 0.9991546818531019
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 247,
+            "residentPopulation": {
+              "median": 373,
+              "p25": 220.5,
+              "p75": 673,
+              "minimum": 7,
+              "maximum": 995
+            },
+            "qoL": {
+              "median": 0.8895571239389944,
+              "p25": 0.7917097259944498,
+              "p75": 0.9549289603940072,
+              "minimum": 0.2004552013928793,
+              "maximum": 0.996108159408441
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 41,
+            "residentPopulation": {
+              "median": 235,
+              "p25": 121,
+              "p75": 711,
+              "minimum": 58,
+              "maximum": 880
+            },
+            "qoL": {
+              "median": 0.7798825057037844,
+              "p25": 0.4043882925868157,
+              "p75": 0.8832770269980007,
+              "minimum": 0,
+              "maximum": 0.9956629457445757
+            }
+          }
+        ]
+      },
+      {
+        "turn": 13,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 578,
+            "residentPopulation": {
+              "median": 414,
+              "p25": 210.25,
+              "p75": 763,
+              "minimum": 18,
+              "maximum": 1061
+            },
+            "qoL": {
+              "median": 0.8850124218051532,
+              "p25": 0.7683540925367495,
+              "p75": 0.9444538659097715,
+              "minimum": 0.03102869819333283,
+              "maximum": 0.9994205062523649
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 249,
+            "residentPopulation": {
+              "median": 415,
+              "p25": 240,
+              "p75": 734,
+              "minimum": 8,
+              "maximum": 997
+            },
+            "qoL": {
+              "median": 0.894364505181108,
+              "p25": 0.7750600848960836,
+              "p75": 0.9508893313100996,
+              "minimum": 0.09482738012644966,
+              "maximum": 0.9959276549087499
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 44,
+            "residentPopulation": {
+              "median": 255,
+              "p25": 131,
+              "p75": 757.5,
+              "minimum": 21,
+              "maximum": 937
+            },
+            "qoL": {
+              "median": 0.7940925176375309,
+              "p25": 0.5876995567590784,
+              "p75": 0.9216884960676784,
+              "minimum": 0,
+              "maximum": 0.9958867930124141
+            }
+          }
+        ]
+      },
+      {
+        "turn": 14,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 593,
+            "residentPopulation": {
+              "median": 416,
+              "p25": 220,
+              "p75": 769,
+              "minimum": 23,
+              "maximum": 1046
+            },
+            "qoL": {
+              "median": 0.8840211962652936,
+              "p25": 0.7693110819630631,
+              "p75": 0.9590511614517564,
+              "minimum": 0.049357330910664306,
+              "maximum": 0.9994170867285522
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 254,
+            "residentPopulation": {
+              "median": 411.5,
+              "p25": 235,
+              "p75": 767.75,
+              "minimum": 9,
+              "maximum": 999
+            },
+            "qoL": {
+              "median": 0.8910204733181,
+              "p25": 0.7840753505245399,
+              "p75": 0.9533136832755734,
+              "minimum": 0.3772825576905341,
+              "maximum": 0.9988851115033143
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 48,
+            "residentPopulation": {
+              "median": 285.5,
+              "p25": 142,
+              "p75": 623.5,
+              "minimum": 37,
+              "maximum": 948
+            },
+            "qoL": {
+              "median": 0.7719729296841056,
+              "p25": 0.5777234623597445,
+              "p75": 0.8863627446988481,
+              "minimum": 0,
+              "maximum": 0.9979175258360764
+            }
+          }
+        ]
+      },
+      {
+        "turn": 15,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 614,
+            "residentPopulation": {
+              "median": 432.5,
+              "p25": 223.25,
+              "p75": 763.25,
+              "minimum": 15,
+              "maximum": 1045
+            },
+            "qoL": {
+              "median": 0.8790635129255346,
+              "p25": 0.746645731581356,
+              "p75": 0.9477790169289045,
+              "minimum": 0.06636505882510252,
+              "maximum": 0.999372141729189
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 260,
+            "residentPopulation": {
+              "median": 422,
+              "p25": 237,
+              "p75": 808.25,
+              "minimum": 10,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8763890348011465,
+              "p25": 0.7586576689225417,
+              "p75": 0.952335092080406,
+              "minimum": 0.1854133843211044,
+              "maximum": 0.9989477351159728
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 51,
+            "residentPopulation": {
+              "median": 323,
+              "p25": 130,
+              "p75": 579.5,
+              "minimum": 18,
+              "maximum": 971
+            },
+            "qoL": {
+              "median": 0.801772523292226,
+              "p25": 0.7192775836435815,
+              "p75": 0.9052963042277548,
+              "minimum": 0,
+              "maximum": 0.9979623646714467
+            }
+          }
+        ]
+      },
+      {
+        "turn": 16,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 633,
+            "residentPopulation": {
+              "median": 437,
+              "p25": 231,
+              "p75": 820,
+              "minimum": 16,
+              "maximum": 1019
+            },
+            "qoL": {
+              "median": 0.8636024644319328,
+              "p25": 0.7433152612472764,
+              "p75": 0.9548510114463713,
+              "minimum": 0.044648144906761965,
+              "maximum": 0.9995354206086102
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 267,
+            "residentPopulation": {
+              "median": 428,
+              "p25": 254.5,
+              "p75": 834,
+              "minimum": 12,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8715524444453792,
+              "p25": 0.7504928198351448,
+              "p75": 0.9524384471178379,
+              "minimum": 0.04705423122862949,
+              "maximum": 0.996756466245379
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 55,
+            "residentPopulation": {
+              "median": 350,
+              "p25": 142.5,
+              "p75": 572,
+              "minimum": 19,
+              "maximum": 985
+            },
+            "qoL": {
+              "median": 0.8100181534307029,
+              "p25": 0.7328356452749121,
+              "p75": 0.9115926626128983,
+              "minimum": 0,
+              "maximum": 0.9982691043024211
+            }
+          }
+        ]
+      },
+      {
+        "turn": 17,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 667,
+            "residentPopulation": {
+              "median": 458,
+              "p25": 233,
+              "p75": 801,
+              "minimum": 17,
+              "maximum": 1035
+            },
+            "qoL": {
+              "median": 0.850127542989225,
+              "p25": 0.7372930517288355,
+              "p75": 0.9475126442293702,
+              "minimum": 0.04594540526586476,
+              "maximum": 0.9995355379606865
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 276,
+            "residentPopulation": {
+              "median": 426.5,
+              "p25": 250.5,
+              "p75": 846.25,
+              "minimum": 13,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8687979839169357,
+              "p25": 0.7438917562254335,
+              "p75": 0.9487512250071982,
+              "minimum": 0.04464125530534158,
+              "maximum": 0.9976327374658627
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 57,
+            "residentPopulation": {
+              "median": 355,
+              "p25": 199,
+              "p75": 569,
+              "minimum": 22,
+              "maximum": 993
+            },
+            "qoL": {
+              "median": 0.8178382271452772,
+              "p25": 0.7316497571932801,
+              "p75": 0.9394310619000915,
+              "minimum": 0,
+              "maximum": 0.9963049921406316
+            }
+          }
+        ]
+      },
+      {
+        "turn": 18,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 705,
+            "residentPopulation": {
+              "median": 456,
+              "p25": 233,
+              "p75": 812,
+              "minimum": 15,
+              "maximum": 1015
+            },
+            "qoL": {
+              "median": 0.8368546268608604,
+              "p25": 0.7335823520148239,
+              "p75": 0.9443326653404878,
+              "minimum": 0.04454197988730756,
+              "maximum": 0.9993199946633887
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 287,
+            "residentPopulation": {
+              "median": 439,
+              "p25": 258.5,
+              "p75": 897,
+              "minimum": 12,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.864193819114166,
+              "p25": 0.7380934865531169,
+              "p75": 0.9525219575052202,
+              "minimum": 0.044607244268573855,
+              "maximum": 0.9988480462273962
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 60,
+            "residentPopulation": {
+              "median": 382.5,
+              "p25": 148.75,
+              "p75": 681,
+              "minimum": 22,
+              "maximum": 1001
+            },
+            "qoL": {
+              "median": 0.8752987405496172,
+              "p25": 0.7334171959315953,
+              "p75": 0.9343668137935165,
+              "minimum": 0,
+              "maximum": 0.9986097372915683
+            }
+          }
+        ]
+      },
+      {
+        "turn": 19,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 737,
+            "residentPopulation": {
+              "median": 476,
+              "p25": 234,
+              "p75": 833,
+              "minimum": 13,
+              "maximum": 1094
+            },
+            "qoL": {
+              "median": 0.8284526665537563,
+              "p25": 0.7337197509671924,
+              "p75": 0.9379852607512466,
+              "minimum": 0.04459759735079269,
+              "maximum": 0.9991075501883322
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 295,
+            "residentPopulation": {
+              "median": 463,
+              "p25": 277,
+              "p75": 914.5,
+              "minimum": 14,
+              "maximum": 1000
+            },
+            "qoL": {
+              "median": 0.8360097701458505,
+              "p25": 0.7337796279257397,
+              "p75": 0.9442005846374033,
+              "minimum": 0.044485201746201096,
+              "maximum": 0.9989633855783758
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 63,
+            "residentPopulation": {
+              "median": 382,
+              "p25": 220.5,
+              "p75": 675,
+              "minimum": 39,
+              "maximum": 1040
+            },
+            "qoL": {
+              "median": 0.8326663463915569,
+              "p25": 0.7313077151429143,
+              "p75": 0.9281154568146792,
+              "minimum": 0,
+              "maximum": 0.9941017754735234
+            }
+          }
+        ]
+      },
+      {
+        "turn": 20,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 779,
+            "residentPopulation": {
+              "median": 469,
+              "p25": 243.5,
+              "p75": 846,
+              "minimum": 23,
+              "maximum": 1082
+            },
+            "qoL": {
+              "median": 0.8143599959394403,
+              "p25": 0.7324491818916923,
+              "p75": 0.937528287827772,
+              "minimum": 0.051110289544848565,
+              "maximum": 0.9991380439144595
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 308,
+            "residentPopulation": {
+              "median": 498,
+              "p25": 279.5,
+              "p75": 920.25,
+              "minimum": 15,
+              "maximum": 1010
+            },
+            "qoL": {
+              "median": 0.828520746625607,
+              "p25": 0.7316375942450235,
+              "p75": 0.941831491688359,
+              "minimum": 0.04495219360960044,
+              "maximum": 0.9991640337127417
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 67,
+            "residentPopulation": {
+              "median": 403,
+              "p25": 170.5,
+              "p75": 651.5,
+              "minimum": 22,
+              "maximum": 1021
+            },
+            "qoL": {
+              "median": 0.8703036362185395,
+              "p25": 0.7427213266232022,
+              "p75": 0.9365739812082146,
+              "minimum": 0,
+              "maximum": 0.9986783878496861
+            }
+          }
+        ]
+      },
+      {
+        "turn": 21,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 823,
+            "residentPopulation": {
+              "median": 490,
+              "p25": 249,
+              "p75": 863.5,
+              "minimum": 17,
+              "maximum": 1047
+            },
+            "qoL": {
+              "median": 0.814767699546647,
+              "p25": 0.7308918540540847,
+              "p75": 0.9340204065977655,
+              "minimum": 0.044529996126739343,
+              "maximum": 0.999563573576913
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 324,
+            "residentPopulation": {
+              "median": 491,
+              "p25": 288.75,
+              "p75": 910.5,
+              "minimum": 18,
+              "maximum": 1044
+            },
+            "qoL": {
+              "median": 0.8237499076664484,
+              "p25": 0.7305201611619982,
+              "p75": 0.9333790805424719,
+              "minimum": 0.04474943817960976,
+              "maximum": 0.999007551917339
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 71,
+            "residentPopulation": {
+              "median": 420,
+              "p25": 223.5,
+              "p75": 670.5,
+              "minimum": 15,
+              "maximum": 1009
+            },
+            "qoL": {
+              "median": 0.8539905904485084,
+              "p25": 0.7327002847103247,
+              "p75": 0.9478104972086918,
+              "minimum": 0,
+              "maximum": 0.999397217152458
+            }
+          }
+        ]
+      },
+      {
+        "turn": 22,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 865,
+            "residentPopulation": {
+              "median": 508,
+              "p25": 258,
+              "p75": 877,
+              "minimum": 14,
+              "maximum": 1094
+            },
+            "qoL": {
+              "median": 0.8092660101039456,
+              "p25": 0.730368276712807,
+              "p75": 0.9318657672432977,
+              "minimum": 0.0446109249899675,
+              "maximum": 0.9994015859321818
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 340,
+            "residentPopulation": {
+              "median": 519,
+              "p25": 286.75,
+              "p75": 913.5,
+              "minimum": 24,
+              "maximum": 1089
+            },
+            "qoL": {
+              "median": 0.8073220375598213,
+              "p25": 0.7299786254465268,
+              "p75": 0.9293281895593437,
+              "minimum": 0.04451215509308985,
+              "maximum": 0.9990905027595146
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 74,
+            "residentPopulation": {
+              "median": 445,
+              "p25": 216.75,
+              "p75": 702.5,
+              "minimum": 28,
+              "maximum": 1011
+            },
+            "qoL": {
+              "median": 0.853529395681727,
+              "p25": 0.746523499160578,
+              "p75": 0.9329503303964856,
+              "minimum": 0,
+              "maximum": 0.9988480457688755
+            }
+          }
+        ]
+      },
+      {
+        "turn": 23,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 913,
+            "residentPopulation": {
+              "median": 516,
+              "p25": 257,
+              "p75": 883,
+              "minimum": 26,
+              "maximum": 1130
+            },
+            "qoL": {
+              "median": 0.7988684982033194,
+              "p25": 0.7300097792956944,
+              "p75": 0.9309275313582783,
+              "minimum": 0.03557878790638338,
+              "maximum": 0.9991146324239424
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 359,
+            "residentPopulation": {
+              "median": 529,
+              "p25": 289,
+              "p75": 920,
+              "minimum": 12,
+              "maximum": 1092
+            },
+            "qoL": {
+              "median": 0.7975210000958678,
+              "p25": 0.7298602468565332,
+              "p75": 0.9194036986802453,
+              "minimum": 0.04384730924809028,
+              "maximum": 0.9981175202104802
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 80,
+            "residentPopulation": {
+              "median": 411,
+              "p25": 245.75,
+              "p75": 727.25,
+              "minimum": 26,
+              "maximum": 1025
+            },
+            "qoL": {
+              "median": 0.8337491523477112,
+              "p25": 0.73432033460938,
+              "p75": 0.9164709688186841,
+              "minimum": 0,
+              "maximum": 0.9990951234237991
+            }
+          }
+        ]
+      },
+      {
+        "turn": 24,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 970,
+            "residentPopulation": {
+              "median": 502.5,
+              "p25": 266.5,
+              "p75": 878,
+              "minimum": 22,
+              "maximum": 1082
+            },
+            "qoL": {
+              "median": 0.7972905924860808,
+              "p25": 0.7299090946336421,
+              "p75": 0.9319162736982575,
+              "minimum": 0.044615540286653606,
+              "maximum": 0.9995845252124919
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 381,
+            "residentPopulation": {
+              "median": 522,
+              "p25": 301,
+              "p75": 937,
+              "minimum": 15,
+              "maximum": 1119
+            },
+            "qoL": {
+              "median": 0.786726615253366,
+              "p25": 0.7298506347753704,
+              "p75": 0.9176940496656913,
+              "minimum": 0.04419308405590865,
+              "maximum": 0.9996559136888666
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 83,
+            "residentPopulation": {
+              "median": 462,
+              "p25": 272.5,
+              "p75": 737,
+              "minimum": 16,
+              "maximum": 1016
+            },
+            "qoL": {
+              "median": 0.8549336350902047,
+              "p25": 0.7501236218822531,
+              "p75": 0.9421537185812252,
+              "minimum": 0,
+              "maximum": 0.9993200313547037
+            }
+          }
+        ]
+      },
+      {
+        "turn": 25,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 1042,
+            "residentPopulation": {
+              "median": 515,
+              "p25": 260,
+              "p75": 873,
+              "minimum": 12,
+              "maximum": 1092
+            },
+            "qoL": {
+              "median": 0.789917916684698,
+              "p25": 0.7298626463575942,
+              "p75": 0.92150021666846,
+              "minimum": 0.04521750949448597,
+              "maximum": 0.9994163442698186
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 400,
+            "residentPopulation": {
+              "median": 558.5,
+              "p25": 293.75,
+              "p75": 953.5,
+              "minimum": 18,
+              "maximum": 1127
+            },
+            "qoL": {
+              "median": 0.7828220710182077,
+              "p25": 0.729861734532471,
+              "p75": 0.9090467502380475,
+              "minimum": 0.044751153268366296,
+              "maximum": 0.9996799321417729
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 89,
+            "residentPopulation": {
+              "median": 479,
+              "p25": 272,
+              "p75": 770,
+              "minimum": 25,
+              "maximum": 1043
+            },
+            "qoL": {
+              "median": 0.8384001918874817,
+              "p25": 0.744275553917848,
+              "p75": 0.9380828672851766,
+              "minimum": 0,
+              "maximum": 0.9998178453172938
+            }
+          }
+        ]
+      },
+      {
+        "turn": 26,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 1108,
+            "residentPopulation": {
+              "median": 514,
+              "p25": 269,
+              "p75": 883.5,
+              "minimum": 17,
+              "maximum": 1080
+            },
+            "qoL": {
+              "median": 0.7885408198577679,
+              "p25": 0.7298679153376181,
+              "p75": 0.9177938213767097,
+              "minimum": 0.050614868233918205,
+              "maximum": 0.9995533785686477
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 434,
+            "residentPopulation": {
+              "median": 524,
+              "p25": 290.25,
+              "p75": 942,
+              "minimum": 16,
+              "maximum": 1101
+            },
+            "qoL": {
+              "median": 0.7745613483458462,
+              "p25": 0.7296595321509065,
+              "p75": 0.907235086861911,
+              "minimum": 0.06740136588564546,
+              "maximum": 0.99984951856659
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 92,
+            "residentPopulation": {
+              "median": 487.5,
+              "p25": 286.25,
+              "p75": 778.75,
+              "minimum": 24,
+              "maximum": 1048
+            },
+            "qoL": {
+              "median": 0.832980191113512,
+              "p25": 0.7409739715160418,
+              "p75": 0.9288407347439429,
+              "minimum": 0,
+              "maximum": 0.9998164249524158
+            }
+          }
+        ]
+      },
+      {
+        "turn": 27,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 1193,
+            "residentPopulation": {
+              "median": 525,
+              "p25": 269,
+              "p75": 894,
+              "minimum": 14,
+              "maximum": 1110
+            },
+            "qoL": {
+              "median": 0.7821962560194987,
+              "p25": 0.7298567940085154,
+              "p75": 0.9059044558087865,
+              "minimum": 0.05212933773402637,
+              "maximum": 0.9989583122018433
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 458,
+            "residentPopulation": {
+              "median": 567,
+              "p25": 305.5,
+              "p75": 942.75,
+              "minimum": 20,
+              "maximum": 1080
+            },
+            "qoL": {
+              "median": 0.7817202284707842,
+              "p25": 0.7295740556380719,
+              "p75": 0.8986849463052975,
+              "minimum": 0.06052301998025139,
+              "maximum": 0.9998637867373948
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 96,
+            "residentPopulation": {
+              "median": 552.5,
+              "p25": 289.25,
+              "p75": 781.25,
+              "minimum": 25,
+              "maximum": 1051
+            },
+            "qoL": {
+              "median": 0.8319546672712206,
+              "p25": 0.7412218270871133,
+              "p75": 0.9327618683790253,
+              "minimum": 0,
+              "maximum": 0.9998162903393075
+            }
+          }
+        ]
+      },
+      {
+        "turn": 28,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 1270,
+            "residentPopulation": {
+              "median": 532,
+              "p25": 282.25,
+              "p75": 893.75,
+              "minimum": 16,
+              "maximum": 1072
+            },
+            "qoL": {
+              "median": 0.7822234655722997,
+              "p25": 0.7298559576573258,
+              "p75": 0.9041241466144362,
+              "minimum": 0.04448488777916619,
+              "maximum": 0.9996015430885221
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 486,
+            "residentPopulation": {
+              "median": 555.5,
+              "p25": 315.5,
+              "p75": 945,
+              "minimum": 21,
+              "maximum": 1079
+            },
+            "qoL": {
+              "median": 0.7775093510212738,
+              "p25": 0.7297616558976725,
+              "p75": 0.8946463595416185,
+              "minimum": 0.043929816636593,
+              "maximum": 0.9996465230688795
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 100,
+            "residentPopulation": {
+              "median": 558.5,
+              "p25": 300.5,
+              "p75": 842.5,
+              "minimum": 15,
+              "maximum": 1025
+            },
+            "qoL": {
+              "median": 0.8330762131013089,
+              "p25": 0.7421158103832488,
+              "p75": 0.9298285351494319,
+              "minimum": 0,
+              "maximum": 0.9998175263357737
+            }
+          }
+        ]
+      },
+      {
+        "turn": 29,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 1364,
+            "residentPopulation": {
+              "median": 543,
+              "p25": 284.75,
+              "p75": 889.25,
+              "minimum": 17,
+              "maximum": 1094
+            },
+            "qoL": {
+              "median": 0.7837541815449338,
+              "p25": 0.7298556607956167,
+              "p75": 0.9004754911073873,
+              "minimum": 0.04576843214829634,
+              "maximum": 0.9991998085763332
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 525,
+            "residentPopulation": {
+              "median": 565,
+              "p25": 322,
+              "p75": 931,
+              "minimum": 20,
+              "maximum": 1079
+            },
+            "qoL": {
+              "median": 0.7829117021954725,
+              "p25": 0.7296653445529152,
+              "p75": 0.8956472619392714,
+              "minimum": 0.04340976174970926,
+              "maximum": 0.9993637494575243
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 106,
+            "residentPopulation": {
+              "median": 568,
+              "p25": 293.25,
+              "p75": 832.25,
+              "minimum": 25,
+              "maximum": 1011
+            },
+            "qoL": {
+              "median": 0.8189954347918973,
+              "p25": 0.7377823365320636,
+              "p75": 0.9265205133215335,
+              "minimum": 0,
+              "maximum": 0.9998166515204282
+            }
+          }
+        ]
+      },
+      {
+        "turn": 30,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 1469,
+            "residentPopulation": {
+              "median": 550,
+              "p25": 295,
+              "p75": 889,
+              "minimum": 17,
+              "maximum": 1085
+            },
+            "qoL": {
+              "median": 0.7876473035688166,
+              "p25": 0.7298559725889381,
+              "p75": 0.8990540244416582,
+              "minimum": 0.0691871122999516,
+              "maximum": 0.99958323770954
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 568,
+            "residentPopulation": {
+              "median": 555.5,
+              "p25": 327,
+              "p75": 934.75,
+              "minimum": 13,
+              "maximum": 1096
+            },
+            "qoL": {
+              "median": 0.7778374565047907,
+              "p25": 0.7296170899072448,
+              "p75": 0.88342445731445,
+              "minimum": 0.05192699173674069,
+              "maximum": 0.9988361335146444
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 111,
+            "residentPopulation": {
+              "median": 548,
+              "p25": 276,
+              "p75": 844.5,
+              "minimum": 19,
+              "maximum": 1006
+            },
+            "qoL": {
+              "median": 0.8181146511817072,
+              "p25": 0.7355993821931429,
+              "p75": 0.9166345873269255,
+              "minimum": 0,
+              "maximum": 0.9998179079358482
+            }
+          }
+        ]
+      },
+      {
+        "turn": 31,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 1571,
+            "residentPopulation": {
+              "median": 565,
+              "p25": 304.5,
+              "p75": 897,
+              "minimum": 18,
+              "maximum": 1121
+            },
+            "qoL": {
+              "median": 0.7795747619501018,
+              "p25": 0.7298555463618882,
+              "p75": 0.8936864474427028,
+              "minimum": 0.04350795208372962,
+              "maximum": 0.9995215572802278
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 618,
+            "residentPopulation": {
+              "median": 578,
+              "p25": 316.5,
+              "p75": 930,
+              "minimum": 20,
+              "maximum": 1095
+            },
+            "qoL": {
+              "median": 0.779297049208307,
+              "p25": 0.7296361974367948,
+              "p75": 0.8702814443639904,
+              "minimum": 0.0700680959817286,
+              "maximum": 0.9994802496126014
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 115,
+            "residentPopulation": {
+              "median": 623,
+              "p25": 305.5,
+              "p75": 883.5,
+              "minimum": 24,
+              "maximum": 1026
+            },
+            "qoL": {
+              "median": 0.8155413997636599,
+              "p25": 0.7342263738481454,
+              "p75": 0.9197920693070192,
+              "minimum": 0,
+              "maximum": 0.9998166986953223
+            }
+          }
+        ]
+      },
+      {
+        "turn": 32,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 1670,
+            "residentPopulation": {
+              "median": 584,
+              "p25": 318.25,
+              "p75": 905.75,
+              "minimum": 19,
+              "maximum": 1105
+            },
+            "qoL": {
+              "median": 0.7837968641151487,
+              "p25": 0.7298555497729641,
+              "p75": 0.8855520162417341,
+              "minimum": 0.06548527735837388,
+              "maximum": 0.9995828814930091
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 673,
+            "residentPopulation": {
+              "median": 558,
+              "p25": 311,
+              "p75": 930,
+              "minimum": 18,
+              "maximum": 1109
+            },
+            "qoL": {
+              "median": 0.7858376984357515,
+              "p25": 0.7296157771124757,
+              "p75": 0.8723692498526712,
+              "minimum": 0.08606593266579561,
+              "maximum": 0.9996728260032606
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 120,
+            "residentPopulation": {
+              "median": 576,
+              "p25": 286.75,
+              "p75": 919,
+              "minimum": 23,
+              "maximum": 1024
+            },
+            "qoL": {
+              "median": 0.8162923824282289,
+              "p25": 0.7319514143599779,
+              "p75": 0.9141629365070656,
+              "minimum": 0,
+              "maximum": 0.9997963481814394
+            }
+          }
+        ]
+      },
+      {
+        "turn": 33,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 1796,
+            "residentPopulation": {
+              "median": 600.5,
+              "p25": 320,
+              "p75": 915.5,
+              "minimum": 12,
+              "maximum": 1135
+            },
+            "qoL": {
+              "median": 0.7835202723951717,
+              "p25": 0.7298555427525566,
+              "p75": 0.8796373692513757,
+              "minimum": 0.07007186529058555,
+              "maximum": 0.9994432939949318
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 723,
+            "residentPopulation": {
+              "median": 580,
+              "p25": 339.5,
+              "p75": 921.5,
+              "minimum": 20,
+              "maximum": 1111
+            },
+            "qoL": {
+              "median": 0.7842870580906032,
+              "p25": 0.7296315195923435,
+              "p75": 0.8668440808169081,
+              "minimum": 0.05219551188159036,
+              "maximum": 0.9998647813100642
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 124,
+            "residentPopulation": {
+              "median": 651,
+              "p25": 336.5,
+              "p75": 945.5,
+              "minimum": 25,
+              "maximum": 1011
+            },
+            "qoL": {
+              "median": 0.8188126628953725,
+              "p25": 0.7335668075770869,
+              "p75": 0.9141296122817402,
+              "minimum": 0,
+              "maximum": 0.9989415634213423
+            }
+          }
+        ]
+      },
+      {
+        "turn": 34,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 1910,
+            "residentPopulation": {
+              "median": 622,
+              "p25": 332.25,
+              "p75": 920,
+              "minimum": 14,
+              "maximum": 1103
+            },
+            "qoL": {
+              "median": 0.7855020538802302,
+              "p25": 0.7298555414915431,
+              "p75": 0.8738342359987872,
+              "minimum": 0.0439895267054425,
+              "maximum": 0.9998693564446467
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 780,
+            "residentPopulation": {
+              "median": 585,
+              "p25": 346.75,
+              "p75": 924,
+              "minimum": 22,
+              "maximum": 1121
+            },
+            "qoL": {
+              "median": 0.7906098171163842,
+              "p25": 0.7297132333756907,
+              "p75": 0.867454023555567,
+              "minimum": 0.043577483691468744,
+              "maximum": 0.9996144098542841
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 129,
+            "residentPopulation": {
+              "median": 654,
+              "p25": 304,
+              "p75": 965,
+              "minimum": 23,
+              "maximum": 1004
+            },
+            "qoL": {
+              "median": 0.8135877405385585,
+              "p25": 0.7308227319212328,
+              "p75": 0.9074330166033499,
+              "minimum": 0,
+              "maximum": 0.9998190161723582
+            }
+          }
+        ]
+      },
+      {
+        "turn": 35,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 2049,
+            "residentPopulation": {
+              "median": 623,
+              "p25": 335,
+              "p75": 929,
+              "minimum": 17,
+              "maximum": 1097
+            },
+            "qoL": {
+              "median": 0.7816792931503218,
+              "p25": 0.7298555386840179,
+              "p75": 0.8710445575600126,
+              "minimum": 0.07395475001922523,
+              "maximum": 0.9996740503794314
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 831,
+            "residentPopulation": {
+              "median": 602,
+              "p25": 365.5,
+              "p75": 930,
+              "minimum": 14,
+              "maximum": 1132
+            },
+            "qoL": {
+              "median": 0.7859726015324032,
+              "p25": 0.7297893314712043,
+              "p75": 0.8656267361568724,
+              "minimum": 0.07430137909251795,
+              "maximum": 0.9998627101731447
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 134,
+            "residentPopulation": {
+              "median": 673.5,
+              "p25": 341.25,
+              "p75": 970,
+              "minimum": 14,
+              "maximum": 1002
+            },
+            "qoL": {
+              "median": 0.8171714650109316,
+              "p25": 0.7306659716090738,
+              "p75": 0.9233513043775465,
+              "minimum": 0,
+              "maximum": 0.9989697369478462
+            }
+          }
+        ]
+      },
+      {
+        "turn": 36,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 2187,
+            "residentPopulation": {
+              "median": 628,
+              "p25": 336.5,
+              "p75": 941.5,
+              "minimum": 17,
+              "maximum": 1098
+            },
+            "qoL": {
+              "median": 0.7850762758123746,
+              "p25": 0.7298555383677301,
+              "p75": 0.8700695158683447,
+              "minimum": 0.06523736578294138,
+              "maximum": 0.9996546911406575
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 897,
+            "residentPopulation": {
+              "median": 617,
+              "p25": 373,
+              "p75": 932,
+              "minimum": 20,
+              "maximum": 1155
+            },
+            "qoL": {
+              "median": 0.7879006681334126,
+              "p25": 0.7297680766257656,
+              "p75": 0.8652809294896858,
+              "minimum": 0.09695457654570236,
+              "maximum": 0.9996668830733307
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 140,
+            "residentPopulation": {
+              "median": 661.5,
+              "p25": 332.25,
+              "p75": 973.25,
+              "minimum": 23,
+              "maximum": 1001
+            },
+            "qoL": {
+              "median": 0.819931692608145,
+              "p25": 0.7306533934881372,
+              "p75": 0.9122569906010433,
+              "minimum": 0,
+              "maximum": 0.9998166051471613
+            }
+          }
+        ]
+      },
+      {
+        "turn": 37,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 2317,
+            "residentPopulation": {
+              "median": 645,
+              "p25": 343,
+              "p75": 949,
+              "minimum": 20,
+              "maximum": 1096
+            },
+            "qoL": {
+              "median": 0.7878918669057283,
+              "p25": 0.7298555381156511,
+              "p75": 0.8669610612779672,
+              "minimum": 0.05285426139064074,
+              "maximum": 0.9998527017618426
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 952,
+            "residentPopulation": {
+              "median": 642.5,
+              "p25": 386.75,
+              "p75": 939.25,
+              "minimum": 20,
+              "maximum": 1127
+            },
+            "qoL": {
+              "median": 0.7886997337614339,
+              "p25": 0.729831954043842,
+              "p75": 0.8614399308101568,
+              "minimum": 0.04403276749411635,
+              "maximum": 0.9998596522414015
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 145,
+            "residentPopulation": {
+              "median": 670,
+              "p25": 333,
+              "p75": 982,
+              "minimum": 20,
+              "maximum": 1001
+            },
+            "qoL": {
+              "median": 0.8118292906462894,
+              "p25": 0.7302951243046437,
+              "p75": 0.8996319386165236,
+              "minimum": 0,
+              "maximum": 0.9990246849653194
+            }
+          }
+        ]
+      },
+      {
+        "turn": 38,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 2449,
+            "residentPopulation": {
+              "median": 658,
+              "p25": 352,
+              "p75": 959,
+              "minimum": 20,
+              "maximum": 1086
+            },
+            "qoL": {
+              "median": 0.7857127426736701,
+              "p25": 0.7298555380060341,
+              "p75": 0.8708706375175788,
+              "minimum": 0.057214259324676664,
+              "maximum": 0.9998677763625862
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1014,
+            "residentPopulation": {
+              "median": 647.5,
+              "p25": 401.25,
+              "p75": 938.75,
+              "minimum": 13,
+              "maximum": 1106
+            },
+            "qoL": {
+              "median": 0.7890443714829298,
+              "p25": 0.7298555380631062,
+              "p75": 0.8576499692599975,
+              "minimum": 0.04343353418610667,
+              "maximum": 0.9996619918830137
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 149,
+            "residentPopulation": {
+              "median": 687,
+              "p25": 377,
+              "p75": 991,
+              "minimum": 23,
+              "maximum": 1019
+            },
+            "qoL": {
+              "median": 0.8165080201232778,
+              "p25": 0.7300424039936982,
+              "p75": 0.8977780918234483,
+              "minimum": 0,
+              "maximum": 0.9995201946779969
+            }
+          }
+        ]
+      },
+      {
+        "turn": 39,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 2604,
+            "residentPopulation": {
+              "median": 674,
+              "p25": 359,
+              "p75": 965.25,
+              "minimum": 16,
+              "maximum": 1082
+            },
+            "qoL": {
+              "median": 0.7816803389055345,
+              "p25": 0.7298555183300656,
+              "p75": 0.8624179547468311,
+              "minimum": 0.08504257824154914,
+              "maximum": 0.999235168413421
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1074,
+            "residentPopulation": {
+              "median": 672.5,
+              "p25": 409.25,
+              "p75": 955.5,
+              "minimum": 13,
+              "maximum": 1128
+            },
+            "qoL": {
+              "median": 0.7875030519705962,
+              "p25": 0.7298500540376343,
+              "p75": 0.8575926149629933,
+              "minimum": 0.07971125786452565,
+              "maximum": 0.9996686193376496
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 155,
+            "residentPopulation": {
+              "median": 684,
+              "p25": 356,
+              "p75": 994,
+              "minimum": 24,
+              "maximum": 1056
+            },
+            "qoL": {
+              "median": 0.8110460680229226,
+              "p25": 0.7299480244002324,
+              "p75": 0.9127967782185261,
+              "minimum": 0,
+              "maximum": 0.9990472440361586
+            }
+          }
+        ]
+      },
+      {
+        "turn": 40,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 2740,
+            "residentPopulation": {
+              "median": 678,
+              "p25": 367.75,
+              "p75": 972,
+              "minimum": 17,
+              "maximum": 1099
+            },
+            "qoL": {
+              "median": 0.7846610969789543,
+              "p25": 0.7298555379931139,
+              "p75": 0.8647266052969288,
+              "minimum": 0.0529826015735849,
+              "maximum": 0.9998669689610388
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1133,
+            "residentPopulation": {
+              "median": 684,
+              "p25": 431,
+              "p75": 958,
+              "minimum": 19,
+              "maximum": 1099
+            },
+            "qoL": {
+              "median": 0.7905223172005176,
+              "p25": 0.7298555406204915,
+              "p75": 0.8526240486773145,
+              "minimum": 0.06803785563515571,
+              "maximum": 0.9995979048202287
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 159,
+            "residentPopulation": {
+              "median": 700,
+              "p25": 381,
+              "p75": 992.5,
+              "minimum": 23,
+              "maximum": 1043
+            },
+            "qoL": {
+              "median": 0.8163703471315984,
+              "p25": 0.7299287179939157,
+              "p75": 0.8983362371977024,
+              "minimum": 0,
+              "maximum": 0.9998203616934275
+            }
+          }
+        ]
+      },
+      {
+        "turn": 41,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 2871,
+            "residentPopulation": {
+              "median": 704,
+              "p25": 390.5,
+              "p75": 979,
+              "minimum": 20,
+              "maximum": 1120
+            },
+            "qoL": {
+              "median": 0.7786587400033066,
+              "p25": 0.729855537971267,
+              "p75": 0.863599809499515,
+              "minimum": 0.08467674482453201,
+              "maximum": 0.9996725592785272
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1198,
+            "residentPopulation": {
+              "median": 694.5,
+              "p25": 434.5,
+              "p75": 969.75,
+              "minimum": 18,
+              "maximum": 1094
+            },
+            "qoL": {
+              "median": 0.7867696062499102,
+              "p25": 0.7298555380128083,
+              "p75": 0.8540976151430638,
+              "minimum": 0.0844887011263387,
+              "maximum": 0.9998440262261374
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 164,
+            "residentPopulation": {
+              "median": 711.5,
+              "p25": 384,
+              "p75": 994.5,
+              "minimum": 25,
+              "maximum": 1022
+            },
+            "qoL": {
+              "median": 0.8047990826314264,
+              "p25": 0.7298836545406724,
+              "p75": 0.9049222271459694,
+              "minimum": 0,
+              "maximum": 0.9998038404834579
+            }
+          }
+        ]
+      },
+      {
+        "turn": 42,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 3017,
+            "residentPopulation": {
+              "median": 714,
+              "p25": 392,
+              "p75": 985,
+              "minimum": 15,
+              "maximum": 1134
+            },
+            "qoL": {
+              "median": 0.7769889851208509,
+              "p25": 0.729855537990685,
+              "p75": 0.8623473222584298,
+              "minimum": 0.06813897056738341,
+              "maximum": 0.9998660502494546
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1250,
+            "residentPopulation": {
+              "median": 722,
+              "p25": 451,
+              "p75": 980,
+              "minimum": 22,
+              "maximum": 1115
+            },
+            "qoL": {
+              "median": 0.7864954902532452,
+              "p25": 0.7298555380049768,
+              "p75": 0.8492962013845312,
+              "minimum": 0.07132982642786108,
+              "maximum": 0.9995510447476386
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 167,
+            "residentPopulation": {
+              "median": 726,
+              "p25": 406.5,
+              "p75": 995.5,
+              "minimum": 23,
+              "maximum": 1009
+            },
+            "qoL": {
+              "median": 0.8124089814278163,
+              "p25": 0.7299580031791916,
+              "p75": 0.9066839859689777,
+              "minimum": 0,
+              "maximum": 0.9998190075833383
+            }
+          }
+        ]
+      },
+      {
+        "turn": 43,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 3135,
+            "residentPopulation": {
+              "median": 737,
+              "p25": 409,
+              "p75": 989.5,
+              "minimum": 15,
+              "maximum": 1142
+            },
+            "qoL": {
+              "median": 0.7765864276059391,
+              "p25": 0.7298555379929472,
+              "p75": 0.8658250937845146,
+              "minimum": 0.06886854568296609,
+              "maximum": 0.9997181208726408
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1302,
+            "residentPopulation": {
+              "median": 749.5,
+              "p25": 481.5,
+              "p75": 985.75,
+              "minimum": 17,
+              "maximum": 1121
+            },
+            "qoL": {
+              "median": 0.7805255126812555,
+              "p25": 0.7298555381328268,
+              "p75": 0.8537143905469802,
+              "minimum": 0.07365779526769808,
+              "maximum": 0.9994673973913063
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 172,
+            "residentPopulation": {
+              "median": 739.5,
+              "p25": 403.25,
+              "p75": 996.25,
+              "minimum": 25,
+              "maximum": 1080
+            },
+            "qoL": {
+              "median": 0.8027446977630384,
+              "p25": 0.7298896731606247,
+              "p75": 0.9023520653091864,
+              "minimum": 0,
+              "maximum": 0.9993498724158139
+            }
+          }
+        ]
+      },
+      {
+        "turn": 44,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 3268,
+            "residentPopulation": {
+              "median": 750,
+              "p25": 409.25,
+              "p75": 992,
+              "minimum": 12,
+              "maximum": 1123
+            },
+            "qoL": {
+              "median": 0.771937177149681,
+              "p25": 0.7298555379756582,
+              "p75": 0.8654559665456079,
+              "minimum": 0.04920160221272195,
+              "maximum": 0.9997247393178125
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1359,
+            "residentPopulation": {
+              "median": 760,
+              "p25": 492,
+              "p75": 989.5,
+              "minimum": 23,
+              "maximum": 1080
+            },
+            "qoL": {
+              "median": 0.7763226898081729,
+              "p25": 0.7298555379900658,
+              "p75": 0.8495982454440792,
+              "minimum": 0.0758564684542595,
+              "maximum": 0.9997518058804474
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 177,
+            "residentPopulation": {
+              "median": 732,
+              "p25": 417,
+              "p75": 998,
+              "minimum": 23,
+              "maximum": 1093
+            },
+            "qoL": {
+              "median": 0.8198304064250242,
+              "p25": 0.7298734738041115,
+              "p75": 0.9051543889992617,
+              "minimum": 0,
+              "maximum": 0.9998203924718022
+            }
+          }
+        ]
+      },
+      {
+        "turn": 45,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 3394,
+            "residentPopulation": {
+              "median": 762,
+              "p25": 425.25,
+              "p75": 994,
+              "minimum": 16,
+              "maximum": 1131
+            },
+            "qoL": {
+              "median": 0.77124249001159,
+              "p25": 0.7298555379642256,
+              "p75": 0.8607597758634022,
+              "minimum": 0.0990638513039291,
+              "maximum": 0.9998308612065815
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1409,
+            "residentPopulation": {
+              "median": 776,
+              "p25": 510,
+              "p75": 993,
+              "minimum": 18,
+              "maximum": 1080
+            },
+            "qoL": {
+              "median": 0.7736768652274157,
+              "p25": 0.7298418283139989,
+              "p75": 0.849114576400917,
+              "minimum": 0.07674370150391188,
+              "maximum": 0.9996457187729308
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 179,
+            "residentPopulation": {
+              "median": 762,
+              "p25": 418.5,
+              "p75": 997.5,
+              "minimum": 25,
+              "maximum": 1081
+            },
+            "qoL": {
+              "median": 0.7967899110925404,
+              "p25": 0.7298618761952402,
+              "p75": 0.9022070912574758,
+              "minimum": 0,
+              "maximum": 0.9997926102418314
+            }
+          }
+        ]
+      },
+      {
+        "turn": 46,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 3539,
+            "residentPopulation": {
+              "median": 780,
+              "p25": 422,
+              "p75": 996,
+              "minimum": 13,
+              "maximum": 1112
+            },
+            "qoL": {
+              "median": 0.7654853133719726,
+              "p25": 0.7298553492467242,
+              "p75": 0.8589235820490002,
+              "minimum": 0.04388071944591229,
+              "maximum": 0.9997182849434145
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1457,
+            "residentPopulation": {
+              "median": 796,
+              "p25": 529,
+              "p75": 995,
+              "minimum": 23,
+              "maximum": 1102
+            },
+            "qoL": {
+              "median": 0.7685319092311615,
+              "p25": 0.7298417275290913,
+              "p75": 0.8416494442005403,
+              "minimum": 0.04414506835653661,
+              "maximum": 0.999527348272891
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 183,
+            "residentPopulation": {
+              "median": 772,
+              "p25": 430.5,
+              "p75": 998.5,
+              "minimum": 23,
+              "maximum": 1079
+            },
+            "qoL": {
+              "median": 0.7970547835186074,
+              "p25": 0.7298582205131623,
+              "p75": 0.9064945546518782,
+              "minimum": 0,
+              "maximum": 0.9998202752034847
+            }
+          }
+        ]
+      },
+      {
+        "turn": 47,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 3670,
+            "residentPopulation": {
+              "median": 793.5,
+              "p25": 428.25,
+              "p75": 997,
+              "minimum": 15,
+              "maximum": 1113
+            },
+            "qoL": {
+              "median": 0.7644527998583193,
+              "p25": 0.7298281512833551,
+              "p75": 0.8538845064592884,
+              "minimum": 0.06739834167242405,
+              "maximum": 0.9998506575678879
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1513,
+            "residentPopulation": {
+              "median": 825,
+              "p25": 527,
+              "p75": 997,
+              "minimum": 23,
+              "maximum": 1111
+            },
+            "qoL": {
+              "median": 0.7567997983953433,
+              "p25": 0.7298174619385488,
+              "p75": 0.8428597876680185,
+              "minimum": 0.08837478702574278,
+              "maximum": 0.9996269760422876
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 187,
+            "residentPopulation": {
+              "median": 756,
+              "p25": 430,
+              "p75": 999,
+              "minimum": 25,
+              "maximum": 1055
+            },
+            "qoL": {
+              "median": 0.7877328992158243,
+              "p25": 0.7298567250152174,
+              "p75": 0.9037247102733714,
+              "minimum": 0,
+              "maximum": 0.9996521239514217
+            }
+          }
+        ]
+      },
+      {
+        "turn": 48,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 3800,
+            "residentPopulation": {
+              "median": 815.5,
+              "p25": 442.75,
+              "p75": 998,
+              "minimum": 17,
+              "maximum": 1093
+            },
+            "qoL": {
+              "median": 0.7622437111847106,
+              "p25": 0.7298417048715535,
+              "p75": 0.8543951821729127,
+              "minimum": 0.07817103419410067,
+              "maximum": 0.9997619285787545
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1554,
+            "residentPopulation": {
+              "median": 845,
+              "p25": 562,
+              "p75": 998,
+              "minimum": 23,
+              "maximum": 1096
+            },
+            "qoL": {
+              "median": 0.7572822514771118,
+              "p25": 0.7298210683720655,
+              "p75": 0.8405484443061564,
+              "minimum": 0.04410970183998666,
+              "maximum": 0.9993835897863294
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 196,
+            "residentPopulation": {
+              "median": 762,
+              "p25": 442.75,
+              "p75": 999,
+              "minimum": 23,
+              "maximum": 1053
+            },
+            "qoL": {
+              "median": 0.7813340329653928,
+              "p25": 0.7298558139493231,
+              "p75": 0.891919556658999,
+              "minimum": 0,
+              "maximum": 0.9998178893244521
+            }
+          }
+        ]
+      },
+      {
+        "turn": 49,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 3952,
+            "residentPopulation": {
+              "median": 827,
+              "p25": 433.5,
+              "p75": 999,
+              "minimum": 17,
+              "maximum": 1109
+            },
+            "qoL": {
+              "median": 0.7529126977029763,
+              "p25": 0.7297306336212899,
+              "p75": 0.8527102827570736,
+              "minimum": 0.05063186233868844,
+              "maximum": 0.9997636240425666
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1610,
+            "residentPopulation": {
+              "median": 867.5,
+              "p25": 565,
+              "p75": 999,
+              "minimum": 23,
+              "maximum": 1122
+            },
+            "qoL": {
+              "median": 0.7482850650257983,
+              "p25": 0.7298053584370738,
+              "p75": 0.8357969485585912,
+              "minimum": 0.08892983717496798,
+              "maximum": 0.9995970495230087
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 201,
+            "residentPopulation": {
+              "median": 749,
+              "p25": 442,
+              "p75": 999,
+              "minimum": 24,
+              "maximum": 1044
+            },
+            "qoL": {
+              "median": 0.7841003881139558,
+              "p25": 0.7298557509931595,
+              "p75": 0.8911279561606023,
+              "minimum": 0,
+              "maximum": 0.9993148275001504
+            }
+          }
+        ]
+      },
+      {
+        "turn": 50,
+        "branches": [
+          {
+            "branch": "Agriculture",
+            "count": 4062,
+            "residentPopulation": {
+              "median": 845.5,
+              "p25": 447,
+              "p75": 999,
+              "minimum": 15,
+              "maximum": 1100
+            },
+            "qoL": {
+              "median": 0.7566774326367791,
+              "p25": 0.7297918855083695,
+              "p75": 0.8525647929443563,
+              "minimum": 0.11800468177566842,
+              "maximum": 0.9997123337857083
+            }
+          },
+          {
+            "branch": "Husbandry",
+            "count": 1662,
+            "residentPopulation": {
+              "median": 883.5,
+              "p25": 586.25,
+              "p75": 999,
+              "minimum": 21,
+              "maximum": 1090
+            },
+            "qoL": {
+              "median": 0.7443976332323448,
+              "p25": 0.7297222856402387,
+              "p75": 0.833921854117649,
+              "minimum": 0.07882295736468997,
+              "maximum": 0.9994891877565166
+            }
+          },
+          {
+            "branch": "Fishing",
+            "count": 209,
+            "residentPopulation": {
+              "median": 781,
+              "p25": 435,
+              "p75": 999,
+              "minimum": 23,
+              "maximum": 1063
+            },
+            "qoL": {
+              "median": 0.7777052829708511,
+              "p25": 0.7298556358570839,
+              "p75": 0.883099912876594,
+              "minimum": 0,
+              "maximum": 0.9985764809392492
+            }
+          }
+        ]
+      }
+    ],
+    "turn50": [
+      {
+        "branch": "Agriculture",
+        "count": 4062,
+        "residentPopulation": {
+          "median": 845.5,
+          "p25": 447,
+          "p75": 999,
+          "minimum": 15,
+          "maximum": 1100
+        },
+        "qoL": {
+          "median": 0.7566774326367791,
+          "p25": 0.7297918855083695,
+          "p75": 0.8525647929443563,
+          "minimum": 0.11800468177566842,
+          "maximum": 0.9997123337857083
+        }
+      },
+      {
+        "branch": "Husbandry",
+        "count": 1662,
+        "residentPopulation": {
+          "median": 883.5,
+          "p25": 586.25,
+          "p75": 999,
+          "minimum": 21,
+          "maximum": 1090
+        },
+        "qoL": {
+          "median": 0.7443976332323448,
+          "p25": 0.7297222856402387,
+          "p75": 0.833921854117649,
+          "minimum": 0.07882295736468997,
+          "maximum": 0.9994891877565166
+        }
+      },
+      {
+        "branch": "Fishing",
+        "count": 209,
+        "residentPopulation": {
+          "median": 781,
+          "p25": 435,
+          "p75": 999,
+          "minimum": 23,
+          "maximum": 1063
+        },
+        "qoL": {
+          "median": 0.7777052829708511,
+          "p25": 0.7298556358570839,
+          "p75": 0.883099912876594,
+          "minimum": 0,
+          "maximum": 0.9985764809392492
+        }
+      }
+    ],
+    "referenceTurn50": null
+  }
+}

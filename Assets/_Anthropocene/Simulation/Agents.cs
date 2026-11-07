@@ -197,12 +197,13 @@ namespace Anthropocene.Simulation
             HashSet<int> visible, IReadOnlyDictionary<int, TileObservation> observedTiles, bool forValidation)
         {
             if (forValidation || camp?.People == null || !FishingEconomy.FeatureEnabled(world, camp)) return Array.Empty<FishingGroundObservation>();
-            bool IsFisheryWater(EnvironmentKind environment) => environment == EnvironmentKind.Shallows || environment == EnvironmentKind.Lake;
+            bool IsFisheryWater(EnvironmentKind environment) => environment == EnvironmentKind.Shallows || environment == EnvironmentKind.Lake ||
+                FishingEconomy.SailingEnabled(world, camp) && environment == EnvironmentKind.Ocean;
             bool InObservationRange(int tile) => tile >= 0 && tile < world.Tiles.Length &&
-                world.Map.Distance(camp.Tile, tile) <= FishingEconomy.GroundRange + 1;
+                world.Map.Distance(camp.Tile, tile) <= FishingEconomy.Range(world, camp) + 1;
             var environmentByTile = new Dictionary<int, EnvironmentKind>();
-            foreach (var tile in observedTiles.Values.Where(t => t.Aquatic && InObservationRange(t.Id)).OrderBy(t => t.Id)) environmentByTile[tile.Id] = tile.Environment;
-            foreach (var tile in index.Remembered(camp.People, camp.Player).Where(t => t.Aquatic && IsFisheryWater(t.Environment) && InObservationRange(t.Id)).OrderBy(t => t.Id))
+            foreach (var tile in observedTiles.Values.Where(t => IsFisheryWater(t.Environment) && InObservationRange(t.Id)).OrderBy(t => t.Id)) environmentByTile[tile.Id] = tile.Environment;
+            foreach (var tile in index.Remembered(camp.People, camp.Player).Where(t => IsFisheryWater(t.Environment) && InObservationRange(t.Id)).OrderBy(t => t.Id))
                 if (!environmentByTile.ContainsKey(tile.Id)) environmentByTile[tile.Id] = tile.Environment;
             var snapshots = (camp.People.FishingGroundKnowledge ?? new List<FishingGroundSnapshot>()).OrderBy(s => s.TileId).ToDictionary(s => s.TileId);
             foreach (int tile in (camp.LastSelectedFishingGrounds ?? new List<int>()).Where(InObservationRange))

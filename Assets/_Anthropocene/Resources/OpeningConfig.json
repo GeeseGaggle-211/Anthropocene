@@ -166,6 +166,7 @@
   "SharedCropHerdAllocationEnabled": true,
   "MinimumHerdHerders": 1,
   "NeolithicFishingEnabled": false,
+  "NeolithicSailingEnabled": false,
   "CorrectedAquaticSeasonalPressureEnabled": false,
   "TradeEnabled": true,
   "TradeRange": 6,

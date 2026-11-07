@@ -373,7 +373,9 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id))
             {
                 var labor = agriculturalLabor[camp.Id];
-                double gatherers = labor.Gatherers;
+                // Resolve the shared pool to food-only labor once, before claims.
+                double gatherers = Math.Max(0, labor.Gatherers - (abandoningVillages.Contains(camp.Id)
+                    ? 0 : camp.EconomicLabor?.MaterialGatherers ?? 0));
                 if (CultivationEconomy.Enabled(camp) && !abandoningVillages.Contains(camp.Id))
                 {
                     // Field and nearby gathering tiles receive one turn-horizon
@@ -577,6 +579,8 @@ namespace Anthropocene.Simulation
         // The ordinary mobile-camp claim path is shared with read-only food
         // forecasts. In particular an accepted village departure uses this
         // path, with bridge-level access on its former fields and no farm work.
+        // gatherers is already food-only labor. Callers own material/authority
+        // reservations; debiting them here would charge a prepared pool twice.
         internal static void AddPassiveCampClaims(WorldState w, Camp camp, double gatherers,
             double startDays, double durationDays, double intervals, bool abandoning,
             Func<int, double> availability, List<Demand> claims)

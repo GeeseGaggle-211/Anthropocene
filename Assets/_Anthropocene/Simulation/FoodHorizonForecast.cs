@@ -223,7 +223,9 @@ namespace Anthropocene.Simulation
             }
             else
             {
-                TurnResolver.AddPassiveCampClaims(snapshot, location, labor.Gatherers,
+                double foodGatherers = Math.Max(0, labor.Gatherers - (abandoningVillage
+                    ? 0 : camp.EconomicLabor?.MaterialGatherers ?? 0));
+                TurnResolver.AddPassiveCampClaims(snapshot, location, foodGatherers,
                     startDays, durationDays, durationDays / snapshot.Config.BaseDays,
                     abandoningVillage, Available, ownClaims);
                 double requested = ownClaims.Sum(d => d.Food);

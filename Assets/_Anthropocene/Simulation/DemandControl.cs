@@ -11,6 +11,9 @@ namespace Anthropocene.Simulation
         public const string Legacy = "Legacy", DemandControl = "DemandControl";
         public static bool IsKnown(string name) => name == Legacy || name == DemandControl;
         public static bool IsDemandControl(SimulationConfig cfg) => cfg != null && cfg.EconomicAllocation == DemandControl;
+        // Human previews use the same strategy and settings as authoritative preparation.
+        public static EconomicIntent Preview(WorldState w, Camp c, EconomicIntent settings)
+            => Plan(w, c, settings, out _);
         internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, out ProductionOrder production)
             => Plan(w, c, settings, null, out production);
 

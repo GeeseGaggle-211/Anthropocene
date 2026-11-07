@@ -67,7 +67,7 @@ namespace Anthropocene.Simulation
                 {
                     activeTiles.Add(ground.TileId);
                     affectedSites.Add(ground.TileId);
-                    if (plan.Departing || !plan.OperatorEligible ||
+                    if (ground.Offshore || plan.Departing || !plan.OperatorEligible ||
                         ground.AssignedFisherYears <= 1e-12 ||
                         ground.KnowledgeSource == FishingKnowledgeSource.ConservativePrior ||
                         !camps.TryGetValue(plan.CampId, out camp) ||

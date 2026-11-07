@@ -35,8 +35,9 @@ namespace Anthropocene.Presentation
                 $"Herding Tools {camp.Inventory.HerdingTools:F2}: 1 Wood + 1 Stone each; {world.Config.Neolithic.HerdingToolCoverageYearsPerUnit:F0} Herder-years per tool. Plan capacity {management.Capacity:F1} / {management.Animals:F0} animals ({management.Fulfillment:P0}); primitive {world.Config.AnimalsPerHerder:F2}, equipped {world.Config.Neolithic.StoneHerdingToolAnimalsPerHerder:F2} animals per Herder.";
             float pastoralDescriptionHeight = husbandry ? small.CalcHeight(new GUIContent(pastoralDescription), col - 8) + 8 : 0;
             float livestockRows = husbandry ? ownedLivestock.Length * 54 : 0;
-            float fishingRows = fishing ? observation.FishingGrounds.Count(g => world.Map.Distance(camp.Tile, g.Tile) <= FishingEconomy.GroundRange + 1) * 24 : 0;
-            float contentHeight = Mathf.Max(1370 + livestockRows + fishingRows, 940 + livestockRows + pastoralDescriptionHeight + fishingRows);
+            float contentHeight = Mathf.Max(1370 + livestockRows, 940 + livestockRows + pastoralDescriptionHeight);
+            // The fishing section measures itself; its bottom from the previous repaint sizes the scroll area.
+            if (fishing) contentHeight = Mathf.Max(contentHeight, fishingInspectorBottom);
             villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, scrollContentWidth, contentHeight));
             float y = 4;
             var inventory = camp.Inventory;
@@ -53,7 +54,7 @@ namespace Anthropocene.Presentation
             GUI.Label(new Rect(4, y, scrollContentWidth - 16, husbandry ? 102 : 76),
                 $"Population {camp.Population} · QoL {camp.QoL:P0} · food {camp.FoodNeedsMetRatio:P0} · water {camp.WaterNeedsMetRatio:P0}\n" +
                 clothingStock + "\n" + housingStock + "\n" +
-                $"Expectations {camp.RudimentaryExpectation:P0} · stationary {camp.StationaryYears:F1} years · shortfalls are graded; automatic fission is deferred.", text);
+                $"Expectations {camp.RudimentaryExpectation:P0} · stationary {camp.StationaryYears:F1} years · shortfalls are graded; moving abandons fixed shelter and fishery capital.", text);
             y += husbandry ? 116 : 90;
             if (husbandry)
             {
@@ -96,11 +97,11 @@ namespace Anthropocene.Presentation
             }
             GUI.Label(new Rect(x, wy, col, 36), "Unassigned food/material gatherers: " + (camp.Population - draft.Assignments.Sum(a => a.Population)), small); wy += 40;
             if (Button(new Rect(x, wy, col - 8, 28), "Reset to gatherers")) { draft.Assignments.Clear(); draft.AutomationTurns = 0; draft.Labor = null; } wy += 34;
-            if (Button(new Rect(x, wy, col - 8, 28), "Allocate once")) { draft.AutomationTurns = 0; draft = EconomicPlanner.Plan(world, camp, draft); } wy += 34;
+            if (Button(new Rect(x, wy, col - 8, 28), "Allocate once")) { draft.AutomationTurns = 0; draft = EconomicAllocationStrategy.Preview(world, camp, draft); } wy += 34;
             GUI.Label(new Rect(x, wy, col - 8, 42), "Automation: " + (draft.AutomationTurns == 0 ? "Off" : draft.AutomationTurns < 0 ? "Until disabled" : draft.AutomationTurns + " turns remaining"), small); wy += 44;
             if (Button(new Rect(x, wy, 65, 26), "Off")) draft.AutomationTurns = 0;
-            if (Button(new Rect(x + 70, wy, col - 78, 26), "Until disabled")) { draft.AutomationTurns = -1; draft = EconomicPlanner.Plan(world, camp, draft); } wy += 32;
-            if (Button(new Rect(x, wy, col - 80, 26), "Next " + Math.Max(1, villageAutomationTurns) + " turns")) { draft.AutomationTurns = Math.Max(1, villageAutomationTurns); draft = EconomicPlanner.Plan(world, camp, draft); }
+            if (Button(new Rect(x + 70, wy, col - 78, 26), "Until disabled")) { draft.AutomationTurns = -1; draft = EconomicAllocationStrategy.Preview(world, camp, draft); } wy += 32;
+            if (Button(new Rect(x, wy, col - 80, 26), "Next " + Math.Max(1, villageAutomationTurns) + " turns")) { draft.AutomationTurns = Math.Max(1, villageAutomationTurns); draft = EconomicAllocationStrategy.Preview(world, camp, draft); }
             if (Button(new Rect(x + col - 76, wy, 30, 26), "−")) villageAutomationTurns = Math.Max(1, villageAutomationTurns - 1);
             if (Button(new Rect(x + col - 40, wy, 30, 26), "+")) villageAutomationTurns = Math.Min(999, villageAutomationTurns + 1); wy += 36;
             GUI.Label(new Rect(x, wy, col - 8, 96), "Replans each turn against demand, stocks and unlocked jobs. Manual workforce edits turn automation off.\n" + (draft.Labor == null ? "" : $"Reserved material gathering: {draft.Labor.MaterialGatherers:F1} workers\nExpansion: {draft.Labor.ExpansionFarmers:F1} farmers"), small);
@@ -109,10 +110,10 @@ namespace Anthropocene.Presentation
             DrawEconomicValue("Hand tools", ref draft.Priorities.HandTools, x, ref cy, col, .05);
             DrawEconomicValue("Pots", ref draft.Priorities.Pots, x, ref cy, col, .05);
             DrawEconomicValue("Improved tools", ref draft.Priorities.Tools, x, ref cy, col, .05);
-            if (CultivationEconomy.Enabled(camp))
+            if (CultivationEconomy.Enabled(camp) || fishing)
             {
                 DrawEconomicValue("Plant cloth", ref draft.Priorities.Cloth, x, ref cy, col, .05);
-                DrawEconomicValue("Farm tools", ref draft.Priorities.FarmTools, x, ref cy, col, .05);
+                if (CultivationEconomy.Enabled(camp)) DrawEconomicValue("Farm tools", ref draft.Priorities.FarmTools, x, ref cy, col, .05);
                 DrawEconomicValue("Fixed housing", ref draft.Priorities.Housing, x, ref cy, col, .05);
             }
             if (husbandry)
@@ -153,20 +154,6 @@ namespace Anthropocene.Presentation
                 if (Button(new Rect(x + col - 86, fy, 78, 22), draft.Focus == t.Id ? "Focused" : "Focus")) draft.Focus = draft.Focus == t.Id ? -1 : t.Id;
                 fy += 28;
             }
-            if (fishing)
-            {
-                var ownSettlement = observation.Settlements.First(s => s.Id == camp.Id);
-                GUI.Label(new Rect(x, fy, col - 8, 48), $"Fishing village support: maturity {Knowledge.Bands[Math.Max(0, Math.Min(4, ownSettlement.FishingVillageMaturity))]}, managed meal support {Knowledge.Bands[Math.Max(0, Math.Min(4, ownSettlement.FishingVillageMealSupport))]}. These are committed prior-turn bands.", small); fy += 54;
-                GUI.Label(new Rect(x, fy, col - 8, 36), "Known Shallows/Lake grounds (live visible state, owner snapshot, or conservative unsurveyed prior):", small); fy += 40;
-                foreach (var ground in observation.FishingGrounds.Where(g => world.Map.Distance(camp.Tile, g.Tile) <= FishingEconomy.GroundRange + 1).OrderBy(g => g.Tile))
-                {
-                    string source = ground.Visible ? "visible" : ground.Visited ? "visited" : "unsurveyed prior";
-                    string selected = ground.Selected ? " · selected" : "";
-                    string capital = Knowledge.Bands[Math.Max(0, Math.Min(4, ground.CapitalIntensity))];
-                    string operation = ground.HasOperation ? Knowledge.Bands[Math.Max(0, Math.Min(4, ground.Operation))] : "unknown";
-                    GUI.Label(new Rect(x, fy, col - 8, 22), $"Tile {ground.Tile} {ground.WaterEnvironment}: {source}{selected} · accessible food {Knowledge.Bands[Math.Max(0, Math.Min(4, ground.AccessibleFood))]} · capital {capital} · operation {operation}", small); fy += 24;
-                }
-            }
             fy += 12;
             DrawEconomicValue("Stone priority", ref draft.StonePriority, x, ref fy, col, .1);
             DrawEconomicValue("Clay priority", ref draft.ClayPriority, x, ref fy, col, .1);
@@ -177,6 +164,7 @@ namespace Anthropocene.Presentation
                 GUI.Label(new Rect(x, fy, col - 8, 24), material + ": " + (known.Any(s => s.Material == material && s.Available > 0) ? "known local source" : "no accessible source"), small); fy += 28;
             }
             GUI.Label(new Rect(x, fy + 10, col - 8, 70), "Irrigation construction, Plough effects and advanced technology effects remain deferred.", small);
+            if (fishing) DrawFishingInspection(camp, draft, Mathf.Max(wy + 110, Mathf.Max(cy, fy + 90)), scrollContentWidth);
             GUI.EndScrollView(); GUI.EndGroup();
             if (draft.Stamp != before) Queue(new Order(OrderKind.Economy, camp.Id) { Economy = draft });
         }

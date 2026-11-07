@@ -7,6 +7,7 @@ namespace Anthropocene.Presentation
 {
     public sealed partial class OpeningGame
     {
+        private bool fishingValidation;
         private int scenarioIndex, previewLayer, previewSeason = -1, previewTile = -1;
         private bool previewOpen, previewAfterGeneration;
         private Texture2D previewTexture;
@@ -20,13 +21,15 @@ namespace Anthropocene.Presentation
             float height = Mathf.Min(780, Screen.height - 32), top = (Screen.height - height) / 2;
             Fill(new Rect(left - 12, top, width + 24, height), Panel);
             GUI.BeginGroup(new Rect(left, top, width, height));
-            menuScroll = GUI.BeginScrollView(new Rect(0, 0, width, height), menuScroll, new Rect(0, 0, width - 20, 764));
+            menuScroll = GUI.BeginScrollView(new Rect(0, 0, width, height), menuScroll, new Rect(0, 0, width - 20, 850));
             float w = width - 30;
             GUI.Label(new Rect(8, 12, w, 38), "A N T H R O P O C E N E", title);
             GUI.Label(new Rect(8, 55, w, 42), "The first generations · Choose a landscape to playtest", text);
             GUI.enabled = generating == null && saving == null;
             for (int i = 0; i < 4; i++)
                 if (Button(new Rect(8 + (i % 2) * (w / 2), 100 + (i / 2) * 40, w / 2 - 6, 34), (scenarioIndex == i ? "◆ " : "◇ ") + PlaytestScenarios.Names[i], scenarioIndex == i)) scenarioIndex = i;
+            if (Button(new Rect(8, 770, w, 34), "Fishing validation profile: " + (fishingValidation ? "ON" : "OFF"))) fishingValidation = !fishingValidation;
+            GUI.Label(new Rect(8, 810, w, 36), "Opt-in resident Fishing and Sailing. Production defaults stay off.", small);
             GUI.Label(new Rect(8, 184, w, 66), PlaytestScenarios.Descriptions[scenarioIndex], text);
             if (scenarioIndex == 0)
             {

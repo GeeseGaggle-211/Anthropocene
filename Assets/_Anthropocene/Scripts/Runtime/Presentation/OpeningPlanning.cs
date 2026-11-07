@@ -142,6 +142,8 @@ namespace Anthropocene.Presentation
         private void DrawPaths(Rect area)
         {
             DrawSupplyTethers(area);
+            if (fishingRouteWorld == world && fishingRouteTurn == world.Turn && fishingRoute.Length > 0)
+                DrawPath(fishingRoute, area, FishColor, 4);
             foreach (var order in planned.Values.OrderBy(o => o.Entity))
             {
                 int origin = order.Entity == observation.CampId ? observation.CampTile : observation.Hunters.FirstOrDefault(h => h.Id == order.Entity)?.Tile ?? -1;

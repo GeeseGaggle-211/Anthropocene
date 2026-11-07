@@ -118,6 +118,10 @@ internal static class FishingStateChecks
         Check(old.Config.Neolithic.FishingToolFisherYearsPerUnit == 20 && old.Config.Neolithic.FishingToolHarvestMultiplier == 1.5, "absent Fishing tool tuning uses its migration defaults");
         Check(old.FisherySites.Count == 0 && camp.LastSelectedFishingGrounds.Count == 0 && camp.People.FishingGroundKnowledge.Count == 0, "absent sparse fishery lists migrate empty");
 
+        original.Config.NeolithicSailingEnabled = true;
+        var absentSailing = SaveCodec.Load(RemoveSaveFields(original, "NeolithicSailingEnabled"));
+        Check(!absentSailing.Config.NeolithicSailingEnabled && absentSailing.Config.NeolithicFishingEnabled, "old resident-Fishing saves do not acquire Sailing activation");
+        original.Config.NeolithicSailingEnabled = false;
         var missingOperation = RemoveSaveFields(original, "OperationFraction");
         var oldSnapshot = SaveCodec.Load(missingOperation).Camps.Single().People.FishingGroundKnowledge.Single();
         Check(oldSnapshot.OperationFraction == 0, "an absent remembered operation fraction defaults to zero");
