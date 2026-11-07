@@ -1,9 +1,16 @@
 # Fishing Unity integration and Sailing
 
+**Current balance decision:** the Fishing investigation is accepted as resolved
+after the mixed-work correction and the broader Archipelagos comparison. The
+remaining measured on/off population differences are retained as evidence, not
+as an outstanding balance blocker for review. Earlier milestone decisions below
+are historical. Native Unity compilation and interactive verification remain
+separate, unverified validation items.
+
 **7 November follow-up:** the major seed-23 regression source is now isolated and
 repaired: non-agricultural passive gathering consumed labor reserved for raw
-materials, starving otherwise-funded manufacturing. See the final section for
-the identical-state counterfactual, corrected cohorts and remaining limits.
+materials, starving otherwise-funded manufacturing. See the 7 November cause
+section for the identical-state counterfactual, corrected cohorts and limits.
 The original measurements below remain historical evidence, not reruns of the fix.
 
 ## Baseline and authority
@@ -54,7 +61,7 @@ The menu's Fishing validation profile and CLI
 `--anthropocene-fishing-validation` load `FishingValidationConfig.json` on top of
 OpeningConfig for **new worlds only**. Existing natural landscape presets remain
 available; the profile grants no technology, workforce, resources or capital.
-General new-game defaults remain off pending balance and Unity acceptance.
+General new-game defaults remain off pending native Unity verification.
 
 ## Validation (updated as milestones complete)
 
@@ -72,8 +79,8 @@ player capture or interactive playtest is claimed. Simulation test results do
 not validate visual layout. Native Unity build/play verification is a release gate.
 
 Raw logs and audit output are under ignored `TestResults/FishingUnity/`.
-Issue #41 remains an explicit balance release blocker until matched Fishing
-cohort evidence justifies closing it.
+At this milestone, issue #41 remained a balance release blocker pending matched
+Fishing cohort evidence. The later correction and acceptance are recorded below.
 
 ## Sailing milestone and correctness repair
 
@@ -178,8 +185,9 @@ deficit. The audit does not isolate actual operator contests or reoccupation. Fe
 accompany it. In seed 101 there is a small receipt shortfall and partial
 maintenance alongside more moves and descendants. These are attribution clues,
 not a proven causal decomposition of the economic, demographic and relocation
-feedbacks. No additional tuning or claim that the regression is an acceptable
-tradeoff is justified. **#41 remains a release blocker.**
+feedbacks. This initial audit did not justify additional tuning or accepting the
+regression as a tradeoff, so #41 remained a release blocker at that milestone.
+The later causal correction and broader Archipelagos audit supersede that decision.
 
 Reproduce the bank and its strict summary with:
 
@@ -251,15 +259,16 @@ Audit/reporting refinements are at `5354793ff2323677ea14f13a5b73bfeee55c9fdd`;
 the evidence commit changes documentation only. The remote default branch was
 reverified as `07f3501` before delivery.
 
-## Delivery and release decision
+## Initial delivery and release decision
 
-Draft [PR #47](https://github.com/GeeseGaggle-211/Anthropocene/pull/47) contains
+The initial draft of [PR #47](https://github.com/GeeseGaggle-211/Anthropocene/pull/47) contained
 separate Unity integration, selection repair, Sailing and audit commits, followed
-by this evidence report. **Keep the general new-game defaults off.** Correctness
-and registered long-run gates pass, but #41's seed-23 cohort decline remains
-unresolved, and this environment cannot verify native Unity compilation or
-presentation. The opt-in profile is ready for that native verification; this is
-not final balance sign-off or a claim of an interactive playtest.
+by the initial evidence report. At that point, correctness and registered
+long-run gates passed, but the seed-23 cohort decline was unresolved and kept
+the PR in draft. The subsequent cause, broader audit and accepted balance
+decision are documented below. General defaults remain off, and the opt-in
+profile still requires native Unity verification; no interactive playtest is
+claimed here.
 
 ## 7 November: cause of the seed-23 regression
 
@@ -383,10 +392,12 @@ Short replays from the exact same initial fingerprints reproduce every traced
 row through turn 12 and confirm opening completion at 8/10 for seeds 23/101
 in both final configurations. Those marker checks are retained in the evidence.
 
-The two original registered 50-turn replays predate this correction and have
-**not** been rerun for it. Native Unity compilation and play remain unverified.
-The residual cohort deficit is not signed off as acceptable. General defaults
-remain off; #41 stays open. No RL checkout, training job or checkpoint changed.
+At this milestone the two original registered 50-turn replays predated the
+correction and had not been rerun. The residual cohort deficit was retained as
+a blocker pending the broader Archipelagos comparison below. The subsequent
+balance decision is recorded at the top of this report; current review checks
+are recorded in the final section. Native Unity compilation and play remain
+unverified. No RL checkout, training job or checkpoint changed.
 
 ### Reproduce the diagnostic
 
@@ -477,10 +488,11 @@ food units over the measured 40 turns.
 All four audits exit successfully. The reducer verifies artifact hashes,
 1024×512/80/Archipelagos configuration, feature switches, exactly 40 measured
 turns, endpoint uniqueness and matched founding-cohort counts. The audit builds
-without errors; it changes no simulation rule or default. This is encouraging
-evidence for the island worlds, not general balance approval: the earlier
-Continents seed-23 residual remains, and native Unity and fresh five-world
-50-turn replay verification are still outstanding. Defaults remain off.
+without errors; it changes no simulation rule or default. The balance review
+accepted the Fishing matter as resolved on this evidence. The two sampled worlds
+do not establish that every heuristic decision in every geography is optimal.
+Native Unity validation remains unverified; the final section records the fresh
+five-world replay checks. General new-game defaults remain off.
 
 Reproduce from the repository root after building the diagnostic project:
 
@@ -500,3 +512,56 @@ saved-state counterfactuals. [FishingArchipelagosEvidence.json](FishingArchipela
 contains the committed summary, per-turn cross-cohort census, fingerprints,
 configuration/artifact hashes, manufacturing checks and caveats. Raw JSONL and
 logs remain under ignored `TestResults/FishingArchipelagos`.
+
+## Review preparation and current validation
+
+Balance review accepts the Fishing matter as resolved after the shared material
+work correction and the Archipelagos comparison. PR #47 is ready for review
+with production defaults unchanged. The tested source is
+`4522f05e2c2259f8ac5966178aa805e30a4bb891`; simulation behavior last changed at
+`b6a690ad2785409ff41bcfd393c74630463ad392`. The review-preparation edits affect
+validation documentation and evidence only.
+
+Fresh checks on that source:
+
+- All **70 registered fixed suites** pass (74 PASS lines), including the final
+  158-assertion DemandControl suite and the warm Fishing calibration. The run
+  takes 75.9 seconds on three lanes under concurrent long-run load; this is not
+  a performance comparison.
+- Headless, PerformanceAudit and FishingRegressionAudit build without errors.
+  Existing CS0649 unassigned diagnostic-field warnings remain; every reported
+  field also exists on the PR base. No new warning category was introduced.
+- Changed-text hygiene passes for 45 files: UTF-8, LF, final newline and no
+  trailing whitespace. All five changed Python files parse, all five changed
+  JSON files parse, and `git diff --check origin/main...HEAD` passes.
+- C# 9 syntax parsing passes all 106 project C# files. All 18 changed Unity
+  assets have `.meta` files; all 166 asset GUIDs are valid and unique. These
+  checks do not substitute for Unity API compilation.
+- The current-contract checker passes 93 JSON/API values, 21 test claims and
+  document links. Both cohort reducers reproduce the committed mixed-work and
+  Archipelagos evidence byte-for-byte. The default-off and opt-in profile
+  feature settings are verified.
+- The fresh **no-population-movement** five-world / 50-turn scenario passes its
+  matched control, exact artifact/fingerprint replay, conservation and activity
+  gates. Agriculture/Husbandry medians are **1,000/1,000**, against **800/800**
+  floors. It records **8,445,289.923** resident fishing food receipts.
+- The fresh **all-social-features** five-world / 50-turn scenario also passes
+  exact artifact/fingerprint replay, conservation and activity gates.
+  Agriculture/Husbandry medians are **831/880.5**, against **384/306.4** floors;
+  the Fishing median is **982** across 177 endpoint settlements. It records
+  **5,471 fissions**, **8,473 migrations** and **24,808,906.160** resident fishing
+  food receipts. Both scenarios use identical candidate opening checkpoints.
+
+[Current review evidence](FishingReviewEvidence.json) records commands, log and
+raw-artifact hashes, all per-turn census distributions, checkpoint identities and
+final fingerprints. Both long-run processes exit successfully. The registered
+five-world census uses its API-default configuration; the separate Archipelagos
+audit above uses the production configuration. Their cohorts are not interchangeable.
+Final changed-text checks also pass after adding this evidence: 46 files,
+including six JSON files, with no hygiene or parsing issues.
+
+There is no dedicated lint command or GitHub Actions workflow in this repository;
+GitHub reports no commit statuses or PR-triggered workflows for the tested head.
+The PR has no existing review submissions or inline review threads. Native
+Unity 6000.5.10f1 is not installed here: engine compilation, EditMode execution
+and interactive verification remain explicit review validation items.
