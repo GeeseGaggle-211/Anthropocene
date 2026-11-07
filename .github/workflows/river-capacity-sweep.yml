@@ -1,0 +1,44 @@
+name: River food capacity q04 experiment
+on:
+  push:
+    branches: [experiments/river-food-capacity-q04-20261107]
+    paths:
+      - 'Tools/RiverCapacitySweep/**'
+      - '.github/workflows/river-capacity-sweep.yml'
+permissions:
+  contents: read
+concurrency:
+  group: river-food-capacity-q04-experiment
+  cancel-in-progress: true
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify production source is unchanged
+        run: git diff --exit-code 07f3501c2d5e047e44d61e85cc0d4613b54572d6 -- Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources
+      - name: Record exact experiment revision
+        run: |
+          mkdir -p TestResults/RiverCapacitySweep
+          git rev-parse HEAD > TestResults/RiverCapacitySweep/experiment-commit.txt
+          dotnet --info > TestResults/RiverCapacitySweep/runtime.txt
+      - name: Native source river valley sweep
+        run: dotnet run -c Release --project Tools/RiverCapacitySweep/Anthropocene.RiverCapacitySweep.csproj -- TestResults/RiverCapacitySweep
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: river-food-capacity-q04
+          retention-days: 14
+          path: |
+            TestResults/RiverCapacitySweep/
+            Tools/RiverCapacitySweep/Program.cs
+            Tools/RiverCapacitySweep/Anthropocene.RiverCapacitySweep.csproj
+            Assets/_Anthropocene/Simulation/*.cs
+            Assets/_Anthropocene/Resources/OpeningConfig.json
+            Assets/_Anthropocene/Resources/ResourceGenerationConfig.json
