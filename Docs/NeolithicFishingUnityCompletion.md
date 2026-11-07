@@ -423,3 +423,80 @@ experiment and verifies every raw artifact hash.
 For these first long-run artifacts, whose metadata preceded the explicit opening
 marker, the reducer also reads the four `opening-SEED-FLAG` short replays. Future
 probe runs record that marker directly.
+
+## Archipelagos follow-up
+
+The same corrected simulation (`b6a690a`; no additional simulation changes) was
+run on **Archipelagos, 1024×512, 80 founders**, seeds **23 and 101**, with the
+production configuration and four workers. Each on/off pair changes only resident
+Fishing and corrected aquatic pressure; Sailing stays off. Each run completes
+its opening and then exactly **40 additional turns**. Seed 23 finishes opening
+at turn 10 and ends at 50; seed 101 finishes opening at 8 and ends at 48.
+
+The opening has **12 Watercraft-first founding societies on seed 23** and
+**11 on seed 101**, equal between the on/off variants. Seed 23 therefore samples
+six times as many Fishing founders as the earlier Continents case's two.
+
+| Seed | Fishing | Watercraft-descended settlements | Residents | Median settlement population | Resident-weighted QoL |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 23 | off | 65 | 43,705 | 728 | 0.748258 |
+| 23 | on | 57 | 43,931 | 944 | 0.766557 |
+| 101 | off | 69 | 40,178 | 564 | 0.762657 |
+| 101 | on | 87 | 69,124 | 913 | 0.772431 |
+
+Fishing changes this cohort's population by **+0.52%** on seed 23 and **+72.04%**
+on seed 101. QoL rises in both. Seed 23 still has fewer descendant settlements,
+but larger settlements offset the difference; its original founders finish at
+7,690 residents versus 7,529 in the control. Measured post-opening fissions are
+39 versus 50. Seed 101 has 76 versus 58 fissions and more descendants, although
+its original founders total 8,603 versus 9,208 residents. These are distinct
+expansion outcomes, not evidence that every population increase is a direct
+increase in the founding camps' food yield.
+
+World populations also rise: **524,605 → 528,769** on seed 23 and
+**485,744 → 540,059** on seed 101. The evidence retains the full per-turn census
+of all first-technology cohorts, not only the Watercraft lineage.
+
+The mixed-work correction remains active in the broader sample. During the
+post-opening period, **69/69** seed-23 and **70/70** seed-101 camp-turns with a
+positive Cloth grant while holding neither Cultivation nor Husbandry produce
+positive Cloth. This checks the prior zero-production failure; it does **not**
+claim every grant is fully realized. Eighteen distinct Fishing-only camps make
+Cloth on seed 23, and 24 on seed 101; they also produce real Hand Tools and
+Housing. Their Cloth totals are 13,249.71 and 12,100.81 units, respectively.
+The original material-starvation symptom is absent from these granted camp-turns.
+
+First technology is an ancestry label. **All** surviving Watercraft-descended
+settlements have Cultivation by the endpoint. On the last turn, **30/57**
+settlements on seed 23 and **40/87** on seed 101 both staff Farmers and Fishers
+and realize resident fishing receipts. Thus this comparison exercises mixed
+economies rather than assuming that a Watercraft lineage lives only on fish.
+Those lineages harvest **8.77 million** and **8.81 million** resident fishing
+food units over the measured 40 turns.
+
+All four audits exit successfully. The reducer verifies artifact hashes,
+1024×512/80/Archipelagos configuration, feature switches, exactly 40 measured
+turns, endpoint uniqueness and matched founding-cohort counts. The audit builds
+without errors; it changes no simulation rule or default. This is encouraging
+evidence for the island worlds, not general balance approval: the earlier
+Continents seed-23 residual remains, and native Unity and fresh five-world
+50-turn replay verification are still outstanding. Defaults remain off.
+
+Reproduce from the repository root after building the diagnostic project:
+
+```sh
+dotnet Tools/FishingRegressionAudit/bin/Release/net8.0/Anthropocene.FishingRegressionAudit.dll \
+  --shape=Archipelagos --seed=23 --fishing=1 --pressure=1 \
+  --post-opening-turns=40 --revision=YOUR_COMMIT \
+  --output=TestResults/FishingArchipelagosFresh/fishing-23.jsonl
+# Repeat for seed 101 and for --fishing=0 --pressure=0 with control-SEED filenames.
+python3 Tools/FishingRegressionAudit/SummarizeArchipelagos.py \
+  TestResults/FishingArchipelagosFresh TestResults/FishingArchipelagosFresh/summary.json
+```
+
+The probe's `--shape` and relative `--post-opening-turns` options remove the need
+to guess when each world's opening finishes; `--end-turn` remains available for
+saved-state counterfactuals. [FishingArchipelagosEvidence.json](FishingArchipelagosEvidence.json)
+contains the committed summary, per-turn cross-cohort census, fingerprints,
+configuration/artifact hashes, manufacturing checks and caveats. Raw JSONL and
+logs remain under ignored `TestResults/FishingArchipelagos`.

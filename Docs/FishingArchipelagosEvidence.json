@@ -1,0 +1,5440 @@
+{
+  "simulationCommit": "b6a690ad2785409ff41bcfd393c74630463ad392",
+  "method": "Production-config Archipelagos/1024x512/80; seeds 23 and 101; exactly 40 turns after each completed opening. Only resident Fishing and corrected aquatic pressure differ within a pair. Sailing off; material-work correction applied to all cases. First technology labels ancestry, not exclusive economic activity.",
+  "cases": [
+    {
+      "seed": 23,
+      "variant": "control",
+      "metadata": {
+        "revision": "a1fa976+archipelago-audit",
+        "seed": 23,
+        "inputHash": null,
+        "shape": "Archipelagos",
+        "Width": 1024,
+        "Height": 512,
+        "Players": 80,
+        "initialFingerprint": "6E0368CDB5BD7C7A02AF681215C3EBEB9F308C335FF08951DD33CC5C17D875C3",
+        "finalFingerprint": "763F525CC33CA80A22A685261EC83F037A96794918B1E3F5D89DDF1802D87577",
+        "configurationHash": "7D4BCB2AAD52848762F8D654E25BF7357B1AB2D3855B14A77E3FA7C93F130331",
+        "endTurn": 50,
+        "openingCompletedTurn": 10,
+        "checkpoints": {},
+        "worldPopulation": 524605,
+        "requestedPostOpeningTurns": 40,
+        "measuredPostOpeningTurns": 40,
+        "openingCensus": [
+          {
+            "technology": "AnimalHusbandry",
+            "settlements": 19,
+            "residents": 2091,
+            "founders": 14,
+            "weightedQoL": 0.48973861530412033
+          },
+          {
+            "technology": "Cultivation",
+            "settlements": 64,
+            "residents": 6645,
+            "founders": 54,
+            "weightedQoL": 0.16496723766921406
+          },
+          {
+            "technology": "Watercraft",
+            "settlements": 15,
+            "residents": 1198,
+            "founders": 12,
+            "weightedQoL": 0.1168526526953505
+          }
+        ],
+        "census": [
+          {
+            "turn": 1,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 1600,
+                "founders": 80,
+                "weightedQoL": 0.5910651485937702
+              }
+            ]
+          },
+          {
+            "turn": 2,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 1750,
+                "founders": 80,
+                "weightedQoL": 0.44374747538071807
+              }
+            ]
+          },
+          {
+            "turn": 3,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 2189,
+                "founders": 80,
+                "weightedQoL": 0.33123365237153535
+              }
+            ]
+          },
+          {
+            "turn": 4,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 2544,
+                "founders": 80,
+                "weightedQoL": 0.19533397155783025
+              }
+            ]
+          },
+          {
+            "turn": 5,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 77,
+                "residents": 2943,
+                "founders": 77,
+                "weightedQoL": 0.05777190656771157
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 3,
+                "residents": 101,
+                "founders": 3,
+                "weightedQoL": 0.30084521583543916
+              }
+            ]
+          },
+          {
+            "turn": 6,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 52,
+                "residents": 2375,
+                "founders": 52,
+                "weightedQoL": 0.06606048788248975
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 11,
+                "residents": 464,
+                "founders": 11,
+                "weightedQoL": 0.18533805505879458
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 17,
+                "residents": 792,
+                "founders": 17,
+                "weightedQoL": 0.010041934131021798
+              }
+            ]
+          },
+          {
+            "turn": 7,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 14,
+                "residents": 697,
+                "founders": 14,
+                "weightedQoL": 0.10197056252925171
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 14,
+                "residents": 801,
+                "founders": 14,
+                "weightedQoL": 0.15306389983106297
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 46,
+                "residents": 2530,
+                "founders": 46,
+                "weightedQoL": 0.06678276208174329
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 6,
+                "residents": 392,
+                "founders": 6,
+                "weightedQoL": 0.06469320170165146
+              }
+            ]
+          },
+          {
+            "turn": 8,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 4,
+                "residents": 103,
+                "founders": 4,
+                "weightedQoL": 0.004824096448909685
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 14,
+                "residents": 1139,
+                "founders": 14,
+                "weightedQoL": 0.2905434357722212
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 51,
+                "residents": 3626,
+                "founders": 51,
+                "weightedQoL": 0.13666345192036145
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 11,
+                "residents": 844,
+                "founders": 11,
+                "weightedQoL": 0.11681277135099354
+              }
+            ]
+          },
+          {
+            "turn": 9,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 1,
+                "residents": 1,
+                "founders": 1,
+                "weightedQoL": 0.599854229657243
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 15,
+                "residents": 1612,
+                "founders": 14,
+                "weightedQoL": 0.2725914053520603
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 56,
+                "residents": 5141,
+                "founders": 53,
+                "weightedQoL": 0.1565493717558238
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 15,
+                "residents": 1064,
+                "founders": 12,
+                "weightedQoL": 0.12852994273316865
+              }
+            ]
+          },
+          {
+            "turn": 10,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 19,
+                "residents": 2091,
+                "founders": 14,
+                "weightedQoL": 0.48973861530412033
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 64,
+                "residents": 6645,
+                "founders": 54,
+                "weightedQoL": 0.16496723766921406
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 15,
+                "residents": 1198,
+                "founders": 12,
+                "weightedQoL": 0.1168526526953505
+              }
+            ]
+          },
+          {
+            "turn": 11,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 23,
+                "residents": 2978,
+                "founders": 14,
+                "weightedQoL": 0.5970884640678672
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 79,
+                "residents": 9221,
+                "founders": 54,
+                "weightedQoL": 0.2352830366741542
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 18,
+                "residents": 1356,
+                "founders": 12,
+                "weightedQoL": 0.12558348345997297
+              }
+            ]
+          },
+          {
+            "turn": 12,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 25,
+                "residents": 4156,
+                "founders": 14,
+                "weightedQoL": 0.7153198166962899
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 93,
+                "residents": 12229,
+                "founders": 54,
+                "weightedQoL": 0.300119741775479
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 19,
+                "residents": 1616,
+                "founders": 12,
+                "weightedQoL": 0.12228450388072841
+              }
+            ]
+          },
+          {
+            "turn": 13,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 26,
+                "residents": 5707,
+                "founders": 14,
+                "weightedQoL": 0.7473972685902104
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 103,
+                "residents": 16470,
+                "founders": 54,
+                "weightedQoL": 0.5069974756231448
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 23,
+                "residents": 1781,
+                "founders": 12,
+                "weightedQoL": 0.1972462259901898
+              }
+            ]
+          },
+          {
+            "turn": 14,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 27,
+                "residents": 7418,
+                "founders": 14,
+                "weightedQoL": 0.7729741615955087
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 113,
+                "residents": 22848,
+                "founders": 54,
+                "weightedQoL": 0.6569436485020409
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 25,
+                "residents": 2446,
+                "founders": 12,
+                "weightedQoL": 0.21031451383653052
+              }
+            ]
+          },
+          {
+            "turn": 15,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 27,
+                "residents": 9144,
+                "founders": 14,
+                "weightedQoL": 0.8250083602574533
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 117,
+                "residents": 30270,
+                "founders": 54,
+                "weightedQoL": 0.7459659432603376
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 27,
+                "residents": 2915,
+                "founders": 12,
+                "weightedQoL": 0.17863026929201156
+              }
+            ]
+          },
+          {
+            "turn": 16,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 29,
+                "residents": 10272,
+                "founders": 14,
+                "weightedQoL": 0.8627791276168628
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 120,
+                "residents": 39929,
+                "founders": 54,
+                "weightedQoL": 0.7792803809581539
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 30,
+                "residents": 3869,
+                "founders": 12,
+                "weightedQoL": 0.3061005297303267
+              }
+            ]
+          },
+          {
+            "turn": 17,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 30,
+                "residents": 11766,
+                "founders": 14,
+                "weightedQoL": 0.8550581974189791
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 122,
+                "residents": 48321,
+                "founders": 54,
+                "weightedQoL": 0.7974669937683292
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 31,
+                "residents": 5117,
+                "founders": 12,
+                "weightedQoL": 0.409907719009251
+              }
+            ]
+          },
+          {
+            "turn": 18,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 30,
+                "residents": 12540,
+                "founders": 14,
+                "weightedQoL": 0.8392687538579603
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 122,
+                "residents": 54270,
+                "founders": 54,
+                "weightedQoL": 0.8104036407978206
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 35,
+                "residents": 6523,
+                "founders": 12,
+                "weightedQoL": 0.5346917185631131
+              }
+            ]
+          },
+          {
+            "turn": 19,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 31,
+                "residents": 13452,
+                "founders": 14,
+                "weightedQoL": 0.8533872291567135
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 124,
+                "residents": 59979,
+                "founders": 54,
+                "weightedQoL": 0.8073850125496589
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 36,
+                "residents": 8524,
+                "founders": 12,
+                "weightedQoL": 0.6342873891009733
+              }
+            ]
+          },
+          {
+            "turn": 20,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 33,
+                "residents": 13934,
+                "founders": 14,
+                "weightedQoL": 0.8220298871412014
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 126,
+                "residents": 64065,
+                "founders": 54,
+                "weightedQoL": 0.8103689602860613
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 38,
+                "residents": 9793,
+                "founders": 12,
+                "weightedQoL": 0.6342113077852943
+              }
+            ]
+          },
+          {
+            "turn": 21,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 33,
+                "residents": 15514,
+                "founders": 14,
+                "weightedQoL": 0.8121735714058214
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 127,
+                "residents": 68890,
+                "founders": 54,
+                "weightedQoL": 0.7979637805915064
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 40,
+                "residents": 10973,
+                "founders": 12,
+                "weightedQoL": 0.6745665782721993
+              }
+            ]
+          },
+          {
+            "turn": 22,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 34,
+                "residents": 15977,
+                "founders": 14,
+                "weightedQoL": 0.8142432819372122
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 128,
+                "residents": 72671,
+                "founders": 54,
+                "weightedQoL": 0.8040045836031124
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 43,
+                "residents": 12637,
+                "founders": 12,
+                "weightedQoL": 0.6933441112218857
+              }
+            ]
+          },
+          {
+            "turn": 23,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 37,
+                "residents": 17663,
+                "founders": 14,
+                "weightedQoL": 0.8157526930201373
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 128,
+                "residents": 77269,
+                "founders": 54,
+                "weightedQoL": 0.7964101563008694
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 44,
+                "residents": 15099,
+                "founders": 12,
+                "weightedQoL": 0.741940349707095
+              }
+            ]
+          },
+          {
+            "turn": 24,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 39,
+                "residents": 18504,
+                "founders": 14,
+                "weightedQoL": 0.7904377780372562
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 131,
+                "residents": 79924,
+                "founders": 54,
+                "weightedQoL": 0.7848676804632775
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 45,
+                "residents": 16542,
+                "founders": 12,
+                "weightedQoL": 0.7392882793809501
+              }
+            ]
+          },
+          {
+            "turn": 25,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 43,
+                "residents": 20326,
+                "founders": 14,
+                "weightedQoL": 0.7843038928173762
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 134,
+                "residents": 85429,
+                "founders": 54,
+                "weightedQoL": 0.7775432257659384
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 46,
+                "residents": 17569,
+                "founders": 12,
+                "weightedQoL": 0.752593043334261
+              }
+            ]
+          },
+          {
+            "turn": 26,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 44,
+                "residents": 22383,
+                "founders": 14,
+                "weightedQoL": 0.78665444340716
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 138,
+                "residents": 89329,
+                "founders": 54,
+                "weightedQoL": 0.7747011420617602
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 46,
+                "residents": 19895,
+                "founders": 12,
+                "weightedQoL": 0.7965988246788607
+              }
+            ]
+          },
+          {
+            "turn": 27,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 47,
+                "residents": 24310,
+                "founders": 14,
+                "weightedQoL": 0.8037938712018483
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 144,
+                "residents": 94040,
+                "founders": 54,
+                "weightedQoL": 0.7695561729481123
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 46,
+                "residents": 21139,
+                "founders": 12,
+                "weightedQoL": 0.8062051344576854
+              }
+            ]
+          },
+          {
+            "turn": 28,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 48,
+                "residents": 26708,
+                "founders": 14,
+                "weightedQoL": 0.7982389370829395
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 148,
+                "residents": 98751,
+                "founders": 54,
+                "weightedQoL": 0.7724170693137953
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 46,
+                "residents": 23119,
+                "founders": 12,
+                "weightedQoL": 0.7985827077292956
+              }
+            ]
+          },
+          {
+            "turn": 29,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 51,
+                "residents": 28085,
+                "founders": 14,
+                "weightedQoL": 0.7834257394864053
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 155,
+                "residents": 104296,
+                "founders": 54,
+                "weightedQoL": 0.7673143912018884
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 47,
+                "residents": 23406,
+                "founders": 12,
+                "weightedQoL": 0.8019002310610329
+              }
+            ]
+          },
+          {
+            "turn": 30,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 53,
+                "residents": 30186,
+                "founders": 14,
+                "weightedQoL": 0.7804048704256076
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 164,
+                "residents": 110802,
+                "founders": 54,
+                "weightedQoL": 0.7594894974042159
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 49,
+                "residents": 24651,
+                "founders": 12,
+                "weightedQoL": 0.7972816794951373
+              }
+            ]
+          },
+          {
+            "turn": 31,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 56,
+                "residents": 32433,
+                "founders": 14,
+                "weightedQoL": 0.7799814516224148
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 177,
+                "residents": 117950,
+                "founders": 54,
+                "weightedQoL": 0.7546388791238623
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 49,
+                "residents": 26191,
+                "founders": 12,
+                "weightedQoL": 0.8004672157811196
+              }
+            ]
+          },
+          {
+            "turn": 32,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 60,
+                "residents": 35067,
+                "founders": 14,
+                "weightedQoL": 0.7819667953339143
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 190,
+                "residents": 125810,
+                "founders": 54,
+                "weightedQoL": 0.7517456383041072
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 50,
+                "residents": 28013,
+                "founders": 12,
+                "weightedQoL": 0.7881365839741336
+              }
+            ]
+          },
+          {
+            "turn": 33,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 64,
+                "residents": 37235,
+                "founders": 14,
+                "weightedQoL": 0.7769404180610232
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 204,
+                "residents": 135133,
+                "founders": 54,
+                "weightedQoL": 0.7566591615053536
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 50,
+                "residents": 28284,
+                "founders": 12,
+                "weightedQoL": 0.7871262481358873
+              }
+            ]
+          },
+          {
+            "turn": 34,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 71,
+                "residents": 40597,
+                "founders": 14,
+                "weightedQoL": 0.7750029834012323
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 222,
+                "residents": 146619,
+                "founders": 54,
+                "weightedQoL": 0.7443422922474059
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 51,
+                "residents": 29374,
+                "founders": 12,
+                "weightedQoL": 0.7789421182506923
+              }
+            ]
+          },
+          {
+            "turn": 35,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 78,
+                "residents": 43647,
+                "founders": 14,
+                "weightedQoL": 0.7625865668309929
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 237,
+                "residents": 157995,
+                "founders": 54,
+                "weightedQoL": 0.753736864631671
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 51,
+                "residents": 30219,
+                "founders": 12,
+                "weightedQoL": 0.779185745990306
+              }
+            ]
+          },
+          {
+            "turn": 36,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 83,
+                "residents": 48398,
+                "founders": 14,
+                "weightedQoL": 0.7856526421307398
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 260,
+                "residents": 169617,
+                "founders": 54,
+                "weightedQoL": 0.7502771715617315
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 51,
+                "residents": 31451,
+                "founders": 12,
+                "weightedQoL": 0.776020033142384
+              }
+            ]
+          },
+          {
+            "turn": 37,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 90,
+                "residents": 52868,
+                "founders": 14,
+                "weightedQoL": 0.7707208458045987
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 272,
+                "residents": 182132,
+                "founders": 54,
+                "weightedQoL": 0.7579731570889764
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 52,
+                "residents": 31933,
+                "founders": 12,
+                "weightedQoL": 0.7700990486407852
+              }
+            ]
+          },
+          {
+            "turn": 38,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 96,
+                "residents": 56296,
+                "founders": 14,
+                "weightedQoL": 0.7798492422392697
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 292,
+                "residents": 195374,
+                "founders": 54,
+                "weightedQoL": 0.7571532309157081
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 53,
+                "residents": 33068,
+                "founders": 12,
+                "weightedQoL": 0.7653006011630162
+              }
+            ]
+          },
+          {
+            "turn": 39,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 104,
+                "residents": 61516,
+                "founders": 14,
+                "weightedQoL": 0.7731887458484491
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 310,
+                "residents": 209392,
+                "founders": 54,
+                "weightedQoL": 0.7620351244622126
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 53,
+                "residents": 33603,
+                "founders": 12,
+                "weightedQoL": 0.7647565689995222
+              }
+            ]
+          },
+          {
+            "turn": 40,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 113,
+                "residents": 67865,
+                "founders": 14,
+                "weightedQoL": 0.7834280301318933
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 327,
+                "residents": 222289,
+                "founders": 54,
+                "weightedQoL": 0.7613851911796384
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 54,
+                "residents": 34788,
+                "founders": 12,
+                "weightedQoL": 0.7609649187444266
+              }
+            ]
+          },
+          {
+            "turn": 41,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 118,
+                "residents": 72235,
+                "founders": 14,
+                "weightedQoL": 0.7793409135719801
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 345,
+                "residents": 238629,
+                "founders": 54,
+                "weightedQoL": 0.7623207414614592
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 54,
+                "residents": 35165,
+                "founders": 12,
+                "weightedQoL": 0.7609179390498895
+              }
+            ]
+          },
+          {
+            "turn": 42,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 120,
+                "residents": 78024,
+                "founders": 14,
+                "weightedQoL": 0.7882235557881191
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 358,
+                "residents": 251485,
+                "founders": 54,
+                "weightedQoL": 0.762179027931296
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 56,
+                "residents": 36055,
+                "founders": 12,
+                "weightedQoL": 0.7555310973682556
+              }
+            ]
+          },
+          {
+            "turn": 43,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 129,
+                "residents": 82660,
+                "founders": 14,
+                "weightedQoL": 0.7791665242384664
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 370,
+                "residents": 264634,
+                "founders": 54,
+                "weightedQoL": 0.7632364961103874
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 57,
+                "residents": 37012,
+                "founders": 12,
+                "weightedQoL": 0.7589579800445454
+              }
+            ]
+          },
+          {
+            "turn": 44,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 135,
+                "residents": 88834,
+                "founders": 14,
+                "weightedQoL": 0.7757136108232305
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 380,
+                "residents": 276858,
+                "founders": 54,
+                "weightedQoL": 0.7623832058407988
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 58,
+                "residents": 38141,
+                "founders": 12,
+                "weightedQoL": 0.753771477343438
+              }
+            ]
+          },
+          {
+            "turn": 45,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 139,
+                "residents": 93409,
+                "founders": 14,
+                "weightedQoL": 0.7826868902309229
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 395,
+                "residents": 289220,
+                "founders": 54,
+                "weightedQoL": 0.7591220184459805
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 59,
+                "residents": 38578,
+                "founders": 12,
+                "weightedQoL": 0.7562335707597483
+              }
+            ]
+          },
+          {
+            "turn": 46,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 144,
+                "residents": 99158,
+                "founders": 14,
+                "weightedQoL": 0.7773239647008788
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 405,
+                "residents": 302016,
+                "founders": 54,
+                "weightedQoL": 0.7602334819560196
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 61,
+                "residents": 40066,
+                "founders": 12,
+                "weightedQoL": 0.7523971282306543
+              }
+            ]
+          },
+          {
+            "turn": 47,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 150,
+                "residents": 103613,
+                "founders": 14,
+                "weightedQoL": 0.7728068571761987
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 418,
+                "residents": 314200,
+                "founders": 54,
+                "weightedQoL": 0.75634597222821
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 61,
+                "residents": 41152,
+                "founders": 12,
+                "weightedQoL": 0.751911550908911
+              }
+            ]
+          },
+          {
+            "turn": 48,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 154,
+                "residents": 109253,
+                "founders": 14,
+                "weightedQoL": 0.7751428843819903
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 432,
+                "residents": 326192,
+                "founders": 54,
+                "weightedQoL": 0.7567903589123521
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 62,
+                "residents": 42023,
+                "founders": 12,
+                "weightedQoL": 0.7506232834695024
+              }
+            ]
+          },
+          {
+            "turn": 49,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 157,
+                "residents": 114105,
+                "founders": 14,
+                "weightedQoL": 0.7754023232624687
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 447,
+                "residents": 339059,
+                "founders": 54,
+                "weightedQoL": 0.7546501279378727
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 63,
+                "residents": 42822,
+                "founders": 12,
+                "weightedQoL": 0.7522360499594982
+              }
+            ]
+          },
+          {
+            "turn": 50,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 158,
+                "residents": 117722,
+                "founders": 14,
+                "weightedQoL": 0.7749015697782875
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 460,
+                "residents": 353235,
+                "founders": 54,
+                "weightedQoL": 0.7541341154250784
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 65,
+                "residents": 43705,
+                "founders": 12,
+                "weightedQoL": 0.7482578351442415
+              }
+            ]
+          }
+        ],
+        "NeolithicFishingEnabled": false,
+        "CorrectedAquaticSeasonalPressureEnabled": false,
+        "NeolithicSailingEnabled": false,
+        "EconomicAllocation": "DemandControl",
+        "artifactSha256": "A2EA967D67718B702DF8BF3019EB6B37F2A5DF2BC7CD789A72150C098FC892C5"
+      },
+      "finalSettlements": 65,
+      "finalResidents": 43705,
+      "weightedQoL": 0.7482578351442415,
+      "medianSettlementPopulation": 728,
+      "finalFounders": 12,
+      "finalFounderResidents": 7529,
+      "finalWithCultivation": 65,
+      "finalWithHusbandry": 20,
+      "finalActualResidentFishing": 0,
+      "finalMixedFarmerFisher": 0,
+      "postOpeningResidentFishingFood": 0,
+      "postOpeningFissions": 50,
+      "pureWatercraftCampTurns": 76,
+      "pureWatercraftClothGrantTurns": 0,
+      "pureWatercraftClothGrantWithActualClothTurns": 0,
+      "pureWatercraftClothProducingCamps": 0,
+      "pureWatercraftCloth": 0,
+      "pureWatercraftHandTools": 0,
+      "pureWatercraftHousing": 0,
+      "pureWatercraftMaterialWorkerIntervals": 0,
+      "foodReceipts": {
+        "Marine gathering": 3713051.559046272,
+        "Gathering": 53358433.48349492,
+        "Cultivation": 21417910.524004105,
+        "Animal Product": 3499516.0267935414,
+        "Slaughter": 80650
+      }
+    },
+    {
+      "seed": 23,
+      "variant": "fishing",
+      "metadata": {
+        "revision": "a1fa976+archipelago-audit",
+        "seed": 23,
+        "inputHash": null,
+        "shape": "Archipelagos",
+        "Width": 1024,
+        "Height": 512,
+        "Players": 80,
+        "initialFingerprint": "2F16FAAADC0FAA44770FB6A107BBA7C0F0ACFB54DD081AF510F9AC7DA5A67CB4",
+        "finalFingerprint": "7D30C37FBC0BA7AB9FE0166B8EDCFB2284602A4443F75D05BBAE2B6DBFAA891F",
+        "configurationHash": "0B64564B5CB987DBEEE13DBADA410412D7EFDC75EC0A82D0A9D9392CD8C9310D",
+        "endTurn": 50,
+        "openingCompletedTurn": 10,
+        "checkpoints": {},
+        "worldPopulation": 528769,
+        "requestedPostOpeningTurns": 40,
+        "measuredPostOpeningTurns": 40,
+        "openingCensus": [
+          {
+            "technology": "AnimalHusbandry",
+            "settlements": 19,
+            "residents": 2091,
+            "founders": 14,
+            "weightedQoL": 0.48973861530412033
+          },
+          {
+            "technology": "Cultivation",
+            "settlements": 64,
+            "residents": 6645,
+            "founders": 54,
+            "weightedQoL": 0.16496723766921406
+          },
+          {
+            "technology": "Watercraft",
+            "settlements": 18,
+            "residents": 2159,
+            "founders": 12,
+            "weightedQoL": 0.3027159042668543
+          }
+        ],
+        "census": [
+          {
+            "turn": 1,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 1600,
+                "founders": 80,
+                "weightedQoL": 0.5910651485937702
+              }
+            ]
+          },
+          {
+            "turn": 2,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 1750,
+                "founders": 80,
+                "weightedQoL": 0.44374747538071807
+              }
+            ]
+          },
+          {
+            "turn": 3,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 2189,
+                "founders": 80,
+                "weightedQoL": 0.33123365237153535
+              }
+            ]
+          },
+          {
+            "turn": 4,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 2544,
+                "founders": 80,
+                "weightedQoL": 0.19533397155783025
+              }
+            ]
+          },
+          {
+            "turn": 5,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 77,
+                "residents": 2943,
+                "founders": 77,
+                "weightedQoL": 0.05777190656771157
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 3,
+                "residents": 101,
+                "founders": 3,
+                "weightedQoL": 0.30084521583543916
+              }
+            ]
+          },
+          {
+            "turn": 6,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 52,
+                "residents": 2375,
+                "founders": 52,
+                "weightedQoL": 0.06606048788248975
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 11,
+                "residents": 464,
+                "founders": 11,
+                "weightedQoL": 0.18533805505879458
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 17,
+                "residents": 792,
+                "founders": 17,
+                "weightedQoL": 0.010041934131021798
+              }
+            ]
+          },
+          {
+            "turn": 7,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 14,
+                "residents": 697,
+                "founders": 14,
+                "weightedQoL": 0.10197056252925171
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 14,
+                "residents": 801,
+                "founders": 14,
+                "weightedQoL": 0.15306389983106297
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 46,
+                "residents": 2530,
+                "founders": 46,
+                "weightedQoL": 0.06678276208174329
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 6,
+                "residents": 392,
+                "founders": 6,
+                "weightedQoL": 0.06469320170165146
+              }
+            ]
+          },
+          {
+            "turn": 8,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 4,
+                "residents": 103,
+                "founders": 4,
+                "weightedQoL": 0.004824096448909685
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 14,
+                "residents": 1139,
+                "founders": 14,
+                "weightedQoL": 0.2905434357722212
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 51,
+                "residents": 3626,
+                "founders": 51,
+                "weightedQoL": 0.13666345192036145
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 11,
+                "residents": 990,
+                "founders": 11,
+                "weightedQoL": 0.15271341747587255
+              }
+            ]
+          },
+          {
+            "turn": 9,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 1,
+                "residents": 1,
+                "founders": 1,
+                "weightedQoL": 0.599854229657243
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 15,
+                "residents": 1612,
+                "founders": 14,
+                "weightedQoL": 0.2725914053520603
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 56,
+                "residents": 5141,
+                "founders": 53,
+                "weightedQoL": 0.1565493717558238
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 14,
+                "residents": 1608,
+                "founders": 12,
+                "weightedQoL": 0.17484673370712234
+              }
+            ]
+          },
+          {
+            "turn": 10,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 19,
+                "residents": 2091,
+                "founders": 14,
+                "weightedQoL": 0.48973861530412033
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 64,
+                "residents": 6645,
+                "founders": 54,
+                "weightedQoL": 0.16496723766921406
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 18,
+                "residents": 2159,
+                "founders": 12,
+                "weightedQoL": 0.3027159042668543
+              }
+            ]
+          },
+          {
+            "turn": 11,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 23,
+                "residents": 2987,
+                "founders": 14,
+                "weightedQoL": 0.5965570144351956
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 79,
+                "residents": 9222,
+                "founders": 54,
+                "weightedQoL": 0.23539547951033007
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 21,
+                "residents": 2896,
+                "founders": 12,
+                "weightedQoL": 0.43128010294613867
+              }
+            ]
+          },
+          {
+            "turn": 12,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 25,
+                "residents": 4155,
+                "founders": 14,
+                "weightedQoL": 0.710973143759957
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 93,
+                "residents": 12232,
+                "founders": 54,
+                "weightedQoL": 0.30037433355800397
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 27,
+                "residents": 3744,
+                "founders": 12,
+                "weightedQoL": 0.5838518308058468
+              }
+            ]
+          },
+          {
+            "turn": 13,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 28,
+                "residents": 5710,
+                "founders": 14,
+                "weightedQoL": 0.7388325483075634
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 103,
+                "residents": 16466,
+                "founders": 54,
+                "weightedQoL": 0.5030681142522617
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 29,
+                "residents": 4974,
+                "founders": 12,
+                "weightedQoL": 0.7472679948029742
+              }
+            ]
+          },
+          {
+            "turn": 14,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 29,
+                "residents": 7361,
+                "founders": 14,
+                "weightedQoL": 0.755216864170755
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 111,
+                "residents": 22814,
+                "founders": 54,
+                "weightedQoL": 0.6559883644996471
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 30,
+                "residents": 6322,
+                "founders": 12,
+                "weightedQoL": 0.7565514155921919
+              }
+            ]
+          },
+          {
+            "turn": 15,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 30,
+                "residents": 9246,
+                "founders": 14,
+                "weightedQoL": 0.8273020920085965
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 112,
+                "residents": 30224,
+                "founders": 54,
+                "weightedQoL": 0.7462003877210472
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 34,
+                "residents": 8307,
+                "founders": 12,
+                "weightedQoL": 0.8220594079534822
+              }
+            ]
+          },
+          {
+            "turn": 16,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 32,
+                "residents": 10518,
+                "founders": 14,
+                "weightedQoL": 0.8481665571105427
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 115,
+                "residents": 39728,
+                "founders": 54,
+                "weightedQoL": 0.7834410024164014
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 36,
+                "residents": 10176,
+                "founders": 12,
+                "weightedQoL": 0.8499766067151002
+              }
+            ]
+          },
+          {
+            "turn": 17,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 32,
+                "residents": 12045,
+                "founders": 14,
+                "weightedQoL": 0.8508853584700261
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 117,
+                "residents": 48184,
+                "founders": 54,
+                "weightedQoL": 0.7993562321655024
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 36,
+                "residents": 12317,
+                "founders": 12,
+                "weightedQoL": 0.8667647478336288
+              }
+            ]
+          },
+          {
+            "turn": 18,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 33,
+                "residents": 12807,
+                "founders": 14,
+                "weightedQoL": 0.839840314422877
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 118,
+                "residents": 53976,
+                "founders": 54,
+                "weightedQoL": 0.8109445174039907
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 36,
+                "residents": 14521,
+                "founders": 12,
+                "weightedQoL": 0.8725159601377689
+              }
+            ]
+          },
+          {
+            "turn": 19,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 33,
+                "residents": 13663,
+                "founders": 14,
+                "weightedQoL": 0.8589926421620784
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 119,
+                "residents": 59135,
+                "founders": 54,
+                "weightedQoL": 0.8177984843082878
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 36,
+                "residents": 16771,
+                "founders": 12,
+                "weightedQoL": 0.8523467203523934
+              }
+            ]
+          },
+          {
+            "turn": 20,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 36,
+                "residents": 14126,
+                "founders": 14,
+                "weightedQoL": 0.8261203109314657
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 122,
+                "residents": 63697,
+                "founders": 54,
+                "weightedQoL": 0.810266697653488
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 36,
+                "residents": 18030,
+                "founders": 12,
+                "weightedQoL": 0.8533782231231642
+              }
+            ]
+          },
+          {
+            "turn": 21,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 37,
+                "residents": 15758,
+                "founders": 14,
+                "weightedQoL": 0.8195297062293354
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 125,
+                "residents": 67838,
+                "founders": 54,
+                "weightedQoL": 0.8008871096061875
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 36,
+                "residents": 18836,
+                "founders": 12,
+                "weightedQoL": 0.8520160001272791
+              }
+            ]
+          },
+          {
+            "turn": 22,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 38,
+                "residents": 16359,
+                "founders": 14,
+                "weightedQoL": 0.825302093469669
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 125,
+                "residents": 71577,
+                "founders": 54,
+                "weightedQoL": 0.8052333980901117
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 37,
+                "residents": 20025,
+                "founders": 12,
+                "weightedQoL": 0.8291898337877018
+              }
+            ]
+          },
+          {
+            "turn": 23,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 40,
+                "residents": 18148,
+                "founders": 14,
+                "weightedQoL": 0.8106487890249805
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 126,
+                "residents": 76054,
+                "founders": 54,
+                "weightedQoL": 0.7966495833774152
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 37,
+                "residents": 21116,
+                "founders": 12,
+                "weightedQoL": 0.8264452987084719
+              }
+            ]
+          },
+          {
+            "turn": 24,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 42,
+                "residents": 18936,
+                "founders": 14,
+                "weightedQoL": 0.7979491672109579
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 128,
+                "residents": 77989,
+                "founders": 54,
+                "weightedQoL": 0.7928622459473432
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 38,
+                "residents": 22140,
+                "founders": 12,
+                "weightedQoL": 0.8138897929039138
+              }
+            ]
+          },
+          {
+            "turn": 25,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 47,
+                "residents": 21081,
+                "founders": 14,
+                "weightedQoL": 0.7847483529611179
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 132,
+                "residents": 83947,
+                "founders": 54,
+                "weightedQoL": 0.7835605326768587
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 38,
+                "residents": 23300,
+                "founders": 12,
+                "weightedQoL": 0.8110234826915995
+              }
+            ]
+          },
+          {
+            "turn": 26,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 49,
+                "residents": 22913,
+                "founders": 14,
+                "weightedQoL": 0.7873548435134381
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 135,
+                "residents": 87775,
+                "founders": 54,
+                "weightedQoL": 0.7824213731093622
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 38,
+                "residents": 23932,
+                "founders": 12,
+                "weightedQoL": 0.8038007514842317
+              }
+            ]
+          },
+          {
+            "turn": 27,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 50,
+                "residents": 25019,
+                "founders": 14,
+                "weightedQoL": 0.8085052891024024
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 141,
+                "residents": 92623,
+                "founders": 54,
+                "weightedQoL": 0.7751750043839448
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 38,
+                "residents": 24645,
+                "founders": 12,
+                "weightedQoL": 0.7990222859586673
+              }
+            ]
+          },
+          {
+            "turn": 28,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 51,
+                "residents": 27416,
+                "founders": 14,
+                "weightedQoL": 0.8058047850563834
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 143,
+                "residents": 96260,
+                "founders": 54,
+                "weightedQoL": 0.7763771046284436
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 38,
+                "residents": 25073,
+                "founders": 12,
+                "weightedQoL": 0.7985416860105313
+              }
+            ]
+          },
+          {
+            "turn": 29,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 53,
+                "residents": 28588,
+                "founders": 14,
+                "weightedQoL": 0.7982921411379279
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 150,
+                "residents": 102185,
+                "founders": 54,
+                "weightedQoL": 0.7674459433935559
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 39,
+                "residents": 25950,
+                "founders": 12,
+                "weightedQoL": 0.7843548837724023
+              }
+            ]
+          },
+          {
+            "turn": 30,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 54,
+                "residents": 30171,
+                "founders": 14,
+                "weightedQoL": 0.7993431044930337
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 158,
+                "residents": 107413,
+                "founders": 54,
+                "weightedQoL": 0.7630188191879969
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 39,
+                "residents": 26387,
+                "founders": 12,
+                "weightedQoL": 0.7931959187376026
+              }
+            ]
+          },
+          {
+            "turn": 31,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 57,
+                "residents": 32289,
+                "founders": 14,
+                "weightedQoL": 0.7899819384364815
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 173,
+                "residents": 114338,
+                "founders": 54,
+                "weightedQoL": 0.755436511294611
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 41,
+                "residents": 27381,
+                "founders": 12,
+                "weightedQoL": 0.7827556719248945
+              }
+            ]
+          },
+          {
+            "turn": 32,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 61,
+                "residents": 34414,
+                "founders": 14,
+                "weightedQoL": 0.7864235286051596
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 186,
+                "residents": 121446,
+                "founders": 54,
+                "weightedQoL": 0.7563556339346901
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 42,
+                "residents": 27871,
+                "founders": 12,
+                "weightedQoL": 0.7837584192289359
+              }
+            ]
+          },
+          {
+            "turn": 33,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 64,
+                "residents": 37022,
+                "founders": 14,
+                "weightedQoL": 0.7804188375458037
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 197,
+                "residents": 131445,
+                "founders": 54,
+                "weightedQoL": 0.7611829218545626
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 44,
+                "residents": 29239,
+                "founders": 12,
+                "weightedQoL": 0.7835828276842366
+              }
+            ]
+          },
+          {
+            "turn": 34,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 70,
+                "residents": 39933,
+                "founders": 14,
+                "weightedQoL": 0.7826186277228038
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 214,
+                "residents": 141925,
+                "founders": 54,
+                "weightedQoL": 0.7500790651274585
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 44,
+                "residents": 30129,
+                "founders": 12,
+                "weightedQoL": 0.7812573935393803
+              }
+            ]
+          },
+          {
+            "turn": 35,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 77,
+                "residents": 43238,
+                "founders": 14,
+                "weightedQoL": 0.7717989257171489
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 223,
+                "residents": 152098,
+                "founders": 54,
+                "weightedQoL": 0.7613433902360135
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 47,
+                "residents": 31010,
+                "founders": 12,
+                "weightedQoL": 0.7815970015230368
+              }
+            ]
+          },
+          {
+            "turn": 36,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 81,
+                "residents": 47327,
+                "founders": 14,
+                "weightedQoL": 0.7870019042508815
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 248,
+                "residents": 161798,
+                "founders": 54,
+                "weightedQoL": 0.7555461927056533
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 47,
+                "residents": 32241,
+                "founders": 12,
+                "weightedQoL": 0.78760444487926
+              }
+            ]
+          },
+          {
+            "turn": 37,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 88,
+                "residents": 52114,
+                "founders": 14,
+                "weightedQoL": 0.7723259438596187
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 259,
+                "residents": 173719,
+                "founders": 54,
+                "weightedQoL": 0.7625481405937167
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 49,
+                "residents": 33774,
+                "founders": 12,
+                "weightedQoL": 0.7835920150271859
+              }
+            ]
+          },
+          {
+            "turn": 38,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 93,
+                "residents": 54602,
+                "founders": 14,
+                "weightedQoL": 0.7908267500071896
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 284,
+                "residents": 186154,
+                "founders": 54,
+                "weightedQoL": 0.7587518440682528
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 49,
+                "residents": 34523,
+                "founders": 12,
+                "weightedQoL": 0.7839297216500953
+              }
+            ]
+          },
+          {
+            "turn": 39,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 101,
+                "residents": 60223,
+                "founders": 14,
+                "weightedQoL": 0.7759215781181984
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 298,
+                "residents": 201216,
+                "founders": 54,
+                "weightedQoL": 0.7604629450641082
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 50,
+                "residents": 35458,
+                "founders": 12,
+                "weightedQoL": 0.7842504287651679
+              }
+            ]
+          },
+          {
+            "turn": 40,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 112,
+                "residents": 65765,
+                "founders": 14,
+                "weightedQoL": 0.7837298890740751
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 321,
+                "residents": 215753,
+                "founders": 54,
+                "weightedQoL": 0.7625815682347873
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 51,
+                "residents": 35927,
+                "founders": 12,
+                "weightedQoL": 0.7833540362180192
+              }
+            ]
+          },
+          {
+            "turn": 41,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 115,
+                "residents": 70892,
+                "founders": 14,
+                "weightedQoL": 0.780543056184438
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 338,
+                "residents": 232457,
+                "founders": 54,
+                "weightedQoL": 0.7611584511608964
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 52,
+                "residents": 37023,
+                "founders": 12,
+                "weightedQoL": 0.7790619667295335
+              }
+            ]
+          },
+          {
+            "turn": 42,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 121,
+                "residents": 75806,
+                "founders": 14,
+                "weightedQoL": 0.783719924968137
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 356,
+                "residents": 245222,
+                "founders": 54,
+                "weightedQoL": 0.7641373420230508
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 53,
+                "residents": 37650,
+                "founders": 12,
+                "weightedQoL": 0.7787879247130698
+              }
+            ]
+          },
+          {
+            "turn": 43,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 128,
+                "residents": 81874,
+                "founders": 14,
+                "weightedQoL": 0.7777687525625644
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 368,
+                "residents": 260360,
+                "founders": 54,
+                "weightedQoL": 0.7644143808814611
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 53,
+                "residents": 38653,
+                "founders": 12,
+                "weightedQoL": 0.7801249381124066
+              }
+            ]
+          },
+          {
+            "turn": 44,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 136,
+                "residents": 86716,
+                "founders": 14,
+                "weightedQoL": 0.7783432614925965
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 382,
+                "residents": 272062,
+                "founders": 54,
+                "weightedQoL": 0.765709717541805
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 53,
+                "residents": 39491,
+                "founders": 12,
+                "weightedQoL": 0.7746131239245015
+              }
+            ]
+          },
+          {
+            "turn": 45,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 141,
+                "residents": 92450,
+                "founders": 14,
+                "weightedQoL": 0.784435473078879
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 401,
+                "residents": 287716,
+                "founders": 54,
+                "weightedQoL": 0.7648467118933238
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 54,
+                "residents": 40028,
+                "founders": 12,
+                "weightedQoL": 0.7750888488944724
+              }
+            ]
+          },
+          {
+            "turn": 46,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 147,
+                "residents": 97635,
+                "founders": 14,
+                "weightedQoL": 0.7800101545349513
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 419,
+                "residents": 301038,
+                "founders": 54,
+                "weightedQoL": 0.7637155713073526
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 54,
+                "residents": 40481,
+                "founders": 12,
+                "weightedQoL": 0.7757373310456046
+              }
+            ]
+          },
+          {
+            "turn": 47,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 150,
+                "residents": 103472,
+                "founders": 14,
+                "weightedQoL": 0.777319112952739
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 437,
+                "residents": 317765,
+                "founders": 54,
+                "weightedQoL": 0.7632295188786855
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 55,
+                "residents": 41434,
+                "founders": 12,
+                "weightedQoL": 0.773134879067435
+              }
+            ]
+          },
+          {
+            "turn": 48,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 152,
+                "residents": 108458,
+                "founders": 14,
+                "weightedQoL": 0.7793064771780993
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 449,
+                "residents": 332366,
+                "founders": 54,
+                "weightedQoL": 0.7669526482466231
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 56,
+                "residents": 42024,
+                "founders": 12,
+                "weightedQoL": 0.7710339032367635
+              }
+            ]
+          },
+          {
+            "turn": 49,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 154,
+                "residents": 112530,
+                "founders": 14,
+                "weightedQoL": 0.7769672455784497
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 471,
+                "residents": 348601,
+                "founders": 54,
+                "weightedQoL": 0.7604613724943357
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 56,
+                "residents": 43112,
+                "founders": 12,
+                "weightedQoL": 0.7722600648752439
+              }
+            ]
+          },
+          {
+            "turn": 50,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 154,
+                "residents": 115296,
+                "founders": 14,
+                "weightedQoL": 0.7797196778446376
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 482,
+                "residents": 364380,
+                "founders": 54,
+                "weightedQoL": 0.7647490717150139
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 57,
+                "residents": 43931,
+                "founders": 12,
+                "weightedQoL": 0.7665566006036189
+              }
+            ]
+          }
+        ],
+        "NeolithicFishingEnabled": true,
+        "CorrectedAquaticSeasonalPressureEnabled": true,
+        "NeolithicSailingEnabled": false,
+        "EconomicAllocation": "DemandControl",
+        "artifactSha256": "D64DF5BE770926C01D6017A4394C58BD6399B96A3D84C79DF41B23B99AFD08C2"
+      },
+      "finalSettlements": 57,
+      "finalResidents": 43931,
+      "weightedQoL": 0.766556600603619,
+      "medianSettlementPopulation": 944,
+      "finalFounders": 12,
+      "finalFounderResidents": 7690,
+      "finalWithCultivation": 57,
+      "finalWithHusbandry": 16,
+      "finalActualResidentFishing": 30,
+      "finalMixedFarmerFisher": 30,
+      "postOpeningResidentFishingFood": 8766334.699831598,
+      "postOpeningFissions": 39,
+      "pureWatercraftCampTurns": 79,
+      "pureWatercraftClothGrantTurns": 69,
+      "pureWatercraftClothGrantWithActualClothTurns": 69,
+      "pureWatercraftClothProducingCamps": 18,
+      "pureWatercraftCloth": 13249.707634770582,
+      "pureWatercraftHandTools": 2911.021160449158,
+      "pureWatercraftHousing": 847.3556158378459,
+      "pureWatercraftMaterialWorkerIntervals": 60242.835789654935,
+      "foodReceipts": {
+        "FisheryHarvest": 8766334.699831601,
+        "Gathering": 45996922.57995205,
+        "Marine gathering": 3086257.182971816,
+        "Cultivation": 27580733.154783234,
+        "Animal Product": 4100282.1653342587,
+        "Slaughter": 98200
+      }
+    },
+    {
+      "seed": 101,
+      "variant": "control",
+      "metadata": {
+        "revision": "a1fa976+archipelago-audit",
+        "seed": 101,
+        "inputHash": null,
+        "shape": "Archipelagos",
+        "Width": 1024,
+        "Height": 512,
+        "Players": 80,
+        "initialFingerprint": "0B0DEEC940206BC90205DDB6B4799E27D484AAC88AE1B99B8104AE286E12D69A",
+        "finalFingerprint": "7BDD91F78572B9833F5BE3B7442846DC29DF5202AE723ACC0C3EF8388017BC2A",
+        "configurationHash": "7D4BCB2AAD52848762F8D654E25BF7357B1AB2D3855B14A77E3FA7C93F130331",
+        "endTurn": 48,
+        "openingCompletedTurn": 8,
+        "checkpoints": {},
+        "worldPopulation": 485744,
+        "requestedPostOpeningTurns": 40,
+        "measuredPostOpeningTurns": 40,
+        "openingCensus": [
+          {
+            "technology": "AnimalHusbandry",
+            "settlements": 15,
+            "residents": 1255,
+            "founders": 15,
+            "weightedQoL": 0.29140159606962834
+          },
+          {
+            "technology": "Cultivation",
+            "settlements": 55,
+            "residents": 3793,
+            "founders": 54,
+            "weightedQoL": 0.1608268902955147
+          },
+          {
+            "technology": "Watercraft",
+            "settlements": 11,
+            "residents": 864,
+            "founders": 11,
+            "weightedQoL": 0.10912723506329855
+          }
+        ],
+        "census": [
+          {
+            "turn": 1,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 1610,
+                "founders": 80,
+                "weightedQoL": 0.5910651485937702
+              }
+            ]
+          },
+          {
+            "turn": 2,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 1817,
+                "founders": 80,
+                "weightedQoL": 0.4496410073379347
+              }
+            ]
+          },
+          {
+            "turn": 3,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 2219,
+                "founders": 80,
+                "weightedQoL": 0.33821248948909166
+              }
+            ]
+          },
+          {
+            "turn": 4,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 2564,
+                "founders": 80,
+                "weightedQoL": 0.22652031796499808
+              }
+            ]
+          },
+          {
+            "turn": 5,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 74,
+                "residents": 2895,
+                "founders": 74,
+                "weightedQoL": 0.09380766137369034
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 6,
+                "residents": 190,
+                "founders": 6,
+                "weightedQoL": 0.30821520389801066
+              }
+            ]
+          },
+          {
+            "turn": 6,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 51,
+                "residents": 2376,
+                "founders": 51,
+                "weightedQoL": 0.10446554855597598
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 10,
+                "residents": 407,
+                "founders": 10,
+                "weightedQoL": 0.174100362203448
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 19,
+                "residents": 964,
+                "founders": 19,
+                "weightedQoL": 0
+              }
+            ]
+          },
+          {
+            "turn": 7,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 9,
+                "residents": 543,
+                "founders": 9,
+                "weightedQoL": 0.13755658861226502
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 15,
+                "residents": 862,
+                "founders": 15,
+                "weightedQoL": 0.1640713007279056
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 52,
+                "residents": 2890,
+                "founders": 51,
+                "weightedQoL": 0.10316893952427648
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 5,
+                "residents": 322,
+                "founders": 5,
+                "weightedQoL": 0.10500925493601398
+              }
+            ]
+          },
+          {
+            "turn": 8,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 15,
+                "residents": 1255,
+                "founders": 15,
+                "weightedQoL": 0.29140159606962834
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 55,
+                "residents": 3793,
+                "founders": 54,
+                "weightedQoL": 0.1608268902955147
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 11,
+                "residents": 864,
+                "founders": 11,
+                "weightedQoL": 0.10912723506329855
+              }
+            ]
+          },
+          {
+            "turn": 9,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 16,
+                "residents": 1822,
+                "founders": 15,
+                "weightedQoL": 0.42069558825876413
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 56,
+                "residents": 5302,
+                "founders": 54,
+                "weightedQoL": 0.17807925571924899
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 13,
+                "residents": 994,
+                "founders": 11,
+                "weightedQoL": 0.08870968803335932
+              }
+            ]
+          },
+          {
+            "turn": 10,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 19,
+                "residents": 2352,
+                "founders": 15,
+                "weightedQoL": 0.46625958255263794
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 69,
+                "residents": 6586,
+                "founders": 54,
+                "weightedQoL": 0.18824008183985905
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 13,
+                "residents": 1123,
+                "founders": 11,
+                "weightedQoL": 0.06423985034850768
+              }
+            ]
+          },
+          {
+            "turn": 11,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 20,
+                "residents": 3403,
+                "founders": 15,
+                "weightedQoL": 0.6156875643232794
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 81,
+                "residents": 8886,
+                "founders": 54,
+                "weightedQoL": 0.273936548131198
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 14,
+                "residents": 1268,
+                "founders": 11,
+                "weightedQoL": 0.07904129472057528
+              }
+            ]
+          },
+          {
+            "turn": 12,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 22,
+                "residents": 4773,
+                "founders": 15,
+                "weightedQoL": 0.6015342274299499
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 91,
+                "residents": 11826,
+                "founders": 54,
+                "weightedQoL": 0.4082538469553271
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 14,
+                "residents": 1467,
+                "founders": 11,
+                "weightedQoL": 0.047880254719790745
+              }
+            ]
+          },
+          {
+            "turn": 13,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 22,
+                "residents": 6680,
+                "founders": 15,
+                "weightedQoL": 0.6964402995520271
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 98,
+                "residents": 16063,
+                "founders": 54,
+                "weightedQoL": 0.5340020710358667
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 15,
+                "residents": 1872,
+                "founders": 11,
+                "weightedQoL": 0.06723523247473509
+              }
+            ]
+          },
+          {
+            "turn": 14,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 22,
+                "residents": 8221,
+                "founders": 15,
+                "weightedQoL": 0.8146097409601062
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 102,
+                "residents": 22155,
+                "founders": 54,
+                "weightedQoL": 0.7056120085268067
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 20,
+                "residents": 2268,
+                "founders": 11,
+                "weightedQoL": 0.23968094853279417
+              }
+            ]
+          },
+          {
+            "turn": 15,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 23,
+                "residents": 10031,
+                "founders": 15,
+                "weightedQoL": 0.8000449473337903
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 105,
+                "residents": 29377,
+                "founders": 54,
+                "weightedQoL": 0.7590169362910707
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 22,
+                "residents": 2727,
+                "founders": 11,
+                "weightedQoL": 0.3057049286576223
+              }
+            ]
+          },
+          {
+            "turn": 16,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 24,
+                "residents": 11294,
+                "founders": 15,
+                "weightedQoL": 0.8270401895688005
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 110,
+                "residents": 37373,
+                "founders": 54,
+                "weightedQoL": 0.7780773611504924
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 23,
+                "residents": 3659,
+                "founders": 11,
+                "weightedQoL": 0.2605025087884847
+              }
+            ]
+          },
+          {
+            "turn": 17,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 24,
+                "residents": 12619,
+                "founders": 15,
+                "weightedQoL": 0.826788376269464
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 112,
+                "residents": 43570,
+                "founders": 54,
+                "weightedQoL": 0.7952062712308026
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 32,
+                "residents": 4763,
+                "founders": 11,
+                "weightedQoL": 0.3264684457105744
+              }
+            ]
+          },
+          {
+            "turn": 18,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 25,
+                "residents": 13268,
+                "founders": 15,
+                "weightedQoL": 0.8151926293766475
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 112,
+                "residents": 48894,
+                "founders": 54,
+                "weightedQoL": 0.7917629398686983
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 36,
+                "residents": 6855,
+                "founders": 11,
+                "weightedQoL": 0.5629394035447196
+              }
+            ]
+          },
+          {
+            "turn": 19,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 25,
+                "residents": 14455,
+                "founders": 15,
+                "weightedQoL": 0.8007393016461151
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 113,
+                "residents": 52365,
+                "founders": 54,
+                "weightedQoL": 0.8107309656581096
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 37,
+                "residents": 9202,
+                "founders": 11,
+                "weightedQoL": 0.6082360626181103
+              }
+            ]
+          },
+          {
+            "turn": 20,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 26,
+                "residents": 15144,
+                "founders": 15,
+                "weightedQoL": 0.7932774304422465
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 115,
+                "residents": 56466,
+                "founders": 54,
+                "weightedQoL": 0.8007045939671223
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 37,
+                "residents": 11718,
+                "founders": 11,
+                "weightedQoL": 0.6758303700832428
+              }
+            ]
+          },
+          {
+            "turn": 21,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 27,
+                "residents": 16265,
+                "founders": 15,
+                "weightedQoL": 0.8043507477991547
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 118,
+                "residents": 60107,
+                "founders": 54,
+                "weightedQoL": 0.7918801107389
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 38,
+                "residents": 13439,
+                "founders": 11,
+                "weightedQoL": 0.7167066729405241
+              }
+            ]
+          },
+          {
+            "turn": 22,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 28,
+                "residents": 16994,
+                "founders": 15,
+                "weightedQoL": 0.7912689948071611
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 122,
+                "residents": 62476,
+                "founders": 54,
+                "weightedQoL": 0.7912841737060687
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 40,
+                "residents": 15225,
+                "founders": 11,
+                "weightedQoL": 0.734825948798402
+              }
+            ]
+          },
+          {
+            "turn": 23,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 28,
+                "residents": 17985,
+                "founders": 15,
+                "weightedQoL": 0.7754801857173041
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 126,
+                "residents": 66435,
+                "founders": 54,
+                "weightedQoL": 0.7866929778426958
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 41,
+                "residents": 16583,
+                "founders": 11,
+                "weightedQoL": 0.7500205608799502
+              }
+            ]
+          },
+          {
+            "turn": 24,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 30,
+                "residents": 19183,
+                "founders": 15,
+                "weightedQoL": 0.775164718898529
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 128,
+                "residents": 69667,
+                "founders": 54,
+                "weightedQoL": 0.7783822748306829
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 43,
+                "residents": 18218,
+                "founders": 11,
+                "weightedQoL": 0.7399347369100439
+              }
+            ]
+          },
+          {
+            "turn": 25,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 32,
+                "residents": 20266,
+                "founders": 15,
+                "weightedQoL": 0.7575199440500142
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 133,
+                "residents": 73807,
+                "founders": 54,
+                "weightedQoL": 0.7702397894131406
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 43,
+                "residents": 19868,
+                "founders": 11,
+                "weightedQoL": 0.7460168575524331
+              }
+            ]
+          },
+          {
+            "turn": 26,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 36,
+                "residents": 21787,
+                "founders": 15,
+                "weightedQoL": 0.750582573256054
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 136,
+                "residents": 76867,
+                "founders": 54,
+                "weightedQoL": 0.7657776868362297
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 46,
+                "residents": 20798,
+                "founders": 11,
+                "weightedQoL": 0.7447635553888005
+              }
+            ]
+          },
+          {
+            "turn": 27,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 37,
+                "residents": 23288,
+                "founders": 15,
+                "weightedQoL": 0.7457762063672249
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 145,
+                "residents": 80511,
+                "founders": 54,
+                "weightedQoL": 0.7629050146678559
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 46,
+                "residents": 21783,
+                "founders": 11,
+                "weightedQoL": 0.7691375259530673
+              }
+            ]
+          },
+          {
+            "turn": 28,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 40,
+                "residents": 25094,
+                "founders": 15,
+                "weightedQoL": 0.7602081767096479
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 149,
+                "residents": 85367,
+                "founders": 54,
+                "weightedQoL": 0.7711873181069885
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 48,
+                "residents": 22651,
+                "founders": 11,
+                "weightedQoL": 0.7677903034418133
+              }
+            ]
+          },
+          {
+            "turn": 29,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 45,
+                "residents": 26974,
+                "founders": 15,
+                "weightedQoL": 0.7460010528388389
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 155,
+                "residents": 91075,
+                "founders": 54,
+                "weightedQoL": 0.7687261920448347
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 48,
+                "residents": 23217,
+                "founders": 11,
+                "weightedQoL": 0.7750740335258122
+              }
+            ]
+          },
+          {
+            "turn": 30,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 47,
+                "residents": 29615,
+                "founders": 15,
+                "weightedQoL": 0.7378187726029075
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 166,
+                "residents": 95595,
+                "founders": 54,
+                "weightedQoL": 0.7635806091137053
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 48,
+                "residents": 24278,
+                "founders": 11,
+                "weightedQoL": 0.7672127506880484
+              }
+            ]
+          },
+          {
+            "turn": 31,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 53,
+                "residents": 32524,
+                "founders": 15,
+                "weightedQoL": 0.7389880625487412
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 176,
+                "residents": 102829,
+                "founders": 54,
+                "weightedQoL": 0.7579853874199344
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 49,
+                "residents": 24519,
+                "founders": 11,
+                "weightedQoL": 0.7679241146331333
+              }
+            ]
+          },
+          {
+            "turn": 32,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 61,
+                "residents": 35141,
+                "founders": 15,
+                "weightedQoL": 0.7301702117692138
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 189,
+                "residents": 110357,
+                "founders": 54,
+                "weightedQoL": 0.7533001963391189
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 49,
+                "residents": 25568,
+                "founders": 11,
+                "weightedQoL": 0.7628965959143972
+              }
+            ]
+          },
+          {
+            "turn": 33,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 67,
+                "residents": 39391,
+                "founders": 15,
+                "weightedQoL": 0.7329564755388059
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 202,
+                "residents": 119002,
+                "founders": 54,
+                "weightedQoL": 0.7608647611127098
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 49,
+                "residents": 25976,
+                "founders": 11,
+                "weightedQoL": 0.764947563793917
+              }
+            ]
+          },
+          {
+            "turn": 34,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 76,
+                "residents": 43661,
+                "founders": 15,
+                "weightedQoL": 0.7445843008500592
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 213,
+                "residents": 127351,
+                "founders": 54,
+                "weightedQoL": 0.7506358876869308
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 50,
+                "residents": 26742,
+                "founders": 11,
+                "weightedQoL": 0.7526505330962437
+              }
+            ]
+          },
+          {
+            "turn": 35,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 82,
+                "residents": 49364,
+                "founders": 15,
+                "weightedQoL": 0.7427404324397338
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 226,
+                "residents": 134708,
+                "founders": 54,
+                "weightedQoL": 0.7555091915167528
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 50,
+                "residents": 27022,
+                "founders": 11,
+                "weightedQoL": 0.7699654941773234
+              }
+            ]
+          },
+          {
+            "turn": 36,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 88,
+                "residents": 54733,
+                "founders": 15,
+                "weightedQoL": 0.7490380013428487
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 245,
+                "residents": 144038,
+                "founders": 54,
+                "weightedQoL": 0.7583947737980291
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 51,
+                "residents": 28136,
+                "founders": 11,
+                "weightedQoL": 0.7645449309651757
+              }
+            ]
+          },
+          {
+            "turn": 37,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 93,
+                "residents": 58696,
+                "founders": 15,
+                "weightedQoL": 0.760173391644149
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 260,
+                "residents": 155407,
+                "founders": 54,
+                "weightedQoL": 0.7581173743155342
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 51,
+                "residents": 28672,
+                "founders": 11,
+                "weightedQoL": 0.7660384729654031
+              }
+            ]
+          },
+          {
+            "turn": 38,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 103,
+                "residents": 63755,
+                "founders": 15,
+                "weightedQoL": 0.7539894854323336
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 278,
+                "residents": 167533,
+                "founders": 54,
+                "weightedQoL": 0.7590014947610999
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 51,
+                "residents": 29637,
+                "founders": 11,
+                "weightedQoL": 0.7566718439067874
+              }
+            ]
+          },
+          {
+            "turn": 39,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 107,
+                "residents": 69244,
+                "founders": 15,
+                "weightedQoL": 0.7607898453116185
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 302,
+                "residents": 182285,
+                "founders": 54,
+                "weightedQoL": 0.7520021586941553
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 52,
+                "residents": 30080,
+                "founders": 11,
+                "weightedQoL": 0.7584139889524874
+              }
+            ]
+          },
+          {
+            "turn": 40,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 119,
+                "residents": 75416,
+                "founders": 15,
+                "weightedQoL": 0.7610053031871686
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 318,
+                "residents": 196394,
+                "founders": 54,
+                "weightedQoL": 0.7569184000421506
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 52,
+                "residents": 30173,
+                "founders": 11,
+                "weightedQoL": 0.7548178179347607
+              }
+            ]
+          },
+          {
+            "turn": 41,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 127,
+                "residents": 82286,
+                "founders": 15,
+                "weightedQoL": 0.7551472492564294
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 334,
+                "residents": 211451,
+                "founders": 54,
+                "weightedQoL": 0.7663901215114793
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 53,
+                "residents": 30587,
+                "founders": 11,
+                "weightedQoL": 0.7594552235556946
+              }
+            ]
+          },
+          {
+            "turn": 42,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 136,
+                "residents": 88874,
+                "founders": 15,
+                "weightedQoL": 0.7598305376187873
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 353,
+                "residents": 225825,
+                "founders": 54,
+                "weightedQoL": 0.7622985736870398
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 54,
+                "residents": 31620,
+                "founders": 11,
+                "weightedQoL": 0.757498744469114
+              }
+            ]
+          },
+          {
+            "turn": 43,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 142,
+                "residents": 95016,
+                "founders": 15,
+                "weightedQoL": 0.761558546938629
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 369,
+                "residents": 241287,
+                "founders": 54,
+                "weightedQoL": 0.7632277762459354
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 55,
+                "residents": 32227,
+                "founders": 11,
+                "weightedQoL": 0.7576498985782483
+              }
+            ]
+          },
+          {
+            "turn": 44,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 147,
+                "residents": 101433,
+                "founders": 15,
+                "weightedQoL": 0.7688822821823929
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 384,
+                "residents": 254751,
+                "founders": 54,
+                "weightedQoL": 0.7637342037982444
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 59,
+                "residents": 33442,
+                "founders": 11,
+                "weightedQoL": 0.7467459804608096
+              }
+            ]
+          },
+          {
+            "turn": 45,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 151,
+                "residents": 106930,
+                "founders": 15,
+                "weightedQoL": 0.7693863186280543
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 401,
+                "residents": 269854,
+                "founders": 54,
+                "weightedQoL": 0.7653145214854246
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 60,
+                "residents": 34966,
+                "founders": 11,
+                "weightedQoL": 0.7679669043209718
+              }
+            ]
+          },
+          {
+            "turn": 46,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 159,
+                "residents": 112179,
+                "founders": 15,
+                "weightedQoL": 0.7636792045987241
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 412,
+                "residents": 286105,
+                "founders": 54,
+                "weightedQoL": 0.7625066572737362
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 64,
+                "residents": 36901,
+                "founders": 11,
+                "weightedQoL": 0.7500878499738061
+              }
+            ]
+          },
+          {
+            "turn": 47,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 166,
+                "residents": 118357,
+                "founders": 15,
+                "weightedQoL": 0.7591817597136004
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 430,
+                "residents": 300319,
+                "founders": 54,
+                "weightedQoL": 0.7642915265360578
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 67,
+                "residents": 38164,
+                "founders": 11,
+                "weightedQoL": 0.75393333724797
+              }
+            ]
+          },
+          {
+            "turn": 48,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 169,
+                "residents": 122411,
+                "founders": 15,
+                "weightedQoL": 0.7701414639468734
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 447,
+                "residents": 315500,
+                "founders": 54,
+                "weightedQoL": 0.761253592790586
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 69,
+                "residents": 40178,
+                "founders": 11,
+                "weightedQoL": 0.7626566452043749
+              }
+            ]
+          }
+        ],
+        "NeolithicFishingEnabled": false,
+        "CorrectedAquaticSeasonalPressureEnabled": false,
+        "NeolithicSailingEnabled": false,
+        "EconomicAllocation": "DemandControl",
+        "artifactSha256": "91FC382AF4900E0FB89B89206E9231FE6FB473BC3BF3814426F8306C100AF122"
+      },
+      "finalSettlements": 69,
+      "finalResidents": 40178,
+      "weightedQoL": 0.762656645204375,
+      "medianSettlementPopulation": 564,
+      "finalFounders": 11,
+      "finalFounderResidents": 9208,
+      "finalWithCultivation": 69,
+      "finalWithHusbandry": 17,
+      "finalActualResidentFishing": 0,
+      "finalMixedFarmerFisher": 0,
+      "postOpeningResidentFishingFood": 0,
+      "postOpeningFissions": 58,
+      "pureWatercraftCampTurns": 70,
+      "pureWatercraftClothGrantTurns": 0,
+      "pureWatercraftClothGrantWithActualClothTurns": 0,
+      "pureWatercraftClothProducingCamps": 0,
+      "pureWatercraftCloth": 0,
+      "pureWatercraftHandTools": 0,
+      "pureWatercraftHousing": 0,
+      "pureWatercraftMaterialWorkerIntervals": 0,
+      "foodReceipts": {
+        "Gathering": 46495499.13440944,
+        "Marine gathering": 3559768.0375132244,
+        "Cultivation": 18304689.740446113,
+        "Animal Product": 3121821.4667501873,
+        "Slaughter": 126960
+      }
+    },
+    {
+      "seed": 101,
+      "variant": "fishing",
+      "metadata": {
+        "revision": "a1fa976+archipelago-audit",
+        "seed": 101,
+        "inputHash": null,
+        "shape": "Archipelagos",
+        "Width": 1024,
+        "Height": 512,
+        "Players": 80,
+        "initialFingerprint": "951A1BA8CE07D805A5ACE33F222CA0B456DEE8CF82CA5C592086DEB370605AD3",
+        "finalFingerprint": "3C2017330F31925F665202B2D2A38A0ED6A350BE34D096CABE376F59EED984D2",
+        "configurationHash": "0B64564B5CB987DBEEE13DBADA410412D7EFDC75EC0A82D0A9D9392CD8C9310D",
+        "endTurn": 48,
+        "openingCompletedTurn": 8,
+        "checkpoints": {},
+        "worldPopulation": 540059,
+        "requestedPostOpeningTurns": 40,
+        "measuredPostOpeningTurns": 40,
+        "openingCensus": [
+          {
+            "technology": "AnimalHusbandry",
+            "settlements": 15,
+            "residents": 1255,
+            "founders": 15,
+            "weightedQoL": 0.29140159606962834
+          },
+          {
+            "technology": "Cultivation",
+            "settlements": 55,
+            "residents": 3793,
+            "founders": 54,
+            "weightedQoL": 0.1608268902955147
+          },
+          {
+            "technology": "Watercraft",
+            "settlements": 11,
+            "residents": 1050,
+            "founders": 11,
+            "weightedQoL": 0.10896178557814415
+          }
+        ],
+        "census": [
+          {
+            "turn": 1,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 1610,
+                "founders": 80,
+                "weightedQoL": 0.5910651485937702
+              }
+            ]
+          },
+          {
+            "turn": 2,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 1817,
+                "founders": 80,
+                "weightedQoL": 0.4496410073379347
+              }
+            ]
+          },
+          {
+            "turn": 3,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 2219,
+                "founders": 80,
+                "weightedQoL": 0.33821248948909166
+              }
+            ]
+          },
+          {
+            "turn": 4,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 80,
+                "residents": 2564,
+                "founders": 80,
+                "weightedQoL": 0.22652031796499808
+              }
+            ]
+          },
+          {
+            "turn": 5,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 74,
+                "residents": 2895,
+                "founders": 74,
+                "weightedQoL": 0.09380766137369034
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 6,
+                "residents": 190,
+                "founders": 6,
+                "weightedQoL": 0.30821520389801066
+              }
+            ]
+          },
+          {
+            "turn": 6,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 51,
+                "residents": 2376,
+                "founders": 51,
+                "weightedQoL": 0.10446554855597598
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 10,
+                "residents": 407,
+                "founders": 10,
+                "weightedQoL": 0.174100362203448
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 19,
+                "residents": 964,
+                "founders": 19,
+                "weightedQoL": 0
+              }
+            ]
+          },
+          {
+            "turn": 7,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "None",
+                "settlements": 9,
+                "residents": 543,
+                "founders": 9,
+                "weightedQoL": 0.13755658861226502
+              },
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 15,
+                "residents": 862,
+                "founders": 15,
+                "weightedQoL": 0.1640713007279056
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 52,
+                "residents": 2890,
+                "founders": 51,
+                "weightedQoL": 0.10316893952427648
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 5,
+                "residents": 322,
+                "founders": 5,
+                "weightedQoL": 0.10500925493601398
+              }
+            ]
+          },
+          {
+            "turn": 8,
+            "postOpening": false,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 15,
+                "residents": 1255,
+                "founders": 15,
+                "weightedQoL": 0.29140159606962834
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 55,
+                "residents": 3793,
+                "founders": 54,
+                "weightedQoL": 0.1608268902955147
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 11,
+                "residents": 1050,
+                "founders": 11,
+                "weightedQoL": 0.10896178557814415
+              }
+            ]
+          },
+          {
+            "turn": 9,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 16,
+                "residents": 1822,
+                "founders": 15,
+                "weightedQoL": 0.42069558825876413
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 56,
+                "residents": 5302,
+                "founders": 54,
+                "weightedQoL": 0.17807925639524044
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 13,
+                "residents": 1585,
+                "founders": 11,
+                "weightedQoL": 0.245340248920367
+              }
+            ]
+          },
+          {
+            "turn": 10,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 19,
+                "residents": 2352,
+                "founders": 15,
+                "weightedQoL": 0.46625958255263794
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 69,
+                "residents": 6586,
+                "founders": 54,
+                "weightedQoL": 0.18803402589572293
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 18,
+                "residents": 2394,
+                "founders": 11,
+                "weightedQoL": 0.31748975376071453
+              }
+            ]
+          },
+          {
+            "turn": 11,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 20,
+                "residents": 3410,
+                "founders": 15,
+                "weightedQoL": 0.6187284331603449
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 81,
+                "residents": 8895,
+                "founders": 54,
+                "weightedQoL": 0.27417076813898666
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 22,
+                "residents": 3289,
+                "founders": 11,
+                "weightedQoL": 0.6193740943947068
+              }
+            ]
+          },
+          {
+            "turn": 12,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 22,
+                "residents": 4776,
+                "founders": 15,
+                "weightedQoL": 0.6040126130992952
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 92,
+                "residents": 11874,
+                "founders": 54,
+                "weightedQoL": 0.41519162938097637
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 25,
+                "residents": 4110,
+                "founders": 11,
+                "weightedQoL": 0.6142527330927103
+              }
+            ]
+          },
+          {
+            "turn": 13,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 22,
+                "residents": 6663,
+                "founders": 15,
+                "weightedQoL": 0.7002639212571378
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 101,
+                "residents": 16135,
+                "founders": 54,
+                "weightedQoL": 0.5424829196783792
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 29,
+                "residents": 5815,
+                "founders": 11,
+                "weightedQoL": 0.7827081612012577
+              }
+            ]
+          },
+          {
+            "turn": 14,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 22,
+                "residents": 8237,
+                "founders": 15,
+                "weightedQoL": 0.8144937670736793
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 105,
+                "residents": 22193,
+                "founders": 54,
+                "weightedQoL": 0.7159926462667608
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 33,
+                "residents": 8207,
+                "founders": 11,
+                "weightedQoL": 0.8263342995604285
+              }
+            ]
+          },
+          {
+            "turn": 15,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 23,
+                "residents": 10039,
+                "founders": 15,
+                "weightedQoL": 0.7942189173478306
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 108,
+                "residents": 29464,
+                "founders": 54,
+                "weightedQoL": 0.7555354126968353
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 35,
+                "residents": 11106,
+                "founders": 11,
+                "weightedQoL": 0.8662095512096029
+              }
+            ]
+          },
+          {
+            "turn": 16,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 24,
+                "residents": 11355,
+                "founders": 15,
+                "weightedQoL": 0.8174730252443495
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 112,
+                "residents": 37516,
+                "founders": 54,
+                "weightedQoL": 0.774826353227751
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 36,
+                "residents": 13205,
+                "founders": 11,
+                "weightedQoL": 0.8541200652704329
+              }
+            ]
+          },
+          {
+            "turn": 17,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 24,
+                "residents": 12785,
+                "founders": 15,
+                "weightedQoL": 0.8189177311830735
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 114,
+                "residents": 43843,
+                "founders": 54,
+                "weightedQoL": 0.7957674118473899
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 38,
+                "residents": 14688,
+                "founders": 11,
+                "weightedQoL": 0.8731098342891455
+              }
+            ]
+          },
+          {
+            "turn": 18,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 25,
+                "residents": 13374,
+                "founders": 15,
+                "weightedQoL": 0.8132328736447662
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 115,
+                "residents": 49183,
+                "founders": 54,
+                "weightedQoL": 0.795607183779363
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 38,
+                "residents": 16323,
+                "founders": 11,
+                "weightedQoL": 0.8769194599099088
+              }
+            ]
+          },
+          {
+            "turn": 19,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 25,
+                "residents": 14594,
+                "founders": 15,
+                "weightedQoL": 0.7960887795664028
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 116,
+                "residents": 53084,
+                "founders": 54,
+                "weightedQoL": 0.8089769750795718
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 39,
+                "residents": 17705,
+                "founders": 11,
+                "weightedQoL": 0.8741895721431615
+              }
+            ]
+          },
+          {
+            "turn": 20,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 25,
+                "residents": 15111,
+                "founders": 15,
+                "weightedQoL": 0.8039614556744629
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 118,
+                "residents": 56963,
+                "founders": 54,
+                "weightedQoL": 0.803127080357716
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 40,
+                "residents": 18544,
+                "founders": 11,
+                "weightedQoL": 0.869267173491954
+              }
+            ]
+          },
+          {
+            "turn": 21,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 26,
+                "residents": 15980,
+                "founders": 15,
+                "weightedQoL": 0.7975206281817817
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 122,
+                "residents": 60741,
+                "founders": 54,
+                "weightedQoL": 0.7950087588863463
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 40,
+                "residents": 19618,
+                "founders": 11,
+                "weightedQoL": 0.8592978842550036
+              }
+            ]
+          },
+          {
+            "turn": 22,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 27,
+                "residents": 16488,
+                "founders": 15,
+                "weightedQoL": 0.7889657724454704
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 125,
+                "residents": 63977,
+                "founders": 54,
+                "weightedQoL": 0.7913525268281582
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 40,
+                "residents": 20440,
+                "founders": 11,
+                "weightedQoL": 0.8555325101349189
+              }
+            ]
+          },
+          {
+            "turn": 23,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 27,
+                "residents": 17286,
+                "founders": 15,
+                "weightedQoL": 0.7748235988425672
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 128,
+                "residents": 67486,
+                "founders": 54,
+                "weightedQoL": 0.7854476146669284
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 41,
+                "residents": 21613,
+                "founders": 11,
+                "weightedQoL": 0.8378162682102754
+              }
+            ]
+          },
+          {
+            "turn": 24,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 29,
+                "residents": 18407,
+                "founders": 15,
+                "weightedQoL": 0.7744386549970317
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 130,
+                "residents": 70890,
+                "founders": 54,
+                "weightedQoL": 0.7768089669486181
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 42,
+                "residents": 22527,
+                "founders": 11,
+                "weightedQoL": 0.8295433821725048
+              }
+            ]
+          },
+          {
+            "turn": 25,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 30,
+                "residents": 19402,
+                "founders": 15,
+                "weightedQoL": 0.7598042010484969
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 136,
+                "residents": 74903,
+                "founders": 54,
+                "weightedQoL": 0.7734658596938616
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 43,
+                "residents": 23444,
+                "founders": 11,
+                "weightedQoL": 0.8140141999893536
+              }
+            ]
+          },
+          {
+            "turn": 26,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 34,
+                "residents": 20719,
+                "founders": 15,
+                "weightedQoL": 0.753555125929576
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 139,
+                "residents": 78193,
+                "founders": 54,
+                "weightedQoL": 0.7680797993865675
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 45,
+                "residents": 24815,
+                "founders": 11,
+                "weightedQoL": 0.8110855893720514
+              }
+            ]
+          },
+          {
+            "turn": 27,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 35,
+                "residents": 22164,
+                "founders": 15,
+                "weightedQoL": 0.7459570739305521
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 147,
+                "residents": 81667,
+                "founders": 54,
+                "weightedQoL": 0.7680495276633516
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 48,
+                "residents": 25946,
+                "founders": 11,
+                "weightedQoL": 0.804306053798804
+              }
+            ]
+          },
+          {
+            "turn": 28,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 38,
+                "residents": 23783,
+                "founders": 15,
+                "weightedQoL": 0.759533897369334
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 155,
+                "residents": 86965,
+                "founders": 54,
+                "weightedQoL": 0.76713090483159
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 50,
+                "residents": 27984,
+                "founders": 11,
+                "weightedQoL": 0.8037866968974089
+              }
+            ]
+          },
+          {
+            "turn": 29,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 43,
+                "residents": 25506,
+                "founders": 15,
+                "weightedQoL": 0.7443888898902421
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 161,
+                "residents": 92892,
+                "founders": 54,
+                "weightedQoL": 0.7687083524046427
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 54,
+                "residents": 30459,
+                "founders": 11,
+                "weightedQoL": 0.7969041159512388
+              }
+            ]
+          },
+          {
+            "turn": 30,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 45,
+                "residents": 27917,
+                "founders": 15,
+                "weightedQoL": 0.732583759412219
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 171,
+                "residents": 98295,
+                "founders": 54,
+                "weightedQoL": 0.7655341364775609
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 57,
+                "residents": 32425,
+                "founders": 11,
+                "weightedQoL": 0.8012232460941282
+              }
+            ]
+          },
+          {
+            "turn": 31,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 52,
+                "residents": 30903,
+                "founders": 15,
+                "weightedQoL": 0.738752145517035
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 182,
+                "residents": 105698,
+                "founders": 54,
+                "weightedQoL": 0.7550970518240092
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 59,
+                "residents": 35260,
+                "founders": 11,
+                "weightedQoL": 0.7866981754097796
+              }
+            ]
+          },
+          {
+            "turn": 32,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 61,
+                "residents": 33762,
+                "founders": 15,
+                "weightedQoL": 0.7272559900041604
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 197,
+                "residents": 113836,
+                "founders": 54,
+                "weightedQoL": 0.759749411739753
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 63,
+                "residents": 37143,
+                "founders": 11,
+                "weightedQoL": 0.7987862034713783
+              }
+            ]
+          },
+          {
+            "turn": 33,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 66,
+                "residents": 38007,
+                "founders": 15,
+                "weightedQoL": 0.7371908348041819
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 213,
+                "residents": 123315,
+                "founders": 54,
+                "weightedQoL": 0.7594142167812789
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 66,
+                "residents": 40313,
+                "founders": 11,
+                "weightedQoL": 0.7921983950846558
+              }
+            ]
+          },
+          {
+            "turn": 34,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 75,
+                "residents": 42366,
+                "founders": 15,
+                "weightedQoL": 0.7571215636279695
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 226,
+                "residents": 133456,
+                "founders": 54,
+                "weightedQoL": 0.7545007633255852
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 67,
+                "residents": 42066,
+                "founders": 11,
+                "weightedQoL": 0.7950813040126268
+              }
+            ]
+          },
+          {
+            "turn": 35,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 81,
+                "residents": 48111,
+                "founders": 15,
+                "weightedQoL": 0.7418745658238325
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 242,
+                "residents": 143549,
+                "founders": 54,
+                "weightedQoL": 0.7570441517238611
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 70,
+                "residents": 45119,
+                "founders": 11,
+                "weightedQoL": 0.7895432172532548
+              }
+            ]
+          },
+          {
+            "turn": 36,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 86,
+                "residents": 53979,
+                "founders": 15,
+                "weightedQoL": 0.7489804808354669
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 264,
+                "residents": 156174,
+                "founders": 54,
+                "weightedQoL": 0.7616714641790446
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 72,
+                "residents": 47281,
+                "founders": 11,
+                "weightedQoL": 0.7893370009206505
+              }
+            ]
+          },
+          {
+            "turn": 37,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 92,
+                "residents": 58288,
+                "founders": 15,
+                "weightedQoL": 0.7546779217294576
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 275,
+                "residents": 168374,
+                "founders": 54,
+                "weightedQoL": 0.7631686340663845
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 74,
+                "residents": 49054,
+                "founders": 11,
+                "weightedQoL": 0.790516746388682
+              }
+            ]
+          },
+          {
+            "turn": 38,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 102,
+                "residents": 62919,
+                "founders": 15,
+                "weightedQoL": 0.7535155357435936
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 297,
+                "residents": 181015,
+                "founders": 54,
+                "weightedQoL": 0.7617836580833325
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 76,
+                "residents": 52266,
+                "founders": 11,
+                "weightedQoL": 0.7806501557055691
+              }
+            ]
+          },
+          {
+            "turn": 39,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 108,
+                "residents": 68561,
+                "founders": 15,
+                "weightedQoL": 0.755647858203073
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 323,
+                "residents": 197388,
+                "founders": 54,
+                "weightedQoL": 0.7558310171186001
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 77,
+                "residents": 53916,
+                "founders": 11,
+                "weightedQoL": 0.7858390323785018
+              }
+            ]
+          },
+          {
+            "turn": 40,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 116,
+                "residents": 75437,
+                "founders": 15,
+                "weightedQoL": 0.7584354580966678
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 343,
+                "residents": 214183,
+                "founders": 54,
+                "weightedQoL": 0.7590437987130859
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 77,
+                "residents": 55777,
+                "founders": 11,
+                "weightedQoL": 0.7832289886021618
+              }
+            ]
+          },
+          {
+            "turn": 41,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 123,
+                "residents": 82410,
+                "founders": 15,
+                "weightedQoL": 0.7548698245659916
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 367,
+                "residents": 230805,
+                "founders": 54,
+                "weightedQoL": 0.7651946629892862
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 80,
+                "residents": 57621,
+                "founders": 11,
+                "weightedQoL": 0.7765803424504519
+              }
+            ]
+          },
+          {
+            "turn": 42,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 130,
+                "residents": 87373,
+                "founders": 15,
+                "weightedQoL": 0.7610520719684741
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 387,
+                "residents": 250052,
+                "founders": 54,
+                "weightedQoL": 0.7616747130695503
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 82,
+                "residents": 59400,
+                "founders": 11,
+                "weightedQoL": 0.7714421671815401
+              }
+            ]
+          },
+          {
+            "turn": 43,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 135,
+                "residents": 93062,
+                "founders": 15,
+                "weightedQoL": 0.7621049919449243
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 405,
+                "residents": 268835,
+                "founders": 54,
+                "weightedQoL": 0.7636209403676889
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 84,
+                "residents": 61129,
+                "founders": 11,
+                "weightedQoL": 0.7662892095999706
+              }
+            ]
+          },
+          {
+            "turn": 44,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 142,
+                "residents": 99208,
+                "founders": 15,
+                "weightedQoL": 0.7644944151664437
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 422,
+                "residents": 284572,
+                "founders": 54,
+                "weightedQoL": 0.76540617110881
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 85,
+                "residents": 63735,
+                "founders": 11,
+                "weightedQoL": 0.7712173007795926
+              }
+            ]
+          },
+          {
+            "turn": 45,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 145,
+                "residents": 104902,
+                "founders": 15,
+                "weightedQoL": 0.761001933057307
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 442,
+                "residents": 300366,
+                "founders": 54,
+                "weightedQoL": 0.7673039195147713
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 85,
+                "residents": 65898,
+                "founders": 11,
+                "weightedQoL": 0.7731251170584713
+              }
+            ]
+          },
+          {
+            "turn": 46,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 153,
+                "residents": 109541,
+                "founders": 15,
+                "weightedQoL": 0.7616242322834559
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 453,
+                "residents": 319155,
+                "founders": 54,
+                "weightedQoL": 0.7659622793592681
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 86,
+                "residents": 67021,
+                "founders": 11,
+                "weightedQoL": 0.771569166228034
+              }
+            ]
+          },
+          {
+            "turn": 47,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 156,
+                "residents": 115298,
+                "founders": 15,
+                "weightedQoL": 0.7645763734657105
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 467,
+                "residents": 330805,
+                "founders": 54,
+                "weightedQoL": 0.7654526085677048
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 87,
+                "residents": 68042,
+                "founders": 11,
+                "weightedQoL": 0.7738709963955707
+              }
+            ]
+          },
+          {
+            "turn": 48,
+            "postOpening": true,
+            "cohorts": [
+              {
+                "technology": "AnimalHusbandry",
+                "settlements": 160,
+                "residents": 120229,
+                "founders": 15,
+                "weightedQoL": 0.7633197984470466
+              },
+              {
+                "technology": "Cultivation",
+                "settlements": 477,
+                "residents": 346708,
+                "founders": 54,
+                "weightedQoL": 0.7663722803881676
+              },
+              {
+                "technology": "Watercraft",
+                "settlements": 87,
+                "residents": 69124,
+                "founders": 11,
+                "weightedQoL": 0.7724305111316733
+              }
+            ]
+          }
+        ],
+        "NeolithicFishingEnabled": true,
+        "CorrectedAquaticSeasonalPressureEnabled": true,
+        "NeolithicSailingEnabled": false,
+        "EconomicAllocation": "DemandControl",
+        "artifactSha256": "5D2B03CA4A06760CF069032C7CDBA9DBB0E3E9165EAABABF3E084FF522B095C0"
+      },
+      "finalSettlements": 87,
+      "finalResidents": 69124,
+      "weightedQoL": 0.7724305111316734,
+      "medianSettlementPopulation": 913,
+      "finalFounders": 11,
+      "finalFounderResidents": 8603,
+      "finalWithCultivation": 87,
+      "finalWithHusbandry": 42,
+      "finalActualResidentFishing": 40,
+      "finalMixedFarmerFisher": 40,
+      "postOpeningResidentFishingFood": 8805844.35112255,
+      "postOpeningFissions": 76,
+      "pureWatercraftCampTurns": 95,
+      "pureWatercraftClothGrantTurns": 70,
+      "pureWatercraftClothGrantWithActualClothTurns": 70,
+      "pureWatercraftClothProducingCamps": 24,
+      "pureWatercraftCloth": 12100.80715525212,
+      "pureWatercraftHandTools": 6200.222311096011,
+      "pureWatercraftHousing": 1073.0582570540284,
+      "pureWatercraftMaterialWorkerIntervals": 61108.62856815373,
+      "foodReceipts": {
+        "Gathering": 64418092.8755406,
+        "FisheryHarvest": 8805844.351122558,
+        "Marine gathering": 3881939.0944944466,
+        "Cultivation": 30746724.61548505,
+        "Animal Product": 5469235.475851502,
+        "Slaughter": 104580
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "seed": 23,
+      "openingWatercraftFounders": 12,
+      "populationChangePercent": 0.5171033062578712,
+      "settlementChange": -8,
+      "weightedQoLChange": 0.018298765459377475
+    },
+    {
+      "seed": 101,
+      "openingWatercraftFounders": 11,
+      "populationChangePercent": 72.04440240927872,
+      "settlementChange": 18,
+      "weightedQoLChange": 0.009773865927298342
+    }
+  ],
+  "limits": [
+    "Two seeds are evidence about these worlds, not general balance sign-off.",
+    "No native Unity playtest or new five-world 50-turn replay is claimed."
+  ]
+}
