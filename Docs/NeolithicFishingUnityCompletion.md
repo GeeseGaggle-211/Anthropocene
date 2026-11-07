@@ -519,8 +519,9 @@ Balance review accepts the Fishing matter as resolved after the shared material
 work correction and the Archipelagos comparison. PR #47 is ready for review
 with production defaults unchanged. The tested source is
 `4522f05e2c2259f8ac5966178aa805e30a4bb891`; simulation behavior last changed at
-`b6a690ad2785409ff41bcfd393c74630463ad392`. The review-preparation edits affect
-validation documentation and evidence only.
+`b6a690ad2785409ff41bcfd393c74630463ad392`. The initial review-preparation commit
+affects validation documentation and evidence only; the subsequent PR-comment
+follow-up below relocates the debit without changing its amount.
 
 Fresh checks on that source:
 
@@ -562,6 +563,50 @@ including six JSON files, with no hygiene or parsing issues.
 
 There is no dedicated lint command or GitHub Actions workflow in this repository;
 GitHub reports no commit statuses or PR-triggered workflows for the tested head.
-The PR has no existing review submissions or inline review threads. Native
+At the initial review-preparation check, the PR had no review submissions or
+inline review threads; the conversation comment is addressed below. Native
 Unity 6000.5.10f1 is not installed here: engine compilation, EditMode execution
 and interactive verification remain explicit review validation items.
+
+## PR comment: RL lineage merge boundary
+
+The [review comment](https://github.com/GeeseGaggle-211/Anthropocene/pull/47#issuecomment-6701552797)
+identifies a real cross-lineage merge hazard. Read-only inspection confirms that
+`28473f2806e2ca5d4304b6ee9b5ddca5ae5c9ce7` introduced
+`PassiveFoodGathererIntervals` on the RL lineage. At the cited pretraining source,
+`8bd480b2797c5ee925d6ea7b9b844849b0d0966e`, that helper already handles actor
+activity authority, policy-authoritative material reservations and phase-A/B
+Gatherer extraction allowances before calling `AddPassiveCampClaims`.
+
+The original PR fix was correct against main's gross `labor.Gatherers` call,
+but its in-function debit could combine with the RL helper and charge material
+work twice. The follow-up makes the boundary explicit: the authoritative caller
+and the forecast caller each compute food-only Gatherers, and
+`AddPassiveCampClaims` only consumes that supplied pool. Village departure still
+releases the old reservation. Current-main arithmetic is unchanged.
+
+A read-only three-way file merge against the PR base and `8bd480b` now produces
+an explicit conflict at the authoritative caller. When integrating those
+lineages, retain the RL `PassiveFoodGathererIntervals` call and its authority
+branches as the single authoritative debit; retain this PR's single forecast
+debit, because that forecast still starts from gross labor. Do not subtract
+material work again inside `AddPassiveCampClaims`. This preview is a merge
+handoff check, not a claim that the combined RL branch builds or passes tests.
+
+The cited pretraining source already reserves material labor, so this particular
+missing-debit defect does not explain deficits in that dataset. Its
+`FishingEconomy` still contains the incumbent-eviction defect repaired by this
+PR; the shared simulation can therefore affect both teacher and actor outcomes.
+The size of that effect on training metrics has not been measured here. No RL
+branch, training job or checkpoint was modified.
+
+Validation of this boundary relocation: all 70 fixed suites pass again (74 PASS
+lines), including 160 DemandControl assertions and explicit zero/positive
+food-only pool checks. The previous and updated audit binaries load the identical
+saved Fishing world and resolve turns 12–15; all 23 traced camp-turn rows are
+byte-identical, as are the final fingerprint and world population of 44,563.
+The audit build has zero errors, with the same existing CS0649 warnings.
+[Boundary evidence](FishingMergeBoundaryEvidence.json) records hashes and both
+comparison outcomes. The two 50-turn scenarios above were run before this
+behavior-preserving relocation and were not repeated for it. Native Unity
+verification remains outstanding.

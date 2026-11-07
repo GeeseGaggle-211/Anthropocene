@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "comment": "https://github.com/GeeseGaggle-211/Anthropocene/pull/47#issuecomment-6701552797",
+  "comparisonBase": "1328ced87a1cd24f2ffb49c57cf43dc2b0a68baa",
+  "inspectedRlSource": "8bd480b2797c5ee925d6ea7b9b844849b0d0966e",
+  "mergeBase": "07f3501c2d5e047e44d61e85cc0d4613b54572d6",
+  "fixedSuites": 70,
+  "fixedPassLines": 74,
+  "demandControlAssertions": 160,
+  "mergePreview": {
+    "authoritativeDebitConflicts": true,
+    "claimBuilderMaterialDebit": false,
+    "mergedRlBranchTested": false
+  },
+  "exactSavedWorldComparison": {
+    "checkpoint": "TestResults/FishingRegression/fishing-fixed.t12.anthro",
+    "turns": [
+      12,
+      13,
+      14,
+      15
+    ],
+    "tracedCampTurnRows": 23,
+    "before": {
+      "inputHash": "1AE24E1A912AF666518C9AFCF181C917F20BCD3F7330BD6D8DFC7F775BC3571E",
+      "initialFingerprint": "CCDA2D63DB9D6D4C33AB1AB83AE69E269C1218CCF1073A0F01B375F2BF813F5B",
+      "finalFingerprint": "2AAF81B960E85B00BD9EEE86E192D0FCDF0859AB45A448B655EB6465186DBC90",
+      "configurationHash": "A9686D58E19527495B17638DD6B88A39C69F03EBA054E508E76DB0E85F841A06",
+      "worldPopulation": 44563,
+      "artifactSha256": "9EBE6A4BA0435426167BE0AD609AC734D871EBB60A7EDFAAA11C3F32CEA3B68D"
+    },
+    "after": {
+      "inputHash": "1AE24E1A912AF666518C9AFCF181C917F20BCD3F7330BD6D8DFC7F775BC3571E",
+      "initialFingerprint": "CCDA2D63DB9D6D4C33AB1AB83AE69E269C1218CCF1073A0F01B375F2BF813F5B",
+      "finalFingerprint": "2AAF81B960E85B00BD9EEE86E192D0FCDF0859AB45A448B655EB6465186DBC90",
+      "configurationHash": "A9686D58E19527495B17638DD6B88A39C69F03EBA054E508E76DB0E85F841A06",
+      "worldPopulation": 44563,
+      "artifactSha256": "9EBE6A4BA0435426167BE0AD609AC734D871EBB60A7EDFAAA11C3F32CEA3B68D"
+    },
+    "jsonlIdentical": true
+  },
+  "logs": {
+    "TestResults/FishingReviewComment/fixed.log": {
+      "sha256": "24d69e16652b840f2030660964618875d1b0d12c1611d0b660a2144b76a9eb11"
+    },
+    "TestResults/FishingReviewComment/build.log": {
+      "sha256": "64572a8d26cdf5e592d7898a7f3734acc2eb875b9e062c87071e3ad430a42062"
+    },
+    "TestResults/FishingReviewComment/merge-preview.cs": {
+      "sha256": "6f879f8e26db8df3550c2677fc04a43f922b014a79cd8f8f9ee2acd717aebf39"
+    }
+  },
+  "sourceSha256": {
+    "Assets/_Anthropocene/Simulation/GenerationalEconomy.cs": "22d95064f810fd2774ec90f86e99ef0ab30eb668149e1b1fa7fa96d69da5ddee",
+    "Assets/_Anthropocene/Simulation/FoodHorizonForecast.cs": "1f3cfba1b5b87ad5942667610ac654bf96e5085506b4a7e07ff363bec4981d5a",
+    "Tools/Headless/DemandControlChecks.cs": "ab2b0431ec5721bf974d08b0a37ff3c7b161c0f7a7a556d7df7fa31be0412a0b"
+  },
+  "nativeUnityVerified": false,
+  "long50TurnScenariosRerunForBoundaryRelocation": false,
+  "rlBranchModified": false
+}

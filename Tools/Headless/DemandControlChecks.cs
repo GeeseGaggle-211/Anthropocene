@@ -348,6 +348,14 @@ internal static class DemandControlChecks
         double pool = c.Population - intent.Assignments.Where(a => a.Role != WorkforceRoles.Gatherer).Sum(a => a.Population);
         double reserved = intent.Labor.MaterialGatherers;
         var preview = EconomicPlanner.Preview(c, intent, c.Population);
+        foreach (double netFoodGatherers in new[] { 0.0, 7.0 })
+        {
+            var claims = new List<Demand>();
+            TurnResolver.AddPassiveCampClaims(w, preview, netFoodGatherers, w.Days,
+                cfg.TurnDays, cfg.GenerationIntervals, false, _ => 1e12, claims);
+            Near(claims.Sum(d => d.Food), netFoodGatherers * cfg.GatherPerPerson * cfg.GenerationIntervals,
+                "passive claims spend the supplied food-only pool without debiting material reservations again");
+        }
         var labor = new AgriculturalLabor { Gatherers = pool };
         int destination = w.Map.Neighbors(c.Tile).First(id => w.Tiles[id].TraversableLand);
         string beforeForecast = SaveCodec.Fingerprint(w);
