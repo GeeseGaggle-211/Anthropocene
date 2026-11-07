@@ -29,7 +29,7 @@ namespace Anthropocene.Presentation
             for (int i = 0; i < 4; i++)
                 if (Button(new Rect(8 + (i % 2) * (w / 2), 100 + (i / 2) * 40, w / 2 - 6, 34), (scenarioIndex == i ? "◆ " : "◇ ") + PlaytestScenarios.Names[i], scenarioIndex == i)) scenarioIndex = i;
             if (Button(new Rect(8, 770, w, 34), "Fishing validation profile: " + (fishingValidation ? "ON" : "OFF"))) fishingValidation = !fishingValidation;
-            GUI.Label(new Rect(8, 810, w, 36), "Experimental resident Fishing. Balance acceptance is still pending.", small);
+            GUI.Label(new Rect(8, 810, w, 36), "Opt-in resident Fishing and Sailing. Production defaults stay off.", small);
             GUI.Label(new Rect(8, 184, w, 66), PlaytestScenarios.Descriptions[scenarioIndex], text);
             if (scenarioIndex == 0)
             {

@@ -19,6 +19,8 @@ namespace Anthropocene.Simulation
         }
         public Ground[] Grounds;
         public int Fishers, Gatherers, Hunters;
+        // Gatherers is the shared pool; MaterialGatherers of it are reserved for raw extraction.
+        public double MaterialGatherers, FoodGatherers;
         public double PrimitiveCatch, EquippedCatch, ExpectedToolUse, ToolDemand;
         public double LastResidentCatch, LastFishFood, LastTerrestrialFood, LastMaturity, LastMealSupport;
         public bool HasLastReport;
@@ -49,6 +51,8 @@ namespace Anthropocene.Simulation
             return new FishingInspection
             {
                 Fishers = fishers, Gatherers = camp.Population - intent.Assignments.Sum(a => a.Population),
+                MaterialGatherers = Math.Min(Math.Max(0, camp.Population - intent.Assignments.Sum(a => a.Population)), Math.Max(0, intent.Labor?.MaterialGatherers ?? 0)),
+                FoodGatherers = Math.Max(0, camp.Population - intent.Assignments.Sum(a => a.Population) - Math.Max(0, intent.Labor?.MaterialGatherers ?? 0)),
                 Hunters = world.Hunters.Where(h => h.SourceCamp == camp.Id).Sum(h => h.Population),
                 PrimitiveCatch = access.CatchEnvelope(fishers), EquippedCatch = access.CatchEnvelope(fishers, camp.Inventory.FishingTools),
                 ExpectedToolUse = plan.Grounds.Sum(g => g.ToolCoveredHarvestWorkerYears) / world.Config.Neolithic.FishingToolFisherYearsPerUnit,

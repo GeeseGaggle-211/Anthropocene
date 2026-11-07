@@ -35,8 +35,8 @@ namespace Anthropocene.Presentation
                 $"Herding Tools {camp.Inventory.HerdingTools:F2}: 1 Wood + 1 Stone each; {world.Config.Neolithic.HerdingToolCoverageYearsPerUnit:F0} Herder-years per tool. Plan capacity {management.Capacity:F1} / {management.Animals:F0} animals ({management.Fulfillment:P0}); primitive {world.Config.AnimalsPerHerder:F2}, equipped {world.Config.Neolithic.StoneHerdingToolAnimalsPerHerder:F2} animals per Herder.";
             float pastoralDescriptionHeight = husbandry ? small.CalcHeight(new GUIContent(pastoralDescription), col - 8) + 8 : 0;
             float livestockRows = husbandry ? ownedLivestock.Length * 54 : 0;
-            float fishingRows = fishing ? observation.FishingGrounds.Count(g => world.Map.Distance(camp.Tile, g.Tile) <= FishingEconomy.GroundRange + 1) * 24 : 0;
-            float contentHeight = Mathf.Max(1370 + livestockRows + fishingRows, 940 + livestockRows + pastoralDescriptionHeight + fishingRows) + (fishing ? 1000 : 0);
+            float contentHeight = Mathf.Max(1370 + livestockRows, 940 + livestockRows + pastoralDescriptionHeight);
+            // The fishing section measures itself; its bottom from the previous repaint sizes the scroll area.
             if (fishing) contentHeight = Mathf.Max(contentHeight, fishingInspectorBottom);
             villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, scrollContentWidth, contentHeight));
             float y = 4;

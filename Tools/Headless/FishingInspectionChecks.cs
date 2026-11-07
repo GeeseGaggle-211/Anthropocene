@@ -28,6 +28,12 @@ internal static class FishingInspectionChecks
             string before = SaveCodec.Fingerprint(w);
             var view = FishingInspection.Build(w, c.Player, c, intent);
             Check(view.Grounds.Length == 3 && view.Fishers == 6, "three legal grounds and explicit Fisher staffing");
+            var reserving = EconomicIntent.From(c);
+            reserving.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Fisher, Population = 6 });
+            reserving.Labor = new EconomicLaborPlan { MaterialGatherers = 2.5 };
+            var split = FishingInspection.Build(w, c.Player, c, reserving);
+            Check(Math.Abs(split.MaterialGatherers - 2.5) < 1e-12 && Math.Abs(split.FoodGatherers + split.MaterialGatherers - split.Gatherers) < 1e-12,
+                "Gatherer pool separates food work from the prepared material reservation");
             Check(view.Grounds.All(g => g.Path.Length == g.Plan.Distance + 1 && g.Path[0] == c.Tile && g.Path.Last() == g.Plan.TileId), "routes start at settlement and end at ground");
             Check(view.Grounds.All(g => g.Path.Zip(g.Path.Skip(1), (a,b) => w.Map.Neighbors(a).Contains(b)).All(x => x)), "every route edge is legal adjacency");
             var historical = view.Grounds.Single(g => g.Plan.TileId == route[1]);

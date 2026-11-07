@@ -29,7 +29,7 @@ namespace Anthropocene.Presentation
                 GUI.Label(new Rect(4, y, width - 16, height), value, small); y += height;
             }
             GUI.Label(new Rect(4, y, width - 16, 28), "FISHING · next-turn estimate at this settlement", section); y += 32;
-            Label($"Drafted Fishers {view.Fishers} · resident Gatherers {view.Gatherers} · detached Hunters {view.Hunters}. Grounds are chosen automatically through the shared Economy plan. A move or competition may change the resolved outcome.");
+            Label($"Drafted Fishers {view.Fishers} · resident Gatherers {view.Gatherers} ({view.FoodGatherers:F1} food, {view.MaterialGatherers:F1} reserved for material gathering) · detached Hunters {view.Hunters}. Grounds are chosen automatically through the shared Economy plan. A move or competition may change the resolved outcome.");
             Label($"Estimated catch: primitive {view.PrimitiveCatch:F1}, with opening tools {view.EquippedCatch:F1}. Expected tool use {view.ExpectedToolUse:F2}; replacement demand {view.ToolDemand:F2}. Tools made this turn serve later fishing. Fishing food is edible and tradable, never Cloth feedstock.");
             camp.People.CraftExperience.TryGetValue(NeolithicTech.Sailing, out double sailingPractice);
             Label(!world.Config.NeolithicSailingEnabled ? "Sailing progression is disabled in this saved world." : camp.People.HasTech(NeolithicTech.Sailing) ? "Sailing mastered: up to five water steps, 90% distance retention, at most one terminal Ocean ground; offshore grounds never build capital or qualify a village." :
