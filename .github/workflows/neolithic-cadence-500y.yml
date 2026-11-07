@@ -1,0 +1,47 @@
+name: Neolithic 500-year cadence experiment
+on:
+  push:
+    branches: [experiments/neolithic-cadence-500y-20261107]
+    paths: ['Tools/Cadence500/**', '.github/workflows/neolithic-cadence-500y.yml']
+permissions:
+  contents: read
+concurrency:
+  group: neolithic-cadence-500y
+  cancel-in-progress: true
+jobs:
+  paired-world:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        seed: [11, 23, 47, 101, 1729]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify native source and profiles are unchanged
+        run: git diff --exit-code 07f3501c2d5e047e44d61e85cc0d4613b54572d6 -- Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources
+      - name: Record provenance
+        run: |
+          mkdir -p TestResults/Cadence500/${{ matrix.seed }}
+          git rev-parse HEAD > TestResults/Cadence500/${{ matrix.seed }}/experiment-commit.txt
+          dotnet --info > TestResults/Cadence500/${{ matrix.seed }}/runtime.txt
+      - name: Run paired complete native economies
+        run: dotnet run -c Release --project Tools/Cadence500/Anthropocene.Cadence500.csproj -- ${{ matrix.seed }} TestResults/Cadence500/${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: neolithic-cadence-500y-${{ matrix.seed }}
+          retention-days: 14
+          path: |
+            TestResults/Cadence500/${{ matrix.seed }}/
+            Tools/Cadence500/Program.cs
+            Tools/Cadence500/Anthropocene.Cadence500.csproj
+            Assets/_Anthropocene/Simulation/*.cs
+            Assets/_Anthropocene/Resources/OpeningConfig.json
+            Assets/_Anthropocene/Resources/ResourceGenerationConfig.json
