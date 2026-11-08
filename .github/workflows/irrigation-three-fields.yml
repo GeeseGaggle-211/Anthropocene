@@ -34,6 +34,8 @@ jobs:
           for seed in 11 23 47 101 1729; do
             dotnet run --no-build -c Release --project Tools/IrrigationThreeFields/Anthropocene.IrrigationThreeFields.csproj -- "$seed" "TestResults/IrrigationThreeFields/$seed"
           done
+      - name: Explicit biological-response alternatives
+        run: python3 Tools/IrrigationThreeFields/RunBiologyComparison.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -41,7 +43,12 @@ jobs:
           retention-days: 30
           path: |
             TestResults/IrrigationThreeFields/
+            TestResults/IrrigationResponse/
+            TestResults/IrrigationResponseHarness/Program.cs
+            TestResults/IrrigationResponseHarness/IrrigationResponse.csproj
+            TestResults/IrrigationResponseHarness/derivation.json
             Tools/IrrigationThreeFields/Program.cs
+            Tools/IrrigationThreeFields/RunBiologyComparison.py
             Tools/IrrigationThreeFields/Anthropocene.IrrigationThreeFields.csproj
             Assets/_Anthropocene/Simulation/*.cs
             Assets/_Anthropocene/Resources/OpeningConfig.json
