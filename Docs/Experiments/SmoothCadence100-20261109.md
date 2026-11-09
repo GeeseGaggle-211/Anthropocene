@@ -36,6 +36,14 @@ All three passed conservation, whole-world invariants and zero-rejection checks.
 
 The annualized migrant-person movement count is ~55/year in the ten-day-scale arm versus ~471/year in the daily arm (an ~8.6× ratio). These unequal-duration observations cannot identify a pure migration coefficient, but they reveal why per-turn migration limits, return cooldowns, fission opportunities and domestication-contact counters need explicit physical-time semantics before enabling the 2050 daily clock. Migrants are movements, not unique people.
 
+## Production-size persistence failure (confirmed)
+
+The first 1024×512, 80-founding-tribe run reached 99 completed smooth turns (1323.69 years), 1,299,036 people and 2,098 settlements. Its production simulation had passed the recorded per-turn conservation and invariants through those 99 transitions. Before turn 100, the experiment's deliberate save/load replay witness failed at `SaveCodec.Load` with `InvalidDataException: Invalid save metadata size.` Evidence: [Actions run 42595221792](https://github.com/GeeseGaggle-211/Anthropocene/actions/runs/42595221792) and production artifact 13663452102.
+
+The production source's `SaveCodec.Load` reads the uncompressed XML metadata header length and rejects values greater than `MaximumMetadataBytes = 512*1024*1024` (or less than one). `SaveCodec.Save` had returned bytes; the throw occurred on Load, before the next world transition. `SaveCodec.CopyWithoutTiles` includes the entire `WorldState.History`, and each `TurnRecord` can contain large settlement and trade lists. Thus growing historical metadata is a plausible root cause, but this experiment has not yet isolated which member dominates or measured the exact header length. Do not simply double the cap without profiling the constituents.
+
+A subsequent production-only continuation omits the repeated large-save replay witness so that the full 100-turn economy and time-matched control can complete independently. This does **not** waive the save defect. Production results must distinguish numeric progression from reload/persistence acceptance.
+
 ## Acceptance and blockers
 
 **Numerical gate (compact): PASS for the tested schedules and population/ecology accounting.**
