@@ -1,6 +1,6 @@
 # Smooth calendar — equal historical time comparison (9 November 2026)
 
-**Status:** Compact-world tests complete; production-sized campaign under execution at publication of this preliminary evidence. The final production section will be filled only from its completed artifact.
+**Status:** COMPLETE. Three compact worlds and one production-size world ran all three schedules to the same 1,333-year endpoint. All checks passed in this test, but the calendar is not balance-neutral and production-scale reload remains a separate known blocker.
 
 ## Correct experimental contract
 
@@ -52,7 +52,40 @@ All from the same 18,493-person checkpoint:
 
 All passed numerical checks, including exact small-world save/replay. Difference in births at equal elapsed time suggests timestep-dependent timing or gating of demographic opportunities, even though the ledger conserves population. It is not proven that the fertility rate function alone is responsible.
 
-## Release blockers
+## Production-size equal-years comparison — completed
+
+[GitHub Actions run 42616621219](https://github.com/GeeseGaggle-211/Anthropocene/actions/runs/42616621219), completed all four jobs. Exact executed experiment commit `051b875cf35153b43b06bca5caaa3f7fc68dd54d`. Production artifact ID 13673422532, digest SHA-256 `649a0a667d52677729958ea3eb90cc2e6b97e166c9892d61fc6cf54b86353d67`.
+
+The 1024×512, 80-founding-tribe world (seed 11) began with 11,937 people after native opening. **All three arms completed exactly 1,333 physical years from this same checkpoint.** Their number of decisions is *not* artificially matched.
+
+| Metric | Smooth exponential (100 turns) | Fixed20 (67 turns) | Stepped 20→15→10 (119 turns) |
+|---|---:|---:|---:|
+| Final world population | **1,347,190** | **1,792,450** | **621,589** |
+| Live settlements | 2,116 | 2,237 | 1,110 |
+| Median agriculture-first settlement | 775 | 976 | 642 |
+| Maximum agriculture-first settlement | 1,108 | 1,063 | 1,098 |
+| Fission events | 2,011 | 2,132 | 1,005 |
+| Migrant-person movements | 83,791 | 69,315 | 44,663 |
+| Food-needs coverage | 99.9058% | 99.9892% | 100.0% |
+| Population-weighted QoL | 0.78455 | 0.75321 | 0.79541 |
+| Mean owned-footprint q | 0.36499 | 0.37986 | 0.35011 |
+| Resident food reserve-years (aggregate) | 13.74 | 18.63 | 15.74 |
+
+Relative to fixed20 at the same end date, smooth has **24.84% fewer residents**, and stepped has **65.32% fewer residents**. The difference is not explained by aggregate meal coverage: all three endpoints are effectively fully fed. The dominant first-order pattern is settlement proliferation and demographic/social decisions, not starvation. Fission and migration differ materially across arms, but this observational comparison does not identify one causal mechanism. The fixed20 control has lower measured QoL despite higher population; population alone is not a welfare criterion.
+
+Native ecological and population bookkeeping: zero submitted-order rejections, all 100+67+119 authoritative resolutions completed, and per-arm whole-world invariant checks passed. Maximum relative ecological balance residual `4.4004637898424434e-16`; each arm's opening population + recorded births − recorded deaths exactly reconciles with its ending population. The three production arms together ran for `732.379` wall seconds on the GitHub-hosted runner. This is a single production seed, not a CI performance distribution.
+
+The production experiment intentionally **did not rerun the earlier known large-save replay failure** (uncompressed save XML metadata header maximum 512 MiB near 2,100 settlements). Numerical/economic completion is not a save/load acceptance.
+
+## Interpretation
+
+The user's methodological correction is substantive. Compare **same world, same initial state, same physical end date, variable turn count**. The prior control that forced 100 decisions at each cadence was not an appropriate test of a fixed twenty-year calendar. The new fixed20 control naturally uses 67 decisions, and its population endpoint differs markedly from the old 100-turn fixed-duration benchmark.
+
+**Assessment:** No numerical conservation catastrophe over the tested schedule, including 365 consecutive daily decisions in the compact smoke test. However, enormous population and settlement divergence across equally long campaigns is a **balance and timing-consistency NO-GO**. A smoothing function can be implemented, but promoting it as the main campaign schedule before normalizing physical-time rules and validating policy responsiveness is not justified. The short-duration daily birth divergence is an additional concern.
+
+Next attribution gates: hold a single staffing/trade/migration policy fixed over matched years; separately normalize physical-time migration caps, return cooldowns, fission/contact counters, production stock/harvest cadence, and birth eligibility; rerun these same seed/fork fixtures; then measure effect per year, not per turn. Preserve late-game performance and persistence checks independently.
+
+## Release blockers and next experiments
 
 1. **Social and decision-event temporal semantics:** Calendar-dependent opportunities for fission, migration, contact and stock harvesting change long-horizon outcomes. Need fixed-policy/normalized physical-time attribution before promoting a schedule.
 2. **Daily temporal accounting:** Small-world 365-day test is numerically valid but differs in cumulative births from a 37-turn schedule over the same year.
