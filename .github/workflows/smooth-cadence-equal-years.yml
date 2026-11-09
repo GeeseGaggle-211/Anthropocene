@@ -1,0 +1,56 @@
+name: Equal-years smooth cadence experiment
+on:
+  push:
+    branches: [experiments/smooth-cadence-fixed-years-20261109]
+    paths: ['Tools/SmoothCadence100/**', '.github/workflows/smooth-cadence-equal-years.yml']
+permissions:
+  contents: read
+concurrency:
+  group: smooth-cadence-equal-years
+  cancel-in-progress: true
+jobs:
+  equal-years:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - seed: 11
+            mode: small
+          - seed: 23
+            mode: small
+          - seed: 47
+            mode: small
+          - seed: 11
+            mode: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Assert unchanged simulation and production config
+        run: git diff --exit-code 07f3501c2d5e047e44d61e85cc0d4613b54572d6 -- Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources
+      - name: Record provenance
+        run: |
+          mkdir -p TestResults/EqualYearsCadence/${{ matrix.mode }}/${{ matrix.seed }}
+          git rev-parse HEAD > TestResults/EqualYearsCadence/${{ matrix.mode }}/${{ matrix.seed }}/experiment-commit.txt
+          dotnet --info > TestResults/EqualYearsCadence/${{ matrix.mode }}/${{ matrix.seed }}/runtime.txt
+      - name: Build native simulation and experimental scheduler
+        run: dotnet build -c Release Tools/SmoothCadence100/Anthropocene.SmoothCadence100.csproj
+      - name: Resolve identical elapsed years, letting turn counts vary
+        run: dotnet run --no-build -c Release --project Tools/SmoothCadence100/Anthropocene.SmoothCadence100.csproj -- ${{ matrix.seed }} ${{ matrix.mode }} TestResults/EqualYearsCadence/${{ matrix.mode }}/${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: equal-years-cadence-${{ matrix.mode }}-${{ matrix.seed }}
+          retention-days: 30
+          path: |
+            TestResults/EqualYearsCadence/${{ matrix.mode }}/${{ matrix.seed }}/
+            Tools/SmoothCadence100/Program.cs
+            Tools/SmoothCadence100/Anthropocene.SmoothCadence100.csproj
+            Assets/_Anthropocene/Resources/OpeningConfig.json
+            Assets/_Anthropocene/Resources/ResourceGenerationConfig.json
