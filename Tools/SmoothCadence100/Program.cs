@@ -209,7 +209,7 @@ internal static class Program
             births=sumBirths,deaths=sumDeaths,submittedRejections=Rejections-rejectionsStart,
             finalFingerprint=SaveCodec.Fingerprint(Current)});
         Console.WriteLine("ARM_FINAL "+JsonSerializer.Serialize(new {
-          Seed,arm,actualYears,firstYears=durations[0],lastYears=durations.Last(),
+          Seed,arm,actualYears=actual,firstYears=durations[0],lastYears=durations.Last(),
           startPopulation,finalPopulation=end.TotalPopulation,peakPopulation=Rows.Skip(startRow).Max(x=>x.TotalPopulation),
           settlements=end.Settlements,agricultureMedian=end.AgricultureMedian,
           foodCoverage=end.FoodCoverage,qol=end.WorldQoL,
