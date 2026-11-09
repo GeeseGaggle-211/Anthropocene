@@ -1,0 +1,48 @@
+name: Irrigation soil 600-year sweep
+on:
+  push:
+    branches: [experiments/irrigation-soil-600y-20261109]
+    paths: ['Tools/IrrigationSoil600/**', '.github/workflows/irrigation-soil-600y.yml']
+permissions:
+  contents: read
+concurrency:
+  group: irrigation-soil-600y
+  cancel-in-progress: true
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Confirm unchanged production source
+        run: git diff --exit-code 07f3501c2d5e047e44d61e85cc0d4613b54572d6 -- Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources
+      - name: Record provenance
+        run: |
+          mkdir -p TestResults/IrrigationSoil600
+          git rev-parse HEAD > TestResults/IrrigationSoil600/experiment-commit.txt
+          dotnet --info > TestResults/IrrigationSoil600/runtime.txt
+      - name: Five seeded native-source 600-year sweeps
+        run: python3 Tools/IrrigationSoil600/Run.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: irrigation-soil-600y-20261109
+          retention-days: 30
+          path: |
+            TestResults/IrrigationSoil600/**/trajectories.csv
+            TestResults/IrrigationSoil600/**/profiles.json
+            TestResults/IrrigationSoil600/**/summary.json
+            TestResults/IrrigationSoil600/*.txt
+            TestResults/IrrigationSoil600/Harness/*.cs
+            TestResults/IrrigationSoil600/Harness/*.csproj
+            TestResults/IrrigationSoil600/Harness/derivation.json
+            Tools/IrrigationSoil600/
+            Tools/IrrigationThreeFields/Program.cs
+            Assets/_Anthropocene/Simulation/*.cs
+            Assets/_Anthropocene/Resources/OpeningConfig.json
+            Assets/_Anthropocene/Resources/ResourceGenerationConfig.json
