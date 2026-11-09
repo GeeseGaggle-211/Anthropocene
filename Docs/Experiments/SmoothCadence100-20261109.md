@@ -1,6 +1,6 @@
 # Smoothly decaying turn duration — 100-turn native economy stress test
 
-Date: 9 November 2026. Status: 3/3 compact-world campaigns complete; production-size campaign still executing when this preliminary record was written. This experiment changes no production simulation source and does not alter active RL environments.
+Date: 9 November 2026. Status: 3/3 compact-world campaigns complete; production-scale 100-turn economic continuation also complete. Production-scale large-save replay still fails and remains a separate NO-GO persistence gate. This experiment changes no production simulation source and does not alter active RL environments.
 
 ## Source and method
 
@@ -10,7 +10,7 @@ Native C# whole-economy AI → Prepare → Resolve, with production, ecological 
 
 The experimental early-game decay is `dt_years(t)=20 exp[-ln(2)*t/1200]`, where t is years since the Neolithic opening. It begins at 20 years, declines to 9.31046 years by the hundredth decision, and spans 1333.000998 simulated years. The primary control is exactly 100 turns at a constant 13.33000998 years, matching the same elapsed physical time. A fixed 20-year 100-turn arm spans 2000 years and is **not** an elapsed-time-matched population comparison.
 
-The compact tests have 256×128 worlds, 16 founders, seeds 11, 23 and 47. One production-size 1024×512, 80-founder run is a separate performance/stability gate (pending). All reported outcomes are native heuristic policies, not learned RL behavior.
+The compact tests have 256×128 worlds, 16 founders, seeds 11, 23 and 47. One production-size 1024×512, 80-founder world completed both 100-turn economic arms on a dedicated production-only rerun. The initial production replay witness failed at the known large-save metadata cap; the rerun did not waive or fix that defect. All reported outcomes are native heuristic policies, not learned RL behavior.
 
 For seed 11 only, a saved mature-Neolithic fixture was forked after 300 simulated years and resolved for 100 turns with (a) the virtual-1900 exponential `dt_days(t)=10exp[-ln(10)*t/100]`, t in years, (b) its equal-100-turn/equal-elapsed-time constant-duration match, and (c) 100 consecutive one-day turns. These are Neolithic physics under short time intervals, **not** a simulated industrial or information society.
 
@@ -44,9 +44,28 @@ The production source's `SaveCodec.Load` reads the uncompressed XML metadata hea
 
 A subsequent production-only continuation omits the repeated large-save replay witness so that the full 100-turn economy and time-matched control can complete independently. This does **not** waive the save defect. Production results must distinguish numeric progression from reload/persistence acceptance.
 
+## Production-sized 100-turn economic continuation (complete)
+
+[Successful production-only cloud rerun 42596356890](https://github.com/GeeseGaggle-211/Anthropocene/actions/runs/42596356890), experiment commit `d5876affa0892141c770f0b02379c4bae14983dd`, artifact ID 13664032961 (ZIP SHA-256 `c6671ce1b23a5017d55f0583e9f56f8484a2537d6b559f24760a6321f9da621a`). The code change for the rerun disabled repeated oversized save/replay witnesses in the production-sized case and skipped the massive final fingerprint; the engine itself was unchanged. Thus the complete economic comparisons pass but production-scale persistence explicitly does not.
+
+| Production seed 11: 1024×512, 80 founders | Smooth 100-turn calendar | Fixed duration matched over 100 turns |
+|---|---:|---:|
+| Physical time | 1,333.001 years | 1,333.001 years |
+| Starting people | 11,937 | 11,937 |
+| Final people | **1,347,124** | **1,574,211** |
+| Settlements | 2,116 | 2,916 |
+| Median agriculture-first settlement size | 775 | 545 |
+| Fission events during test | 2,011 | 2,811 |
+| Food-needs coverage | 99.9057% | 99.91596% |
+| Resident-weighted overall QoL | 0.78456 | 0.80863 |
+
+The smooth population endpoint is **14.43% lower** than the same-elapsed-time constant-duration run in this one production-size seed. No submitted orders were rejected, all recorded population ledgers and whole-world invariants passed through the hundredth transition, and the maximum ecological stock-balance residual was `3.784551920114526e-16`. Execution took 789.9 wall seconds on the GitHub-hosted Ubuntu runner. Exactly 100 native economic transitions occurred per arm, after the native opening, with fission/trade/immigration and endogenous q active.
+
+This test establishes the native simulation can complete the 100 smoothly decreasing turns at production size **when the separate oversized-save replay witness is excluded**. It is not production reload acceptance, historical-era correctness, or a statistical guarantee over multiple production-sized seeds.
+
 ## Acceptance and blockers
 
-**Numerical gate (compact): PASS for the tested schedules and population/ecology accounting.**
+**Numerical gate (compact and production continuation): PASS for the tested schedules and population/ecology accounting. Production persistence gate: FAIL at the documented 512 MiB uncompressed header limit.**
 
 **Physical/social-time semantics: NOT CLEARED.** A calendar change currently changes social opportunity frequency, discrete movement and contact maturation, planning cadence and land opening-stock harvest frequency. Matching elapsed physical time alone does not imply comparable trajectories. The native land pulse-harvest contract (#29) remains open. The observed early smooth-versus-flat population variation reaches approximately +50% and −19% across only three seeds; the economic model needs attribution and more seeds before accepting balance.
 
