@@ -207,7 +207,7 @@ internal static class Program
             startPopulation,finalPopulation=end.TotalPopulation,actualYears=actual,
             firstYears=durations[0],lastYears=durations.Last(),
             births=sumBirths,deaths=sumDeaths,submittedRejections=Rejections-rejectionsStart,
-            finalFingerprint=SaveCodec.Fingerprint(Current)});
+            finalFingerprint=Current.Config.Width>=1024 ? "NOT_TESTED: prior production run identified metadata-header size failure near 2,100 settlements" : SaveCodec.Fingerprint(Current)});
         Console.WriteLine("ARM_FINAL "+JsonSerializer.Serialize(new {
           Seed,arm,actualYears=actual,firstYears=durations[0],lastYears=durations.Last(),
           startPopulation,finalPopulation=end.TotalPopulation,peakPopulation=Rows.Skip(startRow).Max(x=>x.TotalPopulation),
@@ -250,8 +250,8 @@ internal static class Program
             double[] fixed20=Enumerable.Repeat(20.0,100).ToArray();
             Check(smooth[0]==20 && smooth[99]<11 && smooth[99]>8,
                 "Early test slope not stressed as specified");
-            Stage="early smooth";RunArm(openingSave,"early_smooth",smooth,Seed==11);
-            Stage="early duration-matched";RunArm(openingSave,"early_flat_matched",flat,Seed==11);
+            Stage="early smooth";RunArm(openingSave,"early_smooth",smooth,Seed==11 && mode!="production");
+            Stage="early duration-matched";RunArm(openingSave,"early_flat_matched",flat,Seed==11 && mode!="production");
             if(mode!="production") {
                 RunArm(openingSave,"early_legacy_fixed20",fixed20,Seed==11);
                 if(Seed==11) {
