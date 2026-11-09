@@ -158,17 +158,26 @@ internal static class Program
     private static double EarlyK => Math.Log(2) / 1200.0;
     private static double EarlyDuration(double elapsedYears) => 20.0 * Math.Exp(-EarlyK * elapsedYears);
     private static double ModernDuration(double elapsedYears) => Math.Max(1, 10.0 * Math.Exp(-Math.Log(10.0) * elapsedYears / 100.0));
-    private static double[] Durations(int n, Func<double,double> nextYears)
+    // Canonical end date, not number of player turns, controls the experiment.
+    // Last horizon is shortened only to stop at exactly the target physical date.
+    private static double[] DurationsUntil(double horizonYears, Func<double,double> nextYears)
     {
-        var answer = new double[n]; double elapsed = 0;
-        for (int i=0;i<n;i++)
+        Check(horizonYears > 0 && double.IsFinite(horizonYears),"Invalid physical test duration");
+        var answer = new List<double>();
+        double elapsed = 0;
+        while (horizonYears-elapsed > 1e-9)
         {
-            double dt = nextYears(elapsed);
-            Check(dt>0 && !double.IsNaN(dt) && !double.IsInfinity(dt) && dt * 365 >= 1, "Invalid cadence");
-            answer[i]=dt; elapsed+=dt;
+            double proposed = nextYears(elapsed);
+            Check(proposed > 0 && double.IsFinite(proposed) && proposed * 365 >= 1 - 1e-9,"Invalid cadence");
+            double dt=Math.Min(proposed,horizonYears-elapsed);
+            Check(dt > 0 && double.IsFinite(dt),"Invalid bounded terminal horizon");
+            answer.Add(dt);elapsed+=dt;
+            Check(answer.Count<=25000,"Unbounded turn count in fixed-year test");
         }
-        return answer;
+        Check(Math.Abs(answer.Sum()-horizonYears)<1e-8,"Failed to reach exact physical target");
+        return answer.ToArray();
     }
+
     private static void RunArm(byte[] checkpoint, string arm, double[] durations, bool exactReplay)
     {
         Stage="load "+arm; Arm=arm; Current=SaveCodec.Load(checkpoint);
@@ -179,7 +188,7 @@ internal static class Program
         for(int i=0;i<durations.Length;i++)
         {
             Stage=arm+" turn "+(i+1)+"/"+durations.Length;
-            if(exactReplay && (i==0||i==50||i==99))
+            if(exactReplay && (i==0||i==durations.Length/2||i==durations.Length-1))
                 VerifyTransitionReplay(Current,durations[i],arm+"_"+(i+1));
             double start=Current.Days, dt=durations[i];
             var r=Step(Current,dt,out var metrics);
@@ -203,13 +212,13 @@ internal static class Program
         double expected=durations.Sum(), actual=(Current.Days-startDays)/Current.Config.DaysPerYear;
         Check(Relative(expected,actual)<1e-9,"Elapsed years mismatch");
         Check(Rejections-rejectionsStart==0,"Submitted order rejections");
-        Checks.Add(new {test="100-turn native economy",arm,passed=true, startHash,
+        Checks.Add(new {test="equal historical duration native economy",arm,turns=durations.Length,passed=true, startHash,
             startPopulation,finalPopulation=end.TotalPopulation,actualYears=actual,
             firstYears=durations[0],lastYears=durations.Last(),
             births=sumBirths,deaths=sumDeaths,submittedRejections=Rejections-rejectionsStart,
             finalFingerprint=Current.Config.Width>=1024 ? "NOT_TESTED: prior production run identified metadata-header size failure near 2,100 settlements" : SaveCodec.Fingerprint(Current)});
         Console.WriteLine("ARM_FINAL "+JsonSerializer.Serialize(new {
-          Seed,arm,actualYears=actual,firstYears=durations[0],lastYears=durations.Last(),
+          Seed,arm,turns=durations.Length,actualYears=actual,firstYears=durations[0],lastYears=durations.Last(),
           startPopulation,finalPopulation=end.TotalPopulation,peakPopulation=Rows.Skip(startRow).Max(x=>x.TotalPopulation),
           settlements=end.Settlements,agricultureMedian=end.AgricultureMedian,
           foodCoverage=end.FoodCoverage,qol=end.WorldQoL,
@@ -222,7 +231,7 @@ internal static class Program
         CultureInfo.CurrentCulture=CultureInfo.InvariantCulture;
         Seed=args.Length>0?int.Parse(args[0]):11;
         string mode=args.Length>1?args[1]:"small";
-        Output=args.Length>2?args[2]:"TestResults/SmoothCadence100/"+mode+"/"+Seed;
+        Output=args.Length>2?args[2]:"TestResults/EqualYearsCadence/"+mode+"/"+Seed;
         Directory.CreateDirectory(Output);
         try {
             var cfg=JsonSerializer.Deserialize<SimulationConfig>(File.ReadAllText("Assets/_Anthropocene/Resources/OpeningConfig.json"),Json);
@@ -244,36 +253,45 @@ internal static class Program
             byte[] openingSave=SaveCodec.Save(Current);
             Check(SaveCodec.Fingerprint(SaveCodec.Load(openingSave))==openingHash,"Opening save roundtrip");
             Checks.Add(new{test="native opening and save roundtrip",passed=true,openingTurns,openingHash});
-            double[] smooth=Durations(100,EarlyDuration);
-            double totalYears=smooth.Sum(),flatYears=totalYears/100;
-            double[] flat=Enumerable.Repeat(flatYears,100).ToArray();
-            double[] fixed20=Enumerable.Repeat(20.0,100).ToArray();
-            Check(smooth[0]==20 && smooth[99]<11 && smooth[99]>8,
-                "Early test slope not stressed as specified");
-            Stage="early smooth";RunArm(openingSave,"early_smooth",smooth,Seed==11 && mode!="production");
-            Stage="early duration-matched";RunArm(openingSave,"early_flat_matched",flat,Seed==11 && mode!="production");
-            if(mode!="production") {
-                RunArm(openingSave,"early_legacy_fixed20",fixed20,Seed==11);
-                if(Seed==11) {
-                    Current=SaveCodec.Load(openingSave);
-                    Stage="short-step fixture warming";
-                    for(int j=0;j<15;j++) {Step(Current,20,out _);if((j+1)%5==0)TurnResolver.Invariants(Current);}
-                    byte[] shortFork=SaveCodec.Save(Current),roundtrip=SaveCodec.Save(SaveCodec.Load(shortFork));
-                    Check(SaveCodec.Fingerprint(SaveCodec.Load(roundtrip))==SaveCodec.Fingerprint(Current),
-                        "Short-step fixture save roundtrip");
-                    Current=null;GC.Collect();
-                    double[] modern=Durations(100,elapsed=>ModernDuration(elapsed)/365.0);
-                    double[] modernFlat=Enumerable.Repeat(modern.Sum()/100,100).ToArray();
-                    RunArm(shortFork,"modern_1900_anchor",modern, true);
-                    RunArm(shortFork,"modern_flat_matched",modernFlat, false);
-                    RunArm(shortFork,"information_daily_floor",Enumerable.Repeat(1.0/365.0,100).ToArray(),true);
-                }
+            // Every early arm begins from the same post-opening checkpoint
+            // and ends at the same physical date, with an endogenous turn count.
+            const double horizonYears=1333.0;
+            double[] smooth=DurationsUntil(horizonYears,EarlyDuration);
+            double[] fixed20=DurationsUntil(horizonYears,_=>20.0);
+            double[] staged=DurationsUntil(horizonYears,elapsed=>elapsed<200-1e-9?20.0:elapsed<350-1e-9?15.0:10.0);
+            Check(smooth.Length>=95&&smooth.Length<=105,"Unexpected smooth schedule count");
+            Check(fixed20.Length != smooth.Length && staged.Length != smooth.Length,
+                "Control accidentally matched turn count rather than physical years");
+            Stage="smooth physical-date comparison";
+            RunArm(openingSave,"early_smooth",smooth,Seed==11 && mode!="production");
+            RunArm(openingSave,"early_fixed20_same_years",fixed20,Seed==11 && mode!="production");
+            RunArm(openingSave,"early_staged_same_years",staged,Seed==11 && mode!="production");
+            if(mode!="production" && Seed==11) {
+                // Short-duration smoke test: all arms run ONE FULL PHYSICAL YEAR.
+                // This is not a model of actual 1900/2000 industrial technology.
+                Current=SaveCodec.Load(openingSave);
+                Stage="short-step fixture warming";
+                for(int j=0;j<15;j++) {Step(Current,20,out _);if((j+1)%5==0)TurnResolver.Invariants(Current);}
+                byte[] shortFork=SaveCodec.Save(Current),roundtrip=SaveCodec.Save(SaveCodec.Load(shortFork));
+                Check(SaveCodec.Fingerprint(SaveCodec.Load(roundtrip))==SaveCodec.Fingerprint(Current),
+                    "Short-step fixture save roundtrip");
+                Current=null;GC.Collect();
+                const double modernHorizon=1.0;
+                double[] modern=DurationsUntil(modernHorizon,elapsed=>ModernDuration(elapsed)/365.0);
+                double[] fixedTenDays=DurationsUntil(modernHorizon,_=>10.0/365.0);
+                double[] daily=DurationsUntil(modernHorizon,_=>1.0/365.0);
+                Check(daily.Length==365 && modern.Length!=daily.Length,"Modern arm turn counts did not diverge");
+                RunArm(shortFork,"modern_exponential_same_year",modern,true);
+                RunArm(shortFork,"modern_fixed10days_same_year",fixedTenDays,true);
+                RunArm(shortFork,"daily_365days_same_year",daily,true);
             }
             var summary=new {status="complete",Seed,mode,baseline=Baseline,openingTurns,openingHash,
-                earlySchedule="EXPERIMENTAL EARLY STRESS: dt(y)=20 exp(-ln(2)*elapsedYears/1200), 100 decisions. 20 to approximately 9 years; NOT a finalized historical anchor.",
-                modernSchedule="Subannual Neolithic-physics smoke only: 100 transitions from a matured 300-year Neolithic checkpoint, dt=10 exp(-ln(10)*elapsedYears/100) days from a virtual 1900 anchor, plus flat matched and 1-day floor. No industrial mechanics are claimed.",
-                earlyElapsedYears=totalYears,earlyFixedMatchedYears=flatYears,
-                caveat="100 transitions in each arm; early_legacy_fixed20 covers a longer physical period and is NOT an equal-time population comparator. 100-turn modern vs daily covers different physical years. Dynamics preserve existing pulse harvest, per-turn migration/fission/contact and heuristic policy and are not timestep invariant. Production source, config, RL unchanged.",
+                controllingCriterion="Same saved world, same physical years, same end timestamp. Turn counts differ naturally.",
+                earlySchedule="1333 elapsed physical years: smooth dt(y)=20 exp(-ln(2)*y/1200) years, fixed 20-year turns, and 20->15->10-year staged path (20 until year 200, 15 until year 350, 10 thereafter). Terminal turn clipped to exact physical endpoint, never rescaled earlier horizons.",
+                shortSchedule="Seed 11 compact world: after 300 years of native warming, all three virtual-1900 Neolithic-physics tests cover exactly ONE physical year, with 10-day exponential, constant 10-day and daily (365 turns) controls.",
+                earlyElapsedYears=horizonYears,
+                experimentalCalendarCounts=new {smooth=smooth.Length,fixed20=fixed20.Length,staged=staged.Length},
+                caveat="This is a fixed-years, NOT a fixed-number-of-turns comparison. Calendar changes real decision opportunities and native pulse harvest; contact/migration/fission semantics are not normalized. Short-horizon modern trials are Neolithic mechanics only. The 512MiB large-save header issue remains independently open; production-scale repeated reload/fingerprint after substantial accumulated history is intentionally not re-attempted. Main, RL and shipped configuration unchanged.",
                 checks=Checks, maxEcologicalBalanceRelativeError=MaxBalanceError,rejectedSubmittedOrders=Rejections,
                 sourceHashes=Directory.GetFiles("Assets/_Anthropocene/Simulation","*.cs").OrderBy(p=>p).ToDictionary(p=>p,p=>Hash(File.ReadAllBytes(p))),
                 openingConfigHash=Hash(File.ReadAllBytes("Assets/_Anthropocene/Resources/OpeningConfig.json")),
