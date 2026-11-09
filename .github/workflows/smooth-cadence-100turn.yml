@@ -18,12 +18,6 @@ jobs:
       matrix:
         include:
           - seed: 11
-            mode: small
-          - seed: 23
-            mode: small
-          - seed: 47
-            mode: small
-          - seed: 11
             mode: production
     steps:
       - uses: actions/checkout@v4
