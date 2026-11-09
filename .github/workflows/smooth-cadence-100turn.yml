@@ -1,0 +1,56 @@
+name: Smooth cadence 100-turn native economy stress
+on:
+  push:
+    branches: [experiments/smooth-cadence-100turn-20261109]
+    paths: ['Tools/SmoothCadence100/**', '.github/workflows/smooth-cadence-100turn.yml']
+permissions:
+  contents: read
+concurrency:
+  group: smooth-cadence-100turn
+  cancel-in-progress: true
+jobs:
+  native-campaign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - seed: 11
+            mode: small
+          - seed: 23
+            mode: small
+          - seed: 47
+            mode: small
+          - seed: 11
+            mode: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Confirm no changes to production engine or configuration
+        run: git diff --exit-code 07f3501c2d5e047e44d61e85cc0d4613b54572d6 -- Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources
+      - name: Record exact provenance
+        run: |
+          mkdir -p TestResults/SmoothCadence100/${{ matrix.mode }}/${{ matrix.seed }}
+          git rev-parse HEAD > TestResults/SmoothCadence100/${{ matrix.mode }}/${{ matrix.seed }}/commit.txt
+          dotnet --info > TestResults/SmoothCadence100/${{ matrix.mode }}/${{ matrix.seed }}/dotnet-runtime.txt
+      - name: Build native source
+        run: dotnet build -c Release Tools/SmoothCadence100/Anthropocene.SmoothCadence100.csproj
+      - name: Run complete economic campaign
+        run: dotnet run --no-build -c Release --project Tools/SmoothCadence100/Anthropocene.SmoothCadence100.csproj -- ${{ matrix.seed }} ${{ matrix.mode }} TestResults/SmoothCadence100/${{ matrix.mode }}/${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smooth-cadence-100turn-${{ matrix.mode }}-${{ matrix.seed }}
+          retention-days: 30
+          path: |
+            TestResults/SmoothCadence100/${{ matrix.mode }}/${{ matrix.seed }}/
+            Tools/SmoothCadence100/Program.cs
+            Tools/SmoothCadence100/Anthropocene.SmoothCadence100.csproj
+            Assets/_Anthropocene/Resources/OpeningConfig.json
+            Assets/_Anthropocene/Resources/ResourceGenerationConfig.json
