@@ -1,0 +1,36 @@
+name: Production cadence demographic cohorts
+on:
+  push:
+    branches: [experiments/cadence-demography-cause-20261110]
+    paths: ['Tools/CadenceDemographyCause/Production.py', '.github/workflows/cadence-demography-production.yml']
+permissions:
+  contents: read
+jobs:
+  production-cohorts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Assert unchanged production engine
+        run: git diff --exit-code 07f3501c2d5e047e44d61e85cc0d4613b54572d6 -- Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources
+      - name: Run source-identical economic fixture with late cohort diagnostics
+        run: |
+          mkdir -p TestResults/CadenceDemographyCauseProduction/11-baseline
+          git rev-parse HEAD > TestResults/CadenceDemographyCauseProduction/11-baseline/experiment-commit.txt
+          python3 Tools/CadenceDemographyCause/Production.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cadence-demography-production-11
+          retention-days: 30
+          path: |
+            TestResults/CadenceDemographyCauseProduction/11-baseline/*.json
+            TestResults/CadenceDemographyCauseProduction/11-baseline/Program.cs
+            TestResults/CadenceDemographyCauseProduction/11-baseline/Cause.csproj
+            TestResults/CadenceDemographyCauseProduction/11-baseline/experiment-commit.txt
+            Tools/CadenceDemographyCause/
