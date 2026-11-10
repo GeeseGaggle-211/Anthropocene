@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - 'Assets/_Anthropocene/Simulation/**'
+      - 'Assets/_Anthropocene/Resources/SmoothCalendarOpeningConfig.json'
       - 'Tools/SmoothCalendar/**'
       - '.github/workflows/smooth-calendar.yml'
 permissions:
@@ -16,8 +17,6 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    permissions:
-      contents: write
     defaults:
       run:
         shell: bash
@@ -25,20 +24,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Materialize staged integration on its isolated branch only
-        if: github.event_name == 'push' && github.ref == 'refs/heads/features/smooth-calendar'
-        run: |
-          if test -f Tools/SmoothCalendar/ApplyIntegration.py; then
-            python3 -c "from pathlib import Path;p=Path('Tools/SmoothCalendar/ApplyIntegration.py');p.write_text(p.read_text().replace('public readonly TurnHorizon Horizon;', 'internal readonly TurnHorizon Horizon;'))"
-            python3 Tools/SmoothCalendar/ApplyIntegration.py
-            python3 -c "from pathlib import Path;ps=[Path('Assets/_Anthropocene/Simulation/SmoothCalendar.cs.meta'),Path('Assets/_Anthropocene/Resources/SmoothCalendarOpeningConfig.json.meta')];[p.write_text('\n'.join(x.rstrip() for x in p.read_text().splitlines())+'\n') for p in ps]"
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources/SmoothCalendarOpeningConfig.json* Tools/SmoothCalendar Docs/SmoothCalendar.md Docs/CurrentSimulationContract.md
-            git diff --cached --check
-            git commit -m 'Integrate versioned smooth calendar, boundary guards and regression tests'
-            git push origin HEAD:refs/heads/features/smooth-calendar
-          fi
+          persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
@@ -50,7 +36,10 @@ jobs:
       - name: Focused calendar integration tests
         run: dotnet run -c Release --project Tools/SmoothCalendar/Anthropocene.SmoothCalendar.csproj 2>&1 | tee TestResults/SmoothCalendar/calendar.log
       - name: Registered headless regression
-        run: dotnet run -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --tests-only 2>&1 | tee TestResults/SmoothCalendar/headless.log
+        run: |
+          checks=$(python3 -c 'import re,pathlib;s=pathlib.Path("Tools/Headless/Program.cs").read_text();names=re.findall(r"new ParallelChecks.Entry \{ Name = \"([^\"]+)\"",s);assert len(names)>60;print(",".join(names))')
+          printf '%s\n' "$checks" > TestResults/SmoothCalendar/registered-suites.txt
+          dotnet run -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- "--only=$checks" --check-timings 2>&1 | tee TestResults/SmoothCalendar/headless.log
       - name: Contract and whitespace checks
         run: |
           python3 Tools/Docs/Check-CurrentContract.py
@@ -62,5 +51,6 @@ jobs:
           retention-days: 30
           path: |
             TestResults/SmoothCalendar/
-            Tools/SmoothCalendar/
+            Tools/SmoothCalendar/Program.cs
+            Tools/SmoothCalendar/Anthropocene.SmoothCalendar.csproj
             Docs/SmoothCalendar.md
