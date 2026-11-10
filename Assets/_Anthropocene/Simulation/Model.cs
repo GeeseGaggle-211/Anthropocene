@@ -24,6 +24,8 @@ namespace Anthropocene.Simulation
     public sealed class SimulationConfig
     {
         [System.Runtime.Serialization.OptionalField] public NeolithicConfig Neolithic = new NeolithicConfig();
+        // Absent/null is legacy fixed timing. Enabled only by an explicit new-game profile.
+        [System.Runtime.Serialization.OptionalField] public SmoothCalendarSettings SmoothCalendar;
         public SimulationConfig()
         {
             double referenceYears = Neolithic.ReferenceTurnYears;
@@ -35,6 +37,7 @@ namespace Anthropocene.Simulation
         private void InitializeNeolithic(System.Runtime.Serialization.StreamingContext context)
         {
             var defaults = new SimulationConfig(); Neolithic = defaults.Neolithic;
+            SmoothCalendar = null;
             // Older saves retain abstract altitude calibration and their stored climate.
             ElevationMetersPerUnit = 0; LapseRateCPerKm = defaults.LapseRateCPerKm;
             DrainageTerrainEnabled = false;
@@ -294,6 +297,7 @@ namespace Anthropocene.Simulation
 
         public void Validate()
         {
+            SmoothCalendar?.Validate(this);
             if (double.IsNaN(ElevationMetersPerUnit) || double.IsInfinity(ElevationMetersPerUnit) || ElevationMetersPerUnit < 0
                 || double.IsNaN(LapseRateCPerKm) || double.IsInfinity(LapseRateCPerKm) || LapseRateCPerKm < 0
                 || double.IsNaN(LapseRate) || double.IsInfinity(LapseRate) || LapseRate < 0
