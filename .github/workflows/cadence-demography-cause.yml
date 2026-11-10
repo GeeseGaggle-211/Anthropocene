@@ -1,0 +1,45 @@
+name: Cadence demographic attribution
+on:
+  push:
+    branches: [experiments/cadence-demography-cause-20261110]
+    paths: ['Tools/CadenceDemographyCause/**', '.github/workflows/cadence-demography-cause.yml']
+permissions:
+  contents: read
+concurrency:
+  group: cadence-demography-cause
+  cancel-in-progress: true
+jobs:
+  attribution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        seed: [11, 23]
+        treatment: [baseline, scaled, zero]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify unchanged production engine and profiles
+        run: git diff --exit-code 07f3501c2d5e047e44d61e85cc0d4613b54572d6 -- Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources
+      - name: Run equal-years policy attribution and fixed-service hazard checks
+        run: |
+          mkdir -p TestResults/CadenceDemographyCause/${{ matrix.seed }}-${{ matrix.treatment }}
+          git rev-parse HEAD > TestResults/CadenceDemographyCause/${{ matrix.seed }}-${{ matrix.treatment }}/experiment-commit.txt
+          python3 Tools/CadenceDemographyCause/Run.py ${{ matrix.seed }} ${{ matrix.treatment }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cadence-demography-${{ matrix.seed }}-${{ matrix.treatment }}
+          retention-days: 30
+          path: |
+            TestResults/CadenceDemographyCause/${{ matrix.seed }}-${{ matrix.treatment }}/*.json
+            TestResults/CadenceDemographyCause/${{ matrix.seed }}-${{ matrix.treatment }}/Program.cs
+            TestResults/CadenceDemographyCause/${{ matrix.seed }}-${{ matrix.treatment }}/Cause.csproj
+            TestResults/CadenceDemographyCause/${{ matrix.seed }}-${{ matrix.treatment }}/experiment-commit.txt
+            Tools/CadenceDemographyCause/Run.py
