@@ -33,8 +33,9 @@ namespace Anthropocene.Simulation
                 double first = Math.Log(20 * config.DaysPerYear) - SmoothCalendar.EarlyRate * (1750 - NeolithicStartYear);
                 double last = Math.Log(100.0);
                 double secant = (first - last) / 50.0;
-                // The matching endpoint tangents must define a monotone Hermite join.
-                if (!(secant > 0) || SmoothCalendar.EarlyRate / secant + SmoothCalendar.ModernRate / secant > 3)
+                // Positive normalized tangents in this radius-three disk give a monotone cubic.
+                double alpha = SmoothCalendar.EarlyRate / secant, beta = SmoothCalendar.ModernRate / secant;
+                if (!(secant > 0) || alpha * alpha + beta * beta > 9)
                     throw new ArgumentException("Calendar epoch does not admit the monotone industrial join; recalibrate its anchors explicitly.");
             }
         }
