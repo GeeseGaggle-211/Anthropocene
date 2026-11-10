@@ -316,6 +316,7 @@ namespace Anthropocene.Simulation
             var visible = index.Visible(camp.Player);
             using (PhaseProfile.Scope("Settlements"))
                 Settlements = Array.AsReadOnly(index.OwnCamps(camp.Player).Select(c => new SettlementObservation(c, index, recommendEconomy, forValidation)).ToArray());
+            SmoothCalendar.RequireCurrentBoundary(w);
             Days = w.Days;
             var preferences = camp.People.Policy; HuntingInclination = preferences.HuntingInclination; GatheringInclination = preferences.GatheringInclination; FishingInclination = preferences.FishingInclination;
             Player = camp.Player; CampId = camp.Id; CampTile = camp.Tile; CampPopulation = camp.Population; GathererPopulation = camp.GathererPopulation; LinkedPopulation = index.Population(camp);

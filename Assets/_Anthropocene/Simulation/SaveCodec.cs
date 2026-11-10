@@ -112,6 +112,7 @@ namespace Anthropocene.Simulation
                 // the site list is the sole authority in new saves.
                 foreach (var camp in world.Camps.OrderBy(c => c.Id)) NeolithicProduction.MigrateLegacyFixedHousing(world, camp);
                 world.Config.Validate();
+                SmoothCalendar.RequireCurrentBoundary(world);
                 int count = reader.ReadInt32(); if (count != world.Config.Width * world.Config.Height) throw new InvalidDataException("Invalid tile count.");
                 world.Tiles = new Tile[count];
                 bool hasCultivation = magic == Magic || magic == LegacyMagic10;

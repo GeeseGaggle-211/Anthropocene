@@ -61,8 +61,9 @@ namespace Anthropocene.Simulation
 
         public TurnRecord Resolve(WorldState w, PreparedTurn prepared)
         {
-            if (prepared == null || !ReferenceEquals(w, prepared.World) || w.Turn != prepared.Turn || Math.Abs(w.Days - prepared.StartDays) > 1e-8 || Math.Abs(w.Config.TurnDays - prepared.Horizon.Days) > 1e-8)
+            if (prepared == null || !ReferenceEquals(w, prepared.World) || w.Turn != prepared.Turn || Math.Abs(w.Days - prepared.StartDays) > 1e-8 || Math.Abs(w.Config.TurnDays - prepared.Horizon.Days) > 1e-8 || !prepared.CalendarStamp.Equals(SmoothCalendar.Stamp(w)))
                 throw new InvalidOperationException("Prepared turn does not match the current world boundary.");
+            SmoothCalendar.RequireCurrentBoundary(w);
             using var profile = PhaseProfile.Scope("Resolve");
             var resolutionTimer = System.Diagnostics.Stopwatch.StartNew(); LastMetrics = new ResolutionMetrics(); trade = null;
             resolvedFisheryOperations = new Dictionary<int, double>();
@@ -253,6 +254,7 @@ namespace Anthropocene.Simulation
                 LastMetrics.SharedAllocationMilliseconds = diagnostics.SharedAllocationTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
                 LastMetrics.PlanMilliseconds = diagnostics.PlanTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
             }
+            SmoothCalendar.CommitNextBoundary(w);
             LastMetrics.TotalMilliseconds = resolutionTimer.Elapsed.TotalMilliseconds; return record;
         }
 

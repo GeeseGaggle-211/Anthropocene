@@ -12,6 +12,7 @@ namespace Anthropocene.Simulation
         internal readonly int Turn;
         internal readonly double StartDays;
         internal readonly TurnHorizon Horizon;
+        internal readonly CalendarBoundaryStamp CalendarStamp;
         internal readonly List<Order> Orders = new List<Order>();
         internal readonly List<string> OrderReceipts = new List<string>();
         internal readonly List<string> Rejections = new List<string>();
@@ -38,6 +39,7 @@ namespace Anthropocene.Simulation
         {
             World = world; Turn = world.Turn; StartDays = world.Days;
             Horizon = TurnHorizon.Next(world);
+            CalendarStamp = SmoothCalendar.Stamp(world);
         }
     }
 
@@ -177,6 +179,7 @@ namespace Anthropocene.Simulation
         public readonly WorldState World;
         public readonly int Turn;
         public readonly double Days;
+        private readonly CalendarBoundaryStamp calendarStamp;
         public readonly int ExcludedPlayer;
         public readonly PlanningResult Ai;
         internal TradePlan Trade = TradePlan.Empty;
@@ -184,8 +187,9 @@ namespace Anthropocene.Simulation
         internal PlanningDraft(WorldState world, int excludedPlayer, PlanningResult ai)
         {
             World = world; Turn = world.Turn; Days = world.Days; ExcludedPlayer = excludedPlayer; Ai = ai;
+            calendarStamp = SmoothCalendar.Stamp(world);
         }
-        public bool Matches(WorldState world) => ReferenceEquals(World, world) && Turn == world.Turn && Days == world.Days;
+        public bool Matches(WorldState world) => ReferenceEquals(World, world) && Turn == world.Turn && Days == world.Days && calendarStamp.Equals(SmoothCalendar.Stamp(world));
     }
 
     public static class TurnPlanner
@@ -201,6 +205,7 @@ namespace Anthropocene.Simulation
             IEnumerable<DecisionTrace> traces, PhaseExecution execution, PlanningDraft draft)
         {
             if (world == null || submitted == null) throw new ArgumentNullException(world == null ? nameof(world) : nameof(submitted));
+            SmoothCalendar.RequireCurrentBoundary(world);
             using var profile = PhaseProfile.Scope("Prepare");
             TurnDiagnostics.For(world);
             if (world.Resources != null) MaterialAccessIndex.For(world);

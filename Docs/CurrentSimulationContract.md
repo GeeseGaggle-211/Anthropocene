@@ -342,3 +342,7 @@ evidence but remains open on GitHub at this review. Remaining design choices:
 [#13](https://github.com/GeeseGaggle-211/Anthropocene/issues/13) logistics and
 [#15](https://github.com/GeeseGaggle-211/Anthropocene/issues/15) daughter societies.
 Ticket state is workflow metadata, not an override of the current user contract.
+
+
+## Smooth calendar (opt-in integration)
+See [SmoothCalendar.md](SmoothCalendar.md) for the explicit new-game profile, legacy-save boundary and one shared post-opening horizon. Demographic balance diagnosis is deferred; no mortality or planner objective is changed.
