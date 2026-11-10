@@ -18,6 +18,9 @@ jobs:
     timeout-minutes: 25
     permissions:
       contents: write
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,11 +29,13 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/features/smooth-calendar'
         run: |
           if test -f Tools/SmoothCalendar/ApplyIntegration.py; then
+            python3 -c "from pathlib import Path;p=Path('Tools/SmoothCalendar/ApplyIntegration.py');p.write_text(p.read_text().replace('public readonly TurnHorizon Horizon;', 'internal readonly TurnHorizon Horizon;'))"
             python3 Tools/SmoothCalendar/ApplyIntegration.py
-            git diff --check
+            python3 -c "from pathlib import Path;ps=[Path('Assets/_Anthropocene/Simulation/SmoothCalendar.cs.meta'),Path('Assets/_Anthropocene/Resources/SmoothCalendarOpeningConfig.json.meta')];[p.write_text('\n'.join(x.rstrip() for x in p.read_text().splitlines())+'\n') for p in ps]"
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources/SmoothCalendarOpeningConfig.json* Tools/SmoothCalendar Docs/SmoothCalendar.md Docs/CurrentSimulationContract.md
+            git diff --cached --check
             git commit -m 'Integrate versioned smooth calendar, boundary guards and regression tests'
             git push origin HEAD:refs/heads/features/smooth-calendar
           fi
