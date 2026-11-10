@@ -1,0 +1,61 @@
+name: Smooth calendar integration
+on:
+  push:
+    branches: [features/smooth-calendar]
+  pull_request:
+    paths:
+      - 'Assets/_Anthropocene/Simulation/**'
+      - 'Tools/SmoothCalendar/**'
+      - '.github/workflows/smooth-calendar.yml'
+permissions:
+  contents: read
+concurrency:
+  group: smooth-calendar-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Materialize staged integration on its isolated branch only
+        if: github.event_name == 'push' && github.ref == 'refs/heads/features/smooth-calendar'
+        run: |
+          if test -f Tools/SmoothCalendar/ApplyIntegration.py; then
+            python3 Tools/SmoothCalendar/ApplyIntegration.py
+            git diff --check
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add Assets/_Anthropocene/Simulation Assets/_Anthropocene/Resources/SmoothCalendarOpeningConfig.json* Tools/SmoothCalendar Docs/SmoothCalendar.md Docs/CurrentSimulationContract.md
+            git commit -m 'Integrate versioned smooth calendar, boundary guards and regression tests'
+            git push origin HEAD:refs/heads/features/smooth-calendar
+          fi
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Provenance
+        run: |
+          mkdir -p TestResults/SmoothCalendar
+          git rev-parse HEAD > TestResults/SmoothCalendar/commit.txt
+          git diff --stat 07f3501c2d5e047e44d61e85cc0d4613b54572d6 > TestResults/SmoothCalendar/changes.txt
+      - name: Focused calendar integration tests
+        run: dotnet run -c Release --project Tools/SmoothCalendar/Anthropocene.SmoothCalendar.csproj 2>&1 | tee TestResults/SmoothCalendar/calendar.log
+      - name: Registered headless regression
+        run: dotnet run -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --tests-only 2>&1 | tee TestResults/SmoothCalendar/headless.log
+      - name: Contract and whitespace checks
+        run: |
+          python3 Tools/Docs/Check-CurrentContract.py
+          git diff --check 07f3501c2d5e047e44d61e85cc0d4613b54572d6
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smooth-calendar-validation
+          retention-days: 30
+          path: |
+            TestResults/SmoothCalendar/
+            Tools/SmoothCalendar/
+            Docs/SmoothCalendar.md
