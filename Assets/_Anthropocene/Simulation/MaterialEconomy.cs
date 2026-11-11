@@ -772,7 +772,7 @@ namespace Anthropocene.Simulation
                 if (!exportOnly && order != null && order.HasCeilings) wanted = Math.Min(wanted, Math.Max(0, order.Ceiling(recipe.Good) - planned[recipe.Good]));
                 double amount = Math.Min(wanted, recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
                 // Housing Material and its assembly draw on one Builder pool.
-                if (recipe.Good == CraftGood.HousingMaterial)
+                if (recipe.Good == CraftGood.HousingMaterial && order?.Irrigation == null)
                     amount = Math.Min(amount, NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor,
                         exportOnly ? Outstanding(recipe.Good) : Math.Max(0, useful - planned[recipe.Good]),
                         housingMaterial - HeldForExport(CraftGood.HousingMaterial), Outstanding(CraftGood.HousingMaterial)));

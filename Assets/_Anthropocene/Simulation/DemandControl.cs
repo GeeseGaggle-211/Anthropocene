@@ -246,7 +246,7 @@ namespace Anthropocene.Simulation
                 Math.Max(0, c.Food - d.Meals));
 
             // ---- Retained portfolio and current food work (no expansion) ----
-            int farmers = Math.Min(residents, portfolio.FieldFarmers);
+            int farmers = Math.Min(residents, AgriculturalTechnology.FixedFieldStaffingDiagnostic?.Invoke(w, c) ?? portfolio.FieldFarmers);
             int herders = Math.Min(Math.Max(0, residents - farmers),
                 portfolio.HerdHerders);
             double animalReceipts = d.ManagedFood.AnimalFood +
@@ -858,6 +858,33 @@ namespace Anthropocene.Simulation
                         alloc.Requests.Add(request);
                     }
                     prior = edge;
+                }
+            }
+            // The Elder alone creates an infrastructure order. The ordinary
+            // complete-bundle allocator pays Builders, intermediate materials,
+            // extraction and generic tool service alongside housing.
+            IrrigationProject irrigationProject = null;
+            Request canalBuild = null, canalUpkeep = null;
+            if (IrrigationEconomy.Enabled(w) && c.IsVillage &&
+                c.People.HasTech(NeolithicTech.Irrigation))
+            {
+                double upkeep = IrrigationEconomy.UpkeepDemand(w, c, years);
+                if (upkeep > Epsilon) canalUpkeep = Request("canal maintenance", ServiceClass.Continuity, CraftGood.CanalMaintenance, upkeep);
+                if (fieldGapPerYear > Epsilon && IrrigationEconomy.FertileGate(w, c))
+                {
+                    irrigationProject = IrrigationEconomy.Opportunity(w, c);
+                    if (irrigationProject != null)
+                    {
+                        canalBuild = Request("irrigation development", ServiceClass.Development, CraftGood.CanalConstruction, irrigationProject.Remaining);
+                        canalBuild.DevelopmentPlant = true;
+                        canalBuild.DevelopmentFood = irrigationProject.AnnualFoodGain * years;
+                        canalBuild.DevelopmentFoodPerUnit = canalBuild.DevelopmentFood / irrigationProject.Remaining;
+                        canalBuild.TypedDevelopmentNeed = plantFeedstockShortfall;
+                        double constructionYears = canalBuild.Bundle?.RoleYears.Values.Sum() ?? double.PositiveInfinity;
+                        double annualHarvest = irrigationProject.AnnualFoodGain / Math.Max(Epsilon, d.HarvestProductivity * cfg.GatherPerPerson * perYear);
+                        canalBuild.PriorityScore = irrigationProject.AnnualFoodGain * years /
+                            Math.Max(Epsilon, constructionYears * irrigationProject.Remaining + annualHarvest * years);
+                    }
                 }
             }
             // Field development is authorized by the same projected food gap,
@@ -1729,6 +1756,9 @@ namespace Anthropocene.Simulation
             foreach (var r in recipes) if (!order.Contains(r.Good)) order.Add(r.Good);
             foreach (var r in recipes) if (!alloc.Ceilings.ContainsKey(r.Good)) alloc.Ceilings[r.Good] = 0;
             production = new ProductionOrder(order.ToArray(), alloc.Ceilings);
+            if (canalBuild != null || canalUpkeep != null)
+                production.Irrigation = new IrrigationOrder { Project = irrigationProject,
+                    Construction = canalBuild?.Granted ?? 0, Upkeep = canalUpkeep?.Granted ?? 0 };
             if (protectedSplit && protectedClothingUnits >= 0)
                 production.ProtectedClothingUnits = alloc.Requests.Where(q => q.Service == "clothing" && q.Class == ServiceClass.Protected).Sum(q => q.Granted);
             return intent;

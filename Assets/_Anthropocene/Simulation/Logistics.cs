@@ -9,6 +9,20 @@ namespace Anthropocene.Simulation
         public static bool InRange(WorldState w, Camp camp, int tile) => w.Map.Reachable(camp.Tile, tile, w.Config.SupplyRange, n => w.CanEnter(n, true, camp));
         public static bool Connected(WorldState w, Hunter h) => InRange(w, w.Camps.First(c => c.Id == h.SourceCamp), h.Tile);
         public static double Capacity(WorldState w, Hunter h) => h.Population * Math.Max(w.Config.CarryingCapacityPerHunter, w.Config.Consumption * w.Config.GenerationIntervals * w.Config.HunterCarryGenerations);
+        // A shrinking calendar changes the next provisioning target, not the
+        // legality of stock carried from the just-committed physical interval.
+        internal static double CommittedCapacity(WorldState w, Hunter h)
+        {
+            double days = w.Config.TurnDays;
+            if (w.Config.SmoothCalendar != null && w.History.Count > 0)
+            {
+                var last = w.History[w.History.Count - 1];
+                if (Math.Abs(last.StartDays + last.Duration - w.Days) < 1e-7) days = Math.Max(days, last.Duration);
+            }
+            return h.Population * Math.Max(w.Config.CarryingCapacityPerHunter,
+                w.Config.Consumption * days / w.Config.BaseDays * w.Config.HunterCarryGenerations);
+        }
+
         private static LogisticsRecord Entry(TurnRecord record, Hunter h)
         {
             var entry = record.Logistics.FirstOrDefault(e => e.Hunter == h.Id);

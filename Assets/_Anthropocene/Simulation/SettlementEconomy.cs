@@ -383,8 +383,7 @@ namespace Anthropocene.Simulation
             double toolWorkers = years > 0 ? Math.Max(0,
                 camp.Inventory.FarmTools) * cfg.Neolithic.FarmToolFarmerYearsPerUnit /
                 years : 0;
-            double fieldEfficiency = CultivationEconomy.FarmToolFieldWorkEfficiency(
-                cfg.Neolithic);
+            double fieldEfficiency = AgriculturalTechnology.MaintenanceEfficiency(world, camp);
             double WorkersFor(double fraction)
             {
                 double required = rawMaintenance * Numbers.Clamp(fraction, 0, 1);

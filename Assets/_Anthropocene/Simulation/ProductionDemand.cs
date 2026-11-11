@@ -998,6 +998,7 @@ namespace Anthropocene.Simulation
         // Diagnostic prototype only (DemandController.KernelSplitDiagnostic): clothing units
         // the Elder committed ahead of meals; negative (the default) means none.
         internal double ProtectedClothingUnits = -1;
+        internal IrrigationOrder Irrigation;
         // An explicit access order with output ceilings (DemandControl).
         internal ProductionOrder(CraftGood[] goods, IReadOnlyDictionary<CraftGood, double> allocated)
         {

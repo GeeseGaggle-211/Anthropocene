@@ -1,0 +1,170 @@
+[
+  {
+    "networks": 1,
+    "populationPerSettlement": 100,
+    "years": 0.0027397260273972603,
+    "milliseconds": 0.03452,
+    "allocatedBytes": 6540
+  },
+  {
+    "networks": 1,
+    "populationPerSettlement": 100,
+    "years": 20,
+    "milliseconds": 0.051905,
+    "allocatedBytes": 6540
+  },
+  {
+    "networks": 1,
+    "populationPerSettlement": 100,
+    "years": 600,
+    "milliseconds": 0.06888999999999999,
+    "allocatedBytes": 6540
+  },
+  {
+    "networks": 1,
+    "populationPerSettlement": 1000000,
+    "years": 0.0027397260273972603,
+    "milliseconds": 0.03637,
+    "allocatedBytes": 6540
+  },
+  {
+    "networks": 1,
+    "populationPerSettlement": 1000000,
+    "years": 20,
+    "milliseconds": 0.075435,
+    "allocatedBytes": 6540
+  },
+  {
+    "networks": 1,
+    "populationPerSettlement": 1000000,
+    "years": 600,
+    "milliseconds": 0.049055,
+    "allocatedBytes": 6540
+  },
+  {
+    "networks": 16,
+    "populationPerSettlement": 100,
+    "years": 0.0027397260273972603,
+    "milliseconds": 0.363855,
+    "allocatedBytes": 62060
+  },
+  {
+    "networks": 16,
+    "populationPerSettlement": 100,
+    "years": 20,
+    "milliseconds": 0.44907,
+    "allocatedBytes": 62060
+  },
+  {
+    "networks": 16,
+    "populationPerSettlement": 100,
+    "years": 600,
+    "milliseconds": 0.398385,
+    "allocatedBytes": 62060
+  },
+  {
+    "networks": 16,
+    "populationPerSettlement": 1000000,
+    "years": 0.0027397260273972603,
+    "milliseconds": 0.395255,
+    "allocatedBytes": 62060
+  },
+  {
+    "networks": 16,
+    "populationPerSettlement": 1000000,
+    "years": 20,
+    "milliseconds": 0.450075,
+    "allocatedBytes": 62060
+  },
+  {
+    "networks": 16,
+    "populationPerSettlement": 1000000,
+    "years": 600,
+    "milliseconds": 0.41933499999999996,
+    "allocatedBytes": 62060
+  },
+  {
+    "networks": 80,
+    "populationPerSettlement": 100,
+    "years": 0.0027397260273972603,
+    "milliseconds": 1.29084,
+    "allocatedBytes": 305716
+  },
+  {
+    "networks": 80,
+    "populationPerSettlement": 100,
+    "years": 20,
+    "milliseconds": 0.69276,
+    "allocatedBytes": 305716
+  },
+  {
+    "networks": 80,
+    "populationPerSettlement": 100,
+    "years": 600,
+    "milliseconds": 0.7911400000000001,
+    "allocatedBytes": 305716
+  },
+  {
+    "networks": 80,
+    "populationPerSettlement": 1000000,
+    "years": 0.0027397260273972603,
+    "milliseconds": 0.82936,
+    "allocatedBytes": 305716
+  },
+  {
+    "networks": 80,
+    "populationPerSettlement": 1000000,
+    "years": 20,
+    "milliseconds": 0.71505,
+    "allocatedBytes": 305716
+  },
+  {
+    "networks": 80,
+    "populationPerSettlement": 1000000,
+    "years": 600,
+    "milliseconds": 0.698375,
+    "allocatedBytes": 305716
+  },
+  {
+    "networks": 320,
+    "populationPerSettlement": 100,
+    "years": 0.0027397260273972603,
+    "milliseconds": 2.8027450000000003,
+    "allocatedBytes": 1232460
+  },
+  {
+    "networks": 320,
+    "populationPerSettlement": 100,
+    "years": 20,
+    "milliseconds": 4.0170200000000005,
+    "allocatedBytes": 1232460
+  },
+  {
+    "networks": 320,
+    "populationPerSettlement": 100,
+    "years": 600,
+    "milliseconds": 5.530405,
+    "allocatedBytes": 1232460
+  },
+  {
+    "networks": 320,
+    "populationPerSettlement": 1000000,
+    "years": 0.0027397260273972603,
+    "milliseconds": 2.05874,
+    "allocatedBytes": 1232460
+  },
+  {
+    "networks": 320,
+    "populationPerSettlement": 1000000,
+    "years": 20,
+    "milliseconds": 2.625725,
+    "allocatedBytes": 1232460
+  },
+  {
+    "networks": 320,
+    "populationPerSettlement": 1000000,
+    "years": 600,
+    "milliseconds": 2.66008,
+    "allocatedBytes": 1232460
+  }
+]

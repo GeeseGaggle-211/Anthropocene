@@ -109,7 +109,7 @@ namespace Anthropocene.Simulation
             double futureLife = Math.Exp(-r * years) * HerdLabour.DiscountedYears(r, future);
             double raw = demand.CultivationEnabled ? CultivationEconomy.MaintenanceWorkerRequirement(world, camp) : 0;
             double toolWorkers = Math.Max(0, camp.Inventory.FarmTools) * n.FarmToolFarmerYearsPerUnit / years;
-            double efficiency = CultivationEconomy.FarmToolFieldWorkEfficiency(n);
+            double efficiency = AgriculturalTechnology.MaintenanceEfficiency(world, camp);
             double Workers(double fraction)
             {
                 double required = raw * fraction;

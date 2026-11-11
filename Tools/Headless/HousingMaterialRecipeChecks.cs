@@ -54,9 +54,9 @@ internal static class HousingMaterialRecipeChecks
     {
         var w = NeolithicChecks.Fixture(); var n = w.Config.Neolithic;
         var material = Recipe(w, CraftGood.HousingMaterial); var housing = Recipe(w, CraftGood.Housing);
-        Check((int)CraftGood.HousingMaterial == 9 && (int)CraftGood.FishingTools == Enum.GetValues(typeof(CraftGood)).Length - 1 &&
+        Check((int)CraftGood.HousingMaterial == 9 && (int)CraftGood.FishingTools == 10 && (int)CraftGood.CanalConstruction == 11 && (int)CraftGood.CanalMaintenance == 12 &&
             (int)CraftGood.HerdingTools == 8 && (int)CraftGood.Housing == 4,
-            "Fishing Tools is appended and existing ordinals are unchanged");
+            "infrastructure receipt kinds append after Fishing Tools without ordinal drift");
         Near(material.Rate, 2 * n.BuilderHousingOutputPerBaseDays, "material step runs at twice today's Housing rate");
         Near(housing.Rate, 2 * n.BuilderHousingOutputPerBaseDays, "assembly step runs at twice today's Housing rate");
         Near(material.ConstructionMaterial, n.HousingMaterialUnitsPerHousing, "material takes over the flexible Wood/Clay input");

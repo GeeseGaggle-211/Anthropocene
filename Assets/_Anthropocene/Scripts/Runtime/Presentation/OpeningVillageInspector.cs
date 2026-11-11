@@ -36,7 +36,7 @@ namespace Anthropocene.Presentation
             float pastoralDescriptionHeight = husbandry ? small.CalcHeight(new GUIContent(pastoralDescription), col - 8) + 8 : 0;
             float livestockRows = husbandry ? ownedLivestock.Length * 54 : 0;
             float fishingRows = fishing ? observation.FishingGrounds.Count(g => world.Map.Distance(camp.Tile, g.Tile) <= FishingEconomy.GroundRange + 1) * 24 : 0;
-            float contentHeight = Mathf.Max(1370 + livestockRows + fishingRows, 940 + livestockRows + pastoralDescriptionHeight + fishingRows);
+            float contentHeight = Mathf.Max(1370 + livestockRows + fishingRows, 940 + livestockRows + pastoralDescriptionHeight + fishingRows) + (world.Config.Agriculture == null ? 0 : 240);
             villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, scrollContentWidth, contentHeight));
             float y = 4;
             var inventory = camp.Inventory;
@@ -176,7 +176,8 @@ namespace Anthropocene.Presentation
             {
                 GUI.Label(new Rect(x, fy, col - 8, 24), material + ": " + (known.Any(s => s.Material == material && s.Available > 0) ? "known local source" : "no accessible source"), small); fy += 28;
             }
-            GUI.Label(new Rect(x, fy + 10, col - 8, 70), "Irrigation construction, Plough effects and advanced technology effects remain deferred.", small);
+            GUI.Label(new Rect(x, fy + 10, col - 8, 280), AgriculturalTechnology.Plough(world, camp) || world.Config.Agriculture != null
+                ? IrrigationEconomy.Status(world, camp) + $"\nConstruction progress: {(world.Canals?.Where(s => s.Operator == camp.Id).Sum(s => s.Construction) ?? 0):F2} completed segment equivalents." : "Plough and Irrigation are available in the opt-in agricultural technology profile.", small);
             GUI.EndScrollView(); GUI.EndGroup();
             if (draft.Stamp != before) Queue(new Order(OrderKind.Economy, camp.Id) { Economy = draft });
         }

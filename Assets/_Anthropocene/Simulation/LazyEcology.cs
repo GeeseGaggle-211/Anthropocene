@@ -23,8 +23,9 @@ namespace Anthropocene.Simulation
     public struct EcologyView
     {
         public double Food, PotentialFood, Freshwater, Saltwater, LandCondition, AquaticCondition, Days, CultivationCapital;
+        public double IrrigationWater, IrrigationSoil, IrrigationArea;
         public VegetationTier CurrentVegetation;
-        public EcologyView(Tile t) { Food = t.Food; PotentialFood = t.PotentialFood; Freshwater = t.Freshwater; Saltwater = t.Saltwater; LandCondition = t.LandCondition; AquaticCondition = t.AquaticCondition; Days = t.LastEcologyUpdateDays; CurrentVegetation = t.CurrentVegetation; CultivationCapital = t.CultivationCapital; }
+        public EcologyView(Tile t) { IrrigationWater = IrrigationSoil = IrrigationArea = 0; Food = t.Food; PotentialFood = t.PotentialFood; Freshwater = t.Freshwater; Saltwater = t.Saltwater; LandCondition = t.LandCondition; AquaticCondition = t.AquaticCondition; Days = t.LastEcologyUpdateDays; CurrentVegetation = t.CurrentVegetation; CultivationCapital = t.CultivationCapital; }
         public void Commit(Tile t) { t.Food = Food; t.PotentialFood = PotentialFood; t.Freshwater = Freshwater; t.Saltwater = Saltwater; t.LandCondition = LandCondition; t.AquaticCondition = AquaticCondition; t.CurrentVegetation = CurrentVegetation; t.LastEcologyUpdateDays = Days; t.CultivationCapital = CultivationCapital; }
     }
     public readonly struct EcologyCapacity
@@ -55,6 +56,33 @@ namespace Anthropocene.Simulation
             }
             Water = t.WaterBody == WaterKind.Saltwater || t.FreshwaterSource == FreshwaterSource.None ? 0 : s.MaxFreshwater;
             FoodRate = s.FoodRecoveryPerDay; BiomassRate = s.BiomassRecoveryPerDay; WaterRate = s.WaterRecoveryPerDay;
+            if (t.Land && w.Config.Agriculture?.IrrigationEnabled == true && view.IrrigationArea > 0 && q > 0)
+            {
+                var settings = w.Config.Agriculture;
+                double area = Numbers.Clamp(view.IrrigationArea, 0, 1);
+                var watered = s;
+                watered.Moisture = (float)(s.Moisture + view.IrrigationWater * Math.Max(0, settings.TargetMoisture - s.Moisture));
+                double waterBiomass = s.Moisture > 1e-9 ? Biomass * watered.Moisture / s.Moisture :
+                    FoodEcology.LandBiomassBase * w.Config.LandBiomassMultiplier *
+                    FoodEcology.LandProductivity(t, watered, w.Config) * multiplier * condition;
+                // A persistent soil advantage survives drought, but B_water
+                // remains constrained by actual current moisture.
+                double improved = waterBiomass * (1 + settings.SoilCapacityGain * view.IrrigationSoil);
+                Biomass = (1 - area) * Biomass + area * improved;
+                double warmth = Numbers.Clamp((s.Temperature + 8) / 30.0, .015, 1);
+                double fraction = w.Config.LandFoodRegenerationInitialized ? w.Config.LandFoodRegeneration : w.Config.FoodRegeneration;
+                double waterRate = EcologyMath.DailyRate(fraction * (.2 + watered.Moisture) * warmth, w.Config.BaseDays);
+                double naturalRate = EcologyMath.DailyRate(fraction * (.2 + s.Moisture) * warmth, w.Config.BaseDays);
+                double rateGain = Math.Max(0, waterRate - naturalRate);
+                FoodRate += area * rateGain;
+                BiomassRate += area * rateGain;
+                waterRate = s.BiomassRecoveryPerDay + rateGain;
+                double managedFood = EcologyMath.EffectiveWildFoodCapacity(ecologicalWildFood, improved, q, w.Config, watered.Moisture);
+                Food = Math.Min(Biomass, (1 - area) * Food + area * managedFood);
+                ManagedFlow = (1 - area) * ManagedFlow + area * EcologyMath.ManagedRegenerationFlow(w.Config,
+                    q, improved, waterRate, operatingFraction ?? t.CultivationOperatingFraction, watered.Moisture);
+            }
+
         }
     }
     // Four fixed climate profiles remain forcing data. Their exposure can be
@@ -223,6 +251,7 @@ namespace Anthropocene.Simulation
             AquaticEcologyOverlay? aquaticOverlay = null)
         {
             var t = w.Tiles[tile]; var v = new EcologyView(t);
+            IrrigationEconomy.RestoreOverlay(w, tile, ref v, queryDays);
             if (queryDays < v.Days - 1e-8) throw new ArgumentOutOfRangeException(nameof(queryDays), "Cannot project before stored ecology.");
             double days = Math.Max(0, queryDays - v.Days);
             var overlay = aquaticOverlay ?? ProjectAquaticOverlay(w, tile, v.Days, days);

@@ -10,6 +10,17 @@ Implementation evidence is not itself a new design approval. The index is a navi
 and conflict-resolution aid. The linked normative documents and accepted issue
 contracts remain the rule sources.
 
+## Opt-in Plough and Elder irrigation (November 2026)
+
+[AgriculturalTechnology.md](AgriculturalTechnology.md) implements the approved
+Plough/Farm Tools and paid Elder irrigation contract using the versioned smoothed
+calendar. It defines construction/continuity reservations, finite water,
+persistent river-fed soil development, appended work IDs and optional save
+records. [AgriculturalTechnologyValidation.md](AgriculturalTechnologyValidation.md)
+separates measured smoothed-calendar evidence from numerical fixtures and
+unperformed Unity interaction checks. Existing profiles, saves, RL observation
+and action layouts, and demographic laws retain their prior behavior.
+
 ## Physical altitude for new worlds (6 November 2026)
 
 The subsequent user-authorized generation-16 change makes boundary rivers carve

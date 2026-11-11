@@ -105,7 +105,9 @@ namespace Anthropocene.Presentation
             int seed = PlaytestScenarios.Seed;
             if (scenarioIndex == 0 && !int.TryParse(seedText, out seed)) { status = "Enter a whole-number seed."; return; }
             var config = new SimulationConfig();
-            var tuning = Resources.Load<TextAsset>("OpeningConfig");
+            var profile = Array.IndexOf(System.Environment.GetCommandLineArgs(), "--anthropocene-agricultural-technology") >= 0
+                ? "AgriculturalTechnologyOpeningConfig" : "OpeningConfig";
+            var tuning = Resources.Load<TextAsset>(profile);
             if (tuning != null)
             {
                 // Treat omitted physical horizons in older JSON tuning files as

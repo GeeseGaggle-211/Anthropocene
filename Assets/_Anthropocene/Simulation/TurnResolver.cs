@@ -192,6 +192,7 @@ namespace Anthropocene.Simulation
             Ownership.Bind(w);
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) BreakthroughBound(w, camp, record);
             using (PhaseProfile.Scope("Technology")) TechnologyDiscovery.Resolve(w, record);
+            AgriculturalTechnology.Close(w, record);
             using (PhaseProfile.Scope("FieldDomestication")) fieldContact.Resolve(w, record);
             // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
             // Immigration between known settlements precedes fission (QoLFissionTradeDesign 4, 9); its sources and arrivals sit out fission this turn.
@@ -207,6 +208,7 @@ namespace Anthropocene.Simulation
                 LastMetrics.SocialForecastCacheBuilds = socialForecasts.Builds;
                 LastMetrics.SocialForecastCacheHits = socialForecasts.CacheHits;
             }
+            IrrigationEconomy.ReconcileOwnership(w);
             WelfareDiagnostics.Capture(w, record);
             foreach (var change in touched.Values.OrderBy(t => t.Tile))
             { change.AfterFood = w.Tiles[change.Tile].Food; change.AfterPotentialFood = w.Tiles[change.Tile].PotentialFood; change.AfterFreshwater = w.Tiles[change.Tile].Freshwater; change.AfterLandCondition = w.Tiles[change.Tile].LandCondition; change.AfterAquaticCondition = w.Tiles[change.Tile].AquaticCondition; record.Changes.Add(change); }
@@ -580,7 +582,7 @@ namespace Anthropocene.Simulation
             if (expectedPeople >= 0 && w.Camps.Sum(w.LinkedPopulation) != expectedPeople) throw new InvalidOperationException("Unexplained population change.");
             if (w.Camps.Any(c => c.Population < 0 || c.Food < -1e-8 || c.DemographicGrowthMultiplier <= 0 || double.IsNaN(c.DemographicGrowthMultiplier) || c.Workforce == null || c.Workforce.Assignments.Any(a => a == null || string.IsNullOrWhiteSpace(a.Role) || a.Population <= 0) || c.Workforce.Assignments.GroupBy(a => a.Role, StringComparer.Ordinal).Any(g => g.Count() != 1) || c.Workforce.Assigned > c.Population || !w.CanEnter(c.Tile, false)) || w.Hunters.Any(h => h.Population < 0 || !w.CanEnter(h.Tile, true, w.Camps.First(c => c.Id == h.SourceCamp))))
                 throw new InvalidOperationException("Invalid people state or location.");
-            if (w.Hunters.Any(h => h.CarriedFood < -1e-8 || h.CarriedFood > Supply.Capacity(w, h) + 1e-8)
+            if (w.Hunters.Any(h => h.CarriedFood < -1e-8 || h.CarriedFood > Supply.CommittedCapacity(w, h) + 1e-8)
                 || w.Camps.Any(c => c.GrowthRemainder < 0 || c.DeathRemainder < 0 || double.IsNaN(c.GrowthRemainder) || double.IsInfinity(c.GrowthRemainder) || double.IsNaN(c.DeathRemainder) || double.IsInfinity(c.DeathRemainder)
                     || w.Config.DemographicModel == DemographicModel.LegacyQoLNetGrowth && c.GrowthRemainder >= 1)
                 || w.Hunters.Any(h => h.GrowthRemainder < 0 || h.DeathRemainder < 0 || double.IsNaN(h.GrowthRemainder) || double.IsInfinity(h.GrowthRemainder) || double.IsNaN(h.DeathRemainder) || double.IsInfinity(h.DeathRemainder)))
@@ -596,7 +598,7 @@ namespace Anthropocene.Simulation
                     aquaticOverlay: aquaticOverlay);
                 if (tile.WaterBody == WaterKind.Saltwater && (tile.Freshwater > 0 || ecology.MaxFreshwater > 0 || tile.FreshwaterSource != FreshwaterSource.None)) throw new InvalidOperationException("Seawater is not drinkable.");
                 if (tile.Saltwater < 0 || tile.Saltwater > ecology.MaxSaltwater + 1e-6 || tile.FreshwaterSource == FreshwaterSource.None && tile.Freshwater > 1e-8) throw new InvalidOperationException("Water stock lacks a valid source or capacity.");
-                if (double.IsNaN(projected.LandCondition) || double.IsNaN(projected.AquaticCondition) || projected.LandCondition < -1e-8 || projected.LandCondition > 1 + 1e-8 || projected.AquaticCondition < -1e-8 || projected.AquaticCondition > 1 + 1e-8 || double.IsNaN(projected.Food) || double.IsInfinity(projected.Food) || projected.Food < -1e-8 || double.IsNaN(projected.PotentialFood) || double.IsInfinity(projected.PotentialFood) || projected.PotentialFood + 1e-8 < projected.Food || projected.PotentialFood > ecology.MaxPotentialFood * multiplier + 1e-5 || projected.PotentialFood > capacity.Biomass + 1e-6 || projected.Freshwater < -1e-8 || double.IsNaN(projected.Freshwater) ||
+                if (double.IsNaN(projected.LandCondition) || double.IsNaN(projected.AquaticCondition) || projected.LandCondition < -1e-8 || projected.LandCondition > 1 + 1e-8 || projected.AquaticCondition < -1e-8 || projected.AquaticCondition > 1 + 1e-8 || double.IsNaN(projected.Food) || double.IsInfinity(projected.Food) || projected.Food < -1e-8 || double.IsNaN(projected.PotentialFood) || double.IsInfinity(projected.PotentialFood) || projected.PotentialFood + 1e-8 < projected.Food || (IrrigationEconomy.Field(w, tile.Id) == null && projected.PotentialFood > ecology.MaxPotentialFood * multiplier + 1e-5) || projected.PotentialFood > capacity.Biomass + 1e-6 || projected.Freshwater < -1e-8 || double.IsNaN(projected.Freshwater) ||
                     projected.Food > capacity.Food + 1e-6 || projected.Freshwater > ecology.MaxFreshwater + 1e-6)
                     throw new InvalidOperationException("Invalid ecology or capacity overflow at tile " + tile.Id +
                         ": food=" + projected.Food.ToString("R") + "/" + capacity.Food.ToString("R") +

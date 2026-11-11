@@ -52,3 +52,5 @@ TestResults/
 !Tools/NeolithicCraftValidation/Anthropocene.NeolithicCraftValidation.csproj
 !Tools/PerformanceAudit/HerdEcologyProbe.csproj
 !Tools/PerformanceAudit/PastoralPlannerProbe.csproj
+
+!Tools/AgriculturalTechnologySweep/Anthropocene.AgriculturalTechnologySweep.csproj
