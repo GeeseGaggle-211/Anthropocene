@@ -264,6 +264,11 @@ namespace Anthropocene.Simulation
     }
     public static class NeolithicProduction
     {
+        // A new segment includes its first operating period. Manufacturing demand
+        // and the assembly recipe must price that same commissioning bundle.
+        private static double CanalConstructionMaterials(SimulationConfig config)
+            => config.Agriculture.CanalHousingMaterials + config.Agriculture.UpkeepHousingMaterials * config.TurnDays / config.DaysPerYear;
+
         public static CraftRecipe[] Recipes(SimulationConfig config)
         {
             var n = config.Neolithic;
@@ -286,7 +291,7 @@ namespace Anthropocene.Simulation
                 var a = config.Agriculture;
                 recipes = recipes.Concat(new[] {
                     new CraftRecipe { Good = CraftGood.CanalConstruction, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction,
-                        Rate = config.BaseDays / config.DaysPerYear / (a.CanalBuilderYears + a.UpkeepBuilderYears * config.TurnDays / config.DaysPerYear), HousingMaterial = a.CanalHousingMaterials + a.UpkeepHousingMaterials * config.TurnDays / config.DaysPerYear, Equipment = true, SpecialistOnly = true, AgricultureOnly = true },
+                        Rate = config.BaseDays / config.DaysPerYear / (a.CanalBuilderYears + a.UpkeepBuilderYears * config.TurnDays / config.DaysPerYear), HousingMaterial = CanalConstructionMaterials(config), Equipment = true, SpecialistOnly = true, AgricultureOnly = true },
                     new CraftRecipe { Good = CraftGood.CanalMaintenance, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction,
                         Rate = config.BaseDays / config.DaysPerYear / a.UpkeepBuilderYears, HousingMaterial = a.UpkeepHousingMaterials, Equipment = true, SpecialistOnly = true, AgricultureOnly = true }
                 }).ToArray();
@@ -486,11 +491,11 @@ namespace Anthropocene.Simulation
         {
             var n = w.Config.Neolithic;
             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
-            // Housing Material is made only against the Housing gap, never stockpiled beyond it.
+            // Manufacture against housing and authorized infrastructure, net of shared stock/exports.
             if (IrrigationEconomy.InfrastructureGood(good)) return IrrigationEconomy.Demand(order, good);
             if (good == CraftGood.HousingMaterial)
                 return Math.Max(0, Demand(w, c, CraftGood.Housing, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order) +
-                    (w.Config.Agriculture == null ? 0 : IrrigationEconomy.Demand(order, CraftGood.CanalConstruction) * w.Config.Agriculture.CanalHousingMaterials + IrrigationEconomy.Demand(order, CraftGood.CanalMaintenance) * w.Config.Agriculture.UpkeepHousingMaterials) - (Math.Max(0, c.Inventory.HousingMaterial) - c.TradeExport(CraftGood.HousingMaterial)));
+                    (w.Config.Agriculture == null ? 0 : IrrigationEconomy.Demand(order, CraftGood.CanalConstruction) * CanalConstructionMaterials(w.Config) + IrrigationEconomy.Demand(order, CraftGood.CanalMaintenance) * w.Config.Agriculture.UpkeepHousingMaterials) - (Math.Max(0, c.Inventory.HousingMaterial) - c.TradeExport(CraftGood.HousingMaterial)));
             if (good == CraftGood.HandTools || good == CraftGood.Tools)
             {
                 var tools = ToolReplacementDemands(w, c, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order);

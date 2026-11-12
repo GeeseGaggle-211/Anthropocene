@@ -10,5 +10,6 @@
   <ItemGroup>
     <Compile Include="../../Assets/_Anthropocene/Simulation/*.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="Gameplay.cs" />
   </ItemGroup>
 </Project>

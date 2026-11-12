@@ -261,9 +261,44 @@ internal static class AgriculturalTechnologyChecks
         TurnResolver.Invariants(w);
         Console.WriteLine("Agricultural complete-turn canals=" + (w.Canals?.Count ?? 0));
     }
+    private static void CommissioningMaterialChain()
+    {
+        foreach (double years in new[] { 1.0 / 365, 13.445341030213397, 20 })
+        foreach (double stockFraction in new[] { 0.0, .5 })
+        {
+            var w = Fixture(); var c = w.Camps[0]; w.Config.TurnDays = years * w.Config.DaysPerYear;
+            c.People.NeolithicTechnologies.Add(NeolithicTech.Irrigation);
+            c.Workforce.Assign(WorkforceRoles.Farmer, 0, c.Population);
+            c.Workforce.Assign(WorkforceRoles.Builder, 50, c.Population);
+            c.Inventory.HousingUnits = 10000;
+            c.Inventory.Wood = c.Inventory.Clay = 10000;
+            var recipes = NeolithicProduction.Recipes(w.Config);
+            var canal = recipes.Single(r => r.Good == CraftGood.CanalConstruction);
+            double units = Math.Min(1, years * .1), required = units * canal.HousingMaterial;
+            c.Inventory.HousingMaterial = required * stockFraction;
+            var order = new ProductionOrder(new[] { CraftGood.HousingMaterial, CraftGood.CanalConstruction },
+                new Dictionary<CraftGood, double> { [CraftGood.HousingMaterial] = required, [CraftGood.CanalConstruction] = units })
+                { Irrigation = new IrrigationOrder { Project = IrrigationEconomy.Opportunity(w, c), Construction = units } };
+            double demand = NeolithicProduction.Demand(w, c, CraftGood.HousingMaterial, years, c.Population, false, false, order: order);
+            Near(demand, required * (1 - stockFraction), "manufacture includes commissioning upkeep net of carried stock");
+            double intervals = w.Config.GenerationIntervals, equipment = 10000;
+            var forecast = MaterialEconomy.Forecast(w, c, recipes, intervals, years, equipment, false, c.Population, false, false, order: order);
+            Near(forecast[CraftGood.CanalConstruction], units, "forecast completes funded construction from missing materials");
+            var record = new TurnRecord { StartDays = w.Days, Duration = w.Config.TurnDays };
+            var coverage = new ToolCoverageBudget(w, c, intervals);
+            double time = NeolithicProduction.Produce(w, c, recipes.Single(r => r.Good == CraftGood.HousingMaterial),
+                WorkforceRoles.Builder, 50 * intervals, intervals, demand, ref equipment, record, coverage, order: order);
+            NeolithicProduction.Produce(w, c, canal, WorkforceRoles.Builder, 50 * intervals - time, intervals, units,
+                ref equipment, record, coverage, order: order);
+            Near(record.Production.Where(p => p.Good == CraftGood.CanalConstruction).Sum(p => p.Output), units, "manufactured commissioning bundle completes authorized work in same interval");
+            Near(c.Inventory.HousingMaterial, 0, "commissioning consumes manufactured plus carried materials exactly");
+            Near(w.Canals.Sum(s => s.Construction), units, "committed progress agrees with forecast");
+            Check(record.Production.Sum(p => p.WorkerIntervals) <= 50 * intervals + 1e-8, "manufacture and assembly share Builder budget");
+        }
+    }
     public static int Run()
     {
-        checks = 0; Plough(); Discovery(); GatesAndCosts(); WaterAndSoil(); AdditionalContracts(); ElderGatesAndSharing(); CompleteTurns();
+        checks = 0; Plough(); Discovery(); GatesAndCosts(); WaterAndSoil(); AdditionalContracts(); ElderGatesAndSharing(); CompleteTurns(); CommissioningMaterialChain();
         Console.WriteLine("PASS: " + checks + " agricultural technology assertions"); return checks;
     }
 }

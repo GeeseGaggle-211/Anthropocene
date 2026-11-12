@@ -59,6 +59,10 @@ upkeep for the construction interval's physical duration**. The first service
 period is therefore paid before activation. Partial construction persists,
 including fractional prepaid commissioning years. Completion activates at Close
 for the following interval; it cannot irrigate the interval that built it.
+Manufacturing demand and assembly share the commissioning-material calculation;
+the demand nets carried Housing Materials and exports against the entire bundle.
+The 12 November correction removes the previous omission of prepaid upkeep from
+manufacturing demand. See [the 80-tribe follow-up](AgriculturalTechnologyGameplay80.md).
 
 Continuity requests replenish the next service interval after current funding
 is spent. Upkeep costs 0.10 Housing Materials and 0.25 Builder-years per segment-

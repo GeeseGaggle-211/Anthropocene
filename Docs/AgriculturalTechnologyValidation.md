@@ -1,5 +1,14 @@
 # Agricultural technology validation — 11 November 2026
 
+**12 November correction:** headless gameplay exposed and prompted a fix for
+manufacturing demand omitting prepaid canal upkeep. The [80-tribe follow-up](AgriculturalTechnologyGameplay80.md)
+records fresh validation of the corrected build. The tables below remain the
+pre-fix experiment: they are reproducible historical evidence, not a fresh
+calibration of the corrected build. The full five-seed treatment matrix has not
+been rerun after this correction. The 80-tribe run exposes additional construction
+grant/output discrepancies and a final-save metadata limit; acceptance remains
+blocked. Unity interaction acceptance also remains pending.
+
 Plough and paid Elder irrigation are implemented in an opt-in profile using the
 approved smoothed calendar. The tested baseline retains maintenance **1.50×**,
 crop harvest **1.25×**, moisture target **0.50**, and nonzero canal construction
