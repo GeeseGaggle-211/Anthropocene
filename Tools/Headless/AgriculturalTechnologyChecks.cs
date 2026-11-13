@@ -263,42 +263,118 @@ internal static class AgriculturalTechnologyChecks
     }
     private static void CommissioningMaterialChain()
     {
-        foreach (double years in new[] { 1.0 / 365, 13.445341030213397, 20 })
+        foreach (double years in new[] { 1.0 / 365, 10.373449306446295, 13.445341030213397, 20 })
         foreach (double stockFraction in new[] { 0.0, .5 })
+        foreach (bool storage in new[] { false, true })
         {
             var w = Fixture(); var c = w.Camps[0]; w.Config.TurnDays = years * w.Config.DaysPerYear;
             c.People.NeolithicTechnologies.Add(NeolithicTech.Irrigation);
             c.Workforce.Assign(WorkforceRoles.Farmer, 0, c.Population);
-            c.Workforce.Assign(WorkforceRoles.Builder, 50, c.Population);
+            w.Config.GoodsStorageEnabled = storage;
             c.Inventory.HousingUnits = 10000;
             c.Inventory.Wood = c.Inventory.Clay = 10000;
             var recipes = NeolithicProduction.Recipes(w.Config);
             var canal = recipes.Single(r => r.Good == CraftGood.CanalConstruction);
+            var material = recipes.Single(r => r.Good == CraftGood.HousingMaterial);
             double units = Math.Min(1, years * .1), required = units * canal.HousingMaterial;
+            double intervals = w.Config.GenerationIntervals, equipment = 10000;
+            // Independently price the paid bundle; no surplus fifth Builder to mask the cap defect.
+            double workerIntervals = required * (1 - stockFraction) / (material.Rate * w.Config.Neolithic.ImprovedToolsHousingMultiplier)
+                + units / canal.Rate;
+            int builders = (int)Math.Ceiling(workerIntervals / intervals);
+            c.Workforce.Assign(WorkforceRoles.Builder, builders, c.Population);
             c.Inventory.HousingMaterial = required * stockFraction;
             var order = new ProductionOrder(new[] { CraftGood.HousingMaterial, CraftGood.CanalConstruction },
                 new Dictionary<CraftGood, double> { [CraftGood.HousingMaterial] = required, [CraftGood.CanalConstruction] = units })
                 { Irrigation = new IrrigationOrder { Project = IrrigationEconomy.Opportunity(w, c), Construction = units } };
             double demand = NeolithicProduction.Demand(w, c, CraftGood.HousingMaterial, years, c.Population, false, false, order: order);
             Near(demand, required * (1 - stockFraction), "manufacture includes commissioning upkeep net of carried stock");
-            double intervals = w.Config.GenerationIntervals, equipment = 10000;
             var forecast = MaterialEconomy.Forecast(w, c, recipes, intervals, years, equipment, false, c.Population, false, false, order: order);
             Near(forecast[CraftGood.CanalConstruction], units, "forecast completes funded construction from missing materials");
+            GoodsStorage.PlannedUse(recipes, g => forecast[g], out double equipmentUse, out double housingUse, out double infrastructureUse);
+            Near(infrastructureUse, required, "storage exempts exactly the canal commissioning materials");
+            if (storage) c.GoodsStorage = GoodsStorage.Begin(w, c, years, c.Population, equipmentUse, housingUse, infrastructureMaterials: infrastructureUse);
             var record = new TurnRecord { StartDays = w.Days, Duration = w.Config.TurnDays };
             var coverage = new ToolCoverageBudget(w, c, intervals);
             double time = NeolithicProduction.Produce(w, c, recipes.Single(r => r.Good == CraftGood.HousingMaterial),
-                WorkforceRoles.Builder, 50 * intervals, intervals, demand, ref equipment, record, coverage, order: order);
-            NeolithicProduction.Produce(w, c, canal, WorkforceRoles.Builder, 50 * intervals - time, intervals, units,
+                WorkforceRoles.Builder, builders * intervals, intervals, demand, ref equipment, record, coverage, order: order);
+            NeolithicProduction.Produce(w, c, canal, WorkforceRoles.Builder, builders * intervals - time, intervals, units,
                 ref equipment, record, coverage, order: order);
             Near(record.Production.Where(p => p.Good == CraftGood.CanalConstruction).Sum(p => p.Output), units, "manufactured commissioning bundle completes authorized work in same interval");
             Near(c.Inventory.HousingMaterial, 0, "commissioning consumes manufactured plus carried materials exactly");
             Near(w.Canals.Sum(s => s.Construction), units, "committed progress agrees with forecast");
-            Check(record.Production.Sum(p => p.WorkerIntervals) <= 50 * intervals + 1e-8, "manufacture and assembly share Builder budget");
+            Check(record.Production.Sum(p => p.WorkerIntervals) <= builders * intervals + 1e-8, "manufacture and assembly share Builder budget");
+        }
+    }
+    private static void MixedConstructionCommitment()
+    {
+        foreach (int builders in new[] { 4, 8 })
+        {
+            var w = Fixture(); var c = w.Camps[0]; const double years = 10.373449306446295;
+            w.Config.TurnDays = years * w.Config.DaysPerYear; w.Config.GoodsStorageEnabled = true;
+            c.People.NeolithicTechnologies.Add(NeolithicTech.Irrigation);
+            c.Workforce.Assign(WorkforceRoles.Farmer, 0, c.Population);
+            c.Workforce.Assign(WorkforceRoles.Builder, builders, c.Population);
+            c.Inventory.HousingMaterial = c.Inventory.HousingUnits = 0; c.HousingDemand = 100;
+            c.Inventory.FarmTools = 10000; // full store: current construction inputs must be in-use goods
+            c.Inventory.Wood = c.Inventory.Clay = 10000;
+            var recipes = NeolithicProduction.Recipes(w.Config);
+            var canal = recipes.Single(r => r.Good == CraftGood.CanalConstruction);
+            var housing = recipes.Single(r => r.Good == CraftGood.Housing);
+            var material = recipes.Single(r => r.Good == CraftGood.HousingMaterial);
+            var goods = new[] { CraftGood.HousingMaterial, CraftGood.Housing, CraftGood.CanalConstruction };
+            var order = new ProductionOrder(goods, new Dictionary<CraftGood, double> {
+                [CraftGood.HousingMaterial] = canal.HousingMaterial + housing.HousingMaterial,
+                [CraftGood.Housing] = 1, [CraftGood.CanalConstruction] = 1 })
+                { Irrigation = new IrrigationOrder { Project = IrrigationEconomy.Opportunity(w, c), Construction = 1 } };
+            double intervals = w.Config.GenerationIntervals, equipment = 10000;
+            var forecast = MaterialEconomy.Forecast(w, c, recipes, intervals, years, equipment, false, c.Population, false, false, order: order);
+            var allocation = new DemandController.Allocation();
+            var request = new DemandController.Request { Good = CraftGood.CanalConstruction, Granted = 1, GrantedBeforeProduction = 1 };
+            allocation.Requests.Add(request);
+            // Cached drafts must survive repeated preparation unchanged.
+            var preparedAllocation = allocation.CopyForPreparation();
+            var needs = new TurnNeeds { Order = order.CopyForPreparation(), Production = forecast };
+            TurnPlanner.ReconcileInfrastructure(needs, preparedAllocation);
+            Near(order.Ceiling(CraftGood.CanalConstruction), 1, "preparation leaves cached production ceilings intact");
+            Near(order.Irrigation.Construction, 1, "preparation leaves cached construction authorization intact");
+            Near(request.Granted, 1, "preparation leaves cached grant diagnostics intact");
+            var repeat = new TurnNeeds { Order = order.CopyForPreparation(), Production = forecast };
+            TurnPlanner.ReconcileInfrastructure(repeat, allocation.CopyForPreparation());
+            Near(repeat.Order.Irrigation.Construction, needs.Order.Irrigation.Construction, "reusing a cached draft gives the same commitment");
+            order = needs.Order; request = preparedAllocation.Requests[0];
+            Near(request.GrantedBeforeProduction, 1, "original authorization remains visible after reconciliation");
+            Near(request.Granted, forecast[CraftGood.CanalConstruction], "final canal grant agrees with executable shared Builder budget");
+            Check(builders == 8 ? request.Granted >= 1 - 1e-8 : request.Granted < 1 - 1e-8,
+                "mixed fixture distinguishes fully funded work from a constrained Builder pool");
+            GoodsStorage.PlannedUse(recipes, g => forecast[g], out double equipmentUse, out double housingUse, out double infrastructureUse);
+            c.GoodsStorage = GoodsStorage.Begin(w, c, years, c.Population, equipmentUse, housingUse, infrastructureMaterials: infrastructureUse);
+            var record = new TurnRecord { StartDays = w.Days, Duration = w.Config.TurnDays };
+            var coverage = new ToolCoverageBudget(w, c, intervals);
+            double labor = builders * intervals;
+            foreach (var good in goods)
+            {
+                var recipe = recipes.Single(r => r.Good == good);
+                double demand = good == CraftGood.HousingMaterial ? forecast[good] : order.Ceiling(good);
+                labor -= NeolithicProduction.Produce(w, c, recipe, WorkforceRoles.Builder, labor, intervals, demand,
+                    ref equipment, record, coverage, order: order);
+            }
+            Near(record.Production.Where(p => p.Good == CraftGood.Housing).Sum(p => p.Output), forecast[CraftGood.Housing], "housing retains its own job quantity");
+            Near(record.Production.Where(p => p.Good == CraftGood.CanalConstruction).Sum(p => p.Output), request.Granted, "actual canal work matches the reconciled grant");
+            Check(labor >= -1e-8, "mixed construction cannot duplicate Builder time");
+            Near(record.Production.Sum(p => p.HousingMaterial) + c.Inventory.HousingMaterial,
+                record.Production.Where(p => p.Good == CraftGood.HousingMaterial).Sum(p => p.Output), "housing and canals conserve their shared material stock");
+            var maintenance = recipes.Single(r => r.Good == CraftGood.CanalMaintenance);
+            GoodsStorage.PlannedUse(recipes, g => g == CraftGood.CanalMaintenance ? years : 0,
+                out _, out _, out double upkeepMaterials);
+            Near(upkeepMaterials, years * maintenance.HousingMaterial, "continuity repairs receive their exact in-use material exemption");
+            var closing = GoodsStorage.Begin(w, c, years, c.Population, equipmentUse, housingUse, endOfTurn: true, infrastructureMaterials: infrastructureUse);
+            Near(closing.Limit(c, CraftGood.HousingMaterial, 1), 0, "closing storage does not retain the temporary construction exemption");
         }
     }
     public static int Run()
     {
-        checks = 0; Plough(); Discovery(); GatesAndCosts(); WaterAndSoil(); AdditionalContracts(); ElderGatesAndSharing(); CompleteTurns(); CommissioningMaterialChain();
+        checks = 0; Plough(); Discovery(); GatesAndCosts(); WaterAndSoil(); AdditionalContracts(); ElderGatesAndSharing(); CompleteTurns(); CommissioningMaterialChain(); MixedConstructionCommitment();
         Console.WriteLine("PASS: " + checks + " agricultural technology assertions"); return checks;
     }
 }

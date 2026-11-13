@@ -995,10 +995,22 @@ namespace Anthropocene.Simulation
         private readonly Dictionary<CraftGood, double> ceilings;
         public double Ceiling(CraftGood good) => ceilings != null && ceilings.TryGetValue(good, out double c) ? c : double.PositiveInfinity;
         public bool HasCeilings => ceilings != null;
+        internal void Cap(CraftGood good, double amount)
+        { if (ceilings != null) ceilings[good] = Math.Min(Ceiling(good), Math.Max(0, amount)); }
         // Diagnostic prototype only (DemandController.KernelSplitDiagnostic): clothing units
         // the Elder committed ahead of meals; negative (the default) means none.
         internal double ProtectedClothingUnits = -1;
         internal IrrigationOrder Irrigation;
+        internal ProductionOrder CopyForPreparation()
+        {
+            var copy = ceilings == null
+                ? new ProductionOrder(Goods, new Dictionary<CraftGood, double>(keys))
+                : new ProductionOrder(Goods, (IReadOnlyDictionary<CraftGood, double>)ceilings);
+            copy.ProtectedClothingUnits = ProtectedClothingUnits;
+            if (Irrigation != null) copy.Irrigation = new IrrigationOrder {
+                Project = Irrigation.Project, Construction = Irrigation.Construction, Upkeep = Irrigation.Upkeep };
+            return copy;
+        }
         // An explicit access order with output ceilings (DemandControl).
         internal ProductionOrder(CraftGood[] goods, IReadOnlyDictionary<CraftGood, double> allocated)
         {

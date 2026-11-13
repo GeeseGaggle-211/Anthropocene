@@ -87,7 +87,8 @@ internal static class Gameplay
             {
                 var timer = Stopwatch.StartNew();
                 var ai = AiPlanning.Decide(w);
-                var prepared = TurnPlanner.Prepare(w, ai.Orders, ai.Traces);
+                var draft = args.Contains("--use-draft") ? TurnPlanner.Draft(w, -1) : null;
+                var prepared = TurnPlanner.Prepare(w, ai.Orders, ai.Traces, execution: null, draft: draft);
                 var decisions = prepared.DemandAllocations.OrderBy(p => p.Key).Select(p => new {
                     camp = p.Key, developmentFoodGap = p.Value.DevelopmentFoodGap,
                     requests = p.Value.Requests.Where(r => r.Good == CraftGood.CanalConstruction || r.Good == CraftGood.CanalMaintenance)

@@ -1,0 +1,23 @@
+{
+  "reason": "After runs started, cached irrigation production orders and request diagnostics were isolated before reconciliation. The population-run harness never supplies a PlanningDraft. Direct-preparation gameplay statements and calendar were unchanged.",
+  "files": [
+    {
+      "path": "Assets/_Anthropocene/Simulation/DemandControl.cs",
+      "runtimeSha256": "66ef17e11e2fc05509066f183a725435fc99f6c72548ffee92542fc7cf2f22e7",
+      "finalSha256": "ad0cd8a44110053e45e6c85b4264ce0c5393bbf78fa4c0b0f3b48ad40fee0cde"
+    },
+    {
+      "path": "Assets/_Anthropocene/Simulation/ProductionDemand.cs",
+      "runtimeSha256": "85f22f2e1b0e2879787119f7de263f95a14ebf8da59b9e87f36b9ca46a7e0f95",
+      "finalSha256": "a9b598f6adb5428f215d2e0bffaa6303dd3b7e0584da54e5f814a2033aa7b110"
+    },
+    {
+      "path": "Assets/_Anthropocene/Simulation/TurnPlanning.cs",
+      "runtimeSha256": "bb3d90b7027fa5024a20baa1cd4c2e8a973a7eb3cf0ae4c2e94f53e50368af02",
+      "finalSha256": "150f4275a8ca60e1aff33e062fe22841fbac268f0e197288d8a5cc016c513131"
+    }
+  ],
+  "patch": "Docs/Experiments/ConstructionFix80-20261113-cache-isolation.patch",
+  "patchSha256": "7deeccea4f01b97686d66cd1ffebb26b8444ed3b95e3f2a2e1964ea0cfd2ab7f",
+  "runtimeBinarySha256": "0f80701dfd649d3b80044e2be34518f483a05302d4bd69921967b1f73c20485d"
+}

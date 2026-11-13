@@ -64,6 +64,25 @@ the demand nets carried Housing Materials and exports against the entire bundle.
 The 12 November correction removes the previous omission of prepaid upkeep from
 manufacturing demand. See [the 80-tribe follow-up](AgriculturalTechnologyGameplay80.md).
 
+The 13 November construction correction counts implicit generic Tool output once
+in the paid allowance. Housing Material capacity now uses the same Builder-tool
+multiplier as its time charge, including when a canal order is present. Materials
+consumed by canal construction and upkeep receive the same temporary in-use
+storage allowance as housing inputs; the allowance expires at Close.
+
+Housing, canal construction and canal upkeep retain separate output quantities
+and priorities, consumed from one Builder workforce and shared inventories.
+After the physical production forecast, the prepared canal quantities and
+production ceilings are capped to executable output. Diagnostics retain both
+the initial grant (`GrantedBeforeProduction`) and the final grant (`Granted`),
+so a preparation reduction cannot masquerade as delivery. Already compiled input
+and workforce reservations are not reassigned to other jobs by this final cap.
+Cached drafts supply separate construction orders and request diagnostics to
+each preparation, so repeated preparation cannot reduce the reusable draft.
+This adds no persistent fields, identifiers, actions, observations or settings.
+The generic Tool allowance correction also applies to other DemandControl
+production; agriculture remains opt-in and no RL training configuration changes.
+
 Continuity requests replenish the next service interval after current funding
 is spent. Upkeep costs 0.10 Housing Materials and 0.25 Builder-years per segment-
 year, plus ordinary equipment service, and restores hydraulic condition. The

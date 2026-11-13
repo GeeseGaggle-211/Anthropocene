@@ -726,8 +726,8 @@ namespace Anthropocene.Simulation
             GoodsStorage storage = null; double[] stored = null; double storagePots = 0;
             if (GoodsStorage.Enabled(w.Config))
             {
-                GoodsStorage.PlannedUse(recipes, good => NeolithicProduction.Priority(c, good) > 0 ? UsefulDemand(good) : 0, out double equipmentUse, out double housingUse);
-                storage = GoodsStorage.Begin(w, c, years, residentPopulation, equipmentUse, housingUse);
+                GoodsStorage.PlannedUse(recipes, good => NeolithicProduction.Priority(c, good) > 0 ? UsefulDemand(good) : 0, out double equipmentUse, out double housingUse, out double infrastructureUse);
+                storage = GoodsStorage.Begin(w, c, years, residentPopulation, equipmentUse, housingUse, infrastructureMaterials: infrastructureUse);
                 stored = GoodsStorage.StockOf(c);
                 var nc = w.Config.Neolithic;
                 storagePots = Math.Max(0, c.Inventory.Pots) * (potsAlreadyDecayed ? 1 : Math.Pow(1 - nc.PotDecayPerReferenceTurn, Math.Max(0, years) / nc.ReferenceTurnYears));
@@ -770,7 +770,8 @@ namespace Anthropocene.Simulation
                 double wanted = exportOnly ? Outstanding(recipe.Good) : sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]);
                 // DemandControl ceilings: no ordinary step makes more than the allocated output (exports keep their claim).
                 if (!exportOnly && order != null && order.HasCeilings) wanted = Math.Min(wanted, Math.Max(0, order.Ceiling(recipe.Good) - planned[recipe.Good]));
-                double amount = Math.Min(wanted, recipe.Equipment ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
+                double amount = Math.Min(wanted, recipe.Equipment || recipe.Good == CraftGood.HousingMaterial
+                    ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
                 // Housing Material and its assembly draw on one Builder pool.
                 if (recipe.Good == CraftGood.HousingMaterial && order?.Irrigation == null)
                     amount = Math.Min(amount, NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor,

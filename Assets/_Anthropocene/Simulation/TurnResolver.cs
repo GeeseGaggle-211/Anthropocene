@@ -102,10 +102,10 @@ namespace Anthropocene.Simulation
                 foreach (var camp in w.Camps.OrderBy(c => c.Id))
                 {
                     prepared.Needs.TryGetValue(camp.Id, out var campNeeds);
-                    double equipmentOutputs = 0, housingAssembly = 0;
+                    double equipmentOutputs = 0, housingAssembly = 0, infrastructureMaterials = 0;
                     if (campNeeds?.Production != null)
-                        GoodsStorage.PlannedUse(storageRecipes, g => campNeeds.Production.TryGetValue(g, out double q) ? q : 0, out equipmentOutputs, out housingAssembly);
-                    camp.GoodsStorage = GoodsStorage.Begin(w, camp, horizon.Years, campNeeds?.Residents ?? camp.Population, equipmentOutputs, housingAssembly);
+                        GoodsStorage.PlannedUse(storageRecipes, g => campNeeds.Production.TryGetValue(g, out double q) ? q : 0, out equipmentOutputs, out housingAssembly, out infrastructureMaterials);
+                    camp.GoodsStorage = GoodsStorage.Begin(w, camp, horizon.Years, campNeeds?.Residents ?? camp.Population, equipmentOutputs, housingAssembly, infrastructureMaterials: infrastructureMaterials);
                 }
             }
             // Confirmed trades settle from committed stock before dispatch, provisions, production and needs (WP7):

@@ -1,5 +1,12 @@
 # Agricultural technology validation — 11 November 2026
 
+**13 November construction correction:** the [three 80-tribe reruns](ConstructionFix80.md)
+record the repaired tool allowance, Builder material throughput, construction
+storage, final grant reconciliation and cached-draft isolation. The final code
+passes all 69 headless suites. The historical tables below are not recalibrated
+by these normal-play reruns; large-world final-save and Unity acceptance remain
+open.
+
 **12 November correction:** headless gameplay exposed and prompted a fix for
 manufacturing demand omitting prepaid canal upkeep. The [80-tribe follow-up](AgriculturalTechnologyGameplay80.md)
 records fresh validation of the corrected build. The tables below remain the

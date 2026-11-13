@@ -34,12 +34,12 @@ namespace Anthropocene.Simulation
         // The camp's storage terms for one turn. equipmentOutputs are the equipment and housing-work outputs this turn
         // consumes tools for; housingAssembly the fixed Housing units assembled (each consumes Housing Material);
         // endOfTurn drops the allowances for goods consumed during the turn (clothing, Housing Material, tool outputs).
-        public static GoodsStorage Begin(WorldState w, Camp c, double years, double residents, double equipmentOutputs, double housingAssembly, bool endOfTurn = false)
+        public static GoodsStorage Begin(WorldState w, Camp c, double years, double residents, double equipmentOutputs, double housingAssembly, bool endOfTurn = false, double infrastructureMaterials = 0)
         {
             var cfg = w.Config; var n = cfg.Neolithic;
             residents = Math.Max(0, residents < 0 ? c.Population : residents);
             double clothing = endOfTurn ? 0 : residents * n.FabricConsumptionPerPersonTurn * Math.Max(0, years) / n.ReferenceTurnYears;
-            double material = endOfTurn ? 0 : Math.Max(0, housingAssembly) * n.HousingMaterialUnitsPerHousing;
+            double material = endOfTurn ? 0 : Math.Max(0, housingAssembly) * n.HousingMaterialUnitsPerHousing + Math.Max(0, infrastructureMaterials);
             double fixedPeople = NeolithicProduction.HousingCapacity(w, c, w.Days).Fixed;
             double tents = n.LightHousingPeoplePerUnit > 0 ? Math.Max(0, residents - fixedPeople) / n.LightHousingPeoplePerUnit : 0;
             double farm = CultivationEconomy.Enabled(c) ? Math.Max(0, CultivationEconomy.ForecastFarmToolWorkerYears(w, c, years)) / n.FarmToolFarmerYearsPerUnit : 0;
@@ -139,8 +139,11 @@ namespace Anthropocene.Simulation
 
         // Equipment and housing-work outputs, and Housing assembled, in a production plan (by CraftGood).
         public static void PlannedUse(CraftRecipe[] recipes, Func<CraftGood, double> planned, out double equipmentOutputs, out double housingAssembly)
+            => PlannedUse(recipes, planned, out equipmentOutputs, out housingAssembly, out _);
+
+        public static void PlannedUse(CraftRecipe[] recipes, Func<CraftGood, double> planned, out double equipmentOutputs, out double housingAssembly, out double infrastructureMaterials)
         {
-            equipmentOutputs = 0; housingAssembly = 0;
+            equipmentOutputs = 0; housingAssembly = 0; infrastructureMaterials = 0;
             // Only equipment and housing work is read, so a forecast never runs the tool replacement schedule here.
             foreach (var r in recipes)
             {
@@ -149,6 +152,7 @@ namespace Anthropocene.Simulation
                 double q = Math.Max(0, planned(r.Good));
                 if (equipment) equipmentOutputs += q;
                 if (r.Good == CraftGood.Housing) housingAssembly += q;
+                else if (IrrigationEconomy.InfrastructureGood(r.Good)) infrastructureMaterials += q * r.HousingMaterial;
             }
         }
     }

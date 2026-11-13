@@ -39,8 +39,8 @@ internal static class GrantAudit
                 new Dictionary<CraftGood, double> { [CraftGood.HousingMaterial] = canal.HousingMaterial, [CraftGood.CanalConstruction] = 1 })
                 { Irrigation = new IrrigationOrder { Construction = 1, Project = new IrrigationProject { Source = source, Target = c.Tile, Route = new[] { c.Tile }, Remaining = 1 } } };
             var forecast = MaterialEconomy.Forecast(w, c, recipes, cfg.GenerationIntervals, years, 10000, false, c.Population, false, false, order: order);
-            GoodsStorage.PlannedUse(recipes, g => forecast[g], out double equipmentUse, out double housingUse);
-            if (storage) c.GoodsStorage = GoodsStorage.Begin(w, c, years, c.Population, equipmentUse, housingUse);
+            GoodsStorage.PlannedUse(recipes, g => forecast[g], out double equipmentUse, out double housingUse, out double infrastructureUse);
+            if (storage) c.GoodsStorage = GoodsStorage.Begin(w, c, years, c.Population, equipmentUse, housingUse, infrastructureMaterials: infrastructureUse);
             double sameMaterialForHousing = GoodsStorage.Begin(w, c, years, c.Population, equipmentUse, canal.HousingMaterial / cfg.Neolithic.HousingMaterialUnitsPerHousing)
                 .Limit(c, CraftGood.HousingMaterial, canal.HousingMaterial);
             var record = new TurnRecord { Duration = cfg.TurnDays }; var coverage = new ToolCoverageBudget(w, c, cfg.GenerationIntervals);

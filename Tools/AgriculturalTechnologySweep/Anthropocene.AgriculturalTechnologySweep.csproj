@@ -12,5 +12,6 @@
     <Compile Include="Program.cs" />
     <Compile Include="Gameplay.cs" />
     <Compile Include="GrantAudit.cs" />
+    <Compile Include="PopulationRuns.cs" />
   </ItemGroup>
 </Project>

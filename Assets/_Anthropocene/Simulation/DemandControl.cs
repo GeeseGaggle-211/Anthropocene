@@ -151,6 +151,7 @@ namespace Anthropocene.Simulation
         {
             // A goods request names its Good; a labour request (herd growth, field expansion) its Role, in persons.
             public string Service; public ServiceClass Class; public CraftGood? Good; public string Role; public double Units, Granted; public string Unmet = "";
+            public double GrantedBeforeProduction;
             // Development requests are ordered by physical retained food per
             // recurring worker-year. WholeUnits marks livestock heads; a
             // fractional grant is not an economic authorization to breed.
@@ -162,10 +163,19 @@ namespace Anthropocene.Simulation
             // Opening intermediates this request's bundle drew from stock, returned if the request is withdrawn.
             internal double ReservedFabric, ReservedMaterial;
             public double Fraction => Units > Epsilon ? Granted / Units : 1;
+            internal Request CopyForPreparation() => (Request)MemberwiseClone();
         }
         internal sealed class Allocation
         {
-            public readonly List<Request> Requests = new List<Request>();
+            public List<Request> Requests { get; private set; } = new List<Request>();
+            // Preparation changes only request commitments. Bundle, staffing
+            // and cost ledgers remain immutable after compilation.
+            internal Allocation CopyForPreparation()
+            {
+                var copy = (Allocation)MemberwiseClone();
+                copy.Requests = Requests.Select(r => r.CopyForPreparation()).ToList();
+                return copy;
+            }
             public readonly Dictionary<string, int> Staff = new Dictionary<string, int>();
             public int Herders, Farmers, Fishers, FoodGatherers;
             public double FishingFood, FeedstockGatherers,
@@ -1636,7 +1646,8 @@ namespace Anthropocene.Simulation
                     foreach (var p in staff) alloc.Staff[p.Key] = p.Value;
                     alloc.MaterialGatherers = materialGatherers; alloc.FeedstockGatherers = feedstockGatherers; alloc.ToolsMade = toolsMade;
                     foreach (var p in total.Outputs) alloc.Ceilings[p.Key] = p.Value;
-                    if (toolsMade > 0) alloc.Ceilings[toolGood] = (alloc.Ceilings.TryGetValue(toolGood, out double t) ? t : 0) + toolsMade;
+                    // total.Add(toolmaking, toolsMade) already includes this output.
+                    // Adding it again permits unfunded Tools to consume other jobs' inputs.
                     // A final over-budget (rounding after the repair) drops the lowest-class work in stable order.
                     if (repair == 1 && needed > budget + Epsilon)
                     {
@@ -1761,6 +1772,7 @@ namespace Anthropocene.Simulation
                     Construction = canalBuild?.Granted ?? 0, Upkeep = canalUpkeep?.Granted ?? 0 };
             if (protectedSplit && protectedClothingUnits >= 0)
                 production.ProtectedClothingUnits = alloc.Requests.Where(q => q.Service == "clothing" && q.Class == ServiceClass.Protected).Sum(q => q.Granted);
+            foreach (var request in alloc.Requests) request.GrantedBeforeProduction = request.Granted;
             return intent;
         }
 

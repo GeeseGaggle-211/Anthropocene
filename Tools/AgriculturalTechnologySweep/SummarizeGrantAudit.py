@@ -1,4 +1,8 @@
-"""Summarize the diagnosed native construction grants from before/after receipts."""
+"""Summarize historical pre-fix (0a1735e) receipts, whose Tools ceiling was doubled.
+
+Do not apply the half-ceiling inference or original case classification to a
+corrected replay. Use SummarizePopulationRuns.py for post-correction evidence.
+"""
 import json,csv
 from pathlib import Path
 root=Path('TestResults/ConstructionGrantAudit');rows=[]

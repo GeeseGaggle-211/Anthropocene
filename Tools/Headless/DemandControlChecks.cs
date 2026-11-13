@@ -125,6 +125,9 @@ internal static class DemandControlChecks
         NeolithicProduction.AddFixedHousing(w, c, 1000, w.Days);
         var intent = Plan(w, c, out var order, out var allocation);
         var clothing = allocation.Requests.Where(q => q.Service == "clothing" && q.Good == CraftGood.Cloth).ToArray();
+        Check(allocation.ToolsMade > 0, "incoming-feedstock fixture funds generic Tools");
+        Near(order.Ceiling(CraftGood.Tools), allocation.ToolsMade,
+            "generic Tool ceiling contains exactly the paid output, without a second allowance");
         double allocatedCloth = clothing.Sum(q => q.Granted);
         double allocatedToolOutputs = order.Ceiling(CraftGood.HandTools)
             + order.Ceiling(CraftGood.Tools) * ToolCoverageBudget.OutputsPerTool;

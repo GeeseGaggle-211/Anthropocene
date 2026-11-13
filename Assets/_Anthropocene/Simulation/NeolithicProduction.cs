@@ -936,7 +936,8 @@ namespace Anthropocene.Simulation
             if (recipe.ConstructionMaterial > 0 && housing == null)
             {
                 var planned = Recipes(w.Config).ToDictionary(r => r.Good, r => 0d);
-                planned[recipe.Good] = Math.Min(usefulDemand, recipe.Equipment ? coverage.Capacity(recipe.Good, rate, workerIntervals) : workerIntervals * rate);
+                planned[recipe.Good] = Math.Min(usefulDemand, recipe.Equipment || recipe.Good == CraftGood.HousingMaterial
+                    ? coverage.Capacity(recipe.Good, rate, workerIntervals) : workerIntervals * rate);
                 housing = MaterialEconomy.PlanHousingMaterials(w, c, Recipes(w.Config), planned, intervals * w.Config.BaseDays / w.Config.DaysPerYear, w.Days, null, order);
             }
             // The shared budget limits finished output.  The legacy equipment
@@ -947,7 +948,8 @@ namespace Anthropocene.Simulation
             // consume it, so it never takes labour the assembly needs this turn.
             double amount = recipe.Good == CraftGood.HousingMaterial && order?.Irrigation == null
                 ? ExportedHousingMaterialLimit(coverage, rate, labor, usefulDemand, c.Inventory.HousingMaterial - c.TradeHeldForExport(CraftGood.HousingMaterial), c.TradeOutstanding(CraftGood.HousingMaterial))
-                : Math.Min(usefulDemand, recipe.Equipment ? coverage.Capacity(recipe.Good, rate, labor) : labor * rate);
+                : Math.Min(usefulDemand, recipe.Equipment || recipe.Good == CraftGood.HousingMaterial
+                    ? coverage.Capacity(recipe.Good, rate, labor) : labor * rate);
             double laborToolLimit = amount;
             var inv = c.Inventory;
             if (recipe.Stone > 0) amount = Math.Min(amount, inv.Stone / recipe.Stone);

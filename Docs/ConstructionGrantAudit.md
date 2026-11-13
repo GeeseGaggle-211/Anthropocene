@@ -4,6 +4,12 @@ This investigation follows the eleven underfilled irrigation grants in the
 seed-11, 80-founding-tribe smoothed-calendar playthrough. It changes diagnostic
 tools only; simulation rules and the existing acceptance blockers remain.
 
+**Historical audit:** the subsequent construction correction fixes the defects
+identified below. The original case data remain unchanged as before-fix evidence;
+they are not results from the corrected build. The implementation contract is in
+[AgriculturalTechnology.md](AgriculturalTechnology.md), with corrected gameplay
+and population distributions in [the three 80-tribe reruns](ConstructionFix80.md).
+
 ## What the Elder allocates
 
 Housing, new canals and canal upkeep are separate requests. Each request has
@@ -137,6 +143,12 @@ minimum funded staffing, shared input manufacture and mixed construction jobs,
 including tight storage. These corrections have not been applied by this audit.
 
 ## Reproduce
+
+The eleven-case native replay and its summarizer below require the historical
+pre-correction revision `0a1735e`. Later fixes change ordinary tool production,
+subsequent economic choices and settlement IDs, so those hard-coded case IDs do
+not identify matching settlements in a corrected replay. The controlled
+`--grant-audit-fixture` remains useful on the corrected build.
 
 ```bash
 dotnet build Tools/AgriculturalTechnologySweep/Anthropocene.AgriculturalTechnologySweep.csproj -c Release

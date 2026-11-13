@@ -1,5 +1,9 @@
 # Corrected irrigation — 80-tribe smoothed-calendar playthrough
 
+**Subsequent construction fixes:** [three new 80-tribe runs](ConstructionFix80.md)
+record the corrected budget and capacity implementation. This page retains the
+earlier run and its original limitations as historical evidence.
+
 **13 November diagnosis:** the [construction grant audit](ConstructionGrantAudit.md)
 traces the shortfalls to doubled implicit Tools ceilings and an inconsistent
 Housing Material labor cap. The original measurements below remain unchanged.

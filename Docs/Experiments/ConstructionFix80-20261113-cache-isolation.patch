@@ -1,0 +1,59 @@
+--- a/Assets/_Anthropocene/Simulation/DemandControl.cs
++++ b/Assets/_Anthropocene/Simulation/DemandControl.cs
+@@ -163,10 +163,19 @@
+             // Opening intermediates this request's bundle drew from stock, returned if the request is withdrawn.
+             internal double ReservedFabric, ReservedMaterial;
+             public double Fraction => Units > Epsilon ? Granted / Units : 1;
++            internal Request CopyForPreparation() => (Request)MemberwiseClone();
+         }
+         internal sealed class Allocation
+         {
+-            public readonly List<Request> Requests = new List<Request>();
++            public List<Request> Requests { get; private set; } = new List<Request>();
++            // Preparation changes only request commitments. Bundle, staffing
++            // and cost ledgers remain immutable after compilation.
++            internal Allocation CopyForPreparation()
++            {
++                var copy = (Allocation)MemberwiseClone();
++                copy.Requests = Requests.Select(r => r.CopyForPreparation()).ToList();
++                return copy;
++            }
+             public readonly Dictionary<string, int> Staff = new Dictionary<string, int>();
+             public int Herders, Farmers, Fishers, FoodGatherers;
+             public double FishingFood, FeedstockGatherers,
+--- a/Assets/_Anthropocene/Simulation/ProductionDemand.cs
++++ b/Assets/_Anthropocene/Simulation/ProductionDemand.cs
+@@ -1001,6 +1001,16 @@
+         // the Elder committed ahead of meals; negative (the default) means none.
+         internal double ProtectedClothingUnits = -1;
+         internal IrrigationOrder Irrigation;
++        internal ProductionOrder CopyForPreparation()
++        {
++            var copy = ceilings == null
++                ? new ProductionOrder(Goods, new Dictionary<CraftGood, double>(keys))
++                : new ProductionOrder(Goods, (IReadOnlyDictionary<CraftGood, double>)ceilings);
++            copy.ProtectedClothingUnits = ProtectedClothingUnits;
++            if (Irrigation != null) copy.Irrigation = new IrrigationOrder {
++                Project = Irrigation.Project, Construction = Irrigation.Construction, Upkeep = Irrigation.Upkeep };
++            return copy;
++        }
+         // An explicit access order with output ceilings (DemandControl).
+         internal ProductionOrder(CraftGood[] goods, IReadOnlyDictionary<CraftGood, double> allocated)
+         {
+--- a/Assets/_Anthropocene/Simulation/TurnPlanning.cs
++++ b/Assets/_Anthropocene/Simulation/TurnPlanning.cs
+@@ -268,9 +268,12 @@
+                     cached.Tile == effectiveTile && cached.Abandoning == abandoning)
+                 {
+                     Interlocked.Increment(ref diagnostics.DraftIntentsReused);
+-                    return new AutomaticPlan { Order = cached.Order.Copy(), Production = cached.Production,
++                    // Reconciliation belongs to this prepared turn, never to
++                    // the reusable draft displayed while the player plans.
++                    bool construction = cached.Production?.Irrigation != null;
++                    return new AutomaticPlan { Order = cached.Order.Copy(), Production = construction ? cached.Production.CopyForPreparation() : cached.Production,
+                         FishingAccess = fishingAccess.TryGetValue(camp.Id, out var cachedAccess) ? cachedAccess : null,
+-                        DemandAllocation = cached.DemandAllocation };
++                        DemandAllocation = construction ? cached.DemandAllocation?.CopyForPreparation() : cached.DemandAllocation };
+                 }
+                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
+                 fishingAccess.TryGetValue(camp.Id, out var access);

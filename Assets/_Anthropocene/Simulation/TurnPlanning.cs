@@ -268,9 +268,12 @@ namespace Anthropocene.Simulation
                     cached.Tile == effectiveTile && cached.Abandoning == abandoning)
                 {
                     Interlocked.Increment(ref diagnostics.DraftIntentsReused);
-                    return new AutomaticPlan { Order = cached.Order.Copy(), Production = cached.Production,
+                    // Reconciliation belongs to this prepared turn, never to
+                    // the reusable draft displayed while the player plans.
+                    bool construction = cached.Production?.Irrigation != null;
+                    return new AutomaticPlan { Order = cached.Order.Copy(), Production = construction ? cached.Production.CopyForPreparation() : cached.Production,
                         FishingAccess = fishingAccess.TryGetValue(camp.Id, out var cachedAccess) ? cachedAccess : null,
-                        DemandAllocation = cached.DemandAllocation };
+                        DemandAllocation = construction ? cached.DemandAllocation?.CopyForPreparation() : cached.DemandAllocation };
                 }
                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
                 fishingAccess.TryGetValue(camp.Id, out var access);
@@ -297,7 +300,11 @@ namespace Anthropocene.Simulation
                 needsResults = (execution ?? new PhaseExecution()).Map(camps, c =>
                     ComputeNeeds(world, c, prepared, acceptedActions, acceptedEconomy, huntersByCamp));
             for (int i = 0; i < camps.Length; i++)
+            {
                 prepared.Needs[camps[i].Id] = needsResults[i];
+                prepared.DemandAllocations.TryGetValue(camps[i].Id, out var allocation);
+                ReconcileInfrastructure(needsResults[i], allocation);
+            }
             foreach (var camp in camps.Where(c => FishingEconomy.FeatureEnabled(world, c)))
             {
                 fishingAccess.TryGetValue(camp.Id, out var access);
@@ -435,6 +442,26 @@ namespace Anthropocene.Simulation
             var draft = new PlanningDraft(world, excludedPlayer, ai) { Trade = trade };
             foreach (var result in results) draft.Intents[result.Camp] = result;
             return draft;
+        }
+
+        // Compilation reserves the inputs; the prepared physical forecast is the
+        // final output commitment. Retain the original grant in diagnostics so a
+        // reduction is visible rather than reported as successfully delivered work.
+        internal static void ReconcileInfrastructure(TurnNeeds needs, DemandController.Allocation allocation)
+        {
+            var order = needs?.Order;
+            if (order?.Irrigation == null || needs.Production == null) return;
+            foreach (var good in new[] { CraftGood.CanalConstruction, CraftGood.CanalMaintenance })
+            {
+                double authorized = IrrigationEconomy.Demand(order, good);
+                double output = Math.Min(authorized, Math.Max(0, needs.Production.TryGetValue(good, out double q) ? q : 0));
+                if (output >= authorized - 1e-9) continue;
+                order.Cap(good, output);
+                if (good == CraftGood.CanalConstruction) order.Irrigation.Construction = output;
+                else order.Irrigation.Upkeep = output;
+                if (allocation != null) foreach (var request in allocation.Requests.Where(r => r.Good == good))
+                { request.Granted = Math.Min(request.Granted, output); request.Unmet = "prepared production capacity"; }
+            }
         }
 
         private static TurnNeeds ComputeNeeds(WorldState world, Camp camp, PreparedTurn prepared,
