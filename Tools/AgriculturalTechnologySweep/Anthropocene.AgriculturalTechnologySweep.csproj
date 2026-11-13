@@ -11,5 +11,6 @@
     <Compile Include="../../Assets/_Anthropocene/Simulation/*.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Gameplay.cs" />
+    <Compile Include="GrantAudit.cs" />
   </ItemGroup>
 </Project>

@@ -122,6 +122,8 @@ internal static class Program
     private static void Main(string[] args)
     {
         if (args.Contains("--gameplay")) { Gameplay.Run(args); return; }
+        if (args.Contains("--grant-audit")) { GrantAudit.Run(); return; }
+        if (args.Contains("--grant-audit-fixture")) { GrantAudit.Fixture(); return; }
         if (args.Contains("--labor-audit")) { LaborAudit(); return; }
         if (args.Contains("--benchmark")) { Benchmark(); return; }
         string Arg(string name, string fallback) => args.FirstOrDefault(a => a.StartsWith(name + "="))?.Substring(name.Length + 1) ?? fallback;

@@ -1,5 +1,9 @@
 # Corrected irrigation — 80-tribe smoothed-calendar playthrough
 
+**13 November diagnosis:** the [construction grant audit](ConstructionGrantAudit.md)
+traces the shortfalls to doubled implicit Tools ceilings and an inconsistent
+Housing Material labor cap. The original measurements below remain unchanged.
+
 **Readiness limitations:** some later construction grants exceed actual output,
 requiring further funding/production-schedule investigation. The full world
 reaches the target date, but final
