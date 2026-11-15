@@ -1,5 +1,10 @@
 # Corrected irrigation — 80-tribe smoothed-calendar playthrough
 
+**15 November persistence follow-up:** the retained failing endpoint now loads
+with its original authoritative fingerprint. [SavePersistence.md](SavePersistence.md)
+records the streaming fix, save roundtrip and continuation validation. The
+original failure evidence below is preserved.
+
 **Subsequent construction fixes:** [three new 80-tribe runs](ConstructionFix80.md)
 record the corrected budget and capacity implementation. This page retains the
 earlier run and its original limitations as historical evidence.

@@ -1,5 +1,10 @@
 # Construction corrections and three 80-tribe runs — 13 November 2026
 
+**15 November persistence follow-up:** [SavePersistence.md](SavePersistence.md)
+documents the streaming codec that recovers the earlier failing large-world
+save. The measurements and limitations below describe this 13 November run;
+its three endpoints were not retroactively saved or remeasured.
+
 The construction corrections are implemented and tested. These are three fresh
 normal-AI/Elder playthroughs using the smoothed calendar, with 80 founding tribes
 on Standard/Continents 1024 × 512 worlds and seeds 11, 23 and 47. Each runs to the

@@ -54,3 +54,4 @@ TestResults/
 !Tools/PerformanceAudit/PastoralPlannerProbe.csproj
 
 !Tools/AgriculturalTechnologySweep/Anthropocene.AgriculturalTechnologySweep.csproj
+!Tools/SaveAudit/Anthropocene.SaveAudit.csproj

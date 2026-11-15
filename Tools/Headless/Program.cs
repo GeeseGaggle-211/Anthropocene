@@ -407,6 +407,7 @@ internal static class Program
             var fixedChecks = new[]
             {
                 new ParallelChecks.Entry { Name = "Program.Tests", Run = () => Tests() },
+                new ParallelChecks.Entry { Name = "SaveCodecChecks", Run = () => SaveCodecChecks.Run() },
                 new ParallelChecks.Entry { Name = "Milestone2Checks", Run = () => Milestone2Checks.Run() },
                 new ParallelChecks.Entry { Name = "Milestone3Checks", Run = () => Milestone3Checks.Run() },
                 new ParallelChecks.Entry { Name = "FoundationChecks", Run = () => Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions") },

@@ -12,20 +12,26 @@ namespace Anthropocene.Simulation
 {
     public static class SaveCodec
     {
-        private const string Magic = "ANTHROPOCENE-11", LegacyMagic10 = "ANTHROPOCENE-10", LegacyMagic9 = "ANTHROPOCENE-9", LegacyMagic8 = "ANTHROPOCENE-8";
-        // Benchmark-only 320-tribe openings can retain more than 128 MiB of
-        // legitimate turn receipts in the binary XML header. Keep a finite cap.
-        private const int MaximumMetadataBytes = 512 * 1024 * 1024;
+        private const string Magic = "ANTHROPOCENE-11", ExtendedMagic = "ANTHROPOCENE-12", LegacyMagic10 = "ANTHROPOCENE-10", LegacyMagic9 = "ANTHROPOCENE-9", LegacyMagic8 = "ANTHROPOCENE-8";
+        // Shared writer/reader policy; this is a streaming byte limit, never an
+        // allocation size. Envelope 12 extends only the metadata length to Int64.
+        internal const long MaximumMetadataBytes = 8L * 1024 * 1024 * 1024;
         private static DataContractSerializer Serializer(Type type) => new DataContractSerializer(type, new DataContractSerializerSettings { MaxItemsInObjectGraph = int.MaxValue });
         public static byte[] Save(WorldState world)
         {
-            FisheryState.Normalize(world);
-            RequireBoundOwnership(world);
             using (var output = new MemoryStream())
             {
-                using (var zip = new GZipStream(output, CompressionLevel.Fastest, true)) WritePayload(zip, world);
+                Save(world, output);
                 return output.ToArray();
             }
+        }
+        // File/network callers need not retain a second compressed-save array.
+        // The caller owns the stream; the committed world must remain locked.
+        public static void Save(WorldState world, Stream destination)
+        {
+            FisheryState.Normalize(world);
+            RequireBoundOwnership(world);
+            using (var zip = new GZipStream(destination, CompressionLevel.Fastest, true)) WritePayload(zip, world);
         }
         private static void RequireBoundOwnership(WorldState world)
         {
@@ -39,13 +45,21 @@ namespace Anthropocene.Simulation
             using (var buffered = new BufferedStream(destination, 65536))
             using (var writer = new BinaryWriter(buffered))
             {
-                writer.Write(Magic);
                 // Geography dominates the save. Fixed primitive records avoid reflection and repeated XML member names for every tile.
                 var metadata = CopyWithoutTiles(world);
-                using (var header = new MemoryStream())
+                // Count then emit the same committed graph. Two linear passes
+                // avoid a metadata-sized array or temporary file, and preserve
+                // envelope-11 payloads/fingerprints below the Int32 boundary.
+                long length;
+                using (var counter = new MetadataWriteStream(null, MaximumMetadataBytes))
                 {
-                    using (var xml = XmlDictionaryWriter.CreateBinaryWriter(header, null, null, false)) Serializer(typeof(WorldState)).WriteObject(xml, metadata);
-                    writer.Write(checked((int)header.Length)); header.Position = 0; header.CopyTo(buffered);
+                    WriteMetadata(counter, metadata); length = counter.Length;
+                }
+                WriteMetadataPrefix(writer, length);
+                using (var emitted = new MetadataWriteStream(buffered, length))
+                {
+                    WriteMetadata(emitted, metadata);
+                    if (emitted.Length != length) throw new InvalidOperationException("Save metadata changed during serialization.");
                 }
                 writer.Write(world.Tiles.Length);
                 // Encode each tile into one little-endian record, byte-identical to
@@ -76,15 +90,27 @@ namespace Anthropocene.Simulation
         public static WorldState Load(byte[] bytes)
         {
             using (var input = new MemoryStream(bytes))
-            using (var zip = new GZipStream(input, CompressionMode.Decompress))
+                return Load(input);
+        }
+        public static WorldState Load(Stream input)
+        {
+            using (var zip = new GZipStream(input, CompressionMode.Decompress, true))
             using (var buffered = new BufferedStream(zip, 65536))
             using (var reader = new BinaryReader(buffered))
             {
                 string magic = reader.ReadString();
-                if (magic != Magic && magic != LegacyMagic10 && magic != LegacyMagic9 && magic != LegacyMagic8) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
-                int headerLength = reader.ReadInt32(); if (headerLength < 1 || headerLength > MaximumMetadataBytes) throw new InvalidDataException("Invalid save metadata size.");
+                if (magic != Magic && magic != ExtendedMagic && magic != LegacyMagic10 && magic != LegacyMagic9 && magic != LegacyMagic8) throw new InvalidDataException("Unsupported save format: this opening requires separate regional and local moisture. The older save is preserved.");
+                bool currentModel = magic == Magic || magic == ExtendedMagic;
+                long headerLength = magic == ExtendedMagic ? reader.ReadInt64() : reader.ReadInt32();
+                ValidateMetadataLength(headerLength);
                 WorldState world;
-                using (var xml = XmlDictionaryReader.CreateBinaryReader(reader.ReadBytes(headerLength), XmlDictionaryReaderQuotas.Max)) world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
+                using (var header = new MetadataReadStream(buffered, headerLength))
+                using (var xml = XmlDictionaryReader.CreateBinaryReader(header, XmlDictionaryReaderQuotas.Max))
+                {
+                    world = (WorldState)Serializer(typeof(WorldState)).ReadObject(xml);
+                    if (xml.MoveToContent() != XmlNodeType.None || header.Remaining != 0)
+                        throw new InvalidDataException("Trailing save metadata.");
+                }
                 // Generators 8-11 change profiles already stored in this format. Preserve old
                 // profiles and generator metadata; aquatic condition uses its original rules
                 // for pre-11 saves. No implicit geography or plankton regeneration.
@@ -93,7 +119,7 @@ namespace Anthropocene.Simulation
                 MigrateGenerationalDefaults(world);
                 world.Config.MigrateMissingPhysicalFoodHorizons();
                 world.Config.Neolithic.MigrateLegacyMaterialReserveDuration(world.Config.TurnDays / world.Config.DaysPerYear);
-                if (magic != Magic)
+                if (!currentModel)
                 {
                     foreach (var camp in world.Camps)
                     {
@@ -115,7 +141,7 @@ namespace Anthropocene.Simulation
                 SmoothCalendar.RequireCurrentBoundary(world);
                 int count = reader.ReadInt32(); if (count != world.Config.Width * world.Config.Height) throw new InvalidDataException("Invalid tile count.");
                 world.Tiles = new Tile[count];
-                bool hasCultivation = magic == Magic || magic == LegacyMagic10;
+                bool hasCultivation = currentModel || magic == LegacyMagic10;
                 var record = new byte[TileRecordBytes(magic)];
                 for (int i = 0; i < count; i++)
                 {
@@ -132,8 +158,8 @@ namespace Anthropocene.Simulation
                     tile.DepressionDepth = GetFloat(record, ref o); tile.OasisInfluence = GetFloat(record, ref o); tile.Saltwater = GetDouble(record, ref o); tile.LandCondition = GetDouble(record, ref o); tile.AquaticCondition = GetDouble(record, ref o);
                     tile.Elevation = GetFloat(record, ref o); tile.Volcanism = GetFloat(record, ref o); tile.Flow = GetFloat(record, ref o); tile.Food = GetDouble(record, ref o); tile.PotentialFood = GetDouble(record, ref o); tile.Freshwater = GetDouble(record, ref o);
                     tile.Cultivation = hasCultivation ? GetFloat(record, ref o) : 0;
-                    tile.CultivationCapital = magic == Magic ? GetDouble(record, ref o) : Math.Pow(tile.Cultivation / world.Config.ReferenceIntensity, 2);
-                    tile.CultivationOperator = magic == Magic ? GetInt(record, ref o) : -1;
+                    tile.CultivationCapital = currentModel ? GetDouble(record, ref o) : Math.Pow(tile.Cultivation / world.Config.ReferenceIntensity, 2);
+                    tile.CultivationOperator = currentModel ? GetInt(record, ref o) : -1;
                     for (int s = 0; s < 4; s++) tile.Seasons[s] = new SeasonData
                     {
                         Temperature = GetFloat(record, ref o), Rain = GetFloat(record, ref o), Snow = GetFloat(record, ref o), WindX = GetFloat(record, ref o), Runoff = GetFloat(record, ref o), RegionalMoisture = GetFloat(record, ref o), Moisture = GetFloat(record, ref o),
@@ -141,7 +167,7 @@ namespace Anthropocene.Simulation
                     };
                     world.Tiles[i] = tile;
                 }
-                world.Resources = magic == Magic || magic == LegacyMagic10 ? (reader.ReadBoolean() ? ResourceCodec.Read(reader, count) : null) : (magic == LegacyMagic9 ? ResourceCodec.Read(reader, count) : null);
+                world.Resources = currentModel || magic == LegacyMagic10 ? (reader.ReadBoolean() ? ResourceCodec.Read(reader, count) : null) : (magic == LegacyMagic9 ? ResourceCodec.Read(reader, count) : null);
                 NeolithicProduction.NormalizeFixedHousing(world);
                 IrrigationEconomy.Validate(world);
                 FisheryState.Normalize(world);
@@ -162,7 +188,72 @@ namespace Anthropocene.Simulation
         // Fixed tile record: 109 bytes of tile fields plus four 16-float season profiles.
         // Envelopes 8/9 lack Cultivation; envelope 10 lacks capital and operator.
         private static int TileRecordBytes(string magic) => 93 + 4 * 16 * 4
-            + (magic == Magic || magic == LegacyMagic10 ? 4 : 0) + (magic == Magic ? 12 : 0);
+            + (magic == Magic || magic == ExtendedMagic || magic == LegacyMagic10 ? 4 : 0) + (magic == Magic || magic == ExtendedMagic ? 12 : 0);
+        private static void WriteMetadata(Stream stream, WorldState metadata)
+        {
+            using (var xml = XmlDictionaryWriter.CreateBinaryWriter(stream, null, null, false)) Serializer(typeof(WorldState)).WriteObject(xml, metadata);
+        }
+        internal static void ValidateMetadataLength(long length)
+        {
+            if (length < 1 || length > MaximumMetadataBytes) throw new InvalidDataException("Invalid save metadata size (supported range: 1 byte to 8 GiB).");
+        }
+        internal static void WriteMetadataPrefix(BinaryWriter writer, long length)
+        {
+            ValidateMetadataLength(length);
+            writer.Write(length <= int.MaxValue ? Magic : ExtendedMagic);
+            if (length <= int.MaxValue) writer.Write((int)length); else writer.Write(length);
+        }
+        // These wrappers never own their underlying stream. All counters are
+        // Int64; neither path allocates from an untrusted declared length.
+        internal sealed class MetadataWriteStream : Stream
+        {
+            private readonly Stream destination;
+            private readonly long limit;
+            private long written;
+            internal MetadataWriteStream(Stream destination, long limit) { this.destination = destination; this.limit = limit; }
+            public override void Write(byte[] buffer, int offset, int count)
+            {
+                if (count < 0 || count > limit - written) throw new InvalidDataException("Save metadata exceeds its supported or measured size.");
+                destination?.Write(buffer, offset, count); written += count;
+            }
+            public override void WriteByte(byte value)
+            {
+                if (written >= limit) throw new InvalidDataException("Save metadata exceeds its supported or measured size.");
+                destination?.WriteByte(value); written++;
+            }
+            public override void Flush() { }
+            public override bool CanRead => false;
+            public override bool CanSeek => false;
+            public override bool CanWrite => true;
+            public override long Length => written;
+            public override long Position { get => written; set => throw new NotSupportedException(); }
+            public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+        }
+        internal sealed class MetadataReadStream : Stream
+        {
+            private readonly Stream source;
+            internal long Remaining { get; private set; }
+            internal MetadataReadStream(Stream source, long length) { this.source = source; Remaining = length; }
+            public override int Read(byte[] buffer, int offset, int count)
+            {
+                int wanted = (int)Math.Min(Remaining, count);
+                if (wanted == 0) return 0;
+                int read = source.Read(buffer, offset, wanted);
+                if (read == 0) throw new EndOfStreamException("Truncated save metadata.");
+                Remaining -= read; return read;
+            }
+            public override bool CanRead => true;
+            public override bool CanSeek => false;
+            public override bool CanWrite => false;
+            public override long Length => throw new NotSupportedException();
+            public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+            public override void Flush() { }
+            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        }
         private static void ReadRecord(BinaryReader reader, byte[] record)
         {
             for (int read = 0; read < record.Length;)

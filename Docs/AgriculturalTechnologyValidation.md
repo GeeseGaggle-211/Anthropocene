@@ -1,5 +1,10 @@
 # Agricultural technology validation — 11 November 2026
 
+**15 November persistence follow-up:** [SavePersistence.md](SavePersistence.md)
+records recovery of the large-world save, preserving its original fingerprint
+and history. This resolves the documented metadata-size failure; native Unity
+interaction validation remains pending.
+
 **13 November construction correction:** the [three 80-tribe reruns](ConstructionFix80.md)
 record the repaired tool allowance, Builder material throughput, construction
 storage, final grant reconciliation and cached-draft isolation. The final code

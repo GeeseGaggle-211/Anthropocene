@@ -594,7 +594,7 @@ namespace Anthropocene.Presentation
             saving = Task.Run(() =>
             {
                 Directory.CreateDirectory(directory); string temporary = path + ".tmp";
-                File.WriteAllBytes(temporary, SaveCodec.Save(committed));
+                using (var output = File.Create(temporary)) SaveCodec.Save(committed, output);
                 if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path);
             });
         }
@@ -603,7 +603,7 @@ namespace Anthropocene.Presentation
             if (saving != null || generating != null) return;
             drafting = null;
             previewAfterGeneration = false; string path = SavePath; operation = "Loading the saved opening";
-            generating = Task.Run(() => { var loaded = SaveCodec.Load(File.ReadAllBytes(path)); _ = loaded.TerrainMetrics; return loaded; });
+            generating = Task.Run(() => { using (var input = File.OpenRead(path)) { var loaded = SaveCodec.Load(input); _ = loaded.TerrainMetrics; return loaded; } });
         }
         private void TransitionGameOver(Rect rect)
         {

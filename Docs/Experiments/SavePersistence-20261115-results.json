@@ -1,0 +1,224 @@
+[
+  {
+    "name": "original-load",
+    "seconds": 72.8060437,
+    "state": {
+      "Seed": 11,
+      "Turn": 119,
+      "Days": 586091.7181657674,
+      "history": 118,
+      "population": 1363048,
+      "camps": 2150,
+      "canals": 58,
+      "fields": 55
+    },
+    "detail": {
+      "envelope": "ANTHROPOCENE-11",
+      "metadataBytes": 1520801946
+    },
+    "managedBytes": 1660060552,
+    "peakWorkingSetBytes": 1733107712
+  },
+  {
+    "name": "historical-fingerprint",
+    "seconds": 25.9036437,
+    "state": {
+      "Seed": 11,
+      "Turn": 119,
+      "Days": 586091.7181657674,
+      "history": 118,
+      "population": 1363048,
+      "camps": 2150,
+      "canals": 58,
+      "fields": 55
+    },
+    "detail": {
+      "fingerprint": "8BD1670A9268D9DE3F72E0D9FE3E94FA8EE367529639B06C1C1E06BBE6A576F0",
+      "exactHistoricalFingerprint": true
+    },
+    "managedBytes": 1674250464,
+    "peakWorkingSetBytes": 1748930560
+  },
+  {
+    "name": "recovered-fingerprint",
+    "seconds": 24.0310215,
+    "state": {
+      "Seed": 11,
+      "Turn": 119,
+      "Days": 586091.7181657674,
+      "history": 118,
+      "population": 1363048,
+      "camps": 2150,
+      "canals": 58,
+      "fields": 55
+    },
+    "detail": {
+      "fingerprint": "8BD1670A9268D9DE3F72E0D9FE3E94FA8EE367529639B06C1C1E06BBE6A576F0"
+    },
+    "managedBytes": 1669563648,
+    "peakWorkingSetBytes": 1748365312
+  },
+  {
+    "name": "recovered-save",
+    "seconds": 51.9631124,
+    "state": {
+      "Seed": 11,
+      "Turn": 119,
+      "Days": 586091.7181657674,
+      "history": 118,
+      "population": 1363048,
+      "camps": 2150,
+      "canals": 58,
+      "fields": 55
+    },
+    "detail": {
+      "envelope": "ANTHROPOCENE-11",
+      "metadataBytes": 1520801946,
+      "compressedBytes": 321168771,
+      "sha256": "C0AF33B41EF79AB98C57D4C178242890081C5DE6B21ACD94170542FC122F21D6"
+    },
+    "managedBytes": 1600724784,
+    "peakWorkingSetBytes": 1748365312
+  },
+  {
+    "name": "recovered-load",
+    "seconds": 78.5547774,
+    "state": {
+      "Seed": 11,
+      "Turn": 119,
+      "Days": 586091.7181657674,
+      "history": 118,
+      "population": 1363048,
+      "camps": 2150,
+      "canals": 58,
+      "fields": 55
+    },
+    "detail": {
+      "exactFingerprint": true,
+      "envelope": "ANTHROPOCENE-11"
+    },
+    "managedBytes": 3261974880,
+    "peakWorkingSetBytes": 3365351424
+  },
+  {
+    "name": "recovered-continuation",
+    "seconds": 63.5827941,
+    "state": {
+      "Seed": 11,
+      "Turn": 120,
+      "Days": 589332.7522326637,
+      "history": 119,
+      "population": 1414438,
+      "camps": 2161,
+      "canals": 58,
+      "fields": 55
+    },
+    "detail": {
+      "exactNextTurn": true,
+      "fingerprint": "3ECAEAB458AE2A4AA4B04E0A76DB8741CA9D969D1E8E09EF0F2400355BCE1215"
+    },
+    "managedBytes": 4160369912,
+    "peakWorkingSetBytes": 4142112768
+  },
+  {
+    "name": "extended-input",
+    "seconds": 110.4473728,
+    "state": {
+      "Seed": 11,
+      "Turn": 145,
+      "Days": 665373.9299324334,
+      "history": 144,
+      "population": 1565945,
+      "camps": 2290,
+      "canals": 71,
+      "fields": 66
+    },
+    "detail": {
+      "exactNativeFingerprint": true,
+      "fingerprint": "97AF4DBE08441786401BDBE630CDACAB8122CEA042BC08AE295A57CB901B3017"
+    },
+    "managedBytes": 3876580168,
+    "peakWorkingSetBytes": 4427083776
+  },
+  {
+    "name": "extended-fingerprint",
+    "seconds": 22.8132731,
+    "state": {
+      "Seed": 11,
+      "Turn": 145,
+      "Days": 665373.9299324334,
+      "history": 144,
+      "population": 1565945,
+      "camps": 2290,
+      "canals": 71,
+      "fields": 66
+    },
+    "detail": {
+      "fingerprint": "97AF4DBE08441786401BDBE630CDACAB8122CEA042BC08AE295A57CB901B3017"
+    },
+    "managedBytes": 3869941352,
+    "peakWorkingSetBytes": 4426493952
+  },
+  {
+    "name": "extended-save",
+    "seconds": 46.2859924,
+    "state": {
+      "Seed": 11,
+      "Turn": 145,
+      "Days": 665373.9299324334,
+      "history": 144,
+      "population": 1565945,
+      "camps": 2290,
+      "canals": 71,
+      "fields": 66
+    },
+    "detail": {
+      "envelope": "ANTHROPOCENE-12",
+      "metadataBytes": 2189660416,
+      "compressedBytes": 431120515,
+      "sha256": "49261A29E806D521F0D6EA74561944EB4DC3D2EC7C94C4780B974AF9FC7C7866"
+    },
+    "managedBytes": 2191339368,
+    "peakWorkingSetBytes": 4426493952
+  },
+  {
+    "name": "extended-load",
+    "seconds": 118.588869,
+    "state": {
+      "Seed": 11,
+      "Turn": 145,
+      "Days": 665373.9299324334,
+      "history": 144,
+      "population": 1565945,
+      "camps": 2290,
+      "canals": 71,
+      "fields": 66
+    },
+    "detail": {
+      "exactFingerprint": true,
+      "envelope": "ANTHROPOCENE-12"
+    },
+    "managedBytes": 4414958600,
+    "peakWorkingSetBytes": 4596850688
+  },
+  {
+    "name": "extended-continuation",
+    "seconds": 86.5696097,
+    "state": {
+      "Seed": 11,
+      "Turn": 146,
+      "Days": 668232.7990420463,
+      "history": 145,
+      "population": 1562926,
+      "camps": 2293,
+      "canals": 72,
+      "fields": 67
+    },
+    "detail": {
+      "exactNextTurn": true,
+      "fingerprint": "EBE592AB6C1E301B57D424B66050531124933BD626F80A03CB5D7A0A78BE5CBA"
+    },
+    "managedBytes": 4400518064,
+    "peakWorkingSetBytes": 5272977408
+  }
+]

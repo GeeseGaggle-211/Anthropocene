@@ -141,7 +141,7 @@ contested networks retain records but cannot serve a field without valid rights.
 
 ## Save, observation and UI contracts
 
-`ANTHROPOCENE-11`, world/config version 7 and observation schema 22 remain in use.
+`ANTHROPOCENE-11` remains the ordinary envelope; large metadata uses the compatible state layout in envelope 12. World/config version 7 and observation schema 22 remain unchanged. See [SavePersistence.md](SavePersistence.md).
 New optional fields are `SimulationConfig.Agriculture`, `WorldState.Canals`,
 `WorldState.IrrigatedFields`, `TurnRecord.IrrigationWater` and
 `TurnRecord.AgriculturalFood`. Absent agriculture settings load disabled; no load

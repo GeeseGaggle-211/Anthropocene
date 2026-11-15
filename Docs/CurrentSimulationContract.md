@@ -24,8 +24,9 @@ and action layouts, and demographic laws retain their prior behavior.
 [ConstructionFix80.md](ConstructionFix80.md) records the subsequent construction
 corrections and three Standard/80-tribe, 1,600-year smoothed-calendar reruns. The
 generic paid-tool allowance correction applies to DemandControl production;
-the agricultural technology effects remain opt-in. Large-world persistence and
-Unity interaction acceptance remain open.
+the agricultural technology effects remain opt-in. [SavePersistence.md](SavePersistence.md)
+records the subsequent streaming codec and native large-save recovery. Unity
+interaction acceptance remains open.
 
 ## Physical altitude for new worlds (6 November 2026)
 
