@@ -649,6 +649,43 @@ internal static class AgriculturalTechnologyChecks
             var visibleClaims = IrrigationEconomy.EssentialForecastClaimsForSources(w, 20, new[] { source }, _ => true);
             Check(visibleClaims.Any(d => d.Entity == rival.Id), "visible rival water claims are included locally");
         }
+
+        // River-valley diversion up to ValleyMaxSlopeDegrees (25 deg / ~1200 m bank) allows gentle
+        // valley terraces while rejecting steep gorges, excessive cumulative climbs, and mountain climbs.
+        {
+            var w = Fixture(); var c = w.Camps[0];
+            w.Config.ElevationMetersPerUnit = 12000;
+            var p = IrrigationEconomy.Opportunity(w, c);
+            int source = p.Source, target = p.Target;
+            w.Tiles[source].Elevation = .40f; w.Tiles[source].Relief = Relief.Lowland;
+            w.Tiles[target].Relief = Relief.Lowland;
+            double maxRise = IrrigationEconomy.ValleyRiseTolerance(w);
+            Check(maxRise > 0.04 && maxRise < 0.05, "25 deg over 1200 m bank maps to ~0.0466 normalized rise");
+            // Gentle valley terrace (~15 deg / +0.025 normalized / +300 m) is accepted.
+            w.Tiles[target].Elevation = (float)(w.Tiles[source].Elevation + 0.025);
+            Check(IrrigationEconomy.RouteValid(w, source, new[] { target }), "gentle river valley terrace within 25 deg is accepted");
+            // Steep gorge (>25 deg / +0.06 normalized / +720 m) is rejected.
+            w.Tiles[target].Elevation = (float)(w.Tiles[source].Elevation + 0.06);
+            Check(!IrrigationEconomy.RouteValid(w, source, new[] { target }), "steep gorge rise above 25 deg is rejected");
+            // Mountain wall climb is rejected even within 25 deg.
+            w.Tiles[target].Elevation = (float)(w.Tiles[source].Elevation + 0.02);
+            w.Tiles[target].Relief = Relief.Mountain;
+            Check(!IrrigationEconomy.RouteValid(w, source, new[] { target }), "uphill climb onto Mountain relief is rejected");
+            w.Tiles[target].Relief = Relief.Lowland; w.Tiles[source].Relief = Relief.Mountain;
+            Check(!IrrigationEconomy.RouteValid(w, source, new[] { target }), "uphill climb out of Mountain gorge is rejected");
+            w.Tiles[source].Relief = Relief.Lowland;
+            // Cumulative multi-hop climb above source cannot stair-step past 25 deg.
+            int hop2 = CultivationEconomy.Footprint(w, c).First(id => id != source && id != target && w.Map.Distance(target, id) == 1);
+            w.Tiles[hop2].Relief = Relief.Lowland;
+            w.Tiles[target].Elevation = (float)(w.Tiles[source].Elevation + 0.03);
+            w.Tiles[hop2].Elevation = (float)(w.Tiles[source].Elevation + 0.055);
+            Check(!IrrigationEconomy.RouteValid(w, source, new[] { target, hop2 }), "cumulative multi-hop climb above 25 deg is rejected");
+            w.Tiles[hop2].Elevation = (float)(w.Tiles[source].Elevation + 0.04);
+            Check(IrrigationEconomy.RouteValid(w, source, new[] { target, hop2 }), "two-hop gentle valley terrace within cumulative 25 deg is accepted");
+            // ValleyMaxSlopeDegrees = 0 preserves strict downhill-only HydraulicTolerance behavior.
+            w.Config.Agriculture.ValleyMaxSlopeDegrees = 0;
+            Check(!IrrigationEconomy.RouteValid(w, source, new[] { target }), "ValleyMaxSlopeDegrees=0 preserves strict downhill-only routing");
+        }
     }
     public static int Run()
     {

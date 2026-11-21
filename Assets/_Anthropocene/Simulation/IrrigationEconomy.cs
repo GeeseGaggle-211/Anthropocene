@@ -82,17 +82,35 @@ namespace Anthropocene.Simulation
                         (w.Tiles[to].RidgeMask & (1 << ((direction + 3) % 6))) != 0;
             return true;
         }
+        internal static double ValleyRiseTolerance(WorldState w)
+        {
+            var cfg = w.Config.Agriculture;
+            if (cfg == null) return 0;
+            double tol = cfg.HydraulicTolerance;
+            if (cfg.ValleyMaxSlopeDegrees > 0 && cfg.ValleyBankWidthMeters > 0)
+            {
+                double metersPerUnit = w.Config.ElevationMetersPerUnit > 0 ? w.Config.ElevationMetersPerUnit : 12000.0;
+                double valleyRise = cfg.ValleyBankWidthMeters * Math.Tan(cfg.ValleyMaxSlopeDegrees * Math.PI / 180.0) / metersPerUnit;
+                if (valleyRise > tol) tol = valleyRise;
+            }
+            return tol;
+        }
         public static bool RouteValid(WorldState w, int source, IReadOnlyList<int> route)
         {
             if (!Enabled(w) || source < 0 || source >= w.Tiles.Length || !FreshSource(w.Tiles[source]) ||
                 route == null || route.Count == 0 || route.Count > 7) return false;
+            double strictTol = w.Config.Agriculture.HydraulicTolerance;
+            double valleyTol = ValleyRiseTolerance(w);
+            bool sourceMountain = w.Tiles[source].Relief == Relief.Mountain;
+            float sourceElevation = w.Tiles[source].Elevation;
             int prior = source; var seen = new HashSet<int> { source };
             foreach (int id in route)
             {
                 if (id < 0 || id >= w.Tiles.Length || !seen.Add(id) || !w.Tiles[id].TraversableLand ||
-                    w.Map.Distance(prior, id) != 1 || w.Tiles[id].Elevation >
-                    w.Tiles[prior].Elevation + w.Config.Agriculture.HydraulicTolerance ||
-                    Blocked(w, prior, id)) return false;
+                    w.Map.Distance(prior, id) != 1 || Blocked(w, prior, id)) return false;
+                double stepLimit = (sourceMountain || w.Tiles[id].Relief == Relief.Mountain) ? strictTol : valleyTol;
+                if (w.Tiles[id].Elevation > w.Tiles[prior].Elevation + stepLimit ||
+                    w.Tiles[id].Elevation > sourceElevation + stepLimit) return false;
                 prior = id;
             }
             return true;

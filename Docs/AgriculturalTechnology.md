@@ -102,9 +102,13 @@ timestamps. Sparse field records retain one deterministic endpoint, operator,
 serviced area, soil development, last water service and timestamp. A route ends
 on the serviced field; it does not silently irrigate uphill adjacent fields.
 Routing is conservatively restricted to known, continuous, cultivable local
-terrain (at most seven footprint tiles); it rejects saltwater, ridges, uphill
-steps, disconnections and cycles. This is a local gravity model, not a hydraulic
-head or large regional canal simulator.
+terrain (at most seven footprint tiles); it rejects saltwater, ridges, steep
+gorges, mountain climbs, disconnections and cycles. Leaving a carved river or
+lake valley floor onto adjacent terraces allows up to `ValleyMaxSlopeDegrees`
+(default 25° over `ValleyBankWidthMeters` = 1,200 m, bounded both per step and
+cumulatively above the source; zero preserves strict downhill-only
+`HydraulicTolerance` in older saves). This remains a local diversion model, not
+a hydraulic head or large regional canal simulator.
 
 The authoritative pass collects all accepted essential withdrawals first. The
 native horizon water kernel defines a finite source envelope. Irrigation shares

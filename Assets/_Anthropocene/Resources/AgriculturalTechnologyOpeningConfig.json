@@ -556,6 +556,8 @@
     "SoilYears": 500.0,
     "SoilCapacityGain": 0.5,
     "SoilReferenceQ": 0.4,
-    "HydraulicTolerance": 1e-05
+    "HydraulicTolerance": 1e-05,
+    "ValleyMaxSlopeDegrees": 25.0,
+    "ValleyBankWidthMeters": 1200.0
   }
 }

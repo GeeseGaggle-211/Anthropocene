@@ -18,6 +18,12 @@ namespace Anthropocene.Simulation
         public double AnnualApplication = 1000, AnnualThroughput = 5000, Retention = .80;
         public double SoilYears = 500, SoilCapacityGain = .50, SoilReferenceQ = .40;
         public double HydraulicTolerance = .00001;
+        // River/lake valley diversion allowance: allows leaving a carved valley floor
+        // onto adjacent terraces up to ValleyMaxSlopeDegrees over ValleyBankWidthMeters
+        // while rejecting steep gorges, ridges, and mountain walls. OptionalField defaults
+        // to 0 in older saves, preserving strict downhill-only HydraulicTolerance behavior.
+        [System.Runtime.Serialization.OptionalField] public double ValleyMaxSlopeDegrees = 25;
+        [System.Runtime.Serialization.OptionalField] public double ValleyBankWidthMeters = 1200;
         public void Validate()
         {
             foreach (var f in GetType().GetFields().Where(f => f.FieldType == typeof(double)))
@@ -30,7 +36,8 @@ namespace Anthropocene.Simulation
                 FertileMoisture > 1 || TargetMoisture <= 0 || TargetMoisture > 1 ||
                 CanalBuilderYears <= 0 || CanalHousingMaterials <= 0 || UpkeepBuilderYears <= 0 ||
                 UpkeepHousingMaterials <= 0 || AnnualApplication <= 0 || AnnualThroughput <= 0 ||
-                Retention <= 0 || Retention > 1 || SoilYears <= 0 || SoilReferenceQ <= 0)
+                Retention <= 0 || Retention > 1 || SoilYears <= 0 || SoilReferenceQ <= 0 ||
+                ValleyMaxSlopeDegrees >= 90)
                 throw new ArgumentException("Invalid agricultural technology calibration.");
         }
     }
